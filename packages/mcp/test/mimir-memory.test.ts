@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AppLinkCaller } from '../src/app-route'
 import { mimirMemoryTools } from '../src/mimir-memory'
+import { connect, data, text } from './helpers'
 
 const FACTS = [
   { id: 'f2', kind: 'filament', text: 'Prints PLA at 215 C on the textured plate', updatedAt: 30 },
@@ -59,5 +60,36 @@ describe('mimir memory for MCP clients', () => {
     await expect(read(undefined)).rejects.toMatchObject({ code: 'not_configured', message: /--printers link/ })
     await expect(remember(undefined, { kind: 'size', text: 'Hands are 9 cm across' })).rejects.toMatchObject({ code: 'not_configured' })
     for (const code of ['app_link_off', 'app_closed', 'forbidden', 'unauthorized']) await expect(read(failing(code))).rejects.toMatchObject({ code: 'not_configured' })
+  })
+})
+
+describe('who decides on adding a fact', () => {
+  it('get_policy lists the profile class, which gates remember', async () => {
+    const h = await connect()
+    const policy = data<{ classes: Record<string, { mode: string; title: string }> }>(await h.call('slicerx_get_policy'))
+    expect(policy.classes['profile']).toMatchObject({ mode: 'ask', title: 'Change saved profiles' })
+    const listed = (await h.client.listTools()).tools
+    expect(listed.find((t) => t.name === 'slicerx_mimir_memory_remember')?.description).toContain('Permission class: profile (Change saved profiles).')
+    expect(listed.find((t) => t.name === 'slicerx_mimir_memory')?.description).not.toMatch(/Permission class/)
+    // Ask first: the person is asked before the app is reached.
+    const asked = await h.call('slicerx_mimir_memory_remember', { kind: 'printer', text: 'A P1S with a 0.4 mm nozzle' })
+    expect(data<{ status: string }>(asked).status).toBe('approval_required')
+  })
+
+  it('a policy with profile changes off refuses remember and still reads', async () => {
+    const h = await connect({ policy: { classes: { slice: 'allow', queue: 'ask', start: 'ask', profile: 'off' } } })
+    const off = await h.call('slicerx_mimir_memory_remember', { kind: 'printer', text: 'A P1S' })
+    expect(off.isError).toBe(true)
+    expect(text(off)).toMatch(/is Off in the user's permission policy/)
+    expect(text(await h.call('slicerx_mimir_memory'))).toMatch(/--printers link/)
+  })
+
+  it('names a bad data entry by its position, never by its name', () => {
+    const key = 'sk-abcdefghijklmnopqrstuvwxyz0123'
+    const parsed = tools(undefined)[1]!.input.safeParse({ kind: 'preference', text: 'Scripts', data: { nozzleMm: 0.4, [key]: true } })
+    expect(parsed.success).toBe(false)
+    const messages = JSON.stringify(parsed.error?.issues)
+    expect(messages).toMatch(/data entry 2 is text of at most 200 characters or a number/)
+    expect(messages).not.toContain(key)
   })
 })

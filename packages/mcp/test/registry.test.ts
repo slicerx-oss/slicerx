@@ -45,6 +45,8 @@ describe('the tool registry', () => {
 
   it('TOOLS.md is current', () => {
     const doc = readFileSync(join(__dirname, '../TOOLS.md'), 'utf8')
-    for (const name of ['slicerx_mimir_memory', 'slicerx_mimir_memory_remember']) expect(doc).toContain('| `' + name + '` |')
+    // the read is gated as a read and adding a fact as a profile change
+    expect(doc).toContain('| `slicerx_mimir_memory` |  |  | read |')
+    expect(doc).toContain('| `slicerx_mimir_memory_remember` |  |  | profile |')
   })
 })
