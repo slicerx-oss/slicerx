@@ -17,7 +17,8 @@ create table public.mimir_memory (
   -- a tombstone carries exactly its two keys
   constraint mimir_memory_tombstone check (
     not (fact ? 'deleted')
-    or (fact - 'updatedAt' = '{"deleted": true}'::jsonb and jsonb_typeof(fact -> 'updatedAt') = 'number'))
+    -- coalesce: with no updatedAt, jsonb_typeof is null, and a null check would let the row in
+    or (fact - 'updatedAt' = '{"deleted": true}'::jsonb and coalesce(jsonb_typeof(fact -> 'updatedAt') = 'number', false)))
 );
 
 -- Newer wins on the server too, so two devices that sync at once cannot put an older fact back. A
@@ -95,3 +96,81 @@ create policy mimir_memory_insert on public.mimir_memory for insert to authentic
   with check (user_id = (select auth.uid()));
 create policy mimir_memory_update on public.mimir_memory for update to authenticated
   using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
+
+-- The account export (0001_auth.sql) gains the person's synced memory, tombstones included: the same function with
+-- one more section, which it skips when the table is gone (drop_mimir_proxy.sql). Replacing it keeps its grants.
+create or replace function public.export_my_data() returns jsonb
+language plpgsql stable security definer set search_path = '' as $$
+declare
+  uid uuid := (select auth.uid());
+  result jsonb;
+  section record;
+  rows jsonb;
+begin
+  if uid is null then
+    raise exception 'sign in to export your data' using errcode = '42501';
+  end if;
+  result := jsonb_build_object(
+    'format', 'slicerx-account-export',
+    'version', 1,
+    'exported_at', now(),
+    'account', (select jsonb_build_object('id', u.id, 'email', u.email, 'created_at', u.created_at, 'last_sign_in_at', u.last_sign_in_at)
+                from auth.users u where u.id = uid),
+    'profile', (select to_jsonb(p) from public.profiles p where p.id = uid),
+    'api_tokens', (select coalesce(jsonb_agg(public.export_row(to_jsonb(t)) order by t.created_at), '[]'::jsonb)
+                   from public.api_tokens t where t.user_id = uid),
+    'account_deletion', (select to_jsonb(d) from public.account_deletions d where d.user_id = uid)
+  );
+  for section in
+    select * from (values
+      ('paired_devices', 'paired_devices', 'user_id'),
+      ('likes', 'likes', 'user_id'),
+      ('downloads', 'downloads', 'user_id'),
+      ('follows', 'follows', 'user_id'),
+      ('comments', 'comments', 'user_id'),
+      ('makes', 'makes', 'user_id'),
+      ('collections', 'collections', 'owner_id'),
+      ('creator_page', 'creators', 'owner_id'),
+      ('cloud_devices', 'cloud_devices', 'user_id'),
+      ('sync_profiles', 'sync_profiles', 'user_id'),
+      ('sync_printers', 'sync_printers', 'user_id'),
+      ('sync_fleets', 'sync_fleets', 'user_id'),
+      ('cloud_jobs', 'cloud_jobs', 'user_id'),
+      ('cloud_deliveries', 'cloud_deliveries', 'user_id'),
+      ('mimir_memory', 'mimir_memory', 'user_id')
+    ) as s(name, tbl, col)
+  loop
+    if to_regclass('public.' || section.tbl) is not null then
+      execute format('select coalesce(jsonb_agg(public.export_row(to_jsonb(t))), ''[]''::jsonb) from public.%I t where t.%I = $1', section.tbl, section.col)
+        into rows using uid;
+      result := result || jsonb_build_object(section.name, rows);
+    end if;
+  end loop;
+  if to_regclass('public.collection_items') is not null then
+    execute 'select coalesce(jsonb_agg(to_jsonb(i)), ''[]''::jsonb) from public.collection_items i
+             join public.collections c on c.id = i.collection_id where c.owner_id = $1'
+      into rows using uid;
+    result := result || jsonb_build_object('collection_items', rows);
+  end if;
+  if to_regclass('public.listings') is not null then
+    -- The member's uploads, with the review note each one carries.
+    execute 'select coalesce(jsonb_agg(public.export_row(to_jsonb(l)) order by l.created_at), ''[]''::jsonb)
+             from public.listings l join public.creators c on c.id = l.creator_id where c.owner_id = $1'
+      into rows using uid;
+    result := result || jsonb_build_object('listings', rows);
+    execute 'select coalesce(jsonb_agg(public.export_row(to_jsonb(v)) order by v.created_at), ''[]''::jsonb)
+             from public.listing_versions v join public.listings l on l.id = v.listing_id
+             join public.creators c on c.id = l.creator_id where c.owner_id = $1'
+      into rows using uid;
+    result := result || jsonb_build_object('listing_versions', rows);
+    execute 'select coalesce(jsonb_agg(to_jsonb(k)), ''[]''::jsonb)
+             from public.creator_links k join public.creators c on c.id = k.creator_id where c.owner_id = $1'
+      into rows using uid;
+    result := result || jsonb_build_object('creator_links', rows);
+  end if;
+  return result;
+end;
+$$;
+
+revoke execute on function public.export_my_data() from anon, public;
+grant execute on function public.export_my_data() to authenticated;
