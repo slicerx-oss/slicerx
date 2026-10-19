@@ -493,6 +493,10 @@ pub struct ProjectMetadata {
     /// `Metadata/project_settings.config`, parsed (a JSON object of Orca keys).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_settings: Option<serde_json::Value>,
+    /// Why `Metadata/project_settings.config` was left out, when the file has one that is not a JSON object of
+    /// settings (INI style lines, a damaged file). The project then opens and slices as one without settings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings_skipped: Option<String>,
     /// Text of `Metadata/model_settings.config` (per-object settings, plates).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_settings: Option<String>,
@@ -612,10 +616,53 @@ pub(crate) fn application(bytes: &[u8]) -> Option<String> {
     Some(rest.get(start..start + end)?.trim().to_owned()).filter(|a| !a.is_empty())
 }
 
+/// `Metadata/project_settings.config` as settings: `Ok(None)` when it is empty or only white space (as if the file had
+/// none), the JSON object when it is one (a leading byte order mark is allowed), else why it cannot be used.
+fn project_settings_of(bytes: &[u8]) -> std::result::Result<Option<serde_json::Value>, String> {
+    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+    if bytes.iter().all(u8::is_ascii_whitespace) {
+        return Ok(None);
+    }
+    match serde_json::from_slice::<serde_json::Value>(bytes) {
+        Ok(v @ serde_json::Value::Object(_)) => Ok(Some(v)),
+        Ok(_) => Err("is JSON but not an object of settings".to_owned()),
+        Err(_) if looks_like_ini(bytes) => {
+            Err("holds INI style settings (key = value lines), not JSON".to_owned())
+        }
+        Err(e) => Err(format!("is not JSON ({e})")),
+    }
+}
+
+/// Text made only of `key = value` lines, with `;` or `#` comments and `[section]` headers between them.
+fn looks_like_ini(bytes: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let mut pairs = 0;
+    for line in text.lines().map(str::trim) {
+        if line.is_empty() || line.starts_with(';') || line.starts_with('#') {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            continue;
+        }
+        let Some((key, _)) = line.split_once('=') else {
+            return false;
+        };
+        let key = key.trim();
+        if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return false;
+        }
+        pairs += 1;
+    }
+    pairs > 0
+}
+
 /// Reads the settings entries of a 3MF project without touching the geometry.
 /// Entries the file does not have are `None`; a plain 3MF returns all `None`.
-/// Fails when the bytes are not a ZIP archive or `project_settings.config` is
-/// not JSON.
+/// A `project_settings.config` that is not a JSON object of settings is left
+/// out the same way, with the reason in `settings_skipped` (an empty one needs
+/// no reason). Fails when the bytes are not a ZIP archive.
 pub fn metadata(bytes: &[u8], name: &str) -> Result<ProjectMetadata> {
     let zip = Zip::open(bytes).map_err(|e| Error::mesh(name, e))?;
     let text = |entry: &str| {
@@ -623,15 +670,20 @@ pub fn metadata(bytes: &[u8], name: &str) -> Result<ProjectMetadata> {
             .ok()
             .map(|b| String::from_utf8_lossy(&b).into_owned())
     };
-    let project_settings = zip
+    let (mut project_settings, settings_skipped) = match zip
         .read("Metadata/project_settings.config")
         .ok()
-        .map(|b| {
-            serde_json::from_slice(&b)
-                .map_err(|e| Error::mesh(name, format!("project_settings.config is not JSON: {e}")))
-        })
-        .transpose()?;
-    let mut project_settings: Option<serde_json::Value> = project_settings;
+        .map(|b| project_settings_of(&b))
+    {
+        None => (None, None),
+        Some(Ok(v)) => (v, None),
+        Some(Err(why)) => (
+            None,
+            Some(format!(
+                "{name}: Metadata/project_settings.config {why}, so the project's print settings were left out"
+            )),
+        ),
+    };
     let mut dropped_keys = Vec::new();
     if let Some(serde_json::Value::Object(map)) = project_settings.as_mut() {
         map.retain(|k, _| {
@@ -687,6 +739,7 @@ pub fn metadata(bytes: &[u8], name: &str) -> Result<ProjectMetadata> {
         .unwrap_or_default();
     Ok(ProjectMetadata {
         project_settings,
+        settings_skipped,
         model_settings: text("Metadata/model_settings.config"),
         layer_ranges: text("Metadata/layer_config_ranges.xml"),
         dropped_keys,
@@ -2517,9 +2570,72 @@ mod tests {
         assert!(json.get("projectSettings").is_some() && json.get("layerRanges").is_none());
         let plain = zip(&[("3D/3dmodel.model", model.as_bytes(), true)]);
         assert_eq!(metadata(&plain, "p.3mf").unwrap(), ProjectMetadata::default());
-        let bad = zip(&[("Metadata/project_settings.config", b"nope", false)]);
-        assert!(metadata(&bad, "p.3mf").is_err());
         assert!(metadata(b"not a zip at all, sorry", "p.3mf").is_err());
+    }
+
+    /// An empty `project_settings.config` is as if the file had none, and JSON after a byte order mark is read.
+    #[test]
+    fn empty_project_settings_are_missing_ones() {
+        let model = format!(
+            r#"<model unit="millimeter"><resources>{CUBE_OBJECT}</resources><build><item objectid="2"/></build></model>"#
+        );
+        let with = |settings: &[u8]| {
+            let bytes = zip(&[
+                ("3D/3dmodel.model", model.as_bytes(), true),
+                ("Metadata/project_settings.config", settings, true),
+            ]);
+            metadata(&bytes, "p.3mf").unwrap()
+        };
+        for blank in [&b""[..], b"  \r\n\t\n ", b"\xEF\xBB\xBF", b"\xEF\xBB\xBF \n"] {
+            assert_eq!(with(blank), ProjectMetadata::default(), "{blank:?}");
+        }
+        let bom = with(b"\xEF\xBB\xBF{\"layer_height\": \"0.3\"}\n");
+        assert_eq!(bom.project_settings.unwrap()["layer_height"], "0.3");
+        assert!(bom.settings_skipped.is_none());
+    }
+
+    /// A `project_settings.config` that is not a JSON object of settings never stops the project from opening: it is
+    /// left out, with the reason.
+    #[test]
+    fn project_settings_that_are_not_json_are_left_out() {
+        let model = format!(
+            r#"<model unit="millimeter"><resources>{CUBE_OBJECT}</resources><build><item objectid="2"/></build></model>"#
+        );
+        let with = |settings: &[u8]| {
+            let bytes = zip(&[
+                ("3D/3dmodel.model", model.as_bytes(), true),
+                ("Metadata/project_settings.config", settings, true),
+            ]);
+            metadata(&bytes, "p.3mf").unwrap()
+        };
+        let skipped = |settings: &[u8]| {
+            let m = with(settings);
+            assert!(m.project_settings.is_none(), "{settings:?}");
+            m.settings_skipped
+                .unwrap_or_else(|| panic!("no reason for {settings:?}"))
+        };
+        assert_eq!(
+            skipped(b"; an older export\n[print]\nlayer_height = 0.3\nnozzle_diameter = 0.4,0.4\n"),
+            "p.3mf: Metadata/project_settings.config holds INI style settings (key = value lines), not JSON, so \
+             the project's print settings were left out"
+        );
+        let cut = skipped(br#"{"layer_height": "0.3", "wall_lo"#);
+        assert!(
+            cut.starts_with("p.3mf: Metadata/project_settings.config is not JSON (EOF while parsing"),
+            "{cut}"
+        );
+        assert!(skipped(b"garbage").contains("is not JSON (expected value"));
+        assert!(skipped(b"\x00\x01 not settings \xFF").contains("is not JSON"));
+        assert!(skipped(b"[1, 2]").contains("is JSON but not an object of settings"));
+        assert!(skipped(b"null").contains("is JSON but not an object of settings"));
+        // the rest of the project still reads, and the reason goes with the metadata
+        let json = serde_json::to_value(with(b"layer_height = 0.3")).unwrap();
+        assert!(
+            json["settingsSkipped"]
+                .as_str()
+                .is_some_and(|s| s.contains("INI style")),
+            "{json}"
+        );
     }
 
     #[test]
