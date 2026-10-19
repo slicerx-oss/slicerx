@@ -1251,6 +1251,58 @@
                   ]
                 }
               }
+            },
+            "knowledge": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "tools": {
+              "type": "object",
+              "properties": {
+                "design": {
+                  "type": "boolean"
+                },
+                "slicing": {
+                  "type": "boolean"
+                },
+                "printers": {
+                  "type": "boolean"
+                },
+                "watch": {
+                  "type": "boolean"
+                },
+                "paint": {
+                  "type": "boolean"
+                },
+                "web": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false
+            },
+            "routing": {
+              "type": "object",
+              "properties": {
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "anthropic",
+                    "openai"
+                  ]
+                },
+                "base": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "step": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
             }
           }
         }
