@@ -10,7 +10,7 @@ import { command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
 import { addMenu, expect, sliceCount, sliced, tab } from '../fixtures'
 import { journey as test } from '../journey'
-import { projectZip } from '../project-zip'
+import { cubeModel, projectZip, zip } from '../project-zip'
 import { examplePlate, openModel, setFlags, setState, useFileDialogs, useFlags } from './lib/model'
 
 const A1_MINI = { id: 'e2e-a1-mini', name: 'Desk A1 mini', profileId: 'bambu-a1-mini', vendor: 'Bambu Lab', model: 'A1 mini', nozzleCount: 1 }
@@ -125,6 +125,16 @@ test.describe('a Bambu Studio project', () => {
     } finally {
       await setState(page, { settingsOpen: false })
     }
+  })
+
+  test('a project whose settings file is not JSON opens, with a note that its settings were left out', async ({ page }) => {
+    await fresh(page)
+    const buffer = zip({ '3D/3dmodel.model': cubeModel(), 'Metadata/project_settings.config': '; an older export\nlayer_height = 0.3\nnozzle_diameter = 0.4\n' })
+    await openModel(page, { name: 'older.3mf', mimeType: 'model/3mf', buffer })
+    await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
+    await expect
+      .poll(() => toastWith(page, 'print settings were left out'), { timeout: 30_000 })
+      .toContain('Its print settings were left out because they are in an older key = value format, so it opens with the current settings.')
   })
 
   // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
