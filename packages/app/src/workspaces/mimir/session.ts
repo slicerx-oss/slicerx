@@ -19,6 +19,7 @@ import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { get, useApp, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
+import { mimirPlans } from './plans'
 import { mimirTools, NO_APPROVALS, NO_PRINTERS, scriptedMimir } from './scripted'
 import { SCRIPTS } from './scripts'
 
@@ -64,7 +65,8 @@ export function tabState(): { link: MimirLink; provider: string | null; model: s
 
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
 function toolsFor(loader: Loader): PilotTool<never>[] {
-  if (tools.length === 0) tools = mimirTools(designToolset(appDesignHost(loader)))
+  // design.check reads the tab's plans, and holds walls to the nozzle the printer has now
+  if (tools.length === 0) tools = mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => get().profile?.nozzle ?? 0.4 }))
   return tools
 }
 

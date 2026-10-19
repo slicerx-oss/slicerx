@@ -367,6 +367,42 @@ test.describe('the mimir tab', () => {
     await expect.poll(plate).toEqual([{ name: 'Box with lid', parts: ['Box', 'Lid'], steps: 3 }])
   })
 
+  test('scripted mimir checks a built part against its plan and names the item that is off', async ({ page }) => {
+    const composer = page.getByTestId('mimir-composer')
+    const say = async (text: string) => {
+      await composer.getByRole('textbox').fill(text)
+      await composer.getByRole('button', { name: 'Send' }).click()
+    }
+    await say('a wall mount for my thermostat')
+    await page.getByTestId('mimir-choice').getByRole('button', { name: 'Yes, that one' }).click()
+    await page.getByTestId('mimir-sheet-confirm').click()
+    const transcript = page.getByTestId('mimir-transcript')
+    await expect(transcript).toContainText('The backplate is on the plate:', { timeout: 30_000 })
+    // A scripted plan that wants a 32 mm center hole, where the backplate was built with the sheet's 30 mm: the build
+    // is wrong for this plan in that one item.
+    const plan = {
+      planId: 'e2e-backplate',
+      part: 'Thermostat backplate',
+      units: 'mm',
+      features: [{ name: 'plate with holes', kind: 'extrude', sizes: { width: 150.4, height: 110.4, thickness: 3 } }],
+      overall: { x: 150.4, y: 110.4, z: 3 },
+      holes: [
+        { name: 'center hole', diameter: 32 },
+        { name: 'top screw hole', diameter: 4.5 },
+        { name: 'bottom screw hole', diameter: 4.5 },
+      ],
+      assumptions: [],
+      questions: [],
+    }
+    await page.evaluate((p) => (window as unknown as { __mimirPlans: { put(plan: unknown): void } }).__mimirPlans.put(p), plan)
+    await say('Check it against the plan')
+    await expect(transcript).toContainText('It does not match the plan yet.', { timeout: 30_000 })
+    await expect(transcript).toContainText(/Center hole: wanted 32 mm diameter, got (29\.9\d|30(\.0\d)?) mm diameter\./)
+    // only that item: the screw holes, size, features, closed body and walls pass, and the reply never says done
+    await expect(transcript).not.toContainText(/screw hole:|Overall size:|Feature count:|Watertight:|Minimum wall:/)
+    await expect(transcript).not.toContainText('It matches the plan')
+  })
+
   test('a finished part brings up the spools under the run, and a click there picks the spool it prints with', async ({ page }, info) => {
     const printer = (await state(page))['printerId']
     try {
