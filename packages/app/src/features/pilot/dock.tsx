@@ -30,6 +30,7 @@ import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice
 import { openUsage } from '../../pilot-connect/usage-open'
 import { useHost } from '../../host'
 import { partHandlers } from './part-actions'
+import { MEMORY_CARDS } from './remember-chip'
 import { usePhoneLayout } from '../../lib/phone-layout'
 import './dock.css'
 
@@ -184,6 +185,8 @@ function DockRun(p: {
     () => ({
       onApprove: (r: ApprovalRequest, o: { bedClear: boolean }) => pilot.resolveApproval(r.id, o.bedClear ? { kind: 'approve', bedClear: true } : { kind: 'approve' }),
       onCancel: (r: ApprovalRequest) => pilot.resolveApproval(r.id, { kind: 'deny', reason: 'canceled' }),
+      // a note mimir wants to keep asks with a small chip, not the full card
+      cards: MEMORY_CARDS,
     }),
     [pilot],
   )

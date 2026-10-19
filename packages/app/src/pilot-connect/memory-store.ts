@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Where mimir's notes about the person live on this device: one IndexedDB database per edition
-// (slicerx-memory-<edition>), so one edition never reads what the person told another on the same machine.
+// (slicerx-memory-<edition>), so one edition never reads what the person told another on the same machine. The app
+// reads and writes them through its one handle (memory.ts), never this store directly.
 import type { MemoryFact, MemoryStore } from '@slicerx/pilot'
 
 const TABLE = 'facts'

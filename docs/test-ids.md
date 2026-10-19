@@ -382,6 +382,20 @@ Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the
 | `device-<id>` | A key's row; `<id>` is the hub's client id |
 | `device-revoke-<id>` | Revoke on that row; it also closes the connection the key has open |
 
+## mimir's notes: the chip and Settings > Memory
+
+The notes mimir keeps about the person's printers, filaments, preferences, sizes and what worked, on this computer.
+
+| Test id | Control |
+| --- | --- |
+| `mimir-remember` | The chip in the chat before mimir keeps a note, in place of the approval card; `data-done` is `saved` or `dropped` once answered |
+| `mimir-remember-yes` | Remember on the chip: the note is saved |
+| `mimir-remember-no` | Not now on the chip: nothing is saved |
+| `memory-without-asking` | Settings > Memory: Save notes without asking (off by default; on, no chip shows) |
+| `memory-export` | Export: saves every note as one JSON file |
+| `danger-memory-clear` | Clear all (asks first) |
+| `danger-memory-clear-confirm` | Clear all in the confirm: removes every note from this computer |
+
 ## Settings: mimir cloud
 
 Shown only in a build whose edition runs mimir cloud (the desktop app).
