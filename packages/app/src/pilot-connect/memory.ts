@@ -10,8 +10,9 @@
 // in, the edition offers it (ai.brain.memory.sync 'opt-in') and the person turned it on (Settings > Memory > Sync with
 // my account). It talks to the edition's Supabase project with the same session token the rest of the app's cloud
 // calls carry (the host's store client).
+import type { PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
-import type { CreatePilotOptions, MemoryFact, MemoryStore } from '@slicerx/pilot'
+import { isLocalModel, type CreatePilotOptions, type MemoryFact, type MemoryStore } from '@slicerx/pilot'
 import { useEffect, useSyncExternalStore } from 'react'
 import { setMemoryProvider, type MemoryProvider } from '../app-link/mimir-memory'
 import { useEdition } from '../edition'
@@ -218,8 +219,17 @@ export function useMemoryStore(): WatchedMemory {
  * What mimir runs with: the edition's switch, the shared store, whether saving a note shows the chip first, and the
  * sync each chat start runs (when sync is on). Settings > Memory > Save notes without asking turns the chip off, read
  * at each save, so it applies at once. `remember: false` is for a host that cannot grant the approval a save needs.
- * `cloud` is true when the chat runs on mimir cloud, so the chip says notes go along with chats.
+ * `cloud` is true when the chat's model runs off this computer (chatOffComputer), so the chip says notes go along
+ * with chats.
  */
+/**
+ * Whether a chat's notes leave this computer with it: true for any model that answers from elsewhere (mimir cloud, or
+ * the person's own Anthropic or OpenAI key), false for a local model and for the built-in demo (`live` false).
+ */
+export function chatOffComputer(config: Pick<PilotConfig, 'provider'>, live: boolean): boolean {
+  return live && !isLocalModel(config)
+}
+
 export function pilotMemory(edition: Pick<EditionConfig, 'id' | 'ai'>, opts: { remember?: boolean; cloud?: boolean } = {}): NonNullable<CreatePilotOptions['memory']> {
   const h = appMemory(edition)
   const cloud = opts.cloud === true

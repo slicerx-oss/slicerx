@@ -14,7 +14,7 @@ import { EditionContext, NEUTRAL } from '../src/edition'
 import { MEMORY_CARDS } from '../src/features/pilot/remember-chip'
 import { HostContext } from '../src/host'
 import { MemorySection } from '../src/pilot-connect/memory-section'
-import { bindMemoryAccount, memoryFor, pilotMemory } from '../src/pilot-connect/memory'
+import { bindMemoryAccount, chatOffComputer, memoryFor, pilotMemory } from '../src/pilot-connect/memory'
 import { get, set } from '../src/state/store'
 
 const printers = { list: async () => [], plugins: async () => [], fleets: async () => [], status: async () => { throw new Error('none') }, subscribe: () => () => undefined } as unknown as PrinterHost
@@ -112,9 +112,19 @@ describe('the chip', () => {
     expect(screen.getByTestId('mimir-remember')).toBeTruthy()
   })
 
-  it('on mimir cloud the chip says notes go along with chats; otherwise that they stay on this computer', async () => {
+  it('with any model off this computer the chip says notes go along with chats; with a local model, that they stay here', async () => {
     const pilot = (cloud: boolean) => createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(A1, { chunk: false }), memory: pilotMemory(NEUTRAL, { cloud }) })
-    for (const [cloud, want] of [[true, 'Kept on this computer, and sent with chats to the cloud to answer them.'], [false, 'Kept on this computer for later chats.']] as const) {
+    const CLOUD = 'Kept on this computer, and sent with chats to the cloud to answer them.'
+    const HERE = 'Kept on this computer for later chats.'
+    // mimir cloud, and the person's own Anthropic or OpenAI key, answer from elsewhere; a local model and the demo do not
+    const cases = [
+      [chatOffComputer({ provider: 'mimir-cloud' }, true), CLOUD],
+      [chatOffComputer({ provider: 'anthropic' }, true), CLOUD],
+      [chatOffComputer({ provider: 'openai' }, true), CLOUD],
+      [chatOffComputer({ provider: 'openai-compatible' }, true), HERE],
+      [chatOffComputer({ provider: 'anthropic' }, false), HERE],
+    ] as const
+    for (const [cloud, want] of cases) {
       const p = pilot(cloud)
       for await (const ev of p.run('s', 'Remember my A1')) {
         if (ev.type === 'approval_request') {
