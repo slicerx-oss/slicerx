@@ -4,6 +4,7 @@
 // so what it builds lands in the design's history like a person's edit.
 import type { LlmMessage, ScriptStep } from '@slicerx/pilot'
 import { get } from '../../state/store'
+import { mimirPlans } from './plans'
 import type { MimirScript } from './scripted'
 
 /** What the last tool call returned, from the tool message the runtime sent back. */
@@ -393,7 +394,30 @@ const stand: ScriptStep[] = [
   ...Array.from({ length: 7 }, () => standNext),
 ]
 
+/** One item of a design.check result. */
+type Checked = { name: string; want: string; got: string; pass: boolean }
+
+/** A check of the part on the plate against the plan put last; a miss names each failed item and is never "done". */
+const check: ScriptStep[] = [
+  () => {
+    const plan = mimirPlans.latest()
+    if (!plan) return { text: 'There is no plan to check against yet. Ask me for a part, and I will plan it before I build it.' }
+    return { text: `I will check ${plan.part} against its plan.`, calls: [{ name: 'design.check', args: { planId: plan.planId } }] }
+  },
+  (messages) => {
+    const r = lastResult(messages) as { pass?: unknown; items?: Checked[]; designName?: unknown } | null
+    if (!r || !Array.isArray(r.items)) return { text: 'The check did not run, so I cannot say yet whether the part matches its plan.' }
+    // the design the check read, by name, so a check of the wrong part shows
+    const which = typeof r.designName === 'string' ? `I checked the design ${r.designName}. ` : ''
+    if (r.pass === true) return { text: `${which}It matches the plan: all ${r.items.length} checks pass.` }
+    const off = r.items.filter((i) => !i.pass).map((i) => `${i.name[0]!.toUpperCase()}${i.name.slice(1)}: wanted ${i.want}, got ${i.got}.`)
+    return { text: `${which}It does not match the plan yet. ${off.join(' ')} That needs fixing before the part is done.` }
+  },
+]
+
 export const SCRIPTS: MimirScript[] = [
+  // first, so "check the backplate against its plan" checks rather than building another
+  { id: 'check', match: /\bcheck\b[^.?!]*\bplan\b/i, steps: check },
   { id: 'backplate', match: /thermostat|backplate|wall mount/i, steps: backplate },
   { id: 'box', match: /\bbox\b|\blid\b/i, steps: box },
   { id: 'stand', match: /phone|stand/i, steps: stand },

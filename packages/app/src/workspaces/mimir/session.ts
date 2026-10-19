@@ -6,7 +6,7 @@
 // tools; with none, the scripted stub answers, and the chat says so.
 import type { Host, LlmTransport, MeshHandle, MeshPart, Pilot, PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
-import { designToolset } from '@slicerx/mcp/toolset'
+import { designToolset, nozzleOr } from '@slicerx/mcp/toolset'
 import { createMemorySessionStore, createPilot, DEFAULT_CONFIG, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type PilotTool } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
@@ -19,6 +19,7 @@ import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { get, useApp, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
+import { mimirPlans } from './plans'
 import { mimirTools, NO_APPROVALS, NO_PRINTERS, scriptedMimir } from './scripted'
 import { SCRIPTS } from './scripts'
 
@@ -64,7 +65,9 @@ export function tabState(): { link: MimirLink; provider: string | null; model: s
 
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
 function toolsFor(loader: Loader): PilotTool<never>[] {
-  if (tools.length === 0) tools = mimirTools(designToolset(appDesignHost(loader)))
+  // design.check reads the tab's plans, and holds walls to the nozzle the printer has now (0.4 mm when that is not a
+  // positive size)
+  if (tools.length === 0) tools = mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) }))
   return tools
 }
 
