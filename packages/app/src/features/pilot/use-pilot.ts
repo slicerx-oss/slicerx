@@ -12,7 +12,7 @@ import { projectExportHost } from '../../export/actions'
 import { geom } from '../../geom/client'
 import { guardedPrinters } from '../../plate/guard'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
-import { pilotMemory, useMemoryStore } from '../../pilot-connect/memory'
+import { pilotMemory, useMemoryAccount, useMemoryStore } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { hostSlices } from '../../state/model-mode'
 import { get } from '../../state/store'
@@ -63,6 +63,8 @@ export function usePilot(): Pilot | null {
   const cloud = useMimirCloudHost()
   // the same handle Settings > Memory edits and clears
   const memory = useMemoryStore()
+  // the account notes sync with, when this host has one
+  useMemoryAccount()
   const [pilot, setPilot] = useState<Pilot | null>(null)
   useEffect(() => {
     const { printers, approvals } = host
@@ -82,7 +84,7 @@ export function usePilot(): Pilot | null {
       const config = base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' as const } : paid ? { ...base0, billing: paid } : base0
       // what the person asked mimir to remember, kept per edition through the app's one memory handle (the tab, the
       // app link and Settings share it); the edition can turn it off (ai.brain.memory.local)
-      const base = { ...dockPilotOptions(host, { printers, llm, approvals, config, kb }), memory: pilotMemory(edition, memory) }
+      const base = { ...dockPilotOptions(host, { printers, llm, approvals, config, kb }), memory: pilotMemory(edition) }
       const made = createPilot(ok ? base : { ...base, client: createDemoClient() })
       // clients read back what answers here and the tools its model is offered (mimir.dock)
       setDockPilot({ pilot: made, link: ok ? 'model' : 'demo', config })

@@ -51,6 +51,8 @@ export interface Prefs {
   mimirShare?: boolean | undefined
   /** Settings > Memory: mimir saves a note without the chip that asks first. Off by default. */
   mimirRememberWithoutAsking?: boolean | undefined
+  /** Settings > Memory: copy mimir's notes to the signed-in account (when the edition offers it). Off by default. */
+  mimirMemorySync?: boolean | undefined
   /** The mimir cloud notice version the person read before their first chat. */
   mimirNotice?: number | undefined
   /** Settings > Appearance > Motion; absent means the edition's default. */
@@ -319,6 +321,7 @@ export function normalizePrefs(v: unknown): Prefs {
     crashReports: or(bool(r['crashReports']), false),
     mimirShare: or(bool(r['mimirShare']), true),
     mimirRememberWithoutAsking: or(bool(r['mimirRememberWithoutAsking']), false),
+    mimirMemorySync: or(bool(r['mimirMemorySync']), false),
     ...opt('mimirNotice', num(r['mimirNotice'], 1, 1e6)),
     ...opt('motion', oneOf(r['motion'], ['system', 'full', 'reduced'] as const)),
     agreement: or(nullable(r['agreement'], (x) => (isRec(x) && num(x['version'], 1, 1e6) !== undefined && str(x['acceptedAt'], 40) ? { version: x['version'] as number, acceptedAt: x['acceptedAt'] as string } : undefined)), null),
