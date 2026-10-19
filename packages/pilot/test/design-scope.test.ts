@@ -3,11 +3,11 @@
 // The mimir tab's scope: parts are built with the design tools (no part generator), the prompt says how, and Auto
 // moves from huginn to muninn only for a picture or PDF, a request of many steps, or one that needs a size only the
 // person knows (route.test.ts); never on a tool call.
-import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotAttachment, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
+import { DEFAULT_POLICY, setAssistantBrand, type ApprovalHost, type LlmTransport, type PilotAttachment, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { designSteps, designTier, HUGINN, MANY_STEPS, MUNINN } from '../src/models'
-import { systemPrompt } from '../src/prompt'
+import { systemPrompt, VOICE_HEADER } from '../src/prompt'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
 import { createPilot, DESIGN_SCOPE_TOOLS } from '../src/runtime'
 import { DEFAULT_CONFIG } from '../src/config'
@@ -139,10 +139,28 @@ describe('the design scope runtime', () => {
     // one planning instruction, not two that overlap
     expect(prompt).not.toMatch(/one or two sentences/)
     expect(prompt.indexOf('pilot.sheet before building')).toBeLessThan(prompt.indexOf('design.plan'))
-    // the plan comes before the build, and the check against the plan is not asked for yet
+    // the plan comes before the build, and the check against the plan after it
     expect(prompt.indexOf('design.plan')).toBeLessThan(prompt.indexOf('pilot.sheet_bind'))
-    expect(prompt).not.toMatch(/design\.check/)
+    expect(prompt.indexOf('design.plan')).toBeLessThan(prompt.indexOf('design.check'))
     expect(systemPrompt('full')).not.toMatch(/design\.plan/)
+  })
+
+  it('checks a planned part with design.check, fixes once, and on a second miss reports the failed items, never done', () => {
+    setAssistantBrand({ voice: 'Short and warm.' })
+    try {
+      const prompt = systemPrompt('design')
+      const line = prompt.split('\n').find((l) => l.includes('design.check'))!
+      expect(line).toMatch(/After the last feature of a planned part, call design\.check with the plan's planId/)
+      expect(line).toMatch(/fix those items in one round and call design\.check again/)
+      expect(line).toMatch(/If any item still fails, never say the part is done: list each failed item plainly/)
+      // the voice stays the last block, after the check line
+      expect(prompt.endsWith(`\n\n${VOICE_HEADER}\nShort and warm.`)).toBe(true)
+      expect(prompt.indexOf('design.check')).toBeLessThan(prompt.indexOf(VOICE_HEADER))
+      expect(systemPrompt('full')).not.toMatch(/design\.check/)
+      expect(systemPrompt('cad')).not.toMatch(/design\.check/)
+    } finally {
+      setAssistantBrand()
+    }
   })
 
   it('builds a short request on huginn from start to finish, through every design tool call', async () => {
