@@ -132,6 +132,20 @@ function projectValue(v: unknown): SettingValue | undefined {
 
 const listOf = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : typeof v === 'string' && v !== '' ? v.split(';') : [])
 
+/** The main model part: `3D/3dmodel.model`, or the first model part when a file names it otherwise. */
+function mainModel(names: string[]): string {
+  return names.find((n) => n.toLowerCase() === '3d/3dmodel.model') ?? names.find((n) => n.toLowerCase().endsWith('.model')) ?? ''
+}
+
+/**
+ * The printable build items of a 3MF's main model: without plates in model_settings.config the file is one plate of
+ * these, as the engine slices it (an item with `printable="0"` stays off it).
+ */
+function buildItems(model: string): number {
+  const build = /<build\b[^>]*>([\s\S]*?)<\/build>/.exec(model)?.[1] ?? ''
+  return [...build.matchAll(/<item\b([^>]*)>/g)].filter((m) => !/\bprintable\s*=\s*"\s*0\s*"/.test(m[1] ?? '')).length
+}
+
 export function readProjectFile(path: string): ProjectRead {
   const name = basename(path)
   const zip = readZip(readFileSync(path), name)
@@ -168,7 +182,7 @@ export function readProjectFile(path: string): ProjectRead {
       plates.push({ index: Number.isFinite(id) ? id : plates.length + 1, ...(meta['plater_name'] ? { name: meta['plater_name'] } : {}), objects: node.children.filter((c) => c.name === 'model_instance').length, ...(seq === 'by layer' || seq === 'by object' ? { print_sequence: seq } : {}) })
     }
   }
-  if (plates.length === 0) plates.push({ index: 1, objects: imported.objects.length })
+  if (plates.length === 0) plates.push({ index: 1, objects: buildItems(zip.text(mainModel(zip.names())) ?? '') })
 
   const types = listOf(raw['filament_type'])
   const colors = listOf(raw['filament_colour'])
