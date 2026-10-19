@@ -694,6 +694,12 @@ impl EditionConfig {
                 "ai.brain.routing.provider: routing that names base or step models needs a provider (anthropic or openai)",
             );
         }
+        // The edition's own knowledge stays inside its folder, as the TypeScript schema checks it.
+        for p in self.ai.brain.iter().flat_map(|b| b.knowledge.iter().flatten()) {
+            if let Some(why) = knowledge_path_issue(p) {
+                issues.push(format!("ai.brain.knowledge: {why} ({p:?})"));
+            }
+        }
         if let Some(s) = &self.backend.supabase {
             if s.url.is_empty() || s.anon_key.len() < 20 {
                 issues.push("backend.supabase: url and anonKey are both required".to_owned());
@@ -719,6 +725,22 @@ impl EditionConfig {
 }
 
 /// The `role` claim of a JWT, without verifying it (only to refuse service role keys).
+/// Why a knowledge path is not a path inside the edition folder, as the TypeScript schema says it: relative (no
+/// leading slash, backslash, home or drive), no `..` step, and naming something more than the folder itself (not `.`
+/// or empty). None when it is fine.
+fn knowledge_path_issue(path: &str) -> Option<&'static str> {
+    let p = path.trim();
+    let b = p.as_bytes();
+    let drive = b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':';
+    if p.starts_with(['/', '\\', '~']) || drive || p.split(['/', '\\']).any(|s| s == "..") {
+        return Some("a path inside the edition folder, relative to the config file, without ..");
+    }
+    if !p.split(['/', '\\']).any(|s| !s.is_empty() && s != ".") {
+        return Some("name a folder or file inside the edition");
+    }
+    None
+}
+
 fn jwt_role(token: &str) -> Option<String> {
     let payload = token.split('.').nth(1)?;
     let bytes = base64url_decode(payload)?;
@@ -798,18 +820,49 @@ mod tests {
     }
 
     #[test]
+    fn knowledge_paths_stay_inside_the_edition_folder() {
+        let with = |knowledge: serde_json::Value| {
+            neutral_with(|v| {
+                v["ai"]["brain"]["knowledge"] = knowledge;
+            })
+        };
+        assert!(
+            EditionConfig::from_json(&with(serde_json::json!(["knowledge", "./more/docs.yaml"]))).is_ok()
+        );
+        for bad in [
+            ".",
+            "..",
+            "./",
+            "",
+            "../shared",
+            "docs/../../x",
+            "/etc",
+            "\\\\server\\share",
+            "~/docs",
+            "C:\\docs",
+        ] {
+            let Err(Error::Invalid(issues)) = EditionConfig::from_json(&with(serde_json::json!([bad])))
+            else {
+                panic!("expected issues for {bad:?}")
+            };
+            assert!(
+                issues.iter().any(|i| i.starts_with("ai.brain.knowledge")),
+                "{bad:?}: {issues:?}"
+            );
+        }
+    }
+
+    #[test]
     fn routing_models_need_a_provider() {
         let with = |routing: serde_json::Value| {
             neutral_with(|v| {
                 v["ai"]["brain"]["routing"] = routing;
             })
         };
-        assert!(
-            EditionConfig::from_json(&with(
-                serde_json::json!({ "provider": "openai", "base": "gpt-6-luna" })
-            ))
-            .is_ok()
-        );
+        assert!(EditionConfig::from_json(&with(
+            serde_json::json!({ "provider": "openai", "base": "gpt-6-luna" })
+        ))
+        .is_ok());
         assert!(EditionConfig::from_json(&with(serde_json::json!({}))).is_ok());
         let Err(Error::Invalid(issues)) =
             EditionConfig::from_json(&with(serde_json::json!({ "step": "gpt-6-sol" })))
