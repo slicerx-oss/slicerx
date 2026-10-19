@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // memory.remember and memory.recall: short notes about the person (their printers, filaments, preferences, sizes and
-// what worked) kept on their computer. Saving is profile class, so the app asks first; a note that looks like a
-// secret is refused before the card. Recalling is read class. The edition turns both off with ai.brain.memory.local.
+// what worked) kept on their computer. Saving is profile class, so the app asks first unless the person turned that off
+// for notes; a note that looks like a secret is refused before the card either way. Recalling is read class. The
+// edition turns both off with ai.brain.memory.local.
 import { z } from 'zod'
-import { MEMORY_KINDS, NOTE_UNSAFE, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../memory/facts'
+import { MEMORY_KINDS, NOTE_MAX, NOTE_MIN, NOTE_UNSAFE, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../memory/facts'
 import { defineTool, type PilotTool } from '../tool'
 
 const REFUSED = 'Not saved: that looks like a key, token, access code or serial. Those stay in the app, never in notes.'
@@ -15,7 +16,7 @@ const safe = (s: string): boolean => !NOTE_UNSAFE.test(s)
 
 const rememberInput = z.object({
   kind: z.enum(MEMORY_KINDS).describe('printer, filament, preference, outcome (what worked or failed) or size (one of their own things)'),
-  text: z.string().trim().min(3).max(240).refine(safe, ONE_LINE).describe('One short sentence in plain words, such as "Prints PETG at 240 C on the A1"'),
+  text: z.string().trim().min(NOTE_MIN).max(NOTE_MAX).refine(safe, ONE_LINE).describe('One short sentence in plain words, such as "Prints PETG at 240 C on the A1"'),
   data: z
     .record(z.string().max(40).refine(safe, ONE_LINE), z.union([z.string().max(80).refine(safe, ONE_LINE), z.number()]))
     .refine((d) => Object.keys(d).length <= MAX_DATA_KEYS, `At most ${MAX_DATA_KEYS} values`)
@@ -34,7 +35,8 @@ function label(k: string): string {
 
 const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
 
-export function memoryTools(store: MemoryStore, now: () => number = () => Date.now()): PilotTool<never>[] {
+/** `ask` false saves without the card (Settings > Memory > Save notes without asking); it is read at each save. */
+export function memoryTools(store: MemoryStore, now: () => number = () => Date.now(), ask: () => boolean = () => true): PilotTool<never>[] {
   const remember = defineTool({
     name: 'memory.remember',
     version: '1.0.0',
@@ -46,6 +48,7 @@ export function memoryTools(store: MemoryStore, now: () => number = () => Date.n
     // the row and the session log never echo a refused secret: the text with secrets cut out, and no data
     args: (i) => `${i.kind} "${redactSecrets(i.text).text}"`,
     shownInput: (i) => ({ kind: i.kind, text: redactSecrets(i.text).text, ...(i.data ? { data: secretInNote(i) ? '[withheld]' : i.data } : {}) }),
+    withoutAsking: () => (ask() ? null : 'Saving without asking, as set in Settings.'),
     async approval(i) {
       if (secretInNote(i)) throw new Error(REFUSED)
       // everything that is saved and read back later is on the card, the data too

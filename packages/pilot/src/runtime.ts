@@ -86,9 +86,10 @@ export interface CreatePilotOptions {
   /**
    * The person's saved notes and the edition's ai.brain.memory.local switch. On: memory.remember and memory.recall, and
    * the notes that fit (pickFacts) on a chat's first message. Off or unset: neither tool, and no notes. `remember: false`
-   * leaves memory.remember out, for a host that cannot grant the approval saving a note needs.
+   * leaves memory.remember out, for a host that cannot grant the approval saving a note needs. `ask` false saves a note
+   * without the card (read at each save); unset asks.
    */
-  memory?: { local: boolean; store: MemoryStore; remember?: boolean }
+  memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean }
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
   /** How long an approval card waits before it expires, ms. */
@@ -246,7 +247,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The dock (full scope)
   // and the mimir design tab pass one; the browser cad scope gets them only when its host passes a store too.
   const memory = opts.memory?.local ? opts.memory.store : undefined
-  if (memory) for (const t of memoryTools(memory, now)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
+  if (memory) for (const t of memoryTools(memory, now, opts.memory?.ask)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
 
   let pluginTools: AnyTool[] | null = null
   async function loadPluginTools(): Promise<{ loads: PluginLoad[]; tools: AnyTool[] }> {
@@ -345,6 +346,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (permission === 'read') return { kind: 'run' }
     const printerId = tool.printerFor?.(input)
     let mode = decide(policy, permission, printerId)
+    // a tool the person lets run without asking runs as Allow would, with its own line in the chat
+    const skipped = mode === 'ask' ? (tool.withoutAsking?.(input) ?? null) : null
+    if (skipped) mode = 'allow'
     const label = PERMISSION_LABELS[permission].title
     const askReasons = mode === 'allow' && tool.mustAsk ? await tool.mustAsk(input, ctx) : []
     if (askReasons.length) mode = 'ask'
@@ -362,7 +366,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (mode === 'allow' && !policyMayGrant(request)) mode = 'ask'
     await opts.host.approvals.register(request)
     if (mode === 'allow') {
-      emit({ type: 'permission_note', permission, mode: 'allow', tool: tool.name, message: `${label} is set to Allow in Permissions, so ${ASSISTANT_NAME} continued without asking.` })
+      emit({ type: 'permission_note', permission, mode: 'allow', tool: tool.name, message: skipped ?? `${label} is set to Allow in Permissions, so ${ASSISTANT_NAME} continued without asking.` })
       // Allow mode has no card, so nobody confirmed the bed: a start is refused by the hub with bed_check and Pilot says so.
       const token = await grantApproval(opts.host.approvals, request, false)
       emit({ type: 'approval_resolved', requestId: request.id, decision: { kind: 'approve' }, by: 'policy' })

@@ -12,7 +12,7 @@ import { projectExportHost } from '../../export/actions'
 import { geom } from '../../geom/client'
 import { guardedPrinters } from '../../plate/guard'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
-import { appMemory } from '../../pilot-connect/memory'
+import { pilotMemory, useMemoryStore } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { hostSlices } from '../../state/model-mode'
 import { get } from '../../state/store'
@@ -61,6 +61,8 @@ export function usePilot(): Pilot | null {
   const edition = useEdition()
   // a new mimir cloud host (the browser build, on sign-in or sign-out) makes the runtime again
   const cloud = useMimirCloudHost()
+  // the same handle Settings > Memory edits and clears
+  const memory = useMemoryStore()
   const [pilot, setPilot] = useState<Pilot | null>(null)
   useEffect(() => {
     const { printers, approvals } = host
@@ -78,10 +80,9 @@ export function usePilot(): Pilot | null {
       if (!live) return
       // mimir cloud is billed per token like a key: one model for every turn
       const config = base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' as const } : paid ? { ...base0, billing: paid } : base0
-      // what the person asked mimir to remember, kept per edition through the app's one memory handle (the tab and the
-      // app link share it); the edition can turn it off (ai.brain.memory.local)
-      const memory = appMemory(edition)
-      const base = { ...dockPilotOptions(host, { printers, llm, approvals, config, kb }), memory: { local: memory.local, store: memory.store } }
+      // what the person asked mimir to remember, kept per edition through the app's one memory handle (the tab, the
+      // app link and Settings share it); the edition can turn it off (ai.brain.memory.local)
+      const base = { ...dockPilotOptions(host, { printers, llm, approvals, config, kb }), memory: pilotMemory(edition, memory) }
       const made = createPilot(ok ? base : { ...base, client: createDemoClient() })
       // clients read back what answers here and the tools its model is offered (mimir.dock)
       setDockPilot({ pilot: made, link: ok ? 'model' : 'demo', config })
@@ -92,6 +93,6 @@ export function usePilot(): Pilot | null {
       live = false
       if (mine && dockPilot() === mine) setDockPilot(null)
     }
-  }, [host, edition, cloud])
+  }, [host, edition, cloud, memory])
   return pilot
 }
