@@ -11,6 +11,7 @@ end;
 $$;
 drop table if exists public.mimir_memory;
 drop function if exists public.mimir_memory_guard();
+drop function if exists public.mimir_memory_prune();
 drop function if exists public.mimir_reader_prompt(text);
 drop function if exists public.mimir_expire_saved(integer);
 drop function if exists public.mimir_save_chat(uuid, boolean, text, text, text, text, jsonb, jsonb);

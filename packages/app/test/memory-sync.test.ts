@@ -212,6 +212,87 @@ describe('memory sync', () => {
     expect(s.rows('slicerx').get('p1')).toEqual({ deleted: true, updatedAt: 10 })
     live.stop()
   })
+
+  const DAY = 24 * 60 * 60 * 1000
+
+  it('a clock more than a day ahead is neither applied nor sent', async () => {
+    const s = server()
+    const now = 1_760_000_000_000
+    s.rows('slicerx').set('p1', fact('p1', 'from a fast clock', now + 2 * DAY))
+    s.rows('slicerx').set('p2', fact('p2', 'a little ahead', now + DAY / 2))
+    const store = memStore([fact('p1', 'A1 mini', now - 1000), fact('f1', 'frozen', now + 3 * DAY, 'filament'), fact('f2', 'fine', now - 5, 'filament')])
+    expect(await syncMemory(store, 'slicerx', { remote: s.remote, kv: kvMap(), now: () => now })).toEqual({ pulled: 1, pushed: 1 })
+    expect(store.facts.get('p1')?.text).toBe('A1 mini')
+    expect(store.facts.get('p2')?.text).toBe('a little ahead')
+    expect(s.sent[0]!.rows.map((r) => r.id)).toEqual(['f2'])
+  })
+
+  it('pulled facts with a bad shape are skipped, and a fact keeps its row id', async () => {
+    const rows: MemoryRow[] = [
+      { id: 'ok', fact: { id: 'ok', kind: 'printer', text: 'A1 mini', data: { nozzle: 0.4, plate: 'PEI' }, updatedAt: 10, extra: 'x' } as unknown as MemoryFact },
+      { id: 'kind', fact: { id: 'kind', kind: 'secret', text: 'x', updatedAt: 10 } as unknown as MemoryFact },
+      { id: 'text', fact: { id: 'text', kind: 'printer', text: 42, updatedAt: 10 } as unknown as MemoryFact },
+      { id: 'nested', fact: { id: 'nested', kind: 'printer', text: 'x', data: { a: { b: 1 } }, updatedAt: 10 } as unknown as MemoryFact },
+      { id: 'other', fact: fact('someone-else', 'moved', 10) },
+      { id: 'time', fact: { id: 'time', kind: 'printer', text: 'x', updatedAt: '10' } as unknown as MemoryFact },
+      { id: 'nan', fact: { id: 'nan', kind: 'printer', text: 'x', updatedAt: Number.NaN } },
+      { id: 'tomb', fact: { deleted: true, updatedAt: 10, text: 'kept' } as unknown as MemoryFact },
+    ]
+    const sent: MemoryRow[][] = []
+    const remote: MemoryRemote = { pull: async () => rows, push: async (_e, b) => void sent.push(b) }
+    const store = memStore([fact('tomb', 'still here', 5)])
+    expect(await syncMemory(store, 'slicerx', { remote, kv: kvMap() })).toEqual({ pulled: 1, pushed: 0 })
+    expect(store.facts.get('ok')).toEqual({ id: 'ok', kind: 'printer', text: 'A1 mini', data: { nozzle: 0.4, plate: 'PEI' }, updatedAt: 10 })
+    expect([...store.facts.keys()].sort()).toEqual(['ok', 'tomb'])
+    expect(store.facts.has('someone-else')).toBe(false)
+    expect(sent).toEqual([])
+  })
+
+  it('a tombstone goes as exactly deleted and updatedAt, and an oversized fact stays local', async () => {
+    const s = server()
+    const kv = kvMap()
+    const big = fact('big', 'x'.repeat(9000), 20)
+    const store = memStore([fact('p1', 'A1 mini', 1), big, { ...fact('d1', 'with data', 20), data: { a: 1 } }])
+    const live = startMemorySync(store, 'slicerx', { remote: s.remote, kv, enabled: () => true, now: () => 30 })
+    await live.store.remove('p1')
+    expect(await live.chatStarted()).toEqual({ pulled: 0, pushed: 2 })
+    const sent = Object.fromEntries(s.sent[0]!.rows.map((r) => [r.id, r.fact]))
+    expect(Object.keys(sent).sort()).toEqual(['d1', 'p1'])
+    expect(sent.p1).toStrictEqual({ deleted: true, updatedAt: 30 })
+    expect(store.facts.has('big')).toBe(true)
+    live.stop()
+  })
+
+  it('new facts stop at the cap, and tombstones do not count', async () => {
+    const s = server()
+    for (let i = 0; i < 1999; i++) s.rows('slicerx').set(`n${i}`, fact(`n${i}`, 'x', 1))
+    s.rows('slicerx').set('gone', { deleted: true, updatedAt: 1 })
+    const store = memStore([...s.rows('slicerx').entries()].filter(([, f]) => !('deleted' in f)).map(([, f]) => f as MemoryFact))
+    await store.put(fact('a', 'one', 5))
+    await store.put(fact('gone', 'back', 5))
+    await store.put(fact('n0', 'edited', 5))
+    expect(await syncMemory(store, 'slicerx', { remote: s.remote, kv: kvMap() })).toEqual({ pulled: 0, pushed: 2 })
+    // the fact written over the tombstone takes the last slot, the new one waits, and an edit of a live fact still goes
+    expect(s.sent[0]!.rows.map((r) => r.id).sort()).toEqual(['gone', 'n0'])
+    expect(store.facts.has('a')).toBe(true)
+  })
+
+  it('a local edit during the sync is not overwritten by the pull', async () => {
+    const s = server()
+    s.rows('slicerx').set('p1', fact('p1', 'theirs', 2000))
+    const store = memStore([fact('p1', 'old', 1000)])
+    let lists = 0
+    const racing: MemoryStore = {
+      ...store,
+      list: async () => {
+        // the person edits the fact right after the sync first reads the store
+        if (lists++ === 1) await store.put(fact('p1', 'mine, just now', 3000))
+        return store.list()
+      },
+    }
+    expect(await syncMemory(racing, 'slicerx', { remote: s.remote, kv: kvMap() })).toEqual({ pulled: 0, pushed: 0 })
+    expect(store.facts.get('p1')?.text).toBe('mine, just now')
+  })
 })
 
 describe('memory sync over Supabase', () => {

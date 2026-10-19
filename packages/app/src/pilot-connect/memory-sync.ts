@@ -7,8 +7,10 @@
 // local deletions wait in a small per-edition list until a sync has sent them. Nothing is sent while sync is off or
 // the person is signed out.
 
-// Matches MemoryFact and MemoryStore of the local memory store (packages/pilot/src/memory/facts.ts). Replace these
-// with the import from @slicerx/pilot once that module lands.
+// Matches MemoryFact (packages/pilot/src/memory/facts.ts) and MemoryStore (packages/app/src/pilot-connect/memory-store.ts,
+// beside openMemoryStore) of the local memory store. Replace these with the imports once that work lands.
+// TODO(Task 8 merge): push must run each fact's text through redactSecrets from packages/pilot/src/memory/facts.ts
+// and skip any fact it refuses, so a secret that reached the local store never leaves the device (see pushable).
 export type MemoryFact = {
   id: string
   kind: 'printer' | 'filament' | 'preference' | 'outcome' | 'size'
@@ -43,9 +45,62 @@ export interface MemoryKeyValue {
 export interface SyncOptions {
   remote?: MemoryRemote | null
   kv?: MemoryKeyValue
+  now?: () => number
 }
 
 export type SyncResult = { pulled: number; pushed: number }
+
+const KINDS: ReadonlySet<string> = new Set(['printer', 'filament', 'preference', 'outcome', 'size'])
+const DAY_MS = 24 * 60 * 60 * 1000
+/** The live facts one edition holds per person on the server (the table's trigger). */
+export const MEMORY_SYNC_CAP = 2000
+/** The largest fact the server takes, as its jsonb text (the table's check). */
+export const MEMORY_FACT_MAX_BYTES = 8192
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+const isTime = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+
+/**
+ * A synced value read back as a fact or a tombstone, or null when its shape is wrong: kind outside the list, text not
+ * a string, data not a flat record of strings and numbers, an id other than the row's, or no finite updatedAt. Only
+ * the known keys are kept, and the fact always carries the row's id.
+ */
+export function parseSynced(id: string, v: unknown): MemoryFact | MemoryTombstone | null {
+  if (!isRecord(v) || !isTime(v.updatedAt)) return null
+  if ('deleted' in v) return v.deleted === true && Object.keys(v).length === 2 ? { deleted: true, updatedAt: v.updatedAt } : null
+  if (v.id !== id || typeof v.kind !== 'string' || !KINDS.has(v.kind) || typeof v.text !== 'string') return null
+  const out: MemoryFact = { id, kind: v.kind as MemoryFact['kind'], text: v.text, updatedAt: v.updatedAt }
+  if (v.data !== undefined) {
+    if (!isRecord(v.data)) return null
+    const data: Record<string, string | number> = {}
+    for (const [k, x] of Object.entries(v.data)) {
+      if (typeof x !== 'string' && !(typeof x === 'number' && Number.isFinite(x))) return null
+      data[k] = x
+    }
+    out.data = data
+  }
+  return out
+}
+
+/**
+ * An upper bound on the size of the fact as the server stores it: its JSON plus the space jsonb text adds after each
+ * colon and comma.
+ */
+function storedBytes(f: MemoryFact | MemoryTombstone): number {
+  const json = JSON.stringify(f)
+  const members = Object.keys(f).length + ('data' in f && f.data ? Object.keys(f.data).length : 0)
+  return new TextEncoder().encode(json).length + 2 * members
+}
+
+/**
+ * What a sync sends for a local fact or deletion, or null when it must stay on this device: a bad shape, a size the
+ * server would refuse (one such fact would fail the whole batch), or a time more than a day ahead of this clock.
+ */
+function pushable(id: string, f: MemoryFact | MemoryTombstone, limit: number): MemoryFact | MemoryTombstone | null {
+  const clean = parseSynced(id, f)
+  if (!clean || clean.updatedAt > limit || storedBytes(clean) > MEMORY_FACT_MAX_BYTES) return null
+  return clean
+}
 
 const isTombstone = (f: MemoryFact | MemoryTombstone): f is MemoryTombstone => (f as MemoryTombstone).deleted === true
 
@@ -80,7 +135,7 @@ function readTombstones(kv: MemoryKeyValue, edition: string): Record<string, num
   try {
     const raw = JSON.parse(kv.get(tombstoneKey(edition)) ?? '{}') as unknown
     if (!raw || typeof raw !== 'object') return {}
-    return Object.fromEntries(Object.entries(raw).filter((e): e is [string, number] => typeof e[1] === 'number'))
+    return Object.fromEntries(Object.entries(raw).filter((e): e is [string, number] => isTime(e[1])))
   } catch {
     return {}
   }
@@ -101,27 +156,58 @@ function noteDeleted(kv: MemoryKeyValue, edition: string, ids: string[], at: num
 /**
  * Brings the local store and the person's synced facts of this edition into step: per id the newer updatedAt wins,
  * a newer remote fact or tombstone is applied locally (pulled), a newer local fact or deletion is sent (pushed).
+ * Remote rows with a bad shape or dated more than a day ahead of this clock are never applied; a local fact that is
+ * malformed, too large or dated ahead stays on this device. New live facts stop at the server's cap, so one fact too
+ * many cannot fail the batch.
  */
 export async function syncMemory(store: MemoryStore, edition: string, opts: SyncOptions = {}): Promise<SyncResult> {
   const remote = opts.remote === undefined ? registered : opts.remote
   const kv = opts.kv ?? browserKv
+  const limit = (opts.now ?? Date.now)() + DAY_MS
   if (!remote) return { pulled: 0, pushed: 0 }
   const rows = await remote.pull(edition)
   if (!rows) return { pulled: 0, pushed: 0 }
-  const theirs = new Map(rows.map((r) => [r.id, r.fact]))
+  const theirs = new Map<string, MemoryFact | MemoryTombstone>()
+  // ids whose remote row is unusable: the time a local edit must beat to replace it (Infinity: leave the id alone)
+  const blocked = new Map<string, number>()
+  let remoteLive = 0
+  for (const r of rows) {
+    if (!r || typeof r.id !== 'string') continue
+    const raw = r.fact as unknown
+    if (!isRecord(raw) || !('deleted' in raw)) remoteLive++
+    const f = parseSynced(r.id, raw)
+    if (f && f.updatedAt <= limit) theirs.set(r.id, f)
+    else blocked.set(r.id, isRecord(raw) && isTime(raw.updatedAt) && raw.updatedAt <= limit ? raw.updatedAt : Infinity)
+  }
   const local = new Map((await store.list()).map((f) => [f.id, f]))
   const deleted = readTombstones(kv, edition)
-  const ids = new Set([...theirs.keys(), ...local.keys(), ...Object.keys(deleted)])
+  const ids = new Set([...theirs.keys(), ...blocked.keys(), ...local.keys(), ...Object.keys(deleted)])
   const send: MemoryRow[] = []
-  let pulled = 0
+  const apply: [string, MemoryFact | MemoryTombstone][] = []
   for (const id of ids) {
-    const mine: MemoryFact | MemoryTombstone | undefined = local.get(id) ?? (id in deleted ? { deleted: true, updatedAt: deleted[id]! } : undefined)
+    const kept: MemoryFact | MemoryTombstone | undefined = local.get(id) ?? (id in deleted ? { deleted: true, updatedAt: deleted[id]! } : undefined)
+    const mine = kept && pushable(id, kept, limit)
     const other = theirs.get(id)
-    if (mine && (!other || mine.updatedAt > other.updatedAt)) {
+    const floor = other?.updatedAt ?? blocked.get(id)
+    if (mine && (floor === undefined || mine.updatedAt > floor)) {
+      const adds = !isTombstone(mine) && (!other || isTombstone(other)) && !blocked.has(id)
+      if (adds && remoteLive >= MEMORY_SYNC_CAP) continue
+      if (adds) remoteLive++
       send.push({ id, fact: mine })
-    } else if (other && (!mine || other.updatedAt > mine.updatedAt)) {
+    } else if (other && (!kept || other.updatedAt > kept.updatedAt)) {
+      apply.push([id, other])
+    }
+  }
+  let pulled = 0
+  if (apply.length) {
+    // Read the store again just before applying, so a local edit made while the remote answered is not overwritten.
+    const fresh = new Map((await store.list()).map((f) => [f.id, f]))
+    const freshDeleted = readTombstones(kv, edition)
+    for (const [id, other] of apply) {
+      const latest = fresh.get(id)?.updatedAt ?? freshDeleted[id]
+      if (latest !== undefined && latest >= other.updatedAt) continue
       if (isTombstone(other)) {
-        if (local.has(id)) {
+        if (fresh.has(id)) {
           await store.remove(id)
           pulled++
         }
@@ -132,7 +218,8 @@ export async function syncMemory(store: MemoryStore, edition: string, opts: Sync
     }
   }
   if (send.length) await remote.push(edition, send)
-  // Every tombstone read here is now on the remote, or older than what is there. One noted during this sync stays.
+  // Every tombstone read here is now on the remote, older than what is there, or one that can never be sent. One
+  // noted during this sync stays.
   const now = readTombstones(kv, edition)
   for (const [id, at] of Object.entries(deleted)) if (now[id] === at) delete now[id]
   writeTombstones(kv, edition, now)
@@ -146,7 +233,6 @@ export interface MemorySyncOptions extends SyncOptions {
   debounceMs?: number
   /** A sync that failed; it runs again at the next chat or change. */
   onError?: (e: unknown) => void
-  now?: () => number
 }
 
 export interface MemorySync {
@@ -154,7 +240,10 @@ export interface MemorySync {
   store: MemoryStore
   /** Runs a sync now, when sync is on (each chat start calls this). */
   chatStarted(): Promise<SyncResult>
-  /** Cancels a pending sync. */
+  /**
+   * Cancels a pending sync without running it. Local facts and noted deletions stay on this device and go at the next
+   * sync (the next chat start).
+   */
   stop(): void
 }
 
@@ -252,8 +341,9 @@ export function supabaseMemoryRemote(target: SupabaseTarget, token: () => Promis
       if (!session) return null
       const res = await f(`${base}?select=id,fact&edition=eq.${encodeURIComponent(edition)}`, { headers: headers(session) })
       if (!res.ok) throw await fail(res, 'pull')
-      const rows = (await res.json()) as { id: string; fact: MemoryFact | MemoryTombstone }[]
-      return rows.filter((r) => r && typeof r.id === 'string' && r.fact && typeof r.fact.updatedAt === 'number')
+      // syncMemory checks each fact's shape; this only drops what is not a row at all
+      const rows = (await res.json()) as unknown
+      return Array.isArray(rows) ? rows.filter((r): r is MemoryRow => isRecord(r) && typeof r.id === 'string') : []
     },
     async push(edition, rows) {
       const s = await token().catch(() => null)
