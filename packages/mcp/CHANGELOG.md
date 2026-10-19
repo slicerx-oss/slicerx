@@ -7,6 +7,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 ### Added
 
 - `slicerx_mimir_memory` reads what mimir remembers about the person in the open app over the app link: printers, filaments, preferences, outcomes and sizes, newest first, with `kind` to read one kind. The app hides access codes, serial numbers and keys before a fact leaves it, and `hidden` counts the facts that had one. `slicerx_mimir_memory_remember` adds one fact (`kind`, `text`, optional `data`); it follows the profile class of the permission policy, a fact with a secret is refused, and so is a client the person allowed to read only.
+- `slicerx_design_check` checks a built design against a part plan by `planId`: the overall size, each named hole, the feature count, a closed body and the thinnest wall for the nozzle. With the app link on it runs in the app, against the plans the mimir tab made. When the plan is tied to no design and two open designs share the part's name, it asks which.
 
 ### Fixed
 
