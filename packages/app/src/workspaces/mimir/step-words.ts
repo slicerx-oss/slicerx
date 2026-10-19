@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // mimir's steps in the person's words: what it is doing, and what it did. The tool's own name shows only in the row's
-// tooltip. Questions and lookups have no row: their cards say it.
+// tooltip. Questions, plans and lookups have no row: their cards say it.
 import type { StepWords } from '@slicerx/pilot/ui'
 
 /** A step's words, and optionally the caption the view shows while it runs and the view the camera turns to after. */
@@ -15,6 +15,7 @@ export interface Words {
 const WORDS: Record<string, Words | null> = {
   'pilot.ask': null,
   'lookup.show': null,
+  'design.plan': null,
   'design.new': { doing: 'Starting the design', done: 'Started the design' },
   'geom.extrude': { doing: 'Extruding the sketch', done: 'Extruded the sketch', caption: 'Extrude, Z', camera: 'iso' },
   'geom.revolve': { doing: 'Revolving the profile', done: 'Revolved the profile', caption: 'Revolve', camera: 'iso' },
@@ -25,6 +26,7 @@ const WORDS: Record<string, Words | null> = {
   'geom.hole': { doing: 'Sizing the hole', done: 'Sized the hole', caption: 'Hole' },
   'geom.measure': { doing: 'Measuring', done: 'Measured' },
   'geom.info': { doing: 'Checking the part', done: 'Checked the part' },
+  'design.check': { doing: 'Checking the part against its plan', done: 'Checked the part against its plan' },
   'design.undo': { doing: 'Undoing the last step', done: 'Undid the last step' },
   'app.slice': { doing: 'Slicing the plate', done: 'Sliced the plate' },
   'app.project_new': { doing: 'Starting a new project', done: 'Asked about a new project' },

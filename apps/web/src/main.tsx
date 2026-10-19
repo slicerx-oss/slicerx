@@ -98,7 +98,16 @@ if (__SX_E2E__ && __SX_FEATURE_PILOT__) {
 
 const el = document.getElementById('root')
 if (!el) throw new Error('index.html is missing #root')
-const config = editionFromBuild()
+// The end-to-end build can stand in for a signed-in person whose edition offers memory sync: with the session token in
+// sessionStorage 'sx-e2e-memory-sync', the edition offers it and a stand-in account (no network) is signed in.
+const e2eMemorySync = __SX_E2E__ ? sessionStorage.getItem('sx-e2e-memory-sync') : null
+const built = editionFromBuild()
+const config = e2eMemorySync ? { ...built, ai: { ...built.ai, brain: { ...built.ai.brain, memory: { ...built.ai.brain.memory, sync: 'opt-in' as const } } } } : built
+if (e2eMemorySync) {
+  const { bindMemoryAccount } = await import('@slicerx/app/pilot-connect/memory')
+  const reply = async (_url: string | URL | Request, init?: RequestInit) => (init?.method === 'POST' ? new Response(null, { status: 201 }) : new Response('[]', { status: 200 }))
+  bindMemoryAccount({ key: 'e2e', target: { url: 'https://memory.example.invalid', anonKey: 'e2e-stand-in-anon-key' }, getAccessToken: async () => e2eMemorySync, onTokenChange: () => () => undefined, fetch: reply as typeof fetch })
+}
 const [host, list] = await Promise.all([createWebHost(), features()])
 if (__SX_FEATURE_STORE__) {
   // Edition members: the store client and sign-in plumbing, loaded on first use.

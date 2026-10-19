@@ -79,6 +79,11 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-attach` | The composer's attach button, which opens the image picker |
 | `mimir-attachment` | An image on the message or on a sent turn; its remove button is named Remove and the file name |
 | `mimir-choice` | A choice card in the conversation; `data-picked` holds the picked answer's id once there is one |
+| `mimir-plan-card` | A part plan in the conversation (design.plan): its features and sizes before anything is built; `data-plan-id` holds the planId and `data-picked` the answer once there is one |
+| `mimir-plan-feature` | One planned feature on `mimir-plan-card`, with its sizes |
+| `mimir-plan-status` | The plan card's status beside its buttons: waiting, approved (with a check) or sent back for changes |
+| `mimir-plan-change` | Not yet on a waiting plan card: mimir changes the plan before it builds |
+| `mimir-plan-go` | Go on a waiting plan card: mimir builds the part to the plan |
 | `mimir-sheet-record` | A dimension sheet as it stays in the conversation: a numbered row per size (the number is its callout), guesses marked (`data-guess`), each row `data-dim` with its key; while it waits in the tab its rows are fields |
 | `mimir-sheet-source` | The page the looked-up sizes came from, once in the record's header |
 | `mimir-sheet-confirm` | Confirm sizes and build, on a sheet still waiting; it confirms the sheet with the record's values |
@@ -382,6 +387,21 @@ Once BamBuddy is added, printer setup offers `setup-connection-bambuddy` for the
 | `devices-empty` | The line shown when no key is held |
 | `device-<id>` | A key's row; `<id>` is the hub's client id |
 | `device-revoke-<id>` | Revoke on that row; it also closes the connection the key has open |
+
+## mimir's notes: the chip and Settings > Memory
+
+The notes mimir keeps about the person's printers, filaments, preferences, sizes and what worked, on this computer.
+
+| Test id | Control |
+| --- | --- |
+| `mimir-remember` | The chip in the chat before mimir keeps a note, in place of the approval card; `data-done` is `saved` or `dropped` once answered |
+| `mimir-remember-yes` | Remember on the chip: the note is saved |
+| `mimir-remember-no` | Not now on the chip: nothing is saved |
+| `memory-without-asking` | Settings > Memory: Save notes without asking (off by default; on, no chip shows) |
+| `memory-sync` | Settings > Memory: Sync with my account (shown only when signed in and the edition's ai.brain.memory.sync is opt-in; off by default) |
+| `memory-export` | Export: saves every note as one JSON file |
+| `danger-memory-clear` | Clear all (asks first) |
+| `danger-memory-clear-confirm` | Clear all in the confirm: removes every note from this computer |
 
 ## Settings: mimir cloud
 

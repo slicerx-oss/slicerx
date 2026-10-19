@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The mimir tab's runtime on the open project, through the same options the tab makes it with: the project, the
 // guides, settings, arrange and slicing (approvals stay with the person), New project behind the discard question, and
-// a slice that keeps the tab on screen.
+// a slice that keeps the tab on screen. A note mimir wants to keep asks first, with the memory chip, through the
+// app's approvals.
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Host, MeshHandle, PilotEvent, PrinterHost, SliceRequest } from '@slicerx/contracts'
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG } from '@slicerx/pilot'
@@ -10,6 +11,9 @@ import { bundledKb } from '../src/workspaces/mimir/kb'
 import { mimirCommands, tabPilotOptions } from '../src/workspaces/mimir/session'
 import { scriptRouter } from '../src/workspaces/mimir/scripted'
 import { SCRIPTS } from '../src/workspaces/mimir/scripts'
+import { MEMORY_CARDS } from '../src/workspaces/mimir/remember-chip'
+import { NEUTRAL } from '../src/edition'
+import { chatNotesGo, memoryFor, pilotMemory } from '../src/pilot-connect/memory'
 import type { CommandSpec } from '@slicerx/contracts'
 import { sourceOf } from '../src/plate/edit'
 import { createHistory } from '../src/plate/history'
@@ -181,5 +185,39 @@ describe('the scripted stub on the whole toolset', () => {
     expect(await asked('Start a new project')).toEqual(['app.project_new'])
     // a part asked for by name still builds first
     expect(await asked('A box with a lid, then slice it')).not.toContain('app.slice')
+  })
+})
+
+describe('the mimir tab saves notes', () => {
+  const memoryHost = () => ({ kind: 'web', slicer: { loadParts: async (name: string) => ({ ...handle, name }) }, printers, approvals: createApprovalBroker(), capabilities: { threads: 1 } }) as unknown as Host
+
+  beforeEach(async () => {
+    set({ mimirRememberWithoutAsking: false })
+    await memoryFor(NEUTRAL).clear()
+  })
+
+  it("asks through the app's approvals with the chip's line, and keeps the note on Remember", async () => {
+    const host = memoryHost()
+    const options = tabPilotOptions(host, { llm: noLlm, config: DEFAULT_CONFIG, kb: await bundledKb(), tools: [], memory: pilotMemory(NEUTRAL, { where: chatNotesGo({ provider: 'anthropic' }, true) }) })
+    // the tab answers its approvals through the host's own broker, so a save can be granted
+    expect(options.host.approvals).toBe(host.approvals)
+    const remember = [{ calls: [{ name: 'memory.remember', args: { kind: 'printer', text: 'Has a Bambu Lab A1' } }] }, { text: 'Noted.' }]
+    const pilot = createPilot({ ...options, client: createScriptedClient(remember, { chunk: false }) })
+    expect(pilot.tools().map((t) => t.name)).toEqual(expect.arrayContaining(['memory.remember', 'memory.recall']))
+    const asked: string[][] = []
+    for await (const ev of pilot.run('tab-memory', 'Remember that I have an A1', {})) {
+      if (ev.type !== 'approval_request') continue
+      expect(ev.request.tool).toBe('memory.remember')
+      asked.push(ev.request.lines)
+      await pilot.resolveApproval(ev.request.id, { kind: 'approve' })
+    }
+    expect(asked).toHaveLength(1)
+    // the chip's line says where the note goes: with an Anthropic key, along with chats to the model's server
+    expect(asked[0]!.at(-1)).toBe("Kept on this computer, and sent along with chats to the model's server to answer them.")
+    expect(await memoryFor(NEUTRAL).list()).toMatchObject([{ kind: 'printer', text: 'Has a Bambu Lab A1' }])
+  })
+
+  it('shows the memory chip in place of the approval card', () => {
+    expect(Object.keys(MEMORY_CARDS)).toEqual(['memory.remember'])
   })
 })

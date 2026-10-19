@@ -37,13 +37,16 @@ import type { PilotProject } from './project'
 import { createShared } from './shared'
 import { citedSources } from './cite'
 import { contextMessage, systemPrompt as basePrompt, type PilotScope } from './prompt'
+import { factLine, pickFacts, type MemoryStore } from './memory/facts'
 import { fitContext, MIMIR_CONTEXT } from './context'
-import { isLocalModel, surfaceTools, type ToolSurface } from './surfaces'
+import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type ToolSurface } from './surfaces'
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type WebLookup } from './tool'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
+import { memoryTools } from './tools/memory'
+import type { NotesWhere } from './memory/where'
 import { planToDiff } from './tools/settings'
 import { chatRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Tier } from './models'
 
@@ -51,6 +54,9 @@ export interface PilotHost extends ToolHost {
   llm: LlmTransport
   approvals: ApprovalHost
 }
+
+/** What a tool row shows for arguments a tool with shownInput could not read (bad JSON or the wrong shape). */
+export const INPUT_WITHHELD = 'input withheld'
 
 export interface CreatePilotOptions {
   host: PilotHost
@@ -77,8 +83,22 @@ export interface CreatePilotOptions {
    * request (see tabRoute).
    */
   scope?: PilotScope
+  /**
+   * The edition's tool switches (ai.brain.tools): a group set false is never offered, on any surface, plugin and app
+   * command tools included. web false also turns the web lookup off.
+   */
+  toolGroups?: ToolGroups
   /** Where this mimir runs, which decides the tools a local model is offered (see surfaces.ts). Defaults to 'tab'. */
   surface?: ToolSurface
+  /**
+   * The person's saved notes and the edition's ai.brain.memory.local switch. On: memory.remember and memory.recall, and
+   * the notes that fit (pickFacts) on a chat's first message. Off or unset: neither tool, and no notes. `remember: false`
+   * leaves memory.remember out, for a host that cannot grant the approval saving a note needs. `ask` false saves a note
+   * without the card (read at each save); unset asks. `chatStarted` runs before the notes are read on a chat's first
+   * message (the host's sync with the account); the chat waits for it at most CHAT_START_WAIT_MS. `where` is where the
+   * chat's model runs (whereNotesGo), so the save card says whether and where notes go along with chats.
+   */
+  memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean; chatStarted?: () => Promise<unknown>; where?: () => NotesWhere }
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
   /** How long an approval card waits before it expires, ms. */
@@ -92,6 +112,18 @@ type AnyTool = PilotTool<unknown>
 interface Pending {
   request: ApprovalRequest
   resolve: (d: ApprovalDecision | 'expired') => void
+}
+
+/** How long a chat's first message waits for the host's memory sync before it reads the notes it has. */
+export const CHAT_START_WAIT_MS = 1500
+
+/** Settles when `p` does or after `ms`, whichever is first; never throws. */
+function within(p: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms)
+  })
+  return Promise.race([p.then(() => undefined, () => undefined), late]).finally(() => clearTimeout(timer))
 }
 
 /** The tools a host that only models offers mimir (besides its app commands): parts, the knowledge base and the project. */
@@ -233,8 +265,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Dimension sheets waiting for the person, by sheet id, and the last sheet each session showed.
   const sheets = new Map<string, (values: Record<string, number> | null) => void>()
   const lastSheet = new Map<string, PilotSheet>()
-  // Sessions with a sheet confirmed in the current run: where pilot.sheet is offered, a new part waits for one.
+  // Sessions with a confirmed sheet no part has used yet: where pilot.sheet is offered, a new part waits for one. The
+  // confirmation carries over to later runs of the chat (a plan answered in the next message needs no second sheet)
+  // until a run starts a part with it; the run after that asks again.
   const confirmed = new Set<string>()
+  const usedSheet = new Set<string>()
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
 
   const tools = new Map<string, AnyTool>()
@@ -250,6 +285,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const inScope = (t: { name: string }): boolean => !(designs && PART_GENERATORS.has(t.name)) && (scope !== 'cad' || CAD_TOOLS.has(t.name) || t.name.startsWith('app.'))
   if (opts.builtins !== false) for (const t of builtinTools({ planner: opts.planner, commands: opts.commands ?? [], shared })) if (inScope(t)) add(t as AnyTool)
   for (const t of opts.tools ?? []) add(t as AnyTool)
+  // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The mimir tab passes
+  // one in the desktop app (full scope) and in the browser build (cad scope).
+  const memory = opts.memory?.local ? opts.memory.store : undefined
+  if (memory) for (const t of memoryTools(memory, now, opts.memory?.ask, opts.memory?.where)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
 
   let pluginTools: AnyTool[] | null = null
   async function loadPluginTools(): Promise<{ loads: PluginLoad[]; tools: AnyTool[] }> {
@@ -262,7 +301,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { loads: pluginLoads(manifests, printers), tools: made }
   }
 
-  const web: WebLookup | undefined = opts.config.webSearch === false ? undefined : async (query, signal) => {
+  const web: WebLookup | undefined = opts.config.webSearch === false || opts.toolGroups?.web === false ? undefined : async (query, signal) => {
     const citations: Citation[] = []
     let text = ''
     const req = {
@@ -287,8 +326,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   function systemPrompt(): string {
     const has = (n: string): boolean => findTool(n) !== undefined
     const book = playbooks(availableSkills(kb.skills(), has))
-    const base = basePrompt(scope, has)
-    return book ? `${base}\n\n${book}` : base
+    // the playbooks go in with the rules, so the edition's voice still comes last
+    return basePrompt(scope, has, book)
   }
 
   // A local model gets only its surface's tools; a cloud model gets them all.
@@ -296,7 +335,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const local = isLocalModel(opts.config)
   /** The tools the model is offered. */
   function allTools(): AnyTool[] {
-    return surfaceTools(surface, local, [...tools.values(), ...(pluginTools ?? [])])
+    return applyToolGroups(surfaceTools(surface, local, [...tools.values(), ...(pluginTools ?? [])]), opts.toolGroups)
   }
   /** An offered tool by name; a tool the model is not offered is unknown to it. */
   function findTool(name: string): AnyTool | undefined {
@@ -348,6 +387,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (permission === 'read') return { kind: 'run' }
     const printerId = tool.printerFor?.(input)
     let mode = decide(policy, permission, printerId)
+    // a tool the person lets run without asking runs as Allow would, with its own line in the chat
+    const skipped = mode === 'ask' ? (tool.withoutAsking?.(input) ?? null) : null
+    if (skipped) mode = 'allow'
     const label = PERMISSION_LABELS[permission].title
     const askReasons = mode === 'allow' && tool.mustAsk ? await tool.mustAsk(input, ctx) : []
     if (askReasons.length) mode = 'ask'
@@ -365,13 +407,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (mode === 'allow' && !policyMayGrant(request)) mode = 'ask'
     await opts.host.approvals.register(request)
     if (mode === 'allow') {
-      emit({ type: 'permission_note', permission, mode: 'allow', tool: tool.name, message: `${label} is set to Allow in Permissions, so ${ASSISTANT_NAME} continued without asking.` })
+      emit({ type: 'permission_note', permission, mode: 'allow', tool: tool.name, message: skipped ?? `${label} is set to Allow in Permissions, so ${ASSISTANT_NAME} continued without asking.` })
       // Allow mode has no card, so nobody confirmed the bed: a start is refused by the hub with bed_check and Pilot says so.
       const token = await grantApproval(opts.host.approvals, request, false)
       emit({ type: 'approval_resolved', requestId: request.id, decision: { kind: 'approve' }, by: 'policy' })
       return { kind: 'run', token }
     }
-    emit({ type: 'approval_request', request })
+    emit({ type: 'approval_request', request, source: tool.source })
     const decision = await waitForDecision(request, signal)
     if (decision === 'aborted') {
       await opts.host.approvals.deny(request.id, 'canceled').catch(() => undefined)
@@ -399,11 +441,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: `Unknown tool ${call.name}` })
       return { message: JSON.stringify({ ok: false, error: `Unknown tool ${call.name}. Use only the listed tools.` }), stop: false }
     }
+    // A tool that shows a cleaned input (shownInput: it may be handed a secret) never has raw arguments it could not
+    // read shown or logged: the row says the input was withheld, and a refusal names only the top-level field.
+    const withheld = tool.shownInput !== undefined
     let parsedJson: unknown
     try {
       parsedJson = call.arguments.trim() === '' ? {} : JSON.parse(call.arguments)
     } catch {
-      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: call.arguments })
+      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: withheld ? INPUT_WITHHELD : call.arguments, ...(withheld ? { args: INPUT_WITHHELD } : {}) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: 'Arguments were not valid JSON' })
       return { message: JSON.stringify({ ok: false, error: 'Arguments were not valid JSON.' }), stop: false }
     }
@@ -415,13 +460,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (retry.success) parsed = retry
     }
     if (!parsed.success) {
-      const issues = parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.') || '(input)'}: ${i.message}`)
-      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: parsedJson, args: argLine(parsedJson) })
+      const issues = parsed.error.issues.slice(0, 5).map((i) => `${(withheld ? i.path.slice(0, 1) : i.path).join('.') || '(input)'}: ${i.message}`)
+      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: withheld ? INPUT_WITHHELD : parsedJson, args: withheld ? INPUT_WITHHELD : argLine(parsedJson) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: `Invalid arguments: ${issues.join('; ')}` })
       return { message: JSON.stringify({ ok: false, error: 'Invalid arguments', issues }), stop: false }
     }
     const input = parsed.data
-    if (startsPart(tool.name, input) && !confirmed.has(sessionId) && findTool('pilot.sheet')) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
+    if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
+      if (!confirmed.has(sessionId)) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
+      usedSheet.add(sessionId)
+    }
     const project = opts.project?.()
     const ctx: ToolContext = {
       host: opts.host,
@@ -460,7 +508,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         sheets.set(sheet.id, (given) => {
           signal.removeEventListener('abort', onAbort)
           const answer = answerOf(sheet, given)
+          // the latest sheet's answer stands: a cancel takes back an earlier confirmation
           if (answer.confirmed) confirmed.add(sessionId)
+          else confirmed.delete(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
         })
@@ -480,14 +530,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     try {
       gated = await gate(tool, input, sessionId, ctx, emit, signal)
     } catch (e) {
-      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input, args: tool.args?.(input) ?? argLine(input) })
+      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: errorText(e) })
       return { message: JSON.stringify({ ok: false, error: errorText(e) }), stop: false }
     }
     if (gated.kind === 'blocked') return { message: JSON.stringify({ ok: false, blocked: true, message: gated.message }), stop: gated.stop }
     if (gated.token) ctx.token = gated.token
 
-    emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input, args: tool.args?.(input) ?? argLine(input) })
+    emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
     const t0 = now()
     let out: ToolOutput
     try {
@@ -520,6 +570,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let tier: Tier = startTier
     let why: 'request' | 'tool' | 'struggle' = 'request'
     let shown = modelFor(opts.config, HUGINN)
+    // the model last asked for; mimir cloud may answer with another one, which its reply names
+    let asked = shown
     let fails = 0
     const called = new Map<string, string>()
     const watch = (e: PilotEvent) => {
@@ -558,8 +610,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       let failedCode: string | undefined
       let cut = false
       const model = modelFor(opts.config, tier)
-      if (model !== shown) {
-        emit({ type: 'model_switch', model, label: modelLabel(model), reason: why })
+      if (model !== asked) {
+        asked = model
+        if (model !== shown) emit({ type: 'model_switch', model, label: modelLabel(model), reason: why })
         shown = model
       }
       const req = {
@@ -568,6 +621,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         tools: toolDefs,
         toolChoice: stopped || wrap ? ('none' as const) : ('auto' as const),
         session: sessionId,
+        tier,
         ...(opts.config.reasoning ? { reasoning: opts.config.reasoning } : {}),
       }
       try {
@@ -590,6 +644,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
               break
             case 'citation':
               if (!citations.some((c) => c.id === ev.url)) citations.push({ id: ev.url, title: ev.title || ev.url, url: ev.url, kind: 'web' })
+              break
+            case 'model':
+              // mimir cloud says which model answered (a stronger one on a hard turn, or the base one past its limits)
+              if (ev.model !== shown) {
+                emit({ type: 'model_switch', model: ev.model, label: modelLabel(ev.model), reason: why })
+                shown = ev.model
+              }
               break
             case 'usage':
               usageIn += ev.inputTokens
@@ -764,7 +825,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // the start says why Auto picked its model, so a client reading the session sees it; a pinned model has no pick
       const auto = modelFor(opts.config, HUGINN) !== modelFor(opts.config, MUNINN)
       return drive(sessionId, async (emit) => {
-        confirmed.delete(sessionId)
+        if (usedSheet.delete(sessionId)) confirmed.delete(sessionId)
         emit({ type: 'start', runId: `run_${newId()}`, sessionId, provider: client.provider, model: modelFor(opts.config, startTier), at: new Date(now()).toISOString(), ...(auto ? { route } : {}) })
         if (scope !== 'full') pluginTools = []
         else if (pluginTools === null) {
@@ -793,9 +854,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           return
         }
         const attached = files?.names.length ? `\n\nAttached: ${files.names.join(', ')}` : ''
+        // the person's notes ride on a chat's first message, the ones about what it asks first; the host syncs them
+        // first (briefly: a slow network never holds the chat up)
+        const first = !messages.some((m) => m.role === 'user')
+        if (memory && first && opts.memory?.chatStarted) await within(opts.memory.chatStarted(), CHAT_START_WAIT_MS)
+        const notes = memory && first ? pickFacts(await memory.list().catch(() => []), message).map(factLine) : []
         messages.push({
           role: 'user',
-          content: `${contextMessage(context, policy, today)}\n\nUser request:\n${message}${attached}`,
+          content: `${contextMessage(context, policy, today, notes)}\n\nUser request:\n${message}${attached}`,
           ...(files?.images.length ? { images: files.images } : {}),
           ...(files?.documents.length ? { documents: files.documents } : {}),
         })

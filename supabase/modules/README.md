@@ -14,7 +14,7 @@ psql "$DB_URL" -f drop_mimir_proxy.sql
 
 `drop_bug_reports.sql` removes the crash and bug reports table, `submit_bug_report` and the `bug-reports` bucket (only when empty).
 
-`drop_mimir_proxy.sql` removes mimir's cloud model caps, usage and shared sessions. The `mimir_session_reader` role stays (roles are cluster wide) with no access left.
+`drop_mimir_proxy.sql` removes mimir's cloud model caps, usage, shared sessions and synced memory. The `mimir_session_reader` role stays (roles are cluster wide) with no access left.
 
 `drop_store.sql` removes the `uploads-quarantine` and `listing-files` buckets only when they are empty. Delete stored files through the Storage API before dropping the store.
 

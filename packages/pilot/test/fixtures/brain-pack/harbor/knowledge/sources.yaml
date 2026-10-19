@@ -1,0 +1,6 @@
+kind: sources
+sources:
+  - id: harbor_dock_manual
+    title: "Harbor Dock manual"
+    publisher: Harbor Print
+    url: https://docs.harborprint.example/dock

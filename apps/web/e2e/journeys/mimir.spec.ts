@@ -396,6 +396,46 @@ test.describe('the mimir tab', () => {
     await expect.poll(plate).toEqual([{ name: 'Box with lid', parts: ['Box', 'Lid'], steps: 3 }])
   })
 
+  test('scripted mimir checks a built part against its plan and names the item that is off', async ({ page }) => {
+    const composer = page.getByTestId('mimir-composer')
+    const say = async (text: string) => {
+      await composer.getByRole('textbox').fill(text)
+      await composer.getByRole('button', { name: 'Send' }).click()
+    }
+    await say('a wall mount for my thermostat')
+    await page.getByTestId('mimir-choice').getByRole('button', { name: 'Yes, that one' }).click()
+    await page.getByTestId('mimir-sheet-confirm').click()
+    const transcript = page.getByTestId('mimir-transcript')
+    await expect(transcript).toContainText('The backplate is on the plate:', { timeout: 30_000 })
+    // A scripted plan that wants a 32 mm center hole, where the backplate was built with the sheet's 30 mm: the build
+    // is wrong for this plan in that one item.
+    const plan = {
+      planId: 'e2e-backplate',
+      part: 'Thermostat backplate',
+      units: 'mm',
+      features: [{ name: 'plate with holes', kind: 'extrude', sizes: { width: 150.4, height: 110.4, thickness: 3 } }],
+      overall: { x: 150.4, y: 110.4, z: 3 },
+      holes: [
+        { name: 'center hole', diameter: 32 },
+        { name: 'top screw hole', diameter: 4.5 },
+        { name: 'bottom screw hole', diameter: 4.5 },
+      ],
+      assumptions: [],
+      questions: [],
+    }
+    // window.__mimirPlans is there only with localStorage 'slicerx.debug' set, which the journey's page setup does. The
+    // plan goes in as one the person made on the card: the scripted check reads card plans only, never a client's
+    await page.evaluate((p) => (window as unknown as { __mimirPlans: { put(plan: unknown, design: undefined, origin: 'card'): void } }).__mimirPlans.put(p, undefined, 'card'), plan)
+    await say('Check it against the plan')
+    await expect(transcript).toContainText('It does not match the plan yet.', { timeout: 30_000 })
+    // the reply names the design it checked (the one named as the plan's part)
+    await expect(transcript).toContainText('I checked the design Thermostat backplate.')
+    await expect(transcript).toContainText(/Center hole: wanted 32 mm diameter, got (29\.9\d|30(\.0\d)?) mm diameter\./)
+    // only that item: the screw holes, size, features, closed body and walls pass, and the reply never says done
+    await expect(transcript).not.toContainText(/screw hole:|Overall size:|Feature count:|Watertight:|Minimum wall:/)
+    await expect(transcript).not.toContainText('It matches the plan')
+  })
+
   test('a finished part brings up the spools under the run, and a click there picks the spool it prints with', async ({ page }, info) => {
     const printer = (await state(page))['printerId']
     try {
@@ -656,6 +696,77 @@ test.describe('mimir cloud', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Deleted 3 saved chats.' })).toBeVisible()
     expect(await forgets()).toBe(1)
     expect((await row.boundingBox())!.height).toBe(h)
+    await closeDialogs(page)
+  })
+})
+
+/* ------------------------------------------------------------------ what mimir remembers */
+
+// A reply in the mimir tab that asks to keep a note shows the chip, not the approval card. Remember saves it (the chip keeps its size),
+// and Settings > Memory lists it under its kind and clears it after asking. Not now, edit, delete and export are unit
+// tests (packages/app/test/memory-section.test.ts).
+test.describe('what mimir remembers', () => {
+  const NOTE = 'Has a Bambu Lab A1 with the 0.4 mm nozzle'
+
+  test('the chip saves a note on Remember, and Settings, Memory lists it and clears it after asking', async ({ page }, info) => {
+    await ready(page, 'cloud')
+    await stubProxy(page, (body) => (lastUserText(body).includes('tool_result') ? answer('Noted.') : [{ type: 'tool_use', id: 'tu_mem', name: 'memory.remember', input: { kind: 'printer', text: NOTE } }]))
+    await signIn(page)
+    await emptyMimirTab(page)
+    await askTab(page, 'Remember that I have a Bambu Lab A1')
+    const chat = page.getByTestId('mimir-chat')
+    const chip = chat.getByTestId('mimir-remember')
+    await expect(chip).toBeVisible({ timeout: 30_000 })
+    await expect(chip).toContainText(NOTE)
+    await expect(chat).not.toContainText('needs your approval')
+    if (shotsOn()) await chip.screenshot({ path: `${shotsDir(info)}/mimir-remember-chip.png` })
+    const before = (await chip.boundingBox())!
+    await chip.getByTestId('mimir-remember-yes').click()
+    await expect(chip).toHaveAttribute('data-done', 'saved')
+    await expect(chat).toContainText('Noted.', { timeout: 30_000 })
+    expect((await chip.boundingBox())!.height).toBe(before.height)
+
+    await chip.getByRole('button', { name: 'See all notes' }).click()
+    const memory = page.locator('.mem-sec')
+    await expect(memory.getByRole('list', { name: 'Printers' })).toContainText(NOTE)
+    await page.getByTestId('danger-memory-clear').click()
+    const ask = page.getByRole('dialog', { name: 'Clear all notes' })
+    await expect(ask).toContainText("Clear all 1 note? This can't be undone.")
+    await ask.getByTestId('danger-memory-clear-confirm').click()
+    await expect(memory).toContainText('No notes yet.')
+    await closeDialogs(page)
+  })
+})
+
+// Signed in, where the edition offers it, Settings > Memory has Sync with my account under Save notes without asking;
+// it starts off and turns on in place. The build's stand-in account answers with no network.
+test.describe('memory sync with the account', () => {
+  test('Settings, Memory shows Sync with my account to a signed-in person, and it turns on in place', async ({ page }, info) => {
+    await ready(page, 'cloud')
+    await page.evaluate(() => sessionStorage.setItem('sx-e2e-memory-sync', 'stand-in-session'))
+    await page.reload()
+    await viewportReady(page)
+    await page.evaluate(() => (window as unknown as { __sx: { setState(s: Record<string, unknown>): void } }).__sx.setState({ settingsOpen: true, settingsSection: 'memory', mimirMemorySync: false }))
+    const memory = page.locator('.mem-sec')
+    const sync = memory.getByTestId('memory-sync')
+    await expect(sync).toBeVisible({ timeout: 30_000 })
+    await expect(memory).toContainText('Sync with my account')
+    await expect(sync).toHaveAttribute('aria-checked', 'false')
+    const before = (await sync.boundingBox())!
+    await sync.click()
+    await expect(sync).toHaveAttribute('aria-checked', 'true')
+    await expect(memory).toContainText('They stay on this computer and in your account.')
+    // a static control: turning it on moves nothing
+    expect((await sync.boundingBox())!).toEqual(before)
+    if (shotsOn()) {
+      await memory.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: `${shotsDir(info)}/memory-sync-desktop.png` })
+      await page.setViewportSize({ width: 390, height: 844 })
+      await expect(sync).toBeVisible()
+      await sync.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: `${shotsDir(info)}/memory-sync-390.png` })
+    }
+    await page.evaluate(() => sessionStorage.removeItem('sx-e2e-memory-sync'))
     await closeDialogs(page)
   })
 })

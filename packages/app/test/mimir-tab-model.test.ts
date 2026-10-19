@@ -123,13 +123,28 @@ describe('the mimir tab on a model', () => {
     expect(body(llm.sent[0]!).model).toBe('claude-sonnet-5-5')
   })
 
-  it('says when the model runs on this computer, and lists the tools it is offered', async () => {
+  it("says where the model runs (this computer, your network or the model's server), and lists the tools it is offered", async () => {
     set({ pilot: { mode: 'on', provider: 'local', model: 'qwen3:8b-16k', baseUrl: 'http://127.0.0.1:11434/v1' } })
     await tabMimir(hostWith(transport(['openai-compatible'])), NEUTRAL)
     const state = (await runCall('mimir.tab', {})) as { link: string; local: boolean; tools: string[] }
-    expect(state).toMatchObject({ link: 'model', provider: 'openai-compatible', local: true })
+    expect(state).toMatchObject({ link: 'model', provider: 'openai-compatible', local: true, where: 'computer' })
     expect(state.tools).toEqual(expect.arrayContaining(['design.new', 'pilot.sheet', 'printer.queue']))
     expect(state.tools).not.toContain('make_model')
+  })
+
+  it('names where the model runs by its address: a local model on the network is not on this computer', async () => {
+    set({ pilot: { mode: 'on', provider: 'local', model: 'qwen3:8b-16k', baseUrl: 'http://192.168.1.20:11434/v1' } })
+    await tabMimir(hostWith(transport(['openai-compatible'])), NEUTRAL)
+    // still a local model for the tool list, but its server is on the network
+    expect(await runCall('mimir.tab', {})).toMatchObject({ link: 'model', local: true, where: 'network' })
+    resetTabMimir()
+    set({ pilot: { mode: 'on', provider: 'anthropic' } })
+    await tabMimir(hostWith(transport(['anthropic'])), NEUTRAL)
+    expect(await runCall('mimir.tab', {})).toMatchObject({ link: 'model', local: false, where: 'remote' })
+    resetTabMimir()
+    set({ pilot: { mode: 'unset' } })
+    await tabMimir(hostWith(), NEUTRAL)
+    expect(await runCall('mimir.tab', {})).toMatchObject({ link: 'scripted', where: null })
   })
 
   it('in the browser build, keeps the design tools and leaves out slicing and printers', async () => {
@@ -170,6 +185,23 @@ describe('the mimir tab on a model', () => {
     expect(body(llm.sent[0]!).model).toBe('claude-haiku-5-5')
   })
 
+  it('sets the runtime up again when the edition turns memory off or on, with the memory tools to match', async () => {
+    set({ pilot: { mode: 'on', provider: 'anthropic' } })
+    const host = hostWith(transport(['anthropic']))
+    const on = await tabMimir(host, NEUTRAL)
+    expect(on.tools().map((t) => t.name)).toContain('memory.remember')
+    expect(await tabMimir(host, NEUTRAL)).toBe(on)
+    // the same edition id with memory switched off
+    const OFF = { ...NEUTRAL, ai: { ...NEUTRAL.ai, brain: { ...NEUTRAL.ai.brain, memory: { ...NEUTRAL.ai.brain.memory, local: false } } } }
+    const off = await tabMimir(host, OFF)
+    expect(off).not.toBe(on)
+    expect(off.tools().map((t) => t.name)).not.toContain('memory.remember')
+    expect(off.tools().map((t) => t.name)).not.toContain('memory.recall')
+    const again = await tabMimir(host, NEUTRAL)
+    expect(again).not.toBe(off)
+    expect(again.tools().map((t) => t.name)).toContain('memory.remember')
+  })
+
   it('sets the runtime up again when Settings change the model, and keeps it otherwise', async () => {
     const llm = transport(['anthropic'])
     const host = hostWith(llm)
@@ -183,7 +215,7 @@ describe('the mimir tab on a model', () => {
   })
 
   it('reports none before the tab first opens', async () => {
-    expect(await runCall('mimir.tab', {})).toEqual({ link: 'none', provider: null, model: null, auto: null, local: false, tools: [] })
+    expect(await runCall('mimir.tab', {})).toEqual({ link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [] })
   })
 
   it('logs the model conversation for the read-back', async () => {
