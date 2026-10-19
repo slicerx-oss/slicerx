@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { Fragment, memo } from 'react'
+import { Fragment, memo, type ComponentType } from 'react'
 import type { ApprovalRequest, PluginLoad } from '@slicerx/contracts'
-import { ApprovalCard } from './approval-card'
+import { ApprovalCard, type ApprovalCardProps } from './approval-card'
 import { ChoiceCard } from './choice-card'
 import { LookupRecord } from './lookup-record'
 import { SheetRecord } from './sheet-record'
@@ -22,6 +22,8 @@ export interface ApprovalHandlers {
   onApprove: (request: ApprovalRequest, opts: { bedClear: boolean }) => Promise<void>
   onCancel: (request: ApprovalRequest) => Promise<void>
   onEditPlan?: ((request: ApprovalRequest) => void) | undefined
+  /** A tool's own card in place of the approval card, by tool name, such as the host's chip for memory.remember. */
+  cards?: Readonly<Record<string, ComponentType<ApprovalCardProps>>> | undefined
   /** Answers a choice card; without it the cards cannot be answered. */
   onChoose?: ((askId: string, choiceId: string) => Promise<void>) | undefined
   /** Confirms a dimension sheet with its values; without it a sheet waits for another surface to answer it. */
@@ -64,9 +66,10 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
       return <PermLine mode={block.mode} message={block.message} />
     case 'model':
       return <ModelLine label={block.label} reason={block.reason} />
-    case 'approval':
+    case 'approval': {
+      const Card = approvals.cards?.[block.request.tool] ?? ApprovalCard
       return (
-        <ApprovalCard
+        <Card
           request={block.request}
           resolution={block.resolution}
           actionable={!block.replay}
@@ -75,6 +78,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
           onEditPlan={approvals.onEditPlan}
         />
       )
+    }
     case 'lookup':
       return <LookupRecord lookup={block.lookup} />
     case 'sheet':

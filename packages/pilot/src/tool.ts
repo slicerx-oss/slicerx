@@ -151,6 +151,11 @@ export interface PilotTool<I = unknown> {
    * Allow, such as a guarded setting outside the filament's range. Empty: none.
    */
   mustAsk?(input: I, ctx: ToolContext): Promise<string[]>
+  /**
+   * When the person turned asking off for this tool alone (Save notes without asking, for memory.remember): the line
+   * the chat shows instead of the card, and the call runs as Allow would. Null asks as its class says; Off still stops it.
+   */
+  withoutAsking?(input: I): string | null
   /** Required for every class except read: what the approval card shows and which host calls it unlocks. */
   approval?(input: I, ctx: ToolContext): Promise<ApprovalPlan>
   /**
