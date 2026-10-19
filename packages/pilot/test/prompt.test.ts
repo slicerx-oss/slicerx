@@ -14,8 +14,11 @@ describe('the step list in the full prompt', () => {
     expect(p).toContain('needs three or more tools')
     expect(p).toContain('numbered list of the steps')
     expect(p).toContain('"needs your OK"')
-    expect(p).toContain('queue, start a print, change settings')
-    expect(p).toContain('Skip the list when one or two tools are enough.')
+    // the list is a heads-up: it never stands in for working out a part's sizes
+    expect(p).toContain('The list is a heads-up only: still work out every size the part needs')
+    expect(p).toContain("take sizes from the person's things (from a lookup) before choosing a default")
+    const line = p.split('\n').find((l) => l.includes('needs three or more tools'))!
+    expect(line).toBe('- When a request needs three or more tools, first send a short numbered list of the steps, marking the ones that need approval with "needs your OK". The list is a heads-up only: still work out every size the part needs, and take sizes from the person\'s things (from a lookup) before choosing a default.')
   })
 
   it('sits after the approval rules and before the untrusted data block', () => {
