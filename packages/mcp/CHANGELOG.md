@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_mimir_brain` reads the mimir the open app runs over the app link: `name`, `voice` (whether the edition set one), `toolGroups` (each group on or off), `cloud` (`base`, the model mimir cloud answers with, and `stepUp`, the step-up the edition asks for or `null`), `memory` (`local` and `sync`) and `knowledgeDocs`, the count of the edition's own docs. It never carries the voice text or the docs.
+
 ### Fixed
 
 - A slice that runs past the engine's time limit (10 minutes) now fails with `slice_timeout` and `details.limitMs`, and says so, instead of `slice_failed` with "sx exited with code -1". A slice stopped by another signal names the signal (`slice_failed`, `details.signal`).

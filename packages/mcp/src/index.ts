@@ -28,6 +28,7 @@ import { appSettingsTools } from './app-settings'
 import { mimirCloudTools } from './mimir-cloud'
 import { mimirTabTools } from './mimir-tab'
 import { mimirDockTools } from './mimir-dock'
+import { mimirBrainTools } from './mimir-brain'
 import { appSheetTools } from './app-sheet'
 import { appLookTools } from './app-look'
 import { appSketchTools } from './app-sketch'
@@ -206,6 +207,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
   const mimir = [...appAssistantTools(appLink, productName()), ...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName()), ...mimirTabTools(appLink, productName()), ...mimirDockTools(appLink, productName())]
+  mimir.push(...mimirBrainTools(appLink, productName()))
   // The app's plates, and showing one of them as its plate picker does.
   const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
   const history = appHistoryTools(appLink, productName())
