@@ -480,6 +480,8 @@ test.describe('sketch-dims-on-shape', () => {
     await page.keyboard.press('r')
     await clickAt(page, [110, 110])
     await move(page, [130, 120])
+    // the first click puts the keyboard in Width: type only once it is there
+    await expect(inputOf(page, 'width')).toBeFocused()
     await page.keyboard.type('30')
     await page.keyboard.press('Tab')
     await page.keyboard.type('20')
