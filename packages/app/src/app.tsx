@@ -126,6 +126,17 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
     if (host.printers) host.printers = withHandPrinters(host.printers)
     if (hasLegacySetupPrinters()) void import('./first-run/setup-host').then((m) => m.migrateSetupPrinters())
   })
+  // mimir's memory for this edition, and the account its notes sync with, from the start: the app link's
+  // mimir.memory answers before the dock, the mimir tab or Settings > Memory ever mounts. Loads after the first frame.
+  useEffect(() => {
+    let live = true
+    void import('./pilot-connect/memory').then((m) => {
+      if (live) m.startAppMemory(host, edition)
+    })
+    return () => {
+      live = false
+    }
+  }, [host, edition])
   // Crashes are caught from the start; the report code loads after the first frame and takes the early ones.
   useEffect(() => startCrashCapture(), [])
   useEffect(() => {

@@ -192,6 +192,18 @@ export function appMemory(edition: Pick<EditionConfig, 'id' | 'ai'>, opts: AppMe
   return current
 }
 
+/**
+ * What the app does once at start (SlicerXApp), and again when the edition or the host changes: makes the edition's
+ * memory handle, so the app link's mimir.memory answers with the notes before any chat or Settings > Memory mounts,
+ * and binds the account notes sync with. Signing in and out after that is followed through the account's token.
+ */
+export function startAppMemory(host: unknown, edition: Pick<EditionConfig, 'id' | 'ai' | 'backend' | 'features'>, opts: AppMemoryOptions = {}): AppMemory {
+  const h = appMemory(edition, opts)
+  const a = hostMemoryAccount(host, edition)
+  if (a) bindMemoryAccount(a)
+  return h
+}
+
 /** The store every read and write of `edition`'s notes goes through (appMemory's). */
 export function memoryFor(edition: Pick<EditionConfig, 'id' | 'ai'>): WatchedMemory {
   return appMemory(edition).store
@@ -206,10 +218,12 @@ export function useMemoryStore(): WatchedMemory {
  * What mimir runs with: the edition's switch, the shared store, whether saving a note shows the chip first, and the
  * sync each chat start runs (when sync is on). Settings > Memory > Save notes without asking turns the chip off, read
  * at each save, so it applies at once. `remember: false` is for a host that cannot grant the approval a save needs.
+ * `cloud` is true when the chat runs on mimir cloud, so the chip says notes go along with chats.
  */
-export function pilotMemory(edition: Pick<EditionConfig, 'id' | 'ai'>, opts: { remember?: boolean } = {}): NonNullable<CreatePilotOptions['memory']> {
+export function pilotMemory(edition: Pick<EditionConfig, 'id' | 'ai'>, opts: { remember?: boolean; cloud?: boolean } = {}): NonNullable<CreatePilotOptions['memory']> {
   const h = appMemory(edition)
-  return { local: h.local, store: h.store, ask: () => !get().mimirRememberWithoutAsking, chatStarted: () => h.sync.chatStarted(), ...(opts.remember === false ? { remember: false } : {}) }
+  const cloud = opts.cloud === true
+  return { local: h.local, store: h.store, ask: () => !get().mimirRememberWithoutAsking, chatStarted: () => h.sync.chatStarted(), cloud: () => cloud, ...(opts.remember === false ? { remember: false } : {}) }
 }
 
 /** Drops the handle and takes it off the app link (tests, and a window closing). */
