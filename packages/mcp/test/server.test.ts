@@ -433,3 +433,20 @@ describe('project rotation and added objects', () => {
     expect(project.objects().find((o) => o.id === 'cal')?.bboxMm).toEqual([10, 10, 10])
   })
 })
+
+describe('adding a model to a project', () => {
+  it('refuses a file type the project cannot load as unsupported_format and names the type it takes', async () => {
+    const h = await connect()
+    expect((await h.call('slicerx_project_open', {})).isError).toBeFalsy()
+    for (const name of ['part.3mf', 'part.obj']) {
+      const path = join(h.dir, name)
+      writeFileSync(path, 'not read')
+      const r = await h.call('slicerx_project_add_model', { model: path })
+      expect(r.isError).toBe(true)
+      const error = data<{ error: { code: string; message: string } }>(r).error
+      expect(error.code).toBe('unsupported_format')
+      expect(error.message).toMatch(/only STL models \(\.stl\)/)
+      expect(error.message).toMatch(/slicerx_slice_file/)
+    }
+  })
+})
