@@ -82,18 +82,21 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
   }
 
   // `group` names where the size sits (the feature, Overall), so two rows called Height read apart to a screen reader
-  const row = (id: string, label: string, value: number, at: SizeAt, group: string): ReactNode => (
+  // `times` is how many holes a hole row stands for: more than one reads "4 x 3.4 mm"
+  const row = (id: string, label: string, value: number, at: SizeAt, group: string, times = 1): ReactNode => (
     <li key={id} className="sheet-rec-row plan-rec-row">
       <label className="sheet-rec-label" htmlFor={live ? id : undefined}>
         {label}
       </label>
       {live ? (
         <span className="sheet-rec-field">
-          <ScrubNumber id={id} value={value} ariaLabel={`${group}, ${label}, ${UNIT_WORD[unit]}`} digits={unit === 'in' ? 3 : 2} step={unit === 'in' ? 0.05 : 0.5} min={SIZE_MIN[unit]} max={PLAN_SIZE_MAX} boxed={false} onCommit={(v) => edit(at, v)} />
+          {times > 1 ? <span className="sheet-rec-unit">{times} x</span> : null}
+          <ScrubNumber id={id} value={value} ariaLabel={`${group}, ${label}${times > 1 ? `, ${times} holes` : ''}, ${UNIT_WORD[unit]}`} digits={unit === 'in' ? 3 : 2} step={unit === 'in' ? 0.05 : 0.5} min={SIZE_MIN[unit]} max={PLAN_SIZE_MAX} boxed={false} onCommit={(v) => edit(at, v)} />
           <span className="sheet-rec-unit">{unit}</span>
         </span>
       ) : (
         <span className="sheet-rec-v plan-rec-v">
+          {times > 1 ? `${times} x ` : ''}
           {value} {unit}
         </span>
       )}
@@ -135,7 +138,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
       {plan.holes?.length ? (
         <section className="plan-rec-block" aria-label="Holes">
           <span className="plan-rec-h">Holes</span>
-          <ul className="sheet-rec-rows">{plan.holes.map((h, i) => row(`${base}-h${i}`, `${h.name}, diameter`, h.diameter, { kind: 'hole', index: i }, 'Holes'))}</ul>
+          <ul className="sheet-rec-rows">{plan.holes.map((h, i) => row(`${base}-h${i}`, `${h.name}, diameter`, h.diameter, { kind: 'hole', index: i }, 'Holes', h.count))}</ul>
         </section>
       ) : null}
       {plan.assumptions.length ? (

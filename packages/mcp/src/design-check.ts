@@ -21,7 +21,8 @@ export const partPlanSchema = z.object({
   units: z.enum(['mm', 'in']),
   features: z.array(z.object({ name: text(60), kind: text(40).optional(), sizes: z.record(text(40), size) })).max(30),
   overall: z.object({ x: size, y: size, z: size }).optional(),
-  holes: z.array(z.object({ name: text(60), diameter: size })).max(60).optional(),
+  /** Each row is `count` holes of one diameter (default 1), such as four 3.4 mm motor screw holes. */
+  holes: z.array(z.object({ name: text(60), diameter: size, count: z.number().int().positive().max(60).optional().describe('How many holes of this diameter the row stands for; default 1') })).max(60).optional(),
   assumptions: z.array(text(200)).max(12),
   questions: z.array(text(200)).max(6),
 })
@@ -96,10 +97,16 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): 
     items.push({ name: 'overall size', want: `${want.map(r2).join(' x ')} mm${inches}`, got: `${got.map(r2).join(' x ')} mm${note}`, pass })
   }
 
-  const { matched, extra } = matchHoles(plan.holes ?? [], body.holes, scale)
-  for (const { hole, found } of matched) {
+  const { rows, extra } = matchHoles(plan.holes ?? [], body.holes, scale)
+  for (const { hole, found, surplus } of rows) {
     const want = hole.diameter * scale
-    items.push({ name: hole.name, want: `${mm(want)} diameter`, got: found ? `${mm(found.diameterMm)} diameter` : 'no hole', pass: !!found && Math.abs(found.diameterMm - want) <= HOLE_MM })
+    const count = hole.count ?? 1
+    const short = count - found.length
+    const notes = [...(short > 0 && found.length > 0 ? [`${short} short`] : []), ...(surplus.length ? [`${surplus.length} more than planned`] : [])]
+    const all = [...found, ...surplus].map((f) => f.diameterMm)
+    const got = all.length ? `${holeSizes(all)} diameter${notes.length ? ` (${notes.join(', ')})` : ''}` : count === 1 ? 'no hole' : 'no holes'
+    const pass = short === 0 && surplus.length === 0 && found.every((f) => Math.abs(f.diameterMm - want) <= HOLE_MM)
+    items.push({ name: hole.name, want: `${count === 1 ? '' : `${count} x `}${mm(want)} diameter`, got, pass })
   }
   // a plan that lists its holes has no others; one without the list says nothing about holes
   if (plan.holes) for (const h of extra) items.push({ name: `extra hole, ${mm(h.diameterMm)}`, want: 'no hole (not in the plan)', got: `${mm(h.diameterMm)} diameter`, pass: false })
@@ -113,22 +120,48 @@ export function designCheck(plan: PartPlan, body: BodyFacts, nozzleMm: number): 
   return { pass: items.every((i) => i.pass), items }
 }
 
+/** Diameters as the card writes them: "4 x 3.4 mm" for repeats, sizes apart by commas, largest count first. */
+function holeSizes(diameters: number[]): string {
+  const counts = new Map<number, number>()
+  for (const d of diameters) counts.set(r2(d), (counts.get(r2(d)) ?? 0) + 1)
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+    .map(([d, n]) => (n === 1 ? mm(d) : `${n} x ${mm(d)}`))
+    .join(', ')
+}
+
+type PlannedHole = NonNullable<PartPlan['holes']>[number]
+type FoundHole = BodyFacts['holes'][number]
+
 /**
- * Each planned hole with the body's hole that stands for it, closest diameters first, so one wrong hole does not shift
- * the others; and the body's holes no planned hole took.
+ * Each planned row with the body's holes that stand for it (up to its count), closest diameters first, so one wrong
+ * hole does not shift the others. A body hole no row took goes to the row it fits within 0.1 mm as a surplus (the
+ * closest such row), else to the extras.
  */
-function matchHoles(planned: NonNullable<PartPlan['holes']>, found: BodyFacts['holes'], scale: number): { matched: { hole: NonNullable<PartPlan['holes']>[number]; found: BodyFacts['holes'][number] | undefined }[]; extra: BodyFacts['holes'] } {
-  const out = new Map<number, number>()
+function matchHoles(planned: PlannedHole[], found: FoundHole[], scale: number): { rows: { hole: PlannedHole; found: FoundHole[]; surplus: FoundHole[] }[]; extra: FoundHole[] } {
+  const taken = planned.map(() => [] as number[])
   const used = new Set<number>()
   const pairs: [number, number, number][] = []
   planned.forEach((h, k) => found.forEach((f, j) => pairs.push([Math.abs(f.diameterMm - h.diameter * scale), k, j])))
   pairs.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2])
   for (const [, k, j] of pairs) {
-    if (out.has(k) || used.has(j)) continue
-    out.set(k, j)
+    if (used.has(j) || taken[k]!.length >= (planned[k]!.count ?? 1)) continue
+    taken[k]!.push(j)
     used.add(j)
   }
-  return { matched: planned.map((hole, k) => ({ hole, found: out.has(k) ? found[out.get(k)!] : undefined })), extra: found.filter((_, j) => !used.has(j)) }
+  const surplus = planned.map(() => [] as FoundHole[])
+  const extra: FoundHole[] = []
+  found.forEach((f, j) => {
+    if (used.has(j)) return
+    let best = -1
+    planned.forEach((h, k) => {
+      const off = Math.abs(f.diameterMm - h.diameter * scale)
+      if (off <= HOLE_MM && (best < 0 || off < Math.abs(f.diameterMm - planned[best]!.diameter * scale))) best = k
+    })
+    if (best >= 0) surplus[best]!.push(f)
+    else extra.push(f)
+  })
+  return { rows: planned.map((hole, k) => ({ hole, found: taken[k]!.sort((a, b) => a - b).map((j) => found[j]!), surplus: surplus[k]! })), extra }
 }
 
 /**
@@ -142,7 +175,17 @@ export interface PlanEntry {
   plan: PartPlan
   origin: PlanOrigin
   design?: string
+  /** How many design.check runs against this plan failed; absent for none. */
+  failedChecks?: number
+  /** The check that used up the fix round, once it has; later checks of the plan return it without measuring again. */
+  closed?: { summary: string; output: Record<string, unknown> }
 }
+
+/**
+ * Fix rounds a plan gets after a failed design.check: one. The check after it that fails too is the last; it says to
+ * stop building and tell the person what is off.
+ */
+export const FIX_ROUNDS = 1
 
 /** Plans kept at most for each origin; putting one more drops the one of that origin put longest ago. */
 export const MAX_PLANS = 50
@@ -156,6 +199,10 @@ export interface PlanRegistry {
   put(plan: PartPlan, design?: string, origin?: PlanOrigin): void
   /** Ties a kept plan to the design it was built in, for a plan made before the design; false when there is no such plan. */
   tie(planId: string, design: string): boolean
+  /** Counts a design.check of a kept plan; returns how many of its checks have failed (0 when there is no such plan). */
+  checked(planId: string, pass: boolean): number
+  /** Keeps the check that used up a plan's fix round, for every later check of it to return. */
+  close(planId: string, last: { summary: string; output: Record<string, unknown> }): void
   get(planId: string): PlanEntry | undefined
   /** The plan put last (of `origin` alone, when given), or undefined when there is none. */
   latest(origin?: PlanOrigin): PartPlan | undefined
@@ -175,19 +222,12 @@ export class PlanOwnedError extends Error {
 export function createPlanRegistry(): PlanRegistry {
   const plans = new Map<string, PlanEntry>()
   return {
-  /** How many design.check runs against this plan failed; absent for none. */
-  failedChecks?: number
-  /** The check that used up the fix round, once it has; later checks of the plan return it without measuring again. */
-  closed?: { summary: string; output: Record<string, unknown> }
     put(plan, design, origin = 'client') {
       const p = partPlanSchema.parse(plan)
-/**
- * Fix rounds a plan gets after a failed design.check: one. The check after it that fails too is the last; it says to
- * stop building and tell the person what is off.
- */
-export const FIX_ROUNDS = 1
-
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
+      // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
+      const was = plans.get(p.planId)
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.closed ? { closed: was.closed } : {}) }
       plans.delete(p.planId)
       plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
@@ -199,18 +239,6 @@ export const FIX_ROUNDS = 1
       entry.design = design
       return true
     },
-  /** Counts a design.check of a kept plan; returns how many of its checks have failed (0 when there is no such plan). */
-  checked(planId: string, pass: boolean): number
-  /** Keeps the check that used up a plan's fix round, for every later check of it to return. */
-  close(planId: string, last: { summary: string; output: Record<string, unknown> }): void
-    get: (planId) => plans.get(planId),
-    latest: (origin) => [...plans.values()].filter((e) => !origin || e.origin === origin).at(-1)?.plan,
-    clear: () => plans.clear(),
-  }
-}
-      // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
-      const was = plans.get(p.planId)
-      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.closed ? { closed: was.closed } : {}) }
     checked(planId, pass) {
       const entry = plans.get(planId)
       if (!entry) return 0
@@ -221,3 +249,8 @@ export const FIX_ROUNDS = 1
       const entry = plans.get(planId)
       if (entry) entry.closed = last
     },
+    get: (planId) => plans.get(planId),
+    latest: (origin) => [...plans.values()].filter((e) => !origin || e.origin === origin).at(-1)?.plan,
+    clear: () => plans.clear(),
+  }
+}

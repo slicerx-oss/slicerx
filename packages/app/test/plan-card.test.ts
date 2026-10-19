@@ -213,6 +213,25 @@ describe('the plan card', () => {
     expect(screen.getByTestId('mimir-plan-status').textContent).toBe('No answer')
   })
 
+  it('shows a row of several holes as "4 x 3.4 mm", live and saved, and keeps the count through an edit', async () => {
+    const motor: PlanInput = { ...BOX, holes: [{ name: 'Motor screws', diameter: 3.4, count: 4 }, { name: 'Vent', diameter: 5 }] }
+    await shown(motor)
+    const card = screen.getByTestId('mimir-plan-card')
+    const holes = within(card).getByRole('region', { name: 'Holes' })
+    expect(within(holes).getByText('4 x')).toBeTruthy()
+    // a row of one has no count
+    expect(holes.textContent).not.toMatch(/1 x/)
+    const screws = field(/^Holes, Motor screws, diameter, 4 holes, millimeters$/)
+    expect(screws.value).toBe('3.4')
+    fireEvent.change(screws, { target: { value: '3.5' } })
+    fireEvent.keyDown(screws, { key: 'Enter' })
+    const planId = card.dataset.planId!
+    await waitFor(() => expect(planById(planId)!.holes![0]).toEqual({ name: 'Motor screws', diameter: 3.5, count: 4 }))
+    cleanup()
+    render(createElement(PlanCard, { askId: 'b', plan: { planId: 'plan_saved', ...motor }, picked: null, actionable: false }))
+    expect(within(screen.getByRole('region', { name: 'Holes' })).getByText(/4 x\s*3\.4\s*mm/)).toBeTruthy()
+  })
+
   it('puts keys in plain words', () => {
     expect(plainLabel('wall_thickness')).toBe('Wall thickness')
     expect(plainLabel('lipHeight')).toBe('Lip height')

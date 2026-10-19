@@ -488,7 +488,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     source: 'command',
     permission: 'read',
     description:
-      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind and its sizes), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter, with assumptions and questions (empty lists for none). Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
+      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind and its sizes), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none). Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
     input: z.object({
       plan: partPlanSchema.describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
       design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),
@@ -499,10 +499,11 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       if (plans.get(i.plan.planId)?.origin === 'card') throw new ToolInputError(new PlanOwnedError(i.plan.planId).message)
       plans.put(i.plan, tied?.id, 'client')
       const p = i.plan
-      const shape = [plural(p.features.length, 'feature'), ...(p.holes?.length ? [plural(p.holes.length, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : [])].join(', ')
+      const holes = (p.holes ?? []).reduce((n, h) => n + (h.count ?? 1), 0)
+      const shape = [plural(p.features.length, 'feature'), ...(holes ? [plural(holes, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : [])].join(', ')
       return {
         summary: `Kept plan ${p.planId} for ${p.part} (${shape})${tied ? `, tied to ${tied.name} (${tied.id})` : ''}. Build it, then check it with design.check and planId ${p.planId}.`,
-        output: { planId: p.planId, part: p.part, ...(tied ? { design: tied.id } : {}), features: p.features.length, holes: p.holes?.length ?? 0 },
+        output: { planId: p.planId, part: p.part, ...(tied ? { design: tied.id } : {}), features: p.features.length, holes },
       }
     },
   })
