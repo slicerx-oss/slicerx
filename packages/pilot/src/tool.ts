@@ -160,6 +160,8 @@ export interface PilotTool<I = unknown> {
   agentWork?(input: I, ctx: ToolContext): Promise<AgentWork>
   /** Display form of the arguments, shown as the row's command line. */
   args?(input: I): string
+  /** The input as the tool_call event and session log carry it, when the raw input may hold something never to show (a refused secret). */
+  shownInput?(input: I): unknown
   run(input: I, ctx: ToolContext): Promise<ToolOutput>
 }
 
