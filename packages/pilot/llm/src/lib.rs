@@ -118,7 +118,41 @@ pub fn available_with(keys: &dyn KeySource, provider: &str) -> bool {
 /// keychain on a blocking thread (see [`SystemKeySource`]). A non-2xx reply becomes
 /// [`Error::Http`]. Redirects are not followed and no proxy is used. Needs a tokio runtime.
 pub async fn stream(req: LlmHttpRequest) -> Result<impl Stream<Item = Result<Bytes>> + Send + 'static> {
+    Ok(body_stream(send_any(req).await?.1))
+}
+
+/// A model reply from [`stream_reply`]: the model mimir cloud says answered, and the body.
+pub struct Reply {
+    /// The model named in mimir cloud's `x-sx-model`, when it is a plain model id. Always
+    /// `None` for other providers; no other response header is kept.
+    pub model: Option<String>,
+    /// The response body, as [`stream`] returns it.
+    pub body: futures::stream::BoxStream<'static, Result<Bytes>>,
+}
+
+impl std::fmt::Debug for Reply {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Reply").field("model", &self.model).finish_non_exhaustive()
+    }
+}
+
+/// [`stream`], also keeping the model mimir cloud names in its reply (see [`Reply`]).
+pub async fn stream_reply(req: LlmHttpRequest) -> Result<Reply> {
+    let (provider, response) = send_any(req).await?;
+    Ok(reply(provider == Provider::MimirCloud, response))
+}
+
+fn reply(cloud: bool, response: reqwest::Response) -> Reply {
+    Reply {
+        model: if cloud { cloud::reply_model(response.headers()) } else { None },
+        body: body_stream(response).boxed(),
+    }
+}
+
+/// The checks, the key and the send behind [`stream`], with the provider the request took.
+async fn send_any(req: LlmHttpRequest) -> Result<(Provider, reqwest::Response)> {
     let checked = Checked::new(&req)?;
+    let provider = checked.provider;
     let key = match checked.provider {
         Provider::OpenAi => {
             let rt = tokio::runtime::Handle::try_current()
@@ -130,7 +164,8 @@ pub async fn stream(req: LlmHttpRequest) -> Result<impl Stream<Item = Result<Byt
                 .map_err(|_| Error::Transport("key lookup failed".to_owned()))?;
             match auth {
                 Some(chatgpt::OpenAiAuth::ChatGptPlan) => {
-                    return Ok(body_stream(
+                    return Ok((
+                        provider,
                         send_on_plan(&SystemKeySource, &chatgpt::Endpoints::openai()?, req, needs).await?,
                     ));
                 }
@@ -160,9 +195,9 @@ pub async fn stream(req: LlmHttpRequest) -> Result<impl Stream<Item = Result<Byt
                 .await
                 .map_err(|_| Error::Transport("key lookup failed".to_owned()))?
         }
-        Provider::MimirCloud => return Ok(body_stream(cloud_send(&SystemKeySource, checked, req).await?)),
+        Provider::MimirCloud => return Ok((provider, cloud_send(&SystemKeySource, checked, req).await?)),
     };
-    Ok(body_stream(send_response(checked, req, key).await?))
+    Ok((provider, send_response(checked, req, key).await?))
 }
 
 /// [`stream`] over an explicit key source, read on the calling task.
@@ -216,15 +251,30 @@ pub async fn stream_mimir_cloud(
     cloud: &MimirCloud,
     req: LlmHttpRequest,
 ) -> Result<impl Stream<Item = Result<Bytes>> + Send + 'static> {
+    Ok(body_stream(send_mimir_cloud(store, cloud, req).await?))
+}
+
+/// [`stream_mimir_cloud`], also keeping the model the proxy names in its reply (see [`Reply`]).
+pub async fn stream_mimir_cloud_reply(
+    store: &dyn chatgpt::SecretStore,
+    cloud: &MimirCloud,
+    req: LlmHttpRequest,
+) -> Result<Reply> {
+    Ok(reply(true, send_mimir_cloud(store, cloud, req).await?))
+}
+
+async fn send_mimir_cloud(
+    store: &dyn chatgpt::SecretStore,
+    cloud: &MimirCloud,
+    req: LlmHttpRequest,
+) -> Result<reqwest::Response> {
     let checked = Checked::new_in(&req, Some(cloud))?;
     if checked.provider != Provider::MimirCloud {
         return Err(Error::UnknownProvider {
             provider: req.provider,
         });
     }
-    Ok(body_stream(
-        cloud::send_messages(store, cloud, checked.url, checked.headers, req.body).await?,
-    ))
+    cloud::send_messages(store, cloud, checked.url, checked.headers, req.body).await
 }
 
 async fn cloud_send(

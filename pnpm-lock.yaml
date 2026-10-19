@@ -71,6 +71,9 @@ importers:
         specifier: 4.6.5
         version: 4.6.5
     devDependencies:
+      '@slicerx/pilot':
+        specifier: workspace:*
+        version: link:../../packages/pilot
       '@tauri-apps/cli':
         specifier: 2.12.0
         version: 2.12.0
