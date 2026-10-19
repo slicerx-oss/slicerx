@@ -5,12 +5,11 @@
 // for notes; a note that looks like a secret is refused before the card either way. Recalling is read class. The
 // edition turns both off with ai.brain.memory.local.
 import { z } from 'zod'
-import { dataLabel, MEMORY_KINDS, NOTE_MAX, NOTE_MIN, NOTE_UNSAFE, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../memory/facts'
+import { DATA_MAX_KEYS, DATA_NAME_MAX, DATA_VALUE_MAX, dataLabel, MEMORY_KINDS, NOTE_MAX, NOTE_MIN, NOTE_UNSAFE, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../memory/facts'
 import { defineTool, type PilotTool } from '../tool'
 
 const REFUSED = 'Not saved: that looks like a key, token, access code or serial. Those stay in the app, never in notes.'
 
-const MAX_DATA_KEYS = 6
 /** Where a note goes, as the chip says it: on this computer, and along with each chat when the chat runs on the cloud. */
 export const KEPT_HERE = 'Kept on this computer for later chats.'
 export const KEPT_CLOUD = 'Kept on this computer, and sent with chats to the cloud to answer them.'
@@ -21,8 +20,8 @@ const rememberInput = z.object({
   kind: z.enum(MEMORY_KINDS).describe('printer, filament, preference, outcome (what worked or failed) or size (one of their own things)'),
   text: z.string().trim().min(NOTE_MIN).max(NOTE_MAX).refine(safe, ONE_LINE).describe('One short sentence in plain words, such as "Prints PETG at 240 C on the A1"'),
   data: z
-    .record(z.string().max(40).refine(safe, ONE_LINE), z.union([z.string().max(80).refine(safe, ONE_LINE), z.number()]))
-    .refine((d) => Object.keys(d).length <= MAX_DATA_KEYS, `At most ${MAX_DATA_KEYS} values`)
+    .record(z.string().max(DATA_NAME_MAX).refine(safe, ONE_LINE), z.union([z.string().max(DATA_VALUE_MAX).refine(safe, ONE_LINE), z.number()]))
+    .refine((d) => Object.keys(d).length <= DATA_MAX_KEYS, `At most ${DATA_MAX_KEYS} values`)
     .optional()
     .describe('Up to 6 key values, such as { model: "A1", nozzleMm: 0.4 }'),
 })

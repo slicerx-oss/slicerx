@@ -6,7 +6,7 @@
 // deletion travels as a tombstone, { deleted: true, updatedAt }, so another device drops the fact too; tombstones of
 // local deletions wait in a small per-edition list until a pull shows the server has them. A fact that looks like it
 // holds a secret never leaves the device. Nothing is sent while sync is off or the person is signed out.
-import { MEMORY_KINDS, noteProblem, secretInNote, type MemoryFact, type MemoryStore } from '@slicerx/pilot'
+import { dataProblem, MEMORY_KINDS, noteProblem, secretInNote, type MemoryFact, type MemoryStore } from '@slicerx/pilot'
 
 export type { MemoryFact, MemoryStore }
 
@@ -166,8 +166,9 @@ export async function syncMemory(store: MemoryStore, edition: string, opts: Sync
     const raw = r.fact as unknown
     if (!isRecord(raw) || !('deleted' in raw)) remoteLive++
     const f = parseSynced(r.id, raw)
-    // a remote fact passes the checks a note saved here passes (noteProblem: one line, the length, no secret), or is skipped
-    if (f && f.updatedAt <= limit && (isTombstone(f) || (noteProblem(f.text) === null && !secretInNote(f)))) theirs.set(r.id, f)
+    // a remote fact passes the checks a note saved here passes (noteProblem: one line, the length, no secret; its data
+    // within the save's limits: each name and value on one line, names up to 40 characters, values up to 80), or is skipped
+    if (f && f.updatedAt <= limit && (isTombstone(f) || (noteProblem(f.text) === null && !(f.data && dataProblem(f.data)) && !secretInNote(f)))) theirs.set(r.id, f)
     else blocked.set(r.id, isRecord(raw) && isTime(raw.updatedAt) && raw.updatedAt <= limit ? raw.updatedAt : Infinity)
   }
   const local = new Map((await store.list()).map((f) => [f.id, f]))
