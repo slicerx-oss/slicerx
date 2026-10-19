@@ -2424,6 +2424,29 @@ mod tests {
         assert_eq!(plates[1].1.bounds().unwrap().0[0], 300.0);
         assert_eq!(Mesh::load(&bytes, "p.3mf").unwrap().parts.len(), 1);
     }
+    #[test]
+    fn a_project_without_plate_entries_is_plate_1() {
+        // Object settings in model_settings.config but no <plate> there: one plate numbered 1, as a plain 3MF
+        let model = format!(
+            r#"<model unit="millimeter"><resources>{CUBE_OBJECT}</resources><build><item objectid="2"/></build></model>"#
+        );
+        let settings = r#"<config><object id="2"><metadata key="name" value="cube"/><metadata key="extruder" value="1"/></object></config>"#;
+        let bytes = zip(&[
+            ("3D/3dmodel.model", model.as_bytes(), true),
+            ("Metadata/model_settings.config", settings.as_bytes(), false),
+        ]);
+        for plates in [
+            load_plate_objects(&bytes, "p.3mf").unwrap(),
+            load_plate_objects_legacy(&bytes, "p.3mf").unwrap(),
+        ] {
+            assert_eq!(plates.len(), 1);
+            assert_eq!(plates[0].0, 1);
+            assert_eq!(plates[0].1.len(), 1);
+        }
+        let plates = crate::api::load_3mf_plates(&bytes, "p.3mf").unwrap();
+        assert_eq!(plates.iter().map(|(n, _)| *n).collect::<Vec<_>>(), [1]);
+        assert_eq!(plates[0].1.parts.len(), 1);
+    }
 
     /// A two-item model (build items 1 and 2, the second moved 60 mm along X) with the files a project adds.
     fn two_items_with(extra: &[(&str, &str)]) -> Vec<u8> {

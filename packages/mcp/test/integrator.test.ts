@@ -407,6 +407,26 @@ describe.skipIf(noSx())('with the real sx CLI', { timeout: sxTimeout }, () => {
     expect(existsSync(s.preview_path)).toBe(true)
     expect(readZip(readFileSync(s.gcode_3mf_path)).text('Metadata/slice_info.config')).toMatch(/<filament id="2"/)
   })
+  it('slices a project with no plate entries in model_settings.config as plate 1, and refuses any other plate', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const path = join(h.dir, 'no-plates.3mf')
+    writeFileSync(
+      path,
+      writeZip([
+        { name: '3D/3dmodel.model', data: MODEL.replace('<item objectid="1"/>', '<item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/>') },
+        { name: 'Metadata/model_settings.config', data: `<?xml version="1.0" encoding="UTF-8"?><config><object id="1"><metadata key="name" value="tetra"/><metadata key="extruder" value="1"/></object></config>` },
+      ]),
+    )
+    const plates = data<{ plates: { index: number }[] }>(await h.call('slicerx_inspect_project', { file: path })).plates
+    expect(plates.map((p) => p.index)).toEqual([1])
+    const r = await h.call('slicerx_slice_file', { model: path, plate: 1, project_settings: true, output: 'gcode.3mf', preview: true })
+    expect(r.isError, text(r)).toBeFalsy()
+    const s = data<{ plate: number; layer_count: number; gcode_3mf_path: string }>(r)
+    expect(s.plate).toBe(1)
+    expect(s.layer_count).toBeGreaterThan(0)
+    expect(existsSync(s.gcode_3mf_path)).toBe(true)
+    expect(data<Err>(await h.call('slicerx_slice_file', { model: path, plate: 2 })).error.code).toBe('no_such_plate')
+  })
 
   it('writes a filament and color per slot into the .gcode.3mf', async () => {
     const h = await connect({ engine: 'sx', sxBin, allowDirs: [resolve(__dirname, '../../core/bench/models')] })
