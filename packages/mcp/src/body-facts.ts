@@ -73,15 +73,23 @@ function bounds(meshes: readonly Mesh[]): BodyFacts['size'] {
   return { x: r(0), y: r(1), z: r(2) }
 }
 
-/** A hole seen at one end, and the same hole at its other end, are one hole: the narrower reading stands. */
-function sameHoles<H extends { part: number; at: V3; axis: V3; diameterMm: number }>(found: readonly H[]): H[] {
+/** Two readings on one axis are one hole when their diameters agree within this, or this share of the narrower. */
+const SAME_HOLE_MM = 0.1
+const SAME_HOLE_SHARE = 0.02
+
+/**
+ * A hole seen at one end, and the same hole at its other end, are one hole: the narrower reading stands. Coaxial
+ * readings of different sizes are different holes, such as a bearing bore and the narrower shoulder behind it.
+ */
+export function sameHoles<H extends { part: number; at: V3; axis: V3; diameterMm: number }>(found: readonly H[]): H[] {
   const out: H[] = []
   for (const h of found) {
     const k = out.findIndex((o) => {
       if (o.part !== h.part || Math.abs(Math.abs(dot(o.axis, h.axis)) - 1) > 1e-3) return false
       const off = sub(h.at, o.at)
       const across = len(sub(off, scale(o.axis, dot(off, o.axis))))
-      return across <= Math.max(0.05, 0.1 * Math.min(o.diameterMm, h.diameterMm))
+      const narrow = Math.min(o.diameterMm, h.diameterMm)
+      return across <= Math.max(0.05, 0.1 * narrow) && Math.abs(o.diameterMm - h.diameterMm) <= Math.max(SAME_HOLE_MM, SAME_HOLE_SHARE * narrow)
     })
     if (k < 0) out.push(h)
     else if (h.diameterMm < out[k]!.diameterMm) out[k] = h
@@ -169,15 +177,25 @@ function roundHole(points: readonly V3[], n: V3): { at: V3; diameterMm: number }
   const ul = len(u)
   const uu = scale(u, 1 / ul)
   const v = cross(n, uu)
-  const flat = points.map((p) => [dot(p, uu), dot(p, v)] as [number, number])
+  // in the plane, from the first point, so far-off coordinates keep their precision
+  const p0 = points[0]!
+  const flat = points.map((p) => [dot(sub(p, p0), uu), dot(sub(p, p0), v)] as [number, number])
   let area = 0
+  let cx = 0
+  let cy = 0
   for (let k = 0; k < flat.length; k++) {
     const [a, b] = [flat[k]!, flat[(k + 1) % flat.length]!]
-    area += a[0] * b[1] - b[0] * a[1]
+    const w = a[0] * b[1] - b[0] * a[1]
+    area += w
+    cx += (a[0] + b[0]) * w
+    cy += (a[1] + b[1]) * w
   }
   if (area >= 0) return null
-  const at = scale(points.reduce<V3>((s, p) => [s[0] + p[0], s[1] + p[1], s[2] + p[2]], [0, 0, 0]), 1 / points.length)
-  const radii = points.map((p) => len(sub(sub(p, at), scale(n, dot(sub(p, at), n)))))
+  // The center is the loop's area centroid, not the mean of its corners: a boolean leaves a rim with its corners
+  // bunched along some arcs, which pulls their mean off the axis (up to 3.5 mm on a 21.9 mm bore).
+  const [ox, oy] = [cx / (3 * area), cy / (3 * area)]
+  const at: V3 = [p0[0] + uu[0] * ox + v[0] * oy, p0[1] + uu[1] * ox + v[1] * oy, p0[2] + uu[2] * ox + v[2] * oy]
+  const radii = flat.map(([x, y]) => Math.hypot(x - ox, y - oy))
   const most = Math.max(...radii)
   const least = Math.min(...radii)
   // a polygon's corners lie on its circle; an edge split on the way is a little inside it
