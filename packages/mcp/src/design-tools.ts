@@ -7,6 +7,8 @@ import { bakeMesh, keyOfTriangle, mainNumber, replayHistory, stepName, timelineO
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
+import { bodyFacts } from './body-facts'
+import { createPlanRegistry, designCheck, type PlanEntry, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { meshStats } from './mesh'
 
@@ -210,9 +212,18 @@ async function replayChange(host: DesignHost, design: Design, history: History, 
   Object.assign(design, candidate)
 }
 
+/** What design.check reads besides the design: the plans, and the nozzle the part prints with. */
+export interface DesignToolOptions {
+  /** The plans design.check finds by planId; default a registry of this toolset's own. */
+  plans?: PlanRegistry | undefined
+  /** The nozzle diameter in mm, for the thinnest wall; default 0.4. */
+  nozzleMm?: (() => number) | undefined
+}
+
 /** The design tools on a host; `files` reads the models design.new starts from and the 3MF files design.open and design.save use. */
-export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<never>[] {
+export function designTools(designs: DesignHost, files: DesignFiles, opts: DesignToolOptions = {}): PilotTool<never>[] {
   const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`
+  const plans = opts.plans ?? createPlanRegistry()
 
   const create = defineTool({
     name: 'design.new',
@@ -396,5 +407,36 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     },
   })
 
-  return [create, open, list, steps, edit, undo, redo, timeline, roll, save] as PilotTool<never>[]
+  /** The design a plan was built in: the one it is tied to, else the latest named as the part, else the latest. */
+  const builtFrom = (entry: PlanEntry): HostDesign => {
+    if (entry.design) return designs.get(entry.design)
+    const all = designs.list()
+    const named = all.filter((d) => d.name.trim().toLowerCase() === entry.plan.part.trim().toLowerCase()).at(-1)
+    const d = named ?? all.at(-1)
+    if (!d) throw new ToolInputError(`No design to check: build ${entry.plan.part} first, then check it against plan ${entry.plan.planId}.`)
+    return d
+  }
+
+  const check = defineTool({
+    name: 'design.check',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger), each named hole\'s diameter (within 0.1 mm), the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. Returns pass and every item with what the plan wants and what the body has; fix the failed items and check again.',
+    input: z.object({ planId: z.string().min(1).describe('The planId of the plan the part was built from') }),
+    async run(i) {
+      const entry = plans.get(i.planId)
+      if (!entry) throw new ToolInputError(`planId: there is no plan ${i.planId}; make the plan first, then build the part and check it`)
+      const d = builtFrom(entry)
+      const nozzleMm = opts.nozzleMm?.() ?? 0.4
+      const body = await bodyFacts(designs, d)
+      const result = designCheck(entry.plan, body, nozzleMm)
+      const failed = result.items.filter((x) => !x.pass)
+      const summary = result.pass ? `Matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${failed.length} of ${result.items.length} checks failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
+      return { summary, output: { planId: entry.plan.planId, design: d.id, nozzleMm, ...result, body } }
+    },
+  })
+
+  return [create, open, list, steps, edit, undo, redo, timeline, roll, save, check] as PilotTool<never>[]
 }

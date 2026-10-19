@@ -17,6 +17,7 @@ import { createDemoPrinters, createLinkPrinters, createRoutedBroker, type Printe
 import { ProfileCatalog } from './profiles'
 import { createCombinedPlanner, createKb, createProfileStore, pilotTools, servicePluginTools, toolContext } from './registry'
 import { createSlicerxServer, type ServerContext } from './server'
+import type { PlanRegistry } from './design-check'
 import { createStubSlicer, type SlicerBackend } from './slicer'
 import { createNodeSlicerHost } from './slicerhost'
 import { cadTools } from './cad'
@@ -70,6 +71,7 @@ export { SXLOCK_NOT_CONFIGURED, sxlockFromEnv, type SxlockOptions } from './sxlo
 export { DataStore, resolveDataPaths } from './data'
 export { DEFAULT_POLICY_PATH, loadPolicy } from './policy'
 export { design3mf, readDesigns, type Design } from './design'
+export { checkResultSchema, createPlanRegistry, designCheck, partPlanSchema, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
 
 export type EngineMode = 'auto' | 'sx' | 'stub'
 
@@ -123,6 +125,10 @@ export interface SlicerxMcpOptions {
   now?: (() => number) | undefined
   /** Set up local AI tools (slicerx_local_ai_check, _setup, _status): an edition's switches, or test doubles. */
   localAi?: LocalAiOptions | undefined
+  /** The plans slicerx_design_check reads by planId; default a registry of the server's own. */
+  plans?: PlanRegistry | undefined
+  /** The nozzle diameter in mm slicerx_design_check holds the thinnest wall to; default 0.4. */
+  nozzleMm?: number | undefined
 }
 
 /** Builds the shared context once; each MCP server instance reuses it. */
@@ -195,7 +201,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const designs = geomCall ? new Designs({ engine: geomCall, policy }) : undefined
   const appLink = opts.app !== false ? printers?.appLink : undefined
   if (opts.app === 'required' && !appLink) throw new Error('--app needs printers through sx-link (--printers link)')
-  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs }), ...(designs ? [...designTools(designs, designFiles(policy, designs.deps.engine)), ...paintTools(designs)] : [])] : []
+  const built = geomBin || designs ? [...geomTools({ bin: geomBin, policy, designs }), ...cadTools({ files: cadFiles({ bin: geomBin, policy }), designs }), ...(designs ? [...designTools(designs, designFiles(policy, designs.deps.engine), { plans: opts.plans, ...(opts.nozzleMm !== undefined ? { nozzleMm: () => opts.nozzleMm! } : {}) }), ...paintTools(designs)] : [])] : []
   // Without an engine here, the design tools still work on the app's project, through the link.
   const here = appLink && !designs ? [...built, ...designToolset(NO_ENGINE_HOST).filter((t) => APP_DESIGN_TOOLS.has(t.name) && !built.some((b) => b.name === t.name))] : built
   // The plate edits go to the app's shown plate too, unless this server's own project has the object.
