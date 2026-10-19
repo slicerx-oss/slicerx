@@ -12,6 +12,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Fixed
 
+- A tool passed to `createContext` in `extraTools` now replaces a base tool of the same name. The base tool used to win, and the base server adds its CAD tools only when it finds sx-geom, so an embedder's own `slicerx_geom_*` tools were served on a machine without sx-geom and dropped on a machine with it.
 - A slice that runs past the engine's time limit (10 minutes) now fails with `slice_timeout` and `details.limitMs`, and says so, instead of `slice_failed` with "sx exited with code -1". A slice stopped by another signal names the signal (`slice_failed`, `details.signal`).
 
 ## [0.1.8] - 2026-10-18

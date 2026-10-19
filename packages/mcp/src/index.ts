@@ -112,7 +112,8 @@ export interface SlicerxMcpOptions {
   allowUrls?: boolean | undefined
   /**
    * Extra tools in the same style from outside the base kit, such as an edition's cloud slicing
-   * tools. They go through the same permission gate; the base server never imports them.
+   * tools. They go through the same permission gate; the base server never imports them. One with the
+   * name of a base tool replaces it, whether or not this machine has the engines the base tool needs.
    */
   extraTools?: PilotTool<never>[] | undefined
   /** The integrator's cloud slicing API. Absent: slicerx_cloud_slice and slicerx_cloud_jobs answer that cloud slicing is not configured. */
@@ -235,7 +236,9 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const sheets = appLink ? appSheetTools(appLink, productName()) : []
   // A message to mimir in the open app, with pictures and PDFs, and the conversation read back.
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
-  const tools = [...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...appPaintTools(appLink, productName()), ...look, ...appSettingsTools(appLink, productName()), ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...(opts.extraTools ?? [])].filter((t) => printers || t.source !== 'plugin')
+  // The first tool of a name is the one served, so the extra tools go first and replace base tools of the same name.
+  // Listed last, they lost to the CAD tools the server adds only when it finds sx-geom, so they worked on some machines.
+  const tools = [...(opts.extraTools ?? []), ...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...history, ...appPaintTools(appLink, productName()), ...look, ...appSettingsTools(appLink, productName()), ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,
