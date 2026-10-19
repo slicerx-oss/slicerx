@@ -23,6 +23,7 @@ import { get, setCamera, useApp } from '../../state/store'
 import { openUsage } from '../../pilot-connect/usage-open'
 import { useMimirLink } from './connection'
 import { MimirFilamentPick } from './filament-pick'
+import { planChoiceCard } from './plan-card'
 import './mimir.css'
 
 /** The chat column's width: 420 px to start, 340 px at least and half the window at most. */
@@ -109,6 +110,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       onApprove: NO_APPROVAL,
       onCancel: NO_APPROVAL,
       onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(),
+      choiceCard: planChoiceCard,
       onConfirmSheet: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve(),
       onEditSheet: (_sheetId, key, value) => setDraft(key, value),
       onCancelSheet: (sheetId) => pilot.answerSheet?.(sheetId, null) ?? Promise.resolve(),

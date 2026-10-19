@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { Fragment, memo } from 'react'
+import { Fragment, memo, type ReactNode } from 'react'
 import type { ApprovalRequest, PluginLoad } from '@slicerx/contracts'
 import { ApprovalCard } from './approval-card'
-import { ChoiceCard } from './choice-card'
+import { ChoiceCard, type ChoiceCardProps } from './choice-card'
 import { LookupRecord } from './lookup-record'
 import { SheetRecord } from './sheet-record'
 import { Citations } from './citations'
@@ -24,6 +24,8 @@ export interface ApprovalHandlers {
   onEditPlan?: ((request: ApprovalRequest) => void) | undefined
   /** Answers a choice card; without it the cards cannot be answered. */
   onChoose?: ((askId: string, choiceId: string) => Promise<void>) | undefined
+  /** A card of the host's own for a question it recognizes (a plan to approve); null keeps the choice card. */
+  choiceCard?: ((props: ChoiceCardProps) => ReactNode) | undefined
   /** Confirms a dimension sheet with its values; without it a sheet waits for another surface to answer it. */
   onConfirmSheet?: ((sheetId: string, values: Record<string, number>) => Promise<void>) | undefined
   /** Answers a waiting sheet as not confirmed, so nothing builds. */
@@ -79,8 +81,10 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
       return <LookupRecord lookup={block.lookup} />
     case 'sheet':
       return <SheetRecord sheet={block.sheet} answer={block.answer} bound={block.bound !== undefined} actionable={!block.replay} values={approvals.sheetValues} onEdit={block.replay ? undefined : approvals.onEditSheet} onConfirm={approvals.onConfirmSheet} onCancel={approvals.onCancelSheet} onOpen={approvals.onOpenSheet} />
-    case 'choice':
-      return <ChoiceCard askId={block.askId} title={block.title} question={block.question} choices={block.choices} picked={block.picked} actionable={!block.replay} onChoose={approvals.onChoose} />
+    case 'choice': {
+      const props: ChoiceCardProps = { askId: block.askId, title: block.title, question: block.question, choices: block.choices, picked: block.picked, actionable: !block.replay, onChoose: approvals.onChoose }
+      return approvals.choiceCard?.(props) ?? <ChoiceCard {...props} />
+    }
     case 'summary':
       return <Summary title={block.title} rows={block.rows} stopped={block.stopped} ms={block.ms} />
     case 'citations':

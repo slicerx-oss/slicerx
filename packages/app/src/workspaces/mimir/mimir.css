@@ -173,3 +173,28 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 /* The spool pick under a finished run: flat, like the closing card. */
 .mimir-filament { display: grid; gap: var(--s-2); padding-top: var(--s-4); border-top: 1px solid var(--line-soft); }
 .mimir-filament h3 { margin: 0; font: var(--fw-semibold) var(--fs-md) var(--f-body); color: var(--fg); }
+/* The plan card: flat in the conversation like the sheet record it borrows its rows and fields from. Each feature is
+   numbered in build order with its sizes under it; the footer keeps one line of room and its buttons stay in place,
+   only disabled, once the plan is answered. */
+.mimir-chat .plan-rec { gap: var(--s-2); max-width: 68ch; }
+.mimir-chat .plan-rec-units { flex: none; font-size: var(--fs-sm); color: var(--t-mute); }
+.mimir-chat .plan-rec-features { display: flex; flex-direction: column; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+.mimir-chat .plan-rec-feature { display: flex; flex-direction: column; gap: 2px; }
+.mimir-chat .plan-rec-name { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--t-fg); font: var(--fw-semibold) var(--fs-md) var(--f-body); }
+.mimir-chat .plan-rec-name > span:not(.plan-rec-n) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mimir-chat .plan-rec-n { display: grid; place-items: center; flex: none; width: 22px; height: 22px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 50%; color: var(--t-sub); font: var(--fw-semibold) 11.5px var(--f-body); font-variant-numeric: tabular-nums; }
+.mimir-chat .plan-rec .sheet-rec-rows { padding-left: 30px; }
+.mimir-chat .plan-rec .plan-rec-row { grid-template-columns: minmax(0, 1fr) auto; }
+.mimir-chat .plan-rec .sheet-rec-field { width: 112px; }
+.mimir-chat .plan-rec .sx-scrub-input, .mimir-chat .plan-rec-v { font-family: var(--f-body); font-variant-numeric: tabular-nums; }
+.mimir-chat .plan-rec-block { display: flex; flex-direction: column; gap: 2px; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
+.mimir-chat .plan-rec-block .sheet-rec-rows { padding-left: 0; }
+.mimir-chat .plan-rec-h { font-size: var(--fs-sm); color: var(--t-mute); }
+.mimir-chat .plan-rec-notes { margin: 0; padding-left: 18px; color: var(--t-sub); line-height: 1.45; }
+.mimir-chat .plan-rec-foot { align-items: center; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
+.mimir-chat .plan-rec .plan-rec-foot .lookup-rec-s { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding-top: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mimir-chat .plan-rec[data-picked^="go:"] .plan-rec-foot .lookup-rec-s { color: var(--green); }
+:root[data-phone] .mimir-chat .plan-rec .sheet-rec-rows { padding-left: 0; }
+:root[data-phone] .mimir-chat .plan-rec .plan-rec-row { min-height: 44px; }
+:root[data-phone] .mimir-chat .plan-rec .sheet-rec-field { width: 120px; height: 40px; }
+:root[data-phone] .mimir-chat .plan-rec-foot .sx-btn { min-height: 44px; }

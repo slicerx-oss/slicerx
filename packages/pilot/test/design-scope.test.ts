@@ -126,6 +126,20 @@ describe('the design scope runtime', () => {
     expect(String(sys.content)).not.toMatch(/text_to_part/)
   })
 
+  it('a one-feature box skips the plan: plans are for parts with two or more features', () => {
+    const prompt = systemPrompt('design')
+    const line = prompt.split('\n').find((l) => l.includes('design.plan'))!
+    expect(line).toMatch(/Plans are for parts with two or more features/)
+    expect(line).toMatch(/Before the first geometry step/)
+    expect(line).toMatch(/A part of one feature \(a plain box, a spacer, a single plate\) skips the plan/)
+    // sized to the person's own things: the sheet's bound values, not a second question
+    expect(line).toMatch(/values bound on the dimension sheet instead of asking for them twice/)
+    // the plan comes before the build, and the check against the plan is not asked for yet
+    expect(prompt.indexOf('design.plan')).toBeLessThan(prompt.indexOf('pilot.sheet_bind'))
+    expect(prompt).not.toMatch(/design\.check/)
+    expect(systemPrompt('full')).not.toMatch(/design\.plan/)
+  })
+
   it('builds a short request on huginn from start to finish, through every design tool call', async () => {
     const { pilot, client } = tabPilot(BUILD)
     const ev = await run(pilot, 'A bracket with two 5 mm holes and a fillet')
