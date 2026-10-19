@@ -3,6 +3,7 @@
 // Provider-neutral request and event shapes. Adapters translate these to and
 // from one vendor's wire format; the agent loop only sees these.
 import type { JsonSchema, LlmHttpRequest } from '@slicerx/contracts'
+import type { Tier } from '../models'
 
 /** An image the model sees, such as a camera frame a tool returned. Base64 without a data: prefix. */
 export interface LlmImage {
@@ -55,6 +56,8 @@ export interface LlmRequest {
   webSearch?: boolean
   /** The pilot session this turn belongs to; mimir cloud files a shared session under it. */
   session?: string
+  /** The tier the runtime picked for this turn. mimir cloud asks its proxy for the stronger model on muninn. */
+  tier?: Tier
 }
 
 export type LlmStop = 'end' | 'tool_calls' | 'length' | 'error'
@@ -68,6 +71,8 @@ export type LlmEvent =
   | { type: 'done'; stop: LlmStop; raw?: unknown[] }
   /** `code` is mimir cloud's refusal code (`day_used`, `paused`, ...). */
   | { type: 'error'; message: string; retryable: boolean; code?: string }
+  /** The model that answered, when the reply names it (mimir cloud's `x-sx-model`). Comes before the reply's text. */
+  | { type: 'model'; model: string }
 
 /** Builds one HTTP request and parses its SSE body. Never sees a key. */
 export interface LlmAdapter {
