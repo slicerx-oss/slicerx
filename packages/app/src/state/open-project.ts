@@ -202,7 +202,8 @@ async function addProjectShown(
   // choice: the list of moved controls is passed on as it is, so profile sync does not mark sleipnir as moved, and the
   // next fresh plate has it back (lib/sleipnir-default.ts).
   if (wasEmpty && !own) mine(() => set((s) => ({ easy: { ...s.easy, varyLayerHeight: false }, goal: 'custom' as const, easyTouched: [...s.easyTouched] })))
-  let note: string | null = null
+  // Settings the file has but that could not be read are said, never dropped without a word.
+  let note: string | null = project.settingsNote ?? null
   if (wasEmpty && hasSettings && !geometryOnly) {
     const { reviewImportedScripts } = await import('../project/script-review')
     const records = await reviewImportedScripts(host.slicer, project.settings, scriptTarget)
