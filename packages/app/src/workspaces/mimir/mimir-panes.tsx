@@ -29,6 +29,7 @@ import { openUsage } from '../../pilot-connect/usage-open'
 import { useMimirLink } from './connection'
 import { MimirFilamentPick } from './filament-pick'
 import { planChoiceCard } from './plan-card'
+import { MEMORY_CARDS } from './remember-chip'
 import './mimir.css'
 
 /** The chat column's width: 420 px to start, 340 px at least and half the window at most. */
@@ -191,6 +192,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       onCancelSheet: (sheetId) => pilot.answerSheet?.(sheetId, null) ?? Promise.resolve(),
       onOpenSheet: openSheet,
       sheetValues: draft,
+      // a note mimir wants to keep asks with a small chip, not the full card
+      cards: MEMORY_CARDS,
     }),
     [pilot, draft],
   )

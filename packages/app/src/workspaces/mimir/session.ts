@@ -154,11 +154,14 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
   }
 }
 
-/** The stub: the same runtime and tools, answering with the scripts. Replies stream at a reading pace, at once under reduced motion. */
-function scripted(host: Host, kb: KnowledgeBase): Pilot {
+/**
+ * The stub: the same runtime and tools, answering with the scripts, with the edition's tool groups and the person's
+ * notes (which stay on this computer). Replies stream at a reading pace, at once under reduced motion.
+ */
+function scripted(host: Host, kb: KnowledgeBase, edition: EditionConfig): Pilot {
   const still = motionReduced()
   const client = scriptRouter(SCRIPTS, { delayMs: still ? 0 : 28, callDelayMs: still ? 0 : 350 })
-  return createPilot(tabPilotOptions(host, { llm: NO_LLM, config: SCRIPTED_CONFIG, kb, tools: toolsFor(host.slicer), client }))
+  return createPilot(tabPilotOptions(host, { llm: NO_LLM, config: SCRIPTED_CONFIG, kb, tools: toolsFor(host.slicer), client, memory: pilotMemory(edition, { where: chatNotesGo(SCRIPTED_CONFIG, false) }), toolGroups: editionToolGroups(edition) }))
 }
 
 /** The app commands mimir has as tools, by id: they load after first paint, and mimir's app tools are made from them. */
@@ -205,14 +208,14 @@ export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknow
       // mimir cloud is billed per token like a key: one model for every turn
       // the edition's brain pack: no web search when its web tools are off, and its models for the person's own key
       const config: PilotConfig = withBrain(base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' } : paid ? { ...base0, billing: paid } : base0, edition)
-      // mimir cloud keeps the session only while the person allows it (Settings > mimir). The person's notes, through
-      // the same memory handle as the app link. The tab reads them (the notes on a chat's first message, and
-      // memory.recall); saving one needs an approval, which the tab cannot grant, so the app link is where notes are saved.
-      const pilot = createPilot(tabPilotOptions(host, { llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: pilotMemory(edition, { remember: false, where: chatNotesGo(config, true) }), toolGroups: editionToolGroups(edition) }))
+      // mimir cloud keeps the session only while the person allows it (Settings > mimir). The person's notes go through
+      // the app's one memory handle (the app link and Settings > Memory share it): the tab reads them, and saving one
+      // asks first with the memory chip, answered through the app's approvals.
+      const pilot = createPilot(tabPilotOptions(host, { llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: pilotMemory(edition, { where: chatNotesGo(config, true) }), toolGroups: editionToolGroups(edition) }))
       const auto = config.auto && config.models?.huginn && config.models.muninn ? { huginn: config.models.huginn, muninn: config.models.muninn } : undefined
       made = { pilot, model: { link: 'model', provider: config.provider, model: config.model, ...(auto ? { auto } : {}), ...(isLocalModel(config) ? { local: true } : {}) } }
     } else {
-      made = { pilot: scripted(host, kb), model: { link: 'scripted', provider: 'scripted', model: 'scripted' } }
+      made = { pilot: scripted(host, kb, edition), model: { link: 'scripted', provider: 'scripted', model: 'scripted' } }
     }
     // a newer setup may have started meanwhile; it wins
     if (building?.key === key) {
