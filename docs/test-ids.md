@@ -78,6 +78,11 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-attach` | The composer's attach button, which opens the image picker |
 | `mimir-attachment` | An image on the message or on a sent turn; its remove button is named Remove and the file name |
 | `mimir-choice` | A choice card in the conversation; `data-picked` holds the picked answer's id once there is one |
+| `mimir-plan-card` | A part plan in the conversation (design.plan): its features and sizes before anything is built; `data-plan-id` holds the planId and `data-picked` the answer once there is one |
+| `mimir-plan-feature` | One planned feature on `mimir-plan-card`, with its sizes |
+| `mimir-plan-status` | The plan card's status beside its buttons: waiting, approved (with a check) or sent back for changes |
+| `mimir-plan-change` | Not yet on a waiting plan card: mimir changes the plan before it builds |
+| `mimir-plan-go` | Go on a waiting plan card: mimir builds the part to the plan |
 | `mimir-sheet-record` | A dimension sheet as it stays in the conversation: a numbered row per size (the number is its callout), guesses marked (`data-guess`), each row `data-dim` with its key; while it waits in the tab its rows are fields |
 | `mimir-sheet-source` | The page the looked-up sizes came from, once in the record's header |
 | `mimir-sheet-confirm` | Confirm sizes and build, on a sheet still waiting; it confirms the sheet with the record's values |
