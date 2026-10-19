@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A multi-step request in the dock: the model's numbered step list reaches the person as an ordinary assistant
+// A multi-step request in the mimir tab: the model's numbered step list reaches the person as an ordinary assistant
 // message, ahead of the first tool call, and the system prompt it ran under asks for that list.
 import type { PilotEvent, PilotMachine } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'

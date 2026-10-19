@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The app's one handle on mimir's memory for the edition open now. Every writer goes through it: the dock (and the
-// chip that asks first), the mimir tab, the app link (mimir.memory and mimir.memory_remember for MCP clients) and
-// Settings > Memory. The local store (memory-store.ts) sits under the sync wrapper (memory-sync.ts), so a removal or a
+// The app's one handle on mimir's memory for the edition open now. Every writer goes through it: the mimir tab (and
+// the chip that asks first), the app link (mimir.memory and mimir.memory_remember for MCP clients) and Settings >
+// Memory. The local store (memory-store.ts) sits under the sync wrapper (memory-sync.ts), so a removal or a
 // clear records the tombstone a later sync sends, whichever of them made it; on top, every change is announced, so a
 // note saved in the chat shows in Settings at once.
 //

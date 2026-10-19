@@ -114,7 +114,6 @@ interface Pending {
   resolve: (d: ApprovalDecision | 'expired') => void
 }
 
-/** The tools a host that only models offers mimir (besides its app commands): parts, the knowledge base and the project. */
 /** How long a chat's first message waits for the host's memory sync before it reads the notes it has. */
 export const CHAT_START_WAIT_MS = 1500
 
@@ -127,6 +126,7 @@ function within(p: Promise<unknown>, ms: number): Promise<void> {
   return Promise.race([p.then(() => undefined, () => undefined), late]).finally(() => clearTimeout(timer))
 }
 
+/** The tools a host that only models offers mimir (besides its app commands): parts, the knowledge base and the project. */
 export const CAD_TOOLS: ReadonlySet<string> = new Set(['text_to_part', 'make_model', 'cut', 'walls', 'material_recommend', 'kb.search', 'kb.filament', 'kb.printer', 'kb.workflow', 'kb.troubleshoot', 'kb.intent', 'kb.sources', 'parts.lookup', 'web.lookup', 'project.info', 'pilot.report'])
 
 /** The built-in tools that make a whole part in one call. A host that gives mimir the design tools leaves them out. */
@@ -285,8 +285,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const inScope = (t: { name: string }): boolean => !(designs && PART_GENERATORS.has(t.name)) && (scope !== 'cad' || CAD_TOOLS.has(t.name) || t.name.startsWith('app.'))
   if (opts.builtins !== false) for (const t of builtinTools({ planner: opts.planner, commands: opts.commands ?? [], shared })) if (inScope(t)) add(t as AnyTool)
   for (const t of opts.tools ?? []) add(t as AnyTool)
-  // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The dock (full scope)
-  // and the mimir design tab pass one; the browser cad scope gets them only when its host passes a store too.
+  // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The mimir tab passes
+  // one in the desktop app (full scope) and in the browser build (cad scope).
   const memory = opts.memory?.local ? opts.memory.store : undefined
   if (memory) for (const t of memoryTools(memory, now, opts.memory?.ask, opts.memory?.where)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
 

@@ -249,7 +249,7 @@ describe('memory tools', () => {
     for await (const ev of secret.run('s', 'Remember my code')) evs.push(ev)
     expect(evs.some((e) => e.type === 'approval_request')).toBe(false)
     expect(none.rows.size).toBe(0)
-    // the refused secret is never echoed to the dock row or the session log
+    // the refused secret is never echoed to the chat row or the session log
     const call = evs.find((e) => e.type === 'tool_call')
     expect(JSON.stringify(call)).not.toContain('31415926')
   })
