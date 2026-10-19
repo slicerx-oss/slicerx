@@ -60,6 +60,19 @@ it('reads compact topology through the public tool with a stable mutation revisi
   expect((await read()).revision).not.toBe(first.revision)
 })
 
+it('serves the embedded CAD tools over the ones the server builds when it finds an engine', async () => {
+  const mesh = { name: 'Surface', slot: 1, positions: [0, 0, 0, 2, 0, 0, 0, 2, 0], indices: [0, 1, 2], faces: { ids: [0], keys: [17], table: [{ kind: 'plane', normal: [0, 0, 1], offset: 0 }] } }
+  const outDir = mkdtempSync(join(tmpdir(), 'topology-embedded-')); directories.push(outDir)
+  const unused = async (): Promise<never> => { throw new Error('read must not model or open a file') }
+  const designs = new Designs({ engine: unused, policy: { outDir, allowDirs: undefined, allowUrls: false } })
+  const d = await designs.create('Surface', [mesh])
+  // An engine here gives the server its own design store and CAD tools, as a found sx-geom does.
+  const h = await connect({ geomEngine: unused, extraTools: cadTools({ designs, files: { engine: false, call: unused, path: unused, stl: () => { throw new Error('read must not open an STL') } } }) })
+  const result = await h.call('slicerx_geom_faces', { design: d.id, format: 'topology' })
+  expect(result.isError, text(result)).toBeFalsy()
+  expect(data<{ output: { topology: { bodyId: string } } }>(result).output.topology.bodyId).toBe(d.id)
+})
+
 it('refuses topology references for model paths before reading a file', async () => {
   const h = await connect({ geomEngine: async () => { throw new Error('must not model') } })
   const result = await h.call('slicerx_geom_faces', { model: 'not-a-live-design.stl', format: 'topology' })
