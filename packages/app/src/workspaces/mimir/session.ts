@@ -70,9 +70,9 @@ export function tabState(): { link: MimirLink; provider: string | null; model: s
 function toolsFor(loader: Loader): PilotTool<never>[] {
   // design.check reads the tab's plans, and holds walls to the nozzle the printer has now (0.4 mm when that is not a
   // positive size). design.plan puts its plans in the same registry, and the part built after an approved plan ties to
-  // it (withPlanTies), so design.check checks that design. The toolset's own design.plan (a plan kept with no card,
-  // for MCP clients) stays out: here the card's design.plan makes plans.
-  if (tools.length === 0) tools = withPlanTies(mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) }).filter((t) => t.name !== 'design.plan')))
+  // it (withPlanTies), so design.check checks that design. The card's design.plan takes the place of the toolset's
+  // (mimirTools).
+  if (tools.length === 0) tools = withPlanTies(mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) })))
   return tools
 }
 
