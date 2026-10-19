@@ -164,6 +164,16 @@ export const authSchema = z.object({
   providers: z.array(z.discriminatedUnion('kind', [z.object({ kind: z.literal('email') }), oauth('github'), oauth('google'), oauth('apple'), oauth('discord')])).default([{ kind: 'email' }]),
 })
 
+/** Tool groups an edition can switch off in its assistant. Core tools (the knowledge base, questions, the project) have no switch. */
+export const BRAIN_TOOL_GROUPS = ['design', 'slicing', 'printers', 'watch', 'paint', 'web'] as const
+export type BrainToolGroup = (typeof BRAIN_TOOL_GROUPS)[number]
+
+/** A path inside the edition folder: relative, no `..` step, no drive or home prefix. Links out of the folder are refused when it is read. */
+const editionPath = z.string().trim().min(1).refine(
+  (p) => !/^([\\/~]|[a-zA-Z]:)/.test(p) && !p.split(/[\\/]/).includes('..'),
+  'a path inside the edition folder, relative to the config file, without ..',
+)
+
 /** How the edition's assistant talks, when it steps up to a larger cloud model, and what it remembers. Its name is brand.assistant.name. */
 export const brainSchema = z.object({
   /** A short style note added to the assistant's instructions, such as "Plain and brief; metric units". Unset: the stock voice. */
@@ -178,6 +188,17 @@ export const brainSchema = z.object({
     /** Copy those memories to the person's account. opt-in: only after they turn it on. */
     sync: z.enum(['off', 'opt-in']).default('off'),
   }).prefault({}),
+  /** The edition's own knowledge: YAML files or folders of them, in the knowledge/ format, next to the bundled knowledge base. */
+  knowledge: z.array(editionPath).optional(),
+  /** Tool groups switched off with false. A group can only be turned off; true or a missing group keeps it as it is. */
+  tools: z.object(Object.fromEntries(BRAIN_TOOL_GROUPS.map((g) => [g, z.boolean().optional()])) as Record<BrainToolGroup, z.ZodOptional<z.ZodBoolean>>).strict().optional(),
+  /** The models for the person's own key: base for quick looks, step for deep thinking. mimir cloud ignores it; its proxy picks the model. */
+  routing: z.object({
+    /** Only a key for this provider follows the routing. Unset: either. */
+    provider: z.enum(['anthropic', 'openai']).optional(),
+    base: z.string().min(1).optional(),
+    step: z.string().min(1).optional(),
+  }).strict().optional(),
 })
 
 export const aiSchema = z.object({
