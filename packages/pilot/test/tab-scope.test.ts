@@ -191,11 +191,13 @@ describe('the tab runtime', () => {
     for (const scope of ['full', 'cad'] as const) {
       const noPlan = systemPrompt(scope, without('design.plan'))
       expect(noPlan).not.toMatch(/design\.plan|Plans are for parts/)
-      // still sheet first, then small named steps, and the check after the build
+      // still sheet first, then small named steps, and a read-back after the build
       expect(noPlan).toMatch(/pilot\.sheet before building/)
       expect(noPlan).toMatch(/several small steps, each named for what it is/)
       expect(noPlan).not.toMatch(/one or two sentences/)
-      expect(noPlan).toMatch(/design\.check/)
+      // design.check without design.plan has no planned part to check: the read-back line stands in for it
+      expect(noPlan).not.toMatch(/design\.check|planned part/)
+      expect(noPlan).toMatch(/read the part back with geom\.info or geom\.measure and check the main sizes and holes against the request/)
       const noCheck = systemPrompt(scope, without('design.check'))
       expect(noCheck).not.toMatch(/design\.check/)
       expect(noCheck).toMatch(/design\.plan/)

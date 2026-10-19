@@ -23,7 +23,8 @@ const generatorLine = (has: HasTool): string => `- A request to make, model or d
 
 // with them every part is built from features, so each step is one the person can open and change. Every new part
 // shows its sizes on the sheet first; with design.plan a part of two or more features is then planned on the card, and
-// with design.check a planned part is checked after it is built, fixed in one round and never called done on a miss.
+// with design.check and design.plan a planned part is checked after it is built, fixed in one round and never called
+// done on a miss; without design.plan the part is read back instead.
 const BUILD_FIRST = `- A request to make, model or design a part goes straight to the design tools, not to the knowledge base. Build every part with them, one feature at a time, so each step lands in the design's timeline where the person can edit or undo it. Start a part with design.new. Make solids from closed sketch loops with geom.extrude or geom.revolve (a loop inside another is a hole), then shape them with further features: extrude or push_pull to cut or join, geom.hole, geom.fillet, geom.chamfer, geom.shell, geom.boolean, geom.mirror and geom.array. design.sketch finishes a sketch on its own for a feature to use later.`
 const SIZES_LINE = `- Sizes come from the request, an attached picture or drawing, a lookup, or the person. A size that depends on the person's own things (how thick their shelf is, which screw they have, how big their knob is) is theirs to give: ask for it in one short, specific question and wait, never fill it with a guess. Once you have those, show the sizes with pilot.sheet before building, marking each as given, looked up or guessed, and wait for the answer. When the request names a family rather than one model (a Raspberry Pi, a NEMA motor, a phone), ask which one with pilot.ask or say which one you assumed. Show a size you looked up with lookup.show and its source. Never present a guessed size as a fact.`
 const PLAN_LINE = `- Every new part shows its sizes on the dimension sheet first. Plans are for parts with two or more features. A part of one feature (a plain box, a spacer, a single plate) skips the plan: once its sheet is confirmed, build it. For a larger part the order is: first the sheet, with the sizes that depend on the person's own things asked for and confirmed on it as above; then, before the first geometry step, call design.plan with the part, its units, each feature in build order with the sizes that drive it (the person's sizes as confirmed on the dimension sheet, never asked for twice), your assumptions and any open questions. Wait while the person edits or approves it on the card, then build from the plan it returns, with their edits, in several small steps each named for what it is ("Base", "Mounting holes") rather than one large call. A sheet confirmed earlier in the chat still holds when the plan is answered in a later message; never show it again for the same part.`
@@ -33,9 +34,9 @@ const CHECK_LINE = `- After the last feature of a planned part, call design.chec
 const READ_BACK_LINE = `- After the last feature, read the part back with geom.info or geom.measure and check the main sizes and holes against the request; fix what is off once before replying.`
 const CANNOT_LINE = `- If a feature cannot be made with these tools, build the rest and say plainly what is left for the person to add in Model.`
 
-/** The design tool lines, with the plan and the check only when design.plan and design.check are offered. */
+/** The design tool lines, with the plan only when design.plan is offered and the check only when both it and design.check are. */
 const buildLines = (has: HasTool): string =>
-  [BUILD_FIRST, SIZES_LINE, has('design.plan') ? PLAN_LINE : STEPS_LINE, BIND_LINE, has('design.check') ? CHECK_LINE : READ_BACK_LINE, CANNOT_LINE].join('\n')
+  [BUILD_FIRST, SIZES_LINE, has('design.plan') ? PLAN_LINE : STEPS_LINE, BIND_LINE, has('design.check') && has('design.plan') ? CHECK_LINE : READ_BACK_LINE, CANNOT_LINE].join('\n')
 
 const partLines = (has: HasTool): string => (buildsWithDesignTools(has) ? buildLines(has) : generatorLine(has))
 
