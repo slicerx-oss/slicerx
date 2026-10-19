@@ -96,6 +96,22 @@ export async function viewportReady(page: Page): Promise<void> {
   await untilReady(page, 'html[data-sx-ready="viewport"]')
 }
 
+/** How long a fresh browser may take to give its first WebGL2 context, well past a slow software start. */
+const FIRST_CONTEXT_MS = Number(process.env['SX_E2E_FIRST_CONTEXT_MS']) || 120_000
+
+/** `p`, or an error saying `what` once `ms` have passed without it. */
+async function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(what)), ms)
+  })
+  try {
+    return await Promise.race([p, late])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export const test = base.extend<object, { graphics: void }>({
   // The browser starts its graphics process with the first WebGL context, and drops it when the last page using it
   // closes. On a machine with software graphics that start can take over a minute, so a test that opened the first
@@ -112,12 +128,16 @@ export const test = base.extend<object, { graphics: void }>({
       let renderer = 'none'
       for (const wait of tries) {
         if (wait) await new Promise((r) => setTimeout(r, wait))
-        renderer = await holder.evaluate(() => {
-          const gl = document.createElement('canvas').getContext('webgl2')
-          ;(window as unknown as { __holdGl: unknown }).__holdGl = gl
-          const info = gl?.getExtension('WEBGL_debug_renderer_info')
-          return gl === null ? 'none' : String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))
-        })
+        renderer = await within(
+          holder.evaluate(() => {
+            const gl = document.createElement('canvas').getContext('webgl2')
+            ;(window as unknown as { __holdGl: unknown }).__holdGl = gl
+            const info = gl?.getExtension('WEBGL_debug_renderer_info')
+            return gl === null ? 'none' : String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))
+          }),
+          FIRST_CONTEXT_MS,
+          `the browser's first WebGL2 context did not come back within ${FIRST_CONTEXT_MS / 1000} s: its graphics process did not start`,
+        )
         if (renderer !== 'none') break
       }
       if (gpu) {
