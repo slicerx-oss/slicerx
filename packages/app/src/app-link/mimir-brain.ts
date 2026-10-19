@@ -4,9 +4,11 @@
 // which tool groups it keeps, the model mimir cloud answers with and the step-up the edition asks for, what it may
 // remember, and how many docs of the edition's own knowledge it searches. Metadata only: the voice text and the
 // knowledge docs never leave the app.
-import { BRAIN_TOOL_GROUPS, type EditionConfig } from '@slicerx/edition-config'
-import type { KbIndex } from '@slicerx/pilot'
+import type { EditionConfig } from '@slicerx/edition-config'
+import { TOOL_GROUPS, type KbIndex } from '@slicerx/pilot'
 import { currentEdition } from '../edition'
+import { editionKbIndex } from '../features/pilot/kb'
+import { editionToolGroups } from '../pilot-connect/brain'
 import { CLOUD_MODEL } from '../pilot-connect/cloud-edition'
 
 /** The app's answer to mimir.brain. */
@@ -24,23 +26,23 @@ export interface BrainState {
   knowledgeDocs: number
 }
 
-/** The answer for an edition, given the edition index scripts/build-kb.ts compiles. */
-export function brainOf(edition: EditionConfig, editionIndex: Pick<KbIndex, 'docs'>): BrainState {
+/** The answer for an edition, given its knowledge index (edition-kb.<id>.json, null when it has none). */
+export function brainOf(edition: EditionConfig, editionIndex: Pick<KbIndex, 'docs'> | null): BrainState {
   const brain = edition.ai.brain
-  // TODO: read the groups from the running mimir once it filters its tools with applyToolGroups; until then they come from the edition config.
-  const toolGroups = Object.fromEntries(BRAIN_TOOL_GROUPS.map((g) => [g, brain.tools?.[g] !== false]))
+  // the same switches every mimir the app makes passes to applyToolGroups (pilot-connect/brain.ts)
+  const applied = editionToolGroups(edition)
+  const toolGroups = Object.fromEntries(TOOL_GROUPS.map((g) => [g, applied[g] !== false]))
   return {
     name: edition.brand.assistant.name,
     voice: brain.voice !== undefined,
     toolGroups,
     cloud: { base: CLOUD_MODEL, stepUp: brain.cloud.stepUp === 'none' ? null : brain.cloud.stepUp },
     memory: { local: brain.memory.local, sync: brain.memory.sync },
-    knowledgeDocs: editionIndex.docs.filter((d) => d.edition === edition.id).length,
+    knowledgeDocs: editionIndex?.docs.filter((d) => d.edition === edition.id).length ?? 0,
   }
 }
 
-/** mimir.brain: the running edition's mimir. */
+/** mimir.brain: the running edition's mimir, with the knowledge index the build carries for it. */
 export async function brainState(): Promise<BrainState> {
-  const index = (await import('@slicerx/pilot/edition-kb.json')).default as unknown as KbIndex
-  return brainOf(currentEdition(), index)
+  return brainOf(currentEdition(), await editionKbIndex())
 }
