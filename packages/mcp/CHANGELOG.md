@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_mimir_memory` reads what mimir remembers about the person in the open app over the app link: printers, filaments, preferences, outcomes and sizes, newest first, with `kind` to read one kind. The app hides access codes, serial numbers and keys before a fact leaves it, and `hidden` counts the facts that had one. `slicerx_mimir_memory_remember` adds one fact (`kind`, `text`, optional `data`); a fact with a secret is refused, and so is a client the person allowed to read only.
+
 ### Fixed
 
 - A slice that runs past the engine's time limit (10 minutes) now fails with `slice_timeout` and `details.limitMs`, and says so, instead of `slice_failed` with "sx exited with code -1". A slice stopped by another signal names the signal (`slice_failed`, `details.signal`).

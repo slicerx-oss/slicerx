@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// mimir's memory over the app link: mimir.memory reads what it keeps about the person (printers, filaments,
+// preferences, what worked, sizes), with secrets hidden before anything leaves the app, and mimir.memory_remember adds
+// one fact for a client the person allowed to change things. The memory store registers itself here; without one,
+// both answer that memory is unavailable.
+import { ASSISTANT_NAME } from '@slicerx/pilot/name'
+import { appName } from '../edition'
+import { HIDDEN, redactSecrets, SECRET_KEY } from './memory-secrets'
+import { LinkError } from './methods-error'
+
+export const MEMORY_KINDS = ['printer', 'filament', 'preference', 'outcome', 'size'] as const
+export type MemoryKind = (typeof MEMORY_KINDS)[number]
+export type MemoryData = Record<string, string | number>
+
+/** One thing mimir remembers about the person, as the memory store keeps it. */
+export interface MemoryFact {
+  id: string
+  kind: MemoryKind
+  text: string
+  data?: MemoryData
+  updatedAt: number
+}
+
+/** The memory store, as the link reads and adds to it. */
+export interface MemoryProvider {
+  /** Every fact, or only those of one kind. */
+  list(kind?: MemoryKind): Promise<MemoryFact[]>
+  /** Keeps a new fact and answers with it as stored. */
+  remember(fact: { kind: MemoryKind; text: string; data?: MemoryData }): Promise<MemoryFact>
+}
+
+let provider: MemoryProvider | null = null
+
+/** The memory store registers here; null takes it away. */
+export function setMemoryProvider(p: MemoryProvider | null): void {
+  provider = p
+}
+
+const MAX_TEXT = 500
+const MAX_DATA = 20
+const MAX_VALUE = 200
+
+function store(): MemoryProvider {
+  if (!provider) throw new LinkError('not_ready', `memory unavailable: ${ASSISTANT_NAME} keeps no memory in this ${appName()} window, or it is turned off`)
+  return provider
+}
+
+function only(args: Record<string, unknown>, keys: string[], method: string): void {
+  const extra = Object.keys(args).filter((k) => !keys.includes(k))
+  if (extra.length) throw new LinkError('invalid_input', `${method} takes ${keys.join(', ')} only, not ${extra.join(', ')}`)
+}
+
+function kindArg(v: unknown, required: boolean): MemoryKind | undefined {
+  if (v === undefined && !required) return undefined
+  if (typeof v !== 'string' || !(MEMORY_KINDS as readonly string[]).includes(v)) throw new LinkError('invalid_input', `kind is one of ${MEMORY_KINDS.join(', ')}`)
+  return v as MemoryKind
+}
+
+/** A fact as it may leave the app: secrets in its text and data hidden. */
+function shown(f: MemoryFact): { fact: MemoryFact; hid: boolean } {
+  const text = redactSecrets(f.text)
+  let hid = text.refused
+  const fact: MemoryFact = { id: f.id, kind: f.kind, text: text.text, updatedAt: f.updatedAt }
+  if (f.data) {
+    fact.data = Object.fromEntries(
+      Object.entries(f.data).map(([k, v]) => {
+        if (SECRET_KEY.test(k)) {
+          hid = true
+          return [k, HIDDEN]
+        }
+        if (typeof v !== 'string') return [k, v]
+        const r = redactSecrets(v)
+        hid ||= r.refused
+        return [k, r.text]
+      }),
+    )
+  }
+  return { fact, hid }
+}
+
+/** mimir.memory: the facts, newest first, optionally of one `kind`; `hidden` counts the facts that had a secret hidden. */
+export async function readMemory(args: Record<string, unknown>) {
+  only(args, ['kind'], 'mimir.memory')
+  const kind = kindArg(args['kind'], false)
+  const all = await store().list(kind)
+  const facts: MemoryFact[] = []
+  let hidden = 0
+  for (const f of [...all].filter((f) => kind === undefined || f.kind === kind).sort((a, b) => b.updatedAt - a.updatedAt)) {
+    const s = shown(f)
+    if (s.hid) hidden++
+    facts.push(s.fact)
+  }
+  return { facts, hidden }
+}
+
+function dataArg(v: unknown): MemoryData | undefined {
+  if (v === undefined) return undefined
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw new LinkError('invalid_input', 'data is an object of names to text or numbers')
+  const entries = Object.entries(v)
+  if (entries.length > MAX_DATA) throw new LinkError('invalid_input', `data has at most ${MAX_DATA} entries`)
+  for (const [k, x] of entries) {
+    if (!k.trim() || k.length > 64) throw new LinkError('invalid_input', 'each data name is 1 to 64 characters')
+    if (typeof x === 'number' ? !Number.isFinite(x) : typeof x !== 'string' || x.length > MAX_VALUE) {
+      throw new LinkError('invalid_input', `data ${k} is text of at most ${MAX_VALUE} characters or a number`)
+    }
+  }
+  return v as MemoryData
+}
+
+/** mimir.memory_remember: keeps `{ kind, text, data? }`. Refused when it carries a secret; the answer is the fact read back. */
+export async function rememberFact(args: Record<string, unknown>) {
+  only(args, ['kind', 'text', 'data'], 'mimir.memory_remember')
+  const kind = kindArg(args['kind'], true)!
+  const raw = args['text']
+  const text = typeof raw === 'string' ? raw.trim() : ''
+  if (!text || text.length > MAX_TEXT) throw new LinkError('invalid_input', `text is 1 to ${MAX_TEXT} characters`)
+  const data = dataArg(args['data'])
+  const secret = redactSecrets(text).refused || Object.entries(data ?? {}).some(([k, v]) => SECRET_KEY.test(k) || (typeof v === 'string' && redactSecrets(v).refused))
+  if (secret) throw new LinkError('refused', `${ASSISTANT_NAME} does not keep secrets: this looks like a key, an access code or a serial number. Leave it out and try again.`)
+  const fact = await store().remember({ kind, text, ...(data ? { data } : {}) })
+  return { fact: shown(fact).fact }
+}
