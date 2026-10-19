@@ -6,9 +6,11 @@
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotAttachment, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CONFIG } from '../src/config'
-import { chatRoute, designRoute, HUGINN, MUNINN, personSizes, SIZES_GIVEN } from '../src/models'
+import { chatRoute, designRoute, HUGINN, MUNINN, personSizes, SIZES_GIVEN, tabRoute } from '../src/models'
 import { createScriptedClient } from '../src/provider/scripted'
 import { createPilot } from '../src/runtime'
+import { defineTool, type PilotTool } from '../src/tool'
+import { z } from 'zod'
 
 const file = (name: string, type: string): PilotAttachment => ({ id: name, name, type, bytes: 10, url: `data:${type};base64,AAAA` })
 const drawing = [file('drawing.png', 'image/png')]
@@ -89,7 +91,21 @@ describe('the design tab route', () => {
   })
 })
 
-describe('the full chat route', () => {
+describe('the tab route, for designing and slicing in one chat', () => {
+  it('routes a build as the design route does', () => {
+    for (const p of ASK) expect(tabRoute(p), p).toEqual({ tier: MUNINN, reason: 'person_sizes' })
+    for (const id of LADDER) expect(tabRoute(FROM_DRAWING, drawing), id).toEqual({ tier: MUNINN, reason: 'attachment' })
+    expect(tabRoute('a spur gear, module 1, 20 teeth')).toEqual({ tier: MUNINN, reason: 'many_steps' })
+  })
+
+  it('keeps sized parts and plain chat on huginn, and starts deep work deep', () => {
+    for (const p of [...GIVEN, ...KNOWN, ...CHAT]) expect(tabRoute(p), p).toEqual({ tier: HUGINN, reason: 'default' })
+    expect(tabRoute('Why did my print fail?')).toEqual({ tier: MUNINN, reason: 'deep' })
+    expect(tabRoute('Plan 12 strong PETG brackets by Friday')).toEqual({ tier: MUNINN, reason: 'deep' })
+  })
+})
+
+describe('the chat route without the design tools', () => {
   it('starts every bench request on muninn, each for its reason', () => {
     for (const p of ASK) expect(chatRoute(p), p).toEqual({ tier: MUNINN, reason: 'person_sizes' })
     for (const id of LADDER) expect(chatRoute(FROM_DRAWING, drawing), id).toEqual({ tier: MUNINN, reason: 'attachment' })
@@ -110,7 +126,10 @@ const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as unknown
 const NO_APPROVALS = { register: async () => undefined, grant: async () => undefined, deny: async () => undefined } as unknown as ApprovalHost
 const AUTO = { ...DEFAULT_CONFIG, provider: 'anthropic', model: 'claude-haiku-5-5', models: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, billing: 'key' as const, auto: true, webSearch: false }
 
-async function first(message: string, opts: { auto?: boolean; scope?: 'design' } = {}): Promise<{ start: PilotEvent | undefined; models: string[] }> {
+/** A tool named design.new, which makes the runtime build with the design tools (the mimir tab). */
+const DESIGN_NEW = defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', description: 'design.new for the test', input: z.object({}), async run() { return { summary: 'ok' } } }) as PilotTool<never>
+
+async function first(message: string, opts: { auto?: boolean; designs?: boolean } = {}): Promise<{ start: PilotEvent | undefined; models: string[] }> {
   const client = createScriptedClient([{ text: 'How thick is it?' }], { chunk: false })
   const pilot = createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport },
@@ -118,8 +137,7 @@ async function first(message: string, opts: { auto?: boolean; scope?: 'design' }
     policy: DEFAULT_POLICY,
     client,
     builtins: false,
-    tools: [],
-    ...(opts.scope ? { scope: opts.scope } : {}),
+    tools: opts.designs ? [DESIGN_NEW] : [],
   })
   const ev: PilotEvent[] = []
   for await (const e of pilot.run('s', message)) ev.push(e)
@@ -128,10 +146,10 @@ async function first(message: string, opts: { auto?: boolean; scope?: 'design' }
 
 describe('the run on Auto', () => {
   it('asks its first question on muninn for a person-size build and says why at the start', async () => {
-    for (const scope of [undefined, 'design'] as const) {
-      const { start, models } = await first(ASK[0]!, scope ? { scope } : {})
-      expect(models, scope).toEqual(['claude-sonnet-5-5'])
-      expect(start, scope).toMatchObject({ model: 'claude-sonnet-5-5', route: { tier: MUNINN, reason: 'person_sizes' } })
+    for (const designs of [false, true]) {
+      const { start, models } = await first(ASK[0]!, { designs })
+      expect(models, String(designs)).toEqual(['claude-sonnet-5-5'])
+      expect(start, String(designs)).toMatchObject({ model: 'claude-sonnet-5-5', route: { tier: MUNINN, reason: 'person_sizes' } })
     }
   })
 

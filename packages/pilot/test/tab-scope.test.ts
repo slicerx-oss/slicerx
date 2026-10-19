@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The mimir tab's scope: parts are built with the design tools (no part generator), the prompt says how, and Auto
-// moves from huginn to muninn only for a picture or PDF, a request of many steps, or one that needs a size only the
-// person knows (route.test.ts); never on a tool call.
+// mimir in the tab, its one place in the app: with the design tools given, parts are built feature by feature (no part
+// generator) beside the slicing, printer, settings and app tools, or beside the knowledge and project tools alone in
+// the browser build. One prompt covers designing and slicing. Auto starts a build on muninn only for a picture or PDF,
+// a request of many steps, or one that needs a size only the person knows (route.test.ts), and deep work on muninn;
+// a failed build step never moves it, other failures still do.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotAttachment, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { designSteps, designTier, HUGINN, MANY_STEPS, MUNINN } from '../src/models'
-import { systemPrompt } from '../src/prompt'
+import { NEW_PROJECT_TOOL, systemPrompt } from '../src/prompt'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
-import { createPilot, DESIGN_SCOPE_TOOLS } from '../src/runtime'
+import { createPilot, PART_GENERATORS } from '../src/runtime'
+import type { CommandSpec } from '@slicerx/contracts'
 import { DEFAULT_CONFIG } from '../src/config'
 import { defineTool, type PilotTool } from '../src/tool'
 
@@ -69,15 +72,22 @@ function geomTool(name: string, ok = true): PilotTool<never> {
   }) as PilotTool<never>
 }
 
-function tabPilot(steps: ScriptStep[], opts: { config?: Partial<typeof AUTO>; failing?: boolean } = {}) {
+/** The app's commands mimir gets as tools: a slice and New project (which asks the person before discarding). */
+const COMMANDS: CommandSpec[] = [
+  { id: 'slice', title: 'Slice the plate', section: 'slice', tool: { permission: 'slice' }, run: () => ({ status: 'done' }) },
+  { id: 'project-new', title: 'New project', section: 'plate', tool: { permission: 'slice' }, run: () => ({ started: true }) },
+]
+
+function tabPilot(steps: ScriptStep[], opts: { config?: Partial<typeof AUTO>; failing?: boolean; cad?: boolean; others?: PilotTool<never>[] } = {}) {
   const client = createScriptedClient(steps, { chunk: false })
   const pilot = createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport },
     config: { ...AUTO, ...opts.config },
     policy: DEFAULT_POLICY,
     client,
-    scope: 'design',
-    tools: [geomTool('design.new'), geomTool('geom.extrude', !opts.failing), geomTool('geom.fillet', !opts.failing), geomTool('geom.info')],
+    ...(opts.cad ? { scope: 'cad' as const } : {}),
+    commands: opts.cad ? COMMANDS.filter((c) => c.section !== 'slice') : COMMANDS,
+    tools: [geomTool('design.new'), geomTool('geom.extrude', !opts.failing), geomTool('geom.fillet', !opts.failing), geomTool('geom.info'), ...(opts.others ?? [])],
   })
   return { pilot, client }
 }
@@ -99,24 +109,49 @@ const BUILD: ScriptStep[] = [
 const models = (client: ReturnType<typeof tabPilot>['client']) => client.requests.filter((r) => !r.webSearch).map((r) => r.model)
 const switches = (ev: PilotEvent[]) => ev.filter((e) => e.type === 'model_switch')
 
-describe('the design scope runtime', () => {
-  it('has the design tools and the lookups, and no part generator or printer tool', () => {
+describe('the tab runtime', () => {
+  it('has the design tools beside the slicing, printer, settings, project and app tools, and no part generator', () => {
     const { pilot } = tabPilot([{ text: 'Hi.' }])
     const names = pilot.tools().map((t) => t.name)
-    expect(names).toEqual(expect.arrayContaining(['design.new', 'geom.extrude', 'geom.fillet', 'geom.info', 'kb.search', 'parts.lookup', 'web.lookup']))
-    for (const n of names) expect(n.startsWith('kb.') || n === 'parts.lookup' || n === 'web.lookup' || /^(design|geom)\./.test(n), n).toBe(true)
-    expect(names).not.toContain('text_to_part')
-    expect(names).not.toContain('make_model')
-    expect([...DESIGN_SCOPE_TOOLS].every((n) => n.startsWith('kb.') || n === 'parts.lookup' || n === 'web.lookup')).toBe(true)
+    expect(names).toEqual(expect.arrayContaining(['design.new', 'geom.extrude', 'geom.fillet', 'geom.info', 'kb.search', 'kb.intent', 'parts.lookup', 'web.lookup', 'printer.list', 'printer.queue', 'settings.plan', 'project.info', 'pilot.report', 'app.slice', NEW_PROJECT_TOOL]))
+    for (const n of PART_GENERATORS) expect(names).not.toContain(n)
   })
 
-  it('tells the model to build feature by feature with the design tools', async () => {
-    const prompt = systemPrompt('design')
+  it('in the browser build, keeps the design, knowledge, project and app tools and drops slicing and printers', () => {
+    const { pilot } = tabPilot([{ text: 'Hi.' }], { cad: true })
+    const names = pilot.tools().map((t) => t.name)
+    expect(names).toEqual(expect.arrayContaining(['design.new', 'geom.extrude', 'kb.search', 'parts.lookup', 'project.info', NEW_PROJECT_TOOL]))
+    for (const n of ['printer.list', 'printer.queue', 'settings.plan', 'app.slice', ...PART_GENERATORS]) expect(names).not.toContain(n)
+  })
+
+  it('keeps the part generators for a host without the design tools', () => {
+    const pilot = createPilot({ host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport }, config: AUTO, policy: DEFAULT_POLICY, client: createScriptedClient([]) })
+    expect(pilot.tools().map((t) => t.name)).toEqual(expect.arrayContaining(['text_to_part', 'make_model']))
+    const has = (n: string) => n !== 'design.new'
+    expect(systemPrompt('full', has)).toMatch(/goes straight to text_to_part/)
+    expect(systemPrompt('cad', has)).toMatch(/goes straight to text_to_part/)
+  })
+
+  it('one prompt covers designing and slicing; the browser build says the desktop app slices', () => {
+    const prompt = systemPrompt('full')
     expect(prompt).toMatch(/design\.new/)
     expect(prompt).toMatch(/geom\.extrude or geom\.revolve/)
     expect(prompt).toMatch(/one feature at a time/)
     expect(prompt).toMatch(/pilot\.sheet/)
     expect(prompt).not.toMatch(/text_to_part|make_model/)
+    expect(prompt).toMatch(/kb\.intent/)
+    expect(prompt).toMatch(/need the user's approval/)
+    expect(prompt).toMatch(/never start a print on your own/)
+    expect(prompt).toContain(NEW_PROJECT_TOOL)
+    const cad = systemPrompt('cad')
+    expect(cad).toMatch(/one feature at a time/)
+    expect(cad).toMatch(/desktop app does it/)
+    expect(cad).not.toMatch(/approval|kb\.intent/)
+    // New project is named only when it is offered
+    expect(systemPrompt('full', (n) => n !== NEW_PROJECT_TOOL)).not.toContain(NEW_PROJECT_TOOL)
+  })
+
+  it('tells the model to build feature by feature with the design tools', async () => {
     // and the prompt the runtime sends is that one
     const { pilot, client } = tabPilot([{ text: 'Hi.' }])
     await run(pilot, 'Make me a 30 mm cube')
@@ -134,12 +169,33 @@ describe('the design scope runtime', () => {
     expect(ev.find((e) => e.type === 'start')).toMatchObject({ model: 'claude-haiku-5-5' })
   })
 
-  it('stays on huginn when design calls fail, where the full app would move up', async () => {
+  it('stays on huginn when design calls fail', async () => {
     const { pilot, client } = tabPilot(BUILD, { failing: true })
     const ev = await run(pilot, 'A bracket with two 5 mm holes')
     expect(ev.filter((e) => e.type === 'tool_result' && !e.ok).length).toBeGreaterThanOrEqual(2)
     expect(new Set(models(client))).toEqual(new Set(['claude-haiku-5-5']))
     expect(switches(ev)).toEqual([])
+  })
+
+  it('moves up after other tools fail, as anywhere else', async () => {
+    const broken = defineTool({ name: 'kb.search', version: '1.0.0', source: 'command', permission: 'read', description: 'kb for the test', input: z.object({}).passthrough(), async run() { throw new Error('offline') } }) as PilotTool<never>
+    const pilot = createPilot({
+      host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport },
+      config: AUTO,
+      policy: DEFAULT_POLICY,
+      client: createScriptedClient([{ calls: [{ name: 'kb.search', args: {} }] }, { calls: [{ name: 'kb.search', args: {} }] }, { text: 'Done.' }], { chunk: false }),
+      builtins: false,
+      tools: [geomTool('design.new'), broken],
+    })
+    const ev = await run(pilot, 'What temperature for PETG?')
+    expect(switches(ev)).toEqual([expect.objectContaining({ type: 'model_switch', model: 'claude-sonnet-5-5' })])
+  })
+
+  it('starts deep work on muninn: a failure to diagnose', async () => {
+    const { pilot, client } = tabPilot([{ text: 'Most likely a clogged nozzle.' }])
+    const ev = await run(pilot, 'Why did my print fail last night?')
+    expect(models(client)).toEqual(['claude-sonnet-5-5'])
+    expect(ev.find((e) => e.type === 'start')).toMatchObject({ model: 'claude-sonnet-5-5', route: { reason: 'deep' } })
   })
 
   it('ignores the design-to-muninn flag of a provider weak at building', async () => {
