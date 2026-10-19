@@ -243,6 +243,63 @@ pub struct Ai {
     /// Local model ids Set up local AI may offer; none means all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_local_models: Option<Vec<String>>,
+    /// The assistant's voice, cloud step-up and memory; none means the defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brain: Option<Brain>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Brain {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<String>,
+    #[serde(default)]
+    pub cloud: BrainCloud,
+    #[serde(default)]
+    pub memory: BrainMemory,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrainCloud {
+    /// "sonnet" or "none".
+    #[serde(default = "step_up_none")]
+    pub step_up: String,
+}
+
+impl Default for BrainCloud {
+    fn default() -> Self {
+        Self {
+            step_up: step_up_none(),
+        }
+    }
+}
+
+fn step_up_none() -> String {
+    "none".into()
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrainMemory {
+    #[serde(default = "on")]
+    pub local: bool,
+    /// "off" or "opt-in".
+    #[serde(default = "sync_off")]
+    pub sync: String,
+}
+
+impl Default for BrainMemory {
+    fn default() -> Self {
+        Self {
+            local: true,
+            sync: sync_off(),
+        }
+    }
+}
+
+fn sync_off() -> String {
+    "off".into()
 }
 
 fn on() -> bool {
@@ -663,6 +720,17 @@ mod tests {
         });
         let theme: Theme = serde_json::from_value(input.clone()).unwrap();
         assert_eq!(serde_json::to_value(theme).unwrap(), input);
+    }
+
+    #[test]
+    fn brain_round_trips() {
+        let input = serde_json::json!({
+            "provider": "anthropic", "model": "claude-haiku-5-5", "baseUrl": null, "keySource": "cloud",
+            "brain": { "voice": "Short and plain.", "cloud": { "stepUp": "sonnet" }, "memory": { "local": true, "sync": "opt-in" } }
+        });
+        let ai: Ai = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(ai.brain.as_ref().unwrap().cloud.step_up, "sonnet");
+        assert_eq!(serde_json::to_value(ai).unwrap(), input);
     }
 
     #[test]

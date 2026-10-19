@@ -102,7 +102,16 @@
     "provider": "openai-compatible",
     "model": "llama-4-scout",
     "baseUrl": "https://llm.harborprint.example/v1",
-    "keySource": "cloud"
+    "keySource": "cloud",
+    "brain": {
+      "cloud": {
+        "stepUp": "none"
+      },
+      "memory": {
+        "local": true,
+        "sync": "off"
+      }
+    }
   },
   "legal": {
     "terms": "https://harborprint.example/terms",

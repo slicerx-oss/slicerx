@@ -164,6 +164,22 @@ export const authSchema = z.object({
   providers: z.array(z.discriminatedUnion('kind', [z.object({ kind: z.literal('email') }), oauth('github'), oauth('google'), oauth('apple'), oauth('discord')])).default([{ kind: 'email' }]),
 })
 
+/** How the edition's assistant talks, when it steps up to a larger cloud model, and what it remembers. Its name is brand.assistant.name. */
+export const brainSchema = z.object({
+  /** A short style note added to the assistant's instructions, such as "Plain and brief; metric units". Unset: the stock voice. */
+  voice: z.string().trim().min(1).max(280).optional(),
+  cloud: z.object({
+    /** mimir cloud only: the larger model the proxy may hand a hard question to. none keeps every answer on ai.model. */
+    stepUp: z.enum(['sonnet', 'none']).default('none'),
+  }).prefault({}),
+  memory: z.object({
+    /** Remember what the person tells the assistant, on their computer. */
+    local: z.boolean().default(true),
+    /** Copy those memories to the person's account. opt-in: only after they turn it on. */
+    sync: z.enum(['off', 'opt-in']).default('off'),
+  }).prefault({}),
+})
+
 export const aiSchema = z.object({
   provider: z.enum(['openai', 'anthropic', 'openai-compatible', 'none']).default('openai'),
   /** Default model id; users can change it in mimir settings. */
@@ -173,6 +189,7 @@ export const aiSchema = z.object({
   keySource: z.enum(['keychain', 'env', 'cloud']).default('keychain'),
   /** Local model ids (packages/pilot/llm/local-models.json) Set up local AI may offer. Unset: all of them. */
   allowedLocalModels: z.array(z.string().regex(/^[a-z0-9][a-z0-9.-]*$/, 'a model id such as qwen-2.5-14b')).min(1).optional(),
+  brain: brainSchema.prefault({}),
 })
 
 export const legalSchema = z.object({
