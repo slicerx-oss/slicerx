@@ -19,34 +19,62 @@ export interface MemoryStore {
   clear(): Promise<void>
 }
 
-// The edition config's own secret checks, plus what a printer connection holds: a LAN access code, a serial number,
-// and keys or tokens named as such. A named value needs a digit, so "the access code is in Settings" stays a note.
+// The edition config's own secret checks, plus what a printer connection holds: a whole private key block, a LAN access
+// code, a serial number, and keys or tokens named as such. A named value needs a digit, so "the access code is in
+// Settings" stays a note. Each named pattern matches the value only (its name sits in a lookbehind), so a note read
+// back keeps "access code: [hidden]" and loses only the code.
 const NOTE_SECRETS: RegExp[] = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/,
   ...SECRET_PATTERNS.map(([re]) => re),
-  /\b(?:access|lan|pairing)[\s_-]*(?:code|key)\b\W*(?:is\W+)?(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{4,}/i,
-  /\b(?:serial(?:\s*(?:number|no\.?))?|s\/n)\b\W*(?:is\W+)?(?=[A-Za-z0-9-]*\d)[A-Za-z0-9-]{6,}/i,
+  /(?<=\b(?:(?:dev[\s_-]*)?access|lan|pairing)[\s_-]*(?:code|key)\b\W*(?:is\W+)?)(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{4,}/i,
+  /(?<=\b(?:serial(?:[\s_-]*(?:number|no\.?))?|s\/?n)\b\W*(?:is\W+)?)(?=[A-Za-z0-9-]*\d)[A-Za-z0-9-]{6,}/i,
   // a bare "code: 31415926" or "code is 31415926" (not G-code, and "the code is in Settings" stays a note)
-  /(?<![-\w])code\b(?:\s*[:=]\s*|\s+is\s+)(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{6,}/i,
-  // Bambu Lab printers: 15 characters, starting 0 and a digit (01P00A..., 03919C...), in either case
+  /(?<=(?<![-\w])code\b(?:\s*[:=]\s*|\s+is\s+))(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{6,}/i,
+  // Bambu Lab printers: 15 characters, starting 0 and a digit (01P00A..., 03919C...), in either case, or 0 and five
+  // more before a letter (the app link's older check)
   /\b0\d[A-Z0-9]{13}\b/i,
-  /\b(?:api[\s_-]*key|token|secret)\b\W*(?:is\W+)?(?=\S*\d)\S{8,}/i,
-  /\b(?:password|passcode|passwd|pwd)\b\W*(?:is\W+)?(?=\S*\d)\S{6,}/i,
+  /\b0[0-9A-Z]{2}[0-9A-Z]{2}[A-Z][0-9A-Z]{9}\b/,
+  /(?<=\b(?:api[\s_-]*key|token|secret)\b\W*(?:is\W+)?)(?=\S*\d)\S{8,}/i,
+  /(?<=\b(?:password|passcode|passwd|pwd)\b\W*(?:is\W+)?)(?=\S*\d)\S{6,}/i,
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
   /\b(?:gh[pousr]|xox[abp]|AKIA)[A-Za-z0-9_-]{12,}/,
 ]
 
-/** `text` with anything that looks like a secret cut out, and whether there was one: a note with a secret is never saved. */
-export function redactSecrets(text: string): { text: string; refused: boolean } {
+/**
+ * `text` with anything that looks like a secret replaced by `mask`, and whether there was one: a note with a secret is
+ * never saved, and one read back (over the app link, say) shows the mask instead.
+ */
+export function redactSecrets(text: string, mask = '[removed]'): { text: string; refused: boolean } {
   let out = text
   let refused = false
   for (const re of NOTE_SECRETS) {
     const all = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`)
     if (all.test(out)) {
       refused = true
-      out = out.replace(all, '[removed]')
+      all.lastIndex = 0
+      out = out.replace(all, mask)
     }
   }
   return { text: out, refused }
+}
+
+/** Data names whose values are secrets whatever the value looks like. */
+export const SECRET_DATA_KEY = /access[\s_-]?code|lan[\s_-]?code|^code$|serial|^s\/?n$|password|passwd|secret|token|api[\s_-]?key|private[\s_-]?key/i
+
+// "accessCode" read as "access Code", so a name-and-value pattern sees the name
+const spaced = (k: string): string => k.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ')
+
+/**
+ * Whether any part of a note looks like a secret: the text, each data name and value, each name with its value, and a
+ * name that always holds one (SECRET_DATA_KEY). A note with one is never saved, synced or sent.
+ */
+export function secretInNote(n: { text: string; data?: Record<string, string | number> | undefined }): boolean {
+  const parts = [n.text]
+  for (const [k, v] of Object.entries(n.data ?? {})) {
+    if (SECRET_DATA_KEY.test(k)) return true
+    parts.push(k, String(v), `${k}: ${v}`, `${spaced(k)}: ${v}`)
+  }
+  return parts.some((s) => redactSecrets(s).refused)
 }
 
 /** A rough token count for budgets: about four characters a token. */
@@ -54,10 +82,11 @@ export const estimateTokens = (text: string): number => Math.ceil(text.length / 
 
 /**
  * Characters a note may not hold: line breaks and other control characters (C0, C1 with U+0085), the line and
- * paragraph separators, zero-width marks and bidi controls. Any of them could start a new line or hide text in the
- * chat context, so a note could pass itself off as a section of its own.
+ * paragraph separators, zero-width marks (with the word joiner U+2060 and U+FEFF) and bidi controls (with the Arabic
+ * letter mark U+061C). Any of them could start a new line or hide text in the chat context, so a note could pass
+ * itself off as a section of its own.
  */
-export const NOTE_UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/
+export const NOTE_UNSAFE = /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/
 const UNSAFE_RUN = new RegExp(`(?:\\s|${NOTE_UNSAFE.source})+`, 'g')
 
 /** `text` on one line: every run of spaces, line breaks and unsafe characters becomes one space. */

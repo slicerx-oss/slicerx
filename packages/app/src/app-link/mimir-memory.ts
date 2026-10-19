@@ -4,24 +4,17 @@
 // preferences, what worked, sizes), with secrets hidden before anything leaves the app, and mimir.memory_remember adds
 // one fact for a client the person allowed to change things. The memory store registers itself here; without one,
 // both answer that memory is unavailable.
+import { MEMORY_KINDS, redactSecrets, SECRET_DATA_KEY, secretInNote, type MemoryFact, type MemoryKind } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { appName } from '../edition'
-import { HIDDEN, redactSecrets, SECRET_KEY } from './memory-secrets'
 import { LinkError } from './methods-error'
 
-// TODO: when the memory store lands, its redactSecrets and shared fact types replace memory-secrets.ts, these kinds and MemoryFact here and in packages/mcp/src/mimir-memory.ts.
-export const MEMORY_KINDS = ['printer', 'filament', 'preference', 'outcome', 'size'] as const
-export type MemoryKind = (typeof MEMORY_KINDS)[number]
+export { MEMORY_KINDS, type MemoryFact, type MemoryKind }
 export type MemoryData = Record<string, string | number>
 
-/** One thing mimir remembers about the person, as the memory store keeps it. */
-export interface MemoryFact {
-  id: string
-  kind: MemoryKind
-  text: string
-  data?: MemoryData
-  updatedAt: number
-}
+/** What a hidden secret reads as. */
+export const HIDDEN = '[hidden]'
+const hide = (text: string) => redactSecrets(text, HIDDEN)
 
 /** The memory store, as the link reads and adds to it. */
 export interface MemoryProvider {
@@ -60,7 +53,7 @@ function kindArg(v: unknown, required: boolean): MemoryKind | undefined {
 
 /** A fact as it may leave the app: secrets in its text and data hidden, and a data name that is a secret hidden with its value. */
 function shown(f: MemoryFact): { fact: MemoryFact; hid: boolean } {
-  const text = redactSecrets(f.text)
+  const text = hide(f.text)
   let hid = text.refused
   const fact: MemoryFact = { id: f.id, kind: f.kind, text: text.text, updatedAt: f.updatedAt }
   if (f.data) {
@@ -72,12 +65,12 @@ function shown(f: MemoryFact): { fact: MemoryFact; hid: boolean } {
           named++
           return [`${HIDDEN} ${named}`, HIDDEN]
         }
-        if (SECRET_KEY.test(k)) {
+        if (SECRET_DATA_KEY.test(k)) {
           hid = true
           return [k, HIDDEN]
         }
         if (typeof v !== 'string') return [k, v]
-        const r = redactSecrets(v)
+        const r = hide(v)
         hid ||= r.refused
         return [k, r.text]
       }),
@@ -124,7 +117,7 @@ export async function rememberFact(args: Record<string, unknown>) {
   const text = typeof raw === 'string' ? raw.trim() : ''
   if (!text || text.length > MAX_TEXT) throw new LinkError('invalid_input', `text is 1 to ${MAX_TEXT} characters`)
   const data = dataArg(args['data'])
-  const secret = redactSecrets(text).refused || Object.entries(data ?? {}).some(([k, v]) => SECRET_KEY.test(k) || redactSecrets(k).refused || (typeof v === 'string' && redactSecrets(v).refused))
+  const secret = secretInNote({ text, ...(data ? { data } : {}) })
   if (secret) throw new LinkError('refused', `${ASSISTANT_NAME} does not keep secrets: this looks like a key, an access code or a serial number. Leave it out and try again.`)
   const fact = await store().remember({ kind, text, ...(data ? { data } : {}) })
   return { fact: shown(fact).fact }

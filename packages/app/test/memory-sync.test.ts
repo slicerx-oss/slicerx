@@ -96,6 +96,9 @@ describe('memory sync', () => {
     await onDesk.store.remove('p1')
     expect(await onDesk.chatStarted()).toEqual({ pulled: 0, pushed: 1 })
     expect(s.rows('slicerx').get('p1')).toEqual({ deleted: true, updatedAt: 5000 })
+    // the deletion waits until a pull shows it on the server
+    expect(kv.map.size).toBe(1)
+    expect(await onDesk.chatStarted()).toEqual({ pulled: 0, pushed: 0 })
     expect(kv.map.size).toBe(0)
     expect(await syncMemory(phone, 'slicerx', { remote: s.remote, kv: kvMap() })).toEqual({ pulled: 1, pushed: 0 })
     expect(phone.facts.has('p1')).toBe(false)
@@ -214,6 +217,43 @@ describe('memory sync', () => {
   })
 
   const DAY = 24 * 60 * 60 * 1000
+
+  it('a deletion the server skipped (its clock behind ours) is sent again, until a pull shows it there', async () => {
+    const s = server()
+    const kv = kvMap()
+    let skipping = true
+    const remote: MemoryRemote = { pull: s.remote.pull, push: async (e, rows) => (skipping ? void s.sent.push({ edition: e, rows }) : s.remote.push(e, rows)) }
+    s.rows('slicerx').set('p1', fact('p1', 'A1 mini', 1))
+    const live = startMemorySync(memStore([fact('p1', 'A1 mini', 1)]), 'slicerx', { remote, kv, enabled: () => true, now: () => 50 })
+    await live.store.remove('p1')
+    expect(await live.chatStarted()).toEqual({ pulled: 0, pushed: 1 })
+    // the server skipped it: the fact is still live there, and the deletion stays to go again rather than the fact coming back
+    expect(s.rows('slicerx').get('p1')).toMatchObject({ text: 'A1 mini' })
+    expect(kv.map.size).toBe(1)
+    skipping = false
+    expect(await live.chatStarted()).toEqual({ pulled: 0, pushed: 1 })
+    expect(s.rows('slicerx').get('p1')).toEqual({ deleted: true, updatedAt: 50 })
+    expect(await live.chatStarted()).toEqual({ pulled: 0, pushed: 0 })
+    expect(kv.map.size).toBe(0)
+    live.stop()
+  })
+
+  it('a deletion older than the server keeps tombstones is not waited on', async () => {
+    const now = 1_760_000_000_000
+    const kv = kvMap()
+    kv.set('slicerx-memory-tombstones-slicerx', JSON.stringify({ gone: now - 91 * DAY }))
+    const remote: MemoryRemote = { pull: async () => [], push: async () => {} }
+    await syncMemory(memStore(), 'slicerx', { remote, kv, now: () => now })
+    expect(kv.map.size).toBe(0)
+  })
+
+  it('a fact that holds a secret is never sent, though it stays in the local store', async () => {
+    const s = server()
+    const store = memStore([fact('p1', 'A1 access code is 31415926', 10), { ...fact('p2', 'The X1C', 10), data: { serialNumber: 'garage' } }, fact('p3', 'A1 mini', 10)])
+    expect(await syncMemory(store, 'slicerx', { remote: s.remote, kv: kvMap() })).toEqual({ pulled: 0, pushed: 1 })
+    expect(s.sent[0]!.rows.map((r) => r.id)).toEqual(['p3'])
+    expect(store.facts.size).toBe(3)
+  })
 
   it('a clock more than a day ahead is neither applied nor sent', async () => {
     const s = server()
