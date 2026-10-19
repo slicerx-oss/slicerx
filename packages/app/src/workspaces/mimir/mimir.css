@@ -9,6 +9,13 @@
 .mimir-chat-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
 .mimir-chat-mark { display: inline-flex; color: var(--purple); }
 .mimir-chat-head h2 { margin: 0; font: var(--fw-medium) var(--fs-md) var(--f-display); letter-spacing: 0.01em; color: var(--fg); }
+/* More: Skills and permissions takes the chat's place until closed. */
+.mimir-more { min-height: 0; overflow: auto; }
+.mimir-more .insp { border-left: 0; }
+.mimir-stage[hidden], .mimir-chat-foot[hidden] { display: none; }
+/* Before a model is connected: the shared setup, in the chat's place. */
+.mimir-connect { position: relative; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); }
+.mimir-connect p { margin: 0; }
 .mimir-chat-scripted { flex: none; padding: 2px 8px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--muted); font-size: 11px; }
 /* the prompt glyph is the terminal's; the chat's bubble is plain */
 .mimir-chat .bubble .pg { display: none; }
@@ -198,3 +205,22 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .mimir-chat .plan-rec .plan-rec-row { min-height: 44px; }
 :root[data-phone] .mimir-chat .plan-rec .sheet-rec-field { width: 120px; height: 40px; }
 :root[data-phone] .mimir-chat .plan-rec-foot .sx-btn { min-height: 44px; }
+
+/* The chip that asks before mimir keeps a note (remember-chip.tsx): a flat card in the chat, the note in the person's
+   words, and its answer and outcome stacked in one cell so answering moves nothing. */
+.mem-chip { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); border: 1px solid var(--surface-line); border-radius: var(--r-md); background: var(--surface-card); }
+.mem-chip-ic { flex: none; width: 24px; height: 24px; color: var(--accent); }
+.mem-chip-body { flex: 1; min-width: 0; display: grid; gap: var(--s-1); }
+.mem-chip-q { font-size: var(--fs-sm); color: var(--muted); }
+.mem-chip-note { font-size: var(--fs-body); line-height: var(--lh-body); color: var(--fg); overflow-wrap: anywhere; }
+.mem-chip-a { display: grid; margin-top: var(--s-2); }
+.mem-chip-a > * { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); min-height: var(--h-sm); visibility: hidden; }
+.mem-chip-a > [data-on] { visibility: visible; }
+.mem-chip-values { font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
+.mem-chip-hint { font-size: var(--fs-sm); color: var(--dim); }
+.mem-chip-err { font-size: var(--fs-sm); color: var(--orange); }
+.mem-chip-a > [role='status'] { font-size: var(--fs-md); color: var(--muted); }
+.mem-chip-a > [role='status'] > .sx-ic { width: 16px; height: 16px; color: var(--green); }
+.mem-chip[data-done='saved'] .mem-chip-a > [role='status'] > span { color: var(--fg); }
+:root[data-phone] .mem-chip-a > * { min-height: var(--h-lg); }
+:root[data-phone] .mem-chip-a .sx-btn { height: var(--h-lg); }

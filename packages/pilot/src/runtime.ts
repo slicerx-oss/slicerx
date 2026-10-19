@@ -48,7 +48,7 @@ import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
 import type { NotesWhere } from './memory/where'
 import { planToDiff } from './tools/settings'
-import { chatRoute, designRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, type Tier } from './models'
+import { chatRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, tabRoute, type Tier } from './models'
 
 export interface PilotHost extends ToolHost {
   llm: LlmTransport
@@ -77,9 +77,10 @@ export interface CreatePilotOptions {
   /** False leaves out the built-in tools (printers, settings, knowledge, commands), so `tools` is the whole toolset. */
   builtins?: boolean
   /**
-   * 'cad' for a host that only models (the browser build): the part, knowledge and app tools, no printers or plugins, and a
-   * prompt to match. 'design' for the mimir tab: the given design tools plus the knowledge and web lookups, a prompt that
-   * builds feature by feature, and Auto routing by the request (see designTier).
+   * 'full' (the default) for the whole app; 'cad' for a host that only models (the browser build): the part, knowledge
+   * and app tools, no printers or plugins, and a prompt to match. In either, `tools` that include the design tools
+   * (design.new) replace the part generators: parts are built feature by feature, and Auto routes a build by the
+   * request (see tabRoute).
    */
   scope?: PilotScope
   /**
@@ -87,7 +88,7 @@ export interface CreatePilotOptions {
    * command tools included. web false also turns the web lookup off.
    */
   toolGroups?: ToolGroups
-  /** Where this mimir runs, which decides the tools a local model is offered (see surfaces.ts). Defaults to 'dock'. */
+  /** Where this mimir runs, which decides the tools a local model is offered (see surfaces.ts). Defaults to 'tab'. */
   surface?: ToolSurface
   /**
    * The person's saved notes and the edition's ai.brain.memory.local switch. On: memory.remember and memory.recall, and
@@ -128,8 +129,11 @@ function within(p: Promise<unknown>, ms: number): Promise<void> {
 
 export const CAD_TOOLS: ReadonlySet<string> = new Set(['text_to_part', 'make_model', 'cut', 'walls', 'material_recommend', 'kb.search', 'kb.filament', 'kb.printer', 'kb.workflow', 'kb.troubleshoot', 'kb.intent', 'kb.sources', 'parts.lookup', 'web.lookup', 'project.info', 'pilot.report'])
 
-/** The built-in tools the mimir tab keeps beside its design tools: knowledge, standard part and web lookups, never a part generator. */
-export const DESIGN_SCOPE_TOOLS: ReadonlySet<string> = new Set(['kb.search', 'kb.sources', 'parts.lookup', 'web.lookup'])
+/** The built-in tools that make a whole part in one call. A host that gives mimir the design tools leaves them out. */
+export const PART_GENERATORS: ReadonlySet<string> = new Set(['text_to_part', 'make_model'])
+
+/** Calls that build with the design tools: a failed one is part of building, never a reason to change models. */
+const BUILD_CALL = /^(design|geom)\./
 
 /** Whether a call starts a new part: a new body from geom.extrude or geom.revolve, or a part from geom.build. */
 export function startsPart(name: string, input: unknown): boolean {
@@ -276,7 +280,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const shared = createShared()
   for (const [id, rate] of Object.entries(opts.machineRates ?? {})) shared.machineRates.set(id, rate)
   const scope = opts.scope ?? 'full'
-  const inScope = (t: { name: string }): boolean => (scope === 'design' ? DESIGN_SCOPE_TOOLS.has(t.name) : scope !== 'cad' || CAD_TOOLS.has(t.name) || t.name.startsWith('app.'))
+  // the design tools, when the host gives them, are the one way to make a part
+  const designs = (opts.tools ?? []).some((t) => t.name === 'design.new')
+  const inScope = (t: { name: string }): boolean => !(designs && PART_GENERATORS.has(t.name)) && (scope !== 'cad' || CAD_TOOLS.has(t.name) || t.name.startsWith('app.'))
   if (opts.builtins !== false) for (const t of builtinTools({ planner: opts.planner, commands: opts.commands ?? [], shared })) if (inScope(t)) add(t as AnyTool)
   for (const t of opts.tools ?? []) add(t as AnyTool)
   // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The dock (full scope)
@@ -325,7 +331,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   }
 
   // A local model gets only its surface's tools; a cloud model gets them all.
-  const surface: ToolSurface = opts.surface ?? 'dock'
+  const surface: ToolSurface = opts.surface ?? 'tab'
   const local = isLocalModel(opts.config)
   /** The tools the model is offered. */
   function allTools(): AnyTool[] {
@@ -567,8 +573,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     // the model last asked for; mimir cloud may answer with another one, which its reply names
     let asked = shown
     let fails = 0
+    const called = new Map<string, string>()
     const watch = (e: PilotEvent) => {
-      if (e.type === 'tool_result' && !e.ok) fails++
+      if (e.type === 'tool_call') called.set(e.callId, e.tool)
+      // building takes tries; only other failures count toward moving up
+      if (e.type === 'tool_result' && !e.ok && !(designs && BUILD_CALL.test(called.get(e.callId) ?? ''))) fails++
       emit(e)
     }
     // A run always ends on a reply. Out of steps, or done without a word, it gets one more step with no tools to say
@@ -721,15 +730,15 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           stopped = true
           continue
         }
-        // a design run keeps the tier its request set: building is many tool calls, none of them a reason to move up
-        const deep = scope !== 'design' && (MUNINN_TOOLS.has(call.name) || (opts.config.deepDesign === true && /^(design|geom)\./.test(call.name)))
+        // a build with the design tools keeps the tier its request set: building is many tool calls, none of them a reason to move up
+        const deep = MUNINN_TOOLS.has(call.name) || (!designs && opts.config.deepDesign === true && BUILD_CALL.test(call.name))
         if (deep && tier !== MUNINN) {
           tier = MUNINN
           why = 'tool'
         }
         if (call.name.startsWith('kb.') || call.name === 'parts.lookup' || call.name === 'web.lookup' || call.name === 'material_recommend') looked = true
         const res = await execute(call, sessionId, context, watch, signal, citations)
-        if (scope !== 'design' && tier !== MUNINN && fails >= STRUGGLE_FAILS) {
+        if (tier !== MUNINN && fails >= STRUGGLE_FAILS) {
           tier = MUNINN
           why = 'struggle'
         }
@@ -810,8 +819,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const given: PilotContext = runOpts.context ?? {}
       const machine = given.machine ? undefined : opts.project?.()?.machine()
       const context: PilotContext = machine ? { ...given, machine } : given
-      // the tab routes by what the request carries; elsewhere by its words, and for a build by its files too
-      const route = scope === 'design' ? designRoute(message, runOpts.attachments) : chatRoute(message, runOpts.attachments)
+      // with the design tools a request routes by what it carries as well as its words; elsewhere by its words, and for a build by its files too
+      const route = designs ? tabRoute(message, runOpts.attachments) : chatRoute(message, runOpts.attachments)
       const startTier = route.tier
       // the start says why Auto picked its model, so a client reading the session sees it; a pinned model has no pick
       const auto = modelFor(opts.config, HUGINN) !== modelFor(opts.config, MUNINN)

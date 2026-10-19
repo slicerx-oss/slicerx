@@ -5,7 +5,7 @@ export { createPilot, RUNTIME_NOTES, type CreatePilotOptions, type PilotHost } f
 export { ASSISTANT_NAME, assistantBrand, assistantName, assistantText, setAssistantBrand, setAssistantName } from './name'
 export { isLocalModel, surfaceTools, type ToolSurface } from './surfaces'
 export { applyToolGroups, toolGroupOf, TOOL_GROUPS, type ToolGroup, type ToolGroups } from './surfaces'
-export { chatRoute, designRoute, designSteps, designTier, HUGINN, MANY_STEPS, MODEL_AUTOMATIC, MODEL_AUTOMATIC_LABEL, modelFor, MUNINN, personSizes, SIZES_GIVEN, tierForPrompt, type Route, type RouteReason, type Tier } from './models'
+export { chatRoute, designRoute, tabRoute, designSteps, designTier, HUGINN, MANY_STEPS, MODEL_AUTOMATIC, MODEL_AUTOMATIC_LABEL, modelFor, MUNINN, personSizes, SIZES_GIVEN, tierForPrompt, type Route, type RouteReason, type Tier } from './models'
 export { defineSkill, defineTool, toolSpec, type AgentWork, type ApprovalPlan, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset } from './tool'
 export { decide, normalizePolicy, policyMayGrant } from './gate'
 export { createApprovalBroker, TOKEN_TTL_MS, type ApprovalBroker } from './permit/broker'

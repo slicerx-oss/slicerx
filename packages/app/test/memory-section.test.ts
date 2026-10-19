@@ -11,7 +11,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { createElement, type ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { EditionContext, NEUTRAL } from '../src/edition'
-import { MEMORY_CARDS } from '../src/features/pilot/remember-chip'
+import { MEMORY_CARDS } from '../src/workspaces/mimir/remember-chip'
 import { HostContext } from '../src/host'
 import { MemorySection } from '../src/pilot-connect/memory-section'
 import { bindMemoryAccount, chatNotesGo, memoryFor, pilotMemory } from '../src/pilot-connect/memory'

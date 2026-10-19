@@ -418,10 +418,30 @@ const check: ScriptStep[] = [
   },
 ]
 
+/** A slice of the plate, where mimir is: the tab stays on screen and the slice waits in Slice. */
+const slice: ScriptStep[] = [
+  { text: 'Slicing the plate with the printer and settings you have chosen.', calls: [{ name: 'app.slice', args: {} }] },
+  (messages) => {
+    const r = lastResult(messages)
+    if (r?.['status'] === 'done') return { text: 'Sliced. Open the Slice tab to see the layers, the print time and the filament it takes.' }
+    if (r?.['status'] === 'error') return { text: `The slice did not finish: ${String(r['message'] ?? 'the slicer stopped')}.` }
+    return { text: 'There is nothing on the plate to slice yet. Describe a part and I will model it first.' }
+  },
+]
+
+/** A new, empty project: the app asks the person before anything unsaved goes. */
+const fresh: ScriptStep[] = [
+  { text: 'Starting a new project.', calls: [{ name: 'app.project_new', args: {} }] },
+  (messages) => (lastResult(messages)?.['started'] === true ? { text: 'The new project is open and empty. Describe the first part.' } : { text: 'You kept the open project, so nothing changed.' }),
+]
+
 export const SCRIPTS: MimirScript[] = [
   // first, so "check the backplate against its plan" checks rather than building another
   { id: 'check', match: /\bcheck\b[^.?!]*\bplan\b/i, steps: check },
   { id: 'backplate', match: /thermostat|backplate|wall mount/i, steps: backplate },
   { id: 'box', match: /\bbox\b|\blid\b/i, steps: box },
   { id: 'stand', match: /phone|stand/i, steps: stand },
+  // after the parts, so a part asked for with a slice in the same message is built first
+  { id: 'slice', match: /\bslice (?:it|the plate|this|the part|my)\b/i, steps: slice },
+  { id: 'new-project', match: /\bnew project\b|\bstart over\b|\bempty project\b/i, steps: fresh },
 ]

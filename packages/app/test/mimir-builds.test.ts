@@ -125,6 +125,14 @@ describe('scripted mimir builds', () => {
     expect(stepWords(row('Joined: step 4, Extrude'))?.done).toBe('Added to the part')
   })
 
+  it('names slicing and the app\'s other steps for what they are, never as a design step', () => {
+    const row = (tool: string, summary: string): ToolRowModel => ({ callId: 'c', tool, source: 'command', args: '', callSummary: undefined, state: 'ok', summary, display: [], progress: [], ms: 1, untrusted: false })
+    expect(stepWords(row('app.slice', 'Slice the plate done'))).toMatchObject({ doing: 'Slicing the plate', done: 'Sliced the plate' })
+    expect(stepWords(row('app.plate_clear', 'Clear the plate done'))?.done).toBe('Clear the plate done')
+    expect(stepWords(row('kb.search', '3 results'))?.done).toBe('3 results')
+    expect(stepWords(row('design.sketch', 'Sketch 1'))?.done).toBe('Design step done')
+  })
+
   it('stops with words, not a broken part, when the person names another thermostat', async () => {
     const p = scriptedMimir(SCRIPTS, mimirTools(designToolset(appDesignHost(loader))))
     for await (const e of p.run('s', 'wall mount for my thermostat')) if (e.type === 'ask') void p.answer!(e.askId, 'other')
