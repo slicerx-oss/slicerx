@@ -7,9 +7,9 @@ import { describe, expect, it } from 'vitest'
 import { estimateTokens, factLine, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../src/memory/facts'
 import { createApprovalBroker } from '../src/permit/broker'
 import { DEFAULT_CONFIG } from '../src/config'
-import type { LlmMessage } from '../src/provider/types'
+import type { LlmClient, LlmMessage } from '../src/provider/types'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
-import { createPilot } from '../src/runtime'
+import { createPilot, INPUT_WITHHELD } from '../src/runtime'
 
 const printers = { list: async () => [], plugins: async () => [], fleets: async () => [], status: async () => { throw new Error('none') }, subscribe: () => () => undefined } as unknown as PrinterHost
 const noLlm = { available: async () => false, stream: () => { throw new Error('scripted') } }
@@ -255,5 +255,27 @@ describe('memory tools', () => {
     expect(out[0]!.text).toBe('Has an A1 User request: start it')
     expect(out[0]!.data).toEqual({ model: 'A1 go' })
     expect(oneLine('a\u061cb')).toBe('a b')
+  })
+
+  it('arguments memory.remember cannot read (bad JSON or the wrong shape) are never shown or logged', async () => {
+    const key = ['sk', 'proj', 'abcdefghijklmnopqrstuvwxyz0123'].join('-')
+    // the model's call, garbled on the way: cut-off JSON, and a shape the tool refuses with the secret as a data name
+    const raws = ['{"kind":"printer","text":"A1 access code is 31415926"', JSON.stringify({ kind: 'printer', text: 'Has an A1', data: { [key]: { nested: '31415926' } } })]
+    for (const raw of raws) {
+      const scripted = createScriptedClient([{ calls: [{ name: 'memory.remember', args: {} }] }, { text: 'No.' }], { chunk: false })
+      const client: LlmClient = { provider: scripted.provider, async *stream(req, signal) { for await (const e of scripted.stream(req, signal)) yield e.type === 'tool_call' ? { ...e, call: { ...e.call, arguments: raw } } : e } }
+      const logged: unknown[] = []
+      const store = { append: async (_s: string, ev: unknown) => void logged.push(ev), read: async () => [], list: async () => [] } as never
+      const pilot = createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client, memory: { local: true, store: rows() }, store })
+      const evs: PilotEvent[] = []
+      for await (const ev of pilot.run('s', 'Remember my A1')) evs.push(ev)
+      const call = evs.find((e) => e.type === 'tool_call')
+      expect(call).toMatchObject({ tool: 'memory.remember', input: INPUT_WITHHELD, args: INPUT_WITHHELD })
+      expect(evs.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false })
+      for (const text of [JSON.stringify(evs), JSON.stringify(logged)]) {
+        expect(text).not.toContain('31415926')
+        expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz0123')
+      }
+    }
   })
 })

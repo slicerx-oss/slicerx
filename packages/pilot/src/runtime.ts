@@ -54,6 +54,9 @@ export interface PilotHost extends ToolHost {
   approvals: ApprovalHost
 }
 
+/** What a tool row shows for arguments a tool with shownInput could not read (bad JSON or the wrong shape). */
+export const INPUT_WITHHELD = 'input withheld'
+
 export interface CreatePilotOptions {
   host: PilotHost
   config: PilotConfig
@@ -392,11 +395,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: `Unknown tool ${call.name}` })
       return { message: JSON.stringify({ ok: false, error: `Unknown tool ${call.name}. Use only the listed tools.` }), stop: false }
     }
+    // A tool that shows a cleaned input (shownInput: it may be handed a secret) never has raw arguments it could not
+    // read shown or logged: the row says the input was withheld, and a refusal names only the top-level field.
+    const withheld = tool.shownInput !== undefined
     let parsedJson: unknown
     try {
       parsedJson = call.arguments.trim() === '' ? {} : JSON.parse(call.arguments)
     } catch {
-      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: call.arguments })
+      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: withheld ? INPUT_WITHHELD : call.arguments, ...(withheld ? { args: INPUT_WITHHELD } : {}) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: 'Arguments were not valid JSON' })
       return { message: JSON.stringify({ ok: false, error: 'Arguments were not valid JSON.' }), stop: false }
     }
@@ -408,8 +414,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (retry.success) parsed = retry
     }
     if (!parsed.success) {
-      const issues = parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.') || '(input)'}: ${i.message}`)
-      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: parsedJson, args: argLine(parsedJson) })
+      const issues = parsed.error.issues.slice(0, 5).map((i) => `${(withheld ? i.path.slice(0, 1) : i.path).join('.') || '(input)'}: ${i.message}`)
+      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: withheld ? INPUT_WITHHELD : parsedJson, args: withheld ? INPUT_WITHHELD : argLine(parsedJson) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: `Invalid arguments: ${issues.join('; ')}` })
       return { message: JSON.stringify({ ok: false, error: 'Invalid arguments', issues }), stop: false }
     }
