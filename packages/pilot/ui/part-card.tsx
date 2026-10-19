@@ -14,6 +14,8 @@ export interface PartHandlers {
   onRun?: ((request: string, id: string) => void) | undefined
   /** False once the part is gone from the project; the card and chips then say so instead of acting. */
   has?: ((id: string) => boolean) | undefined
+  /** Whether the chat's toolset has a tool, so the chips offer only steps it can do. Without it there are no chips. */
+  can?: ((tool: string) => boolean) | undefined
 }
 
 /** "The 20 mm cube is no longer in the project, so this step has nothing to change." */
@@ -117,10 +119,12 @@ export function FollowUpChips({ part, handlers }: { part: CreatedPart; handlers:
     if (f.request) handlers.onRun?.(f.request, part.id)
   }
   const changed = size.some((v, i) => Math.abs(v - part.sizeMm[i]!) > 1e-6)
+  const steps = followUps(part, handlers.can)
+  if (steps.length === 0) return null
   return (
     <div className="follow" data-part={part.id}>
       <div className="follow-reply" role="group" aria-label="Next steps">
-        {followUps(part).map((f) => (
+        {steps.map((f) => (
           <button
             key={f.id}
             type="button"
