@@ -6,13 +6,19 @@
 // edition turns both off with ai.brain.memory.local.
 import { z } from 'zod'
 import { DATA_MAX_KEYS, DATA_NAME_MAX, DATA_VALUE_MAX, dataLabel, MEMORY_KINDS, NOTE_MAX, NOTE_MIN, NOTE_UNSAFE, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../memory/facts'
+import type { NotesWhere } from '../memory/where'
 import { defineTool, type PilotTool } from '../tool'
 
 const REFUSED = 'Not saved: that looks like a key, token, access code or serial. Those stay in the app, never in notes.'
 
-/** Where a note goes, as the chip says it: on this computer, and along with each chat when the chat runs on the cloud. */
+/**
+ * Where a note goes, as the chip says it: on this computer, and along with each chat when the chat's model runs on
+ * another computer on the person's network or anywhere else.
+ */
 export const KEPT_HERE = 'Kept on this computer for later chats.'
+export const KEPT_NETWORK = 'Kept on this computer, and sent with chats to a computer on your network to answer them.'
 export const KEPT_CLOUD = 'Kept on this computer, and sent with chats to the cloud to answer them.'
+const KEPT: Record<NotesWhere, string> = { computer: KEPT_HERE, network: KEPT_NETWORK, remote: KEPT_CLOUD }
 const ONE_LINE = 'One line only: no line breaks or hidden characters'
 const safe = (s: string): boolean => !NOTE_UNSAFE.test(s)
 
@@ -29,11 +35,11 @@ const rememberInput = z.object({
 const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
 
 /**
- * `ask` false saves without the card (Settings > Memory > Save notes without asking); it is read at each save. `cloud`
- * true when the chat's model runs off this computer (mimir cloud or the person's own key), so the card says the notes
- * go along with chats; read at each save.
+ * `ask` false saves without the card (Settings > Memory > Save notes without asking); it is read at each save. `where`
+ * is where the chat's model runs (whereNotesGo), so the card says whether and where the notes go along with chats;
+ * read at each save.
  */
-export function memoryTools(store: MemoryStore, now: () => number = () => Date.now(), ask: () => boolean = () => true, cloud: () => boolean = () => false): PilotTool<never>[] {
+export function memoryTools(store: MemoryStore, now: () => number = () => Date.now(), ask: () => boolean = () => true, where: () => NotesWhere = () => 'computer'): PilotTool<never>[] {
   const remember = defineTool({
     name: 'memory.remember',
     version: '1.0.0',
@@ -50,7 +56,7 @@ export function memoryTools(store: MemoryStore, now: () => number = () => Date.n
       if (secretInNote(i)) throw new Error(REFUSED)
       // everything that is saved and read back later is on the card, the data too
       const data = Object.entries(i.data ?? {}).map(([k, v]) => dataLabel(k, v))
-      return { title: 'Remember this?', lines: [i.text, ...data, cloud() ? KEPT_CLOUD : KEPT_HERE], actions: [] }
+      return { title: 'Remember this?', lines: [i.text, ...data, KEPT[where()]], actions: [] }
     },
     async run(i, ctx) {
       if (!ctx.token) return { ok: false, summary: 'Not approved' }

@@ -17,7 +17,7 @@ import { bundledKb } from '../../features/pilot/kb'
 import { useHost } from '../../host'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { editionToolGroups, withBrain } from '../../pilot-connect/brain'
-import { chatOffComputer, pilotMemory, useMemoryAccount } from '../../pilot-connect/memory'
+import { chatNotesGo, pilotMemory, useMemoryAccount } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { get, useApp, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
@@ -136,7 +136,7 @@ export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknow
       // the person's notes, through the same memory handle as the dock and the app link. The tab reads them (the notes
       // on a chat's first message, and memory.recall); saving one needs an approval, which the tab cannot grant, so the
       // dock and the app link are where notes are saved.
-      const pilot = createPilot(tabPilotOptions({ llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: pilotMemory(edition, { remember: false, cloud: chatOffComputer(config, true) }), toolGroups: editionToolGroups(edition) }))
+      const pilot = createPilot(tabPilotOptions({ llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: pilotMemory(edition, { remember: false, where: chatNotesGo(config, true) }), toolGroups: editionToolGroups(edition) }))
       const auto = config.auto && config.models?.huginn && config.models.muninn ? { huginn: config.models.huginn, muninn: config.models.muninn } : undefined
       made = { pilot, model: { link: 'model', provider: config.provider, model: config.model, ...(auto ? { auto } : {}) } }
     } else {

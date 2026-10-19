@@ -46,6 +46,7 @@ import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, typ
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
+import type { NotesWhere } from './memory/where'
 import { planToDiff } from './tools/settings'
 import { chatRoute, designRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, type Tier } from './models'
 
@@ -93,10 +94,10 @@ export interface CreatePilotOptions {
    * the notes that fit (pickFacts) on a chat's first message. Off or unset: neither tool, and no notes. `remember: false`
    * leaves memory.remember out, for a host that cannot grant the approval saving a note needs. `ask` false saves a note
    * without the card (read at each save); unset asks. `chatStarted` runs before the notes are read on a chat's first
-   * message (the host's sync with the account); the chat waits for it at most CHAT_START_WAIT_MS. `cloud` true when the
-   * chat's model runs off this computer, so the save card says notes go along with chats.
+   * message (the host's sync with the account); the chat waits for it at most CHAT_START_WAIT_MS. `where` is where the
+   * chat's model runs (whereNotesGo), so the save card says whether and where notes go along with chats.
    */
-  memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean; chatStarted?: () => Promise<unknown>; cloud?: () => boolean }
+  memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean; chatStarted?: () => Promise<unknown>; where?: () => NotesWhere }
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
   /** How long an approval card waits before it expires, ms. */
@@ -281,7 +282,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The dock (full scope)
   // and the mimir design tab pass one; the browser cad scope gets them only when its host passes a store too.
   const memory = opts.memory?.local ? opts.memory.store : undefined
-  if (memory) for (const t of memoryTools(memory, now, opts.memory?.ask, opts.memory?.cloud)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
+  if (memory) for (const t of memoryTools(memory, now, opts.memory?.ask, opts.memory?.where)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
 
   let pluginTools: AnyTool[] | null = null
   async function loadPluginTools(): Promise<{ loads: PluginLoad[]; tools: AnyTool[] }> {
