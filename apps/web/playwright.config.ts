@@ -52,6 +52,11 @@ export default defineConfig({
       args: gpu
         ? ['--ignore-gpu-blocklist', '--disable-domain-blocking-for-3d-apis', '--disable-gpu-process-crash-limit']
         : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+      // Software WebGL runs on SwiftShader's Vulkan, and the Vulkan loader also loads Mesa's device select layer when a
+      // machine has one. That layer asks the Wayland display (WSLg on Windows) for its devices and waits on it with no
+      // limit, so a fresh browser's first WebGL context could take from 12 s to over 100 s. NODEVICE_SELECT turns the
+      // layer off; SwiftShader is the only device here, so nothing else changes.
+      ...(gpu ? {} : { env: { ...process.env, NODEVICE_SELECT: '1' } as Record<string, string> }),
     },
   },
   // The desktop project runs every spec; a phone-only describe in it skips. The phone project runs only the phone
