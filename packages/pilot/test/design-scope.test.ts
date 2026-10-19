@@ -130,10 +130,15 @@ describe('the design scope runtime', () => {
     const prompt = systemPrompt('design')
     const line = prompt.split('\n').find((l) => l.includes('design.plan'))!
     expect(line).toMatch(/Plans are for parts with two or more features/)
-    expect(line).toMatch(/Before the first geometry step/)
+    expect(line).toMatch(/before the first geometry step, call design\.plan/)
     expect(line).toMatch(/A part of one feature \(a plain box, a spacer, a single plate\) skips the plan/)
-    // sized to the person's own things: the sheet's bound values, not a second question
-    expect(line).toMatch(/values bound on the dimension sheet instead of asking for them twice/)
+    // sized to the person's own things: the sheet comes first, then the plan reads what was confirmed on it
+    expect(line).toMatch(/first the sizes that depend on the person's own things, asked for and confirmed on the dimension sheet as above; then/)
+    expect(line).toMatch(/as confirmed on the dimension sheet, never asked for twice/)
+    expect(line).not.toMatch(/bound/)
+    // one planning instruction, not two that overlap
+    expect(prompt).not.toMatch(/one or two sentences/)
+    expect(prompt.indexOf('pilot.sheet before building')).toBeLessThan(prompt.indexOf('design.plan'))
     // the plan comes before the build, and the check against the plan is not asked for yet
     expect(prompt.indexOf('design.plan')).toBeLessThan(prompt.indexOf('pilot.sheet_bind'))
     expect(prompt).not.toMatch(/design\.check/)

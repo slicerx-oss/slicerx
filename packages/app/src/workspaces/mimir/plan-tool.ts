@@ -7,7 +7,9 @@
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 
-const size = z.number().finite().min(-100_000).max(100_000)
+/** The largest size a plan takes, in its own units. */
+export const PLAN_SIZE_MAX = 10_000
+const size = z.number().finite().positive().max(PLAN_SIZE_MAX)
 const text = (max: number) => z.string().trim().min(1).max(max)
 
 // Replaced by the PartPlan import from @slicerx/mcp (design-check) once that lands; keep the two shapes identical.
@@ -48,8 +50,27 @@ export interface PlanAnswer {
 
 // ---- the registry: every plan this window made, by id, with the latest edits applied ----
 
+/** The registry keeps this many plans; the oldest goes first. */
+export const PLAN_KEEP = 50
 const plans = new Map<string, { shown: PartPlan; latest: PartPlan }>()
 let counter = 0
+
+function remember(plan: PartPlan): void {
+  plans.set(plan.planId, { shown: structuredClone(plan), latest: plan })
+  while (plans.size > PLAN_KEEP) plans.delete(plans.keys().next().value!)
+}
+
+/** A value with every object's keys in order, so two plans compare by content alone. */
+function canonical(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canonical)
+  if (v && typeof v === 'object') return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical((v as Record<string, unknown>)[k])]))
+  return v
+}
+
+/** True when two plans say the same thing, whatever order their keys came in. */
+export function samePlan(a: PartPlan, b: PartPlan): boolean {
+  return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
+}
 
 /** The plan with this id, as last edited, or null. */
 export function planById(planId: string): PartPlan | null {
@@ -100,12 +121,8 @@ export function planOfChoices(choices: readonly { id: string }[]): string | null
   return plans.has(planId) ? planId : null
 }
 
-/** True when a plan's sizes, assumptions or questions differ from another's. */
-function changed(a: PartPlan, b: PartPlan): boolean {
-  return JSON.stringify(a) !== JSON.stringify(b)
-}
-
-export function planTool(): PilotTool<never> {
+/** `newId` names each plan (tests); by default a random plan_ id. */
+export function planTool(opts: { newId?: () => string } = {}): PilotTool<never> {
   return defineTool({
     name: 'design.plan',
     version: '1.0.0',
@@ -117,9 +134,9 @@ export function planTool(): PilotTool<never> {
     args: (i) => `"${i.part}", ${i.features.length} feature${i.features.length === 1 ? '' : 's'}`,
     async run(i, ctx) {
       if (!ctx.ask) return { ok: false, summary: 'Nobody here can approve a plan' }
-      const plan: PartPlan = { planId: newPlanId(), ...i }
+      const plan: PartPlan = { planId: (opts.newId ?? newPlanId)(), ...i }
       const shown = structuredClone(plan)
-      plans.set(plan.planId, { shown, latest: plan })
+      remember(plan)
       const picked = await ctx.ask({
         title: 'Plan',
         question: `Build ${i.part} from this plan?`,
@@ -133,7 +150,7 @@ export function planTool(): PilotTool<never> {
         const answer: PlanAnswer = { planId: plan.planId, accepted: false }
         return { ok: false, summary: 'Not approved; build nothing until the plan is agreed', output: answer }
       }
-      const edited = changed(latest, shown)
+      const edited = !samePlan(latest, shown)
       const answer: PlanAnswer = edited ? { planId: plan.planId, accepted: true, edits: latest } : { planId: plan.planId, accepted: true }
       return { summary: edited ? 'Approved with changes' : 'Approved as shown', output: answer }
     },
