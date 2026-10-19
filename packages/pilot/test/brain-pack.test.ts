@@ -3,7 +3,7 @@
 // An edition's brain pack: its own knowledge next to the bundled one (found, cited as the edition's, and never shown to
 // another edition), tool groups it can switch off, and the models it picks for the person's own key. mimir cloud keeps
 // taking its model from the proxy whatever the edition routes.
-import { DEFAULT_POLICY, type ApprovalHost, type CommandSpec, type LlmTransport, type PilotConfig, type PluginManifest, type PrinterHost } from '@slicerx/contracts'
+import { DEFAULT_POLICY, PERMISSION_CLASSES, type ApprovalHost, type CommandSpec, type LlmTransport, type PilotConfig, type PluginManifest, type PrinterHost } from '@slicerx/contracts'
 import { readdirSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -96,6 +96,16 @@ describe('tool groups', () => {
     expect(left).toEqual(['app.pause_bay_1', 'app.mode_design', 'app.layer_up'])
   })
 
+  it('an app command that changes something falls in a group: slicing unless it is a printer, design or share command', () => {
+    for (const permission of PERMISSION_CLASSES) {
+      const g = toolGroupOf(commandTools([command(`x-${permission}`, 'library', permission)])[0]!)
+      if (permission === 'read' || permission === 'share') expect(g, permission).toBe('core')
+      else expect(g, permission).not.toBe('core')
+    }
+    // a section no rule names, with a class no rule names: slicing
+    expect(toolGroupOf(commandTools([command('mystery', 'help', 'profile')])[0]!)).toBe('slicing')
+  })
+
   it('groups cannot add tools', () => {
     const tools = ['kb.search', 'slice', 'printer.status', 'web.lookup'].map((name) => ({ name }))
     expect(applyToolGroups(tools, { design: true, printers: true, web: true })).toEqual(tools)
@@ -104,6 +114,27 @@ describe('tool groups', () => {
     expect(applyToolGroups(tools, { core: false, cad: true } as never)).toEqual(tools)
     for (const name of ['kb.search', 'pilot.ask', 'project.info', 'constructor']) expect(toolGroupOf({ name }), name).toBe('core')
     expect(applyToolGroups(tools, { web: false }).map((t) => t.name)).toEqual(['kb.search', 'slice', 'printer.status'])
+  })
+})
+
+describe('the runtime with tool groups', () => {
+  const noLlm: LlmTransport = { available: async () => true, stream: () => { throw new Error('scripted') } } as unknown as LlmTransport
+  const printers = { list: async () => [], plugins: async () => MANIFESTS, fleets: async () => [], status: async () => { throw new Error('none') }, subscribe: () => () => undefined } as unknown as PrinterHost
+  const approvals = { request: async () => ({ kind: 'deny' }) } as unknown as ApprovalHost
+
+  it('offers no tool of a group switched off, plugin and app command tools included, and web off drops the web lookup', async () => {
+    const pilot = createPilot({ host: { printers, llm: noLlm, approvals }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, commands: COMMANDS, client: createScriptedClient([{ text: 'ok' }]), toolGroups: { printers: false, slicing: false, web: false } })
+    // a run loads the printer plugins' tools
+    for await (const _ of pilot.run('s', 'hi')) void _
+    const offered = new Set(pilot.tools().map((t) => t.name))
+    const all = pilot.registry()
+    expect(all.some((t) => t.source === 'plugin')).toBe(true)
+    for (const t of all.filter((x) => offered.has(x.name))) expect(['printers', 'slicing', 'web'], t.name).not.toContain(toolGroupOf(t))
+    expect(offered.has('web.lookup')).toBe(false)
+    expect(offered.has('app.pause_bay_1')).toBe(false)
+    expect(offered.has('app.cut')).toBe(false)
+    expect(offered.has('kb.search')).toBe(true)
+    expect(offered.has('app.mode_design')).toBe(true)
   })
 })
 

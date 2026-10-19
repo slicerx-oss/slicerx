@@ -39,7 +39,7 @@ import { citedSources } from './cite'
 import { contextMessage, systemPrompt as basePrompt, type PilotScope } from './prompt'
 import { factLine, pickFacts, type MemoryStore } from './memory/facts'
 import { fitContext, MIMIR_CONTEXT } from './context'
-import { isLocalModel, surfaceTools, type ToolSurface } from './surfaces'
+import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type ToolSurface } from './surfaces'
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type WebLookup } from './tool'
@@ -81,6 +81,11 @@ export interface CreatePilotOptions {
    * builds feature by feature, and Auto routing by the request (see designTier).
    */
   scope?: PilotScope
+  /**
+   * The edition's tool switches (ai.brain.tools): a group set false is never offered, on any surface, plugin and app
+   * command tools included. web false also turns the web lookup off.
+   */
+  toolGroups?: ToolGroups
   /** Where this mimir runs, which decides the tools a local model is offered (see surfaces.ts). Defaults to 'dock'. */
   surface?: ToolSurface
   /**
@@ -273,7 +278,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { loads: pluginLoads(manifests, printers), tools: made }
   }
 
-  const web: WebLookup | undefined = opts.config.webSearch === false ? undefined : async (query, signal) => {
+  const web: WebLookup | undefined = opts.config.webSearch === false || opts.toolGroups?.web === false ? undefined : async (query, signal) => {
     const citations: Citation[] = []
     let text = ''
     const req = {
@@ -307,7 +312,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const local = isLocalModel(opts.config)
   /** The tools the model is offered. */
   function allTools(): AnyTool[] {
-    return surfaceTools(surface, local, [...tools.values(), ...(pluginTools ?? [])])
+    return applyToolGroups(surfaceTools(surface, local, [...tools.values(), ...(pluginTools ?? [])]), opts.toolGroups)
   }
   /** An offered tool by name; a tool the model is not offered is unknown to it. */
   function findTool(name: string): AnyTool | undefined {

@@ -106,14 +106,17 @@ export const PRINTER_APPS: ReadonlySet<string> = new Set(['bambuddy', 'spoolman'
 /** What a tool's group is read from: its name, and where a plugin or app command tool came from. */
 export type GroupedTool = Pick<PilotTool, 'name'> & Partial<Pick<PilotTool, 'source' | 'permission' | 'plugin' | 'command' | 'printerFor' | 'approval'>>
 
-/** An app command's group: printer commands with printers, plate and slice changes with slicing, design changes with design. */
+/**
+ * An app command's group: printer commands with printers, design workspace changes with design, and every other
+ * command that changes something with slicing (plate edits such as cut and orient, slicing, profiles and settings).
+ * A command that changes nothing, or only shares, has no switch.
+ */
 function commandGroup(c: NonNullable<PilotTool['command']>, permission: PilotTool['permission'] | undefined): ToolGroup {
   if (c.section === 'printers' || permission === 'start' || permission === 'queue' || permission === 'printer_config') return 'printers'
   // a command that changes nothing (go to a tab, step a layer) stays whatever is switched off
-  if (!permission || permission === 'read') return 'core'
+  if (!permission || permission === 'read' || permission === 'share') return 'core'
   if (c.workspace === 'design') return 'design'
-  if (permission === 'slice' || permission === 'profile' || c.section === 'plate' || c.section === 'slice') return 'slicing'
-  return 'core'
+  return 'slicing'
 }
 
 /**

@@ -16,6 +16,7 @@ import { useEdition } from '../../edition'
 import { bundledKb } from '../../features/pilot/kb'
 import { useHost } from '../../host'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
+import { editionToolGroups, withBrain } from '../../pilot-connect/brain'
 import { pilotMemory, useMemoryAccount } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { get, useApp, type PilotPref } from '../../state/store'
@@ -86,7 +87,7 @@ function scripted(loader: Loader): Pilot {
  * a part of many steps, or one that needs a size only the person knows. Nothing in the tab reaches a printer or asks
  * for an approval.
  */
-export function tabPilotOptions(parts: { llm: LlmTransport; config: PilotConfig; kb: KnowledgeBase; tools: readonly PilotTool<never>[]; client?: LlmClient; share?: CreatePilotOptions['share']; memory?: CreatePilotOptions['memory'] }): CreatePilotOptions {
+export function tabPilotOptions(parts: { llm: LlmTransport; config: PilotConfig; kb: KnowledgeBase; tools: readonly PilotTool<never>[]; client?: LlmClient; share?: CreatePilotOptions['share']; memory?: CreatePilotOptions['memory']; toolGroups?: CreatePilotOptions['toolGroups'] }): CreatePilotOptions {
   return {
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: parts.llm },
     // a part takes many feature steps; the stub's limits hold for a model too
@@ -99,6 +100,7 @@ export function tabPilotOptions(parts: { llm: LlmTransport; config: PilotConfig;
     ...(parts.client ? { client: parts.client } : {}),
     ...(parts.share ? { share: parts.share } : {}),
     ...(parts.memory ? { memory: parts.memory } : {}),
+    ...(parts.toolGroups ? { toolGroups: parts.toolGroups } : {}),
   }
 }
 
@@ -128,11 +130,12 @@ export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknow
     let made: { pilot: Pilot; model: TabModel }
     if (ok && llm && chosen) {
       // mimir cloud is billed per token like a key: one model for every turn
-      const config: PilotConfig = base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' } : paid ? { ...base0, billing: paid } : base0
+      // the edition's brain pack: no web search when its web tools are off, and its models for the person's own key
+      const config: PilotConfig = withBrain(base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' } : paid ? { ...base0, billing: paid } : base0, edition)
       // the person's notes, through the same memory handle as the dock and the app link. The tab reads them (the notes
       // on a chat's first message, and memory.recall); saving one needs an approval, which the tab cannot grant, so the
       // dock and the app link are where notes are saved.
-      const pilot = createPilot(tabPilotOptions({ llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: pilotMemory(edition, { remember: false }) }))
+      const pilot = createPilot(tabPilotOptions({ llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: pilotMemory(edition, { remember: false }), toolGroups: editionToolGroups(edition) }))
       const auto = config.auto && config.models?.huginn && config.models.muninn ? { huginn: config.models.huginn, muninn: config.models.muninn } : undefined
       made = { pilot, model: { link: 'model', provider: config.provider, model: config.model, ...(auto ? { auto } : {}) } }
     } else {

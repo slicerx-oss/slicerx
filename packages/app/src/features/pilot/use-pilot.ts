@@ -11,6 +11,7 @@ import { useHost } from '../../host'
 import { projectExportHost } from '../../export/actions'
 import { geom } from '../../geom/client'
 import { guardedPrinters } from '../../plate/guard'
+import { editionToolGroups, withBrain } from '../../pilot-connect/brain'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { pilotMemory, useMemoryAccount, useMemoryStore } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
@@ -81,10 +82,11 @@ export function usePilot(): Pilot | null {
     void Promise.all([chosen ? llm.available(base0.provider).catch(() => false) : Promise.resolve(false), billing, bundledKb()]).then(([ok, paid, kb]) => {
       if (!live) return
       // mimir cloud is billed per token like a key: one model for every turn
-      const config = base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' as const } : paid ? { ...base0, billing: paid } : base0
+      // the edition's brain pack: no web search when its web tools are off, and its models for the person's own key
+      const config = withBrain(base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' as const } : paid ? { ...base0, billing: paid } : base0, edition)
       // what the person asked mimir to remember, kept per edition through the app's one memory handle (the tab, the
       // app link and Settings share it); the edition can turn it off (ai.brain.memory.local)
-      const base = { ...dockPilotOptions(host, { printers, llm, approvals, config, kb }), memory: pilotMemory(edition) }
+      const base = { ...dockPilotOptions(host, { printers, llm, approvals, config, kb }), memory: pilotMemory(edition), toolGroups: editionToolGroups(edition) }
       const made = createPilot(ok ? base : { ...base, client: createDemoClient() })
       // clients read back what answers here and the tools its model is offered (mimir.dock)
       setDockPilot({ pilot: made, link: ok ? 'model' : 'demo', config })
