@@ -89,7 +89,15 @@ describe('who decides on adding a fact', () => {
     const parsed = tools(undefined)[1]!.input.safeParse({ kind: 'preference', text: 'Scripts', data: { nozzleMm: 0.4, [key]: true } })
     expect(parsed.success).toBe(false)
     const messages = JSON.stringify(parsed.error?.issues)
-    expect(messages).toMatch(/data entry 2 is text of at most 200 characters or a number/)
+    expect(messages).toMatch(/data entry 2 is text of at most 80 characters on one line, or a number/)
     expect(messages).not.toContain(key)
+  })
+
+  it("takes the app's note limits: 3 to 240 characters on one line, at most 6 data entries", () => {
+    const input = tools(undefined)[1]!.input
+    expect(input.safeParse({ kind: 'size', text: 'x'.repeat(240), data: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 'y'.repeat(80) } }).success).toBe(true)
+    for (const bad of [{ text: 'x'.repeat(241) }, { text: 'ab' }, { text: 'two\nlines' }, { text: 'Desk is 120 cm', data: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 } }, { text: 'Desk is 120 cm', data: { note: 'x'.repeat(81) } }]) {
+      expect(input.safeParse({ kind: 'size', ...bad }).success, JSON.stringify(bad)).toBe(false)
+    }
   })
 })

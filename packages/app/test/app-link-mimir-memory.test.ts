@@ -88,10 +88,20 @@ describe('mimir memory over the app link', () => {
       expect(e?.code, args.text).toBe('refused')
       expect(e?.message).toMatch(/does not keep secrets/)
     }
-    for (const args of [{ kind: 'mood', text: 'x' }, { kind: 'size', text: '' }, { kind: 'size', text: 'x'.repeat(501) }, { kind: 'size', text: 'ok', data: [1] }, { kind: 'size', text: 'ok', extra: true }]) {
+    for (const args of [{ kind: 'mood', text: 'x' }, { kind: 'size', text: '' }, { kind: 'size', text: 'x'.repeat(501) }, { kind: 'size', text: 'ok', data: [1] }, { kind: 'size', text: 'ok', extra: true },
+      // the in-app limits (noteProblem and memory.remember): 3 to 240 characters on one line, at most 6 data entries
+      { kind: 'size', text: 'x'.repeat(241) }, { kind: 'size', text: 'ab' }, { kind: 'size', text: 'two\nlines' }, { kind: 'size', text: 'hidden\u200b mark' },
+      { kind: 'size', text: 'Desk is 120 cm', data: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 } },
+      { kind: 'size', text: 'Desk is 120 cm', data: { note: 'x'.repeat(81) } }, { kind: 'size', text: 'Desk is 120 cm', data: { note: 'one\ntwo' } }]) {
       expect((await refusal(runCall('mimir.memory_remember', args)))?.code, JSON.stringify(args)).toBe('invalid_input')
     }
     expect(p.remember).not.toHaveBeenCalled()
+  })
+
+  it('takes a note at the in-app limits: 240 characters and 6 data entries', async () => {
+    const { p } = memory()
+    await runCall('mimir.memory_remember', { kind: 'size', text: 'x'.repeat(240), data: { a: 1, b: 2, c: 3, d: 4, e: 5, f: 'y'.repeat(80) } })
+    expect(p.remember).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -138,7 +148,7 @@ describe('secrets in data names', () => {
 
   it('names a bad data entry by its position, never by its name', async () => {
     memory()
-    for (const data of [{ nozzleMm: 0.4, [KEY]: true }, { nozzleMm: 0.4, [KEY]: 'x'.repeat(201) }, { [KEY + 'x'.repeat(64)]: 1 }]) {
+    for (const data of [{ nozzleMm: 0.4, [KEY]: true }, { nozzleMm: 0.4, [KEY]: 'x'.repeat(81) }, { [KEY + 'x'.repeat(40)]: 1 }]) {
       const e = await refusal(runCall('mimir.memory_remember', { kind: 'preference', text: 'Scripts', data }))
       expect(e?.code).toBe('invalid_input')
       expect(e?.message).toMatch(/^data entry [0-9]/)
