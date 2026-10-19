@@ -27,11 +27,6 @@
 .cg-note { margin: 0; color: var(--muted); font-size: var(--fs-sm); }
 .cg-key { border-top: 1px solid var(--line-soft); padding-top: var(--s-3); }
 .cg-key-panel { margin-top: var(--s-3); }
-.cg-compact { flex-direction: row; align-items: center; gap: 10px; margin: 10px 12px 0; padding: 10px 12px; }
-.cg-compact .sx-ic { color: var(--purple); flex: none; }
-.cg-compact b { display: block; font-weight: var(--fw-semibold); font-size: var(--fs-sm); }
-.cg-compact small { display: block; color: var(--muted); font-size: var(--fs-xs); }
-.cg-compact .min0 { flex: 1; }
 
 /* Connect your AI agent */
 .ag { display: flex; flex-direction: column; gap: var(--s-3); border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); padding: var(--s-4); }

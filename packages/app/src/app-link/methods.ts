@@ -150,10 +150,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.share': 'read',
   // mimir cloud at a glance: offered, in use, signed in, and today's use when in use; no key or token
   'mimir.status': 'read',
-  // what answers in the mimir tab: a model (which one, and Auto's pair) or the scripted stub, and the tools it has
+  // what answers in the mimir tab: a model (which one, Auto's pair, whether it runs locally) or the scripted stub, and the tools it is offered
   'mimir.tab': 'read',
-  // what answers in the docked chat (a model or the demo), whether it runs locally, and the tools its model is offered
-  'mimir.dock': 'read',
 }
 
 export { LinkError } from './methods-error'
@@ -474,7 +472,6 @@ const HANDLERS: Record<string, Handler> = {
     return { cloud, enabled, needsSignIn, signedIn, quota, quotaError }
   },
   'mimir.tab': async () => (await import('../workspaces/mimir/session')).tabState(),
-  'mimir.dock': async () => (await import('../features/pilot/dock-model')).dockState(),
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()

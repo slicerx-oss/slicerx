@@ -9,6 +9,13 @@
 .mimir-chat-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-bottom: 1px solid var(--line-soft); }
 .mimir-chat-mark { display: inline-flex; color: var(--purple); }
 .mimir-chat-head h2 { margin: 0; font: var(--fw-medium) var(--fs-md) var(--f-display); letter-spacing: 0.01em; color: var(--fg); }
+/* More: Skills and permissions takes the chat's place until closed. */
+.mimir-more { min-height: 0; overflow: auto; }
+.mimir-more .insp { border-left: 0; }
+.mimir-stage[hidden], .mimir-chat-foot[hidden] { display: none; }
+/* Before a model is connected: the shared setup, in the chat's place. */
+.mimir-connect { position: relative; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); }
+.mimir-connect p { margin: 0; }
 .mimir-chat-scripted { flex: none; padding: 2px 8px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--muted); font-size: 11px; }
 /* the prompt glyph is the terminal's; the chat's bubble is plain */
 .mimir-chat .bubble .pg { display: none; }

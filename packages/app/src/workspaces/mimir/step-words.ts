@@ -26,9 +26,19 @@ const WORDS: Record<string, Words | null> = {
   'geom.measure': { doing: 'Measuring', done: 'Measured' },
   'geom.info': { doing: 'Checking the part', done: 'Checked the part' },
   'design.undo': { doing: 'Undoing the last step', done: 'Undid the last step' },
+  'app.slice': { doing: 'Slicing the plate', done: 'Sliced the plate' },
+  'app.project_new': { doing: 'Starting a new project', done: 'Asked about a new project' },
+  'settings.plan': { doing: 'Planning the settings', done: 'Planned the settings' },
+  'settings.apply': { doing: 'Changing the settings', done: 'Changed the settings' },
+  'project.info': { doing: 'Reading the project', done: 'Read the project' },
+  'printer.list': { doing: 'Checking the printers', done: 'Checked the printers' },
+  'printer.status': { doing: 'Checking the printer', done: 'Checked the printer' },
+  'printer.queue': { doing: 'Sending to the printer', done: 'Sent to the printer' },
 }
 
 const GENERIC = { doing: 'Working on the design', done: 'Design step done' }
+/** Any other tool (the app's commands, the guides, the skills): its own summary once done. */
+const OTHER = { doing: 'Working', done: 'Step done' }
 
 // an extrude that cuts or joins says so; its summary starts with the verb ("Cut: step 2, Extrude")
 const EXTRUDED: Record<string, string> = { Cut: 'Cut into the part', Joined: 'Added to the part' }
@@ -36,7 +46,8 @@ const EXTRUDED: Record<string, string> = { Cut: 'Cut into the part', Joined: 'Ad
 export const stepWords: StepWords = (row) => {
   const w = WORDS[row.tool]
   if (w === null) return null
-  const base = w ?? GENERIC
+  const design = /^(design|geom)\./.test(row.tool)
+  const base = w ?? (design ? GENERIC : { ...OTHER, done: row.summary ?? OTHER.done })
   if (row.state === 'bad') return { ...base, done: row.summary ?? 'That step failed' }
   const verb = row.tool === 'geom.extrude' ? row.summary?.split(':')[0] : undefined
   return verb && EXTRUDED[verb] ? { ...base, done: EXTRUDED[verb] } : base

@@ -33,8 +33,8 @@ import { addFileRefs } from './state/actions'
 import { isDirty, startDirtyTracking } from './project/unsaved'
 import { noteWorkspaceUp, startChunkReload } from './lib/chunk-reload'
 import { useFolderThemes } from './theme/folder'
-import { get, pilotState, pushRecent, set, showsLayers, toast, useApp } from './state/store'
-import { hostSlices, setHostSlices, stayInModel, useCadShown, useModelMode } from './state/model-mode'
+import { get, pilotState, pushRecent, set, setModelMode, showsLayers, toast, useApp } from './state/store'
+import { hostSlices, mimirOn, setHostSlices, setMimirOn, stayInModel, useCadShown, useModelMode } from './state/model-mode'
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
@@ -76,7 +76,6 @@ const Agreement = lazy(() => import('./first-run/agreement').then((m) => ({ defa
 const BugReportDialog = lazy(() => import('./bugs/report-dialog').then((m) => ({ default: m.BugReportDialog })))
 // In-app updates load only where the desktop shell registered an updater.
 const UpdatesRoot = lazy(() => import('./updates/root').then((m) => ({ default: m.UpdatesRoot })))
-const PilotDock = lazy(() => import('./features/pilot/dock').then((m) => ({ default: m.PilotDock })))
 
 /**
  * The whole app. `theme` rebrands it (colors, fonts, radii); without one the user's light or dark choice
@@ -109,9 +108,13 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
   }, [themeIds, themeCache, userThemes, folderThemes])
   const active = theme ?? editionTheme(edition, scheme, chosen)
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } }))
-  // The assistant off means off everywhere: no commands, no panel. Not yet connected keeps both, and the panel shows the connect step.
+  // The assistant off means off everywhere: no commands, no mimir tab. Not yet connected keeps both, and the tab answers with scripted replies.
   const pilotEnabled = useApp((s) => pilotState(s) !== 'off')
   const featureSet = useMemo(() => resolveFeatures(host, pilotEnabled ? features : features.filter((f) => f.id !== 'pilot')), [host, features, pilotEnabled])
+  // the mimir tab follows: right for the first frame, and again whenever mimir is turned on or off
+  const assistantOn = featureSet.ids.has('pilot')
+  useState(() => setMimirOn(assistantOn))
+  useLayoutEffect(() => setMimirOn(assistantOn), [assistantOn])
   // A pre-alpha build asks for the agreement before anything else, and catches crashes from the first frame.
   useState(() => {
     // before the first frame, so the tab bar never shifts as it loads
@@ -241,7 +244,7 @@ function Shell() {
   // a crash names the tab the person is on: the plate workspace shows as Model or mimir as well as Slice
   const mode = useModelMode()
   const cad = useCadShown()
-  const shownName = workspace === 'prepare' && cad && mode !== 'slice' ? (mode === 'mimir' ? ASSISTANT_NAME : 'Model') : (current?.label ?? 'This workspace')
+  const shownName = workspace === 'prepare' && mode === 'mimir' ? ASSISTANT_NAME : workspace === 'prepare' && cad && mode !== 'slice' ? 'Model' : (current?.label ?? 'This workspace')
 
   // The built-in commands load right after first paint; a command run before they land waits for them.
   useEffect(() => registerCommandsLater(() => import('./commands/builtin').then((m) => m.builtinCommands(host, workspaces))), [host, workspaces, assistant.name])
@@ -304,11 +307,6 @@ function Shell() {
             </Suspense>
           )}
         </WorkspaceBoundary>
-        {covered ? null : (
-          <LazySlot>
-            <PilotDock />
-          </LazySlot>
-        )}
       </Frame>
       <CommandBarSlot />
       <LazySlot>
@@ -467,6 +465,12 @@ function useGlobalKeys(order: readonly string[]): void {
       if (matchShortcut(e, 'Mod+Alt+B')) {
         e.preventDefault()
         toggleRail('right')
+        return
+      }
+      // Mod+/ opens the mimir tab from anywhere, even from a text field
+      if (matchShortcut(e, 'Mod+/') && mimirOn()) {
+        e.preventDefault()
+        setModelMode('mimir')
         return
       }
       if (inTextField(e)) return
