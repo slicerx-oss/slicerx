@@ -367,3 +367,47 @@ describe('slicerx_design_check', () => {
     expect(text(r)).toContain('there is no plan nope')
   })
 })
+
+describe('design.plan', () => {
+  const tools = (all: HostDesign[], plans = createPlanRegistry()) => {
+    const set = designToolset(hostOf(all), {}, { plans })
+    const run = async (name: string, args: Record<string, unknown>) => {
+      const t = set.find((x) => x.name === name)!
+      return t.run(t.input.parse(args), {} as ToolContext)
+    }
+    return { plans, run, set }
+  }
+
+  it('keeps a plan design.check then checks the built part against, tied to its design', async () => {
+    // two designs open, neither named as the part: the tie picks the right one
+    const { plans, run } = tools([boxDesign('d1', 'Other'), boxDesign('d2', 'Clip')])
+    const kept = await run('design.plan', { plan: boxPlan, design: 'd1' })
+    expect(kept.output).toEqual({ planId: 'box-1', part: 'Spacer', design: 'd1', features: 0, holes: 0 })
+    expect(kept.summary).toContain('Kept plan box-1 for Spacer (0 features, 40 x 20 x 5 mm overall), tied to Other (d1)')
+    expect(plans.get('box-1')).toEqual({ plan: boxPlan, design: 'd1' })
+    const r = await run('design.check', { planId: 'box-1' })
+    expect(r.output).toMatchObject({ design: 'd1', chosen: 'tied to the plan', pass: true })
+    // the same planId again replaces it, untied
+    await run('design.plan', { plan: { ...boxPlan, overall: { x: 50, y: 20, z: 5 } } })
+    expect(plans.get('box-1')?.plan.overall?.x).toBe(50)
+    expect(plans.get('box-1')?.design).toBeUndefined()
+  })
+
+  it('refuses a plan off the schema or tied to a design that is not open, and keeps nothing', async () => {
+    const { plans, run, set } = tools([boxDesign('d1', 'Spacer')])
+    const input = set.find((t) => t.name === 'design.plan')!.input
+    expect(input.safeParse({ plan: { ...boxPlan, overall: { x: 0, y: 20, z: 5 } } }).success).toBe(false)
+    expect(input.safeParse({ plan: { ...boxPlan, units: 'cm' } }).success).toBe(false)
+    await expect(run('design.plan', { plan: boxPlan, design: 'nope' })).rejects.toThrow(/no design nope/)
+    expect(plans.get('box-1')).toBeUndefined()
+  })
+
+  it('is read class, and is on the MCP server as slicerx_design_plan', async () => {
+    const { set } = tools([])
+    expect(set.find((t) => t.name === 'design.plan')?.permission).toBe('read')
+    const h = await connect({ geomEngine: engine })
+    const r = await h.call('slicerx_design_plan', { plan: { ...boxPlan, planId: 'mcp-1' } })
+    expect(r.isError, text(r)).toBeFalsy()
+    expect(data<{ output: { planId: string } }>(r).output.planId).toBe('mcp-1')
+  })
+})

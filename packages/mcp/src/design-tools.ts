@@ -8,7 +8,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { createPlanRegistry, designCheck, nozzleOr, type PlanEntry, type PlanRegistry } from './design-check'
+import { createPlanRegistry, designCheck, nozzleOr, partPlanSchema, type PlanEntry, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { meshStats } from './mesh'
 
@@ -459,5 +459,31 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     },
   })
 
-  return [create, open, list, steps, edit, undo, redo, timeline, roll, save, check] as PilotTool<never>[]
+  // How an integrator hands design.check a plan: kept in the same registry it reads, with no card to approve. In the
+  // mimir tab the model makes plans with its own design.plan card instead (the tab leaves this one out).
+  const plan = defineTool({
+    name: 'design.plan',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Give slicerx_design_check a part plan to check a built part against, before or after building it. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind and its sizes), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter, with assumptions and questions (empty lists for none). A plan with a planId already kept replaces it; the last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
+    input: z.object({
+      plan: partPlanSchema.describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
+      design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),
+    }),
+    async run(i) {
+      // a tie names a design that exists (get refuses one that does not)
+      const tied = i.design ? designs.get(i.design) : undefined
+      plans.put(i.plan, tied?.id)
+      const p = i.plan
+      const shape = [plural(p.features.length, 'feature'), ...(p.holes?.length ? [plural(p.holes.length, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : [])].join(', ')
+      return {
+        summary: `Kept plan ${p.planId} for ${p.part} (${shape})${tied ? `, tied to ${tied.name} (${tied.id})` : ''}. Build it, then check it with design.check and planId ${p.planId}.`,
+        output: { planId: p.planId, part: p.part, ...(tied ? { design: tied.id } : {}), features: p.features.length, holes: p.holes?.length ?? 0 },
+      }
+    },
+  })
+
+  return [create, open, list, steps, edit, undo, redo, timeline, roll, save, check, plan] as PilotTool<never>[]
 }

@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-241 tools.
+242 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -78,6 +78,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_design_list` |  |  | read | The designs open on this server, with their parts, sizes and step counts. |
 | `slicerx_design_new` |  |  | slice | Start a design: a part you build step by step with the modeling tools (slicerx_geom_extrude, slicerx_geom_revolve, slicerx_geom_push_pull, slicerx_geom_fillet, slicerx_geom_chamfer, slicerx_geom_hole, slicerx_geom_build, slicerx_geom_subtract, slicerx_geom_hollow, slicerx_geom_emboss, slicerx_geom_repair), each given this design id. |
 | `slicerx_design_open` |  |  | read | Open the objects of any 3MF project (SlicerX, Bambu Studio, Orca) as designs, one per object. |
+| `slicerx_design_plan` |  |  | read | Give slicerx_design_check a part plan to check a built part against, before or after building it. |
 | `slicerx_design_redo` |  |  | slice | Put back the step slicerx_design_undo last removed. |
 | `slicerx_design_roll` |  |  | slice | Move the timeline marker, rolling the whole design back to how it was after that many items (0 is before everything; leave marker out for the end), as dragging the marker in SlicerX does. |
 | `slicerx_design_save` |  |  | slice | Save a design as a 3MF project in the output folder: the parts with their filament slots, and the CAD history, so the file opens in SlicerX with every step editable (other slicers open the parts). |
