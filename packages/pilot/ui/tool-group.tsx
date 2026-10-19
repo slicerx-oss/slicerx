@@ -193,6 +193,7 @@ function touched(row: ToolRowModel): string {
   if (t.startsWith('project.') || t.startsWith('plate.')) return 'the project'
   if (t.startsWith('slice') || t.startsWith('slicer.')) return 'a test slice'
   if (t.startsWith('web.')) return 'the web'
+  if (t.startsWith('memory.')) return 'your notes'
   return t.split('.')[0] ?? t
 }
 

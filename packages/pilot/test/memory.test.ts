@@ -27,7 +27,7 @@ function rows(): MemoryStore & { rows: Map<string, MemoryFact> } {
 
 const fact = (id: string, kind: MemoryFact['kind'], text: string, updatedAt: number, data?: MemoryFact['data']): MemoryFact => ({ id, kind, text, updatedAt, ...(data ? { data } : {}) })
 
-function pilotWith(steps: ScriptStep[], memory: { local: boolean; store: MemoryStore }) {
+function pilotWith(steps: ScriptStep[], memory: { local: boolean; store: MemoryStore; ask?: () => boolean }) {
   return createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), memory })
 }
 
@@ -225,5 +225,29 @@ describe('memory tools', () => {
     const evs: PilotEvent[] = []
     for await (const ev of pilot.run('s', 'What printer do I have?')) evs.push(ev)
     expect(evs.find((e) => e.type === 'tool_result')).toMatchObject({ ok: true, untrusted: true })
+  })
+
+  it('remember saves without the card when asking is off, and still refuses a secret', async () => {
+    const store = rows()
+    let ask = false
+    const steps: ScriptStep[] = [{ calls: [{ name: 'memory.remember', args: { kind: 'filament', text: 'Mostly prints Polymaker PLA' } }] }, { text: 'Saved.' }]
+    const events: PilotEvent[] = []
+    for await (const ev of pilotWith(steps, { local: true, store, ask: () => ask }).run('s', 'Remember I use Polymaker PLA')) events.push(ev)
+    expect(events.some((e) => e.type === 'approval_request')).toBe(false)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'permission_note', mode: 'allow', tool: 'memory.remember', message: 'Saving without asking, as set in Settings.' }))
+    expect([...store.rows.values()]).toMatchObject([{ kind: 'filament', text: 'Mostly prints Polymaker PLA' }])
+
+    // read at each save: turned back on, the next note asks again
+    ask = true
+    const again = pilotWith([{ calls: [{ name: 'memory.remember', args: { kind: 'size', text: 'Desk shelf is 300 mm deep' } }] }, { text: 'Ok.' }], { local: true, store, ask: () => ask })
+    let asked = 0
+    for await (const ev of again.run('s', 'Remember my shelf')) if (ev.type === 'approval_request') (asked++, await again.resolveApproval(ev.request.id, { kind: 'deny' }))
+    expect(asked).toBe(1)
+    expect(store.rows.size).toBe(1)
+
+    ask = false
+    const secret = pilotWith([{ calls: [{ name: 'memory.remember', args: { kind: 'printer', text: 'A1 access code is 31415926' } }] }, { text: 'No.' }], { local: true, store, ask: () => ask })
+    for await (const _ of secret.run('s', 'Remember my code')) void _
+    expect(store.rows.size).toBe(1)
   })
 })

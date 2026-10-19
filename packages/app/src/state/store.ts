@@ -428,6 +428,8 @@ export interface AppState {
   crashReports: boolean
   /** Settings > mimir: share mimir cloud sessions to improve mimir (on by default). Sent only to mimir cloud. */
   mimirShare: boolean
+  /** Settings > Memory: save mimir's notes without the chip that asks first (off by default). */
+  mimirRememberWithoutAsking: boolean
   /** The mimir cloud notice version read before the first chat, or null until then. */
   mimirNotice: number | null
   /** Settings > Appearance > Motion; null until picked, which means the edition's default. */
@@ -785,6 +787,7 @@ export const appStore = createStore<AppState>()(() => ({
   setup: firstLaunch ? { step: 'welcome' } : setupAtReload ? { step: setupAtReload } : null,
   crashReports: prefs.crashReports ?? false,
   mimirShare: prefs.mimirShare ?? true,
+  mimirRememberWithoutAsking: prefs.mimirRememberWithoutAsking ?? false,
   mimirNotice: prefs.mimirNotice ?? null,
   motion: prefs.motion ?? null,
   agreement: prefs.agreement ?? null,
@@ -875,7 +878,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'toolheadSkipMatching', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'toolheadSkipMatching', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirRememberWithoutAsking', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
 
 // the tab remembers that setup is open (first-run.tsx notes each step), so a reload goes back to it
 const setup0 = appStore.getState().setup
@@ -932,6 +935,7 @@ appStore.subscribe((s, prev) => {
       firstRun: s.firstRun as Prefs['firstRun'],
       crashReports: s.crashReports,
       mimirShare: s.mimirShare,
+      mimirRememberWithoutAsking: s.mimirRememberWithoutAsking,
       ...(s.mimirNotice ? { mimirNotice: s.mimirNotice } : {}),
       ...(s.motion ? { motion: s.motion } : {}),
       agreement: s.agreement,

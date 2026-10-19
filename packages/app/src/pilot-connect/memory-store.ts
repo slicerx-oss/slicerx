@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Where mimir's notes about the person live on this device: one IndexedDB database per edition
-// (slicerx-memory-<edition>), so one edition never reads what the person told another on the same machine.
-import type { MemoryFact, MemoryStore } from '@slicerx/pilot'
+// (slicerx-memory-<edition>), so one edition never reads what the person told another on the same machine. The app
+// reads and writes them through one handle per edition (memoryFor): mimir's memory.remember, the chip that asks first and
+// Settings > Memory all share it, so a note saved in the chat shows in Settings at once.
+import type { EditionConfig } from '@slicerx/edition-config'
+import type { CreatePilotOptions, MemoryFact, MemoryStore } from '@slicerx/pilot'
+import { useEdition } from '../edition'
+import { get } from '../state/store'
 
 const TABLE = 'facts'
 
@@ -82,4 +87,54 @@ function memoryOnly(name: string): MemoryStore {
 export function openMemoryStore(edition: string, idb: IDBFactory | null = typeof indexedDB === 'undefined' ? null : indexedDB): MemoryStore {
   const name = `slicerx-memory-${edition}`
   return idb ? indexedDbMemory(idb, name) : memoryOnly(name)
+}
+
+/** The app's handle on one edition's notes: the store, and a call for each change made through it. */
+export type AppMemory = MemoryStore & { subscribe(listener: () => void): () => void }
+
+const handles = new Map<string, AppMemory>()
+
+function watched(store: MemoryStore): AppMemory {
+  const listeners = new Set<() => void>()
+  const changed = <T>(p: Promise<T>): Promise<T> =>
+    p.then((v) => {
+      for (const l of listeners) l()
+      return v
+    })
+  return {
+    list: () => store.list(),
+    put: (f) => changed(store.put(f)),
+    remove: (id) => changed(store.remove(id)),
+    clear: () => changed(store.clear()),
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => void listeners.delete(listener)
+    },
+  }
+}
+
+/**
+ * The one handle every write and delete of `edition`'s notes goes through: mimir saving one, Settings editing,
+ * deleting or clearing them. Anything that copies notes elsewhere wraps this, so it sees every change.
+ */
+export function memoryFor(edition: string): AppMemory {
+  let h = handles.get(edition)
+  if (!h) {
+    h = watched(openMemoryStore(edition))
+    handles.set(edition, h)
+  }
+  return h
+}
+
+/** The handle for the edition this app runs as. */
+export function useMemoryStore(): AppMemory {
+  return memoryFor(useEdition().id)
+}
+
+/**
+ * What mimir runs with: the edition's switch, the shared handle, and whether saving a note shows the chip first.
+ * Settings > Memory > Save notes without asking turns the chip off, read at each save, so it applies at once.
+ */
+export function pilotMemory(edition: EditionConfig, store: MemoryStore): NonNullable<CreatePilotOptions['memory']> {
+  return { local: edition.ai.brain.memory.local, store, ask: () => !get().mimirRememberWithoutAsking }
 }

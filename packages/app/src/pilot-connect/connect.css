@@ -138,3 +138,34 @@
 .pc-share-cap { display: grid; }
 .pc-share-cap > span { grid-area: 1 / 1; visibility: hidden; }
 .pc-share-cap > span[data-on] { visibility: visible; }
+
+/* Settings > Memory (memory-section.tsx): each kind's notes as one flat card of rows, numbers in tabular figures */
+.mem-sec { font-variant-numeric: tabular-nums; }
+.mem-group { display: grid; gap: var(--s-1); }
+.mem-group > .set-sub { margin: 0; }
+.mem-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--surface-line); border-radius: var(--r-md); background: var(--surface-card); }
+.mem-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s-2); padding: var(--s-2); }
+.mem-row + .mem-row { border-top: 1px solid var(--line-soft); }
+/* the words and the field are one box: same type, padding and border, and the field grows with a hidden copy of its
+   text, so Edit keeps the row's height */
+.mem-text { flex: 1; min-width: 0; display: grid; }
+.mem-field, .mem-row[data-editing] .mem-text::after {
+  grid-area: 1 / 1; box-sizing: border-box; min-height: var(--h-sm); margin: 0; padding: var(--s-1) var(--s-2); border: 1px solid transparent; border-radius: var(--r-sm);
+  font: var(--fw-regular, 400) var(--fs-body) / var(--lh-body) var(--f-body); color: var(--fg); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.mem-row[data-editing] .mem-text::after { content: attr(data-value); visibility: hidden; }
+textarea.mem-field { width: 100%; resize: none; overflow: hidden; background: var(--field-bg); border-color: var(--field-line); font-variant-numeric: tabular-nums; }
+textarea.mem-field:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-field); }
+textarea.mem-field[aria-invalid='true'] { border-color: var(--red); }
+/* Edit and Save, Delete and Cancel: one width each, so the swap moves nothing */
+.mem-row-a { flex: none; display: flex; gap: var(--s-2); }
+.mem-row-a > .sx-btn { width: 64px; justify-content: center; }
+.mem-err { flex-basis: 100%; margin: 0; padding: 0 var(--s-2); color: var(--red); }
+.mem-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s-2); margin: 0; }
+.mem-clear { display: grid; gap: var(--s-3); padding: var(--s-4); max-width: 280px; }
+.mem-clear p { margin: 0; font-size: var(--fs-md); }
+.mem-clear-a { display: flex; justify-content: space-between; gap: var(--s-2); }
+/* a phone gives the words the row's full width, Edit and Delete under them at the right */
+:root[data-phone] .mem-text { flex-basis: 100%; }
+:root[data-phone] .mem-row-a { margin-left: auto; }
+:root[data-phone] .mem-row-a > .sx-btn, :root[data-phone] .mem-clear-a > .sx-btn { height: var(--h-lg); }

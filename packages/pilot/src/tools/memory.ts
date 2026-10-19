@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // memory.remember and memory.recall: short notes about the person (their printers, filaments, preferences, sizes and
-// what worked) kept on their computer. Saving is profile class, so the app asks first; a note that looks like a
-// secret is refused before the card. Recalling is read class. The edition turns both off with ai.brain.memory.local.
+// what worked) kept on their computer. Saving is profile class, so the app asks first unless the person turned that off
+// for notes; a note that looks like a secret is refused before the card either way. Recalling is read class. The
+// edition turns both off with ai.brain.memory.local.
 import { z } from 'zod'
 import { MEMORY_KINDS, NOTE_UNSAFE, pickFacts, redactSecrets, type MemoryFact, type MemoryStore } from '../memory/facts'
 import { defineTool, type PilotTool } from '../tool'
@@ -43,7 +44,8 @@ function label(k: string): string {
 
 const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
 
-export function memoryTools(store: MemoryStore, now: () => number = () => Date.now()): PilotTool<never>[] {
+/** `ask` false saves without the card (Settings > Memory > Save notes without asking); it is read at each save. */
+export function memoryTools(store: MemoryStore, now: () => number = () => Date.now(), ask: () => boolean = () => true): PilotTool<never>[] {
   const remember = defineTool({
     name: 'memory.remember',
     version: '1.0.0',
@@ -55,6 +57,7 @@ export function memoryTools(store: MemoryStore, now: () => number = () => Date.n
     // the row and the session log never echo a refused secret: the text with secrets cut out, and no data
     args: (i) => `${i.kind} "${redactSecrets(i.text).text}"`,
     shownInput: (i) => ({ kind: i.kind, text: redactSecrets(i.text).text, ...(i.data ? { data: secretIn(i) ? '[withheld]' : i.data } : {}) }),
+    withoutAsking: () => (ask() ? null : 'Saving without asking, as set in Settings.'),
     async approval(i) {
       if (secretIn(i)) throw new Error(REFUSED)
       // everything that is saved and read back later is on the card, the data too

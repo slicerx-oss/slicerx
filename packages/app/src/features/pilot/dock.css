@@ -48,3 +48,22 @@
   .mimir-dock { width: 100%; --mimir-w: 100%; }
 }
 .sx-pilot-dock .pc-notice { margin: var(--s-3); }
+
+/* The chip that asks before mimir keeps a note (remember-chip.tsx): a flat card in the chat, the note in the person's
+   words, and its answer and outcome stacked in one cell so answering moves nothing. */
+.mem-chip { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); border: 1px solid var(--surface-line); border-radius: var(--r-md); background: var(--surface-card); }
+.mem-chip-ic { flex: none; width: 24px; height: 24px; color: var(--accent); }
+.mem-chip-body { flex: 1; min-width: 0; display: grid; gap: var(--s-1); }
+.mem-chip-q { font-size: var(--fs-sm); color: var(--muted); }
+.mem-chip-note { font-size: var(--fs-body); line-height: var(--lh-body); color: var(--fg); overflow-wrap: anywhere; }
+.mem-chip-a { display: grid; margin-top: var(--s-2); }
+.mem-chip-a > * { grid-area: 1 / 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); min-height: var(--h-sm); visibility: hidden; }
+.mem-chip-a > [data-on] { visibility: visible; }
+.mem-chip-values { font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
+.mem-chip-hint { font-size: var(--fs-sm); color: var(--dim); }
+.mem-chip-err { font-size: var(--fs-sm); color: var(--orange); }
+.mem-chip-a > [role='status'] { font-size: var(--fs-md); color: var(--muted); }
+.mem-chip-a > [role='status'] > .sx-ic { width: 16px; height: 16px; color: var(--green); }
+.mem-chip[data-done='saved'] .mem-chip-a > [role='status'] > span { color: var(--fg); }
+:root[data-phone] .mem-chip-a > * { min-height: var(--h-lg); }
+:root[data-phone] .mem-chip-a .sx-btn { height: var(--h-lg); }
