@@ -433,22 +433,30 @@ async fn the_reply_names_the_model_the_proxy_used() {
     step.headers.insert("x-sx-tier".into(), "step".into());
     let reply = stream_mimir_cloud_reply(&store, &cloud, step).await.unwrap();
     assert_eq!(reply.model.as_deref(), Some("claude-haiku-5-5"));
-    let body: Vec<u8> = reply
-        .body
-        .map(|c| c.unwrap().to_vec())
-        .concat()
-        .await;
+    let body: Vec<u8> = reply.body.map(|c| c.unwrap().to_vec()).concat().await;
     assert_eq!(String::from_utf8(body).unwrap(), SSE);
     assert_eq!(
-        proxy.lock().unwrap().seen.last().unwrap().headers.get("x-sx-tier").map(String::as_str),
+        proxy
+            .lock()
+            .unwrap()
+            .seen
+            .last()
+            .unwrap()
+            .headers
+            .get("x-sx-tier")
+            .map(String::as_str),
         Some("step")
     );
     // an odd value is dropped, and a reply without the header names no model
     proxy.lock().unwrap().model = Some("<b>x</b>");
-    let odd = stream_mimir_cloud_reply(&store, &cloud, messages(&cloud)).await.unwrap();
+    let odd = stream_mimir_cloud_reply(&store, &cloud, messages(&cloud))
+        .await
+        .unwrap();
     assert_eq!(odd.model, None);
     proxy.lock().unwrap().model = None;
-    let none = stream_mimir_cloud_reply(&store, &cloud, messages(&cloud)).await.unwrap();
+    let none = stream_mimir_cloud_reply(&store, &cloud, messages(&cloud))
+        .await
+        .unwrap();
     assert_eq!(none.model, None);
 }
 

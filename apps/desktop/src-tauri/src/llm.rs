@@ -370,7 +370,10 @@ mod tests {
     #[tokio::test]
     async fn another_provider_never_passes_a_model_header() {
         let sse = "data: [DONE]\n\n";
-        let chunks = collect(request(server_with(200, sse, "x-sx-model: claude-sonnet-5-5\r\n").await)).await;
+        let chunks = collect(request(
+            server_with(200, sse, "x-sx-model: claude-sonnet-5-5\r\n").await,
+        ))
+        .await;
         assert!(!chunks.iter().any(|c| matches!(c, LlmChunk::Model { .. })));
         assert_eq!(chunks.last(), Some(&LlmChunk::End));
     }

@@ -132,7 +132,9 @@ pub struct Reply {
 
 impl std::fmt::Debug for Reply {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Reply").field("model", &self.model).finish_non_exhaustive()
+        f.debug_struct("Reply")
+            .field("model", &self.model)
+            .finish_non_exhaustive()
     }
 }
 
@@ -144,7 +146,11 @@ pub async fn stream_reply(req: LlmHttpRequest) -> Result<Reply> {
 
 fn reply(cloud: bool, response: reqwest::Response) -> Reply {
     Reply {
-        model: if cloud { cloud::reply_model(response.headers()) } else { None },
+        model: if cloud {
+            cloud::reply_model(response.headers())
+        } else {
+            None
+        },
         body: body_stream(response).boxed(),
     }
 }

@@ -305,10 +305,7 @@ fn build_request(call: &Call, token: &ApiKey) -> Result<reqwest::RequestBuilder>
 }
 
 async fn send_once(call: &Call, token: &ApiKey) -> Result<reqwest::Response> {
-    build_request(call, token)?
-        .send()
-        .await
-        .map_err(Error::transport)
+    build_request(call, token)?.send().await.map_err(Error::transport)
 }
 
 /// Sends with the install token. When the proxy no longer knows the install (401

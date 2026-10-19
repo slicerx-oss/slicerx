@@ -859,10 +859,12 @@ mod tests {
                 v["ai"]["brain"]["routing"] = routing;
             })
         };
-        assert!(EditionConfig::from_json(&with(
-            serde_json::json!({ "provider": "openai", "base": "gpt-6-luna" })
-        ))
-        .is_ok());
+        assert!(
+            EditionConfig::from_json(&with(
+                serde_json::json!({ "provider": "openai", "base": "gpt-6-luna" })
+            ))
+            .is_ok()
+        );
         assert!(EditionConfig::from_json(&with(serde_json::json!({}))).is_ok());
         let Err(Error::Invalid(issues)) =
             EditionConfig::from_json(&with(serde_json::json!({ "step": "gpt-6-sol" })))
