@@ -127,9 +127,24 @@ describe('the mimir tab on a model', () => {
     set({ pilot: { mode: 'on', provider: 'local', model: 'qwen3:8b-16k', baseUrl: 'http://127.0.0.1:11434/v1' } })
     await tabMimir(hostWith(transport(['openai-compatible'])), NEUTRAL)
     const state = (await runCall('mimir.tab', {})) as { link: string; local: boolean; tools: string[] }
-    expect(state).toMatchObject({ link: 'model', provider: 'openai-compatible', local: true })
+    expect(state).toMatchObject({ link: 'model', provider: 'openai-compatible', local: true, where: 'computer' })
     expect(state.tools).toEqual(expect.arrayContaining(['design.new', 'pilot.sheet', 'printer.queue']))
     expect(state.tools).not.toContain('make_model')
+  })
+
+  it('names where the model runs by its address: a local model on the network is not on this computer', async () => {
+    set({ pilot: { mode: 'on', provider: 'local', model: 'qwen3:8b-16k', baseUrl: 'http://192.168.1.20:11434/v1' } })
+    await tabMimir(hostWith(transport(['openai-compatible'])), NEUTRAL)
+    // still a local model for the tool list, but its server is on the network
+    expect(await runCall('mimir.tab', {})).toMatchObject({ link: 'model', local: true, where: 'network' })
+    resetTabMimir()
+    set({ pilot: { mode: 'on', provider: 'anthropic' } })
+    await tabMimir(hostWith(transport(['anthropic'])), NEUTRAL)
+    expect(await runCall('mimir.tab', {})).toMatchObject({ link: 'model', local: false, where: 'remote' })
+    resetTabMimir()
+    set({ pilot: { mode: 'unset' } })
+    await tabMimir(hostWith(), NEUTRAL)
+    expect(await runCall('mimir.tab', {})).toMatchObject({ link: 'scripted', where: null })
   })
 
   it('in the browser build, keeps the design tools and leaves out slicing and printers', async () => {
@@ -183,7 +198,7 @@ describe('the mimir tab on a model', () => {
   })
 
   it('reports none before the tab first opens', async () => {
-    expect(await runCall('mimir.tab', {})).toEqual({ link: 'none', provider: null, model: null, auto: null, local: false, tools: [] })
+    expect(await runCall('mimir.tab', {})).toEqual({ link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [] })
   })
 
   it('logs the model conversation for the read-back', async () => {

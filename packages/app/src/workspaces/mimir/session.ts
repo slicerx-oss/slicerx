@@ -7,7 +7,7 @@
 import { DEFAULT_POLICY, type CommandSpec, type Host, type LlmTransport, type MeshHandle, type MeshPart, type Pilot, type PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { designToolset, nozzleOr } from '@slicerx/mcp/toolset'
-import { createCombinedPlanner, createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type PilotTool } from '@slicerx/pilot'
+import { createCombinedPlanner, createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, whereNotesGo, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { setSessionSource } from '../../app-link/sessions'
@@ -45,8 +45,10 @@ export interface TabModel {
   model: string
   /** Auto's two models when the person chose Auto: huginn to start, muninn for pictures, many-step parts and sizes only the person knows. */
   auto?: { huginn: string; muninn: string }
-  /** Whether the model runs on this computer (Ollama or LM Studio). */
+  /** Whether it is a local model (a server the person runs, such as Ollama or LM Studio), which gets the shorter tool list. */
   local?: boolean
+  /** Where the model's server is, by its address (whereNotesGo): this computer, the person's network, or elsewhere. */
+  where?: NotesWhere
 }
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
@@ -67,13 +69,14 @@ export function tabModel(): TabModel | null {
 
 /**
  * `mimir.tab` over the app link: what answers in the tab (none before it first opens, scripted, or model), the model
- * and Auto's pair, whether it runs on this computer, and the tools the model is offered there (a local model gets a
- * shorter list). No key or token.
+ * and Auto's pair, whether it is a local model, where the model's server is (this computer, the person's network, or
+ * elsewhere; null without a model), and the tools the model is offered there (a local model gets a shorter list). No
+ * key or token.
  */
-export function tabState(): { link: MimirLink; provider: string | null; model: string | null; auto: { huginn: string; muninn: string } | null; local: boolean; tools: string[] } {
-  if (!current) return { link: 'none', provider: null, model: null, auto: null, local: false, tools: [] }
+export function tabState(): { link: MimirLink; provider: string | null; model: string | null; auto: { huginn: string; muninn: string } | null; local: boolean; where: NotesWhere | null; tools: string[] } {
+  if (!current) return { link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [] }
   const m = current.model
-  return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, tools: current.pilot.tools().map((t) => t.name) }
+  return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, where: m.where ?? null, tools: current.pilot.tools().map((t) => t.name) }
 }
 
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
@@ -213,7 +216,7 @@ export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknow
       // asks first with the memory chip, answered through the app's approvals.
       const pilot = createPilot(tabPilotOptions(host, { llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: pilotMemory(edition, { where: chatNotesGo(config, true) }), toolGroups: editionToolGroups(edition) }))
       const auto = config.auto && config.models?.huginn && config.models.muninn ? { huginn: config.models.huginn, muninn: config.models.muninn } : undefined
-      made = { pilot, model: { link: 'model', provider: config.provider, model: config.model, ...(auto ? { auto } : {}), ...(isLocalModel(config) ? { local: true } : {}) } }
+      made = { pilot, model: { link: 'model', provider: config.provider, model: config.model, ...(auto ? { auto } : {}), ...(isLocalModel(config) ? { local: true } : {}), where: whereNotesGo(config) } }
     } else {
       made = { pilot: scripted(host, kb, edition), model: { link: 'scripted', provider: 'scripted', model: 'scripted' } }
     }
