@@ -159,6 +159,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // what mimir remembers about the person, secrets hidden; and one fact added, which changes what mimir knows
   'mimir.memory': 'read',
   'mimir.memory_remember': 'edit',
+  // the mimir the edition runs: name, whether it has a voice, tool groups, cloud step-up, memory, knowledge doc count;
+  // never the voice text or the docs
+  'mimir.brain': 'read',
 }
 
 export { LinkError } from './methods-error'
@@ -482,6 +485,7 @@ const HANDLERS: Record<string, Handler> = {
   'mimir.dock': async () => (await import('../features/pilot/dock-model')).dockState(),
   'mimir.memory': async (args) => (await import('./mimir-memory')).readMemory(args),
   'mimir.memory_remember': async (args) => (await import('./mimir-memory')).rememberFact(args),
+  'mimir.brain': async () => (await import('./mimir-brain')).brainState(),
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()

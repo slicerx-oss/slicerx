@@ -233,6 +233,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // What mimir remembers about the person, with secrets hidden in the app; adding a fact changes what it knows.
     ("mimir.memory", LinkClass::Read),
     ("mimir.memory_remember", LinkClass::Edit),
+    // The mimir the edition runs: its name, tool groups, cloud step-up, memory and knowledge doc count. Never the
+    // voice text or the docs.
+    ("mimir.brain", LinkClass::Read),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -519,6 +522,7 @@ mod tests {
         ("mimir.dock", LinkClass::Read),
         ("mimir.memory", LinkClass::Read),
         ("mimir.memory_remember", LinkClass::Edit),
+        ("mimir.brain", LinkClass::Read),
     ];
 
     #[test]
