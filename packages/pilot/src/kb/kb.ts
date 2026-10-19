@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // In-memory knowledge base over the index compiled from knowledge/ by
-// scripts/build-kb.ts. Lookups are exact on ids and aliases; search is a small
+// scripts/build-kb.ts, plus the running edition's own knowledge from its
+// edition index. Lookups are exact on ids and aliases; search is a small
 // BM25 over names, aliases and flattened text.
 import type { Citation } from '@slicerx/contracts'
 
@@ -12,12 +13,14 @@ export interface KbDoc {
   id: string
   name: string
   aliases: string[]
-  /** Path under knowledge/, for diagnostics. */
+  /** Path under knowledge/, or under the edition folder for an edition's doc, for diagnostics. */
   file: string
   /** The parsed YAML record. */
   data: Record<string, unknown>
   /** Every source id cited anywhere in the record. */
   sources: string[]
+  /** The edition id, for a doc from an edition's own knowledge (ai.brain.knowledge). Only that edition sees it. */
+  edition?: string
 }
 
 export interface KbSource {
@@ -26,6 +29,8 @@ export interface KbSource {
   publisher?: string
   url?: string
   type?: string
+  /** The edition id, for a source from an edition's own knowledge; it cites as kind `edition`. */
+  edition?: string
 }
 
 export interface KbPrefix {
@@ -33,6 +38,8 @@ export interface KbPrefix {
   title: string
   publisher?: string
   urlTemplate: string
+  /** The edition id, for a prefix from an edition's own knowledge. */
+  edition?: string
 }
 
 export interface KbSetting {
@@ -137,18 +144,39 @@ function flatten(v: unknown, out: string[]): void {
   }
 }
 
-export function createKnowledgeBase(index: KbIndex): KnowledgeBase {
+/** The running edition and its own knowledge, the edition index scripts/build-kb.ts compiles. */
+export interface KbEdition {
+  id: string
+  index: KbIndex
+}
+
+/**
+ * A knowledge base over the bundled index and, with `edition`, that edition's docs and sources from its index. Anything tagged
+ * with another edition is left out of both, so one edition never finds or cites another's knowledge. On the same id
+ * the bundled entry wins.
+ */
+export function createKnowledgeBase(bundled: KbIndex, edition?: KbEdition): KnowledgeBase {
+  const mine = <T extends { edition?: string }>(x: T): boolean => x.edition === undefined || x.edition === edition?.id
+  const own = edition?.index
+  const index: KbIndex = {
+    ...bundled,
+    docs: [...bundled.docs, ...(own?.docs ?? [])].filter(mine),
+    sources: [...bundled.sources, ...(own?.sources ?? [])].filter(mine),
+    prefixes: [...bundled.prefixes, ...(own?.prefixes ?? [])].filter(mine),
+  }
   const byKey = new Map<string, KbDoc>()
   for (const d of index.docs) {
-    byKey.set(`${d.kind}:${norm(d.id)}`, d)
-    byKey.set(`${d.kind}:${norm(d.name)}`, d)
+    // an edition's doc never takes a bundled doc's id or name
+    for (const k of [`${d.kind}:${norm(d.id)}`, `${d.kind}:${norm(d.name)}`]) if (!d.edition || !byKey.has(k)) byKey.set(k, d)
     for (const a of d.aliases) {
       const k = `${d.kind}:${norm(a)}`
       if (!byKey.has(k)) byKey.set(k, d)
     }
   }
-  const sources = new Map(index.sources.map((s) => [s.id, s]))
-  const prefixes = new Map(index.prefixes.map((p) => [p.prefix, p]))
+  const sources = new Map(index.sources.filter((s) => !s.edition).map((s) => [s.id, s]))
+  for (const s of index.sources) if (s.edition && !sources.has(s.id)) sources.set(s.id, s)
+  const prefixes = new Map(index.prefixes.filter((p) => !p.edition).map((p) => [p.prefix, p]))
+  for (const p of index.prefixes) if (p.edition && !prefixes.has(p.prefix)) prefixes.set(p.prefix, p)
   const settings = new Map(index.settings.map((s) => [s.key, s]))
 
   // BM25 fields: names and aliases weigh more than body text.
@@ -216,7 +244,7 @@ export function createKnowledgeBase(index: KbIndex): KnowledgeBase {
         seen.add(id)
         const s = sources.get(id)
         if (s) {
-          const c: Citation = { id, title: s.title, kind: 'kb' }
+          const c: Citation = { id, title: s.title, kind: s.edition ? 'edition' : 'kb' }
           if (s.url) c.url = s.url
           if (s.publisher) c.publisher = s.publisher
           out.push(c)
@@ -231,7 +259,7 @@ export function createKnowledgeBase(index: KbIndex): KnowledgeBase {
               id,
               title: `${p.title}: ${path}`,
               url: p.urlTemplate.replace('{path}', path.split('/').map(encodeURIComponent).join('/')),
-              kind: 'kb',
+              kind: p.edition ? 'edition' : 'kb',
             }
             if (p.publisher) c.publisher = p.publisher
             out.push(c)
