@@ -2,11 +2,12 @@
 -- Copyright (C) 2026 The SlicerX contributors
 -- mimir memory sync (pgTAP): a person reads and writes only their own facts, the newer
 -- updated_at wins, deletions are tombstones, a clock far ahead is ignored, tombstones do not hold
--- slots under the cap and old ones are pruned, and neither anon nor the mimir session reader
--- reaches the table. Run with `supabase test db` after `supabase db reset`.
+-- slots under the cap and old ones are pruned (only the writer's, and never without a signed-in
+-- writer), the account export carries the person's own facts, and neither anon nor the mimir
+-- session reader reaches the table. Run with `supabase test db` after `supabase db reset`.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(28);
+select plan(36);
 
 create temp table ids on commit drop as
 select
@@ -31,6 +32,14 @@ begin
   reset role;
   perform set_config('request.jwt.claims', '{"role":"anon"}', true);
   set local role anon;
+end;
+$$;
+
+-- the table owner with no signed-in user: auth.uid() is null
+create function pg_temp.as_nobody() returns void language plpgsql as $$
+begin
+  reset role;
+  perform set_config('request.jwt.claims', '', true);
 end;
 $$;
 
@@ -103,6 +112,14 @@ select throws_ok(
   $$insert into public.mimir_memory (edition, id, fact, updated_at)
     values ('slicerx', 'odd', '{"deleted": true, "updatedAt": 1, "text": "kept"}', now())$$,
   '23514', null, 'a tombstone carries only deleted and updatedAt');
+select throws_ok(
+  $$insert into public.mimir_memory (edition, id, fact, updated_at)
+    values ('slicerx', 'bare', '{"deleted": true}', now())$$,
+  '23514', null, 'a tombstone without updatedAt is refused');
+select throws_ok(
+  $$insert into public.mimir_memory (edition, id, fact, updated_at)
+    values ('slicerx', 'text-time', '{"deleted": true, "updatedAt": "1"}', now())$$,
+  '23514', null, 'a tombstone with an updatedAt that is not a number is refused');
 select ok(not has_table_privilege('authenticated', 'public.mimir_memory', 'DELETE, TRUNCATE'),
   'clients never delete rows');
 select is((select fact ->> 'text' from public.mimir_memory where edition = 'layermate' and id = 'p1'), 'X1C',
@@ -156,6 +173,36 @@ select is((select count(*)::int from public.mimir_memory where edition = 'prune'
   'an edition keeps at most 8000 tombstones');
 select ok(not exists (select 1 from public.mimir_memory where edition = 'prune' and id in ('recent', 't1')),
   'the oldest tombstones go first');
+
+-- prune touches only the writer's tombstones, and nothing at all without a signed-in writer
+select pg_temp.as_nobody();
+insert into public.mimir_memory (user_id, edition, id, fact, updated_at) values
+  ((select ash from ids), 'prune', 'ash-old', '{"deleted": true, "updatedAt": 1}', now() - interval '120 days'),
+  ((select rv from ids), 'nouid', 'rv-old', '{"deleted": true, "updatedAt": 1}', now() - interval '120 days');
+select is((select count(*)::int from public.mimir_memory where id in ('ash-old', 'rv-old')), 2,
+  'with no signed-in writer, prune removes nothing');
+select pg_temp.as_user('rv');
+insert into public.mimir_memory (edition, id, fact, updated_at) values ('prune', 'rv-write', '{"text": "a write"}', now());
+reset role;
+select is((select count(*)::int from public.mimir_memory where id = 'ash-old'), 1,
+  'a write prunes the writer''s old tombstones, never another user''s');
+select is((select count(*)::int from public.mimir_memory where id = 'rv-old'), 0,
+  'and the writer''s own old tombstones go');
+
+-- the account export carries the person's own facts and tombstones, and no one else's
+select pg_temp.as_user('ash');
+insert into public.mimir_memory (edition, id, fact, updated_at) values ('slicerx', 'ash-fact', '{"text": "ash only"}', now());
+select pg_temp.as_user('rv');
+select is((select jsonb_array_length(public.export_my_data() -> 'mimir_memory')),
+  (select count(*)::int from public.mimir_memory), 'the export has every one of the person''s memory rows');
+select ok(not exists (
+    select 1 from jsonb_array_elements(public.export_my_data() -> 'mimir_memory') m
+    where (m ->> 'user_id')::uuid <> (select rv from ids) or m ->> 'id' = 'ash-fact'),
+  'the export has no one else''s memory');
+select ok(exists (
+    select 1 from jsonb_array_elements(public.export_my_data() -> 'mimir_memory') m
+    where m ->> 'edition' = 'layermate' and m -> 'fact' ->> 'text' = 'X1C'),
+  'the export carries each fact with its edition');
 
 select pg_temp.as_anon();
 select throws_ok('select count(*) from public.mimir_memory', '42501', null, 'anon cannot read facts');
