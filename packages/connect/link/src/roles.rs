@@ -228,7 +228,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("mimir.share", LinkClass::Read),
     // mimir cloud at a glance: offered, in use, signed in, and today's use while in use. No key or token.
     ("mimir.status", LinkClass::Read),
-    // What answers in the mimir tab (a model, whether it runs locally, or the scripted stub) and the tools it is offered.
+    // What answers in the mimir tab (a model and where it runs: this computer, your network or the model's server; or
+    // the scripted stub) and the tools it is offered.
     // No key or token.
     ("mimir.tab", LinkClass::Read),
     // What mimir remembers about the person, with secrets hidden in the app; adding a fact changes what it knows.

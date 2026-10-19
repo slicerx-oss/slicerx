@@ -154,7 +154,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.share': 'read',
   // mimir cloud at a glance: offered, in use, signed in, and today's use when in use; no key or token
   'mimir.status': 'read',
-  // what answers in the mimir tab: a model (which one, Auto's pair, whether it runs locally) or the scripted stub, and the tools it is offered
+  // what answers in the mimir tab: a model (which one, Auto's pair, where it runs: this computer, your network or the
+  // model's server) or the scripted stub, and the tools it is offered
   'mimir.tab': 'read',
   // what mimir remembers about the person, secrets hidden; and one fact added, which changes what mimir knows
   'mimir.memory': 'read',

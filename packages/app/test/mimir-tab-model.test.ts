@@ -123,7 +123,7 @@ describe('the mimir tab on a model', () => {
     expect(body(llm.sent[0]!).model).toBe('claude-sonnet-5-5')
   })
 
-  it('says when the model runs on this computer, and lists the tools it is offered', async () => {
+  it("says where the model runs (this computer, your network or the model's server), and lists the tools it is offered", async () => {
     set({ pilot: { mode: 'on', provider: 'local', model: 'qwen3:8b-16k', baseUrl: 'http://127.0.0.1:11434/v1' } })
     await tabMimir(hostWith(transport(['openai-compatible'])), NEUTRAL)
     const state = (await runCall('mimir.tab', {})) as { link: string; local: boolean; tools: string[] }
