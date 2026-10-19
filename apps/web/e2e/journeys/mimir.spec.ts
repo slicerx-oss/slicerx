@@ -394,8 +394,9 @@ test.describe('the mimir tab', () => {
       assumptions: [],
       questions: [],
     }
-    // window.__mimirPlans is there only with localStorage 'slicerx.debug' set, which the journey's page setup does
-    await page.evaluate((p) => (window as unknown as { __mimirPlans: { put(plan: unknown): void } }).__mimirPlans.put(p), plan)
+    // window.__mimirPlans is there only with localStorage 'slicerx.debug' set, which the journey's page setup does. The
+    // plan goes in as one the person made on the card: the scripted check reads card plans only, never a client's
+    await page.evaluate((p) => (window as unknown as { __mimirPlans: { put(plan: unknown, design: undefined, origin: 'card'): void } }).__mimirPlans.put(p, undefined, 'card'), plan)
     await say('Check it against the plan')
     await expect(transcript).toContainText('It does not match the plan yet.', { timeout: 30_000 })
     // the reply names the design it checked (the one named as the plan's part)
