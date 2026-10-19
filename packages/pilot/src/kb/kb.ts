@@ -152,21 +152,24 @@ export interface KbEdition {
 
 /**
  * A knowledge base over the bundled index and, with `edition`, that edition's docs and sources from its index. Anything tagged
- * with another edition is left out of both, so one edition never finds or cites another's knowledge. On the same id
- * the bundled entry wins.
+ * with another edition is left out of both, so one edition never finds or cites another's knowledge. An edition doc
+ * with a bundled doc's id or name is left out too, and on a source id the bundled entry wins.
  */
 export function createKnowledgeBase(bundled: KbIndex, edition?: KbEdition): KnowledgeBase {
   const mine = <T extends { edition?: string }>(x: T): boolean => x.edition === undefined || x.edition === edition?.id
   const own = edition?.index
+  // an edition's doc that shares a bundled doc's id or name is left out, from lookups and search alike
+  const taken = new Set(bundled.docs.filter((d) => !d.edition).flatMap((d) => [`${d.kind}:${norm(d.id)}`, `${d.kind}:${norm(d.name)}`]))
+  const fresh = (d: KbDoc): boolean => !d.edition || (!taken.has(`${d.kind}:${norm(d.id)}`) && !taken.has(`${d.kind}:${norm(d.name)}`))
   const index: KbIndex = {
     ...bundled,
-    docs: [...bundled.docs, ...(own?.docs ?? [])].filter(mine),
+    docs: [...bundled.docs, ...(own?.docs ?? [])].filter((d) => mine(d) && fresh(d)),
     sources: [...bundled.sources, ...(own?.sources ?? [])].filter(mine),
     prefixes: [...bundled.prefixes, ...(own?.prefixes ?? [])].filter(mine),
   }
   const byKey = new Map<string, KbDoc>()
   for (const d of index.docs) {
-    // an edition's doc never takes a bundled doc's id or name
+    // one edition doc never takes another's id or name
     for (const k of [`${d.kind}:${norm(d.id)}`, `${d.kind}:${norm(d.name)}`]) if (!d.edition || !byKey.has(k)) byKey.set(k, d)
     for (const a of d.aliases) {
       const k = `${d.kind}:${norm(a)}`

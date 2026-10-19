@@ -26,7 +26,7 @@ const GENERATORS = [
   { name: 'settings gen:profiles', run: ['pnpm', '--filter', '@slicerx/settings', 'gen:profiles'], outputs: ['packages/settings/profiles/printers.json'] },
   { name: 'settings gen:defaults', run: ['pnpm', '--filter', '@slicerx/settings', 'gen:defaults'], outputs: ['packages/settings/defaults.json'] },
   { name: 'settings gen:reference', run: ['pnpm', '--filter', '@slicerx/settings', 'gen:reference'], outputs: ['packages/settings/docs/reference'] },
-  { name: 'pilot kb:build', run: ['pnpm', '--filter', '@slicerx/pilot', 'kb:build'], outputs: ['packages/pilot/src/kb/generated/kb.json', 'packages/pilot/src/kb/generated/edition-kb.json'] },
+  { name: 'pilot kb:build', run: ['pnpm', '--filter', '@slicerx/pilot', 'kb:build'], outputs: ['packages/pilot/src/kb/generated/kb.json', 'packages/pilot/src/kb/generated/edition-kb.*.json'] },
   {
     name: 'ui gen:icons',
     run: ['pnpm', '--filter', '@slicerx/ui', 'gen:icons'],

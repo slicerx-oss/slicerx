@@ -382,7 +382,7 @@ export interface PilotConfig {
   deepDesign?: boolean
   /**
    * The edition's models for the person's own key (ai.brain.routing): base for huginn, step for muninn, for a key of
-   * `provider` (either when unset). mimir cloud ignores it; its proxy picks the model.
+   * `provider` only. mimir cloud ignores it; its proxy picks the model.
    */
   routing?: { provider?: 'anthropic' | 'openai'; base?: string; step?: string }
 }

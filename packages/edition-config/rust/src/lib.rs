@@ -687,6 +687,13 @@ impl EditionConfig {
             self.legal.source_url.is_some(),
             "legal.sourceUrl: edition builds ship the AGPL-3.0 stock profiles: set legal.sourceUrl so users can get the source (section 13)",
         );
+        if let Some(r) = self.ai.brain.as_ref().and_then(|b| b.routing.as_ref()) {
+            need(
+                r.base.is_some() || r.step.is_some(),
+                r.provider.is_some(),
+                "ai.brain.routing.provider: routing that names base or step models needs a provider (anthropic or openai)",
+            );
+        }
         if let Some(s) = &self.backend.supabase {
             if s.url.is_empty() || s.anon_key.len() < 20 {
                 issues.push("backend.supabase: url and anonKey are both required".to_owned());
@@ -788,6 +795,28 @@ mod tests {
         assert_eq!(serde_json::to_value(brain).unwrap(), input);
         let unknown = serde_json::json!({ "tools": { "cad": true } });
         assert!(serde_json::from_value::<Brain>(unknown).is_err());
+    }
+
+    #[test]
+    fn routing_models_need_a_provider() {
+        let with = |routing: serde_json::Value| {
+            neutral_with(|v| {
+                v["ai"]["brain"]["routing"] = routing;
+            })
+        };
+        assert!(
+            EditionConfig::from_json(&with(
+                serde_json::json!({ "provider": "openai", "base": "gpt-6-luna" })
+            ))
+            .is_ok()
+        );
+        assert!(EditionConfig::from_json(&with(serde_json::json!({}))).is_ok());
+        let Err(Error::Invalid(issues)) =
+            EditionConfig::from_json(&with(serde_json::json!({ "step": "gpt-6-sol" })))
+        else {
+            panic!("expected issues")
+        };
+        assert!(issues.iter().any(|i| i.starts_with("ai.brain.routing.provider")));
     }
 
     #[test]

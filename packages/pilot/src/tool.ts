@@ -3,6 +3,7 @@
 import type {
   ApprovalToken,
   Citation,
+  CommandSpec,
   JobFile,
   PermissionClass,
   PilotChoice,
@@ -11,6 +12,7 @@ import type {
   PilotSheet,
   PilotSheetAnswer,
   PilotSheetBind,
+  PluginKind,
   PrinterHost,
   SettingsDiff,
   SettingValue,
@@ -131,6 +133,10 @@ export interface PilotTool<I = unknown> {
   title?: string
   /** Other words makers use for it (bevel for chamfer), for finding it. */
   aliases?: string[]
+  /** For a plugin's tool: the manifest it came from, which decides its tool group (surfaces.ts). */
+  plugin?: { id: string; kind: PluginKind }
+  /** For an app command's tool: where the command sits, which decides its tool group (surfaces.ts). */
+  command?: { id: string; section: CommandSpec['section']; workspace?: string }
   /** The set it loads with. */
   toolset?: Toolset
   /** The shape of `structured` replies, published as the MCP output schema. */
