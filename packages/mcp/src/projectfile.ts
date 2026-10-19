@@ -64,6 +64,11 @@ export interface ImportReport {
   invalid: { key: string; value: unknown }[]
   /** Which wall generator the project slices with and why, when it names one or SlicerX keeps its own. */
   walls?: WallsNote
+  /**
+   * Why the file's `Metadata/project_settings.config` was left out, when it is not a JSON object of settings (INI style
+   * lines, a damaged file). The project then opens and slices as one without settings.
+   */
+  skipped?: string
 }
 
 export type { WallsNote } from '@slicerx/settings'
@@ -90,6 +95,7 @@ const REPORT_NAMES = 8
 export function importReportLines(report: ImportReport, withWalls = true): string[] {
   const named = (keys: string[]): string => keys.slice(0, REPORT_NAMES).join(', ') + (keys.length > REPORT_NAMES ? ` and ${keys.length - REPORT_NAMES} more` : '')
   const out: string[] = []
+  if (report.skipped) out.push(report.skipped)
   if (report.invalid.length) out.push(`${report.invalid.length} with a value ${productName()} cannot read, kept from the preset: ${named(report.invalid.map((i) => i.key))}`)
   if (report.unknown.length) out.push(`${report.unknown.length} ${productName()} does not know, not used: ${named(report.unknown.map((u) => u.key))}`)
   if (report.other_slicer.length) out.push(`${report.other_slicer.length} only another slicer reads, not used: ${named(report.other_slicer)}`)
@@ -130,22 +136,47 @@ function projectValue(v: unknown): SettingValue | undefined {
   return undefined
 }
 
+/** Text made only of `key = value` lines, with `;` or `#` comments and `[section]` headers between them. */
+function looksLikeIni(text: string): boolean {
+  let pairs = 0
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith(';') || line.startsWith('#') || (line.startsWith('[') && line.endsWith(']'))) continue
+    const eq = line.indexOf('=')
+    if (eq < 0 || !/^[A-Za-z0-9_]+$/.test(line.slice(0, eq).trim())) return false
+    pairs++
+  }
+  return pairs > 0
+}
+
+/**
+ * `Metadata/project_settings.config` as settings, as sx-core reads it: nothing when the file has none or it is empty or
+ * only white space, the JSON object when it is one (a leading byte order mark is allowed), else why it was left out.
+ */
+export function projectSettingsOf(name: string, text: string | undefined): { raw?: Record<string, unknown>; skipped?: string } {
+  const body = text?.replace(/^\uFEFF/, '')
+  if (body === undefined || /^[ \t\n\r\f]*$/.test(body)) return {}
+  let why: string
+  try {
+    const j: unknown = JSON.parse(body)
+    if (j !== null && typeof j === 'object' && !Array.isArray(j)) return { raw: j as Record<string, unknown> }
+    why = 'is JSON but not an object of settings'
+  } catch (e) {
+    why = looksLikeIni(body) ? 'holds INI style settings (key = value lines), not JSON' : `is not JSON (${e instanceof Error ? e.message : String(e)})`
+  }
+  return { skipped: `${name}: Metadata/project_settings.config ${why}, so the project's print settings were left out` }
+}
+
 const listOf = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : typeof v === 'string' && v !== '' ? v.split(';') : [])
 
 export function readProjectFile(path: string): ProjectRead {
   const name = basename(path)
   const zip = readZip(readFileSync(path), name)
   if (!zip.names().some((n) => n.toLowerCase().endsWith('.model'))) throw new ToolInputError(`${name} has no 3D model part, so it is not a 3MF project`, 'invalid_model')
-  const settingsText = zip.text('Metadata/project_settings.config')
+  const read = projectSettingsOf(name, zip.text('Metadata/project_settings.config'))
+  const hasSettings = read.raw !== undefined
   const modelSettings = zip.text('Metadata/model_settings.config')
-  let raw: Record<string, unknown> = {}
-  if (settingsText !== undefined) {
-    try {
-      raw = JSON.parse(settingsText) as Record<string, unknown>
-    } catch {
-      throw new ToolInputError(`${name}: Metadata/project_settings.config is not JSON`, 'invalid_model')
-    }
-  }
+  const raw: Record<string, unknown> = read.raw ?? {}
   const dropped = Object.keys(raw).filter(isNeverImported).sort()
   // Bambu Studio 2 writes some values once per hotend variant: the ones that slice, as the app takes them.
   let kept: Record<string, unknown>
@@ -217,22 +248,23 @@ export function readProjectFile(path: string): ProjectRead {
   const fromOf = new Map(renamed.map((r) => [r.to, r.from]))
   const modelPath = zip.names().find((n) => n.toLowerCase() === '3d/3dmodel.model')
   // A project's main model only places its objects, so it is small; a plain 3MF's can be large and has no settings.
-  const source = settingsText !== undefined && modelPath ? sourceApp(zip.text(modelPath)?.slice(0, 4096)) : undefined
+  const source = hasSettings && modelPath ? sourceApp(zip.text(modelPath)?.slice(0, 4096)) : undefined
   const importReport: ImportReport = {
     ...(source ? { source } : {}),
+    ...(read.skipped ? { skipped: read.skipped } : {}),
     unknown: imported.unknownKeys.map((k) => ({ key: k, value: raw[k] })),
     retired: imported.ignoredKeys.filter((k) => !LEGACY_GROUPS.foreign.has(k)),
     other_slicer: imported.ignoredKeys.filter((k) => LEGACY_GROUPS.foreign.has(k)),
     renamed,
     invalid: imported.invalidKeys.map((k) => ({ key: k, value: raw[k] ?? raw[fromOf.get(k) ?? ''] })),
   }
-  const walls = settingsText !== undefined ? projectWalls(raw, source) : undefined
+  const walls = hasSettings ? projectWalls(raw, source) : undefined
   if (walls) importReport.walls = walls
 
   return {
     summary: {
       file: path,
-      has_settings: settingsText !== undefined,
+      has_settings: hasSettings,
       plates,
       presets: { ...(imported.names.printer ? { printer: imported.names.printer } : {}), ...(imported.names.process ? { process: imported.names.process } : {}), filaments: presets },
       filaments,
