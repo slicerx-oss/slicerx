@@ -16,7 +16,8 @@ const DIMS = [
   { key: 'case_allowance', label: 'Case allowance', value: 1.5, unit: 'mm', min: 0, max: 5, source: 'guess' },
   { key: 'lean', label: 'Lean angle', value: 70, unit: 'deg', min: 45, max: 85, source: 'guess' },
 ]
-const SHEET = { name: 'pilot.sheet', args: { title: 'Phone stand sizes', views: ['front', 'side'], dims: DIMS } }
+const PART = [{ plane: 'xz', points: [[0, 0], [80, 0], [80, 6], [0, 6]], from: -35, to: 35 }]
+const SHEET = { name: 'pilot.sheet', args: { title: 'Phone stand sizes', views: ['front', 'side'], dims: DIMS, part: PART } }
 
 async function play(steps: ScriptStep[], answer?: (sheet: PilotSheet) => Record<string, number> | null) {
   const p = pilot(steps)
@@ -61,6 +62,14 @@ describe('pilot.sheet', () => {
       expect(events.some((e) => e.type === 'sheet'), JSON.stringify(dims)).toBe(false)
       expect(events.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false })
     }
+  })
+
+  it('refuses a sheet of several sizes with no part to draw, and keeps a one-row sheet', async () => {
+    const none = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Sizes', dims: DIMS } }] }], () => ({}))
+    expect(none.some((e) => e.type === 'sheet')).toBe(false)
+    expect(none.find((e) => e.type === 'tool_result')).toMatchObject({ ok: false, summary: expect.stringContaining('needs part') })
+    const one = await play([{ calls: [{ name: 'pilot.sheet', args: { title: 'Bore', dims: [DIMS[1]] } }] }], () => ({}))
+    expect(one.some((e) => e.type === 'sheet')).toBe(true)
   })
 
   it('carries the part and each row\'s place on its drawing', async () => {
