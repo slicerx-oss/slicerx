@@ -87,7 +87,7 @@ export function sheetTool(): PilotTool<never> {
     input: z
       .object({
         title: z.string().min(2).max(60),
-        views: z.array(z.enum(['front', 'top', 'side', 'iso'])).min(1).max(4).default(['iso']),
+        views: z.array(z.enum(['front', 'top', 'side', 'iso'])).min(1).max(4).default(['top', 'front', 'side', 'iso']),
         dims: z.array(dim).min(1).max(30),
         part: z.array(solid).min(1).max(40).optional(),
       })
