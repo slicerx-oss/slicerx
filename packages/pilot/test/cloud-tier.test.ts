@@ -9,6 +9,8 @@ import { DEFAULT_CONFIG } from '../src/config'
 import { HUGINN, MUNINN } from '../src/models'
 import { cloudHeaders, cloudModel, createTransportClient } from '../src/provider/client'
 import { createPilot } from '../src/runtime'
+import { defineTool, type PilotTool } from '../src/tool'
+import { z } from 'zod'
 
 const BASE = 'https://abcdefghijklmnop.supabase.co/functions/v1/mimir'
 const HAIKU = 'claude-haiku-5-5'
@@ -60,19 +62,21 @@ const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as unknown
 const NO_APPROVALS = { register: async () => undefined, grant: async () => undefined, deny: async () => undefined } as unknown as ApprovalHost
 const CLOUD = { ...DEFAULT_CONFIG, provider: 'mimir-cloud', model: HAIKU, baseUrl: BASE, billing: 'key' as const, webSearch: false }
 
-async function run(t: LlmTransport, message: string, opts: { scope?: 'design'; attachments?: PilotAttachment[] } = {}): Promise<PilotEvent[]> {
+async function run(t: LlmTransport, message: string, opts: { design?: boolean; attachments?: PilotAttachment[] } = {}): Promise<PilotEvent[]> {
   const pilot = createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: t },
     config: CLOUD,
     policy: DEFAULT_POLICY,
     builtins: false,
-    tools: [],
-    ...(opts.scope ? { scope: opts.scope } : {}),
+    // the mimir tab gives its runtime the design tools, and Auto then routes a build by the request
+    tools: opts.design ? [designNew] : [],
   })
   const ev: PilotEvent[] = []
   for await (const e of pilot.run('ses_1', message, opts.attachments ? { attachments: opts.attachments } : {})) ev.push(e)
   return ev
 }
+
+const designNew = defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', description: 'design.new for the test', input: z.object({}).passthrough(), run: async () => ({ summary: 'new design' }) }) as PilotTool<never>
 
 const tiers = (sent: LlmHttpRequest[]): (string | undefined)[] => sent.map((r) => r.headers['x-sx-tier'])
 const switches = (ev: PilotEvent[]): string[] => ev.flatMap((e) => (e.type === 'model_switch' ? [e.model] : []))
@@ -114,12 +118,12 @@ describe('mimir cloud asks for the stronger model on hard turns', () => {
     expect(tiers(sent)).toEqual(['base', 'base', 'step', 'step'])
   })
 
-  it("the design tab's many-step part sends step", async () => {
+  it("the tab's many-step part sends step", async () => {
     const { t, sent } = proxy([{ text: 'Building it.' }])
-    await run(t, 'A spur gear with 20 teeth and a 5 mm bore', { scope: 'design' })
+    await run(t, 'A spur gear with 20 teeth and a 5 mm bore', { design: true })
     expect(tiers(sent)).toEqual(['step'])
     const plain = proxy([{ text: 'Building it.' }])
-    await run(plain.t, 'Make me a 30 mm cube', { scope: 'design' })
+    await run(plain.t, 'Make me a 30 mm cube', { design: true })
     expect(tiers(plain.sent)).toEqual(['base'])
   })
 })
