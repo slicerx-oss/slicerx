@@ -25,9 +25,11 @@ describe('the step list in the full prompt', () => {
     expect(at).toBeLessThan(p.indexOf('Untrusted data:'))
   })
 
-  it('leaves the cad and design prompts without it', () => {
+  it('leaves the cad prompt without it, with or without the design tools', () => {
     expect(systemPrompt('cad')).not.toContain('Multi-step requests:')
-    expect(systemPrompt('design')).not.toContain('Multi-step requests:')
+    expect(systemPrompt('cad', (n) => !n.startsWith('design.'))).not.toContain('Multi-step requests:')
+    // the whole app keeps it when the mimir tab gives the design tools
+    expect(systemPrompt('full', (n) => n.startsWith('design.') || n.startsWith('geom.'))).toContain('Multi-step requests:')
   })
 
   it('keeps an edition voice as the very last thing', () => {
