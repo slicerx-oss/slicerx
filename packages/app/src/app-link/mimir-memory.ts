@@ -9,6 +9,7 @@ import { appName } from '../edition'
 import { HIDDEN, redactSecrets, SECRET_KEY } from './memory-secrets'
 import { LinkError } from './methods-error'
 
+// TODO: when the memory store lands, its redactSecrets and shared fact types replace memory-secrets.ts, these kinds and MemoryFact here and in packages/mcp/src/mimir-memory.ts.
 export const MEMORY_KINDS = ['printer', 'filament', 'preference', 'outcome', 'size'] as const
 export type MemoryKind = (typeof MEMORY_KINDS)[number]
 export type MemoryData = Record<string, string | number>
@@ -57,14 +58,20 @@ function kindArg(v: unknown, required: boolean): MemoryKind | undefined {
   return v as MemoryKind
 }
 
-/** A fact as it may leave the app: secrets in its text and data hidden. */
+/** A fact as it may leave the app: secrets in its text and data hidden, and a data name that is a secret hidden with its value. */
 function shown(f: MemoryFact): { fact: MemoryFact; hid: boolean } {
   const text = redactSecrets(f.text)
   let hid = text.refused
   const fact: MemoryFact = { id: f.id, kind: f.kind, text: text.text, updatedAt: f.updatedAt }
   if (f.data) {
+    let named = 0
     fact.data = Object.fromEntries(
       Object.entries(f.data).map(([k, v]) => {
+        if (redactSecrets(k).refused) {
+          hid = true
+          named++
+          return [`${HIDDEN} ${named}`, HIDDEN]
+        }
         if (SECRET_KEY.test(k)) {
           hid = true
           return [k, HIDDEN]
@@ -99,10 +106,11 @@ function dataArg(v: unknown): MemoryData | undefined {
   if (!v || typeof v !== 'object' || Array.isArray(v)) throw new LinkError('invalid_input', 'data is an object of names to text or numbers')
   const entries = Object.entries(v)
   if (entries.length > MAX_DATA) throw new LinkError('invalid_input', `data has at most ${MAX_DATA} entries`)
-  for (const [k, x] of entries) {
-    if (!k.trim() || k.length > 64) throw new LinkError('invalid_input', 'each data name is 1 to 64 characters')
+  // Refusals name an entry by its position, never by its name, which may be a secret.
+  for (const [n, [k, x]] of entries.entries()) {
+    if (!k.trim() || k.length > 64) throw new LinkError('invalid_input', `data entry ${n + 1} needs a name of 1 to 64 characters`)
     if (typeof x === 'number' ? !Number.isFinite(x) : typeof x !== 'string' || x.length > MAX_VALUE) {
-      throw new LinkError('invalid_input', `data ${k} is text of at most ${MAX_VALUE} characters or a number`)
+      throw new LinkError('invalid_input', `data entry ${n + 1} is text of at most ${MAX_VALUE} characters or a number`)
     }
   }
   return v as MemoryData
@@ -116,7 +124,7 @@ export async function rememberFact(args: Record<string, unknown>) {
   const text = typeof raw === 'string' ? raw.trim() : ''
   if (!text || text.length > MAX_TEXT) throw new LinkError('invalid_input', `text is 1 to ${MAX_TEXT} characters`)
   const data = dataArg(args['data'])
-  const secret = redactSecrets(text).refused || Object.entries(data ?? {}).some(([k, v]) => SECRET_KEY.test(k) || (typeof v === 'string' && redactSecrets(v).refused))
+  const secret = redactSecrets(text).refused || Object.entries(data ?? {}).some(([k, v]) => SECRET_KEY.test(k) || redactSecrets(k).refused || (typeof v === 'string' && redactSecrets(v).refused))
   if (secret) throw new LinkError('refused', `${ASSISTANT_NAME} does not keep secrets: this looks like a key, an access code or a serial number. Leave it out and try again.`)
   const fact = await store().remember({ kind, text, ...(data ? { data } : {}) })
   return { fact: shown(fact).fact }

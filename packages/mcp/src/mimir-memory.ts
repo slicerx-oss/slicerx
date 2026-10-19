@@ -36,6 +36,16 @@ async function call<T>(link: AppLinkCaller | undefined, appName: string, method:
   }
 }
 
+/** Checks the data entries; a refusal names an entry by its position, never by its name, which may be a secret. */
+function checkData(d: Record<string, unknown>, ctx: z.RefinementCtx): void {
+  const entries = Object.entries(d)
+  if (entries.length > 20) ctx.addIssue({ code: 'custom', message: 'data has at most 20 entries' })
+  entries.forEach(([k, v], n) => {
+    if (!k.trim() || k.length > 64) ctx.addIssue({ code: 'custom', message: `data entry ${n + 1} needs a name of 1 to 64 characters` })
+    else if (typeof v === 'number' ? !Number.isFinite(v) : typeof v !== 'string' || v.length > 200) ctx.addIssue({ code: 'custom', message: `data entry ${n + 1} is text of at most 200 characters or a number` })
+  })
+}
+
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
 
 export function mimirMemoryTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
@@ -57,15 +67,16 @@ export function mimirMemoryTools(link: AppLinkCaller | undefined, appName: strin
     name: 'mimir.memory_remember',
     version: '1.0.0',
     source: 'command',
-    permission: 'read',
+    // Like a saved profile change in the app: the person's policy can make it ask first.
+    permission: 'profile',
     description: assistantText(`Add one fact to mimir's memory in ${appName}, such as the person's printer and nozzle, a filament they use, a preference, what worked for a print, or a size that matters to them. A fact with an access code, a serial number or a key is refused. It changes what mimir knows, so the app link asks the person for this client once and a client allowed to read only is refused. Answers with the fact as kept.`),
     input: z.object({
       kind: z.enum(MEMORY_KINDS).describe('printer, filament, preference, outcome (what worked) or size'),
       text: z.string().trim().min(1).max(500).describe('The fact in plain words, for example "Prints PETG at 240 C on the textured plate"'),
-      data: z.record(z.string().min(1).max(64), z.union([z.string().max(200), z.number()])).refine((d) => Object.keys(d).length <= 20, 'at most 20 entries').optional().describe('Values that go with the fact, for example { "nozzleMm": 0.4 }'),
+      data: z.record(z.string(), z.unknown()).superRefine(checkData).optional().describe('Values that go with the fact, up to 20, each text of at most 200 characters or a number, for example { "nozzleMm": 0.4 }'),
     }),
     async run(i) {
-      const out = await call<{ fact: MemoryFact }>(link, appName, 'mimir.memory_remember', { kind: i.kind, text: i.text, ...(i.data ? { data: i.data } : {}) })
+      const out = await call<{ fact: MemoryFact }>(link, appName, 'mimir.memory_remember', { kind: i.kind, text: i.text, ...(i.data ? { data: i.data as Record<string, string | number> } : {}) })
       return { summary: assistantText(`mimir will remember this ${out.fact.kind} fact in ${appName}: ${out.fact.text}`), output: out }
     },
   })

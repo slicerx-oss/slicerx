@@ -113,3 +113,33 @@ describe('the memory secrets filter', () => {
     }
   })
 })
+
+describe('secrets in data names', () => {
+  const KEY = 'sk-abcdefghijklmnopqrstuvwxyz0123'
+
+  it('hides a data name that is a secret, with its value, and counts the fact', async () => {
+    memory([{ id: 'k1', kind: 'preference', text: 'Scripts read the printer', data: { [KEY]: 'scripts', nozzleMm: 0.4 }, updatedAt: 5 }])
+    const out = (await runCall('mimir.memory', {})) as { facts: MemoryFact[]; hidden: number }
+    expect(out.hidden).toBe(1)
+    expect(out.facts[0]!.data).toEqual({ '[hidden] 1': '[hidden]', nozzleMm: 0.4 })
+    expect(JSON.stringify(out)).not.toContain(KEY)
+  })
+
+  it('never keeps a fact whose data name is a secret', async () => {
+    const { p } = memory()
+    const e = await refusal(runCall('mimir.memory_remember', { kind: 'preference', text: 'Scripts read the printer', data: { [KEY]: 'scripts' } }))
+    expect(e?.code).toBe('refused')
+    expect(e?.message).not.toContain(KEY)
+    expect(p.remember).not.toHaveBeenCalled()
+  })
+
+  it('names a bad data entry by its position, never by its name', async () => {
+    memory()
+    for (const data of [{ nozzleMm: 0.4, [KEY]: true }, { nozzleMm: 0.4, [KEY]: 'x'.repeat(201) }, { [KEY + 'x'.repeat(64)]: 1 }]) {
+      const e = await refusal(runCall('mimir.memory_remember', { kind: 'preference', text: 'Scripts', data }))
+      expect(e?.code).toBe('invalid_input')
+      expect(e?.message).toMatch(/^data entry [0-9]/)
+      expect(e?.message).not.toContain(KEY)
+    }
+  })
+})
