@@ -228,6 +228,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("mimir.tab", LinkClass::Read),
     // What answers in the docked chat (a model or the demo) and the tools its model is offered. No key or token.
     ("mimir.dock", LinkClass::Read),
+    // The mimir the edition runs: its name, tool groups, cloud step-up, memory and knowledge doc count. Never the
+    // voice text or the docs.
+    ("mimir.brain", LinkClass::Read),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -511,6 +514,7 @@ mod tests {
         ("mimir.status", LinkClass::Read),
         ("mimir.tab", LinkClass::Read),
         ("mimir.dock", LinkClass::Read),
+        ("mimir.brain", LinkClass::Read),
     ];
 
     #[test]
