@@ -85,9 +85,10 @@ export interface CreatePilotOptions {
   surface?: ToolSurface
   /**
    * The person's saved notes and the edition's ai.brain.memory.local switch. On: memory.remember and memory.recall, and
-   * the notes that fit (pickFacts) on a chat's first message. Off or unset: neither tool, and no notes.
+   * the notes that fit (pickFacts) on a chat's first message. Off or unset: neither tool, and no notes. `remember: false`
+   * leaves memory.remember out, for a host that cannot grant the approval saving a note needs.
    */
-  memory?: { local: boolean; store: MemoryStore }
+  memory?: { local: boolean; store: MemoryStore; remember?: boolean }
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
   /** How long an approval card waits before it expires, ms. */
@@ -245,7 +246,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The dock (full scope)
   // and the mimir design tab pass one; the browser cad scope gets them only when its host passes a store too.
   const memory = opts.memory?.local ? opts.memory.store : undefined
-  if (memory) for (const t of memoryTools(memory, now)) add(t as AnyTool)
+  if (memory) for (const t of memoryTools(memory, now)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
 
   let pluginTools: AnyTool[] | null = null
   async function loadPluginTools(): Promise<{ loads: PluginLoad[]; tools: AnyTool[] }> {
