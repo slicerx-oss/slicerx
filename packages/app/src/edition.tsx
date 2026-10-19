@@ -21,7 +21,8 @@ let current: EditionConfig = NEUTRAL
 export function setCurrentEdition(edition: EditionConfig): void {
   const changed = current !== edition
   current = edition
-  if (changed) setAssistantBrand(edition.brand.assistant)
+  // the edition's voice rides with the assistant's identity, so the prompt reads it wherever the name is read
+  if (changed) setAssistantBrand({ ...edition.brand.assistant, voice: edition.ai?.brain?.voice })
   // the packages with no edition of their own (settings, the link client, the printer catalog) name it too
   setProductName(edition.brand.name)
   setProductColors(edition.brand.colors)
