@@ -213,7 +213,8 @@ describe('the tab runtime', () => {
         const line = prompt.split('\n').find((l) => l.includes('design.check'))!
         expect(line).toMatch(/After the last feature of a planned part, call design\.check with the plan's planId/)
         expect(line).toMatch(/fix those items in one round and call design\.check again/)
-        expect(line).toMatch(/If any item still fails, never say the part is done: list each failed item plainly/)
+        expect(line).toMatch(/If any item still fails, never say the part is done: stop building, list each failed item plainly/)
+        expect(line).toMatch(/design\.check says so too, and checks that plan no more/)
         // the voice stays the last block, after the check line, and after the skill playbooks too
         expect(prompt.endsWith(`\n\n${VOICE_HEADER}\nShort and warm.`)).toBe(true)
         expect(prompt.indexOf('design.check')).toBeLessThan(prompt.indexOf(VOICE_HEADER))

@@ -175,11 +175,21 @@ export class PlanOwnedError extends Error {
 export function createPlanRegistry(): PlanRegistry {
   const plans = new Map<string, PlanEntry>()
   return {
+  /** How many design.check runs against this plan failed; absent for none. */
+  failedChecks?: number
+  /** The check that used up the fix round, once it has; later checks of the plan return it without measuring again. */
+  closed?: { summary: string; output: Record<string, unknown> }
     put(plan, design, origin = 'client') {
       const p = partPlanSchema.parse(plan)
+/**
+ * Fix rounds a plan gets after a failed design.check: one. The check after it that fails too is the last; it says to
+ * stop building and tell the person what is off.
+ */
+export const FIX_ROUNDS = 1
+
       if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       plans.delete(p.planId)
-      plans.set(p.planId, design ? { plan: p, origin, design } : { plan: p, origin })
+      plans.set(p.planId, design ? { plan: p, origin, design, ...counts } : { plan: p, origin, ...counts })
       const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
       for (let k = 0; k < mine.length - MAX_PLANS; k++) plans.delete(mine[k]![0])
     },
@@ -189,8 +199,25 @@ export function createPlanRegistry(): PlanRegistry {
       entry.design = design
       return true
     },
+  /** Counts a design.check of a kept plan; returns how many of its checks have failed (0 when there is no such plan). */
+  checked(planId: string, pass: boolean): number
+  /** Keeps the check that used up a plan's fix round, for every later check of it to return. */
+  close(planId: string, last: { summary: string; output: Record<string, unknown> }): void
     get: (planId) => plans.get(planId),
     latest: (origin) => [...plans.values()].filter((e) => !origin || e.origin === origin).at(-1)?.plan,
     clear: () => plans.clear(),
   }
 }
+      // the same planId put again is the same plan: its failed checks, and a used fix round, carry over
+      const was = plans.get(p.planId)
+      const counts = { ...(was?.failedChecks ? { failedChecks: was.failedChecks } : {}), ...(was?.closed ? { closed: was.closed } : {}) }
+    checked(planId, pass) {
+      const entry = plans.get(planId)
+      if (!entry) return 0
+      if (!pass) entry.failedChecks = (entry.failedChecks ?? 0) + 1
+      return entry.failedChecks ?? 0
+    },
+    close(planId, last) {
+      const entry = plans.get(planId)
+      if (entry) entry.closed = last
+    },
