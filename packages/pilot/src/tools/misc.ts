@@ -64,6 +64,7 @@ export function commandTools(commands: CommandSpec[]): PilotTool<never>[] {
         source: 'command',
         permission: c.tool?.permission ?? 'read',
         description: `${c.title}. App command in the ${c.section} section.`,
+        command: { id: c.id, section: c.section, ...(c.workspace ? { workspace: c.workspace } : {}) },
         input,
         async run(i) {
           const out = await c.run(i)

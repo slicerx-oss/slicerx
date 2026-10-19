@@ -157,7 +157,8 @@ export interface Citation {
   title: string
   url?: string
   publisher?: string
-  kind: 'kb' | 'web'
+  /** `edition` for a source from the edition's own knowledge (ai.brain.knowledge). */
+  kind: 'kb' | 'web' | 'edition'
 }
 
 export interface SettingsDiffRow {
@@ -379,6 +380,11 @@ export interface PilotConfig {
   auto?: boolean
   /** With auto: design and geometry tools move the run to muninn too (when huginn's model is weak at building parts). */
   deepDesign?: boolean
+  /**
+   * The edition's models for the person's own key (ai.brain.routing): base for huginn, step for muninn, for a key of
+   * `provider` only. mimir cloud ignores it; its proxy picks the model.
+   */
+  routing?: { provider?: 'anthropic' | 'openai'; base?: string; step?: string }
 }
 
 /** The machine a plate targets. Ids are knowledge ids (`prusa_mk4s`, `petg`). */

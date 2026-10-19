@@ -15,6 +15,7 @@
     "./node": "./src/node/index.ts",
     "./functions": "./src/functions.ts",
     "./kb.json": "./src/kb/generated/kb.json",
+    "./edition-kb.*.json": "./src/kb/generated/edition-kb.*.json",
     "./local-models.json": "./llm/local-models.json",
     "./local-ai": "./src/local-ai.ts"
   },
