@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { afterEach, expect, it } from 'vitest'
-import { assistantBrand, setAssistantBrand, setAssistantName } from '@slicerx/contracts'
+import { assistantBrand, assistantVoice, setAssistantBrand, setAssistantName } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { currentEdition, NEUTRAL, setCurrentEdition } from '../src/edition'
 import { STEP_TITLES } from '../src/first-run/model'
@@ -29,4 +29,12 @@ it('loads an edition once and reads back the effective identity after a name ove
   setAssistantName('YourMate')
   setCurrentEdition(edition)
   expect(await runCall('app.info', {})).toMatchObject({ assistant: { name: 'YourMate', icon: 'helper.svg', accent: '#006b65', enabled: edition.features.pilot } })
+})
+
+it('carries the edition voice to the assistant brand, and clears it with an edition that has none', () => {
+  const voice = 'Plain and brief; metric units.'
+  setCurrentEdition({ ...NEUTRAL, ai: { ...NEUTRAL.ai, brain: { ...NEUTRAL.ai.brain, voice } } })
+  expect(assistantVoice()).toBe(voice)
+  setCurrentEdition({ ...NEUTRAL })
+  expect(assistantVoice()).toBeUndefined()
 })

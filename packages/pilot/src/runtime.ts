@@ -269,8 +269,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   function systemPrompt(): string {
     const has = (n: string): boolean => findTool(n) !== undefined
     const book = playbooks(availableSkills(kb.skills(), has))
-    const base = basePrompt(scope, has)
-    return book ? `${base}\n\n${book}` : base
+    // the playbooks go in with the rules, so the edition's voice still comes last
+    return basePrompt(scope, has, book)
   }
 
   // A local model gets only its surface's tools; a cloud model gets them all.
