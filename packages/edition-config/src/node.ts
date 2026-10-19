@@ -203,4 +203,35 @@ export function editionAssetsPlugin(assets: readonly BuildAsset[], css: string, 
   }
 }
 
+/** The module id an app imports the running edition's knowledge index from (packages/pilot/src/kb/edition-kb.ts). */
+export const EDITION_KB_MODULE = '@slicerx/pilot/edition-kb'
+const EDITION_KB_ID = '\0slicerx-edition-kb'
+
+export interface EditionKbPlugin {
+  name: string
+  enforce: 'pre'
+  resolveId(id: string): string | null
+  load(id: string): string | null
+}
+
+/**
+ * A Vite plugin that answers `@slicerx/pilot/edition-kb` with the edition's own knowledge index, the
+ * edition-kb.<id>.json in `generatedDir` (null when the edition has none), so the build carries that one file only.
+ */
+export function editionKbPlugin(editionId: string, generatedDir: string): EditionKbPlugin {
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(editionId)) throw new Error(`edition id ${JSON.stringify(editionId)} cannot name a knowledge file`)
+  const file = join(generatedDir, `edition-kb.${editionId}.json`)
+  return {
+    name: 'slicerx-edition-kb',
+    enforce: 'pre',
+    resolveId: (id) => (id === EDITION_KB_MODULE ? EDITION_KB_ID : null),
+    load(id) {
+      if (id !== EDITION_KB_ID) return null
+      // parsed and written again, so the module holds exactly one JSON value
+      const index: unknown = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
+      return `export default ${JSON.stringify(index)}\n`
+    },
+  }
+}
+
 export { buildCommit, resolveCommit, type CommitSources } from './build-info.ts'
