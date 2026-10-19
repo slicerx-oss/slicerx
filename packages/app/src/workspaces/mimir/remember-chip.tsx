@@ -73,5 +73,5 @@ export function RememberChip(p: ApprovalCardProps) {
   )
 }
 
-/** The dock's own cards by tool name (ApprovalHandlers.cards). */
+/** The mimir tab's own cards by tool name (ApprovalHandlers.cards). */
 export const MEMORY_CARDS: Readonly<Record<string, ComponentType<ApprovalCardProps>>> = { 'memory.remember': RememberChip }
