@@ -277,6 +277,25 @@ describe('mimir cloud', () => {
     }).rejects.toThrow(/not part of this build/)
   })
 
+  it('passes on the model the proxy says it used, before the reply', async () => {
+    const sending: MimirCloudHost = { ...host, send: async () => new Response('data: {}\n\n', { headers: { 'x-sx-model': 'claude-sonnet-5-5' } }) }
+    registerMimirCloud(sending)
+    try {
+      const t = browserTransport(browserStore(null), () => ({ provider: 'mimir-cloud' }))
+      const seen: string[] = []
+      let chunks = 0
+      for await (const _ of t.stream({ provider: 'mimir-cloud', url: `${onCloud.baseUrl}/v1/messages`, method: 'POST', headers: { 'x-sx-tier': 'step' }, body: '{}' }, undefined, (h) => seen.push(h['x-sx-model'] ?? ''))) {
+        void _
+        chunks++
+        expect(seen).toEqual(['claude-sonnet-5-5'])
+      }
+      expect(chunks).toBeGreaterThan(0)
+      expect(seen).toEqual(['claude-sonnet-5-5'])
+    } finally {
+      registerMimirCloud(null)
+    }
+  })
+
   it('keeps the cloud choice and the share switch in prefs, sharing on by default', () => {
     const prefs = normalizePrefs({ pilot: { mode: 'on', provider: 'mimir-cloud' } })
     expect(prefs.pilot).toEqual({ mode: 'on', provider: 'mimir-cloud' })

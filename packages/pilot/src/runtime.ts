@@ -500,6 +500,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let tier: Tier = startTier
     let why: 'request' | 'tool' | 'struggle' = 'request'
     let shown = modelFor(opts.config, HUGINN)
+    // the model last asked for; mimir cloud may answer with another one, which its reply names
+    let asked = shown
     let fails = 0
     const watch = (e: PilotEvent) => {
       if (e.type === 'tool_result' && !e.ok) fails++
@@ -535,8 +537,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       let failedCode: string | undefined
       let cut = false
       const model = modelFor(opts.config, tier)
-      if (model !== shown) {
-        emit({ type: 'model_switch', model, label: modelLabel(model), reason: why })
+      if (model !== asked) {
+        asked = model
+        if (model !== shown) emit({ type: 'model_switch', model, label: modelLabel(model), reason: why })
         shown = model
       }
       const req = {
@@ -545,6 +548,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         tools: toolDefs,
         toolChoice: stopped || wrap ? ('none' as const) : ('auto' as const),
         session: sessionId,
+        tier,
         ...(opts.config.reasoning ? { reasoning: opts.config.reasoning } : {}),
       }
       try {
@@ -567,6 +571,13 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
               break
             case 'citation':
               if (!citations.some((c) => c.id === ev.url)) citations.push({ id: ev.url, title: ev.title || ev.url, url: ev.url, kind: 'web' })
+              break
+            case 'model':
+              // mimir cloud says which model answered (a stronger one on a hard turn, or the base one past its limits)
+              if (ev.model !== shown) {
+                emit({ type: 'model_switch', model: ev.model, label: modelLabel(ev.model), reason: why })
+                shown = ev.model
+              }
               break
             case 'usage':
               usageIn += ev.inputTokens

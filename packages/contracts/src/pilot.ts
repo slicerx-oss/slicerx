@@ -453,8 +453,12 @@ export interface LlmHttpRequest {
 export interface LlmTransport {
   /** True when a key for this provider is present in the keychain or environment. */
   available(provider: string): Promise<boolean>
-  /** Streams the raw response body (SSE bytes). Rejects with the HTTP status on a non-2xx reply. */
-  stream(req: LlmHttpRequest, signal?: AbortSignal): AsyncIterable<Uint8Array>
+  /**
+   * Streams the raw response body (SSE bytes). Rejects with the HTTP status on a non-2xx reply. A transport that can read
+   * the reply's headers passes them to `onHeaders` (lowercase names) before the first body chunk; mimir cloud names the
+   * model it used in `x-sx-model`.
+   */
+  stream(req: LlmHttpRequest, signal?: AbortSignal, onHeaders?: (headers: Record<string, string>) => void): AsyncIterable<Uint8Array>
 }
 
 export interface ApprovalHost {
