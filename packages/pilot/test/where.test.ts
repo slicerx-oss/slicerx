@@ -22,7 +22,7 @@ describe('whereHost', () => {
     ])
   })
 
-  it('the private ranges, link-local and mDNS names are the network', () => {
+  it('the private ranges, the tailnet range, link-local and mDNS names are the network', () => {
     cases([
       ['http://10.0.0.5:8080/v1', 'network'],
       ['http://10.255.255.255/v1', 'network'],
@@ -30,6 +30,9 @@ describe('whereHost', () => {
       ['http://172.31.255.254/v1', 'network'],
       ['http://192.168.1.20:11434/v1', 'network'],
       ['http://169.254.10.20/v1', 'network'],
+      ['http://100.64.0.1:11434/v1', 'network'],
+      ['http://100.101.102.103/v1', 'network'],
+      ['http://100.127.255.254/v1', 'network'],
       ['http://studio.local:1234/v1', 'network'],
       ['http://[fd12:3456:789a::1]:11434/v1', 'network'],
       ['http://[fc00::1]/v1', 'network'],
@@ -44,6 +47,8 @@ describe('whereHost', () => {
       ['http://172.32.0.1/v1', 'remote'],
       ['http://192.169.0.1/v1', 'remote'],
       ['http://169.253.0.1/v1', 'remote'],
+      ['http://100.63.255.255/v1', 'remote'],
+      ['http://100.128.0.0/v1', 'remote'],
       ['http://11.0.0.1/v1', 'remote'],
       ['http://8.8.8.8/v1', 'remote'],
       ['http://[fec0::1]/v1', 'remote'],
@@ -53,12 +58,11 @@ describe('whereHost', () => {
     ])
   })
 
-  it('0.0.0.0, the unspecified IPv6 address and the shared 100.64/10 range are remote', () => {
+  it('0.0.0.0 and the unspecified IPv6 address are remote', () => {
     cases([
       ['http://0.0.0.0:11434/v1', 'remote'],
       ['http://0/v1', 'remote'],
       ['http://[::]:11434/v1', 'remote'],
-      ['http://100.101.102.103/v1', 'remote'],
     ])
   })
 
@@ -92,6 +96,8 @@ describe('whereHost', () => {
       ['http://[::ffff:7f00:1]/v1', 'computer'],
       ['http://[::ffff:192.168.1.5]/v1', 'network'],
       ['http://[::ffff:10.1.2.3]/v1', 'network'],
+      ['http://[::ffff:100.64.0.1]/v1', 'network'],
+      ['http://[::ffff:100.128.0.0]/v1', 'remote'],
       ['http://[::ffff:8.8.8.8]/v1', 'remote'],
       // the old IPv4-compatible form is not mapped
       ['http://[::127.0.0.1]/v1', 'remote'],

@@ -13,11 +13,11 @@ const REFUSED = 'Not saved: that looks like a key, token, access code or serial.
 
 /**
  * Where a note goes, as the chip says it: on this computer, and along with each chat when the chat's model runs on
- * another computer on the person's network or anywhere else.
+ * another computer on the person's network or anywhere else (mimir cloud, a provider's API, or a server of their own).
  */
 export const KEPT_HERE = 'Kept on this computer for later chats.'
 export const KEPT_NETWORK = 'Kept on this computer, and sent with chats to a computer on your network to answer them.'
-export const KEPT_CLOUD = 'Kept on this computer, and sent with chats to the cloud to answer them.'
+export const KEPT_CLOUD = "Kept on this computer, and sent along with chats to the model's server to answer them."
 const KEPT: Record<NotesWhere, string> = { computer: KEPT_HERE, network: KEPT_NETWORK, remote: KEPT_CLOUD }
 const ONE_LINE = 'One line only: no line breaks or hidden characters'
 const safe = (s: string): boolean => !NOTE_UNSAFE.test(s)

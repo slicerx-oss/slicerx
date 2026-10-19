@@ -21,9 +21,9 @@ function ipv4(host: string): number[] | null {
 function ipv4Where([a = 0, b = 0]: number[]): NotesWhere {
   // 127/8 loopback. 0.0.0.0 is left out: the server check refuses it, and what it reaches depends on the system.
   if (a === 127) return 'computer'
-  // the private ranges (10/8, 172.16/12, 192.168/16) and link-local 169.254/16, which no router forwards
-  if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)) return 'network'
-  // everything else, 100.64/10 included: Tailscale uses it, but so do carriers, and the address alone can't tell
+  // the private ranges (10/8, 172.16/12, 192.168/16), link-local 169.254/16, which no router forwards, and 100.64/10,
+  // the shared range Tailscale gives the devices on a tailnet (the server check accepts it the same way)
+  if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127)) return 'network'
   return 'remote'
 }
 

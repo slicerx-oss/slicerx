@@ -283,9 +283,9 @@ describe('memory tools', () => {
     expect(store.rows.size).toBe(1)
   })
 
-  it('the card says where notes go: along with chats to the cloud or a computer on the network, or nowhere', async () => {
+  it("the card says where notes go: along with chats to the model's server or a computer on the network, or nowhere", async () => {
     const cases = [
-      ['remote', 'Kept on this computer, and sent with chats to the cloud to answer them.'],
+      ['remote', "Kept on this computer, and sent along with chats to the model's server to answer them."],
       ['network', 'Kept on this computer, and sent with chats to a computer on your network to answer them.'],
       ['computer', 'Kept on this computer for later chats.'],
     ] as const
