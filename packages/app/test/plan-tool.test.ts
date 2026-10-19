@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mimirTools, scriptedMimir, type MimirScript } from '../src/workspaces/mimir/scripted'
 import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, planTool, samePlan, shownPlan, withPlanTies, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
 import { mimirPlans } from '../src/workspaces/mimir/plans'
+import { SCRIPTS } from '../src/workspaces/mimir/scripts'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 
@@ -245,5 +246,17 @@ describe('design.plan and design.check share one registry', () => {
   it('sizes past the plan maximum are refused by the shared shape', () => {
     expect(PartPlanSchema.safeParse({ planId: 'p', ...BOX, overall: { x: PLAN_SIZE_MAX + 1, y: 1, z: 1 } }).success).toBe(false)
     expect(() => mimirPlans.put({ planId: 'p', ...BOX, overall: { x: -1, y: 1, z: 1 } })).toThrow()
+  })
+
+  it("the scripted check reads the person's last card plan; a client's plan put after it changes nothing", async () => {
+    const step = SCRIPTS.find((x) => x.id === 'check')!.steps[0] as (m: never[]) => { calls?: { name: string; args: { planId: string } }[] }
+    expect(step([]).calls).toBeUndefined()
+    const { planId } = (await planTool().run(BOX as never, { ask: async (q: { choices: { id: string }[] }) => q.choices[0]!.id } as never)).output as { planId: string }
+    expect(step([]).calls?.[0]).toEqual({ name: 'design.check', args: { planId } })
+    // an MCP client puts its own plan after the card's (design.put_plan)
+    mimirPlans.put({ planId: 'client-9', ...BOX, part: 'Steered' }, undefined, 'client')
+    expect(mimirPlans.latest()?.planId).toBe('client-9')
+    expect(mimirPlans.latest('card')?.planId).toBe(planId)
+    expect(step([]).calls?.[0]).toEqual({ name: 'design.check', args: { planId } })
   })
 })

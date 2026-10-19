@@ -171,6 +171,16 @@ describe('designCheck', () => {
     expect(plans.get('c59')?.origin).toBe('card')
   })
 
+  it('reads the latest plan of one origin', () => {
+    const plans = createPlanRegistry()
+    expect(plans.latest('card')).toBeUndefined()
+    plans.put(bracket, undefined, 'card')
+    plans.put({ ...bracket, planId: 'client-1' })
+    expect(plans.latest()?.planId).toBe('client-1')
+    expect(plans.latest('card')?.planId).toBe('bracket-1')
+    expect(plans.latest('client')?.planId).toBe('client-1')
+  })
+
   it('rejects a plan with a size, hole or overall value of zero or less', () => {
     expect(partPlanSchema.safeParse(bracket).success).toBe(true)
     for (const v of [0, -1]) {

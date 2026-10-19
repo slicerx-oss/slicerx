@@ -397,10 +397,13 @@ const stand: ScriptStep[] = [
 /** One item of a design.check result. */
 type Checked = { name: string; want: string; got: string; pass: boolean }
 
-/** A check of the part on the plate against the plan put last; a miss names each failed item and is never "done". */
+/**
+ * A check of the part on the plate against the plan the person made last on the card (a plan an MCP client put never
+ * stands in); a miss names each failed item and is never "done".
+ */
 const check: ScriptStep[] = [
   () => {
-    const plan = mimirPlans.latest()
+    const plan = mimirPlans.latest('card')
     if (!plan) return { text: 'There is no plan to check against yet. Ask me for a part, and I will plan it before I build it.' }
     return { text: `I will check ${plan.part} against its plan.`, calls: [{ name: 'design.check', args: { planId: plan.planId } }] }
   },
