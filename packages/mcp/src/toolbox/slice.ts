@@ -50,7 +50,7 @@ export const sliceInput = {
   strict_settings: z
     .boolean()
     .default(false)
-    .describe("With project_settings: refuse with error code project_settings_unused when the project's print settings carry keys the slicer does not know or values it cannot read, instead of slicing without them (import_report lists them either way)"),
+    .describe("With project_settings: refuse with error code project_settings_unused when the project's print settings carry keys the slicer does not know or values it cannot read, or its settings file cannot be read at all, instead of slicing without them (import_report lists them either way)"),
   allow_collisions: z
     .boolean()
     .default(false)
@@ -144,6 +144,7 @@ export const summaryShape = {
       renamed: z.array(z.object({ from: z.string(), to: z.string() })),
       invalid: z.array(z.object({ key: z.string(), value: z.unknown() })),
       walls: z.object({ generator: z.string(), source: z.enum(['kept', 'project', 'request', 'profile']), text: z.string() }).optional(),
+      skipped: z.string().optional(),
     })
     .optional(),
   /** Which wall generator the slice ran and why. */
@@ -215,7 +216,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     if (args.project_settings) {
       importReport = read.summary.import_report
       const r = importReport
-      if (args.strict_settings && (r.unknown.length || r.invalid.length)) {
+      if (args.strict_settings && (r.unknown.length || r.invalid.length || r.skipped)) {
         throw new ToolInputError(`${basename(modelPath)}'s print settings carry what ${productName()} cannot use (strict_settings): ${importReportLines(r).join('; ')}`, 'project_settings_unused')
       }
     }

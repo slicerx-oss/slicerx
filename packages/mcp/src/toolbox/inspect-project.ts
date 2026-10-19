@@ -24,7 +24,7 @@ export default (d: ServerToolDeps) =>
       if (!['.3mf', '.sx3mf'].includes(extname(path).toLowerCase())) throw new ToolInputError(`${basename(path)} is not a 3MF or .sx3mf project`, 'unsupported_format')
       const { summary } = readProjectFile(path)
       const text = [
-        `${basename(path)}: ${summary.plates.length} plate${summary.plates.length === 1 ? '' : 's'}${summary.has_settings ? '' : ', no print settings (a plain 3MF)'}`,
+        `${basename(path)}: ${summary.plates.length} plate${summary.plates.length === 1 ? '' : 's'}${summary.has_settings || summary.import_report.skipped ? '' : ', no print settings (a plain 3MF)'}`,
         ...summary.plates.map((p) => `Plate ${p.index}${p.name ? ` "${p.name}"` : ''}: ${p.objects} object${p.objects === 1 ? '' : 's'}`),
         ...(summary.presets.printer ? [`Printer preset: ${summary.presets.printer}`] : []),
         ...(summary.presets.process ? [`Process preset: ${summary.presets.process}`] : []),

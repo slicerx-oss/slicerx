@@ -13,6 +13,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Changed
 
+- `slicerx_inspect_project` and `slicerx_slice_file` with `project_settings` no longer refuse a project whose `Metadata/project_settings.config` is not JSON. An empty one is read as a project without settings, JSON after a byte order mark is read as usual, and INI style lines or a damaged file are left out: the project opens and slices with the other settings, and `import_report.skipped` says why. `strict_settings` refuses such a file with `project_settings_unused`.
 - `slicerx_mimir_tab` 1.1.0 also says whether the model is a local one (`local`, a server the person runs, which gets the shorter tool list) and where its server is (`where`: `computer`, `network` or `remote`, by its address, the same way the memory chip says where notes go; `null` without a model). A local model can run on another computer on the network, so `local` alone never means this computer. mimir has one chat in the app now, the mimir tab, so `tools` lists everything the model is offered there: the design tools, the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands (among them `app.project_new`, which still asks the person before anything unsaved is discarded).
 
 ### Removed
