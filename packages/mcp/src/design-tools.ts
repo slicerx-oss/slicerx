@@ -8,7 +8,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { createPlanRegistry, designCheck, nozzleOr, partPlanSchema, PlanOwnedError, type PlanEntry, type PlanRegistry } from './design-check'
+import { createPlanRegistry, designCheck, FIX_ROUNDS, nozzleOr, partPlanSchema, PlanOwnedError, type PlanEntry, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { meshStats } from './mesh'
 
@@ -451,7 +451,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     source: 'command',
     permission: 'read',
     description:
-      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items and check again.",
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
     input: z.object({
       planId: z.string().min(1).describe('The planId of the plan the part was built from'),
       design: z.string().min(1).optional().describe('The design id the part was built in, when the plan is not tied to one; it ties the plan to it, except a plan the person made in the mimir tab, which only the tab ties'),
@@ -459,6 +459,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     async run(i) {
       const entry = plans.get(i.planId)
       if (!entry) throw new ToolInputError(`planId: there is no plan ${i.planId}; make the plan first, then build the part and check it`)
+      // the fix round is used: the same answer again, with no new geometry work
+      if (entry.closed) return { summary: `Plan ${entry.plan.planId} has had its fix round, so the part was not checked again. Its last check: ${entry.closed.summary}`, output: { ...entry.closed.output, repeated: true } }
       const { design: d, how } = builtFrom(entry, i.design)
       const nozzleMm = nozzleOr(opts.nozzleMm?.())
       const body = await bodyFacts(designs, d)
@@ -466,7 +468,14 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       const failed = result.items.filter((x) => !x.pass)
       const which = `${d.name} (${d.id}, ${how})`
       const summary = result.pass ? `${which} matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${which}: ${failed.length} of ${result.items.length} checks against plan ${entry.plan.planId} failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
-      return { summary, output: { planId: entry.plan.planId, design: d.id, designName: d.name, chosen: how, nozzleMm, ...result, body } }
+      const output = { planId: entry.plan.planId, design: d.id, designName: d.name, chosen: how, nozzleMm, ...result, body }
+      const failedChecks = plans.checked(entry.plan.planId, result.pass)
+      if (result.pass || failedChecks <= FIX_ROUNDS) return { summary, output }
+      // the second miss: one fix round was the limit, so mimir stops here and says what is off
+      const stop = `The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan ${entry.plan.planId} again returns this same result.`
+      const last = { summary: `${summary}. ${stop}`, output: { ...output, stop } }
+      plans.close(entry.plan.planId, last)
+      return last
     },
   })
 

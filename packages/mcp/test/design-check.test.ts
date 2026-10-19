@@ -7,7 +7,7 @@ import type { Design as HostDesign, DesignHost } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { minWall } from '../src/body-facts'
-import { createPlanRegistry, designCheck, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
+import { createPlanRegistry, designCheck, FIX_ROUNDS, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
 import { designToolset } from '../src/toolset'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
@@ -390,6 +390,81 @@ describe('slicerx_design_check', () => {
     // the hole sits 10 - 3 = 7 mm from the long edges and 12 - 3 = 9 mm from the near end, so the thinnest wall is the
     // plate's 5 mm thickness
     expect(r.body.minWallMm).toBeCloseTo(5, 2)
+describe('design.check gives a plan one fix round', () => {
+  // a spacer built 5 mm tall, planned 6 mm: every check of it fails on the overall size
+  const tall: PartPlan = { ...boxPlan, overall: { x: 40, y: 20, z: 6 } }
+  type Out = { pass: boolean; stop?: string; repeated?: boolean; items: { name: string; pass: boolean }[] }
+
+  /** A scripted run: design.check called again and again on one host, counting the geometry calls it makes. */
+  function run(designs: HostDesign[] = [boxDesign('d1', 'Spacer')]) {
+    const plans = createPlanRegistry()
+    const host = hostOf(designs)
+    let calls = 0
+    const counted = { ...host, call: async (op: string, req: unknown) => (calls++, host.call(op as never, req as never)) } as unknown as DesignHost
+    const tool = designToolset(counted, {}, { plans }).find((t) => t.name === 'design.check')!
+    const check = async (planId = 'box-1') => {
+      const r = await tool.run(tool.input.parse({ planId }), {} as ToolContext)
+      return { summary: r.summary, out: r.output as Out }
+    }
+    return { plans, check, calls: () => calls }
+  }
+
+  it('is one round, as the prompt says', () => {
+    expect(FIX_ROUNDS).toBe(1)
+  })
+
+  it('two failed checks stop after the second, and a third call does no new geometry work', async () => {
+    const { plans, check, calls } = run()
+    plans.put(tall, 'd1', 'card')
+    const first = await check()
+    expect(first.out.pass).toBe(false)
+    expect(first.out.stop).toBeUndefined()
+    expect(first.summary).not.toMatch(/fix round/)
+    const second = await check()
+    expect(second.out.pass).toBe(false)
+    expect(second.out.items.filter((i) => !i.pass).map((i) => i.name)).toEqual(['overall size'])
+    expect(second.out.stop).toMatch(/^The fix round is used: stop building, and tell the person exactly what is off/)
+    expect(second.summary).toContain('overall size (want 40 x 20 x 6 mm')
+    expect(second.summary).toContain(second.out.stop!)
+    expect(plans.get('box-1')?.failedChecks).toBe(2)
+    const measured = calls()
+    expect(measured).toBeGreaterThan(0)
+    // the third call: the same result, said to be the last one, with no geometry calls and no further count
+    const third = await check()
+    expect(calls()).toBe(measured)
+    expect(third.out).toEqual({ ...second.out, repeated: true })
+    expect(third.summary).toMatch(/^Plan box-1 has had its fix round, so the part was not checked again\. Its last check: /)
+    expect(third.summary).toContain(second.summary)
+    expect(plans.get('box-1')?.failedChecks).toBe(2)
+  })
+
+  it('a check that passes after one miss ends it as usual', async () => {
+    const { plans, check } = run()
+    plans.put(tall, 'd1')
+    await check()
+    plans.put(boxPlan, 'd1')
+    const fixed = await check()
+    expect(fixed.out.pass).toBe(true)
+    expect(fixed.out.stop).toBeUndefined()
+    // the same planId put again kept its one miss
+    expect(plans.get('box-1')?.failedChecks).toBe(1)
+  })
+
+  it('a new plan, with a new planId, starts over', async () => {
+    const { plans, check } = run()
+    plans.put(tall, 'd1')
+    await check()
+    await check()
+    plans.put({ ...tall, planId: 'box-2' }, 'd1')
+    const fresh = await check('box-2')
+    expect(fresh.out.stop).toBeUndefined()
+    expect(fresh.out.repeated).toBeUndefined()
+    expect((await check('box-2')).out.stop).toMatch(/fix round is used/)
+    // the old plan still answers with its closed result
+    expect((await check('box-1')).out.repeated).toBe(true)
+  })
+})
+
     expect(r.items.filter((i) => !i.pass)).toEqual([])
     expect(r.pass).toBe(true)
   })
