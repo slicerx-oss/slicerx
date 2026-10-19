@@ -5,7 +5,7 @@
 // exports every one. All of it goes through the app's one handle on the edition's notes.
 import { DEFAULT_POLICY, type Host, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type MemoryFact, type ScriptStep } from '@slicerx/pilot'
-import { foldEvents, TranscriptView } from '@slicerx/pilot/ui'
+import { emptyTranscript, foldEvents, startTurn, TranscriptView } from '@slicerx/pilot/ui'
 import { ToastProvider } from '@slicerx/ui'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { createElement, type ReactElement } from 'react'
@@ -97,6 +97,30 @@ describe('the chip', () => {
     await no.drain()
     expect(await store.list()).toEqual([])
     expect(no.events).toContainEqual(expect.objectContaining({ type: 'approval_resolved', decision: expect.objectContaining({ kind: 'deny' }) }))
+  })
+
+  it("a plugin's tool named memory.remember gets the ordinary approval card, never the chip", () => {
+    const request = { id: 'apr_1', sessionId: 's', tool: 'memory.remember', permission: 'profile' as const, title: 'Remember this?', lines: ['Has a Bambu Lab A1', 'Kept on this computer for later chats.'], paramsHash: 'x', actions: [], expiresAt: new Date(Date.now() + 60_000).toISOString() }
+    const view = (source: 'plugin' | 'command') =>
+      mount(createElement(TranscriptView, { transcript: foldEvents([{ type: 'approval_request', request, source }], startTurn(emptyTranscript(), { user: 'Remember my A1' }, 0)), showThinking: false, approvals: { cards: MEMORY_CARDS, onApprove: async () => undefined, onCancel: async () => undefined } }))
+    const plugin = view('plugin')
+    expect(screen.queryByTestId('mimir-remember')).toBeNull()
+    plugin.unmount()
+    view('command')
+    expect(screen.getByTestId('mimir-remember')).toBeTruthy()
+  })
+
+  it('on mimir cloud the chip says notes go along with chats; otherwise that they stay on this computer', async () => {
+    const pilot = (cloud: boolean) => createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(A1, { chunk: false }), memory: pilotMemory(NEUTRAL, { cloud }) })
+    for (const [cloud, want] of [[true, 'Kept on this computer, and sent with chats to the cloud to answer them.'], [false, 'Kept on this computer for later chats.']] as const) {
+      const p = pilot(cloud)
+      for await (const ev of p.run('s', 'Remember my A1')) {
+        if (ev.type === 'approval_request') {
+          expect(ev.request.lines.at(-1)).toBe(want)
+          await p.resolveApproval(ev.request.id, { kind: 'deny', reason: 'test' })
+        }
+      }
+    }
   })
 
   it('Save notes without asking saves with no chip', async () => {
