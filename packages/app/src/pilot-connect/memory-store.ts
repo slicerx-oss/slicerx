@@ -9,9 +9,26 @@ const TABLE = 'facts'
 function open(idb: IDBFactory, name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = idb.open(name, 1)
+    let settled = false
     req.onupgradeneeded = () => req.result.createObjectStore(TABLE, { keyPath: 'id' })
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error ?? new Error('Could not open the memory store'))
+    req.onsuccess = () => {
+      const db = req.result
+      // opened after we gave up waiting (onblocked): close it rather than leave it holding the database
+      if (settled) return db.close()
+      settled = true
+      // a newer copy of the app upgrading the database: let it through
+      db.onversionchange = () => db.close()
+      resolve(db)
+    }
+    req.onerror = () => {
+      settled = true
+      reject(req.error ?? new Error('Could not open the memory store'))
+    }
+    req.onblocked = () => {
+      if (settled) return
+      settled = true
+      reject(new Error('The memory store is busy in another SlicerX window. Close it and try again.'))
+    }
   })
 }
 
@@ -20,13 +37,23 @@ function indexedDbMemory(idb: IDBFactory, name: string): MemoryStore {
     open(idb, name).then(
       (db) =>
         new Promise<T>((resolve, reject) => {
-          const tx = db.transaction(TABLE, mode)
-          const req = fn(tx.objectStore(TABLE))
-          tx.oncomplete = () => {
+          // every way out closes the database: done, failed, aborted (a full disk aborts) or thrown before it began
+          const fail = (e: unknown, fallback: string) => {
             db.close()
-            resolve(req.result)
+            reject(e ?? new Error(fallback))
           }
-          tx.onerror = () => reject(tx.error ?? new Error('The memory store failed'))
+          try {
+            const tx = db.transaction(TABLE, mode)
+            const req = fn(tx.objectStore(TABLE))
+            tx.oncomplete = () => {
+              db.close()
+              resolve(req.result)
+            }
+            tx.onerror = () => fail(tx.error, 'The memory store failed')
+            tx.onabort = () => fail(tx.error, 'The memory store stopped before saving (the disk may be full)')
+          } catch (e) {
+            fail(e, 'The memory store failed')
+          }
         }),
     )
   return {

@@ -25,9 +25,12 @@ const NOTE_SECRETS: RegExp[] = [
   ...SECRET_PATTERNS.map(([re]) => re),
   /\b(?:access|lan|pairing)[\s_-]*(?:code|key)\b\W*(?:is\W+)?(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{4,}/i,
   /\b(?:serial(?:\s*(?:number|no\.?))?|s\/n)\b\W*(?:is\W+)?(?=[A-Za-z0-9-]*\d)[A-Za-z0-9-]{6,}/i,
-  // Bambu Lab printers: 15 characters, starting 0 and a digit (01P00A..., 03919C...)
-  /\b0\d[A-Z0-9]{13}\b/,
-  /\b(?:api[\s_-]*key|token|password|secret)\b\W*(?:is\W+)?(?=\S*\d)\S{8,}/i,
+  // a bare "code: 31415926" or "code is 31415926" (not G-code, and "the code is in Settings" stays a note)
+  /(?<![-\w])code\b(?:\s*[:=]\s*|\s+is\s+)(?=[A-Za-z0-9]*\d)[A-Za-z0-9]{6,}/i,
+  // Bambu Lab printers: 15 characters, starting 0 and a digit (01P00A..., 03919C...), in either case
+  /\b0\d[A-Z0-9]{13}\b/i,
+  /\b(?:api[\s_-]*key|token|secret)\b\W*(?:is\W+)?(?=\S*\d)\S{8,}/i,
+  /\b(?:password|passcode|passwd|pwd)\b\W*(?:is\W+)?(?=\S*\d)\S{6,}/i,
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/,
   /\b(?:gh[pousr]|xox[abp]|AKIA)[A-Za-z0-9_-]{12,}/,
 ]
@@ -49,10 +52,21 @@ export function redactSecrets(text: string): { text: string; refused: boolean } 
 /** A rough token count for budgets: about four characters a token. */
 export const estimateTokens = (text: string): number => Math.ceil(text.length / 4)
 
-/** One note as the model reads it. */
+/**
+ * Characters a note may not hold: line breaks and other control characters (C0, C1 with U+0085), the line and
+ * paragraph separators, zero-width marks and bidi controls. Any of them could start a new line or hide text in the
+ * chat context, so a note could pass itself off as a section of its own.
+ */
+export const NOTE_UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/
+const UNSAFE_RUN = new RegExp(`(?:\\s|${NOTE_UNSAFE.source})+`, 'g')
+
+/** `text` on one line: every run of spaces, line breaks and unsafe characters becomes one space. */
+export const oneLine = (text: string | number): string => String(text).replace(UNSAFE_RUN, ' ').trim()
+
+/** One note as the model reads it, always a single line, whatever the store holds. */
 export function factLine(f: MemoryFact): string {
-  const data = f.data && Object.keys(f.data).length ? ` (${Object.entries(f.data).map(([k, v]) => `${k}: ${v}`).join(', ')})` : ''
-  return `- ${f.text}${data}`
+  const data = f.data && Object.keys(f.data).length ? ` (${Object.entries(f.data).map(([k, v]) => `${oneLine(k)}: ${oneLine(v)}`).join(', ')})` : ''
+  return `- ${oneLine(f.text)}${data}`
 }
 
 const STOP = new Set(['the', 'and', 'for', 'with', 'my', 'is', 'it', 'on', 'in', 'of', 'to', 'a', 'an', 'at', 'what', 'why', 'how', 'does', 'do', 'i', 'me', 'this', 'that', 'can', 'should'])
@@ -64,8 +78,12 @@ function words(text: string): Set<string> {
 // with nothing in the question to go on, the person's printers and filaments come before the rest
 const KIND_ORDER: Record<MemoryKind, number> = { printer: 0, filament: 1, preference: 2, size: 3, outcome: 4 }
 
+// What the notes block costs around the notes themselves: its label and end line in contextMessage (prompt.ts).
+const NOTES_FRAME_TOKENS = 80
+
 /**
- * The notes a chat reads, within `budgetTokens` (as factLine counts them): the ones sharing the most words with the
+ * The notes a chat reads, within `budgetTokens` (the block's label and end line, then each factLine and its line
+ * break): the ones sharing the most words with the
  * question first (a printer, filament or size it names), then by kind and the newest. Notes past the budget wait for
  * memory.recall.
  */
@@ -79,9 +97,9 @@ export function pickFacts(facts: MemoryFact[], query: string, budgetTokens = 800
   }
   const ranked = facts.map((f) => ({ f, s: score(f) })).sort((a, b) => b.s - a.s || KIND_ORDER[a.f.kind] - KIND_ORDER[b.f.kind] || b.f.updatedAt - a.f.updatedAt)
   const out: MemoryFact[] = []
-  let used = 0
+  let used = NOTES_FRAME_TOKENS
   for (const { f } of ranked) {
-    const cost = estimateTokens(factLine(f))
+    const cost = estimateTokens(`${factLine(f)}\n`)
     if (used + cost > budgetTokens) continue
     used += cost
     out.push(f)

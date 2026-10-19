@@ -9,8 +9,9 @@ import { openMemoryStore } from '../src/pilot-connect/memory-store'
 type Req = { result?: unknown; error?: unknown; onsuccess?: () => void; onerror?: () => void; onupgradeneeded?: () => void }
 
 /** Just enough IndexedDB for the store: named databases holding one keyed table, each call answered on a later tick. */
-function fakeIndexedDb(): { factory: IDBFactory; names: () => string[] } {
+function fakeIndexedDb(opts: { abortWrites?: boolean } = {}): { factory: IDBFactory; names: () => string[]; closes: () => number } {
   const dbs = new Map<string, Map<string, unknown>>()
+  let closes = 0
   const later = (fn: () => void) => setTimeout(fn, 0)
   const factory = {
     open(name: string) {
@@ -21,18 +22,22 @@ function fakeIndexedDb(): { factory: IDBFactory; names: () => string[] } {
         const rows = dbs.get(name)!
         req.result = {
           createObjectStore: () => ({}),
-          close: () => undefined,
-          transaction: () => {
-            const tx: { oncomplete?: () => void; onerror?: () => void; objectStore: () => unknown } = {
+          close: () => void closes++,
+          transaction: (_t: string, mode: string) => {
+            const tx: { oncomplete?: () => void; onerror?: () => void; onabort?: () => void; error?: unknown; objectStore: () => unknown } = {
               objectStore: () => {
                 const done = (result: unknown) => {
                   const r: Req = { result }
-                  later(() => tx.oncomplete?.())
+                  // a full disk aborts a write transaction, with no onerror first
+                  if (opts.abortWrites && mode === 'readwrite') {
+                    tx.error = new DOMException('The disk is full', 'QuotaExceededError')
+                    later(() => tx.onabort?.())
+                  } else later(() => tx.oncomplete?.())
                   return r
                 }
                 return {
                   getAll: () => done([...rows.values()].map((v) => structuredClone(v))),
-                  put: (v: { id: string }) => (rows.set(v.id, structuredClone(v)), done(v.id)),
+                  put: (v: { id: string }) => (opts.abortWrites ? undefined : rows.set(v.id, structuredClone(v)), done(v.id)),
                   delete: (id: string) => (rows.delete(id), done(undefined)),
                   clear: () => (rows.clear(), done(undefined)),
                 }
@@ -47,7 +52,7 @@ function fakeIndexedDb(): { factory: IDBFactory; names: () => string[] } {
       return req
     },
   } as unknown as IDBFactory
-  return { factory, names: () => [...dbs.keys()] }
+  return { factory, names: () => [...dbs.keys()], closes: () => closes }
 }
 
 const fact = (id: string, text: string): MemoryFact => ({ id, kind: 'printer', text, updatedAt: 1 })
@@ -76,5 +81,15 @@ describe('the memory store', () => {
     await a.put(fact('a1', 'Has a Bambu Lab A1'))
     expect(await b.list()).toEqual([])
     expect((await openMemoryStore('slicerx', null).list()).map((f) => f.id)).toEqual(['a1'])
+  })
+
+  it('an aborted write rejects and closes the database', async () => {
+    const idb = fakeIndexedDb({ abortWrites: true })
+    const store = openMemoryStore('slicerx', idb.factory)
+    await expect(store.put(fact('a1', 'Has a Bambu Lab A1'))).rejects.toThrow('The disk is full')
+    expect(idb.closes()).toBe(1)
+    // reads still work afterwards, and close too
+    expect(await store.list()).toEqual([])
+    expect(idb.closes()).toBe(2)
   })
 })
