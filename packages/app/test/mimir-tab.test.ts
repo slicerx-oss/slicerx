@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The mimir tab is the plate's third mode and comes first: mimir, Model, Slice. It shares the workspace, the design
-// and the view with Model, hides where Model hides, and answers agents through its command and the bridge's state.
+// and the view with Model, shows in every build and settings mode while mimir is on (on a phone and without the
+// modeling tools too), and answers agents through its command and the bridge's state.
 import type { Host } from '@slicerx/contracts'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
@@ -9,10 +10,11 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appState } from '../src/agent-bridge/page'
 import { builtinCommands } from '../src/commands/builtin'
+import { pilotFeature } from '../src/features/pilot'
 import { NEUTRAL, setCurrentEdition } from '../src/edition'
 import { pickKeysOn } from '../src/plate/pick-filter'
 import { ModeTabs } from '../src/shell/mode-tab'
-import { modelMode, showsDesign, toggleModelMode } from '../src/state/model-mode'
+import { modelMode, setHostSlices, setMimirOn, showsDesign, toggleModelMode } from '../src/state/model-mode'
 import { get, set, setModelMode } from '../src/state/store'
 import { modelLook } from '../src/viewport/viewport-host'
 import { captionFor, chatMax, designName } from '../src/workspaces/mimir/mimir-panes'
@@ -22,6 +24,8 @@ const NO_CAD = { ...NEUTRAL, features: { ...NEUTRAL.features, cad: false } }
 beforeEach(() => set({ workspace: 'prepare', modelMode: 'slice', modelModeDefault: 'slice', devBuild: true, settingsMode: 'simple' }))
 afterEach(() => {
   setCurrentEdition(NEUTRAL)
+  setMimirOn(true)
+  setHostSlices(true)
   document.body.innerHTML = ''
 })
 
@@ -78,32 +82,52 @@ describe('the mimir tab', () => {
     expect(get().modelMode).toBe('design')
   })
 
-  it('hides where Model hides: an edition without modeling tools stays in Slice', () => {
+  it('stays where Model hides: an edition without modeling tools opens mimir from its command', () => {
     setCurrentEdition(NO_CAD)
     set({ modelMode: 'mimir' })
+    expect(modelMode()).toBe('mimir')
+    const ids = builtinCommands({} as Host, []).map((c) => c.id)
+    expect(ids).toContain('mode-mimir')
+    expect(ids).not.toContain('mode-design')
+    // the other modes still read as Slice there
+    set({ modelMode: 'design' })
     expect(modelMode()).toBe('slice')
-    expect(builtinCommands({} as Host, []).map((c) => c.id)).not.toContain('mode-mimir')
+  })
+
+  it('shows in the browser build beside Model, with no Slice tab', () => {
+    setHostSlices(false)
+    const el = render()
+    expect([...el.querySelectorAll('.sx-tab')].map((b) => b.getAttribute('data-testid'))).toEqual(['tab-mimir', 'tab-model'])
+    set({ modelMode: 'mimir' })
+    expect(modelMode()).toBe('mimir')
   })
 })
 
-describe('in a release build', () => {
-  beforeEach(() => set({ devBuild: false }))
-
-  it('hides until developer mode, leaving Model first', () => {
+describe('in every build and settings mode', () => {
+  it('shows in a release build in every settings mode, first', () => {
+    set({ devBuild: false })
     const el = render()
     const ids = () => [...el.querySelectorAll('.sx-tab')].map((b) => b.getAttribute('data-testid'))
-    expect(ids()).toEqual(['tab-model', 'tab-prepare'])
-    flushSync(() => set({ settingsMode: 'developer' }))
-    expect(ids()).toEqual(['tab-mimir', 'tab-model', 'tab-prepare'])
+    for (const settingsMode of ['simple', 'advanced', 'expert', 'developer'] as const) {
+      flushSync(() => set({ settingsMode }))
+      expect(ids(), settingsMode).toEqual(['tab-mimir', 'tab-model', 'tab-prepare'])
+    }
+    set({ modelMode: 'mimir' })
+    expect(modelMode()).toBe('mimir')
   })
 
-  it('reads as Model while hidden, and agents cannot open it', () => {
+  it('goes away only while mimir is off, reading as Model then, and agents cannot open it', () => {
+    const el = render()
+    const ids = () => [...el.querySelectorAll('.sx-tab')].map((b) => b.getAttribute('data-testid'))
+    flushSync(() => setMimirOn(false))
+    expect(ids()).toEqual(['tab-model', 'tab-prepare'])
     set({ modelMode: 'mimir' })
     expect(modelMode()).toBe('design')
     const go = builtinCommands({} as Host, []).find((c) => c.id === 'mode-mimir')!
     set({ modelMode: 'slice' })
     expect(go.enabled?.()).toBe(false)
-    set({ settingsMode: 'developer' })
+    flushSync(() => setMimirOn(true))
+    expect(ids()).toEqual(['tab-mimir', 'tab-model', 'tab-prepare'])
     expect(go.enabled?.()).toBe(true)
   })
 })
@@ -117,6 +141,24 @@ describe('agents', () => {
     void go.run()
     expect(get().modelMode).toBe('mimir')
     expect(go.enabled?.()).toBe(false)
+  })
+
+  it('may start a new project with the slice permission; the discard question stays with the person', () => {
+    const fresh = builtinCommands({} as Host, []).find((c) => c.id === 'project-new')!
+    expect(fresh.tool?.permission).toBe('slice')
+  })
+
+  it('Ask mimir in the command bar opens the tab and hands the words over, and Mod+/ is its shortcut', () => {
+    set({ workspace: 'library', modelMode: 'slice', pilotPrompt: null })
+    const cmds = pilotFeature.commands!({} as Host)
+    const ask = cmds.find((c) => c.id === 'pilot-ask')!
+    expect(ask.shortcut).toBe('Mod+/')
+    void ask.run()
+    expect(get()).toMatchObject({ workspace: 'prepare', modelMode: 'mimir', pilotPrompt: null })
+    set({ modelMode: 'slice' })
+    void ask.run('Why is my first layer rough')
+    expect(get()).toMatchObject({ workspace: 'prepare', modelMode: 'mimir', pilotPrompt: 'Why is my first layer rough' })
+    set({ pilotPrompt: null })
   })
 
   it('read the mode back from the bridge state', () => {

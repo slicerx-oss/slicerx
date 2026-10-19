@@ -18,7 +18,6 @@ it('reads a Path B name set after imports in tips, setup and provider labels', (
   expect(STEP_TITLES.mimir).toBe('YourMate')
   expect(TIPS['mode.mimir']!.title).toBe('YourMate')
   expect(TIPS['pilot.ask']!.title).toBe('Ask YourMate')
-  expect(TIPS['pilot.close']!.title).toBe('Close YourMate')
   expect(PROVIDERS['mimir-cloud'].label).toBe('YourMate cloud')
 })
 

@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// mimir in the browser build: the tab and its dimension sheet (scripted, no model behind them), then the docked chat
-// against a stubbed cloud proxy (cloud notice and switches, files on a message, a reply that makes a part, a refusal with
-// See usage), and the browser build that only models. One page serves them all: a test puts mimir in the state it needs
-// (the connection, the notice, a new conversation) through the store, and the proxy stub is one route whose answers each
-// test swaps (lib/session.ts). The phone leg of the part card is in phone-session.spec.ts.
+// mimir in the browser build, one tab for designing and slicing: the tab and its dimension sheet (scripted, no model
+// behind them), slicing and a new project from the chat, the top bar's button, then mimir cloud against a stubbed proxy
+// (the notice and switches, files on a message, a refusal with See usage), and the browser build that only models. One
+// page serves them all: a test puts mimir in the state it needs (the connection, the notice, a new conversation) through
+// the store, and the proxy stub is one route whose answers each test swaps (lib/session.ts). The phone leg is in
+// phone-session.spec.ts.
 //
 // Dropped because a unit test has them:
 //  - mimir-attach: a picture and a PDF going out as an image block and a document block (packages/pilot/test/ui-attach.test.tsx:135,
 //    packages/pilot/test/attachments.test.ts:46) and a file that is not a picture or a PDF left out with a note
 //    (packages/pilot/test/ui-attach.test.tsx:71). The 1568 px downscale stays: it needs a real canvas.
-//  - mimir-part-card: a step under an older reply acting on that reply's part, and a deleted part saying so
-//    (packages/pilot/test/ui-part.test.tsx:100 and :112).
+//  - mimir-part-card: the next steps offered only when the toolset can do them, a step under an older reply acting on that
+//    reply's part, and a deleted part saying so (packages/pilot/test/ui-part.test.tsx). The tab builds with the design tools,
+//    so a part card from the part generator no longer comes up in the app.
 //  - mimir-sheet: Cancel building nothing (packages/pilot/test/ui-sheet.test.tsx:81 and :97, packages/app/test/mimir-sheet.test.ts:162)
 //    and the thermostat backplate's drawing and status (packages/app/test/mimir-sheet.test.ts:146, packages/pilot/test/ui-sheet.test.tsx:27).
 //  - mimir-web-walk: the save switch caption (packages/app/test/mimir-web-walk.test.ts:55).
@@ -22,11 +24,10 @@ import { freshBox } from '../cad-helpers'
 import { goTab, test as cold, viewportReady } from '../fixtures'
 import {
   answer,
-  askDock,
+  askTab,
   closeDialogs,
   debugOn,
   emptyMimirTab,
-  freshDock,
   lastUserBlocks,
   lastUserText,
   setPilot,
@@ -36,11 +37,11 @@ import {
   signIn,
   standIn,
   stubProxy,
-  type Block,
 } from './lib/session'
 
-test.use({ journeyPrefs: { workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, scheme: 'dark', themeFollowsSystem: false } })
-test.skip(({ isMobile }) => isMobile, 'Desktop only: phones have no modeling tabs. The part card on a phone is in phone-session.spec.ts')
+// a provider with no key: the tab plays its scripts over the real tools
+test.use({ journeyPrefs: { workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'on', provider: 'anthropic' }, scheme: 'dark', themeFollowsSystem: false } })
+test.skip(({ isMobile }) => isMobile, 'Desktop. The mimir tab on a phone is in phone-session.spec.ts')
 
 type Sx = { setState(p: unknown): void; getState(): Record<string, any> }
 type Vp = { camera: { position: { x: number; y: number; z: number } } }
@@ -52,7 +53,7 @@ const topDown = (page: Page) =>
     return Math.abs(p.y) / Math.hypot(p.x, p.y, p.z)
   })
 
-/** Debug hooks on, the pilot in the state a test starts from, and the dock closed unless the test opens it. */
+/** Debug hooks on, and the pilot in the state a test starts from. */
 async function ready(page: Page, mode: Parameters<typeof setPilot>[1], opts: { notice?: boolean } = {}): Promise<void> {
   await debugOn(page)
   await setPilot(page, mode, opts)
@@ -76,7 +77,7 @@ async function clearOfBottom(page: Page, card: Locator): Promise<void> {
 
 test.describe('the mimir tab', () => {
   test.beforeEach(async ({ page }) => {
-    await ready(page, 'off')
+    await ready(page, 'scripted')
     await emptyMimirTab(page)
   })
 
@@ -201,26 +202,54 @@ test.describe('the mimir tab', () => {
     expect(hit).toBe('mimir-composer')
   })
 
-  test('the docked chat stands aside on the mimir tab; its button keeps its place', async ({ page }) => {
-    // the dock's button shows while mimir is on or waiting to be connected, not once it is off
-    await setPilot(page, 'unset')
+  test("the top bar's button opens the tab and keeps its place there; Mod+/ opens it from anywhere", async ({ page }) => {
     await goTab(page, 'prepare')
     const btn = page.locator('.mimir-btn')
     await expect(btn).toBeVisible()
-    // the dock is a view choice the browser remembers: start from it shut
-    if (await page.locator('.mimir-dock').isVisible()) await btn.click()
-    await expect(page.locator('.mimir-dock')).toHaveCount(0)
-    await btn.click()
-    await expect(page.locator('.mimir-dock')).toBeVisible()
     const box = (await btn.boundingBox())!
-    await page.getByTestId('tab-mimir').click()
-    await expect(page.locator('.mimir-dock')).toHaveCount(0)
+    await btn.click()
+    await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByTestId('mimir-chat')).toBeVisible()
+    // the tab names mimir, so the button hides but keeps its place, and nothing in the bar moves
     await expect(btn).toBeHidden()
     expect((await btn.boundingBox()) ?? box).toEqual(box)
     await page.getByTestId('tab-model').click()
-    await expect(page.locator('.mimir-dock')).toBeVisible()
-    await btn.click()
-    await expect(page.locator('.mimir-dock')).toHaveCount(0)
+    await expect(btn).toBeVisible()
+    await expect(page.getByTestId('mimir-chat')).toBeHidden()
+    await page.keyboard.press('ControlOrMeta+/')
+    await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
+    // and off: no tab, no button
+    await setPilot(page, 'off')
+    await expect(page.getByTestId('tab-mimir')).toHaveCount(0)
+    await expect(btn).toHaveCount(0)
+    await setPilot(page, 'scripted')
+    await expect(page.getByTestId('tab-mimir')).toBeVisible()
+  })
+
+  test('slices the plate and starts a new project from the chat, staying on the tab; the discard question stays with the person', async ({ page }, info) => {
+    await goTab(page, 'prepare')
+    await freshBox(page)
+    await page.getByTestId('tab-mimir').click()
+    const chat = page.getByTestId('mimir-chat')
+    await askTab(page, 'Slice the plate')
+    await expect(chat).toContainText('Sliced. Open the Slice tab', { timeout: 60_000 })
+    // the slice happened where mimir is: the tab is still open, and the slice waits in Slice
+    await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
+    expect((await state(page))['slice']?.status).toBe('done')
+    if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/mimir-sliced.png` })
+    // a new project asks the person first; keeping the open one changes nothing
+    await askTab(page, 'Start a new project')
+    const unsaved = page.getByRole('dialog', { name: 'Save changes first?' })
+    await expect(unsaved).toBeVisible({ timeout: 30_000 })
+    await unsaved.getByTestId('unsaved-cancel').click()
+    await expect(chat).toContainText('You kept the open project, so nothing changed.')
+    expect((await state(page))['plate'].length).toBe(1)
+    await askTab(page, 'Start a new project')
+    await expect(unsaved).toBeVisible({ timeout: 30_000 })
+    await unsaved.getByTestId('unsaved-discard').click()
+    await expect(chat).toContainText('The new project is open and empty.')
+    expect((await state(page))['plate'].length).toBe(0)
+    await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
   })
 
   // Past the attention window and the close delay (4.8 s), which is the point of the test, so it runs at night.
@@ -414,7 +443,7 @@ function still(before: Box[], after: Box[]): void {
 
 test.describe('the dimension sheet', () => {
   test.beforeEach(async ({ page }) => {
-    await ready(page, 'off')
+    await ready(page, 'scripted')
     await emptyMimirTab(page)
   })
 
@@ -564,32 +593,6 @@ async function pressStill(target: Locator, others: Locator[]): Promise<void> {
 // and Settings > mimir's share switch and delete control. The web build has no cloud shell, so a test stands one in through
 // the debug hook. Controls stay put when pressed.
 test.describe('mimir cloud', () => {
-  test('in the dock, the header, the notice, the chat and its input line span the dock', async ({ page }, info) => {
-    await ready(page, 'cloud', { notice: false })
-    await standIn(page)
-    await freshDock(page)
-    const notice = page.locator('.mimir-dock').getByTestId('mimir-cloud-notice')
-    await expect(notice).toBeVisible()
-    const dock = await page.locator('.mimir-dock').boundingBox()
-    const box = await notice.boundingBox()
-    // below the dock's header, nearly its full width, and no taller than the dock
-    expect(box!.width).toBeGreaterThan(dock!.width * 0.8)
-    expect(box!.y + box!.height).toBeLessThanOrEqual(dock!.y + dock!.height)
-    // the header spans it too: the dock is one column, not the chat page's three
-    expect((await page.locator('.mimir-dock > .mimir-head').boundingBox())!.width).toBeGreaterThan(dock!.width - 2)
-    await expect(page.locator('.mimir-dock').getByTestId('mimir-notice-ok')).toBeInViewport()
-    if (shotsOn()) await page.locator('.mimir-dock').screenshot({ path: `${shotsDir(info)}/mimir-dock-notice.png` })
-    // and so does the chat once the notice is read
-    await page.locator('.mimir-dock').getByTestId('mimir-notice-ok').click()
-    const term = page.locator('.mimir-dock > .term')
-    await expect(term).toBeVisible()
-    expect((await term.boundingBox())!.width).toBeGreaterThan(dock!.width - 2)
-    // the dock's input is the terminal's own line, not the mimir tab's composer
-    await expect(term.getByRole('textbox', { name: /^Ask / })).toBeVisible()
-    expect((await term.locator('.term-in').boundingBox())!.width).toBeGreaterThan(dock!.width * 0.85)
-    if (shotsOn()) await page.locator('.mimir-dock').screenshot({ path: `${shotsDir(info)}/mimir-dock-chat.png` })
-  })
-
   test('the mimir tab shows the notice once before the first chat', async ({ page }, info) => {
     await ready(page, 'unset', { notice: false })
     await standIn(page)
@@ -611,7 +614,8 @@ test.describe('mimir cloud', () => {
 
     await start.click()
     await expect(notice).toHaveCount(0)
-    await expect(page.locator('.mimir-empty')).toBeVisible()
+    // the stand-in shell has no proxy behind it, so no model answers and the chat offers the setup
+    await expect(page.locator('.mimir-empty').or(page.getByTestId('mimir-connect'))).toBeVisible()
     expect((await state(page))['mimirNotice']).toBe(2)
 
     // read once: it stays gone after a reload
@@ -656,19 +660,21 @@ test.describe('mimir cloud', () => {
   })
 })
 
-/* ------------------------------------------------------------------ the docked chat against a stubbed proxy */
+/* ------------------------------------------------------------------ the tab against a stubbed proxy */
 
 // A 1 by 1 PNG and a one page PDF
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
-test.describe('files on a message in the docked chat', () => {
+test.describe('files on a message in the tab', () => {
   // A big picture is scaled down to 1568 px before it is sent. (A picture and a PDF going out as blocks, and a file that
   // is not one of them being left out, are unit tests: see the header.)
   test('a big picture is scaled down to 1568 px before it is sent', async ({ page }) => {
     await ready(page, 'cloud')
     const bodies = await stubProxy(page, () => answer('I can see the sketch and the drawing.'))
     await signIn(page)
-    await freshDock(page)
+    await emptyMimirTab(page)
+    // signing in makes the runtime again on mimir cloud; the scripted replies' chip goes once it is there
+    await expect(page.locator('.mimir-chat-scripted')).toHaveCount(0)
     const big = await page.evaluate(async () => {
       const c = document.createElement('canvas')
       c.width = 3000
@@ -681,10 +687,10 @@ test.describe('files on a message in the docked chat', () => {
       const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/png'))
       return Array.from(new Uint8Array(await blob.arrayBuffer()))
     })
-    const dock = page.locator('.mimir-dock')
-    await dock.getByTestId('mimir-attach-input').setInputFiles([{ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from(big) }])
-    await expect(dock.getByTestId('mimir-attachment')).toHaveCount(1)
-    await dock.getByRole('textbox', { name: /^Ask / }).press('Enter')
+    const composer = page.getByTestId('mimir-composer')
+    await composer.locator('input[type="file"]').setInputFiles([{ name: 'photo.png', mimeType: 'image/png', buffer: Buffer.from(big) }])
+    await expect(page.getByTestId('mimir-attachment')).toHaveCount(1)
+    await composer.getByRole('button', { name: 'Send' }).click()
     await expect.poll(() => bodies.length, { timeout: 30_000 }).toBeGreaterThan(0)
     const img = lastUserBlocks(bodies[0]!).find((b) => b.type === 'image')!
     expect(img.source!.media_type).toBe('image/jpeg')
@@ -693,98 +699,6 @@ test.describe('files on a message in the docked chat', () => {
       return [bmp.width, bmp.height]
     }, img.source!.data)
     expect(size).toEqual([1568, 1045])
-  })
-})
-
-// A reply that makes a part: the real text_to_part call puts a cube on the plate, the reply shows it as a card read from the
-// tool's result, Edit opens the part's editor, and the next steps under each reply act on that reply's part. The starters
-// show only while the thread is empty.
-test.describe('a reply that makes a part', () => {
-  /** The proxy: "cube" builds one with text_to_part and asks what next; anything else is acknowledged. */
-  async function partProxy(page: Page): Promise<string[]> {
-    const asked: string[] = []
-    await stubProxy(page, (body) => {
-      const text = lastUserText(body)
-      if (text.includes('tool_result')) return answer('Want rounded edges, or a hole through it?')
-      asked.push(text)
-      for (const n of [20, 10])
-        if (text.includes(`a ${n} mm cube`))
-          return [
-            { type: 'text', text: `Created a ${n} mm cube at the origin.` },
-            { type: 'tool_use', id: `tu_${n}`, name: 'text_to_part', input: { name: `${n} mm cube`, solids: [{ type: 'box', sizeMm: [n, n, n] }] } },
-          ] satisfies Block[]
-      return answer('On it.')
-    })
-    return asked
-  }
-
-  test.beforeEach(async ({ page }) => {
-    await ready(page, 'cloud')
-    await setState(page, { plate: [], selection: null, selectedIds: [] })
-    await signIn(page)
-  })
-
-  test('shows the part as a card, and its next steps send their request', async ({ page }) => {
-    const asked = await partProxy(page)
-    await freshDock(page)
-    const dock = page.locator('.mimir-dock')
-    await expect(dock.getByRole('textbox', { name: 'Ask mimir' })).toHaveAttribute('placeholder', 'Ask mimir')
-    const starters = dock.getByRole('group', { name: 'Suggestions' })
-    await expect(starters).toBeVisible()
-
-    await askDock(page, 'a 20 mm cube')
-    const card = dock.getByTestId('mimir-part')
-    await expect(card).toBeVisible({ timeout: 30_000 })
-    await expect(card).toContainText('Cube created')
-    await expect(card).toContainText('Cube 20 x 20 x 20 mm')
-    await expect(dock).toContainText('Created a 20 mm cube at the origin.')
-    await expect(dock).toContainText('Want rounded edges, or a hole through it?')
-    // the card reads the part the call put on the plate, and the permission line gives way to it
-    expect(await card.getAttribute('data-part')).toBe('20-mm-cube')
-    await expect(dock).not.toContainText('set to Allow in Permissions')
-    // the starters are gone once the thread has a turn
-    await expect(starters).toHaveCount(0)
-    const next = dock.getByRole('group', { name: 'Next steps' })
-    await expect(next.getByRole('button')).toHaveText(['Fillet edges, 2 mm', 'Center hole, 5 mm', 'Change size'])
-
-    // Change size asks for the size first; nothing is sent until Resize
-    await next.getByRole('button', { name: 'Change size' }).click()
-    const sizing = dock.getByRole('group', { name: 'Change size' })
-    await expect(sizing).toBeVisible()
-    const before = asked.length
-    await sizing.getByRole('textbox', { name: /X/ }).fill('30')
-    await sizing.getByRole('textbox', { name: /X/ }).press('Enter')
-    expect(asked.length).toBe(before)
-    await sizing.getByRole('button', { name: 'Resize' }).click()
-    await expect(dock).toContainText('On it.', { timeout: 30_000 })
-    expect(asked.at(-1)).toMatch(/User request:\s*Change the size of the 20 mm cube to 30 x 20 x 20 mm$/)
-
-    await next.first().getByRole('button', { name: 'Fillet edges, 2 mm' }).click()
-    await expect.poll(() => asked.at(-1)).toMatch(/User request:\s*Fillet the edges of the 20 mm cube by 2 mm$/)
-    // the chip's request shows as the person's message
-    await expect(dock.locator('.turn-user').last()).toContainText('Fillet the edges of the 20 mm cube by 2 mm')
-
-    // a reload brings the card back from the saved conversation
-    await page.reload()
-    await viewportReady(page)
-    await expect(card).toContainText('Cube created')
-  })
-
-  test('Edit opens the part for editing, and the card body selects it', async ({ page }, info) => {
-    await partProxy(page)
-    await freshDock(page)
-    await askDock(page, 'a 20 mm cube')
-    const card = page.locator('.mimir-dock').getByTestId('mimir-part')
-    await expect(card).toBeVisible({ timeout: 30_000 })
-    await setState(page, { selection: null, selectedIds: [] })
-    await card.getByRole('button', { name: 'Select the 20 mm cube' }).click()
-    await expect.poll(async () => (await state(page))['selection']).toBe('20-mm-cube')
-    await card.getByRole('button', { name: 'Edit the 20 mm cube' }).click()
-    const transform = page.getByRole('dialog', { name: 'Transform' })
-    await expect(transform).toBeVisible()
-    await expect(transform.getByRole('group', { name: /Size/ })).toBeVisible()
-    if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/part-edit.png` })
-    await closeDialogs(page)
   })
 })
 
@@ -802,7 +716,7 @@ test.describe('See usage on a mimir cloud refusal', () => {
     paused: [503, 'Free mimir is paused right now. We know and are fixing it. Your own key or a local model still works.'],
   }
 
-  /** Opens the dock on mimir cloud, signed in through the build's browser host pointed at the stub, and asks once. */
+  /** Opens the tab on mimir cloud, signed in through the build's browser host pointed at the stub, and asks once. */
   async function askAndRefuse(page: Page, code: keyof typeof MESSAGES): Promise<void> {
     const [status, message] = MESSAGES[code]!
     await ready(page, 'cloud', { notice: false })
@@ -818,19 +732,20 @@ test.describe('See usage on a mimir cloud refusal', () => {
       quota: { edition: 'slicerx-web', day: '2026-10-13', install_used: 250000, install_cap: 250000, ip_used: 0, ip_cap: 1000000, edition_open: true, v2 },
     })
     await signIn(page)
-    await freshDock(page)
+    await emptyMimirTab(page)
+    // the question waits for the notice
     await setState(page, { pilotPrompt: 'a 20 mm cube' })
-    await page.locator('.mimir-dock').getByTestId('mimir-notice-ok').click()
-    const line = page.locator('.mimir-dock').getByTestId('mimir-limit')
+    await page.getByTestId('mimir-chat').getByTestId('mimir-notice-ok').click()
+    const line = page.getByTestId('mimir-chat').getByTestId('mimir-limit')
     await expect(line).toHaveAttribute('data-code', code, { timeout: 30_000 })
     await expect(line).toContainText(MESSAGES[code]![1])
   }
 
   test('a used-up day links to Settings > Account with Usage in view', async ({ page }, info) => {
     await askAndRefuse(page, 'day_used')
-    const link = page.locator('.mimir-dock').getByTestId('mimir-see-usage')
+    const link = page.getByTestId('mimir-chat').getByTestId('mimir-see-usage')
     await expect(link).toHaveText('See usage')
-    if (shotsOn()) await page.locator('.mimir-dock').screenshot({ path: `${shotsDir(info)}/mimir-see-usage-line.png` })
+    if (shotsOn()) await page.getByTestId('mimir-chat').screenshot({ path: `${shotsDir(info)}/mimir-see-usage-line.png` })
     await link.click()
     const dialog = page.getByRole('dialog', { name: 'Settings' })
     await expect(dialog.getByRole('heading', { name: 'Account' })).toBeVisible()
@@ -853,7 +768,7 @@ test.describe('See usage on a mimir cloud refusal', () => {
   for (const code of ['edition_day_used', 'slow_down'] as const) {
     test(`${code} links to usage too`, async ({ page }) => {
       await askAndRefuse(page, code)
-      await page.locator('.mimir-dock').getByTestId('mimir-see-usage').click()
+      await page.getByTestId('mimir-chat').getByTestId('mimir-see-usage').click()
       await expect(page.getByTestId('mu-today-out')).toBeInViewport({ ratio: 1 })
       await closeDialogs(page)
     })
@@ -861,17 +776,17 @@ test.describe('See usage on a mimir cloud refusal', () => {
 
   test('a pause has no usage link', async ({ page }) => {
     await askAndRefuse(page, 'paused')
-    await expect(page.locator('.mimir-dock').getByTestId('mimir-see-usage')).toHaveCount(0)
+    await expect(page.getByTestId('mimir-chat').getByTestId('mimir-see-usage')).toHaveCount(0)
   })
 })
 
 /* ------------------------------------------------------------------ the browser build that only models (cold) */
 
-// mimir cloud in the browser build that only models, against a stubbed proxy: part chips and no printer plugins, the
-// answer above a folded sources line, a reply even when the model ends silent, and the conversation kept over a reload.
-// This build is chosen at the start (slicerx.e2e.cadOnly), so it has a page of its own.
+// mimir cloud in the browser build that only models, against a stubbed proxy: the mimir and Model tabs and no Slice, a
+// parts note and no printer plugins, the answer above a folded sources line, and a reply even when the model ends
+// silent. This build is chosen at the start (slicerx.e2e.cadOnly), so it has a page of its own.
 cold.describe('mimir in the browser build that only models', () => {
-  cold.skip(({ isMobile }) => isMobile, 'Desktop. The phone leg of mimir is the part card in phone-session.spec.ts')
+  cold.skip(({ isMobile }) => isMobile, 'Desktop. The phone leg of mimir is in phone-session.spec.ts')
 
   cold('offers parts, answers above a folded sources line, and never ends silent', async ({ page }, info) => {
     const bodies = await stubProxy(page, (body) => {
@@ -887,52 +802,44 @@ cold.describe('mimir in the browser build that only models', () => {
       sessionStorage.setItem('sx-e2e', '1')
       localStorage.setItem('slicerx.debug', '1')
       localStorage.setItem('slicerx.e2e.cadOnly', '1')
-      localStorage.setItem('sx-mimir-dock', '1')
       localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'on', provider: 'mimir-cloud' }, mimirNotice: 2 }))
     })
     await page.goto('./')
     await viewportReady(page)
     await signIn(page)
-    const dock = page.locator('.mimir-dock')
-    // part chips, none about printers
-    await expect(dock.getByRole('button', { name: 'Design a part' })).toBeVisible()
-    await expect(dock.getByRole('button', { name: 'Check on a print' })).toHaveCount(0)
-    await expect(dock.getByRole('textbox', { name: /^Ask / })).toHaveAttribute('placeholder', 'Ask mimir')
-    if (shotsOn()) await dock.screenshot({ path: `${shotsDir(info)}/web-dock-empty.png` })
+    await expect(page.locator('.sx-tab[data-mode]')).toHaveText(['mimir', 'Model'])
+    await page.getByTestId('tab-mimir').click()
+    const chat = page.getByTestId('mimir-chat')
+    await expect(chat).toBeVisible()
+    // a parts note, nothing about slicing or printers
+    await expect(chat.locator('.mimir-empty')).toContainText('Describe a part')
+    await expect(chat.locator('.mimir-empty')).not.toContainText(/slice|printer/i)
+    await expect(page.getByTestId('mimir-composer').getByRole('textbox')).toHaveAttribute('placeholder', 'Ask mimir')
+    if (shotsOn()) await chat.screenshot({ path: `${shotsDir(info)}/web-tab-empty.png` })
 
-    await askDock(page, 'What layer height for a strong bracket?')
-    await expect(dock).toContainText('Use 0.2 mm for a strong bracket', { timeout: 30_000 })
-    // no plugins block, and the prompt is about parts in the browser
-    await expect(dock.getByText('Plugins', { exact: true })).toHaveCount(0)
+    await askTab(page, 'What layer height for a strong bracket?')
+    await expect(chat).toContainText('Use 0.2 mm for a strong bracket', { timeout: 30_000 })
+    // no plugins, and the prompt is about parts in the browser, built with the design tools
     expect(bodies[0]?.system?.map((s) => s.text).join(' ')).toMatch(/in the browser, where people design parts/)
     expect(bodies[0]?.tools?.some((t) => t.name.startsWith('printer'))).toBe(false)
+    expect(bodies[0]?.tools?.some((t) => t.name === 'text_to_part')).toBe(false)
+    expect(bodies[0]?.tools?.some((t) => t.name.startsWith('design'))).toBe(true)
     // sources fold to one line under the answer, which stays in view
-    const head = dock.getByRole('button', { name: /^Sources \(\d\)$/ })
+    const head = chat.getByRole('button', { name: /^Sources \(\d\)$/ })
     await expect(head).toBeVisible()
     await expect(head).toHaveAttribute('aria-expanded', 'false')
-    await expect(dock.getByText('Use 0.2 mm for a strong bracket')).toBeInViewport()
-    if (shotsOn()) await dock.screenshot({ path: `${shotsDir(info)}/web-dock-answer.png` })
+    await expect(chat.getByText('Use 0.2 mm for a strong bracket')).toBeInViewport()
+    if (shotsOn()) await chat.screenshot({ path: `${shotsDir(info)}/web-tab-answer.png` })
 
     // a model that ends with nothing is asked once more, with no tools, and its reply shows
-    await askDock(page, 'Pi case, stay silent')
-    await expect(dock).toContainText('Which wall should the ports go in?', { timeout: 30_000 })
+    await askTab(page, 'Pi case, stay silent')
+    await expect(chat).toContainText('Which wall should the ports go in?', { timeout: 30_000 })
     expect(bodies.at(-1)?.tool_choice?.type).toBe('none')
-
-    // a reload keeps the conversation
-    await page.reload()
-    await viewportReady(page)
-    await signIn(page)
-    await expect(dock).toContainText('Use 0.2 mm for a strong bracket')
-    await expect(dock).toContainText('Which wall should the ports go in?')
-    if (shotsOn()) await dock.screenshot({ path: `${shotsDir(info)}/web-dock-reloaded.png` })
-    // and the next message carries it as context
-    await askDock(page, 'a 20 mm cube')
-    await expect(dock).toContainText('A 20 mm cube, coming up.', { timeout: 30_000 })
+    // and the next message carries the conversation as context; New conversation forgets it
+    await askTab(page, 'a 20 mm cube')
+    await expect(chat).toContainText('A 20 mm cube, coming up.', { timeout: 30_000 })
     expect(JSON.stringify(bodies.at(-1)?.messages)).toContain('What layer height for a strong bracket?')
-    // New conversation forgets it
-    await dock.getByRole('button', { name: 'New conversation' }).click()
-    await page.reload()
-    await viewportReady(page)
-    await expect(dock).not.toContainText('A 20 mm cube, coming up.')
+    await chat.getByRole('button', { name: 'New conversation' }).click()
+    await expect(chat).not.toContainText('A 20 mm cube, coming up.')
   })
 })

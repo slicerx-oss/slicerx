@@ -8,13 +8,12 @@ import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { AppBar, Button, Icon, keymapFor, Menu, MenuAnchor, MenuItem, Popover, SearchButton, Tabs, tipAttrs, type TabSpec } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type RefObject } from 'react'
 import { formatShortcut } from '../lib/keys'
-import { toggleDock, useDockOpen } from '../features/pilot/dock-state'
-import { watchOf } from '../features/pilot/watch'
+import { watchOf } from '../workspaces/mimir/watch'
 import { useFeatures, useHasFeature } from '../features'
 import { topBarTabs, useLayout, useLookChoice } from '../first-run/look'
 import { ModeSelector } from '../first-run/mode-selector'
 import { useFleet } from '../lib/queries'
-import { openSettings, set, setWorkspace, useApp } from '../state/store'
+import { get, openSettings, set, setModelMode, setWorkspace, useApp } from '../state/store'
 import { ModeTabs } from './mode-tab'
 import { hostSlices, useCadShown, useInMimir } from '../state/model-mode'
 import { usePhoneLayout } from '../lib/phone-layout'
@@ -69,6 +68,12 @@ function useFitStep(probe: RefObject<HTMLElement | null>, content: string): numb
   return step
 }
 
+/** Opens a workspace tab. mimir is the plate workspace in its own mode, so the plain Slice tab leaves it for Slice. */
+export function openTab(id: string): void {
+  if (id === 'prepare' && get().modelMode === 'mimir') return setModelMode('slice')
+  setWorkspace(id as Parameters<typeof setWorkspace>[0])
+}
+
 /** The workspace tabs the shell shows (Model's own tab aside), shared by the top bar and the phone's tab bar. */
 export function useShellTabs(): { shown: TabSpec[]; cad: boolean; activeTab: string } {
   const active = useApp((s) => s.workspace)
@@ -86,10 +91,12 @@ export function useShellTabs(): { shown: TabSpec[]; cad: boolean; activeTab: str
   // With modeling tools the first tab is the Design | Slice pair; without, a plain Slice tab.
   // A phone shows a plain Slice tab: modeling waits for the desktop.
   const cad = useCadShown()
-  // A host that cannot slice (the CAD-only browser build) shows Model and nothing else.
+  // A host that cannot slice (the CAD-only browser build) shows mimir and Model and nothing else.
   const slices = hostSlices()
   const shown = useMemo(() => (!slices ? [] : cad ? tabs.filter((w) => w.id !== 'prepare') : tabs), [slices, cad, tabs])
-  const activeTab = hasFeed && active === 'library' ? 'feed' : active
+  // Without the mode tabs, mimir is the plate workspace in its own mode: the plain Slice tab is not the current one then.
+  const inMimir = useInMimir()
+  const activeTab = inMimir && !cad ? 'mimir' : hasFeed && active === 'library' ? 'feed' : active
   return { shown, cad, activeTab }
 }
 
@@ -101,8 +108,8 @@ export function TopBar() {
   const palette = keymapFor(choice.id, choice.overrides?.keys ?? {}).palette ?? 'Mod+K'
   const fleet = useFleet()
   const assistant = useHasFeature('pilot')
-  const dockOpen = useDockOpen()
-  // On the mimir tab the chat is already on screen: the button hides but keeps its place, so nothing in the bar moves.
+  // The button opens the mimir tab. Where the mode tabs show it, the button hides on it but keeps its place, so nothing
+  // in the bar moves; without them (an edition without modeling tools) it is mimir's tab, pressed while open.
   const inMimir = useInMimir()
   const watch = watchOf(fleet.data ?? [])
   const slices = hostSlices()
@@ -147,7 +154,7 @@ export function TopBar() {
           )}
           <SearchButton placeholder="Search" onClick={() => set({ commandOpen: true })} shortcut={formatShortcut(palette)} />
           {assistant ? (
-            <Button variant="ghost" size="sm" className="mimir-btn" aria-label={ASSISTANT_NAME} aria-pressed={dockOpen} tip="pilot.ask" onClick={toggleDock} {...(inMimir ? { 'data-hidden': '', 'aria-hidden': true, tabIndex: -1 } : {})}>
+            <Button variant="ghost" size="sm" className="mimir-btn" aria-label={ASSISTANT_NAME} aria-pressed={inMimir} tip="pilot.ask" data-testid="mimir-btn" onClick={() => setModelMode('mimir')} {...(inMimir && cad ? { 'data-hidden': '', 'aria-hidden': true, tabIndex: -1 } : {})}>
               <Icon name="mimir" size={16} />
               <span className="mimir-btn-label">{ASSISTANT_NAME}</span>
               {watch.names.length ? <span className="mimir-watch" data-attention={watch.attention ? true : undefined} role="img" aria-label={watch.attention ? `Look at ${watch.names.join(', ')}` : `Watching ${watch.names.join(', ')}`} /> : null}
@@ -157,7 +164,7 @@ export function TopBar() {
         </>
       }
     >
-      <Tabs tabs={inBar} active={activeTab} onChange={setWorkspace} lead={cad ? <ModeTabs /> : null} tips={step >= 2} trail={overflow.length ? <MoreTabs tabs={overflow} active={activeTab} /> : null} />
+      <Tabs tabs={inBar} active={activeTab} onChange={openTab} lead={cad ? <ModeTabs /> : null} tips={step >= 2} trail={overflow.length ? <MoreTabs tabs={overflow} active={activeTab} /> : null} />
       <div ref={nameRef} className="sx-projname" {...tipAttrs(projectFile ? { title: projectFile.path ?? projectFile.name } : undefined)}>
         {projectFile ? (
           <>
@@ -211,7 +218,7 @@ function MoreTabs({ tabs, active }: { tabs: readonly TabSpec[]; active: string }
       </button>
       <Menu open={open} onClose={() => setOpen(false)} label="More tabs" align="end">
         {tabs.map((t) => (
-          <MenuItem key={t.id} icon={t.icon} data-testid={`tab-overflow-${t.id}`} aria-current={t.id === active ? 'page' : undefined} onClick={() => (setOpen(false), setWorkspace(t.id as Parameters<typeof setWorkspace>[0]))}>
+          <MenuItem key={t.id} icon={t.icon} data-testid={`tab-overflow-${t.id}`} aria-current={t.id === active ? 'page' : undefined} onClick={() => (setOpen(false), openTab(t.id))}>
             {t.label}
             {t.status ? <i className={t.status === 'warn' ? 'sx-dot warn tab-dot' : 'sx-dot tab-dot'} aria-hidden="true" /> : null}
           </MenuItem>

@@ -22,12 +22,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 
 | Test id | Control |
 | --- | --- |
-| `tab-<workspace>` | A workspace tab in the top bar: `tab-prepare`, `tab-preview`, `tab-printers`, `tab-feed` (the Vault). In an edition with modeling tools the first three tabs are mimir, Model and Slice: `tab-mimir`, `tab-model` and `tab-prepare` (Slice). The Model tab also answers to its old id, `tab-design`, through `data-testid-alias`, until scripts move to `tab-model` |
-| `phone-tabs` | The tab bar at the bottom of a phone. Its tabs keep the top bar's ids (`tab-model`, `tab-<workspace>`), and `tab-mimir` there opens mimir as a page; it is not drawn when only one tab is left |
-| `mimir-foot-more` | The More button in the dock's row of conversation controls (under the dock header on a desktop, at the top on a phone); it opens `mimir-foot-menu` with Skills and permissions, Show thinking and Connect an AI agent |
-| `mimir-foot-menu` | The menu `mimir-foot-more` opens |
-| `mimir-foot-thinking` | In `mimir-foot-menu`, the Show thinking switch (a checkable item, `aria-checked`); the dock draws no terminal bar, so this is where it lives |
-| `mimir-foot-pause` | Pause (Resume while paused) in the dock's row of conversation controls, beside New conversation on a desktop and beside More on a phone; off while nothing runs |
+| `tab-<workspace>` | A workspace tab in the top bar: `tab-prepare`, `tab-preview`, `tab-printers`, `tab-feed` (the Vault). In an edition with modeling tools the first three tabs are mimir, Model and Slice: `tab-mimir`, `tab-model` and `tab-prepare` (Slice); the browser build has `tab-mimir` and `tab-model`. `mimir-btn` is the top bar's mimir button, which opens the mimir tab (hidden in place while the tab is open where `tab-mimir` shows, pressed while open in an edition without modeling tools). The Model tab also answers to its old id, `tab-design`, through `data-testid-alias`, until scripts move to `tab-model` |
+| `phone-tabs` | The tab bar at the bottom of a phone. Its tabs keep the top bar's ids (`tab-model`, `tab-<workspace>`), and `tab-mimir` there opens the mimir tab, its chat under the view; it is not drawn when only one tab is left |
 | `tab-overflow` | More, at the end of the tabs on a narrow window, holding the tabs that no longer fit; each item is `tab-overflow-<workspace>` (`tab-overflow-printers` first) |
 | `edge-tab-<side>` | The tab on a panel's edge that shuts and reopens it: `edge-tab-left` (the left sidebar), `edge-tab-right` (the right pane), `edge-tab-bottom` (the bottom panel, and in Slice the playback bar); `aria-expanded` says whether the panel is open, `data-attention` is set while a shut panel's tab glows for something to look at, and `data-panel` says which panel: `model-tree`, `model-inspector`, `model-timeline`, `slice-sidebar` or `slice-summary` |
 | `model-tree`, `model-inspector`, `slice-sidebar`, `slice-summary` | The body of the side pane with that edge tab: Model's tree and its tool and transform pane, Slice's printer and settings sidebar (its printer and filaments sit above it, pinned) and its right pane with the objects and the slice summary. It is gone while the pane is shut |
@@ -75,6 +71,11 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-filament` | Under a finished run in the chat, the loaded spools: a click picks the spool the part prints with |
 | `mimir-model-switch` | Auto's one line when a run moves to another model (Using Sonnet 5.5 for this one.) |
 | `mimir-composer` | The message box pinned at the foot of the chat |
+| `mimir-connect` | In place of the conversation before a model is connected (and with no mimir cloud): the shared mimir setup; nothing is sent |
+| `mimir-chat-more` | The More button in the chat's header; it opens `mimir-chat-menu` with Skills and permissions, Show thinking and Connect a model |
+| `mimir-chat-menu` | The menu `mimir-chat-more` opens |
+| `mimir-chat-thinking` | In `mimir-chat-menu`, the Show thinking switch (a checkable item, `aria-checked`) |
+| `mimir-more` | Skills and permissions, in the chat's place until closed from the menu |
 | `mimir-attach` | The composer's attach button, which opens the image picker |
 | `mimir-attachment` | An image on the message or on a sent turn; its remove button is named Remove and the file name |
 | `mimir-choice` | A choice card in the conversation; `data-picked` holds the picked answer's id once there is one |

@@ -2,12 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The mimir tab: the chat on the left and the design's view on the right, loaded as their own chunk when the tab first
 // opens. The view is the one Model uses, on the same design and history; this file adds the chat column and the
-// caption that names the view.
+// caption that names the view. The chat is mimir's one conversation in the app: the top bar's button, the phone's tab
+// and Ask mimir in the command bar all open it, and clients reach it over the app link (mimir.ask, mimir.session).
+import { SKILL_INFO } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Composer, TranscriptView, UsageLinkContext, useAttachments, usePilotRun, type ApprovalHandlers, type Transcript } from '@slicerx/pilot/ui'
-import { DEFAULT_POLICY, type Pilot, type PilotLookup } from '@slicerx/contracts'
+import { Composer, Inspector, transcriptTurns, TranscriptView, UsageLinkContext, useAttachments, usePilotRun, type ApprovalHandlers, type PolicyClass, type Transcript } from '@slicerx/pilot/ui'
+import { DEFAULT_POLICY, PERMISSION_LABELS, type ApprovalRequest, type PermissionMode, type PermissionPolicy, type Pilot, type PilotAttachment, type PilotLookup } from '@slicerx/contracts'
 import '@slicerx/pilot/ui/pilot.css'
-import { Button, Icon, ResizeEdge, tipAttrs } from '@slicerx/ui'
+import { Button, Icon, LinkButton, Menu, MenuAnchor, MenuItem, ResizeEdge, tipAttrs } from '@slicerx/ui'
 import { RavenMark } from '@slicerx/ui/raven'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 import { setLookups } from './lookups'
@@ -19,7 +21,10 @@ import { openSheet, setDraft, setSheetActions, setShownSheet, sheetMode, useShee
 import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
-import { get, setCamera, useApp } from '../../state/store'
+import { setMimirAsker } from '../../app-link/mimir-ask'
+import { hostSlices } from '../../state/model-mode'
+import { get, openSettings, pilotState, set, setCamera, useApp } from '../../state/store'
+import { MimirSetup } from '../../pilot-connect/mimir-setup'
 import { openUsage } from '../../pilot-connect/usage-open'
 import { useMimirLink } from './connection'
 import { MimirFilamentPick } from './filament-pick'
@@ -62,6 +67,12 @@ export function lookupsIn(t: Transcript): PilotLookup[] {
   return t.turns.flatMap((turn) => turn.blocks.flatMap((b) => (b.kind === 'lookup' ? [b.lookup] : [])))
 }
 
+/** What the empty chat says: parts first, then slicing and printers where the host slices. */
+export function emptyNote(slices: boolean): string {
+  const parts = `Describe a part, or drop a photo of what it fits. ${ASSISTANT_NAME} models it here, and every step lands in the timeline, where you can edit or undo it.`
+  return slices ? `${parts} Ask it to slice, tune settings or check a printer too.` : parts
+}
+
 /** Stands in while the tab sets up its model: nothing to run, and the composer does not send. */
 const SETTING_UP: Pilot = {
   tools: () => [],
@@ -72,8 +83,7 @@ const SETTING_UP: Pilot = {
   policy: () => DEFAULT_POLICY,
 }
 
-// Approvals never come up in the tab: its tools change nothing outside the design.
-const NO_APPROVAL = async (): Promise<void> => undefined
+const MODE_WORD: Record<PermissionMode, string> = { allow: 'Allow', ask: 'Ask first', off: 'Off' }
 
 export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const max = chatMax(useWindowWidth())
@@ -83,13 +93,77 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const ref = useRef<HTMLElement>(null)
   const attachments = useAttachments()
   const link = useMimirLink()
-  // null for the moment the tab sets up its model; sending waits until it is there
-  const ready = useTabMimir()
+  // null for the moment the tab sets up its model; sending waits until it is there. Before a model is connected (and
+  // with no mimir cloud to fall back on) the chat is the setup, and nothing is sent.
+  const connecting = useApp((s) => pilotState(s) === 'connect') && link === 'scripted'
+  const tab = useTabMimir()
+  const ready = connecting ? null : tab
   const pilot = ready ?? SETTING_UP
   const [sessionId, setSessionId] = useState(newSessionId)
   const run = usePilotRun(pilot, sessionId)
   const { reset, transcript } = run
   useEffect(() => reset(), [sessionId, reset])
+  // a runtime made again (Settings, signing in, the app's commands arriving) picks up the conversation on screen
+  const madeFor = useRef(pilot)
+  const shown = useRef(transcript)
+  shown.current = transcript
+  useEffect(() => {
+    if (madeFor.current === pilot) return
+    madeFor.current = pilot
+    const turns = transcriptTurns(shown.current)
+    if (turns.length) pilot.resume?.(sessionId, turns)
+  }, [pilot, sessionId])
+  // On mimir cloud, the first chat waits for the person to read what is sent and kept.
+  const notice = useCloudNoticeDue() && transcript.turns.length === 0
+  // every message goes through here, so the read-back lines the person's words up with mimir's runs
+  const stick = useRef(true)
+  const send = (text: string, files: readonly PilotAttachment[] = []): void => {
+    if (ready === null || notice) return
+    stick.current = true
+    noteMessage(sessionId, text, files)
+    run.run(text, files.length ? { attachments: [...files] } : {})
+  }
+  const sendRef = useRef(send)
+  sendRef.current = send
+  const running = useRef(run.running)
+  running.current = run.running
+  // clients' messages arrive over the app link (mimir.ask) as if the person had sent them; a run going is never interrupted
+  const live = ready !== null && !notice
+  useEffect(() => {
+    if (!live) return
+    setMimirAsker({
+      busy: () => running.current,
+      send: (text, files) => {
+        sendRef.current(text, files)
+        return sessionId
+      },
+    })
+    return () => setMimirAsker(null)
+  }, [sessionId, live])
+  // Ask mimir in the command bar hands its words over as a message once mimir can take it; each distinct one runs once
+  const prompt = useApp((s) => s.pilotPrompt)
+  const consumed = useRef<string | null>(null)
+  // the chat stays mounted, so the same words asked again later run again
+  useEffect(() => {
+    if (!prompt) consumed.current = null
+  }, [prompt])
+  useEffect(() => {
+    if (!prompt || !live || notice || consumed.current === prompt || run.running) return
+    consumed.current = prompt
+    sendRef.current(prompt)
+    set({ pilotPrompt: null })
+  }, [prompt, live, notice, run.running])
+  // the permissions for this conversation's runs, as Skills and permissions sets them
+  const [policy, setPolicyState] = useState<PermissionPolicy | null>(null)
+  const [more, setMore] = useState(false)
+  const [thinking, setThinking] = useState(false)
+  const [announcement, setAnnouncement] = useState('')
+  const onPolicy = (cls: PolicyClass, mode: PermissionMode): void => {
+    const next: PermissionPolicy = { ...(policy ?? pilot.policy()), classes: { ...(policy ?? pilot.policy()).classes, [cls]: mode } }
+    setPolicyState(next)
+    pilot.setPolicy(next)
+    setAnnouncement(`${PERMISSION_LABELS[cls].title}: ${MODE_WORD[mode]}. Applies from the next step ${ASSISTANT_NAME} takes.`)
+  }
   useEffect(() => setLookups(lookupsIn(transcript)), [transcript])
   useEffect(() => setShownSheet(lastSheet(transcript)), [transcript])
   useEffect(() => {
@@ -106,8 +180,9 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const draft = useSheetUi((s) => s.draft)
   const handlers = useMemo<ApprovalHandlers>(
     () => ({
-      onApprove: NO_APPROVAL,
-      onCancel: NO_APPROVAL,
+      // a print or a profile change waits for the person here; mimir can neither approve nor skip it
+      onApprove: (r: ApprovalRequest, o: { bedClear: boolean }) => pilot.resolveApproval(r.id, o.bedClear ? { kind: 'approve', bedClear: true } : { kind: 'approve' }),
+      onCancel: (r: ApprovalRequest) => pilot.resolveApproval(r.id, { kind: 'deny', reason: 'canceled' }),
       onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(),
       onConfirmSheet: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve(),
       onEditSheet: (_sheetId, key, value) => setDraft(key, value),
@@ -119,7 +194,6 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   )
   // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
   const body = useRef<HTMLDivElement>(null)
-  const stick = useRef(true)
   useLayoutEffect(() => {
     const el = body.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
@@ -156,8 +230,6 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     // to the first assumed size, else the first size
     ;(rec.querySelector<HTMLElement>('[data-guess] input') ?? rec.querySelector<HTMLElement>('input'))?.focus({ preventScroll: true })
   }
-  // On mimir cloud, the first chat waits for the person to read what is sent and kept.
-  const notice = useCloudNoticeDue()
   // A file dragged anywhere over the chat can be dropped onto the message.
   const [dropping, setDropping] = useState(false)
   const files = (e: DragEvent) => Array.from(e.dataTransfer.types).includes('Files')
@@ -196,14 +268,23 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           {name}
         </span>
         {/* Shown while the stub answers, so nobody mistakes it for a model. */}
-        {link === 'scripted' ? (
+        {link === 'scripted' && !connecting ? (
         <span className="mimir-chat-scripted sx-mono" {...tipAttrs({ title: 'Scripted replies', body: `${ASSISTANT_NAME} plays scripted turns here until a model is set up in Settings > mimir. The tools it calls are real.` })}>
           Scripted replies
         </span>
         ) : null}
         <Button size="sm" variant="ghost" icon="plus" aria-label="New conversation" tip="pilot.newChat" onClick={() => setSessionId(newSessionId())} />
+        <ChatMenu more={more} setMore={setMore} thinking={thinking} setThinking={setThinking} />
       </header>
-      <div className="mimir-stage">
+      {more ? (
+        <div id="mimir-more" className="mimir-more" data-testid="mimir-more">
+          <Inspector transcript={transcript} paused={run.paused} skills={SKILL_INFO.filter((k) => pilot.tools().some((t) => t.name === k.name))} plugins={transcript.plugins ?? []} policy={policy ?? pilot.policy()} onPolicy={onPolicy} />
+        </div>
+      ) : null}
+      <p className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </p>
+      <div className="mimir-stage" hidden={more}>
         {/* The battle ravens: a faint, still watermark while the chat is empty; never behind a reply. */}
         {transcript.turns.length === 0 ? (
           <div className="mimir-ravens" data-testid="mimir-ravens" aria-hidden="true">
@@ -223,18 +304,20 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
           }}
         >
-          {transcript.turns.length === 0 && notice ? (
+          {notice ? (
             <div className="mimir-notice">
               <CloudNotice />
             </div>
+          ) : transcript.turns.length === 0 && connecting ? (
+            <MimirConnect />
           ) : transcript.turns.length === 0 ? (
             <div className="mimir-empty">
-              <p>Describe a part, or drop a photo of what it fits. {ASSISTANT_NAME} models it here, and every step lands in the timeline, where you can edit or undo it.</p>
+              <p>{emptyNote(hostSlices())}</p>
             </div>
           ) : (
             <div className="mimir-turns">
               <UsageLinkContext.Provider value={openUsage}>
-                <TranscriptView transcript={transcript} showThinking={false} approvals={handlers} words={stepWords} />
+                <TranscriptView transcript={transcript} showThinking={thinking} approvals={handlers} words={stepWords} />
               </UsageLinkContext.Provider>
               <MimirFilamentPick transcript={transcript} running={run.running} />
             </div>
@@ -248,18 +331,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           </button>
         ) : null}
       </div>
-      <div className="mimir-chat-foot">
-        <Composer
-          attachments={attachments}
-          running={run.running}
-          sendOff={ready === null}
-          onStop={run.cancel}
-          onSend={(text, files) => {
-            stick.current = true
-            noteMessage(sessionId, text, files)
-            run.run(text, { attachments: files })
-          }}
-        />
+      <div className="mimir-chat-foot" hidden={more}>
+        <Composer attachments={attachments} running={run.running} sendOff={ready === null || notice} onStop={run.cancel} onSend={(text, files) => send(text, files)} />
       </div>
       <div className="mimir-split" data-testid="mimir-split">
         <ResizeEdge
@@ -278,6 +351,52 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
         />
       </div>
     </aside>
+  )
+}
+
+/**
+ * Before a model is connected the chat is the shared mimir setup, the same as in Settings > mimir and first-run, and
+ * nothing is sent. A question handed over from the command bar waits and goes once the connection is made.
+ */
+function MimirConnect() {
+  const waiting = useApp((s) => s.pilotPrompt)
+  const lead = waiting
+    ? `Connect a model and ${ASSISTANT_NAME} answers "${waiting}".`
+    : hostSlices()
+      ? `Connect a model and ${ASSISTANT_NAME} designs parts, slices them and answers questions about your prints, with changes you approve.`
+      : `Connect a model and ${ASSISTANT_NAME} designs parts from a description and answers printing questions.`
+  return (
+    <div className="mimir-connect" data-testid="mimir-connect">
+      <p className="sx-small sx-muted">{lead} Nothing is sent until you connect.</p>
+      <MimirSetup place="panel" idPrefix="mimir-ms" />
+      <p className="sx-small sx-muted">
+        Do not want {ASSISTANT_NAME}? <LinkButton onClick={() => set({ pilot: { mode: 'off' }, pilotPrompt: null })}>Turn it off</LinkButton>. You can turn it back on in Settings.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * The header's More menu: Skills and permissions (what mimir may do in this conversation, in place of the chat until
+ * closed), Show thinking, and the model setup in Settings.
+ */
+function ChatMenu(p: { more: boolean; setMore: (v: boolean) => void; thinking: boolean; setThinking: (v: boolean) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <MenuAnchor className="mimir-chat-more">
+      <Button size="sm" variant="ghost" icon="more" aria-label="More" aria-haspopup="menu" aria-expanded={open} data-testid="mimir-chat-more" onClick={() => setOpen(!open)} />
+      <Menu open={open} onClose={() => setOpen(false)} label="More" align="end" testId="mimir-chat-menu">
+        <MenuItem icon={p.more ? 'arrow-left' : 'skill'} aria-controls="mimir-more" onClick={() => (setOpen(false), p.setMore(!p.more))}>
+          {p.more ? 'Back to the conversation' : 'Skills and permissions'}
+        </MenuItem>
+        <MenuItem icon="sparkle" checked={p.thinking} data-testid="mimir-chat-thinking" onClick={() => (setOpen(false), p.setThinking(!p.thinking))}>
+          Show thinking
+        </MenuItem>
+        <MenuItem icon="plugin" onClick={() => (setOpen(false), openSettings('pilot'))}>
+          Connect a model
+        </MenuItem>
+      </Menu>
+    </MenuAnchor>
   )
 }
 

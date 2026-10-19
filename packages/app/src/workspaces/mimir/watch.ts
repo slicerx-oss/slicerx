@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// What the hub watches, for the dot in the top bar and the dock. Tiny on purpose: the top bar is in the shell chunk.
+// What the hub watches, for the dot on the top bar's mimir button. Tiny on purpose: the top bar is in the shell chunk.
 
 export interface Watch {
   /** Printers the hub is watching through their camera. */

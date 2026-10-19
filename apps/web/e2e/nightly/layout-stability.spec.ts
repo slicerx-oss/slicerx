@@ -26,7 +26,7 @@ const CONTROLS = [
 const LIMIT = 0.5
 const MAX_PER_SCREEN = 40
 
-/** mimir cloud against a stub on the page's own origin, answering every message with one line; returns the dock once the answer shows. */
+/** mimir cloud against a stub on the page's own origin, answering every message with one line; returns the mimir tab's chat once the answer shows. */
 async function mimirChat(page: Page): Promise<Locator> {
   const reply = 'A 20 mm cube is easy. I put one on the grid at the origin.'
   await page.route('**/functions/v1/mimir/**', async (route) => {
@@ -49,7 +49,6 @@ async function mimirChat(page: Page): Promise<Locator> {
     localStorage.setItem('slicerx.debug', '1')
     if (sessionStorage.getItem('sx-e2e')) return
     sessionStorage.setItem('sx-e2e', '1')
-    localStorage.setItem('sx-mimir-dock', '1')
     localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'on', provider: 'mimir-cloud' } }))
   })
   await page.goto('./')
@@ -60,13 +59,14 @@ async function mimirChat(page: Page): Promise<Locator> {
     w.__sxMimirCloud(w.__sxBrowserMimirCloud(base, token), base)
   }, 'eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiJlMmUifQ.c2ln')
   await sx(page, { pilotPrompt: 'a 20 mm cube' })
+  await page.getByTestId('tab-mimir').click()
   await page.getByTestId('mimir-notice-ok').click()
-  const dock = page.locator('.mimir-dock')
-  await expect(dock.getByText(reply)).toBeVisible({ timeout: 30_000 })
-  return dock
+  const chat = page.getByTestId('mimir-chat')
+  await expect(chat.getByText(reply)).toBeVisible({ timeout: 30_000 })
+  return chat
 }
 
-/** Turns Show thinking on and off from the dock's More menu; what moved among the boxes `sel` matches. */
+/** Turns Show thinking on and off from the chat's More menu; what moved among the boxes `sel` matches. */
 async function thinkingMoves(page: Page, sel: string): Promise<Moved[]> {
   const boxes = () => page.locator(sel).evaluateAll((els) => els.map((e) => {
     const r = e.getBoundingClientRect()
@@ -75,11 +75,11 @@ async function thinkingMoves(page: Page, sel: string): Promise<Moved[]> {
   const moved: Moved[] = []
   for (const on of [true, false]) {
     const before = await boxes()
-    await page.getByTestId('mimir-foot-more').click()
-    const item = page.getByTestId('mimir-foot-menu').getByTestId('mimir-foot-thinking')
+    await page.getByTestId('mimir-chat-more').click()
+    const item = page.getByTestId('mimir-chat-menu').getByTestId('mimir-chat-thinking')
     await expect(item).toHaveAttribute('aria-checked', String(!on))
     await item.click()
-    await expect(page.getByTestId('mimir-foot-menu')).toHaveCount(0)
+    await expect(page.getByTestId('mimir-chat-menu')).toHaveCount(0)
     await page.waitForTimeout(350)
     const after = await boxes()
     expect(after.length).toBe(before.length)
@@ -88,10 +88,10 @@ async function thinkingMoves(page: Page, sel: string): Promise<Moved[]> {
       const d = { dx: n.x - o.x, dy: n.y - o.y, dw: n.w - o.w, dh: n.h - o.h }
       if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) moved.push({ control: `Show thinking ${on ? 'on' : 'off'}`, what: `item ${i}`, ...d })
     })
-    await page.getByTestId('mimir-foot-more').click()
-    await expect(page.getByTestId('mimir-foot-thinking')).toHaveAttribute('aria-checked', String(on))
+    await page.getByTestId('mimir-chat-more').click()
+    await expect(page.getByTestId('mimir-chat-thinking')).toHaveAttribute('aria-checked', String(on))
     await page.keyboard.press('Escape')
-    await expect(page.getByTestId('mimir-foot-menu')).toHaveCount(0)
+    await expect(page.getByTestId('mimir-chat-menu')).toHaveCount(0)
   }
   return moved
 }
@@ -449,8 +449,9 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
   })
 
   test('the mimir tab', async ({ page, isMobile }, info) => {
-    test.skip(isMobile, 'Phones have no modeling tabs')
-    await open(page, { settingsMode: 'advanced' })
+    test.skip(isMobile, 'The phone has its own mimir test (the phone tab bar and the mimir tab)')
+    // a provider with no key: the tab plays its scripts
+    await open(page, { settingsMode: 'advanced', pilot: { mode: 'on', provider: 'anthropic' } })
     // Pressing the tab moves nothing in the bar: the tabs, the project name and the buttons on the right.
     const boxes = () => page.locator('.sx-appbar').locator('.sx-tab, .sx-projname, .sx-btn').evaluateAll((els) => els.map((e) => {
       const r = e.getBoundingClientRect()
@@ -474,9 +475,9 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
   })
 
   test('mimir lookup cards', async ({ page, isMobile }, info) => {
-    test.skip(isMobile, 'Phones have no modeling tabs')
+    test.skip(isMobile, 'Desktop: the cards sit beside the chat')
     test.slow()
-    await open(page, { settingsMode: 'advanced' })
+    await open(page, { settingsMode: 'advanced', pilot: { mode: 'on', provider: 'anthropic' } })
     await sx(page, { plate: [], selection: null, selectedIds: [] })
     await page.getByTestId('tab-mimir').click()
     const composer = page.getByTestId('mimir-composer')
@@ -609,7 +610,7 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
     expect(moved).toEqual([])
   })
 
-  test('the phone tab bar and the mimir page', async ({ page, isMobile }, info) => {
+  test('the phone tab bar and the mimir tab', async ({ page, isMobile }, info) => {
     test.skip(!isMobile, 'The tab bar is the phone layout; desktop keeps its tabs in the top bar')
     await open(page, { pilot: { mode: 'unset' } })
     const tabs = page.getByTestId('phone-tabs')
@@ -632,20 +633,21 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
     for (const b of await page.locator('.phone-tab').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(b).toBeGreaterThanOrEqual(44)
     let before = await boxes()
     await page.getByTestId('tab-mimir').click()
-    await expect(page.locator('.mimir-dock')).toBeVisible()
+    const chat = page.getByTestId('mimir-chat')
+    await expect(chat).toBeVisible()
     await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
     await page.waitForTimeout(350)
     compare('phone-tab-mimir', before, await boxes())
-    // the page sits between the bars and covers the screen's width
-    const dock = (await page.locator('.mimir-dock').boundingBox())!
+    // the chat sits under the view, above the tab bar, across the screen's width
+    const c = (await chat.boundingBox())!
     const bar = (await tabs.boundingBox())!
-    expect(dock.x).toBe(0)
-    expect(dock.width).toBe(page.viewportSize()!.width)
-    expect(dock.y + dock.height).toBeLessThanOrEqual(bar.y + 0.5)
-    moved.push(...(await probe(page, 'phone mimir', page.locator('.mimir-dock'))))
+    expect(c.x).toBe(0)
+    expect(c.width).toBe(page.viewportSize()!.width)
+    expect(c.y + c.height).toBeLessThanOrEqual(bar.y + 0.5)
+    moved.push(...(await probe(page, 'phone mimir', chat)))
     before = await boxes()
     await page.locator('.phone-tab').first().click()
-    await expect(page.locator('.mimir-dock')).toHaveCount(0)
+    await expect(chat).toBeHidden()
     await page.waitForTimeout(350)
     compare('first phone tab', before, await boxes())
     report(info, moved)
@@ -653,7 +655,7 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
   })
 
   test('mimir on a phone: the slow-graphics notice keeps off the chat, and Show thinking moves nothing', async ({ page, isMobile }, info) => {
-    test.skip(!isMobile, 'Phone only: a desktop keeps the toast beside the dock (covered below)')
+    test.skip(!isMobile, 'Phone only: a desktop keeps the toast beside the chat (covered below)')
     const dock = await mimirChat(page)
 
     // The viewport's own slow-graphics event: a phone shows a warning icon in the top bar, never a toast.
@@ -666,8 +668,8 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
     await page.waitForTimeout(400)
     await expect(page.getByTestId('toast').filter({ hasText: 'Hardware acceleration' })).toHaveCount(0)
     // nothing floats over the conversation or the composer
-    const chat = (await dock.locator('.term-body').boundingBox())!
-    const composer = (await dock.locator('.term-in').boundingBox())!
+    const chat = (await dock.getByTestId('mimir-transcript').boundingBox())!
+    const composer = (await dock.getByTestId('mimir-composer').boundingBox())!
     for (const t of await page.locator('.sx-toast').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0).map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height })))) {
       for (const a of [chat, composer]) expect(t.x < a.x + a.width && a.x < t.x + t.width && t.y < a.y + a.height && a.y < t.y + t.height).toBe(false)
     }
@@ -681,59 +683,45 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
     await page.mouse.click(20, chat.y + chat.height / 2)
     await expect(note).toHaveCount(0)
 
-    // One header row above the chat: the terminal's bar is gone, Pause sits beside More, Show thinking is in More.
-    await expect(dock.locator('.term-bar')).toBeHidden()
-    const pause = page.getByTestId('mimir-foot-pause')
-    await expect(pause).toBeVisible()
-    expect(Math.min(...Object.values((await pause.boundingBox())!).slice(2))).toBeGreaterThanOrEqual(44)
-    const moved = await thinkingMoves(page, '.sx-appbar .sx-btn, .sx-appbar .sx-projname, .mimir-dock > .mimir-foot > *, .mimir-dock .term-body, .mimir-dock .term-in, .phone-tab')
+    // One header row above the chat, its buttons full touch targets; Show thinking is in More.
+    for (const b of await dock.locator('.mimir-chat-head .sx-btn').evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => Math.min(r.width, r.height)))) expect(b).toBeGreaterThanOrEqual(44)
+    const moved = await thinkingMoves(page, '.sx-appbar .sx-btn, .sx-appbar .sx-projname, .mimir-chat-head > *, [data-testid="mimir-transcript"], [data-testid="mimir-composer"], .phone-tab')
     await page.screenshot({ path: info.outputPath('phone-mimir-header.png') })
     report(info, moved)
     expect(moved).toEqual([])
   })
 
-  test('the mimir dock on a desktop: two header rows, and Show thinking moves nothing', async ({ page, isMobile }, info) => {
+  test("the mimir tab's header on a desktop: More holds the rest, and Show thinking moves nothing", async ({ page, isMobile }, info) => {
     test.skip(isMobile, 'Desktop only: a phone has its own header row (covered above)')
-    const dock = await mimirChat(page)
-    // The panel header, then one row of conversation controls: no terminal bar, no links under the composer.
-    await expect(dock.locator('.term-bar')).toHaveCount(0)
-    await expect(dock.getByRole('button', { name: 'Replay this run' })).toHaveCount(0)
-    const head = (await dock.locator('> .mimir-head').boundingBox())!
-    const row = (await dock.locator('> .mimir-foot').boundingBox())!
-    const chat = (await dock.locator('.term-body').boundingBox())!
-    expect(Math.abs(row.y - (head.y + head.height))).toBeLessThanOrEqual(1)
-    expect(chat.y).toBeGreaterThanOrEqual(row.y + row.height - 1)
-    // Pause sits beside New conversation, More at the row's right end
-    const fresh = (await dock.getByRole('button', { name: 'New conversation' }).boundingBox())!
-    const pause = (await page.getByTestId('mimir-foot-pause').boundingBox())!
-    const more = (await page.getByTestId('mimir-foot-more').boundingBox())!
-    expect(pause.x).toBeGreaterThan(fresh.x + fresh.width)
-    expect(pause.x - (fresh.x + fresh.width)).toBeLessThanOrEqual(16)
-    expect(more.x).toBeGreaterThan(pause.x + pause.width)
-    expect(row.x + row.width - (more.x + more.width)).toBeLessThanOrEqual(16)
-    for (const b of [fresh, pause, more]) expect(b.y + b.height).toBeLessThanOrEqual(row.y + row.height + 0.5)
-    // Skills and permissions and Connect an AI agent are in More with Show thinking
-    await page.getByTestId('mimir-foot-more').click()
-    const menu = page.getByTestId('mimir-foot-menu')
+    const chat = await mimirChat(page)
+    // one header row: the name, the design, New conversation and More at its right end
+    const head = (await chat.locator('.mimir-chat-head').boundingBox())!
+    const fresh = (await chat.getByRole('button', { name: 'New conversation' }).boundingBox())!
+    const more = (await page.getByTestId('mimir-chat-more').boundingBox())!
+    expect(more.x).toBeGreaterThan(fresh.x + fresh.width)
+    expect(head.x + head.width - (more.x + more.width)).toBeLessThanOrEqual(16)
+    for (const b of [fresh, more]) expect(b.y + b.height).toBeLessThanOrEqual(head.y + head.height + 0.5)
+    await page.getByTestId('mimir-chat-more').click()
+    const menu = page.getByTestId('mimir-chat-menu')
     await expect(menu.getByRole('menuitem', { name: 'Skills and permissions' })).toBeVisible()
     await expect(menu.getByRole('menuitemcheckbox', { name: 'Show thinking' })).toBeVisible()
-    await expect(menu.getByRole('menuitem', { name: 'Connect an AI agent' })).toBeVisible()
+    await expect(menu.getByRole('menuitem', { name: 'Connect a model' })).toBeVisible()
     await page.screenshot({ path: info.outputPath('desktop-mimir-more.png') })
     await page.keyboard.press('Escape')
     await expect(menu).toHaveCount(0)
-    const moved = await thinkingMoves(page, '.sx-appbar .sx-btn, .mimir-dock > .mimir-head > *, .mimir-dock > .mimir-foot > *, .mimir-dock .term-body, .mimir-dock .term-in')
+    const moved = await thinkingMoves(page, '.sx-appbar .sx-btn, .mimir-chat-head > *, [data-testid="mimir-transcript"], [data-testid="mimir-composer"]')
     report(info, moved)
     expect(moved).toEqual([])
   })
 
-  test('a toast never lands on the mimir dock, beside the view or over it', async ({ page, isMobile }, info) => {
+  test("a toast never lands on the mimir tab's chat", async ({ page, isMobile }, info) => {
     test.skip(isMobile, 'Desktop widths; a phone keeps the slow-graphics notice in its top bar (covered above)')
     const text = 'Hardware acceleration looks off in this browser, so the 3D view will be slow. Turn it on in the browser settings and reload.'
-    await page.addInitScript(() => localStorage.setItem('sx-mimir-dock', '1'))
     for (const width of [1440, 1100, 1000]) {
       await page.setViewportSize({ width, height: 900 })
       await open(page, { pilot: { mode: 'unset' } })
-      const dock = page.locator('.mimir-dock')
+      await page.getByTestId('tab-mimir').click()
+      const dock = page.getByTestId('mimir-chat')
       await expect(dock).toBeVisible()
       await page.evaluate((t) => (window as unknown as { __sx: Sx }).__sx.setState({ toast: { id: Date.now(), text: t, tone: 'info' } }), text)
       const toast = page.getByTestId('toast').filter({ hasText: 'Turn it on in the browser settings' }).last()
@@ -741,8 +729,8 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
       const t = await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)).then(() => { const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height } }))
       const d = (await dock.boundingBox())!
       const overlaps = t.x < d.x + d.width && d.x < t.x + t.width && t.y < d.y + d.height && d.y < t.y + t.height
-      if (overlaps) await page.screenshot({ path: info.outputPath(`toast-over-dock-${width}.png`) })
-      expect(overlaps, `toast ${JSON.stringify(t)} over the dock ${JSON.stringify(d)} at ${width} px`).toBe(false)
+      if (overlaps) await page.screenshot({ path: info.outputPath(`toast-over-chat-${width}.png`) })
+      expect(overlaps, `toast ${JSON.stringify(t)} over the chat ${JSON.stringify(d)} at ${width} px`).toBe(false)
     }
   })
 

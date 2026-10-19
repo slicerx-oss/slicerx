@@ -10,8 +10,15 @@
 .sx-tab-more { display: flex; height: 100%; }
 .sx-tab-more > .sx-tab .tab-dot { position: absolute; top: 14px; right: 5px; margin: 0; }
 .sx-tab-more .sx-menu-item .tab-dot { margin-left: 8px; }
-/* On the mimir tab its chat is on screen: the dock button keeps its place but hides. */
+/* The mimir button: the mark, the name, and the watching dot. On the mimir tab it keeps its place but hides; without
+   the mode tabs it is mimir's tab, pressed while open. */
+.mimir-btn { display: inline-flex; align-items: center; gap: 6px; }
+.mimir-btn[aria-pressed="true"] { color: var(--purple); }
 .mimir-btn[data-hidden] { visibility: hidden; }
+.mimir-watch { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 0 color-mix(in srgb, var(--cyan) 60%, transparent); animation: mimir-breathe 2.4s ease-in-out infinite; }
+@keyframes mimir-breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cyan) 60%, transparent); } 50% { box-shadow: 0 0 0 5px transparent; } }
+:root[data-motion="reduced"] .mimir-watch { animation: none; }
+.mimir-watch[data-attention] { background: var(--orange); animation: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 35%, transparent); }
 /* a phone-width bar has no room for the name; the icon and its tip stay */
 @media (max-width: 480px) { .mimir-btn-label, .open-in-name { display: none; } }
 @media (min-width: 481px) { .open-in-short { display: none; } }

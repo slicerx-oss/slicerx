@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Feature `pilot`: the assistant's docked panel and the Cmd+K handoff of free text.
-// Entry point @slicerx/app/features/pilot.
+// Feature `pilot`: mimir's commands and the Cmd+K handoff of free text, which open the mimir tab (the tab itself is
+// part of the plate workspace, workspaces/mimir). Entry point @slicerx/app/features/pilot.
 import type { AppFeature } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { set } from '../../state/store'
-import { openDock } from './dock-state'
+import { set, setModelMode } from '../../state/store'
 
+const openMimir = (): void => setModelMode('mimir')
+
+/** Opens the mimir tab with the words as the person's next message. */
 function ask(prompt: string): void {
-  openDock()
+  openMimir()
   set({ pilotPrompt: prompt })
 }
 
@@ -24,7 +26,7 @@ export const pilotFeature: AppFeature = {
       shortcut: 'Mod+/',
       run: (input) => {
         if (typeof input === 'string' && input.trim()) ask(input.trim())
-        else openDock()
+        else openMimir()
       },
     },
     {

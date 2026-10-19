@@ -3,11 +3,13 @@
 // The first tab's mode as the app shows it. An edition without modeling tools is always in Slice, even when a pref
 // carried over from another edition says Design, and so is a phone: it views and prints, and modeling waits for the
 // desktop. The saved mode is kept for when the same person opens a wider screen. A host that cannot slice (the CAD-only
-// browser build) is the other way round: always in Model, on any screen.
+// browser build) is the other way round: always in Model, on any screen. mimir is the one mode every build shows, on
+// any screen and in any edition, whenever mimir is on.
+import { useSyncExternalStore } from 'react'
 import { editionHasCad, useEdition } from '../edition'
 import { isPhoneLayout, usePhoneLayout } from '../lib/phone-layout'
 import { modelOrigin, type Vec3 } from '../plate/transform'
-import { appStore, get, set, setModelMode, useApp, type ModelMode, type SettingsMode } from './store'
+import { appStore, get, set, setModelMode, useApp, type ModelMode } from './store'
 
 /** Whether the host can slice; set once from its capabilities when the app starts (app.tsx). */
 let slicing = true
@@ -47,26 +49,46 @@ export function cadShown(): boolean {
   return !slicing || (editionHasCad() && !isPhoneLayout())
 }
 
-/** The mimir tab is still being built: a release build shows it in developer mode, dev and test builds always. */
-export function mimirShown(s: { devBuild: boolean; settingsMode: SettingsMode }): boolean {
-  return s.devBuild || s.settingsMode === 'developer'
+/** Whether mimir is on: its feature is in the build, the host has what it needs, and the person has not turned it off. Set by the app (app.tsx). */
+let assistant = true
+const assistantListeners = new Set<() => void>()
+
+export function setMimirOn(on: boolean): void {
+  if (assistant === on) return
+  assistant = on
+  for (const l of assistantListeners) l()
 }
 
-/** The mode with mimir hidden reads as Model, the other design mode. */
-const shownMode = (s: { modelMode: ModelMode; devBuild: boolean; settingsMode: SettingsMode }): ModelMode =>
-  s.modelMode === 'mimir' && !mimirShown(s) ? 'design' : s.modelMode
+/** True when the mimir tab shows: in every build and settings mode, on any screen, while mimir is on. */
+export function mimirOn(): boolean {
+  return assistant
+}
+
+export function useMimirOn(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      assistantListeners.add(cb)
+      return () => assistantListeners.delete(cb)
+    },
+    () => assistant,
+    () => assistant,
+  )
+}
+
+/** The mode shown for a saved mode: mimir while it is on (else Model, or Slice without modeling tools), and otherwise as the host and screen allow. */
+function shown(mode: ModelMode, cad: boolean, on: boolean): ModelMode {
+  if (mode === 'mimir' && on) return 'mimir'
+  const m = mode === 'mimir' ? 'design' : mode
+  if (!slicing) return m === 'slice' ? 'design' : m
+  return cad ? m : 'slice'
+}
 
 export function useModelMode(): ModelMode {
-  const mode = useApp(shownMode)
-  const cad = useCadShown()
-  if (!slicing) return mode === 'slice' ? 'design' : mode
-  return cad ? mode : 'slice'
+  return shown(useApp((s) => s.modelMode), useCadShown(), useMimirOn())
 }
 
 export function modelMode(): ModelMode {
-  const mode = shownMode(get())
-  if (!slicing) return mode === 'slice' ? 'design' : mode
-  return cadShown() ? mode : 'slice'
+  return shown(get().modelMode, cadShown(), assistant)
 }
 
 /** mimir and Model both show the design: the CAD look, the ground grid, the picks and the timeline. */
@@ -74,7 +96,7 @@ export function showsDesign(s: { workspace: string; modelMode: ModelMode }): boo
   return s.workspace === 'prepare' && (s.modelMode === 'design' || s.modelMode === 'mimir')
 }
 
-/** True while the mimir tab is open: its chat stands in for the docked one. */
+/** True while the mimir tab is open. */
 export function useInMimir(): boolean {
   const open = useApp((s) => s.workspace === 'prepare')
   return useModelMode() === 'mimir' && open
