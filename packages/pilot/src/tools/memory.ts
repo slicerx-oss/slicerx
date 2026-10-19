@@ -5,7 +5,7 @@
 // for notes; a note that looks like a secret is refused before the card either way. Recalling is read class. The
 // edition turns both off with ai.brain.memory.local.
 import { z } from 'zod'
-import { MEMORY_KINDS, NOTE_UNSAFE, pickFacts, redactSecrets, type MemoryFact, type MemoryStore } from '../memory/facts'
+import { MEMORY_KINDS, NOTE_MAX, NOTE_MIN, NOTE_UNSAFE, pickFacts, redactSecrets, type MemoryFact, type MemoryStore } from '../memory/facts'
 import { defineTool, type PilotTool } from '../tool'
 
 const REFUSED = 'Not saved: that looks like a key, token, access code or serial. Those stay in the app, never in notes.'
@@ -16,7 +16,7 @@ const safe = (s: string): boolean => !NOTE_UNSAFE.test(s)
 
 const rememberInput = z.object({
   kind: z.enum(MEMORY_KINDS).describe('printer, filament, preference, outcome (what worked or failed) or size (one of their own things)'),
-  text: z.string().trim().min(3).max(240).refine(safe, ONE_LINE).describe('One short sentence in plain words, such as "Prints PETG at 240 C on the A1"'),
+  text: z.string().trim().min(NOTE_MIN).max(NOTE_MAX).refine(safe, ONE_LINE).describe('One short sentence in plain words, such as "Prints PETG at 240 C on the A1"'),
   data: z
     .record(z.string().max(40).refine(safe, ONE_LINE), z.union([z.string().max(80).refine(safe, ONE_LINE), z.number()]))
     .refine((d) => Object.keys(d).length <= MAX_DATA_KEYS, `At most ${MAX_DATA_KEYS} values`)

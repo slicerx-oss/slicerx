@@ -9,7 +9,9 @@ import { createApprovalBroker } from '../src/permit/broker'
 import { DEFAULT_CONFIG } from '../src/config'
 import type { LlmMessage } from '../src/provider/types'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
-import { createPilot } from '../src/runtime'
+import { createPilot, type CreatePilotOptions } from '../src/runtime'
+import { defineTool } from '../src/tool'
+import { z } from 'zod'
 
 const printers = { list: async () => [], plugins: async () => [], fleets: async () => [], status: async () => { throw new Error('none') }, subscribe: () => () => undefined } as unknown as PrinterHost
 const noLlm = { available: async () => false, stream: () => { throw new Error('scripted') } }
@@ -27,8 +29,8 @@ function rows(): MemoryStore & { rows: Map<string, MemoryFact> } {
 
 const fact = (id: string, kind: MemoryFact['kind'], text: string, updatedAt: number, data?: MemoryFact['data']): MemoryFact => ({ id, kind, text, updatedAt, ...(data ? { data } : {}) })
 
-function pilotWith(steps: ScriptStep[], memory: { local: boolean; store: MemoryStore; ask?: () => boolean }) {
-  return createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), memory })
+function pilotWith(steps: ScriptStep[], memory: { local: boolean; store: MemoryStore; ask?: () => boolean }, more: Partial<CreatePilotOptions> = {}) {
+  return createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), memory, ...more })
 }
 
 describe('secrets never become notes', () => {
@@ -249,5 +251,43 @@ describe('memory tools', () => {
     const secret = pilotWith([{ calls: [{ name: 'memory.remember', args: { kind: 'printer', text: 'A1 access code is 31415926' } }] }, { text: 'No.' }], { local: true, store, ask: () => ask })
     for await (const _ of secret.run('s', 'Remember my code')) void _
     expect(store.rows.size).toBe(1)
+  })
+
+  it('asking off for notes never lets another profile tool skip its card', async () => {
+    const store = rows()
+    let ran = 0
+    const profile = defineTool({
+      name: 'profile.rename',
+      version: '1.0.0',
+      source: 'command',
+      permission: 'profile',
+      description: 'Rename a saved profile',
+      input: z.object({ name: z.string() }),
+      approval: async (i) => ({ title: `Rename to ${i.name}?`, lines: [], actions: [] }),
+      run: async () => (ran++, { summary: 'Renamed' }),
+    })
+    const steps: ScriptStep[] = [{ calls: [{ name: 'memory.remember', args: { kind: 'filament', text: 'Mostly prints Polymaker PLA' } }, { name: 'profile.rename', args: { name: 'Fast PLA' } }] }, { text: 'Done.' }]
+    const pilot = pilotWith(steps, { local: true, store, ask: () => false }, { tools: [profile as never] })
+    const asked: string[] = []
+    for await (const ev of pilot.run('s', 'Rename my profile and remember my PLA')) {
+      if (ev.type !== 'approval_request') continue
+      asked.push(ev.request.tool)
+      await pilot.resolveApproval(ev.request.id, { kind: 'deny' })
+    }
+    // the profile tool still asked (and, declined, did not run); only the note went in without a card
+    expect(asked).toEqual(['profile.rename'])
+    expect(ran).toBe(0)
+    expect([...store.rows.values()]).toMatchObject([{ text: 'Mostly prints Polymaker PLA' }])
+  })
+
+  it('with Change saved profiles off, a note is still not saved when asking is off', async () => {
+    const store = rows()
+    const policy = { ...DEFAULT_POLICY, classes: { ...DEFAULT_POLICY.classes, profile: 'off' as const } }
+    const pilot = pilotWith([{ calls: [{ name: 'memory.remember', args: { kind: 'printer', text: 'Has a Bambu Lab A1' } }] }, { text: 'Ok.' }], { local: true, store, ask: () => false }, { policy })
+    const events: PilotEvent[] = []
+    for await (const ev of pilot.run('s', 'Remember my A1')) events.push(ev)
+    expect(events.some((e) => e.type === 'approval_request')).toBe(false)
+    expect(events).toContainEqual(expect.objectContaining({ type: 'permission_note', mode: 'off', tool: 'memory.remember' }))
+    expect(store.rows.size).toBe(0)
   })
 })

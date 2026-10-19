@@ -5,7 +5,7 @@
 // handle (pilot-connect/memory-store.ts); Not now declines it and nothing is kept.
 import type { ApprovalCardProps } from '@slicerx/pilot/ui'
 import { Button, Icon } from '@slicerx/ui'
-import { useState, type ComponentType } from 'react'
+import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { openSettings } from '../../state/store'
 
 function outcome(p: ApprovalCardProps): { word: string; ok: boolean } | null {
@@ -19,6 +19,13 @@ export function RememberChip(p: ApprovalCardProps) {
   const [note, setNote] = useState<string | null>(null)
   const done = outcome(p)
   const live = done === null
+  const box = useRef<HTMLDivElement>(null)
+  // once the person's own answer lands, the buttons go and focus goes back to the chat's input line
+  useEffect(() => {
+    if (!done || busy === null) return
+    const chat = box.current?.closest('.sx-pilot')
+    chat?.querySelector<HTMLInputElement>('.term-in input[type="text"], .composer-text')?.focus({ preventScroll: true })
+  }, [done, busy])
   // the note, then its values ("Nozzle mm: 0.4"), then where it is kept
   const [text, ...rest] = p.request.lines
   const hint = rest.length ? rest[rest.length - 1] : undefined
@@ -34,7 +41,7 @@ export function RememberChip(p: ApprovalCardProps) {
   }
   // the buttons and the outcome share one cell, so answering swaps them with nothing around it moving
   return (
-    <div className="mem-chip" role="group" aria-label={p.request.title} data-testid="mimir-remember" data-done={done ? (done.ok ? 'saved' : 'dropped') : undefined}>
+    <div ref={box} className="mem-chip" role="group" aria-label={p.request.title} data-testid="mimir-remember" data-done={done ? (done.ok ? 'saved' : 'dropped') : undefined}>
       <Icon name="bookmark" className="mem-chip-ic" />
       <div className="mem-chip-body">
         <span className="mem-chip-q">{p.request.title}</span>

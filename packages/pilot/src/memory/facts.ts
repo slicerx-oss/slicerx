@@ -49,6 +49,21 @@ export function redactSecrets(text: string): { text: string; refused: boolean } 
   return { text: out, refused }
 }
 
+/** How long a note's words may be, in characters, as memory.remember and Settings both take them. */
+export const NOTE_MIN = 3
+export const NOTE_MAX = 240
+
+/**
+ * What stops `text` (already trimmed) becoming a note, the same checks memory.remember makes: a line break or hidden
+ * character, the length, then anything that looks like a secret. Null: it can be saved.
+ */
+export function noteProblem(text: string): 'one-line' | 'short' | 'long' | 'secret' | null {
+  if (NOTE_UNSAFE.test(text)) return 'one-line'
+  if (text.length < NOTE_MIN) return 'short'
+  if (text.length > NOTE_MAX) return 'long'
+  return redactSecrets(text).refused ? 'secret' : null
+}
+
 /** A rough token count for budgets: about four characters a token. */
 export const estimateTokens = (text: string): number => Math.ceil(text.length / 4)
 

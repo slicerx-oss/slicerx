@@ -165,7 +165,13 @@ textarea.mem-field[aria-invalid='true'] { border-color: var(--red); }
 .mem-clear { display: grid; gap: var(--s-3); padding: var(--s-4); max-width: 280px; }
 .mem-clear p { margin: 0; font-size: var(--fs-md); }
 .mem-clear-a { display: flex; justify-content: space-between; gap: var(--s-2); }
-/* a phone gives the words the row's full width, Edit and Delete under them at the right */
+/* the section's own toast card, centered low in the Settings dialog (its frosted glass makes the dialog the card's
+   frame), clear of the footer */
+.mem-toasts { display: contents; --overlay-center: 50%; --overlay-top: auto; --overlay-bottom: 88px; --overlay-width: calc(100% - 2 * var(--s-4)); }
+:root[data-phone] .mem-toasts { --overlay-bottom: var(--s-4); }
+/* a phone gives the words the row's full width, Edit and Delete under them at the right, and the words and the field
+   (with its hidden copy) a 44 px touch height alike, so Edit still moves nothing */
+:root[data-phone] .mem-field, :root[data-phone] .mem-row[data-editing] .mem-text::after { min-height: var(--h-lg); padding-top: var(--s-2); padding-bottom: var(--s-2); }
 :root[data-phone] .mem-text { flex-basis: 100%; }
 :root[data-phone] .mem-row-a { margin-left: auto; }
 :root[data-phone] .mem-row-a > .sx-btn, :root[data-phone] .mem-clear-a > .sx-btn { height: var(--h-lg); }

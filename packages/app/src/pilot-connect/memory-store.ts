@@ -98,7 +98,14 @@ function watched(store: MemoryStore): AppMemory {
   const listeners = new Set<() => void>()
   const changed = <T>(p: Promise<T>): Promise<T> =>
     p.then((v) => {
-      for (const l of listeners) l()
+      // a listener that throws never fails the save, nor keeps the others from hearing of it
+      for (const l of listeners) {
+        try {
+          l()
+        } catch (e) {
+          console.error('memory listener failed', e)
+        }
+      }
       return v
     })
   return {
