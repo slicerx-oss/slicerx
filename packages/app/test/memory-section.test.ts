@@ -70,7 +70,7 @@ async function untilCard(steps: ScriptStep[], ask: string) {
   return { view, events, drain }
 }
 
-const A1: ScriptStep[] = [{ calls: [{ name: 'memory.remember', args: { kind: 'printer', text: 'Has a Bambu Lab A1', data: { model: 'A1' } } }] }, { text: 'Saved.' }]
+const A1: ScriptStep[] = [{ calls: [{ name: 'memory.remember', args: { kind: 'printer', text: 'Has a Bambu Lab A1', data: { model: 'A1', nozzleMm: 0.4 } } }] }, { text: 'Saved.' }]
 
 describe('the chip', () => {
   it('the chip saves on Remember and drops on Not now', async () => {
@@ -81,6 +81,9 @@ describe('the chip', () => {
     expect(chip.textContent).toContain('Has a Bambu Lab A1')
     // its values in plain words, never the keys mimir sent
     expect(chip.textContent).toContain('Model: A1')
+    // the name, then the value and its unit
+    expect(chip.textContent).toContain('Nozzle: 0.4 mm')
+    expect(chip.textContent).not.toContain('Nozzle mm')
     expect(chip.textContent).not.toMatch(/\bmodel:|printers?\b|profiles?\b/)
     expect(await store.list()).toEqual([])
     fireEvent.click(within(chip).getByRole('button', { name: 'Remember' }))
@@ -219,6 +222,15 @@ describe('Settings > Memory', () => {
       expect(screen.getByRole('textbox', { name: 'Note' })).toBeTruthy()
     }
     expect(await store.list()).toEqual(before)
+  })
+
+  it("shows a note's values as the name, then the value and its unit", async () => {
+    await store.put({ ...fact('depth', 'size', 'The drawer is this deep', 50), data: { depthMm: 300, label: 'Top drawer' } })
+    mount(createElement(MemorySection))
+    await screen.findByText('The drawer is this deep')
+    const row = screen.getByText('The drawer is this deep').closest('li')!
+    expect(row.textContent).toContain('Depth: 300 mm, Label: Top drawer')
+    expect(row.textContent).not.toContain('Depth mm')
   })
 
   it('export downloads every fact', async () => {
