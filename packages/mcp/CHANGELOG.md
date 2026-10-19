@@ -4,6 +4,14 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Changed
+
+- `slicerx_mimir_tab` 1.1.0 also says whether the model runs on this computer (`local`). mimir has one chat in the app now, the mimir tab, so `tools` lists everything the model is offered there: the design tools, the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands (among them `app.project_new`, which still asks the person before anything unsaved is discarded).
+
+### Removed
+
+- `slicerx_mimir_dock`: the docked chat is gone from the app. Read the mimir tab with `slicerx_mimir_tab` instead; `slicerx_mimir_ask` and `slicerx_mimir_session` now reach the tab's conversation.
+
 ## [0.1.9] - 2026-10-19
 
 ### Changed

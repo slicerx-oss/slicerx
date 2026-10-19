@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-237 tools.
+236 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -150,10 +150,9 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_mesh_analyze` |  |  | read | Measure an object as it sits on the bed now: volume, surface area, size, whether it is watertight (open, flipped and non-manifold edges, separate shells), overhang area past the support angle, estimated support volume and bed contact area. |
 | `slicerx_mesh_repair` |  |  | slice | Repair an object mesh before slicing: merge loose vertices, remove zero-area and duplicate triangles, flip inward-facing triangles and fill holes. |
 | `slicerx_mimir_cloud_status` |  |  | read | Read mimir cloud's status in SlicerX: whether this build offers mimir cloud, whether mimir is on and runs on it, whether the person is signed in to their account (null in a build without accounts), whether mimir cloud waits for a sign-in, and today's use and what is left (only while mimir runs on mimir cloud). |
-| `slicerx_mimir_dock` |  |  | read | Read what answers in the docked mimir chat of the open SlicerX app: "model" when a model is set up (its provider and model, and whether it runs locally on this computer), "demo" when no model answers and the built-in demo does, or "none" before the chat is set up. |
 | `slicerx_mimir_quota` |  |  | read | Read today's free mimir use in SlicerX on this computer: what this install and this network have used of their daily caps, in US dollars, and whether mimir cloud is open today. |
 | `slicerx_mimir_share` |  |  | read | Read whether SlicerX runs mimir on mimir cloud, whether it shares this install's mimir sessions to improve mimir (Settings > mimir, on by default), and whether the person has read the notice shown before the first chat. |
-| `slicerx_mimir_tab` |  |  | read | Read what answers in the mimir tab of the open SlicerX app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens. |
+| `slicerx_mimir_tab` |  |  | read | Read what answers in the mimir tab of the open SlicerX app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens, and whether the model runs locally on this computer. |
 | `slicerx_multicolor_assign` |  |  | slice | Plan a multicolor print: which filament each region or height band gets, the order of color changes with layer numbers for height bands, whether the printer has enough slots and can feed each material, and how to cut purge waste (flush multiplier, prime tower). |
 | `slicerx_open_in_app` | Open in the SlicerX app | core | read, ungated | Open a model or project file (.sx3mf, .3mf or .stl) in the SlicerX desktop app on this computer, to slice and print it there, as the browser's Open in SlicerX button does. |
 | `slicerx_optimize_to_target` |  |  | slice | Hit a print target by slicing many real candidates: under a time limit, under a filament or cost limit, or strongest (or fastest, lightest, cheapest) within a limit. |
