@@ -3,7 +3,7 @@
 // What mimir remembers, as the person sees it: the chip that asks before a note is saved (in place of the approval
 // card), and Settings > Memory, which lists the notes by kind, edits and deletes one, clears them all after asking, and
 // exports every one. All of it goes through the app's one handle on the edition's notes.
-import { DEFAULT_POLICY, type Host, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
+import { DEFAULT_POLICY, type Host, type PilotEvent, type PrinterHost, type ToolSource } from '@slicerx/contracts'
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type MemoryFact, type ScriptStep } from '@slicerx/pilot'
 import { emptyTranscript, foldEvents, startTurn, TranscriptView } from '@slicerx/pilot/ui'
 import { ToastProvider } from '@slicerx/ui'
@@ -99,13 +99,15 @@ describe('the chip', () => {
     expect(no.events).toContainEqual(expect.objectContaining({ type: 'approval_resolved', decision: expect.objectContaining({ kind: 'deny' }) }))
   })
 
-  it("a plugin's tool named memory.remember gets the ordinary approval card, never the chip", () => {
+  it('only a built-in memory.remember gets the chip; a plugin, a skill or a request with no source gets the ordinary card', () => {
     const request = { id: 'apr_1', sessionId: 's', tool: 'memory.remember', permission: 'profile' as const, title: 'Remember this?', lines: ['Has a Bambu Lab A1', 'Kept on this computer for later chats.'], paramsHash: 'x', actions: [], expiresAt: new Date(Date.now() + 60_000).toISOString() }
-    const view = (source: 'plugin' | 'command') =>
-      mount(createElement(TranscriptView, { transcript: foldEvents([{ type: 'approval_request', request, source }], startTurn(emptyTranscript(), { user: 'Remember my A1' }, 0)), showThinking: false, approvals: { cards: MEMORY_CARDS, onApprove: async () => undefined, onCancel: async () => undefined } }))
-    const plugin = view('plugin')
-    expect(screen.queryByTestId('mimir-remember')).toBeNull()
-    plugin.unmount()
+    const view = (source: ToolSource | undefined) =>
+      mount(createElement(TranscriptView, { transcript: foldEvents([source ? { type: 'approval_request', request, source } : { type: 'approval_request', request }], startTurn(emptyTranscript(), { user: 'Remember my A1' }, 0)), showThinking: false, approvals: { cards: MEMORY_CARDS, onApprove: async () => undefined, onCancel: async () => undefined } }))
+    for (const source of ['plugin', 'skill', 'web', 'kb', 'settings', undefined] as const) {
+      const other = view(source)
+      expect(screen.queryByTestId('mimir-remember'), String(source)).toBeNull()
+      other.unmount()
+    }
     view('command')
     expect(screen.getByTestId('mimir-remember')).toBeTruthy()
   })
