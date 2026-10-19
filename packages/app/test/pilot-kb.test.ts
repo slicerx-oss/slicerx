@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_POLICY, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type KnowledgeBase } from '@slicerx/pilot'
-import { bundledKb } from '../src/features/pilot/kb'
+import { bundledKb } from '../src/workspaces/mimir/kb'
 
 const printers = { list: async () => [], plugins: async () => [], fleets: async () => [], status: async () => { throw new Error('none') }, subscribe: () => () => undefined } as unknown as PrinterHost
 const noLlm = { available: async () => false, stream: () => { throw new Error('scripted') } }

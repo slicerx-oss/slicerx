@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A client's message to mimir over the app link, with a picture and a PDF: mimir.ask hands it to the chat, the chat's
+// A client's message to mimir over the app link, with a picture and a PDF: mimir.ask hands it to the tab's chat, the chat's
 // run sends both files to the model in the provider request, and mimir.session reads the turn back with the files'
 // names. Files outside the chat's limits are refused before anything runs, and a run already going is never cut off.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmHttpRequest, type LlmTransport, type PilotAttachment, type PrinterHost } from '@slicerx/contracts'
@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { LinkError, runCall } from '../src/app-link/methods'
 import { setMimirAsker } from '../src/app-link/mimir-ask'
 import { setSessionSource } from '../src/app-link/sessions'
-import { dockLogs, dockMessages, noteDockMessage } from '../src/features/pilot/dock-log'
+import { mimirLogs, mimirMessages, noteMessage } from '../src/workspaces/mimir/session'
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 const PDF = Buffer.from('%PDF-1.4\n%%EOF').toString('base64')
@@ -32,15 +32,15 @@ function chat() {
     },
   }
   const host = { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm }
-  const pilot = createPilot({ host, config: { ...DEFAULT_CONFIG, provider: 'anthropic', model: 'claude-haiku-5-5' }, policy: DEFAULT_POLICY, builtins: false, tools: [], store: dockLogs })
+  const pilot = createPilot({ host, config: { ...DEFAULT_CONFIG, provider: 'anthropic', model: 'claude-haiku-5-5' }, policy: DEFAULT_POLICY, builtins: false, tools: [], store: mimirLogs })
   const runs: Promise<void>[] = []
   let busy = false
-  // what the docked chat registers: each message noted for the read-back, then run
-  setSessionSource({ store: dockLogs, messages: dockMessages })
+  // what the tab's chat registers: each message noted for the read-back, then run
+  setSessionSource({ store: mimirLogs, messages: (id) => mimirMessages.get(id) ?? [] })
   setMimirAsker({
     busy: () => busy,
     send: (text: string, files: PilotAttachment[]) => {
-      noteDockMessage('s_link', text, files)
+      noteMessage('s_link', text, files)
       runs.push(
         (async () => {
           for await (const _ of pilot.run('s_link', text, files.length ? { attachments: files } : {})) void _
@@ -90,7 +90,7 @@ describe('mimir.ask over the app link', () => {
     expect(c.sent).toHaveLength(0)
   })
 
-  it('says so when the chat is not open', async () => {
+  it('says so when the mimir tab has not been opened', async () => {
     expect(((await runCall('mimir.ask', { message: 'hi' }).catch((e: unknown) => e)) as LinkError).code).toBe('not_ready')
   })
 })

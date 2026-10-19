@@ -14,17 +14,17 @@ export interface MimirScript {
   steps: ScriptStep[]
 }
 
-/** The text of the last thing the person said. */
+/** The text of the last thing the person said: their request, without the app's context the runtime puts before it. */
 function lastUser(messages: readonly LlmMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]!
-    if (m.role === 'user') return typeof m.content === 'string' ? m.content : ''
+    if (m.role === 'user') return typeof m.content === 'string' ? (m.content.split('User request:').at(-1) ?? m.content) : ''
   }
   return ''
 }
 
 /** What mimir says to a message no script matches. */
-const UNKNOWN: ScriptStep[] = [{ text: 'Scripted replies know three parts for now: a thermostat backplate, a box with a lid and a phone stand. Ask for one of them.' }]
+const UNKNOWN: ScriptStep[] = [{ text: 'Scripted replies know three parts for now: a thermostat backplate, a box with a lid and a phone stand. Ask for one of them, ask me to slice the plate, or to start a new project.' }]
 
 const CANCELED: ScriptStep[] = [{ text: 'Nothing is built. Tell me which sizes are off and I will put up a new sheet.' }]
 
@@ -63,9 +63,9 @@ export function scriptRouter(scripts: readonly MimirScript[], opts: { delayMs?: 
   }
 }
 
-/** A printer host with no printers: the tab's toolset never reaches one. */
+/** A printer host with no printers, for a host without any. */
 export const NO_PRINTERS = { list: async () => [], plugins: async () => [] } as unknown as PrinterHost
-/** Nothing in the tab asks for an approval; one that did would be refused. */
+/** For a host without approvals: a call that needs one is refused, so a print always starts with a person. */
 export const NO_APPROVALS: ApprovalHost = {
   register: async () => undefined,
   grant: async () => {
@@ -75,12 +75,12 @@ export const NO_APPROVALS: ApprovalHost = {
 } as unknown as ApprovalHost
 const NO_LLM = {} as LlmTransport
 
-/** The tools a scripted mimir can call in the tab. No printer tool is among them: a print always starts with a person. */
+/** The tab's own tools: questions, lookups and sheets, then the given design tools. */
 export function mimirTools(extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
   return [askTool(), lookupTool(), sheetTool(), sheetBindTool(), ...extra]
 }
 
-/** The tab's mimir: the runtime over the given tools, answering with the scripts. */
+/** The runtime over the given tools alone, answering with the scripts (the tab gives its stub the whole toolset, session.ts). */
 export function scriptedMimir(scripts: readonly MimirScript[], tools: readonly PilotTool<never>[], opts: { delayMs?: number; callDelayMs?: number; store?: SessionStore } = {}): Pilot {
   return createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: NO_LLM },

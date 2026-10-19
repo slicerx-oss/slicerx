@@ -138,33 +138,18 @@ export async function standIn(page: Page): Promise<void> {
   })
 }
 
-export type PilotMode = 'off' | 'cloud' | 'unset'
+/** off: turned off. cloud: mimir cloud. unset: not connected yet. scripted: a provider with no key, so the tab plays its scripts. */
+export type PilotMode = 'off' | 'cloud' | 'unset' | 'scripted'
 
 /** Puts mimir in the state a test starts from: the connection, the one-time notice (read, or not yet) and the save switch on. */
 export async function setPilot(page: Page, mode: PilotMode, opts: { notice?: boolean } = {}): Promise<void> {
-  const pilot = mode === 'off' ? { mode: 'off' } : mode === 'cloud' ? { mode: 'on', provider: 'mimir-cloud' } : { mode: 'unset' }
+  const pilot = mode === 'off' ? { mode: 'off' } : mode === 'cloud' ? { mode: 'on', provider: 'mimir-cloud' } : mode === 'scripted' ? { mode: 'on', provider: 'anthropic' } : { mode: 'unset' }
   await page.evaluate(([pilot, noticeRead]) => (window as unknown as W).__sx.setState({ pilot, mimirNotice: noticeRead ? 2 : null, mimirShare: true }), [pilot, opts.notice ?? true] as const)
 }
 
 /** Puts away whatever dialog an earlier test left open. */
 export async function closeDialogs(page: Page): Promise<void> {
   for (let i = 0; i < 3 && (await page.getByRole('dialog').first().isVisible()); i++) await page.keyboard.press('Escape')
-}
-
-/** The docked chat, open on the Slice tab and empty. */
-export async function freshDock(page: Page): Promise<void> {
-  await closeDialogs(page)
-  // the dock picks the last conversation back up when it mounts again (a reload, a new connection)
-  await page.evaluate(() => sessionStorage.removeItem('sx-mimir-dock-chat'))
-  await goTab(page, 'prepare')
-  const dock = page.locator('.mimir-dock')
-  if (!(await dock.isVisible())) await page.locator('.mimir-btn').click()
-  await expect(dock).toBeVisible()
-  // the prompt (or the notice before the first chat) shows once mimir has loaded
-  await expect(dock.getByRole('textbox', { name: /^Ask / }).or(dock.getByTestId('mimir-cloud-notice')).first()).toBeVisible()
-  const again = dock.getByRole('button', { name: 'New conversation' })
-  if (await again.isVisible()) await again.click()
-  await expect(dock.locator('.turn-user')).toHaveCount(0)
 }
 
 /** The mimir tab, empty: the plate cleared, a new conversation, and the camera looking down on the grid. */
@@ -190,11 +175,11 @@ export async function emptyMimirTab(page: Page): Promise<void> {
   if (await again.isVisible()) await again.click()
 }
 
-/** Types into the dock's prompt and sends. */
-export async function askDock(page: Page, text: string): Promise<void> {
-  const box = page.locator('.mimir-dock').getByRole('textbox', { name: /^Ask / })
-  await box.fill(text)
-  await box.press('Enter')
+/** Types into the mimir tab's composer and sends. */
+export async function askTab(page: Page, text: string): Promise<void> {
+  const composer = page.getByTestId('mimir-composer')
+  await composer.getByRole('textbox').fill(text)
+  await composer.getByRole('button', { name: 'Send' }).click()
 }
 
 /* ------------------------------------------------------------------ the app, up (desktop and phone) */
@@ -350,17 +335,21 @@ export async function escapeAndHandAdd(page: Page, phone: boolean): Promise<void
 
 /** With setup closed and no model connected, mimir offers the connect step, a question waits in it, and Settings holds the rest. */
 export async function mimirConnectSteps(page: Page, phone: boolean): Promise<void> {
-  // a phone opens mimir from its tab bar, and leaves it for the first tab
+  // a phone opens the mimir tab from its tab bar, a desktop from the top bar's button; before a model is connected the
+  // chat is the setup
   await page.locator(phone ? '[data-testid="phone-tabs"] [data-tab="mimir"]' : '.mimir-btn').click()
-  await expect(page.locator('.mimir-connect')).toContainText('Nothing is sent until you connect')
-  await expect(page.locator('.mimir-connect').getByRole('radiogroup', { name: 'Model provider' })).toBeVisible()
-  await page.locator(phone ? '.phone-tab >> nth=0' : '.mimir-btn').click()
-  await expect(page.locator('.mimir-dock')).toHaveCount(0)
-  // A question offers mimir, and choosing it opens the same step with the question waiting.
+  const connect = page.getByTestId('mimir-connect')
+  await expect(connect).toContainText('Nothing is sent until you connect')
+  await expect(connect.getByRole('radiogroup', { name: 'Model provider' })).toBeVisible()
+  await expect(page.getByTestId('mimir-composer').getByRole('button', { name: 'Send' })).toBeDisabled()
+  // the first tab leaves it
+  await page.locator(phone ? '.phone-tab >> nth=0' : '.sx-tab >> nth=1').click()
+  await expect(page.getByTestId('mimir-chat')).toBeHidden()
+  // A question offers mimir, and choosing it opens the tab with the question waiting.
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('why is my first layer rough')
   await page.locator('.sx-palette-item', { hasText: 'Ask mimir: why is my first layer rough' }).click()
-  await expect(page.locator('.mimir-connect')).toContainText('why is my first layer rough')
+  await expect(connect).toContainText('why is my first layer rough')
   await page.keyboard.press('ControlOrMeta+k')
   await page.keyboard.type('connect mimir')
   await page.locator('.sx-palette-item', { hasText: 'Connect mimir' }).first().click()

@@ -61,17 +61,16 @@ journey.describe('the main flows of the browser build', () => {
     await expectCurrentTab(page, 'printers', 'Printers')
   })
 
-  journey('free text in Cmd+K goes to the assistant dock', async ({ page }) => {
+  journey('free text in Cmd+K goes to the mimir tab', async ({ page }) => {
     await goTab(page, 'prepare')
     await page.keyboard.press('ControlOrMeta+k')
     await page.keyboard.type('why is my first layer peeling')
     await expect(page.locator('.sx-palette-item', { hasText: 'Ask mimir: why is my first layer peeling' })).toBeVisible()
     await page.keyboard.press('Enter')
-    await expect(page.locator('.mimir-dock')).toBeVisible()
-    await expect(page.locator('.mimir-dock')).toContainText('why is my first layer peeling')
-    // the dock is a view choice the browser remembers: shut it for the next test
-    await page.locator('.mimir-btn').click()
-    await expect(page.locator('.mimir-dock')).toHaveCount(0)
+    await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
+    await expect(page.getByTestId('mimir-chat')).toContainText('why is my first layer peeling')
+    // back to the plate for the next test
+    await goTab(page, 'prepare')
   })
 
   journey('Slice runs and shows the layers in place', async ({ page }) => {

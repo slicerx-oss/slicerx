@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A client's message to mimir in the open app, with files: mimir.ask puts it in the docked chat as if the person had
-// sent it (pictures and PDF drawings ride on it, under the same limits as the chat's attach button) and answers at
+// A client's message to mimir in the open app, with files: mimir.ask puts it in the mimir tab's chat as if the person
+// had sent it (pictures and PDF drawings ride on it, under the same limits as the chat's attach button) and answers at
 // once with the session; mimir.session reads back what mimir did. The chat registers itself here while it is open; a
 // run already going is never interrupted.
 import type { PilotAttachment } from '@slicerx/contracts'
@@ -59,7 +59,7 @@ export async function askMimir(args: Record<string, unknown>): Promise<unknown> 
     if (decodedBytes(data) > FILE_LIMITS.maxBytes) throw new LinkError('invalid_input', `${name} is over 10 MB.`)
     files.push(await attachment(i, name, type, data))
   }
-  if (!asker) throw new LinkError('not_ready', 'the mimir chat is not open in the app; ask the person to open it')
+  if (!asker) throw new LinkError('not_ready', 'the mimir tab is not open in the app, or no model is connected to it yet; ask the person to open it')
   if (asker.busy()) throw new LinkError('busy', 'mimir is answering a message now; read it back with mimir.session and send again when it is done')
   const sessionId = asker.send(message.trim(), files)
   return { sessionId, said: message.trim(), attachments: files.map((f) => ({ name: f.name, type: f.type, bytes: f.bytes })) }

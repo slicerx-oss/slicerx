@@ -2,19 +2,19 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The phone legs of the session journeys (boot-session, mimir and vault), the ones with an assertion that only a phone
 // has: no sideways scroll, setup with one step fewer, the Settings list, a Slice without a legend, the Vault's two
-// covers and the edge of a third, a start screen with no gutter, and a part card with no Edit. What a phone shares with
+// covers and the edge of a third, a start screen with no gutter, and the mimir tab with its chat under the view. What a phone shares with
 // the desktop runs there. The tests with the shared page (journey) are on a phone-sized page; the cold ones start the
 // app from nothing, as the desktop ones in boot-session.spec.ts do.
 import { journey, expect } from '../journey'
-import { goTab, plateReady, test as cold, viewportReady } from '../fixtures'
+import { goTab, plateReady, test as cold } from '../fixtures'
 import {
-  askDock,
+  answer,
+  askTab,
   cadOnlyStudio,
   debugOn,
   escapeAndHandAdd,
   expectHeroCoverFits,
   iconsWithoutTable,
-  lastUserText,
   measureRow,
   mimirConnectSteps,
   noHorizontalScroll,
@@ -29,7 +29,6 @@ import {
   themeAndLookAndFeel,
   vaultFeed,
   workspaceNeverDownloads,
-  type Block,
 } from './lib/session'
 
 // Worker options go at the top of the file. Mimir is put in the state it needs by the test that uses it.
@@ -86,37 +85,30 @@ journey.describe('the main flows on a phone', () => {
 journey.describe('mimir on a phone', () => {
   journey.skip(({ isMobile }) => !isMobile, 'The phone project')
 
-  // The part card on a phone has no Edit: a phone has no modeling tools. The reply, the card and its Select are the same as at desktop.
-  journey('a reply that makes a part shows the card, and a phone has no Edit', async ({ page }) => {
+  // The tab bar opens the mimir tab: the design's view on top, the chat under it, and a reply in the chat.
+  journey('the tab bar opens the mimir tab, with the chat under the view', async ({ page }) => {
     await debugOn(page)
     // The tab the step before left is what the page comes back to, and the Vault has no view to wait for.
     await goTab(page, 'prepare')
-    // the docked chat is a view choice the browser remembers, read as the page loads
-    await page.evaluate(() => localStorage.setItem('sx-mimir-dock', '1'))
-    await page.reload()
-    await viewportReady(page)
     await setPilot(page, 'cloud')
-    await stubProxy(page, (body) => {
-      const text = lastUserText(body)
-      if (text.includes('tool_result')) return [{ type: 'text', text: 'Want rounded edges, or a hole through it?' }]
-      return [
-        { type: 'text', text: 'Created a 20 mm cube at the origin.' },
-        { type: 'tool_use', id: 'tu_20', name: 'text_to_part', input: { name: '20 mm cube', solids: [{ type: 'box', sizeMm: [20, 20, 20] }] } },
-      ] satisfies Block[]
-    })
+    await stubProxy(page, () => answer('A PETG part on a hot dashboard wants ASA instead, per the material guide.'))
     await signIn(page)
     await setState(page, { plate: [], selection: null, selectedIds: [] })
-    const dock = page.locator('.mimir-dock')
-    await expect(dock).toBeVisible()
-    const again = dock.getByRole('button', { name: 'New conversation' })
-    if (await again.isVisible()) await again.click()
-    await askDock(page, 'a 20 mm cube')
-    const card = dock.getByTestId('mimir-part')
-    await expect(card).toBeVisible({ timeout: 30_000 })
-    await card.getByRole('button', { name: 'Select the 20 mm cube' }).click()
-    await expect(card.getByRole('button', { name: 'Edit the 20 mm cube' })).toHaveCount(0)
-    // the dock stays open in the browser for the next test on this page: put it away
-    await page.evaluate(() => localStorage.setItem('sx-mimir-dock', '0'))
+    await page.locator('[data-testid="phone-tabs"] [data-tab="mimir"]').click()
+    await expect(page.locator('[data-testid="phone-tabs"] [data-tab="mimir"]')).toHaveAttribute('aria-current', 'page')
+    const chat = page.getByTestId('mimir-chat')
+    await expect(chat).toBeVisible()
+    const view = (await page.locator('.studio > .vp').boundingBox())!
+    const box = (await chat.boundingBox())!
+    expect(box.y).toBeGreaterThanOrEqual(view.y + view.height - 1)
+    const again = chat.getByRole('button', { name: 'New conversation' })
+    await again.click()
+    await askTab(page, 'What should I print a car phone mount in?')
+    await expect(chat).toContainText('wants ASA instead', { timeout: 30_000 })
+    await noHorizontalScroll(page)
+    // the first tab leaves it
+    await page.locator('.phone-tab >> nth=0').click()
+    await expect(chat).toBeHidden()
   })
 })
 
