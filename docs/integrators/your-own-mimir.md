@@ -19,19 +19,19 @@ The config is checked when it loads. A bad value stops it with the setting's pat
 
 ## What works today
 
-The config accepts every setting on this page, the knowledge build compiles your docs, and `slicerx_mimir_brain` reports what your edition set. The chat doesn't apply the voice, your knowledge, the tool switches, the routing or the memory settings yet. Each section below says what is in place now.
+Every setting on this page is in effect in the app's mimir: the docked chat, the dock in the browser build, and the mimir tab. The voice goes into the assistant's instructions, your knowledge is searched and cited, switched-off tool groups are never offered, routing picks the models for a person's own key, and memory follows `memory.local` and `memory.sync`. `slicerx_mimir_brain` reads back what the running app applies.
 
 ## Voice
 
-`voice` is a short style note, 1 to 280 characters, such as `"Plain and brief; metric units"`. Leave it out for the stock voice. It is meant as a note on tone added to the assistant's instructions, never a replacement for them (see [What an edition can't change](#what-an-edition-cant-change)). For now the config holds it and nothing reads it.
+`voice` is a short style note, 1 to 280 characters, such as `"Plain and brief; metric units"`. Leave it out for the stock voice. It is added as the last block of the assistant's instructions, folded onto one line, and only changes tone; it never replaces the rules above it (see [What an edition can't change](#what-an-edition-cant-change)).
 
 ## Knowledge
 
 `knowledge` lists YAML files, or folders of them, in the same format as the bundled `knowledge/` folder. Paths are relative to the edition config file. The schema refuses absolute paths, paths that start with `~` or a drive letter, and any `..` step. A file or link that resolves outside the edition folder is refused when the files are read.
 
-`pnpm --filter @slicerx/pilot kb:build` compiles the knowledge of every edition under `editions/` into `packages/pilot/src/kb/generated/edition-kb.json`, and tags each doc with its edition id. A knowledge base built for one edition takes the bundled docs plus that edition's own, so one edition never finds or cites another's. If one of your docs has the same id or name as a bundled doc, the bundled doc wins. Your sources cite with kind `edition`.
+`pnpm --filter @slicerx/pilot kb:build` compiles each edition under `editions/` into its own file, `packages/pilot/src/kb/generated/edition-kb.<id>.json`, with every doc tagged with the edition id. An app build includes only the file for the edition it builds, so your docs never ship in another edition's app. If one of your docs has the same id or name as a bundled doc, the bundled doc wins.
 
-The app doesn't load the edition index into mimir's search yet.
+In the app, mimir's knowledge base is the bundled docs plus your edition's file. `kb.search` and the other knowledge tools find your docs next to the bundled ones, and your sources cite with kind `edition`.
 
 ## Tool groups
 
@@ -39,34 +39,38 @@ The app doesn't load the edition index into mimir's search yet.
 
 | Group | What it covers |
 | --- | --- |
-| `design` | Making and changing parts: `text_to_part`, `make_model`, `parts.lookup`, cut, hollow, emboss, threads and fits, and the `design.` and `geom.` tools |
-| `slicing` | Preparing and slicing a plate: slice, estimate, arrange, orient, supports, walls, mesh checks and repair, calibration, and planning and applying settings |
-| `printers` | Printers, fleets and spools: every `printer.`, `printer_` and `spoolman.` tool, plus scheduling, diagnosis, spool fit and AMS or toolhead mapping |
+| `design` | Making and changing parts: `text_to_part`, `make_model`, `parts.lookup`, cut, hollow, emboss, threads and fits, the `design.` and `geom.` tools, and app commands of the design workspace |
+| `slicing` | Preparing and slicing a plate: slice, estimate, arrange, orient, supports, walls, mesh checks and repair, calibration, planning and applying settings, and app commands that change the plate, the slice, a profile or a setting (plate edits such as cut and orient included) |
+| `printers` | Printers, fleets and spools: every `printer.`, `printer_` and `spoolman.` tool, scheduling, diagnosis, spool fit, AMS or toolhead mapping, every tool of a printer plugin or of a connected app that works on the printers (BamBuddy, Spoolman, Home Assistant), and app commands that queue, start or set up a printer |
 | `watch` | Looking at a running print through its camera and adjusting it: `check_print` and `print.adjust` |
 | `paint` | Painting color, seams, supports and fuzzy skin onto a part: the `paint.` and `paint_` tools and `multicolor_assign` |
-| `web` | Web search |
+| `web` | Web search: the `web.` tools and the web search the model can run |
+
+App commands go by their permission class: printer classes are `printers`, a change in the design workspace is `design`, and any other change is `slicing`. Commands that only read (go to a tab, step a layer) or share have no switch.
 
 `false` turns a group off. `true`, or leaving the group out, keeps it as it is. A switch only ever removes tools, and a group name that isn't on the list is a config error. Core tools (the knowledge base, questions to the person, the project) have no switch.
 
-`applyToolGroups` and `toolGroupOf` in `@slicerx/pilot` do the filtering. The chat doesn't call them yet.
+Every mimir the app makes applies the switches with `applyToolGroups` from `@slicerx/pilot` (`toolGroupOf` says which group a tool is in), so a switched-off tool is not offered to the model and cannot be called. With `web: false` the app also turns web search off in mimir's config.
 
 ## Routing
 
-`routing` names the models for a person who uses their own key. `base` is the model for quick turns, and the only model when the person isn't on Auto. `step` is the model Auto moves to for deep turns. `provider` limits the routing to a key for `anthropic` or `openai`; leave it out and it applies to either.
+`routing` names the models for a person who uses their own key. `base` is the model for quick turns, and the only model when the person isn't on Auto. `step` is the model Auto moves to for deep turns. `provider` (`anthropic` or `openai`) says which key the models are for, and is required when you name `base` or `step`; a key for another provider keeps its own models.
 
 Some things always win over routing. A model the person picks in Settings is used as picked. A ChatGPT plan sign-in keeps its own models. mimir cloud ignores routing completely, because its proxy picks the model.
 
-`modelFor` in `@slicerx/pilot` follows these rules. The app doesn't pass your edition's routing into mimir's config yet.
+The app puts your routing into mimir's config (`routing`), and `modelFor` in `@slicerx/pilot` applies these rules on each turn.
 
 ## Cloud step-up
 
-On mimir cloud, the app never sends a model id. It sends one hint per turn (`x-sx-tier: step` for a deep turn, `base` otherwise), and the proxy decides. For a step turn the proxy looks up your edition's step-up model in its own database table, which the SlicerX team sets for each edition. With no step-up model, or none with a price, the turn runs on the base model, Haiku 5.5. A step turn that doesn't fit the daily caps also runs on the base model. The model a turn actually used comes back in the `x-sx-model` header.
+On mimir cloud, the app never sends a model id. It sends one hint per turn (`x-sx-tier: step` for a deep turn, `base` otherwise), and the proxy decides. For a step turn the proxy looks up your edition's step-up model in its own database table, which the SlicerX team sets for each edition. With no step-up model, or none with a price, the turn runs on the base model (`cloud.base` in the read-back). A step turn that doesn't fit the daily caps also runs on the base model. The model a turn actually used comes back in the `x-sx-model` header.
 
 The proxy knows your edition from the install's token, which the install got by registering with your edition's registration key. So `cloud.stepUp` in your config (`sonnet` or `none`, default `none`) states what you expect. Setting it can't move your edition onto a larger model or past its caps: the check runs on the server. To change your edition's step-up, ask the SlicerX team. [mimir-cloud.md](mimir-cloud.md) covers the proxy itself.
 
 ## Memory
 
-`memory.local` (default `true`) lets the assistant remember what the person tells it, on their computer. `memory.sync` is `off` (the default) or `opt-in`, which copies those memories to the person's account only after they turn it on. In this release these are config values only.
+`memory.local` (default `true`) lets the assistant keep short notes about the person (their printers, filaments, preferences, sizes and what worked) on their computer, one store per edition. mimir asks before it saves a note, unless the person turned that off in Settings > Memory, where they can also see, edit, delete, export and clear their notes. A note that looks like a key, token, access code or serial is refused. With `local: false` mimir has no memory tools and reads no notes.
+
+`memory.sync` is `off` (the default) or `opt-in`. With `opt-in`, a signed-in person sees "Sync with my account" in Settings > Memory, off until they turn it on. While it is on, notes and deletions sync with their account when a chat starts and shortly after each change, with the same session the rest of the app's cloud calls use. Signed out, or with the switch off, nothing is sent.
 
 ## Reading it back
 
@@ -83,7 +87,7 @@ The proxy knows your edition from the install's token, which the install got by 
 }
 ```
 
-`voice` says whether a voice is set. The answer never has the voice text or the contents of your docs. `knowledgeDocs` counts your edition's docs in the compiled edition index. `cloud.stepUp` is your config's value, `null` for `none`, and the proxy still decides. `toolGroups` comes from the config until the chat filters its tools by them.
+`voice` says whether a voice is set. The answer never has the voice text or the contents of your docs. `knowledgeDocs` counts only your edition's own docs, in the edition file the running build carries; the bundled docs are not counted. `cloud.base` is the base model mimir cloud answers with, and `cloud.stepUp` is your config's value (`null` for `none`); the proxy still decides. `toolGroups` is the set of switches every mimir in the app applies.
 
 ## What an edition can't change
 
