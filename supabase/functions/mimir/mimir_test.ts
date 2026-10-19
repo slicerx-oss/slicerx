@@ -444,6 +444,33 @@ Deno.test('a capped install falls back to the base model', async () => {
   assertEquals(busy.calls.filter((c) => c.fn === 'mimir_reserve').map((c) => c.args['p_model']), [SONNET])
 })
 
+Deno.test('a step-up turn whose PDF count fails goes on the base model', async () => {
+  const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0x' } }
+  const body = { messages: [{ role: 'user', content: [pdf, { type: 'text', text: 'Make this.' }] }] }
+  const counts = (h: ReturnType<typeof harness>) => h.sent.filter((x) => x.url.endsWith('/count_tokens')).map((x) => x.body['model'])
+  const reserves = (h: ReturnType<typeof harness>) => h.calls.filter((c) => c.fn === 'mimir_reserve').map((c) => c.args['p_model'])
+  // the step-up count fails, the base one answers: one reservation, on the base model
+  const h = harness({ turnModel: toSonnet, count: (b) => (b['model'] === SONNET ? new Response('{}', { status: 500 }) : Response.json({ input_tokens: 5_000 })) })
+  const res = await handle(post('/v1/messages', body, STEP), h.env)
+  assertEquals([res.status, res.headers.get('x-sx-model')], [200, MODEL])
+  await res.text()
+  await Promise.all(h.pending)
+  assertEquals(counts(h), [SONNET, MODEL])
+  assertEquals(reserves(h), [MODEL])
+  assertEquals(h.sent.filter((x) => x.url.endsWith('/v1/messages')).map((x) => x.body['model']), [MODEL])
+  assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_model'], MODEL)
+  // when neither count answers, one retry and then the plain answer, with nothing reserved
+  const down = harness({ turnModel: toSonnet, count: () => new Response('{}', { status: 500 }) })
+  const busy = await handle(post('/v1/messages', body, STEP), down.env)
+  assertEquals([busy.status, ((await busy.json()) as { error: Obj }).error['code']], [503, 'provider_busy'])
+  assertEquals(counts(down), [SONNET, MODEL])
+  assertEquals(reserves(down), [])
+  // a base turn whose count fails is not retried
+  const base1 = harness({ count: () => new Response('{}', { status: 500 }) })
+  assertEquals((await handle(post('/v1/messages', body, { 'x-sx-install': TOKEN }), base1.env)).status, 503)
+  assertEquals(counts(base1), [MODEL])
+})
+
 Deno.test('reserve, settle and save use the turn\'s model', async () => {
   const h = harness({ turnModel: toSonnet })
   await (await handle(post('/v1/messages', base(), STEP), h.env)).text()
