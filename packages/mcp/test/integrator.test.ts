@@ -73,6 +73,19 @@ describe('3MF projects', () => {
     ])
     expect(s.dropped_keys).toEqual(['post_process', 'printhost_apikey'])
   })
+  it('counts the objects of a plain 3MF without model_settings.config on plate 1, as the engine slices them', async () => {
+    const h = await connect()
+    const path = join(h.dir, 'plain-two.3mf')
+    const items = '<item objectid="1" transform="1 0 0 0 1 0 0 0 1 60 60 0"/><item objectid="1" transform="1 0 0 0 1 0 0 0 1 120 60 0"/><item objectid="1" printable="0"/>'
+    writeFileSync(path, writeZip([{ name: '3D/3dmodel.model', data: MODEL.replace('<item objectid="1"/>', items) }]))
+    const r = await h.call('slicerx_inspect_project', { file: path })
+    expect(r.isError, text(r)).toBeFalsy()
+    expect(data<{ has_settings: boolean; plates: unknown[] }>(r)).toMatchObject({ has_settings: false, plates: [{ index: 1, objects: 2 }] })
+    expect(text(r)).toMatch(/^Plate 1: 2 objects$/m)
+    // A project's plates still come from its model_settings.config.
+    const project = data<{ plates: unknown[] }>(await h.call('slicerx_inspect_project', { file: projectFile(h.dir) }))
+    expect(project.plates).toEqual([{ index: 1, name: 'Body', objects: 1 }, { index: 2, objects: 0 }])
+  })
 
   it("lists the project's support settings as the file sets them", async () => {
     const h = await connect()
