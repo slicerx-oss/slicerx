@@ -56,7 +56,7 @@ node scripts/export-kit-assets.mjs ./assets --backdrop --edition harbor.json
 
 ## Plain HTML example
 
-Serve the `assets` folder over HTTP and open `example.html`. It loads three shaded tool icons and three loops in both themes, using `example.css` to change the accent. The only JavaScript fetches trusted local SVG files and inserts their markup. The example does not load any app bundle, framework, font service, or backend.
+Serve the `assets` folder over HTTP and open `example.html`, for example with `python3 -m http.server` in that folder. Opened straight from the folder (a `file://` address), the page stays blank, because browsers block it from loading the SVG files next to it. It loads three shaded tool icons and three loops in both themes, using `example.css` to change the accent. The only JavaScript fetches trusted local SVG files and inserts their markup. The example does not load any app bundle, framework, font service, or backend.
 
 Clients: the kit packaging command adds `--assets-only`; `node scripts/export-kit-assets.mjs <assets-directory>` is also available. No MCP tool or application command changes.
 
