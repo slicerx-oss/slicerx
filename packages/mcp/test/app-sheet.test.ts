@@ -17,7 +17,7 @@ describe('app sheet tools', () => {
     const [ask, get] = appSheetTools({ call } as AppLinkCaller, 'SlicerX')
     const asked = await ask!.run(ask!.input.parse(SHEET) as never, {} as never)
     expect(asked.output).toEqual({ sheetId: 'csheet_1', state: 'waiting' })
-    expect(call).toHaveBeenCalledWith('sheet.ask', expect.objectContaining({ title: 'Clip sizes', views: ['iso'] }))
+    expect(call).toHaveBeenCalledWith('sheet.ask', expect.objectContaining({ title: 'Clip sizes', views: ['top', 'front', 'side', 'iso'] }))
     expect((await get!.run({ sheet_id: 'csheet_1' } as never, {} as never)).output).toMatchObject({ state: 'confirmed', answer: { values: { bore: 6.2 } } })
     expect(call).toHaveBeenLastCalledWith('sheet.get', { sheetId: 'csheet_1' })
   })

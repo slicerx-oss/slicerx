@@ -17,6 +17,12 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 - `Citation.kind` in `@slicerx/contracts` gained `'edition'`, for a source from the edition's own knowledge. Code that switches on `kind` should handle it.
 - The `approval_request` pilot event in `@slicerx/contracts` has an optional `source`, the tool's source, so a host's own card for a built-in tool never stands in for a plugin's tool of the same name.
 
+## [0.1.9] - 2026-10-19
+
+### Changed
+
+- mimir now shows a part's sizes on a four-view drawing the person can edit, and waits for Confirm, before it builds a new part. `slicerx_app_sheet` draws all four views when a call names none.
+
 ### Fixed
 
 - A slice that runs past the engine's time limit (10 minutes) now fails with `slice_timeout` and `details.limitMs`, and says so, instead of `slice_failed` with "sx exited with code -1". A slice stopped by another signal names the signal (`slice_failed`, `details.signal`).

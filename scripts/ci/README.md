@@ -302,4 +302,10 @@ app's 213 test files fail per seed, all known and listed there, so a nightly run
 `SX_GREEN_WAIT` seconds (default 3600, an hour: a push to main takes 35 to 43 minutes to turn every required check green) and then counts as not green. `apps/desktop/release/publish.sh` runs it before it
 builds or publishes anything. `SX_PUBLISH_CHECK_ONLY=1 publish.sh ...` (or `require-green.sh --dry-run <commit>`) only
 reports. `SX_PUBLISH_ALLOW_RED=1` lets a red commit through with a loud warning: for an owner-approved emergency only.
+The read uses `gh api` when gh is installed and works. When gh is missing, fails, or `SX_GREEN_GH=0` is set (a machine
+where gh is not signed in), the script reads `api.github.com` anonymously with `curl`, follows the `Link` pages, parses
+the JSON with `node`, and prints one note on stderr. This works for a public repository only. Anonymous reads are
+limited to 60 per hour, so in that mode the poll interval is at least 300 seconds unless `SX_GREEN_POLL` is set, and a
+403 or 429 reply ends the run with exit 2 and a rate limit message. With no repository argument the script asks gh, then
+reads it from the `origin` URL. `require-green.test.mjs` covers the fallback with a fake `curl` and no network.
 Keep `required-checks.txt` in step with the jobs in `ci.yml`.
