@@ -1,1 +1,0 @@
-the pills stay in the view and off the point | subydoo-ci | 2026-10-18 | 2026-10-19 | https://github.com/slicerx-oss/slicerx/issues/1258 | 60 runs per side (20 per test), 0 failures on main and on the rebased branch of PR 1259, 5 workers, retries 0, 0 boot timeouts; still seen only on GitHub runners
