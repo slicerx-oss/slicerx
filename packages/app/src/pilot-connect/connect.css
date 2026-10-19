@@ -161,6 +161,7 @@ textarea.mem-field[aria-invalid='true'] { border-color: var(--red); }
 .mem-row-a { flex: none; display: flex; gap: var(--s-2); }
 .mem-row-a > .sx-btn { width: 64px; justify-content: center; }
 .mem-err { flex-basis: 100%; margin: 0; padding: 0 var(--s-2); color: var(--red); }
+.mem-data { flex-basis: 100%; margin: 0; padding: 0 calc(var(--s-2) + 1px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .mem-actions { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--s-2); margin: 0; }
 .mem-clear { display: grid; gap: var(--s-3); padding: var(--s-4); max-width: 280px; }
 .mem-clear p { margin: 0; font-size: var(--fs-md); }

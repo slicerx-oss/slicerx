@@ -5,7 +5,7 @@
 // for notes; a note that looks like a secret is refused before the card either way. Recalling is read class. The
 // edition turns both off with ai.brain.memory.local.
 import { z } from 'zod'
-import { MEMORY_KINDS, NOTE_MAX, NOTE_MIN, NOTE_UNSAFE, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../memory/facts'
+import { dataLabel, MEMORY_KINDS, NOTE_MAX, NOTE_MIN, NOTE_UNSAFE, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../memory/facts'
 import { defineTool, type PilotTool } from '../tool'
 
 const REFUSED = 'Not saved: that looks like a key, token, access code or serial. Those stay in the app, never in notes.'
@@ -23,15 +23,6 @@ const rememberInput = z.object({
     .optional()
     .describe('Up to 6 key values, such as { model: "A1", nozzleMm: 0.4 }'),
 })
-
-// "nozzleMm" read as "nozzle Mm", for the card's label
-const spaced = (k: string): string => k.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ')
-
-/** A data key as a plain label for the card: nozzleMm becomes "Nozzle mm". */
-function label(k: string): string {
-  const words = spaced(k).trim().toLowerCase()
-  return words.charAt(0).toUpperCase() + words.slice(1)
-}
 
 const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
 
@@ -52,7 +43,7 @@ export function memoryTools(store: MemoryStore, now: () => number = () => Date.n
     async approval(i) {
       if (secretInNote(i)) throw new Error(REFUSED)
       // everything that is saved and read back later is on the card, the data too
-      const data = Object.entries(i.data ?? {}).map(([k, v]) => `${label(k)}: ${v}`)
+      const data = Object.entries(i.data ?? {}).map(([k, v]) => dataLabel(k, v))
       return { title: 'Remember this?', lines: [i.text, ...data, 'Kept on this computer for later chats.'], actions: [] }
     },
     async run(i, ctx) {

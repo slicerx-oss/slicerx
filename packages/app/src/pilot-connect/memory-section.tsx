@@ -3,7 +3,7 @@
 // Settings > Memory: the notes mimir keeps about the person, by kind, each one edited or deleted in place; whether a
 // note is saved without asking; whether notes sync with the account (signed in, where the edition offers it); Export (every note as one JSON file) and Clear all, which asks first. Every change goes
 // through the app's one handle on the edition's notes (memory.ts), the same one mimir saves through.
-import { NOTE_MAX, noteProblem, type MemoryFact, type MemoryKind } from '@slicerx/pilot'
+import { dataLabel, NOTE_MAX, noteProblem, type MemoryFact, type MemoryKind } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { Button, MenuAnchor, Popover, SwitchRow, ToastProvider, useToast } from '@slicerx/ui'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
@@ -137,6 +137,8 @@ function NoteRow({ fact, store, onDelete }: { fact: MemoryFact; store: WatchedMe
           </>
         )}
       </div>
+      {/* the values kept with the note, as the chip showed them ("Nozzle: 0.4 mm"); editing changes only the words */}
+      {fact.data && Object.keys(fact.data).length ? <p className="mem-data sx-small sx-muted">{Object.entries(fact.data).map(([k, v]) => dataLabel(k, v)).join(', ')}</p> : null}
       {err ? (
         <p className="mem-err sx-small" role="alert">
           {err}

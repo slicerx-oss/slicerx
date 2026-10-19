@@ -92,6 +92,21 @@ export function noteProblem(text: string): 'one-line' | 'short' | 'long' | 'secr
   return secretInNote({ text }) ? 'secret' : null
 }
 
+// Unit words a data name may end in (nozzleMm, depth_mm, tempC), as they read after the value.
+const DATA_UNITS: Record<string, string> = { mm: 'mm', cm: 'cm', m: 'm', in: 'in', g: 'g', kg: 'kg', c: 'C', f: 'F', deg: 'deg', pct: 'percent', percent: 'percent', s: 's', min: 'min', h: 'h', mms: 'mm/s' }
+
+/**
+ * A note's data value as a person reads it: the name, then the value and its unit. nozzleMm 0.4 reads
+ * "Nozzle: 0.4 mm", depth_mm 300 reads "Depth: 300 mm", model A1 reads "Model: A1". The chip and Settings both show it.
+ */
+export function dataLabel(key: string, value: string | number): string {
+  const words = oneLine(key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ')).toLowerCase().split(' ').filter(Boolean)
+  const unit = words.length > 1 ? DATA_UNITS[words.at(-1)!] : undefined
+  const name = (unit ? words.slice(0, -1) : words).join(' ')
+  const shown = name.charAt(0).toUpperCase() + name.slice(1)
+  return `${shown}: ${oneLine(value)}${unit ? ` ${unit}` : ''}`
+}
+
 /** A rough token count for budgets: about four characters a token. */
 export const estimateTokens = (text: string): number => Math.ceil(text.length / 4)
 

@@ -4,7 +4,7 @@
 // printer asked about, the edition can turn memory off, and saving a note always asks first.
 import { DEFAULT_POLICY, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
-import { estimateTokens, factLine, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../src/memory/facts'
+import { dataLabel, estimateTokens, factLine, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../src/memory/facts'
 import { createApprovalBroker } from '../src/permit/broker'
 import { DEFAULT_CONFIG } from '../src/config'
 import type { LlmClient, LlmMessage } from '../src/provider/types'
@@ -117,6 +117,18 @@ describe('which notes mimir reads', () => {
     expect(seen[0]).toContain('- Prusa MK4S in the shed')
     expect(seen[0]!.indexOf('Permissions:')).toBeLessThan(seen[0]!.indexOf('What you know about this person'))
     expect(seen[1]).not.toContain('What you know about this person')
+  })
+})
+
+describe('data values as a person reads them', () => {
+  it('reads the name, then the value and its unit', () => {
+    expect(dataLabel('depthMm', 300)).toBe('Depth: 300 mm')
+    expect(dataLabel('depth_mm', 300)).toBe('Depth: 300 mm')
+    expect(dataLabel('nozzleMm', 0.4)).toBe('Nozzle: 0.4 mm')
+    expect(dataLabel('bedTempC', 60)).toBe('Bed temp: 60 C')
+    expect(dataLabel('model', 'A1')).toBe('Model: A1')
+    // a name that is only a unit word stays a name
+    expect(dataLabel('mm', 3)).toBe('Mm: 3')
   })
 })
 
@@ -267,7 +279,7 @@ describe('memory tools', () => {
         await pilot.resolveApproval(ev.request.id, { kind: 'approve' })
       }
     }
-    expect(lines).toEqual(['Has a Bambu Lab A1', 'Model: A1', 'Nozzle mm: 0.4', 'Kept on this computer for later chats.'])
+    expect(lines).toEqual(['Has a Bambu Lab A1', 'Model: A1', 'Nozzle: 0.4 mm', 'Kept on this computer for later chats.'])
     expect(store.rows.size).toBe(1)
   })
 
