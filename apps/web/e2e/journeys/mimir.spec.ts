@@ -394,9 +394,12 @@ test.describe('the mimir tab', () => {
       assumptions: [],
       questions: [],
     }
+    // window.__mimirPlans is there only with localStorage 'slicerx.debug' set, which the journey's page setup does
     await page.evaluate((p) => (window as unknown as { __mimirPlans: { put(plan: unknown): void } }).__mimirPlans.put(p), plan)
     await say('Check it against the plan')
     await expect(transcript).toContainText('It does not match the plan yet.', { timeout: 30_000 })
+    // the reply names the design it checked (the one named as the plan's part)
+    await expect(transcript).toContainText('I checked the design Thermostat backplate.')
     await expect(transcript).toContainText(/Center hole: wanted 32 mm diameter, got (29\.9\d|30(\.0\d)?) mm diameter\./)
     // only that item: the screw holes, size, features, closed body and walls pass, and the reply never says done
     await expect(transcript).not.toContainText(/screw hole:|Overall size:|Feature count:|Watertight:|Minimum wall:/)

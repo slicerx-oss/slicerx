@@ -3,7 +3,8 @@
 // The facts design.check compares with a plan, read from a design's current body: its bounds (as geom.info gives
 // them), whether each part is closed (the engine's info, as geom.info asks it), its round holes (the inner loops of
 // its flat faces, as geom.faces finds them, each measured with the engine's hole finder as geom.measure and geom.hole
-// do), its feature steps, and its thinnest wall (a ray from each facet inward to the far side).
+// do), its feature steps, and its thinnest wall (a ray from each facet inward to the far side, through a grid of the
+// facets, within a budget).
 import { bakeMesh, type Design as HostDesign, type DesignHost, type HistoryMesh } from '@slicerx/cad-history'
 import type { BodyFacts } from './design-check'
 
@@ -29,10 +30,13 @@ export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFa
   }
   const holes: { part: number; at: V3; axis: V3; diameterMm: number }[] = []
   for (const [part, w] of world.entries()) {
-    for (const loop of holeLoops(w)) {
+    const loops = holeLoops(w)
+    if (loops.length === 0) continue
+    // the part as the engine takes it, copied once for all of its holes
+    const mesh = { positions: Array.from(d.parts[part]!.positions), indices: Array.from(d.parts[part]!.indices) }
+    for (const loop of loops) {
       let diameterMm = loop.diameterMm
       try {
-        const mesh = { positions: Array.from(d.parts[part]!.positions), indices: Array.from(d.parts[part]!.indices) }
         // the request geom.hole makes for a hole picked by its axis: the part with the object's transform
         const found = (await host.call('hole.find', { mesh: { mesh, transform: d.transform }, at: loop.at, axis: loop.axis })) as { diameterMm?: unknown }
         if (typeof found.diameterMm === 'number' && Number.isFinite(found.diameterMm)) diameterMm = found.diameterMm
@@ -42,12 +46,14 @@ export async function bodyFacts(host: DesignHost, d: HostDesign): Promise<BodyFa
       holes.push({ part, at: loop.at, axis: loop.axis, diameterMm })
     }
   }
+  const wall = minWall(world)
   return {
     size: bounds(world),
     holes: sameHoles(holes).map((h) => ({ diameterMm: h.diameterMm })),
     features: d.history.steps.filter((s) => !s.suppressed && s.params.op !== 'paint').length,
     watertight,
-    minWallMm: minWall(world),
+    minWallMm: wall.mm,
+    ...(wall.why ? { minWallWhy: wall.why } : {}),
   }
 }
 
@@ -179,60 +185,225 @@ function roundHole(points: readonly V3[], n: V3): { at: V3; diameterMm: number }
   return { at, diameterMm: 2 * most }
 }
 
-/** Facets cast from, per part: more than this and every few facets cast, all of them still hit. */
-const MAX_CASTS = 6000
+/** How much work the thinnest wall may take. Past it the wall is reported as not measured, never as a guess. */
+export interface WallBudget {
+  /** Facets over every part together. */
+  maxFacets: number
+  /** Wall-clock time in ms (the app measures on its main thread). */
+  maxMs: number
+}
+export const WALL_BUDGET: WallBudget = { maxFacets: 250_000, maxMs: 1500 }
 
-/**
- * The thinnest wall: from the center of each facet a ray goes in, against its outward normal, to the first facet of
- * the same part it meets on the far side. The shortest such distance over every part; null when no ray hits.
- */
-export function minWall(meshes: readonly Mesh[]): number | null {
-  let best = Infinity
-  for (const m of meshes) {
-    const tris = m.indices.length / 3
-    const all = Array.from({ length: tris }, (_, t) => corners(m, t))
-    const boxes = all.map((c) => [Math.min(c[0][0], c[1][0], c[2][0]), Math.min(c[0][1], c[1][1], c[2][1]), Math.min(c[0][2], c[1][2], c[2][2]), Math.max(c[0][0], c[1][0], c[2][0]), Math.max(c[0][1], c[1][1], c[2][1]), Math.max(c[0][2], c[1][2], c[2][2])] as const)
-    const step = Math.max(1, Math.ceil(tris / MAX_CASTS))
-    for (let t = 0; t < tris; t += step) {
-      const c = all[t]!
-      const n = cross(sub(c[1], c[0]), sub(c[2], c[0]))
-      const l = len(n)
-      if (l < 1e-12) continue
-      const dir = scale(n, -1 / l)
-      const from: V3 = [(c[0][0] + c[1][0] + c[2][0]) / 3, (c[0][1] + c[1][1] + c[2][1]) / 3, (c[0][2] + c[1][2] + c[2][2]) / 3]
-      for (let o = 0; o < tris; o++) {
-        if (o === t) continue
-        const b = boxes[o]!
-        // the ray's reach so far, against the facet's bounds, before the exact test
-        const reach = Math.min(best, 1e9)
-        let skip = false
-        for (let k = 0; k < 3 && !skip; k++) {
-          const lo = Math.min(from[k]!, from[k]! + dir[k]! * reach)
-          const hi = Math.max(from[k]!, from[k]! + dir[k]! * reach)
-          if (hi < b[k]! - 1e-6 || lo > b[k + 3]! + 1e-6) skip = true
-        }
-        if (skip) continue
-        const d = rayHit(from, dir, all[o]!)
-        if (d !== null && d > 1e-6 && d < best) best = d
-      }
-    }
-  }
-  return Number.isFinite(best) ? Math.round(best * 1000) / 1000 : null
+/** The thinnest wall, in mm, or null with the reason when it was not measured (null alone: no ray met a far side). */
+export interface WallReading {
+  mm: number | null
+  why?: string
 }
 
-/** Where a ray meets a triangle, as its distance along the ray (Moller and Trumbore), or null. */
-function rayHit(from: V3, dir: V3, [a, b, c]: [V3, V3, V3]): number | null {
-  const e1 = sub(b, a)
-  const e2 = sub(c, a)
-  const p = cross(dir, e2)
-  const det = dot(e1, p)
-  if (Math.abs(det) < 1e-12) return null
+const TOO_DENSE = 'part too dense'
+/** Grid cells per part at most, and facet entries over all cells (a facet is listed in each cell its bounds cross). */
+const MAX_CELLS = 1 << 21
+const MAX_ENTRIES = 4_000_000
+
+/**
+ * The thinnest wall: from the center of every facet a ray goes in, against its outward normal, to the first facet of
+ * the same part it meets on the far side. The shortest such distance over every part. Each part's facets sit in a
+ * uniform grid, so a ray only tests the facets of the cells it passes through. Over the budget (too many facets, or too
+ * long) the reading is null with why "part too dense".
+ */
+export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = Date.now): WallReading {
+  const facets = meshes.reduce((n, m) => n + Math.floor(m.indices.length / 3), 0)
+  if (facets > budget.maxFacets) return { mm: null, why: TOO_DENSE }
+  const start = now()
+  const late = (): boolean => now() - start > budget.maxMs
+  if (late()) return { mm: null, why: TOO_DENSE }
+  let best = Infinity
+  for (const m of meshes) {
+    const r = partWall(m, best, late)
+    if (r === null) return { mm: null, why: TOO_DENSE }
+    best = r
+  }
+  return { mm: Number.isFinite(best) ? Math.round(best * 1000) / 1000 : null }
+}
+
+/** The thinnest wall of one part, no more than `bestSoFar`; null when `late` says the time ran out. */
+function partWall(m: Mesh, bestSoFar: number, late: () => boolean): number | null {
+  const tris = Math.floor(m.indices.length / 3)
+  if (tris === 0) return bestSoFar
+  // every facet's corners, nine numbers each
+  const tri = new Float64Array(tris * 9)
+  const lo = [Infinity, Infinity, Infinity]
+  const hi = [-Infinity, -Infinity, -Infinity]
+  for (let t = 0; t < tris; t++)
+    for (let j = 0; j < 3; j++) {
+      const vi = m.indices[t * 3 + j] ?? 0
+      for (let k = 0; k < 3; k++) {
+        const v = m.positions[vi * 3 + k] ?? 0
+        tri[t * 9 + j * 3 + k] = v
+        if (v < lo[k]!) lo[k] = v
+        if (v > hi[k]!) hi[k] = v
+      }
+    }
+  const span = Math.max(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!, 1e-9)
+  const pad = span * 1e-6
+  const ext = [0, 1, 2].map((k) => Math.max(hi[k]! - lo[k]!, span * 1e-3))
+  // about one facet per cell, coarser until the cells and the entries fit
+  let h = Math.cbrt((ext[0]! * ext[1]! * ext[2]!) / Math.min(tris, MAX_CELLS))
+  let n0 = 1
+  let n1 = 1
+  let n2 = 1
+  let cs0 = ext[0]!
+  let cs1 = ext[1]!
+  let cs2 = ext[2]!
+  const cell = (v: number, k: number, size: number, count: number): number => Math.min(count - 1, Math.max(0, Math.floor((v - lo[k]!) / size)))
+  const range = (t: number, k: number, size: number, count: number): [number, number] => {
+    const b = t * 9 + k
+    const a = Math.min(tri[b]!, tri[b + 3]!, tri[b + 6]!)
+    const z = Math.max(tri[b]!, tri[b + 3]!, tri[b + 6]!)
+    return [cell(a - pad, k, size, count), cell(z + pad, k, size, count)]
+  }
+  let entries = 0
+  for (;;) {
+    n0 = Math.max(1, Math.ceil(ext[0]! / h))
+    n1 = Math.max(1, Math.ceil(ext[1]! / h))
+    n2 = Math.max(1, Math.ceil(ext[2]! / h))
+    cs0 = ext[0]! / n0
+    cs1 = ext[1]! / n1
+    cs2 = ext[2]! / n2
+    const cells = n0 * n1 * n2
+    if (cells > MAX_CELLS) {
+      h *= 1.26
+      continue
+    }
+    entries = 0
+    for (let t = 0; t < tris; t++) {
+      const [a0, z0] = range(t, 0, cs0, n0)
+      const [a1, z1] = range(t, 1, cs1, n1)
+      const [a2, z2] = range(t, 2, cs2, n2)
+      entries += (z0 - a0 + 1) * (z1 - a1 + 1) * (z2 - a2 + 1)
+    }
+    if (entries > MAX_ENTRIES && cells > 1) {
+      h *= 1.26
+      continue
+    }
+    break
+  }
+  // the facets of each cell, in one list: cell c holds items[start[c]] up to items[start[c + 1]]
+  const cells = n0 * n1 * n2
+  const start = new Int32Array(cells + 1)
+  const items = new Int32Array(entries)
+  for (let pass = 0; pass < 2; pass++) {
+    const fill = pass === 1 ? start.slice(0, cells) : null
+    for (let t = 0; t < tris; t++) {
+      const [a0, z0] = range(t, 0, cs0, n0)
+      const [a1, z1] = range(t, 1, cs1, n1)
+      const [a2, z2] = range(t, 2, cs2, n2)
+      for (let c2 = a2; c2 <= z2; c2++)
+        for (let c1 = a1; c1 <= z1; c1++)
+          for (let c0 = a0; c0 <= z0; c0++) {
+            const c = (c2 * n1 + c1) * n0 + c0
+            if (fill) items[fill[c]!++] = t
+            else start[c + 1]!++
+          }
+    }
+    if (pass === 0) for (let c = 0; c < cells; c++) start[c + 1] = start[c + 1]! + start[c]!
+  }
+  // the ray each facet was last tested against, so a facet in several cells is tested once per ray
+  const tested = new Int32Array(tris).fill(-1)
+  let best = bestSoFar
+  for (let t = 0; t < tris; t++) {
+    if ((t & 255) === 0 && late()) return null
+    const b = t * 9
+    const e10 = tri[b + 3]! - tri[b]!
+    const e11 = tri[b + 4]! - tri[b + 1]!
+    const e12 = tri[b + 5]! - tri[b + 2]!
+    const e20 = tri[b + 6]! - tri[b]!
+    const e21 = tri[b + 7]! - tri[b + 1]!
+    const e22 = tri[b + 8]! - tri[b + 2]!
+    const nx = e11 * e22 - e12 * e21
+    const ny = e12 * e20 - e10 * e22
+    const nz = e10 * e21 - e11 * e20
+    const l = Math.hypot(nx, ny, nz)
+    if (l < 1e-12) continue
+    const d0 = -nx / l
+    const d1 = -ny / l
+    const d2 = -nz / l
+    const o0 = (tri[b]! + tri[b + 3]! + tri[b + 6]!) / 3
+    const o1 = (tri[b + 1]! + tri[b + 4]! + tri[b + 7]!) / 3
+    const o2 = (tri[b + 2]! + tri[b + 5]! + tri[b + 8]!) / 3
+    // walk the cells the ray passes through, nearest first (Amanatides and Woo)
+    let i0 = cell(o0, 0, cs0, n0)
+    let i1 = cell(o1, 1, cs1, n1)
+    let i2 = cell(o2, 2, cs2, n2)
+    const s0 = d0 > 0 ? 1 : -1
+    const s1 = d1 > 0 ? 1 : -1
+    const s2 = d2 > 0 ? 1 : -1
+    let t0 = d0 !== 0 ? (lo[0]! + (i0 + (d0 > 0 ? 1 : 0)) * cs0 - o0) / d0 : Infinity
+    let t1 = d1 !== 0 ? (lo[1]! + (i1 + (d1 > 0 ? 1 : 0)) * cs1 - o1) / d1 : Infinity
+    let t2 = d2 !== 0 ? (lo[2]! + (i2 + (d2 > 0 ? 1 : 0)) * cs2 - o2) / d2 : Infinity
+    const dt0 = d0 !== 0 ? cs0 / Math.abs(d0) : Infinity
+    const dt1 = d1 !== 0 ? cs1 / Math.abs(d1) : Infinity
+    const dt2 = d2 !== 0 ? cs2 / Math.abs(d2) : Infinity
+    let hit = Infinity
+    for (;;) {
+      const c = (i2 * n1 + i1) * n0 + i0
+      for (let q = start[c]!; q < start[c + 1]!; q++) {
+        const f = items[q]!
+        if (f === t || tested[f] === t) continue
+        tested[f] = t
+        const d = rayHit(o0, o1, o2, d0, d1, d2, tri, f * 9)
+        if (d > 1e-6 && d < hit) hit = d
+      }
+      const exit = Math.min(t0, t1, t2)
+      // a hit inside the cells walked so far is the first; a cell past the best wall cannot beat it
+      if (hit <= exit || exit >= best) break
+      if (t0 === exit) {
+        i0 += s0
+        if (i0 < 0 || i0 >= n0) break
+        t0 += dt0
+      } else if (t1 === exit) {
+        i1 += s1
+        if (i1 < 0 || i1 >= n1) break
+        t1 += dt1
+      } else {
+        i2 += s2
+        if (i2 < 0 || i2 >= n2) break
+        t2 += dt2
+      }
+    }
+    if (hit < best) best = hit
+  }
+  return best
+}
+
+/** Where a ray meets the triangle at `tri[at]` (nine numbers), as its distance along the ray (Moller and Trumbore), or -1. */
+function rayHit(f0: number, f1: number, f2: number, d0: number, d1: number, d2: number, tri: Float64Array, at: number): number {
+  const a0 = tri[at]!
+  const a1 = tri[at + 1]!
+  const a2 = tri[at + 2]!
+  const e10 = tri[at + 3]! - a0
+  const e11 = tri[at + 4]! - a1
+  const e12 = tri[at + 5]! - a2
+  const e20 = tri[at + 6]! - a0
+  const e21 = tri[at + 7]! - a1
+  const e22 = tri[at + 8]! - a2
+  // p = dir x e2
+  const p0 = d1 * e22 - d2 * e21
+  const p1 = d2 * e20 - d0 * e22
+  const p2 = d0 * e21 - d1 * e20
+  const det = e10 * p0 + e11 * p1 + e12 * p2
+  if (Math.abs(det) < 1e-12) return -1
   const inv = 1 / det
-  const s = sub(from, a)
-  const u = dot(s, p) * inv
-  if (u < -1e-9 || u > 1 + 1e-9) return null
-  const q = cross(s, e1)
-  const v = dot(dir, q) * inv
-  if (v < -1e-9 || u + v > 1 + 1e-9) return null
-  return dot(e2, q) * inv
+  const s0 = f0 - a0
+  const s1 = f1 - a1
+  const s2 = f2 - a2
+  const u = (s0 * p0 + s1 * p1 + s2 * p2) * inv
+  if (u < -1e-9 || u > 1 + 1e-9) return -1
+  // q = s x e1
+  const q0 = s1 * e12 - s2 * e11
+  const q1 = s2 * e10 - s0 * e12
+  const q2 = s0 * e11 - s1 * e10
+  const v = (d0 * q0 + d1 * q1 + d2 * q2) * inv
+  if (v < -1e-9 || u + v > 1 + 1e-9) return -1
+  return (e20 * q0 + e21 * q1 + e22 * q2) * inv
 }
