@@ -4,6 +4,7 @@
 // (slicerx-memory-<edition>), so one edition never reads what the person told another on the same machine. The app
 // reads and writes them through its one handle (memory.ts), never this store directly.
 import type { MemoryFact, MemoryStore } from '@slicerx/pilot'
+import { appName } from '../edition'
 
 const TABLE = 'facts'
 
@@ -28,7 +29,7 @@ function open(idb: IDBFactory, name: string): Promise<IDBDatabase> {
     req.onblocked = () => {
       if (settled) return
       settled = true
-      reject(new Error('The memory store is busy in another SlicerX window. Close it and try again.'))
+      reject(new Error(`The memory store is busy in another ${appName()} window. Close it and try again.`))
     }
   })
 }
