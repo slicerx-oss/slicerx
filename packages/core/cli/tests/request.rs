@@ -761,14 +761,86 @@ fn box_3mf(settings: Option<&serde_json::Value>) -> Vec<u8> {
 
 /// [`box_3mf`] with more files of the project, such as its brim ears or layer marks.
 fn box_3mf_with(settings: Option<&serde_json::Value>, extra: &[(&str, &str)]) -> Vec<u8> {
-    let model = r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-01.10.02.73</metadata><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>"#;
     let text = settings.map(ToString::to_string);
+    box_3mf_raw(text.as_deref().map(str::as_bytes), extra)
+}
+
+/// [`box_3mf_with`] with `settings` as the bytes of its `Metadata/project_settings.config`, JSON or not.
+fn box_3mf_raw(settings: Option<&[u8]>, extra: &[(&str, &str)]) -> Vec<u8> {
+    let model = r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-01.10.02.73</metadata><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>"#;
     let mut entries: Vec<(&str, &[u8])> = vec![("3D/3dmodel.model", model.as_bytes())];
-    if let Some(t) = &text {
-        entries.push(("Metadata/project_settings.config", t.as_bytes()));
+    if let Some(s) = settings {
+        entries.push(("Metadata/project_settings.config", s));
     }
     entries.extend(extra.iter().map(|(n, t)| (*n, t.as_bytes())));
     zip(&entries)
+}
+
+/// A project whose `project_settings.config` is not JSON still slices: an empty one as a plain 3MF, JSON after a byte
+/// order mark with its own settings, and INI style lines or a damaged file with the defaults and a note saying the
+/// settings were left out. `--strict` refuses those, and `sx metadata` gives the reason.
+#[test]
+fn a_project_whose_settings_are_not_json_still_slices() {
+    let dir = temp_dir(format!("sx-cli-project-not-json-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let json = b"{\"layer_height\": \"0.3\", \"initial_layer_print_height\": \"0.3\"}\n";
+    let bom = [&b"\xEF\xBB\xBF"[..], json].concat();
+    let ini = b"; an older export\n\nlayer_height = 0.3\ninitial_layer_print_height = 0.3\nnozzle_diameter = 0.4,0.4\n";
+    let run = |name: &str, settings: Option<&[u8]>, extra: &[&str]| {
+        let path = dir.join(name);
+        std::fs::write(&path, box_3mf_raw(settings, &[])).unwrap();
+        sx().arg("slice")
+            .arg(&path)
+            .args(["-o", "-"])
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let ok = |name: &str, settings: Option<&[u8]>| {
+        let out = run(name, settings, &[]);
+        let err = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(out.status.success(), "{name}: {err}");
+        (layers(&out.stderr), err)
+    };
+    let (plain, _) = ok("plain.3mf", None);
+    for (name, blank) in [("empty.3mf", &b""[..]), ("blank.3mf", b" \r\n\t\n")] {
+        let (n, err) = ok(name, Some(blank));
+        assert_eq!(n, plain, "{name}: {err}");
+        assert!(!err.contains("left out"), "{name}: {err}");
+    }
+    assert_eq!(ok("bom.3mf", Some(&bom)).0, 33);
+    let (n, err) = ok("ini.3mf", Some(ini));
+    assert_eq!(n, plain, "{err}");
+    assert!(
+        err.contains(
+            "ini.3mf: Metadata/project_settings.config holds INI style settings (key = value lines), not JSON, so the \
+             project's print settings were left out"
+        ),
+        "{err}"
+    );
+    let (n, err) = ok("cut.3mf", Some(&json[..30]));
+    assert_eq!(n, plain, "{err}");
+    assert!(
+        err.contains("cut.3mf: Metadata/project_settings.config is not JSON (EOF while parsing"),
+        "{err}"
+    );
+    let strict = run("ini.3mf", Some(ini), &["--strict"]);
+    let err = String::from_utf8_lossy(&strict.stderr);
+    assert_eq!(strict.status.code(), Some(3), "{err}");
+    assert!(
+        err.contains("--strict") && err.contains("INI style settings"),
+        "{err}"
+    );
+    let meta = sx().arg("metadata").arg(dir.join("ini.3mf")).output().unwrap();
+    assert!(meta.status.success(), "{}", String::from_utf8_lossy(&meta.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&meta.stdout).unwrap();
+    assert!(v.get("projectSettings").is_none(), "{v}");
+    assert!(
+        v["settingsSkipped"]
+            .as_str()
+            .is_some_and(|s| s.contains("INI style settings")),
+        "{v}"
+    );
 }
 
 /// The layer count `sx slice` reports on stderr ("N layers, ...").

@@ -890,17 +890,23 @@ fn read_config_value(config: &mut PrintConfig, value: &Value) -> Res<sx_core::ap
 
 /// The settings `sx slice <model>` prints with, lowest first: the engine's defaults, a project's own settings (our
 /// engine choices kept where it did not change them), the object's own settings, then `--config`; and what they set
-/// that the engine does not use; and which of them set `chamber_cooling_mode` last (`project` for the project's or the
-/// object's settings, `preset` for `--config`).
+/// that the engine does not use; which of them set `chamber_cooling_mode` last (`project` for the project's or the
+/// object's settings, `preset` for `--config`); and why a project's settings were left out, when they could not be read.
 fn layered_config(
     args: &[String],
     model: &str,
     bytes: &[u8],
     mesh: &Mesh,
-) -> Res<(PrintConfig, sx_core::api::ConfigReport, Option<&'static str>)> {
+) -> Res<(
+    PrintConfig,
+    sx_core::api::ConfigReport,
+    Option<&'static str>,
+    Option<String>,
+)> {
     let mut config = PrintConfig::default();
     let mut report = sx_core::api::ConfigReport::default();
     let mut chamber_from = None;
+    let mut skipped = None;
     let sets_chamber = |v: &Value| v.get(sx_core::chamber::KEY).is_some();
     let is_3mf = Path::new(model)
         .extension()
@@ -909,6 +915,7 @@ fn layered_config(
         && !has(args, "--no-project-settings")
         && let Some(project) = sx_core::api::project_config(bytes, model)?
     {
+        skipped = project.skipped;
         let settings = Value::Object(project.settings);
         if sets_chamber(&settings) {
             chamber_from = Some("project");
@@ -952,7 +959,31 @@ fn layered_config(
             "the settings",
         ));
     }
-    Ok((config, report, chamber_from))
+    Ok((config, report, chamber_from, skipped))
+}
+
+/// Prints why a project's settings were left out, the walls the slice runs and what the settings set that the engine
+/// does not use. With `--strict`, either of the first and last refuses the slice: the exit code to stop with.
+fn settings_notes(
+    args: &[String],
+    report: &sx_core::api::ConfigReport,
+    skipped: Option<String>,
+) -> Option<ExitCode> {
+    if let Some(why) = &skipped {
+        eprintln!("sx: {why}");
+    }
+    if let Some(w) = &report.walls {
+        eprintln!("sx: walls: {}", w.text);
+    }
+    if !report.is_empty() || !report.kept.is_empty() {
+        print_config_report(report);
+    }
+    if has(args, "--strict") && (!report.is_empty() || skipped.is_some()) {
+        let why: Vec<String> = skipped.into_iter().chain(report.lines()).collect();
+        eprintln!("sx slice: --strict: {}", why.join("; "));
+        return Some(ExitCode::from(EXIT_INPUT));
+    }
+    None
 }
 
 fn cmd_slice(args: &[String]) -> Res<ExitCode> {
@@ -972,16 +1003,9 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         }
         None => Mesh::load(&bytes, model)?,
     };
-    let (mut config, report, chamber_from) = layered_config(args, model, &bytes, &mesh)?;
-    if let Some(w) = &report.walls {
-        eprintln!("sx: walls: {}", w.text);
-    }
-    if !report.is_empty() || !report.kept.is_empty() {
-        print_config_report(&report);
-    }
-    if has(args, "--strict") && !report.is_empty() {
-        eprintln!("sx slice: --strict: {}", report.lines().join("; "));
-        return Ok(ExitCode::from(EXIT_INPUT));
+    let (mut config, report, chamber_from, skipped) = layered_config(args, model, &bytes, &mesh)?;
+    if let Some(code) = settings_notes(args, &report, skipped) {
+        return Ok(code);
     }
     config.trusted_gcode_keys = review_config_scripts(&config.raw, script_target(args)?.as_ref(), None)?.0;
     // The same limits every entry point applies: settings past the nozzle and machine limits are lowered.

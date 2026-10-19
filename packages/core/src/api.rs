@@ -522,6 +522,9 @@ pub struct ProjectConfig {
     pub dropped: Vec<String>,
     /// Which wall generator the project's settings give and why, when they name one or ours is kept.
     pub walls: Option<WallsNote>,
+    /// Why the file's `Metadata/project_settings.config` was left out (it is not a JSON object of settings); `settings`
+    /// is then empty and the project slices as one without settings.
+    pub skipped: Option<String>,
 }
 
 /// Our engine choices: key, the value we print with, and the note.
@@ -572,9 +575,16 @@ fn same_value(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     a == b || text(a).is_some_and(|t| text(b).as_ref() == Some(&t))
 }
 
-/// A project file's own print settings as a config, or `None` when the file has none (a plain 3MF).
+/// A project file's own print settings as a config, or `None` when the file has none (a plain 3MF, or an empty
+/// settings file). Settings that cannot be read give an empty config with the reason in `skipped`.
 pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>> {
     let meta = crate::threemf::metadata(bytes, name)?;
+    if let Some(why) = meta.settings_skipped {
+        return Ok(Some(ProjectConfig {
+            skipped: Some(why),
+            ..ProjectConfig::default()
+        }));
+    }
     let Some(serde_json::Value::Object(mut settings)) = meta.project_settings else {
         return Ok(None);
     };
@@ -615,6 +625,7 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
         kept,
         dropped: meta.dropped_keys,
         walls,
+        skipped: None,
     }))
 }
 
