@@ -14,8 +14,8 @@ import { EditionContext, NEUTRAL } from '../src/edition'
 import { MEMORY_CARDS } from '../src/features/pilot/remember-chip'
 import { HostContext } from '../src/host'
 import { MemorySection } from '../src/pilot-connect/memory-section'
-import { memoryFor, pilotMemory } from '../src/pilot-connect/memory'
-import { set } from '../src/state/store'
+import { bindMemoryAccount, memoryFor, pilotMemory } from '../src/pilot-connect/memory'
+import { get, set } from '../src/state/store'
 
 const printers = { list: async () => [], plugins: async () => [], fleets: async () => [], status: async () => { throw new Error('none') }, subscribe: () => () => undefined } as unknown as PrinterHost
 const noLlm = { available: async () => false, stream: () => { throw new Error('scripted') } }
@@ -46,7 +46,7 @@ afterEach(() => cleanup())
 
 /** A run of mimir on the app's handle up to its first card, with the rest to drain once it is answered. */
 async function untilCard(steps: ScriptStep[], ask: string) {
-  const pilot = createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), memory: pilotMemory(NEUTRAL, store) })
+  const pilot = createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), memory: pilotMemory(NEUTRAL) })
   const run = pilot.run('s', ask)[Symbol.asyncIterator]()
   const events: PilotEvent[] = []
   for (let n = await run.next(); !n.done; n = await run.next()) {
@@ -231,5 +231,64 @@ describe('Settings > Memory', () => {
     expect(out.version).toBe(1)
     expect(out.facts.map((f) => f.id).sort()).toEqual(['a1', 'petg', 'pla', 'shelf'])
     expect(out.facts.find((f) => f.id === 'a1')).toEqual(SEED[0])
+  })
+})
+
+describe('Settings > Memory > Sync with my account', () => {
+  const OPT_IN = { ...NEUTRAL, ai: { ...NEUTRAL.ai, brain: { ...NEUTRAL.ai.brain, memory: { ...NEUTRAL.ai.brain.memory, sync: 'opt-in' as const } } } }
+  const mountAs = (edition: typeof NEUTRAL) => render(createElement(HostContext.Provider, { value: HOST }, createElement(EditionContext.Provider, { value: edition }, createElement(MemorySection))))
+  const calls: string[] = []
+  let token: string | null = null
+  let listener: ((t: string | null) => void) | null = null
+  const account = {
+    key: {},
+    target: { url: 'https://project.example', anonKey: 'anon' },
+    getAccessToken: async () => token,
+    onTokenChange: (cb: (t: string | null) => void) => ((listener = cb), () => void (listener = null)),
+    fetch: (async (url: string, init?: RequestInit) => (calls.push(`${init?.method ?? 'GET'} ${url}`), init?.method === 'POST' ? new Response(null, { status: 201 }) : new Response('[]', { status: 200 }))) as unknown as typeof fetch,
+  }
+  beforeEach(() => {
+    calls.length = 0
+    token = null
+    set({ mimirMemorySync: false })
+    bindMemoryAccount(account)
+  })
+  afterEach(() => {
+    bindMemoryAccount(null)
+    set({ mimirMemorySync: false })
+  })
+
+  it('shows only when signed in where the edition offers it, and turning it on syncs at once', async () => {
+    mountAs(OPT_IN)
+    await screen.findByRole('heading', { name: 'Memory' })
+    expect(screen.queryByTestId('memory-sync')).toBeNull()
+    expect(screen.getByText(/They stay on this computer\.$/)).toBeTruthy()
+    // signing in shows the switch, off until the person turns it on
+    token = 'session-token'
+    act(() => listener?.('session-token'))
+    const sw = await screen.findByTestId('memory-sync')
+    expect(sw.getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByText('Sync with my account')).toBeTruthy()
+    fireEvent.click(sw)
+    expect(get().mimirMemorySync).toBe(true)
+    await waitFor(() => expect(calls.some((c) => c.startsWith('GET https://project.example/rest/v1/mimir_memory'))).toBe(true))
+    expect(screen.getByText(/They stay on this computer and in your account\.$/)).toBeTruthy()
+    // signing out hides it again
+    token = null
+    act(() => listener?.(null))
+    await waitFor(() => expect(screen.queryByTestId('memory-sync')).toBeNull())
+  })
+
+  it('stays hidden, signed in, when the edition keeps notes on this computer', async () => {
+    token = 'session-token'
+    bindMemoryAccount(null)
+    bindMemoryAccount(account)
+    mountAs(NEUTRAL)
+    await screen.findByRole('heading', { name: 'Memory' })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(NEUTRAL.ai.brain.memory.sync).toBe('off')
+    expect(screen.queryByTestId('memory-sync')).toBeNull()
   })
 })

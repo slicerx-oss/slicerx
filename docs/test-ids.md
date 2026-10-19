@@ -392,6 +392,7 @@ The notes mimir keeps about the person's printers, filaments, preferences, sizes
 | `mimir-remember-yes` | Remember on the chip: the note is saved |
 | `mimir-remember-no` | Not now on the chip: nothing is saved |
 | `memory-without-asking` | Settings > Memory: Save notes without asking (off by default; on, no chip shows) |
+| `memory-sync` | Settings > Memory: Sync with my account (shown only when signed in and the edition's ai.brain.memory.sync is opt-in; off by default) |
 | `memory-export` | Export: saves every note as one JSON file |
 | `danger-memory-clear` | Clear all (asks first) |
 | `danger-memory-clear-confirm` | Clear all in the confirm: removes every note from this computer |

@@ -9,7 +9,7 @@ import { createApprovalBroker } from '../src/permit/broker'
 import { DEFAULT_CONFIG } from '../src/config'
 import type { LlmClient, LlmMessage } from '../src/provider/types'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
-import { createPilot, INPUT_WITHHELD, type CreatePilotOptions } from '../src/runtime'
+import { CHAT_START_WAIT_MS, createPilot, INPUT_WITHHELD, type CreatePilotOptions } from '../src/runtime'
 import { defineTool } from '../src/tool'
 import { z } from 'zod'
 
@@ -29,7 +29,7 @@ function rows(): MemoryStore & { rows: Map<string, MemoryFact> } {
 
 const fact = (id: string, kind: MemoryFact['kind'], text: string, updatedAt: number, data?: MemoryFact['data']): MemoryFact => ({ id, kind, text, updatedAt, ...(data ? { data } : {}) })
 
-function pilotWith(steps: ScriptStep[], memory: { local: boolean; store: MemoryStore; ask?: () => boolean }, more: Partial<CreatePilotOptions> = {}) {
+function pilotWith(steps: ScriptStep[], memory: NonNullable<CreatePilotOptions['memory']>, more: Partial<CreatePilotOptions> = {}) {
   return createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), memory, ...more })
 }
 
@@ -117,6 +117,34 @@ describe('which notes mimir reads', () => {
     expect(seen[0]).toContain('- Prusa MK4S in the shed')
     expect(seen[0]!.indexOf('Permissions:')).toBeLessThan(seen[0]!.indexOf('What you know about this person'))
     expect(seen[1]).not.toContain('What you know about this person')
+  })
+})
+
+describe('the host syncs notes when a chat starts', () => {
+  it("a chat's first message waits for the host's sync, so a synced note is in the notes block; later messages do not sync", async () => {
+    const store = rows()
+    let syncs = 0
+    const chatStarted = async (): Promise<void> => {
+      syncs++
+      await store.put(fact('synced', 'printer', 'Has a Prusa MK4S from the other computer', 1))
+    }
+    const seen: string[] = []
+    const pilot = pilotWith([(m) => (seen.push(String(m.at(-1)?.content)), { text: 'Ok.' }), (m) => (seen.push(String(m.at(-1)?.content)), { text: 'Ok.' })], { local: true, store, chatStarted })
+    for await (const _ of pilot.run('s', 'Which printer do I have?')) void _
+    for await (const _ of pilot.run('s', 'And then?')) void _
+    expect(syncs).toBe(1)
+    expect(seen[0]).toContain('- Has a Prusa MK4S from the other computer')
+  })
+
+  it('a sync that hangs or fails never holds the chat up past the wait', async () => {
+    for (const chatStarted of [() => new Promise<void>(() => undefined), () => Promise.reject(new Error('offline'))]) {
+      const pilot = pilotWith([{ text: 'Ok.' }], { local: true, store: rows(), chatStarted })
+      const t0 = Date.now()
+      const events: PilotEvent[] = []
+      for await (const ev of pilot.run('s', 'Hello')) events.push(ev)
+      expect(events.at(-1)).toMatchObject({ type: 'done' })
+      expect(Date.now() - t0).toBeLessThan(CHAT_START_WAIT_MS + 1000)
+    }
   })
 })
 

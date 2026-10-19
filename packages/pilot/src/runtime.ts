@@ -87,9 +87,10 @@ export interface CreatePilotOptions {
    * The person's saved notes and the edition's ai.brain.memory.local switch. On: memory.remember and memory.recall, and
    * the notes that fit (pickFacts) on a chat's first message. Off or unset: neither tool, and no notes. `remember: false`
    * leaves memory.remember out, for a host that cannot grant the approval saving a note needs. `ask` false saves a note
-   * without the card (read at each save); unset asks.
+   * without the card (read at each save); unset asks. `chatStarted` runs before the notes are read on a chat's first
+   * message (the host's sync with the account); the chat waits for it at most CHAT_START_WAIT_MS.
    */
-  memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean }
+  memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean; chatStarted?: () => Promise<unknown> }
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
   /** How long an approval card waits before it expires, ms. */
@@ -106,6 +107,18 @@ interface Pending {
 }
 
 /** The tools a host that only models offers mimir (besides its app commands): parts, the knowledge base and the project. */
+/** How long a chat's first message waits for the host's memory sync before it reads the notes it has. */
+export const CHAT_START_WAIT_MS = 1500
+
+/** Settles when `p` does or after `ms`, whichever is first; never throws. */
+function within(p: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, ms)
+  })
+  return Promise.race([p.then(() => undefined, () => undefined), late]).finally(() => clearTimeout(timer))
+}
+
 export const CAD_TOOLS: ReadonlySet<string> = new Set(['text_to_part', 'make_model', 'cut', 'walls', 'material_recommend', 'kb.search', 'kb.filament', 'kb.printer', 'kb.workflow', 'kb.troubleshoot', 'kb.intent', 'kb.sources', 'parts.lookup', 'web.lookup', 'project.info', 'pilot.report'])
 
 /** The built-in tools the mimir tab keeps beside its design tools: knowledge, standard part and web lookups, never a part generator. */
@@ -802,8 +815,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           return
         }
         const attached = files?.names.length ? `\n\nAttached: ${files.names.join(', ')}` : ''
-        // the person's notes ride on a chat's first message, the ones about what it asks first
-        const notes = memory && !messages.some((m) => m.role === 'user') ? pickFacts(await memory.list().catch(() => []), message).map(factLine) : []
+        // the person's notes ride on a chat's first message, the ones about what it asks first; the host syncs them
+        // first (briefly: a slow network never holds the chat up)
+        const first = !messages.some((m) => m.role === 'user')
+        if (memory && first && opts.memory?.chatStarted) await within(opts.memory.chatStarted(), CHAT_START_WAIT_MS)
+        const notes = memory && first ? pickFacts(await memory.list().catch(() => []), message).map(factLine) : []
         messages.push({
           role: 'user',
           content: `${contextMessage(context, policy, today, notes)}\n\nUser request:\n${message}${attached}`,

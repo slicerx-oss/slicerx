@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Settings > Memory: the notes mimir keeps about the person, by kind, each one edited or deleted in place; whether a
-// note is saved without asking; Export (every note as one JSON file) and Clear all, which asks first. Every change goes
+// note is saved without asking; whether notes sync with the account (signed in, where the edition offers it); Export (every note as one JSON file) and Clear all, which asks first. Every change goes
 // through the app's one handle on the edition's notes (memory.ts), the same one mimir saves through.
 import { NOTE_MAX, noteProblem, type MemoryFact, type MemoryKind } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
@@ -11,7 +11,7 @@ import { useEdition } from '../edition'
 import { useHost } from '../host'
 import { Loading } from '../shell/loading'
 import { set, useApp } from '../state/store'
-import { useMemoryStore, type WatchedMemory } from './memory'
+import { syncMemoryNow, useMemoryAccount, useMemorySignedIn, useMemoryStore, type WatchedMemory } from './memory'
 import './connect.css'
 
 /** The kinds in the order Settings lists them, in plain words. */
@@ -167,6 +167,11 @@ function MemoryBody() {
   const edition = useEdition()
   const toast = useToast()
   const withoutAsking = useApp((s) => s.mimirRememberWithoutAsking)
+  const syncOn = useApp((s) => s.mimirMemorySync)
+  useMemoryAccount()
+  const signedIn = useMemorySignedIn()
+  // the switch shows only to a signed-in person, and only where the edition lets notes go to the account
+  const canSync = signedIn && edition.ai.brain.memory.sync === 'opt-in'
   const [clearing, setClearing] = useState(false)
   const count = facts?.length ?? 0
   const sec = useRef<HTMLElement>(null)
@@ -228,7 +233,7 @@ function MemoryBody() {
       <h3 id="mem-h" ref={heading} tabIndex={-1}>
         Memory
       </h3>
-      <p className="sx-small sx-muted">Notes {ASSISTANT_NAME} keeps about your printers, filaments and what worked, so you don't have to repeat yourself. They stay on this computer.</p>
+      <p className="sx-small sx-muted">Notes {ASSISTANT_NAME} keeps about your printers, filaments and what worked, so you don't have to repeat yourself. {canSync && syncOn ? 'They stay on this computer and in your account.' : 'They stay on this computer.'}</p>
       <SwitchRow
         id="memory-without-asking"
         testId="memory-without-asking"
@@ -237,8 +242,19 @@ function MemoryBody() {
         checked={withoutAsking}
         onChange={(v) => set({ mimirRememberWithoutAsking: v })}
       />
-      {/* Sync with my account goes here, under Save notes without asking, once notes can be copied to the account
-          (the edition's ai.brain.memory.sync). */}
+      {canSync ? (
+        <SwitchRow
+          id="memory-sync"
+          testId="memory-sync"
+          label="Sync with my account"
+          detail="Keeps a copy of your notes in your account, so they follow you to your other computers."
+          checked={syncOn}
+          onChange={(v) => {
+            set({ mimirMemorySync: v })
+            if (v) void syncMemoryNow()
+          }}
+        />
+      ) : null}
       {/* Clear all at the row's right end, so its confirm opens leftward inside the dialog and never needs lifting out */}
       <div className="set-actions mem-actions">
         <Button icon="export" data-testid="memory-export" disabled={count === 0} onClick={() => void exportAll()}>

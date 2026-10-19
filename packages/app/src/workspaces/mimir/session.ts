@@ -16,7 +16,7 @@ import { useEdition } from '../../edition'
 import { bundledKb } from '../../features/pilot/kb'
 import { useHost } from '../../host'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
-import { appMemory } from '../../pilot-connect/memory'
+import { pilotMemory, useMemoryAccount } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { get, useApp, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
@@ -132,8 +132,7 @@ export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknow
       // the person's notes, through the same memory handle as the dock and the app link. The tab reads them (the notes
       // on a chat's first message, and memory.recall); saving one needs an approval, which the tab cannot grant, so the
       // dock and the app link are where notes are saved.
-      const memory = appMemory(edition)
-      const pilot = createPilot(tabPilotOptions({ llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: { local: memory.local, store: memory.store, remember: false } }))
+      const pilot = createPilot(tabPilotOptions({ llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: pilotMemory(edition, { remember: false }) }))
       const auto = config.auto && config.models?.huginn && config.models.muninn ? { huginn: config.models.huginn, muninn: config.models.muninn } : undefined
       made = { pilot, model: { link: 'model', provider: config.provider, model: config.model, ...(auto ? { auto } : {}) } }
     } else {
@@ -157,6 +156,8 @@ export function useTabMimir(): Pilot | null {
   const edition = useEdition()
   const cloud = useMimirCloudHost()
   const pref = useApp((s) => s.pilot)
+  // the account notes sync with, when this host has one
+  useMemoryAccount()
   const [pilot, setPilot] = useState<Pilot | null>(() => (current?.key === setupKey(host, edition, get().pilot, cloud) ? current.pilot : null))
   useEffect(() => {
     let live = true

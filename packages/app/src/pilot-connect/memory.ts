@@ -5,19 +5,28 @@
 // Settings > Memory. The local store (memory-store.ts) sits under the sync wrapper (memory-sync.ts), so a removal or a
 // clear records the tombstone a later sync sends, whichever of them made it; on top, every change is announced, so a
 // note saved in the chat shows in Settings at once.
+//
+// Sync with the account runs at each chat start and shortly after each change, and only while the person is signed
+// in, the edition offers it (ai.brain.memory.sync 'opt-in') and the person turned it on (Settings > Memory > Sync with
+// my account). It talks to the edition's Supabase project with the same session token the rest of the app's cloud
+// calls carry (the host's store client).
 import type { EditionConfig } from '@slicerx/edition-config'
 import type { CreatePilotOptions, MemoryFact, MemoryStore } from '@slicerx/pilot'
+import { useEffect, useSyncExternalStore } from 'react'
 import { setMemoryProvider, type MemoryProvider } from '../app-link/mimir-memory'
 import { useEdition } from '../edition'
+import { useHost } from '../host'
 import { get } from '../state/store'
 import { openMemoryStore } from './memory-store'
-import { startMemorySync, type MemorySync, type MemorySyncOptions } from './memory-sync'
+import { registerMemoryRemote, startMemorySync, supabaseMemoryRemote, type MemorySync, type MemorySyncOptions, type SupabaseTarget } from './memory-sync'
 
 export interface AppMemory {
   /** The edition's config id the notes belong to. */
   edition: string
   /** Whether the edition keeps notes at all (ai.brain.memory.local). */
   local: boolean
+  /** Whether the edition lets the person copy notes to their account (ai.brain.memory.sync), as last read. */
+  syncMode: 'off' | 'opt-in'
   /** The store to read and write through; it tells subscribers of each change made through it. */
   store: WatchedMemory
   sync: MemorySync
@@ -54,6 +63,91 @@ function watched(store: MemoryStore): WatchedMemory {
 
 let current: AppMemory | null = null
 
+/** The account notes sync with: the edition's Supabase project and the signed-in session's token. */
+export interface MemoryAccount {
+  /** What identifies this sign-in source (the host's store client), so binding the same one twice changes nothing. */
+  key: unknown
+  target: SupabaseTarget
+  getAccessToken(): Promise<string | null>
+  onTokenChange(cb: (token: string | null) => void): () => void
+  /** For tests; default the browser's fetch. */
+  fetch?: typeof fetch
+}
+
+let account: MemoryAccount | null = null
+let accountOff: (() => void) | null = null
+let signedIn = false
+const signInListeners = new Set<() => void>()
+
+function setSignedIn(v: boolean): void {
+  if (v === signedIn) return
+  signedIn = v
+  for (const l of signInListeners) l()
+  // signing in is a good moment to catch up, like a chat start
+  if (v) void current?.sync.chatStarted()
+}
+
+/**
+ * Sets the account notes sync with (null: none). The remote it registers carries the session token on every call, so
+ * signing out stops sync at once; signing in runs one.
+ */
+export function bindMemoryAccount(next: MemoryAccount | null): void {
+  if (next?.key === account?.key && next?.target.url === account?.target.url) return
+  accountOff?.()
+  accountOff = null
+  account = next
+  setSignedIn(false)
+  registerMemoryRemote(next ? supabaseMemoryRemote(next.target, () => next.getAccessToken(), next.fetch) : null)
+  if (!next) return
+  const seen = (t: string | null): void => {
+    if (account === next) setSignedIn(t !== null)
+  }
+  accountOff = next.onTokenChange(seen)
+  void next.getAccessToken().then(seen, () => seen(null))
+}
+
+type TokenStore = { getAccessToken(): Promise<string | null>; onTokenChange(cb: (token: string | null) => void): () => void }
+
+/** The account of an edition host (its store client and the edition's Supabase project), or null without one. */
+export function hostMemoryAccount(host: unknown, edition: Pick<EditionConfig, 'backend' | 'features'>): MemoryAccount | null {
+  const store = (host as { store?: Partial<TokenStore> } | null)?.store
+  const sb = edition.features.demoData ? null : edition.backend.supabase
+  if (!sb || typeof store?.getAccessToken !== 'function' || typeof store.onTokenChange !== 'function') return null
+  const s = store as TokenStore
+  return { key: s, target: { url: sb.url, anonKey: sb.anonKey }, getAccessToken: () => s.getAccessToken(), onTokenChange: (cb) => s.onTokenChange(cb) }
+}
+
+/** Binds this app's account for memory sync (once; a host without accounts leaves it as it is). */
+export function useMemoryAccount(): void {
+  const host = useHost()
+  const edition = useEdition()
+  useEffect(() => {
+    const a = hostMemoryAccount(host, edition)
+    if (a) bindMemoryAccount(a)
+  }, [host, edition])
+}
+
+/** Whether someone is signed in to the account memory syncs with. */
+export function useMemorySignedIn(): boolean {
+  return useSyncExternalStore(
+    (l) => {
+      signInListeners.add(l)
+      return () => void signInListeners.delete(l)
+    },
+    () => signedIn,
+  )
+}
+
+/** Whether notes sync now: signed in, the edition offers it, and the person turned it on. */
+export function memorySyncOn(): boolean {
+  return signedIn && current?.syncMode === 'opt-in' && get().mimirMemorySync
+}
+
+/** Runs a sync now when sync is on (Settings turning it on). */
+export function syncMemoryNow(): Promise<unknown> {
+  return current?.sync.chatStarted() ?? Promise.resolve()
+}
+
 const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
 
 /** The app link's view of the store: list by kind, and remember one fact (an equal note of the same kind is updated). */
@@ -82,15 +176,18 @@ export interface AppMemoryOptions {
  */
 export function appMemory(edition: Pick<EditionConfig, 'id' | 'ai'>, opts: AppMemoryOptions = {}): AppMemory {
   const local = edition.ai.brain.memory.local
-  if (current && current.edition === edition.id && current.local === local) return current
+  const syncMode = edition.ai.brain.memory.sync
+  if (current && current.edition === edition.id && current.local === local) {
+    current.syncMode = syncMode
+    return current
+  }
   current?.sync.stop()
   const base = (opts.open ?? openMemoryStore)(edition.id)
-  // TODO(stage 2, with the Settings switch): sync on at chat start, the remote from the session token
-  // (supabaseMemoryRemote) and enabled from ai.brain.memory.sync and the person's choice. Until then nothing is sent;
-  // the wrapper still keeps a tombstone for each removal so the first sync carries them.
-  const sync = startMemorySync(base, edition.id, { remote: null, ...opts.sync, enabled: opts.sync?.enabled ?? (() => false) })
+  // The remote is the one bindMemoryAccount registers (each call carries the session token). With sync off the
+  // wrapper still keeps a tombstone for each removal, so the first sync carries them.
+  const sync = startMemorySync(base, edition.id, { onError: (e) => console.warn('memory sync failed', e), ...opts.sync, enabled: opts.sync?.enabled ?? memorySyncOn })
   const store = watched(sync.store)
-  current = { edition: edition.id, local, store, sync }
+  current = { edition: edition.id, local, syncMode, store, sync }
   setMemoryProvider(local ? memoryProvider(store) : null)
   return current
 }
@@ -106,11 +203,13 @@ export function useMemoryStore(): WatchedMemory {
 }
 
 /**
- * What mimir runs with: the edition's switch, the shared store, and whether saving a note shows the chip first.
- * Settings > Memory > Save notes without asking turns the chip off, read at each save, so it applies at once.
+ * What mimir runs with: the edition's switch, the shared store, whether saving a note shows the chip first, and the
+ * sync each chat start runs (when sync is on). Settings > Memory > Save notes without asking turns the chip off, read
+ * at each save, so it applies at once. `remember: false` is for a host that cannot grant the approval a save needs.
  */
-export function pilotMemory(edition: Pick<EditionConfig, 'ai'>, store: MemoryStore): NonNullable<CreatePilotOptions['memory']> {
-  return { local: edition.ai.brain.memory.local, store, ask: () => !get().mimirRememberWithoutAsking }
+export function pilotMemory(edition: Pick<EditionConfig, 'id' | 'ai'>, opts: { remember?: boolean } = {}): NonNullable<CreatePilotOptions['memory']> {
+  const h = appMemory(edition)
+  return { local: h.local, store: h.store, ask: () => !get().mimirRememberWithoutAsking, chatStarted: () => h.sync.chatStarted(), ...(opts.remember === false ? { remember: false } : {}) }
 }
 
 /** Drops the handle and takes it off the app link (tests, and a window closing). */
@@ -118,4 +217,5 @@ export function resetAppMemory(): void {
   current?.sync.stop()
   current = null
   setMemoryProvider(null)
+  bindMemoryAccount(null)
 }
