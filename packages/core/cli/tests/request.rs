@@ -827,6 +827,47 @@ fn a_project_slices_with_its_painted_ears_and_layer_marks() {
     assert!(marked.contains(";TYPE:Brim"), "the painted ears are not printed");
     assert_eq!(marked.matches("M601").count(), 1, "the pause is not written once");
 }
+/// A project whose `Metadata/model_settings.config` has no `<plate>` entry is one plate, numbered 1, as a plain 3MF is:
+/// `--plate 1` and a `#1` mesh reference slice it, and any other plate is refused as one the file does not have.
+#[test]
+fn a_project_without_plate_entries_slices_as_plate_1() {
+    let dir = temp_dir(format!("sx-cli-no-plates-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = r#"<?xml version="1.0" encoding="UTF-8"?><config><object id="1"><metadata key="name" value="box"/><metadata key="extruder" value="1"/></object></config>"#;
+    let path = dir.join("no-plates.3mf");
+    std::fs::write(
+        &path,
+        box_3mf_with(None, &[("Metadata/model_settings.config", settings)]),
+    )
+    .unwrap();
+    let plate = |n: &str| {
+        sx().arg("slice")
+            .arg(&path)
+            .args(["--plate", n, "-o"])
+            .arg(dir.join(format!("plate-{n}.gcode")))
+            .output()
+            .unwrap()
+    };
+    let out = plate("1");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(layers(&out.stderr), 50);
+    let out = plate("2");
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("has no plate 2"), "{err}");
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": {"p": format!("{}#1", path.display())},
+        "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+        "config": {"layer_height": 0.2, "initial_layer_print_height": 0.2},
+    });
+    let request = dir.join("request.json");
+    std::fs::write(&request, req.to_string()).unwrap();
+    let out = sx().args(["slice", "--request"]).arg(&request).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["layerCount"], 50);
+}
 
 #[test]
 fn a_project_slices_with_its_own_settings() {
