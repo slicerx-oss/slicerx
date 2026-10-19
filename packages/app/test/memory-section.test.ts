@@ -113,7 +113,7 @@ describe('the chip', () => {
   })
 
   it('the chip shows where the note goes, for each of the three places', () => {
-    const lines = ['Kept on this computer for later chats.', 'Kept on this computer, and sent with chats to a computer on your network to answer them.', 'Kept on this computer, and sent with chats to the cloud to answer them.']
+    const lines = ['Kept on this computer for later chats.', 'Kept on this computer, and sent with chats to a computer on your network to answer them.', "Kept on this computer, and sent along with chats to the model's server to answer them."]
     for (const where of lines) {
       const request = { id: 'apr_1', sessionId: 's', tool: 'memory.remember', permission: 'profile' as const, title: 'Remember this?', lines: ['Has a Bambu Lab A1', where], paramsHash: 'x', actions: [], expiresAt: new Date(Date.now() + 60_000).toISOString() }
       const v = mount(createElement(TranscriptView, { transcript: foldEvents([{ type: 'approval_request', request, source: 'command' }], startTurn(emptyTranscript(), { user: 'Remember my A1' }, 0)), showThinking: false, approvals: { cards: MEMORY_CARDS, onApprove: async () => undefined, onCancel: async () => undefined } }))
@@ -124,9 +124,9 @@ describe('the chip', () => {
     }
   })
 
-  it('the chip says where notes go: to the cloud, to a computer on your network, or nowhere', async () => {
+  it("the chip says where notes go: to the model's server, to a computer on your network, or nowhere", async () => {
     const pilot = (where: NotesWhere) => createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(A1, { chunk: false }), memory: pilotMemory(NEUTRAL, { where }) })
-    const CLOUD = 'Kept on this computer, and sent with chats to the cloud to answer them.'
+    const CLOUD = "Kept on this computer, and sent along with chats to the model's server to answer them."
     const NETWORK = 'Kept on this computer, and sent with chats to a computer on your network to answer them.'
     const HERE = 'Kept on this computer for later chats.'
     // mimir cloud, and the person's own Anthropic or OpenAI key, answer from elsewhere; a server the person runs goes by
