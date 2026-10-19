@@ -174,6 +174,11 @@ describe('memory tools', () => {
     expect(on.registry().find((t) => t.name === 'memory.recall')?.permission).toBe('read')
   })
 
+  it('a host that cannot grant the approval reads notes but has no memory.remember', () => {
+    const pilot = createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([], { chunk: false }), memory: { local: true, store: rows(), remember: false } })
+    expect(pilot.registry().map((t) => t.name).filter((n) => n.startsWith('memory.'))).toEqual(['memory.recall'])
+  })
+
   it('remember asks before saving', async () => {
     const store = rows()
     const steps: ScriptStep[] = [{ calls: [{ name: 'memory.remember', args: { kind: 'printer', text: 'Has a Bambu Lab A1', data: { model: 'A1' } } }] }, { text: 'Saved.' }]
