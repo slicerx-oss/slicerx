@@ -138,6 +138,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.subtract': 'edit',
   // a built part checked against a plan the mimir tab made
   'design.check': 'read',
+  // a client's plan kept for design.check, beside the tab's; no card, nothing on the plate changes
+  'design.plan': 'read',
   // A client's dimension sheet: asking puts a question in front of the person, so it is an edit.
   'sheet.ask': 'edit',
   'sheet.get': 'read',
