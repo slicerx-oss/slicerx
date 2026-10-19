@@ -16,10 +16,11 @@ import { matchParts, words } from '../src/parts/match'
 import { bundledPartsTable, loadPartsTable, type PartsTable } from '../src/parts/table'
 import { PARTS_LINE, systemPrompt } from '../src/prompt'
 import { createScriptedClient } from '../src/provider/scripted'
-import { CAD_TOOLS, createPilot, DESIGN_SCOPE_TOOLS } from '../src/runtime'
+import { CAD_TOOLS, createPilot } from '../src/runtime'
 import { builtinTools } from '../src/tools/index'
 import { lookupParts, partsTool, sizeText } from '../src/tools/parts'
-import type { ToolContext } from '../src/tool'
+import { defineTool, type PilotTool, type ToolContext } from '../src/tool'
+import { z } from 'zod'
 
 const FIXTURES = join(__dirname, 'fixtures', 'standard-parts')
 const TABLE_FILE = join(__dirname, 'fixtures', 'standard-parts.table.json')
@@ -240,13 +241,12 @@ describe('where mimir has parts.lookup, and what the prompt says about it', () =
   it('is in the full toolset, the browser build and the mimir tab', () => {
     expect(builtinTools({ planner: undefined, commands: [] }).map((t) => t.name)).toContain('parts.lookup')
     expect(CAD_TOOLS.has('parts.lookup')).toBe(true)
-    expect(DESIGN_SCOPE_TOOLS.has('parts.lookup')).toBe(true)
     const pilot = createPilot({
       host: { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport },
       config: { ...DEFAULT_CONFIG, webSearch: false },
       policy: DEFAULT_POLICY,
       client: createScriptedClient([]),
-      scope: 'design',
+      tools: [defineTool({ name: 'design.new', version: '1.0.0', source: 'command', permission: 'read', description: 'design.new for the test', input: z.object({}), async run() { return { summary: 'ok' } } }) as PilotTool<never>],
     })
     expect(pilot.tools().map((t) => t.name)).toContain('parts.lookup')
   })
@@ -255,6 +255,6 @@ describe('where mimir has parts.lookup, and what the prompt says about it', () =
     expect(PARTS_LINE).toMatch(/call parts\.lookup before building and cite each size's source; if not found, ask or look it up\./)
     // one sentence, kept short: a local model's context holds the whole prompt and every tool
     expect(PARTS_LINE.split(/(?<=\.)\s+/).length).toBeLessThanOrEqual(2)
-    for (const scope of ['full', 'cad', 'design'] as const) expect(systemPrompt(scope)).toContain(PARTS_LINE)
+    for (const scope of ['full', 'cad'] as const) for (const designs of [true, false]) expect(systemPrompt(scope, (n) => designs || n !== 'design.new')).toContain(PARTS_LINE)
   })
 })

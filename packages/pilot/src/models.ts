@@ -160,13 +160,13 @@ export function personSizes(prompt: string): boolean {
   return false
 }
 
-/** Words that ask for a part to be made, in the full chat (the design tab only builds). */
+/** Words that ask for a part to be made, in a chat without the design tools. */
 const BUILD = /\b(?:make|design|model|build|create|draw|cad|print me|3d print)\b/i
 
 const reads = (files: readonly DesignRequestFiles[]): boolean => files.some((f) => f.type.startsWith('image/') || f.type === 'application/pdf')
 
 /**
- * Where a design request starts in the design tab, and why. Auto stays on huginn unless the message carries a picture
+ * Where a design request starts, and why. Auto stays on huginn unless the message carries a picture
  * or a PDF drawing to read, the part takes many steps (a gear, thread or pattern, or `MANY_STEPS` distinct features
  * named), or it needs a size only the person knows (see personSizes). Tool calls never move a design run, and neither
  * do failed ones: the build stays on the tier it started on.
@@ -178,13 +178,23 @@ export function designRoute(prompt: string, files: readonly DesignRequestFiles[]
   return { tier: HUGINN, reason: 'default' }
 }
 
-/** The tier a design request starts on in the design tab (see designRoute). */
+/** The tier a design request starts on (see designRoute). */
 export function designTier(prompt: string, files: readonly DesignRequestFiles[] = []): Tier {
   return designRoute(prompt, files).tier
 }
 
 /**
- * Where a request starts in the full chat, and why: muninn for deep work (see tierForPrompt), and for a build from a
+ * Where a request starts in the mimir tab, which designs and slices in one conversation, and why: muninn for deep work
+ * (a failure to diagnose, a profile to tune, a job to plan; see tierForPrompt), else as designRoute decides for a build.
+ * Chat that builds nothing names no features and nothing of the person's, so it stays on huginn.
+ */
+export function tabRoute(prompt: string, files: readonly DesignRequestFiles[] = []): Route {
+  if (tierForPrompt(prompt) === MUNINN) return { tier: MUNINN, reason: 'deep' }
+  return designRoute(prompt, files)
+}
+
+/**
+ * Where a request starts in a chat without the design tools, and why: muninn for deep work (see tierForPrompt), and for a build from a
  * picture or PDF or one that needs a size only the person knows, so the model that decides what to ask is the larger
  * one. Any other request starts on huginn; a part tool or failures can still move the run up later.
  */

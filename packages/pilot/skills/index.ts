@@ -20,8 +20,8 @@ import { SKILL_TOOLS } from './catalog'
 export const SKILL_NAMES = ['check_print', 'diagnose', 'tune_from_failure', 'resume_from_layer', 'intent_to_settings', 'material_recommend', 'optimize_to_target', 'compare_setups', 'split_to_fit', 'make_model', 'text_to_part', 'knowledge_answer', 'printer_setup', 'calibrate', 'farm_schedule', 'queue_control'] as const
 
 /**
- * One line per skill for the inspector and for suggestion chips in a docked
- * panel: `example` is a prompt the user can send as is. Kept in step with
+ * One line per skill for the inspector and for suggestion chips in the
+ * chat: `example` is a prompt the user can send as is. Kept in step with
  * knowledge/skills.yaml (a test checks it).
  */
 export const SKILL_INFO: { name: (typeof SKILL_NAMES)[number]; title: string; version: string; description: string; example: string }[] = [

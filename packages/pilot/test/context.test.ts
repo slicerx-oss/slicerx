@@ -129,7 +129,7 @@ describe('the runtime and the context', () => {
   const CONVERSATION_ROOM = 1500
 
   // Every surface a local model runs on; the conversation trims to fit, but the prompt and tool schemas cannot.
-  it.each(['full', 'cad'] as const)('leaves a local model in the dock (%s) at least 1,500 tokens for the conversation', async (scope) => {
+  it.each(['full', 'cad'] as const)('leaves a local model in the tab (%s) at least 1,500 tokens for the conversation', async (scope) => {
     const [first] = await requests('openai-compatible', scope)
     expect(requestCost(first!) + REPLY_RESERVE + CONVERSATION_ROOM).toBeLessThanOrEqual(MIMIR_CONTEXT)
   })
