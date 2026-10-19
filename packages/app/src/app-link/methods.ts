@@ -518,7 +518,8 @@ let linkLoader: Loader | null = null
 export async function useDesignHost(loader: Loader): Promise<void> {
   linkLoader = loader
   const [{ designToolset, nozzleOr }, { appDesignHost }, { mimirPlans }] = await Promise.all([import('@slicerx/mcp/toolset'), import('../cad/design-host'), import('../workspaces/mimir/plans')])
-  // design.check reads the same plans as the mimir tab, and holds walls to the printer's nozzle now
+  // design.check reads the same plans as the mimir tab, and holds walls to the printer's nozzle now; a client never
+  // ties a plan the person made on the tab's card (no cardSide here)
   const opts = { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) }
   designTools = new Map(designToolset(appDesignHost(loader), {}, opts).filter((t) => Object.hasOwn(APP_LINK_METHODS, t.name)).map((t) => [t.name, t]))
 }
