@@ -4,37 +4,15 @@
 // that drive it, what it assumed, what it still needs to know) on a card the person can edit inline and approve with
 // Go. The card answers through the same question channel pilot.ask uses. The plans made here are kept by id with the
 // person's latest edits, so a later check can read the plan the part was built from.
-import { defineTool, type PilotTool } from '@slicerx/pilot'
-import { z } from 'zod'
+import { MAX_PLANS, partPlanSchema, PLAN_SIZE_MAX, type PartPlan } from '@slicerx/mcp/toolset'
+import { defineTool, type PilotTool, type ToolOutput } from '@slicerx/pilot'
+import type { z } from 'zod'
+import { mimirPlans } from './plans'
 
-/** The largest size a plan takes, in its own units. */
-export const PLAN_SIZE_MAX = 10_000
-const size = z.number().finite().positive().max(PLAN_SIZE_MAX)
-const text = (max: number) => z.string().trim().min(1).max(max)
+export { PLAN_SIZE_MAX, type PartPlan }
 
-// Replaced by the PartPlan import from @slicerx/mcp (design-check) once that lands; keep the two shapes identical.
-export const PartPlanSchema = z.object({
-  planId: text(64),
-  part: text(80),
-  units: z.enum(['mm', 'in']),
-  features: z
-    .array(
-      z.object({
-        name: text(60),
-        kind: text(40).optional(),
-        sizes: z.record(text(40), size),
-      }),
-    )
-    .min(1)
-    .max(30),
-  overall: z.object({ x: size, y: size, z: size }).optional(),
-  holes: z.array(z.object({ name: text(60), diameter: size })).max(60).optional(),
-  assumptions: z.array(text(200)).max(12),
-  questions: z.array(text(200)).max(6),
-})
-
-/** A part's plan; every size is in `units`. */
-export type PartPlan = z.infer<typeof PartPlanSchema>
+/** A part's plan as the card takes it: the shared shape (@slicerx/mcp, which design.check reads), with one feature at least. */
+export const PartPlanSchema = partPlanSchema.extend({ features: partPlanSchema.shape.features.min(1) })
 
 /** What mimir sends: the plan without its id, which the tool gives it. */
 export const PlanInputSchema = PartPlanSchema.omit({ planId: true })
@@ -48,16 +26,20 @@ export interface PlanAnswer {
   edits?: PartPlan
 }
 
-// ---- the registry: every plan this window made, by id, with the latest edits applied ----
+// ---- the plans: the tab's one registry (plans.ts), which design.check reads too, with the latest edits applied ----
 
 /** The registry keeps this many plans; the oldest goes first. */
-export const PLAN_KEEP = 50
-const plans = new Map<string, { shown: PartPlan; latest: PartPlan }>()
+export const PLAN_KEEP = MAX_PLANS
+/** Each plan as mimir first showed it, before any edit, while the registry still keeps the plan. */
+const shownPlans = new Map<string, PartPlan>()
 let counter = 0
+/** The plan the person last approved whose part is not built yet: the next design built ties to it. */
+let unbuilt: string | null = null
 
 function remember(plan: PartPlan): void {
-  plans.set(plan.planId, { shown: structuredClone(plan), latest: plan })
-  while (plans.size > PLAN_KEEP) plans.delete(plans.keys().next().value!)
+  mimirPlans.put(plan)
+  shownPlans.set(plan.planId, structuredClone(plan))
+  for (const id of shownPlans.keys()) if (!mimirPlans.get(id)) shownPlans.delete(id)
 }
 
 /** A value with every object's keys in order, so two plans compare by content alone. */
@@ -74,27 +56,58 @@ export function samePlan(a: PartPlan, b: PartPlan): boolean {
 
 /** The plan with this id, as last edited, or null. */
 export function planById(planId: string): PartPlan | null {
-  return plans.get(planId)?.latest ?? null
+  return mimirPlans.get(planId)?.plan ?? null
 }
 
 /** The plan with this id as mimir first showed it, before any edit, or null. */
 export function shownPlan(planId: string): PartPlan | null {
-  return plans.get(planId)?.shown ?? null
+  return mimirPlans.get(planId) ? (shownPlans.get(planId) ?? null) : null
 }
 
 /** Records edits to a plan (sizes typed on its card); ignored for an unknown id or a plan of another shape. */
 export function editPlan(planId: string, next: PartPlan): boolean {
-  const entry = plans.get(planId)
+  const entry = mimirPlans.get(planId)
   if (!entry || next.planId !== planId) return false
   const ok = PartPlanSchema.safeParse(next)
   if (!ok.success) return false
-  entry.latest = ok.data
+  mimirPlans.put(ok.data, entry.design)
   return true
 }
 
 /** Forgets every plan (tests). */
 export function clearPlans(): void {
-  plans.clear()
+  mimirPlans.clear()
+  shownPlans.clear()
+  unbuilt = null
+}
+
+/**
+ * Ties the approved plan to the design its part is built in, once a tool builds it: the design design.new starts, or
+ * the design a geometry step changes. design.check then checks that design, whatever else is open.
+ */
+export function tieBuiltPart(tool: { name: string; permission: string }, input: unknown, out: ToolOutput): void {
+  if (!unbuilt || out.ok === false) return
+  let design: unknown
+  if (tool.name === 'design.new') design = (out.output as { design?: unknown } | undefined)?.design
+  else if (tool.name.startsWith('geom.') && tool.permission !== 'read') design = (input as { design?: unknown } | undefined)?.design
+  if (typeof design !== 'string' || !design) return
+  if (mimirPlans.tie(unbuilt, design)) unbuilt = null
+}
+
+/** The tools with tieBuiltPart after each run. */
+export function withPlanTies(tools: readonly PilotTool<never>[]): PilotTool<never>[] {
+  return tools.map((t) => {
+    if (t.name !== 'design.new' && !t.name.startsWith('geom.')) return t
+    const run = t.run.bind(t)
+    return {
+      ...t,
+      async run(input: never, ctx: Parameters<typeof t.run>[1]): Promise<ToolOutput> {
+        const out = await run(input, ctx)
+        tieBuiltPart(t, input, out)
+        return out
+      },
+    }
+  })
 }
 
 function newPlanId(): string {
@@ -118,7 +131,7 @@ export function planOfChoices(choices: readonly { id: string }[]): string | null
   const go = choices.find((c) => c.id.startsWith(`${PLAN_GO}:`))
   if (!go) return null
   const planId = go.id.slice(PLAN_GO.length + 1)
-  return plans.has(planId) ? planId : null
+  return mimirPlans.get(planId) ? planId : null
 }
 
 /** `newId` names each plan (tests); by default a random plan_ id. */
@@ -145,11 +158,13 @@ export function planTool(opts: { newId?: () => string } = {}): PilotTool<never> 
           { id: planChoiceId(PLAN_CHANGE, plan.planId), label: 'Not yet' },
         ],
       })
-      const latest = plans.get(plan.planId)?.latest ?? shown
+      const latest = planById(plan.planId) ?? shown
       if (picked !== planChoiceId(PLAN_GO, plan.planId)) {
         const answer: PlanAnswer = { planId: plan.planId, accepted: false }
         return { ok: false, summary: 'Not approved; build nothing until the plan is agreed', output: answer }
       }
+      // the next design built is this plan's part
+      unbuilt = plan.planId
       const edited = !samePlan(latest, shown)
       const answer: PlanAnswer = edited ? { planId: plan.planId, accepted: true, edits: latest } : { planId: plan.planId, accepted: true }
       return { summary: edited ? 'Approved with changes' : 'Approved as shown', output: answer }

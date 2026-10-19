@@ -19,6 +19,7 @@ import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { get, useApp, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
+import { withPlanTies } from './plan-tool'
 import { mimirPlans } from './plans'
 import { mimirTools, NO_APPROVALS, NO_PRINTERS, scriptedMimir } from './scripted'
 import { SCRIPTS } from './scripts'
@@ -66,8 +67,9 @@ export function tabState(): { link: MimirLink; provider: string | null; model: s
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
 function toolsFor(loader: Loader): PilotTool<never>[] {
   // design.check reads the tab's plans, and holds walls to the nozzle the printer has now (0.4 mm when that is not a
-  // positive size)
-  if (tools.length === 0) tools = mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) }))
+  // positive size). design.plan puts its plans in the same registry, and the part built after an approved plan ties to
+  // it (withPlanTies), so design.check checks that design.
+  if (tools.length === 0) tools = withPlanTies(mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) })))
   return tools
 }
 

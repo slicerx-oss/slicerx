@@ -6,7 +6,10 @@
 import type { PilotEvent } from '@slicerx/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mimirTools, scriptedMimir, type MimirScript } from '../src/workspaces/mimir/scripted'
-import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, planTool, samePlan, shownPlan, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
+import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, planTool, samePlan, shownPlan, withPlanTies, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
+import { mimirPlans } from '../src/workspaces/mimir/plans'
+import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { z } from 'zod'
 
 afterEach(clearPlans)
 
@@ -186,5 +189,52 @@ describe('design.plan', () => {
     const tool = planTool()
     const out = await tool.run(BOX as never, {} as never)
     expect(out).toMatchObject({ ok: false, summary: 'Nobody here can approve a plan' })
+  })
+})
+
+describe('design.plan and design.check share one registry', () => {
+  const go = { ask: async (q: { choices: { id: string }[] }) => q.choices[0]!.id } as never
+  const no = { ask: async (q: { choices: { id: string }[] }) => q.choices[1]!.id } as never
+  /** A stand-in for a design tool: design.new answers with its design id, a geometry step takes one. */
+  const fake = (name: string, permission: 'read' | 'slice', output?: unknown): PilotTool<never> =>
+    defineTool({ name, version: '1.0.0', source: 'command', permission, description: `${name} stand-in for the test`, input: z.object({ design: z.string().optional() }), run: async () => ({ summary: name, output }) }) as PilotTool<never>
+
+  it('a plan made on the card is the one the shared registry holds, edits included', async () => {
+    const out = await planTool().run(BOX as never, {
+      ask: async (q: { choices: { id: string }[] }) => {
+        const id = planOfChoices(q.choices)!
+        expect(editPlan(id, { ...planById(id)!, features: [{ ...BOX.features[0]!, sizes: { ...BOX.features[0]!.sizes, wall: 2.4 } }, BOX.features[1]!] })).toBe(true)
+        return q.choices[0]!.id
+      },
+    } as never)
+    const { planId } = out.output as { planId: string }
+    expect(mimirPlans.get(planId)?.plan.features[0]!.sizes.wall).toBe(2.4)
+    expect(mimirPlans.latest()?.planId).toBe(planId)
+  })
+
+  it('the design built after Go ties to the approved plan, and only once', async () => {
+    const [made, extrude, info] = withPlanTies([fake('design.new', 'slice', { design: 'd7' }), fake('geom.extrude', 'slice'), fake('geom.info', 'read')])
+    const { planId } = (await planTool().run(BOX as never, go)).output as { planId: string }
+    await info!.run({ design: 'd1' } as never, {} as never)
+    expect(mimirPlans.get(planId)?.design).toBeUndefined()
+    await made!.run({} as never, {} as never)
+    expect(mimirPlans.get(planId)?.design).toBe('d7')
+    await extrude!.run({ design: 'd9' } as never, {} as never)
+    expect(mimirPlans.get(planId)?.design).toBe('d7')
+  })
+
+  it('a geometry step on an existing design ties the plan to it; a plan not approved ties to nothing', async () => {
+    const [extrude] = withPlanTies([fake('geom.extrude', 'slice')])
+    const refused = ((await planTool().run(BOX as never, no)).output as { planId: string }).planId
+    await extrude!.run({ design: 'd3' } as never, {} as never)
+    expect(mimirPlans.get(refused)?.design).toBeUndefined()
+    const { planId } = (await planTool().run(BOX as never, go)).output as { planId: string }
+    await extrude!.run({ design: 'd3' } as never, {} as never)
+    expect(mimirPlans.get(planId)?.design).toBe('d3')
+  })
+
+  it('sizes past the plan maximum are refused by the shared shape', () => {
+    expect(PartPlanSchema.safeParse({ planId: 'p', ...BOX, overall: { x: PLAN_SIZE_MAX + 1, y: 1, z: 1 } }).success).toBe(false)
+    expect(() => mimirPlans.put({ planId: 'p', ...BOX, overall: { x: -1, y: 1, z: 1 } })).toThrow()
   })
 })
