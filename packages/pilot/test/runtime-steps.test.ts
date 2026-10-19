@@ -36,5 +36,9 @@ describe('a step list before a multi-step task', () => {
     const system = String(client.requests[0]!.messages[0]!.content)
     expect(system).toContain('Multi-step requests:')
     expect(system.indexOf('Multi-step requests:')).toBeGreaterThan(system.indexOf('Permissions and approvals:'))
+    expect(system.indexOf('Multi-step requests:')).toBeLessThan(system.indexOf('Untrusted data:'))
+    // a heads-up that leaves the part's sizes to be worked out
+    expect(system).toContain('marking the ones that need approval with "needs your OK"')
+    expect(system).toContain('The list is a heads-up only: still work out every size the part needs')
   })
 })
