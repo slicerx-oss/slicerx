@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { AppLinkCaller } from '../src/app-route'
-import { mimirBrainTools, type BrainState } from '../src/mimir-brain'
+import { mimirBrainTools, pick, type BrainState } from '../src/mimir-brain'
 
 // What the app answers for an edition with a voice, printers and web off, a Sonnet step-up, synced memory and 2 docs.
 const HARBOR: BrainState = {
@@ -33,7 +33,7 @@ describe('slicerx_mimir_brain', () => {
     const out = await run({ call: call as AppLinkCaller['call'] })
     expect(call).toHaveBeenCalledWith('mimir.brain', {})
     expect(out.output).toEqual(HARBOR)
-    expect(out.summary).toBe('Pilot in SlicerX: the edition voice; 4 of 6 tool groups on (off: printers, web); mimir cloud on claude-haiku-5-5, stepping up to sonnet; memory on this computer, sync opt-in; 2 docs of its own knowledge.')
+    expect(out.summary).toBe('Pilot in SlicerX: the edition voice; 4 of 6 tool groups on (off: printers, web); mimir cloud on claude-haiku-5-5, asks to step up to sonnet (the proxy decides); memory on this computer, sync opt-in; 2 docs of its own knowledge.')
 
     const stock: BrainState = { name: 'mimir', voice: false, toolGroups: Object.fromEntries(Object.keys(HARBOR.toolGroups).map((g) => [g, true])), cloud: { base: 'claude-haiku-5-5', stepUp: null }, memory: { local: true, sync: 'off' }, knowledgeDocs: 0 }
     const plain = await run({ call: (async () => stock) as AppLinkCaller['call'] })
@@ -48,6 +48,19 @@ describe('slicerx_mimir_brain', () => {
     expect(out.output).toEqual(HARBOR)
     const all = JSON.stringify(out)
     for (const secret of [VOICE, DOC, 'sk-ant-', 'voiceText', '"docs"']) expect(all).not.toContain(secret)
+  })
+
+  it('an answer of the wrong shape reads as safe defaults, with only the six known tool groups', async () => {
+    const none = { name: '', voice: false, toolGroups: { design: false, slicing: false, printers: false, watch: false, paint: false, web: false }, cloud: { base: '', stepUp: null }, memory: { local: false, sync: 'off' }, knowledgeDocs: 0 }
+    for (const bad of [null, 'mimir', 42, [], { cloud: null, memory: 'yes', toolGroups: [] }]) expect(pick(bad), JSON.stringify(bad)).toEqual(none)
+    const extra = pick({ ...HARBOR, toolGroups: { ...HARBOR.toolGroups, cad: true, __proto__: { x: true }, web: 'yes' }, knowledgeDocs: 2.5 })
+    expect(Object.keys(extra.toolGroups)).toEqual(['design', 'slicing', 'printers', 'watch', 'paint', 'web'])
+    expect(extra.toolGroups.web).toBe(false)
+    expect(extra.knowledgeDocs).toBe(0)
+    // run never fails on it either
+    const out = await run({ call: (async () => null) as AppLinkCaller['call'] })
+    expect(out.output).toEqual(none)
+    expect(out.summary).toContain('mimir cloud on its base model with no step-up')
   })
 
   it('TOOLS.md is current', () => {
