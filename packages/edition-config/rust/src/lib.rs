@@ -724,14 +724,12 @@ impl EditionConfig {
     }
 }
 
-/// The `role` claim of a JWT, without verifying it (only to refuse service role keys).
 /// Why a knowledge path is not a path inside the edition folder, as the TypeScript schema says it: relative (no
 /// leading slash, backslash, home or drive), no `..` step, and naming something more than the folder itself (not `.`
 /// or empty). None when it is fine.
 fn knowledge_path_issue(path: &str) -> Option<&'static str> {
     let p = path.trim();
-    let b = p.as_bytes();
-    let drive = b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':';
+    let drive = matches!(p.as_bytes(), [d, b':', ..] if d.is_ascii_alphabetic());
     if p.starts_with(['/', '\\', '~']) || drive || p.split(['/', '\\']).any(|s| s == "..") {
         return Some("a path inside the edition folder, relative to the config file, without ..");
     }
@@ -741,6 +739,7 @@ fn knowledge_path_issue(path: &str) -> Option<&'static str> {
     None
 }
 
+/// The `role` claim of a JWT, without verifying it (only to refuse service role keys).
 fn jwt_role(token: &str) -> Option<String> {
     let payload = token.split('.').nth(1)?;
     let bytes = base64url_decode(payload)?;
