@@ -228,6 +228,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("mimir.tab", LinkClass::Read),
     // What answers in the docked chat (a model or the demo) and the tools its model is offered. No key or token.
     ("mimir.dock", LinkClass::Read),
+    // What mimir remembers about the person, with secrets hidden in the app; adding a fact changes what it knows.
+    ("mimir.memory", LinkClass::Read),
+    ("mimir.memory_remember", LinkClass::Edit),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -511,6 +514,8 @@ mod tests {
         ("mimir.status", LinkClass::Read),
         ("mimir.tab", LinkClass::Read),
         ("mimir.dock", LinkClass::Read),
+        ("mimir.memory", LinkClass::Read),
+        ("mimir.memory_remember", LinkClass::Edit),
     ];
 
     #[test]

@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-237 tools.
+239 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -151,6 +151,8 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_mesh_repair` |  |  | slice | Repair an object mesh before slicing: merge loose vertices, remove zero-area and duplicate triangles, flip inward-facing triangles and fill holes. |
 | `slicerx_mimir_cloud_status` |  |  | read | Read mimir cloud's status in SlicerX: whether this build offers mimir cloud, whether mimir is on and runs on it, whether the person is signed in to their account (null in a build without accounts), whether mimir cloud waits for a sign-in, and today's use and what is left (only while mimir runs on mimir cloud). |
 | `slicerx_mimir_dock` |  |  | read | Read what answers in the docked mimir chat of the open SlicerX app: "model" when a model is set up (its provider and model, and whether it runs locally on this computer), "demo" when no model answers and the built-in demo does, or "none" before the chat is set up. |
+| `slicerx_mimir_memory` |  |  | read | Read what mimir remembers about the person in SlicerX: their printers, filaments, preferences, outcomes (what worked) and sizes, newest first, each with its kind, text, optional data and when it changed. |
+| `slicerx_mimir_memory_remember` |  |  | profile | Add one fact to mimir's memory in SlicerX, such as the person's printer and nozzle, a filament they use, a preference, what worked for a print, or a size that matters to them. |
 | `slicerx_mimir_quota` |  |  | read | Read today's free mimir use in SlicerX on this computer: what this install and this network have used of their daily caps, in US dollars, and whether mimir cloud is open today. |
 | `slicerx_mimir_share` |  |  | read | Read whether SlicerX runs mimir on mimir cloud, whether it shares this install's mimir sessions to improve mimir (Settings > mimir, on by default), and whether the person has read the notice shown before the first chat. |
 | `slicerx_mimir_tab` |  |  | read | Read what answers in the mimir tab of the open SlicerX app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens. |

@@ -42,4 +42,11 @@ describe('the tool registry', () => {
     if (process.env['SLICERX_WRITE_TOOLS_DOC'] === '1') writeFileSync(path, want)
     expect(readFileSync(path, 'utf8')).toBe(want)
   })
+
+  it('TOOLS.md is current', () => {
+    const doc = readFileSync(join(__dirname, '../TOOLS.md'), 'utf8')
+    // the read is gated as a read and adding a fact as a profile change
+    expect(doc).toContain('| `slicerx_mimir_memory` |  |  | read |')
+    expect(doc).toContain('| `slicerx_mimir_memory_remember` |  |  | profile |')
+  })
 })
