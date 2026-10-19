@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // What answers in the mimir tab of the open app, read over the app link: a model (which one, and the pair Auto moves
-// between) or the scripted replies the tab plays until a model is set up, and the tools mimir has there. Carries no
-// key or token. Changing the model stays with the person, in Settings > mimir.
+// between, and whether it runs on this computer) or the scripted replies the tab plays until a model is set up, and the
+// tools the model is offered there. A local model gets a shorter list, so the list is what the model really sees.
+// Carries no key or token. Changing the model stays with the person, in Settings > mimir.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
@@ -16,16 +17,17 @@ interface TabState {
   provider: string | null
   model: string | null
   auto: { huginn: string; muninn: string } | null
+  local?: boolean
   tools: string[]
 }
 
 export function mimirTabTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   const tab = defineTool({
     name: 'mimir.tab',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: `Read what answers in the mimir tab of the open ${appName} app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens. Also lists the tools mimir has in the tab (the design tools, so each step lands in the timeline). Carries no key or token.`,
+    description: `Read what answers in the mimir tab of the open ${appName} app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens, and whether the model runs locally on this computer. Also lists the tools the model is offered in the tab: the design tools (so each step lands in the timeline), the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands. A local model gets a shorter list that fits its context. Carries no key or token.`,
     input: z.object({}),
     async run() {
       if (!link) throw new ToolInputError(`reading the mimir tab needs the open ${appName} app: start the server with --printers link and turn on the app link`, 'not_configured')
@@ -41,7 +43,7 @@ export function mimirTabTools(link: AppLinkCaller | undefined, appName: string):
         throw new ToolInputError(message, 'internal_error')
       }
       // only the fields a client needs; anything else the app adds stays out
-      const output = { link: out.link, provider: out.provider, model: out.model, auto: out.auto ? { huginn: out.auto.huginn, muninn: out.auto.muninn } : null, tools: [...out.tools] }
+      const output = { link: out.link, provider: out.provider, model: out.model, auto: out.auto ? { huginn: out.auto.huginn, muninn: out.auto.muninn } : null, local: out.local === true, tools: [...out.tools] }
       const summary =
         out.link === 'none'
           ? `The mimir tab has not been opened in ${appName} yet.`
@@ -49,7 +51,7 @@ export function mimirTabTools(link: AppLinkCaller | undefined, appName: string):
             ? 'The mimir tab plays scripted replies: no model is set up in Settings > mimir.'
             : out.auto
               ? `The mimir tab runs ${out.provider} on Auto: ${out.auto.huginn}, and ${out.auto.muninn} for a picture, a PDF, a part of many steps or one that needs a size only the person knows.`
-              : `The mimir tab runs ${out.provider} with ${out.model}.`
+              : `The mimir tab runs ${out.provider} with ${out.model}${output.local ? ' on this computer' : ''}, offering ${out.tools.length} tools.`
       return { summary, output }
     },
   })
