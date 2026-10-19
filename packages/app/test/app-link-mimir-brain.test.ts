@@ -56,6 +56,13 @@ describe('mimir.brain over the app link', () => {
     expect(brainOf(HARBOR, INDEX).knowledgeDocs).toBe(2)
   })
 
+  it('counts only the edition docs mimir keeps: one that shares a bundled doc id or name is left out', () => {
+    const bundled = { docs: [{ ...doc('tide'), name: 'Tide' }, { ...doc('bundled-only'), name: 'dock' }] } as unknown as KbIndex
+    expect(brainOf(HARBOR, INDEX, bundled).knowledgeDocs).toBe(0)
+    expect(brainOf(HARBOR, INDEX, { docs: [doc('elsewhere')] } as unknown as KbIndex).knowledgeDocs).toBe(2)
+    expect(brainOf(HARBOR, INDEX, { docs: [doc('tide')] } as unknown as KbIndex).knowledgeDocs).toBe(1)
+  })
+
   it("reads the groups every mimir applies, and counts the docs of the knowledge file the build carries", async () => {
     setCurrentEdition(HARBOR)
     BUILT.value = INDEX

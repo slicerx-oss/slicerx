@@ -9,7 +9,7 @@ export { chatRoute, designRoute, designSteps, designTier, HUGINN, MANY_STEPS, MO
 export { defineSkill, defineTool, toolSpec, type AgentWork, type ApprovalPlan, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset } from './tool'
 export { decide, normalizePolicy, policyMayGrant } from './gate'
 export { createApprovalBroker, TOKEN_TTL_MS, type ApprovalBroker } from './permit/broker'
-export { createKnowledgeBase, EMPTY_KB_INDEX, type KbIndex, type KnowledgeBase } from './kb/kb'
+export { createKnowledgeBase, EMPTY_KB_INDEX, keptEditionDocs, type KbIndex, type KnowledgeBase } from './kb/kb'
 export { createKbPlanner } from './kb/planner'
 export { createCombinedPlanner } from './kb/combined-planner'
 export { parseIntent, type Intent } from './intent'

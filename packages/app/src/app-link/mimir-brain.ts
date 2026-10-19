@@ -5,7 +5,7 @@
 // remember, and how many docs of the edition's own knowledge it searches. Metadata only: the voice text and the
 // knowledge docs never leave the app.
 import type { EditionConfig } from '@slicerx/edition-config'
-import { TOOL_GROUPS, type KbIndex } from '@slicerx/pilot'
+import { keptEditionDocs, TOOL_GROUPS, type KbIndex } from '@slicerx/pilot'
 import { currentEdition } from '../edition'
 import { editionKbIndex } from '../features/pilot/kb'
 import { editionToolGroups } from '../pilot-connect/brain'
@@ -22,12 +22,15 @@ export interface BrainState {
   /** mimir cloud's base model, and the step-up the edition asks for (null for none). The proxy decides the step-up. */
   cloud: { base: string; stepUp: string | null }
   memory: { local: boolean; sync: 'off' | 'opt-in' }
-  /** Docs of the edition's own knowledge (ai.brain.knowledge) in the edition index. */
+  /** Docs of the edition's own knowledge (ai.brain.knowledge) mimir searches: those in the edition index that do not share a bundled doc's id or name. */
   knowledgeDocs: number
 }
 
-/** The answer for an edition, given its knowledge index (edition-kb.<id>.json, null when it has none). */
-export function brainOf(edition: EditionConfig, editionIndex: Pick<KbIndex, 'docs'> | null): BrainState {
+/**
+ * The answer for an edition, given its knowledge index (edition-kb.<id>.json, null when it has none) and the bundled
+ * index, whose docs win over an edition doc of the same id or name.
+ */
+export function brainOf(edition: EditionConfig, editionIndex: Pick<KbIndex, 'docs'> | null, bundled: Pick<KbIndex, 'docs'> = { docs: [] }): BrainState {
   const brain = edition.ai.brain
   // the same switches every mimir the app makes passes to applyToolGroups (pilot-connect/brain.ts)
   const applied = editionToolGroups(edition)
@@ -38,11 +41,14 @@ export function brainOf(edition: EditionConfig, editionIndex: Pick<KbIndex, 'doc
     toolGroups,
     cloud: { base: CLOUD_MODEL, stepUp: brain.cloud.stepUp === 'none' ? null : brain.cloud.stepUp },
     memory: { local: brain.memory.local, sync: brain.memory.sync },
-    knowledgeDocs: editionIndex?.docs.filter((d) => d.edition === edition.id).length ?? 0,
+    knowledgeDocs: editionIndex ? keptEditionDocs(bundled, { id: edition.id, index: editionIndex as KbIndex }).length : 0,
   }
 }
 
 /** mimir.brain: the running edition's mimir, with the knowledge index the build carries for it. */
 export async function brainState(): Promise<BrainState> {
-  return brainOf(currentEdition(), await editionKbIndex())
+  const index = await editionKbIndex()
+  // the bundled index only matters when the edition has docs of its own to count against it
+  const bundled = index ? ((await import('@slicerx/pilot/kb.json')).default as unknown as KbIndex) : undefined
+  return brainOf(currentEdition(), index, bundled)
 }
