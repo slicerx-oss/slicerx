@@ -1,1 +1,0 @@
-at 1100 by 700 the footer never covers a setting | subydoo-ci | 2026-10-19 | 2026-10-20 | https://github.com/slicerx-oss/slicerx/issues/1258 | 60 runs per side (20 per test), 0 failures on main and on the rebased branch of PR 1259, 5 workers, retries 0, 0 boot timeouts; still seen only on GitHub runners
