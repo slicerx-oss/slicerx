@@ -24,17 +24,29 @@ export interface BrainState {
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`
 
-/** Only the fields a client needs, so nothing else the app adds can leave it. */
-function pick(b: BrainState): BrainState {
-  const toolGroups: Record<string, boolean> = {}
-  for (const [g, on] of Object.entries(b.toolGroups ?? {})) toolGroups[g] = on === true
+/** The tool groups an edition can switch, the only keys toolGroups carries. */
+const TOOL_GROUP_KEYS = ['design', 'slicing', 'printers', 'watch', 'paint', 'web'] as const
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/**
+ * Only the fields a client needs, so nothing else the app adds can leave it, and an answer of the wrong shape (an
+ * older or broken app) reads as safe defaults rather than failing: always the six known tool groups, each on only
+ * when the app said true.
+ */
+export function pick(raw: unknown): BrainState {
+  const b = isRecord(raw) ? raw : {}
+  const groups = isRecord(b['toolGroups']) ? b['toolGroups'] : {}
+  const cloud = isRecord(b['cloud']) ? b['cloud'] : {}
+  const memory = isRecord(b['memory']) ? b['memory'] : {}
+  const docs = b['knowledgeDocs']
   return {
-    name: String(b.name),
-    voice: b.voice === true,
-    toolGroups,
-    cloud: { base: String(b.cloud.base), stepUp: typeof b.cloud.stepUp === 'string' ? b.cloud.stepUp : null },
-    memory: { local: b.memory.local === true, sync: b.memory.sync === 'opt-in' ? 'opt-in' : 'off' },
-    knowledgeDocs: Number.isInteger(b.knowledgeDocs) && b.knowledgeDocs > 0 ? b.knowledgeDocs : 0,
+    name: typeof b['name'] === 'string' ? b['name'] : '',
+    voice: b['voice'] === true,
+    toolGroups: Object.fromEntries(TOOL_GROUP_KEYS.map((g) => [g, groups[g] === true])),
+    cloud: { base: typeof cloud['base'] === 'string' ? cloud['base'] : '', stepUp: typeof cloud['stepUp'] === 'string' ? cloud['stepUp'] : null },
+    memory: { local: memory['local'] === true, sync: memory['sync'] === 'opt-in' ? 'opt-in' : 'off' },
+    knowledgeDocs: typeof docs === 'number' && Number.isInteger(docs) && docs > 0 ? docs : 0,
   }
 }
 
@@ -48,9 +60,9 @@ export function mimirBrainTools(link: AppLinkCaller | undefined, appName: string
     input: z.object({}),
     async run() {
       if (!link) throw new ToolInputError(`reading mimir's setup needs the open ${appName} app: start the server with --printers link and turn on the app link`, 'not_configured')
-      let out: BrainState
+      let out: unknown
       try {
-        out = await link.call<BrainState>('mimir.brain', {})
+        out = await link.call<unknown>('mimir.brain', {})
       } catch (e) {
         const code = String((e as { code?: unknown }).code ?? '')
         const message = e instanceof Error ? e.message : String(e)
@@ -65,7 +77,7 @@ export function mimirBrainTools(link: AppLinkCaller | undefined, appName: string
       const summary = [
         `${output.name} in ${appName}: ${output.voice ? 'the edition voice' : 'the stock voice'}`,
         off.length ? `${groups.length - off.length} of ${groups.length} tool groups on (off: ${off.join(', ')})` : `all ${groups.length} tool groups on`,
-        `mimir cloud on ${output.cloud.base}${output.cloud.stepUp ? `, stepping up to ${output.cloud.stepUp}` : ' with no step-up'}`,
+        `mimir cloud on ${output.cloud.base || 'its base model'}${output.cloud.stepUp ? `, asks to step up to ${output.cloud.stepUp} (the proxy decides)` : ' with no step-up'}`,
         `memory ${output.memory.local ? 'on this computer' : 'off'}, sync ${output.memory.sync}`,
         `${plural(output.knowledgeDocs, 'doc')} of its own knowledge.`,
       ].join('; ')
