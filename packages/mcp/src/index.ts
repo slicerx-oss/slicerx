@@ -11,13 +11,13 @@ import { createApprovalBroker, loadPartsTable, normalizePolicy, type ApprovalBro
 import { createGeomCli } from '@slicerx/pilot/node'
 import { createActionLog } from './actionlog'
 import { DataStore, resolveDataPaths } from './data'
+import type { PlanRegistry } from './design-check'
 import type { GateDeps } from './gate'
 import { loadPolicy } from './policy'
 import { createDemoPrinters, createLinkPrinters, createRoutedBroker, type PrinterBackend, type PrinterMode } from './printers'
 import { ProfileCatalog } from './profiles'
 import { createCombinedPlanner, createKb, createProfileStore, pilotTools, servicePluginTools, toolContext } from './registry'
 import { createSlicerxServer, type ServerContext } from './server'
-import type { PlanRegistry } from './design-check'
 import { createStubSlicer, type SlicerBackend } from './slicer'
 import { createNodeSlicerHost } from './slicerhost'
 import { cadTools } from './cad'
@@ -71,7 +71,6 @@ export { SXLOCK_NOT_CONFIGURED, sxlockFromEnv, type SxlockOptions } from './sxlo
 export { DataStore, resolveDataPaths } from './data'
 export { DEFAULT_POLICY_PATH, loadPolicy } from './policy'
 export { design3mf, readDesigns, type Design } from './design'
-export { checkResultSchema, createPlanRegistry, designCheck, partPlanSchema, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
 
 export type EngineMode = 'auto' | 'sx' | 'stub'
 

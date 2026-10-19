@@ -405,11 +405,13 @@ const check: ScriptStep[] = [
     return { text: `I will check ${plan.part} against its plan.`, calls: [{ name: 'design.check', args: { planId: plan.planId } }] }
   },
   (messages) => {
-    const r = lastResult(messages) as { pass?: unknown; items?: Checked[] } | null
+    const r = lastResult(messages) as { pass?: unknown; items?: Checked[]; designName?: unknown } | null
     if (!r || !Array.isArray(r.items)) return { text: 'The check did not run, so I cannot say yet whether the part matches its plan.' }
-    if (r.pass === true) return { text: `It matches the plan: all ${r.items.length} checks pass.` }
+    // the design the check read, by name, so a check of the wrong part shows
+    const which = typeof r.designName === 'string' ? `I checked the design ${r.designName}. ` : ''
+    if (r.pass === true) return { text: `${which}It matches the plan: all ${r.items.length} checks pass.` }
     const off = r.items.filter((i) => !i.pass).map((i) => `${i.name[0]!.toUpperCase()}${i.name.slice(1)}: wanted ${i.want}, got ${i.got}.`)
-    return { text: `It does not match the plan yet. ${off.join(' ')} That needs fixing before the part is done.` }
+    return { text: `${which}It does not match the plan yet. ${off.join(' ')} That needs fixing before the part is done.` }
   },
 ]
 

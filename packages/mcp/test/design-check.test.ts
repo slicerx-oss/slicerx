@@ -3,8 +3,12 @@
 // A built part checked against its plan: first the comparison on fixture bodies (the size tolerance, each named
 // hole, the feature count, a closed body, the thinnest wall for the nozzle, an inch plan), then slicerx_design_check
 // on real designs, whose facts are read from the body the steps made.
+import type { Design as HostDesign, DesignHost } from '@slicerx/cad-history'
+import type { ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
-import { createPlanRegistry, designCheck, partPlanSchema, type BodyFacts, type PartPlan } from '../src/design-check'
+import { minWall } from '../src/body-facts'
+import { createPlanRegistry, designCheck, MAX_PLANS, partPlanSchema, type BodyFacts, type PartPlan } from '../src/design-check'
+import { designToolset } from '../src/toolset'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
 
@@ -72,11 +76,44 @@ describe('designCheck', () => {
     expect(failed(designCheck(bracket, { ...built, features: 4 }, 0.4))).toEqual(['feature count'])
   })
 
-  it('a planned hole the body lacks fails as no hole, and a hole of the same name is matched first', () => {
+  it('a planned hole the body lacks fails as no hole', () => {
     const r = designCheck(bracket, { ...built, holes: [{ diameterMm: 6 }] }, 0.4)
     expect(r.items.find((i) => i.name === 'cable hole')).toMatchObject({ got: 'no hole', pass: false })
-    const named = designCheck(bracket, { ...built, holes: [{ name: 'Mount hole', diameterMm: 4 }, { diameterMm: 6 }] }, 0.4)
-    expect(failed(named)).toEqual(['mount hole', 'cable hole'])
+  })
+
+  it('a hole the plan does not list fails as an extra hole; a plan without a hole list says nothing about holes', () => {
+    const r = designCheck(bracket, { ...built, holes: [{ diameterMm: 4.02 }, { diameterMm: 5 }, { diameterMm: 6.04 }] }, 0.4)
+    expect(failed(r)).toEqual(['extra hole, 5 mm'])
+    expect(r.items.find((i) => !i.pass)).toEqual({ name: 'extra hole, 5 mm', want: 'no hole (not in the plan)', got: '5 mm diameter', pass: false })
+    expect(failed(designCheck({ ...bracket, holes: [] }, built, 0.4))).toEqual(['extra hole, 4.02 mm', 'extra hole, 6.04 mm'])
+    const { holes: _, ...noList } = bracket
+    expect(designCheck(noList, built, 0.4).pass).toBe(true)
+  })
+
+  it('a wall that was not measured fails, and says why when it was on purpose', () => {
+    const r = designCheck(bracket, { ...built, minWallMm: null }, 0.4)
+    expect(failed(r)).toEqual(['minimum wall'])
+    expect(r.items.at(-1)).toMatchObject({ name: 'minimum wall', got: 'not measured', pass: false })
+    const dense = designCheck(bracket, { ...built, minWallMm: null, minWallWhy: 'part too dense' }, 0.4)
+    expect(dense.items.at(-1)).toMatchObject({ got: 'not measured (part too dense)', pass: false })
+  })
+
+  it('compares the size axis by axis: an x and y swap passes, a swap with z fails and says to rotate it', () => {
+    const turned = designCheck(bracket, { ...built, size: { x: 30, y: 60, z: 40 } }, 0.4)
+    expect(turned.pass).toBe(true)
+    expect(turned.items[0]!.got).toBe('30 x 60 x 40 mm (x and y swapped: turned on the bed, it prints the same)')
+    const lying = designCheck(bracket, { ...built, size: { x: 60, y: 40, z: 30 } }, 0.4)
+    expect(failed(lying)).toEqual(['overall size'])
+    expect(lying.items[0]!.got).toBe('60 x 40 x 30 mm (same size, axes swapped: rotate it)')
+    // a different size altogether gets no note
+    expect(designCheck(bracket, { ...built, size: { x: 60, y: 41, z: 30 } }, 0.4).items[0]!.got).toBe('60 x 41 x 30 mm')
+  })
+
+  it('a nozzle that is not a positive finite number counts as 0.4 mm', () => {
+    for (const n of [Number.NaN, 0, -0.4, Number.POSITIVE_INFINITY]) {
+      const r = designCheck(bracket, { ...built, minWallMm: 0.6 }, n)
+      expect(r.items.at(-1)).toMatchObject({ want: 'at least 0.8 mm (twice the 0.4 mm nozzle)', pass: false })
+    }
   })
 
   it('an inch plan passes against a body measured in mm, and fails a size off past the mm tolerance', () => {
@@ -104,6 +141,22 @@ describe('designCheck', () => {
     expect(partPlanSchema.safeParse({ ...bracket, holes: [{ name: 'x', diameterMm: 3 }] }).success).toBe(false)
   })
 
+  it('ties a plan made before its design, and keeps the last 50 plans', () => {
+    const plans = createPlanRegistry()
+    plans.put(bracket)
+    expect(plans.tie('bracket-1', 'd7')).toBe(true)
+    expect(plans.get('bracket-1')).toEqual({ plan: bracket, design: 'd7' })
+    expect(plans.tie('nope', 'd7')).toBe(false)
+    for (let k = 0; k < MAX_PLANS; k++) plans.put({ ...bracket, planId: `p${k}` })
+    expect(MAX_PLANS).toBe(50)
+    expect(plans.get('bracket-1')).toBeUndefined()
+    expect(plans.get('p0')).toBeDefined()
+    plans.put({ ...bracket, planId: 'one more' })
+    expect(plans.get('p0')).toBeUndefined()
+    expect(plans.get('p1')).toBeDefined()
+    expect(plans.latest()?.planId).toBe('one more')
+  })
+
   it('rejects a plan with a size, hole or overall value of zero or less', () => {
     expect(partPlanSchema.safeParse(bracket).success).toBe(true)
     for (const v of [0, -1]) {
@@ -112,6 +165,138 @@ describe('designCheck', () => {
       for (const axis of ['x', 'y', 'z'] as const) expect(partPlanSchema.safeParse({ ...bracket, overall: { ...bracket.overall!, [axis]: v } }).success).toBe(false)
     }
     expect(() => createPlanRegistry().put({ ...bracket, features: [{ name: 'base', sizes: { width: 0 } }] })).toThrow()
+  })
+})
+
+type Tri = [number[], number[], number[]]
+
+/** A closed box's 12 facets, outward, as [-y, -z, -y, -z, +y, +z, +y, +z, -x, -x, +x, +x]: its z faces at odd places. */
+function boxTris([x0, y0, z0]: number[], [x1, y1, z1]: number[]): Tri[] {
+  const v = (i: number): number[] => [i & 1 ? x1! : x0!, i & 2 ? y1! : y0!, i & 4 ? z1! : z0!]
+  const f = (a: number, b: number, c: number): Tri => [v(a), v(b), v(c)]
+  return [f(0, 1, 5), f(0, 2, 3), f(0, 5, 4), f(0, 3, 1), f(2, 6, 7), f(4, 5, 7), f(2, 7, 3), f(4, 7, 6), f(0, 4, 6), f(0, 6, 2), f(1, 3, 7), f(1, 7, 5)]
+}
+
+const meshOf = (tris: readonly Tri[]) => ({ positions: tris.flat(2), indices: tris.flatMap((_, t) => [t * 3, t * 3 + 1, t * 3 + 2]) })
+
+/**
+ * One part of 7222 facets: a 100 x 100 x 10 mm slab whose top is 7200 small facets, and apart from it a 20 x 20 mm plate
+ * 0.5 mm thick from facet 7210 on, whose top and bottom facets sit at odd places. Casting from every second facet (as
+ * a cap of 6000 casts by index stride did) never casts from those four, and reads 10 mm.
+ */
+function denseWithThinPlate(thick = 0.5) {
+  const tris: Tri[] = []
+  const cells = 60
+  const s = 100 / cells
+  for (let i = 0; i < cells; i++)
+    for (let j = 0; j < cells; j++) {
+      const [a, b, c, d] = [[i * s, j * s, 10], [(i + 1) * s, j * s, 10], [(i + 1) * s, (j + 1) * s, 10], [i * s, (j + 1) * s, 10]]
+      tris.push([a!, b!, c!], [a!, c!, d!])
+    }
+  // the slab's bottom and sides: the box's facets but its top
+  tris.push(...boxTris([0, 0, 0], [100, 100, 10]).filter((_, k) => k !== 5 && k !== 7))
+  expect(tris.length).toBe(7210)
+  tris.push(...boxTris([200, 0, 0], [220, 20, thick]))
+  return meshOf(tris)
+}
+
+describe('minWall', () => {
+  it('reads a thin plate among more than 6000 facets that casting from every second facet misses', () => {
+    const m = denseWithThinPlate()
+    expect(m.indices.length / 3).toBeGreaterThan(6000)
+    expect(minWall([m])).toEqual({ mm: 0.5 })
+    // the same mesh with the plate 0.6 mm thick: the reading follows it
+    expect(minWall([denseWithThinPlate(0.6)])).toEqual({ mm: 0.6 })
+  })
+
+  it('reads a closed box from its nearest faces, and nothing for no facets', () => {
+    expect(minWall([meshOf(boxTris([0, 0, 0], [40, 20, 5]))])).toEqual({ mm: 5 })
+    expect(minWall([])).toEqual({ mm: null })
+  })
+
+  it('over the budget, says not measured (part too dense) and never a number', () => {
+    const m = denseWithThinPlate()
+    expect(minWall([m], { maxFacets: 1000, maxMs: 60_000 })).toEqual({ mm: null, why: 'part too dense' })
+    // out of time: a clock that jumps a minute at every look
+    let t = 0
+    expect(minWall([m], { maxFacets: 1_000_000, maxMs: 1000 }, () => (t += 60_000))).toEqual({ mm: null, why: 'part too dense' })
+    expect(designCheck(bracket, { ...built, minWallMm: null, minWallWhy: 'part too dense' }, 0.4).pass).toBe(false)
+  })
+})
+
+const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+
+/** A design of one closed box part, no steps, on a host whose engine says every mesh is closed and finds no holes. */
+const boxDesign = (id: string, name: string): HostDesign => {
+  const m = meshOf(boxTris([0, 0, 0], [40, 20, 5]))
+  return { id, name, history: { version: 1, base: [], steps: [] }, transform: IDENTITY, parts: [{ name, slot: 0, ...m }], status: [], madeBy: {}, redo: [] } as unknown as HostDesign
+}
+const hostOf = (all: HostDesign[]): DesignHost =>
+  ({
+    get: (id: string) => {
+      const d = all.find((x) => x.id === id)
+      if (!d) throw new Error(`no design ${id}`)
+      return d
+    },
+    list: () => all,
+    create: async () => Promise.reject(new Error('not here')),
+    add: async () => Promise.reject(new Error('not here')),
+    replay: async () => {},
+    call: async (op: string) => (op === 'info' ? { watertight: true } : Promise.reject(new Error('no hole there'))),
+  }) as unknown as DesignHost
+
+const boxPlan: PartPlan = { planId: 'box-1', part: 'Spacer', units: 'mm', features: [], overall: { x: 40, y: 20, z: 5 }, assumptions: [], questions: [] }
+
+/** design.check on a host of these designs; nozzle as given. */
+async function checkOn(all: HostDesign[], setup: (plans: ReturnType<typeof createPlanRegistry>) => void, args: Record<string, unknown> = { planId: 'box-1' }, nozzleMm?: () => number | undefined) {
+  const plans = createPlanRegistry()
+  setup(plans)
+  const tool = designToolset(hostOf(all), {}, { plans, nozzleMm }).find((t) => t.name === 'design.check')!
+  const r = await tool.run(tool.input.parse(args), {} as ToolContext)
+  return { r, out: r.output as { design: string; designName: string; chosen: string; nozzleMm: number; pass: boolean }, plans }
+}
+
+describe('design.check picks the design it checks', () => {
+  const a = boxDesign('d1', 'Bracket')
+  const b = boxDesign('d2', 'Clip')
+
+  it('refuses with two designs open and the plan neither tied nor named, asking which', async () => {
+    await expect(checkOn([a, b], (p) => p.put(boxPlan))).rejects.toThrow(/not tied to a design.*Which design is it\? Open: Bracket \(d1\), Clip \(d2\)/)
+  })
+
+  it('checks the tied design once the plan is tied after it was made', async () => {
+    const { r, out } = await checkOn([a, b], (p) => {
+      p.put(boxPlan)
+      p.tie('box-1', 'd1')
+    })
+    expect(out).toMatchObject({ design: 'd1', designName: 'Bracket', chosen: 'tied to the plan', pass: true })
+    expect(r.summary).toContain('Bracket (d1, tied to the plan) matches plan box-1')
+  })
+
+  it('a design given in the call is checked and the plan tied to it', async () => {
+    const { out, plans } = await checkOn([a, b], (p) => p.put(boxPlan), { planId: 'box-1', design: 'd2' })
+    expect(out).toMatchObject({ design: 'd2', chosen: 'tied to the plan' })
+    expect(plans.get('box-1')?.design).toBe('d2')
+  })
+
+  it('a design named as the part beats the latest one', async () => {
+    const { r, out } = await checkOn([boxDesign('d1', 'Spacer'), b], (p) => p.put(boxPlan))
+    expect(out).toMatchObject({ design: 'd1', designName: 'Spacer', chosen: 'matched by name' })
+    expect(r.summary).toContain('Spacer (d1, matched by name)')
+  })
+
+  it('with one design open, checks it and says latest', async () => {
+    const { r, out } = await checkOn([b], (p) => p.put(boxPlan))
+    expect(out).toMatchObject({ design: 'd2', designName: 'Clip', chosen: 'latest' })
+    expect(r.summary).toContain('Clip (d2, latest)')
+  })
+
+  it('a nozzle that is not a positive finite number counts as 0.4 mm', async () => {
+    for (const n of [Number.NaN, 0, -1, undefined]) {
+      const { out } = await checkOn([b], (p) => p.put(boxPlan), undefined, () => n)
+      expect(out.nozzleMm).toBe(0.4)
+    }
+    expect((await checkOn([b], (p) => p.put(boxPlan), undefined, () => 0.6)).out.nozzleMm).toBe(0.6)
   })
 })
 
@@ -147,7 +332,8 @@ describe('slicerx_design_check', () => {
     expect(r.body.watertight).toBe(true)
     expect(r.body.holes).toHaveLength(1)
     expect(Math.abs(r.body.holes[0]!.diameterMm - 6)).toBeLessThan(0.05)
-    // the thinnest wall is from the hole to the near edge, 12 - 3 = 9 mm, or the plate's 5 mm thickness
+    // the hole sits 10 - 3 = 7 mm from the long edges and 12 - 3 = 9 mm from the near end, so the thinnest wall is the
+    // plate's 5 mm thickness
     expect(r.body.minWallMm).toBeCloseTo(5, 2)
     expect(r.items.filter((i) => !i.pass)).toEqual([])
     expect(r.pass).toBe(true)

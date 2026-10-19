@@ -8,7 +8,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { createPlanRegistry, designCheck, type PlanEntry, type PlanRegistry } from './design-check'
+import { createPlanRegistry, designCheck, nozzleOr, type PlanEntry, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { meshStats } from './mesh'
 
@@ -216,8 +216,8 @@ async function replayChange(host: DesignHost, design: Design, history: History, 
 export interface DesignToolOptions {
   /** The plans design.check finds by planId; default a registry of this toolset's own. */
   plans?: PlanRegistry | undefined
-  /** The nozzle diameter in mm, for the thinnest wall; default 0.4. */
-  nozzleMm?: (() => number) | undefined
+  /** The nozzle diameter in mm, for the thinnest wall; 0.4 when absent or not a positive finite number. */
+  nozzleMm?: (() => number | undefined) | undefined
 }
 
 /** The design tools on a host; `files` reads the models design.new starts from and the 3MF files design.open and design.save use. */
@@ -407,14 +407,27 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     },
   })
 
-  /** The design a plan was built in: the one it is tied to, else the latest named as the part, else the latest. */
-  const builtFrom = (entry: PlanEntry): HostDesign => {
-    if (entry.design) return designs.get(entry.design)
+  /**
+   * The design a plan was built in, and how it was chosen: the one it is tied to (or given now, which ties it), else
+   * the latest named as the part, else the only design open. With several open and none tied or named, it refuses
+   * and asks which, rather than check the wrong part.
+   */
+  const builtFrom = (entry: PlanEntry, given: string | undefined): { design: HostDesign; how: 'tied to the plan' | 'matched by name' | 'latest' } => {
+    if (given) {
+      const design = designs.get(given)
+      plans.tie(entry.plan.planId, design.id)
+      return { design, how: 'tied to the plan' }
+    }
+    if (entry.design) return { design: designs.get(entry.design), how: 'tied to the plan' }
     const all = designs.list()
     const named = all.filter((d) => d.name.trim().toLowerCase() === entry.plan.part.trim().toLowerCase()).at(-1)
-    const d = named ?? all.at(-1)
-    if (!d) throw new ToolInputError(`No design to check: build ${entry.plan.part} first, then check it against plan ${entry.plan.planId}.`)
-    return d
+    if (named) return { design: named, how: 'matched by name' }
+    if (all.length === 0) throw new ToolInputError(`No design to check: build ${entry.plan.part} first, then check it against plan ${entry.plan.planId}.`)
+    if (all.length > 1)
+      throw new ToolInputError(
+        `design: plan ${entry.plan.planId} (${entry.plan.part}) is not tied to a design and no open design is named ${entry.plan.part}. Which design is it? Open: ${all.map((d) => `${d.name} (${d.id})`).join(', ')}. Check again with design set to its id.`,
+      )
+    return { design: all[0]!, how: 'latest' }
   }
 
   const check = defineTool({
@@ -423,18 +436,22 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     source: 'command',
     permission: 'read',
     description:
-      'Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger), each named hole\'s diameter (within 0.1 mm), the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. Returns pass and every item with what the plan wants and what the body has; fix the failed items and check again.',
-    input: z.object({ planId: z.string().min(1).describe('The planId of the plan the part was built from') }),
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height), each named hole's diameter (within 0.1 mm) and no holes the plan lacks, the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items and check again.",
+    input: z.object({
+      planId: z.string().min(1).describe('The planId of the plan the part was built from'),
+      design: z.string().min(1).optional().describe('The design id the part was built in, when the plan is not tied to one; it ties the plan to it'),
+    }),
     async run(i) {
       const entry = plans.get(i.planId)
       if (!entry) throw new ToolInputError(`planId: there is no plan ${i.planId}; make the plan first, then build the part and check it`)
-      const d = builtFrom(entry)
-      const nozzleMm = opts.nozzleMm?.() ?? 0.4
+      const { design: d, how } = builtFrom(entry, i.design)
+      const nozzleMm = nozzleOr(opts.nozzleMm?.())
       const body = await bodyFacts(designs, d)
       const result = designCheck(entry.plan, body, nozzleMm)
       const failed = result.items.filter((x) => !x.pass)
-      const summary = result.pass ? `Matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${failed.length} of ${result.items.length} checks failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
-      return { summary, output: { planId: entry.plan.planId, design: d.id, nozzleMm, ...result, body } }
+      const which = `${d.name} (${d.id}, ${how})`
+      const summary = result.pass ? `${which} matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${which}: ${failed.length} of ${result.items.length} checks against plan ${entry.plan.planId} failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
+      return { summary, output: { planId: entry.plan.planId, design: d.id, designName: d.name, chosen: how, nozzleMm, ...result, body } }
     },
   })
 
