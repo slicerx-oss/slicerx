@@ -162,40 +162,63 @@ describe('the tab runtime', () => {
   })
 
   it('a one-feature box skips the plan: plans are for parts with two or more features', () => {
-    const prompt = systemPrompt('design')
-    const line = prompt.split('\n').find((l) => l.includes('design.plan'))!
-    expect(line).toMatch(/Plans are for parts with two or more features/)
-    expect(line).toMatch(/before the first geometry step, call design\.plan/)
-    expect(line).toMatch(/A part of one feature \(a plain box, a spacer, a single plate\) skips the plan: once its sheet is confirmed, build it/)
-    // every new part shows the sheet first (the runtime refuses a new part without one); a larger part then gets the plan
-    expect(line).toMatch(/Every new part shows its sizes on the dimension sheet first/)
-    expect(line).toMatch(/first the sheet, with the sizes that depend on the person's own things asked for and confirmed on it as above; then/)
-    expect(line).toMatch(/as confirmed on the dimension sheet, never asked for twice/)
-    // a plan answered in a later message reuses the sheet the person already confirmed
-    expect(line).toMatch(/A sheet confirmed earlier in the chat still holds when the plan is answered in a later message/)
-    expect(line).not.toMatch(/bound/)
-    // one planning instruction, not two that overlap
-    expect(prompt).not.toMatch(/one or two sentences/)
-    expect(prompt.indexOf('pilot.sheet before building')).toBeLessThan(prompt.indexOf('design.plan'))
-    // the plan comes before the build, and the check against the plan after it
-    expect(prompt.indexOf('design.plan')).toBeLessThan(prompt.indexOf('pilot.sheet_bind'))
-    expect(prompt.indexOf('design.plan')).toBeLessThan(prompt.indexOf('design.check'))
-    expect(systemPrompt('full')).not.toMatch(/design\.plan/)
+    for (const scope of ['full', 'cad'] as const) {
+      const prompt = systemPrompt(scope)
+      const line = prompt.split('\n').find((l) => l.includes('design.plan'))!
+      expect(line).toMatch(/Plans are for parts with two or more features/)
+      expect(line).toMatch(/before the first geometry step, call design\.plan/)
+      expect(line).toMatch(/A part of one feature \(a plain box, a spacer, a single plate\) skips the plan: once its sheet is confirmed, build it/)
+      // every new part shows the sheet first (the runtime refuses a new part without one); a larger part then gets the plan
+      expect(line).toMatch(/Every new part shows its sizes on the dimension sheet first/)
+      expect(line).toMatch(/first the sheet, with the sizes that depend on the person's own things asked for and confirmed on it as above; then/)
+      expect(line).toMatch(/as confirmed on the dimension sheet, never asked for twice/)
+      // a plan answered in a later message reuses the sheet the person already confirmed
+      expect(line).toMatch(/A sheet confirmed earlier in the chat still holds when the plan is answered in a later message/)
+      expect(line).not.toMatch(/bound/)
+      // one planning instruction, not two that overlap
+      expect(prompt).not.toMatch(/one or two sentences/)
+      expect(prompt.indexOf('pilot.sheet before building')).toBeLessThan(prompt.indexOf('design.plan'))
+      // the plan comes before the build, and the check against the plan after it
+      expect(prompt.indexOf('design.plan')).toBeLessThan(prompt.indexOf('pilot.sheet_bind'))
+      expect(prompt.indexOf('design.plan')).toBeLessThan(prompt.indexOf('design.check'))
+    }
+    // the multi-step list stays in the whole app's prompt
+    expect(systemPrompt('full')).toMatch(/Multi-step requests:/)
+  })
+
+  it('names the plan and the check only when design.plan and design.check are offered', () => {
+    const without = (...gone: string[]) => (n: string) => !gone.includes(n)
+    for (const scope of ['full', 'cad'] as const) {
+      const noPlan = systemPrompt(scope, without('design.plan'))
+      expect(noPlan).not.toMatch(/design\.plan|Plans are for parts/)
+      // still sheet first, then small named steps, and the check after the build
+      expect(noPlan).toMatch(/pilot\.sheet before building/)
+      expect(noPlan).toMatch(/several small steps, each named for what it is/)
+      expect(noPlan).not.toMatch(/one or two sentences/)
+      expect(noPlan).toMatch(/design\.check/)
+      const noCheck = systemPrompt(scope, without('design.check'))
+      expect(noCheck).not.toMatch(/design\.check/)
+      expect(noCheck).toMatch(/design\.plan/)
+      expect(noCheck).toMatch(/read the part back with geom\.info or geom\.measure and check the main sizes and holes against the request/)
+      // without the design tools neither is named
+      expect(systemPrompt(scope, without('design.new'))).not.toMatch(/design\.(plan|check)/)
+    }
   })
 
   it('checks a planned part with design.check, fixes once, and on a second miss reports the failed items, never done', () => {
     setAssistantBrand({ voice: 'Short and warm.' })
     try {
-      const prompt = systemPrompt('design')
-      const line = prompt.split('\n').find((l) => l.includes('design.check'))!
-      expect(line).toMatch(/After the last feature of a planned part, call design\.check with the plan's planId/)
-      expect(line).toMatch(/fix those items in one round and call design\.check again/)
-      expect(line).toMatch(/If any item still fails, never say the part is done: list each failed item plainly/)
-      // the voice stays the last block, after the check line
-      expect(prompt.endsWith(`\n\n${VOICE_HEADER}\nShort and warm.`)).toBe(true)
-      expect(prompt.indexOf('design.check')).toBeLessThan(prompt.indexOf(VOICE_HEADER))
-      expect(systemPrompt('full')).not.toMatch(/design\.check/)
-      expect(systemPrompt('cad')).not.toMatch(/design\.check/)
+      for (const scope of ['full', 'cad'] as const) {
+        const prompt = systemPrompt(scope)
+        const line = prompt.split('\n').find((l) => l.includes('design.check'))!
+        expect(line).toMatch(/After the last feature of a planned part, call design\.check with the plan's planId/)
+        expect(line).toMatch(/fix those items in one round and call design\.check again/)
+        expect(line).toMatch(/If any item still fails, never say the part is done: list each failed item plainly/)
+        // the voice stays the last block, after the check line, and after the skill playbooks too
+        expect(prompt.endsWith(`\n\n${VOICE_HEADER}\nShort and warm.`)).toBe(true)
+        expect(prompt.indexOf('design.check')).toBeLessThan(prompt.indexOf(VOICE_HEADER))
+        expect(systemPrompt(scope, undefined, 'Playbook: tune PETG.').endsWith(`Playbook: tune PETG.\n\n${VOICE_HEADER}\nShort and warm.`)).toBe(true)
+      }
     } finally {
       setAssistantBrand()
     }
