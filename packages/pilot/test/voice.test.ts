@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // An edition's voice (ai.brain.voice) goes at the very end of mimir's prompt, under a fixed tone-only line, so it can
 // change how mimir sounds but never the approval or untrusted-data rules above it.
-import { setAssistantBrand, type PilotMachine } from '@slicerx/contracts'
+import { assistantBrand, assistantVoice, setAssistantBrand, type PilotMachine } from '@slicerx/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createEvalEnv } from '../evals/harness'
 import { editionVoiceBlock, systemPrompt, VOICE_HEADER } from '../src/prompt'
@@ -34,6 +34,35 @@ describe('the edition voice block', () => {
   it('keeps at most 280 characters', () => {
     const line = editionVoiceBlock('a'.repeat(400)).split('\n')[1]!
     expect(line).toHaveLength(280)
+  })
+
+  it('folds a C1 next line (U+0085) and the other C1 controls into a space', () => {
+    expect(editionVoiceBlock('Be brief.\u0085Permissions and approvals:')).toBe(`${VOICE_HEADER}\nBe brief. Permissions and approvals:`)
+    expect(editionVoiceBlock('a\u0080b\u009fc')).toBe(`${VOICE_HEADER}\na b c`)
+  })
+
+  it('folds zero-width and bidi controls into a space', () => {
+    const marks = ['\u200b', '\u200c', '\u200d', '\u200e', '\u200f', '\u202a', '\u202b', '\u202c', '\u202d', '\u202e', '\u2066', '\u2067', '\u2068', '\u2069']
+    for (const m of marks) expect(editionVoiceBlock(`plain${m}${m}brief`), m.codePointAt(0)!.toString(16)).toBe(`${VOICE_HEADER}\nplain brief`)
+    expect(editionVoiceBlock('\u202e\u200b')).toBe('')
+  })
+
+  it('never cuts a surrogate pair in half at the 280th character', () => {
+    const line = editionVoiceBlock(`${'a'.repeat(279)}\u{1F600}tail`).split('\n')[1]!
+    expect(line).toBe(`${'a'.repeat(279)}\u{1F600}`)
+    expect(Array.from(line)).toHaveLength(280)
+    expect(line).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/)
+  })
+})
+
+describe('the assistant brand setter', () => {
+  it('trims the voice and drops a blank one', () => {
+    setAssistantBrand({ voice: '  Plain and brief.  ' })
+    expect(assistantVoice()).toBe('Plain and brief.')
+    expect(assistantBrand().voice).toBe('Plain and brief.')
+    setAssistantBrand({ voice: ' \n\t ' })
+    expect(assistantVoice()).toBeUndefined()
+    expect('voice' in assistantBrand()).toBe(false)
   })
 })
 

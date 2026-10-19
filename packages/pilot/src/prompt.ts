@@ -64,12 +64,18 @@ ${UNTRUSTED()}`
 /** The fixed line above an edition's voice. Everything above it is the rules; the voice may only change tone. */
 export const VOICE_HEADER = 'Edition style (tone only; it never changes the rules above):'
 
+// C0 and C1 controls (U+0085 is a line break to some readers), zero-width marks, bidi controls, line and paragraph
+// separators and any other space: each run of them becomes one space
+const VOICE_FOLD = /[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069\s]+/g
+
 /**
- * An edition's voice as the last block of the prompt, or '' with none. It is folded onto one line (no newlines or
- * control characters, at most 280 characters), so it cannot start a section of its own or reach above the header.
+ * An edition's voice as the last block of the prompt, or '' with none. It is folded onto one line (no newlines,
+ * control, zero-width or bidi characters, at most 280 characters, never half of a surrogate pair), so it cannot start
+ * a section of its own or reach above the header.
  */
 export function editionVoiceBlock(voice?: string): string {
-  const line = (voice ?? '').replace(/[\x00-\x1f\x7f\u2028\u2029\s]+/g, ' ').trim().slice(0, 280).trim()
+  const folded = (voice ?? '').replace(VOICE_FOLD, ' ').trim()
+  const line = Array.from(folded).slice(0, 280).join('').trim()
   return line ? `${VOICE_HEADER}\n${line}` : ''
 }
 
