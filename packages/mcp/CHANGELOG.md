@@ -6,10 +6,16 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Added
 
-- `slicerx_mimir_memory` reads what mimir remembers about the person in the open app over the app link: printers, filaments, preferences, outcomes and sizes, newest first, with `kind` to read one kind. The app hides access codes, serial numbers and keys before a fact leaves it, and `hidden` counts the facts that had one. `slicerx_mimir_memory_remember` adds one fact (`kind`, `text`, optional `data`); it follows the profile class of the permission policy, a fact with a secret is refused, and so is a client the person allowed to read only.
+- `slicerx_mimir_memory` reads what mimir remembers about the person in the open app over the app link: printers, filaments, preferences, outcomes and sizes, newest first, with `kind` to read one kind. The app hides access codes, serial numbers and keys before a fact leaves it, and `hidden` counts the facts that had one. `slicerx_mimir_memory_remember` adds one fact (`kind`, `text` of 3 to 240 characters on one line, optional `data` of up to 6 values), with the limits the app's own save uses; it follows the profile class of the permission policy, a fact with a secret is refused, and so is a client the person allowed to read only.
 - `slicerx_design_check` checks a built design against a part plan by `planId`: the overall size, each named hole, the feature count, a closed body and the thinnest wall for the nozzle. With the app link on it runs in the app, against the plans the mimir tab made. When the plan is tied to no design and two open designs share the part's name, it asks which.
-- `slicerx_design_plan` keeps a part plan for `slicerx_design_check` under its `planId`, optionally tied to a `design`, and returns the `planId`. A plan with the same `planId` replaces the old one. With the app link on it goes to the app (`design.plan`, read class), where the app's design check reads it; there is no card on this path.
+- `slicerx_design_put_plan` adds the client's own part plan for `slicerx_design_check` under its `planId`, optionally tied to a `design`, and returns the `planId`. The client's plan with the same `planId` replaces its old one; the client's last 50 plans are kept apart from the plans the person makes in the mimir tab, which it can never replace or push out (their `planId` is refused). With the app link on it goes to the app (`design.put_plan`, read class), where the app's design check reads it; there is no card on this path.
 - `slicerx_mimir_brain` reads the mimir the open app runs over the app link: `name`, `voice` (whether the edition set one), `toolGroups` (each group on or off), `cloud` (`base`, the model mimir cloud answers with, and `stepUp`, the step-up the edition asks for or `null`), `memory` (`local` and `sync`) and `knowledgeDocs`, the count of the edition's own docs. It never carries the voice text or the docs.
+
+### Notes for partners
+
+- `ai.brain.memory.local` in the edition config defaults to `true`. Every edition's mimir gets `memory.remember`, `memory.recall` and the notes block in its instructions unless the edition sets `local: false`.
+- `Citation.kind` in `@slicerx/contracts` gained `'edition'`, for a source from the edition's own knowledge. Code that switches on `kind` should handle it.
+- The `approval_request` pilot event in `@slicerx/contracts` has an optional `source`, the tool's source, so a host's own card for a built-in tool never stands in for a plugin's tool of the same name.
 
 ### Fixed
 

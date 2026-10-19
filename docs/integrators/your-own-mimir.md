@@ -19,7 +19,7 @@ The config is checked when it loads. A bad value stops it with the setting's pat
 
 ## What works today
 
-Every setting on this page is in effect in the app's mimir: the docked chat, the dock in the browser build, and the mimir tab. The voice goes into the assistant's instructions, your knowledge is searched and cited, switched-off tool groups are never offered, routing picks the models for a person's own key, and memory follows `memory.local` and `memory.sync`. `slicerx_mimir_brain` reads back what the running app applies.
+Every setting on this page is in effect in the app's mimir: the docked chat, the dock in the browser build, and the mimir tab. The voice goes into the assistant's instructions, your knowledge is searched and cited, switched-off tool groups are never offered, routing picks the models for a person's own key, and memory follows `memory.local` and `memory.sync` (see [Memory](#memory) for who saves notes and who only reads them). `slicerx_mimir_brain` reads back what the running app applies.
 
 ## Voice
 
@@ -52,6 +52,8 @@ App commands go by their permission class: printer classes are `printers`, a cha
 
 Every mimir the app makes applies the switches with `applyToolGroups` from `@slicerx/pilot` (`toolGroupOf` says which group a tool is in), so a switched-off tool is not offered to the model and cannot be called. With `web: false` the app also turns web search off in mimir's config.
 
+These switches act when the app builds mimir, for everyone on your edition. A person's own On, Ask first and Off choices in Settings > Permissions are a different layer: they set the permission policy classes (allow, ask, off) that the app and MCP clients both go through. Those choices can make a tool ask or stop, but they can't bring back a group your edition switched off.
+
 ## Routing
 
 `routing` names the models for a person who uses their own key. `base` is the model for quick turns, and the only model when the person isn't on Auto. `step` is the model Auto moves to for deep turns. `provider` (`anthropic` or `openai`) says which key the models are for, and is required when you name `base` or `step`; a key for another provider keeps its own models.
@@ -70,6 +72,8 @@ The proxy knows your edition from the install's token, which the install got by 
 
 `memory.local` (default `true`) lets the assistant keep short notes about the person (their printers, filaments, preferences, sizes and what worked) on their computer, one store per edition. mimir asks before it saves a note, unless the person turned that off in Settings > Memory, where they can also see, edit, delete, export and clear their notes. A note that looks like a key, token, access code or serial is refused. With `local: false` mimir has no memory tools and reads no notes.
 
+The docked chat saves notes. The mimir tab reads them and can recall them, but it doesn't save new ones. MCP clients read notes with `slicerx_mimir_memory` and add them with `slicerx_mimir_memory_remember` over the app link. `slicerx_mimir_memory` is read class, so a client the person allowed to read only can read the notes, with keys, access codes and serials masked. Adding a note goes through the profile class and is refused for a read-only client.
+
 `memory.sync` is `off` (the default) or `opt-in`. With `opt-in`, a signed-in person sees "Sync with my account" in Settings > Memory, off until they turn it on. While it is on, notes and deletions sync with their account when a chat starts and shortly after each change, with the same session the rest of the app's cloud calls use. Signed out, or with the switch off, nothing is sent.
 
 ## Reading it back
@@ -87,7 +91,7 @@ The proxy knows your edition from the install's token, which the install got by 
 }
 ```
 
-`voice` says whether a voice is set. The answer never has the voice text or the contents of your docs. `knowledgeDocs` counts only your edition's own docs, in the edition file the running build carries; the bundled docs are not counted. `cloud.base` is the base model mimir cloud answers with, and `cloud.stepUp` is your config's value (`null` for `none`); the proxy still decides. `toolGroups` is the set of switches every mimir in the app applies.
+`voice` says whether a voice is set. The answer never has the voice text or the contents of your docs. `knowledgeDocs` counts only your edition's own docs that mimir searches, in the edition file the running build carries. The bundled docs are not counted, and neither is one of yours that shares a bundled doc's id or name (the bundled doc wins). `cloud.base` is the base model mimir cloud answers with, and `cloud.stepUp` is your config's value (`null` for `none`); the proxy still decides. `toolGroups` is the set of switches every mimir in the app applies.
 
 ## What an edition can't change
 
