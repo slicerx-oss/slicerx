@@ -5,21 +5,13 @@
 // hides secrets before a fact leaves it and refuses to keep one; this server keeps no copy. Adding a fact is an edit on
 // the link, so a client the person allowed to read only is refused there.
 import { assistantText } from '@slicerx/contracts'
-import { defineTool, type PilotTool } from '@slicerx/pilot'
+import { defineTool, MEMORY_KINDS, type MemoryFact, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
 
-export const MEMORY_KINDS = ['printer', 'filament', 'preference', 'outcome', 'size'] as const
-
-/** One fact as the app answers it, with secrets already hidden. */
-export interface MemoryFact {
-  id: string
-  kind: (typeof MEMORY_KINDS)[number]
-  text: string
-  data?: Record<string, string | number>
-  updatedAt: number
-}
+// One fact as the app answers it, with secrets already hidden: the memory store's own shape (@slicerx/pilot).
+export { MEMORY_KINDS, type MemoryFact }
 
 const OFF = ['app_link_off', 'app_closed', 'forbidden', 'unauthorized']
 const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', refused: 'invalid_input', not_found: 'not_supported', not_ready: 'not_configured', busy: 'busy', read_only: 'not_supported', denied: 'not_supported' }

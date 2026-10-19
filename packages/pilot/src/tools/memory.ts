@@ -4,7 +4,7 @@
 // what worked) kept on their computer. Saving is profile class, so the app asks first; a note that looks like a
 // secret is refused before the card. Recalling is read class. The edition turns both off with ai.brain.memory.local.
 import { z } from 'zod'
-import { MEMORY_KINDS, NOTE_UNSAFE, pickFacts, redactSecrets, type MemoryFact, type MemoryStore } from '../memory/facts'
+import { MEMORY_KINDS, NOTE_UNSAFE, oneLine, pickFacts, redactSecrets, secretInNote, type MemoryFact, type MemoryStore } from '../memory/facts'
 import { defineTool, type PilotTool } from '../tool'
 
 const REFUSED = 'Not saved: that looks like a key, token, access code or serial. Those stay in the app, never in notes.'
@@ -23,17 +23,8 @@ const rememberInput = z.object({
     .describe('Up to 6 key values, such as { model: "A1", nozzleMm: 0.4 }'),
 })
 
-type RememberInput = z.infer<typeof rememberInput>
-
-// "accessCode" read as "access Code", so a name-and-value pattern sees the name
+// "nozzleMm" read as "nozzle Mm", for the card's label
 const spaced = (k: string): string => k.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ')
-
-/** Whether any part of the note looks like a secret: the text, each data key and value, and each key with its value. */
-function secretIn(i: RememberInput): boolean {
-  const parts = [i.text]
-  for (const [k, v] of Object.entries(i.data ?? {})) parts.push(k, String(v), `${k}: ${v}`, `${spaced(k)}: ${v}`)
-  return parts.some((s) => redactSecrets(s).refused)
-}
 
 /** A data key as a plain label for the card: nozzleMm becomes "Nozzle mm". */
 function label(k: string): string {
@@ -54,16 +45,16 @@ export function memoryTools(store: MemoryStore, now: () => number = () => Date.n
     input: rememberInput,
     // the row and the session log never echo a refused secret: the text with secrets cut out, and no data
     args: (i) => `${i.kind} "${redactSecrets(i.text).text}"`,
-    shownInput: (i) => ({ kind: i.kind, text: redactSecrets(i.text).text, ...(i.data ? { data: secretIn(i) ? '[withheld]' : i.data } : {}) }),
+    shownInput: (i) => ({ kind: i.kind, text: redactSecrets(i.text).text, ...(i.data ? { data: secretInNote(i) ? '[withheld]' : i.data } : {}) }),
     async approval(i) {
-      if (secretIn(i)) throw new Error(REFUSED)
+      if (secretInNote(i)) throw new Error(REFUSED)
       // everything that is saved and read back later is on the card, the data too
       const data = Object.entries(i.data ?? {}).map(([k, v]) => `${label(k)}: ${v}`)
       return { title: 'Remember this?', lines: [i.text, ...data, 'Kept on this computer for later chats.'], actions: [] }
     },
     async run(i, ctx) {
       if (!ctx.token) return { ok: false, summary: 'Not approved' }
-      if (secretIn(i)) return { ok: false, summary: REFUSED }
+      if (secretInNote(i)) return { ok: false, summary: REFUSED }
       const old = (await store.list()).find((f) => f.kind === i.kind && same(f.text, i.text))
       const f: MemoryFact = { id: old?.id ?? `mem_${globalThis.crypto.randomUUID()}`, kind: i.kind, text: i.text, updatedAt: now(), ...(i.data ? { data: i.data } : {}) }
       await store.put(f)
@@ -81,8 +72,9 @@ export function memoryTools(store: MemoryStore, now: () => number = () => Date.n
     input: z.object({ query: z.string().min(1).max(200) }),
     args: (i) => `"${i.query}"`,
     async run(i) {
-      const facts = pickFacts(await store.list(), i.query)
-      // the notes are the person's own words, read back as data like any other text from outside
+      // each note on one line, whatever the store holds (a synced note was never checked by this tool), and read back
+      // as data like any other text from outside
+      const facts = pickFacts(await store.list(), i.query).map((f) => ({ ...f, text: oneLine(f.text), ...(f.data ? { data: Object.fromEntries(Object.entries(f.data).map(([k, v]) => [oneLine(k), typeof v === 'number' ? v : oneLine(v)])) } : {}) }))
       return { summary: `${facts.length} note${facts.length === 1 ? '' : 's'}`, output: facts, untrusted: true }
     },
   })

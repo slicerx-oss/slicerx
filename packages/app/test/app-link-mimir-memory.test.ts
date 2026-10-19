@@ -3,9 +3,12 @@
 // mimir's memory over the app link: facts read back with secrets hidden, a fact added through the store, a secret never
 // kept, and a plain "memory unavailable" while no store is registered.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { redactSecrets } from '../src/app-link/memory-secrets'
+import { redactSecrets as redact } from '@slicerx/pilot'
 import { APP_LINK_METHODS, type LinkError, runCall } from '../src/app-link/methods'
-import { setMemoryProvider, type MemoryFact, type MemoryProvider } from '../src/app-link/mimir-memory'
+import { HIDDEN, setMemoryProvider, type MemoryFact, type MemoryProvider } from '../src/app-link/mimir-memory'
+
+/** The one secrets filter (packages/pilot/src/memory/facts.ts), masking as the link does. */
+const redactSecrets = (text: string) => redact(text, HIDDEN)
 
 const FACTS: MemoryFact[] = [
   { id: 'f1', kind: 'printer', text: 'A Bambu Lab P1S with a 0.4 mm nozzle, access code 12345678', data: { nozzleMm: 0.4, accessCode: '87654321' }, updatedAt: 10 },

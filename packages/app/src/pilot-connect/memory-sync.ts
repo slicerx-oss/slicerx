@@ -4,26 +4,11 @@
 // for each edition; this keeps that store in step with the person's rows in mimir_memory on the edition's Supabase
 // project (supabase/migrations/0029_mimir_memory.sql). Per fact id the newer updatedAt wins, on either side. A
 // deletion travels as a tombstone, { deleted: true, updatedAt }, so another device drops the fact too; tombstones of
-// local deletions wait in a small per-edition list until a sync has sent them. Nothing is sent while sync is off or
-// the person is signed out.
+// local deletions wait in a small per-edition list until a pull shows the server has them. A fact that looks like it
+// holds a secret never leaves the device. Nothing is sent while sync is off or the person is signed out.
+import { MEMORY_KINDS, secretInNote, type MemoryFact, type MemoryStore } from '@slicerx/pilot'
 
-// Matches MemoryFact (packages/pilot/src/memory/facts.ts) and MemoryStore (packages/app/src/pilot-connect/memory-store.ts,
-// beside openMemoryStore) of the local memory store. Replace these with the imports once that work lands.
-// TODO(Task 8 merge): push must run each fact's text through redactSecrets from packages/pilot/src/memory/facts.ts
-// and skip any fact it refuses, so a secret that reached the local store never leaves the device (see pushable).
-export type MemoryFact = {
-  id: string
-  kind: 'printer' | 'filament' | 'preference' | 'outcome' | 'size'
-  text: string
-  data?: Record<string, string | number>
-  updatedAt: number
-}
-export interface MemoryStore {
-  list(): Promise<MemoryFact[]>
-  put(f: MemoryFact): Promise<void>
-  remove(id: string): Promise<void>
-  clear(): Promise<void>
-}
+export type { MemoryFact, MemoryStore }
 
 /** A deleted fact as it syncs. */
 export type MemoryTombstone = { deleted: true; updatedAt: number }
@@ -50,8 +35,10 @@ export interface SyncOptions {
 
 export type SyncResult = { pulled: number; pushed: number }
 
-const KINDS: ReadonlySet<string> = new Set(['printer', 'filament', 'preference', 'outcome', 'size'])
+const KINDS: ReadonlySet<string> = new Set(MEMORY_KINDS)
 const DAY_MS = 24 * 60 * 60 * 1000
+/** The server drops tombstones older than this (0029's prune), so a deletion this old is not waited on. */
+const TOMBSTONE_KEEP_MS = 90 * DAY_MS
 /** The live facts one edition holds per person on the server (the table's trigger). */
 export const MEMORY_SYNC_CAP = 2000
 /** The largest fact the server takes, as its jsonb text (the table's check). */
@@ -92,17 +79,19 @@ function storedBytes(f: MemoryFact | MemoryTombstone): number {
   return new TextEncoder().encode(json).length + 2 * members
 }
 
+const isTombstone = (f: MemoryFact | MemoryTombstone): f is MemoryTombstone => (f as MemoryTombstone).deleted === true
+
 /**
  * What a sync sends for a local fact or deletion, or null when it must stay on this device: a bad shape, a size the
- * server would refuse (one such fact would fail the whole batch), or a time more than a day ahead of this clock.
+ * server would refuse (one such fact would fail the whole batch), a time more than a day ahead of this clock, or a
+ * fact that holds something like a secret (secretInNote), so a secret that reached the local store never leaves it.
  */
 function pushable(id: string, f: MemoryFact | MemoryTombstone, limit: number): MemoryFact | MemoryTombstone | null {
   const clean = parseSynced(id, f)
   if (!clean || clean.updatedAt > limit || storedBytes(clean) > MEMORY_FACT_MAX_BYTES) return null
+  if (!isTombstone(clean) && secretInNote(clean)) return null
   return clean
 }
-
-const isTombstone = (f: MemoryFact | MemoryTombstone): f is MemoryTombstone => (f as MemoryTombstone).deleted === true
 
 let registered: MemoryRemote | null = null
 
@@ -218,10 +207,19 @@ export async function syncMemory(store: MemoryStore, edition: string, opts: Sync
     }
   }
   if (send.length) await remote.push(edition, send)
-  // Every tombstone read here is now on the remote, older than what is there, or one that can never be sent. One
-  // noted during this sync stays.
+  // A deletion waits here until a pull shows the server has it (its tombstone, or a newer edit from another device that
+  // wins), since the server skips a write it finds too far ahead of its own clock. It also goes once the fact is back
+  // in the local store, once an unusable remote row stands in its way, or once it is older than the server keeps
+  // tombstones. One noted during this sync stays.
   const now = readTombstones(kv, edition)
-  for (const [id, at] of Object.entries(deleted)) if (now[id] === at) delete now[id]
+  const oldest = (opts.now ?? Date.now)() - TOMBSTONE_KEEP_MS
+  for (const [id, at] of Object.entries(deleted)) {
+    if (now[id] !== at) continue
+    const other = theirs.get(id)
+    const settled = other ? (isTombstone(other) ? other.updatedAt >= at : other.updatedAt > at) : false
+    const moot = local.has(id) || (blocked.get(id) ?? -Infinity) >= at || at < oldest
+    if (settled || moot) delete now[id]
+  }
   writeTombstones(kv, edition, now)
   return { pulled, pushed: send.length }
 }
