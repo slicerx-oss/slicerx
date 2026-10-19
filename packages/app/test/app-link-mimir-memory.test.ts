@@ -109,8 +109,8 @@ describe('the memory secrets filter', () => {
   it('hides keys from the edition config patterns, private keys, access codes and serials', () => {
     for (const [text, want] of [
       ['key sk-abcdefghijklmnopqrstuvwxyz0123 here', 'key [hidden] here'],
-      ['stripe sk_live_abcdefghij1234', 'stripe [hidden]'],
-      ['-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY----- done', '[hidden] done'],
+      ['stripe sk_live_abcdefghij1234', 'stripe [hidden]'], // gitleaks:allow (a made-up test key)
+      ['-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY----- done', '[hidden] done'], // gitleaks:allow (a made-up test key)
       ['access code: 12345678', 'access code: [hidden]'],
       ['LAN code is 9f8e7d6c', 'LAN code is [hidden]'],
       ['serial number 01S00C123456789', 'serial number [hidden]'],
@@ -128,7 +128,7 @@ describe('the memory secrets filter', () => {
 })
 
 describe('secrets in data names', () => {
-  const KEY = 'sk-abcdefghijklmnopqrstuvwxyz0123'
+  const KEY = 'sk-abcdefghijklmnopqrstuvwxyz0123' // gitleaks:allow (a made-up test key)
 
   it('hides a data name that is a secret, with its value, and counts the fact', async () => {
     memory([{ id: 'k1', kind: 'preference', text: 'Scripts read the printer', data: { [KEY]: 'scripts', nozzleMm: 0.4 }, updatedAt: 5 }])

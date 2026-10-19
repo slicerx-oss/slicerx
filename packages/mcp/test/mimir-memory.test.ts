@@ -85,7 +85,7 @@ describe('who decides on adding a fact', () => {
   })
 
   it('names a bad data entry by its position, never by its name', () => {
-    const key = 'sk-abcdefghijklmnopqrstuvwxyz0123'
+    const key = 'sk-abcdefghijklmnopqrstuvwxyz0123' // gitleaks:allow (a made-up test key)
     const parsed = tools(undefined)[1]!.input.safeParse({ kind: 'preference', text: 'Scripts', data: { nozzleMm: 0.4, [key]: true } })
     expect(parsed.success).toBe(false)
     const messages = JSON.stringify(parsed.error?.issues)

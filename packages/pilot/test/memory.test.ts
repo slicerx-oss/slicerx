@@ -63,7 +63,7 @@ describe('one secrets filter for notes, the sync and the app link', () => {
     expect(redactSecrets('access code: 12345678', '[hidden]')).toEqual({ text: 'access code: [hidden]', refused: true })
     expect(redactSecrets('LAN code is 9f8e7d6c')).toEqual({ text: 'LAN code is [removed]', refused: true })
     expect(redactSecrets('serial number 01S00C123456789', '[hidden]').text).toBe('serial number [hidden]')
-    expect(redactSecrets('-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY----- done', '[hidden]').text).toBe('[hidden] done')
+    expect(redactSecrets('-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY----- done', '[hidden]').text).toBe('[hidden] done') // gitleaks:allow (a made-up test key)
   })
 
   it('a data name that always holds a secret refuses the note, whatever its value', () => {
