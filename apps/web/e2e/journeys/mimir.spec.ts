@@ -702,7 +702,7 @@ test.describe('mimir cloud', () => {
 
 /* ------------------------------------------------------------------ what mimir remembers */
 
-// A reply that asks to keep a note shows the chip, not the approval card. Remember saves it (the chip keeps its size),
+// A reply in the mimir tab that asks to keep a note shows the chip, not the approval card. Remember saves it (the chip keeps its size),
 // and Settings > Memory lists it under its kind and clears it after asking. Not now, edit, delete and export are unit
 // tests (packages/app/test/memory-section.test.ts).
 test.describe('what mimir remembers', () => {
@@ -712,18 +712,18 @@ test.describe('what mimir remembers', () => {
     await ready(page, 'cloud')
     await stubProxy(page, (body) => (lastUserText(body).includes('tool_result') ? answer('Noted.') : [{ type: 'tool_use', id: 'tu_mem', name: 'memory.remember', input: { kind: 'printer', text: NOTE } }]))
     await signIn(page)
-    await freshDock(page)
-    await askDock(page, 'Remember that I have a Bambu Lab A1')
-    const dock = page.locator('.mimir-dock')
-    const chip = dock.getByTestId('mimir-remember')
+    await emptyMimirTab(page)
+    await askTab(page, 'Remember that I have a Bambu Lab A1')
+    const chat = page.getByTestId('mimir-chat')
+    const chip = chat.getByTestId('mimir-remember')
     await expect(chip).toBeVisible({ timeout: 30_000 })
     await expect(chip).toContainText(NOTE)
-    await expect(dock).not.toContainText('needs your approval')
+    await expect(chat).not.toContainText('needs your approval')
     if (shotsOn()) await chip.screenshot({ path: `${shotsDir(info)}/mimir-remember-chip.png` })
     const before = (await chip.boundingBox())!
     await chip.getByTestId('mimir-remember-yes').click()
     await expect(chip).toHaveAttribute('data-done', 'saved')
-    await expect(dock).toContainText('Noted.', { timeout: 30_000 })
+    await expect(chat).toContainText('Noted.', { timeout: 30_000 })
     expect((await chip.boundingBox())!.height).toBe(before.height)
 
     await chip.getByRole('button', { name: 'See all notes' }).click()
