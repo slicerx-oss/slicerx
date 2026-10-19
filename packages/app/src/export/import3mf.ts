@@ -84,6 +84,39 @@ export interface ImportedProject {
   namedValues: NamedValue[]
   /** Why the histories did not open, when a newer SlicerX saved them. */
   historyNote?: string
+  /** Why the project's print settings were left out, when its settings file is there but not JSON settings. */
+  settingsNote?: string
+}
+
+/** Text made only of `key = value` lines, with `;` or `#` comments and `[section]` headers between them. */
+function looksLikeIni(text: string): boolean {
+  let pairs = 0
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim()
+    if (line === '' || line.startsWith(';') || line.startsWith('#') || (line.startsWith('[') && line.endsWith(']'))) continue
+    const eq = line.indexOf('=')
+    if (eq < 0 || !/^[A-Za-z0-9_]+$/.test(line.slice(0, eq).trim())) return false
+    pairs++
+  }
+  return pairs > 0
+}
+
+/**
+ * Metadata/project_settings.config as settings, as the engine reads it: none when it is missing, empty or only white
+ * space, the JSON object when it is one (a byte order mark first is fine), else none with a note saying why.
+ */
+export function projectSettingsOf(bytes: Uint8Array | undefined): { settings?: Record<string, unknown>; note?: string } {
+  if (!bytes) return {}
+  const text = new TextDecoder().decode(bytes).replace(/^\uFEFF/, '')
+  if (/^[ \t\n\r\f]*$/.test(text)) return {}
+  try {
+    const j: unknown = JSON.parse(text)
+    if (j !== null && typeof j === 'object' && !Array.isArray(j)) return { settings: j as Record<string, unknown> }
+  } catch {
+    // not JSON: said below
+  }
+  const why = looksLikeIni(text) ? 'they are in an older key = value format' : 'its settings file is damaged'
+  return { note: `Its print settings were left out because ${why}, so it opens with the current settings.` }
 }
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -769,7 +802,9 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   let colors: string[] = []
   let settings: Record<string, unknown> = {}
   let settingsFrom: ImportedProject['settingsFrom'] = 'orca'
-  const ps = files.get('Metadata/project_settings.config')
+  // An empty settings file is as if there were none; one that is not JSON settings is left out with a note.
+  const read = projectSettingsOf(files.get('Metadata/project_settings.config'))
+  const ps = read.settings || read.note ? read : undefined
   const pe = ps ? undefined : files.get('Metadata/Slic3r_PE.config')
   if (pe) {
     // A PrusaSlicer project: its config, mapped to the Orca keys and value forms an Orca project carries.
@@ -778,14 +813,9 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     settingsFrom = 'prusaslicer'
     if (Array.isArray(settings['filament_colour'])) colors = settings['filament_colour'].filter((c): c is string => typeof c === 'string')
   }
-  if (ps) {
-    try {
-      const j: unknown = JSON.parse(dec.decode(ps))
-      if (j !== null && typeof j === 'object' && !Array.isArray(j)) settings = j as Record<string, unknown>
-      if (Array.isArray(settings['filament_colour'])) colors = settings['filament_colour'].filter((c): c is string => typeof c === 'string')
-    } catch {
-      // Settings that do not parse are left out; geometry still opens.
-    }
+  if (read.settings) {
+    settings = read.settings
+    if (Array.isArray(settings['filament_colour'])) colors = settings['filament_colour'].filter((c): c is string => typeof c === 'string')
   }
   // A 3MF that is no slicer's project (no project settings: a CAD export, a downloaded model) is placed the way Orca
   // places one (Plater::priv::load_files: center_instances_around_point, then ensure_on_bed): its objects, as one
@@ -798,5 +828,5 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const histories = parseHistories(files, fileIds)
   const note = historyNewer(files) ?? historyLost(files, fileIds, histories)
   const timeline = histories.size ? parseTimeline(files, fileIds) : null
-  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}) }
+  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : {}) }
 }
