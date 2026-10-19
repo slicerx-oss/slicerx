@@ -9,6 +9,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { extname, join } from 'node:path'
 import type { GcodeExport, GcodeTarget, MeshHandle, MeshPart, PrintConfig, SettingValue, SliceRequest, SliceResult, SlicerHost } from '@slicerx/contracts'
 import { gcode3mf } from './gcode3mf'
+import { ToolInputError } from './errors'
 import { defaultConfig, sameValue } from '@slicerx/settings'
 import { meshStats, readStlPositions, transformPositions, writeBinaryStl } from './mesh'
 import type { SliceJobObject, SliceSummary, SlicerBackend } from './slicer'
@@ -116,7 +117,9 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
 
   return {
     async loadModel(data, fileName) {
-      if (extname(fileName).toLowerCase() !== '.stl') throw new Error(`${fileName}: only STL models can be loaded today.`)
+      if (extname(fileName).toLowerCase() !== '.stl') {
+        throw new ToolInputError(`${fileName}: only STL models (.stl) can be added to a project. To slice a 3MF, .sx3mf or OBJ file, use slicerx_slice_file.`, 'unsupported_format')
+      }
       return store(fileName, readStlPositions(Buffer.from(data)))
     },
     async loadParts(name, parts) {
