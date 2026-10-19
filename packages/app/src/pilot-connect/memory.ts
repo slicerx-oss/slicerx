@@ -12,7 +12,7 @@
 // calls carry (the host's store client).
 import type { PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
-import { isLocalModel, type CreatePilotOptions, type MemoryFact, type MemoryStore } from '@slicerx/pilot'
+import { whereNotesGo, type CreatePilotOptions, type MemoryFact, type MemoryStore, type NotesWhere } from '@slicerx/pilot'
 import { useEffect, useSyncExternalStore } from 'react'
 import { setMemoryProvider, type MemoryProvider } from '../app-link/mimir-memory'
 import { useEdition } from '../edition'
@@ -219,21 +219,21 @@ export function useMemoryStore(): WatchedMemory {
  * What mimir runs with: the edition's switch, the shared store, whether saving a note shows the chip first, and the
  * sync each chat start runs (when sync is on). Settings > Memory > Save notes without asking turns the chip off, read
  * at each save, so it applies at once. `remember: false` is for a host that cannot grant the approval a save needs.
- * `cloud` is true when the chat's model runs off this computer (chatOffComputer), so the chip says notes go along
- * with chats.
+ * `where` is where the chat's model runs (chatNotesGo), so the chip says whether and where notes go along with chats.
  */
 /**
- * Whether a chat's notes leave this computer with it: true for any model that answers from elsewhere (mimir cloud, or
- * the person's own Anthropic or OpenAI key), false for a local model and for the built-in demo (`live` false).
+ * Where a chat's notes go with it: to the cloud for any model that answers from elsewhere (mimir cloud, or the person's
+ * own Anthropic or OpenAI key), by the server's address for a server the person runs (this computer, or a computer
+ * on their network), and nowhere for the built-in demo (`live` false).
  */
-export function chatOffComputer(config: Pick<PilotConfig, 'provider'>, live: boolean): boolean {
-  return live && !isLocalModel(config)
+export function chatNotesGo(config: Pick<PilotConfig, 'provider' | 'baseUrl'>, live: boolean): NotesWhere {
+  return live ? whereNotesGo(config) : 'computer'
 }
 
-export function pilotMemory(edition: Pick<EditionConfig, 'id' | 'ai'>, opts: { remember?: boolean; cloud?: boolean } = {}): NonNullable<CreatePilotOptions['memory']> {
+export function pilotMemory(edition: Pick<EditionConfig, 'id' | 'ai'>, opts: { remember?: boolean; where?: NotesWhere } = {}): NonNullable<CreatePilotOptions['memory']> {
   const h = appMemory(edition)
-  const cloud = opts.cloud === true
-  return { local: h.local, store: h.store, ask: () => !get().mimirRememberWithoutAsking, chatStarted: () => h.sync.chatStarted(), cloud: () => cloud, ...(opts.remember === false ? { remember: false } : {}) }
+  const where = opts.where ?? 'computer'
+  return { local: h.local, store: h.store, ask: () => !get().mimirRememberWithoutAsking, chatStarted: () => h.sync.chatStarted(), where: () => where, ...(opts.remember === false ? { remember: false } : {}) }
 }
 
 /** Drops the handle and takes it off the app link (tests, and a window closing). */

@@ -13,7 +13,7 @@ import { geom } from '../../geom/client'
 import { guardedPrinters } from '../../plate/guard'
 import { editionToolGroups, withBrain } from '../../pilot-connect/brain'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
-import { chatOffComputer, pilotMemory, useMemoryAccount, useMemoryStore } from '../../pilot-connect/memory'
+import { chatNotesGo, pilotMemory, useMemoryAccount, useMemoryStore } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { hostSlices } from '../../state/model-mode'
 import { get } from '../../state/store'
@@ -86,7 +86,7 @@ export function usePilot(): Pilot | null {
       const config = withBrain(base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' as const } : paid ? { ...base0, billing: paid } : base0, edition)
       // what the person asked mimir to remember, kept per edition through the app's one memory handle (the tab, the
       // app link and Settings share it); the edition can turn it off (ai.brain.memory.local)
-      const base = { ...dockPilotOptions(host, { printers, llm, approvals, config, kb }), memory: pilotMemory(edition, { cloud: chatOffComputer(base0, ok) }), toolGroups: editionToolGroups(edition) }
+      const base = { ...dockPilotOptions(host, { printers, llm, approvals, config, kb }), memory: pilotMemory(edition, { where: chatNotesGo(base0, ok) }), toolGroups: editionToolGroups(edition) }
       const made = createPilot(ok ? base : { ...base, client: createDemoClient() })
       // clients read back what answers here and the tools its model is offered (mimir.dock)
       setDockPilot({ pilot: made, link: ok ? 'model' : 'demo', config })

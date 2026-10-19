@@ -28,6 +28,7 @@ export { createAppFunctionTools, SKILL_INFO, SKILL_NAMES } from '../skills/index
 export { builtinTools } from './tools/index'
 export { DATA_MAX_KEYS, DATA_NAME_MAX, DATA_VALUE_MAX, dataLabel, dataProblem, estimateTokens, factLine, MEMORY_KINDS, NOTE_MAX, NOTE_MIN, noteProblem, oneLine, pickFacts, redactSecrets, SECRET_DATA_KEY, secretInNote, type MemoryFact, type MemoryKind, type MemoryStore } from './memory/facts'
 export { memoryTools } from './tools/memory'
+export { whereHost, whereNotesGo, type NotesWhere } from './memory/where'
 export { kbTools } from './tools/kb'
 export { lookupParts, partsTool } from './tools/parts'
 export { loadPartsTable, type PartRecord, type PartSize, type PartsTable } from './parts/table'

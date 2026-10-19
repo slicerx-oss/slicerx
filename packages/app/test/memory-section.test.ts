@@ -4,7 +4,7 @@
 // card), and Settings > Memory, which lists the notes by kind, edits and deletes one, clears them all after asking, and
 // exports every one. All of it goes through the app's one handle on the edition's notes.
 import { DEFAULT_POLICY, type Host, type PilotEvent, type PrinterHost, type ToolSource } from '@slicerx/contracts'
-import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type MemoryFact, type ScriptStep } from '@slicerx/pilot'
+import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type MemoryFact, type NotesWhere, type ScriptStep } from '@slicerx/pilot'
 import { emptyTranscript, foldEvents, startTurn, TranscriptView } from '@slicerx/pilot/ui'
 import { ToastProvider } from '@slicerx/ui'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -14,7 +14,7 @@ import { EditionContext, NEUTRAL } from '../src/edition'
 import { MEMORY_CARDS } from '../src/features/pilot/remember-chip'
 import { HostContext } from '../src/host'
 import { MemorySection } from '../src/pilot-connect/memory-section'
-import { bindMemoryAccount, chatOffComputer, memoryFor, pilotMemory } from '../src/pilot-connect/memory'
+import { bindMemoryAccount, chatNotesGo, memoryFor, pilotMemory } from '../src/pilot-connect/memory'
 import { get, set } from '../src/state/store'
 
 const printers = { list: async () => [], plugins: async () => [], fleets: async () => [], status: async () => { throw new Error('none') }, subscribe: () => () => undefined } as unknown as PrinterHost
@@ -112,20 +112,41 @@ describe('the chip', () => {
     expect(screen.getByTestId('mimir-remember')).toBeTruthy()
   })
 
-  it('with any model off this computer the chip says notes go along with chats; with a local model, that they stay here', async () => {
-    const pilot = (cloud: boolean) => createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(A1, { chunk: false }), memory: pilotMemory(NEUTRAL, { cloud }) })
+  it('the chip shows where the note goes, for each of the three places', () => {
+    const lines = ['Kept on this computer for later chats.', 'Kept on this computer, and sent with chats to a computer on your network to answer them.', 'Kept on this computer, and sent with chats to the cloud to answer them.']
+    for (const where of lines) {
+      const request = { id: 'apr_1', sessionId: 's', tool: 'memory.remember', permission: 'profile' as const, title: 'Remember this?', lines: ['Has a Bambu Lab A1', where], paramsHash: 'x', actions: [], expiresAt: new Date(Date.now() + 60_000).toISOString() }
+      const v = mount(createElement(TranscriptView, { transcript: foldEvents([{ type: 'approval_request', request, source: 'command' }], startTurn(emptyTranscript(), { user: 'Remember my A1' }, 0)), showThinking: false, approvals: { cards: MEMORY_CARDS, onApprove: async () => undefined, onCancel: async () => undefined } }))
+      const chip = screen.getByTestId('mimir-remember')
+      expect(within(chip).getByText(where)).toBeTruthy()
+      expect(chip.textContent?.match(/Kept on/g)).toHaveLength(1)
+      v.unmount()
+    }
+  })
+
+  it('the chip says where notes go: to the cloud, to a computer on your network, or nowhere', async () => {
+    const pilot = (where: NotesWhere) => createPilot({ host: { printers, llm: noLlm, approvals: createApprovalBroker() }, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(A1, { chunk: false }), memory: pilotMemory(NEUTRAL, { where }) })
     const CLOUD = 'Kept on this computer, and sent with chats to the cloud to answer them.'
+    const NETWORK = 'Kept on this computer, and sent with chats to a computer on your network to answer them.'
     const HERE = 'Kept on this computer for later chats.'
-    // mimir cloud, and the person's own Anthropic or OpenAI key, answer from elsewhere; a local model and the demo do not
+    // mimir cloud, and the person's own Anthropic or OpenAI key, answer from elsewhere; a server the person runs goes by
+    // its address, and only loopback stays on this computer; the demo sends nothing
+    const local = (baseUrl?: string) => ({ provider: 'openai-compatible', ...(baseUrl === undefined ? {} : { baseUrl }) })
     const cases = [
-      [chatOffComputer({ provider: 'mimir-cloud' }, true), CLOUD],
-      [chatOffComputer({ provider: 'anthropic' }, true), CLOUD],
-      [chatOffComputer({ provider: 'openai' }, true), CLOUD],
-      [chatOffComputer({ provider: 'openai-compatible' }, true), HERE],
-      [chatOffComputer({ provider: 'anthropic' }, false), HERE],
+      [chatNotesGo({ provider: 'mimir-cloud' }, true), CLOUD],
+      [chatNotesGo({ provider: 'anthropic' }, true), CLOUD],
+      [chatNotesGo({ provider: 'openai' }, true), CLOUD],
+      [chatNotesGo(local('http://localhost:11434/v1'), true), HERE],
+      [chatNotesGo(local('http://[::1]:1234/v1'), true), HERE],
+      [chatNotesGo(local('http://192.168.1.20:11434/v1'), true), NETWORK],
+      [chatNotesGo(local('http://studio.local:1234/v1'), true), NETWORK],
+      [chatNotesGo(local('https://llm.example.com/v1'), true), CLOUD],
+      [chatNotesGo(local('http://localhost@llm.example.com/v1'), true), CLOUD],
+      [chatNotesGo(local(), true), CLOUD],
+      [chatNotesGo({ provider: 'anthropic' }, false), HERE],
     ] as const
-    for (const [cloud, want] of cases) {
-      const p = pilot(cloud)
+    for (const [where, want] of cases) {
+      const p = pilot(where)
       for await (const ev of p.run('s', 'Remember my A1')) {
         if (ev.type === 'approval_request') {
           expect(ev.request.lines.at(-1)).toBe(want)
