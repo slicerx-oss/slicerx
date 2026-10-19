@@ -5,6 +5,7 @@
 // which run through the same tools a model would call. When the real agent arrives, only the client changes.
 import { assistantText } from '@slicerx/contracts'
 import { DEFAULT_CONFIG, RUNTIME_NOTES, askTool, createPilot, createScriptedClient, lookupTool, sheetBindTool, sheetTool, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
+import { planTool } from './plan-tool'
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type Pilot, type PrinterHost, type SessionStore } from '@slicerx/contracts'
 
 export interface MimirScript {
@@ -77,7 +78,7 @@ const NO_LLM = {} as LlmTransport
 
 /** The tools a scripted mimir can call in the tab. No printer tool is among them: a print always starts with a person. */
 export function mimirTools(extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
-  return [askTool(), lookupTool(), sheetTool(), sheetBindTool(), ...extra]
+  return [askTool(), lookupTool(), sheetTool(), sheetBindTool(), planTool(), ...extra]
 }
 
 /** The tab's mimir: the runtime over the given tools, answering with the scripts. */
