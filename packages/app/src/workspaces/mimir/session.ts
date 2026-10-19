@@ -72,7 +72,7 @@ function toolsFor(loader: Loader): PilotTool<never>[] {
   // positive size). The card's design.plan puts its plans in the same registry, and the part built after an approved
   // plan ties to it (withPlanTies), so design.check checks that design. The toolset's design.put_plan (for MCP clients)
   // is left out of the tab (mimirTools).
-  if (tools.length === 0) tools = withPlanTies(mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) })))
+  if (tools.length === 0) tools = withPlanTies(mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle), cardSide: true })))
   return tools
 }
 

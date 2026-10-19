@@ -218,6 +218,11 @@ export interface DesignToolOptions {
   plans?: PlanRegistry | undefined
   /** The nozzle diameter in mm, for the thinnest wall; 0.4 when absent or not a positive finite number. */
   nozzleMm?: (() => number | undefined) | undefined
+  /**
+   * True on the side that owns the card plans (the mimir tab): design.check given a design ties an untied card plan
+   * to it. Elsewhere (an MCP client over the app link) a design given for a card plan is checked but never tied.
+   */
+  cardSide?: boolean | undefined
 }
 
 /** The design tools on a host; `files` reads the models design.new starts from and the 3MF files design.open and design.save use. */
@@ -410,11 +415,17 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
   /**
    * The design a plan was built in, and how it was chosen: the one it is tied to (or given now, which ties it), else
    * the one design named as the part, else the only design open. With several open and none tied or named, or two
-   * named as the part, it refuses and asks which, rather than check the wrong part.
+   * named as the part, it refuses and asks which, rather than check the wrong part. A design given now ties a client
+   * plan, or an untied card plan on the card's own side; a card plan is never tied again to another design, and a
+   * client's given design for an untied card plan is checked without tying it.
    */
-  const builtFrom = (entry: PlanEntry, given: string | undefined): { design: HostDesign; how: 'tied to the plan' | 'matched by name' | 'latest' } => {
+  const builtFrom = (entry: PlanEntry, given: string | undefined): { design: HostDesign; how: 'tied to the plan' | 'given' | 'matched by name' | 'latest' } => {
     if (given) {
+      if (entry.origin === 'card' && entry.design && entry.design !== given)
+        throw new ToolInputError(`design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is already tied to design ${entry.design}. It is not tied again; check it without design, or check another plan.`)
       const design = designs.get(given)
+      if (entry.origin === 'card' && entry.design) return { design, how: 'tied to the plan' }
+      if (entry.origin === 'card' && !opts.cardSide) return { design, how: 'given' }
       plans.tie(entry.plan.planId, design.id)
       return { design, how: 'tied to the plan' }
     }
@@ -443,7 +454,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
       "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items and check again.",
     input: z.object({
       planId: z.string().min(1).describe('The planId of the plan the part was built from'),
-      design: z.string().min(1).optional().describe('The design id the part was built in, when the plan is not tied to one; it ties the plan to it'),
+      design: z.string().min(1).optional().describe('The design id the part was built in, when the plan is not tied to one; it ties the plan to it, except a plan the person made in the mimir tab, which only the tab ties'),
     }),
     async run(i) {
       const entry = plans.get(i.planId)

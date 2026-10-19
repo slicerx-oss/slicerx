@@ -262,10 +262,10 @@ const hostOf = (all: HostDesign[]): DesignHost =>
 const boxPlan: PartPlan = { planId: 'box-1', part: 'Spacer', units: 'mm', features: [], overall: { x: 40, y: 20, z: 5 }, assumptions: [], questions: [] }
 
 /** design.check on a host of these designs; nozzle as given. */
-async function checkOn(all: HostDesign[], setup: (plans: ReturnType<typeof createPlanRegistry>) => void, args: Record<string, unknown> = { planId: 'box-1' }, nozzleMm?: () => number | undefined) {
+async function checkOn(all: HostDesign[], setup: (plans: ReturnType<typeof createPlanRegistry>) => void, args: Record<string, unknown> = { planId: 'box-1' }, nozzleMm?: () => number | undefined, cardSide?: boolean) {
   const plans = createPlanRegistry()
   setup(plans)
-  const tool = designToolset(hostOf(all), {}, { plans, nozzleMm }).find((t) => t.name === 'design.check')!
+  const tool = designToolset(hostOf(all), {}, { plans, nozzleMm, cardSide }).find((t) => t.name === 'design.check')!
   const r = await tool.run(tool.input.parse(args), {} as ToolContext)
   return { r, out: r.output as { design: string; designName: string; chosen: string; nozzleMm: number; pass: boolean }, plans }
 }
@@ -290,6 +290,33 @@ describe('design.check picks the design it checks', () => {
   it('a design given in the call is checked and the plan tied to it', async () => {
     const { out, plans } = await checkOn([a, b], (p) => p.put(boxPlan), { planId: 'box-1', design: 'd2' })
     expect(out).toMatchObject({ design: 'd2', chosen: 'tied to the plan' })
+    expect(plans.get('box-1')?.design).toBe('d2')
+  })
+
+  it("never ties a card plan again: a client's other design is refused, its tied design is checked", async () => {
+    const card = (p: ReturnType<typeof createPlanRegistry>) => p.put(boxPlan, 'd1', 'card')
+    // a read-class client (no cardSide) naming another design for a tied card plan
+    await expect(checkOn([a, b], card, { planId: 'box-1', design: 'd2' })).rejects.toThrow(/made in the mimir tab and is already tied to design d1\. It is not tied again/)
+    // nor on the card's own side
+    await expect(checkOn([a, b], card, { planId: 'box-1', design: 'd2' }, undefined, true)).rejects.toThrow(/already tied to design d1/)
+    // naming the design it is tied to checks it and changes nothing
+    const { out, plans } = await checkOn([a, b], card, { planId: 'box-1', design: 'd1' })
+    expect(out).toMatchObject({ design: 'd1', chosen: 'tied to the plan' })
+    expect(plans.get('box-1')?.design).toBe('d1')
+  })
+
+  it("checks a client's given design for an untied card plan without tying it; the card side ties it", async () => {
+    const card = (p: ReturnType<typeof createPlanRegistry>) => p.put(boxPlan, undefined, 'card')
+    const client = await checkOn([a, b], card, { planId: 'box-1', design: 'd2' })
+    expect(client.out).toMatchObject({ design: 'd2', chosen: 'given' })
+    expect(client.plans.get('box-1')?.design).toBeUndefined()
+    const tab = await checkOn([a, b], card, { planId: 'box-1', design: 'd2' }, undefined, true)
+    expect(tab.out).toMatchObject({ design: 'd2', chosen: 'tied to the plan' })
+    expect(tab.plans.get('box-1')?.design).toBe('d2')
+  })
+
+  it('still ties a client plan to a design given again', async () => {
+    const { plans } = await checkOn([a, b], (p) => p.put(boxPlan, 'd1'), { planId: 'box-1', design: 'd2' })
     expect(plans.get('box-1')?.design).toBe('d2')
   })
 

@@ -32,6 +32,14 @@ describe('design.put_plan over the app link', () => {
     expect(e?.message).toContain('build Spacer first')
   })
 
+  it("never ties the person's card plan from a read-class client", async () => {
+    mimirPlans.put({ ...plan, planId: 'card-1', part: 'Box' }, 'design_tab', 'card')
+    const e = await runCall('design.check', { planId: 'card-1', design: 'design_other' }).then(() => null, (x: unknown) => x as LinkError)
+    expect(e?.code).toBe('invalid_input')
+    expect(e?.message).toContain('made in the mimir tab and is already tied to design design_tab')
+    expect(mimirPlans.get('card-1')?.design).toBe('design_tab')
+  })
+
   it('refuses a plan off the schema and keeps nothing', async () => {
     const e = await runCall('design.put_plan', { plan: { ...plan, overall: { x: -1, y: 20, z: 5 } } }).then(() => null, (x: unknown) => x as LinkError)
     expect(e?.code).toBe('invalid_input')
