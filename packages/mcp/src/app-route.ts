@@ -41,6 +41,8 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.emboss',
   'geom.build',
   'geom.subtract',
+  // reads the app's plans (the mimir tab's) and its design
+  'design.check',
 ])
 
 /** Object placement and project print settings, routed to the app when the server does not own the target. */

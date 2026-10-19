@@ -6,16 +6,24 @@
 // plan and result shapes.
 import { z } from 'zod'
 
-/** A part as planned before it is built. Every size is in `units`. */
+/** The largest size a plan takes, in its own units. */
+export const PLAN_SIZE_MAX = 10_000
+const size = z.number().finite().positive().max(PLAN_SIZE_MAX)
+const text = (max: number) => z.string().trim().min(1).max(max)
+
+/**
+ * A part as planned before it is built. Every size is in `units`. The app's plan card (design.plan) and design.check
+ * share this one shape; the card also needs at least one feature.
+ */
 export const partPlanSchema = z.object({
-  planId: z.string().min(1),
-  part: z.string().min(1),
+  planId: text(64),
+  part: text(80),
   units: z.enum(['mm', 'in']),
-  features: z.array(z.object({ name: z.string().min(1), kind: z.string().min(1).optional(), sizes: z.record(z.string(), z.number().positive()) })),
-  overall: z.object({ x: z.number().positive(), y: z.number().positive(), z: z.number().positive() }).optional(),
-  holes: z.array(z.object({ name: z.string().min(1), diameter: z.number().positive() })).optional(),
-  assumptions: z.array(z.string()),
-  questions: z.array(z.string()),
+  features: z.array(z.object({ name: text(60), kind: text(40).optional(), sizes: z.record(text(40), size) })).max(30),
+  overall: z.object({ x: size, y: size, z: size }).optional(),
+  holes: z.array(z.object({ name: text(60), diameter: size })).max(60).optional(),
+  assumptions: z.array(text(200)).max(12),
+  questions: z.array(text(200)).max(6),
 })
 export type PartPlan = z.infer<typeof partPlanSchema>
 
@@ -141,6 +149,8 @@ export interface PlanRegistry {
   get(planId: string): PlanEntry | undefined
   /** The plan put last, or undefined when there is none. */
   latest(): PartPlan | undefined
+  /** Forgets every plan. */
+  clear(): void
 }
 
 /** A registry of up to MAX_PLANS plans, the oldest put dropped first. */
@@ -161,5 +171,6 @@ export function createPlanRegistry(): PlanRegistry {
     },
     get: (planId) => plans.get(planId),
     latest: () => [...plans.values()].at(-1)?.plan,
+    clear: () => plans.clear(),
   }
 }
