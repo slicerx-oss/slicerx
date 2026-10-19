@@ -42,4 +42,9 @@ describe('the tool registry', () => {
     if (process.env['SLICERX_WRITE_TOOLS_DOC'] === '1') writeFileSync(path, want)
     expect(readFileSync(path, 'utf8')).toBe(want)
   })
+
+  it('TOOLS.md is current', () => {
+    const doc = readFileSync(join(__dirname, '../TOOLS.md'), 'utf8')
+    for (const name of ['slicerx_mimir_memory', 'slicerx_mimir_memory_remember']) expect(doc).toContain('| `' + name + '` |')
+  })
 })
