@@ -150,6 +150,20 @@ export interface KbEdition {
   index: KbIndex
 }
 
+/** The keys a bundled doc holds (its id and its name, per kind); an edition doc on one of them is left out. */
+function bundledKeys(bundled: Pick<KbIndex, 'docs'>): Set<string> {
+  return new Set(bundled.docs.filter((d) => !d.edition).flatMap((d) => [`${d.kind}:${norm(d.id)}`, `${d.kind}:${norm(d.name)}`]))
+}
+
+/**
+ * The edition's own docs a knowledge base over `bundled` keeps (createKnowledgeBase): those tagged with the edition,
+ * less any that share a bundled doc's id or name.
+ */
+export function keptEditionDocs(bundled: Pick<KbIndex, 'docs'>, edition: KbEdition): KbDoc[] {
+  const taken = bundledKeys(bundled)
+  return edition.index.docs.filter((d) => d.edition === edition.id && !taken.has(`${d.kind}:${norm(d.id)}`) && !taken.has(`${d.kind}:${norm(d.name)}`))
+}
+
 /**
  * A knowledge base over the bundled index and, with `edition`, that edition's docs and sources from its index. Anything tagged
  * with another edition is left out of both, so one edition never finds or cites another's knowledge. An edition doc
@@ -159,7 +173,7 @@ export function createKnowledgeBase(bundled: KbIndex, edition?: KbEdition): Know
   const mine = <T extends { edition?: string }>(x: T): boolean => x.edition === undefined || x.edition === edition?.id
   const own = edition?.index
   // an edition's doc that shares a bundled doc's id or name is left out, from lookups and search alike
-  const taken = new Set(bundled.docs.filter((d) => !d.edition).flatMap((d) => [`${d.kind}:${norm(d.id)}`, `${d.kind}:${norm(d.name)}`]))
+  const taken = bundledKeys(bundled)
   const fresh = (d: KbDoc): boolean => !d.edition || (!taken.has(`${d.kind}:${norm(d.id)}`) && !taken.has(`${d.kind}:${norm(d.name)}`))
   const index: KbIndex = {
     ...bundled,
