@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-10-19
+
+No changes to the slicer engine in this release; see @slicerx/mcp.
+
 ## [0.1.8] - 2026-10-18
 
 ### Added
