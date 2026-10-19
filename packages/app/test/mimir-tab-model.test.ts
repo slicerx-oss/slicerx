@@ -185,6 +185,23 @@ describe('the mimir tab on a model', () => {
     expect(body(llm.sent[0]!).model).toBe('claude-haiku-5-5')
   })
 
+  it('sets the runtime up again when the edition turns memory off or on, with the memory tools to match', async () => {
+    set({ pilot: { mode: 'on', provider: 'anthropic' } })
+    const host = hostWith(transport(['anthropic']))
+    const on = await tabMimir(host, NEUTRAL)
+    expect(on.tools().map((t) => t.name)).toContain('memory.remember')
+    expect(await tabMimir(host, NEUTRAL)).toBe(on)
+    // the same edition id with memory switched off
+    const OFF = { ...NEUTRAL, ai: { ...NEUTRAL.ai, brain: { ...NEUTRAL.ai.brain, memory: { ...NEUTRAL.ai.brain.memory, local: false } } } }
+    const off = await tabMimir(host, OFF)
+    expect(off).not.toBe(on)
+    expect(off.tools().map((t) => t.name)).not.toContain('memory.remember')
+    expect(off.tools().map((t) => t.name)).not.toContain('memory.recall')
+    const again = await tabMimir(host, NEUTRAL)
+    expect(again).not.toBe(off)
+    expect(again.tools().map((t) => t.name)).toContain('memory.remember')
+  })
+
   it('sets the runtime up again when Settings change the model, and keeps it otherwise', async () => {
     const llm = transport(['anthropic'])
     const host = hostWith(llm)

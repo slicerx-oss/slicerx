@@ -183,9 +183,12 @@ function cloudId(cloud: unknown): number {
   return id
 }
 
-/** The setup the tab would use now: what Settings > mimir chose, or the edition's own, the mimir cloud host and the app's commands. A change makes the runtime again. */
+/**
+ * The setup the tab would use now: what Settings > mimir chose, or the edition's own, the mimir cloud host, the app's
+ * commands and whether the edition keeps notes (ai.brain.memory.local). A change makes the runtime again.
+ */
 function setupKey(host: Host, edition: EditionConfig, pref: PilotPref | null, cloud: unknown): string {
-  return JSON.stringify([edition.id, pref, cloudId(cloud), host.llm ? 1 : 0, toolCommands()])
+  return JSON.stringify([edition.id, pref, cloudId(cloud), host.llm ? 1 : 0, toolCommands(), edition.ai.brain.memory.local])
 }
 
 /**
