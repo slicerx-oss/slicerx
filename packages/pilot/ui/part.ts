@@ -66,11 +66,23 @@ const half = (v: number): number => Math.round(v * 2) / 2
 /** "the 20 mm cube": the part by its own name, so a request reads on its own in the transcript. */
 const the = (p: CreatedPart): string => `the ${p.name}`
 
+/** Whether the toolset the chat runs with has a tool, by name. */
+export type CanTool = (tool: string) => boolean
+
+/** The tools a next step needs: a chip shows only when the chat's toolset has one of them. */
+const NEEDS: Readonly<Record<string, readonly string[]>> = {
+  fillet: ['geom.fillet'],
+  chamfer: ['geom.chamfer'],
+  hole: ['geom.hole'],
+  size: ['design.new', 'text_to_part'],
+}
+
 /**
- * What to offer next for a part. A step that acts at once shows its value in the label ("Fillet edges, 2 mm"); a
- * step that needs a value (the size) asks for it before anything is sent.
+ * What to offer next for a part, among the steps the toolset can do (`can`; without it, none). A step that acts at once
+ * shows its value in the label ("Fillet edges, 2 mm"); a step that needs a value (the size) asks for it before anything
+ * is sent.
  */
-export function followUps(p: CreatedPart): FollowUp[] {
+export function followUps(p: CreatedPart, can: CanTool = () => false): FollowUp[] {
   const it = the(p)
   const small = Math.min(...p.sizeMm)
   const across = Math.min(p.sizeMm[0], p.sizeMm[1])
@@ -78,9 +90,13 @@ export function followUps(p: CreatedPart): FollowUp[] {
   const hole = Math.max(1, Math.min(20, half(across / 4)))
   const resize: FollowUp = { id: 'size', label: 'Change size', asks: 'size', adds: false }
   const holeStep: FollowUp = { id: 'hole', label: `Center hole, ${mm(hole)} mm`, request: `Add a ${mm(hole)} mm hole through the center of ${it}`, adds: true }
-  if (p.kind === 'cylinder') return [{ id: 'chamfer', label: `Chamfer top edge, ${mm(round / 2)} mm`, request: `Chamfer the top edge of ${it} by ${mm(round / 2)} mm`, adds: true }, holeStep, resize]
-  if (p.kind === 'part') return [{ id: 'fillet', label: `Fillet edges, ${mm(round / 2)} mm`, request: `Fillet the outside edges of ${it} by ${mm(round / 2)} mm`, adds: true }, resize]
-  return [{ id: 'fillet', label: `Fillet edges, ${mm(round)} mm`, request: `Fillet the edges of ${it} by ${mm(round)} mm`, adds: true }, holeStep, resize]
+  const all =
+    p.kind === 'cylinder'
+      ? [{ id: 'chamfer', label: `Chamfer top edge, ${mm(round / 2)} mm`, request: `Chamfer the top edge of ${it} by ${mm(round / 2)} mm`, adds: true }, holeStep, resize]
+      : p.kind === 'part'
+        ? [{ id: 'fillet', label: `Fillet edges, ${mm(round / 2)} mm`, request: `Fillet the outside edges of ${it} by ${mm(round / 2)} mm`, adds: true }, resize]
+        : [{ id: 'fillet', label: `Fillet edges, ${mm(round)} mm`, request: `Fillet the edges of ${it} by ${mm(round)} mm`, adds: true }, holeStep, resize]
+  return all.filter((f) => (NEEDS[f.id] ?? []).some(can))
 }
 
 /** The request a new size sends: "Change the size of the 20 mm cube to 30 x 20 x 20 mm". */

@@ -38,7 +38,9 @@ function twoCubes() {
   return foldEvents(events(true, small, 'Created a 10 mm cube.', 'c2'), startTurn(first, { user: 'a 10 mm cube' }, 1), 1)
 }
 
-const handlers = (gone: string[] = []) => ({ onEdit: vi.fn(), onSelect: vi.fn(), onRun: vi.fn(), has: (id: string) => !gone.includes(id) })
+// a toolset with the design tools, so every next step can be done
+const ALL = () => true
+const handlers = (gone: string[] = []) => ({ onEdit: vi.fn(), onSelect: vi.fn(), onRun: vi.fn(), has: (id: string) => !gone.includes(id), can: ALL })
 const approvals = { onApprove: async () => undefined, onCancel: async () => undefined }
 
 describe('the part a reply made', () => {
@@ -49,10 +51,24 @@ describe('the part a reply made', () => {
     expect(part).toEqual({ id: '20-mm-cube', name: '20 mm cube', kind: 'cube', sizeMm: [20, 20, 20] })
     expect(partTitle(part!)).toBe('Cube created')
     expect(partLine(part!)).toBe('Cube 20 x 20 x 20 mm')
-    const steps = followUps(part!)
+    const steps = followUps(part!, ALL)
     expect(steps.map((f) => f.label)).toEqual(['Fillet edges, 2 mm', 'Center hole, 5 mm', 'Change size'])
     expect(steps.map((f) => f.request)).toEqual(['Fillet the edges of the 20 mm cube by 2 mm', 'Add a 5 mm hole through the center of the 20 mm cube', undefined])
     expect(sizeRequest(part!, [30, 20, 20])).toBe('Change the size of the 20 mm cube to 30 x 20 x 20 mm')
+  })
+
+  it('offers only the next steps the toolset can do', () => {
+    const t = reply()
+    const block = t.turns[0]!.blocks.find((b) => b.kind === 'tools')
+    const part = block?.kind === 'tools' ? createdPart(block.rows[0]!) : null
+    // the part generator alone cannot fillet or drill a part it made, only make it again at another size
+    expect(followUps(part!, (n) => n === 'text_to_part').map((f) => f.id)).toEqual(['size'])
+    expect(followUps(part!, (n) => n === 'geom.fillet' || n === 'design.new').map((f) => f.id)).toEqual(['fillet', 'size'])
+    // without a toolset to ask, nothing is offered
+    expect(followUps(part!)).toEqual([])
+    render(<TranscriptView transcript={reply()} showThinking={false} approvals={approvals} parts={{ ...handlers(), can: undefined }} />)
+    expect(screen.getByTestId('mimir-part')).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'Next steps' })).toBeNull()
   })
 
   it('shows a card, then the question and the next steps; the body selects, Edit opens the editor', () => {
