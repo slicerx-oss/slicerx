@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@slicerx/contracts": "workspace:*",
+    "@slicerx/edition-config": "workspace:*",
     "@slicerx/printer-catalog": "workspace:*",
     "@slicerx/settings": "workspace:*",
     "@slicerx/ui": "workspace:*",

@@ -37,6 +37,7 @@ import type { PilotProject } from './project'
 import { createShared } from './shared'
 import { citedSources } from './cite'
 import { contextMessage, systemPrompt as basePrompt, type PilotScope } from './prompt'
+import { factLine, pickFacts, type MemoryStore } from './memory/facts'
 import { fitContext, MIMIR_CONTEXT } from './context'
 import { isLocalModel, surfaceTools, type ToolSurface } from './surfaces'
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
@@ -44,6 +45,7 @@ import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/ty
 import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type WebLookup } from './tool'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
+import { memoryTools } from './tools/memory'
 import { planToDiff } from './tools/settings'
 import { chatRoute, designRoute, HUGINN, modelFor, modelLabel, MUNINN, MUNINN_TOOLS, STRUGGLE_FAILS, type Tier } from './models'
 
@@ -78,6 +80,11 @@ export interface CreatePilotOptions {
   scope?: PilotScope
   /** Where this mimir runs, which decides the tools a local model is offered (see surfaces.ts). Defaults to 'dock'. */
   surface?: ToolSurface
+  /**
+   * The person's saved notes and the edition's ai.brain.memory.local switch. On: memory.remember and memory.recall, and
+   * the notes that fit (pickFacts) on a chat's first message. Off or unset: neither tool, and no notes.
+   */
+  memory?: { local: boolean; store: MemoryStore }
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
   /** How long an approval card waits before it expires, ms. */
@@ -232,6 +239,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const inScope = (t: { name: string }): boolean => (scope === 'design' ? DESIGN_SCOPE_TOOLS.has(t.name) : scope !== 'cad' || CAD_TOOLS.has(t.name) || t.name.startsWith('app.'))
   if (opts.builtins !== false) for (const t of builtinTools({ planner: opts.planner, commands: opts.commands ?? [], shared })) if (inScope(t)) add(t as AnyTool)
   for (const t of opts.tools ?? []) add(t as AnyTool)
+  const memory = opts.memory?.local ? opts.memory.store : undefined
+  if (memory) for (const t of memoryTools(memory, now)) add(t as AnyTool)
 
   let pluginTools: AnyTool[] | null = null
   async function loadPluginTools(): Promise<{ loads: PluginLoad[]; tools: AnyTool[] }> {
@@ -780,9 +789,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           return
         }
         const attached = files?.names.length ? `\n\nAttached: ${files.names.join(', ')}` : ''
+        // the person's notes ride on a chat's first message, the ones about what it asks first
+        const notes = memory && !messages.some((m) => m.role === 'user') ? pickFacts(await memory.list().catch(() => []), message).map(factLine) : []
         messages.push({
           role: 'user',
-          content: `${contextMessage(context, policy, today)}\n\nUser request:\n${message}${attached}`,
+          content: `${contextMessage(context, policy, today, notes)}\n\nUser request:\n${message}${attached}`,
           ...(files?.images.length ? { images: files.images } : {}),
           ...(files?.documents.length ? { documents: files.documents } : {}),
         })
