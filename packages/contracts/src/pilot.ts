@@ -332,7 +332,8 @@ export type PilotEvent =
   | { type: 'settings_diff'; diff: SettingsDiff }
   | { type: 'citations'; items: Citation[] }
   | { type: 'permission_note'; permission: PermissionClass; mode: 'allow' | 'off'; tool: string; message: string }
-  | { type: 'approval_request'; request: ApprovalRequest }
+  /** `source` is where the tool came from (a plugin's tool never gets a built-in tool's own card); absent on older hosts. */
+  | { type: 'approval_request'; request: ApprovalRequest; source?: ToolSource }
   /** A question for the person with fixed answers; the run waits until one is picked. */
   | { type: 'ask'; askId: string; title: string; question: string; choices: PilotChoice[] }
   | { type: 'ask_answered'; askId: string; choiceId: string }

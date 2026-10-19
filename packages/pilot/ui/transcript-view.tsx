@@ -69,7 +69,8 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
     case 'model':
       return <ModelLine label={block.label} reason={block.reason} />
     case 'approval': {
-      const Card = approvals.cards?.[block.request.tool] ?? ApprovalCard
+      // a host's own card is for the built-in tool of that name, never a plugin's tool that shares it
+      const Card = (block.source === 'plugin' ? undefined : approvals.cards?.[block.request.tool]) ?? ApprovalCard
       return (
         <Card
           request={block.request}

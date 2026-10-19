@@ -283,6 +283,20 @@ describe('memory tools', () => {
     expect(store.rows.size).toBe(1)
   })
 
+  it('on mimir cloud the card says notes go along with chats; otherwise they stay on this computer', async () => {
+    for (const [cloud, want] of [[true, 'Kept on this computer, and sent with chats to the cloud to answer them.'], [false, 'Kept on this computer for later chats.']] as const) {
+      const pilot = pilotWith([{ calls: [{ name: 'memory.remember', args: { kind: 'printer', text: 'Has a Bambu Lab A1' } }] }, { text: 'Saved.' }], { local: true, store: rows(), cloud: () => cloud })
+      let lines: string[] = []
+      for await (const ev of pilot.run('s', 'Remember my A1')) {
+        if (ev.type === 'approval_request') {
+          lines = ev.request.lines
+          await pilot.resolveApproval(ev.request.id, { kind: 'approve' })
+        }
+      }
+      expect(lines.at(-1)).toBe(want)
+    }
+  })
+
   it('recalled notes come back marked untrusted', async () => {
     const store = rows()
     await store.put(fact('a1', 'printer', 'Has a Bambu Lab A1', 1))

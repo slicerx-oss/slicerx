@@ -11,6 +11,9 @@ import { defineTool, type PilotTool } from '../tool'
 const REFUSED = 'Not saved: that looks like a key, token, access code or serial. Those stay in the app, never in notes.'
 
 const MAX_DATA_KEYS = 6
+/** Where a note goes, as the chip says it: on this computer, and along with each chat when the chat runs on the cloud. */
+export const KEPT_HERE = 'Kept on this computer for later chats.'
+export const KEPT_CLOUD = 'Kept on this computer, and sent with chats to the cloud to answer them.'
 const ONE_LINE = 'One line only: no line breaks or hidden characters'
 const safe = (s: string): boolean => !NOTE_UNSAFE.test(s)
 
@@ -26,8 +29,11 @@ const rememberInput = z.object({
 
 const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase()
 
-/** `ask` false saves without the card (Settings > Memory > Save notes without asking); it is read at each save. */
-export function memoryTools(store: MemoryStore, now: () => number = () => Date.now(), ask: () => boolean = () => true): PilotTool<never>[] {
+/**
+ * `ask` false saves without the card (Settings > Memory > Save notes without asking); it is read at each save. `cloud`
+ * true when the chat runs on mimir cloud, so the card says the notes go along with chats; read at each save.
+ */
+export function memoryTools(store: MemoryStore, now: () => number = () => Date.now(), ask: () => boolean = () => true, cloud: () => boolean = () => false): PilotTool<never>[] {
   const remember = defineTool({
     name: 'memory.remember',
     version: '1.0.0',
@@ -44,7 +50,7 @@ export function memoryTools(store: MemoryStore, now: () => number = () => Date.n
       if (secretInNote(i)) throw new Error(REFUSED)
       // everything that is saved and read back later is on the card, the data too
       const data = Object.entries(i.data ?? {}).map(([k, v]) => dataLabel(k, v))
-      return { title: 'Remember this?', lines: [i.text, ...data, 'Kept on this computer for later chats.'], actions: [] }
+      return { title: 'Remember this?', lines: [i.text, ...data, cloud() ? KEPT_CLOUD : KEPT_HERE], actions: [] }
     },
     async run(i, ctx) {
       if (!ctx.token) return { ok: false, summary: 'Not approved' }

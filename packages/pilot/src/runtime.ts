@@ -95,7 +95,7 @@ export interface CreatePilotOptions {
    * without the card (read at each save); unset asks. `chatStarted` runs before the notes are read on a chat's first
    * message (the host's sync with the account); the chat waits for it at most CHAT_START_WAIT_MS.
    */
-  memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean; chatStarted?: () => Promise<unknown> }
+  memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean; chatStarted?: () => Promise<unknown>; cloud?: () => boolean }
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
   /** How long an approval card waits before it expires, ms. */
@@ -265,7 +265,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The dock (full scope)
   // and the mimir design tab pass one; the browser cad scope gets them only when its host passes a store too.
   const memory = opts.memory?.local ? opts.memory.store : undefined
-  if (memory) for (const t of memoryTools(memory, now, opts.memory?.ask)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
+  if (memory) for (const t of memoryTools(memory, now, opts.memory?.ask, opts.memory?.cloud)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
 
   let pluginTools: AnyTool[] | null = null
   async function loadPluginTools(): Promise<{ loads: PluginLoad[]; tools: AnyTool[] }> {
@@ -390,7 +390,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       emit({ type: 'approval_resolved', requestId: request.id, decision: { kind: 'approve' }, by: 'policy' })
       return { kind: 'run', token }
     }
-    emit({ type: 'approval_request', request })
+    emit({ type: 'approval_request', request, source: tool.source })
     const decision = await waitForDecision(request, signal)
     if (decision === 'aborted') {
       await opts.host.approvals.deny(request.id, 'canceled').catch(() => undefined)
