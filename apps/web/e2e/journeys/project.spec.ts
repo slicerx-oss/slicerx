@@ -134,7 +134,7 @@ test.describe('a Bambu Studio project', () => {
     await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
     await expect
       .poll(() => toastWith(page, 'print settings were left out'), { timeout: 30_000 })
-      .toContain('Its print settings were left out because they are in an older key = value format, so it opens with the current settings.')
+      .toContain("This project's print settings were left out because they are in an older key = value format, so it opens with the current settings.")
   })
 
   // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).

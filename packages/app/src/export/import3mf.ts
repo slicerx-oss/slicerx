@@ -116,7 +116,7 @@ export function projectSettingsOf(bytes: Uint8Array | undefined): { settings?: R
     // not JSON: said below
   }
   const why = looksLikeIni(text) ? 'they are in an older key = value format' : 'its settings file is damaged'
-  return { note: `Its print settings were left out because ${why}, so it opens with the current settings.` }
+  return { note: `This project's print settings were left out because ${why}, so it opens with the current settings.` }
 }
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
