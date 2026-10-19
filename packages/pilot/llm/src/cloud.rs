@@ -286,7 +286,10 @@ struct Call {
     renew: bool,
 }
 
-async fn send_once(call: &Call, token: &ApiKey) -> Result<reqwest::Response> {
+/// The request for one call: the checked headers as the app sent them (`x-sx-tier` asks for
+/// the stronger model on a hard turn, `x-sx-share` and the rest say how to file the chat),
+/// plus the install token.
+fn build_request(call: &Call, token: &ApiKey) -> Result<reqwest::RequestBuilder> {
     let mut headers = call.headers.clone();
     headers.insert(HeaderName::from_static("x-sx-install"), install_header(token)?);
     let mut request = client()?
@@ -298,7 +301,11 @@ async fn send_once(call: &Call, token: &ApiKey) -> Result<reqwest::Response> {
     if let Some(t) = call.timeout {
         request = request.timeout(t);
     }
-    request.send().await.map_err(Error::transport)
+    Ok(request)
+}
+
+async fn send_once(call: &Call, token: &ApiKey) -> Result<reqwest::Response> {
+    build_request(call, token)?.send().await.map_err(Error::transport)
 }
 
 /// Sends with the install token. When the proxy no longer knows the install (401
@@ -325,6 +332,19 @@ async fn send(store: &dyn SecretStore, cloud: &MimirCloud, call: &Call) -> Resul
         }
         return Err(http_error(status, &body, Some(&token)));
     }
+}
+
+/// The model the proxy names in `x-sx-model`, when it is a plain model id (a lowercase letter
+/// or digit, then up to 63 more of those, `.` or `-`). Anything else is dropped.
+pub(crate) fn reply_model(headers: &HeaderMap) -> Option<String> {
+    let model = headers.get("x-sx-model")?.to_str().ok()?.trim();
+    let mut bytes = model.bytes();
+    let plain = model.len() <= 64
+        && bytes
+            .next()
+            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-');
+    plain.then(|| model.to_owned())
 }
 
 /// Sends a checked model request to the proxy and returns the streaming response.
@@ -444,7 +464,9 @@ pub async fn forget(store: &dyn SecretStore, cloud: &MimirCloud) -> Result<u64> 
 
 #[cfg(test)]
 mod tests {
-    use super::field;
+    use std::collections::BTreeMap;
+
+    use super::{ApiKey, Call, Method, Url, build_request, field};
 
     #[test]
     fn only_a_plain_code_comes_through() {
@@ -456,5 +478,25 @@ mod tests {
         assert_eq!(field(body("<b>x</b>").as_bytes(), "/error/code"), None);
         assert_eq!(field(body(&"a".repeat(41)).as_bytes(), "/error/code"), None);
         assert_eq!(field(b"not json", "/error/code"), None);
+    }
+
+    #[test]
+    fn tier_header_passes_the_guard() {
+        let mut sent = BTreeMap::new();
+        sent.insert("x-sx-tier".to_owned(), "step".to_owned());
+        sent.insert("content-type".to_owned(), "application/json".to_owned());
+        let headers = crate::guard::check_headers(&sent).expect("x-sx-tier is not a forbidden header");
+        let call = Call {
+            method: Method::POST,
+            url: Url::parse("https://abcdefghijklmnop.supabase.co/functions/v1/mimir/v1/messages").unwrap(),
+            headers,
+            body: Some("{}".to_owned()),
+            timeout: None,
+            renew: true,
+        };
+        let token = ApiKey::new("a".repeat(64));
+        let request = build_request(&call, &token).unwrap().build().unwrap();
+        assert_eq!(request.headers().get("x-sx-tier").unwrap(), "step");
+        assert!(request.headers().get("x-sx-install").is_some());
     }
 }

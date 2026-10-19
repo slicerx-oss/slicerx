@@ -30,6 +30,8 @@ const PRESETS_ID = 'presets'
 const LOOK_ID = 'look'
 const SLICING_ID = 'slicing'
 const PILOT_ID = 'pilot'
+const MemorySection = lazy(() => import('../pilot-connect/memory-section').then((m) => ({ default: m.MemorySection })))
+const MEMORY_ID = 'memory'
 const AgentsSection = lazy(() => import('../app-link/section').then((m) => ({ default: m.AgentsSection })))
 const AGENTS_ID = 'agents'
 
@@ -59,6 +61,8 @@ export function SettingsDialog() {
     { id: LOOK_ID, label: 'Look and feel', icon: 'sliders' },
     slices ? { id: SLICING_ID, label: 'Slicing and modeling', icon: 'slice' } : { id: SLICING_ID, label: 'Modeling', icon: 'shapes' },
     ...(settings.some((s) => s.id === PILOT_ID) ? [] : [{ id: PILOT_ID, label: ASSISTANT_NAME, icon: 'mimir' as IconName }]),
+    // what mimir remembers, under its own section; an edition that keeps no notes has none to show
+    ...(edition.ai.brain.memory.local ? [{ id: MEMORY_ID, label: 'Memory', icon: 'bookmark' as IconName }] : []),
   ]
   const id = [want, picked].find((x) => x && sections.some((s) => s.id === x)) ?? sections[0]?.id
   // A phone opens on the list of sections, and a section on its own page with Back; a section asked for from
@@ -184,6 +188,10 @@ export function SettingsDialog() {
           ) : id === PILOT_ID && !settings.some((s) => s.id === PILOT_ID) ? (
             <Suspense fallback={<Loading />}>
               <PilotSettingsSection />
+            </Suspense>
+          ) : id === MEMORY_ID ? (
+            <Suspense fallback={<Loading />}>
+              <MemorySection />
             </Suspense>
           ) : id === PHONE_ID ? (
             <PhoneAccessSection />

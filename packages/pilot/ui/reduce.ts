@@ -52,7 +52,7 @@ export type Block =
   | { kind: 'diff'; id: string; diff: SettingsDiff }
   | { kind: 'perm'; id: string; permission: PermissionClass; mode: 'allow' | 'off'; message: string }
   | { kind: 'model'; id: string; model: string; label: string; reason: 'request' | 'tool' | 'struggle' }
-  | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean }
+  | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean; source?: ToolSource }
   | { kind: 'lookup'; id: string; lookup: PilotLookup }
   | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean }
   | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean; bound?: { design: string; binds: PilotSheetBind[] } }
@@ -353,7 +353,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       return append(settleStreams(s), (id) => ({ kind: 'perm', id, permission: event.permission, mode: event.mode, message: event.message }), true)
     case 'approval_request': {
       const replay = lastTurn(s)?.replay ?? false
-      return append(settleStreams(s), (id) => ({ kind: 'approval', id, request: event.request, resolution: null, replay }), true)
+      return append(settleStreams(s), (id) => ({ kind: 'approval', id, request: event.request, resolution: null, replay, ...(event.source ? { source: event.source } : {}) }), true)
     }
     case 'ask': {
       const replay = lastTurn(s)?.replay ?? false

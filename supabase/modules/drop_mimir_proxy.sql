@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: Apache-2.0
 -- Copyright (C) 2026 The SlicerX contributors
--- Removes mimir's cloud model accounting and saved chats (migrations/0020_mimir_proxy.sql, 0024_mimir_saved_chats.sql).
+-- Removes mimir's cloud model accounting, saved chats and synced memory (migrations/0020_mimir_proxy.sql,
+-- 0024_mimir_saved_chats.sql, 0025_mimir_usage.sql, 0026_mimir_web_users.sql, 0028_mimir_step_up.sql,
+-- 0029_mimir_memory.sql).
 do $$
 begin
   if exists (select 1 from pg_extension where extname = 'pg_cron') then
@@ -8,12 +10,19 @@ begin
   end if;
 end;
 $$;
+drop table if exists public.mimir_memory;
+drop function if exists public.mimir_memory_guard();
+drop function if exists public.mimir_memory_prune();
 drop function if exists public.mimir_reader_prompt(text);
 drop function if exists public.mimir_expire_saved(integer);
 drop function if exists public.mimir_save_chat(uuid, boolean, text, text, text, text, jsonb, jsonb);
 drop function if exists public.mimir_reader_session(uuid, text);
 drop function if exists public.mimir_reader_sessions(timestamptz, integer);
 drop function if exists public.mimir_reader_edition();
+drop function if exists public.mimir_turn_model(text, text);
+drop function if exists public.mimir_user_token(text, uuid, text);
+drop function if exists public.mimir_install_edition(text);
+drop function if exists public.mimir_usage(text);
 drop function if exists public.mimir_quota(text, text);
 drop function if exists public.mimir_forget(text);
 drop function if exists public.mimir_store_session(uuid, text, text, text, jsonb);

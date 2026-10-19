@@ -66,7 +66,16 @@ export const NEUTRAL_PARSED: EditionConfig = {
   "ai": {
     "provider": "openai",
     "model": "gpt-6-sol",
-    "keySource": "keychain"
+    "keySource": "keychain",
+    "brain": {
+      "cloud": {
+        "stepUp": "none"
+      },
+      "memory": {
+        "local": true,
+        "sync": "off"
+      }
+    }
   },
   "legal": {},
   "funding": {},

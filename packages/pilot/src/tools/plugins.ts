@@ -57,6 +57,7 @@ export function pluginToolsFrom(manifests: PluginManifest[]): PilotTool<never>[]
           name,
           version: m.version,
           source: 'plugin',
+          plugin: { id: m.id, kind: m.kind },
           permission: t.permission,
           description: `${t.description} (${m.name} plugin)`,
           input,

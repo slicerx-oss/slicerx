@@ -243,6 +243,101 @@ pub struct Ai {
     /// Local model ids Set up local AI may offer; none means all.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_local_models: Option<Vec<String>>,
+    /// The assistant's voice, cloud step-up and memory; none means the defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brain: Option<Brain>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Brain {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<String>,
+    #[serde(default)]
+    pub cloud: BrainCloud,
+    #[serde(default)]
+    pub memory: BrainMemory,
+    /// The edition's own knowledge files and folders, relative to the edition folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub knowledge: Option<Vec<String>>,
+    /// Tool groups switched off with false; none switches nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<BrainTools>,
+    /// The models for the person's own key; mimir cloud ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing: Option<BrainRouting>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrainTools {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slicing: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub printers: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paint: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrainRouting {
+    /// "anthropic" or "openai"; none means either.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrainCloud {
+    /// "sonnet" or "none".
+    #[serde(default = "step_up_none")]
+    pub step_up: String,
+}
+
+impl Default for BrainCloud {
+    fn default() -> Self {
+        Self {
+            step_up: step_up_none(),
+        }
+    }
+}
+
+fn step_up_none() -> String {
+    "none".into()
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct BrainMemory {
+    #[serde(default = "on")]
+    pub local: bool,
+    /// "off" or "opt-in".
+    #[serde(default = "sync_off")]
+    pub sync: String,
+}
+
+impl Default for BrainMemory {
+    fn default() -> Self {
+        Self {
+            local: true,
+            sync: sync_off(),
+        }
+    }
+}
+
+fn sync_off() -> String {
+    "off".into()
 }
 
 fn on() -> bool {
@@ -592,6 +687,19 @@ impl EditionConfig {
             self.legal.source_url.is_some(),
             "legal.sourceUrl: edition builds ship the AGPL-3.0 stock profiles: set legal.sourceUrl so users can get the source (section 13)",
         );
+        if let Some(r) = self.ai.brain.as_ref().and_then(|b| b.routing.as_ref()) {
+            need(
+                r.base.is_some() || r.step.is_some(),
+                r.provider.is_some(),
+                "ai.brain.routing.provider: routing that names base or step models needs a provider (anthropic or openai)",
+            );
+        }
+        // The edition's own knowledge stays inside its folder, as the TypeScript schema checks it.
+        for p in self.ai.brain.iter().flat_map(|b| b.knowledge.iter().flatten()) {
+            if let Some(why) = knowledge_path_issue(p) {
+                issues.push(format!("ai.brain.knowledge: {why} ({p:?})"));
+            }
+        }
         if let Some(s) = &self.backend.supabase {
             if s.url.is_empty() || s.anon_key.len() < 20 {
                 issues.push("backend.supabase: url and anonKey are both required".to_owned());
@@ -614,6 +722,21 @@ impl EditionConfig {
             Err(Error::Invalid(issues))
         }
     }
+}
+
+/// Why a knowledge path is not a path inside the edition folder, as the TypeScript schema says it: relative (no
+/// leading slash, backslash, home or drive), no `..` step, and naming something more than the folder itself (not `.`
+/// or empty). None when it is fine.
+fn knowledge_path_issue(path: &str) -> Option<&'static str> {
+    let p = path.trim();
+    let drive = matches!(p.as_bytes(), [d, b':', ..] if d.is_ascii_alphabetic());
+    if p.starts_with(['/', '\\', '~']) || drive || p.split(['/', '\\']).any(|s| s == "..") {
+        return Some("a path inside the edition folder, relative to the config file, without ..");
+    }
+    if !p.split(['/', '\\']).any(|s| !s.is_empty() && s != ".") {
+        return Some("name a folder or file inside the edition");
+    }
+    None
 }
 
 /// The `role` claim of a JWT, without verifying it (only to refuse service role keys).
@@ -663,6 +786,91 @@ mod tests {
         });
         let theme: Theme = serde_json::from_value(input.clone()).unwrap();
         assert_eq!(serde_json::to_value(theme).unwrap(), input);
+    }
+
+    #[test]
+    fn brain_round_trips() {
+        let input = serde_json::json!({
+            "provider": "anthropic", "model": "claude-haiku-5-5", "baseUrl": null, "keySource": "cloud",
+            "brain": { "voice": "Short and plain.", "cloud": { "stepUp": "sonnet" }, "memory": { "local": true, "sync": "opt-in" } }
+        });
+        let ai: Ai = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(ai.brain.as_ref().unwrap().cloud.step_up, "sonnet");
+        assert_eq!(serde_json::to_value(ai).unwrap(), input);
+    }
+
+    #[test]
+    fn brain_reads_knowledge_tools_and_routing() {
+        let input = serde_json::json!({
+            "cloud": { "stepUp": "none" }, "memory": { "local": true, "sync": "off" },
+            "knowledge": ["knowledge"], "tools": { "printers": false, "web": false },
+            "routing": { "provider": "openai", "base": "gpt-6-luna", "step": "gpt-6-sol" }
+        });
+        let brain: Brain = serde_json::from_value(input.clone()).unwrap();
+        assert_eq!(brain.tools.as_ref().unwrap().printers, Some(false));
+        assert_eq!(brain.tools.as_ref().unwrap().design, None);
+        assert_eq!(
+            brain.routing.as_ref().unwrap().base.as_deref(),
+            Some("gpt-6-luna")
+        );
+        assert_eq!(serde_json::to_value(brain).unwrap(), input);
+        let unknown = serde_json::json!({ "tools": { "cad": true } });
+        assert!(serde_json::from_value::<Brain>(unknown).is_err());
+    }
+
+    #[test]
+    fn knowledge_paths_stay_inside_the_edition_folder() {
+        let with = |knowledge: serde_json::Value| {
+            neutral_with(|v| {
+                v["ai"]["brain"]["knowledge"] = knowledge;
+            })
+        };
+        assert!(
+            EditionConfig::from_json(&with(serde_json::json!(["knowledge", "./more/docs.yaml"]))).is_ok()
+        );
+        for bad in [
+            ".",
+            "..",
+            "./",
+            "",
+            "../shared",
+            "docs/../../x",
+            "/etc",
+            "\\\\server\\share",
+            "~/docs",
+            "C:\\docs",
+        ] {
+            let Err(Error::Invalid(issues)) = EditionConfig::from_json(&with(serde_json::json!([bad])))
+            else {
+                panic!("expected issues for {bad:?}")
+            };
+            assert!(
+                issues.iter().any(|i| i.starts_with("ai.brain.knowledge")),
+                "{bad:?}: {issues:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn routing_models_need_a_provider() {
+        let with = |routing: serde_json::Value| {
+            neutral_with(|v| {
+                v["ai"]["brain"]["routing"] = routing;
+            })
+        };
+        assert!(
+            EditionConfig::from_json(&with(
+                serde_json::json!({ "provider": "openai", "base": "gpt-6-luna" })
+            ))
+            .is_ok()
+        );
+        assert!(EditionConfig::from_json(&with(serde_json::json!({}))).is_ok());
+        let Err(Error::Invalid(issues)) =
+            EditionConfig::from_json(&with(serde_json::json!({ "step": "gpt-6-sol" })))
+        else {
+            panic!("expected issues")
+        };
+        assert!(issues.iter().any(|i| i.starts_with("ai.brain.routing.provider")));
     }
 
     #[test]

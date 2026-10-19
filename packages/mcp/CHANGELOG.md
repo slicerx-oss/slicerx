@@ -4,13 +4,26 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_mimir_memory` reads what mimir remembers about the person in the open app over the app link: printers, filaments, preferences, outcomes and sizes, newest first, with `kind` to read one kind. The app hides access codes, serial numbers and keys before a fact leaves it, and `hidden` counts the facts that had one. `slicerx_mimir_memory_remember` adds one fact (`kind`, `text` of 3 to 240 characters on one line, optional `data` of up to 6 values), with the limits the app's own save uses; it follows the profile class of the permission policy, a fact with a secret is refused, and so is a client the person allowed to read only.
+- `slicerx_design_check` checks a built design against a part plan by `planId`: the overall size, each named hole, the feature count, a closed body and the thinnest wall for the nozzle. With the app link on it runs in the app, against the plans the mimir tab made. When the plan is tied to no design and two open designs share the part's name, it asks which. A `design` given ties the client's own plan to it; a plan the person made in the mimir tab is never tied from a client, and a `design` other than the one it is tied to is refused. A plan gets one fix round: when its second check fails too, the result adds `stop`, a plain instruction to stop building and tell the person exactly what is off, and every later check of that `planId` returns that same result with `repeated: true`, without measuring the part again. A new `planId` starts over. A hole row with a `count` is checked as that many holes of its diameter, and its item says how many are short or how many more were found.
+- `slicerx_design_put_plan` adds the client's own part plan for `slicerx_design_check` under its `planId`, optionally tied to a `design`, and returns the `planId`. Each `holes` row takes an optional `count` (a whole number from 1 to 60, default 1) for a row that stands for several holes of one diameter, such as four motor screw holes. The client's plan with the same `planId` replaces its old one; the client's last 50 plans are kept apart from the plans the person makes in the mimir tab, which it can never replace or push out (their `planId` is refused). With the app link on it goes to the app (`design.put_plan`, read class), where the app's design check reads it; there is no card on this path.
+- `slicerx_mimir_brain` reads the mimir the open app runs over the app link: `name`, `voice` (whether the edition set one), `toolGroups` (each group on or off), `cloud` (`base`, the model mimir cloud answers with, and `stepUp`, the step-up the edition asks for or `null`), `memory` (`local` and `sync`) and `knowledgeDocs`, the count of the edition's own docs. It never carries the voice text or the docs.
+
 ### Changed
 
-- `slicerx_mimir_tab` 1.1.0 also says whether the model runs on this computer (`local`). mimir has one chat in the app now, the mimir tab, so `tools` lists everything the model is offered there: the design tools, the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands (among them `app.project_new`, which still asks the person before anything unsaved is discarded).
+- `slicerx_mimir_tab` 1.1.0 also says whether the model is a local one (`local`, a server the person runs, which gets the shorter tool list) and where its server is (`where`: `computer`, `network` or `remote`, by its address, the same way the memory chip says where notes go; `null` without a model). A local model can run on another computer on the network, so `local` alone never means this computer. mimir has one chat in the app now, the mimir tab, so `tools` lists everything the model is offered there: the design tools, the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands (among them `app.project_new`, which still asks the person before anything unsaved is discarded).
 
 ### Removed
 
 - `slicerx_mimir_dock`: the docked chat is gone from the app. Read the mimir tab with `slicerx_mimir_tab` instead; `slicerx_mimir_ask` and `slicerx_mimir_session` now reach the tab's conversation.
+
+### Notes for partners
+
+- `ai.brain.memory.local` in the edition config defaults to `true`. Every edition's mimir gets `memory.remember`, `memory.recall` and the notes block in its instructions unless the edition sets `local: false`.
+- `Citation.kind` in `@slicerx/contracts` gained `'edition'`, for a source from the edition's own knowledge. Code that switches on `kind` should handle it.
+- The `approval_request` pilot event in `@slicerx/contracts` has an optional `source`, the tool's source, so a host's own card for a built-in tool never stands in for a plugin's tool of the same name.
 
 ## [0.1.9] - 2026-10-19
 

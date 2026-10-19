@@ -157,7 +157,8 @@ export interface Citation {
   title: string
   url?: string
   publisher?: string
-  kind: 'kb' | 'web'
+  /** `edition` for a source from the edition's own knowledge (ai.brain.knowledge). */
+  kind: 'kb' | 'web' | 'edition'
 }
 
 export interface SettingsDiffRow {
@@ -331,7 +332,8 @@ export type PilotEvent =
   | { type: 'settings_diff'; diff: SettingsDiff }
   | { type: 'citations'; items: Citation[] }
   | { type: 'permission_note'; permission: PermissionClass; mode: 'allow' | 'off'; tool: string; message: string }
-  | { type: 'approval_request'; request: ApprovalRequest }
+  /** `source` is where the tool came from (a plugin's tool never gets a built-in tool's own card); absent on older hosts. */
+  | { type: 'approval_request'; request: ApprovalRequest; source?: ToolSource }
   /** A question for the person with fixed answers; the run waits until one is picked. */
   | { type: 'ask'; askId: string; title: string; question: string; choices: PilotChoice[] }
   | { type: 'ask_answered'; askId: string; choiceId: string }
@@ -379,6 +381,11 @@ export interface PilotConfig {
   auto?: boolean
   /** With auto: design and geometry tools move the run to muninn too (when huginn's model is weak at building parts). */
   deepDesign?: boolean
+  /**
+   * The edition's models for the person's own key (ai.brain.routing): base for huginn, step for muninn, for a key of
+   * `provider` only. mimir cloud ignores it; its proxy picks the model.
+   */
+  routing?: { provider?: 'anthropic' | 'openai'; base?: string; step?: string }
 }
 
 /** The machine a plate targets. Ids are knowledge ids (`prusa_mk4s`, `petg`). */
@@ -453,8 +460,12 @@ export interface LlmHttpRequest {
 export interface LlmTransport {
   /** True when a key for this provider is present in the keychain or environment. */
   available(provider: string): Promise<boolean>
-  /** Streams the raw response body (SSE bytes). Rejects with the HTTP status on a non-2xx reply. */
-  stream(req: LlmHttpRequest, signal?: AbortSignal): AsyncIterable<Uint8Array>
+  /**
+   * Streams the raw response body (SSE bytes). Rejects with the HTTP status on a non-2xx reply. A transport that can read
+   * the reply's headers passes them to `onHeaders` (lowercase names) before the first body chunk; mimir cloud names the
+   * model it used in `x-sx-model`.
+   */
+  stream(req: LlmHttpRequest, signal?: AbortSignal, onHeaders?: (headers: Record<string, string>) => void): AsyncIterable<Uint8Array>
 }
 
 export interface ApprovalHost {

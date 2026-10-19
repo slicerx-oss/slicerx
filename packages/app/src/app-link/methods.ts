@@ -136,6 +136,10 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'geom.emboss': 'edit',
   'geom.build': 'edit',
   'geom.subtract': 'edit',
+  // a built part checked against a plan the mimir tab made
+  'design.check': 'read',
+  // a client's own plan kept for design.check, beside the tab's (never in place of one); no card, nothing on the plate changes
+  'design.put_plan': 'read',
   // A client's dimension sheet: asking puts a question in front of the person, so it is an edit.
   'sheet.ask': 'edit',
   'sheet.get': 'read',
@@ -150,8 +154,15 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.share': 'read',
   // mimir cloud at a glance: offered, in use, signed in, and today's use when in use; no key or token
   'mimir.status': 'read',
-  // what answers in the mimir tab: a model (which one, Auto's pair, whether it runs locally) or the scripted stub, and the tools it is offered
+  // what answers in the mimir tab: a model (which one, Auto's pair, where it runs: this computer, your network or the
+  // model's server) or the scripted stub, and the tools it is offered
   'mimir.tab': 'read',
+  // what mimir remembers about the person, secrets hidden; and one fact added, which changes what mimir knows
+  'mimir.memory': 'read',
+  'mimir.memory_remember': 'edit',
+  // the mimir the edition runs: name, whether it has a voice, tool groups, cloud step-up, memory, knowledge doc count;
+  // never the voice text or the docs
+  'mimir.brain': 'read',
 }
 
 export { LinkError } from './methods-error'
@@ -472,6 +483,9 @@ const HANDLERS: Record<string, Handler> = {
     return { cloud, enabled, needsSignIn, signedIn, quota, quotaError }
   },
   'mimir.tab': async () => (await import('../workspaces/mimir/session')).tabState(),
+  'mimir.memory': async (args) => (await import('./mimir-memory')).readMemory(args),
+  'mimir.memory_remember': async (args) => (await import('./mimir-memory')).rememberFact(args),
+  'mimir.brain': async () => (await import('./mimir-brain')).brainState(),
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()
@@ -501,8 +515,11 @@ let linkLoader: Loader | null = null
 /** Gives the design tools the plate's design host. */
 export async function useDesignHost(loader: Loader): Promise<void> {
   linkLoader = loader
-  const [{ designToolset }, { appDesignHost }] = await Promise.all([import('@slicerx/mcp/toolset'), import('../cad/design-host')])
-  designTools = new Map(designToolset(appDesignHost(loader)).filter((t) => Object.hasOwn(APP_LINK_METHODS, t.name)).map((t) => [t.name, t]))
+  const [{ designToolset, nozzleOr }, { appDesignHost }, { mimirPlans }] = await Promise.all([import('@slicerx/mcp/toolset'), import('../cad/design-host'), import('../workspaces/mimir/plans')])
+  // design.check reads the same plans as the mimir tab, and holds walls to the printer's nozzle now; a client never
+  // ties a plan the person made on the tab's card (no cardSide here)
+  const opts = { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle) }
+  designTools = new Map(designToolset(appDesignHost(loader), {}, opts).filter((t) => Object.hasOwn(APP_LINK_METHODS, t.name)).map((t) => [t.name, t]))
 }
 
 const TOOL_CODES = new Set(['invalid_input', 'not_found'])

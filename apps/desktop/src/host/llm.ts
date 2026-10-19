@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The assistant's model transport through src-tauri/src/llm.rs. The request goes out without a
-// credential; Rust adds the ChatGPT plan's token or the API key. Only response bytes come back.
+// credential; Rust adds the ChatGPT plan's token or the API key. Only response bytes come back, plus the
+// model mimir cloud names in its reply.
 import type { LlmHttpRequest, LlmTransport } from '@slicerx/contracts'
 import { Channel, invoke } from '@tauri-apps/api/core'
 
-type Chunk = { kind: 'data'; b64: string } | { kind: 'error'; status: number; message: string; code?: string } | { kind: 'end' }
+type Chunk = { kind: 'model'; model: string } | { kind: 'data'; b64: string } | { kind: 'error'; status: number; message: string; code?: string } | { kind: 'end' }
 
 let nextId = 1
 
@@ -36,7 +37,7 @@ export function createTauriLlm(): DesktopLlm {
   return {
     available: (provider) => invoke<boolean>('llm_available', { provider }),
     billing: () => invoke<'plan' | 'key' | null>('llm_billing'),
-    async *stream(req: LlmHttpRequest, signal?: AbortSignal): AsyncIterable<Uint8Array> {
+    async *stream(req: LlmHttpRequest, signal?: AbortSignal, onHeaders?: (headers: Record<string, string>) => void): AsyncIterable<Uint8Array> {
       const id = nextId++
       const queue: Chunk[] = []
       let wake: (() => void) | undefined
@@ -60,7 +61,9 @@ export function createTauriLlm(): DesktopLlm {
             })
             continue
           }
-          if (c.kind === 'data') yield bytes(c.b64)
+          // mimir cloud's model comes before the first data chunk, so the chat can name it before the reply
+          if (c.kind === 'model') onHeaders?.({ 'x-sx-model': c.model })
+          else if (c.kind === 'data') yield bytes(c.b64)
           else if (c.kind === 'error') throw new LlmHttpError(c.status, c.message, c.code)
           else return
         }

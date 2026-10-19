@@ -6,8 +6,8 @@
 // runs it; with none, the scripted stub answers over the same tools, and the chat says so.
 import { DEFAULT_POLICY, type CommandSpec, type Host, type LlmTransport, type MeshHandle, type MeshPart, type Pilot, type PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
-import { designToolset } from '@slicerx/mcp/toolset'
-import { createCombinedPlanner, createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type PilotTool } from '@slicerx/pilot'
+import { designToolset, nozzleOr } from '@slicerx/mcp/toolset'
+import { createCombinedPlanner, createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, whereNotesGo, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { setSessionSource } from '../../app-link/sessions'
@@ -19,12 +19,16 @@ import { geom } from '../../geom/client'
 import { useHost } from '../../host'
 import { guardedPrinters } from '../../plate/guard'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
+import { editionToolGroups, withBrain } from '../../pilot-connect/brain'
+import { chatNotesGo, pilotMemory, useMemoryAccount } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { slicePlate } from '../../state/actions'
 import { hostSlices } from '../../state/model-mode'
 import { get, useApp, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
 import { bundledKb } from './kb'
+import { withPlanTies } from './plan-tool'
+import { mimirPlans } from './plans'
 import { appProject, pilotSlicer } from './project'
 import { mimirTools, NO_APPROVALS, NO_PRINTERS, scriptRouter } from './scripted'
 import { SCRIPTS } from './scripts'
@@ -41,8 +45,10 @@ export interface TabModel {
   model: string
   /** Auto's two models when the person chose Auto: huginn to start, muninn for pictures, many-step parts and sizes only the person knows. */
   auto?: { huginn: string; muninn: string }
-  /** Whether the model runs on this computer (Ollama or LM Studio). */
+  /** Whether it is a local model (a server the person runs, such as Ollama or LM Studio), which gets the shorter tool list. */
   local?: boolean
+  /** Where the model's server is, by its address (whereNotesGo): this computer, the person's network, or elsewhere. */
+  where?: NotesWhere
 }
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
@@ -63,18 +69,23 @@ export function tabModel(): TabModel | null {
 
 /**
  * `mimir.tab` over the app link: what answers in the tab (none before it first opens, scripted, or model), the model
- * and Auto's pair, whether it runs on this computer, and the tools the model is offered there (a local model gets a
- * shorter list). No key or token.
+ * and Auto's pair, whether it is a local model, where the model's server is (this computer, the person's network, or
+ * elsewhere; null without a model), and the tools the model is offered there (a local model gets a shorter list). No
+ * key or token.
  */
-export function tabState(): { link: MimirLink; provider: string | null; model: string | null; auto: { huginn: string; muninn: string } | null; local: boolean; tools: string[] } {
-  if (!current) return { link: 'none', provider: null, model: null, auto: null, local: false, tools: [] }
+export function tabState(): { link: MimirLink; provider: string | null; model: string | null; auto: { huginn: string; muninn: string } | null; local: boolean; where: NotesWhere | null; tools: string[] } {
+  if (!current) return { link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [] }
   const m = current.model
-  return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, tools: current.pilot.tools().map((t) => t.name) }
+  return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, where: m.where ?? null, tools: current.pilot.tools().map((t) => t.name) }
 }
 
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */
 function toolsFor(loader: Loader): PilotTool<never>[] {
-  if (tools.length === 0) tools = mimirTools(designToolset(appDesignHost(loader)))
+  // design.check reads the tab's plans, and holds walls to the nozzle the printer has now (0.4 mm when that is not a
+  // positive size). The card's design.plan puts its plans in the same registry, and the part built after an approved
+  // plan ties to it (withPlanTies), so design.check checks that design. The toolset's design.put_plan (for MCP clients)
+  // is left out of the tab (mimirTools).
+  if (tools.length === 0) tools = withPlanTies(mimirTools(designToolset(appDesignHost(loader), {}, { plans: mimirPlans, nozzleMm: () => nozzleOr(get().profile?.nozzle), cardSide: true })))
   return tools
 }
 
@@ -115,7 +126,7 @@ const NO_LLM = {} as LlmTransport
  * so there it has the design, knowledge and project tools and says the desktop app slices. Auto starts a build on
  * huginn and moves to muninn for deep work, a picture or PDF, a part of many steps, or a size only the person knows.
  */
-export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: PilotConfig; kb: KnowledgeBase; tools: readonly PilotTool<never>[]; client?: LlmClient; share?: CreatePilotOptions['share']; commands?: readonly CommandSpec[] }): CreatePilotOptions {
+export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: PilotConfig; kb: KnowledgeBase; tools: readonly PilotTool<never>[]; client?: LlmClient; share?: CreatePilotOptions['share']; commands?: readonly CommandSpec[]; memory?: CreatePilotOptions['memory']; toolGroups?: CreatePilotOptions['toolGroups'] }): CreatePilotOptions {
   const slices = hostSlices()
   const commands = mimirCommands(host, parts.commands ?? listCommands())
   return {
@@ -141,14 +152,19 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
     store: mimirLogs,
     ...(parts.client ? { client: parts.client } : {}),
     ...(parts.share ? { share: parts.share } : {}),
+    ...(parts.memory ? { memory: parts.memory } : {}),
+    ...(parts.toolGroups ? { toolGroups: parts.toolGroups } : {}),
   }
 }
 
-/** The stub: the same runtime and tools, answering with the scripts. Replies stream at a reading pace, at once under reduced motion. */
-function scripted(host: Host, kb: KnowledgeBase): Pilot {
+/**
+ * The stub: the same runtime and tools, answering with the scripts, with the edition's tool groups and the person's
+ * notes (which stay on this computer). Replies stream at a reading pace, at once under reduced motion.
+ */
+function scripted(host: Host, kb: KnowledgeBase, edition: EditionConfig): Pilot {
   const still = motionReduced()
   const client = scriptRouter(SCRIPTS, { delayMs: still ? 0 : 28, callDelayMs: still ? 0 : 350 })
-  return createPilot(tabPilotOptions(host, { llm: NO_LLM, config: SCRIPTED_CONFIG, kb, tools: toolsFor(host.slicer), client }))
+  return createPilot(tabPilotOptions(host, { llm: NO_LLM, config: SCRIPTED_CONFIG, kb, tools: toolsFor(host.slicer), client, memory: pilotMemory(edition, { where: chatNotesGo(SCRIPTED_CONFIG, false) }), toolGroups: editionToolGroups(edition) }))
 }
 
 /** The app commands mimir has as tools, by id: they load after first paint, and mimir's app tools are made from them. */
@@ -167,9 +183,12 @@ function cloudId(cloud: unknown): number {
   return id
 }
 
-/** The setup the tab would use now: what Settings > mimir chose, or the edition's own, the mimir cloud host and the app's commands. A change makes the runtime again. */
+/**
+ * The setup the tab would use now: what Settings > mimir chose, or the edition's own, the mimir cloud host, the app's
+ * commands and whether the edition keeps notes (ai.brain.memory.local). A change makes the runtime again.
+ */
 function setupKey(host: Host, edition: EditionConfig, pref: PilotPref | null, cloud: unknown): string {
-  return JSON.stringify([edition.id, pref, cloudId(cloud), host.llm ? 1 : 0, toolCommands()])
+  return JSON.stringify([edition.id, pref, cloudId(cloud), host.llm ? 1 : 0, toolCommands(), edition.ai.brain.memory.local])
 }
 
 /**
@@ -193,13 +212,16 @@ export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknow
     let made: { pilot: Pilot; model: TabModel }
     if (ok && llm && chosen) {
       // mimir cloud is billed per token like a key: one model for every turn
-      const config: PilotConfig = base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' } : paid ? { ...base0, billing: paid } : base0
-      // mimir cloud keeps the session only while the person allows it (Settings > mimir)
-      const pilot = createPilot(tabPilotOptions(host, { llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }) }))
+      // the edition's brain pack: no web search when its web tools are off, and its models for the person's own key
+      const config: PilotConfig = withBrain(base0.provider === 'mimir-cloud' ? { ...base0, billing: 'key' } : paid ? { ...base0, billing: paid } : base0, edition)
+      // mimir cloud keeps the session only while the person allows it (Settings > mimir). The person's notes go through
+      // the app's one memory handle (the app link and Settings > Memory share it): the tab reads them, and saving one
+      // asks first with the memory chip, answered through the app's approvals.
+      const pilot = createPilot(tabPilotOptions(host, { llm, config, kb, tools: toolsFor(loader), share: () => ({ on: get().mimirShare, version: host.build.version }), memory: pilotMemory(edition, { where: chatNotesGo(config, true) }), toolGroups: editionToolGroups(edition) }))
       const auto = config.auto && config.models?.huginn && config.models.muninn ? { huginn: config.models.huginn, muninn: config.models.muninn } : undefined
-      made = { pilot, model: { link: 'model', provider: config.provider, model: config.model, ...(auto ? { auto } : {}), ...(isLocalModel(config) ? { local: true } : {}) } }
+      made = { pilot, model: { link: 'model', provider: config.provider, model: config.model, ...(auto ? { auto } : {}), ...(isLocalModel(config) ? { local: true } : {}), where: whereNotesGo(config) } }
     } else {
-      made = { pilot: scripted(host, kb), model: { link: 'scripted', provider: 'scripted', model: 'scripted' } }
+      made = { pilot: scripted(host, kb, edition), model: { link: 'scripted', provider: 'scripted', model: 'scripted' } }
     }
     // a newer setup may have started meanwhile; it wins
     if (building?.key === key) {
@@ -219,6 +241,8 @@ export function useTabMimir(): Pilot | null {
   const edition = useEdition()
   const cloud = useMimirCloudHost()
   const pref = useApp((s) => s.pilot)
+  // the account notes sync with, when this host has one
+  useMemoryAccount()
   // the app's commands arriving (or changing) makes the runtime again with them
   const commands = useCommands()
   const [pilot, setPilot] = useState<Pilot | null>(() => (current?.key === setupKey(host, edition, get().pilot, cloud) ? current.pilot : null))

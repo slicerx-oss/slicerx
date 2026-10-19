@@ -210,6 +210,10 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("geom.emboss", LinkClass::Edit),
     ("geom.build", LinkClass::Edit),
     ("geom.subtract", LinkClass::Edit),
+    // A built part checked against a plan the mimir tab made: it reads only.
+    ("design.check", LinkClass::Read),
+    // A client's plan kept for design.check; no card and nothing on the plate changes.
+    ("design.put_plan", LinkClass::Read),
     // A client's dimension sheet: asking puts a question in front of the person, so it edits.
     ("sheet.ask", LinkClass::Edit),
     ("sheet.get", LinkClass::Read),
@@ -224,9 +228,16 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("mimir.share", LinkClass::Read),
     // mimir cloud at a glance: offered, in use, signed in, and today's use while in use. No key or token.
     ("mimir.status", LinkClass::Read),
-    // What answers in the mimir tab (a model, whether it runs locally, or the scripted stub) and the tools it is offered.
+    // What answers in the mimir tab (a model and where it runs: this computer, your network or the model's server; or
+    // the scripted stub) and the tools it is offered.
     // No key or token.
     ("mimir.tab", LinkClass::Read),
+    // What mimir remembers about the person, with secrets hidden in the app; adding a fact changes what it knows.
+    ("mimir.memory", LinkClass::Read),
+    ("mimir.memory_remember", LinkClass::Edit),
+    // The mimir the edition runs: its name, tool groups, cloud step-up, memory and knowledge doc count. Never the
+    // voice text or the docs.
+    ("mimir.brain", LinkClass::Read),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -500,6 +511,8 @@ mod tests {
         ("geom.emboss", LinkClass::Edit),
         ("geom.build", LinkClass::Edit),
         ("geom.subtract", LinkClass::Edit),
+        ("design.check", LinkClass::Read),
+        ("design.put_plan", LinkClass::Read),
         ("sheet.ask", LinkClass::Edit),
         ("sheet.get", LinkClass::Read),
         ("mimir.sessions", LinkClass::Read),
@@ -509,6 +522,9 @@ mod tests {
         ("mimir.share", LinkClass::Read),
         ("mimir.status", LinkClass::Read),
         ("mimir.tab", LinkClass::Read),
+        ("mimir.memory", LinkClass::Read),
+        ("mimir.memory_remember", LinkClass::Edit),
+        ("mimir.brain", LinkClass::Read),
     ];
 
     #[test]

@@ -7,6 +7,8 @@ import { bakeMesh, keyOfTriangle, mainNumber, replayHistory, stepName, timelineO
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
+import { bodyFacts } from './body-facts'
+import { createPlanRegistry, designCheck, FIX_ROUNDS, nozzleOr, partPlanSchema, PlanOwnedError, type PlanEntry, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { meshStats } from './mesh'
 
@@ -210,9 +212,23 @@ async function replayChange(host: DesignHost, design: Design, history: History, 
   Object.assign(design, candidate)
 }
 
+/** What design.check reads besides the design: the plans, and the nozzle the part prints with. */
+export interface DesignToolOptions {
+  /** The plans design.check finds by planId; default a registry of this toolset's own. */
+  plans?: PlanRegistry | undefined
+  /** The nozzle diameter in mm, for the thinnest wall; 0.4 when absent or not a positive finite number. */
+  nozzleMm?: (() => number | undefined) | undefined
+  /**
+   * True on the side that owns the card plans (the mimir tab): design.check given a design ties an untied card plan
+   * to it. Elsewhere (an MCP client over the app link) a design given for a card plan is checked but never tied.
+   */
+  cardSide?: boolean | undefined
+}
+
 /** The design tools on a host; `files` reads the models design.new starts from and the 3MF files design.open and design.save use. */
-export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<never>[] {
+export function designTools(designs: DesignHost, files: DesignFiles, opts: DesignToolOptions = {}): PilotTool<never>[] {
   const plural = (n: number, w: string): string => `${n} ${w}${n === 1 ? '' : 's'}`
+  const plans = opts.plans ?? createPlanRegistry()
 
   const create = defineTool({
     name: 'design.new',
@@ -396,5 +412,101 @@ export function designTools(designs: DesignHost, files: DesignFiles): PilotTool<
     },
   })
 
-  return [create, open, list, steps, edit, undo, redo, timeline, roll, save] as PilotTool<never>[]
+  /**
+   * The design a plan was built in, and how it was chosen: the one it is tied to (or given now, which ties it), else
+   * the one design named as the part, else the only design open. With several open and none tied or named, or two
+   * named as the part, it refuses and asks which, rather than check the wrong part. A design given now ties a client
+   * plan, or an untied card plan on the card's own side; a card plan is never tied again to another design, and a
+   * client's given design for an untied card plan is checked without tying it.
+   */
+  const builtFrom = (entry: PlanEntry, given: string | undefined): { design: HostDesign; how: 'tied to the plan' | 'given' | 'matched by name' | 'latest' } => {
+    if (given) {
+      if (entry.origin === 'card' && entry.design && entry.design !== given)
+        throw new ToolInputError(`design: plan ${entry.plan.planId} (${entry.plan.part}) was made in the mimir tab and is already tied to design ${entry.design}. It is not tied again; check it without design, or check another plan.`)
+      const design = designs.get(given)
+      if (entry.origin === 'card' && entry.design) return { design, how: 'tied to the plan' }
+      if (entry.origin === 'card' && !opts.cardSide) return { design, how: 'given' }
+      plans.tie(entry.plan.planId, design.id)
+      return { design, how: 'tied to the plan' }
+    }
+    if (entry.design) return { design: designs.get(entry.design), how: 'tied to the plan' }
+    const all = designs.list()
+    const named = all.filter((d) => d.name.trim().toLowerCase() === entry.plan.part.trim().toLowerCase())
+    if (named.length === 1) return { design: named[0]!, how: 'matched by name' }
+    if (named.length > 1)
+      throw new ToolInputError(
+        `design: plan ${entry.plan.planId} (${entry.plan.part}) is not tied to a design and ${named.length} open designs are named ${entry.plan.part}. Which design is it? ${named.map((d) => `${d.name} (${d.id})`).join(', ')}. Check again with design set to its id.`,
+      )
+    if (all.length === 0) throw new ToolInputError(`No design to check: build ${entry.plan.part} first, then check it against plan ${entry.plan.planId}.`)
+    if (all.length > 1)
+      throw new ToolInputError(
+        `design: plan ${entry.plan.planId} (${entry.plan.part}) is not tied to a design and no open design is named ${entry.plan.part}. Which design is it? Open: ${all.map((d) => `${d.name} (${d.id})`).join(', ')}. Check again with design set to its id.`,
+      )
+    return { design: all[0]!, how: 'latest' }
+  }
+
+  const check = defineTool({
+    name: 'design.check',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items once and check again. A plan gets one fix round: when its second check fails too, the result adds stop, a plain instruction to stop building and tell the person exactly what is off, and every later check of that plan returns that same result (with repeated) without measuring the part again. A new plan, with a new planId, starts over.",
+    input: z.object({
+      planId: z.string().min(1).describe('The planId of the plan the part was built from'),
+      design: z.string().min(1).optional().describe('The design id the part was built in, when the plan is not tied to one; it ties the plan to it, except a plan the person made in the mimir tab, which only the tab ties'),
+    }),
+    async run(i) {
+      const entry = plans.get(i.planId)
+      if (!entry) throw new ToolInputError(`planId: there is no plan ${i.planId}; make the plan first, then build the part and check it`)
+      // the fix round is used: the same answer again, with no new geometry work
+      if (entry.closed) return { summary: `Plan ${entry.plan.planId} has had its fix round, so the part was not checked again. Its last check: ${entry.closed.summary}`, output: { ...entry.closed.output, repeated: true } }
+      const { design: d, how } = builtFrom(entry, i.design)
+      const nozzleMm = nozzleOr(opts.nozzleMm?.())
+      const body = await bodyFacts(designs, d)
+      const result = designCheck(entry.plan, body, nozzleMm)
+      const failed = result.items.filter((x) => !x.pass)
+      const which = `${d.name} (${d.id}, ${how})`
+      const summary = result.pass ? `${which} matches plan ${entry.plan.planId}: all ${result.items.length} checks pass` : `${which}: ${failed.length} of ${result.items.length} checks against plan ${entry.plan.planId} failed: ${failed.map((x) => `${x.name} (want ${x.want}, got ${x.got})`).join('; ')}`
+      const output = { planId: entry.plan.planId, design: d.id, designName: d.name, chosen: how, nozzleMm, ...result, body }
+      const failedChecks = plans.checked(entry.plan.planId, result.pass)
+      if (result.pass || failedChecks <= FIX_ROUNDS) return { summary, output }
+      // the second miss: one fix round was the limit, so mimir stops here and says what is off
+      const stop = `The fix round is used: stop building, and tell the person exactly what is off (each failed item, what the plan wants and what the part has) and ask how to go on. Checking plan ${entry.plan.planId} again returns this same result.`
+      const last = { summary: `${summary}. ${stop}`, output: { ...output, stop } }
+      plans.close(entry.plan.planId, last)
+      return last
+    },
+  })
+
+  // How an integrator hands design.check a plan: kept in the same registry it reads, as a client plan, with no card to
+  // approve. It never replaces or pushes out a plan the person made on the mimir tab's card (design.plan there), and
+  // the tab leaves this tool out.
+  const plan = defineTool({
+    name: 'design.put_plan',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description:
+      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind and its sizes), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter (count for a row of several holes of that diameter, default 1), with assumptions and questions (empty lists for none). Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
+    input: z.object({
+      plan: partPlanSchema.describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
+      design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),
+    }),
+    async run(i) {
+      // a tie names a design that exists (get refuses one that does not)
+      const tied = i.design ? designs.get(i.design) : undefined
+      if (plans.get(i.plan.planId)?.origin === 'card') throw new ToolInputError(new PlanOwnedError(i.plan.planId).message)
+      plans.put(i.plan, tied?.id, 'client')
+      const p = i.plan
+      const holes = (p.holes ?? []).reduce((n, h) => n + (h.count ?? 1), 0)
+      const shape = [plural(p.features.length, 'feature'), ...(holes ? [plural(holes, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : [])].join(', ')
+      return {
+        summary: `Kept plan ${p.planId} for ${p.part} (${shape})${tied ? `, tied to ${tied.name} (${tied.id})` : ''}. Build it, then check it with design.check and planId ${p.planId}.`,
+        output: { planId: p.planId, part: p.part, ...(tied ? { design: tied.id } : {}), features: p.features.length, holes },
+      }
+    },
+  })
+
+  return [create, open, list, steps, edit, undo, redo, timeline, roll, save, check, plan] as PilotTool<never>[]
 }

@@ -26,6 +26,12 @@ begin
   if leftover is not null then
     raise exception 'tables left after dropping the modules: %', leftover;
   end if;
+  select string_agg(p.proname, ', ') into leftover
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public' and p.proname like 'mimir\_%';
+  if leftover is not null then
+    raise exception 'mimir functions left after dropping the mimir module: %', leftover;
+  end if;
   if (select count(*) from public.profiles) = 0 then
     raise exception 'profiles were lost';
   end if;

@@ -1,0 +1,218 @@
+{
+ "note": "A 608 pillow block from a real mimir tab session: the approved plan, then the last build of the part and its check, with their inputs as made. stl is the part exported at the end.",
+ "planId": "plan_mvexiw8l53dc1",
+ "plan": {
+  "part": "608 pillow block",
+  "units": "mm",
+  "features": [
+   {
+    "name": "Base plate",
+    "kind": "extrude",
+    "sizes": {
+     "length": 60,
+     "width": 30,
+     "thickness": 5
+    }
+   },
+   {
+    "name": "Bearing housing",
+    "kind": "extrude",
+    "sizes": {
+     "width": 30,
+     "depth": 14,
+     "top height": 33
+    }
+   },
+   {
+    "name": "Press-fit bore",
+    "kind": "hole",
+    "sizes": {
+     "diameter": 21.9,
+     "axis height": 19
+    }
+   },
+   {
+    "name": "M4 mounting holes",
+    "kind": "hole",
+    "sizes": {
+     "diameter": 4.5,
+     "spacing": 40
+    }
+   }
+  ],
+  "overall": {
+   "x": 60,
+   "y": 30,
+   "z": 33
+  },
+  "holes": [
+   {
+    "name": "Bearing bore",
+    "diameter": 21.9
+   },
+   {
+    "name": "M4 mounting hole 1",
+    "diameter": 4.5
+   },
+   {
+    "name": "M4 mounting hole 2",
+    "diameter": 4.5
+   }
+  ],
+  "assumptions": [
+   "608 bearing: 8 mm bore, 22 mm OD, 7 mm wide (NSK guide, p.29).",
+   "M4 clearance hole 4.5 mm (normal fit, Albany County chart).",
+   "Bearing axis runs along Y, housing 14 mm deep, bore goes through the housing.",
+   "Bore is 21.9 mm, a 0.1 mm interference for a press fit.",
+   "No internal shoulder; the bearing is pressed in and stops against the wall.",
+   "Mounting holes at x = plus and minus 20 mm, through the base."
+  ],
+  "questions": [
+   "Should the bore have a shoulder so the bearing stops at a set depth?"
+  ]
+ },
+ "steps": [
+  {
+   "tool": "design.new",
+   "input": {
+    "name": "608 pillow block with shoulder"
+   },
+   "summary": "Started 608 pillow block with shoulder (obj_mvexmj7gd8)"
+  },
+  {
+   "tool": "geom.build",
+   "input": {
+    "solids": [
+     {
+      "type": "box",
+      "min": [
+       -30,
+       -15,
+       0
+      ],
+      "max": [
+       30,
+       15,
+       5
+      ]
+     },
+     {
+      "type": "box",
+      "min": [
+       -15,
+       -7,
+       5
+      ],
+      "max": [
+       15,
+       7,
+       33
+      ]
+     }
+    ],
+    "subtract": [
+     {
+      "type": "cylinder",
+      "origin": [
+       0,
+       -10,
+       19
+      ],
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "diameterMm": 21.9,
+      "heightMm": 10
+     },
+     {
+      "type": "cylinder",
+      "origin": [
+       0,
+       2,
+       19
+      ],
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "diameterMm": 21.9,
+      "heightMm": 10
+     },
+     {
+      "type": "cylinder",
+      "origin": [
+       0,
+       -1,
+       19
+      ],
+      "axis": [
+       0,
+       1,
+       0
+      ],
+      "diameterMm": 18,
+      "heightMm": 4
+     },
+     {
+      "type": "cylinder",
+      "origin": [
+       -20,
+       0,
+       -1
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "diameterMm": 4.5,
+      "heightMm": 7
+     },
+     {
+      "type": "cylinder",
+      "origin": [
+       20,
+       0,
+       -1
+      ],
+      "axis": [
+       0,
+       0,
+       1
+      ],
+      "diameterMm": 4.5,
+      "heightMm": 7
+     }
+    ],
+    "design": "obj_mvexmj7gd8",
+    "name": "Pillow block",
+    "slot": 1
+   },
+   "summary": "Built: step 1, Add Pillow block"
+  },
+  {
+   "tool": "design.check",
+   "input": {
+    "planId": "plan_mvexiw8l53dc1",
+    "design": "obj_mvexmj7gd8"
+   },
+   "summary": "608 pillow block with shoulder (obj_mvexmj7gd8, tied to the plan): 4 of 7 checks against plan plan_mvexiw8l53dc1 failed: Bearing bore (want 21.9 mm diameter, got no hole); M4 mounting hole 1 (want 4.5 mm diameter, got no hole); M4 mounting hole 2 (want 4.5 mm diameter, got no hole); feature count (want 4, got 1)"
+  }
+ ],
+ "stl": {
+  "triangles": 139998,
+  "min": [
+   -30.0,
+   -15.0,
+   0.0
+  ],
+  "max": [
+   30.0,
+   15.0,
+   33.0
+  ]
+ }
+}

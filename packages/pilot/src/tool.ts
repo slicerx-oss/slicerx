@@ -3,6 +3,7 @@
 import type {
   ApprovalToken,
   Citation,
+  CommandSpec,
   JobFile,
   PermissionClass,
   PilotChoice,
@@ -11,6 +12,7 @@ import type {
   PilotSheet,
   PilotSheetAnswer,
   PilotSheetBind,
+  PluginKind,
   PrinterHost,
   SettingsDiff,
   SettingValue,
@@ -131,6 +133,10 @@ export interface PilotTool<I = unknown> {
   title?: string
   /** Other words makers use for it (bevel for chamfer), for finding it. */
   aliases?: string[]
+  /** For a plugin's tool: the manifest it came from, which decides its tool group (surfaces.ts). */
+  plugin?: { id: string; kind: PluginKind }
+  /** For an app command's tool: where the command sits, which decides its tool group (surfaces.ts). */
+  command?: { id: string; section: CommandSpec['section']; workspace?: string }
   /** The set it loads with. */
   toolset?: Toolset
   /** The shape of `structured` replies, published as the MCP output schema. */
@@ -151,6 +157,11 @@ export interface PilotTool<I = unknown> {
    * Allow, such as a guarded setting outside the filament's range. Empty: none.
    */
   mustAsk?(input: I, ctx: ToolContext): Promise<string[]>
+  /**
+   * When the person turned asking off for this tool alone (Save notes without asking, for memory.remember): the line
+   * the chat shows instead of the card, and the call runs as Allow would. Null asks as its class says; Off still stops it.
+   */
+  withoutAsking?(input: I): string | null
   /** Required for every class except read: what the approval card shows and which host calls it unlocks. */
   approval?(input: I, ctx: ToolContext): Promise<ApprovalPlan>
   /**
@@ -160,6 +171,8 @@ export interface PilotTool<I = unknown> {
   agentWork?(input: I, ctx: ToolContext): Promise<AgentWork>
   /** Display form of the arguments, shown as the row's command line. */
   args?(input: I): string
+  /** The input as the tool_call event and session log carry it, when the raw input may hold something never to show (a refused secret). */
+  shownInput?(input: I): unknown
   run(input: I, ctx: ToolContext): Promise<ToolOutput>
 }
 

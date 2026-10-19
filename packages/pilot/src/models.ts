@@ -40,16 +40,28 @@ export function tierForPrompt(prompt: string): Tier {
   return DEEP.test(prompt) ? MUNINN : HUGINN
 }
 
+/** The provider id of mimir cloud (provider/client.ts), whose proxy picks the model whatever the config routes. */
+const CLOUD_PROVIDER = 'mimir-cloud'
+
+/** The edition's routing when it applies: the person's own key, for the provider it names. */
+function ownKeyRouting(config: Partial<Pick<PilotConfig, 'provider' | 'billing' | 'routing'>>): PilotConfig['routing'] {
+  const r = config.routing
+  if (!r || config.billing !== 'key' || config.provider === CLOUD_PROVIDER) return undefined
+  return r.provider !== undefined && r.provider === config.provider ? r : undefined
+}
+
 /**
  * The model id for a tier. A pinned choice wins. `models` are the ChatGPT plan's tiers (the
  * owner's pick from the plan listing is in pilot.config.example.json). On an API key, billed
  * per token, one model does everything (`config.model`, a small one) unless the person chose
- * Auto, which uses the tiers too.
+ * Auto, which uses the tiers too. The edition's routing names those models for the person's
+ * own key: base for the one model and huginn, step for muninn.
  */
-export function modelFor(config: Pick<PilotConfig, 'model' | 'models' | 'modelChoice' | 'billing' | 'auto'>, tier: Tier): string {
+export function modelFor(config: Pick<PilotConfig, 'model' | 'models' | 'modelChoice' | 'billing' | 'auto'> & Partial<Pick<PilotConfig, 'provider' | 'routing'>>, tier: Tier): string {
   if (config.modelChoice && config.modelChoice !== MODEL_AUTOMATIC) return config.modelChoice
-  if (config.billing === 'key' && !config.auto) return config.model
-  return config.models?.[tier] ?? config.model
+  const routed = ownKeyRouting(config)
+  if (config.billing === 'key' && !config.auto) return routed?.base ?? config.model
+  return (tier === MUNINN ? routed?.step : routed?.base) ?? config.models?.[tier] ?? config.model
 }
 
 const LABELS: Record<string, string> = {

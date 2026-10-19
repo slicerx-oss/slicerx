@@ -69,13 +69,16 @@ export function browserTransport(store: KeyStore, config: () => ConnectConfig | 
       }
       return !PROVIDERS[c.provider].needsKey || store.has(c.provider)
     },
-    async *stream(req: LlmHttpRequest, signal?: AbortSignal) {
+    async *stream(req: LlmHttpRequest, signal?: AbortSignal, onHeaders?: (headers: Record<string, string>) => void) {
       const c = config()
       if (!c) throw new Error(`${ASSISTANT_NAME} is not connected.`)
       if (c.provider === 'mimir-cloud') {
         const host = mimirCloudHost()
         if (!host?.send) throw new Error(`${ASSISTANT_NAME} cloud is not part of this build.`)
         const res = await host.send(req.url, { method: req.method, headers: req.headers, ...(req.body !== undefined ? { body: req.body } : {}) }, signal)
+        // the proxy names the model it used, which the chat shows
+        const model = res.headers?.get('x-sx-model')
+        if (model) onHeaders?.({ 'x-sx-model': model })
         if (!res.body) return
         const reader = res.body.getReader()
         for (;;) {

@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// mimir.brain over the app link: the running edition's mimir read back from its config, the edition's own docs
+// counted (never another edition's), and no voice text or doc text in the answer.
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { brainSchema, type EditionConfig } from '@slicerx/edition-config'
+import { TOOL_GROUPS, type KbIndex } from '@slicerx/pilot'
+import { APP_LINK_METHODS, runCall } from '../src/app-link/methods'
+import { brainOf, type BrainState } from '../src/app-link/mimir-brain'
+import { NEUTRAL, setCurrentEdition } from '../src/edition'
+import { editionToolGroups } from '../src/pilot-connect/brain'
+
+// what the build puts in for the running edition's knowledge (editionKbPlugin): two docs of this test's edition
+const BUILT = vi.hoisted(() => ({ value: null as unknown }))
+vi.mock('@slicerx/pilot/edition-kb', () => ({
+  get default() {
+    return BUILT.value
+  },
+}))
+
+const VOICE = 'Talk like a harbor pilot: short, calm, metric units only.'
+const DOC = 'Dock 4 printers run PETG at 245 C with the door closed.'
+
+const HARBOR: EditionConfig = {
+  ...NEUTRAL,
+  id: 't13-test-edition',
+  brand: { ...NEUTRAL.brand, name: 'Harbor', assistant: { ...NEUTRAL.brand.assistant, name: 'Pilot' } },
+  ai: { ...NEUTRAL.ai, brain: brainSchema.parse({ voice: VOICE, cloud: { stepUp: 'sonnet' }, memory: { local: false, sync: 'opt-in' }, tools: { printers: false, web: false, design: true }, knowledge: ['knowledge'] }) },
+}
+
+const doc = (id: string, edition?: string) => ({ kind: 'troubleshoot', id, name: id, aliases: [], file: `knowledge/${id}.yaml`, data: { summary: DOC }, sources: [], ...(edition ? { edition } : {}) })
+const INDEX = { docs: [doc('dock', 't13-test-edition'), doc('tide', 't13-test-edition'), doc('quay', 'other')] } as unknown as KbIndex
+
+afterEach(() => {
+  setCurrentEdition(NEUTRAL)
+  BUILT.value = null
+})
+
+describe('mimir.brain over the app link', () => {
+  it('reads with the read class', () => {
+    expect(APP_LINK_METHODS['mimir.brain']).toBe('read')
+  })
+
+  it('read-back matches the edition config', async () => {
+    setCurrentEdition(HARBOR)
+    const out = (await runCall('mimir.brain', {})) as BrainState
+    expect(out).toEqual({
+      name: 'Pilot',
+      voice: true,
+      toolGroups: { design: true, slicing: true, printers: false, watch: true, paint: true, web: false },
+      cloud: { base: 'claude-haiku-5-5', stepUp: 'sonnet' },
+      memory: { local: false, sync: 'opt-in' },
+      // no knowledge file in this build
+      knowledgeDocs: 0,
+    })
+    expect(brainOf(HARBOR, INDEX).knowledgeDocs).toBe(2)
+  })
+
+  it('counts only the edition docs mimir keeps: one that shares a bundled doc id or name is left out', () => {
+    const bundled = { docs: [{ ...doc('tide'), name: 'Tide' }, { ...doc('bundled-only'), name: 'dock' }] } as unknown as KbIndex
+    expect(brainOf(HARBOR, INDEX, bundled).knowledgeDocs).toBe(0)
+    expect(brainOf(HARBOR, INDEX, { docs: [doc('elsewhere')] } as unknown as KbIndex).knowledgeDocs).toBe(2)
+    expect(brainOf(HARBOR, INDEX, { docs: [doc('tide')] } as unknown as KbIndex).knowledgeDocs).toBe(1)
+  })
+
+  it("reads the groups every mimir applies, and counts the docs of the knowledge file the build carries", async () => {
+    setCurrentEdition(HARBOR)
+    BUILT.value = INDEX
+    const out = (await runCall('mimir.brain', {})) as BrainState
+    const applied = editionToolGroups(HARBOR)
+    expect(applied).toEqual({ printers: false, web: false })
+    expect(out.toolGroups).toEqual(Object.fromEntries(TOOL_GROUPS.map((g) => [g, applied[g] !== false])))
+    // its own two docs, never the other edition's
+    expect(out.knowledgeDocs).toBe(2)
+  })
+
+  it('the neutral edition reads as the stock mimir', async () => {
+    expect(await runCall('mimir.brain', {})).toEqual({
+      name: 'mimir',
+      voice: false,
+      toolGroups: { design: true, slicing: true, printers: true, watch: true, paint: true, web: true },
+      cloud: { base: 'claude-haiku-5-5', stepUp: null },
+      memory: { local: true, sync: 'off' },
+      knowledgeDocs: 0,
+    })
+  })
+
+  it('no voice text or doc text leaks', async () => {
+    const all = JSON.stringify(brainOf(HARBOR, INDEX))
+    expect(all).not.toContain(VOICE)
+    expect(all).not.toContain('harbor pilot')
+    expect(all).not.toContain(DOC)
+    for (const id of ['dock', 'tide', 'quay', 'knowledge/']) expect(all).not.toContain(id)
+    setCurrentEdition(HARBOR)
+    expect(JSON.stringify(await runCall('mimir.brain', {}))).not.toContain(VOICE)
+  })
+})

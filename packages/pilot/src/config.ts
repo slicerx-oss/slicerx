@@ -19,6 +19,7 @@ const schema = z.object({
   billing: z.enum(['plan', 'key']).optional(),
   auto: z.boolean().optional(),
   deepDesign: z.boolean().optional(),
+  routing: z.object({ provider: z.enum(['anthropic', 'openai']).optional(), base: z.string().min(1).optional(), step: z.string().min(1).optional() }).optional(),
 })
 
 export function parsePilotConfig(input: unknown): PilotConfig {
@@ -37,6 +38,13 @@ export function parsePilotConfig(input: unknown): PilotConfig {
   if (parsed.billing !== undefined) out.billing = parsed.billing
   if (parsed.auto !== undefined) out.auto = parsed.auto
   if (parsed.deepDesign !== undefined) out.deepDesign = parsed.deepDesign
+  if (parsed.routing !== undefined) {
+    const routing: NonNullable<PilotConfig['routing']> = {}
+    if (parsed.routing.provider !== undefined) routing.provider = parsed.routing.provider
+    if (parsed.routing.base !== undefined) routing.base = parsed.routing.base
+    if (parsed.routing.step !== undefined) routing.step = parsed.routing.step
+    out.routing = routing
+  }
   return out
 }
 

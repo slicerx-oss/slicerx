@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
 import { viteDefines } from '@slicerx/edition-config'
-import { buildCommit, editionAssetsPlugin, editionFontAssets, editionFontFiles, editionLogoAssets, loadEditionConfig } from '@slicerx/edition-config/node'
+import { buildCommit, editionAssetsPlugin, editionFontAssets, editionFontFiles, editionKbPlugin, editionLogoAssets, loadEditionConfig } from '@slicerx/edition-config/node'
 import { loadEnv, type UserConfig } from 'vite'
 
 const root = resolve(import.meta.dirname, '../..')
@@ -44,7 +44,8 @@ export async function sharedConfig(appDir: string, port: number, editionFile?: s
   const edition = logos.config
   return {
     base,
-    plugins: [react(), editionAssetsPlugin([...logos.assets, ...fonts.assets], fonts.css, base)],
+    // the edition's own knowledge for mimir: only this edition's file goes in the build
+    plugins: [react(), editionAssetsPlugin([...logos.assets, ...fonts.assets], fonts.css, base), editionKbPlugin(edition.id, join(root, 'packages/pilot/src/kb/generated'))],
     define: {
       __SX_VERSION__: JSON.stringify(pkg.version),
       __SX_COMMIT__: JSON.stringify(buildCommit(root, command === 'serve', env)),

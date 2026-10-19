@@ -1,0 +1,10 @@
+kind: guide
+id: harbor_dock_unload
+name: Unloading the Harbor Dock
+aliases: [dock unload]
+summary: >
+  The Harbor Dock lifts finished plates off the bed. Clear the drop chute before a
+  long queue and keep the dock rail free of purge.
+facts:
+  - text: "Empty the drop chute before a queue of more than eight plates."
+    src: [harbor_dock_manual]

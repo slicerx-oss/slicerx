@@ -6,12 +6,14 @@
 import type { DesignHost } from '@slicerx/cad-history'
 import type { PilotTool } from '@slicerx/pilot'
 import { cadTools, type CadFiles } from './cad'
-import { designTools, type DesignFiles } from './design-tools'
+import { designTools, type DesignFiles, type DesignToolOptions } from './design-tools'
 import { ToolInputError } from './errors'
 import { modelingTools, type ModelingFiles } from './modeling-tools'
 
 export { appValueInputs, type AppValuesResult } from './app-values'
 export { brimEditInput, brimReadInput } from './brim-input'
+export { checkResultSchema, createPlanRegistry, DEFAULT_NOZZLE_MM, designCheck, FIX_ROUNDS, MAX_PLANS, nozzleOr, partPlanSchema, PLAN_SIZE_MAX, PlanOwnedError, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanOrigin, type PlanRegistry } from './design-check'
+export type { DesignToolOptions } from './design-tools'
 
 export { appVolumeInputs, type AppVolumes } from './app-volumes'
 export { appDimensionInputs, type AppDimensions } from './app-dimensions'
@@ -44,8 +46,8 @@ function noEngine(): never {
 }
 
 /** The design tools and the CAD tools on `host`, with the files the caller has. */
-export function designToolset(host: DesignHost, files: { design?: DesignFiles; cad?: CadFiles; modeling?: ModelingFiles } = {}): PilotTool<never>[] {
-  return [...designTools(host, files.design ?? NO_DESIGN_FILES), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host }), ...modelingTools({ files: files.modeling ?? NO_MODELING_FILES, designs: host })]
+export function designToolset(host: DesignHost, files: { design?: DesignFiles; cad?: CadFiles; modeling?: ModelingFiles } = {}, opts: DesignToolOptions = {}): PilotTool<never>[] {
+  return [...designTools(host, files.design ?? NO_DESIGN_FILES, opts), ...cadTools({ files: files.cad ?? NO_CAD_FILES, designs: host }), ...modelingTools({ files: files.modeling ?? NO_MODELING_FILES, designs: host })]
 }
 
 export { appUnitInputs, type AppUnits } from './app-units'

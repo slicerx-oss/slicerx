@@ -60,6 +60,8 @@ struct Proxy {
     cap: Option<&'static str>,
     /// Issue tokens without remembering them.
     forgets: bool,
+    /// Name this model in `x-sx-model` on model replies, with another header beside it.
+    model: Option<&'static str>,
     /// Every request: first line, x-sx-install, the other x-sx headers, authorization, body.
     seen: Vec<Seen>,
 }
@@ -202,14 +204,18 @@ async fn serve(proxy: Arc<Mutex<Proxy>>) -> String {
                         seen.headers.insert(k, v.trim().to_owned());
                     }
                 }
-                let (status, reply) = {
+                let messages = seen.first.starts_with("POST /functions/v1/mimir/v1/messages ");
+                let (status, reply, model) = {
                     let mut p = proxy.lock().unwrap();
                     let out = route(&mut p, &seen);
                     p.seen.push(seen);
-                    out
+                    (out.0, out.1, p.model.filter(|_| messages))
                 };
+                let extra = model
+                    .map(|m| format!("x-sx-model: {m}\r\nx-sx-other: kept-out\r\n"))
+                    .unwrap_or_default();
                 let msg = format!(
-                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    "HTTP/1.1 {status} X\r\nContent-Type: application/json\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{reply}",
                     reply.len()
                 );
                 let _ = sock.write_all(msg.as_bytes()).await;
@@ -416,4 +422,55 @@ fn not_available_until_the_host_is_set() {
     // this test binary never sets the process-wide host
     assert!(mimir_cloud().is_none());
     assert!(!available_with(&MemStore::default(), "mimir-cloud"));
+}
+
+#[tokio::test]
+async fn the_reply_names_the_model_the_proxy_used() {
+    let (proxy, cloud) = setup().await;
+    let store = MemStore::default();
+    proxy.lock().unwrap().model = Some("claude-haiku-5-5");
+    let mut step = messages(&cloud);
+    step.headers.insert("x-sx-tier".into(), "step".into());
+    let reply = stream_mimir_cloud_reply(&store, &cloud, step).await.unwrap();
+    assert_eq!(reply.model.as_deref(), Some("claude-haiku-5-5"));
+    let body: Vec<u8> = reply.body.map(|c| c.unwrap().to_vec()).concat().await;
+    assert_eq!(String::from_utf8(body).unwrap(), SSE);
+    assert_eq!(
+        proxy
+            .lock()
+            .unwrap()
+            .seen
+            .last()
+            .unwrap()
+            .headers
+            .get("x-sx-tier")
+            .map(String::as_str),
+        Some("step")
+    );
+    // an odd value is dropped, and a reply without the header names no model
+    proxy.lock().unwrap().model = Some("<b>x</b>");
+    let odd = stream_mimir_cloud_reply(&store, &cloud, messages(&cloud))
+        .await
+        .unwrap();
+    assert_eq!(odd.model, None);
+    proxy.lock().unwrap().model = None;
+    let none = stream_mimir_cloud_reply(&store, &cloud, messages(&cloud))
+        .await
+        .unwrap();
+    assert_eq!(none.model, None);
+}
+
+#[test]
+fn only_a_plain_model_id_is_kept() {
+    let with = |v: &str| {
+        let mut h = reqwest::header::HeaderMap::new();
+        h.insert("x-sx-model", v.parse().unwrap());
+        cloud::reply_model(&h)
+    };
+    assert_eq!(with("claude-sonnet-5-5").as_deref(), Some("claude-sonnet-5-5"));
+    assert_eq!(with(" claude-haiku-5-5 ").as_deref(), Some("claude-haiku-5-5"));
+    assert_eq!(with("Claude"), None);
+    assert_eq!(with(&"a".repeat(65)), None);
+    assert_eq!(with("-x"), None);
+    assert_eq!(cloud::reply_model(&reqwest::header::HeaderMap::new()), None);
 }
