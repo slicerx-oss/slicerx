@@ -760,6 +760,9 @@ importers:
       '@slicerx/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@slicerx/edition-config':
+        specifier: workspace:*
+        version: link:../edition-config
       '@slicerx/printer-catalog':
         specifier: workspace:*
         version: link:../connect/catalog

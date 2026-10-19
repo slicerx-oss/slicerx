@@ -313,7 +313,7 @@ const baseSchema = z.object({
   links: linksSchema.prefault({}),
 })
 
-const SECRET_PATTERNS: [RegExp, string][] = [
+export const SECRET_PATTERNS: [RegExp, string][] = [
   [/\bsk-[A-Za-z0-9_-]{20,}/, 'an API key'],
   [/\bsk_(live|test)_[A-Za-z0-9]{10,}/, 'a Stripe secret key'],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, 'a private key'],
