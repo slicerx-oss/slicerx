@@ -78,7 +78,11 @@ const NO_LLM = {} as LlmTransport
 
 /** The tools a scripted mimir can call in the tab. No printer tool is among them: a print always starts with a person. */
 export function mimirTools(extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
-  return [askTool(), lookupTool(), sheetTool(), sheetBindTool(), planTool(), ...extra]
+  const own = [askTool(), lookupTool(), sheetTool(), sheetBindTool(), planTool()]
+  // the tab's own tools win: the design toolset's design.plan (a plan kept with no card, for MCP clients) gives way to
+  // the card's, which makes plans here
+  const names = new Set(own.map((t) => t.name))
+  return [...own, ...extra.filter((t) => !names.has(t.name))]
 }
 
 /** The tab's mimir: the runtime over the given tools, answering with the scripts. */

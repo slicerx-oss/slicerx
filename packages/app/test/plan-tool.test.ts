@@ -192,6 +192,15 @@ describe('design.plan', () => {
   })
 })
 
+describe("the tab's design.plan", () => {
+  it("is the card's, never the design toolset's plan tool that keeps plans without one", () => {
+    const keeper = defineTool({ name: 'design.plan', version: '1.0.0', source: 'command', permission: 'read', description: 'keeps a plan', input: z.object({}), run: async () => ({ summary: 'kept' }) }) as PilotTool<never>
+    const tools = mimirTools([keeper])
+    expect(tools.filter((t) => t.name === 'design.plan')).toHaveLength(1)
+    expect(tools.find((t) => t.name === 'design.plan')).not.toBe(keeper)
+  })
+})
+
 describe('design.plan and design.check share one registry', () => {
   const go = { ask: async (q: { choices: { id: string }[] }) => q.choices[0]!.id } as never
   const no = { ask: async (q: { choices: { id: string }[] }) => q.choices[1]!.id } as never
