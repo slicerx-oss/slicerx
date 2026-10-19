@@ -259,13 +259,13 @@ describe('a client plan over the app link', () => {
   it("puts the plan where the app's design.check reads it while the link answers, and keeps it here otherwise", async () => {
     const call = vi.fn(async () => ({ summary: 'Kept plan clip-1 for Clip (1 feature).', output: { planId: 'clip-1', part: 'Clip', features: 1, holes: 0 } }))
     const { run } = routed(call as AppLinkCaller['call'])
-    const out = await run('design.plan', { plan })
-    expect(call).toHaveBeenCalledWith('design.plan', { plan })
+    const out = await run('design.put_plan', { plan })
+    expect(call).toHaveBeenCalledWith('design.put_plan', { plan })
     expect(out.output).toMatchObject({ planId: 'clip-1', in: 'app' })
     const off = routed(vi.fn(async () => {
       throw Object.assign(new Error('app_link_off'), { code: 'app_link_off' })
     }) as AppLinkCaller['call'])
-    const here = await off.run('design.plan', { plan })
+    const here = await off.run('design.put_plan', { plan })
     expect(here.output).toEqual({ planId: 'clip-1', part: 'Clip', features: 1, holes: 0 })
     expect(here.summary).toContain('Kept plan clip-1 for Clip (1 feature)')
   })

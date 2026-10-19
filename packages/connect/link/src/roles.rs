@@ -213,7 +213,7 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // A built part checked against a plan the mimir tab made: it reads only.
     ("design.check", LinkClass::Read),
     // A client's plan kept for design.check; no card and nothing on the plate changes.
-    ("design.plan", LinkClass::Read),
+    ("design.put_plan", LinkClass::Read),
     // A client's dimension sheet: asking puts a question in front of the person, so it edits.
     ("sheet.ask", LinkClass::Edit),
     ("sheet.get", LinkClass::Read),
@@ -512,7 +512,7 @@ mod tests {
         ("geom.build", LinkClass::Edit),
         ("geom.subtract", LinkClass::Edit),
         ("design.check", LinkClass::Read),
-        ("design.plan", LinkClass::Read),
+        ("design.put_plan", LinkClass::Read),
         ("sheet.ask", LinkClass::Edit),
         ("sheet.get", LinkClass::Read),
         ("mimir.sessions", LinkClass::Read),

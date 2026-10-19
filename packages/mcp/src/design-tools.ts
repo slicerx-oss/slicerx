@@ -8,7 +8,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName } from '@slicerx/contracts'
 import { bodyFacts } from './body-facts'
-import { createPlanRegistry, designCheck, nozzleOr, partPlanSchema, type PlanEntry, type PlanRegistry } from './design-check'
+import { createPlanRegistry, designCheck, nozzleOr, partPlanSchema, PlanOwnedError, type PlanEntry, type PlanRegistry } from './design-check'
 import { ToolInputError } from './errors'
 import { meshStats } from './mesh'
 
@@ -459,15 +459,16 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     },
   })
 
-  // How an integrator hands design.check a plan: kept in the same registry it reads, with no card to approve. In the
-  // mimir tab the model makes plans with its own design.plan card instead (the tab leaves this one out).
+  // How an integrator hands design.check a plan: kept in the same registry it reads, as a client plan, with no card to
+  // approve. It never replaces or pushes out a plan the person made on the mimir tab's card (design.plan there), and
+  // the tab leaves this tool out.
   const plan = defineTool({
-    name: 'design.plan',
+    name: 'design.put_plan',
     version: '1.0.0',
     source: 'command',
     permission: 'read',
     description:
-      'Give slicerx_design_check a part plan to check a built part against, before or after building it. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind and its sizes), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter, with assumptions and questions (empty lists for none). A plan with a planId already kept replaces it; the last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
+      'Add your own part plan for slicerx_design_check to check a built part against, before or after building it. It only adds plans you make here: it cannot change or replace a plan the person made in the mimir tab (that planId is refused), and nothing on the plate or printer changes. The plan is the part as planned: planId, part (its name), units (mm or in), features (each with a name, an optional kind and its sizes), and optionally the overall size (x, y and z, z as the print height) and the holes by name and diameter, with assumptions and questions (empty lists for none). Your plan with a planId you already used replaces it; your last 50 plans are kept. design ties the plan to the design the part is built in; without it, slicerx_design_check picks the design named as the part, or the only one open. Returns the planId to check with.',
     input: z.object({
       plan: partPlanSchema.describe('The part plan: planId, part, units, features, optional overall and holes, assumptions and questions'),
       design: z.string().min(1).optional().describe('The design id the part is built in, to tie the plan to it'),
@@ -475,7 +476,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     async run(i) {
       // a tie names a design that exists (get refuses one that does not)
       const tied = i.design ? designs.get(i.design) : undefined
-      plans.put(i.plan, tied?.id)
+      if (plans.get(i.plan.planId)?.origin === 'card') throw new ToolInputError(new PlanOwnedError(i.plan.planId).message)
+      plans.put(i.plan, tied?.id, 'client')
       const p = i.plan
       const shape = [plural(p.features.length, 'feature'), ...(p.holes?.length ? [plural(p.holes.length, 'hole')] : []), ...(p.overall ? [`${p.overall.x} x ${p.overall.y} x ${p.overall.z} ${p.units} overall`] : [])].join(', ')
       return {
