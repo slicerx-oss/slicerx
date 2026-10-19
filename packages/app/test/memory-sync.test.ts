@@ -304,6 +304,25 @@ describe('memory sync', () => {
     expect([...store.facts.keys()]).toEqual(['ok'])
   })
 
+  it('pulled facts whose data breaks the save limits (one line, names 40, values 80, 6 values) are skipped', async () => {
+    const withData = (id: string, data: Record<string, string | number>): MemoryRow => ({ id, fact: { ...fact(id, 'Has a Bambu Lab A1', 10), data } })
+    const rows: MemoryRow[] = [
+      withData('ok', { model: 'A1', nozzleMm: 0.4, ['nozzle '.repeat(6).slice(0, 40)]: 'Prints well at 240 C '.repeat(4).slice(0, 80) }),
+      withData('nameLines', { 'two\nlines': 'A1' }),
+      withData('nameHidden', { 'mo\u200bdel': 'A1' }),
+      withData('nameLong', { ['nozzle '.repeat(6).slice(0, 41)]: 'A1' }),
+      withData('nameEmpty', { ' ': 'A1' }),
+      withData('valueLines', { model: 'A1\nX1C' }),
+      withData('valueControl', { model: 'A1\u0007' }),
+      withData('valueLong', { model: 'Prints well at 240 C '.repeat(4).slice(0, 81) }),
+      withData('many', { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 }),
+    ]
+    const remote: MemoryRemote = { pull: async () => rows, push: async () => undefined }
+    const store = memStore()
+    expect(await syncMemory(store, 'slicerx', { remote, kv: kvMap() })).toEqual({ pulled: 1, pushed: 0 })
+    expect([...store.facts.keys()]).toEqual(['ok'])
+  })
+
   it('a tombstone goes as exactly deleted and updatedAt, and an oversized fact stays local', async () => {
     const s = server()
     const kv = kvMap()

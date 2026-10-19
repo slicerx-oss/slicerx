@@ -4,7 +4,7 @@
 // preferences, what worked, sizes), with secrets hidden before anything leaves the app, and mimir.memory_remember adds
 // one fact for a client the person allowed to change things. The memory store registers itself here; without one,
 // both answer that memory is unavailable.
-import { MEMORY_KINDS, NOTE_MAX, NOTE_MIN, noteProblem, redactSecrets, SECRET_DATA_KEY, secretInNote, type MemoryFact, type MemoryKind } from '@slicerx/pilot'
+import { DATA_MAX_KEYS, DATA_NAME_MAX, DATA_VALUE_MAX, MEMORY_KINDS, NOTE_MAX, NOTE_MIN, noteProblem, redactSecrets, SECRET_DATA_KEY, secretInNote, type MemoryFact, type MemoryKind } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { appName } from '../edition'
 import { LinkError } from './methods-error'
@@ -33,9 +33,9 @@ export function setMemoryProvider(p: MemoryProvider | null): void {
 
 // The limits the in-app save (memory.remember) and Settings > Memory use: a note of NOTE_MIN to NOTE_MAX characters on
 // one line, and at most 6 data entries, each name up to 40 characters and each text value up to 80, all on one line.
-const MAX_DATA = 6
-const MAX_NAME = 40
-const MAX_VALUE = 80
+const MAX_DATA = DATA_MAX_KEYS
+const MAX_NAME = DATA_NAME_MAX
+const MAX_VALUE = DATA_VALUE_MAX
 /** True when `s` has a line break or a hidden character (noteProblem's first check). */
 const unsafe = (s: string): boolean => noteProblem(s) === 'one-line'
 

@@ -92,6 +92,22 @@ export function noteProblem(text: string): 'one-line' | 'short' | 'long' | 'secr
   return secretInNote({ text }) ? 'secret' : null
 }
 
+/** A note's data, as every save takes it: at most this many values, each name and text value on one line and this long. */
+export const DATA_MAX_KEYS = 6
+export const DATA_NAME_MAX = 40
+export const DATA_VALUE_MAX = 80
+
+/**
+ * True when a note's data breaks the limits every save holds it to: more than DATA_MAX_KEYS values, a name that is
+ * empty, longer than DATA_NAME_MAX or not one line, or a text value longer than DATA_VALUE_MAX or not one line. A
+ * number value must be finite.
+ */
+export function dataProblem(data: Record<string, string | number>): boolean {
+  const entries = Object.entries(data)
+  if (entries.length > DATA_MAX_KEYS) return true
+  return entries.some(([k, v]) => !k.trim() || k.length > DATA_NAME_MAX || NOTE_UNSAFE.test(k) || (typeof v === 'number' ? !Number.isFinite(v) : typeof v !== 'string' || v.length > DATA_VALUE_MAX || NOTE_UNSAFE.test(v)))
+}
+
 // Unit words a data name may end in (nozzleMm, depth_mm, tempC), as they read after the value.
 const DATA_UNITS: Record<string, string> = { mm: 'mm', cm: 'cm', m: 'm', in: 'in', g: 'g', kg: 'kg', c: 'C', f: 'F', deg: 'deg', pct: 'percent', percent: 'percent', s: 's', min: 'min', h: 'h', mms: 'mm/s' }
 
