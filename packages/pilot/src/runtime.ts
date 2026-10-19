@@ -239,6 +239,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const inScope = (t: { name: string }): boolean => (scope === 'design' ? DESIGN_SCOPE_TOOLS.has(t.name) : scope !== 'cad' || CAD_TOOLS.has(t.name) || t.name.startsWith('app.'))
   if (opts.builtins !== false) for (const t of builtinTools({ planner: opts.planner, commands: opts.commands ?? [], shared })) if (inScope(t)) add(t as AnyTool)
   for (const t of opts.tools ?? []) add(t as AnyTool)
+  // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The dock (full scope)
+  // and the mimir design tab pass one; the browser cad scope gets them only when its host passes a store too.
   const memory = opts.memory?.local ? opts.memory.store : undefined
   if (memory) for (const t of memoryTools(memory, now)) add(t as AnyTool)
 
@@ -469,14 +471,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     try {
       gated = await gate(tool, input, sessionId, ctx, emit, signal)
     } catch (e) {
-      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input, args: tool.args?.(input) ?? argLine(input) })
+      emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
       emit({ type: 'tool_result', callId: call.id, ok: false, summary: errorText(e) })
       return { message: JSON.stringify({ ok: false, error: errorText(e) }), stop: false }
     }
     if (gated.kind === 'blocked') return { message: JSON.stringify({ ok: false, blocked: true, message: gated.message }), stop: gated.stop }
     if (gated.token) ctx.token = gated.token
 
-    emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input, args: tool.args?.(input) ?? argLine(input) })
+    emit({ type: 'tool_call', callId: call.id, tool: tool.name, source: tool.source, input: tool.shownInput?.(input) ?? input, args: tool.args?.(input) ?? argLine(input) })
     const t0 = now()
     let out: ToolOutput
     try {
