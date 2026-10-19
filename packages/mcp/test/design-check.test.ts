@@ -285,6 +285,10 @@ describe('design.check picks the design it checks', () => {
     expect(r.summary).toContain('Spacer (d1, matched by name)')
   })
 
+  it('two open designs named as the part refuse and ask which', async () => {
+    await expect(checkOn([boxDesign('d1', 'Spacer'), boxDesign('d2', 'spacer '), b], (p) => p.put(boxPlan))).rejects.toThrow(/2 open designs are named Spacer\. Which design is it\? Spacer \(d1\), spacer  \(d2\)/)
+  })
+
   it('with one design open, checks it and says latest', async () => {
     const { r, out } = await checkOn([b], (p) => p.put(boxPlan))
     expect(out).toMatchObject({ design: 'd2', designName: 'Clip', chosen: 'latest' })

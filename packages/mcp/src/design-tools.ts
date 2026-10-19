@@ -409,8 +409,8 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
 
   /**
    * The design a plan was built in, and how it was chosen: the one it is tied to (or given now, which ties it), else
-   * the latest named as the part, else the only design open. With several open and none tied or named, it refuses
-   * and asks which, rather than check the wrong part.
+   * the one design named as the part, else the only design open. With several open and none tied or named, or two
+   * named as the part, it refuses and asks which, rather than check the wrong part.
    */
   const builtFrom = (entry: PlanEntry, given: string | undefined): { design: HostDesign; how: 'tied to the plan' | 'matched by name' | 'latest' } => {
     if (given) {
@@ -420,8 +420,12 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     }
     if (entry.design) return { design: designs.get(entry.design), how: 'tied to the plan' }
     const all = designs.list()
-    const named = all.filter((d) => d.name.trim().toLowerCase() === entry.plan.part.trim().toLowerCase()).at(-1)
-    if (named) return { design: named, how: 'matched by name' }
+    const named = all.filter((d) => d.name.trim().toLowerCase() === entry.plan.part.trim().toLowerCase())
+    if (named.length === 1) return { design: named[0]!, how: 'matched by name' }
+    if (named.length > 1)
+      throw new ToolInputError(
+        `design: plan ${entry.plan.planId} (${entry.plan.part}) is not tied to a design and ${named.length} open designs are named ${entry.plan.part}. Which design is it? ${named.map((d) => `${d.name} (${d.id})`).join(', ')}. Check again with design set to its id.`,
+      )
     if (all.length === 0) throw new ToolInputError(`No design to check: build ${entry.plan.part} first, then check it against plan ${entry.plan.planId}.`)
     if (all.length > 1)
       throw new ToolInputError(
@@ -436,7 +440,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     source: 'command',
     permission: 'read',
     description:
-      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height), each named hole's diameter (within 0.1 mm) and no holes the plan lacks, the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items and check again.",
+      "Check a built part against its plan, after its last feature: the overall size (within 0.2 mm or 1 percent, whichever is larger, axis by axis with z as the print height), each named hole's diameter (within 0.1 mm) and, when the plan lists its holes, no holes it lacks, the feature count, that the body is closed (watertight), and that its thinnest wall is at least twice the nozzle. Inch plans are compared in mm. It checks the design tied to the plan, else the one named as the plan's part, else the only one open; with several open, or two named as the part, it asks which (give design). Returns which design it checked and how it chose it, pass, and every item with what the plan wants and what the body has; fix the failed items and check again.",
     input: z.object({
       planId: z.string().min(1).describe('The planId of the plan the part was built from'),
       design: z.string().min(1).optional().describe('The design id the part was built in, when the plan is not tied to one; it ties the plan to it'),

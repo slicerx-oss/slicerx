@@ -211,7 +211,7 @@ const MAX_ENTRIES = 4_000_000
  * uniform grid, so a ray only tests the facets of the cells it passes through. Over the budget (too many facets, or too
  * long) the reading is null with why "part too dense".
  */
-export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = Date.now): WallReading {
+export function minWall(meshes: readonly Mesh[], budget: WallBudget = WALL_BUDGET, now: () => number = () => performance.now()): WallReading {
   const facets = meshes.reduce((n, m) => n + Math.floor(m.indices.length / 3), 0)
   if (facets > budget.maxFacets) return { mm: null, why: TOO_DENSE }
   const start = now()
