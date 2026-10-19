@@ -337,6 +337,19 @@ async fn send(store: &dyn SecretStore, cloud: &MimirCloud, call: &Call) -> Resul
     }
 }
 
+/// The model the proxy names in `x-sx-model`, when it is a plain model id (a lowercase letter
+/// or digit, then up to 63 more of those, `.` or `-`). Anything else is dropped.
+pub(crate) fn reply_model(headers: &HeaderMap) -> Option<String> {
+    let model = headers.get("x-sx-model")?.to_str().ok()?.trim();
+    let mut bytes = model.bytes();
+    let plain = model.len() <= 64
+        && bytes
+            .next()
+            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && bytes.all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-');
+    plain.then(|| model.to_owned())
+}
+
 /// Sends a checked model request to the proxy and returns the streaming response.
 pub(crate) async fn send_messages(
     store: &dyn SecretStore,

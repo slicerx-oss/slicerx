@@ -21,6 +21,9 @@ use tauri::ipc::Channel;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum LlmChunk {
+    /// The model mimir cloud says answered, sent before the first data chunk. Only on the mimir
+    /// cloud path, and only a plain model id; no other response header crosses.
+    Model { model: String },
     /// Response bytes, base64.
     Data { b64: String },
     /// The request failed. `status` is the HTTP status, 0 when there was none; `code` is mimir
@@ -63,8 +66,15 @@ fn error_chunk(e: &sx_llm::Error) -> LlmChunk {
 
 /// Sends `request` and forwards the body to `on_chunk` until it ends, fails or is canceled.
 pub async fn pump(request: LlmHttpRequest, on_chunk: impl Fn(LlmChunk) -> bool + Send) {
-    let mut body = match sx_llm::stream(request).await {
-        Ok(b) => b,
+    let mut body = match sx_llm::stream_reply(request).await {
+        Ok(reply) => {
+            if let Some(model) = reply.model
+                && !on_chunk(LlmChunk::Model { model })
+            {
+                return;
+            }
+            reply.body
+        }
         Err(e) => {
             on_chunk(error_chunk(&e));
             return;
@@ -240,6 +250,10 @@ mod tests {
 
     /// A local model server: answers one request with `status` and `body`.
     async fn server(status: u16, body: &'static str) -> String {
+        server_with(status, body, "").await
+    }
+
+    async fn server_with(status: u16, body: &'static str, extra: &'static str) -> String {
         let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!(
             "http://127.0.0.1:{}/v1/chat/completions",
@@ -250,7 +264,7 @@ mod tests {
             let mut buf = vec![0u8; 8192];
             let _ = s.read(&mut buf).await;
             let head = format!(
-                "HTTP/1.1 {status} X\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 {status} X\r\nContent-Type: text/event-stream\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
             );
             s.write_all(head.as_bytes()).await.unwrap();
@@ -340,5 +354,24 @@ mod tests {
         req.headers.insert("authorization".into(), "Bearer sk-x".into());
         let chunks = collect(req).await;
         assert!(matches!(&chunks[..], [LlmChunk::Error { status: 0, .. }]));
+    }
+
+    #[test]
+    fn the_model_reaches_the_webview_as_its_own_chunk() {
+        let chunk = LlmChunk::Model {
+            model: "claude-haiku-5-5".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(chunk).unwrap(),
+            serde_json::json!({ "kind": "model", "model": "claude-haiku-5-5" })
+        );
+    }
+
+    #[tokio::test]
+    async fn another_provider_never_passes_a_model_header() {
+        let sse = "data: [DONE]\n\n";
+        let chunks = collect(request(server_with(200, sse, "x-sx-model: claude-sonnet-5-5\r\n").await)).await;
+        assert!(!chunks.iter().any(|c| matches!(c, LlmChunk::Model { .. })));
+        assert_eq!(chunks.last(), Some(&LlmChunk::End));
     }
 }
