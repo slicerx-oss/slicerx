@@ -154,6 +154,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.tab': 'read',
   // what answers in the docked chat (a model or the demo), whether it runs locally, and the tools its model is offered
   'mimir.dock': 'read',
+  // what mimir remembers about the person, secrets hidden; and one fact added, which changes what mimir knows
+  'mimir.memory': 'read',
+  'mimir.memory_remember': 'edit',
 }
 
 export { LinkError } from './methods-error'
@@ -475,6 +478,8 @@ const HANDLERS: Record<string, Handler> = {
   },
   'mimir.tab': async () => (await import('../workspaces/mimir/session')).tabState(),
   'mimir.dock': async () => (await import('../features/pilot/dock-model')).dockState(),
+  'mimir.memory': async (args) => (await import('./mimir-memory')).readMemory(args),
+  'mimir.memory_remember': async (args) => (await import('./mimir-memory')).rememberFact(args),
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()

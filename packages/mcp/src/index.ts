@@ -57,6 +57,7 @@ import { localTools, type ProjectRef } from './tools'
 import { localAiTools, type LocalAiOptions } from './localai'
 import { mimirQuotaTools } from './mimir-quota'
 import { appAssistantTools } from './app-assistant'
+import { mimirMemoryTools } from './mimir-memory'
 
 export { createSlicerxServer, SERVER_NAME, SERVER_VERSION, serverTools, type ServerContext } from './server'
 export { startHttp, type HttpOptions } from './http'
@@ -206,6 +207,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
   const mimir = [...appAssistantTools(appLink, productName()), ...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName()), ...mimirTabTools(appLink, productName()), ...mimirDockTools(appLink, productName())]
+  mimir.push(...mimirMemoryTools(appLink, productName()))
   // The app's plates, and showing one of them as its plate picker does.
   const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
   const history = appHistoryTools(appLink, productName())
