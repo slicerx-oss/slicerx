@@ -243,7 +243,8 @@ async function messages(req: Request, env: Env): Promise<Response> {
   const s = shape(raw)
   if (!s.ok) return fail(400, 'invalid_request', s.error)
   if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
-  // picked once the request is known to be good, so a refused one never reaches the database
+  // picked once the request is known to be good, so a refused one never reaches the database. A
+  // step-up model may drop once to the base model below, when the caps or the PDF count refuse it.
   let model = await turnModel(env, who, req.headers.get('x-sx-tier'))
   s.body['model'] = model
 
@@ -278,15 +279,21 @@ async function messages(req: Request, env: Env): Promise<Response> {
     }
     return res
   }
+  const toBase = () => {
+    model = MODEL
+    s.body['model'] = MODEL
+    return reserveAt(MODEL)
+  }
   let reserved: string | null
   try {
     reserved = await reserveAt(model).catch((e) => {
       if (model === MODEL || !(e instanceof RpcError && DAILY_CAPS.has(e.hint))) throw e
       // a step-up turn the daily caps cannot fit goes once more, on the base model
-      model = MODEL
-      s.body['model'] = MODEL
-      return reserveAt(MODEL)
+      return toBase()
     })
+    // a step-up turn whose PDF could not be sized was never reserved: it goes once more, on the
+    // base model, so a step hint never does worse than a base turn
+    if (reserved === null && model !== MODEL) reserved = await toBase()
   } catch (e) {
     return refused(e)
   }
