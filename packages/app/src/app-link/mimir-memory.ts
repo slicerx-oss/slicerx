@@ -4,7 +4,7 @@
 // preferences, what worked, sizes), with secrets hidden before anything leaves the app, and mimir.memory_remember adds
 // one fact for a client the person allowed to change things. The memory store registers itself here; without one,
 // both answer that memory is unavailable.
-import { MEMORY_KINDS, redactSecrets, SECRET_DATA_KEY, secretInNote, type MemoryFact, type MemoryKind } from '@slicerx/pilot'
+import { MEMORY_KINDS, NOTE_MAX, NOTE_MIN, noteProblem, redactSecrets, SECRET_DATA_KEY, secretInNote, type MemoryFact, type MemoryKind } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { appName } from '../edition'
 import { LinkError } from './methods-error'
@@ -31,9 +31,13 @@ export function setMemoryProvider(p: MemoryProvider | null): void {
   provider = p
 }
 
-const MAX_TEXT = 500
-const MAX_DATA = 20
-const MAX_VALUE = 200
+// The limits the in-app save (memory.remember) and Settings > Memory use: a note of NOTE_MIN to NOTE_MAX characters on
+// one line, and at most 6 data entries, each name up to 40 characters and each text value up to 80, all on one line.
+const MAX_DATA = 6
+const MAX_NAME = 40
+const MAX_VALUE = 80
+/** True when `s` has a line break or a hidden character (noteProblem's first check). */
+const unsafe = (s: string): boolean => noteProblem(s) === 'one-line'
 
 function store(): MemoryProvider {
   if (!provider) throw new LinkError('not_ready', `memory unavailable: ${ASSISTANT_NAME} keeps no memory in this ${appName()} window, or it is turned off`)
@@ -101,9 +105,9 @@ function dataArg(v: unknown): MemoryData | undefined {
   if (entries.length > MAX_DATA) throw new LinkError('invalid_input', `data has at most ${MAX_DATA} entries`)
   // Refusals name an entry by its position, never by its name, which may be a secret.
   for (const [n, [k, x]] of entries.entries()) {
-    if (!k.trim() || k.length > 64) throw new LinkError('invalid_input', `data entry ${n + 1} needs a name of 1 to 64 characters`)
-    if (typeof x === 'number' ? !Number.isFinite(x) : typeof x !== 'string' || x.length > MAX_VALUE) {
-      throw new LinkError('invalid_input', `data entry ${n + 1} is text of at most ${MAX_VALUE} characters or a number`)
+    if (!k.trim() || k.length > MAX_NAME || unsafe(k)) throw new LinkError('invalid_input', `data entry ${n + 1} needs a name of 1 to ${MAX_NAME} characters on one line`)
+    if (typeof x === 'number' ? !Number.isFinite(x) : typeof x !== 'string' || x.length > MAX_VALUE || unsafe(x)) {
+      throw new LinkError('invalid_input', `data entry ${n + 1} is text of at most ${MAX_VALUE} characters on one line, or a number`)
     }
   }
   return v as MemoryData
@@ -115,7 +119,10 @@ export async function rememberFact(args: Record<string, unknown>) {
   const kind = kindArg(args['kind'], true)!
   const raw = args['text']
   const text = typeof raw === 'string' ? raw.trim() : ''
-  if (!text || text.length > MAX_TEXT) throw new LinkError('invalid_input', `text is 1 to ${MAX_TEXT} characters`)
+  // the checks the in-app save makes (noteProblem): one line with no hidden characters, then the length; a secret is refused below
+  const problem = noteProblem(text)
+  if (problem === 'one-line') throw new LinkError('invalid_input', 'text is one line: no line breaks or hidden characters')
+  if (problem === 'short' || problem === 'long') throw new LinkError('invalid_input', `text is ${NOTE_MIN} to ${NOTE_MAX} characters`)
   const data = dataArg(args['data'])
   const secret = secretInNote({ text, ...(data ? { data } : {}) })
   if (secret) throw new LinkError('refused', `${ASSISTANT_NAME} does not keep secrets: this looks like a key, an access code or a serial number. Leave it out and try again.`)

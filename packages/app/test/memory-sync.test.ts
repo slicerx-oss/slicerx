@@ -288,6 +288,22 @@ describe('memory sync', () => {
     expect(sent).toEqual([])
   })
 
+  it('pulled facts that fail the checks a saved note passes (a secret, a line break, the length) are skipped', async () => {
+    const rows: MemoryRow[] = [
+      { id: 'ok', fact: fact('ok', 'Prints PETG at 240 C', 10) },
+      { id: 'secret', fact: fact('secret', 'A1 access code is 31415926', 10) },
+      { id: 'lines', fact: fact('lines', 'two\nlines', 10) },
+      { id: 'control', fact: fact('control', 'bell\u0007 here', 10) },
+      { id: 'long', fact: fact('long', 'x'.repeat(241), 10) },
+      { id: 'short', fact: fact('short', 'ab', 10) },
+      { id: 'data', fact: { ...fact('data', 'Has a Bambu Lab A1', 10), data: { serial: '01P00A123456789' } } },
+    ]
+    const remote: MemoryRemote = { pull: async () => rows, push: async () => undefined }
+    const store = memStore()
+    expect(await syncMemory(store, 'slicerx', { remote, kv: kvMap() })).toEqual({ pulled: 1, pushed: 0 })
+    expect([...store.facts.keys()]).toEqual(['ok'])
+  })
+
   it('a tombstone goes as exactly deleted and updatedAt, and an oversized fact stays local', async () => {
     const s = server()
     const kv = kvMap()

@@ -6,7 +6,7 @@
 // deletion travels as a tombstone, { deleted: true, updatedAt }, so another device drops the fact too; tombstones of
 // local deletions wait in a small per-edition list until a pull shows the server has them. A fact that looks like it
 // holds a secret never leaves the device. Nothing is sent while sync is off or the person is signed out.
-import { MEMORY_KINDS, secretInNote, type MemoryFact, type MemoryStore } from '@slicerx/pilot'
+import { MEMORY_KINDS, noteProblem, secretInNote, type MemoryFact, type MemoryStore } from '@slicerx/pilot'
 
 export type { MemoryFact, MemoryStore }
 
@@ -145,7 +145,8 @@ function noteDeleted(kv: MemoryKeyValue, edition: string, ids: string[], at: num
 /**
  * Brings the local store and the person's synced facts of this edition into step: per id the newer updatedAt wins,
  * a newer remote fact or tombstone is applied locally (pulled), a newer local fact or deletion is sent (pushed).
- * Remote rows with a bad shape or dated more than a day ahead of this clock are never applied; a local fact that is
+ * Remote rows with a bad shape, dated more than a day ahead of this clock, or that fail a note's checks (noteProblem)
+ * are never applied; a local fact that is
  * malformed, too large or dated ahead stays on this device. New live facts stop at the server's cap, so one fact too
  * many cannot fail the batch.
  */
@@ -165,7 +166,8 @@ export async function syncMemory(store: MemoryStore, edition: string, opts: Sync
     const raw = r.fact as unknown
     if (!isRecord(raw) || !('deleted' in raw)) remoteLive++
     const f = parseSynced(r.id, raw)
-    if (f && f.updatedAt <= limit) theirs.set(r.id, f)
+    // a remote fact passes the checks a note saved here passes (noteProblem: one line, the length, no secret), or is skipped
+    if (f && f.updatedAt <= limit && (isTombstone(f) || (noteProblem(f.text) === null && !secretInNote(f)))) theirs.set(r.id, f)
     else blocked.set(r.id, isRecord(raw) && isTime(raw.updatedAt) && raw.updatedAt <= limit ? raw.updatedAt : Infinity)
   }
   const local = new Map((await store.list()).map((f) => [f.id, f]))

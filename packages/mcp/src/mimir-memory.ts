@@ -5,7 +5,7 @@
 // hides secrets before a fact leaves it and refuses to keep one; this server keeps no copy. Adding a fact is an edit on
 // the link, so a client the person allowed to read only is refused there.
 import { assistantText } from '@slicerx/contracts'
-import { defineTool, MEMORY_KINDS, type MemoryFact, type PilotTool } from '@slicerx/pilot'
+import { defineTool, MEMORY_KINDS, noteProblem, type MemoryFact, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -29,12 +29,15 @@ async function call<T>(link: AppLinkCaller | undefined, appName: string, method:
 }
 
 /** Checks the data entries; a refusal names an entry by its position, never by its name, which may be a secret. */
+// The app's limits for a note, as its own save takes one: 3 to 240 characters on one line, and at most 6 data
+// entries, each name up to 40 characters and each text value up to 80, on one line.
+const unsafe = (s: string): boolean => noteProblem(s) === 'one-line'
 function checkData(d: Record<string, unknown>, ctx: z.RefinementCtx): void {
   const entries = Object.entries(d)
-  if (entries.length > 20) ctx.addIssue({ code: 'custom', message: 'data has at most 20 entries' })
+  if (entries.length > 6) ctx.addIssue({ code: 'custom', message: 'data has at most 6 entries' })
   entries.forEach(([k, v], n) => {
-    if (!k.trim() || k.length > 64) ctx.addIssue({ code: 'custom', message: `data entry ${n + 1} needs a name of 1 to 64 characters` })
-    else if (typeof v === 'number' ? !Number.isFinite(v) : typeof v !== 'string' || v.length > 200) ctx.addIssue({ code: 'custom', message: `data entry ${n + 1} is text of at most 200 characters or a number` })
+    if (!k.trim() || k.length > 40 || unsafe(k)) ctx.addIssue({ code: 'custom', message: `data entry ${n + 1} needs a name of 1 to 40 characters on one line` })
+    else if (typeof v === 'number' ? !Number.isFinite(v) : typeof v !== 'string' || v.length > 80 || unsafe(v)) ctx.addIssue({ code: 'custom', message: `data entry ${n + 1} is text of at most 80 characters on one line, or a number` })
   })
 }
 
@@ -64,8 +67,8 @@ export function mimirMemoryTools(link: AppLinkCaller | undefined, appName: strin
     description: assistantText(`Add one fact to mimir's memory in ${appName}, such as the person's printer and nozzle, a filament they use, a preference, what worked for a print, or a size that matters to them. A fact with an access code, a serial number or a key is refused. It changes what mimir knows, so the app link asks the person for this client once and a client allowed to read only is refused. Answers with the fact as kept.`),
     input: z.object({
       kind: z.enum(MEMORY_KINDS).describe('printer, filament, preference, outcome (what worked) or size'),
-      text: z.string().trim().min(1).max(500).describe('The fact in plain words, for example "Prints PETG at 240 C on the textured plate"'),
-      data: z.record(z.string(), z.unknown()).superRefine(checkData).optional().describe('Values that go with the fact, up to 20, each text of at most 200 characters or a number, for example { "nozzleMm": 0.4 }'),
+      text: z.string().trim().min(3).max(240).refine((t) => !unsafe(t), 'text is one line: no line breaks or hidden characters').describe('The fact in plain words on one line, 3 to 240 characters, for example "Prints PETG at 240 C on the textured plate"'),
+      data: z.record(z.string(), z.unknown()).superRefine(checkData).optional().describe('Values that go with the fact, up to 6, each text of at most 80 characters or a number, for example { "nozzleMm": 0.4 }'),
     }),
     async run(i) {
       const out = await call<{ fact: MemoryFact }>(link, appName, 'mimir.memory_remember', { kind: i.kind, text: i.text, ...(i.data ? { data: i.data as Record<string, string | number> } : {}) })
