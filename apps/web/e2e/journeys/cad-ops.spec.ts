@@ -1000,36 +1000,6 @@ test('Model ribbon: two objects turn off Cut and Hole, Array stays on', async ({
   await expect(shelf.locator('[data-tool="array"]')).not.toHaveAttribute('aria-disabled', 'true')
 })
 
-test('Model ribbon beside the mimir panel: every tool stays in view at 1440 px, and the labels come back when it closes', async ({ page }) => {
-  await studio(page)
-  // The assistant's button needs the assistant on; studio() puts it back off for the next test.
-  await page.evaluate(() => {
-    const sx = (window as unknown as { __sx: { getState(): { pilot: Record<string, unknown> }; setState(p: unknown): void } }).__sx
-    sx.setState({ pilot: { ...sx.getState().pilot, mode: 'unset' } })
-  })
-  await designTab(page)
-  const shelf = page.getByTestId('model-shelf')
-  await expect(shelf).toHaveAttribute('data-fit', 'labels')
-  await page.locator('.mimir-btn').click()
-  const dock = page.locator('.mimir-dock')
-  await expect(dock).toBeVisible()
-  await expect(shelf).toHaveAttribute('data-fit', 'icons')
-  const fits = () => shelf.evaluate((bar) => {
-    const r = bar.getBoundingClientRect()
-    const out = [...bar.querySelectorAll<HTMLElement>('button')].filter((b) => b.offsetParent !== null).filter((b) => b.getBoundingClientRect().right > r.right + 0.5)
-    return { scrolls: bar.scrollWidth > bar.clientWidth + 1, out: out.map((b) => b.getAttribute('aria-label')) }
-  })
-  expect(await fits()).toEqual({ scrolls: false, out: [] })
-  expect((await shelf.boundingBox())!.x + (await shelf.boundingBox())!.width).toBeLessThanOrEqual((await dock.boundingBox())!.x)
-  await expect(shelf.locator('[data-tool="redo"], [aria-label="Redo"]').first()).toBeInViewport()
-  await noOverlap(page)
-  await dock.getByRole('button', { name: /close/i }).first().click()
-  await expect(dock).toHaveCount(0)
-  await expect(shelf).toHaveAttribute('data-fit', 'labels')
-  expect(await fits()).toEqual({ scrolls: false, out: [] })
-  await expect(shelf.locator('.rb-btn .rb-label').first()).toBeVisible()
-})
-
 test('the Add shape menu opens over the view, and Repair mesh on the Mesh tab adds its step', async ({ page }) => {
   await studio(page)
   const id = await freshBox(page)

@@ -13,8 +13,8 @@ const MACHINE: PilotMachine = { printer: 'prusa_mk4s', material: 'pla', nozzle: 
 
 /** Every surface and scope a mimir runs with today. A surface added later adds its rows here. */
 const SURFACES: { surface: ToolSurface; scope: 'full' | 'cad' }[] = [
-  { surface: 'dock', scope: 'full' },
-  { surface: 'dock', scope: 'cad' },
+  { surface: 'tab', scope: 'full' },
+  { surface: 'tab', scope: 'cad' },
 ]
 const PATHS = [
   { path: 'local', provider: 'openai-compatible' },
@@ -35,11 +35,11 @@ describe('picking the tools by surface', () => {
   const tools = ['kb.search', 'text_to_part', 'make_model', 'slice', 'printer.status'].map((name) => ({ name }))
 
   it('gives a cloud model every tool, in order', () => {
-    expect(surfaceTools('dock', false, tools)).toEqual(tools)
+    expect(surfaceTools('tab', false, tools)).toEqual(tools)
   })
 
-  it('gives a local model in the dock its chat tools and text_to_part, without make_model', () => {
-    expect(surfaceTools('dock', true, tools).map((t) => t.name)).toEqual(['kb.search', 'text_to_part', 'slice', 'printer.status'])
+  it('gives a local model in the tab its chat tools and text_to_part, without make_model', () => {
+    expect(surfaceTools('tab', true, tools).map((t) => t.name)).toEqual(['kb.search', 'text_to_part', 'slice', 'printer.status'])
   })
 
   it('counts only the OpenAI-compatible local server as a local model', () => {

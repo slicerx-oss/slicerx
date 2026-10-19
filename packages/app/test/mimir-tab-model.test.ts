@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The mimir tab runs the model set up in Settings > mimir (a key on Auto, one pinned model, mimir cloud) over the
-// design tools, and the scripted stub only when no model answers. The chat's link and the app link's mimir.tab say
+// design tools and the slicing, printer and settings tools, and the scripted stub only when no model answers. The chat's link and the app link's mimir.tab say
 // which, and the request a model gets carries the design prompt, the design tools and Auto's pick.
 import type { Host, LlmHttpRequest, LlmTransport, MeshHandle, MeshPart, PilotEvent } from '@slicerx/contracts'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -10,6 +10,7 @@ import { runCall } from '../src/app-link/methods'
 import { listSessions, readSession } from '../src/app-link/sessions'
 import { currentEdition, NEUTRAL, setCurrentEdition } from '../src/edition'
 import { registerMimirCloud } from '../src/pilot-connect/cloud'
+import { setHostSlices } from '../src/state/model-mode'
 import { get, set } from '../src/state/store'
 import { mimirLink } from '../src/workspaces/mimir/connection'
 import { mimirLogs, resetTabMimir, tabMimir, tabModel } from '../src/workspaces/mimir/session'
@@ -96,7 +97,11 @@ describe('the mimir tab on a model', () => {
     const state = (await runCall('mimir.tab', {})) as { link: string; provider: string; model: string; auto: unknown; tools: string[] }
     expect(state).toMatchObject({ link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' } })
     expect(state.tools).toEqual(expect.arrayContaining(['pilot.ask', 'pilot.sheet', 'lookup.show', 'design.new', 'geom.extrude', 'geom.revolve', 'geom.boolean', 'geom.fillet', 'kb.search', 'web.lookup']))
+    // what the docked chat had: printers (approvals stay with the person), settings, the project and the report
+    expect(state.tools).toEqual(expect.arrayContaining(['printer.list', 'printer.queue', 'settings.plan', 'settings.apply', 'project.info', 'pilot.report', 'kb.intent']))
     expect(state.tools).not.toContain('text_to_part')
+    expect(state.tools).not.toContain('make_model')
+    expect(state).toMatchObject({ local: false })
     expect(JSON.stringify(state)).not.toMatch(/key|token/i)
 
     const ev = await ask(host, 'A 30 mm cube with a fillet')
@@ -116,6 +121,28 @@ describe('the mimir tab on a model', () => {
     llm.sent.length = 0
     await ask(host, 'A spur gear, 20 teeth, module 1')
     expect(body(llm.sent[0]!).model).toBe('claude-sonnet-5-5')
+  })
+
+  it('says when the model runs on this computer, and lists the tools it is offered', async () => {
+    set({ pilot: { mode: 'on', provider: 'local', model: 'qwen3:8b-16k', baseUrl: 'http://127.0.0.1:11434/v1' } })
+    await tabMimir(hostWith(transport(['openai-compatible'])), NEUTRAL)
+    const state = (await runCall('mimir.tab', {})) as { link: string; local: boolean; tools: string[] }
+    expect(state).toMatchObject({ link: 'model', provider: 'openai-compatible', local: true })
+    expect(state.tools).toEqual(expect.arrayContaining(['design.new', 'pilot.sheet', 'printer.queue']))
+    expect(state.tools).not.toContain('make_model')
+  })
+
+  it('in the browser build, keeps the design tools and leaves out slicing and printers', async () => {
+    setHostSlices(false)
+    try {
+      set({ pilot: { mode: 'on', provider: 'anthropic' } })
+      await tabMimir(hostWith(transport(['anthropic'])), NEUTRAL)
+      const state = (await runCall('mimir.tab', {})) as { tools: string[] }
+      expect(state.tools).toEqual(expect.arrayContaining(['design.new', 'pilot.sheet', 'kb.search', 'project.info']))
+      for (const n of ['printer.queue', 'printer.list', 'settings.plan', 'text_to_part']) expect(state.tools).not.toContain(n)
+    } finally {
+      setHostSlices(true)
+    }
   })
 
   it('runs one pinned model for every message, a picture included', async () => {
@@ -156,7 +183,7 @@ describe('the mimir tab on a model', () => {
   })
 
   it('reports none before the tab first opens', async () => {
-    expect(await runCall('mimir.tab', {})).toEqual({ link: 'none', provider: null, model: null, auto: null, tools: [] })
+    expect(await runCall('mimir.tab', {})).toEqual({ link: 'none', provider: null, model: null, auto: null, local: false, tools: [] })
   })
 
   it('logs the model conversation for the read-back', async () => {

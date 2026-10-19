@@ -11,6 +11,14 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 - `slicerx_design_put_plan` adds the client's own part plan for `slicerx_design_check` under its `planId`, optionally tied to a `design`, and returns the `planId`. The client's plan with the same `planId` replaces its old one; the client's last 50 plans are kept apart from the plans the person makes in the mimir tab, which it can never replace or push out (their `planId` is refused). With the app link on it goes to the app (`design.put_plan`, read class), where the app's design check reads it; there is no card on this path.
 - `slicerx_mimir_brain` reads the mimir the open app runs over the app link: `name`, `voice` (whether the edition set one), `toolGroups` (each group on or off), `cloud` (`base`, the model mimir cloud answers with, and `stepUp`, the step-up the edition asks for or `null`), `memory` (`local` and `sync`) and `knowledgeDocs`, the count of the edition's own docs. It never carries the voice text or the docs.
 
+### Changed
+
+- `slicerx_mimir_tab` 1.1.0 also says whether the model runs on this computer (`local`). mimir has one chat in the app now, the mimir tab, so `tools` lists everything the model is offered there: the design tools, the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands (among them `app.project_new`, which still asks the person before anything unsaved is discarded).
+
+### Removed
+
+- `slicerx_mimir_dock`: the docked chat is gone from the app. Read the mimir tab with `slicerx_mimir_tab` instead; `slicerx_mimir_ask` and `slicerx_mimir_session` now reach the tab's conversation.
+
 ### Notes for partners
 
 - `ai.brain.memory.local` in the edition config defaults to `true`. Every edition's mimir gets `memory.remember`, `memory.recall` and the notes block in its instructions unless the edition sets `local: false`.
@@ -25,6 +33,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Fixed
 
+- A tool passed to `createContext` in `extraTools` now replaces a base tool of the same name. The base tool used to win, and the base server adds its CAD tools only when it finds sx-geom, so an embedder's own `slicerx_geom_*` tools were served on a machine without sx-geom and dropped on a machine with it.
 - A slice that runs past the engine's time limit (10 minutes) now fails with `slice_timeout` and `details.limitMs`, and says so, instead of `slice_failed` with "sx exited with code -1". A slice stopped by another signal names the signal (`slice_failed`, `details.signal`).
 
 ## [0.1.8] - 2026-10-18

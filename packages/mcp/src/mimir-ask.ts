@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A message to mimir in the open app, with pictures and PDF drawings from this computer: the files are read here, held
 // to the chat's limits (4 files, 10 MB each, PNG, JPEG, WebP, GIF or PDF) and sent over the app link, where the message
-// shows in the docked chat as the person's next one. The ask answers at once with the session; mimir_session reads
+// shows in the mimir tab as the person's next one. The ask answers at once with the session; mimir_session reads
 // back what mimir said and did, with the files each message carried. Offered while the app link is in use.
 import { readFile, stat } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
@@ -43,7 +43,7 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Send mimir a message in the open ${appName} app, with up to 4 pictures or PDF drawings from this computer (PNG, JPEG, WebP, GIF or PDF, 10 MB each), for example a photo of what a part must fit or a dimensioned drawing. It shows in the docked chat as the person's next message, and mimir reads the files with it. Answers at once with the session id and the files as sent (a big picture is scaled down to 1568 px); read mimir's reply with slicerx_mimir_session. Refused while mimir is still answering.`,
+    description: `Send mimir a message in the open ${appName} app, with up to 4 pictures or PDF drawings from this computer (PNG, JPEG, WebP, GIF or PDF, 10 MB each), for example a photo of what a part must fit or a dimensioned drawing. It shows in the mimir tab as the person's next message, and mimir reads the files with it. Answers at once with the session id and the files as sent (a big picture is scaled down to 1568 px); read mimir's reply with slicerx_mimir_session. Refused while mimir is still answering.`,
     input: z.object({
       message: z.string().max(4000).default('').describe('What to ask mimir, as the person would type it'),
       files: z.array(z.string().min(1)).max(FILE_LIMITS.maxCount).default([]).describe('Paths of pictures or PDFs on this computer to attach'),

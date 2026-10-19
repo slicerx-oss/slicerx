@@ -19,8 +19,8 @@ function whenText(unix: number): string {
   return new Date(unix * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-/** The account card. `compact` is the dock's version: one line and a button. */
-export function ChatGptCard({ compact = false, idPrefix = 'cg', withLocal = true }: { compact?: boolean; idPrefix?: string; withLocal?: boolean }) {
+/** The account card. */
+export function ChatGptCard({ idPrefix = 'cg', withLocal = true }: { idPrefix?: string; withLocal?: boolean }) {
   const host = useHost()
   const gpt = useChatGpt(host)
   const pref = useApp((s) => s.pilot)
@@ -41,7 +41,7 @@ export function ChatGptCard({ compact = false, idPrefix = 'cg', withLocal = true
 
   if (!gpt) {
     // No sign-in here (the browser): the key panel is the whole story.
-    return compact ? null : <ConnectPanel idPrefix={idPrefix} withLocal={withLocal} />
+    return <ConnectPanel idPrefix={idPrefix} withLocal={withLocal} />
   }
 
   const connect = async () => {
@@ -66,22 +66,6 @@ export function ChatGptCard({ compact = false, idPrefix = 'cg', withLocal = true
   }
 
   const signedIn = state.status === 'in' ? state.account : null
-  if (compact) {
-    if (signedIn || state.status === 'loading') return null
-    return (
-      <div className="cg cg-compact">
-        <Icon name="creator" size={16} />
-        <span className="min0">
-          <b>Connect your ChatGPT account</b>
-          <small>{ASSISTANT_NAME} answers with your plan. Nothing to paste.</small>
-        </span>
-        <Button size="sm" variant="primary" disabled={state.status === 'connecting'} onClick={() => void connect()}>
-          {state.status === 'connecting' ? 'Waiting for the browser' : 'Connect'}
-        </Button>
-      </div>
-    )
-  }
-
   return (
     <div className="cg">
       <div className="cg-head">

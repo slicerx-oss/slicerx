@@ -14,7 +14,7 @@ import { printBlock } from '../plate/heimdall'
 import { helpLinks, openLink } from '../lib/links'
 import { newProject } from '../project/new'
 import { appName, currentEdition, editionHasCad } from '../edition'
-import { mimirShown, modelMode, railKey } from '../state/model-mode'
+import { mimirOn, modelMode, railKey } from '../state/model-mode'
 import { bugReportsOff } from '../bugs/where'
 import { updaterRegistered } from '../updates/hold'
 import { toggleEdge, toggleRail } from '../shell/edge-keys'
@@ -62,17 +62,19 @@ export function builtinCommands(host: Host, workspaces: readonly { id: string; l
     })
   })
   // The plate tabs' modes: mimir, Model and Slice. Ctrl+E (Cmd+E) flips Model and Slice; it lives in the keymap, not here.
+  // mimir shows in every edition while it is on, so its command is there without the modeling tools too.
+  const inMode = (m: ModelMode) => () => get().workspace === 'prepare' && get().modelMode === m
+  out.push({ id: 'mode-mimir', title: `Go to ${ASSISTANT_NAME}`, section: 'navigate', keywords: ['chat', 'cad', 'describe', 'agent', 'assistant'], enabled: () => mimirOn() && !inMode('mimir')(), tool: { permission: 'read' }, run: () => setModelMode('mimir') })
   if (editionHasCad()) {
-    const inMode = (m: ModelMode) => () => get().workspace === 'prepare' && get().modelMode === m
     out.push(
-      { id: 'mode-mimir', title: `Go to ${ASSISTANT_NAME}`, section: 'navigate', keywords: ['chat', 'cad', 'describe', 'agent'], enabled: () => mimirShown(get()) && !inMode('mimir')(), tool: { permission: 'read' }, run: () => setModelMode('mimir') },
       { id: 'mode-design', title: 'Go to Model', section: 'navigate', keywords: ['design', 'cad', 'sketch'], enabled: () => !inMode('design')(), tool: { permission: 'read' }, run: () => setModelMode('design') },
       { id: 'mode-slice', title: 'Go to Slice', section: 'navigate', keywords: ['plate', 'prepare'], enabled: () => !inMode('slice')(), tool: { permission: 'read' }, run: () => setModelMode('slice') },
     )
   }
 
   out.push(
-    { id: 'project-new', title: 'New project', section: 'plate', keywords: ['new', 'empty', 'blank', 'clear', 'start'], shortcut: 'Mod+N', run: async () => { if (await newProject()) setWorkspace('prepare') } },
+    // mimir may start a new project too; the discard question still goes to the person, and its answer comes back
+    { id: 'project-new', title: 'New project', section: 'plate', keywords: ['new', 'empty', 'blank', 'clear', 'start'], shortcut: 'Mod+N', tool: { permission: 'slice' }, run: async () => { const made = await newProject(); if (made) setWorkspace('prepare'); return { started: made } } },
     { id: 'plate-default', title: 'Start over with the example plate', section: 'plate', keywords: ['example', 'demo', 'new', 'reset'], workspace: 'prepare', tool: { permission: 'slice' }, run: async () => { if (!(await confirmDiscard('start over'))) return; setWorkspace('prepare'); await loadDefaultPlate(host) } },
     { id: 'plate-open', title: 'Open a model file', section: 'plate', keywords: ['import', 'stl', '3mf', 'obj', 'step', 'stp', 'add'], shortcut: 'Mod+O', workspace: 'prepare', run: async () => { setWorkspace('prepare'); await openModelFiles(host) } },
     { id: 'gcode-open', title: 'Open a G-code file to view', section: 'plate', keywords: ['gcode', 'view', 'preview', 'file'], run: () => pickGcodeFile(host) },

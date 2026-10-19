@@ -154,10 +154,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.share': 'read',
   // mimir cloud at a glance: offered, in use, signed in, and today's use when in use; no key or token
   'mimir.status': 'read',
-  // what answers in the mimir tab: a model (which one, and Auto's pair) or the scripted stub, and the tools it has
+  // what answers in the mimir tab: a model (which one, Auto's pair, whether it runs locally) or the scripted stub, and the tools it is offered
   'mimir.tab': 'read',
-  // what answers in the docked chat (a model or the demo), whether it runs locally, and the tools its model is offered
-  'mimir.dock': 'read',
   // what mimir remembers about the person, secrets hidden; and one fact added, which changes what mimir knows
   'mimir.memory': 'read',
   'mimir.memory_remember': 'edit',
@@ -484,7 +482,6 @@ const HANDLERS: Record<string, Handler> = {
     return { cloud, enabled, needsSignIn, signedIn, quota, quotaError }
   },
   'mimir.tab': async () => (await import('../workspaces/mimir/session')).tabState(),
-  'mimir.dock': async () => (await import('../features/pilot/dock-model')).dockState(),
   'mimir.memory': async (args) => (await import('./mimir-memory')).readMemory(args),
   'mimir.memory_remember': async (args) => (await import('./mimir-memory')).rememberFact(args),
   'mimir.brain': async () => (await import('./mimir-brain')).brainState(),

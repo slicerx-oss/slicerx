@@ -2,13 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Which tools mimir offers a model, by where it runs. A cloud model gets every tool the runtime has. A local model has
 // a small context (see context.ts) where the tool schemas are most of the request, so it gets only the tools its
-// surface uses: the docked chat keeps its chat tools and text_to_part as the way into a design, without make_model.
+// surface uses: the mimir tab keeps its chat tools and its way into a design (the design tools, or text_to_part where a
+// host has no design tools), without make_model.
 // An edition can also switch whole tool groups off (ai.brain.tools); a switch only ever takes tools away.
 import type { PilotConfig } from '@slicerx/contracts'
 import type { PilotTool } from './tool'
 
-/** Where a mimir runs: the docked chat beside the plate. */
-export type ToolSurface = 'dock'
+/** Where a mimir runs: the mimir tab. */
+export type ToolSurface = 'tab'
 
 /** Whether a config runs a local model (Ollama or LM Studio through their OpenAI-compatible server). */
 export function isLocalModel(config: Pick<PilotConfig, 'provider'>): boolean {
@@ -17,8 +18,8 @@ export function isLocalModel(config: Pick<PilotConfig, 'provider'>): boolean {
 
 /** Tools a local model does not get, per surface. Everything else the surface has stays. */
 const LOCAL_LEAVE_OUT: Record<ToolSurface, ReadonlySet<string>> = {
-  // text_to_part is the dock's one way into a design; make_model's schema alone is about 1,700 tokens
-  dock: new Set(['make_model']),
+  // make_model's schema alone is about 1,700 tokens
+  tab: new Set(['make_model']),
 }
 
 /** The tools a model on `surface` is offered: all of `tools` for a cloud model, the surface's own set for a local one. */

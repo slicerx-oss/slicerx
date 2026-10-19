@@ -13,10 +13,6 @@
   --toast-floor: 12px;
 }
 :root[data-phone][data-phone-tabs] { --phone-tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px)); --toast-floor: 68px; }
-/* On the mimir page toasts rest above the composer and its chips (or the keyboard, while it is up). The 3D view under
-   the page still places the stack over its own controls (--overlay-bottom), so the page sets the stack's place itself. */
-:root[data-phone]:has(.mimir-dock .term-in) { --toast-floor: calc(max(var(--phone-tabbar-h), var(--phone-kb)) + 124px + 12px); }
-:root[data-phone]:has(.mimir-dock .term-in) .sx-toasts { top: auto; bottom: calc(var(--toast-floor) + env(safe-area-inset-bottom, 0px)); left: 50%; max-width: calc(100vw - 2 * var(--gutter)); }
 
 :root[data-phone], :root[data-phone] body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 :root[data-phone] #root { height: 100%; }
@@ -54,37 +50,7 @@
 .phone-tab-dot { position: absolute; top: -1px; right: -4px; margin: 0; }
 .phone-tab-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* mimir is a page over the workspace, between the bars (lifted by the keyboard while it is up). The workspace keeps
-   running under it, so Model comes back as it was. Its name is on the tab, so the panel header goes. */
-:root[data-phone] .mimir-dock {
-  position: fixed; top: var(--h-bar); bottom: max(var(--phone-tabbar-h), var(--phone-kb)); left: 0; right: 0; width: auto; z-index: calc(var(--z-rail-peek) + 3);
-  grid-template-rows: auto auto minmax(0, 1fr); border: 0; background: var(--ink-1); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
-}
-:root[data-phone] .mimir-dock.sx-pilot { --t-bg: var(--ink-1); }
-:root[data-phone] .mimir-dock > .mimir-head { display: none; }
-/* the conversation's own links sit on one row above it: New conversation, then More with the other two (dock.tsx) */
-:root[data-phone] .mimir-dock > .mimir-foot { grid-row: 1; flex-wrap: nowrap; justify-content: flex-start; gap: var(--s-1); padding: 0 var(--s-1) 0 var(--s-2); border-top: 0; border-bottom: 1px solid var(--line-soft); }
-:root[data-phone] .mimir-dock > .mimir-foot > .sx-linkbtn { flex: none; min-height: 44px; padding: 0 var(--s-2); white-space: nowrap; }
-:root[data-phone] .mimir-foot-pause { flex: none; width: 44px; height: 44px; padding: 0; justify-content: center; margin-left: auto; }
-:root[data-phone] .mimir-foot-pause + .mimir-foot-more { margin-left: 0; }
-:root[data-phone] .mimir-foot-more { margin-left: auto; }
-:root[data-phone] .mimir-foot-more > .sx-btn { width: 44px; height: 44px; padding: 0; justify-content: center; color: var(--fg); }
-:root[data-phone] [data-testid="mimir-foot-menu"] .sx-menu-item { min-height: 44px; }
-:root[data-phone] .mimir-dock > .cg-compact { grid-row: 2; }
-:root[data-phone] .mimir-dock > .term, :root[data-phone] .mimir-dock > .mimir-more, :root[data-phone] .mimir-dock > .ws-loading { grid-row: 3; }
-:root[data-phone] .mimir-dock > .pc-notice { grid-row: 1 / 4; margin: var(--s-3); }
-:root[data-phone] .mimir-dock > .mimir-connect { grid-row: 1 / 4; padding: var(--s-4); gap: var(--s-4); }
-:root[data-phone] .mimir-dock .term { border-bottom: 0; }
-:root[data-phone] .mimir-dock .term-body { padding: var(--s-4) var(--s-4) var(--s-5); }
-:root[data-phone] .mimir-dock .term-in { padding: var(--s-2) var(--s-3) var(--s-3); }
-:root[data-phone] .mimir-dock .in-row { height: 48px; }
-/* 16 px keeps a phone browser from zooming into the field */
-:root[data-phone] .mimir-dock .in-row input { font-size: 16px; }
-:root[data-phone] .mimir-dock .in-row .sx-btn { height: 40px; min-width: 56px; }
-:root[data-phone] .mimir-dock .chips { flex-wrap: nowrap; margin: var(--s-2) calc(-1 * var(--s-3)) 0; padding: 0 var(--s-3); overflow-x: auto; scrollbar-width: none; }
-:root[data-phone] .mimir-dock .sugg { flex: none; height: 44px; padding: 0 var(--s-4); }
 /* the setup and sign-in: full-width cards and a full-width send */
-:root[data-phone] .mimir-dock .ms-card { min-height: 64px; }
 :root[data-phone] .ms-signin .si-row { flex-direction: column; }
 :root[data-phone] .ms-signin .si-row > * { flex: none; width: 100%; min-height: 44px; }
 :root[data-phone] .ms-signin .si-row input { font-size: 16px; }
