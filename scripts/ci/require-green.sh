@@ -5,15 +5,20 @@
 #
 #   scripts/ci/require-green.sh [--dry-run] <commit> [repo]
 #
-# Reads the commit's check-runs from GitHub (gh api, read only) and requires each check in required-checks.txt to be
+# Reads the commit's check-runs from GitHub (read only) and requires each check in required-checks.txt to be
 # success or skipped. A check that is still running, or has not appeared yet, is waited for up to
 # SX_GREEN_WAIT seconds (default 3600: a push to main takes 35 to 43 minutes to turn every required check green), then
 # counts as not green. If a check was run more than once, the latest run
 # counts. Exit 0 when green, 1 when not, 2 on usage or API errors.
+# The read goes through gh api when gh is installed and works. When gh is missing, fails, or SX_GREEN_GH=0, it
+# reads api.github.com anonymously with curl (a public repository needs no sign-in; the JSON is parsed with node) and
+# says so once on stderr. Anonymous reads are limited to 60 per hour, so in that mode the poll interval is at least
+# 300 s unless SX_GREEN_POLL is set, and a 403 or 429 reply is an API error (exit 2).
 #   --dry-run                  report each check and the verdict, and exit 0 either way
 #   SX_PUBLISH_ALLOW_RED=1     owner-approved emergency only: prints a loud warning and lets a red commit through
 #   SX_GREEN_WAIT=<seconds>    how long to wait for pending or missing checks
-#   SX_GREEN_POLL=<seconds>    poll interval while waiting (default 20)
+#   SX_GREEN_POLL=<seconds>    poll interval while waiting (default 20, or 300 when reading anonymously)
+#   SX_GREEN_GH=0              skip gh and read anonymously
 #   SX_REQUIRED_CHECKS=<file>  another list (default: required-checks.txt next to this script)
 set -uo pipefail
 
@@ -23,17 +28,85 @@ if [ "${1:-}" = --dry-run ]; then dry=1; shift; fi
 here=$(cd "$(dirname "$0")" && pwd)
 list=${SX_REQUIRED_CHECKS:-$here/required-checks.txt}
 sha=$(git -C "$here" rev-parse --verify "$1^{commit}" 2>/dev/null) || { echo "require-green: unknown commit $1" >&2; exit 2; }
-slug=${2:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}
-[ -n "$slug" ] || { echo "require-green: cannot tell the repository (gh repo view failed)" >&2; exit 2; }
+gh_ok=0
+if [ "${SX_GREEN_GH:-}" != 0 ] && command -v gh > /dev/null 2>&1; then gh_ok=1; fi
+slug=${2:-}
+[ -z "$slug" ] && [ "$gh_ok" = 1 ] && slug=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+if [ -z "$slug" ]; then # github.com/owner/repo from the origin URL (https or ssh form)
+  slug=$(git -C "$here" remote get-url origin 2>/dev/null | sed -E 's#/+$##; s#\.git$##' \
+    | sed -nE 's#^.*github\.com[:/]+([^/]+/[^/]+)$#\1#p' | head -n 1)
+fi
+[ -n "$slug" ] || { echo "require-green: cannot tell the repository (pass owner/repo)" >&2; exit 2; }
 wait=${SX_GREEN_WAIT:-3600}; poll=${SX_GREEN_POLL:-20}
 required=$(grep -vE '^\s*(#|$)' "$list" | sed 's/[[:space:]]*$//')
 [ -n "$required" ] || { echo "require-green: no required checks in $list" >&2; exit 2; }
 
-# name <TAB> status <TAB> conclusion, latest run per name
+# Parses one raw curl -i reply on stdin. Line 1: http status, next page URL, requests left. Then id, name, status,
+# conclusion rows. Status 0 means the reply was not a check-runs page.
+parse_page='
+const s = require("fs").readFileSync(0, "utf8");
+let rest = s, head = "";
+while (/^HTTP\/\S+ \d+/.test(rest)) {
+  const m = rest.search(/\r?\n\r?\n/);
+  if (m < 0) { head = rest; rest = ""; break; }
+  head = rest.slice(0, m); rest = rest.slice(m).replace(/^\r?\n\r?\n/, "");
+}
+const status = Number((/^HTTP\/\S+ (\d+)/.exec(head) || [0, 0])[1]);
+const next = (/<([^>]+)>;\s*rel="next"/.exec(head) || [0, ""])[1];
+const left = (/^x-ratelimit-remaining:\s*(\d+)/im.exec(head) || [0, ""])[1];
+let rows = [];
+let ok = status === 200;
+if (ok) {
+  try { rows = JSON.parse(rest).check_runs.map((r) => [r.id, r.name, r.status, r.conclusion || ""].join("\t")); }
+  catch (e) { ok = false; }
+}
+console.log([ok ? status : (status === 200 ? 0 : status), next, left].join("\t"));
+if (ok && rows.length) console.log(rows.join("\n"));
+'
+
+# Sets runs: name <TAB> status <TAB> conclusion, latest run per name. Returns 1 on an API error.
+latest() { sort -n | awk -F'\t' '{ r[$2] = $3 "\t" $4 } END { for (n in r) print n "\t" r[n] }'; }
+
+fetch_gh() {
+  local out
+  out=$(gh api --paginate "repos/$slug/commits/$sha/check-runs?per_page=100" \
+    --jq '.check_runs[] | [.id, .name, .status, (.conclusion // "")] | @tsv' 2>/dev/null) || return 1
+  runs=$(latest <<< "$out")
+}
+
+fetch_anon() {
+  local url="https://api.github.com/repos/$slug/commits/$sha/check-runs?per_page=100" pages=0 raw parsed meta status left all=""
+  while [ -n "$url" ]; do
+    pages=$((pages + 1))
+    [ "$pages" -le 30 ] || { echo "require-green: more than 30 pages of check runs for $slug@${sha:0:8}" >&2; return 1; }
+    raw=$(curl -sS -i -H "User-Agent: slicerx-require-green" -H "Accept: application/vnd.github+json" "$url") \
+      || { echo "require-green: curl failed reading $url" >&2; return 1; }
+    parsed=$(node -e "$parse_page" <<< "$raw") || { echo "require-green: node could not read the GitHub reply" >&2; return 1; }
+    meta=${parsed%%$'\n'*}
+    IFS=$'\t' read -r status url left <<< "$meta"
+    case "$status" in
+      200) ;;
+      403|429) echo "require-green: GitHub refused the anonymous read (HTTP $status, rate limit or access). Anonymous reads are limited to 60 per hour; wait and retry, or sign in gh." >&2; return 1 ;;
+      *) echo "require-green: GitHub answered HTTP $status reading check runs for $slug@${sha:0:8}" >&2; return 1 ;;
+    esac
+    case "$url" in https://api.github.com/*) ;; *) url="" ;; esac
+    [ "$parsed" = "$meta" ] || all+="${parsed#*$'\n'}"$'\n'
+  done
+  runs=$(printf '%s' "$all" | grep . | latest)
+}
+
+fallback=0
 fetch() {
-  gh api --paginate "repos/$slug/commits/$sha/check-runs?per_page=100" \
-    --jq '.check_runs[] | [.id, .name, .status, (.conclusion // "")] | @tsv' \
-    | sort -n | awk -F'\t' '{ r[$2] = $3 "\t" $4 } END { for (n in r) print n "\t" r[n] }'
+  if [ "$gh_ok" = 1 ]; then
+    fetch_gh && return 0
+    gh_ok=0
+  fi
+  if [ "$fallback" = 0 ]; then
+    fallback=1
+    echo "require-green: gh unavailable, reading check runs anonymously" >&2
+    [ -n "${SX_GREEN_POLL:-}" ] || poll=300
+  fi
+  fetch_anon
 }
 
 evaluate() { # sets bad (lines) and pending (count)
@@ -51,7 +124,7 @@ evaluate() { # sets bad (lines) and pending (count)
 
 waited=0
 while :; do
-  runs=$(fetch) || { echo "require-green: gh api failed for $slug@${sha:0:8}" >&2; exit 2; }
+  fetch || { echo "require-green: could not read check runs for $slug@${sha:0:8}" >&2; exit 2; }
   evaluate
   # wait only while something could still turn green; a finished failure ends it at once
   [ -z "$bad" ] && break
