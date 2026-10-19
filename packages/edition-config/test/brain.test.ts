@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { checkEditionConfig, defineEditionConfig } from '../src/define.ts'
 import { NEUTRAL_EDITION } from '../src/defaults.ts'
 import { mergeLayers } from '../src/merge.ts'
-import { editionKnowledgeFiles } from '../src/node.ts'
+import { EDITION_KB_MODULE, editionKbPlugin, editionKnowledgeFiles } from '../src/node.ts'
 
 const check = (brain: unknown) => checkEditionConfig(mergeLayers(NEUTRAL_EDITION, { ai: { brain } } as never))
 
@@ -100,5 +100,28 @@ describe('ai.brain', () => {
       if (!r.ok) expect(r.issues).toContainEqual({ path: 'ai.brain.routing.provider', message: 'routing that names base or step models needs a provider (anthropic or openai)' })
     }
     expect(check({ routing: { model: 'gpt-6-sol' } }).ok).toBe(false)
+  })
+})
+
+describe('the edition knowledge a build carries', () => {
+  it("answers the edition-kb module with that edition's own file only, and null when it has none", () => {
+    const dir = mkdtempSync(join(tmpdir(), 'edition-kb-'))
+    const harbor = { schema: 1, docs: [{ id: 'dock', kind: 'workflow', name: 'Dock', edition: 'harbor' }], sources: [], prefixes: [], settings: [] }
+    writeFileSync(join(dir, 'edition-kb.harbor.json'), JSON.stringify(harbor))
+    writeFileSync(join(dir, 'edition-kb.other.json'), JSON.stringify({ ...harbor, docs: [{ id: 'secret', kind: 'workflow', name: 'Other', edition: 'other' }] }))
+    const plugin = editionKbPlugin('harbor', dir)
+    const id = plugin.resolveId(EDITION_KB_MODULE)
+    expect(id).not.toBeNull()
+    expect(plugin.resolveId('@slicerx/pilot/kb.json')).toBeNull()
+    const code = plugin.load(id!)!
+    expect(code).toBe(`export default ${JSON.stringify(harbor)}\n`)
+    expect(code).not.toContain('secret')
+    expect(plugin.load('something-else')).toBeNull()
+    const none = editionKbPlugin('lonely', dir)
+    expect(none.load(none.resolveId(EDITION_KB_MODULE)!)).toBe('export default null\n')
+  })
+
+  it('refuses an id that could name another file', () => {
+    for (const bad of ['../harbor', 'a/b', 'Harbor', '']) expect(() => editionKbPlugin(bad, '/tmp'), bad).toThrow()
   })
 })
