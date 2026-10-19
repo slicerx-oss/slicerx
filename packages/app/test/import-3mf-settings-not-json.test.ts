@@ -15,8 +15,8 @@ import { get, set } from '../src/state/store'
 const BOM = String.fromCharCode(0xfeff)
 const JSON_SETTINGS = '{\n  "layer_height": "0.3",\n  "filament_colour": ["#FF0000"]\n}\n'
 const INI = '; an older export\n\n[print]\nlayer_height = 0.3\nnozzle_diameter = 0.4,0.4\n'
-const OLDER = 'Its print settings were left out because they are in an older key = value format, so it opens with the current settings.'
-const DAMAGED = 'Its print settings were left out because its settings file is damaged, so it opens with the current settings.'
+const OLDER = "This project's print settings were left out because they are in an older key = value format, so it opens with the current settings."
+const DAMAGED = "This project's print settings were left out because its settings file is damaged, so it opens with the current settings."
 
 const vertices = [[0, 0, 0], [20, 0, 0], [20, 20, 0], [0, 20, 0], [0, 0, 20], [20, 0, 20], [20, 20, 20], [0, 20, 20]]
 const triangles = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [3, 7, 6], [3, 6, 2], [0, 4, 7], [0, 7, 3], [1, 2, 6], [1, 6, 5]]
