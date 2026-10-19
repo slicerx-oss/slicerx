@@ -7,7 +7,7 @@ import type { Design as HostDesign, DesignHost } from '@slicerx/cad-history'
 import type { ToolContext } from '@slicerx/pilot'
 import { describe, expect, it } from 'vitest'
 import { minWall } from '../src/body-facts'
-import { createPlanRegistry, designCheck, MAX_PLANS, partPlanSchema, type BodyFacts, type PartPlan } from '../src/design-check'
+import { createPlanRegistry, designCheck, MAX_PLANS, partPlanSchema, PlanOwnedError, type BodyFacts, type PartPlan } from '../src/design-check'
 import { designToolset } from '../src/toolset'
 import { connect, data, text } from './helpers'
 import { useGeomEngine } from './geom-engine'
@@ -134,7 +134,7 @@ describe('designCheck', () => {
     expect(plans.latest()).toBeUndefined()
     plans.put(bracket)
     plans.put({ ...bracket, planId: 'bracket-2' }, 'd1')
-    expect(plans.get('bracket-1')).toEqual({ plan: bracket })
+    expect(plans.get('bracket-1')).toEqual({ plan: bracket, origin: 'client' })
     expect(plans.get('bracket-2')?.design).toBe('d1')
     expect(plans.latest()?.planId).toBe('bracket-2')
     expect(() => plans.put({ ...bracket, units: 'cm' } as unknown as PartPlan)).toThrow()
@@ -145,7 +145,7 @@ describe('designCheck', () => {
     const plans = createPlanRegistry()
     plans.put(bracket)
     expect(plans.tie('bracket-1', 'd7')).toBe(true)
-    expect(plans.get('bracket-1')).toEqual({ plan: bracket, design: 'd7' })
+    expect(plans.get('bracket-1')).toEqual({ plan: bracket, origin: 'client', design: 'd7' })
     expect(plans.tie('nope', 'd7')).toBe(false)
     for (let k = 0; k < MAX_PLANS; k++) plans.put({ ...bracket, planId: `p${k}` })
     expect(MAX_PLANS).toBe(50)
@@ -155,6 +155,20 @@ describe('designCheck', () => {
     expect(plans.get('p0')).toBeUndefined()
     expect(plans.get('p1')).toBeDefined()
     expect(plans.latest()?.planId).toBe('one more')
+  })
+
+  it('keeps card plans apart from client plans: a client never replaces or pushes out a card plan', () => {
+    const plans = createPlanRegistry()
+    plans.put(bracket, undefined, 'card')
+    expect(() => plans.put({ ...bracket, part: 'Other' })).toThrow(PlanOwnedError)
+    expect(plans.get('bracket-1')).toEqual({ plan: bracket, origin: 'card' })
+    for (let k = 0; k < 60; k++) plans.put({ ...bracket, planId: `c${k}` }, undefined, 'client')
+    expect(plans.get('bracket-1')?.origin).toBe('card')
+    expect(plans.get('c9')).toBeUndefined()
+    expect(plans.get('c10')?.origin).toBe('client')
+    // a card plan may take over a client's id
+    plans.put({ ...bracket, planId: 'c59' }, undefined, 'card')
+    expect(plans.get('c59')?.origin).toBe('card')
   })
 
   it('rejects a plan with a size, hole or overall value of zero or less', () => {
@@ -368,7 +382,7 @@ describe('slicerx_design_check', () => {
   })
 })
 
-describe('design.plan', () => {
+describe('design.put_plan', () => {
   const tools = (all: HostDesign[], plans = createPlanRegistry()) => {
     const set = designToolset(hostOf(all), {}, { plans })
     const run = async (name: string, args: Record<string, unknown>) => {
@@ -381,32 +395,43 @@ describe('design.plan', () => {
   it('keeps a plan design.check then checks the built part against, tied to its design', async () => {
     // two designs open, neither named as the part: the tie picks the right one
     const { plans, run } = tools([boxDesign('d1', 'Other'), boxDesign('d2', 'Clip')])
-    const kept = await run('design.plan', { plan: boxPlan, design: 'd1' })
+    const kept = await run('design.put_plan', { plan: boxPlan, design: 'd1' })
     expect(kept.output).toEqual({ planId: 'box-1', part: 'Spacer', design: 'd1', features: 0, holes: 0 })
     expect(kept.summary).toContain('Kept plan box-1 for Spacer (0 features, 40 x 20 x 5 mm overall), tied to Other (d1)')
-    expect(plans.get('box-1')).toEqual({ plan: boxPlan, design: 'd1' })
+    expect(plans.get('box-1')).toEqual({ plan: boxPlan, origin: 'client', design: 'd1' })
     const r = await run('design.check', { planId: 'box-1' })
     expect(r.output).toMatchObject({ design: 'd1', chosen: 'tied to the plan', pass: true })
     // the same planId again replaces it, untied
-    await run('design.plan', { plan: { ...boxPlan, overall: { x: 50, y: 20, z: 5 } } })
+    await run('design.put_plan', { plan: { ...boxPlan, overall: { x: 50, y: 20, z: 5 } } })
     expect(plans.get('box-1')?.plan.overall?.x).toBe(50)
     expect(plans.get('box-1')?.design).toBeUndefined()
   })
 
   it('refuses a plan off the schema or tied to a design that is not open, and keeps nothing', async () => {
     const { plans, run, set } = tools([boxDesign('d1', 'Spacer')])
-    const input = set.find((t) => t.name === 'design.plan')!.input
+    const input = set.find((t) => t.name === 'design.put_plan')!.input
     expect(input.safeParse({ plan: { ...boxPlan, overall: { x: 0, y: 20, z: 5 } } }).success).toBe(false)
     expect(input.safeParse({ plan: { ...boxPlan, units: 'cm' } }).success).toBe(false)
-    await expect(run('design.plan', { plan: boxPlan, design: 'nope' })).rejects.toThrow(/no design nope/)
+    await expect(run('design.put_plan', { plan: boxPlan, design: 'nope' })).rejects.toThrow(/no design nope/)
     expect(plans.get('box-1')).toBeUndefined()
   })
 
-  it('is read class, and is on the MCP server as slicerx_design_plan', async () => {
+  it("refuses a card plan's planId, leaves every card plan in place after many client plans, and says it only adds the client's own", async () => {
+    const { plans, run, set } = tools([boxDesign('d1', 'Spacer')])
+    expect(set.find((t) => t.name === 'design.put_plan')!.description).toContain('only adds plans you make here')
+    for (let k = 0; k < 5; k++) plans.put({ ...boxPlan, planId: `card-${k}` }, undefined, 'card')
+    await expect(run('design.put_plan', { plan: { ...boxPlan, planId: 'card-0', part: 'Hijack' } })).rejects.toThrow(/plan the person made/)
+    expect(plans.get('card-0')).toEqual({ plan: { ...boxPlan, planId: 'card-0' }, origin: 'card' })
+    for (let k = 0; k < 60; k++) await run('design.put_plan', { plan: { ...boxPlan, planId: `client-${k}` } })
+    for (let k = 0; k < 5; k++) expect(plans.get(`card-${k}`)?.origin).toBe('card')
+    expect(plans.get('client-59')?.origin).toBe('client')
+  })
+
+  it('is read class, and is on the MCP server as slicerx_design_put_plan', async () => {
     const { set } = tools([])
-    expect(set.find((t) => t.name === 'design.plan')?.permission).toBe('read')
+    expect(set.find((t) => t.name === 'design.put_plan')?.permission).toBe('read')
     const h = await connect({ geomEngine: engine })
-    const r = await h.call('slicerx_design_plan', { plan: { ...boxPlan, planId: 'mcp-1' } })
+    const r = await h.call('slicerx_design_put_plan', { plan: { ...boxPlan, planId: 'mcp-1' } })
     expect(r.isError, text(r)).toBeFalsy()
     expect(data<{ output: { planId: string } }>(r).output.planId).toBe('mcp-1')
   })

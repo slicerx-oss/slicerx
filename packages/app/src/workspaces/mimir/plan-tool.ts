@@ -36,10 +36,16 @@ let counter = 0
 /** The plan the person last approved whose part is not built yet: the next design built ties to it. */
 let unbuilt: string | null = null
 
+/** The card's own entry for this id: a plan an MCP client put (design.put_plan) is never the person's. */
+function cardEntry(planId: string) {
+  const entry = mimirPlans.get(planId)
+  return entry?.origin === 'card' ? entry : undefined
+}
+
 function remember(plan: PartPlan): void {
-  mimirPlans.put(plan)
+  mimirPlans.put(plan, undefined, 'card')
   shownPlans.set(plan.planId, structuredClone(plan))
-  for (const id of shownPlans.keys()) if (!mimirPlans.get(id)) shownPlans.delete(id)
+  for (const id of shownPlans.keys()) if (!cardEntry(id)) shownPlans.delete(id)
 }
 
 /** A value with every object's keys in order, so two plans compare by content alone. */
@@ -54,23 +60,23 @@ export function samePlan(a: PartPlan, b: PartPlan): boolean {
   return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b))
 }
 
-/** The plan with this id, as last edited, or null. */
+/** The card plan with this id, as last edited, or null (also for a plan an MCP client put). */
 export function planById(planId: string): PartPlan | null {
-  return mimirPlans.get(planId)?.plan ?? null
+  return cardEntry(planId)?.plan ?? null
 }
 
 /** The plan with this id as mimir first showed it, before any edit, or null. */
 export function shownPlan(planId: string): PartPlan | null {
-  return mimirPlans.get(planId) ? (shownPlans.get(planId) ?? null) : null
+  return cardEntry(planId) ? (shownPlans.get(planId) ?? null) : null
 }
 
 /** Records edits to a plan (sizes typed on its card); ignored for an unknown id or a plan of another shape. */
 export function editPlan(planId: string, next: PartPlan): boolean {
-  const entry = mimirPlans.get(planId)
+  const entry = cardEntry(planId)
   if (!entry || next.planId !== planId) return false
   const ok = PartPlanSchema.safeParse(next)
   if (!ok.success) return false
-  mimirPlans.put(ok.data, entry.design)
+  mimirPlans.put(ok.data, entry.design, 'card')
   return true
 }
 
@@ -131,7 +137,7 @@ export function planOfChoices(choices: readonly { id: string }[]): string | null
   const go = choices.find((c) => c.id.startsWith(`${PLAN_GO}:`))
   if (!go) return null
   const planId = go.id.slice(PLAN_GO.length + 1)
-  return mimirPlans.get(planId) ? planId : null
+  return cardEntry(planId) ? planId : null
 }
 
 /** `newId` names each plan (tests); by default a random plan_ id. */

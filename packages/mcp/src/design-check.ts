@@ -12,7 +12,7 @@ const size = z.number().finite().positive().max(PLAN_SIZE_MAX)
 const text = (max: number) => z.string().trim().min(1).max(max)
 
 /**
- * A part as planned before it is built. Every size is in `units`. The app's plan card (design.plan) and design.check
+ * A part as planned before it is built. Every size is in `units`. The app's plan card (design.plan), design.put_plan and design.check
  * share this one shape; the card also needs at least one feature.
  */
 export const partPlanSchema = z.object({
@@ -131,19 +131,29 @@ function matchHoles(planned: NonNullable<PartPlan['holes']>, found: BodyFacts['h
   return { matched: planned.map((hole, k) => ({ hole, found: out.has(k) ? found[out.get(k)!] : undefined })), extra: found.filter((_, j) => !used.has(j)) }
 }
 
-/** A plan and the design it was built in, when that is known. */
+/**
+ * Who made a plan: the mimir tab's plan card ('card', the person's plan) or an integrator over design.put_plan
+ * ('client'). A client can never replace or push out a card plan.
+ */
+export type PlanOrigin = 'card' | 'client'
+
+/** A plan, who made it, and the design it was built in, when that is known. */
 export interface PlanEntry {
   plan: PartPlan
+  origin: PlanOrigin
   design?: string
 }
 
-/** Plans kept at most; putting one more drops the one put longest ago. */
+/** Plans kept at most for each origin; putting one more drops the one of that origin put longest ago. */
 export const MAX_PLANS = 50
 
-/** Where plans wait for design.check, by planId. design.plan puts them here; tests and scripts may too. */
+/** Where plans wait for design.check, by planId. The plan card and design.put_plan put them here; tests and scripts may too. */
 export interface PlanRegistry {
-  /** Keeps a plan (checked against the schema), replacing one with the same planId; `design` ties it to a design. */
-  put(plan: PartPlan, design?: string): void
+  /**
+   * Keeps a plan (checked against the schema), replacing one with the same planId; `design` ties it to a design.
+   * `origin` defaults to 'client'. A client plan whose planId belongs to a card plan is refused (throws).
+   */
+  put(plan: PartPlan, design?: string, origin?: PlanOrigin): void
   /** Ties a kept plan to the design it was built in, for a plan made before the design; false when there is no such plan. */
   tie(planId: string, design: string): boolean
   get(planId: string): PlanEntry | undefined
@@ -153,15 +163,25 @@ export interface PlanRegistry {
   clear(): void
 }
 
-/** A registry of up to MAX_PLANS plans, the oldest put dropped first. */
+/** Thrown when a client plan would replace a card plan. */
+export class PlanOwnedError extends Error {
+  constructor(readonly planId: string) {
+    super(`planId: ${planId} is a plan the person made in the mimir tab; give your plan its own planId`)
+    this.name = 'PlanOwnedError'
+  }
+}
+
+/** A registry of up to MAX_PLANS card plans and MAX_PLANS client plans, the oldest of each put dropped first. */
 export function createPlanRegistry(): PlanRegistry {
   const plans = new Map<string, PlanEntry>()
   return {
-    put(plan, design) {
+    put(plan, design, origin = 'client') {
       const p = partPlanSchema.parse(plan)
+      if (origin === 'client' && plans.get(p.planId)?.origin === 'card') throw new PlanOwnedError(p.planId)
       plans.delete(p.planId)
-      plans.set(p.planId, design ? { plan: p, design } : { plan: p })
-      while (plans.size > MAX_PLANS) plans.delete(plans.keys().next().value!)
+      plans.set(p.planId, design ? { plan: p, origin, design } : { plan: p, origin })
+      const mine = [...plans.entries()].filter(([, e]) => e.origin === origin)
+      for (let k = 0; k < mine.length - MAX_PLANS; k++) plans.delete(mine[k]![0])
     },
     tie(planId, design) {
       const entry = plans.get(planId)

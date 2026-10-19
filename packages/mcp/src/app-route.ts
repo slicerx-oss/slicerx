@@ -43,8 +43,8 @@ export const APP_DESIGN_TOOLS = new Set([
   'geom.subtract',
   // reads the app's plans (the mimir tab's) and its design
   'design.check',
-  // puts a plan where the app's design.check reads it
-  'design.plan',
+  // puts a client plan where the app's design.check reads it
+  'design.put_plan',
 ])
 
 /** Object placement and project print settings, routed to the app when the server does not own the target. */

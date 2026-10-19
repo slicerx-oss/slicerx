@@ -12,7 +12,7 @@ import { modelingTools, type ModelingFiles } from './modeling-tools'
 
 export { appValueInputs, type AppValuesResult } from './app-values'
 export { brimEditInput, brimReadInput } from './brim-input'
-export { checkResultSchema, createPlanRegistry, DEFAULT_NOZZLE_MM, designCheck, MAX_PLANS, nozzleOr, partPlanSchema, PLAN_SIZE_MAX, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanRegistry } from './design-check'
+export { checkResultSchema, createPlanRegistry, DEFAULT_NOZZLE_MM, designCheck, MAX_PLANS, nozzleOr, partPlanSchema, PLAN_SIZE_MAX, PlanOwnedError, type BodyFacts, type CheckItem, type CheckResult, type PartPlan, type PlanEntry, type PlanOrigin, type PlanRegistry } from './design-check'
 export type { DesignToolOptions } from './design-tools'
 
 export { appVolumeInputs, type AppVolumes } from './app-volumes'
