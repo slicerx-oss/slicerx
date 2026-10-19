@@ -93,7 +93,8 @@ export interface CreatePilotOptions {
    * the notes that fit (pickFacts) on a chat's first message. Off or unset: neither tool, and no notes. `remember: false`
    * leaves memory.remember out, for a host that cannot grant the approval saving a note needs. `ask` false saves a note
    * without the card (read at each save); unset asks. `chatStarted` runs before the notes are read on a chat's first
-   * message (the host's sync with the account); the chat waits for it at most CHAT_START_WAIT_MS.
+   * message (the host's sync with the account); the chat waits for it at most CHAT_START_WAIT_MS. `cloud` true when the
+   * chat's model runs off this computer, so the save card says notes go along with chats.
    */
   memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean; chatStarted?: () => Promise<unknown>; cloud?: () => boolean }
   /** Machine cost per hour by printer id, for "cheapest printers first". */

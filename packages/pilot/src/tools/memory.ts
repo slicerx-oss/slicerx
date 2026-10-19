@@ -30,7 +30,8 @@ const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.tri
 
 /**
  * `ask` false saves without the card (Settings > Memory > Save notes without asking); it is read at each save. `cloud`
- * true when the chat runs on mimir cloud, so the card says the notes go along with chats; read at each save.
+ * true when the chat's model runs off this computer (mimir cloud or the person's own key), so the card says the notes
+ * go along with chats; read at each save.
  */
 export function memoryTools(store: MemoryStore, now: () => number = () => Date.now(), ask: () => boolean = () => true, cloud: () => boolean = () => false): PilotTool<never>[] {
   const remember = defineTool({
