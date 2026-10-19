@@ -97,6 +97,8 @@ export function sheetTool(): PilotTool<never> {
     args: (i) => `"${i.title}", ${i.dims.length} sizes`,
     async run(i, ctx) {
       if (!ctx.sheet) return { ok: false, summary: 'Nobody here can confirm a sheet' }
+      // the person edits sizes on the drawing, so a sheet of several sizes needs the part to draw
+      if (i.dims.length > 1 && !i.part?.length) return { ok: false, summary: 'Not shown: a sheet of several sizes needs part, the part as extruded outlines, and at on each row, so it can draw the four views with callouts. Send it again with them.' }
       const answer = await ctx.sheet({ title: i.title, views: i.views, dims: i.dims as PilotDim[], ...(i.part ? { part: i.part as PilotSheetSolid[] } : {}) })
       if (!answer.confirmed) return { ok: false, summary: 'Canceled; build nothing until the sizes are confirmed', output: answer }
       const n = answer.changed.length
