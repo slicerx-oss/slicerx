@@ -125,7 +125,7 @@ describe('a sheet before the first build', () => {
     for (const message of ['A bracket with two holes', 'Make the holes 5 mm and go', 'Now a lid']) {
       for await (const e of p.run('s', message)) {
         if (e.type === 'sheet') (sheets.push(e.sheet.id), void p.answerSheet!(e.sheet.id, {}))
-        if (e.type === 'ask') void p.answer(e.askId, answers.shift()!)
+        if (e.type === 'ask') void p.answer!(e.askId, answers.shift()!)
       }
       blocked.push(ran.join(','))
     }

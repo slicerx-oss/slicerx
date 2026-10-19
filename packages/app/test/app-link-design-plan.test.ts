@@ -33,7 +33,7 @@ describe('design.put_plan over the app link', () => {
   })
 
   it("never ties the person's card plan from a read-class client", async () => {
-    mimirPlans.put({ ...plan, planId: 'card-1', part: 'Box' }, 'design_tab', 'card')
+    mimirPlans.put({ ...plan, units: 'mm', planId: 'card-1', part: 'Box' }, 'design_tab', 'card')
     const e = await runCall('design.check', { planId: 'card-1', design: 'design_other' }).then(() => null, (x: unknown) => x as LinkError)
     expect(e?.code).toBe('invalid_input')
     expect(e?.message).toContain('made in the mimir tab and is already tied to design design_tab')
