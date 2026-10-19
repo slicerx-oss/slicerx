@@ -157,8 +157,8 @@ export interface PlanRegistry {
   /** Ties a kept plan to the design it was built in, for a plan made before the design; false when there is no such plan. */
   tie(planId: string, design: string): boolean
   get(planId: string): PlanEntry | undefined
-  /** The plan put last, or undefined when there is none. */
-  latest(): PartPlan | undefined
+  /** The plan put last (of `origin` alone, when given), or undefined when there is none. */
+  latest(origin?: PlanOrigin): PartPlan | undefined
   /** Forgets every plan. */
   clear(): void
 }
@@ -190,7 +190,7 @@ export function createPlanRegistry(): PlanRegistry {
       return true
     },
     get: (planId) => plans.get(planId),
-    latest: () => [...plans.values()].at(-1)?.plan,
+    latest: (origin) => [...plans.values()].filter((e) => !origin || e.origin === origin).at(-1)?.plan,
     clear: () => plans.clear(),
   }
 }
