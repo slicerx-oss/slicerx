@@ -9,6 +9,9 @@
 //   POST v1/messages     Messages API, streamed  (x-sx-install: token, or authorization: Bearer session)
 //   GET  quota                                   (the same): v1 fields, plus v2 (fractions for a usage page)
 //   POST forget          deletes saved chats (the same)
+// The model: the base model (Haiku 5.5) unless the client sends x-sx-tier: step and the edition
+// allows a step-up (mimir_turn_model, 0028); a step-up turn the daily caps refuse goes on the base
+// model instead. The model the turn used comes back in x-sx-model.
 // Saved chats: a call is saved when the edition saves by default (alpha: SlicerX) or the
 // client sends x-sx-share: 1, never with x-sx-share: 0. x-sx-session and x-sx-version file it; without
 // them it goes under one key per install and Melbourne day.
@@ -140,7 +143,8 @@ const WEB = 'slicerx-web'
 
 // Who is calling: an install's token, or a signed-in web user, whose install the database
 // keeps under their id (mimir_user_token). The token never leaves the server for a web user.
-type Caller = { tok: string; key: string }
+// `edition` is known up front only for a web user; an install's is looked up when needed.
+type Caller = { tok: string; key: string; edition?: string }
 async function caller(req: Request, env: Env, ip: string): Promise<Caller | Response> {
   const auth = req.headers.get('authorization') ?? ''
   if (!auth) {
@@ -158,7 +162,7 @@ async function caller(req: Request, env: Env, ip: string): Promise<Caller | Resp
   if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
   try {
     const tok = (await rpc(env, 'mimir_user_token', { p_edition: WEB, p_user: v.user, p_ip: ip })) as string
-    return { tok, key: env.anthropicWebKey }
+    return { tok, key: env.anthropicWebKey, edition: WEB }
   } catch (e) {
     return rpcFailure(e)
   }
@@ -210,6 +214,19 @@ export function dayKey(now = new Date()): string {
   return `day-${new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne' }).format(now).replaceAll('-', '')}`
 }
 
+// The turn's model. The base tier never needs the database: mimir_turn_model answers the base
+// model for it. A failed lookup is the base model too, so a step-up never costs a turn.
+async function turnModel(env: Env, who: Caller, tier: string | null): Promise<string> {
+  if (tier !== 'step') return MODEL
+  try {
+    const edition = who.edition ?? (await editionOf(env, who.tok))
+    const m = await rpc(env, 'mimir_turn_model', { p_edition: edition, p_tier: 'step' })
+    return typeof m === 'string' && m.length > 0 ? m : MODEL
+  } catch {
+    return MODEL
+  }
+}
+
 async function messages(req: Request, env: Env): Promise<Response> {
   const ip = clientIp(req, env.ipSource)
   const who = await caller(req, env, ip)
@@ -226,12 +243,32 @@ async function messages(req: Request, env: Env): Promise<Response> {
   const s = shape(raw)
   if (!s.ok) return fail(400, 'invalid_request', s.error)
   if (!ip) return rpcFailure(new RpcError('no_ip', 'no client address'))
+  // picked once the request is known to be good, so a refused one never reaches the database
+  let model = await turnModel(env, who, req.headers.get('x-sx-tier'))
+  s.body['model'] = model
 
-  const reserve = (prompt: number) =>
+  const reserve = (m: string, prompt: number) =>
     rpc(env, 'mimir_reserve', {
-      p_token: tok, p_ip: ip, p_model: MODEL, p_input: worstInput(prompt, s.maxOutput, s.maxSearches), p_output: s.maxOutput,
+      p_token: tok, p_ip: ip, p_model: m, p_input: worstInput(prompt, s.maxOutput, s.maxSearches), p_output: s.maxOutput,
       p_searches: s.maxSearches,
     }) as Promise<string>
+  // A reservation at model m, or null when a PDF could not be sized. A PDF's pages cost more than
+  // its bytes can say (a short file can hold many pages), so it is counted exactly first. The byte
+  // count overstates most prompts; when it is what hit a daily cap, count exactly and try once more.
+  // The count is the model's own (s.body carries m), made at most once per model.
+  const reserveAt = async (m: string): Promise<string | null> => {
+    let exact: number | null | undefined
+    const count = async () => (exact === undefined ? (exact = await countTokens(env, s.body, who.key)) : exact)
+    const first = s.documents > 0 ? await count() : s.promptEstimate
+    if (first === null) return null
+    try {
+      return await reserve(m, first)
+    } catch (e) {
+      const n = e instanceof RpcError && DAILY_CAPS.has(e.hint) ? await count() : null
+      if (n === null) throw e
+      return await reserve(m, n)
+    }
+  }
   const refused = async (e: unknown) => {
     if (e instanceof RpcError && COUNTED.has(e.hint)) await rpc(env, 'mimir_refused', { p_token: tok, p_ip: ip }).catch(() => {})
     const res = rpcFailure(e)
@@ -241,22 +278,20 @@ async function messages(req: Request, env: Env): Promise<Response> {
     }
     return res
   }
-  let call: string
+  let reserved: string | null
   try {
-    // a PDF's pages cost more than its bytes can say (a short file can hold many pages), so it is counted exactly first
-    const prompt = s.documents > 0 ? await countTokens(env, s.body, who.key) : s.promptEstimate
-    if (prompt === null) return fail(503, 'provider_busy', 'mimir could not size this PDF right now. Try again in a moment.')
-    call = await reserve(prompt)
+    reserved = await reserveAt(model).catch((e) => {
+      if (model === MODEL || !(e instanceof RpcError && DAILY_CAPS.has(e.hint))) throw e
+      // a step-up turn the daily caps cannot fit goes once more, on the base model
+      model = MODEL
+      s.body['model'] = MODEL
+      return reserveAt(MODEL)
+    })
   } catch (e) {
-    // the byte count overstates most prompts; when it is what hit a cap, count exactly and try once more
-    const exact = e instanceof RpcError && DAILY_CAPS.has(e.hint) ? await countTokens(env, s.body, who.key) : null
-    if (exact === null) return refused(e)
-    try {
-      call = await reserve(exact)
-    } catch (e2) {
-      return refused(e2)
-    }
+    return refused(e)
   }
+  if (reserved === null) return fail(503, 'provider_busy', 'mimir could not size this PDF right now. Try again in a moment.')
+  const call = reserved
 
   // the client's choice; null leaves it to the edition's default
   const shareHeader = req.headers.get('x-sx-share')
@@ -273,14 +308,14 @@ async function messages(req: Request, env: Env): Promise<Response> {
     tap.end()
     const u = cut ? { ...tap.usage, output: Math.max(tap.usage.output, s.maxOutput) } : tap.usage
     await rpc(env, 'mimir_settle', {
-      p_call: call, p_model: MODEL, p_input: u.input, p_cache_write: u.cacheWrite, p_cache_read: u.cacheRead,
+      p_call: call, p_model: model, p_input: u.input, p_cache_write: u.cacheWrite, p_cache_read: u.cacheRead,
       p_output: u.output, p_searches: u.searches,
     })
     if (answered && tap.complete && !tap.failed && share !== false) {
       const t = await transcript(s.body, tap.reply, u)
       if (new TextEncoder().encode(JSON.stringify(t.kept)).length > MAX_STORED_BYTES) return
       await rpc(env, 'mimir_save_chat', {
-        p_call: call, p_share: share, p_session_key: session, p_app_version: version, p_model: MODEL,
+        p_call: call, p_share: share, p_session_key: session, p_app_version: version, p_model: model,
         p_prompt_hash: t.hash, p_prompt: t.prompt, p_transcript: t.kept,
       })
     }
@@ -344,7 +379,7 @@ async function messages(req: Request, env: Env): Promise<Response> {
   })
   return new Response(up.body.pipeThrough(pass), {
     status: 200,
-    headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store' },
+    headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-sx-model': model },
   })
 }
 
@@ -408,7 +443,9 @@ async function countTokens(env: Env, body: Obj, key: string): Promise<number | n
 
 // The pages a browser may call from: only the web app. The desktop and other clients send no Origin.
 const ORIGINS = new Set(['https://slicerx.app'])
-const ALLOW_HEADERS = 'content-type, accept, authorization, x-sx-install, x-sx-share, x-sx-session, x-sx-version'
+const ALLOW_HEADERS = 'content-type, accept, authorization, x-sx-install, x-sx-share, x-sx-session, x-sx-version, x-sx-tier'
+// response headers the web app's script may read
+const EXPOSE_HEADERS = 'x-sx-model'
 
 export function allowedOrigin(origin: string): boolean {
   return ORIGINS.has(origin)
@@ -418,7 +455,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const origin = req.headers.get('origin')
   if (origin === null) return route(req, env)
   if (!allowedOrigin(origin)) return fail(403, 'origin_refused', 'mimir does not take calls from this page.')
-  const cors = { 'access-control-allow-origin': origin, vary: 'Origin' }
+  const cors = { 'access-control-allow-origin': origin, vary: 'Origin', 'access-control-expose-headers': EXPOSE_HEADERS }
   if (req.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: { ...cors, 'access-control-allow-methods': 'GET, POST', 'access-control-allow-headers': ALLOW_HEADERS, 'access-control-max-age': '600' } })
   }

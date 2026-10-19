@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // What mimir may send through the proxy. The request is rebuilt from an allowlist, never
-// forwarded as is: the model is pinned, the reply and web searches are capped, thinking is
+// forwarded as is: the model is the one the proxy picked for the turn, the reply and web searches are capped, thinking is
 // adaptive, only the app's own tools and web search pass, and cache points sit on the
 // tools and system prompt so every turn after the first reads them from the cache.
 
+// the base model, for every turn the edition does not step up (migrations/0028_mimir_step_up.sql)
 export const MODEL = 'claude-haiku-5-5'
 export const MAX_OUTPUT = 8192
 export const MAX_SEARCHES = 3
@@ -13,7 +14,8 @@ export const MAX_BODY_BYTES = 24_000_000
 const MAX_MESSAGES = 400
 const MAX_TOOLS = 128
 const MAX_BREAKPOINTS = 4
-// the most one image can cost on Haiku 5.5's vision tier, in tokens
+// the most one image can cost on Haiku 5.5's vision tier, in tokens, kept as the worst case for a
+// step-up turn too
 const IMAGE_TOKENS = 4784
 // what the provider adds for tool use, in tokens, rounded up
 const TOOL_OVERHEAD = 1000
@@ -274,14 +276,15 @@ export function worstInput(prompt: number, maxOutput: number, searches: number):
   return (searches + 1) * Math.min(prompt + maxOutput + searches * SEARCH_RESULT_TOKENS, CONTEXT_TOKENS)
 }
 
-export function shape(raw: unknown): Shaped {
+/** `model`: the turn's model, which the proxy picked (never the client's `model` field). */
+export function shape(raw: unknown, model: string = MODEL): Shaped {
   try {
     if (!isObj(raw)) refuse('the body must be a JSON object')
     const r = raw as Obj
     const asked = typeof r['max_tokens'] === 'number' && r['max_tokens'] > 0 ? Math.floor(r['max_tokens']) : MAX_OUTPUT
     const maxOutput = Math.min(asked, MAX_OUTPUT)
     const t = tools(r['tools'])
-    const body: Obj = { model: MODEL, max_tokens: maxOutput, stream: true, messages: messages(r['messages']) }
+    const body: Obj = { model, max_tokens: maxOutput, stream: true, messages: messages(r['messages']) }
     const sys = system(r['system'])
     if (sys) body['system'] = sys
     if (t.list.length > 0) {

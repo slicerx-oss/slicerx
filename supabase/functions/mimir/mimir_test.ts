@@ -19,9 +19,15 @@ const ok = (raw: unknown) => {
 }
 const base = (extra: Obj = {}) => ({ messages: [{ role: 'user', content: 'a 20 mm cube' }], ...extra })
 
+const SONNET = 'claude-sonnet-5-5'
+
 Deno.test('the model is pinned and the reply capped', () => {
   const s = ok(base({ model: 'claude-opus-5-5', max_tokens: 100000 }))
   assertEquals(s.body['model'], MODEL)
+  // the turn's model is the proxy's pick, whatever the client names
+  const picked = shape(base({ model: 'claude-opus-5-5' }), SONNET)
+  assert(picked.ok)
+  assertEquals(picked.body['model'], SONNET)
   assertEquals(s.body['max_tokens'], MAX_OUTPUT)
   assertEquals(s.body['stream'], true)
   assertEquals(ok(base({ max_tokens: 500 })).body['max_tokens'], 500)
@@ -289,7 +295,7 @@ Deno.test('the passed-on stream folds cache counts into the input count', () => 
 // A fake database and provider, recording what reaches them.
 const QUOTA_V1 = { edition: 'slicerx', day: '2026-10-13', install_used: 250000, install_cap: 1000000, ip_used: 250000, ip_cap: 2000000, edition_open: true }
 const USAGE = { day: { used: 0.25, resetsAt: '2026-10-13T13:00:00Z' }, hourly: Array.from({ length: 24 }, (_, i) => (i === 23 ? 0.25 : 0)), daily: [0, 0, 0.1, 0, 0, 0.4, 0.25], perMinute: { limit: 10 } }
-function harness(opts: { reserve?: (args: Obj) => Response; upstream?: () => Response; count?: (body: Obj) => Response; forget?: () => Response } = {}) {
+function harness(opts: { reserve?: (args: Obj) => Response; upstream?: () => Response; count?: (body: Obj) => Response; forget?: () => Response; turnModel?: (args: Obj) => Response } = {}) {
   const calls: { fn: string; args: Obj }[] = []
   const sent: { url: string; headers: Headers; body: Obj }[] = []
   const pending: Promise<unknown>[] = []
@@ -314,6 +320,7 @@ function harness(opts: { reserve?: (args: Obj) => Response; upstream?: () => Res
         if (fn === 'mimir_quota') return Response.json([QUOTA_V1])
         if (fn === 'mimir_usage') return Response.json(USAGE)
         if (fn === 'mimir_user_token') return Response.json('b'.repeat(64))
+        if (fn === 'mimir_turn_model') return opts.turnModel?.(body) ?? Response.json(MODEL)
         return Response.json(null)
       }
       sent.push({ url, headers: new Headers(init?.headers), body })
@@ -348,6 +355,106 @@ Deno.test('a call reserves, streams through, and settles what it used', async ()
   assertEquals(h.sent[0]!.url, 'http://provider/v1/messages')
   assertEquals(h.sent[0]!.headers.get('x-api-key'), 'sk-ant-test')
   assertEquals(h.sent[0]!.body['model'], MODEL)
+})
+
+// The turn's model: the base model unless the client asks for the step tier and the database
+// (mimir_turn_model) answers the edition's step-up model.
+const STEP = { 'x-sx-install': TOKEN, 'x-sx-tier': 'step' }
+const SAVED = ['mimir_reserve', 'mimir_settle', 'mimir_save_chat']
+const toSonnet = () => Response.json(SONNET)
+
+Deno.test('a step hint gets the step-up model', async () => {
+  const h = harness({ turnModel: toSonnet })
+  const res = await handle(post('/v1/messages', base(), STEP), h.env)
+  assertEquals(res.status, 200)
+  assertEquals(res.headers.get('x-sx-model'), SONNET)
+  await res.text()
+  await Promise.all(h.pending)
+  assertEquals(h.calls.map((c) => c.fn), ['mimir_install_edition', 'mimir_turn_model', ...SAVED])
+  assertEquals(h.calls[1]!.args, { p_edition: 'slicerx', p_tier: 'step' })
+  assertEquals(h.sent[0]!.body['model'], SONNET)
+  // an edition without a step-up gets the base model from the database, and the turn goes on as usual
+  const none = harness({ turnModel: () => Response.json(MODEL) })
+  const plain = await handle(post('/v1/messages', base(), STEP), none.env)
+  assertEquals([plain.status, plain.headers.get('x-sx-model')], [200, MODEL])
+  await plain.text()
+  assertEquals(none.sent[0]!.body['model'], MODEL)
+  // so does a lookup that fails: a step-up never costs a turn
+  const down = harness({ turnModel: () => Response.json({ message: 'no' }, { status: 500 }) })
+  const fallback = await handle(post('/v1/messages', base(), STEP), down.env)
+  assertEquals([fallback.status, fallback.headers.get('x-sx-model')], [200, MODEL])
+  await fallback.text()
+  assertEquals(down.sent[0]!.body['model'], MODEL)
+})
+
+Deno.test('a signed-in member asks for a step-up as the web edition', async () => {
+  const h = webHarness()
+  const res = await handle(post('/v1/messages', base(), { ...bearer(await session()), 'x-sx-tier': 'step' }), h.env)
+  assertEquals(res.status, 200)
+  await res.text()
+  await Promise.all(h.pending)
+  // the edition is known from the session, so there is no install lookup
+  assertEquals(h.calls.map((c) => c.fn), ['mimir_user_token', 'mimir_turn_model', ...SAVED])
+  assertEquals(h.calls[1]!.args, { p_edition: 'slicerx-web', p_tier: 'step' })
+})
+
+Deno.test('a client model id is still ignored', async () => {
+  // the model comes from mimir_turn_model, never the body
+  const h = harness({ turnModel: toSonnet })
+  await (await handle(post('/v1/messages', base({ model: 'claude-opus-5-5' }), STEP), h.env)).text()
+  assertEquals(h.sent[0]!.body['model'], SONNET)
+  // the base tier, no tier and an unknown tier take the base model without asking the database
+  for (const tier of ['base', null, 'opus', 'STEP']) {
+    const b = harness({ turnModel: toSonnet })
+    const headers: Record<string, string> = { 'x-sx-install': TOKEN }
+    if (tier) headers['x-sx-tier'] = tier
+    const res = await handle(post('/v1/messages', base({ model: 'claude-opus-5-5' }), headers), b.env)
+    assertEquals(res.headers.get('x-sx-model'), MODEL, String(tier))
+    await res.text()
+    assertEquals(b.sent[0]!.body['model'], MODEL, String(tier))
+    assert(!b.calls.some((c) => c.fn === 'mimir_turn_model'), String(tier))
+  }
+})
+
+Deno.test('a capped install falls back to the base model', async () => {
+  const capped = (args: Obj) =>
+    args['p_model'] === SONNET ? Response.json({ message: 'daily limit', hint: 'install_daily' }, { status: 400 }) : Response.json('33333333-3333-3333-3333-333333333333')
+  const h = harness({ turnModel: toSonnet, reserve: capped })
+  const res = await handle(post('/v1/messages', base(), STEP), h.env)
+  assertEquals(res.status, 200)
+  assertEquals(res.headers.get('x-sx-model'), MODEL)
+  await res.text()
+  await Promise.all(h.pending)
+  // the step-up model at the byte count and the exact count, then once on the base model
+  assertEquals(h.calls.filter((c) => c.fn === 'mimir_reserve').map((c) => c.args['p_model']), [SONNET, SONNET, MODEL])
+  assertEquals(h.sent.filter((x) => x.url.endsWith('/v1/messages')).map((x) => x.body['model']), [MODEL])
+  assertEquals(h.calls.find((c) => c.fn === 'mimir_settle')!.args['p_model'], MODEL)
+  assertEquals(h.calls.find((c) => c.fn === 'mimir_save_chat')!.args['p_model'], MODEL)
+  assert(!h.calls.some((c) => c.fn === 'mimir_refused'), 'a turn that went ahead is not a refusal')
+  // when the base model does not fit either, the cap answers, counted once
+  const full = harness({ turnModel: toSonnet, reserve: () => Response.json({ message: 'daily limit', hint: 'edition_daily' }, { status: 400 }) })
+  const refused = await handle(post('/v1/messages', base(), STEP), full.env)
+  assertEquals(refused.status, 429)
+  assertEquals(full.calls.filter((c) => c.fn === 'mimir_reserve').map((c) => c.args['p_model']), [SONNET, SONNET, MODEL, MODEL])
+  assertEquals(full.calls.filter((c) => c.fn === 'mimir_refused').length, 1)
+  assert(!full.sent.some((x) => x.url.endsWith('/v1/messages')))
+  // a refusal that is not a daily cap is final, on any model
+  const busy = harness({ turnModel: toSonnet, reserve: () => Response.json({ message: 'no', hint: 'install_busy' }, { status: 400 }) })
+  assertEquals((await handle(post('/v1/messages', base(), STEP), busy.env)).status, 429)
+  assertEquals(busy.calls.filter((c) => c.fn === 'mimir_reserve').map((c) => c.args['p_model']), [SONNET])
+})
+
+Deno.test('reserve, settle and save use the turn\'s model', async () => {
+  const h = harness({ turnModel: toSonnet })
+  await (await handle(post('/v1/messages', base(), STEP), h.env)).text()
+  await Promise.all(h.pending)
+  for (const fn of SAVED) assertEquals(h.calls.find((c) => c.fn === fn)!.args['p_model'], SONNET, fn)
+  // and the exact count asks about the turn's model
+  const capped = harness({ turnModel: toSonnet, reserve: (a) => (a['p_input'] === 10 ? Response.json('44444444-4444-4444-4444-444444444444') : Response.json({ message: 'daily limit', hint: 'install_daily' }, { status: 400 })) })
+  await (await handle(post('/v1/messages', base(), STEP), capped.env)).text()
+  await Promise.all(capped.pending)
+  assertEquals(capped.sent.find((x) => x.url.endsWith('/count_tokens'))!.body['model'], SONNET)
+  assertEquals(capped.calls.find((c) => c.fn === 'mimir_settle')!.args['p_model'], SONNET)
 })
 
 Deno.test('the client never sets provider headers', async () => {
@@ -802,9 +909,13 @@ Deno.test('browsers call from the web app only, with CORS on every answer', asyn
   assertEquals(pre.headers.get('access-control-allow-origin'), 'https://slicerx.app')
   assertMatch(pre.headers.get('access-control-allow-headers') ?? '', /x-sx-install/)
   assertMatch(pre.headers.get('access-control-allow-headers') ?? '', /x-sx-session/)
+  assertMatch(pre.headers.get('access-control-allow-headers') ?? '', /x-sx-tier/)
   // the stream and a refusal both carry it, so the page can read either
   const res = await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN, origin: 'https://slicerx.app' }), h.env)
   assertEquals(res.headers.get('access-control-allow-origin'), 'https://slicerx.app')
+  // the page may read which model answered
+  assertMatch(res.headers.get('access-control-expose-headers') ?? '', /x-sx-model/)
+  assertEquals(res.headers.get('x-sx-model'), MODEL)
   assertMatch(await res.text(), /A 20 mm /)
   await Promise.all(h.pending)
   const bad = await handle(post('/register', { edition: 'Bad Edition', key: 'k'.repeat(20) }, { origin: 'https://slicerx.app' }), h.env)
