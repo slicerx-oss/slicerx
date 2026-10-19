@@ -6,7 +6,7 @@
 import type { PilotEvent } from '@slicerx/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mimirTools, scriptedMimir, type MimirScript } from '../src/workspaces/mimir/scripted'
-import { clearPlans, editPlan, PartPlanSchema, planById, planChoiceId, planOfChoices, planTool, shownPlan, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
+import { clearPlans, editPlan, PartPlanSchema, PLAN_KEEP, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, planTool, samePlan, shownPlan, type PartPlan, type PlanInput } from '../src/workspaces/mimir/plan-tool'
 
 afterEach(clearPlans)
 
@@ -115,6 +115,71 @@ describe('design.plan', () => {
     expect(planById(planId)!.features).toHaveLength(2)
     expect(planOfChoices([{ id: 'same' }, { id: 'other' }])).toBeNull()
     expect(planOfChoices([{ id: 'go:plan_unknown' }])).toBeNull()
+  })
+
+  it('refuses a size of 0 or less, or past the largest a plan takes, before any card shows', async () => {
+    const bad = [
+      { ...BOX, features: [{ name: 'Body', sizes: { wall: -2 } }] },
+      { ...BOX, features: [{ name: 'Body', sizes: { wall: 0 } }] },
+      { ...BOX, features: [{ name: 'Body', sizes: { width: PLAN_SIZE_MAX + 1 } }] },
+      { ...BOX, holes: [{ name: 'Vent', diameter: -5 }] },
+      { ...BOX, overall: { x: 80, y: 0, z: 44 } },
+    ]
+    for (const args of bad) {
+      const ev = await run(args, () => 'x')
+      expect(ev.some((e) => e.type === 'ask')).toBe(false)
+      expect(result(ev).summary).toMatch(/Invalid arguments/)
+    }
+  })
+
+  it('a negative or out-of-range edit is refused and the registry keeps the size it had', async () => {
+    let planId = ''
+    const ev = await run(BOX, (e) => {
+      planId = planOfChoices(e.choices)!
+      const plan = planById(planId)!
+      const withWall = (wall: number): PartPlan => ({ ...plan, features: plan.features.map((f, i) => (i === 0 ? { ...f, sizes: { ...f.sizes, wall } } : f)) })
+      expect(editPlan(planId, withWall(-1))).toBe(false)
+      expect(editPlan(planId, withWall(0))).toBe(false)
+      expect(editPlan(planId, withWall(PLAN_SIZE_MAX * 2))).toBe(false)
+      expect(planById(planId)!.features[0]!.sizes.wall).toBe(2)
+      return planChoiceId('go', planId)
+    })
+    expect(result(ev).output).toEqual({ planId, accepted: true })
+  })
+
+  it('compares plans by content, whatever order their keys came in', () => {
+    const a: PartPlan = { planId: 'p', ...BOX }
+    const b = JSON.parse(JSON.stringify({ questions: [], assumptions: a.assumptions, features: a.features.map((f) => ({ sizes: Object.fromEntries(Object.entries(f.sizes).reverse()), name: f.name, ...(f.kind ? { kind: f.kind } : {}) })), units: 'mm', part: a.part, planId: 'p' })) as PartPlan
+    expect(samePlan(a, b)).toBe(true)
+    expect(samePlan(a, { ...b, units: 'in' })).toBe(false)
+  })
+
+  it(`keeps the last ${PLAN_KEEP} plans, the oldest going first`, async () => {
+    const tool = planTool()
+    const ids: string[] = []
+    const ctx = { ask: async (q: { choices: { id: string }[] }) => q.choices[1]!.id } as never
+    for (let n = 0; n <= PLAN_KEEP; n++) {
+      const out = await tool.run(BOX as never, ctx)
+      ids.push((out.output as { planId: string }).planId)
+    }
+    expect(new Set(ids).size).toBe(PLAN_KEEP + 1)
+    expect(planById(ids[0]!)).toBeNull()
+    expect(shownPlan(ids[0]!)).toBeNull()
+    for (const id of ids.slice(1)) expect(planById(id)).not.toBeNull()
+  })
+
+  it('a plan id with colons in it still finds its plan', async () => {
+    const tool = planTool({ newId: () => 'plan:with:colons' })
+    let seen: string | null = null
+    const out = await tool.run(BOX as never, {
+      ask: async (q: { choices: { id: string }[] }) => {
+        seen = planOfChoices(q.choices)
+        return q.choices[0]!.id
+      },
+    } as never)
+    expect(seen).toBe('plan:with:colons')
+    expect(out.output).toEqual({ planId: 'plan:with:colons', accepted: true })
+    expect(planChoiceId('go', 'plan:with:colons')).toBe('go:plan:with:colons')
   })
 
   it('without anyone to answer, it says so', async () => {

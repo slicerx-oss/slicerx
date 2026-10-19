@@ -7,7 +7,7 @@
 import type { ChoiceCardProps } from '@slicerx/pilot/ui'
 import { Button, Icon, ScrubNumber } from '@slicerx/ui'
 import { useState, type ReactNode } from 'react'
-import { editPlan, PLAN_CHANGE, PLAN_GO, planById, planChoiceId, planOfChoices, shownPlan, type PartPlan } from './plan-tool'
+import { editPlan, PLAN_CHANGE, PLAN_GO, PLAN_SIZE_MAX, planById, planChoiceId, planOfChoices, samePlan, shownPlan, type PartPlan } from './plan-tool'
 
 /** A size's key in plain words: "wall_thickness" and "wallThickness" read "Wall thickness". */
 export function plainLabel(key: string): string {
@@ -20,6 +20,8 @@ export function plainLabel(key: string): string {
 }
 
 const UNIT_WORD = { mm: 'millimeters', in: 'inches' } as const
+/** The smallest size a field takes: one step of its last digit, so a size is always more than 0. */
+const SIZE_MIN = { mm: 0.01, in: 0.001 } as const
 
 /** Where a size sits in the plan, for editing it. */
 type SizeAt = { kind: 'feature'; index: number; key: string } | { kind: 'overall'; axis: 'x' | 'y' | 'z' } | { kind: 'hole'; index: number }
@@ -56,18 +58,22 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
   const chosen = picked ?? sent
   const live = chosen === null && actionable && onChoose !== undefined
   const go = planChoiceId(PLAN_GO, plan.planId)
-  const edits = JSON.stringify(plan) !== JSON.stringify(shown)
+  const edits = !samePlan(plan, shown)
   const unit = plan.units
 
   const edit = (at: SizeAt, value: number): void => {
     const next = withSize(plan, at, value)
-    setPlan(next)
-    editPlan(next.planId, next)
+    // the card only shows what the plan kept; a size the plan turns down leaves the field as it was
+    if (editPlan(next.planId, next)) {
+      setPlan(next)
+      setNote(null)
+    } else setNote(`That size was not kept. Sizes are more than 0 and up to ${PLAN_SIZE_MAX} ${unit}.`)
   }
 
   const answer = (id: string): void => {
     if (!live) return
     if (id === go) editPlan(plan.planId, plan)
+    setNote(null)
     setSent(id)
     onChoose(askId, id).catch((e: unknown) => {
       setSent(null)
@@ -83,7 +89,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
       </label>
       {live ? (
         <span className="sheet-rec-field">
-          <ScrubNumber id={id} value={value} ariaLabel={`${group}, ${label}, ${UNIT_WORD[unit]}`} digits={unit === 'in' ? 3 : 2} step={unit === 'in' ? 0.05 : 0.5} boxed={false} onCommit={(v) => edit(at, v)} />
+          <ScrubNumber id={id} value={value} ariaLabel={`${group}, ${label}, ${UNIT_WORD[unit]}`} digits={unit === 'in' ? 3 : 2} step={unit === 'in' ? 0.05 : 0.5} min={SIZE_MIN[unit]} max={PLAN_SIZE_MAX} boxed={false} onCommit={(v) => edit(at, v)} />
           <span className="sheet-rec-unit">{unit}</span>
         </span>
       ) : (
@@ -104,7 +110,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
           <Icon name="list" />
           <span>Plan: {plan.part}</span>
         </span>
-        <span className="plan-rec-units">Sizes in {unit}</span>
+        <span className="plan-rec-units">Sizes in {UNIT_WORD[unit]}</span>
       </div>
       <ol className="plan-rec-features">
         {plan.features.map((f, i) => (
