@@ -65,8 +65,10 @@ export function inlineLogo(config: EditionConfig, configFile: string): EditionCo
  */
 export function editionKnowledgeFiles(config: EditionConfig, configFile: string): string[] {
   const folder = realpathSync(dirname(resolve(configFile)))
+  // Windows paths compare without case: C:\Editions\harbor is the same folder as c:\editions\Harbor
+  const fold = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
   const inside = (p: string): boolean => {
-    const rel = relative(folder, p)
+    const rel = relative(fold(folder), fold(p))
     return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
   }
   const out = new Set<string>()
@@ -83,6 +85,7 @@ export function editionKnowledgeFiles(config: EditionConfig, configFile: string)
   }
   for (const entry of config.ai.brain.knowledge ?? []) {
     const path = resolve(folder, entry)
+    if (fold(path) === fold(folder)) throw new Error(`ai.brain.knowledge: ${entry}: name a folder or file inside the edition`)
     if (!existsSync(path)) throw new Error(`ai.brain.knowledge: ${entry} not found: ${path}`)
     visit(entry, path)
   }

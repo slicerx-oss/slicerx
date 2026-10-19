@@ -3,10 +3,10 @@
 // Compiles knowledge/**/*.yaml into src/kb/generated/kb.json so the browser,
 // the desktop app and the evals share one index without a YAML parser at
 // runtime, and each edition's own knowledge (ai.brain.knowledge in
-// editions/*/edition.config.ts) into src/kb/generated/edition-kb.json, every
-// entry tagged with its edition's id. Run after either changes:
+// editions/*/edition.config.ts) into src/kb/generated/edition-kb.<id>.json,
+// one file per edition with every entry tagged with its id. Run after either changes:
 // pnpm --filter @slicerx/pilot kb:build
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
@@ -17,7 +17,9 @@ const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..', '..', '..')
 const root = join(repo, 'knowledge')
 const outFile = join(here, '..', 'src', 'kb', 'generated', 'kb.json')
-const editionOutFile = join(here, '..', 'src', 'kb', 'generated', 'edition-kb.json')
+const generated = join(here, '..', 'src', 'kb', 'generated')
+/** Where one edition's own knowledge goes; each edition's build ships only its own file. */
+export const editionKbFile = (id: string): string => join(generated, `edition-kb.${id}.json`)
 
 const KIND: Record<string, KbKind> = {
   filament: 'filament',
@@ -177,10 +179,10 @@ export function compileKnowledge(files: readonly string[], base: string, edition
  * One edition's own knowledge (ai.brain.knowledge in its config file), tagged with its id. Throws when a path is
  * missing or leaves the edition folder, through `..`, an absolute path or a link.
  */
-export async function editionKnowledge(configFile: string): Promise<Compiled> {
+export async function editionKnowledge(configFile: string): Promise<Compiled & { id: string }> {
   const config = await loadEditionConfig({ file: configFile, env: {} })
   const files = editionKnowledgeFiles(config, configFile)
-  return compileKnowledge(files, realpathSync(dirname(resolve(configFile))), config.id)
+  return { id: config.id, ...compileKnowledge(files, realpathSync(dirname(resolve(configFile))), config.id) }
 }
 
 function report(name: string, out: string, { index, problems, missing }: Compiled): void {
@@ -195,23 +197,23 @@ async function main(): Promise<void> {
   writeFileSync(outFile, `${JSON.stringify(bundled.index)}\n`)
   report('kb', outFile, bundled)
 
-  // one index for every edition's own knowledge; each entry names its edition, and a knowledge base only takes its own
+  // one file per edition, so a build ships its own edition's docs and no other's
   const editions = join(repo, 'editions')
-  const all: KbIndex = { schema: 1, docs: [], sources: [], prefixes: [], settings: [], skills: [] }
-  const problems: string[] = []
-  const missing = new Set<string>()
+  const written = new Set<string>()
   for (const name of existsSync(editions) ? readdirSync(editions).sort() : []) {
     const configFile = join(editions, name, 'edition.config.ts')
     if (!existsSync(configFile)) continue
     const one = await editionKnowledge(configFile)
-    all.docs.push(...one.index.docs)
-    all.sources.push(...one.index.sources)
-    all.prefixes.push(...one.index.prefixes)
-    problems.push(...one.problems.map((p) => `${name}/${p}`))
-    for (const m of one.missing) missing.add(m)
+    const out = editionKbFile(one.id)
+    writeFileSync(out, `${JSON.stringify(one.index)}\n`)
+    written.add(out)
+    report(`edition kb ${one.id}`, out, one)
   }
-  writeFileSync(editionOutFile, `${JSON.stringify(all)}\n`)
-  report('edition kb', editionOutFile, { index: all, problems, missing })
+  // an edition that is gone, or renamed, leaves no file behind
+  for (const name of readdirSync(generated)) {
+    const file = join(generated, name)
+    if (/^edition-kb\..+\.json$/.test(name) && !written.has(file)) rmSync(file)
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()

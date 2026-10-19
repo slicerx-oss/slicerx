@@ -43,11 +43,11 @@ export function tierForPrompt(prompt: string): Tier {
 /** The provider id of mimir cloud (provider/client.ts), whose proxy picks the model whatever the config routes. */
 const CLOUD_PROVIDER = 'mimir-cloud'
 
-/** The edition's routing when it applies: the person's own key, for the provider it names (or either). */
+/** The edition's routing when it applies: the person's own key, for the provider it names. */
 function ownKeyRouting(config: Partial<Pick<PilotConfig, 'provider' | 'billing' | 'routing'>>): PilotConfig['routing'] {
   const r = config.routing
   if (!r || config.billing !== 'key' || config.provider === CLOUD_PROVIDER) return undefined
-  return !r.provider || r.provider === config.provider ? r : undefined
+  return r.provider !== undefined && r.provider === config.provider ? r : undefined
 }
 
 /**

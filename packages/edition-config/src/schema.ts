@@ -172,7 +172,7 @@ export type BrainToolGroup = (typeof BRAIN_TOOL_GROUPS)[number]
 const editionPath = z.string().trim().min(1).refine(
   (p) => !/^([\\/~]|[a-zA-Z]:)/.test(p) && !p.split(/[\\/]/).includes('..'),
   'a path inside the edition folder, relative to the config file, without ..',
-)
+).refine((p) => p.split(/[\\/]/).some((s) => s !== '' && s !== '.'), 'name a folder or file inside the edition')
 
 /** How the edition's assistant talks, when it steps up to a larger cloud model, and what it remembers. Its name is brand.assistant.name. */
 export const brainSchema = z.object({
@@ -194,11 +194,15 @@ export const brainSchema = z.object({
   tools: z.object(Object.fromEntries(BRAIN_TOOL_GROUPS.map((g) => [g, z.boolean().optional()])) as Record<BrainToolGroup, z.ZodOptional<z.ZodBoolean>>).strict().optional(),
   /** The models for the person's own key: base for quick looks, step for deep thinking. mimir cloud ignores it; its proxy picks the model. */
   routing: z.object({
-    /** Only a key for this provider follows the routing. Unset: either. */
+    /** The provider these models are for; only a key for it follows the routing. Required with base or step. */
     provider: z.enum(['anthropic', 'openai']).optional(),
     base: z.string().min(1).optional(),
     step: z.string().min(1).optional(),
-  }).strict().optional(),
+  }).strict().superRefine((r, ctx) => {
+    if ((r.base !== undefined || r.step !== undefined) && r.provider === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['provider'], message: 'routing that names base or step models needs a provider (anthropic or openai)' })
+    }
+  }).optional(),
 })
 
 export const aiSchema = z.object({

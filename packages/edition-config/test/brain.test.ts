@@ -46,6 +46,11 @@ describe('ai.brain', () => {
 
   it('knowledge paths must stay inside the edition folder', () => {
     expect(check({ knowledge: ['knowledge', 'guides/dock.yaml', './more'] }).ok).toBe(true)
+    for (const path of ['.', './', '././', '.\\']) {
+      const r = check({ knowledge: [path] })
+      expect(r.ok, path).toBe(false)
+      if (!r.ok) expect(r.issues).toContainEqual({ path: 'ai.brain.knowledge.0', message: 'name a folder or file inside the edition' })
+    }
     for (const path of ['../other', 'guides/../../other', '/etc/kb', 'C:/kb', 'C:\\kb', '\\\\server\\kb', 'guides\\..\\..\\x', '~/kb']) {
       const r = check({ knowledge: [path] })
       expect(r.ok, path).toBe(false)
@@ -70,6 +75,9 @@ describe('ai.brain', () => {
     symlinkSync(join(dir, 'outside', 'other.yaml'), join(edition, 'own', 'other.yaml'))
     expect(() => files(['own'])).toThrow(/outside the edition folder/)
     expect(() => files(['missing'])).toThrow(/not found/)
+    // past the schema too: the edition folder itself is not a knowledge entry
+    const whole = defineEditionConfig({})
+    expect(() => editionKnowledgeFiles({ ...whole, ai: { ...whole.ai, brain: { ...whole.ai.brain, knowledge: ['.'] } } }, configFile)).toThrow(/name a folder or file inside the edition/)
   })
 
   it('groups cannot add tools', () => {
@@ -84,7 +92,13 @@ describe('ai.brain', () => {
   it('routing names an own-key provider and its models', () => {
     expect(check({ routing: { provider: 'openai', base: 'gpt-6-luna', step: 'gpt-6-sol' } }).ok).toBe(true)
     expect(check({ routing: { provider: 'mimir-cloud' } }).ok).toBe(false)
-    expect(check({ routing: { base: '' } }).ok).toBe(false)
+    expect(check({ routing: { provider: 'openai', base: '' } }).ok).toBe(false)
+    expect(check({ routing: { provider: 'anthropic' } }).ok).toBe(true)
+    for (const routing of [{ base: 'gpt-6-luna' }, { step: 'gpt-6-sol' }]) {
+      const r = check({ routing })
+      expect(r.ok).toBe(false)
+      if (!r.ok) expect(r.issues).toContainEqual({ path: 'ai.brain.routing.provider', message: 'routing that names base or step models needs a provider (anthropic or openai)' })
+    }
     expect(check({ routing: { model: 'gpt-6-sol' } }).ok).toBe(false)
   })
 })

@@ -5,6 +5,7 @@
 // surface uses: the docked chat keeps its chat tools and text_to_part as the way into a design, without make_model.
 // An edition can also switch whole tool groups off (ai.brain.tools); a switch only ever takes tools away.
 import type { PilotConfig } from '@slicerx/contracts'
+import type { PilotTool } from './tool'
 
 /** Where a mimir runs: the docked chat beside the plate. */
 export type ToolSurface = 'dock'
@@ -81,7 +82,6 @@ const GROUP_OF: Record<string, ToolGroup> = {
   'print.adjust': 'watch',
   // painting color, seams, supports and fuzzy skin onto a part
   multicolor_assign: 'paint',
-  web_search: 'web',
 }
 
 /** Name prefixes of whole tool families. */
@@ -96,18 +96,45 @@ const GROUP_PREFIX: readonly [string, ToolGroup][] = [
   ['web.', 'web'],
 ]
 
-/** The group a tool is switched with, by its name. */
-export function toolGroupOf(toolName: string): ToolGroup {
-  if (Object.hasOwn(GROUP_OF, toolName)) return GROUP_OF[toolName]!
-  return GROUP_PREFIX.find(([p]) => toolName.startsWith(p))?.[1] ?? 'core'
+/**
+ * Connected apps (packages/app/src/connected-apps/registry.ts) that work on the printers: sending prints (BamBuddy),
+ * the spools in their slots (Spoolman) and the plugs and fans around them (Home Assistant). Their tools switch with
+ * printers.
+ */
+export const PRINTER_APPS: ReadonlySet<string> = new Set(['bambuddy', 'spoolman', 'home-assistant'])
+
+/** What a tool's group is read from: its name, and where a plugin or app command tool came from. */
+export type GroupedTool = Pick<PilotTool, 'name'> & Partial<Pick<PilotTool, 'source' | 'permission' | 'plugin' | 'command' | 'printerFor' | 'approval'>>
+
+/** An app command's group: printer commands with printers, plate and slice changes with slicing, design changes with design. */
+function commandGroup(c: NonNullable<PilotTool['command']>, permission: PilotTool['permission'] | undefined): ToolGroup {
+  if (c.section === 'printers' || permission === 'start' || permission === 'queue' || permission === 'printer_config') return 'printers'
+  // a command that changes nothing (go to a tab, step a layer) stays whatever is switched off
+  if (!permission || permission === 'read') return 'core'
+  if (c.workspace === 'design') return 'design'
+  if (permission === 'slice' || permission === 'profile' || c.section === 'plate' || c.section === 'slice') return 'slicing'
+  return 'core'
+}
+
+/**
+ * The group a tool is switched with. A plugin's tool goes by its manifest: a printer connector or a connected app
+ * that works on the printers is printers, and so is any other plugin tool that can reach a printer or ask for an
+ * approval. An app command goes by its permission and section. Every other tool goes by its name.
+ */
+export function toolGroupOf(tool: GroupedTool): ToolGroup {
+  if (tool.plugin && (tool.plugin.kind === 'printer' || PRINTER_APPS.has(tool.plugin.id))) return 'printers'
+  if (tool.source === 'plugin' && (tool.printerFor || tool.approval)) return 'printers'
+  if (tool.command) return commandGroup(tool.command, tool.permission)
+  if (Object.hasOwn(GROUP_OF, tool.name)) return GROUP_OF[tool.name]!
+  return GROUP_PREFIX.find(([p]) => tool.name.startsWith(p))?.[1] ?? 'core'
 }
 
 /** `tools` without the groups the edition switched off, in order. Switches never add a tool, and core stays. */
-export function applyToolGroups<T extends { name: string }>(tools: readonly T[], groups: ToolGroups | undefined): T[] {
+export function applyToolGroups<T extends GroupedTool>(tools: readonly T[], groups: ToolGroups | undefined): T[] {
   const off = new Set(TOOL_GROUPS.filter((g) => groups?.[g] === false))
   if (off.size === 0) return [...tools]
   return tools.filter((t) => {
-    const g = toolGroupOf(t.name)
+    const g = toolGroupOf(t)
     return g === 'core' || !off.has(g)
   })
 }
