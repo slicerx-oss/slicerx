@@ -90,6 +90,41 @@ describe('designCheck', () => {
     expect(designCheck(noList, built, 0.4).pass).toBe(true)
   })
 
+  it('a row with a count stands for that many holes: four 3.4 mm holes pass as one row', () => {
+    const motor: PartPlan = { ...bracket, holes: [{ name: 'motor screw holes', diameter: 3.4, count: 4 }, { name: 'pilot', diameter: 22 }] }
+    const four = { ...built, holes: [{ diameterMm: 3.42 }, { diameterMm: 22 }, { diameterMm: 3.4 }, { diameterMm: 3.38 }, { diameterMm: 3.41 }] }
+    const r = designCheck(motor, four, 0.4)
+    expect(r.pass).toBe(true)
+    expect(r.items.map((i) => i.name)).toEqual(['overall size', 'motor screw holes', 'pilot', 'feature count', 'watertight', 'minimum wall'])
+    expect(r.items[1]).toEqual({ name: 'motor screw holes', want: '4 x 3.4 mm diameter', got: '3.38 mm, 3.4 mm, 3.41 mm, 3.42 mm diameter', pass: true })
+    expect(designCheck(motor, { ...four, holes: [{ diameterMm: 22 }, ...Array(4).fill({ diameterMm: 3.4 })] }, 0.4).items[1]!.got).toBe('4 x 3.4 mm diameter')
+  })
+
+  it('a row of four with one missing fails that row with how many are short', () => {
+    const motor: PartPlan = { ...bracket, holes: [{ name: 'motor screw holes', diameter: 3.4, count: 4 }] }
+    const r = designCheck(motor, { ...built, holes: Array(3).fill({ diameterMm: 3.4 }) }, 0.4)
+    expect(failed(r)).toEqual(['motor screw holes'])
+    expect(r.items[1]).toEqual({ name: 'motor screw holes', want: '4 x 3.4 mm diameter', got: '3 x 3.4 mm diameter (1 short)', pass: false })
+    expect(designCheck(motor, { ...built, holes: [] }, 0.4).items[1]).toMatchObject({ got: 'no holes', pass: false })
+  })
+
+  it('a row of four with one more of its size fails that row as a surplus, not as an extra hole', () => {
+    const motor: PartPlan = { ...bracket, holes: [{ name: 'motor screw holes', diameter: 3.4, count: 4 }] }
+    const r = designCheck(motor, { ...built, holes: [...Array(5).fill({ diameterMm: 3.4 }), { diameterMm: 8 }] }, 0.4)
+    expect(failed(r)).toEqual(['motor screw holes', 'extra hole, 8 mm'])
+    expect(r.items[1]).toEqual({ name: 'motor screw holes', want: '4 x 3.4 mm diameter', got: '5 x 3.4 mm diameter (1 more than planned)', pass: false })
+    // a wrong size in the row shows among its diameters
+    const wrong = designCheck(motor, { ...built, holes: [...Array(3).fill({ diameterMm: 3.4 }), { diameterMm: 4 }] }, 0.4)
+    expect(wrong.items[1]).toMatchObject({ got: '3 x 3.4 mm, 4 mm diameter', pass: false })
+  })
+
+  it('a hole count is a positive whole number, 1 when left out', () => {
+    const row = (count: unknown) => partPlanSchema.safeParse({ ...bracket, holes: [{ name: 'h', diameter: 3, count }] }).success
+    expect(row(4)).toBe(true)
+    expect(row(undefined)).toBe(true)
+    for (const bad of [0, -1, 1.5, 61, '4']) expect(row(bad), String(bad)).toBe(false)
+  })
+
   it('a wall that was not measured fails, and says why when it was on purpose', () => {
     const r = designCheck(bracket, { ...built, minWallMm: null }, 0.4)
     expect(failed(r)).toEqual(['minimum wall'])
@@ -355,41 +390,6 @@ describe('design.check picks the design it checks', () => {
   })
 })
 
-type Check = { pass: boolean; planId: string; design: string; items: { name: string; want: string; got: string; pass: boolean }[]; body: BodyFacts }
-
-const geom = useGeomEngine('design-check-replies')
-const engine = (op: string, request: unknown): Promise<unknown> => geom.engine(op, request)
-const top = (z: number) => ({ origin: [0, 0, z], normal: [0, 0, 1] })
-
-/** A 40 x 20 plate `t` mm thick with one through hole of `d` mm, planned with a 6 mm hole. */
-async function plate(t: number, d: number, plan: Partial<PartPlan> = {}) {
-  const plans = createPlanRegistry()
-  const h = await connect({ geomEngine: engine, plans })
-  const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
-    const r = await h.call(name, args)
-    expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
-    return data<{ output: T }>(r).output
-  }
-  const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Plate' })).design
-  await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, placement: { center: [20, 10] }, distance_mm: t })
-  await ok('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: d }, frame: top(t), placement: { center: [12, 10] }, distance_mm: t, operation: 'cut' })
-  plans.put({ planId: 'plate-1', part: 'Plate', units: 'mm', features: [{ name: 'plate', kind: 'extrude', sizes: { width: 40, depth: 20, thickness: t } }, { name: 'hole', kind: 'cut', sizes: { diameter: 6 } }], overall: { x: 40, y: 20, z: t }, holes: [{ name: 'mount hole', diameter: 6 }], assumptions: [], questions: [], ...plan })
-  return { h, ok, design }
-}
-
-describe('slicerx_design_check', () => {
-  it('reads the body a plate was built to and passes it against its plan', async () => {
-    const { ok, design } = await plate(5, 6)
-    const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
-    expect(r.design).toBe(design)
-    expect(r.body.size).toEqual({ x: 40, y: 20, z: 5 })
-    expect(r.body.features).toBe(2)
-    expect(r.body.watertight).toBe(true)
-    expect(r.body.holes).toHaveLength(1)
-    expect(Math.abs(r.body.holes[0]!.diameterMm - 6)).toBeLessThan(0.05)
-    // the hole sits 10 - 3 = 7 mm from the long edges and 12 - 3 = 9 mm from the near end, so the thinnest wall is the
-    // plate's 5 mm thickness
-    expect(r.body.minWallMm).toBeCloseTo(5, 2)
 describe('design.check gives a plan one fix round', () => {
   // a spacer built 5 mm tall, planned 6 mm: every check of it fails on the overall size
   const tall: PartPlan = { ...boxPlan, overall: { x: 40, y: 20, z: 6 } }
@@ -465,6 +465,41 @@ describe('design.check gives a plan one fix round', () => {
   })
 })
 
+type Check = { pass: boolean; planId: string; design: string; items: { name: string; want: string; got: string; pass: boolean }[]; body: BodyFacts }
+
+const geom = useGeomEngine('design-check-replies')
+const engine = (op: string, request: unknown): Promise<unknown> => geom.engine(op, request)
+const top = (z: number) => ({ origin: [0, 0, z], normal: [0, 0, 1] })
+
+/** A 40 x 20 plate `t` mm thick with one through hole of `d` mm, planned with a 6 mm hole. */
+async function plate(t: number, d: number, plan: Partial<PartPlan> = {}) {
+  const plans = createPlanRegistry()
+  const h = await connect({ geomEngine: engine, plans })
+  const ok = async <T,>(name: string, args: Record<string, unknown>): Promise<T> => {
+    const r = await h.call(name, args)
+    expect(r.isError, `${name}: ${text(r)}`).toBeFalsy()
+    return data<{ output: T }>(r).output
+  }
+  const design = (await ok<{ design: string }>('slicerx_design_new', { name: 'Plate' })).design
+  await ok('slicerx_geom_extrude', { design, shape: { type: 'rectangle', widthMm: 40, heightMm: 20 }, placement: { center: [20, 10] }, distance_mm: t })
+  await ok('slicerx_geom_extrude', { design, shape: { type: 'circle', diameterMm: d }, frame: top(t), placement: { center: [12, 10] }, distance_mm: t, operation: 'cut' })
+  plans.put({ planId: 'plate-1', part: 'Plate', units: 'mm', features: [{ name: 'plate', kind: 'extrude', sizes: { width: 40, depth: 20, thickness: t } }, { name: 'hole', kind: 'cut', sizes: { diameter: 6 } }], overall: { x: 40, y: 20, z: t }, holes: [{ name: 'mount hole', diameter: 6 }], assumptions: [], questions: [], ...plan })
+  return { h, ok, design }
+}
+
+describe('slicerx_design_check', () => {
+  it('reads the body a plate was built to and passes it against its plan', async () => {
+    const { ok, design } = await plate(5, 6)
+    const r = await ok<Check>('slicerx_design_check', { planId: 'plate-1' })
+    expect(r.design).toBe(design)
+    expect(r.body.size).toEqual({ x: 40, y: 20, z: 5 })
+    expect(r.body.features).toBe(2)
+    expect(r.body.watertight).toBe(true)
+    expect(r.body.holes).toHaveLength(1)
+    expect(Math.abs(r.body.holes[0]!.diameterMm - 6)).toBeLessThan(0.05)
+    // the hole sits 10 - 3 = 7 mm from the long edges and 12 - 3 = 9 mm from the near end, so the thinnest wall is the
+    // plate's 5 mm thickness
+    expect(r.body.minWallMm).toBeCloseTo(5, 2)
     expect(r.items.filter((i) => !i.pass)).toEqual([])
     expect(r.pass).toBe(true)
   })
@@ -517,6 +552,13 @@ describe('design.put_plan', () => {
     await run('design.put_plan', { plan: { ...boxPlan, overall: { x: 50, y: 20, z: 5 } } })
     expect(plans.get('box-1')?.plan.overall?.x).toBe(50)
     expect(plans.get('box-1')?.design).toBeUndefined()
+  })
+
+  it('counts a row of several holes as that many holes', async () => {
+    const { run } = tools([boxDesign('d1', 'Spacer')])
+    const kept = await run('design.put_plan', { plan: { ...boxPlan, holes: [{ name: 'corner holes', diameter: 3.4, count: 4 }, { name: 'center', diameter: 8 }] } })
+    expect(kept.output).toMatchObject({ holes: 5 })
+    expect(kept.summary).toContain('(0 features, 5 holes, 40 x 20 x 5 mm overall)')
   })
 
   it('refuses a plan off the schema or tied to a design that is not open, and keeps nothing', async () => {
