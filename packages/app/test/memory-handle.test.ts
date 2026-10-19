@@ -5,9 +5,9 @@
 // account runs at a chat's start only when signed in, offered by the edition and switched on in Settings.
 import { DEFAULT_POLICY, type PrinterHost } from '@slicerx/contracts'
 import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, type MemoryFact, type MemoryStore } from '@slicerx/pilot'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runCall, type LinkError } from '../src/app-link/methods'
-import { appMemory, bindMemoryAccount, hostMemoryAccount, memorySyncOn, pilotMemory, resetAppMemory, type MemoryAccount } from '../src/pilot-connect/memory'
+import { appMemory, bindMemoryAccount, hostMemoryAccount, memorySyncOn, pilotMemory, resetAppMemory, startAppMemory, type MemoryAccount } from '../src/pilot-connect/memory'
 import type { MemoryKeyValue } from '../src/pilot-connect/memory-sync'
 import { set } from '../src/state/store'
 
@@ -183,5 +183,30 @@ describe('memory sync with the account', () => {
     expect(hostMemoryAccount({ store }, { backend: { supabase: sb }, features: { demoData: true } } as never)).toBeNull()
     expect(hostMemoryAccount({}, { backend: { supabase: sb }, features: { demoData: false } } as never)).toBeNull()
     expect(hostMemoryAccount({ store }, { backend: { supabase: null }, features: { demoData: false } } as never)).toBeNull()
+  })
+})
+
+describe('memory from the start of the app', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('with no dock, tab or Settings mounted, the app link reads the notes, and sync runs when signed in with sync on', async () => {
+    const calls: { url: string; method: string; auth: string | null }[] = []
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      calls.push({ url, method: init?.method ?? 'GET', auth: new Headers(init?.headers).get('authorization') })
+      return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+    })
+    set({ mimirMemorySync: true })
+    const base = memStore()
+    base.facts.set('a1', { id: 'a1', kind: 'printer', text: 'Has a Bambu Lab A1', updatedAt: 50 })
+    const store = { getAccessToken: async () => 'session-token', onTokenChange: () => () => undefined }
+    const ed = { id: 'started', ai: { brain: { memory: { local: true, sync: 'opt-in' } } }, backend: { supabase: { url: 'https://project.example', anonKey: 'anon' } }, features: { demoData: false } } as never
+    startAppMemory({ store }, ed, { open: () => base, sync: { kv: kvMap(), debounceMs: 60_000 } })
+    const out = (await runCall('mimir.memory', {})) as { facts: { text: string }[] }
+    expect(out.facts.map((f) => f.text)).toEqual(['Has a Bambu Lab A1'])
+    await tick()
+    await tick()
+    expect(memorySyncOn()).toBe(true)
+    expect(calls[0]).toMatchObject({ method: 'GET', auth: 'Bearer session-token' })
+    expect(calls[0]!.url).toContain('/rest/v1/mimir_memory?select=id,fact&edition=eq.started')
   })
 })
