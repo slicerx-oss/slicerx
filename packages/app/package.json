@@ -10,6 +10,7 @@
     "./features/phone": "./src/features/phone/controller.ts",
     "./pilot-connect/agents": "./src/pilot-connect/agents.ts",
     "./pilot-connect/browser-cloud": "./src/pilot-connect/browser-cloud.ts",
+    "./pilot-connect/memory": "./src/pilot-connect/memory.ts",
     "./zod-jitless": "./src/zod-jitless.ts"
   },
   "scripts": {

@@ -733,6 +733,39 @@ test.describe('what mimir remembers', () => {
   })
 })
 
+// Signed in, where the edition offers it, Settings > Memory has Sync with my account under Save notes without asking;
+// it starts off and turns on in place. The build's stand-in account answers with no network.
+test.describe('memory sync with the account', () => {
+  test('Settings, Memory shows Sync with my account to a signed-in person, and it turns on in place', async ({ page }, info) => {
+    await ready(page, 'cloud')
+    await page.evaluate(() => sessionStorage.setItem('sx-e2e-memory-sync', 'stand-in-session'))
+    await page.reload()
+    await viewportReady(page)
+    await page.evaluate(() => (window as unknown as { __sx: { setState(s: Record<string, unknown>): void } }).__sx.setState({ settingsOpen: true, settingsSection: 'memory', mimirMemorySync: false }))
+    const memory = page.locator('.mem-sec')
+    const sync = memory.getByTestId('memory-sync')
+    await expect(sync).toBeVisible({ timeout: 30_000 })
+    await expect(memory).toContainText('Sync with my account')
+    await expect(sync).toHaveAttribute('aria-checked', 'false')
+    const before = (await sync.boundingBox())!
+    await sync.click()
+    await expect(sync).toHaveAttribute('aria-checked', 'true')
+    await expect(memory).toContainText('They stay on this computer and in your account.')
+    // a static control: turning it on moves nothing
+    expect((await sync.boundingBox())!).toEqual(before)
+    if (shotsOn()) {
+      await memory.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: `${shotsDir(info)}/memory-sync-desktop.png` })
+      await page.setViewportSize({ width: 390, height: 844 })
+      await expect(sync).toBeVisible()
+      await sync.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: `${shotsDir(info)}/memory-sync-390.png` })
+    }
+    await page.evaluate(() => sessionStorage.removeItem('sx-e2e-memory-sync'))
+    await closeDialogs(page)
+  })
+})
+
 /* ------------------------------------------------------------------ the docked chat against a stubbed proxy */
 
 // A 1 by 1 PNG and a one page PDF
