@@ -259,8 +259,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // Dimension sheets waiting for the person, by sheet id, and the last sheet each session showed.
   const sheets = new Map<string, (values: Record<string, number> | null) => void>()
   const lastSheet = new Map<string, PilotSheet>()
-  // Sessions with a sheet confirmed in the current run: where pilot.sheet is offered, a new part waits for one.
+  // Sessions with a confirmed sheet no part has used yet: where pilot.sheet is offered, a new part waits for one. The
+  // confirmation carries over to later runs of the chat (a plan answered in the next message needs no second sheet)
+  // until a run starts a part with it; the run after that asks again.
   const confirmed = new Set<string>()
+  const usedSheet = new Set<string>()
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
 
   const tools = new Map<string, AnyTool>()
@@ -455,7 +458,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       return { message: JSON.stringify({ ok: false, error: 'Invalid arguments', issues }), stop: false }
     }
     const input = parsed.data
-    if (startsPart(tool.name, input) && !confirmed.has(sessionId) && findTool('pilot.sheet')) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
+    if (startsPart(tool.name, input) && findTool('pilot.sheet')) {
+      if (!confirmed.has(sessionId)) return { message: JSON.stringify({ ok: false, blocked: true, message: SHEET_FIRST_NOTE }), stop: false }
+      usedSheet.add(sessionId)
+    }
     const project = opts.project?.()
     const ctx: ToolContext = {
       host: opts.host,
@@ -494,7 +500,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         sheets.set(sheet.id, (given) => {
           signal.removeEventListener('abort', onAbort)
           const answer = answerOf(sheet, given)
+          // the latest sheet's answer stands: a cancel takes back an earlier confirmation
           if (answer.confirmed) confirmed.add(sessionId)
+          else confirmed.delete(sessionId)
           emit({ type: 'sheet_answered', sheetId: sheet.id, answer })
           resolve(answer)
         })
@@ -806,7 +814,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // the start says why Auto picked its model, so a client reading the session sees it; a pinned model has no pick
       const auto = modelFor(opts.config, HUGINN) !== modelFor(opts.config, MUNINN)
       return drive(sessionId, async (emit) => {
-        confirmed.delete(sessionId)
+        if (usedSheet.delete(sessionId)) confirmed.delete(sessionId)
         emit({ type: 'start', runId: `run_${newId()}`, sessionId, provider: client.provider, model: modelFor(opts.config, startTier), at: new Date(now()).toISOString(), ...(auto ? { route } : {}) })
         if (scope !== 'full') pluginTools = []
         else if (pluginTools === null) {

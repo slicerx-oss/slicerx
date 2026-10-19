@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Where pilot.sheet is offered, a new part waits for a confirmed sheet: geom.extrude, geom.revolve (as a new body) and
 // geom.build are refused until the person confirms the sizes in the same run. Edits to a part, a canceled sheet and a
-// toolset without the sheet behave as before.
+// toolset without the sheet behave as before. A confirmed sheet no part has used yet carries over to the chat's next
+// run, so a plan answered in a later message needs no second sheet.
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
@@ -86,5 +87,61 @@ describe('a sheet before the first build', () => {
     const { ran, events } = await play([{ calls: [EXTRUDE] }, { text: 'Built.' }], { sheet: false })
     expect(ran).toEqual(['geom.extrude:new'])
     expect(toolReplies(events).every((e) => e.type === 'tool_result' && e.ok)).toBe(true)
+  })
+
+  it('keeps a confirmed sheet for a plan answered in a later message, then asks again after the part', async () => {
+    const ran: string[] = []
+    // a stand-in for the tab's design.plan: a card answered on the question channel
+    const plan = defineTool({
+      name: 'design.plan',
+      version: '1.0.0',
+      source: 'command',
+      permission: 'read',
+      description: 'test',
+      input: z.object({}),
+      async run(_i, ctx) {
+        const picked = await ctx.ask!({ title: 'Plan', question: 'Build from this plan?', choices: [{ id: 'go', label: 'Go' }, { id: 'change', label: 'Not yet' }] })
+        return picked === 'go' ? { summary: 'Approved' } : { ok: false, summary: 'Not approved' }
+      },
+    }) as PilotTool<never>
+    const PLAN = { name: 'design.plan', args: {} }
+    const steps: ScriptStep[] = [
+      // run 1: the sheet is confirmed, the plan is not approved yet
+      { calls: [SHEET] },
+      { calls: [PLAN] },
+      { text: 'What should change?' },
+      // run 2: the person answers in a new message; the plan is approved and the part builds with no second sheet
+      { calls: [PLAN] },
+      { calls: [EXTRUDE] },
+      { text: 'Built.' },
+      // run 3: a new part needs its own sheet
+      { calls: [EXTRUDE] },
+      { text: 'Sizes first.' },
+    ]
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient(steps, { chunk: false }), builtins: false, tools: [sheetTool(), plan, geom('geom.extrude', ran)] })
+    const answers = ['change', 'go']
+    const sheets: string[] = []
+    const blocked: string[] = []
+    for (const message of ['A bracket with two holes', 'Make the holes 5 mm and go', 'Now a lid']) {
+      for await (const e of p.run('s', message)) {
+        if (e.type === 'sheet') (sheets.push(e.sheet.id), void p.answerSheet!(e.sheet.id, {}))
+        if (e.type === 'ask') void p.answer(e.askId, answers.shift()!)
+      }
+      blocked.push(ran.join(','))
+    }
+    expect(sheets).toHaveLength(1)
+    expect(ran).toEqual(['geom.extrude:new'])
+    // the extrude ran in run 2, and run 3's was refused
+    expect(blocked).toEqual(['', 'geom.extrude:new', 'geom.extrude:new'])
+  })
+
+  it('drops a confirmation when a later sheet is canceled', async () => {
+    const ran: string[] = []
+    const p = createPilot({ host, config: DEFAULT_CONFIG, policy: DEFAULT_POLICY, client: createScriptedClient([{ calls: [SHEET] }, { text: 'Ok.' }, { calls: [SHEET] }, { calls: [EXTRUDE] }, { text: 'No sizes.' }], { chunk: false }), builtins: false, tools: [sheetTool(), geom('geom.extrude', ran)] })
+    const answers: (Record<string, number> | null)[] = [{}, null]
+    for (const message of ['A box', 'Changed my mind']) {
+      for await (const e of p.run('s', message)) if (e.type === 'sheet') void p.answerSheet!(e.sheet.id, answers.shift()!)
+    }
+    expect(ran).toEqual([])
   })
 })

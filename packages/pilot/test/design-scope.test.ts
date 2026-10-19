@@ -131,10 +131,13 @@ describe('the design scope runtime', () => {
     const line = prompt.split('\n').find((l) => l.includes('design.plan'))!
     expect(line).toMatch(/Plans are for parts with two or more features/)
     expect(line).toMatch(/before the first geometry step, call design\.plan/)
-    expect(line).toMatch(/A part of one feature \(a plain box, a spacer, a single plate\) skips the plan/)
-    // sized to the person's own things: the sheet comes first, then the plan reads what was confirmed on it
-    expect(line).toMatch(/first the sizes that depend on the person's own things, asked for and confirmed on the dimension sheet as above; then/)
+    expect(line).toMatch(/A part of one feature \(a plain box, a spacer, a single plate\) skips the plan: once its sheet is confirmed, build it/)
+    // every new part shows the sheet first (the runtime refuses a new part without one); a larger part then gets the plan
+    expect(line).toMatch(/Every new part shows its sizes on the dimension sheet first/)
+    expect(line).toMatch(/first the sheet, with the sizes that depend on the person's own things asked for and confirmed on it as above; then/)
     expect(line).toMatch(/as confirmed on the dimension sheet, never asked for twice/)
+    // a plan answered in a later message reuses the sheet the person already confirmed
+    expect(line).toMatch(/A sheet confirmed earlier in the chat still holds when the plan is answered in a later message/)
     expect(line).not.toMatch(/bound/)
     // one planning instruction, not two that overlap
     expect(prompt).not.toMatch(/one or two sentences/)
