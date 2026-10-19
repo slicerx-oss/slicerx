@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Node-only loaders: config files and the environment. Import from '@slicerx/edition-config/node'.
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, extname, resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { NEUTRAL_EDITION } from './defaults.ts'
 import { parseEditionConfig } from './define.ts'
@@ -56,6 +56,40 @@ export function inlineLogo(config: EditionConfig, configFile: string): EditionCo
     assistant.icon = `data:${type};base64,${readFileSync(iconPath).toString('base64')}`
   }
   return Object.freeze({ ...config, brand: { ...config.brand, logo, assistant } })
+}
+
+/**
+ * The YAML files of the edition's own knowledge (ai.brain.knowledge), each a path or a folder walked for .yaml and .yml
+ * files, resolved against the config file and sorted. Throws when an entry is missing, or when it or any file under it
+ * resolves outside the edition folder, through `..` or a link.
+ */
+export function editionKnowledgeFiles(config: EditionConfig, configFile: string): string[] {
+  const folder = realpathSync(dirname(resolve(configFile)))
+  // Windows paths compare without case: C:\Editions\harbor is the same folder as c:\editions\Harbor
+  const fold = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
+  const inside = (p: string): boolean => {
+    const rel = relative(fold(folder), fold(p))
+    return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+  }
+  const out = new Set<string>()
+  const walked = new Set<string>()
+  const visit = (entry: string, path: string): void => {
+    const real = realpathSync(path)
+    if (!inside(real)) throw new Error(`ai.brain.knowledge: ${entry} resolves outside the edition folder: ${real}`)
+    if (statSync(real).isDirectory()) {
+      // a link back up the tree would walk forever
+      if (walked.has(real)) return
+      walked.add(real)
+      for (const name of readdirSync(real).sort()) visit(entry, join(path, name))
+    } else if (/\.ya?ml$/i.test(real)) out.add(real)
+  }
+  for (const entry of config.ai.brain.knowledge ?? []) {
+    const path = resolve(folder, entry)
+    if (fold(path) === fold(folder)) throw new Error(`ai.brain.knowledge: ${entry}: name a folder or file inside the edition`)
+    if (!existsSync(path)) throw new Error(`ai.brain.knowledge: ${entry} not found: ${path}`)
+    visit(entry, path)
+  }
+  return [...out].sort()
 }
 
 /** A font file the edition bundles, resolved to its path on disk. */
@@ -165,6 +199,37 @@ export function editionAssetsPlugin(assets: readonly BuildAsset[], css: string, 
     },
     transformIndexHtml() {
       return css ? [{ tag: 'style', attrs: { 'data-edition-fonts': '' }, children: css, injectTo: 'head-prepend' }] : []
+    },
+  }
+}
+
+/** The module id an app imports the running edition's knowledge index from (packages/pilot/src/kb/edition-kb.ts). */
+export const EDITION_KB_MODULE = '@slicerx/pilot/edition-kb'
+const EDITION_KB_ID = '\0slicerx-edition-kb'
+
+export interface EditionKbPlugin {
+  name: string
+  enforce: 'pre'
+  resolveId(id: string): string | null
+  load(id: string): string | null
+}
+
+/**
+ * A Vite plugin that answers `@slicerx/pilot/edition-kb` with the edition's own knowledge index, the
+ * edition-kb.<id>.json in `generatedDir` (null when the edition has none), so the build carries that one file only.
+ */
+export function editionKbPlugin(editionId: string, generatedDir: string): EditionKbPlugin {
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(editionId)) throw new Error(`edition id ${JSON.stringify(editionId)} cannot name a knowledge file`)
+  const file = join(generatedDir, `edition-kb.${editionId}.json`)
+  return {
+    name: 'slicerx-edition-kb',
+    enforce: 'pre',
+    resolveId: (id) => (id === EDITION_KB_MODULE ? EDITION_KB_ID : null),
+    load(id) {
+      if (id !== EDITION_KB_ID) return null
+      // parsed and written again, so the module holds exactly one JSON value
+      const index: unknown = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
+      return `export default ${JSON.stringify(index)}\n`
     },
   }
 }

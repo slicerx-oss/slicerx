@@ -415,10 +415,12 @@ describe('a dimension sheet through a scripted hub', () => {
 describe('the mimir tab through a scripted hub', () => {
   const link = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
 
-  it('reads what answers in the tab: a model on Auto, a local model, the scripts, or nothing yet', async () => {
+  it('reads what answers in the tab: a model on Auto, a local model here or on the network, the scripts, or nothing yet', async () => {
     const answers = [
-      { link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, local: false, tools: ['pilot.sheet', 'design.new', 'geom.extrude', 'app.slice', 'printer.queue'], key: 'sk-never' },
-      { link: 'model', provider: 'openai-compatible', model: 'qwen3:8b-16k', auto: null, local: true, tools: ['kb.search', 'design.new', 'app.slice'] },
+      { link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, local: false, where: 'remote', tools: ['pilot.sheet', 'design.new', 'geom.extrude', 'app.slice', 'printer.queue'], key: 'sk-never' },
+      { link: 'model', provider: 'openai-compatible', model: 'qwen3:8b-16k', auto: null, local: true, where: 'computer', tools: ['kb.search', 'design.new', 'app.slice'] },
+      { link: 'model', provider: 'openai-compatible', model: 'qwen3:8b-16k', auto: null, local: true, where: 'network', tools: ['kb.search', 'design.new', 'app.slice'] },
+      { link: 'model', provider: 'openai-compatible', model: 'qwen3:8b-16k', auto: null, local: true, where: 'remote', tools: ['kb.search', 'design.new', 'app.slice'] },
       { link: 'scripted', provider: 'scripted', model: 'scripted', auto: null, tools: ['pilot.sheet', 'geom.extrude'] },
       { link: 'none', provider: null, model: null, auto: null, tools: [] },
     ]
@@ -429,14 +431,22 @@ describe('the mimir tab through a scripted hub', () => {
     const h = await connect(link(hub))
     const model = await h.call('slicerx_mimir_tab')
     expect(model.isError, text(model)).toBeFalsy()
-    expect(data<{ output: unknown }>(model).output).toEqual({ link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, local: false, tools: ['pilot.sheet', 'design.new', 'geom.extrude', 'app.slice', 'printer.queue'] })
+    expect(data<{ output: unknown }>(model).output).toEqual({ link: 'model', provider: 'anthropic', model: 'claude-haiku-5-5', auto: { huginn: 'claude-haiku-5-5', muninn: 'claude-sonnet-5-5' }, local: false, where: 'remote', tools: ['pilot.sheet', 'design.new', 'geom.extrude', 'app.slice', 'printer.queue'] })
     expect(JSON.stringify(model)).not.toMatch(/sk-never/)
     expect(text(model)).toMatch(/runs anthropic on Auto: claude-haiku-5-5, and claude-sonnet-5-5 for a picture/)
     const local = await h.call('slicerx_mimir_tab')
-    expect(data<{ output: { local: boolean } }>(local).output.local).toBe(true)
-    expect(text(local)).toMatch(/runs openai-compatible with qwen3:8b-16k on this computer, offering 3 tools/)
+    expect(data<{ output: { local: boolean; where: string } }>(local).output).toMatchObject({ local: true, where: 'computer' })
+    expect(text(local)).toMatch(/runs openai-compatible with qwen3:8b-16k on this computer, a local model, offering 3 tools/)
+    // a local model is not always on this computer: the address decides
+    const network = await h.call('slicerx_mimir_tab')
+    expect(data<{ output: { local: boolean; where: string } }>(network).output).toMatchObject({ local: true, where: 'network' })
+    expect(text(network)).toMatch(/with qwen3:8b-16k on a computer on your network, a local model/)
+    expect(text(network)).not.toMatch(/this computer/)
+    const away = await h.call('slicerx_mimir_tab')
+    expect(text(away)).toMatch(/with qwen3:8b-16k on the model's server, a local model/)
+    expect(text(away)).not.toMatch(/this computer/)
     const scripted = await h.call('slicerx_mimir_tab')
-    expect(data<{ output: { link: string } }>(scripted).output.link).toBe('scripted')
+    expect(data<{ output: { link: string; where: unknown } }>(scripted).output).toMatchObject({ link: 'scripted', where: null })
     expect(text(scripted)).toMatch(/scripted replies: no model is set up/)
     const none = await h.call('slicerx_mimir_tab')
     expect(text(none)).toMatch(/has not been opened/)

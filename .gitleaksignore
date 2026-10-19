@@ -1,3 +1,9 @@
 # made-up Anycubic test tokens in history, before the gitleaks:allow markers
 489975e79a3a5c3c3be346bfc5112e2e7f86812c:packages/connect/src/drivers/anycubic/mod.rs:generic-api-key:903
 489975e79a3a5c3c3be346bfc5112e2e7f86812c:packages/connect/src/drivers/anycubic/mod.rs:generic-api-key:912
+# made-up keys in the mimir memory tests in history, before the gitleaks:allow markers
+07abc93b286edba24881c6ff9a72d01dd67fa31f:packages/pilot/test/memory.test.ts:private-key:64
+1d482f4c17e9be06e223240fb6d093330db85c0a:packages/app/test/app-link-mimir-memory.test.ts:generic-api-key:118
+1d482f4c17e9be06e223240fb6d093330db85c0a:packages/mcp/test/mimir-memory.test.ts:generic-api-key:88
+c1acc9cba5d51cf4f194789cc487d0e97589d9e0:packages/app/test/app-link-mimir-memory.test.ts:private-key:100
+c1acc9cba5d51cf4f194789cc487d0e97589d9e0:packages/app/test/app-link-mimir-memory.test.ts:stripe-access-token:99

@@ -164,6 +164,47 @@ export const authSchema = z.object({
   providers: z.array(z.discriminatedUnion('kind', [z.object({ kind: z.literal('email') }), oauth('github'), oauth('google'), oauth('apple'), oauth('discord')])).default([{ kind: 'email' }]),
 })
 
+/** Tool groups an edition can switch off in its assistant. Core tools (the knowledge base, questions, the project) have no switch. */
+export const BRAIN_TOOL_GROUPS = ['design', 'slicing', 'printers', 'watch', 'paint', 'web'] as const
+export type BrainToolGroup = (typeof BRAIN_TOOL_GROUPS)[number]
+
+/** A path inside the edition folder: relative, no `..` step, no drive or home prefix. Links out of the folder are refused when it is read. */
+const editionPath = z.string().trim().min(1).refine(
+  (p) => !/^([\\/~]|[a-zA-Z]:)/.test(p) && !p.split(/[\\/]/).includes('..'),
+  'a path inside the edition folder, relative to the config file, without ..',
+).refine((p) => p.split(/[\\/]/).some((s) => s !== '' && s !== '.'), 'name a folder or file inside the edition')
+
+/** How the edition's assistant talks, when it steps up to a larger cloud model, and what it remembers. Its name is brand.assistant.name. */
+export const brainSchema = z.object({
+  /** A short style note added to the assistant's instructions, such as "Plain and brief; metric units". Unset: the stock voice. */
+  voice: z.string().trim().min(1).max(280).optional(),
+  cloud: z.object({
+    /** mimir cloud only: the larger model the proxy may hand a hard question to. none keeps every answer on ai.model. */
+    stepUp: z.enum(['sonnet', 'none']).default('none'),
+  }).prefault({}),
+  memory: z.object({
+    /** Remember what the person tells the assistant, on their computer. */
+    local: z.boolean().default(true),
+    /** Copy those memories to the person's account. opt-in: only after they turn it on. */
+    sync: z.enum(['off', 'opt-in']).default('off'),
+  }).prefault({}),
+  /** The edition's own knowledge: YAML files or folders of them, in the knowledge/ format, next to the bundled knowledge base. */
+  knowledge: z.array(editionPath).optional(),
+  /** Tool groups switched off with false. A group can only be turned off; true or a missing group keeps it as it is. */
+  tools: z.object(Object.fromEntries(BRAIN_TOOL_GROUPS.map((g) => [g, z.boolean().optional()])) as Record<BrainToolGroup, z.ZodOptional<z.ZodBoolean>>).strict().optional(),
+  /** The models for the person's own key: base for quick looks, step for deep thinking. mimir cloud ignores it; its proxy picks the model. */
+  routing: z.object({
+    /** The provider these models are for; only a key for it follows the routing. Required with base or step. */
+    provider: z.enum(['anthropic', 'openai']).optional(),
+    base: z.string().min(1).optional(),
+    step: z.string().min(1).optional(),
+  }).strict().superRefine((r, ctx) => {
+    if ((r.base !== undefined || r.step !== undefined) && r.provider === undefined) {
+      ctx.addIssue({ code: 'custom', path: ['provider'], message: 'routing that names base or step models needs a provider (anthropic or openai)' })
+    }
+  }).optional(),
+})
+
 export const aiSchema = z.object({
   provider: z.enum(['openai', 'anthropic', 'openai-compatible', 'none']).default('openai'),
   /** Default model id; users can change it in mimir settings. */
@@ -173,6 +214,7 @@ export const aiSchema = z.object({
   keySource: z.enum(['keychain', 'env', 'cloud']).default('keychain'),
   /** Local model ids (packages/pilot/llm/local-models.json) Set up local AI may offer. Unset: all of them. */
   allowedLocalModels: z.array(z.string().regex(/^[a-z0-9][a-z0-9.-]*$/, 'a model id such as qwen-2.5-14b')).min(1).optional(),
+  brain: brainSchema.prefault({}),
 })
 
 export const legalSchema = z.object({
@@ -296,7 +338,8 @@ const baseSchema = z.object({
   links: linksSchema.prefault({}),
 })
 
-const SECRET_PATTERNS: [RegExp, string][] = [
+/** Secrets that never belong in shipped config or kept text: each pattern and what it looks like. */
+export const SECRET_PATTERNS: [RegExp, string][] = [
   [/\bsk-[A-Za-z0-9_-]{20,}/, 'an API key'],
   [/\bsk_(live|test)_[A-Za-z0-9]{10,}/, 'a Stripe secret key'],
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, 'a private key'],

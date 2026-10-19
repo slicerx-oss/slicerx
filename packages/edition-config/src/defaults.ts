@@ -24,5 +24,5 @@ export const NEUTRAL_EDITION: EditionConfigInput = {
     phonePairing: false,
     pilot: true,
   },
-  ai: { provider: 'openai', model: 'gpt-6-sol', keySource: 'keychain' },
+  ai: { provider: 'openai', model: 'gpt-6-sol', keySource: 'keychain', brain: { cloud: { stepUp: 'none' }, memory: { local: true, sync: 'off' } } },
 }

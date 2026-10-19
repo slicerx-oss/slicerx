@@ -5,6 +5,8 @@ export interface AssistantBrand {
   name: string
   icon: string
   accent?: string | Readonly<{ light: string; dark: string }> | undefined
+  /** The edition's short style note for the assistant's replies (ai.brain.voice). Tone only; the prompt keeps it below every rule. */
+  voice?: string | undefined
 }
 
 export const DEFAULT_ASSISTANT_BRAND: Readonly<AssistantBrand> = Object.freeze({ name: 'mimir', icon: 'builtin:mimir' })
@@ -16,6 +18,7 @@ function normalize(value?: Partial<AssistantBrand>): Readonly<AssistantBrand> {
     name: name.toLowerCase() === 'mimir' ? 'mimir' : name,
     icon: value?.icon || DEFAULT_ASSISTANT_BRAND.icon,
     ...(value?.accent ? { accent: typeof value.accent === 'string' ? value.accent : Object.freeze({ ...value.accent }) } : {}),
+    ...(value?.voice?.trim() ? { voice: value.voice.trim() } : {}),
   })
 }
 
@@ -27,6 +30,7 @@ const state = ((globalThis as Record<symbol, unknown>)[KEY] ??= {
 
 export function assistantBrand(): Readonly<AssistantBrand> { return state.value }
 export function assistantName(): string { return state.value.name }
+export function assistantVoice(): string | undefined { return state.value.voice }
 
 /** Brands authored display copy, leaving stable tool names, URLs and command flags alone. */
 export function assistantText(text: string): string {

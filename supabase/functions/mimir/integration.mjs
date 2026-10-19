@@ -5,7 +5,8 @@
 // Checks register with the edition's key, a streamed call settled at its real cost, the
 // share switch, quota, a cap answering 429, concurrent calls that never pass the cap, the
 // in-flight limit, the exact count when the byte estimate is too high, two session stores
-// at once that never pass the install's daily bytes, and forget.
+// at once that never pass the install's daily bytes, forget, and a step-up turn on the edition's
+// step-up model, falling back to the base model when only that fits.
 import { createServer } from 'node:http'
 import { execFile, execFileSync } from 'node:child_process'
 import assert from 'node:assert/strict'
@@ -67,8 +68,8 @@ const settled = async (n) => {
   throw new Error('calls did not settle')
 }
 const KEY = 'integration-key-slicerx'
-// back to the seeds (0022, 0023): $1 an install, $5 for SlicerX's day, open calls at $0.05
-const RESET = "update public.mimir_limits set install_daily_micros = 1000000, edition_daily_micros = 5000000, install_call_micros = 50000, install_in_flight = 3, register_key_hash = null where edition = 'slicerx'"
+// back to the seeds (0022, 0023, 0028): $1 an install, $20 for SlicerX's day, open calls at $0.05
+const RESET = "update public.mimir_limits set install_daily_micros = 1000000, edition_daily_micros = 20000000, install_call_micros = 50000, install_in_flight = 3, register_key_hash = null where edition = 'slicerx'"
 
 try {
   sql('delete from public.mimir_sessions; delete from public.mimir_calls; delete from public.mimir_installs')
@@ -177,6 +178,37 @@ try {
   assert.ok(Number(sql(`select sum(stored_bytes) from public.mimir_calls where install_id = '${inst}'`)) <= 30, 'the stored bytes stay under the day\'s cap')
   assert.equal(sql(`select count(*) from public.mimir_sessions where install_id = '${inst}'`), '1')
   sql(`update public.mimir_limits set install_store_daily_bytes = 33554432 where edition = 'slicerx'`)
+
+  // A step-up turn: SlicerX's step-up model, settled at its own price. A fresh install on its own address.
+  sql(`update public.mimir_limits set install_daily_micros = 500000 where edition = 'slicerx'`)
+  const reg3 = await (await call('/register', { body: { edition: 'slicerx', key: KEY }, headers: { 'cf-connecting-ip': '203.0.113.11' } })).json()
+  const auth3 = { 'x-sx-install': reg3.token, 'cf-connecting-ip': '203.0.113.11', 'x-sx-tier': 'step' }
+  const install3 = `(select id from public.mimir_installs where token_hash = public.mimir_token_hash('${reg3.token}'))`
+  const settled3 = async (n) => {
+    for (let i = 0; i < 50; i++) {
+      if (Number(sql(`select count(*) from public.mimir_calls where install_id = ${install3} and settled_at is not null`)) >= n) return
+      await new Promise((r) => setTimeout(r, 200))
+    }
+    throw new Error('step-up calls did not settle')
+  }
+  const step = await call('/v1/messages', { body: msg, headers: { ...auth3, 'x-sx-share': '1', 'x-sx-session': 'it-step', 'x-sx-version': '0.2.0' } })
+  assert.equal(step.status, 200, await step.clone().text())
+  assert.equal(step.headers.get('x-sx-model'), 'claude-sonnet-5-5')
+  await step.text()
+  await settled3(1)
+  assert.equal(seen.at(-1).body.model, 'claude-sonnet-5-5', 'the step-up turn reaches the provider on the step-up model')
+  // 100000 input at $2/M plus 1000 output at $10/M
+  assert.equal(sql(`select cost_micros from public.mimir_calls where install_id = ${install3}`), '210000')
+  assert.equal(sql("select model from public.mimir_sessions where session_key = 'it-step'"), 'claude-sonnet-5-5')
+  // room for the base model's worst case but not the step-up model's: the turn goes on the base model
+  const spent3 = Number(sql(`select coalesce(sum(cost_micros), 0) from public.mimir_calls where install_id = ${install3}`))
+  sql(`update public.mimir_limits set install_daily_micros = ${spent3 + 20000} where edition = 'slicerx'`)
+  const down = await call('/v1/messages', { body: small, headers: auth3 })
+  assert.equal(down.status, 200, await down.clone().text())
+  assert.equal(down.headers.get('x-sx-model'), 'claude-haiku-5-5')
+  await down.text()
+  await settled3(2)
+  assert.equal(seen.at(-1).body.model, 'claude-haiku-5-5', 'the capped step-up turn goes on the base model')
   console.log('mimir proxy integration: ok')
 } finally {
   sql(RESET)

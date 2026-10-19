@@ -5,6 +5,7 @@
 // which run through the same tools a model would call. When the real agent arrives, only the client changes.
 import { assistantText } from '@slicerx/contracts'
 import { DEFAULT_CONFIG, RUNTIME_NOTES, askTool, createPilot, createScriptedClient, lookupTool, sheetBindTool, sheetTool, type LlmClient, type LlmMessage, type PilotTool, type ScriptStep } from '@slicerx/pilot'
+import { planTool } from './plan-tool'
 import { DEFAULT_POLICY, type ApprovalHost, type LlmTransport, type Pilot, type PrinterHost, type SessionStore } from '@slicerx/contracts'
 
 export interface MimirScript {
@@ -77,7 +78,11 @@ const NO_LLM = {} as LlmTransport
 
 /** The tab's own tools: questions, lookups and sheets, then the given design tools. */
 export function mimirTools(extra: readonly PilotTool<never>[] = []): PilotTool<never>[] {
-  return [askTool(), lookupTool(), sheetTool(), sheetBindTool(), ...extra]
+  const own = [askTool(), lookupTool(), sheetTool(), sheetBindTool(), planTool()]
+  // the tab's own tools win, and the design toolset's design.put_plan (a client plan kept with no card, for MCP
+  // clients) stays out: plans here are made on the card
+  const names = new Set([...own.map((t) => t.name), 'design.put_plan'])
+  return [...own, ...extra.filter((t) => !names.has(t.name))]
 }
 
 /** The runtime over the given tools alone, answering with the scripts (the tab gives its stub the whole toolset, session.ts). */
