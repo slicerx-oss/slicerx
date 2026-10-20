@@ -43,6 +43,10 @@ ignore = [
   "RUSTSEC-2026-0098",
   "RUSTSEC-2026-0099",
   "RUSTSEC-2026-0104",
+  # 2026-10-20: RUSTSEC-2026-0382 (distrusted emSign intermediates) on that same 0.102.8 copy. rumqttc
+  # 0.25.1, the latest, uses it only for an error type (src/tls.rs); certificates are checked by our own
+  # rustls 0.23 verifiers, whose rustls-webpki is 0.103.16 with the fix. Same removal condition.
+  "RUSTSEC-2026-0382",
   # rustls-pemfile (unmaintained) is pulled in by rumqttc. Same removal condition.
   "RUSTSEC-2025-0134",
   # proc-macro-error (unmaintained) is a build-time dependency of a macro crate, not shipped code.
