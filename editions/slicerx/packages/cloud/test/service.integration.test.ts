@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Runs the client against the real sx-cloud binary on its in-memory backend.
-// Skipped unless the binary is built (`cargo build -p sx-cloud`).
+// Skipped unless the binary is built (`cargo build -p sx-cloud`). It is read from CARGO_TARGET_DIR when that is set,
+// where cargo builds it, so a stale copy in the repo's own target folder is never the one tested.
 import { type ChildProcess, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createCloudClient } from '../src/client'
 import { createDeliveryAgent } from '../src/delivery'
 import type { ApprovalRequest } from '@slicerx/contracts'
 
-const bin = fileURLToPath(new URL('../../../../../target/debug/sx-cloud', import.meta.url))
+const repo = fileURLToPath(new URL('../../../../../', import.meta.url))
+const bin = join(resolve(repo, process.env['CARGO_TARGET_DIR'] ?? 'target'), 'debug', 'sx-cloud')
 // Any resolved edition config with cloudSlicing on; the memory backend ignores its Supabase URL.
 const config = fileURLToPath(
   new URL('../../../../../packages/edition-config/fixtures/fork-harbor.resolved.json', import.meta.url),
