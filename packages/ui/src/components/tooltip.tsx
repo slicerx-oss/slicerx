@@ -102,6 +102,13 @@ function anchorOf(target: EventTarget | null): HTMLElement | null {
   return target instanceof Element ? (target.closest(SELECTOR) as HTMLElement | null) : null
 }
 
+/** A field a person types into: a text input, a text area or editable text. */
+function typesText(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false
+  if (el.isContentEditable || el instanceof HTMLTextAreaElement) return true
+  return el instanceof HTMLInputElement && !/^(button|submit|reset|checkbox|radio|range|color|file|image|hidden)$/.test(el.type)
+}
+
 function isDisabled(el: HTMLElement): boolean {
   return el.getAttribute('aria-disabled') === 'true' || (el as HTMLButtonElement).disabled === true
 }
@@ -429,6 +436,10 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
     const focusIn = (e: FocusEvent) => {
       const moved = intent.focus()
       const a = anchorOf(e.target)
+      // Typing gets the screen: a field taking focus (a click, a key or code) closes any other control's tip, and one
+      // still to come. Focus leaving alone misses some: code can focus a field when nothing had focus before, and a
+      // tip opened by a click outlasts a focus leaving.
+      if (typesText(e.target) && !(s.current ?? s.pending)?.contains(e.target as Node)) hide()
       // A click that focuses a field is not a request for its tip; text fields match :focus-visible either way.
       if (!a || s.down || !moved || !(e.target as HTMLElement).matches(':focus-visible')) return
       schedule(a, TIP_TIMING.focus)
@@ -517,6 +528,11 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
     }
     const watchDialogs = new MutationObserver((list) => {
       for (const m of list) for (const n of Array.from(m.addedNodes)) if (n instanceof HTMLElement && (n.matches('[role=dialog]') || n.querySelector('[role=dialog]'))) s.dialogAt = performance.now()
+      // A tip goes with its anchor: one unmounted, or swapped for a new element by a re-render, gets no pointer
+      // leaving it and would keep its tip over whatever took its place.
+      if (s.current && !s.current.isConnected) hide()
+      if (s.pending && !s.pending.isConnected) clear()
+      if (s.hover && !s.hover.isConnected) s.hover = null
     })
     watchDialogs.observe(document.body, { childList: true, subtree: true })
     document.addEventListener('pointerover', over, true)
