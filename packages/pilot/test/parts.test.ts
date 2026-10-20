@@ -218,6 +218,14 @@ describe('parts.lookup', () => {
     expect((family.output as { hint: string }).hint).toMatch(/ask which one/)
   })
 
+  it('tells a case or holder built around a phone that its pocket is at least the phone deep', async () => {
+    const scope = (out: Awaited<ReturnType<typeof run>>) => (out.output as { parts: { scope?: string }[] }).parts[0]!.scope
+    const out = await run({ name: 'iPhone 15' })
+    expect(out.summary).toBe('Apple iPhone 15: height 147.6 mm, width 71.6 mm, depth 7.8 mm')
+    expect(scope(out)).toMatch(/pocket at least the phone's depth deep, plus clearance\.$/)
+    expect(scope(lookupParts(await bundledPartsTable(), 'iPhone 15'))).toMatch(/pocket at least the phone's depth deep, plus clearance\.$/)
+  })
+
   it('writes values the way people read them', () => {
     expect(sizeText({ key: 'bore', value: 8, unit: 'mm', source_url: NSK })).toBe('8 mm')
     expect(sizeText({ key: 'outline_xy', value: [85, 56], unit: 'mm', source_url: NSK })).toBe('85 x 56 mm')

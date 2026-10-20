@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "checked_utc": "2026-10-16T00:48:59Z",
-  "scope": "Phone body height, width and depth as printed on the manufacturer tech specs pages. Both manufacturers state that size varies by configuration and manufacturing process. No case, camera bump or tolerance is implied.",
+  "scope": "Phone body height, width and depth as printed on the manufacturer tech specs pages. Both manufacturers state that size varies by configuration and manufacturing process. No case, camera bump or tolerance is implied. A case, holder or dock needs a pocket at least the phone's depth deep, plus clearance.",
   "records": [
     {
       "id": "iphone-15",
