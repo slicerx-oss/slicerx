@@ -34,6 +34,8 @@
 .cad-trio { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; align-items: end; }
 .cad-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-md); }
 .cad-row label { color: var(--fg); }
+/* a note over its button: the note takes the whole row, the button keeps its own size */
+.cad-row.cad-stack { flex-direction: column; align-items: flex-start; gap: var(--s-2); }
 .cad-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
 /* a tool's own actions stay on screen at the foot of the sidebar while the panel scrolls above them */
 .cad-footer { position: sticky; bottom: 0; z-index: 3; margin: 0 -18px -16px; padding: 10px 18px 16px; background: var(--ink-1); border-top: 1px solid var(--line-soft); }

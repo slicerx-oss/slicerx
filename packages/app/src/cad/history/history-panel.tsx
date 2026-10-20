@@ -195,12 +195,12 @@ export function HistorySteps({ objectId, tree, only }: { objectId: string; tree?
         })}
       </ol>
       {editingIndex !== null ? (
-        <div className="cad-row">
+        <div className="cad-row cad-stack">
           <span className="sx-small sx-muted">The part shows how it was before step {editingIndex + 1}.</span>
           <Button size="sm" variant="ghost" onClick={cancelEdit}>Stop editing</Button>
         </div>
       ) : viewingIndex !== null ? (
-        <div className="cad-row">
+        <div className="cad-row cad-stack">
           <span className="sx-small sx-muted">The part shows how it was after step {viewingIndex + 1}.</span>
           <Button size="sm" variant="ghost" onClick={cancelEdit}>Back to the latest</Button>
         </div>
