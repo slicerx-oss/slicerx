@@ -312,6 +312,30 @@ function toTopLayer(el: HTMLElement): void {
  * The tip is a popover, so it shows over a modal dialog too. An anchor marked data-tip-click also
  * opens on a click or tap and stays open until the next click or Esc.
  */
+/** How long after a long press lifts its own click may still come. */
+const PRESS_CLICK_WINDOW = 400
+
+/**
+ * Takes the one click a long press makes as the finger lifts: the press showed a tip, so that click is not a tap on
+ * the control. Only the next click is looked at, and it is taken only when it lands on the pressed control within a
+ * moment of the lift. Any other click goes through, so a tap right after the tip (on a tab, say) is never lost.
+ */
+export function pressClickGuard(now: () => number = () => performance.now()) {
+  let armed: { anchor: { contains(other: Node | null): boolean }; at: number } | null = null
+  return {
+    /** A long press on this control showed its tip and the finger lifted. */
+    lifted(anchor: { contains(other: Node | null): boolean }): void {
+      armed = { anchor, at: now() }
+    },
+    /** A click came. True when it is the long press's own click, to be dropped. */
+    take(target: Node | null): boolean {
+      const a = armed
+      armed = null
+      return a !== null && now() - a.at <= PRESS_CLICK_WINDOW && a.anchor.contains(target)
+    },
+  }
+}
+
 export function TooltipHost({ resolve, enabled = true, media = true, summonKey = '?' }: TooltipHostProps) {
   const [shown, setShown] = useState<{ anchor: HTMLElement; layer: HTMLElement; content: TipContent; pinned: boolean; warm: boolean; glide: boolean; touch: boolean; still: boolean } | null>(null)
   const [mediaOn, setMediaOn] = useState(false)
@@ -319,7 +343,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
   const tipRef = useRef<HTMLDivElement>(null)
   const live = useRef({ enabled, resolve })
   live.current = { enabled, resolve }
-  const state = useRef({ show: 0, hide: 0, lastHidden: 0, hover: null as HTMLElement | null, down: false, dialogAt: 0, current: null as HTMLElement | null, described: [] as HTMLElement[], pinned: false, pending: null as HTMLElement | null, press: 0, pressAt: null as { x: number; y: number } | null, touchShown: false, suppressClick: false, clickPinned: false, wasClickPinned: false })
+  const state = useRef({ show: 0, hide: 0, lastHidden: 0, hover: null as HTMLElement | null, down: false, dialogAt: 0, current: null as HTMLElement | null, described: [] as HTMLElement[], pinned: false, pending: null as HTMLElement | null, press: 0, pressAt: null as { x: number; y: number } | null, touchShown: null as HTMLElement | null, clickPinned: false, wasClickPinned: false })
 
   useEffect(() => {
     const s = state.current
@@ -401,6 +425,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       leave()
     }
     const intent = focusIntent()
+    const pressClick = pressClickGuard()
     const focusIn = (e: FocusEvent) => {
       const moved = intent.focus()
       const a = anchorOf(e.target)
@@ -415,11 +440,11 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
         // A touch has no hover: holding for half a second shows the tip above the finger until release.
         const a = anchorOf(e.target)
         window.clearTimeout(s.press)
-        s.touchShown = false
+        s.touchShown = null
         if (!a) return
         s.pressAt = { x: e.clientX, y: e.clientY }
         s.press = window.setTimeout(() => {
-          s.touchShown = true
+          s.touchShown = a
           reveal(a, false, true)
         }, TIP_TIMING.longPress)
         return
@@ -438,10 +463,9 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
         window.clearTimeout(s.press)
         s.pressAt = null
         if (s.touchShown) {
-          // The press showed a tip, so the release is not a tap on the control.
-          s.touchShown = false
-          s.suppressClick = true
-          window.setTimeout(() => (s.suppressClick = false), 400)
+          // The press showed a tip, so the click the release makes is not a tap on the control.
+          pressClick.lifted(s.touchShown)
+          s.touchShown = null
           hide()
         }
         return
@@ -449,7 +473,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       s.down = false
     }
     const clickCapture = (e: MouseEvent) => {
-      if (s.suppressClick) {
+      if (pressClick.take(e.target instanceof Node ? e.target : null)) {
         e.preventDefault()
         e.stopPropagation()
         return
