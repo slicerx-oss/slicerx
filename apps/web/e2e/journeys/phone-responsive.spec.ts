@@ -536,6 +536,11 @@ test.describe('phone', () => {
     await expect(page.locator('#sx-tip')).toHaveCount(0)
     // the release did not press it
     await expect(print).toHaveAttribute('aria-pressed', 'false')
+    // and a press right after it does: the hold drops only the click its own release makes, not the next one
+    await print.click()
+    await expect(print).toHaveAttribute('aria-pressed', 'true')
+    await print.click()
+    await expect(print).toHaveAttribute('aria-pressed', 'false')
     await shutSheet(page)
   })
 
