@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Slices project plates on the host's slicer (WASM worker pool or native core).
+// Slices project plates on the host's slicer (WASM worker pool or native core), and records the slice in the chat's
+// print run: its time, filament, cost and warnings, and the plate's fingerprint from before the slice.
 import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
-import { fmtDuration, fmtGrams, fmtMoney, type ToolShared } from '../../src/shared'
+import { fmtDuration, fmtGrams, fmtMoney, sliceFigures, type ToolShared } from '../../src/shared'
 import { defineSkill } from '../../src/tool'
 
 export function createSlice(shared: ToolShared) {
@@ -25,6 +26,11 @@ export function createSlice(shared: ToolShared) {
       const indexes = i.plates ?? all.map((p) => p.index)
       for (const k of [...shared.slices.keys()]) if (!all.some((p) => p.index === k)) shared.slices.delete(k)
       if (indexes.length === 0) return { ok: false, summary: 'No plates to slice. Run arrange first.' }
+      // The run's plate when it is one of these, else the first plate sliced. The fingerprint is read before slicing,
+      // so an edit made while the slice runs leaves it stale.
+      const run = ctx.run
+      const runPlate = run ? (indexes.includes(run.get().plate) ? run.get().plate : indexes[0]!) : null
+      const fingerprint = runPlate !== null ? (run?.fingerprint(runPlate) ?? '') : ''
       const rows: Cell[][] = []
       const progress: { label: string; fraction: number; note?: string }[] = []
       let time = 0
@@ -51,13 +57,15 @@ export function createSlice(shared: ToolShared) {
         rows.push([String(idx), printer, fmtDuration(res.stats.timeS), fmtGrams(g), fmtMoney(res.stats.cost)])
         for (const w of res.warnings) rows.push(['', { text: w.code, tone: 'warn' }, { text: w.message, tone: 'warn' }, '', ''])
       }
+      const made = runPlate !== null ? shared.slices.get(runPlate)?.result : undefined
+      if (run && runPlate !== null && made) run.update({ plate: runPlate, slice: { sliceId: made.id, plate: runPlate, at: new Date().toISOString(), ...sliceFigures(made), fingerprint, stale: false } })
       return {
         summary: `${indexes.length} plate${indexes.length === 1 ? '' : 's'}, ${fmtDuration(time)}, ${fmtGrams(grams)}, ${fmtMoney(cost)}`,
         output: {
           plates: indexes.map((idx) => {
             const r = shared.slices.get(idx)?.result
             if (!r) return null
-            const base = { plate: idx, layers: r.layerCount, timeS: Math.round(r.stats.timeS), grams: Math.round(r.stats.filamentG.reduce((a, b) => a + b, 0) * 10) / 10, cost: Math.round(r.stats.cost * 100) / 100, warnings: r.warnings.map((w) => w.message) }
+            const base = { plate: idx, layers: r.layerCount, ...sliceFigures(r) }
             // Which filament each object's walls, infill, support and other features printed with, when the host reports it.
             return r.featureFilaments?.length ? { ...base, featureFilaments: r.featureFilaments } : base
           }),

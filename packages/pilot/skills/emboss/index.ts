@@ -91,8 +91,10 @@ export function createEmboss() {
       const first = g.parts[0]
       const part = partFromGeom(res['mesh'], first?.name ?? obj.name, first?.slot ?? 1)
       if (!part) return { ok: false, summary: 'Embossing returned no mesh' }
-      const replaced = await replaceGeometry(ctx.project, obj, [part])
+      const bed: string[] = []
+      const replaced = await replaceGeometry(ctx.project, obj, [part], bed)
       const notes = [...check.warnings]
+      notes.push(...bed)
       if (g.parts.length > 1) notes.push(`The ${g.parts.length} parts were merged into one body on the first part's filament slot.`)
       if (!replaced) notes.push('This project cannot swap geometry, so the text was not applied.')
       const where = i.point ? `at ${point.map((v) => round(v, 1)).join(', ')}` : `on the ${face} face`

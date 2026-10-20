@@ -5,8 +5,9 @@
 // a slice that keeps the tab on screen. A note mimir wants to keep asks first, with the memory chip, through the
 // app's approvals.
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { Host, MeshHandle, PilotEvent, PrinterHost, SliceRequest } from '@slicerx/contracts'
-import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG } from '@slicerx/pilot'
+import type { Host, MeshHandle, PilotEvent, PrinterHost, SliceRequest, SliceResult } from '@slicerx/contracts'
+import { createApprovalBroker, createPilot, createRunBook, createScriptedClient, DEFAULT_CONFIG, runHandle, type CommandRun, type CommandToolContext } from '@slicerx/pilot'
+import { appPrintRun } from '../src/workspaces/mimir/print-run'
 import { bundledKb } from '../src/workspaces/mimir/kb'
 import { mimirCommands, tabPilotOptions } from '../src/workspaces/mimir/session'
 import { scriptRouter } from '../src/workspaces/mimir/scripted'
@@ -18,7 +19,8 @@ import type { CommandSpec } from '@slicerx/contracts'
 import { sourceOf } from '../src/plate/edit'
 import { createHistory } from '../src/plate/history'
 import { boxMesh } from '../src/plate/mesh-ops'
-import { compose } from '../src/plate/transform'
+import { placedOnBed } from '../src/plate/arrange'
+import { bounds, compose, identity } from '../src/plate/transform'
 import { setHostSlices } from '../src/state/model-mode'
 import { get, set, type PlateEntry } from '../src/state/store'
 
@@ -102,13 +104,40 @@ describe('the mimir tab works on the open project', () => {
     const slice: CommandSpec = { id: 'slice', title: 'Slice the plate', section: 'slice', tool: { permission: 'slice' }, run: () => void switched++ }
     const host = { kind: 'web', slicer: {}, printers, capabilities: { threads: 1, slicing: false } } as unknown as Host
     const [mine] = mimirCommands(host, [slice])
-    // the slice runs without the Slice tab's switch (a host that cannot slice returns at once)
-    set({ workspace: 'prepare', modelMode: 'mimir' })
+    // the slice runs without the Slice tab's switch (a host that cannot slice returns at once, with the slice on screen)
+    const result = { id: 's1', engine: 'native', layerCount: 50, layerZ: new Float32Array(), layerTimeS: new Float32Array(), stats: { timeS: 1800.4, filamentMm: [1000, 200], filamentG: [12, 2.04], cost: 0.304, toolChanges: 1 }, stageMicros: {}, wallMs: 5, warnings: [{ code: 'thin_wall', message: 'A wall on Bracket is thinner than the nozzle.' }] } as unknown as SliceResult
+    set({ workspace: 'prepare', modelMode: 'mimir', slice: { status: 'done', result, stale: false } })
     setHostSlices(false)
-    const out = await Promise.resolve(mine!.run()).finally(() => setHostSlices(true))
+    // as the runtime runs it: the input, then the chat's run (update and fingerprint only)
+    const runs = runHandle(createRunBook(appPrintRun(), () => Date.parse('2026-10-20T00:00:00.000Z')), 'tab')
+    let updates = 0
+    const narrow: CommandRun = {
+      update: (p) => {
+        updates++
+        return runs.update(p)
+      },
+      fingerprint: (n) => runs.fingerprint(n),
+    }
+    const call = (cx: CommandToolContext) => Promise.resolve((mine!.run as (input: unknown, cx: CommandToolContext) => unknown)({}, cx))
+    const out = await call({ run: narrow }).finally(() => setHostSlices(true))
     expect(switched).toBe(0)
     expect(get().modelMode).toBe('mimir')
-    expect(out).toMatchObject({ status: expect.any(String) })
+    const figures = { timeS: 1800, grams: 14, cost: 0.3, warnings: ['A wall on Bracket is thinner than the nozzle.'] }
+    expect(out).toEqual({ status: 'done', sliceId: 's1', ...figures })
+    // the reply has the figures, not a pointer to the Slice tab
+    expect(JSON.stringify(out)).not.toContain('Slice tab')
+    // no slice ran, so nothing is recorded: the slice on screen was recorded by whatever made it
+    expect(updates).toBe(0)
+    expect(runs.get().slice).toBeNull()
+    // without a run (the command bar) it replies the same
+    setHostSlices(false)
+    expect(await Promise.resolve(mine!.run()).finally(() => setHostSlices(true))).toEqual({ status: 'done', sliceId: 's1', ...figures })
+    // a slice on screen that an edit has made stale is not this plate's: a plain line says so, and nothing is recorded
+    set({ slice: { status: 'done', result, stale: true } })
+    setHostSlices(false)
+    const stale = await call({ run: narrow }).finally(() => setHostSlices(true))
+    expect(stale).toEqual({ status: 'stale', message: 'The slice on screen is out of date because the plate changed after it. Slice the plate again.' })
+    expect(updates).toBe(0)
     // every other command is the app's own
     const other: CommandSpec = { id: 'plate-clear', title: 'Clear the plate', section: 'plate', run: () => undefined }
     expect(mimirCommands(host, [other])[0]).toBe(other)
@@ -134,6 +163,35 @@ describe('the mimir tab works on the open project', () => {
     } finally {
       undo.dispose()
     }
+  })
+
+  it('arrange moves a part that hangs off the bed onto it, and the slice gets it inside the bed', async () => {
+    // built around the origin: half of it past the bed's front left edges
+    set({ plate: [{ ...bracket, transform: identity() }], bed: { widthMm: 256, depthMm: 256, heightMm: 256 } })
+    const { results, sliced } = await rig([[{ name: 'arrange', args: {} }], [{ name: 'slice', args: {} }]])
+    expect(results.get('arrange')).toMatchObject({ ok: true })
+    const e = get().plate.find((p) => p.id === 'a')!
+    expect(placedOnBed(e, get().bed)).toBe(true)
+    const b = bounds(e.parts, sliced[0]!.plate.objects[0]!.transform)!
+    expect(b.min[0]).toBeGreaterThanOrEqual(0)
+    expect(b.min[1]).toBeGreaterThanOrEqual(0)
+    expect(b.max[0]).toBeLessThanOrEqual(256)
+    expect(b.max[1]).toBeLessThanOrEqual(256)
+  })
+
+  it('arrange says so when a part that hangs off the bed finds no room on it', async () => {
+    // a 230 mm square slab fills the middle of the bed; the bracket hangs off the corner and has nowhere to go
+    const slab: PlateEntry = { ...bracket, id: 'slab', name: 'Slab', parts: [{ ...boxMesh(230, 230, 2), name: 'Slab', slot: 1 }], transform: compose({ position: [128, 128, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
+    set({ plate: [slab, { ...bracket, transform: identity() }], bed: { widthMm: 256, depthMm: 256, heightMm: 256 } })
+    const { results } = await rig([{ name: 'arrange', args: { objectId: 'a' } }])
+    expect(results.get('arrange')).toMatchObject({ ok: false, summary: expect.stringContaining('1 part is still off the bed because there is no room for it.') })
+    expect(get().plate.find((p) => p.id === 'slab')!.transform).toEqual(slab.transform)
+  })
+
+  it('arrange leaves a part already on the bed where it is', async () => {
+    set({ bed: { widthMm: 256, depthMm: 256, heightMm: 256 } })
+    await rig([{ name: 'arrange', args: {} }])
+    expect(get().plate.find((p) => p.id === 'a')!.transform).toEqual(bracket.transform)
   })
 
   it('cut parts replace the object in one undo step, and a repaired mesh keeps its place', async () => {

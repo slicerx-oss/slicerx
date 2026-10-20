@@ -163,6 +163,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // the mimir the edition runs: name, whether it has a voice, tool groups, cloud step-up, memory, knowledge doc count;
   // never the voice text or the docs
   'mimir.brain': 'read',
+  // one chat's print run: its steps, the last slice, what was sent and the print; never a file, hash, token or serial
+  'mimir.run': 'read',
 }
 
 export { LinkError } from './methods-error'
@@ -486,6 +488,7 @@ const HANDLERS: Record<string, Handler> = {
   'mimir.memory': async (args) => (await import('./mimir-memory')).readMemory(args),
   'mimir.memory_remember': async (args) => (await import('./mimir-memory')).rememberFact(args),
   'mimir.brain': async () => (await import('./mimir-brain')).brainState(),
+  'mimir.run': async (args) => (await import('./mimir-run')).readRun(args),
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // web.lookup, pilot.report and app commands.
-import type { CommandSpec, JsonSchema } from '@slicerx/contracts'
+import type { CommandSpec, JsonSchema, PrintConfig, SliceResult } from '@slicerx/contracts'
 import { z } from 'zod'
+import type { RunHandle } from '../run/print-run'
+import type { ToolShared } from '../shared'
 import { defineTool, type PilotTool } from '../tool'
 
 export function webTool(): PilotTool<never> {
@@ -46,8 +48,34 @@ export function reportTool(): PilotTool<never> {
   }) as PilotTool<never>
 }
 
-/** Cmd+K commands with a `tool` field become `app.<id>` tools. */
-export function commandTools(commands: CommandSpec[]): PilotTool<never>[] {
+/** The part of the chat's print run an app command may use: record a change and read a plate's fingerprint. Never the send or the job. */
+export type CommandRun = Pick<RunHandle, 'update' | 'fingerprint'>
+
+/**
+ * What an app command run as a tool gets after its input: the chat's print run, when the runtime keeps one (the tab's
+ * slice records its slice there). A command run from the bar gets nothing.
+ */
+export interface CommandToolContext {
+  run?: CommandRun
+  /**
+   * Keeps a slice the command made for plate `plate` (1 based) as the slice skill keeps one, so printer.queue sends
+   * that slice and no older one. Given when the command runs as a tool of a runtime.
+   */
+  sliced?(plate: number, result: SliceResult, config?: PrintConfig): void
+  /** Drops the runtime's slice of plate `plate` after the engine refused to slice it, so nothing sends an older one. */
+  refused?(plate: number): void
+}
+
+/** An engine's reason as a plain sentence: a capital first letter and an end stop. */
+function reasonSentence(text: string): string {
+  const t = text.trim()
+  if (!t) return ''
+  const s = t[0]!.toUpperCase() + t.slice(1)
+  return /[.!?]$/.test(s) ? s : `${s}.`
+}
+
+/** Cmd+K commands with a `tool` field become `app.<id>` tools. `shared` is the runtime's slices, which app.slice fills. */
+export function commandTools(commands: CommandSpec[], shared?: ToolShared): PilotTool<never>[] {
   return commands
     .filter((c) => c.tool)
     .map((c) => {
@@ -66,9 +94,23 @@ export function commandTools(commands: CommandSpec[]): PilotTool<never>[] {
         description: `${c.title}. App command in the ${c.section} section.`,
         command: { id: c.id, section: c.section, ...(c.workspace ? { workspace: c.workspace } : {}) },
         input,
-        async run(i) {
-          const out = await c.run(i)
-          return { summary: `${c.title} done`, ...(out && typeof out === 'object' ? { output: out as Record<string, unknown> } : {}) }
+        async run(i, ctx) {
+          // CommandSpec.run takes the input only; a command that wants the run reads it as its second argument. It gets
+          // a handle of its own with update and fingerprint only, so no command can write the send or the job.
+          const run = ctx.run
+          const cx: CommandToolContext = run ? { run: { update: (patch) => run.update(patch), fingerprint: (plate) => run.fingerprint(plate) } } : {}
+          if (shared) {
+            cx.sliced = (plate, result, config) => void shared.slices.set(plate, { plate, result, ...(config ? { config } : {}) })
+            cx.refused = (plate) => void shared.slices.delete(plate)
+          }
+          const out = await (c.run as (input: unknown, cx: CommandToolContext) => unknown)(i, cx)
+          const output = out && typeof out === 'object' ? (out as Record<string, unknown>) : undefined
+          // a command that reports an error in its reply did not do what it says, whatever it returned
+          if (output?.['status'] === 'error') {
+            const why = typeof output['message'] === 'string' ? reasonSentence(output['message']) : ''
+            return { ok: false, summary: why || `${c.title} did not finish.`, output }
+          }
+          return { summary: `${c.title} done`, ...(output ? { output } : {}) }
         },
       }) as PilotTool<never>
     })

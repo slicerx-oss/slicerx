@@ -4,6 +4,7 @@
 // overall size and holes when it knows them, what it assumed and what it still needs to know. While the plan waits,
 // sizes are fields the person types into; Go approves it with those edits, Not yet sends mimir back to ask. The buttons
 // keep their places and the status keeps its height once answered, so nothing moves under the chat.
+import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { ChoiceCardProps } from '@slicerx/pilot/ui'
 import { Button, Icon, ScrubNumber } from '@slicerx/ui'
 import { useState, type ReactNode } from 'react'
@@ -18,6 +19,9 @@ export function plainLabel(key: string): string {
     .toLowerCase()
   return words ? words[0]!.toUpperCase() + words.slice(1) : key
 }
+
+/** What the card says when its answer could not be delivered. */
+export const PLAN_INACTIVE = `Nothing built. Ask ${ASSISTANT_NAME} again.`
 
 const UNIT_WORD = { mm: 'millimeters', in: 'inches' } as const
 /** The smallest size a field takes: one step of its last digit, so a size is always more than 0. */
@@ -55,8 +59,10 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
   const [plan, setPlan] = useState(given)
   const [sent, setSent] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  // an answer the app could not deliver: the plan's question is gone, so the card stops taking answers and edits
+  const [inactive, setInactive] = useState(false)
   const chosen = picked ?? sent
-  const live = chosen === null && actionable && onChoose !== undefined
+  const live = chosen === null && actionable && onChoose !== undefined && !inactive
   const go = planChoiceId(PLAN_GO, plan.planId)
   const edits = !samePlan(plan, shown)
   const unit = plan.units
@@ -75,9 +81,11 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
     if (id === go) editPlan(plan.planId, plan)
     setNote(null)
     setSent(id)
+    // no internal reason or id reaches the person: the plan is over, and asking again makes a new one
     onChoose(askId, id).catch((e: unknown) => {
+      console.warn('mimir: the plan answer did not land', e)
       setSent(null)
-      setNote(`Could not send your answer: ${e instanceof Error ? e.message : String(e)}`)
+      setInactive(true)
     })
   }
 
@@ -103,7 +111,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
     </li>
   )
 
-  const status = chosen === null ? (actionable ? (edits ? 'Your changes go with Go' : 'Waiting for your go') : 'No answer') : chosen === go ? (edits ? 'Approved with your changes' : 'Approved as shown') : 'Not approved, nothing built'
+  const status = chosen === null ? (inactive ? PLAN_INACTIVE : actionable ? (edits ? 'Your changes go with Go' : 'Waiting for your go') : 'No answer') : chosen === go ? (edits ? 'Approved with your changes' : 'Approved as shown') : 'Not approved, nothing built'
   const base = `plan-${plan.planId}`
 
   return (
@@ -162,7 +170,7 @@ export function PlanCard({ askId, plan: given, shown = given, picked, actionable
         </section>
       ) : null}
       <span className="sheet-rec-foot plan-rec-foot">
-        <span className="lookup-rec-s" data-testid="mimir-plan-status" aria-live="polite">
+        <span className="lookup-rec-s" data-testid="mimir-plan-status" role="status">
           {chosen === go ? <Icon name="check" size={14} /> : null}
           {status}
         </span>

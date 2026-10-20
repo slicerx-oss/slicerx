@@ -15,13 +15,19 @@ type Item =
   | { key: string; kind: 'who' }
   | { key: string; kind: 'block'; block: Block; replay: boolean }
 
+/** Blocks the phone draws. A print run card stays on the desktop, so a run block gets no row. */
+function shown(b: Block): boolean {
+  return b.kind !== 'run'
+}
+
 /** Flattens turns into list rows, oldest first. */
 export function transcriptItems(tr: Transcript): Item[] {
   const out: Item[] = []
   for (const turn of tr.turns) {
+    const blocks = turn.blocks.filter(shown)
     if (turn.user !== null) out.push({ key: `${turn.id}u`, kind: 'user', text: turn.user, where: turn.where })
-    if (turn.blocks.length > 0) out.push({ key: `${turn.id}w`, kind: 'who' })
-    for (const b of turn.blocks) out.push({ key: `${turn.id}${b.id}`, kind: 'block', block: b, replay: turn.replay })
+    if (blocks.length > 0) out.push({ key: `${turn.id}w`, kind: 'who' })
+    for (const b of blocks) out.push({ key: `${turn.id}${b.id}`, kind: 'block', block: b, replay: turn.replay })
   }
   return out
 }
@@ -78,6 +84,13 @@ export function TranscriptList({ transcript, onApprove, onDeny, onRetry, empty }
         return <Citations items={b.items} />
       case 'error':
         return <ErrorLine message={b.message} retryable={b.retryable} {...(onRetry ? { onRetry } : {})} />
+      case 'run':
+        // the print run card is desktop only; transcriptItems leaves these out
+        return null
+      default: {
+        const unknown: never = b
+        return unknown
+      }
     }
   }
 

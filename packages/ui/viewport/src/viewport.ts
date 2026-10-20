@@ -1253,7 +1253,10 @@ class ViewportImpl implements Viewport {
       }
     }
     const t0 = performance.now()
+    const bedWas = new Vector3().setFromMatrixPosition(this.stage.bedMatrix())
     this.stage.setBed(plate.bed, plate.surfaceLabel)
+    // a kept camera stays on the same spot of a bed of another size (another printer), so the parts stay in view
+    if (opts.keepCamera) this.rig.followBed(new Vector3().setFromMatrixPosition(this.stage.bedMatrix()).sub(bedWas))
     this.stage.setNozzleZones(plate.zones ?? [])
     if (plate.excluded) this.stage.setExcludedAreas(plate.excluded)
     this.hoverFace(null)

@@ -205,6 +205,96 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .mimir-chat .plan-rec .plan-rec-row { min-height: 44px; }
 :root[data-phone] .mimir-chat .plan-rec .sheet-rec-field { width: 120px; height: 40px; }
 :root[data-phone] .mimir-chat .plan-rec-foot .sx-btn { min-height: 44px; }
+/* The send card (send-card.tsx): flat like the plan card, rows of label and value, the problems that keep Print off as
+   plain lines, the bed tick on its own line, and a footer whose buttons keep their place and only turn off. */
+.mimir-chat .send-rec { gap: var(--s-2); max-width: 68ch; }
+.mimir-chat .send-rec .send-rec-row { grid-template-columns: minmax(96px, auto) minmax(0, 1fr); }
+.mimir-chat .send-rec .send-rec-v { font-family: var(--f-body); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+.mimir-chat .send-rec-errors, .mimir-chat .send-rec-warnings { margin: 0; padding-left: 18px; line-height: 1.45; }
+.mimir-chat .send-rec-errors { color: var(--red); }
+.mimir-chat .send-rec-warnings { color: var(--orange); }
+.mimir-chat .send-rec-dev { display: flex; flex-direction: column; gap: var(--s-2); padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
+.mimir-chat .send-rec-remedy { display: flex; flex-direction: column; gap: 2px; }
+.mimir-chat .send-rec-bed { display: flex; align-items: flex-start; gap: 8px; min-height: 28px; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); color: var(--t-fg); cursor: pointer; }
+.mimir-chat .send-rec-bed input { flex: none; margin: 2px 0 0; width: 16px; height: 16px; }
+/* The status takes a line of its own and wraps, so a long one (what keeps Print off, a card no longer active) is read
+   in full, and the buttons stay in one place under it whatever it says. */
+.mimir-chat .send-rec-foot { flex-wrap: wrap; justify-content: flex-end; align-items: center; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
+.mimir-chat .send-rec .send-rec-foot .lookup-rec-s { flex: 1 1 100%; display: flex; align-items: center; gap: 6px; min-height: 28px; padding-top: 0; font-variant-numeric: tabular-nums; white-space: normal; overflow: visible; -webkit-line-clamp: none; overflow-wrap: anywhere; }
+.mimir-chat .send-rec[data-state="approved"] .send-rec-foot .lookup-rec-s { color: var(--green); }
+:root[data-phone] .mimir-chat .send-rec .send-rec-row { grid-template-columns: minmax(84px, auto) minmax(0, 1fr); min-height: 36px; }
+:root[data-phone] .mimir-chat .send-rec .send-rec-v { white-space: normal; text-align: right; }
+:root[data-phone] .mimir-chat .send-rec-bed { min-height: 44px; align-items: center; }
+:root[data-phone] .mimir-chat .send-rec-bed input { width: 22px; height: 22px; margin: 0; }
+:root[data-phone] .mimir-chat .send-rec-foot { flex-wrap: wrap; }
+:root[data-phone] .mimir-chat .send-rec-foot .lookup-rec-s { flex-basis: 100%; }
+:root[data-phone] .mimir-chat .send-rec-foot .sx-btn { flex: 1; min-height: 44px; }
+/* The slice card (slice-card.tsx): flat in the conversation. The plate's outline beside the time, filament and cost
+   in three equal columns, numbers in the body font with tabular figures; each warning on a line of its own, then the
+   stale line, then Open in Slice at the foot, where it keeps its size and place. */
+.mimir-chat .slice-rec { gap: var(--s-2); max-width: 68ch; }
+.mimir-chat .slice-rec-main { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.mimir-chat .slice-rec-thumb { display: grid; place-items: center; flex: none; width: 56px; height: 56px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); overflow: hidden; }
+.mimir-chat .slice-rec-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mimir-chat .slice-rec-figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 var(--s-3); margin: 0; }
+.mimir-chat .slice-rec-figs > div { min-width: 0; }
+.mimir-chat .slice-rec-figs dt { color: var(--t-sub); font-size: var(--fs-sm); }
+.mimir-chat .slice-rec-figs dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t-fg); font: var(--fw-semibold) var(--fs-md) var(--f-body); font-variant-numeric: tabular-nums; }
+.mimir-chat .slice-rec-warn { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: var(--s-2) 0 0; border-top: 1px solid var(--line-soft); list-style: none; }
+.mimir-chat .slice-rec-warn li { display: flex; align-items: flex-start; gap: 6px; color: var(--t-fg); line-height: 1.45; overflow-wrap: anywhere; }
+.mimir-chat .slice-rec-warn .sx-ic { flex: none; margin-top: 2px; color: var(--orange); }
+.mimir-chat .slice-rec-stale { margin: 0; color: var(--orange); line-height: 1.45; }
+.mimir-chat .slice-rec-foot { display: flex; justify-content: flex-end; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
+:root[data-phone] .mimir-chat .slice-rec-foot .sx-btn { min-height: 44px; }
+/* The progress card (progress-card.tsx): flat in the conversation. The camera still in a box of fixed size beside the
+   printer, the file, the layer and the time left, then a bar. Numbers in the body font with tabular figures; the box and
+   the bar keep their size as the figures change and when the print ends. */
+.mimir-chat .progress-rec { gap: var(--s-2); max-width: 68ch; }
+.mimir-chat .progress-rec-main { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.mimir-chat .progress-rec-still { display: block; flex: none; width: 96px; height: 72px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); overflow: hidden; background: var(--line-soft); }
+.mimir-chat .progress-rec-still img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.mimir-chat .progress-rec-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mimir-chat .progress-rec-file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t-sub); font-size: var(--fs-sm); }
+.mimir-chat .progress-rec-figs { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 var(--s-3); color: var(--t-fg); font: var(--fw-semibold) var(--fs-md) var(--f-body); font-variant-numeric: tabular-nums; }
+.mimir-chat .progress-rec-bar { display: block; height: 6px; margin-top: 2px; border-radius: 3px; background: var(--surface-line); overflow: hidden; }
+.mimir-chat .progress-rec-bar > span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.mimir-chat .progress-rec[data-state="finished"] .progress-rec-bar > span { background: var(--green); }
+.mimir-chat .progress-rec-bar[data-tone="off"] > span { background: var(--t-sub); }
+.mimir-chat .progress-rec[data-state="finished"] .lookup-rec-t .sx-ic { color: var(--green); }
+.mimir-chat .progress-rec:is([data-state="failed"], [data-state="canceled"]) .lookup-rec-t .sx-ic { color: var(--orange); }
+.mimir-chat .progress-rec-flag { margin: 0; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); color: var(--orange); line-height: 1.45; }
+:root[data-phone] .mimir-chat .progress-rec-still { width: 80px; height: 60px; }
+
+/* The printer and spool pick (target-card.tsx): a flat card, each online printer with its loaded spools in a grid.
+   A spool keeps the cell for its check from the start and a pick changes only fill and border, so nothing moves. */
+.target-rec { display: flex; flex-direction: column; gap: var(--s-3); max-width: 68ch; padding: var(--s-3) var(--s-4) var(--s-4); border: 1px solid var(--surface-line); border-radius: var(--r-md); background: var(--surface-card); }
+.target-rec-top { display: flex; align-items: center; gap: var(--s-2); min-height: 20px; font-size: var(--fs-sm); color: var(--t-mute); }
+.target-rec-state { margin-left: auto; display: inline-flex; align-items: center; gap: var(--s-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.target-rec-state[data-on] { color: var(--green); }
+.target-rec-state .sx-ic { flex: none; width: 14px; height: 14px; }
+.target-rec-q { color: var(--t-fg); font: var(--fw-semibold) var(--fs-body) / 1.45 var(--f-body); }
+.target-rec-printers { display: flex; flex-direction: column; gap: var(--s-3); margin: 0; padding: 0; list-style: none; }
+.target-rec-printer { display: flex; flex-direction: column; gap: var(--s-2); }
+.target-rec-name { display: flex; align-items: baseline; gap: var(--s-2); min-width: 0; color: var(--t-fg); font: var(--fw-semibold) var(--fs-md) var(--f-body); }
+.target-rec-name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.target-rec-model { flex: none; font-weight: var(--fw-regular); font-size: var(--fs-sm); color: var(--t-mute); }
+.target-rec-spools { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: var(--s-2); }
+.target-rec-spool { display: grid; grid-template-columns: auto minmax(0, 1fr) 16px; align-items: center; gap: var(--s-2); min-height: 44px; padding: var(--s-1) var(--s-2); box-sizing: border-box; border: 1px solid var(--line); border-radius: var(--r-sm); background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.target-rec-spool:hover:not(:disabled) { border-color: var(--purple); background: color-mix(in srgb, var(--purple) 8%, transparent); }
+.target-rec-spool:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.target-rec-spool:disabled { cursor: default; }
+.target-rec-spool[data-on] { border-color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
+.target-rec-spool[data-off] { opacity: 0.5; }
+.target-rec-words { display: flex; flex-direction: column; min-width: 0; }
+.target-rec-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); color: var(--t-fg); }
+.target-rec-slot { font-size: var(--fs-sm); color: var(--t-mute); font-variant-numeric: tabular-nums; }
+.target-rec-check { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; color: var(--green); }
+.target-rec-check .sx-ic { width: 14px; height: 14px; }
+/* the line a pick that no longer lands fills: always one line, so the card never grows when it does */
+.target-rec-note { min-height: 18px; line-height: 18px; font-size: 12.5px; color: var(--orange); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.target-rec-foot { display: flex; padding-top: var(--s-2); border-top: 1px solid var(--line-soft); }
+:root[data-phone] .target-rec-spools { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+:root[data-phone] .target-rec-foot .sx-btn { min-height: var(--h-lg); }
 
 /* The chip that asks before mimir keeps a note (remember-chip.tsx): a flat card in the chat, the note in the person's
    words, and its answer and outcome stacked in one cell so answering moves nothing. */
@@ -218,7 +308,6 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 .mem-chip-a > [data-on] { visibility: visible; }
 .mem-chip-values { font-size: var(--fs-md); color: var(--muted); font-variant-numeric: tabular-nums; }
 .mem-chip-hint { font-size: var(--fs-sm); color: var(--dim); }
-.mem-chip-err { font-size: var(--fs-sm); color: var(--orange); }
 .mem-chip-a > [role='status'] { font-size: var(--fs-md); color: var(--muted); }
 .mem-chip-a > [role='status'] > .sx-ic { width: 16px; height: 16px; color: var(--green); }
 .mem-chip[data-done='saved'] .mem-chip-a > [role='status'] > span { color: var(--fg); }

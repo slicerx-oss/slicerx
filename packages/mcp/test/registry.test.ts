@@ -48,5 +48,7 @@ describe('the tool registry', () => {
     // the read is gated as a read and adding a fact as a profile change
     expect(doc).toContain('| `slicerx_mimir_memory` |  |  | read |')
     expect(doc).toContain('| `slicerx_mimir_memory_remember` |  |  | profile |')
+    // the print run read-back is a read; starting a print stays with printer.queue and the person
+    expect(doc).toContain('| `slicerx_mimir_run` |  |  | read |')
   })
 })

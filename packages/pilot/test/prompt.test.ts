@@ -42,3 +42,55 @@ describe('the step list in the full prompt', () => {
     expect(p.indexOf('Multi-step requests:')).toBeLessThan(p.indexOf(VOICE_HEADER))
   })
 })
+
+describe('the print run in the full prompt', () => {
+  /** The prompt line that names `tool`. */
+  const lineWith = (p: string, tool: string): string => p.split('\n').find((l) => l.includes(tool)) ?? ''
+
+  it('the full prompt orders target, slice and send', () => {
+    const p = systemPrompt('full')
+    const line = lineWith(p, 'run.target')
+    expect(line).toContain('make and print')
+    // design first, then the printer and spool, the slice and the send
+    const at = (s: string) => line.indexOf(s)
+    expect(at('design')).toBeGreaterThan(-1)
+    expect(at('design')).toBeLessThan(at('run.target'))
+    expect(at('run.target')).toBeLessThan(at('app.slice'))
+    expect(at('app.slice')).toBeLessThan(at('printer.queue'))
+    expect(line).toContain('step list first')
+    // a pick on the card is offered once to be remembered, and the chip asks
+    const remember = lineWith(p, 'memory.remember')
+    expect(remember).toContain('offer once')
+    expect(remember).toContain('picked')
+    // without the memory tool there is nothing to offer
+    expect(systemPrompt('full', (n) => n !== 'memory.remember')).not.toContain('memory.remember')
+  })
+
+  it('the prompt forbids sending a stale slice', () => {
+    const p = systemPrompt('full')
+    const line = lineWith(p, 'stale slice')
+    expect(line).toContain('Never call printer.queue with a stale slice')
+    expect(line).toContain('slice again')
+    expect(line).toContain('"use 0.2 mm layers"')
+    expect(line).toContain('"on the P1S instead"')
+  })
+
+  it('a request to make a part, without asking to print it, ends with the part', () => {
+    for (const p of [systemPrompt('full'), systemPrompt('full', (n) => !n.startsWith('printer.') && n !== 'run.target')]) {
+      const line = lineWith(p, 'Print only when asked')
+      expect(line).toContain('a part alone ends with the part')
+    }
+  })
+
+  it('no printer tools, no send step in the prompt', () => {
+    const p = systemPrompt('full', (n) => !n.startsWith('printer.') && n !== 'run.target')
+    expect(p).not.toContain('printer.queue')
+    expect(p).not.toContain('run.target')
+    expect(p).not.toContain('stale slice')
+    const line = lineWith(p, 'make and print')
+    expect(line).toContain('app.slice')
+    expect(line).toContain('offer to save the file')
+    // the cad prompt has no print run at all
+    expect(systemPrompt('cad')).not.toContain('make and print')
+  })
+})

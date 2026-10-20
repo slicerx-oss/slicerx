@@ -4,11 +4,13 @@
 // The part card: a reply that made a part shows it as a card built from the tool's own result, and the next steps
 // for it sit under that reply once it has finished, bound to that part: an immediate step names its value and sends,
 // the size step asks for the size first, and a step for a part that is gone says so. Without part handlers the call
-// stays a tool row.
+// stays a tool row. A design built step by step keeps its step rows and gets one card after them, for the design as
+// its newest step left it: "Part created" when the turn started it, "<name> updated" when it changed one, and no card
+// when an undo left it empty.
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { PilotEvent } from '@slicerx/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createdPart, followUps, partLine, partTitle, sizeRequest, Terminal, TranscriptView } from '../ui/index'
+import { builtPart, createdPart, followUps, partLine, partTitle, sizeRequest, Terminal, TranscriptView } from '../ui/index'
 import { emptyTranscript, foldEvents, startTurn } from '../ui/reduce'
 
 afterEach(cleanup)
@@ -148,6 +150,179 @@ describe('the part a reply made', () => {
     cleanup()
     render(<TranscriptView transcript={reply(true, { sizeMm: [1, 2, 3] })} showThinking={false} approvals={approvals} parts={handlers()} />)
     expect(screen.queryByTestId('mimir-part')).toBeNull()
+  })
+})
+
+/** The design summary a design step returns, as the design tools give it. */
+const summary = (sizeMm: number[] | null, steps: number) => ({
+  design: 'box-with-lid',
+  name: 'Box with lid',
+  exact: true,
+  steps,
+  ...(sizeMm ? { minMm: [0, 0, 0], sizeMm, parts: [{ index: 0, name: 'Box', sizeMm }] } : { parts: [] }),
+  volumeMm3: 1,
+})
+
+/** A box with a lid built in four extrudes after design.new, as the tab's script builds it; `last` adds one more call. */
+function boxWithLid(opts: { done?: boolean; last?: { tool: string; ok: boolean } } = {}): ReturnType<typeof reply> {
+  const steps: [string, string, unknown][] = [
+    ['design.new', 'Started Box with lid (box-with-lid)', summary(null, 0)],
+    ['geom.extrude', 'Extruded: step 1, Box', summary([40, 30, 20], 1)],
+    ['geom.extrude', 'Cut: step 2', summary([40, 30, 20], 2)],
+    ['geom.extrude', 'Extruded: step 3, Lid', summary([90, 30, 20], 3)],
+    ['geom.extrude', 'Extruded: step 4, Lip', summary([90, 30, 20], 4)],
+  ]
+  if (opts.last) steps.push([opts.last.tool, 'Last', summary([90, 30, 25], 5)])
+  const ev: PilotEvent[] = [
+    { type: 'start', runId: 'r1', sessionId: 's', provider: 'scripted', model: 'm', at: '2026-10-14T00:00:00Z' },
+    { type: 'text', delta: 'I will make a box with a lid.' },
+    ...steps.flatMap(([tool, said, output], i): PilotEvent[] => [
+      { type: 'tool_call', callId: `d${i}`, tool, source: 'command', input: {}, args: '' },
+      { type: 'tool_result', callId: `d${i}`, ok: i < 5 || opts.last?.ok === true, summary: said, output },
+    ]),
+    { type: 'text', delta: 'Done: the box and its lid.' },
+    ...(opts.done === false ? [] : [{ type: 'done', stopReason: 'end', ms: 900 } as const]),
+  ]
+  return foldEvents(ev, startTurn(emptyTranscript(), { user: 'a box with a lid' }, 0), 0)
+}
+
+describe('a design built step by step', () => {
+  it('a box with a lid gives one card, not four, and the step rows stay', () => {
+    const h = handlers()
+    render(<TranscriptView transcript={boxWithLid()} showThinking={false} approvals={approvals} parts={h} />)
+    const cards = screen.getAllByTestId('mimir-part')
+    expect(cards).toHaveLength(1)
+    // the design as its newest step left it: the design id, which is the object's id on the plate, its name and size
+    expect(cards[0]!.getAttribute('data-part')).toBe('box-with-lid')
+    expect(cards[0]!.textContent).toContain('Part created')
+    expect(cards[0]!.textContent).toContain('Box with lid 90 x 30 x 20 mm')
+    // every step keeps its row, design.new included
+    expect(document.querySelectorAll('.trow')).toHaveLength(5)
+    // the card follows the step rows, and the next steps follow the card
+    const order = Array.from(document.querySelectorAll('.trow, .part-card, .follow')).map((e) => e.className.split(' ')[0])
+    expect(order).toEqual(['trow', 'trow', 'trow', 'trow', 'trow', 'part-card', 'follow'])
+    fireEvent.click(within(cards[0]!).getByRole('button', { name: 'Select the Box with lid' }))
+    expect(h.onSelect).toHaveBeenCalledWith('box-with-lid')
+    fireEvent.click(within(cards[0]!).getByRole('button', { name: 'Edit the Box with lid' }))
+    expect(h.onEdit).toHaveBeenCalledWith('box-with-lid')
+  })
+
+  it('reads the design from a step that changed it, never from a read or a failed step', () => {
+    const t = boxWithLid()
+    const rows = t.turns[0]!.blocks.flatMap((b) => (b.kind === 'tools' ? b.rows : []))
+    // design.new has nothing in it yet
+    expect(builtPart(rows[0]!)).toBeNull()
+    expect(builtPart(rows[1]!)).toEqual({ id: 'box-with-lid', name: 'Box with lid', kind: 'part', sizeMm: [40, 30, 20], built: true })
+    // the part generator's card is unchanged: a design step is no maker
+    expect(createdPart(rows[1]!)).toBeNull()
+    // a read after the build leaves the card at the newest build step
+    render(<TranscriptView transcript={boxWithLid({ last: { tool: 'design.steps', ok: true } })} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getByTestId('mimir-part').textContent).toContain('90 x 30 x 20 mm')
+    cleanup()
+    // a failed step leaves it at the step before
+    render(<TranscriptView transcript={boxWithLid({ last: { tool: 'geom.fillet', ok: false } })} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getByTestId('mimir-part').textContent).toContain('90 x 30 x 20 mm')
+    cleanup()
+    render(<TranscriptView transcript={boxWithLid({ last: { tool: 'geom.fillet', ok: true } })} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getByTestId('mimir-part').textContent).toContain('90 x 30 x 25 mm')
+  })
+
+  it('keeps only the rows without part handlers, and shows the card while the build runs', () => {
+    render(<TranscriptView transcript={boxWithLid()} showThinking={false} approvals={approvals} />)
+    expect(screen.queryByTestId('mimir-part')).toBeNull()
+    expect(document.querySelectorAll('.trow')).toHaveLength(5)
+    cleanup()
+    render(<TranscriptView transcript={boxWithLid({ done: false })} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getAllByTestId('mimir-part')).toHaveLength(1)
+    expect(screen.queryAllByTestId('mimir-follow')).toHaveLength(0)
+  })
+
+  it('a turn that only reads a design shows no card', () => {
+    const ev: PilotEvent[] = [
+      { type: 'start', runId: 'r1', sessionId: 's', provider: 'scripted', model: 'm', at: '2026-10-14T00:00:00Z' },
+      { type: 'tool_call', callId: 'r', tool: 'design.steps', source: 'command', input: {}, args: '' },
+      { type: 'tool_result', callId: 'r', ok: true, summary: '4 steps', output: summary([90, 30, 20], 4) },
+      { type: 'done', stopReason: 'end', ms: 10 },
+    ]
+    render(<TranscriptView transcript={foldEvents(ev, startTurn(emptyTranscript(), { user: 'what steps?' }, 0), 0)} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.queryByTestId('mimir-part')).toBeNull()
+    expect(document.querySelectorAll('.trow')).toHaveLength(1)
+  })
+})
+
+/** One turn of design calls: each is [tool, ok, the summary it returned]; `perm` adds the turn's permission line. */
+function designTurn(calls: [string, boolean, unknown][], perm = false): ReturnType<typeof reply> {
+  const ev: PilotEvent[] = [
+    { type: 'start', runId: 'r1', sessionId: 's', provider: 'scripted', model: 'm', at: '2026-10-14T00:00:00Z' },
+    ...(perm ? [{ type: 'permission_note', permission: 'slice', mode: 'allow', tool: 'geom.extrude', message: 'Slice and arrange is set to Allow in Permissions, so mimir continued without asking.' } as const] : []),
+    ...calls.flatMap(([tool, ok, output], i): PilotEvent[] => [
+      { type: 'tool_call', callId: `c${i}`, tool, source: 'command', input: {}, args: '' },
+      { type: 'tool_result', callId: `c${i}`, ok, summary: tool, output },
+    ]),
+    { type: 'text', delta: 'Done.' },
+    { type: 'done', stopReason: 'end', ms: 10 },
+  ]
+  return foldEvents(ev, startTurn(emptyTranscript(), { user: 'change it' }, 0), 0)
+}
+
+describe('what the built card says the turn did', () => {
+  it('says Part created only when the turn started the design', () => {
+    render(<TranscriptView transcript={boxWithLid()} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getByRole('group', { name: 'Part created' })).toBeTruthy()
+    cleanup()
+    // a later turn that fillets the same design names the design and says it was updated
+    render(<TranscriptView transcript={designTurn([['geom.fillet', true, summary([90, 30, 20], 5)]])} showThinking={false} approvals={approvals} parts={handlers()} />)
+    const card = screen.getByTestId('mimir-part')
+    expect(card.querySelector('.part-title')!.textContent).toBe('Box with lid updated')
+    expect(card.getAttribute('aria-label')).toBe('Box with lid updated')
+    expect(card.textContent).toContain('Box with lid 90 x 30 x 20 mm')
+    expect(card.textContent).not.toContain('created')
+    // a design.new that failed started nothing, so the design was only updated
+    cleanup()
+    render(<TranscriptView transcript={designTurn([['design.new', false, null], ['geom.extrude', true, summary([40, 30, 20], 2)]])} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getByTestId('mimir-part').querySelector('.part-title')!.textContent).toBe('Box with lid updated')
+  })
+
+  it('keeps the part generator\'s title', () => {
+    expect(partTitle({ id: 'c', name: '20 mm cube', kind: 'cube', sizeMm: [20, 20, 20] })).toBe('Cube created')
+    expect(partTitle({ id: 'b', name: 'Box with lid', kind: 'part', sizeMm: [1, 1, 1], built: true })).toBe('Part created')
+    expect(partTitle({ id: 'b', name: 'Box with lid', kind: 'part', sizeMm: [1, 1, 1], built: true, updated: true })).toBe('Box with lid updated')
+  })
+
+  it('an undo that leaves the design empty shows no card', () => {
+    render(<TranscriptView transcript={designTurn([['design.undo', true, summary(null, 0)]], true)} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.queryByTestId('mimir-part')).toBeNull()
+    expect(screen.queryAllByTestId('mimir-follow')).toHaveLength(0)
+    expect(document.querySelectorAll('.trow')).toHaveLength(1)
+    // with no card, the permission line stays
+    expect(document.body.textContent).toContain('set to Allow in Permissions')
+    cleanup()
+    // nor when the turn built the design first and then undid back to nothing
+    render(<TranscriptView transcript={designTurn([['design.new', true, summary(null, 0)], ['geom.extrude', true, summary([40, 30, 20], 1)], ['design.undo', true, summary(null, 0)]])} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.queryByTestId('mimir-part')).toBeNull()
+    cleanup()
+    // an undo that leaves something shows the design as it is now
+    render(<TranscriptView transcript={designTurn([['design.undo', true, summary([40, 30, 20], 3)]])} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getByTestId('mimir-part').textContent).toContain('Box with lid updated')
+    expect(screen.getByTestId('mimir-part').textContent).toContain('40 x 30 x 20 mm')
+    cleanup()
+    // and a redo after the emptying undo brings the card back
+    render(<TranscriptView transcript={designTurn([['design.undo', true, summary(null, 0)], ['design.redo', true, summary([40, 30, 20], 1)]])} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getByTestId('mimir-part').textContent).toContain('40 x 30 x 20 mm')
+  })
+
+  it('drops the permission line for a built design, created or updated', () => {
+    render(<TranscriptView transcript={designTurn([['design.new', true, summary(null, 0)], ['geom.extrude', true, summary([40, 30, 20], 1)]], true)} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getByRole('group', { name: 'Part created' })).toBeTruthy()
+    expect(document.body.textContent).not.toContain('set to Allow in Permissions')
+    cleanup()
+    render(<TranscriptView transcript={designTurn([['geom.fillet', true, summary([40, 30, 20], 2)]], true)} showThinking={false} approvals={approvals} parts={handlers()} />)
+    expect(screen.getByRole('group', { name: 'Box with lid updated' })).toBeTruthy()
+    expect(document.body.textContent).not.toContain('set to Allow in Permissions')
+    cleanup()
+    // without part handlers the line stays, as a plain row
+    render(<TranscriptView transcript={designTurn([['geom.fillet', true, summary([40, 30, 20], 2)]], true)} showThinking={false} approvals={approvals} />)
+    expect(document.body.textContent).toContain('set to Allow in Permissions')
   })
 })
 

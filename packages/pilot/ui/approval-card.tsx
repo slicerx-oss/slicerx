@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { useEffect, useRef, useState } from 'react'
-import { PERMISSION_LABELS, startsPrint, type ApprovalRequest } from '@slicerx/contracts'
+import { PERMISSION_LABELS, startsPrint, type ApprovalRequest, type PrintRun } from '@slicerx/contracts'
 import { Button, Icon } from '@slicerx/ui'
 import { fmtClock, fmtCountdown } from './format'
 import type { ApprovalResolution } from './reduce'
@@ -16,6 +16,8 @@ export interface ApprovalCardProps {
   onApprove: (request: ApprovalRequest, opts: { bedClear: boolean }) => Promise<void>
   onCancel: (request: ApprovalRequest) => Promise<void>
   onEditPlan?: ((request: ApprovalRequest) => void) | undefined
+  /** The chat's print run, for a host's own card for a runtime tool. It shows the run; it never permits anything. */
+  run?: PrintRun | null | undefined
 }
 
 function ruleLabel(request: ApprovalRequest): string {

@@ -381,7 +381,7 @@
 .sx-pilot .part-card{display:flex;flex-direction:column;gap:var(--s-2);padding:var(--s-3) var(--s-4);border:1px solid var(--surface-line);border-radius:var(--r-md);background:var(--surface-card);max-width:68ch}
 .sx-pilot .part-row{display:flex;align-items:center;gap:var(--s-3)}
 /* the body selects the part: the glyph and the text are one button */
-.sx-pilot .part-main{display:flex;align-items:center;gap:var(--s-4);flex:1;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:var(--r-sm)}
+.sx-pilot .part-main{display:flex;align-items:center;gap:var(--s-4);flex:1;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:var(--r-sm);-webkit-tap-highlight-color:transparent}
 .sx-pilot .part-main:hover .part-title{color:var(--purple)}
 .sx-pilot .part-glyph{display:block;flex:none}
 .sx-pilot .part-glyph .pg-top{fill:color-mix(in srgb,var(--purple) 70%,var(--ink-1))}

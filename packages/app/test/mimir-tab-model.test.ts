@@ -5,14 +5,20 @@
 // design tools and the slicing, printer and settings tools, and the scripted stub only when no model answers. The chat's link and the app link's mimir.tab say
 // which, and the request a model gets carries the design prompt, the design tools and Auto's pick.
 import type { Host, LlmHttpRequest, LlmTransport, MeshHandle, MeshPart, PilotEvent } from '@slicerx/contracts'
+import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool } from '@slicerx/pilot'
+import { DEFAULT_POLICY } from '@slicerx/contracts'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { z } from 'zod'
 import { runCall } from '../src/app-link/methods'
 import { listSessions, readSession } from '../src/app-link/sessions'
 import { currentEdition, NEUTRAL, setCurrentEdition } from '../src/edition'
+import { guardedPrinters } from '../src/plate/guard'
+import { createSendLedger } from '../src/plate/send-ledger'
 import { registerMimirCloud } from '../src/pilot-connect/cloud'
 import { setHostSlices } from '../src/state/model-mode'
 import { get, set } from '../src/state/store'
 import { mimirLink } from '../src/workspaces/mimir/connection'
+import { appPrintRun } from '../src/workspaces/mimir/print-run'
 import { mimirLogs, resetTabMimir, tabMimir, tabModel } from '../src/workspaces/mimir/session'
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] })
@@ -212,6 +218,81 @@ describe('the mimir tab on a model', () => {
     const model = await tabMimir(host, NEUTRAL)
     expect(model).not.toBe(stub)
     expect(mimirLink.getState().link).toBe('model')
+  })
+
+  it('keeps the runtime when the bridge comes back, so its open cards stay answerable', async () => {
+    set({ pilot: { mode: 'unset' } })
+    const printers = () => ({ list: async () => [], plugins: async () => [], subscribe: () => () => undefined }) as unknown as NonNullable<Host['printers']>
+    const host = hostWith()
+    host.printers = printers()
+    const first = await tabMimir(host, NEUTRAL)
+    // the bridge came back: its new connection's printers replace the dropped one's, in a new epoch
+    host.printers = printers()
+    set((s) => ({ linkEpoch: s.linkEpoch + 1 }))
+    expect(await tabMimir(host, NEUTRAL)).toBe(first)
+    // the watch on a started print reads the host's printers as they are now
+    expect(appPrintRun(host).printers?.()).toBe(host.printers)
+  })
+
+  it('a send card open across a reconnect still prints, through the new connection', async () => {
+    const info = { id: 'bay-2', name: 'Bay 2', vendor: 'Bambu Lab', model: 'P1S', plugin: 'bambu-lan', nozzleCount: 1 }
+    const connection = () => {
+      const calls: string[] = []
+      const printers = {
+        list: async () => [info],
+        plugins: async () => [],
+        status: async () => ({ printerId: 'bay-2', state: 'idle', nozzles: [], slots: [], cameraAvailable: false, updatedAt: '' }),
+        subscribe: () => () => undefined,
+        upload: async (id: string, f: { name: string }) => {
+          calls.push(`upload ${f.name}`)
+          return { printerId: id, path: `/${f.name}`, name: f.name }
+        },
+        start: async (f: { name: string }) => void calls.push(`start ${f.name}`),
+      } as unknown as NonNullable<Host['printers']>
+      return { printers, calls }
+    }
+    const SHA = 'ab'.repeat(32)
+    const send = defineTool<Record<string, never>>({
+      name: 'printer.queue',
+      version: '1',
+      description: 'Sends the plate and starts it',
+      source: 'command',
+      permission: 'queue',
+      input: z.object({}),
+      async run(_i, ctx) {
+        const file = { name: 'clip.gcode.3mf', kind: 'gcode.3mf' as const, data: new ArrayBuffer(0), sha256: SHA }
+        const remote = await ctx.host.printers.upload('bay-2', file, ctx.token!)
+        await ctx.host.printers.start(remote, {}, ctx.token!)
+        return { summary: 'Printing' }
+      },
+    })
+    const before = connection()
+    const host = { printers: before.printers } as Pick<Host, 'printers'>
+    const ledger = createSendLedger()
+    const pilot = createPilot({
+      host: { printers: guardedPrinters(host, { ledger })!, approvals: createApprovalBroker(), llm: {} as LlmTransport },
+      config: DEFAULT_CONFIG,
+      policy: DEFAULT_POLICY,
+      client: createScriptedClient([{ calls: [{ name: 'printer.queue', args: {} }] }, { text: 'Printing.' }], { chunk: false }),
+      builtins: false,
+      tools: [send] as never[],
+      printRun: appPrintRun(host),
+    })
+    const after = connection()
+    const events: PilotEvent[] = []
+    for await (const ev of pilot.run('s', 'print it')) {
+      events.push(ev)
+      if (ev.type !== 'approval_request') continue
+      // the bridge dropped and came back while the card waited; the person ticks the bed and presses Print
+      host.printers = after.printers
+      set((s) => ({ linkEpoch: s.linkEpoch + 1 }))
+      ledger.mark(ev.request.id, 'bay-2', SHA, new Date(Date.now() + 60_000).toISOString())
+      await pilot.resolveApproval(ev.request.id, { kind: 'approve' })
+    }
+    expect(events.filter((e) => e.type === 'tool_result')).toEqual([expect.objectContaining({ ok: true })])
+    expect(after.calls).toEqual(['upload clip.gcode.3mf', 'start clip.gcode.3mf'])
+    expect(before.calls).toEqual([])
+    expect(get().approval).toBeNull()
   })
 
   it('reports none before the tab first opens', async () => {

@@ -15,6 +15,7 @@ import type {
   PilotSheetAnswer,
   PilotSheetBind,
   PluginLoad,
+  PrintRun,
   SettingsDiff,
   ToolDisplay,
   ToolSource,
@@ -52,13 +53,21 @@ export type Block =
   | { kind: 'diff'; id: string; diff: SettingsDiff }
   | { kind: 'perm'; id: string; permission: PermissionClass; mode: 'allow' | 'off'; message: string }
   | { kind: 'model'; id: string; model: string; label: string; reason: 'request' | 'tool' | 'struggle' }
-  | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean; source?: ToolSource }
+  /** `builtin`: the runtime's own tool asked, so the host may show its own card in place of the approval card. */
+  | { kind: 'approval'; id: string; request: ApprovalRequest; resolution: ApprovalResolution | null; replay: boolean; source?: ToolSource; builtin?: boolean }
   | { kind: 'lookup'; id: string; lookup: PilotLookup }
   | { kind: 'choice'; id: string; askId: string; title: string; question: string; choices: PilotChoice[]; picked: string | null; replay: boolean }
   | { kind: 'sheet'; id: string; sheet: PilotSheet; answer: PilotSheetAnswer | null; replay: boolean; bound?: { design: string; binds: PilotSheetBind[] } }
   | { kind: 'summary'; id: string; title: string; rows: [string, string][]; stopped: boolean; ms: number | null }
   | { kind: 'citations'; id: string; items: Citation[] }
   | { kind: 'error'; id: string; message: string; retryable: boolean; code?: string }
+  /**
+   * A place for the print run's card: the slice it made, or the print it started. The card reads `Transcript.printRun`
+   * while it is the latest of its kind; `run` is the run as it was when the card was made, which a card keeps once a
+   * later slice has replaced its slice. A progress card's `run` follows its own job until the job ends, so it keeps
+   * how its print ended once a later print is the chat's.
+   */
+  | { kind: 'run'; id: string; stage: 'slice' | 'progress'; run?: PrintRun }
 
 export type BlockKind = Block['kind']
 
@@ -99,12 +108,16 @@ export interface Transcript {
   model: string | null
   /** New turns are marked as replayed from a saved log. */
   replaying: boolean
+  /** The chat's print run as the runtime last reported it, or null before it reported one. */
+  printRun: PrintRun | null
+  /** The person holds the run going: it waits before its next step. A run's end lets go. */
+  held: boolean
 }
 
 const EMPTY_METER: Meter = { steps: 0, toolCalls: 0, tokens: 0, elapsedMs: 0 }
 
 export function emptyTranscript(): Transcript {
-  return { turns: [], seq: 0, status: 'idle', meter: EMPTY_METER, clockStart: null, plugins: null, model: null, replaying: false }
+  return { turns: [], seq: 0, status: 'idle', meter: EMPTY_METER, clockStart: null, plugins: null, model: null, replaying: false, printRun: null, held: false }
 }
 
 /** Marks turns created from here on as replayed (saved log) or live. */
@@ -122,7 +135,8 @@ export function restoredTranscript(t: Transcript): Transcript {
     replay: true,
     blocks: turn.blocks.map((b): Block => (b.kind === 'approval' || b.kind === 'choice' || b.kind === 'sheet' ? { ...b, replay: true } : b.kind === 'say' ? { ...b, streaming: false } : b)),
   }))
-  return { ...t, turns, status: t.status === 'running' ? 'stopped' : t.status, clockStart: null, replaying: false }
+  // a transcript saved before print runs has no printRun key
+  return { ...t, turns, status: t.status === 'running' ? 'stopped' : t.status, clockStart: null, replaying: false, printRun: t.printRun ?? null, held: false }
 }
 
 /** Each message the person sent and mimir's words in reply, for picking the conversation back up. */
@@ -269,8 +283,65 @@ function finishRun(s: Draft, stopReason: Extract<PilotEvent, { type: 'done' }>['
   return { ...out, status, clockStart: null, meter: { ...out.meter, elapsedMs: ms } }
 }
 
+/**
+ * The run a card shows: the latest run while its slice (or, for a progress card, its job) is the latest, else the run
+ * it was made with. A progress card's run follows its own job to the end, so a restored chat with two prints shows each
+ * print as it ended.
+ */
+export function runShown(b: Extract<Block, { kind: 'run' }>, latest: PrintRun | null): PrintRun | null {
+  if (b.stage === 'slice') return b.run?.slice && b.run.slice.sliceId !== latest?.slice?.sliceId ? b.run : latest
+  return b.run?.job && b.run.job.startedAt !== latest?.job?.startedAt ? b.run : latest
+}
+
+/** Gives the progress card of `run`'s job the run as it is now; turns without that card stay as they are. */
+function withOwnJob(turns: readonly Turn[], run: PrintRun): Turn[] {
+  const startedAt = run.job?.startedAt
+  const mine = (b: Block): boolean => b.kind === 'run' && b.stage === 'progress' && b.run?.job != null && b.run.job.startedAt === startedAt
+  return turns.map((t) => (t.blocks.some(mine) ? { ...t, blocks: t.blocks.map((b) => (mine(b) ? { ...b, run } : b)) } : t))
+}
+
+/** A turn of mimir's own with no message, opened without starting a run (a line about the print run between runs). */
+function quietTurn(s: Draft): Draft {
+  const seq = s.seq + 1
+  const turn: Turn = { id: `t${seq}`, user: null, where: null, attachments: [], blocks: [], replay: s.replaying }
+  return { ...s, seq, turns: [...s.turns, turn] }
+}
+
+/**
+ * Keeps the latest run. A slice with a new id adds a slice card to the current turn, and a job with a new start time adds
+ * a progress card; the same slice or job reported again adds nothing.
+ */
+function foldPrintRun(state: Transcript, run: PrintRun): Transcript {
+  const prev = state.printRun
+  // loose checks: a run read back from a log may lack a key
+  const newSlice = run.slice != null && run.slice.sliceId !== prev?.slice?.sliceId
+  const newJob = run.job != null && run.job.startedAt !== prev?.job?.startedAt
+  let s: Draft = { ...state, printRun: run }
+  // the same job moved or ended: its card keeps it, even once a later print is the chat's
+  if (!newJob && run.job != null) s = { ...s, turns: withOwnJob(s.turns, run) }
+  if (!newSlice && !newJob) return s
+  if (s.turns.length === 0) s = quietTurn(s)
+  if (newSlice) s = append(settleStreams(s), (id) => ({ kind: 'run', id, stage: 'slice', run }), false)
+  if (newJob) s = append(settleStreams(s), (id) => ({ kind: 'run', id, stage: 'progress', run }), false)
+  return s
+}
+
+/**
+ * A line about the print run (how a print ended): between runs it is a turn of its own with no bubble; during a run it
+ * is a line in the reply under way, so the run's later events stay in their own turn.
+ */
+function foldRunNote(state: Transcript, text: string): Transcript {
+  const s = state.status === 'running' && state.turns.length > 0 ? settleStreams(state) : quietTurn(state)
+  return append(s, (id) => ({ kind: 'say', id, text, streaming: false }), false)
+}
+
 /** Folds one PilotEvent into the transcript. `now` is the local clock in ms (used for times shown to the person). */
 export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0): Transcript {
+  // the print run arrives between runs too, so it never opens a run's turn
+  if (event.type === 'print_run') return foldPrintRun(state, event.run)
+  if (event.type === 'run_note') return foldRunNote(state, event.text)
+  // a hold is about the run going, not a line in it, and a run that is over is never held
+  if (event.type === 'held') return { ...state, held: event.on && state.status === 'running' }
   let s = ensureTurn(state, now)
   switch (event.type) {
     case 'start': {
@@ -353,7 +424,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
       return append(settleStreams(s), (id) => ({ kind: 'perm', id, permission: event.permission, mode: event.mode, message: event.message }), true)
     case 'approval_request': {
       const replay = lastTurn(s)?.replay ?? false
-      return append(settleStreams(s), (id) => ({ kind: 'approval', id, request: event.request, resolution: null, replay, ...(event.source ? { source: event.source } : {}) }), true)
+      return append(settleStreams(s), (id) => ({ kind: 'approval', id, request: event.request, resolution: null, replay, ...(event.source ? { source: event.source } : {}), ...(event.builtin === true ? { builtin: true } : {}) }), true)
     }
     case 'ask': {
       const replay = lastTurn(s)?.replay ?? false
@@ -387,7 +458,7 @@ export function reduceTranscript(state: Transcript, event: PilotEvent, now = 0):
     case 'error':
       return append(settleStreams(s), (id) => ({ kind: 'error', id, message: event.message, retryable: event.retryable, ...(event.code ? { code: event.code } : {}) }), false)
     case 'done':
-      return finishRun(s, event.stopReason, event.ms, now)
+      return { ...finishRun(s, event.stopReason, event.ms, now), held: false }
   }
 }
 

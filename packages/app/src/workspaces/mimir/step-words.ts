@@ -35,6 +35,7 @@ const WORDS: Record<string, Words | null> = {
   'project.info': { doing: 'Reading the project', done: 'Read the project' },
   'printer.list': { doing: 'Checking the printers', done: 'Checked the printers' },
   'printer.status': { doing: 'Checking the printer', done: 'Checked the printer' },
+  'run.target': { doing: 'Picking the printer and spool', done: 'Picked the printer and spool' },
   'printer.queue': { doing: 'Sending to the printer', done: 'Sent to the printer' },
 }
 

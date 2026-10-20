@@ -21,6 +21,7 @@ import type {
   PilotEvent,
   PilotMachine,
   PluginLoad,
+  PrintRun,
   SessionStore,
   SettingsDiff,
   ToolSpec,
@@ -35,6 +36,7 @@ import { EMPTY_KB_INDEX, createKnowledgeBase, type KbSkill, type KnowledgeBase }
 import type { SettingsPlanner } from './planner'
 import type { PilotProject } from './project'
 import { createShared } from './shared'
+import { runBookFor, runHandle, type PrintRunHost } from './run/print-run'
 import { citedSources } from './cite'
 import { contextMessage, systemPrompt as basePrompt, type PilotScope } from './prompt'
 import { factLine, pickFacts, type MemoryStore } from './memory/facts'
@@ -101,6 +103,11 @@ export interface CreatePilotOptions {
   memory?: { local: boolean; store: MemoryStore; remember?: boolean; ask?: () => boolean; chatStarted?: () => Promise<unknown>; where?: () => NotesWhere }
   /** Machine cost per hour by printer id, for "cheapest printers first". */
   machineRates?: Record<string, number>
+  /**
+   * Keeps a print run per chat (the part, plate, printer, slots, slice, send and job). Tools get it as `ctx.run`, every
+   * change during a run is emitted as `print_run`, and `printRun()` reads it. Unset: no run, no handle, no events.
+   */
+  printRun?: PrintRunHost
   /** How long an approval card waits before it expires, ms. */
   approvalTimeoutMs?: number
   now?: () => number
@@ -252,6 +259,10 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   registry(): AnyTool[]
   knowledge(): KnowledgeBase
   skills(): KbSkill[]
+  /** Drops the chat's print run record, for a chat that is over (deleted, or replaced by a new conversation). A print it started is still watched to its end. */
+  forgetRun(sessionId: string): void
+  /** True while a run is going, or a card, a question or a sheet waits for its answer here. */
+  waiting(): boolean
 } {
   const now = opts.now ?? (() => Date.now())
   const newId = opts.newId ?? randomId
@@ -271,8 +282,43 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const confirmed = new Set<string>()
   const usedSheet = new Set<string>()
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
+  // one book per print run host, so a runtime made again keeps the runs; a started print's watch logs how it ended to
+  // the chat's session, whether or not the chat is on screen
+  const runBook = opts.printRun ? runBookFor(opts.printRun, now, { printers: opts.host.printers, log: (sessionId, e) => void log(sessionId, e) }) : null
+  // Holds: a held session's loop waits at its next step boundary. The set holds the waiters to wake on letting go.
+  const holds = new Map<string, Set<() => void>>()
+  // The emit of each chat run going, by session, so a hold reaches the run's transcript.
+  const going = new Map<string, Set<(e: PilotEvent) => void>>()
+  const letGo = (sessionId: string): boolean => {
+    const waiters = holds.get(sessionId)
+    if (!waiters) return false
+    holds.delete(sessionId)
+    for (const wake of [...waiters]) wake()
+    return true
+  }
+  /** Resolves once the session is not held, or the run is canceled. Never touches printers or cards. */
+  const whileHeld = (sessionId: string, signal: AbortSignal): Promise<void> => {
+    const waiters = holds.get(sessionId)
+    if (!waiters || signal.aborted) return Promise.resolve()
+    return new Promise((resolve) => {
+      const wake = (): void => {
+        waiters.delete(wake)
+        signal.removeEventListener('abort', wake)
+        resolve()
+      }
+      waiters.add(wake)
+      signal.addEventListener('abort', wake, { once: true })
+    })
+  }
 
   const tools = new Map<string, AnyTool>()
+  // the tools builtinTools gave: its printer tools say source 'plugin' for the tool list, yet they are the runtime's own
+  const own = new Set<AnyTool>()
+  /**
+   * A tool from the runtime's own toolset (printers, settings, skills, commands), never a plugin's. Only these write the
+   * print run and only their approvals may show a host's own card.
+   */
+  const isBuiltin = (tool: AnyTool): boolean => own.has(tool) || (tool.source !== 'plugin' && !tool.plugin && !(pluginTools ?? []).includes(tool))
   const add = (t: AnyTool): void => {
     if (tools.has(t.name)) throw new Error(`Duplicate ${ASSISTANT_NAME} tool ${t.name}`)
     tools.set(t.name, t)
@@ -283,11 +329,17 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // the design tools, when the host gives them, are the one way to make a part
   const designs = (opts.tools ?? []).some((t) => t.name === 'design.new')
   const inScope = (t: { name: string }): boolean => !(designs && PART_GENERATORS.has(t.name)) && (scope !== 'cad' || CAD_TOOLS.has(t.name) || t.name.startsWith('app.'))
-  if (opts.builtins !== false) for (const t of builtinTools({ planner: opts.planner, commands: opts.commands ?? [], shared })) if (inScope(t)) add(t as AnyTool)
+  // The person's notes, when the edition keeps them: run.target (a builtin) reads them as well as the memory tools.
+  const memory = opts.memory?.local ? opts.memory.store : undefined
+  if (opts.builtins !== false)
+    for (const t of builtinTools({ planner: opts.planner, commands: opts.commands ?? [], shared, ...(memory ? { memory } : {}) }))
+      if (inScope(t)) {
+        add(t as AnyTool)
+        own.add(t as AnyTool)
+      }
   for (const t of opts.tools ?? []) add(t as AnyTool)
   // The memory tools skip inScope on purpose: they come with the host's store, not the builtins. The mimir tab passes
   // one in the desktop app (full scope) and in the browser build (cad scope).
-  const memory = opts.memory?.local ? opts.memory.store : undefined
   if (memory) for (const t of memoryTools(memory, now, opts.memory?.ask, opts.memory?.where)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
 
   let pluginTools: AnyTool[] | null = null
@@ -401,11 +453,22 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // Project-only tools (slice class) have no host side effect to authorize.
       if (mode === 'allow') return { kind: 'run' }
     }
+    // printer.queue's approval records the send it shows; a card that is not approved takes that record back
+    const sendBefore = ctx.run ? ctx.run.get().send : null
+    const undoSend = (): void => {
+      if (ctx.run && JSON.stringify(ctx.run.get().send) !== JSON.stringify(sendBefore)) ctx.run.recordSend(sendBefore)
+    }
     const request: ApprovalRequest = { ...(await buildApprovalRequest(tool, input, ctx, { id: `apr_${newId()}`, sessionId, expiresAt: new Date(now() + approvalTimeout).toISOString() })), origin: 'pilot' }
     if (askReasons.length) request.lines = [...request.lines, ...askReasons]
     // Only pause and cancel reach a printer on the policy alone; everything else there waits for a person.
     if (mode === 'allow' && !policyMayGrant(request)) mode = 'ask'
-    await opts.host.approvals.register(request)
+    try {
+      await opts.host.approvals.register(request)
+    } catch (e) {
+      // the approval recorded the send before the host refused the card: take the record back
+      undoSend()
+      throw e
+    }
     if (mode === 'allow') {
       emit({ type: 'permission_note', permission, mode: 'allow', tool: tool.name, message: skipped ?? `${label} is set to Allow in Permissions, so ${ASSISTANT_NAME} continued without asking.` })
       // Allow mode has no card, so nobody confirmed the bed: a start is refused by the hub with bed_check and Pilot says so.
@@ -413,18 +476,21 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       emit({ type: 'approval_resolved', requestId: request.id, decision: { kind: 'approve' }, by: 'policy' })
       return { kind: 'run', token }
     }
-    emit({ type: 'approval_request', request, source: tool.source })
+    emit({ type: 'approval_request', request, source: tool.source, ...(isBuiltin(tool) ? { builtin: true } : {}) })
     const decision = await waitForDecision(request, signal)
     if (decision === 'aborted') {
+      undoSend()
       await opts.host.approvals.deny(request.id, 'canceled').catch(() => undefined)
       return { kind: 'blocked', message: 'Run canceled.', stop: true }
     }
     if (decision === 'expired') {
+      undoSend()
       await opts.host.approvals.deny(request.id, 'expired').catch(() => undefined)
       emit({ type: 'approval_resolved', requestId: request.id, decision: { kind: 'deny', reason: 'expired' }, by: 'expiry' })
       return { kind: 'blocked', message: 'The approval expired without an answer. Nothing was done. Do not retry.', stop: true }
     }
     if (decision.kind === 'deny') {
+      undoSend()
       await opts.host.approvals.deny(request.id, decision.reason).catch(() => undefined)
       emit({ type: 'approval_resolved', requestId: request.id, decision, by: 'user' })
       return { kind: 'blocked', message: `The user declined${decision.reason ? ` (${decision.reason})` : ''}. Nothing was done. Do not retry this step.`, stop: true }
@@ -478,11 +544,15 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       signal,
       context,
       today: new Date(now()).toISOString().slice(0, 10),
+      now,
       kb,
       progress: (line, fraction) => emit(fraction === undefined ? { type: 'tool_progress', callId: call.id, line } : { type: 'tool_progress', callId: call.id, line, fraction }),
     }
     if (project) ctx.project = project
     if (web) ctx.web = web
+    // only built-in tools write the print run; a plugin's tool never gets the handle
+    const builtin = isBuiltin(tool)
+    if (runBook && builtin) ctx.run = runHandle(runBook, sessionId)
     ctx.ask = (q) =>
       new Promise<string>((resolve, reject) => {
         const askId = `ask_${newId()}`
@@ -550,6 +620,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     if (out.display) result.display = out.display
     if (out.untrusted) result.untrusted = true
     emit(result)
+    // the part this chat prints is the design it started last
+    if (runBook && builtin && tool.name === 'design.new' && out.ok !== false) {
+      const design = (out.output as { design?: unknown } | undefined)?.design
+      if (typeof design === 'string' && design) runBook.update(sessionId, { designId: design })
+    }
     if (out.diff) emit({ type: 'settings_diff', diff: out.diff })
     if (out.report) emit({ type: 'summary', title: out.report.title, rows: out.report.rows, stopped: false })
     if (out.lookup) emit({ type: 'lookup', lookup: { id: `lk_${newId()}`, ...out.lookup } })
@@ -588,6 +663,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let reply = ''
     let looked = false
     for (let step = 0; step <= opts.config.maxSteps; step++) {
+      // a held run waits here, before its next model request
+      await whileHeld(sessionId, signal)
       if (signal.aborted) {
         stopReason = 'canceled'
         break
@@ -715,6 +792,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         break
       }
       for (const call of toolCalls) {
+        // a held run waits here, before its next tool call; a canceled one answers the calls it never made
+        await whileHeld(sessionId, signal)
+        if (signal.aborted) {
+          messages.push({ role: 'tool', callId: call.id, content: JSON.stringify({ ok: false, skipped: true, message: 'Skipped because the run was canceled.' }) })
+          continue
+        }
         if (call === clipped) {
           watch({ type: 'tool_call', callId: call.id, tool: call.name, source: findTool(call.name)?.source ?? 'command', input: call.arguments })
           watch({ type: 'tool_result', callId: call.id, ok: false, summary: 'Cut off at the output limit before the call was complete' })
@@ -825,6 +908,24 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // the start says why Auto picked its model, so a client reading the session sees it; a pinned model has no pick
       const auto = modelFor(opts.config, HUGINN) !== modelFor(opts.config, MUNINN)
       return drive(sessionId, async (emit) => {
+        // every change to the chat's print run during this run reaches the transcript
+        const unwatch = runBook?.subscribe(sessionId, (run) => emit({ type: 'print_run', run }))
+        const runs = going.get(sessionId) ?? new Set<(e: PilotEvent) => void>()
+        going.set(sessionId, runs)
+        runs.add(emit)
+        try {
+          await runChat(emit)
+        } finally {
+          unwatch?.()
+          runs.delete(emit)
+          // a hold ends with the last run it held; the next message never starts held
+          if (runs.size === 0) {
+            going.delete(sessionId)
+            letGo(sessionId)
+          }
+        }
+      })
+      async function runChat(emit: (e: PilotEvent) => void): Promise<void> {
         if (usedSheet.delete(sessionId)) confirmed.delete(sessionId)
         emit({ type: 'start', runId: `run_${newId()}`, sessionId, provider: client.provider, model: modelFor(opts.config, startTier), at: new Date(now()).toISOString(), ...(auto ? { route } : {}) })
         if (scope !== 'full') pluginTools = []
@@ -873,7 +974,27 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           done = { type: 'done', stopReason: signal.aborted ? 'canceled' : 'error', ms: 0 }
         }
         emit(done)
-      })
+      }
+    },
+    printRun(sessionId: string): PrintRun | null {
+      return runBook ? runBook.get(sessionId) : null
+    },
+    forgetRun(sessionId: string): void {
+      runBook?.forget(sessionId)
+    },
+    waiting(): boolean {
+      return going.size > 0 || pending.size > 0 || asks.size > 0 || sheets.size > 0
+    },
+    watchRun(sessionId: string, on: (e: PilotEvent) => void): () => void {
+      return runBook ? runBook.watch(sessionId, on) : () => {}
+    },
+    hold(sessionId: string, on: boolean): void {
+      // only a run going can be held, so a hold never waits for a message that is not sent yet
+      if (on) {
+        if (holds.has(sessionId) || !going.has(sessionId)) return
+        holds.set(sessionId, new Set())
+      } else if (!letGo(sessionId)) return
+      for (const emit of going.get(sessionId) ?? []) emit({ type: 'held', on })
     },
     switchMachine(sessionId: string, from: PilotMachine, to: PilotMachine, swOpts: { narrate?: boolean; signal?: AbortSignal } = {}): AsyncIterable<PilotEvent> {
       const signal = swOpts.signal ?? new AbortController().signal

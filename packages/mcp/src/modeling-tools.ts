@@ -5,7 +5,7 @@ import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { bakeMesh, checkedTextFit, direction, invert, multiply, point, stepName, textFitMessage, type FaceFrame, type HistoryMesh, type Polygon, type PrimitiveSpec, type SolidSpec, type StepParams } from '@slicerx/cad-history'
 import type { DesignHost } from '@slicerx/cad-history'
-import { designArg, designSummary, faceAt, item, type Design } from './design-tools'
+import { designArg, designSummary, faceAt, landedNote, item, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 import { modelArg, vec3, type GeomCall } from './args'
 
@@ -49,7 +49,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   }
   const added = (d: Design, verb: string) => {
     const s = d.history.steps[d.history.steps.length - 1]
-    return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}`, output: designSummary(d) }
+    return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed)}` : ''}`, output: designSummary(d) }
   }
   /** The text laid out on the step's frame against the picked face's outline, both in that frame. */
   const textFitOn = async (ds: DesignHost, d: Design, f: { part: number; triangle: number }, frame: FaceFrame, at: V3, text: string, sizeMm: number) => {

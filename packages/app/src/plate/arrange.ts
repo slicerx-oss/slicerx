@@ -308,3 +308,51 @@ export function fillCount(item: ArrangeItem, others: readonly ArrangeItem[], bed
   }
   return n
 }
+
+/** How far past the bed edge an outline may reach and still count as on the bed, mm: STL coordinates are float32. */
+const ON_BED_TOL_MM = 0.01
+
+/**
+ * True when an object stands where it can print: its footprint inside the bed (the circle of a round bed) and off the
+ * printer's excluded areas. One that hangs off the bed, or sits in an excluded corner, is not placed yet.
+ */
+export function placedOnBed(item: Pick<ArrangeItem, 'parts' | 'transform'>, bed: Bed): boolean {
+  const b = bounds(item.parts, item.transform)
+  if (!b) return true
+  if (!boxInBed(bed, b.min[0], b.min[1], b.max[0], b.max[1], -ON_BED_TOL_MM)) return false
+  const t = ON_BED_TOL_MM
+  return !avoid.some((z) => b.min[0] < z.x + z.w - t && z.x + t < b.max[0] && b.min[1] < z.y + z.h - t && z.y + t < b.max[1])
+}
+
+/** The room a landed part keeps from the bed edge and excluded areas when the plate gives no brim or skirt, mm. */
+export const LAND_EDGE_MM = 5
+
+/**
+ * Where an object that is not placed goes: the middle of the bed when that spot is on the bed and clear of `others`,
+ * else the first free spot arrange finds around them. The middle keeps what prints around the part (brim, skirt) off
+ * the edge, the excluded areas and the neighbors' brims, as arrange does, or LAND_EDGE_MM when the plate gives none.
+ * Keeps its height and rotation. Null when nothing fits.
+ */
+export function landOnBed(item: ArrangeItem, others: readonly ArrangeItem[], bed: Bed, opts: ArrangeOptions = ARRANGE_DEFAULTS): Mat4 | null {
+  const b = bounds(item.parts, item.transform)
+  if (!b) return null
+  const middle = [...item.transform]
+  middle[12] = (middle[12] ?? 0) + bed.widthMm / 2 - (b.min[0] + b.max[0]) / 2
+  middle[13] = (middle[13] ?? 0) + bed.depthMm / 2 - (b.min[1] + b.max[1]) / 2
+  const m = bounds(item.parts, middle)!
+  const margins = opts.margins ?? marginSource()
+  const size = printSizeOf(m)
+  const reach = margins.reach(size)
+  const grow = margins.grow(size)
+  const edge = reach > 0 ? reach + MARGIN_SAFETY_MM : LAND_EDGE_MM
+  const zones = [...avoid, ...margins.keepOut]
+  const clearOf = (r: Rect, by: number) => m.min[0] >= r.x + r.w + by || m.max[0] <= r.x - by || m.min[1] >= r.y + r.h + by || m.max[1] <= r.y - by
+  const clear = others.every((o) => {
+    const ob = bounds(o.parts, o.transform)
+    if (!ob) return true
+    const os = printSizeOf(ob)
+    return clearOf({ x: ob.min[0], y: ob.min[1], w: os.w, h: os.h }, sepOf(grow, margins.grow(os), opts.gapMm))
+  })
+  if (clear && zones.every((z) => clearOf(z, edge)) && boxInBed(bed, m.min[0], m.min[1], m.max[0], m.max[1], edge)) return middle
+  return arrange([item], others, bed, { ...opts, rotate: false }).transforms[item.id] ?? null
+}

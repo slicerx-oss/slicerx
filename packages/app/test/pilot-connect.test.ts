@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import type { Host } from '@slicerx/contracts'
+import type { Host, LlmTransport } from '@slicerx/contracts'
 import { chatGptFor, registerChatGpt, type ChatGptHost } from '../src/pilot-connect/chatgpt'
 import { browserStore, keyStoreFor } from '../src/pilot-connect/keys'
 import { registerMimirCloud, type MimirCloudHost } from '../src/pilot-connect/cloud'
 import { cloudBase, cloudReady } from '../src/pilot-connect/cloud-edition'
-import { pilotModel } from '../src/pilot-connect/llm'
+import { pilotModel, pilotTransport } from '../src/pilot-connect/llm'
+import { standInLlm } from '../src/pilot-connect/stand-in-llm'
+import { get, set } from '../src/state/store'
 import { AUTO_MODEL, modelChoices } from '../src/pilot-connect/models'
 import { normalizePrefs } from '../src/state/prefs'
 import { authHeaders, browserTransport, connectFetch, hostLocalFetch, localAllowed, testConnection } from '../src/pilot-connect/transport'
@@ -301,5 +303,32 @@ describe('mimir cloud', () => {
     expect(prefs.pilot).toEqual({ mode: 'on', provider: 'mimir-cloud' })
     expect(prefs.mimirShare).toBe(true)
     expect(normalizePrefs({ mimirShare: false }).mimirShare).toBe(false)
+  })
+})
+
+describe('mimir transport on a paired host', () => {
+  const secrets = { has: async () => false, set: async () => undefined, delete: async () => undefined }
+  const transport = (): LlmTransport => ({ available: async () => true, stream: () => (async function* () {})() })
+  const sending: MimirCloudHost = { quota: async () => ({ edition: 'slicerx-web', day: '2026-10-20', installUsed: 0, installCap: 1, ipUsed: 0, ipCap: 1, editionOpen: true }), forget: async () => 0, register: async () => undefined, send: async () => new Response('data: {}') }
+
+  it('keeps mimir cloud in a browser paired with sx-link, and the desktop on its own transport', async () => {
+    const before = get().pilot
+    set({ pilot: { mode: 'on', provider: 'mimir-cloud' } })
+    registerMimirCloud(sending)
+    try {
+      // the browser build after pairing: the bridge brings secure storage, and host.llm is the stand-in
+      const stand = standInLlm(transport())
+      const paired = { capabilities: { secureStorage: true }, secrets, llm: stand } as unknown as Host
+      const web = pilotTransport(paired)
+      expect(web).not.toBe(stand)
+      expect(await web?.available('mimir-cloud')).toBe(true)
+      // the desktop: its own transport, with the keychain, sends mimir cloud itself
+      const own = transport()
+      const desktop = { capabilities: { secureStorage: true }, secrets, llm: own } as unknown as Host
+      expect(pilotTransport(desktop)).toBe(own)
+    } finally {
+      registerMimirCloud(null)
+      set({ pilot: before })
+    }
   })
 })

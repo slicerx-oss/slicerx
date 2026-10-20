@@ -173,19 +173,25 @@ describe('the plan card', () => {
     await waitFor(() => expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Approved as shown'))
   })
 
-  it('an answer that fails to send says so and can be sent again', async () => {
-    const { result, onChoose } = await shown(BOX, { failFirst: true })
+  it('an answer that cannot be delivered says the plan is no longer active, with no internal reason or id, and turns it off', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const { e, onChoose } = await shown(BOX, { failFirst: true })
     const go = screen.getByTestId('mimir-plan-go') as HTMLButtonElement
     fireEvent.click(go)
-    await waitFor(() => expect(screen.getByText('Could not send your answer: the run is busy')).toBeTruthy())
-    expect(go.disabled).toBe(false)
-    expect(screen.getAllByRole('textbox').length).toBeGreaterThan(0)
+    // the status line says it, so the card keeps its height
+    await waitFor(() => expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Nothing built. Ask mimir again.'))
+    expect(screen.getByTestId('mimir-plan-status').getAttribute('role')).toBe('status')
+    expect(warn).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ message: 'the run is busy' }))
+    const text = screen.getByTestId('mimir-plan-card').textContent ?? ''
+    expect(text).not.toContain(e.askId)
+    expect(text).not.toMatch(/the run is busy|Could not send/)
+    // the buttons keep their places, only off, and the sizes are no longer fields
+    expect(go.disabled).toBe(true)
+    expect((screen.getByTestId('mimir-plan-change') as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0)
     fireEvent.click(go)
-    const r = await result()
-    expect((r.output as { accepted: boolean }).accepted).toBe(true)
-    expect(onChoose).toHaveBeenCalledTimes(2)
-    expect(screen.queryByText(/Could not send your answer/)).toBeNull()
-    expect(screen.getByTestId('mimir-plan-status').textContent).toBe('Approved as shown')
+    expect(onChoose).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
   })
 
   it('a plan id with colons in it still gets its card', async () => {

@@ -11,6 +11,8 @@ useGeomEngine('app-link-inspect-replies')
 beforeAll(() => useDesignHost({ loadParts: async (id: string): Promise<MeshHandle> => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 10, 8], openEdges: 0, parts: [] }) }))
 beforeEach(() => set({ plate: [], selection: null, selectedIds: [], historyEdit: null }))
 
+/** The tray is built around the origin and lands in the middle of the 256 mm bed, where its coordinates are the plate's. */
+const MID = 128
 async function box() {
   const result = await runCall('design.new', { name: 'Tray' }) as { output: { design: string } }
   const design = result.output.design
@@ -22,7 +24,7 @@ it('shells a live body and reads current and historical volume without changing 
   const design = await box()
   const solid = await runCall('geom.info', { design }) as { output: { design: string; parts: { watertight: boolean; volumeMm3: number }[] } }
   expect(solid).toMatchObject({ output: { design, parts: [{ watertight: true, volumeMm3: expect.closeTo(1600, 4) }] } })
-  const shelled = await runCall('geom.shell', { design, open: [{ at: [0, 0, 8], normal: [0, 0, 1] }], wall_mm: 1 })
+  const shelled = await runCall('geom.shell', { design, open: [{ at: [MID, MID, 8], normal: [0, 0, 1] }], wall_mm: 1 })
   expect(shelled).toMatchObject({ output: { design, steps: 2, sizeMm: [20, 10, 8] } })
   const before = get().plate[0]!
   const current = await runCall('geom.info', { design })
@@ -53,7 +55,7 @@ it('measures faces in world coordinates and permits readback while a step is bei
 it('refuses an impossible shell without changing the body or its steps', async () => {
   const design = await box()
   const before = get().plate[0]
-  await expect(runCall('geom.shell', { design, open: [{ at: [0, 0, 8], normal: [0, 0, 1] }], wall_mm: 100 })).rejects.toMatchObject({ code: 'refused' })
+  await expect(runCall('geom.shell', { design, open: [{ at: [MID, MID, 8], normal: [0, 0, 1] }], wall_mm: 100 })).rejects.toMatchObject({ code: 'refused' })
   expect(get().plate[0]).toBe(before)
   await expect(runCall('geom.info', { design: 'missing' })).rejects.toMatchObject({ code: 'not_found' })
 })

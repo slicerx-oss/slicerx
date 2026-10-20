@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { Fragment, memo, type ComponentType, type ReactNode } from 'react'
-import type { ApprovalRequest, PluginLoad } from '@slicerx/contracts'
+import type { ApprovalRequest, PluginLoad, PrintRun } from '@slicerx/contracts'
 import { ApprovalCard, type ApprovalCardProps } from './approval-card'
 import { ChoiceCard, type ChoiceCardProps } from './choice-card'
 import { LookupRecord } from './lookup-record'
@@ -11,7 +11,7 @@ import { Diff } from './diff'
 import { ErrorLine, ModelLine, PermLine, PlanList, UsedLine } from './notes'
 import { createdPart, turnPart } from './part'
 import { FollowUpChips, PartCard, type PartHandlers } from './part-card'
-import type { Block, Transcript } from './reduce'
+import { runShown, type Block, type Transcript } from './reduce'
 import { Say } from './say'
 import { Summary } from './summary'
 import { Think } from './think'
@@ -22,7 +22,10 @@ export interface ApprovalHandlers {
   onApprove: (request: ApprovalRequest, opts: { bedClear: boolean }) => Promise<void>
   onCancel: (request: ApprovalRequest) => Promise<void>
   onEditPlan?: ((request: ApprovalRequest) => void) | undefined
-  /** A tool's own card in place of the approval card, by tool name, such as the host's chip for memory.remember. */
+  /**
+   * A tool's own card in place of the approval card, by tool name, such as the host's chip for memory.remember. Used only
+   * for the runtime's own tools: a plugin's tool of the same name gets the ordinary approval card.
+   */
   cards?: Readonly<Record<string, ComponentType<ApprovalCardProps>>> | undefined
   /** Answers a choice card; without it the cards cannot be answered. */
   onChoose?: ((askId: string, choiceId: string) => Promise<void>) | undefined
@@ -38,10 +41,13 @@ export interface ApprovalHandlers {
   onEditSheet?: ((sheetId: string, key: string, value: number) => void) | undefined
   /** The sizes typed so far on the waiting sheet, wherever it was edited. */
   sheetValues?: Record<string, number> | undefined
+  /** The host's card for a print run step (the slice it made, the print it started); without it the step shows nothing. */
+  runCard?: ((p: { stage: 'slice' | 'progress'; run: PrintRun | null; actionable: boolean }) => ReactNode) | undefined
 }
 
 // Unchanged blocks keep their identity in the reducer, so a streaming delta repaints only its own block.
-const BlockView = memo(function BlockView({ block, showThinking, approvals, words, parts }: { block: Block; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords | undefined; parts?: PartHandlers | undefined }) {
+// `run` and `replay` are passed for run blocks only, so a new print run repaints its cards and nothing else.
+const BlockView = memo(function BlockView({ block, showThinking, approvals, words, parts, run, replay }: { block: Block; showThinking: boolean; approvals: ApprovalHandlers; words?: StepWords | undefined; parts?: PartHandlers | undefined; run?: PrintRun | null | undefined; replay?: boolean | undefined }) {
   switch (block.kind) {
     case 'think':
       return <Think text={block.text} ms={block.ms} showThinking={showThinking} />
@@ -69,8 +75,10 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
     case 'model':
       return <ModelLine label={block.label} reason={block.reason} />
     case 'approval': {
-      // a host's own card is only for a built-in tool (source 'command'); any other source, or none, gets the ordinary card
-      const Card = (block.source === 'command' ? approvals.cards?.[block.request.tool] : undefined) ?? ApprovalCard
+      // a host's own card is only for the runtime's own tools (source 'command', or the runtime's builtin flag); a
+      // plugin's tool of the same name, or an event with neither, gets the ordinary card
+      const Own = block.source === 'command' || block.builtin === true ? approvals.cards?.[block.request.tool] : undefined
+      const Card = Own ?? ApprovalCard
       return (
         <Card
           request={block.request}
@@ -79,6 +87,7 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
           onApprove={approvals.onApprove}
           onCancel={approvals.onCancel}
           onEditPlan={approvals.onEditPlan}
+          {...(Own ? { run: run ?? null } : {})}
         />
       )
     }
@@ -96,6 +105,8 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
       return <Citations items={block.items} />
     case 'error':
       return <ErrorLine message={block.message} code={block.code} />
+    case 'run':
+      return approvals.runCard?.({ stage: block.stage, run: run ?? null, actionable: replay !== true }) ?? null
   }
 })
 
@@ -122,8 +133,10 @@ export function TranscriptView({ transcript, showThinking, approvals, words, par
             <PilotTurn>
               {/* the part card already shows what happened, so the turn's permission line is dropped */}
               {(part ? t.blocks.filter((b) => b.kind !== 'perm') : t.blocks).map((b) => (
-                <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} />
+                <BlockView key={b.id} block={b} showThinking={showThinking} approvals={approvals} words={words} parts={parts} {...(b.kind === 'run' ? { run: runShown(b, transcript.printRun), replay: t.replay } : b.kind === 'approval' && b.builtin === true ? { run: transcript.printRun } : {})} />
               ))}
+              {/* a design built step by step keeps its rows, and gets one card after them */}
+              {part?.built && parts ? <PartCard part={part} handlers={parts} /> : null}
               {part && parts && done ? <FollowUpChips part={part} handlers={parts} /> : null}
               <UsedLine names={usedNames(t.used, transcript.plugins)} />
             </PilotTurn>

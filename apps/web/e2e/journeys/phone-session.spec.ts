@@ -23,6 +23,8 @@ import {
   setPilot,
   setState,
   settingsAccount,
+  shotsDir,
+  shotsOn,
   sliceAndColorBy,
   stubProxy,
   signIn,
@@ -109,6 +111,34 @@ journey.describe('mimir on a phone', () => {
     // the first tab leaves it
     await page.locator('.phone-tab >> nth=0').click()
     await expect(chat).toBeHidden()
+  })
+
+  // A part card on a phone has no Edit (a phone has no modeling tools), and tapping its body selects the part.
+  journey("a scripted box's card has no Edit, and tapping it selects the part", async ({ page }, info) => {
+    await debugOn(page)
+    await goTab(page, 'prepare')
+    await setPilot(page, 'scripted')
+    await setState(page, { plate: [], selection: null, selectedIds: [] })
+    await page.locator('[data-testid="phone-tabs"] [data-tab="mimir"]').click()
+    const chat = page.getByTestId('mimir-chat')
+    await chat.getByRole('button', { name: 'New conversation' }).click()
+    await askTab(page, 'Can you make a box with a lid?')
+    await page.getByTestId('mimir-sheet-confirm').click()
+    await expect(page.getByTestId('mimir-transcript')).toContainText('Done: the box and its lid', { timeout: 30_000 })
+    const card = page.getByTestId('mimir-part').last()
+    await expect(page.getByTestId('mimir-part')).toHaveCount(1)
+    // the reply has finished, so its next steps show under the card
+    await expect(page.getByTestId('mimir-transcript')).toContainText('Both parts are in Model with their steps.')
+    await expect(card.getByRole('button', { name: /^Edit the / })).toHaveCount(0)
+    const id = await card.getAttribute('data-part')
+    // the build leaves the part selected; clear that, so Select is what selects it
+    await setState(page, { selection: null, selectedIds: [] })
+    await card.scrollIntoViewIfNeeded()
+    if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/phone-part-card.png` })
+    await card.getByRole('button', { name: /^Select the / }).tap()
+    await expect.poll(async () => (await page.evaluate(() => (window as unknown as { __sx: { getState(): { selectedIds: string[] } } }).__sx.getState().selectedIds))).toEqual([id])
+    await noHorizontalScroll(page)
+    if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/phone-part-select.png` })
   })
 })
 

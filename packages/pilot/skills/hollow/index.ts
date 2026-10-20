@@ -105,8 +105,10 @@ export function createHollow() {
       const saving = hollowSaving(before, num(report['volumeAfterMm3'], after.volumeMm3), dens.gPerCm3, nums.infillPct)
       const holesCut = num(report['drainHoles'])
       if (saving.removedMm3 < 1) return { ok: false, summary: `${obj.name} is too thin to hollow with ${i.wallMm} mm walls`, output: { wallMm: i.wallMm, volumeCm3: cm3(before) } }
-      const replaced = await replaceGeometry(ctx.project, obj, [part])
+      const bed: string[] = []
+      const replaced = await replaceGeometry(ctx.project, obj, [part], bed)
       const notes: string[] = []
+      notes.push(...bed)
       if (g.parts.length > 1) notes.push(`The ${g.parts.length} parts were hollowed as one body on the first part's filament slot.`)
       if (i.drainHoles > 0 && holesCut < i.drainHoles) notes.push(`Only ${holesCut} of ${i.drainHoles} drain holes could be placed on the bottom face.`)
       if (i.drainHoles === 0) notes.push('The cavity is sealed. For resin prints add a drain hole; for FDM the slicer fills the cavity with nothing, so the part is only walls.')

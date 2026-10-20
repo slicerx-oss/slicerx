@@ -19,6 +19,9 @@ const loader = { loadParts: async (name: string, _parts: MeshPart[]) => handle(n
 beforeAll(() => useDesignHost(loader))
 beforeEach(() => set({ plate: [], selection: null, selectedIds: [], historyEdit: null }))
 
+/** A body built around the origin lands in the middle of the 256 mm bed; from then on its coordinates are the plate's. */
+const MID = 128
+
 const code = async (p: Promise<unknown>) => ((await p.catch((e: unknown) => e)) as LinkError).code
 
 describe('design tools over the app link', () => {
@@ -37,15 +40,15 @@ describe('design tools over the app link', () => {
   it('make a hole another size on the plate, as the hole step the hole tool records', async () => {
     const design = ((await runCall('design.new', { name: 'Plate' })) as { output: { design: string } }).output.design
     await runCall('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 3 })
-    await runCall('geom.extrude', { design, operation: 'cut', frame: { origin: [0, 0, 3], normal: [0, 0, 1] }, shape: { type: 'circle', diameterMm: 4 }, distance_mm: 3 })
-    const out = await runCall('geom.hole', { design, center: [0, 0, 3], axis: [0, 0, 1], diameter_mm: 3, label: 'M2.5 clearance' })
+    await runCall('geom.extrude', { design, operation: 'cut', frame: { origin: [MID, MID, 3], normal: [0, 0, 1] }, shape: { type: 'circle', diameterMm: 4 }, distance_mm: 3 })
+    const out = await runCall('geom.hole', { design, center: [MID, MID, 3], axis: [0, 0, 1], diameter_mm: 3, label: 'M2.5 clearance' })
     expect(JSON.stringify(out)).not.toMatch(/positions|indices/)
     expect(out).toMatchObject({
-      output: { steps: 3, before: { center: [0, 0, 3], diameterMm: 4, depthMm: 3, kind: 'through' }, after: { diameterMm: 3, depthMm: 3, kind: 'through', head: 'none' } },
+      output: { steps: 3, before: { center: [MID, MID, 3], diameterMm: 4, depthMm: 3, kind: 'through' }, after: { diameterMm: 3, depthMm: 3, kind: 'through', head: 'none' } },
     })
     const step = get().plate.find((e) => e.id === design)?.history?.steps.at(-1)
     expect(step?.params).toMatchObject({ op: 'hole.apply', hole: { diameterMm: expect.closeTo(4, 5), through: true }, spec: { diameterMm: 3 }, label: 'M2.5 clearance' })
-    expect(await code(runCall('geom.hole', { design, center: [8, 3, 3], axis: [0, 0, 1], diameter_mm: 3 }))).toBe('invalid_input')
+    expect(await code(runCall('geom.hole', { design, center: [MID + 8, MID + 3, 3], axis: [0, 0, 1], diameter_mm: 3 }))).toBe('invalid_input')
   })
 
   it('wait for the person: busy while they edit a step of that object', async () => {
@@ -66,7 +69,7 @@ describe('design tools over the app link', () => {
     let finish = () => undefined as void
     await useDesignHost({ loadParts: (name: string) => new Promise<MeshHandle>((r) => (finish = () => r(handle(name)))) })
     try {
-      const hole = { design, operation: 'cut', frame: { origin: [0, 0, 3], normal: [0, 0, 1] }, shape: { type: 'circle', diameterMm: 4 }, distance_mm: 3 }
+      const hole = { design, operation: 'cut', frame: { origin: [MID, MID, 3], normal: [0, 0, 1] }, shape: { type: 'circle', diameterMm: 4 }, distance_mm: 3 }
       const second = runCall('geom.extrude', hole)
       await vi.waitFor(() => expect(replaying(design)).toBe(true))
       expect(await code(runCall('geom.extrude', hole))).toBe('busy')

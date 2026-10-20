@@ -13,7 +13,7 @@ import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, 
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
 import { modelArg, vec3, type GeomCall } from './args'
-import { designArg, designSummary, faceAt, item, partAt, partsAt, type Design } from './design-tools'
+import { designArg, designSummary, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
 import { topologyManifest, topologyFace, TopologyReferenceError } from '@slicerx/cad-history/topology-manifest'
 import { StaleBody } from '@slicerx/cad-history/body-revisions'
@@ -208,7 +208,7 @@ function oneOf(i: { model?: string | undefined; design?: string | undefined }): 
 /** What a modeling tool returns for a design: the step it added and the design as it is now. */
 function stepOut(d: Design, verb: string): { summary: string; output: Record<string, unknown> } {
   const s = d.history.steps[d.history.steps.length - 1]
-  return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}`, output: designSummary(d) }
+  return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed)}` : ''}`, output: designSummary(d) }
 }
 
 /**

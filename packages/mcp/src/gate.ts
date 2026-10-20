@@ -81,7 +81,11 @@ export interface GateDeps {
   pending: Map<string, PendingCall>
   /** A note added to a tool's result, such as "these printers are simulated". */
   annotate?(toolName: string): string | undefined
-  /** Builds the context a tool runs with; `token` is set only after approval. */
+  /**
+   * Builds the context a tool runs with; `token` is set only after approval. An MCP client has no chat, so this context
+   * carries no print run (`run`): printer.queue's stale slice refusal does not apply over MCP yet. The person still
+   * approves the send on the hub card with the bed tick. Known gap, logged for Task 11.
+   */
   context(token: ApprovalToken | undefined, signal: AbortSignal, progress?: ToolProgress): ToolContext
   now(): number
   /** Link mode: where person-only requests go, with their work. */

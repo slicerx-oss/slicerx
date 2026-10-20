@@ -20,7 +20,15 @@ export interface Design {
   madeBy: Record<number, string>
   /** Steps undone, last undone last; a new step clears them. */
   redo: Step[]
+  /** Set only on the call whose first body was built off the bed: how it landed on the plate (Landed). */
+  landed?: Landed
 }
+
+/**
+ * A first body built off the bed: moved by (dxMm, dyMm) onto it, after which the design's coordinates are the plate's;
+ * or offBed when no spot on the bed holds it, so it stays where it was built.
+ */
+export type Landed = { dxMm: number; dyMm: number } | { offBed: true }
 
 export interface DesignCommit {
   step: Step

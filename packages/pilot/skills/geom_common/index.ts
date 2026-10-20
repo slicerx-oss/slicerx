@@ -5,7 +5,7 @@
 // object's geometry and the numbers skills read from the project config.
 import { assistantText, onAssistantBrand, type MeshPart } from '@slicerx/contracts'
 import type { KnowledgeBase } from '../../src/kb/kb'
-import type { PilotProject, ProjectObject } from '../../src/project'
+import { leftOffWords, type PilotProject, type ProjectObject } from '../../src/project'
 import type { ToolContext, ToolOutput } from '../../src/tool'
 import { FACE_DIRS, currentRotation, partsBox, plateOf, rot3, transformParts, type FaceDir, type Vec3 } from '../orientation_search/geometry'
 
@@ -233,15 +233,17 @@ export function newObject(id: string, name: string, parts: MeshPart[]): ProjectO
 
 /**
  * Swaps an object's geometry in place: same id and name, new mesh, plates and
- * rotations kept. False when the project cannot replace objects.
+ * rotations kept. False when the project cannot replace objects. A part the new
+ * geometry leaves with no room on the bed is said in `notes`.
  */
-export async function replaceGeometry(project: PilotProject | undefined, obj: ProjectObject, parts: MeshPart[]): Promise<boolean> {
+export async function replaceGeometry(project: PilotProject | undefined, obj: ProjectObject, parts: MeshPart[], notes?: string[]): Promise<boolean> {
   if (!project?.replaceObjects) return false
   const plates = project.plates()
   const next: ProjectObject = { id: obj.id, name: obj.name, bboxMm: placedBox(project, obj.id, parts), triangles: triangleCount(parts), mesh: async () => parts }
   if (obj.metadata) next.metadata = obj.metadata
   await project.replaceObjects([obj.id], [next])
-  project.setPlates(plates)
+  const left = leftOffWords(project.setPlates(plates))
+  if (left) notes?.push(left)
   return true
 }
 

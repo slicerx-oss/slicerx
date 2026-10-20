@@ -5,7 +5,7 @@
 // answers, what it looked up). The chat that keeps them registers its log here; nothing is registered until it does.
 // Text is cut to a readable length and nothing else in the app is reachable from here.
 import { assistantText } from '@slicerx/contracts'
-import type { PilotEvent, SessionStore } from '@slicerx/contracts'
+import type { PilotEvent, PrintRun, SessionStore } from '@slicerx/contracts'
 import { reduceTranscript, startTurn, emptyTranscript, type Transcript, type Turn } from '@slicerx/pilot/reduce'
 import { LinkError } from './methods-error'
 
@@ -13,6 +13,11 @@ export interface SessionSource {
   store: SessionStore
   /** The person's messages in a session, in order; the runtime logs only its own events. */
   messages?(sessionId: string): { text: string; attachments: string[] }[]
+  /**
+   * The chat's print run as the runtime holds it now, with the print's live layer, progress and time left (the log
+   * keeps only how the print started and ended); null where the runtime keeps no runs.
+   */
+  run?(sessionId: string): PrintRun | null
 }
 
 let source: SessionSource | null = null
@@ -20,6 +25,23 @@ let source: SessionSource | null = null
 /** The chat that keeps mimir's conversations registers them; null takes them away. */
 export function setSessionSource(s: SessionSource | null): void {
   source = s
+}
+
+/** The registered log, or null before the chat registers one (mimir.run reads its print runs). */
+export function sessionSource(): SessionSource | null {
+  return source
+}
+
+let tabChat: string | null = null
+
+/** The mimir tab sets the chat it has open; null before the tab first opens. */
+export function setTabChat(sessionId: string | null): void {
+  tabChat = sessionId
+}
+
+/** The chat the mimir tab has open, which mimir.run reads when no sessionId names another; null before the tab first opens. */
+export function currentTabChat(): string | null {
+  return tabChat
 }
 
 const MAX_TEXT = 4_000

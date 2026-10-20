@@ -5,6 +5,7 @@
 // its constant so a build without it carries none of its code.
 import type { ApprovalHost, ApprovalVerifier, FileHost, Host, LlmTransport, SecretsHost, SlicerHost, ThemesHost } from '@slicerx/contracts'
 import { editionFromBuild, SLICERX_SOURCE, sourceUrl } from '@slicerx/edition-config'
+import { standInLlm } from '@slicerx/app/pilot-connect/stand-in-llm'
 import { createWebFiles } from './files'
 
 declare const __SX_VERSION__: string
@@ -27,13 +28,14 @@ const noSecrets: SecretsHost = {
   delete: async () => undefined,
 }
 
-// Browser users reach a model provider through sx-link on localhost. Without it, Pilot replays recorded runs.
-const noLlm: LlmTransport = {
+// The browser build has no transport of its own: mimir sends through its browser transport (a key, a local model or
+// mimir cloud), and plays its scripts without one. Marked as a stand-in, so a paired bridge never makes it the transport.
+const noLlm: LlmTransport = standInLlm({
   available: async () => false,
   stream: () => {
     throw new Error('mimir needs sx-link running on this computer to reach a model provider')
   },
-}
+})
 
 /**
  * The WASM worker pool, or the synthetic slicer when the WASM build is missing (a dev tree before `sx-wasm` is built).

@@ -12,6 +12,10 @@ export interface CreatedPart {
   name: string
   kind: PartKind
   sizeMm: [number, number, number]
+  /** Built step by step in a design: the card follows the turn's step rows, which stay. */
+  built?: true
+  /** A design the turn changed but did not start: the card says it was updated, not created. */
+  updated?: true
 }
 
 /** A next step for a part: the chip's label and the exact request it sends, or the value it asks for first. */
@@ -29,6 +33,46 @@ export interface FollowUp {
 /** Tools whose result is a new part on the plate. */
 const MAKERS: ReadonlySet<string> = new Set(['text_to_part'])
 const KINDS: ReadonlySet<string> = new Set(['cube', 'box', 'cylinder', 'part'])
+/** Design steps that change the design; each returns the design's summary. Reads (steps, measure, info) are left out. */
+const BUILDERS: ReadonlySet<string> = new Set([
+  'design.edit_step',
+  'design.undo',
+  'design.redo',
+  'design.roll',
+  'geom.extrude',
+  'geom.revolve',
+  'geom.push_pull',
+  'geom.boolean',
+  'geom.fillet',
+  'geom.chamfer',
+  'geom.hole',
+  'geom.shell',
+  'geom.cut',
+  'geom.split',
+  'geom.mirror',
+  'geom.array',
+  'geom.repair',
+  'geom.hollow',
+  'geom.emboss',
+  'geom.build',
+  'geom.subtract',
+])
+
+/** The design an ok design step changed, or null for any other call. */
+function changedDesign(row: ToolRowModel): string | null {
+  if (row.state !== 'ok' || !BUILDERS.has(row.tool)) return null
+  const o = row.output as Record<string, unknown> | null | undefined
+  return o && typeof o === 'object' && typeof o['design'] === 'string' && o['design'] ? o['design'] : null
+}
+
+/** The design an ok design.new started, or null. */
+function startedDesign(row: ToolRowModel): string | null {
+  if (row.state !== 'ok' || row.tool !== 'design.new') return null
+  const o = row.output as Record<string, unknown> | null | undefined
+  return o && typeof o === 'object' && typeof o['design'] === 'string' && o['design'] ? o['design'] : null
+}
+
+const triple = (v: unknown): v is [number, number, number] => Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === 'number' && Number.isFinite(n))
 
 /** The part a finished tool call created, or null when the call made none. */
 export function createdPart(row: ToolRowModel): CreatedPart | null {
@@ -36,10 +80,24 @@ export function createdPart(row: ToolRowModel): CreatedPart | null {
   const o = row.output as Record<string, unknown> | null | undefined
   if (!o || typeof o !== 'object' || typeof o['objectId'] !== 'string') return null
   const size = o['sizeMm']
-  if (!Array.isArray(size) || size.length !== 3 || !size.every((v) => typeof v === 'number' && Number.isFinite(v))) return null
+  if (!triple(size)) return null
   const kind = typeof o['kind'] === 'string' && KINDS.has(o['kind']) ? (o['kind'] as PartKind) : 'part'
   const name = typeof o['name'] === 'string' && o['name'] ? o['name'] : o['objectId']
   return { id: o['objectId'], name, kind, sizeMm: [size[0], size[1], size[2]] }
+}
+
+/**
+ * The design a finished design step left, read from the design summary it returned: the design id (the object's id
+ * on the plate), its name and its size. Null for a read, a failed step or a design with nothing in it yet.
+ */
+export function builtPart(row: ToolRowModel): CreatedPart | null {
+  const design = changedDesign(row)
+  if (!design) return null
+  const o = row.output as Record<string, unknown>
+  const size = o['sizeMm']
+  if (!triple(size)) return null
+  const name = typeof o['name'] === 'string' && o['name'] ? o['name'] : design
+  return { id: design, name, kind: 'part', sizeMm: [size[0], size[1], size[2]], built: true }
 }
 
 const WORD: Record<PartKind, string> = { cube: 'Cube', box: 'Box', cylinder: 'Cylinder', part: 'Part' }
@@ -51,9 +109,9 @@ export function partSize(p: CreatedPart): string {
   return `${p.sizeMm.map(mm).join(' x ')} mm`
 }
 
-/** The card's title: "Cube created". */
+/** The card's title: "Cube created", or "Box with lid updated" for a design the turn changed but did not start. */
 export function partTitle(p: CreatedPart): string {
-  return `${WORD[p.kind]} created`
+  return p.updated ? `${p.name} updated` : `${WORD[p.kind]} created`
 }
 
 /** The card's subtitle: "Cube 20 x 20 x 20 mm", or the part's own name for anything that is not a plain solid. */
@@ -104,15 +162,27 @@ export function sizeRequest(p: CreatedPart, size: readonly [number, number, numb
   return `Change the size of ${the(p)} to ${size.map(mm).join(' x ')} mm`
 }
 
-/** The newest part a turn made, or null when it made none. */
+/**
+ * The newest part a turn made, or null when it made none: a part a single call made, or the design the turn built
+ * step by step, as its newest step left it. A turn of many steps on one design gives that one design, not a part per
+ * step. A design the turn did not start with design.new is marked updated. A design whose newest step left it empty
+ * (an undo of its only step) gives no card.
+ */
 export function turnPart(turn: Transcript['turns'][number]): CreatedPart | null {
-  for (let i = turn.blocks.length - 1; i >= 0; i--) {
-    const b = turn.blocks[i]!
-    if (b.kind !== 'tools') continue
-    for (let k = b.rows.length - 1; k >= 0; k--) {
-      const p = createdPart(b.rows[k]!)
-      if (p) return p
+  const rows = turn.blocks.flatMap((b) => (b.kind === 'tools' ? b.rows : []))
+  const emptied = new Set<string>()
+  for (let k = rows.length - 1; k >= 0; k--) {
+    const row = rows[k]!
+    const made = createdPart(row)
+    if (made) return made
+    const design = changedDesign(row)
+    if (!design || emptied.has(design)) continue
+    const p = builtPart(row)
+    if (!p) {
+      emptied.add(design)
+      continue
     }
+    return rows.slice(0, k).some((r) => startedDesign(r) === design) ? p : { ...p, updated: true }
   }
   return null
 }

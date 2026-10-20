@@ -238,6 +238,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // The mimir the edition runs: its name, tool groups, cloud step-up, memory and knowledge doc count. Never the
     // voice text or the docs.
     ("mimir.brain", LinkClass::Read),
+    // One chat's print run read back: its steps, the last slice, what was sent and the print. Never the file, its
+    // hash, a card's token or request id, an access code or a serial; starting a print stays with the person.
+    ("mimir.run", LinkClass::Read),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -525,6 +528,7 @@ mod tests {
         ("mimir.memory", LinkClass::Read),
         ("mimir.memory_remember", LinkClass::Edit),
         ("mimir.brain", LinkClass::Read),
+        ("mimir.run", LinkClass::Read),
     ];
 
     #[test]
@@ -612,6 +616,21 @@ mod tests {
             "partner apps stay off the open project"
         );
         assert!(!allowed(Role::Watch, "app.call"));
+    }
+
+    #[test]
+    fn mimir_run_is_read() {
+        // The chat's print run read back: steps, slice, send and print, never a file, hash, token or serial.
+        assert_eq!(link_class("mimir.run"), Some(LinkClass::Read));
+        // Reading it approves nothing: the link still has no method that answers a card or starts a print.
+        for m in [
+            "mimir.approve",
+            "mimir.run_approve",
+            "mimir.run.approve",
+            "approvals.grant",
+        ] {
+            assert_eq!(link_class(m), None, "{m}");
+        }
     }
 
     #[test]

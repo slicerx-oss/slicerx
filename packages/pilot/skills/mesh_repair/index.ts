@@ -94,7 +94,8 @@ export function createMeshRepair() {
       }
       const after = await meshInfo(ctx, toGeomMesh(repaired))
       const did = improves(before, after, counts)
-      const replacedIt = did ? await replaceGeometry(ctx.project, obj, repaired) : false
+      const bed: string[] = []
+      const replacedIt = did ? await replaceGeometry(ctx.project, obj, repaired, bed) : false
       const fixes = did ? fixesOf(counts) : []
       // What the project holds now: the repair when kept, else the original.
       const final = did ? after : before
@@ -107,7 +108,7 @@ export function createMeshRepair() {
         ['volume', `${cm3(before.volumeMm3)} cm3`, `${cm3(final.volumeMm3)} cm3`],
         ['triangles', String(before.triangles), String(final.triangles)],
       ]
-      const notes: string[] = []
+      const notes: string[] = [...bed]
       if (did && counts.holesLeftOpen) notes.push(`${counts.holesLeftOpen} hole${counts.holesLeftOpen === 1 ? ' is' : 's are'} larger than the fill limit and stay open; raise maxHoleEdges or fix it in the model.`)
       if (final.nonManifoldEdges) notes.push('Some edges are shared by more than two triangles; the slicer may still warn about them.')
       if (did && !replacedIt) notes.push('This project cannot swap geometry, so the repaired mesh was not applied.')

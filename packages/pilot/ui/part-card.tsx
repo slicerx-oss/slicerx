@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { useId, useState } from 'react'
-import { Button, Icon, VectorField } from '@slicerx/ui'
+import { Button, Icon, tipAttrs, VectorField } from '@slicerx/ui'
 import { followUps, partLine, partTitle, sizeRequest, type CreatedPart, type FollowUp } from './part'
 
 /** What the card and chips do. Each names the part it was made for, never the current selection. */
 export interface PartHandlers {
   /** Opens the part for editing: its modeling step, or its own size and placement panel. Without it there is no Edit. */
   onEdit?: ((id: string) => void) | undefined
+  /** Edit's tooltip: where Edit takes the person, which only the host knows. */
+  editTip?: { title: string; body?: string } | undefined
   /** Selects the part on the plate, which highlights it. */
   onSelect?: ((id: string) => void) | undefined
   /** Sends a chip's request for that part. */
@@ -73,7 +75,7 @@ export function PartCard({ part, handlers }: { part: CreatedPart; handlers: Part
   return (
     <div className="part-card" role="group" aria-label={title} data-testid="mimir-part" data-part={part.id}>
       <div className="part-row">
-        <button type="button" className="part-main" aria-label={`Select the ${part.name}`} onClick={act(handlers.onSelect)}>
+        <button type="button" className="part-main" aria-label={`Select the ${part.name}`} {...tipAttrs({ title: 'Select it on the plate' })} onClick={act(handlers.onSelect)}>
           <PartGlyph part={part} size={40} />
           <span className="part-text">
             <span className="part-title">{title}</span>
@@ -81,7 +83,7 @@ export function PartCard({ part, handlers }: { part: CreatedPart; handlers: Part
           </span>
         </button>
         {handlers.onEdit ? (
-          <Button size="sm" onClick={act(handlers.onEdit)} aria-label={`Edit the ${part.name}`}>
+          <Button size="sm" onClick={act(handlers.onEdit)} aria-label={`Edit the ${part.name}`} {...tipAttrs(handlers.editTip)}>
             Edit
           </Button>
         ) : null}

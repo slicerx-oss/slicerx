@@ -27,6 +27,7 @@ import { z } from 'zod'
 import type { GeomHost, HistoryHost, ModelSearchHost, ProfilesHost, ProjectExportHost, SetupHost, ShareHost } from './hosts'
 import type { KnowledgeBase } from './kb/kb'
 import type { PilotProject } from './project'
+import type { RunHandle } from './run/print-run'
 import type { LlmImage } from './provider/types'
 
 /** The parts of `Host` tools may use. Kept narrow so tests and evals can fake them. */
@@ -57,6 +58,8 @@ export interface ToolContext {
   context: PilotContext
   /** ISO date (YYYY-MM-DD) of the run, from the runtime clock. */
   today: string
+  /** The runtime clock, in ms since the epoch; absent outside the runtime (an MCP gate). */
+  now?: () => number
   project?: PilotProject
   kb: KnowledgeBase
   web?: WebLookup
@@ -67,6 +70,8 @@ export interface ToolContext {
   sheet?(sheet: Omit<PilotSheet, 'id'>): Promise<PilotSheetAnswer>
   /** Ties the last sheet's rows to the steps they set; false when this run showed no sheet. */
   bindSheet?(design: string, binds: PilotSheetBind[]): boolean
+  /** The chat's print run; present only when the host keeps print runs. */
+  run?: RunHandle
 }
 
 export interface ToolOutput {
