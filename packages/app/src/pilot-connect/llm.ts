@@ -11,13 +11,16 @@ import { get, type PilotPref } from '../state/store'
 import { cloudBase, cloudReady, CLOUD_MODEL } from './cloud-edition'
 import { keyStoreFor, PROVIDERS } from './keys'
 import { AUTO_MODEL, autoPair } from './models'
+import { isStandInLlm } from './stand-in-llm'
 import { browserTransport } from './transport'
 
 export function pilotTransport(host: Host): LlmTransport | null {
   const pref = get().pilot
   if (pref && pref.mode === 'off') return null
   if (!pref?.provider) return host.llm ?? null
-  if (host.capabilities.secureStorage && host.llm) return host.llm
+  // a host's own transport, unless it is the browser build's stand-in: pairing with sx-link brings secure storage there,
+  // and mimir still sends through the browser transport (mimir cloud through the signed-in host)
+  if (host.capabilities.secureStorage && host.llm && !isStandInLlm(host.llm)) return host.llm
   return browserTransport(keyStoreFor(host), () => {
     const p = get().pilot
     return p?.provider ? { provider: p.provider, ...(p.baseUrl ? { baseUrl: p.baseUrl } : {}), ...(p.model ? { model: p.model } : {}) } : null

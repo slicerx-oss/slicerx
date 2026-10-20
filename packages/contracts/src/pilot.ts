@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // mimir runtime, tools, permissions and the LLM transport.
-import type { PluginManifest, PrinterInfo } from './printers'
+import type { PluginManifest, PrinterInfo, PrinterState } from './printers'
 
 export const PERMISSION_CLASSES = ['read', 'slice', 'queue', 'start', 'profile', 'printer_config', 'share'] as const
 export type PermissionClass = (typeof PERMISSION_CLASSES)[number]
@@ -308,6 +308,63 @@ export interface PilotRoute {
   reason: 'deep' | 'attachment' | 'many_steps' | 'person_sizes' | 'default'
 }
 
+/** The last slice of a chat's plate. `stale` is worked out on every read: the plate, printer or slots changed after it. */
+export interface RunSlice {
+  sliceId: string
+  plate: number
+  at: string
+  timeS: number
+  grams: number
+  cost: number
+  warnings: string[]
+  fingerprint: string
+  stale: boolean
+}
+
+/** The file a chat sent to a printer, with the slots it used. */
+export interface RunSend {
+  printerId: string
+  fileName: string
+  fileKind: 'gcode' | 'gcode.3mf' | 'bgcode'
+  sha256: string
+  slots: Record<number, string>
+  timeS: number
+  grams: number
+}
+
+/** The print a chat started, as the printer last reported it. */
+export interface RunJob {
+  printerId: string
+  fileName: string
+  startedAt: string
+  state: PrinterState
+  layer?: number
+  layerCount?: number
+  timeLeftS?: number
+  progress?: number
+  outcome?: 'finished' | 'failed' | 'canceled'
+  endedAt?: string
+  attention?: boolean
+}
+
+/**
+ * One chat's print run: the part, the plate, the printer and slots, the last slice, the send and the job. Cards and
+ * tools read the same record. Slot keys are 1 based filament numbers, as the app shows them.
+ */
+export interface PrintRun {
+  sessionId: string
+  designId: string | null
+  plate: number
+  printerId: string | null
+  slots: Record<number, string>
+  slice: RunSlice | null
+  send: RunSend | null
+  job: RunJob | null
+  updatedAt: string
+}
+
+export type RunStepName = 'design' | 'plate' | 'target' | 'slice' | 'send' | 'print'
+
 export type PilotEvent =
   /** `route`, on Auto only: the tier the request started on and why (deep work, a picture or PDF, many steps, sizes only the person knows). */
   | { type: 'start'; runId: string; sessionId: string; provider: string; model: string; at: string; route?: PilotRoute }
@@ -332,8 +389,11 @@ export type PilotEvent =
   | { type: 'settings_diff'; diff: SettingsDiff }
   | { type: 'citations'; items: Citation[] }
   | { type: 'permission_note'; permission: PermissionClass; mode: 'allow' | 'off'; tool: string; message: string }
-  /** `source` is where the tool came from (a plugin's tool never gets a built-in tool's own card); absent on older hosts. */
-  | { type: 'approval_request'; request: ApprovalRequest; source?: ToolSource }
+  /**
+   * `source` is where the tool came from (a plugin's tool never gets a built-in tool's own card); absent on older hosts.
+   * `builtin` is true only for a tool from the runtime's own toolset, never for a plugin's tool of the same name.
+   */
+  | { type: 'approval_request'; request: ApprovalRequest; source?: ToolSource; builtin?: boolean }
   /** A question for the person with fixed answers; the run waits until one is picked. */
   | { type: 'ask'; askId: string; title: string; question: string; choices: PilotChoice[] }
   | { type: 'ask_answered'; askId: string; choiceId: string }
@@ -352,6 +412,12 @@ export type PilotEvent =
   /** `code` is mimir cloud's refusal code (`day_used`, `paused`, ...). */
   | { type: 'error'; message: string; retryable: boolean; code?: string }
   | { type: 'done'; stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error'; ms: number }
+  /** The chat's print run after a change. */
+  | { type: 'print_run'; run: PrintRun }
+  /** A plain line about the print run, such as how a print ended. */
+  | { type: 'run_note'; text: string; tone: 'ok' | 'warn' | 'bad' }
+  /** The person held the run (`on`) or let it go on. A held run waits before its next step; a printer is never paused. */
+  | { type: 'held'; on: boolean }
 
 // ---------------------------------------------------------------------------
 // Configuration and context
@@ -443,6 +509,16 @@ export interface Pilot {
   resolveApproval(requestId: string, decision: ApprovalDecision): Promise<void>
   setPolicy(policy: PermissionPolicy): void
   policy(): PermissionPolicy
+  /** The chat's print run. Runtimes without print runs leave it out, or return null. */
+  printRun?(sessionId: string): PrintRun | null
+  /** Events about the chat's print run that arrive between runs, such as how a print ended. Returns the unsubscribe. */
+  watchRun?(sessionId: string, on: (e: PilotEvent) => void): () => void
+  /**
+   * Holds the chat's run going (`on`) or lets it go on. A held run waits before its next model request and before its
+   * next tool call, never in the middle of one. It never pauses a printer and never answers or cancels a waiting card,
+   * and cancel still works. Letting go continues the same run. Runtimes without holds leave it out.
+   */
+  hold?(sessionId: string, on: boolean): void
 }
 
 // ---------------------------------------------------------------------------

@@ -302,6 +302,9 @@ export function usePilotRun(pilot: Pilot, sessionId: string, opts: { context?: P
 
   const log = useCallback(() => events.current, [])
 
+  // Events about the chat's print run that come between runs (how a print ended) fold in like a run's own.
+  useEffect(() => pilot.watchRun?.(sessionId, push), [pilot, sessionId, push])
+
   useEffect(() => {
     mounted.current = true
     return () => {

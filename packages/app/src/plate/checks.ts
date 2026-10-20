@@ -47,7 +47,7 @@ export function plateMaterial(s: Pick<AppState, 'plate' | 'plates' | 'activePlat
 
 /** A read-only project over the plate on screen. Objects are the printable ones, placed as they sit on the bed. */
 async function plateProject(s: Inputs) {
-  const { createMemoryProject, createKnowledgeBase } = await import('@slicerx/pilot')
+  const { createMemoryProject, createKnowledgeBase, leftOffWords } = await import('@slicerx/pilot')
   const kbJson = await import('@slicerx/pilot/kb.json')
   const kb = createKnowledgeBase(kbJson.default as never)
   const printable = s.plate.filter((p) => p.printable !== false)
@@ -61,8 +61,9 @@ async function plateProject(s: Inputs) {
     warnings: async () => freshWarnings(s),
     config: (base) => ({ ...base, ...resolved, ...bedSettings(s.bed) }),
   })
-  project.setPlates([{ index: 1, items: objects.map((o) => ({ objectId: o.id, copies: 1 })) }])
-  return project
+  // what found no room on the bed, said with the check's result
+  const left = leftOffWords(project.setPlates([{ index: 1, items: objects.map((o) => ({ objectId: o.id, copies: 1 })) }]))
+  return { project, left }
 }
 
 const NONE = { list: async () => [] } as unknown as PrinterHost
@@ -71,11 +72,11 @@ const NONE = { list: async () => [] } as unknown as PrinterHost
 export async function runPlateCheck(kind: PlateCheckKind, s: Inputs, printers?: PrinterHost): Promise<PlateCheck> {
   if (s.plate.every((p) => p.printable === false)) return { title: TITLE[kind], ok: false, summary: 'Add a model to the plate first.', display: [], fixes: [] }
   const { runAppFunction } = await import('@slicerx/pilot/functions')
-  const project = await plateProject(s)
+  const { project, left } = await plateProject(s)
   const machine = project.machine()!
   const env = { host: { printers: printers ?? NONE }, project, context: { machine } }
   const r: FunctionResult = kind === 'risks' ? await runAppFunction('risk_report', {}, env) : await runAppFunction('printer_match', { material: machine.material }, env)
-  return { title: TITLE[kind], ok: r.ok, summary: r.summary, display: r.display ?? [], fixes: kind === 'risks' ? riskFixes(r.output, s) : [] }
+  return { title: TITLE[kind], ok: r.ok && !left, summary: left ? `${r.summary} ${left}` : r.summary, display: r.display ?? [], fixes: kind === 'risks' ? riskFixes(r.output, s) : [] }
 }
 
 /** Electricity for one print: kWh, cost at an assumed price, and whether the wattage is a figure or a guess. */

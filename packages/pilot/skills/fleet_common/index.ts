@@ -4,6 +4,7 @@
 // knowledge lookups, Spoolman spools, capability checks and one-copy slicing.
 import type { PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import type { KbDoc, KnowledgeBase } from '../../src/kb/kb'
+import { leftOffWords } from '../../src/project'
 import type { ToolShared } from '../../src/shared'
 import type { ToolContext } from '../../src/tool'
 import { resolvePrinters } from '../../src/tools/printers'
@@ -233,8 +234,10 @@ export async function perCopy(ctx: ToolContext, shared: ToolShared, objectRef: s
     res = 'No slicer on this host. Give minutesPerCopy for each job.'
   } else {
     const saved = project.plates()
-    project.setPlates([{ index: 1, items: [{ objectId: obj.id, copies: 1 }] }])
+    const left = leftOffWords(project.setPlates([{ index: 1, items: [{ objectId: obj.id, copies: 1 }] }]))
     try {
+      // a part with no room on the bed cannot be sliced for its time
+      if (left) throw new Error(left)
       const plate = await project.plate(1)
       const r = await ctx.host.slicer.slice({ plate, config: project.config(1), options: { emitGcode: false, emitPreview: false } }, { signal: ctx.signal })
       ctx.host.slicer.release(r.id)

@@ -46,7 +46,9 @@ export const journeys = [
   // clients reaching the open app
   { paths: ['packages/app/src/app-link/', 'packages/app/src/agent-bridge/', 'packages/app-bridge/', 'packages/mcp/src/app'], journeys: ['links'] },
   // mimir
-  { paths: ['packages/app/src/pilot-connect/', 'packages/app/src/workspaces/mimir/', 'packages/app/src/features/pilot/', 'packages/pilot/src/'], journeys: ['mimir', 'phone-session'] },
+  { paths: ['packages/app/src/pilot-connect/', 'packages/app/src/workspaces/mimir/', 'packages/app/src/features/pilot/', 'packages/pilot/src/'], journeys: ['mimir', 'mimir-print-run', 'phone-session'] },
+  // the print run from the chat: the guard and its send ledger
+  { paths: ['packages/app/src/plate/guard.ts', 'packages/app/src/plate/send-ledger.ts'], journeys: ['plates', 'sidebar', 'phone-model', 'mimir-print-run'] },
   // the start, first-run setup, updates and the Vault
   { paths: ['packages/app/src/first-run/', 'packages/app/src/updates/', 'packages/app/src/bugs/', 'packages/app/src/edition.tsx', 'packages/app/src/lib/chunk-reload.ts'], journeys: session },
   { paths: ['packages/app/src/workspaces/library/', 'packages/app/src/features/store/', 'packages/store/src/'], journeys: ['vault', 'phone-session'] },

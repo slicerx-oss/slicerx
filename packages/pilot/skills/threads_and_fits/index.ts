@@ -117,7 +117,7 @@ export function createThreadsAndFits() {
             else {
               const part = partFromGeom(res.mesh, g.parts[0]?.name ?? obj.name, g.parts[0]?.slot ?? 1)
               if (!part) notes.push('The hole cut returned no mesh, so nothing changed.')
-              else if (await replaceGeometry(ctx.project, obj, [part])) {
+              else if (await replaceGeometry(ctx.project, obj, [part], notes)) {
                 cut = placed.length
                 watertight = res.watertight
                 if (!res.watertight) notes.push('The part is not watertight after the cut; repair the mesh before slicing.')

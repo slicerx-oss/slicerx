@@ -115,6 +115,9 @@ async function exportProject(shared: ToolShared, ctx: ToolContext, plate: number
   return { file: { name: entry.project.file.fileName, kind: 'gcode.3mf', data: entry.project.data, sha256 }, ...jobStats(entry) }
 }
 
+/** What a stale slice says, the same on the slice card, the send card and printer.queue. */
+export const STALE_SLICE = 'The plate changed after this slice. Slice it again.'
+
 /** A refusal before any card, in one sentence a client can pass on to a person. */
 function refusal(code: string, message: string): Error {
   return Object.assign(new Error(message), { code })
@@ -188,7 +191,14 @@ interface QueuePlan {
  * for the run after an approval, which reuses the slots the card showed.
  */
 async function planQueue(shared: ToolShared, ctx: ToolContext, i: { printerId: string; plate: number; slotMap?: Record<string, string> | undefined }, card: boolean): Promise<QueuePlan> {
+  // A plate, printer or slot change after slicing: refused before any card, on every path with a run. A fresh slice
+  // is no permission on its own; the send card and the guard's preflight still decide.
+  const recorded = ctx.run?.get().slice
+  if (recorded?.stale) throw refusal('stale_slice', STALE_SLICE)
   const entry = slicedPlate(shared, ctx, i.plate)
+  // With a run, its slice is the one sent: it must be of this plate and be the very slice the file comes from, so a
+  // slice made one way and a newer one made another can never send the older G-code.
+  if (ctx.run && (!recorded || recorded.plate !== i.plate || recorded.sliceId !== entry.result.id)) throw refusal('stale_slice', `Plate ${i.plate} has no current slice in this chat, so nothing was sent. Slice it again.`)
   const info = (await ctx.host.printers.list()).find((p) => p.id === i.printerId)
   const name = info?.name ?? i.printerId
   const given = i.slotMap && Object.keys(i.slotMap).length > 0 ? i.slotMap : undefined
@@ -449,6 +459,16 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
     async approval(i, ctx) {
       const plan = await planQueue(shared, ctx, i, true)
       const slots = slotMapLine(plan.opts.slotMap)
+      // What the card shows: the file, its slots (1 based, as the app shows them), time and grams. A record, not a permission.
+      ctx.run?.recordSend({
+        printerId: i.printerId,
+        fileName: plan.file.name,
+        fileKind: plan.file.kind,
+        sha256: plan.file.sha256,
+        slots: Object.fromEntries(Object.entries(plan.opts.slotMap ?? {}).map(([k, v]) => [Number(k) + 1, v])),
+        timeS: plan.timeS,
+        grams: plan.grams,
+      })
       return {
         title: `Send plate ${i.plate} to ${plan.name}?`,
         lines: [
@@ -504,6 +524,7 @@ export function printerTools(shared: ToolShared): PilotTool<never>[] {
         return { ok: false, summary: say, output: { ok: false, error: 'unverified_file', tellTheUser: say, retry: false } }
       }
       const s = await ctx.host.printers.status(i.printerId).catch(() => null)
+      ctx.run?.recordJob({ printerId: i.printerId, fileName: remote.name, startedAt: new Date(ctx.now?.() ?? Date.now()).toISOString(), state: s?.state ?? 'printing' })
       const slots = slotMapLine(opts.slotMap)
       const rows: [string, Cell][] = [['job', { text: 'accepted', tone: 'ok' }], ['file', remote.name]]
       if (slots) rows.push(['slots', slots.replace(/^Filament slots: /, '')])

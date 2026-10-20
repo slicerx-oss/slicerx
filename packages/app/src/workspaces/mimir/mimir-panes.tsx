@@ -6,7 +6,7 @@
 // and Ask mimir in the command bar all open it, and clients reach it over the app link (mimir.ask, mimir.session).
 import { SKILL_INFO } from '@slicerx/pilot'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Composer, Inspector, transcriptTurns, TranscriptView, UsageLinkContext, useAttachments, usePilotRun, type ApprovalHandlers, type PolicyClass, type Transcript } from '@slicerx/pilot/ui'
+import { Composer, Inspector, transcriptTurns, TranscriptView, UsageLinkContext, useAttachments, usePilotRun, type ApprovalHandlers, type PartHandlers, type PolicyClass, type Transcript } from '@slicerx/pilot/ui'
 import { DEFAULT_POLICY, PERMISSION_LABELS, type ApprovalRequest, type PermissionMode, type PermissionPolicy, type Pilot, type PilotAttachment, type PilotLookup } from '@slicerx/contracts'
 import '@slicerx/pilot/ui/pilot.css'
 import { Button, Icon, LinkButton, Menu, MenuAnchor, MenuItem, ResizeEdge, tipAttrs } from '@slicerx/ui'
@@ -15,13 +15,16 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { setLookups } from './lookups'
 import { stepWords } from './step-words'
 import { followSteps, useStepCaption, viewStep } from './view-step'
-import { newSessionId, noteMessage, tabTools, useTabMimir } from './session'
+import { newSessionId, noteMessage, startNewChat, tabTools, useTabMimir } from './session'
 import { editRow } from './sheet-drive'
 import { openSheet, setDraft, setSheetActions, setShownSheet, sheetMode, useSheetUi, type ShownSheet } from './sheet-ui'
 import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice'
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
 import { setMimirAsker } from '../../app-link/mimir-ask'
+import { setTabChat } from '../../app-link/sessions'
+import { useHost } from '../../host'
+import { usePhoneLayout } from '../../lib/phone-layout'
 import { hostSlices } from '../../state/model-mode'
 import { get, openSettings, pilotState, set, setCamera, useApp } from '../../state/store'
 import { MimirSetup } from '../../pilot-connect/mimir-setup'
@@ -29,7 +32,9 @@ import { openUsage } from '../../pilot-connect/usage-open'
 import { useMimirLink } from './connection'
 import { MimirFilamentPick } from './filament-pick'
 import { planChoiceCard } from './plan-card'
+import { partHandlers } from './part-actions'
 import { MEMORY_CARDS } from './remember-chip'
+import { RUN_APPROVAL_CARDS, runCard, runChoiceCard } from './run-cards'
 import './mimir.css'
 
 /** The chat column's width: 420 px to start, 340 px at least and half the window at most. */
@@ -48,6 +53,27 @@ function useWindowWidth(): number {
     return () => window.removeEventListener('resize', on)
   }, [])
   return w
+}
+
+/**
+ * Pause and Resume in the chat's header: holds the run before its next step. It never pauses a printer and never
+ * answers a waiting card. Off with no run going and none held.
+ */
+export function HoldButton({ running, held, onHold }: { running: boolean; held: boolean; onHold: (on: boolean) => void }) {
+  const label = `${held ? 'Resume' : 'Pause'} ${ASSISTANT_NAME}`
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      icon={held ? 'play' : 'pause'}
+      aria-label={label}
+      pressed={held}
+      data-testid="mimir-pause"
+      tip={{ title: label, body: `Holds ${ASSISTANT_NAME} before its next step. A print keeps going.` }}
+      disabled={!running && !held}
+      onClick={() => onHold(!held)}
+    />
+  )
 }
 
 /** The design's name for the chat header: the project file without its extension, or Untitled. */
@@ -105,6 +131,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   const run = usePilotRun(pilot, sessionId)
   const { reset, transcript } = run
   useEffect(() => reset(), [sessionId, reset])
+  // mimir.run with no sessionId reads the chat on screen
+  useEffect(() => setTabChat(sessionId), [sessionId])
   // a runtime made again (Settings, signing in, the app's commands arriving) picks up the conversation on screen
   const madeFor = useRef(pilot)
   const shown = useRef(transcript)
@@ -186,16 +214,25 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       onApprove: (r: ApprovalRequest, o: { bedClear: boolean }) => pilot.resolveApproval(r.id, o.bedClear ? { kind: 'approve', bedClear: true } : { kind: 'approve' }),
       onCancel: (r: ApprovalRequest) => pilot.resolveApproval(r.id, { kind: 'deny', reason: 'canceled' }),
       onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(),
-      choiceCard: planChoiceCard,
+      choiceCard: (p) => planChoiceCard(p) ?? runChoiceCard(p),
       onConfirmSheet: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve(),
       onEditSheet: (_sheetId, key, value) => setDraft(key, value),
       onCancelSheet: (sheetId) => pilot.answerSheet?.(sheetId, null) ?? Promise.resolve(),
       onOpenSheet: openSheet,
       sheetValues: draft,
-      // a note mimir wants to keep asks with a small chip, not the full card
-      cards: MEMORY_CARDS,
+      // a note mimir wants to keep asks with a small chip, not the full card; the print run has its own cards
+      cards: { ...MEMORY_CARDS, ...RUN_APPROVAL_CARDS },
+      runCard,
     }),
     [pilot, draft],
+  )
+  // A part card's body selects its part and Edit opens it (a phone has no modeling tools, so no Edit); its next steps
+  // send their request as a message, and offer only what this toolset can do.
+  const host = useHost()
+  const phone = usePhoneLayout()
+  const parts = useMemo<PartHandlers>(
+    () => ({ ...partHandlers(host.slicer, phone), onRun: (request: string) => sendRef.current(request), can: (tool: string) => pilot.tools().some((t) => t.name === tool) }),
+    [host, phone, pilot],
   )
   // Follows the stream while the reader is at the bottom; leaves them be once they scroll up.
   const body = useRef<HTMLDivElement>(null)
@@ -278,7 +315,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           Scripted replies
         </span>
         ) : null}
-        <Button size="sm" variant="ghost" icon="plus" aria-label="New conversation" tip="pilot.newChat" onClick={() => setSessionId(newSessionId())} />
+        <HoldButton running={run.running} held={transcript.held} onHold={(on) => pilot.hold?.(sessionId, on)} />
+        <Button size="sm" variant="ghost" icon="plus" aria-label="New conversation" tip="pilot.newChat" onClick={() => setSessionId(startNewChat(sessionId))} />
         <ChatMenu more={more} setMore={setMore} thinking={thinking} setThinking={setThinking} />
       </header>
       {more ? (
@@ -322,7 +360,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
           ) : (
             <div className="mimir-turns">
               <UsageLinkContext.Provider value={openUsage}>
-                <TranscriptView transcript={transcript} showThinking={thinking} approvals={handlers} words={stepWords} />
+                <TranscriptView transcript={transcript} showThinking={thinking} approvals={handlers} words={stepWords} parts={parts} />
               </UsageLinkContext.Provider>
               <MimirFilamentPick transcript={transcript} running={run.running} />
             </div>

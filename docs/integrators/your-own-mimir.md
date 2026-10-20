@@ -93,6 +93,43 @@ The mimir tab saves notes, asking first with a small chip that says where the no
 
 `voice` says whether a voice is set. The answer never has the voice text or the contents of your docs. `knowledgeDocs` counts only your edition's own docs that mimir searches, in the edition file the running build carries. The bundled docs are not counted, and neither is one of yours that shares a bundled doc's id or name (the bundled doc wins). `cloud.base` is the base model mimir cloud answers with, and `cloud.stepUp` is your config's value (`null` for `none`); the proxy still decides. `toolGroups` is the set of switches every mimir in the app applies.
 
+## Print runs
+
+mimir follows one chat from a part to a print in six steps: design, plate, target (the printer, and which slot feeds each filament), slice, send and print. It keeps one run record per chat, and mimir's tools and cards read the same record.
+
+By default an edition gets the whole path. mimir designs, slices, sends the plate to one of the person's printers and follows the print. Switching off a [tool group](#tool-groups) takes its steps away:
+
+- With `printers` off, mimir has no tool that reaches a printer. It still slices and the person can save the result, but it can't send or start anything. The target, send and print steps read as off.
+- With `design` off, mimir doesn't make or change parts, and the design step reads as off.
+- With `slicing` off, the slice step reads as off.
+
+`slicerx_mimir_run` reads a run back over the app link. Like `slicerx_mimir_brain`, it needs the app open, the app link on and the MCP server started with `--printers link`. It is a read, so a client allowed to read only can call it. It answers for the chat the mimir tab has open, falling back to the newest mimir session when the tab hasn't opened one, or for the session `sessionId` names:
+
+```json
+{
+  "sessionId": "a1b2c3",
+  "steps": [
+    { "name": "design", "state": "done" },
+    { "name": "plate", "state": "done" },
+    { "name": "target", "state": "done" },
+    { "name": "slice", "state": "done" },
+    { "name": "send", "state": "done" },
+    { "name": "print", "state": "now" }
+  ],
+  "slice": { "timeS": 3100, "grams": 14.2, "cost": 0.31, "warnings": [], "stale": false },
+  "send": { "printerName": "Bench printer", "fileName": "bracket.gcode.3mf", "slots": [{ "filament": 1, "slot": "A1" }] },
+  "print": { "printerName": "Bench printer", "state": "printing", "layer": 42, "layerCount": 180, "timeLeftS": 2400, "progress": 23, "outcome": null }
+}
+```
+
+Each step is `done`, `now`, `todo` or `off`. `slice` is the last slice, and `stale` is true when the plate, the printer or the slots changed after it, so it has to be sliced again before it is sent. `send` is what went to the printer. `print` is the job as the printer last reported it: while it prints, its layer, progress and time left follow the printer, and `outcome` is `finished`, `failed` or `canceled` once it ends. A chat that hasn't sliced, sent or printed has `null` for those parts, and the whole answer is `null` before the mimir tab first opens. Printers go by the name the person gave them. The answer never carries the file or its bytes, its SHA-256, approval tokens, request ids, printer ids, access codes or serial numbers.
+
+An integrator never presses Print. Starting a print waits for the person in the app, on a card mimir can't answer. The card has the person tick that the bed is clear and the right build plate is on it, every time, and there is no "don't ask again". A permission policy set to Allow doesn't skip the tick, and nothing on the app link or in MCP approves a print: `slicerx_mimir_run` only reads, and `slicerx_printer_queue` waits for the person. A card that isn't answered within 5 minutes expires, and nothing is sent. Preflight runs before every send.
+
+A print only starts on an idle or finished printer, and it never queues to a busy one. The tick has to describe the bed at the moment the print starts, and on a busy printer the person can't know that yet. If the printer is busy, the check fails and Print stays off. mimir offers an idle printer of the same make and model instead, never a different one, since the file is made for one machine. When the busy printer finishes, the person asks again. A start that is scheduled or queued for later stays with the app's print queue, where the start has its own card with the bed tick.
+
+Two cards carry the run in the chat. The send card shows the file, the printer, the slot for each filament and the bed tick in one place, and Print stays off until the tick is in and preflight passes. The progress card follows the print with its layer, time left and, on a printer with a camera, a still that refreshes every 30 seconds. The chat gets one line when the print finishes, stops or is canceled.
+
 ## What an edition can't change
 
 - mimir's core prompt is built into `@slicerx/pilot`, and the config has no setting that replaces or removes it. The voice is a note of at most 280 characters.

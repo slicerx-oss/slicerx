@@ -61,7 +61,8 @@ export function createWalls() {
       if (!after.watertight) return { ok: false, summary: `${obj.name} unchanged: the new walls did not close` }
       const part: MeshPart | null = partFromGeom(mesh, g.parts[0]?.name ?? obj.name, g.parts[0]?.slot ?? 1)
       if (!part) return { ok: false, summary: `${obj.name} unchanged: no mesh came back` }
-      const replaced = await replaceGeometry(ctx.project, obj, [part])
+      const notes: string[] = []
+      const replaced = await replaceGeometry(ctx.project, obj, [part], notes)
       const moved = plan.targets.map((t) => ({ kind: t.kind, normal: t.normal, beforeMm: t.thicknessMm, afterMm: Math.round((t.thicknessMm + t.deltaMm) * 1000) / 1000 }))
       const rows: Cell[][] = [
         [plan.targets.some((t) => t.kind === 'floor') && plan.targets.some((t) => t.kind === 'wall') ? 'walls and floor' : plan.targets[0]?.kind === 'floor' ? 'floor' : 'walls', thick(plan.targets), thick(plan.targets.map((t) => ({ ...t, thicknessMm: t.thicknessMm + t.deltaMm })))],
@@ -69,7 +70,7 @@ export function createWalls() {
         ['volume', `${cm3(before.volumeMm3)} cm3`, `${cm3(after.volumeMm3)} cm3`],
       ]
       return {
-        summary: `${obj.name}: ${moved.length} face${moved.length === 1 ? '' : 's'} moved, ${rows[0]?.[0]} ${thick(plan.targets)} to ${rows[0]?.[2]}${replaced ? '' : ' (this project cannot swap geometry, so it was not applied)'}`,
+        summary: `${obj.name}: ${moved.length} face${moved.length === 1 ? '' : 's'} moved, ${rows[0]?.[0]} ${thick(plan.targets)} to ${rows[0]?.[2]}${replaced ? '' : ' (this project cannot swap geometry, so it was not applied)'}${notes.length ? `. ${notes.join(' ')}` : ''}`,
         output: { objectId: obj.id, replaced, faces: moved, before: { sizeMm: before.sizeMm, volumeCm3: cm3(before.volumeMm3) }, after: { sizeMm: after.sizeMm, volumeCm3: cm3(after.volumeMm3), watertight: after.watertight } },
         display: [{ kind: 'table', head: ['', 'before', 'after'], rows }],
       }

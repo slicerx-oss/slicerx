@@ -31,6 +31,7 @@ import { createApprovalBroker, type ApprovalBroker } from '../src/permit/broker'
 import { createMemoryProject, type MemoryProject } from '../src/memory-project'
 import type { PilotProject } from '../src/project'
 import type { LlmClient } from '../src/provider/types'
+import type { PrintRunHost } from '../src/run/print-run'
 import { createPilot } from '../src/runtime'
 import type { PilotTool, ToolHost } from '../src/tool'
 
@@ -286,6 +287,8 @@ export interface EvalEnvOptions {
   device?: Record<string, (printerId: string) => Promise<unknown>>
   /** Extra config, such as the huginn and muninn models. */
   config?: Partial<PilotConfig>
+  /** Keeps a print run per chat, for tests of the run's tools and cards. */
+  printRun?: PrintRunHost
 }
 
 export type EvalHosts = Partial<Pick<ToolHost, 'profiles' | 'geom' | 'history' | 'models' | 'share' | 'setup' | 'projectExport'>>
@@ -349,6 +352,7 @@ export function createEvalEnv(opts: EvalEnvOptions) {
     ...(opts.tools ? { tools: opts.tools } : {}),
     ...(opts.scope ? { scope: opts.scope } : {}),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
+    ...(opts.printRun ? { printRun: opts.printRun } : {}),
     now: () => {
       clock += 1
       return opts.realClock ? Date.now() : clock

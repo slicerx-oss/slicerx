@@ -6,6 +6,7 @@
 // goes through printer.queue and its approval.
 import type { Cell } from '@slicerx/contracts'
 import { z } from 'zod'
+import { leftOffWords } from '../../src/project'
 import { defineSkill, type ToolContext } from '../../src/tool'
 import { arr, geomRun, newObject, num, partFromGeom, rec } from '../geom_common/index'
 
@@ -63,7 +64,8 @@ async function generate(ctx: ToolContext, test: CalibrationTest, params: Record<
     const ids = new Set(out.objects.map((o) => o.id))
     const rest = project.plates().filter((p) => !p.items.every((it) => ids.has(it.objectId)))
     const plates = [...rest, { index: 0, items: out.objects.map((o) => ({ objectId: o.id, copies: 1 })) }]
-    project.setPlates(plates.map((p, k) => ({ ...p, index: k + 1 })))
+    const left = leftOffWords(project.setPlates(plates.map((p, k) => ({ ...p, index: k + 1 }))))
+    if (left) out.notes.push(left)
   }
   return out
 }

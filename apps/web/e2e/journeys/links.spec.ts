@@ -27,6 +27,12 @@ test.skip(({ isMobile }) => isMobile, 'The app link is hosted by the desktop she
 const refused = { isError: true, structuredContent: { error: { code: 'not_supported' } } }
 const slab = { shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 8 }
 
+/**
+ * A body built off the bed lands on it once, and its coordinates are the plate's from then on, so face picks start
+ * from where the extrude reply says the slab is: the middle of its footprint, at a height above its floor.
+ */
+const onSlab = (made: { minMm: number[]; sizeMm: number[] }, z: number): number[] => [made.minMm[0]! + made.sizeMm[0]! / 2, made.minMm[1]! + made.sizeMm[1]! / 2, made.minMm[2]! + z]
+
 test('a read-only grant reads and is refused every edit, an edit grant works, and a client with only a hub code is told how to connect', async ({ page, link }) => {
   test.slow()
   await cleanPlate(page)
@@ -35,7 +41,7 @@ test('a read-only grant reads and is refused every edit, an edit grant works, an
     const reader = await session(link, page, dir, 'grant-reader', 'read')
     try {
       const design = (await editor.ok('design_new', { name: 'Grant block' })).design
-      await editor.ok('geom_extrude', { design, ...slab })
+      const made = await editor.ok('geom_extrude', { design, ...slab })
       // Read: the project's history, values and volumes, and a body's geometry.
       const history = await reader.ok('app_history')
       expect(await reader.ok('app_values')).toMatchObject({ values: [] })
@@ -48,7 +54,7 @@ test('a read-only grant reads and is refused every edit, an edit grant works, an
         ['app_redo', { revision: history.revision }],
         ['app_value_set', { name: 'height', expression: '3' }],
         ['app_volume_add', { object: design, role: 'negative', shape: 'box' }],
-        ['geom_shell', { design, open: [{ at: [0, 0, 8], normal: [0, 0, 1] }], wall_mm: 1 }],
+        ['geom_shell', { design, open: [{ at: onSlab(made, 8), normal: [0, 0, 1] }], wall_mm: 1 }],
         ['geom_cut', { design, plane: { axis: 'z', at: 4 }, keep: 'both' }],
       ] as const) expect(await reader.call(tool, args), tool).toMatchObject(refused)
     } finally {
@@ -287,11 +293,12 @@ test('shell and measurement commands operate on the live body', async ({ page, l
     const editor = await session(link, page, dir, 'inspect-editor', 'edit')
     try {
       const design = (await editor.ok('design_new', { name: 'Measured tray' })).design
-      await editor.ok('geom_extrude', { design, ...slab })
-      const shell = { design, open: [{ at: [0, 0, 8], normal: [0, 0, 1] }], wall_mm: 1 }
+      const made = await editor.ok('geom_extrude', { design, ...slab })
+      expect(made.sizeMm).toEqual([20, 10, 8])
+      const shell = { design, open: [{ at: onSlab(made, 8), normal: [0, 0, 1] }], wall_mm: 1 }
       expect(await editor.call('geom_shell', shell)).toMatchObject({ structuredContent: { output: { in: 'app', steps: 2 } } })
       expect(await editor.call('geom_info', { design })).toMatchObject({ structuredContent: { output: { in: 'app', parts: [{ watertight: true, volumeMm3: expect.closeTo(592, 3) }] } } })
-      expect(await editor.call('geom_measure', { design, a: { at: [0, 0, 1], normal: [0, 0, 1] }, b: { at: [0, 0, 0], normal: [0, 0, -1] } })).toMatchObject({ structuredContent: { output: { in: 'app', measurement: { distanceMm: 1 } } } })
+      expect(await editor.call('geom_measure', { design, a: { at: onSlab(made, 1), normal: [0, 0, 1] }, b: { at: onSlab(made, 0), normal: [0, 0, -1] } })).toMatchObject({ structuredContent: { output: { in: 'app', measurement: { distanceMm: 1 } } } })
       await editor.ok('design_undo', { design })
       expect(await editor.call('geom_info', { design })).toMatchObject({ structuredContent: { output: { parts: [{ volumeMm3: expect.closeTo(1600, 4) }] } } })
     } finally {

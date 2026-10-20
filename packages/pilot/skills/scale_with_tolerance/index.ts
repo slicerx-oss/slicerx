@@ -98,7 +98,7 @@ export function createScaleWithTolerance() {
           }
         }
         if (ok) {
-          applied = await replaceGeometry(ctx.project, obj, result)
+          applied = await replaceGeometry(ctx.project, obj, result, notes)
           if (!applied) notes.push('This project cannot swap geometry, so the scale was not applied.')
           size = placedBox(ctx.project, obj.id, result)
         }
