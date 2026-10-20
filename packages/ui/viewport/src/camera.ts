@@ -108,6 +108,9 @@ export function applyInsets(camera: PerspectiveCamera, w: number, h: number, ins
   return { fw: f.w / w, fh: f.h / h }
 }
 
+/** Presets that frame the bed itself around its center, rather than what is on it. */
+const BED_PRESETS: ReadonlySet<ViewPreset> = new Set<ViewPreset>(['bed', 'plate', 'top', 'bottom', 'front', 'back', 'left', 'right'])
+
 export class CameraRig {
   move: CameraMove | null = null
   preset: ViewPreset | null = 'iso'
@@ -197,6 +200,21 @@ export class CameraRig {
     const off = this.camera.position.clone().sub(t)
     const d = Math.min(this.controls.maxDistance, Math.max(this.controls.minDistance, off.length() / factor))
     return { pos: t.clone().add(off.setLength(d)), target: t.clone() }
+  }
+
+  /**
+   * The bed moved by `delta` in the world: the stage centers every bed on the origin, so a bed of another size moves
+   * what is on it. The view moves along and stays on the same spot of the bed (a part it framed stays in view), and a
+   * move under way ends there too. A view of the whole bed stays put, centered on the new bed. Returns whether it moved.
+   */
+  followBed(delta: Vector3): boolean {
+    if (delta.lengthSq() === 0 || (this.preset !== null && BED_PRESETS.has(this.preset))) return false
+    const m = this.move
+    if (m) for (const v of [m.fromPos, m.fromTarget, m.toPos, m.toTarget]) v.add(delta)
+    this.camera.position.add(delta)
+    this.controls.target.add(delta)
+    this.controls.update()
+    return true
   }
 
   go(pose: { pos: Vector3; target: Vector3 }, animate: boolean, now: number, durationMs = 520): void {

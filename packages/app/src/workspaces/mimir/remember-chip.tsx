@@ -3,21 +3,27 @@
 // The chip mimir shows before it saves a note about the person (memory.remember), in place of the approval card: the
 // note in their words, Remember and Not now. Remember approves the call, which saves through the app's one memory
 // handle (pilot-connect/memory.ts); Not now declines it and nothing is kept.
+import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import type { ApprovalCardProps } from '@slicerx/pilot/ui'
 import { Button, Icon } from '@slicerx/ui'
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 import { openSettings } from '../../state/store'
 
-function outcome(p: ApprovalCardProps): { word: string; ok: boolean } | null {
+/** What the chip says when its answer could not be delivered. */
+export const REMEMBER_INACTIVE = `Nothing saved. Ask ${ASSISTANT_NAME} again.`
+
+function outcome(p: ApprovalCardProps, inactive: boolean): { word: string; ok: boolean } | null {
   const r = p.resolution
+  if (!r && inactive) return { word: REMEMBER_INACTIVE, ok: false }
   if (r) return r.decision.kind === 'approve' ? { word: 'Remembered', ok: true } : { word: 'Not saved', ok: false }
   return p.actionable ? null : { word: 'Not answered', ok: false }
 }
 
 export function RememberChip(p: ApprovalCardProps) {
   const [busy, setBusy] = useState<'yes' | 'no' | null>(null)
-  const [note, setNote] = useState<string | null>(null)
-  const done = outcome(p)
+  // an answer the app could not deliver: the request is gone, so the chip stops taking answers
+  const [inactive, setInactive] = useState(false)
+  const done = outcome(p, inactive)
   const live = done === null
   const box = useRef<HTMLDivElement>(null)
   // once the person's own answer lands, the buttons go and focus goes back to the chat's input line
@@ -32,11 +38,12 @@ export function RememberChip(p: ApprovalCardProps) {
   const values = rest.slice(0, -1)
   const answer = (which: 'yes' | 'no'): void => {
     setBusy(which)
-    setNote(null)
     const sent = which === 'yes' ? p.onApprove(p.request, { bedClear: false }) : p.onCancel(p.request)
+    // no internal reason or id reaches the person: the chip is over, and asking again makes a new one
     sent.catch((e: unknown) => {
+      console.warn('mimir: the remember answer did not land', e)
       setBusy(null)
-      setNote(`Could not send your answer: ${e instanceof Error ? e.message : String(e)}`)
+      setInactive(true)
     })
   }
   // the buttons and the outcome share one cell, so answering swaps them with nothing around it moving
@@ -56,7 +63,6 @@ export function RememberChip(p: ApprovalCardProps) {
             <Button size="sm" variant="ghost" busy={busy === 'no'} disabled={busy !== null} data-testid="mimir-remember-no" onClick={() => answer('no')}>
               Not now
             </Button>
-            {note ? <span className="mem-chip-err">{note}</span> : null}
           </div>
           <div data-on={!live || undefined} inert={live || undefined} role="status">
             {done?.ok ? <Icon name="check" /> : null}

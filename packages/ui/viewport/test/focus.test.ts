@@ -41,3 +41,42 @@ describe('focusing a point', () => {
     expect(b.controls.target.x).toBe(10)
   })
 })
+
+describe('a bed of another size', () => {
+  // A 330 by 320 mm bed to a 256 mm one: the stage centers both on the origin, and the bed's Y runs along the world's
+  // -Z, so a bed point moves by (37, 0, -32).
+  const shift = new Vector3(37, 0, -32)
+
+  it('keeps the view on the part it framed', () => {
+    const { r, camera, controls } = rig()
+    r.preset = 'iso'
+    expect(r.followBed(shift)).toBe(true)
+    expect(controls.target.toArray()).toEqual([37, 0, -32])
+    expect(camera.position.toArray()).toEqual([137, 80, 68])
+    expect(controls.update).toHaveBeenCalled()
+  })
+
+  it('ends a move under way on the same spot of the bed', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false }))
+    const { r, controls } = rig()
+    r.go(r.centerOn(new Vector3(10, 0, 0)), true, 0)
+    r.preset = null
+    r.followBed(shift)
+    r.step(600)
+    expect(controls.target.toArray()).toEqual([47, 0, -32])
+  })
+
+  it('leaves a view of the whole bed centered on the new bed', () => {
+    const { r, camera, controls } = rig()
+    r.preset = 'plate'
+    expect(r.followBed(shift)).toBe(false)
+    expect(controls.target.toArray()).toEqual([0, 0, 0])
+    expect(camera.position.toArray()).toEqual([100, 80, 100])
+  })
+
+  it('does nothing when the bed stays where it was', () => {
+    const { r, controls } = rig()
+    expect(r.followBed(new Vector3())).toBe(false)
+    expect(controls.update).not.toHaveBeenCalled()
+  })
+})

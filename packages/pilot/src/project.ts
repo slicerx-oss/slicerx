@@ -60,8 +60,8 @@ export interface PilotProject {
   machine(): PilotMachine | undefined
   objects(): ProjectObject[]
   plates(): ProjectPlate[]
-  /** Replace the plate layout (class slice: stays inside the project). */
-  setPlates(plates: ProjectPlate[]): void
+  /** Replace the plate layout (class slice: stays inside the project). May say what found no room on the bed. */
+  setPlates(plates: ProjectPlate[]): void | PlatesLeftOff
   /** Capacity of the host's actual layout, including the resolved first-layer margins. */
   arrangeCapacity?(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): number
   /** Project level overrides by Orca key. */
@@ -90,4 +90,20 @@ export interface PilotProject {
   setObjectSettings?(objectId: string, changes: Record<string, SettingValue>): void
   /** An object's own settings, for read-back. */
   objectSettings?(objectId: string): Record<string, SettingValue>
+}
+
+/** What a new plate layout could not fit: parts still off the bed, and copies that found no room and were not added. */
+export interface PlatesLeftOff {
+  leftOff: number
+  notAdded?: number
+}
+
+/** Plain sentences for what a layout could not fit, or '' when everything fit. */
+export function leftOffWords(r: void | PlatesLeftOff | undefined): string {
+  const off = r?.leftOff ?? 0
+  const notAdded = r?.notAdded ?? 0
+  const out: string[] = []
+  if (off > 0) out.push(off === 1 ? '1 part is still off the bed because there is no room for it.' : `${off} parts are still off the bed because there is no room for them.`)
+  if (notAdded > 0) out.push(notAdded === 1 ? '1 copy did not fit, so it was not added.' : `${notAdded} copies did not fit, so they were not added.`)
+  return out.join(' ')
 }

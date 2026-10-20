@@ -17,7 +17,7 @@ import { ModeTabs } from '../src/shell/mode-tab'
 import { modelMode, setHostSlices, setMimirOn, showsDesign, toggleModelMode } from '../src/state/model-mode'
 import { get, set, setModelMode } from '../src/state/store'
 import { modelLook } from '../src/viewport/viewport-host'
-import { captionFor, chatMax, designName } from '../src/workspaces/mimir/mimir-panes'
+import { captionFor, chatMax, designName, HoldButton } from '../src/workspaces/mimir/mimir-panes'
 
 const NO_CAD = { ...NEUTRAL, features: { ...NEUTRAL.features, cad: false } }
 
@@ -188,3 +188,40 @@ describe('the chat and the caption', () => {
   })
 })
 
+
+describe('Pause and Resume in the chat header', () => {
+  function hold(props: { running: boolean; held: boolean }): { button: HTMLButtonElement; asked: boolean[] } {
+    const asked: boolean[] = []
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    flushSync(() => createRoot(el).render(createElement(HoldButton, { ...props, onHold: (on: boolean) => asked.push(on) })))
+    return { button: el.querySelector<HTMLButtonElement>('[data-testid="mimir-pause"]')!, asked }
+  }
+
+  it('the button is off with no run', () => {
+    const { button, asked } = hold({ running: false, held: false })
+    expect(button.getAttribute('aria-disabled')).toBe('true')
+    expect(button.getAttribute('aria-label')).toBe('Pause mimir')
+    expect(button.getAttribute('aria-pressed')).toBe('false')
+    flushSync(() => button.click())
+    expect(asked).toEqual([])
+  })
+
+  it('reads Pause while a run goes, with the tip that a print keeps going', () => {
+    const { button, asked } = hold({ running: true, held: false })
+    expect(button.getAttribute('aria-disabled')).toBeNull()
+    expect(button.getAttribute('aria-label')).toBe('Pause mimir')
+    expect(button.getAttribute('data-tip-body')).toBe('Holds mimir before its next step. A print keeps going.')
+    flushSync(() => button.click())
+    expect(asked).toEqual([true])
+  })
+
+  it('it reads Resume while held', () => {
+    const { button, asked } = hold({ running: true, held: true })
+    expect(button.getAttribute('aria-label')).toBe('Resume mimir')
+    expect(button.getAttribute('aria-pressed')).toBe('true')
+    expect(button.getAttribute('aria-disabled')).toBeNull()
+    flushSync(() => button.click())
+    expect(asked).toEqual([false])
+  })
+})

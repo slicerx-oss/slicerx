@@ -7,7 +7,7 @@
 import { DEFAULT_POLICY, type CommandSpec, type Host, type LlmTransport, type MeshHandle, type MeshPart, type Pilot, type PilotConfig } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { designToolset, nozzleOr } from '@slicerx/mcp/toolset'
-import { createCombinedPlanner, createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, whereNotesGo, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
+import { createCombinedPlanner, createMemorySessionStore, createPilot, DEFAULT_CONFIG, isLocalModel, sliceFigures, whereNotesGo, type CommandToolContext, type CreatePilotOptions, type KnowledgeBase, type LlmClient, type NotesWhere, type PilotTool } from '@slicerx/pilot'
 import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { setSessionSource } from '../../app-link/sessions'
@@ -18,17 +18,21 @@ import { projectExportHost } from '../../export/actions'
 import { geom } from '../../geom/client'
 import { useHost } from '../../host'
 import { guardedPrinters } from '../../plate/guard'
+import { sendLedger } from '../../plate/send-ledger'
 import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { editionToolGroups, withBrain } from '../../pilot-connect/brain'
 import { chatNotesGo, pilotMemory, useMemoryAccount } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
 import { slicePlate } from '../../state/actions'
+import { plateSliceConfig } from '../../state/slice-plate'
 import { hostSlices } from '../../state/model-mode'
 import { get, useApp, type PilotPref } from '../../state/store'
 import { setMimirLink, type MimirLink } from './connection'
 import { bundledKb } from './kb'
 import { withPlanTies } from './plan-tool'
 import { mimirPlans } from './plans'
+import { answersReachTheirRun, forgetReplaced, retire } from './answers'
+import { appPrintRun } from './print-run'
 import { appProject, pilotSlicer } from './project'
 import { mimirTools, NO_APPROVALS, NO_PRINTERS, scriptRouter } from './scripted'
 import { SCRIPTS } from './scripts'
@@ -54,7 +58,7 @@ export interface TabModel {
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
 let tools: PilotTool<never>[] = []
-let current: { key: string; pilot: Pilot; model: TabModel } | null = null
+let current: { key: string; pilot: Pilot & { forgetRun?(sessionId: string): void }; model: TabModel } | null = null
 let building: { key: string; done: Promise<Pilot> } | null = null
 
 /** The tools the tab's mimir calls, for editing a built sheet's steps the same way. */
@@ -96,18 +100,43 @@ export function modelingCommands(commands: readonly CommandSpec[]): CommandSpec[
 
 /**
  * The app's commands as mimir runs them: the same, except that a slice happens where mimir is, so the tab and its
- * conversation stay on screen. The slice waits in Slice, where the person opens it.
+ * conversation stay on screen. The slice replies with its time, filament, cost and warnings, and records them in the
+ * chat's print run, which shows them on the slice card.
  */
+/** app.slice's reply when no slice ran and the one on screen no longer matches the plate. */
+export const STALE_REPLY = 'The slice on screen is out of date because the plate changed after it. Slice the plate again.'
+
 export function mimirCommands(host: Host, commands: readonly CommandSpec[]): CommandSpec[] {
   return commands.map((c) =>
     c.id !== 'slice'
       ? c
       : {
           ...c,
-          run: async () => {
+          run: async (_input?: unknown, cx?: CommandToolContext) => {
+            // the plate and its fingerprint are read before slicing, so an edit made while the slice runs leaves it stale
+            const before = get()
+            const plate = Math.max(1, before.plates.findIndex((p) => p.id === before.activePlate) + 1)
+            const fingerprint = cx?.run?.fingerprint(plate)
             await slicePlate(host)
-            const s = get().slice
-            return s.status === 'done' ? { status: 'done', note: 'Sliced. The person sees the result in the Slice tab.' } : s.status === 'error' ? { status: 'error', message: s.message } : { status: s.status }
+            const after = get()
+            const s = after.slice
+            if (s.status === 'error') {
+              // the engine refused: no slice for this plate is recorded or kept, so none can be sent
+              cx?.refused?.(plate)
+              return { status: 'error', message: s.message }
+            }
+            if (s.status !== 'done') return { status: s.status }
+            // a slice that did not run leaves the last one, which an edit since has made stale: it is not this plate's
+            if (s.stale) return { status: 'stale', message: STALE_REPLY }
+            const r = s.result
+            const figures = sliceFigures(r)
+            // only a slice this call made is recorded: when none ran (a host that cannot slice), the one on screen was
+            // recorded by whatever made it, and recording it again would stamp it with this moment's plate
+            const made = after.slicesDone > before.slicesDone
+            if (made && cx?.run && fingerprint !== undefined) cx.run.update({ plate, slice: { sliceId: r.id, plate, at: new Date().toISOString(), ...figures, fingerprint, stale: false } })
+            // printer.queue sends the runtime's slice of the plate, so this slice replaces any older one there
+            if (made) cx?.sliced?.(plate, r, plateSliceConfig(before, before.plates.find((p) => p.id === before.activePlate)))
+            return { status: 'done', sliceId: r.id, ...figures }
           },
         },
   )
@@ -131,7 +160,7 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
   const commands = mimirCommands(host, parts.commands ?? listCommands())
   return {
     host: {
-      printers: guardedPrinters(host) ?? host.printers ?? NO_PRINTERS,
+      printers: guardedPrinters(host, { ledger: sendLedger }) ?? host.printers ?? NO_PRINTERS,
       approvals: host.approvals ?? NO_APPROVALS,
       llm: parts.llm,
       slicer: pilotSlicer(host),
@@ -150,6 +179,7 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
     project: appProject(host),
     tools: [...parts.tools],
     store: mimirLogs,
+    printRun: appPrintRun(host),
     ...(parts.client ? { client: parts.client } : {}),
     ...(parts.share ? { share: parts.share } : {}),
     ...(parts.memory ? { memory: parts.memory } : {}),
@@ -198,7 +228,12 @@ function setupKey(host: Host, edition: EditionConfig, pref: PilotPref | null, cl
 export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknown = null): Promise<Pilot> {
   const pref = get().pilot
   const key = setupKey(host, edition, pref, cloud)
-  if (current?.key === key) return current.pilot
+  if (current?.key === key) {
+    // the setup came back to the runtime there is (the commands went away and came back): a build for the setup in
+    // between is no longer wanted, so it never replaces this one
+    building = null
+    return current.pilot
+  }
   if (building?.key === key) return building.done
   const done = (async (): Promise<Pilot> => {
     const loader = host.slicer
@@ -225,11 +260,16 @@ export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknow
     }
     // a newer setup may have started meanwhile; it wins
     if (building?.key === key) {
+      // a run going on the runtime this replaces keeps waiting there; the chat's answers reach it through the new one
+      if (current) retire(current.pilot)
+      answersReachTheirRun(made.pilot)
       current = { key, ...made }
       building = null
       setMimirLink(made.model.link)
+      return made.pilot
     }
-    return made.pilot
+    // a build no longer wanted: whoever waited on it gets the runtime there is
+    return current?.pilot ?? made.pilot
   })()
   building = { key, done }
   return done
@@ -257,7 +297,7 @@ export function useTabMimir(): Pilot | null {
   }, [host, edition, cloud, pref, commands])
   // the tab's conversations are what clients read back while it is open
   useEffect(() => {
-    setSessionSource({ store: mimirLogs, messages: (id) => mimirMessages.get(id) ?? [] })
+    setSessionSource({ store: mimirLogs, messages: (id) => mimirMessages.get(id) ?? [], run: (id) => current?.pilot.printRun?.(id) ?? null })
     return () => setSessionSource(null)
   }, [])
   return pilot
@@ -273,8 +313,18 @@ export function noteMessage(sessionId: string, text: string, attachments: readon
   mimirMessages.set(sessionId, list)
 }
 
+/**
+ * Starts a new conversation: the old chat is over, so its print run is dropped. A print it started is still watched to
+ * its end, and the end line goes to the old chat's log. Returns the new chat's id.
+ */
+export function startNewChat(oldSessionId: string): string {
+  current?.pilot.forgetRun?.(oldSessionId)
+  return newSessionId()
+}
+
 /** For tests: forget the runtime, so the next use sets it up again. */
 export function resetTabMimir(): void {
+  forgetReplaced()
   current = null
   building = null
   tools = []

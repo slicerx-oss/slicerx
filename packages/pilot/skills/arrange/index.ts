@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Packs copies onto plates by bed size, one plate per chosen printer.
 import { z } from 'zod'
-import type { ProjectPlate } from '../../src/project'
+import { leftOffWords, type ProjectPlate } from '../../src/project'
 import type { ToolShared } from '../../src/shared'
 import { defineSkill } from '../../src/tool'
 import { buildVolume, printerVolume, pickObject, round, type BuildVolume } from '../common'
@@ -127,9 +127,11 @@ export function createArrange(shared: ToolShared) {
         plates.push(plate)
       }
       if (left > 0) return { ok: false, summary: `Only ${count - left} of ${count} fit on ${targets.length} plates. Add plates or printers.`, output: { placed: count - left, count } }
-      ctx.project?.setPlates(plates)
+      const set = ctx.project?.setPlates(plates)
       // Old slices describe plates that no longer exist.
       shared.slices.clear()
+      const missed = leftOffWords(set)
+      if (missed) return { ok: false, summary: `${missed} The parts that fit are on the plates. To fit the rest, scale them down, cut them, or add a larger printer or more plates.`, output: { leftOff: set ? set.leftOff : 0, notAdded: set?.notAdded ?? 0 } }
       const rows = plates.map((p, k) => {
         const t = targets[k]
         const copies = p.items[0]?.copies ?? 0

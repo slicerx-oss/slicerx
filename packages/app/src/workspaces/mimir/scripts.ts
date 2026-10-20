@@ -5,7 +5,7 @@
 import type { LlmMessage, ScriptStep } from '@slicerx/pilot'
 import { get } from '../../state/store'
 import { mimirPlans } from './plans'
-import type { MimirScript } from './scripted'
+import { lastUser, type MimirScript } from './scripted'
 
 /** What the last tool call returned, from the tool message the runtime sent back. */
 function lastResult(messages: readonly LlmMessage[]): Record<string, unknown> | null {
@@ -418,15 +418,148 @@ const check: ScriptStep[] = [
   },
 ]
 
+/** What mimir says once the plate is sliced: the slice card in the chat has the figures. */
+const SLICED = 'Sliced. The card shows the print time and the filament it takes, and Open in Slice shows the layers.'
+
 /** A slice of the plate, where mimir is: the tab stays on screen and the slice waits in Slice. */
 const slice: ScriptStep[] = [
   { text: 'Slicing the plate with the printer and settings you have chosen.', calls: [{ name: 'app.slice', args: {} }] },
   (messages) => {
     const r = lastResult(messages)
-    if (r?.['status'] === 'done') return { text: 'Sliced. Open the Slice tab to see the layers, the print time and the filament it takes.' }
+    if (r?.['status'] === 'done') return { text: SLICED }
     if (r?.['status'] === 'error') return { text: `The slice did not finish: ${String(r['message'] ?? 'the slicer stopped')}.` }
     return { text: 'There is nothing on the plate to slice yet. Describe a part and I will model it first.' }
   },
+]
+
+/** The last tool reply: whether it went through, and what it said. */
+function lastReply(messages: readonly LlmMessage[]): { ok: boolean; said: string } | null {
+  const m = messages.at(-1)
+  if (m?.role !== 'tool') return null
+  try {
+    const r = JSON.parse(m.content) as { ok?: unknown; summary?: unknown; error?: unknown; message?: unknown }
+    const said = [r.summary, r.error, r.message].find((x): x is string => typeof x === 'string') ?? ''
+    return { ok: r.ok !== false, said }
+  } catch {
+    return null
+  }
+}
+
+/** The printer and spool run.target settled on in this conversation, the last one first. */
+function targetOf(messages: readonly LlmMessage[]): { printerId: string; printerName: string; from: string } | null {
+  for (let k = messages.length - 1; k >= 0; k--) {
+    const m = messages[k]!
+    if (m.role !== 'tool') continue
+    try {
+      const r = (JSON.parse(m.content) as { result?: { printerId?: unknown; printerName?: unknown; from?: unknown } }).result
+      if (typeof r?.printerId === 'string' && typeof r.printerName === 'string' && typeof r.from === 'string') return { printerId: r.printerId, printerName: r.printerName, from: r.from }
+    } catch {
+      // not a tool reply this script reads
+    }
+  }
+  return null
+}
+
+/** A tool's words as a sentence of their own. */
+const sentence = (t: string, or: string): string => {
+  const s = t.trim() || or
+  return /[.!?]$/.test(s) ? s : `${s}.`
+}
+
+const COLOR_WORD = /\b(black|white|gray|grey|silver|red|orange|yellow|green|blue|purple|pink|brown)\b/i
+const MATERIAL_WORD = /\b(PETG|PCTG|PLA|ABS|ASA|TPU|PC|PA)\b/i
+
+/** The printer and filament a print request names, for run.target: "print it on my A1 in black PETG". */
+export function printAsk(text: string): { printer?: string; filaments?: { material?: string; color?: string }[] } {
+  const said = text.trim()
+  const printer = /\bon (?:my|the) (.+?)(?=\s+(?:in|with|using|and|then)\b|[.,;!?]|$)/i.exec(said)?.[1]?.trim().slice(0, 80)
+  const material = MATERIAL_WORD.exec(said)?.[1]?.toUpperCase()
+  const color = COLOR_WORD.exec(said)?.[1]?.toLowerCase()
+  return { ...(printer ? { printer } : {}), ...(material || color ? { filaments: [{ ...(material ? { material } : {}), ...(color ? { color } : {}) }] } : {}) }
+}
+
+/** The clip as its sheet draws it: one block on the bed. */
+export function clipPart(v: Record<string, number>) {
+  const [l, w, h] = [v['length']!, v['width']!, v['height']!]
+  return {
+    part: [{ plane: 'xy', points: box2([0, 0], l, w), from: 0, to: h }],
+    at: {
+      length: span([-l / 2, -w / 2, 0], [l / 2, -w / 2, 0], [0, -12, 0]),
+      width: span([l / 2, -w / 2, 0], [l / 2, w / 2, 0], [12, 0, 0]),
+      height: span([-l / 2, -w / 2, 0], [-l / 2, -w / 2, h], [0, -12, 0]),
+    } as Record<string, { at: unknown }>,
+  }
+}
+
+/** The plate on screen, 1 based, as the slice numbers it. */
+function activePlate(): number {
+  const { plates, activePlate: id } = get()
+  return Math.max(1, plates.findIndex((p) => p.id === id) + 1)
+}
+
+/**
+ * Make and print in one conversation, after its sheet: each step follows from the last tool it called. The printer
+ * and spool come from the message, the slice is sent as it is, and a printer picked on the card is offered as a note
+ * once the print is sent (a no to the chip ends the run, so it comes last).
+ */
+const printNext: ScriptStep = (messages) => {
+  const reply = lastReply(messages)
+  const v = sheetValues(messages) ?? {}
+  const [length, width, height] = [v['length'] ?? 30, v['width'] ?? 12, v['height'] ?? 8]
+  switch (lastCall(messages)) {
+    case 'pilot.sheet':
+      return { text: `I will make a ${length} x ${width} x ${height} mm clip.`, calls: [{ name: 'design.new', args: { name: 'Clip' } }] }
+    case 'design.new': {
+      const design = lastDesign(messages)
+      if (!design) return { text: 'The design did not start, so I stopped here.' }
+      return { calls: [{ name: 'geom.extrude', args: { design, name: 'Clip', shape: { type: 'rectangle', widthMm: length, heightMm: width }, placement: { center: bedMid() }, distance_mm: height } }] }
+    }
+    case 'geom.extrude': {
+      const design = lastDesign(messages)
+      return design ? { calls: [{ name: 'pilot.sheet_bind', args: { design, binds: [{ key: 'height', step: 1 }] } }] } : { text: 'The clip did not build, so I stopped here.' }
+    }
+    case 'pilot.sheet_bind':
+      return { text: 'Now the printer and spool.', calls: [{ name: 'run.target', args: printAsk(lastUser(messages)) }] }
+    case 'run.target':
+      if (!reply?.ok) return { text: `${sentence(reply?.said ?? '', 'No printer was set')} I stopped before slicing.` }
+      return { text: 'Slicing the plate.', calls: [{ name: 'app.slice', args: {} }] }
+    case 'app.slice': {
+      const r = lastResult(messages)
+      const target = targetOf(messages)
+      if (r?.['status'] === 'done' && target) return { text: 'Sliced. Sending it needs your OK on the card.', calls: [{ name: 'printer.queue', args: { printerId: target.printerId, plate: activePlate() } }] }
+      if (r?.['status'] === 'error') return { text: `The slice did not finish: ${String(r['message'] ?? 'the slicer stopped')}. Nothing was sent.` }
+      return { text: `${sentence(String(r?.['message'] ?? reply?.said ?? ''), 'The plate did not slice')} Nothing was sent.` }
+    }
+    case 'printer.queue': {
+      if (!reply?.ok) return { text: `${sentence(reply?.said ?? '', 'The print did not start')} Nothing was sent.` }
+      const target = targetOf(messages)
+      const name = target?.printerName ?? 'the printer'
+      if (target?.from !== 'picked') return { text: `Sent to ${name}, and the print has started.` }
+      return { text: `Sent to ${name}, and the print has started. I can remember ${name} for your next print.`, calls: [{ name: 'memory.remember', args: { kind: 'printer', text: `Prints on ${name}` } }] }
+    }
+    case 'memory.remember':
+      return { text: reply?.ok ? 'Noted. Next time I will print there without asking.' : 'I did not save it.' }
+    default:
+      return { text: 'That step did not finish, so I stopped here.' }
+  }
+}
+
+const printRun: ScriptStep[] = [
+  {
+    reasoning: 'A part to make and print: model it, pick the printer and spool, slice, then send. The send waits for the person.',
+    text: 'Here is the plan:\n1. Model the clip.\n2. Pick the printer and spool.\n3. Slice the plate.\n4. Send it to the printer (needs your OK).\n\nFirst the sizes. They are my guesses for a small clip; change any that are off.',
+    calls: [
+      {
+        name: 'pilot.sheet',
+        args: {
+          title: 'Clip sizes',
+          views: ['iso', 'top'],
+          ...drawn([row('length', 'Length', 30, 'guess', { min: 10, max: 120 }), row('width', 'Width', 12, 'guess', { min: 4, max: 60 }), row('height', 'Height', 8, 'guess', { min: 2, max: 40 })], clipPart),
+        },
+      },
+    ],
+  },
+  ...Array.from({ length: 9 }, () => printNext),
 ]
 
 /** A new, empty project: the app asks the person before anything unsaved goes. */
@@ -441,6 +574,8 @@ export const SCRIPTS: MimirScript[] = [
   { id: 'backplate', match: /thermostat|backplate|wall mount/i, steps: backplate },
   { id: 'box', match: /\bbox\b|\blid\b/i, steps: box },
   { id: 'stand', match: /phone|stand/i, steps: stand },
+  // after the parts and before the slice: "print it on my A1" models a clip, slices and sends it
+  { id: 'print-run', match: /\bprint (?:it|this)\b.*\bon (?:my|the)\b/i, steps: printRun },
   // after the parts, so a part asked for with a slice in the same message is built first
   { id: 'slice', match: /\bslice (?:it|the plate|this|the part|my)\b/i, steps: slice },
   { id: 'new-project', match: /\bnew project\b|\bstart over\b|\bempty project\b/i, steps: fresh },

@@ -96,6 +96,23 @@ const rulesPrompt = (scope: PilotScope, has: HasTool): string => (scope === 'cad
 export const systemPrompt = (scope: PilotScope = 'full', has: HasTool = ALL_TOOLS, extra = ''): string =>
   [rulesPrompt(scope, has), extra, editionVoiceBlock(assistantVoice())].filter(Boolean).join('\n\n')
 
+// make and print in one conversation: with the printer tools the order ends in a send, never of a stale slice, and a
+// printer picked on the card is offered once as a note; without them the slice ends in a saved file. A part asked for
+// without a print stops at the part.
+const printRunLines = (has: HasTool): string => {
+  const slice = has('app.slice') ? 'app.slice' : 'slice the plate'
+  const only = '\n- Print only when asked: a part alone ends with the part.'
+  if (!has('printer.queue')) return `${only}\n- For a request to make and print a part, design it, then ${slice}, then offer to save the file so the person can print it. Nothing here reaches a printer.`
+  const target = has('run.target') ? 'run.target for the printer and spool, then ' : ''
+  const lines = [
+    `- For a request to make and print a part, in order: design it (as above), then ${target}${slice}, then printer.queue. Say the step list first.`,
+    `- Never call printer.queue with a stale slice. After any change the person asks for ("use 0.2 mm layers", "on the P1S instead"), ${has('run.target') ? 'call run.target again for a new printer or spool, and ' : ''}slice again before sending.`,
+  ]
+  // the offer comes after the send, since a no to the chip ends the run
+  if (has('run.target') && has('memory.remember')) lines.push('- If run.target says picked, offer once after the send to remember the choice with memory.remember; the app asks with its chip.')
+  return `${only}\n${lines.join('\n')}`
+}
+
 /** The whole app: designing parts, slicing, settings and printers, in one conversation. */
 const fullPrompt = (has: HasTool): string => `You are ${ASSISTANT_NAME}, the agent inside ${productName()}, a 3D printing slicer. You design parts, diagnose failed prints, turn goals into settings and geometry, answer printing questions with sources, help set up printers and plan batches across several printers, using the tools you are given.
 
@@ -104,7 +121,7 @@ How to work:
 ${partLines(has)}
 ${PARTS_LINE}
 - For a failed or odd print, give the most likely cause and its fix first, then at most one clarifying question. Never answer with only a question.
-- For a job request ("12 strong PETG brackets by Friday"), call kb.intent to turn the words into settings targets, check printers and spools, then orient, arrange and slice before proposing anything that reaches a printer.
+- For a job request ("12 strong PETG brackets by Friday"), call kb.intent to turn the words into settings targets, check printers and spools, then orient, arrange and slice before proposing anything that reaches a printer.${printRunLines(has)}
 - The app tells you which printer is selected ("Current machine"). That is a fact from the app, not a guess: use it for printer-specific advice without asking or verifying, and say where it came from ("your A1, as selected"). If no printer is selected, do not assume one.
 - Answer the question the user asked. Call printer or fleet status tools only when the question is about their printers' current state; do not list fleet status unprompted.
 - The app already shows the settings diff when the material, printer or nozzle changes, and runs the send preflight, risk warnings, spool checks and overnight readiness on its own. Do not repeat those checks; explain one only when the user asks about it.${newProjectLine(has)}

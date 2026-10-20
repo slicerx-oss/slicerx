@@ -72,6 +72,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-model-switch` | Auto's one line when a run moves to another model (Using Sonnet 5.5 for this one.) |
 | `mimir-composer` | The message box pinned at the foot of the chat |
 | `mimir-connect` | In place of the conversation before a model is connected (and with no mimir cloud): the shared mimir setup; nothing is sent |
+| `mimir-pause` | Pause and Resume in the chat's header, beside New conversation: holds mimir before its next step (`aria-pressed` while held, named Resume mimir then). It never pauses a printer or answers a waiting card; off with no run going and none held |
 | `mimir-chat-more` | The More button in the chat's header; it opens `mimir-chat-menu` with Skills and permissions, Show thinking and Connect a model |
 | `mimir-chat-menu` | The menu `mimir-chat-more` opens |
 | `mimir-chat-thinking` | In `mimir-chat-menu`, the Show thinking switch (a checkable item, `aria-checked`) |
@@ -79,11 +80,24 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-attach` | The composer's attach button, which opens the image picker |
 | `mimir-attachment` | An image on the message or on a sent turn; its remove button is named Remove and the file name |
 | `mimir-choice` | A choice card in the conversation; `data-picked` holds the picked answer's id once there is one |
+| `mimir-target` | The printer and spool pick in the conversation, when what the person said and their notes do not settle it: each online printer with its loaded spools, and None of these; `data-picked` holds the picked answer's id once there is one |
+| `mimir-target-spool` | One loaded spool on `mimir-target`, with its swatch and words; a tap picks that printer and spool (`aria-pressed` once picked) |
+| `mimir-target-note` | The status line on `mimir-target`: empty until it has something to say, such as "Nothing picked. Ask mimir again." when an answer no longer lands |
 | `mimir-plan-card` | A part plan in the conversation (design.plan): its features and sizes before anything is built; `data-plan-id` holds the planId and `data-picked` the answer once there is one |
 | `mimir-plan-feature` | One planned feature on `mimir-plan-card`, with its sizes |
 | `mimir-plan-status` | The plan card's status beside its buttons: waiting, approved (with a check) or sent back for changes |
 | `mimir-plan-change` | Not yet on a waiting plan card: mimir changes the plan before it builds |
 | `mimir-plan-go` | Go on a waiting plan card: mimir builds the part to the plan |
+| `mimir-send` | The send card in place of the approval card for mimir's own printer.queue: the printer, each filament's slot, the time, the grams and the file; `data-request-id` is the request, `data-state` is off, ready, approved or closed |
+| `mimir-send-bed` | The bed tick on `mimir-send`, unchecked on every card; Print stays off until it is ticked |
+| `danger-mimir-send-print` | Print on `mimir-send`: on only with the tick, a passing preflight, a fresh slice, an idle or finished printer and a request that has not expired. It starts a print, so the agent bridge refuses it |
+| `mimir-send-status` | The send card's status beside its buttons: checking, what keeps Print off with the time left, or the answer |
+| `mimir-send-errors` | The lines that keep Print off on `mimir-send`: a stale slice, preflight errors, a busy printer with its time left |
+| `mimir-send-dev` | On `mimir-send` for a printer with Developer Mode off: the steps to turn it on, and Bambu Connect as the other way |
+| `mimir-slice` | The slice card in the conversation after mimir slices: the plate's outline, the print time, filament and cost, and each warning on a line of its own; `data-stale` once the plate changed after slicing, when it says to slice again |
+| `mimir-slice-open` | Open in Slice on `mimir-slice`: shows that plate in the Slice tab |
+| `mimir-progress` | The progress card in the conversation for a print mimir's run started: the printer, the file, the layer, the time left and a bar; `data-state` is the printer's state while it prints, then `finished`, `failed` or `canceled` |
+| `mimir-progress-still` | The camera still on `mimir-progress`, refreshed every 30 s while the printer prints; absent for a printer without a camera |
 | `mimir-sheet-record` | A dimension sheet as it stays in the conversation: a numbered row per size (the number is its callout), guesses marked (`data-guess`), each row `data-dim` with its key; while it waits in the tab its rows are fields |
 | `mimir-sheet-source` | The page the looked-up sizes came from, once in the record's header |
 | `mimir-sheet-confirm` | Confirm sizes and build, on a sheet still waiting; it confirms the sheet with the record's values |
@@ -104,6 +118,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-drawing-status` | The strip on the drawing's bottom edge: the sheet's title, its units and that nothing is built yet |
 | `mimir-lookup-card` | A card over the view with what mimir looked up: two rows and the source; Escape closes it |
 | `mimir-lookup-close` | The close button on a lookup card |
+| `mimir-part` | A part card in the conversation: in place of the call that made a part, or after the step rows for the design a reply built (one card per reply, the rows kept); `data-part` is the part's object id on the plate. The body (`Select the <name>`) selects the part and the tab stays; Edit (`Edit the <name>`, none on a phone) opens it in Model at its newest step |
+| `mimir-follow` | A next step chip under a finished reply's part card; `data-request` is the request it sends, absent on Change size, which asks for the size first |
 | `mimir-see-usage` | See usage, on a refusal for a used-up free allowance (`data-code` day_used, edition_day_used or slow_down on the line); opens Settings at Account > Usage |
 
 ## Setup (first run and Printers > Add)
@@ -487,6 +503,7 @@ them. `packages/app/test/test-ids.test.ts` keeps this table and its own list the
 | `creator-cancel` | Closes the creator page editor without saving |
 | `model-tool-cancel` | Closes a modeling tool; what was applied stays, and nothing more is undone |
 | `mimir-sheet-cancel` | Answers the size sheet as not confirmed; nothing is built and nothing is removed |
+| `mimir-send-cancel` | Not now on the send card: answers it as not approved, so nothing is sent |
 | `update-sheet` | The update sheet itself |
 | `update-body` | The sheet body, read for its step |
 | `update-download` | Opens the download page for a package install; nothing is installed |

@@ -13,7 +13,7 @@
 //    (packages/pilot/test/ui-attach.test.tsx:71). The 1568 px downscale stays: it needs a real canvas.
 //  - mimir-part-card: the next steps offered only when the toolset can do them, a step under an older reply acting on that
 //    reply's part, and a deleted part saying so (packages/pilot/test/ui-part.test.tsx). The tab builds with the design tools,
-//    so a part card from the part generator no longer comes up in the app.
+//    so its card is the one a built design gets after its step rows (the scripted box below).
 //  - mimir-sheet: Cancel building nothing (packages/pilot/test/ui-sheet.test.tsx:81 and :97, packages/app/test/mimir-sheet.test.ts:162)
 //    and the thermostat backplate's drawing and status (packages/app/test/mimir-sheet.test.ts:146, packages/pilot/test/ui-sheet.test.tsx:27).
 //  - mimir-web-walk: the save switch caption (packages/app/test/mimir-web-walk.test.ts:55).
@@ -232,7 +232,7 @@ test.describe('the mimir tab', () => {
     await page.getByTestId('tab-mimir').click()
     const chat = page.getByTestId('mimir-chat')
     await askTab(page, 'Slice the plate')
-    await expect(chat).toContainText('Sliced. Open the Slice tab', { timeout: 60_000 })
+    await expect(chat).toContainText('Sliced. The card shows the print time', { timeout: 60_000 })
     // the slice happened where mimir is: the tab is still open, and the slice waits in Slice
     await expect(page.getByTestId('tab-mimir')).toHaveAttribute('aria-current', 'page')
     expect((await state(page))['slice']?.status).toBe('done')
@@ -394,6 +394,38 @@ test.describe('the mimir tab', () => {
     await page.getByTestId('tab-model').click()
     await page.keyboard.press('ControlOrMeta+z')
     await expect.poll(plate).toEqual([{ name: 'Box with lid', parts: ['Box', 'Lid'], steps: 3 }])
+  })
+
+  test("a scripted box's card selects its part in the tab, and Edit opens its newest step in Model", async ({ page }, info) => {
+    await askTab(page, 'Can you make a box with a lid?')
+    await page.getByTestId('mimir-sheet-confirm').click()
+    await expect(page.getByTestId('mimir-transcript')).toContainText('Done: the box and its lid', { timeout: 30_000 })
+    // one card for the design the turn built, after its step rows, which stay
+    const card = page.getByTestId('mimir-part').last()
+    await expect(page.getByTestId('mimir-part')).toHaveCount(1)
+    // the reply has finished, so its next steps show under the card
+    await expect(page.getByTestId('mimir-transcript')).toContainText('Both parts are in Model with their steps.')
+    await expect(page.getByTestId('mimir-transcript').locator('.trow')).not.toHaveCount(0)
+    await expect(card).toContainText('Box with lid')
+    const id = await card.getAttribute('data-part')
+    expect((await state(page))['plate'].map((e: { id: string }) => e.id)).toEqual([id])
+    // the build leaves the part selected; clear that, so Select is what selects it
+    await setState(page, { selection: null, selectedIds: [] })
+    await card.scrollIntoViewIfNeeded()
+    if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/desktop-part-card.png` })
+    // Select stays in the tab and selects the part on the plate
+    await card.getByRole('button', { name: /^Select the / }).click()
+    await expect.poll(async () => (await state(page))['selectedIds']).toEqual([id])
+    expect((await state(page))['modelMode']).toBe('mimir')
+    if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/desktop-part-select.png` })
+    // Edit goes to Model with the part's newest step open, and the timeline shows it
+    await expect(card.getByRole('button', { name: /^Edit the / })).toHaveAttribute('data-tip-title', 'Edit in Model')
+    await card.getByRole('button', { name: /^Edit the / }).click()
+    await expect.poll(async () => (await state(page))['modelMode']).toBe('design')
+    await expect.poll(async () => (await state(page))['historyEdit']?.objectId ?? null).toBe(id)
+    await expect(page.getByTestId('tab-model')).toHaveAttribute('aria-current', 'page')
+    await expect(page.locator(`[data-testid="model-tree-step"][data-object-id="${id}"][data-editing]`)).toHaveCount(1)
+    if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/desktop-part-edit.png` })
   })
 
   test('scripted mimir checks a built part against its plan and names the item that is off', async ({ page }) => {

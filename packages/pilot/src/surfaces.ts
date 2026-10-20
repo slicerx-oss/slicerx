@@ -78,6 +78,8 @@ const GROUP_OF: Record<string, ToolGroup> = {
   spool_inventory: 'printers',
   ams_mapping: 'printers',
   toolhead_mapping: 'printers',
+  // the printer and spools a chat prints with
+  'run.target': 'printers',
   // looking at and changing a running print through its camera
   check_print: 'watch',
   'print.adjust': 'watch',

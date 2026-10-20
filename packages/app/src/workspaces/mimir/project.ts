@@ -4,9 +4,9 @@
 // resolved settings and the slice request, all read from the store at call time. Each change is
 // one store update inside one undo step per tool call, and marks the slice stale like the panels do.
 import type { Bed, Host, MeshPart, PilotMachine, Plate, PrintConfig, SettingValue, SliceWarning, SlicerHost } from '@slicerx/contracts'
-import type { PilotProject, ProjectObject, ProjectPlate, ProjectVolume, VolumeSpec } from '@slicerx/pilot'
+import { leftOffWords, type PilotProject, type ProjectObject, type ProjectPlate, type ProjectVolume, type VolumeSpec } from '@slicerx/pilot'
 import { resolveSlots } from '../../filament/slots'
-import { arrange } from '../../plate/arrange'
+import { arrange, landOnBed, placedOnBed } from '../../plate/arrange'
 import { getArrangeOptions, sourceOf } from '../../plate/edit'
 import { inStep } from '../../plate/history'
 import { allPlates, projectBase } from '../../plate/plates'
@@ -79,19 +79,24 @@ function commit(plates: PlateMeta[], extra: Partial<AppState> = {}): void {
   markStale()
 }
 
-/** Sets how many of a family stand on a plate, newest copies going first and new ones placed in free space. */
-function setCount(plate: PlateMeta, family: string, count: number, from: PlateEntry | undefined, index: number, bed: Bed): number {
+/**
+ * Sets how many of a family stand on a plate, newest copies going first and new ones placed in free space. Says how
+ * many of its parts are still off the bed and how many copies found no room and were not added.
+ */
+function setCount(plate: PlateMeta, family: string, count: number, from: PlateEntry | undefined, index: number, bed: Bed): { off: number; notAdded: number } {
+  const off = landFamily(plate, family, bed)
   const mine = plate.objects.filter((o) => familyOf(o) === family)
-  if (count === mine.length) return 0
+  if (count === mine.length) return { off, notAdded: 0 }
   if (count < mine.length) {
     // Instances go before the object they copy.
     const drop = new Set([...mine.filter((o) => o.instanceOf), ...mine.filter((o) => !o.instanceOf)].slice(0, mine.length - count).map((o) => o.id))
     plate.objects = plate.objects.filter((o) => !drop.has(o.id))
-    return 0
+    // a part left off the bed that this drops no longer counts
+    return { off: plate.objects.filter((o) => familyOf(o) === family && !o.locked && !placedOnBed(o, bed)).length, notAdded: 0 }
   }
   const root = mine.find((o) => !o.instanceOf)
   let base = root ?? mine[0] ?? from
-  if (!base) return 0
+  if (!base) return { off, notAdded: 0 }
   const fresh: PlateEntry[] = []
   if (!root) {
     // The first one on another plate is an object of its own there.
@@ -104,7 +109,23 @@ function setCount(plate: PlateMeta, family: string, count: number, from: PlateEn
   const r = arrange(fresh, plate.objects, bed, placeOptions())
   const placed = fresh.filter((c) => r.transforms[c.id]).map((c) => ({ ...c, transform: r.transforms[c.id]! }))
   plate.objects = [...plate.objects, ...placed]
-  return fresh.length - placed.length
+  return { off, notAdded: fresh.length - placed.length }
+}
+
+/**
+ * Moves the family's objects that hang off the bed or sit in an excluded area onto it: they are not placed yet (a part
+ * built by the bed's corner). Each goes to the middle of the bed or the first free spot; locked ones stay. Returns how
+ * many found no spot and are still off the bed.
+ */
+function landFamily(plate: PlateMeta, family: string, bed: Bed): number {
+  let off = 0
+  for (const o of plate.objects) {
+    if (familyOf(o) !== family || o.locked || placedOnBed(o, bed)) continue
+    const to = landOnBed(o, plate.objects.filter((x) => x.id !== o.id), bed, placeOptions())
+    if (to) plate.objects = plate.objects.map((x) => (x.id === o.id ? { ...x, transform: to } : x))
+    else off++
+  }
+  return off
 }
 
 function newPlate(plates: readonly PlateMeta[], settings: PlateMeta['settings']): PlateMeta {
@@ -154,7 +175,7 @@ export function appProject(host: Pick<Host, 'slicer'>): () => PilotProject {
        * Lays out the objects `next` names: their copies on each plate, new plates as needed, and none on plates `next`
        * leaves out. Plates this empties go. Objects `next` does not name stay where they are.
        */
-      setPlates(next: ProjectPlate[]): void {
+      setPlates(next: ProjectPlate[]): { leftOff: number; notAdded: number } {
         const s = get()
         const plates = draft()
         const before = new Set(plates.filter((p) => p.objects.length).map((p) => p.id))
@@ -163,18 +184,23 @@ export function appProject(host: Pick<Host, 'slicer'>): () => PilotProject {
         const settings = plates.find((p) => p.id === s.activePlate)?.settings ?? {}
         while (plates.length < Math.max(0, ...next.map((p) => p.index))) plates.push(newPlate(plates, settings))
         let left = 0
+        let notAdded = 0
         plates.forEach((plate, i) => {
           const target = next.find((p) => p.index === i + 1)
           if (target?.printerId) printers.set(plate.id, target.printerId)
           for (const family of families) {
             const count = target?.items.filter((it) => familyOf(all.find((o) => o.id === it.objectId) ?? { id: it.objectId }) === family).reduce((n, it) => n + Math.max(0, it.copies), 0) ?? 0
-            left += setCount(plate, family, count, all.find((o) => familyOf(o) === family && !o.instanceOf), i + 1, s.bed)
+            const r = setCount(plate, family, count, all.find((o) => familyOf(o) === family && !o.instanceOf), i + 1, s.bed)
+            left += r.off
+            notAdded += r.notAdded
           }
         })
         const kept = plates.filter((p) => p.objects.length || !before.has(p.id))
         for (const p of plates) if (!kept.includes(p)) printers.delete(p.id)
-        if (left) toast(`${left} ${left === 1 ? 'copy' : 'copies'} did not fit and ${left === 1 ? 'was' : 'were'} left off.`, 'warn')
+        const said = leftOffWords({ leftOff: left, notAdded })
+        if (said) toast(said, 'warn')
         edit(() => commit(kept.length ? kept : plates.slice(0, 1)))
+        return { leftOff: left, notAdded }
       },
       overrides() {
         return { ...get().overrides }

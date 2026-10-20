@@ -8,6 +8,9 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { HistoryMesh, StepParams } from '@slicerx/cad-history'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost, DesignNotFound } from '../src/cad/design-host'
+import { toPart } from '../src/cad/history/ops'
+import { placedOnBed } from '../src/plate/arrange'
+import { bounds } from '../src/plate/transform'
 import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
@@ -34,7 +37,17 @@ function volume(parts: readonly Pick<HistoryMesh, 'positions' | 'indices'>[]): n
   return Math.abs(v)
 }
 
-beforeEach(() => set({ plate: [], selection: null, selectedIds: [], historyEdit: null }))
+/** A closed box from `min` to `max`, as a design's base part. */
+function box(min: [number, number, number], max: [number, number, number]): HistoryMesh {
+  const [a, b] = [min, max]
+  const positions = [a[0], a[1], a[2], b[0], a[1], a[2], b[0], b[1], a[2], a[0], b[1], a[2], a[0], a[1], b[2], b[0], a[1], b[2], b[0], b[1], b[2], a[0], b[1], b[2]]
+  const indices = [0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 1, 2, 6, 1, 6, 5, 2, 3, 7, 2, 7, 6, 3, 0, 4, 3, 4, 7]
+  return { name: 'Box', slot: 1, positions, indices }
+}
+
+const GENERIC = { widthMm: 256, depthMm: 256, heightMm: 256 }
+
+beforeEach(() => set({ plate: [], selection: null, selectedIds: [], historyEdit: null, bed: { ...GENERIC } }))
 
 describe('the app design host', () => {
   it('keeps an empty design off the plate until its first step makes a body', async () => {
@@ -96,6 +109,116 @@ describe('the app design host', () => {
     expect(host.get(d.id).history.steps).toHaveLength(1)
     expect(host.get(d.id).redo).toEqual([last])
     expect(volume(get().plate[0]!.parts)).toBeCloseTo(150.4 * 110.4 * 3, -1)
+  })
+
+  it('moves a part built by the bed\'s corner to the middle of the plate once, and says so; from then on its coordinates are the plate\'s', async () => {
+    const host = appDesignHost(loader)
+    // built around the origin, as a model sketches it: 7.5 mm past the bed's front left edges
+    const d = await host.create('Peg', [box([-7.5, -7.5, 0], [7.5, 7.5, 20])])
+    const e = get().plate.find((p) => p.id === d.id)!
+    const b = bounds(e.parts, e.transform)!
+    expect(placedOnBed(e, get().bed)).toBe(true)
+    expect([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, b.min[2]]).toEqual([128, 128, 0])
+    expect(d.landed).toEqual({ dxMm: 128, dyMm: 128 })
+    // one frame: the design reports the plate's transform, and only the call that moved it says so
+    const seen = host.get(d.id)
+    expect(seen.transform).toEqual(e.transform)
+    expect(bounds(seen.parts.map(toPart), seen.transform)).toEqual({ min: [120.5, 120.5, 0], max: [135.5, 135.5, 20] })
+    expect(seen.landed).toBeUndefined()
+    expect(host.list().find((x) => x.id === d.id)!.transform).toEqual(e.transform)
+  })
+
+  it('lands it beside what is on the plate when the middle is taken, and leaves a part built on the bed where it is', async () => {
+    const host = appDesignHost(loader)
+    const middle = await host.create('Middle', [box([108, 108, 0], [148, 148, 10])])
+    expect(middle.landed).toBeUndefined()
+    expect(bounds(get().plate[0]!.parts, get().plate[0]!.transform)).toEqual({ min: [108, 108, 0], max: [148, 148, 10] })
+    expect(host.get(middle.id).transform).toEqual(get().plate[0]!.transform)
+    const peg = await host.create('Peg', [box([-5, -5, 0], [5, 5, 10])])
+    const e = get().plate.find((p) => p.id === peg.id)!
+    const b = bounds(e.parts, e.transform)!
+    expect(placedOnBed(e, get().bed)).toBe(true)
+    // clear of the middle box
+    expect(b.max[0] <= 108 || b.min[0] >= 148 || b.max[1] <= 108 || b.min[1] >= 148).toBe(true)
+  })
+
+  it('keeps a landed part 5 mm in from the bed edge when the plate gives no brim or skirt', async () => {
+    set({ bed: { widthMm: 40, depthMm: 40, heightMm: 40 } })
+    const host = appDesignHost(loader)
+    // 32 mm wide: the middle leaves 4 mm a side, less than the 5 mm kept, and arrange keeps 6 mm, so it fits nowhere
+    const d = await host.create('Wide', [box([-16, -16, 0], [16, 16, 5])])
+    expect(d.landed).toEqual({ offBed: true })
+    const e = get().plate.find((p) => p.id === d.id)!
+    expect(bounds(e.parts, e.transform)).toEqual({ min: [-16, -16, 0], max: [16, 16, 5] })
+    // 28 mm wide leaves 6 mm a side: the middle
+    set({ plate: [] })
+    expect((await host.create('Narrower', [box([-14, -14, 0], [14, 14, 5])])).landed).toEqual({ dxMm: 20, dyMm: 20 })
+  })
+
+  it('says when a part fits nowhere on the bed and stays where it was built', async () => {
+    const host = appDesignHost(loader)
+    const d = await host.create('Huge', [box([-150, -150, 0], [150, 150, 5])])
+    expect(d.landed).toEqual({ offBed: true })
+    expect(placedOnBed(get().plate.find((p) => p.id === d.id)!, get().bed)).toBe(false)
+  })
+
+  /** The origin of a timeline sketch's frame, or null when it has none. */
+  const sketchAt = (id: string) => {
+    const k = get().timeline.items.find((i) => i.id === id)
+    return k?.kind === 'sketch' ? (k.frame?.origin ?? null) : undefined
+  }
+  /** A first body for an empty design: a box around the origin, added as parts (no engine call). */
+  const firstBody = (host: ReturnType<typeof appDesignHost>, d: Parameters<ReturnType<typeof appDesignHost>['add']>[0], half = 7.5) =>
+    host.add(d, -1, { op: 'parts.add', label: 'Add part', parts: [box([-half, -half, 0], [half, half, 10])] })
+  const circle = { loops: [{ type: 'circle' as const, center: [0, 0] as [number, number], diameterMm: 4 }] }
+
+  it('takes a sketch drawn for a waiting design along with its body, so it draws where the body is', async () => {
+    set({ timeline: { bodies: [], items: [], marker: 0 } })
+    const host = appDesignHost(loader)
+    const d = await host.create('Peg', [])
+    const k = host.addSketch!(circle)
+    await firstBody(host, d)
+    expect(d.landed).toEqual({ dxMm: 128, dyMm: 128 })
+    expect(get().timeline.items.find((i) => i.id === k.id)).toMatchObject({ kind: 'sketch', frame: { origin: [128, 128, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] } })
+  })
+
+  it('moves a kept sketch once: a later design landing leaves it, and a sketch drawn in plate coordinates', async () => {
+    set({ timeline: { bodies: [], items: [], marker: 0 } })
+    const host = appDesignHost(loader)
+    const a = await host.create('A', [])
+    const kept = host.addSketch!(circle)
+    await firstBody(host, a)
+    expect(sketchAt(kept.id)).toEqual([128, 128, 0])
+    // drawn with no design waiting: already in the plate's coordinates
+    const after = host.addSketch!({ frame: { origin: [60, 60, 0], normal: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, loops: circle.loops })
+    const b = await host.create('B', [])
+    await firstBody(host, b, 5)
+    expect(b.landed).toBeDefined()
+    expect(sketchAt(kept.id)).toEqual([128, 128, 0])
+    expect(sketchAt(after.id)).toEqual([60, 60, 0])
+  })
+
+  it('an undo and rebuild of a first body does not move its sketch a second time', async () => {
+    set({ timeline: { bodies: [], items: [], marker: 0 } })
+    const host = appDesignHost(loader)
+    const d = await host.create('Peg', [])
+    const k = host.addSketch!(circle)
+    await firstBody(host, d)
+    expect(sketchAt(k.id)).toEqual([128, 128, 0])
+    const first = d.history.steps[0]!
+    d.history = { ...d.history, steps: [] }
+    d.redo = [first]
+    await host.replay(d)
+    expect(get().plate).toHaveLength(0)
+    // a sketch drawn while it waits again, then the body back: it is already on the bed, so nothing moves
+    const again = host.addSketch!(circle)
+    d.history = { ...d.history, steps: [first] }
+    d.redo = []
+    await host.replay(d)
+    expect(d.landed).toBeUndefined()
+    expect(placedOnBed(get().plate[0]!, get().bed)).toBe(true)
+    expect(sketchAt(k.id)).toEqual([128, 128, 0])
+    expect(sketchAt(again.id)).toBeNull()
   })
 
   it('says a design id names nothing', () => {

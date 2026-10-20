@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-241 tools.
+242 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -156,6 +156,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_mimir_memory` |  |  | read | Read what mimir remembers about the person in SlicerX: their printers, filaments, preferences, outcomes (what worked) and sizes, newest first, each with its kind, text, optional data and when it changed. |
 | `slicerx_mimir_memory_remember` |  |  | profile | Add one fact to mimir's memory in SlicerX, such as the person's printer and nozzle, a filament they use, a preference, what worked for a print, or a size that matters to them. |
 | `slicerx_mimir_quota` |  |  | read | Read today's free mimir use in SlicerX on this computer: what this install and this network have used of their daily caps, in US dollars, and whether mimir cloud is open today. |
+| `slicerx_mimir_run` |  |  | read | Read back mimir's print run in the open SlicerX app for one chat (the chat the mimir tab has open, else the newest mimir session, unless sessionId names another), never the file, its SHA-256, a card's token or request id, an access code or a serial: each step (design, plate, target, slice, send, print) as done, now, todo or off; the last slice's time, grams, cost, warnings and whether the plate, printer or slots changed after it (stale); what was sent (the printer's name, the file name and which slot feeds each filament); and the print as the printer last reported it (state, layer, time left, progress and how it ended). |
 | `slicerx_mimir_share` |  |  | read | Read whether SlicerX runs mimir on mimir cloud, whether it shares this install's mimir sessions to improve mimir (Settings > mimir, on by default), and whether the person has read the notice shown before the first chat. |
 | `slicerx_mimir_tab` |  |  | read | Read what answers in the mimir tab of the open SlicerX app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens; whether it is a local model (a server the person runs, through the OpenAI-compatible provider); and where the model's server is, by its address: "computer" (this computer), "network" (another computer on the person's network) or "remote" (anywhere else, mimir cloud and API keys included), null without a model. |
 | `slicerx_multicolor_assign` |  |  | slice | Plan a multicolor print: which filament each region or height band gets, the order of color changes with layer numbers for height bands, whether the printer has enough slots and can feed each material, and how to cut purge waste (flush multiplier, prime tower). |

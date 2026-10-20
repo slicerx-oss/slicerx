@@ -16,7 +16,7 @@ export interface MimirScript {
 }
 
 /** The text of the last thing the person said: their request, without the app's context the runtime puts before it. */
-function lastUser(messages: readonly LlmMessage[]): string {
+export function lastUser(messages: readonly LlmMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i]!
     if (m.role === 'user') return typeof m.content === 'string' ? (m.content.split('User request:').at(-1) ?? m.content) : ''

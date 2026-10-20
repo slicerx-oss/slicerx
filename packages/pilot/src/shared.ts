@@ -37,4 +37,12 @@ export function fmtDuration(s: number): string {
 }
 
 export const fmtGrams = (g: number): string => `${g.toFixed(1)} g`
+
+/**
+ * A slice's figures as mimir reports and records them: time in whole seconds, filament in grams to 0.1, cost to the
+ * cent, and the warnings' messages. The slice skill and the app's slice command both use it, so they always agree.
+ */
+export function sliceFigures(r: Pick<SliceResult, 'stats' | 'warnings'>): { timeS: number; grams: number; cost: number; warnings: string[] } {
+  return { timeS: Math.round(r.stats.timeS), grams: Math.round(r.stats.filamentG.reduce((a, b) => a + b, 0) * 10) / 10, cost: Math.round(r.stats.cost * 100) / 100, warnings: r.warnings.map((w) => w.message) }
+}
 export const fmtMoney = (v: number): string => `$${v.toFixed(2)}`

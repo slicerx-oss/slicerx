@@ -17,6 +17,8 @@ async function output(name: string, args: Record<string, unknown>): Promise<Body
   expect(JSON.stringify(reply)).not.toMatch(/positions|indices/)
   return reply.output
 }
+/** A body built around the origin lands in the middle of the 256 mm bed: from then on its coordinates are the plate's. */
+const MID = 128
 async function box(empty = false) {
   const { design } = await output('design.new', { name: 'Modeling block' })
   if (!empty) await output('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 8 })
@@ -26,13 +28,13 @@ async function box(empty = false) {
 const cases: { name: string; args: Record<string, unknown>; parts: number; volume?: number }[] = [
   { name: 'cut', args: { plane: { axis: 'z', at: 4 }, keep: 'both' }, parts: 2, volume: 1600 },
   { name: 'split', args: { build_volume_mm: [12, 12, 12], margin_mm: 0 }, parts: 2, volume: 1600 },
-  { name: 'mirror', args: { plane: { axis: 'x', at: 20 }, copy: false }, parts: 1, volume: 1600 },
+  { name: 'mirror', args: { plane: { axis: 'x', at: MID + 20 }, copy: false }, parts: 1, volume: 1600 },
   { name: 'array', args: { spec: { kind: 'linear', count: 3, step: [25, 0, 0] }, merge: false }, parts: 3, volume: 4800 },
   { name: 'repair', args: {}, parts: 1, volume: 1600 },
   { name: 'hollow', args: { wall_mm: 1 }, parts: 1 },
-  { name: 'emboss', args: { text: 'X', point: [0, 0, 8], normal: [0, 0, 1], size_mm: 3, depth_mm: 1 }, parts: 1 },
+  { name: 'emboss', args: { text: 'X', point: [MID, MID, 8], normal: [0, 0, 1], size_mm: 3, depth_mm: 1 }, parts: 1 },
   { name: 'build', args: { solids: [{ type: 'box', min: [-10, -5, 0], max: [10, 5, 8] }] }, parts: 1, volume: 1600 },
-  { name: 'subtract', args: { solids: [{ type: 'box', min: [-2, -2, 4], max: [2, 2, 10] }] }, parts: 1, volume: 1536 },
+  { name: 'subtract', args: { solids: [{ type: 'box', min: [MID - 2, MID - 2, 4], max: [MID + 2, MID + 2, 10] }] }, parts: 1, volume: 1536 },
 ]
 
 it.each(cases)('$name edits a live body and returns its geometry and undoable history', async ({ name, args, parts, volume }) => {
@@ -45,7 +47,7 @@ it.each(cases)('$name edits a live body and returns its geometry and undoable hi
   if (volume !== undefined) expect(out.volumeMm3).toBeCloseTo(volume, 1)
   if (name === 'hollow') { expect(out.volumeMm3).toBeGreaterThan(0); expect(out.volumeMm3).toBeLessThan(1600) }
   if (name === 'emboss') { expect(out.volumeMm3).toBeGreaterThan(1600); expect(out.sizeMm[2]).toBeCloseTo(9, 3) }
-  if (name === 'mirror') expect(out.minMm).toEqual([30, -5, 0])
+  if (name === 'mirror') expect(out.minMm).toEqual([MID + 30, MID - 5, 0])
   expect(get().plate.find((entry) => entry.id === design)?.history?.steps.length).toBe(out.steps)
   await runCall('design.undo', { design })
   if (!before) expect(get().plate).toHaveLength(0)
@@ -54,6 +56,16 @@ it.each(cases)('$name edits a live body and returns its geometry and undoable hi
     expect(restored.output.designs.find((d) => d.design === design)).toMatchObject({ steps: 1, sizeMm: [20, 10, 8], volumeMm3: 1600 })
   }
 }, 60_000)
+
+it('lands a body built by the bed corner in the middle of the plate and says it moved', async () => {
+  const { design } = await output('design.new', { name: 'Corner block' })
+  const reply = await runCall('geom.extrude', { design, shape: { type: 'rectangle', widthMm: 20, heightMm: 10 }, distance_mm: 8 }) as { summary: string; output: Body & { landed?: string } }
+  expect(reply.summary).toContain('moved to the plate by (128, 128) mm')
+  expect(reply.output).toMatchObject({ minMm: [MID - 10, MID - 5, 0], landed: expect.stringContaining("coordinates are now the plate's") })
+  const listed = await runCall('design.list', {}) as { output: { designs: (Body & { landed?: string })[] } }
+  expect(listed.output.designs[0]).toMatchObject({ minMm: [MID - 10, MID - 5, 0] })
+  expect(listed.output.designs[0]!.landed).toBeUndefined()
+})
 
 it('places separate array copies and built solids in world coordinates on a moved body', async () => {
   const design = await box()
