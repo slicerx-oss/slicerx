@@ -71,7 +71,7 @@ const NAMES: readonly [string, string][] = [
   ['Brown', '#6d4c41'],
   ['Beige', '#e6d3b3'],
   // Second anchors for names whose common filament colors sit far from the first one: bright and amber oranges, gold,
-  // olive, pale and bright yellows, hot and light pinks, a redder brown, and the plain web teal and navy.
+  // olive, pale and bright yellows, hot and light pinks, a redder brown, and the plain web green, teal and navy.
   ['Orange', '#ff8000'],
   ['Orange', '#ffa500'],
   ['Gold', '#d4af37'],
@@ -82,6 +82,7 @@ const NAMES: readonly [string, string][] = [
   ['Brown', '#8b4513'],
   ['Yellow', '#ffff00'],
   ['Yellow', '#fff59d'],
+  ['Green', '#00ff00'],
   ['Teal', '#008080'],
   ['Navy', '#000080'],
 ]
