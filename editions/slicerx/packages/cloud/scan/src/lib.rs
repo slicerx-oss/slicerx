@@ -88,13 +88,30 @@ struct Built {
     library_file: Vec<u8>,
     payload_sha256: String,
     facts: MeshFacts,
+    placed: Placed,
     stripped: Vec<String>,
     preview: Vec<u8>,
     detected: DetectedType,
 }
 
-fn parse_mesh(bytes: &[u8], name: &str) -> Result<Mesh, Reject> {
-    std::panic::catch_unwind(AssertUnwindSafe(|| Mesh::load(bytes, name)))
+/// Where the model prints: the bounds of one plate with every build item and component transform applied, the
+/// plate they are for and how many plates the file has.
+struct Placed {
+    min: [f32; 3],
+    max: [f32; 3],
+    plate: u32,
+    plates: u32,
+}
+
+/// Axis-aligned bounds `(min, max)`, mm.
+type Box3 = ([f32; 3], [f32; 3]);
+
+/// A plate's number and its placed bounds, `None` when it has no vertices.
+type PlateBounds = (u32, Option<Box3>);
+
+/// Runs a loader of the engine, turning a panic or a refusal into a rejection.
+fn parse<T>(f: impl FnOnce() -> sx_core::Result<T>) -> Result<T, Reject> {
+    std::panic::catch_unwind(AssertUnwindSafe(f))
         .map_err(|_| Reject::new("mesh_parse", "the model could not be parsed"))?
         .map_err(|e| {
             Reject::new(
@@ -102,6 +119,37 @@ fn parse_mesh(bytes: &[u8], name: &str) -> Result<Mesh, Reject> {
                 format!("the file does not parse as a mesh: {e}"),
             )
         })
+}
+
+fn parse_mesh(bytes: &[u8], name: &str) -> Result<Mesh, Reject> {
+    parse(|| Mesh::load(bytes, name))
+}
+
+/// The plate a 3MF is measured on: the one whose bounds hold the most volume (the first of equals), so a project
+/// spread over several plates is never measured across them. Its size is held to the same limit as the checked mesh.
+fn placed_plate(plates: &[PlateBounds], limits: &Limits) -> Result<Placed, Reject> {
+    let volume = |(lo, hi): &Box3| (0..3).map(|i| f64::from(hi[i] - lo[i])).product::<f64>();
+    let mut best: Option<(u32, Box3)> = None;
+    for (n, b) in plates {
+        let Some(b) = b else { continue };
+        if best.as_ref().is_none_or(|(_, kept)| volume(b) > volume(kept)) {
+            best = Some((*n, *b));
+        }
+    }
+    let (plate, (min, max)) = best.ok_or_else(|| Reject::new("mesh_empty", "the model has no vertices"))?;
+    let extent = (0..3).map(|i| max[i] - min[i]).fold(0.0_f32, f32::max);
+    if !extent.is_finite() || extent > limits.max_extent_mm {
+        return Err(Reject::new(
+            "mesh_too_large",
+            format!("the model is larger than {} mm", limits.max_extent_mm),
+        ));
+    }
+    Ok(Placed {
+        min,
+        max,
+        plate,
+        plates: u32::try_from(plates.len()).unwrap_or(u32::MAX),
+    })
 }
 
 /// The reject code for a model the engine refuses to load. Its refusals read "refused <code> <object> <element>
@@ -126,25 +174,46 @@ fn load_reject_code(e: &sx_core::Error) -> &'static str {
 /// Parses, checks and converts. Synchronous and CPU bound.
 fn build(bytes: &[u8], sniffed: Sniffed, limits: &Limits, listing: &ListingMeta) -> Result<Built, Reject> {
     // An sx3mf is a 3MF with `sx:` metadata, so both take the same path.
-    let (mesh, kept_3mf, stripped, detected) = match sniffed {
+    let (mesh, plates, kept_3mf, stripped, detected) = match sniffed {
         Sniffed::Stl { .. } => (
             parse_mesh(bytes, "upload.stl")?,
+            Vec::new(),
             None,
             Vec::new(),
             DetectedType::Stl,
         ),
         Sniffed::Zip => {
             let clean = archive::sanitize_3mf(bytes, limits)?;
-            let mesh = parse_mesh(&clean.bytes, "upload.3mf")?;
+            // Every plate, as the engine places them. The checks, the preview and the triangle count read the first
+            // plate, as a 3MF opens; the size reads the largest.
+            let mut plates = parse(|| sx_core::api::load_3mf_plates(&clean.bytes, "upload.3mf"))?;
+            if plates.is_empty() {
+                return Err(Reject::new(
+                    "mesh_parse",
+                    "the file does not parse as a mesh: the 3MF file has no printable objects",
+                ));
+            }
+            let bounds = plates.iter().map(|(n, m)| (*n, m.bounds())).collect();
+            let mesh = std::mem::take(&mut plates[0].1);
             let detected = if convert::is_sx3mf(&clean.bytes) {
                 DetectedType::Sx3mf
             } else {
                 DetectedType::ThreeMf
             };
-            (mesh, Some(clean.bytes), clean.stripped, detected)
+            (mesh, bounds, Some(clean.bytes), clean.stripped, detected)
         }
     };
     let facts = model::check_mesh(&mesh, limits)?;
+    let placed = if plates.is_empty() {
+        Placed {
+            min: facts.min,
+            max: facts.max,
+            plate: 1,
+            plates: 1,
+        }
+    } else {
+        placed_plate(&plates, limits)?
+    };
     let payload = if let Some(b) = kept_3mf {
         b
     } else {
@@ -164,6 +233,7 @@ fn build(bytes: &[u8], sniffed: Sniffed, limits: &Limits, listing: &ListingMeta)
         payload_sha256: sha256_hex(&payload),
         library_file,
         facts,
+        placed,
         stripped,
         preview,
         detected,
@@ -220,6 +290,8 @@ impl Scanner {
             size_bytes: bytes.len() as u64,
             triangle_count: None,
             bounds_mm: None,
+            bounds_plate: None,
+            plate_count: None,
             stripped: Vec::new(),
             scanner: ScannerInfo {
                 engine: self.av.engine().to_owned(),
@@ -322,9 +394,11 @@ impl Scanner {
         }
         report.triangle_count = Some(built.facts.triangle_count);
         report.bounds_mm = Some(Bounds {
-            min: built.facts.min,
-            max: built.facts.max,
+            min: built.placed.min,
+            max: built.placed.max,
         });
+        report.bounds_plate = Some(built.placed.plate);
+        report.plate_count = Some(built.placed.plates);
         report.stripped.clone_from(&built.stripped);
         self.blocked(&built.payload_sha256, report)?;
         let library_sha = sha256_hex(&built.library_file);
