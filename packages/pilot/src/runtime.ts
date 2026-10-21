@@ -500,7 +500,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { kind: 'run', token }
   }
 
-  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[]): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
+  async function execute(call: LlmToolCall, sessionId: string, context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, citations: Citation[], cards: Set<string>): Promise<{ message: string; stop: boolean; images?: LlmImage[] }> {
     const tool = findTool(call.name)
     if (!tool) {
       emit({ type: 'tool_call', callId: call.id, tool: call.name, source: 'command', input: call.arguments })
@@ -627,7 +627,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     if (out.diff) emit({ type: 'settings_diff', diff: out.diff })
     if (out.report) emit({ type: 'summary', title: out.report.title, rows: out.report.rows, stopped: false })
-    if (out.lookup) emit({ type: 'lookup', lookup: { id: `lk_${newId()}`, ...out.lookup } })
+    // one card per source page in a turn: parts.lookup shows its own, so a lookup.show of the same part adds none
+    if (out.lookup && !cards.has(out.lookup.source.url)) {
+      cards.add(out.lookup.source.url)
+      emit({ type: 'lookup', lookup: { id: `lk_${newId()}`, ...out.lookup } })
+    }
     if (out.citations) for (const c of out.citations) if (!citations.some((x) => x.id === c.id)) citations.push(c)
     return { message: toolMessage(out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
   }
@@ -635,6 +639,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN): Promise<PilotEvent & { type: 'done' }> {
     const t0 = now()
     const citations: Citation[] = []
+    const cards = new Set<string>()
     let calls = 0
     let stopReason: 'end' | 'max_steps' | 'canceled' | 'denied' | 'error' = 'max_steps'
     let usageIn = 0
@@ -820,7 +825,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           why = 'tool'
         }
         if (call.name.startsWith('kb.') || call.name === 'parts.lookup' || call.name === 'web.lookup' || call.name === 'material_recommend') looked = true
-        const res = await execute(call, sessionId, context, watch, signal, citations)
+        const res = await execute(call, sessionId, context, watch, signal, citations, cards)
         if (tier !== MUNINN && fails >= STRUGGLE_FAILS) {
           tier = MUNINN
           why = 'struggle'
