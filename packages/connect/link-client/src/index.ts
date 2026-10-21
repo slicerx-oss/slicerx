@@ -249,8 +249,16 @@ export interface CameraProbe {
   firstFrameMs: number | null
   fps: number
   kbps: number
-  /** A quality to start the player at. */
+  /** A quality to start the player at. Not a measurement when `busy`. */
   recommended: 'low' | 'medium' | 'high'
+  /**
+   * The probe did not look, and `ok` is false: another probe of this printer was running (`probe`), a
+   * live view or still was reading its camera (`stream`), or the camera is left alone for a while after
+   * closing several connections in a row (`held`, for `retryInMs`). Start at the quality you wanted.
+   */
+  busy?: boolean
+  busyWith?: 'probe' | 'stream' | 'held'
+  retryInMs?: number
 }
 
 export interface CameraHandle {

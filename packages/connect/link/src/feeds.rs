@@ -194,7 +194,21 @@ pub(crate) struct Feeds {
     sessions: StdMutex<HashMap<String, Sessions>>,
     /// The holds after closes in a row, when not [`HOLDS`] (tests shorten them).
     holds: StdMutex<Option<Vec<Duration>>>,
+    /// The printers a probe is looking at now: one probe per camera at a time.
+    probing: StdMutex<std::collections::HashSet<String>>,
     next: StdMutex<u64>,
+}
+
+/// A probe of one printer's camera, from [`Feeds::begin_probe`] until it is dropped.
+pub(crate) struct Probing {
+    feeds: Arc<Feeds>,
+    printer: String,
+}
+
+impl Drop for Probing {
+    fn drop(&mut self) {
+        lock(&self.feeds.probing).remove(&self.printer);
+    }
 }
 
 fn lock<T>(m: &StdMutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -237,6 +251,21 @@ impl Feeds {
             (secs >= 1.0).then(|| r.frames as f64 / secs)
         })?;
         Some((if fresh { rate } else { 0.0 }, fresh))
+    }
+
+    /// Marks a probe of the printer's camera until the returned guard drops; `None` while another
+    /// probe of it runs, so two probes never measure one feed at once.
+    pub(crate) fn begin_probe(self: &Arc<Self>, printer: &str) -> Option<Probing> {
+        lock(&self.probing).insert(printer.to_owned()).then(|| Probing {
+            feeds: self.clone(),
+            printer: printer.to_owned(),
+        })
+    }
+
+    /// How many read the printer's feed now (live views, probes, stills); 0 with no feed, or one
+    /// that lingers with nobody on it.
+    pub(crate) fn readers(&self, printer: &str) -> usize {
+        lock(&self.live).get(printer).map_or(0, |f| f.tx.receiver_count())
     }
 
     /// What the printer's feed is doing, while it has one.
@@ -886,6 +915,27 @@ mod tests {
         assert!(ago < STILL_EVERY);
         tokio::time::sleep(STILL_EVERY).await;
         assert!(feeds.paced_still("p").is_none(), "time for a new session");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn one_probe_per_camera_at_a_time_and_readers_are_counted() {
+        let feeds = Arc::new(Feeds::default());
+        let first = feeds.begin_probe("p").expect("nothing probes p");
+        assert!(feeds.begin_probe("p").is_none(), "a second probe of p is busy");
+        let other = feeds.begin_probe("q").expect("per printer");
+        drop(first);
+        assert!(feeds.begin_probe("p").is_some(), "free once the first is done");
+        drop(other);
+        assert_eq!(feeds.readers("p"), 0, "no feed");
+        let view = feeds.start(
+            "p",
+            Ok(source(vec![frame(true, 1)], Arc::new(StdMutex::new(false)))),
+            true,
+            never(),
+        );
+        assert_eq!(feeds.readers("p"), 1);
+        drop(view);
+        assert_eq!(feeds.readers("p"), 0, "a lingering feed has nobody on it");
     }
 
     #[test]

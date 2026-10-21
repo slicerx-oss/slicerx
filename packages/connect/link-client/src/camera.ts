@@ -361,7 +361,9 @@ export function linkCameraStreams(host: { camera: LinkCamera }, o: LinkStreamsOp
       let start: Quality = quality
       if (o.probe !== false) {
         const p: CameraProbe = await host.camera.probe(printer.id, 800)
-        if (p.ok && RANK[p.recommended] < RANK[start]) start = p.recommended
+        // A busy probe did not look (another probe or a view has the camera), so it caps nothing: the
+        // stream opens at the asked quality and the bridge steps it down if this client falls behind.
+        if (p.ok && !p.busy && RANK[p.recommended] < RANK[start]) start = p.recommended
       }
       if (signal?.aborted) throw aborted()
       const handle: CameraHandle = await host.camera.open(printer.id, { quality: start })
