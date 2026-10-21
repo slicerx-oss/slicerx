@@ -1643,6 +1643,47 @@ async fn a_printer_without_a_camera_says_so_and_the_probe_measures_one_that_has(
     assert_eq!(p["recommended"], "high");
 }
 
+// Two probes of one camera at once, from two windows: one looks and the other answers busy at once,
+// instead of waiting for the first to open the camera and then counting the frames its new feed
+// replays. A probe while a live view reads the camera answers busy too; once the view closes, a
+// probe looks again.
+#[tokio::test]
+async fn a_probe_while_another_probe_or_a_stream_has_the_camera_answers_busy() {
+    let (link, mocks, mut ws) = camera_rig("moonraker", &["--camera"]).await;
+    let r = call(
+        &mut ws,
+        2,
+        "printers.add",
+        json!({ "config": { "id": "cam1", "name": "Cam", "plugin": "moonraker", "host": "127.0.0.1", "port": mocks.port("moonraker") } }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    let mut other = paired(&link).await;
+    let probe = json!({ "printerId": "cam1", "windowMs": 800 });
+    let (one, two) = tokio::join!(
+        call(&mut ws, 3, "camera.probe", probe.clone()),
+        call(&mut other, 3, "camera.probe", probe.clone()),
+    );
+    let (one, two) = (&one["result"], &two["result"]);
+    let busy: Vec<&Value> = [one, two].into_iter().filter(|res| res["busy"] == true).collect();
+    assert_eq!(busy.len(), 1, "one looks and one is busy: {one} {two}");
+    let looked = if one["busy"] == true { two } else { one };
+    assert_eq!(looked["ok"], true, "{looked}");
+    assert_eq!(looked["kind"], "jpeg", "{looked}");
+    assert_eq!(busy[0]["ok"], false, "{}", busy[0]);
+    assert_eq!(busy[0]["busyWith"], "probe", "{}", busy[0]);
+
+    let r = call(&mut ws, 4, "camera.open", json!({ "printerId": "cam1" })).await;
+    let stream = r["result"]["stream"].as_u64().unwrap_or_else(|| panic!("{r}"));
+    let r = call(&mut other, 5, "camera.probe", probe.clone()).await;
+    assert_eq!(r["result"]["busy"], true, "{r}");
+    assert_eq!(r["result"]["busyWith"], "stream", "{r}");
+    call(&mut ws, 6, "camera.close", json!({ "stream": stream })).await;
+    let r = call(&mut other, 7, "camera.probe", probe).await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    assert!(r["result"]["busy"].is_null(), "{r}");
+}
+
 // Status calls that arrive together, from two app windows or the app and the bridge's own watcher,
 // share one connection to the printer instead of each opening one.
 #[tokio::test]
@@ -2175,6 +2216,24 @@ async fn a_camera_that_keeps_closing_play_is_left_alone_and_said_busy() {
             "{m}"
         );
     }
+    // A probe answers busy at once, with the wait, and sends the camera nothing.
+    let r = call(
+        &mut ws,
+        31,
+        "camera.probe",
+        json!({ "printerId": "h2d", "windowMs": 800 }),
+    )
+    .await;
+    let probe = &r["result"];
+    assert_eq!(
+        (&probe["busy"], &probe["busyWith"], &probe["ok"]),
+        (&json!(true), &json!("held"), &json!(false)),
+        "{r}"
+    );
+    assert!(
+        probe["retryInMs"].as_u64().is_some_and(|ms| ms > 0 && ms <= 6000),
+        "{r}"
+    );
     // A live view opens and says the camera is busy until the hold is over.
     let r = call(&mut ws, 9, "camera.open", json!({ "printerId": "h2d" })).await;
     let stream = r["result"]["stream"].as_u64().unwrap_or_else(|| panic!("{r}"));

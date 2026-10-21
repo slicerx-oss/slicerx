@@ -71,7 +71,7 @@ Not built yet. The video runs on your own network today: the app and `sx-link` o
 | `camera.close` | `stream` | `{closed}`. Streams also end when the connection closes. |
 | `camera.webrtc` | `printerId`, `sdp` | `{sdp}`, the camera's answer. `not_supported` when the camera has no WebRTC service. |
 | `cameras.discover` | `timeoutMs?` | `{cameras: [{host, port, name?, hardware?, cameraUrl}]}` from an ONVIF probe. `--no-mdns` turns it off. |
-| `camera.probe` | `printerId`, `windowMs?` (500 to 5000) | `{ok, kind, firstFrameMs, fps, kbps, recommended}`. Reads the camera without streaming to the client. |
+| `camera.probe` | `printerId`, `windowMs?` (500 to 5000) | `{ok, kind, firstFrameMs, fps, kbps, recommended}`. Reads the camera without streaming to the client. One probe per camera at a time: while another probe of the printer runs, a live view or still reads its camera, or the camera is held after closing PLAYs in a row, it answers at once with `ok: false`, `busy: true` and `busyWith` (`probe`, `stream` or `held`, the last with `retryInMs`), and does not touch the camera. |
 
 Frames are binary WebSocket messages, a 16 byte header and the payload: byte 0 `0xC1`, byte 1 kind (1 JPEG, 2 H.264), byte 2 bit 0 key frame, bytes 4 to 7 stream id (u32), bytes 8 to 15 bridge receive time in milliseconds since the epoch (u64), all big endian. Text events: `camera.stats` (`stream`, `fps`, `kbps`, `dropped`, `quality`, once a second), `camera.ended`, and `camera.status` for what the printer's camera feed is doing: `live`, `retrying` (`attempt`, `retryInMs`, `reason`, `busy`) or `failed` (`reason`).
 

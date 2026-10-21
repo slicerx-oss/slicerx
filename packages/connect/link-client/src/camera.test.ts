@@ -295,3 +295,22 @@ test('a live view says in one line why there is no picture', async () => {
   s.close('the view closed or the app navigated away')
   assert.equal(closedWith, 'the view closed or the app navigated away')
 })
+
+// A probe that answers busy (another probe or a view has the camera) caps nothing: the stream opens at
+// the asked quality. One that looked caps it at its recommendation. No bridge needed.
+test('a busy probe leaves the asked quality, a measured one caps it', async () => {
+  const opened: string[] = []
+  const camera = (probe: Record<string, unknown>) =>
+    ({
+      probe: async () => probe,
+      open: async (_id: string, o: { quality: 'low' | 'medium' | 'high' }) => {
+        opened.push(o.quality)
+        return { stream: 1, quality: o.quality, onFrame: () => () => undefined, onStats: () => () => undefined, onEnded: () => () => undefined, onStatus: () => () => undefined, setQuality: async () => undefined, close: async () => undefined }
+      },
+    }) as unknown as LinkHost['camera']
+  const renderer = (): Renderer => ({ media: null, draw: () => undefined, close: () => undefined })
+  const open = async (probe: Record<string, unknown>) => (await linkCameraStreams({ camera: camera(probe) }, { webrtc: false, renderer }).open({ id: 'p', name: 'P' }, { quality: 'high' })).close()
+  for (const busyWith of ['probe', 'stream', 'held']) await open({ ok: false, busy: true, busyWith, kind: null, firstFrameMs: null, fps: 0, kbps: 0, recommended: 'low' })
+  await open({ ok: true, kind: 'jpeg', firstFrameMs: 300, fps: 4, kbps: 600, recommended: 'medium' })
+  assert.deepEqual(opened, ['high', 'high', 'high', 'medium'])
+})

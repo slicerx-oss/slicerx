@@ -2350,15 +2350,47 @@ async fn camera_open(
 
 /// Looks at the camera before a stream starts: how fast the first frame comes and how many frames a
 /// second the printer gives. `recommended` is a starting quality for the player.
+///
+/// One probe per camera at a time, and none beside a reader: a probe while another probe of the
+/// printer runs, while a live view or still reads its camera, or while the camera is held after
+/// closing PLAYs in a row answers `busy` at once (`busyWith` says which; `retryInMs` the hold left)
+/// and does not touch the camera. Waiting instead would join a feed under a second old and count the
+/// frames it replays as live ones.
 async fn camera_probe(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     use sx_connect::camera::FrameKind;
     let printer = str_arg(p, "printerId")?;
+    if !b.printers.lock().await.contains_key(printer.as_str()) {
+        return Err(RpcError::new("not_found", format!("no printer {printer}")));
+    }
     let window = Duration::from_millis(
         p.get("windowMs")
             .and_then(Value::as_u64)
             .unwrap_or(2000)
             .clamp(500, 5000),
     );
+    let busy = |with: &str, left: Option<Duration>| {
+        sx_connect::trace(&printer, format_args!("camera probe: busy ({with})"));
+        let mut out = json!({
+            "ok": false, "busy": true, "busyWith": with,
+            "kind": null, "firstFrameMs": null, "fps": 0.0, "kbps": 0.0, "recommended": "low",
+        });
+        if let (Some(left), Some(o)) = (left, out.as_object_mut()) {
+            o.insert(
+                "retryInMs".to_owned(),
+                json!(u64::try_from(left.as_millis()).unwrap_or(u64::MAX).max(1)),
+            );
+        }
+        out
+    };
+    let Some(_probing) = b.feeds.begin_probe(&printer) else {
+        return Ok(busy("probe", None));
+    };
+    if let Some(left) = b.feeds.held(&printer) {
+        return Ok(busy("held", Some(left)));
+    }
+    if b.feeds.readers(&printer) > 0 {
+        return Ok(busy("stream", None));
+    }
     let started = Instant::now();
     let mut src = camera_source(b, &printer, "probe").await?;
     let (mut frames, mut bytes, mut first_ms, mut kind) = (0_u32, 0_usize, None, None);
