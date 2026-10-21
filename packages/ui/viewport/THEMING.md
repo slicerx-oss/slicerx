@@ -20,6 +20,8 @@ vp.setTheme() // back to the defaults
 
 `scene` keys: `bgTop`, `bgBottom`, `bgGlow` (background), `selection`, `selectionHidden` (outline), `liveLayer`, `travel`, `overhangRed`, `overhangAmber`, `overhangBase`, `clay`, `plateSide`, `floorGrid`, `edgeDark`, `edgeXray`, `xrayTint`.
 
+The move, rotate and scale handles take `axisX`, `axisY`, `axisZ` (the axis fills), `axisUniform` (the scale gizmo's corners), `handleHot` (hovered or dragged), `handlePinned` (the handle a held key keeps fixed) and `handleHalo` (a thin outline under every handle). The app reads them from `--axis-x`, `--axis-y`, `--axis-z`, `--axis-uniform`, `--gizmo-hot`, `--gizmo-pinned` and `--gizmo-halo`. Keep every handle color at least 9:1 off `handleHalo`: then the fill or the outline keeps 3:1 against any color behind a handle. With a near black outline that means fills with a relative luminance of about 0.43 or more.
+
 `features` is keyed by the SXPV feature id. `heatRamp` takes two to eight stops, low to high. `toolColors` are used until the app calls `setToolColors`.
 
 `glyphs` recolors sketch constraint pixels: `line`, `pickedLine`, `node`, `pickedNode`, `center`, `halo`, `pickedEdge` and `pickedHalo`. These accept `#rrggbb` or `#rrggbbaa`. Omitted colors retain the existing defaults chosen from the studio background's lightness. Changing them with `setTheme` redraws existing glyph textures. See [edition restyling](../../../docs/integrators/restyle-icons-and-loops.md#viewport-sketch-glyphs) for the defaults and corresponding CSS properties.

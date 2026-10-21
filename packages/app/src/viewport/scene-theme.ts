@@ -18,6 +18,14 @@ const MAP = [
   // the accent marks the selection, the bed outline and the guides; an edition's accent replaces the purple
   ['--purple', 'selection'],
   ['--cyan', 'liveLayer'],
+  // the move, rotate and scale handles
+  ['--axis-x', 'axisX'],
+  ['--axis-y', 'axisY'],
+  ['--axis-z', 'axisZ'],
+  ['--axis-uniform', 'axisUniform'],
+  ['--gizmo-hot', 'handleHot'],
+  ['--gizmo-pinned', 'handlePinned'],
+  ['--gizmo-halo', 'handleHalo'],
 ] as const
 
 const GLYPHS = {

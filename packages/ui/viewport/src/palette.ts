@@ -94,9 +94,25 @@ export const SCENE = {
   wipe: '#c4b5fd',
   toolChange: '#f472b6',
   pause: '#fb923c',
+  /** Move, rotate and scale handles (--axis-x, --axis-y, --axis-z and --axis-uniform in tokens.css). */
+  axisX: '#ff928a',
+  axisY: '#51cf66',
+  axisZ: '#57b9ff',
+  axisUniform: '#8be9fd',
+  /** A hovered or dragged handle (--gizmo-hot) and the handle a held key pins (--gizmo-pinned). */
+  handleHot: '#ffe066',
+  handlePinned: '#b4b4b4',
+  /**
+   * The outline under every handle (--gizmo-halo). Each handle color is at least 9:1 off it, so against any color behind
+   * a handle (a bed, a plate surface, a shadow, a part) the fill or the outline keeps 3:1.
+   */
+  handleHalo: '#08090c',
 } as const
 
 export type SceneColors = Record<keyof typeof SCENE, string>
+
+/** The colors the move, rotate and scale handles draw with. */
+export type HandleColors = Pick<SceneColors, 'axisX' | 'axisY' | 'axisZ' | 'axisUniform' | 'handleHot' | 'handlePinned' | 'handleHalo'>
 
 export const GLYPH_COLOR_NAMES = ['line', 'pickedLine', 'node', 'pickedNode', 'center', 'halo', 'pickedEdge', 'pickedHalo'] as const
 export type GlyphColors = Partial<Record<(typeof GLYPH_COLOR_NAMES)[number], string>>

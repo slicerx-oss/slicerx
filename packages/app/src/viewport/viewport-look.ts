@@ -32,9 +32,17 @@ export interface ViewportScene {
   liveLayer: string
   originPlane: string
   addPreview: string
+  /** Move, rotate and scale handles: the axis fills, the uniform corners, hovered or dragged, pinned, and the outline under each. */
+  axisX: string
+  axisY: string
+  axisZ: string
+  axisUniform: string
+  handleHot: string
+  handlePinned: string
+  handleHalo: string
 }
 
-const SCENE_READ = ['bgTop', 'bgBottom', 'bgGlow', 'plateSide', 'floorGrid', 'edgeDark', 'edgeXray', 'selection', 'liveLayer', 'originPlane', 'addPreview'] as const
+const SCENE_READ = ['bgTop', 'bgBottom', 'bgGlow', 'plateSide', 'floorGrid', 'edgeDark', 'edgeXray', 'selection', 'liveLayer', 'originPlane', 'addPreview', 'axisX', 'axisY', 'axisZ', 'axisUniform', 'handleHot', 'handlePinned', 'handleHalo'] as const
 
 /** The look for the theme on the root element: its scheme picks the preset, its name whether the backdrop is the preset's. */
 export function themeLook(root: HTMLElement = document.documentElement): { preset: LookPresetId; themeBackdrop: boolean; look: ViewportLook } {
