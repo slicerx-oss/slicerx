@@ -350,7 +350,7 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
   const tipRef = useRef<HTMLDivElement>(null)
   const live = useRef({ enabled, resolve })
   live.current = { enabled, resolve }
-  const state = useRef({ show: 0, hide: 0, lastHidden: 0, hover: null as HTMLElement | null, down: false, dialogAt: 0, current: null as HTMLElement | null, described: [] as HTMLElement[], pinned: false, pending: null as HTMLElement | null, press: 0, pressAt: null as { x: number; y: number } | null, touchShown: null as HTMLElement | null, clickPinned: false, wasClickPinned: false })
+  const state = useRef({ show: 0, hide: 0, lastHidden: 0, hover: null as HTMLElement | null, down: false, dialogAt: 0, dialog: null as HTMLElement | null, current: null as HTMLElement | null, described: [] as HTMLElement[], pinned: false, pending: null as HTMLElement | null, press: 0, pressAt: null as { x: number; y: number } | null, touchShown: null as HTMLElement | null, clickPinned: false, wasClickPinned: false })
 
   useEffect(() => {
     const s = state.current
@@ -420,7 +420,10 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       const a = anchorOf(e.target)
       s.hover = a
       if (!a) return leave()
-      if (s.down || e.buttons !== 0 || performance.now() - s.dialogAt < TIP_TIMING.dialogQuiet) return
+      // A dialog opening under a resting pointer puts a control under it that the pointer never moved to, so a hover
+      // inside a dialog that has just opened is ignored. A hover anywhere else is the pointer moving onto a control,
+      // and dropping it would leave that control without its tip until the pointer left it and came back.
+      if (s.down || e.buttons !== 0 || (performance.now() - s.dialogAt < TIP_TIMING.dialogQuiet && s.dialog?.contains(a))) return
       schedule(a, TIP_TIMING.cold)
     }
     const out = (e: PointerEvent) => {
@@ -527,7 +530,12 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       if (s.current && !s.pinned) hide()
     }
     const watchDialogs = new MutationObserver((list) => {
-      for (const m of list) for (const n of Array.from(m.addedNodes)) if (n instanceof HTMLElement && (n.matches('[role=dialog]') || n.querySelector('[role=dialog]'))) s.dialogAt = performance.now()
+      for (const m of list)
+        for (const n of Array.from(m.addedNodes))
+          if (n instanceof HTMLElement && (n.matches('[role=dialog]') || n.querySelector('[role=dialog]'))) {
+            s.dialogAt = performance.now()
+            s.dialog = n
+          }
       // A tip goes with its anchor: one unmounted, or swapped for a new element by a re-render, gets no pointer
       // leaving it and would keep its tip over whatever took its place.
       if (s.current && !s.current.isConnected) hide()
