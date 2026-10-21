@@ -1896,6 +1896,22 @@ test.describe('sketch-panel-behavior', () => {
     await expect(again.getByRole('radiogroup', { name: 'Result' }).getByRole('radio', { name: 'Cut' })).toHaveAttribute('aria-checked', 'true')
   })
 
+  test('an extrude past the limit says the distance is too large and changes nothing', async ({ page }) => {
+    const id = await sketchOnTop(page)
+    const panel = toolPanel(page)
+    const box = await bounds(page, id)
+    const before = (await steps(page)).length
+    await page.locator('body').press('r')
+    await sketchAt(page, 'click', [-3, -3])
+    await sketchAt(page, 'click', [3, 3])
+    await panel.locator('#sk-dist').fill('1000000')
+    await panel.getByTestId('model-tool-apply').click()
+    await expect(panel).toContainText('The distance is too large. The most is 10000 mm.')
+    await expect(panel).not.toContainText(/Mm:|must not be zero/)
+    expect((await steps(page)).length).toBe(before)
+    expect((await bounds(page, id)).max).toEqual(box.max)
+  })
+
   test('Extrude and Revolve say why they are off: open, crossing, no axis, no body to cut', async ({ page }) => {
     await bedSketch(page)
     const panel = toolPanel(page)

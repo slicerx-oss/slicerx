@@ -20,6 +20,7 @@ import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
+import { sizeWords } from './op-preview'
 
 interface Picked {
   objectId: string
@@ -102,7 +103,7 @@ export function HoleTool() {
       setPicked(null)
       return true
     } catch (err) {
-      setNote(errorText(err))
+      setNote(sizeWords(errorText(err)))
     } finally {
       setBusy(false)
     }

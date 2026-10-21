@@ -9,6 +9,8 @@ import { applyExtrude } from '../src/cad/cad-ops'
 import { shellReason } from '../src/cad/holes'
 import { holeProblem, simplifySelected, subtractFromSelected } from '../src/plate/geom-ops'
 import { dropSelectedToBed } from '../src/plate/edit'
+import { extrudeProblem, pushLimit } from '../src/cad/push'
+import { sizeWords } from '../src/cad/op-preview'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { get, set, type PlateEntry } from '../src/state/store'
 
@@ -144,5 +146,22 @@ describe('drop to bed', () => {
     expect(dropSelectedToBed()).toBe(true)
     expect(get().plate[0]!.transform[14]).toBeCloseTo(0)
     expect(get().toast).toBeNull()
+  })
+})
+
+describe('an extrude past the engine limit', () => {
+  it('says the distance is too large, never that it must not be zero', () => {
+    // a sketch extrude of 1000000 mm: the engine's own reply reads "distanceMm: must not be zero (at most 10000 mm)"
+    expect(extrudeProblem({ distanceMm: 1_000_000 })).toBe('The distance is too large. The most is 10000 mm.')
+    expect(extrudeProblem({ distanceMm: 5, distance2Mm: 20_000 })).toBe('The second distance is too large. The most is 10000 mm.')
+    expect(extrudeProblem({ distanceMm: 0 })).toBe('The distance must be more than 0 mm.')
+    expect(extrudeProblem({ distanceMm: 5, distance2Mm: 0 })).toBe('The second distance must be more than 0 mm.')
+    expect(extrudeProblem({ distanceMm: 5, taperDeg: 50 })).toBe('The draft is between -45 and 45 degrees.')
+    expect(extrudeProblem({ distanceMm: 10_000, distance2Mm: 3, taperDeg: -45 })).toBeNull()
+    expect(pushLimit(10_001)).toBe('The distance is too large. The most is 10000 mm.')
+  })
+  it('puts a refusal that still comes back in plain words', () => {
+    // what Sketch and Shape on a face now show for the engine's range check, with the typed distance
+    expect(sizeWords('DistanceMm: must not be zero (at most 10000 mm)', 1_000_000)).toBe('The distance is too large. The most is 10000 mm.')
   })
 })
