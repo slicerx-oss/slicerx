@@ -118,6 +118,7 @@ export async function hollowSelected(host: Loader, wallMm: number): Promise<stri
     parts.push(fromGeom(r.mesh, p.name, p.slot))
     saved = Math.max(saved, r.report.materialSavedPercent)
   }
+  if (!(saved > 0)) throw new Error(`A ${wallMm} mm wall is too thick to hollow this object, so nothing changed. Try a thinner wall.`)
   const dropped = await replace(host, e, parts, e.transform, { params: { op: 'hollow', wallMm }, start: true })
   const msg = `Hollowed with ${wallMm} mm walls, about ${Math.round(saved)} % less material. Add a drain hole for resin.${paintNote(dropped)}`
   toast(msg, 'ok')
@@ -163,7 +164,8 @@ export async function cutSelected(host: Loader, spec: CutSpec): Promise<number> 
   if (spec.keep !== 'above' && below.length) pieces.push({ name: `${e.name} lower`, parts: below })
   if (spec.keep !== 'below' && above.length) pieces.push({ name: `${e.name} upper`, parts: above })
   extras.forEach((x, i) => pieces.push({ name: `${e.name} connector ${i + 1}`, parts: [x] }))
-  if (pieces.length === 0 || (below.length === 0 && spec.keep !== 'above') || (above.length === 0 && spec.keep !== 'below')) {
+  // A plane on the object's top or bottom face leaves one side whole and the other empty: keeping either is no cut.
+  if (pieces.length === 0 || below.length === 0 || above.length === 0) {
     toast('The plane does not cross the object. Pick a height inside it.', 'warn')
     return 0
   }

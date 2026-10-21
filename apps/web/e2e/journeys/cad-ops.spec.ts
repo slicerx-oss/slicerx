@@ -45,6 +45,22 @@ test('push and pull moves the top face, shows the step and undoes in one go', as
   await expect.poll(() => height(page, id)).toBe(25)
 })
 
+test('Add with a name already in use says so and keeps the value', async ({ page }) => {
+  await studio(page)
+  await freshBox(page)
+  await command(page, 'Named values for sizes')
+  const values = toolPanel(page)
+  for (const v of ['2', '5']) {
+    await values.getByLabel("New value's name").fill('wall')
+    await values.getByLabel('New value', { exact: true }).fill(v)
+    await values.getByRole('button', { name: 'Add value' }).click()
+  }
+  await expect(values).toContainText('There is already a value named wall.')
+  await expect(values.getByTestId('value-wall')).toContainText('= 2 mm')
+  await expect(values.getByLabel('wall is')).toHaveValue('2')
+  await values.getByRole('button', { name: 'Done' }).click()
+})
+
 test('a push typed with a named value follows the value when it changes', async ({ page }) => {
   test.slow()
   await studio(page)

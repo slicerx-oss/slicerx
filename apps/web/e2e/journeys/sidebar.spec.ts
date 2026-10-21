@@ -1049,6 +1049,30 @@ test.describe('the plate tools', () => {
     await sidebarDone(page)
   })
 
+  test('a cut plane on the top face keeping the lower side says it does not cross, and keeps the object', async ({ page }) => {
+    await sidebarAs(page, { mode: 'advanced' })
+    const objs = page.locator('.objs > li')
+    await page.locator('.obj-name', { hasText: 'Layered X' }).click()
+    await addMenu(page, 'Tools')
+    await page.getByRole('menuitem', { name: 'Cut' }).click()
+    const panel = page.locator('[data-section="cut-tool"]')
+    await expect(panel).toBeVisible()
+    // the offset stops at the object's top face
+    const offset = panel.getByLabel('Distance from the center, millimeters')
+    await offset.fill('1000')
+    await offset.blur()
+    await panel.getByRole('radiogroup', { name: 'Keep' }).getByRole('radio', { name: 'Lower' }).click()
+    await panel.getByRole('button', { name: 'Cut', exact: true }).click()
+    await expect(page.locator('.sx-toast, [role=status]').filter({ hasText: 'The plane does not cross the object' }).first()).toBeVisible({ timeout: 30_000 })
+    await expect(panel).toBeVisible()
+    // the objects card comes back once the tool closes: the one object, not a lower piece
+    await panel.getByRole('button', { name: 'Cancel' }).click()
+    await expect(panel).toBeHidden()
+    await expect(objs).toHaveCount(1)
+    await expect(page.locator('.obj-name', { hasText: 'lower' })).toHaveCount(0)
+    await sidebarDone(page)
+  })
+
   test('the paint tool paints the object with a filament color, and undo takes it back', async ({ page }) => {
     await sidebarAs(page, { mode: 'advanced' })
     // Select the model first: the Paint panel takes the Objects card's place.
