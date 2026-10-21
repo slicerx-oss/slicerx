@@ -52,7 +52,7 @@ export function PairDialog({ phone, onClose }: { phone: PhoneAccess; onClose: ()
     }
   }, [phone])
   return (
-    <Dialog open onClose={onClose} title="Pair a phone" footer={<Button onClick={onClose}>{stage?.at === 'done' ? 'Done' : 'Close'}</Button>}>
+    <Dialog open onClose={onClose} title="Pair a phone" className="pair-dialog" footer={<Button onClick={onClose}>{stage?.at === 'done' ? 'Done' : 'Close'}</Button>}>
       {stage?.at === 'offer' ? (
         <>
           <p>Open the {appName()} phone app, choose Pair a computer, and scan this code. Or type the code below.</p>

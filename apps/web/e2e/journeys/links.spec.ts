@@ -201,6 +201,91 @@ test('a client lists the plates and steps through them over MCP and the command 
   }
 })
 
+// The window over the link: a read grant reads it and switches the workspace and tab, and is refused the selection and
+// panels, which an edit grant sets. Every argument, the busy cases and the summaries are app-link-ui.test.ts and
+// app-ui.test.ts; here one of each through the real hub, and the busy answer for a command the person is typing.
+test('a read client reads the window and switches workspace and tab, an edit client sets the selection and panels, over MCP and the command line', async ({ page, link }) => {
+  test.slow()
+  await cleanPlate(page)
+  await scratch('ui', async (dir) => {
+    const reader = await session(link, page, dir, 'ui-reader', 'read')
+    const editor = await session(link, page, dir, 'ui-editor', 'edit')
+    const slice = page.locator('.sx-tab[data-mode="slice"]')
+    const model = page.locator('.sx-tab[data-mode="design"]')
+    const about = page.getByRole('dialog', { name: 'About SlicerX' })
+    const palette = page.getByRole('dialog', { name: 'Commands' })
+    try {
+      await tab(page, 'model').click()
+      await command(page, 'Add a box')
+      await expect.poll(async () => (await reader.ok('app_ui')).selection.objects.length).toBe(1)
+      const read = await reader.ok('app_ui')
+      expect(read).toMatchObject({ workspace: 'prepare', tab: 'design', plate: { number: 1, count: 1 }, panels: { open: [] } })
+      const box = read.selection.primary.id as string
+      expect(read.selection.objects).toEqual([{ id: box, name: read.selection.primary.name }])
+
+      // Read grant: the tab and the workspace switch, read back and on screen.
+      expect(await reader.ok('app_ui_set', { tab: 'slice' })).toMatchObject({ tab: 'slice' })
+      await expect(slice).toHaveAttribute('aria-current', 'page')
+      const other = (read.workspaces as { id: string }[]).find((w) => w.id !== 'prepare')!.id
+      expect(await reader.ok('app_ui_set', { workspace: other })).toMatchObject({ workspace: other })
+      await expect.poll(() => sx.get(page, 'workspace')).toBe(other)
+      expect(await reader.ok('app_ui_set', { tab: 'design' })).toMatchObject({ workspace: 'prepare', tab: 'design' })
+      await expect(model).toHaveAttribute('aria-current', 'page')
+      // ...and is refused the selection and the panels, which change nothing.
+      expect(await reader.call('app_ui_select', { selection: [] })).toMatchObject(refused)
+      expect(await reader.call('app_ui_select', { open: 'about' })).toMatchObject(refused)
+      await expect(about).toBeHidden()
+      expect(await sx.get(page, 'selection')).toBe(box)
+
+      // Edit grant: the selection and a panel, read back and on screen.
+      expect(await editor.ok('app_ui_select', { selection: [] })).toMatchObject({ selection: { primary: null, objects: [] } })
+      expect(await sx.get(page, 'selection')).toBeNull()
+      expect(await editor.ok('app_ui_select', { selection: [box] })).toMatchObject({ selection: { primary: { id: box } } })
+      expect(await sx.get(page, 'selection')).toBe(box)
+      expect(await editor.ok('app_ui_select', { open: 'about' })).toMatchObject({ panels: { open: ['about'] } })
+      await expect(about).toBeVisible()
+      // Another dialog never opens over it, and it stays.
+      expect(await editor.call('app_ui_select', { open: 'shortcuts' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await expect(about).toBeVisible()
+      expect(await editor.ok('app_ui_select', { close: 'about' })).toMatchObject({ panels: { open: [] } })
+      await expect(about).toBeHidden()
+
+      // The person is typing in the command bar: a client may not close it until the query is gone.
+      await page.keyboard.press('ControlOrMeta+k')
+      await expect(palette).toBeVisible()
+      await page.keyboard.type('slice')
+      expect(await editor.call('app_ui_select', { close: 'command' })).toMatchObject({ isError: true, structuredContent: { error: { code: 'busy' } } })
+      await expect(palette).toBeVisible()
+      await page.locator('.sx-palette-input').fill('')
+      expect(await editor.ok('app_ui_select', { close: 'command' })).toMatchObject({ panels: { open: [] } })
+      await expect(palette).toBeHidden()
+
+      // The command line: slicerx-mcp call, one JSON line per call, the switch and its read-back.
+      const agent = await link.agent()
+      const lines = await agent.cli('app_ui_set', { tab: 'slice' }, 'app_ui')
+      expect(lines.map((l) => l.ok)).toEqual([true, true])
+      expect(lines[0]!.output.output).toMatchObject({ tab: 'slice' })
+      expect(lines[1]!.output.output).toMatchObject({ tab: 'slice', selection: { primary: { id: box } } })
+      await expect(slice).toHaveAttribute('aria-current', 'page')
+      if (process.platform === 'win32') {
+        // The native CLI with the read grant's key: it switches the tab and is refused the selection.
+        await windowsCli(link, dir, reader.clientKey!, async (run) => {
+          const rows = await run('app_ui_set', { tab: 'design' }, 'app_ui_select', { selection: [] })
+          expect(rows[0].ok).toBe(true)
+          expect(rows[0].output.output).toMatchObject({ tab: 'design' })
+          expect(rows[1].ok).toBe(false)
+          expect(await sx.get(page, 'selection')).toBe(box)
+        })
+      }
+    } finally {
+      await editor.close()
+      await reader.close()
+      await page.keyboard.press('Escape')
+      await cleanPlate(page)
+    }
+  })
+})
+
 test('a client reads the open Push and pull and types a distance for the person over MCP and the command line', async ({ page, link }) => {
   test.slow()
   await cleanPlate(page, 'design')

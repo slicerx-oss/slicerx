@@ -3,8 +3,11 @@
 // What an agent may do with the open project over the app link, and the page's answer to each. The hub keeps the same
 // list (packages/connect/link/src/roles.rs, APP_LINK_METHODS) and refuses every other name before it reaches here; a
 // test checks the two lists match. Project geometry and its modifier print values are editable, as are view
-// preferences. model.push_set only types a distance into the open Push and pull for the person to apply. Nothing here
-// prints, queues, approves, signs in or changes printer connections.
+// preferences. model.push_set only types a distance into the open Push and pull for the person to apply. The window is
+// read (ui.get) and switched between workspaces and tabs (ui.set, read class); the selection and the panels open
+// (ui.select) are edit class, since the person's next click or key acts on them, and it never closes or covers a panel
+// with their work under way. Nothing here prints, queues, approves, signs in, picks a printer or changes printer
+// connections.
 // Project print overrides have their own methods and read-back.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
@@ -82,6 +85,13 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   // window behaves, never the project.
   'look.get': 'read',
   'look.set': 'read',
+  // The window as the person sees it: the workspace, the tab, the selection, the plate shown, the printer chosen and the
+  // panels open. Switching the workspace or tab changes only what the window shows, like the preview. Setting the
+  // selection and opening or closing panels is an edit: the person's next click or key acts on them. Neither changes the
+  // project, and the printer is only read.
+  'ui.get': 'read',
+  'ui.set': 'read',
+  'ui.select': 'edit',
   // The open sketch's dimension boxes: read them, and type a value into one (it drives the shape, or frees it).
   'sketch.boxes': 'read',
   'sketch.box_set': 'edit',
@@ -416,6 +426,9 @@ const HANDLERS: Record<string, Handler> = {
   ])),
   'look.get': () => lookState(),
   'look.set': (args) => setLook(args),
+  'ui.get': async () => (await import('./ui')).readUi(),
+  'ui.set': async (args) => (await import('./ui')).setUi(args),
+  'ui.select': async (args) => (await import('./ui')).selectUi(args),
   'sketch.boxes': async () => (await import('./sketch-boxes')).readBoxes(),
   'sketch.box_set': async (args) => (await import('./sketch-boxes')).setBox(args),
   'model.push': async () => (await import('./model-push')).readPush(),

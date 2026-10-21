@@ -35,6 +35,7 @@ import { noteWorkspaceUp, startChunkReload } from './lib/chunk-reload'
 import { useFolderThemes } from './theme/folder'
 import { get, pilotState, pushRecent, set, setModelMode, showsLayers, toast, useApp } from './state/store'
 import { hostSlices, mimirOn, setHostSlices, setMimirOn, stayInModel, useCadShown, useModelMode } from './state/model-mode'
+import { setOffered } from './state/offered'
 import { updaterRegistered } from './updates/hold'
 import { toolStore } from './plate/tools'
 import { startReadySignal } from './lib/ready-signal'
@@ -239,7 +240,7 @@ function Shell() {
   const printSheetOpen = useApp((s) => s.printSheet !== null)
   const aboutOpen = useApp((s) => s.aboutOpen)
   const shortcutsOpen = useApp((s) => s.shortcutsOpen)
-  const { features, workspaces: available } = useFeatures()
+  const { features, workspaces: available, settings: featureSettings } = useFeatures()
   const layout = useLayout()
   const workspaces = useMemo(() => orderWorkspaces(available, layout), [available, layout])
   const setup = useApp((s) => s.setup)
@@ -279,6 +280,8 @@ function Shell() {
   useEffect(() => {
     if (stored !== workspace) set({ workspace })
   }, [stored, workspace])
+  // The app link names and checks workspaces and Settings sections by what the window offers.
+  useEffect(() => setOffered({ workspaces, settings: featureSettings }), [workspaces, featureSettings])
 
   const edition = useEdition()
   useEffect(() => {
