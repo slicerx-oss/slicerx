@@ -36,7 +36,7 @@ export const journeys = [
   // plates, objects and files
   { paths: ['packages/app/src/plate/'], journeys: ['plates', 'sidebar', 'phone-model'] },
   { paths: ['packages/app/src/plate/tower.ts'], journeys: ['tower'] },
-  { paths: ['packages/app/src/project/', 'packages/app/src/export/', 'packages/sx3mf/'], journeys: ['project', 'file-open'] },
+  { paths: ['packages/app/src/project/', 'packages/app/src/export/', 'packages/sx3mf/', 'packages/threemf/'], journeys: ['project', 'file-open'] },
   { paths: ['packages/app/src/state/open-', 'packages/app/src/state/import-', 'packages/app/src/state/multi-body.ts'], journeys: ['file-open'] },
   // slicing and the result
   { paths: ['packages/app/src/workspaces/preview/', 'packages/app/src/workspaces/slice-progress.tsx', 'packages/app/src/state/auto-slice', 'packages/core/web/', 'packages/core/wasm/'], journeys: slicing },

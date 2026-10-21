@@ -58,7 +58,7 @@ describe('geom.build into a design', () => {
     const saved = (await ok('slicerx_design_save', { design: d }))['path'] as string
     const zip = readZip(readFileSync(saved))
     const files = new Map(zip.names().map((n) => [n, new Uint8Array(zip.read(n)!)]))
-    const ids = (JSON.parse(zip.text('Metadata/slicerx_history.json')!) as { objects: { object: string }[] }).objects.map((o) => o.object)
+    const ids = (JSON.parse(zip.text('Metadata/slicerx_history.json')!) as { bodies: { object: string }[] }).bodies.map((o) => o.object)
     const history = [...parseHistories(files, new Set(ids)).values()][0]!
     const added = history.steps.flatMap((s) => (s.params.op === 'parts.add' ? s.params.parts : []))
     expect(added.map((p) => p.name)).toEqual(['Block', 'Peg', 'Two'])

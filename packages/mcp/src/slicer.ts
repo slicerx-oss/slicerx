@@ -171,7 +171,11 @@ export function createStubSlicer(): SlicerBackend {
       if (job.emitGcode) {
         mkdirSync(job.outDir, { recursive: true })
         const path = join(job.outDir, `${basename(job.modelPath, extname(job.modelPath))}.stub.gcode`)
-        writeFileSync(path, [STUB_MARKER, `; model ${summary.model.name}`, `; layers ${layers}`, `; estimated time ${summary.time_text}`, `; estimated filament ${summary.filament_g} g`, ''].join('\n'))
+        // The footer lines the sx engine ends its G-code with, so a .gcode.3mf reads its time and filament from them.
+        const s = summary.time_s
+        const clock = `${s >= 3600 ? `${Math.floor(s / 3600)}h ` : ''}${s >= 60 ? `${Math.floor((s % 3600) / 60)}m ` : ''}${s % 60}s`
+        const footer = [`; filament used [mm] = ${mm.toFixed(2)}`, `; filament used [g] = ${grams.toFixed(2)}`, `; total filament used [g] = ${grams.toFixed(2)}`, `; estimated printing time (normal mode) = ${clock}`]
+        writeFileSync(path, [STUB_MARKER, `; model ${summary.model.name}`, `; layers ${layers}`, `; estimated time ${summary.time_text}`, `; estimated filament ${summary.filament_g} g`, ...footer, ''].join('\n'))
         summary.gcode_path = path
       }
       return summary

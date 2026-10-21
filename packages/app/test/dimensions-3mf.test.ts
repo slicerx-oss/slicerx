@@ -43,7 +43,7 @@ describe('dimensions in the project file', () => {
         },
       ],
     })
-    expect(text(files.get('3D/3dmodel.model'))).toContain('<object id="4" type="model">')
+    expect(text(files.get('3D/3dmodel.model'))).toContain('<object id="4" type="model" name="obj_a">')
     expect(text(files.get('[Content_Types].xml'))).toContain('Extension="json"')
   })
 

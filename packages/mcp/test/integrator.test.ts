@@ -381,7 +381,8 @@ describe('.gcode.3mf', () => {
   })
 
   it('packs the plate the way Bambu Lab printers read it', () => {
-    const gcode = '; model label id: 101,102\nG28\nG1 X10 E1\n'
+    // The engine's header and footer lines, which the time, weight and filaments are read from.
+    const gcode = '; model label id: 101,102\n; estimated first layer printing time (normal mode) = 30s\nG28\nG1 X10 E1\n; filament used [mm] = 1000.00, 200.00\n; filament used [g] = 3.00, 0.50\n; total filament used [g] = 3.50\n; estimated printing time (normal mode) = 10m 0s\n'
     const summary: SliceSummary = {
       engine: 'sx',
       model: { name: 'bracket.stl' },
@@ -401,7 +402,16 @@ describe('.gcode.3mf', () => {
     expect(info).toMatch(/key="printer_model_id" value="N2S"/)
     expect(info).toMatch(/<object identify_id="102"/)
     expect(info).toMatch(/<filament id="2" tray_info_idx="" type="PETG" color="#00AE42" used_m="0.20" used_g="0.50"/)
+    expect(info).toMatch(/key="weight" value="3.50"/)
+    expect(info).toMatch(/key="first_layer_time" value="30.000000"/)
+    expect(info).toMatch(/<object identify_id="101" name="bracket.stl"/)
+    expect(info).toMatch(/<object identify_id="102" name="bracket.stl 2"/)
     expect(zip.text('Metadata/model_settings.config')).toMatch(/gcode_file" value="Metadata\/plate_1.gcode"/)
+    expect(zip.text('Metadata/model_settings.config')).toMatch(/pattern_bbox_file" value="Metadata\/plate_1.json"/)
+    // The settings it was sliced with, as the app's export writes them, and the plate's object boxes.
+    expect(JSON.parse(zip.text('Metadata/project_settings.config') ?? '{}')).toMatchObject({ filament_type: ['PLA', 'PETG'], printer_model: 'Bambu Lab A1' })
+    expect(JSON.parse(zip.text('Metadata/plate_1.json') ?? '{}')).toMatchObject({ filament_ids: [0, 1], version: 2 })
+    expect(zip.text('[Content_Types].xml')).toMatch(/Extension="json"/)
   })
 })
 

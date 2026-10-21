@@ -111,9 +111,11 @@ describe('a client models a cable clip as a design', () => {
     const saved = data<{ output: { path: string } }>(await h.call('slicerx_design_save', { design: d })).output
     const zip = readZip(readFileSync(saved.path))
     expect(zip.names()).toEqual(expect.arrayContaining(['3D/3dmodel.model', 'Metadata/model_settings.config', 'Metadata/slicerx_history.json']))
-    const file = JSON.parse(zip.text('Metadata/slicerx_history.json') ?? '{}') as { version: number; objects: { steps: unknown[] }[] }
-    expect(file.version).toBe(2)
-    expect(file.objects[0]?.steps).toHaveLength(5)
+    // The design timeline the app saves (version 3): one body, its five steps as features on it.
+    const file = JSON.parse(zip.text('Metadata/slicerx_history.json') ?? '{}') as { version: number; bodies: { object: string }[]; items: { kind: string; body?: string }[] }
+    expect(file.version).toBe(3)
+    expect(file.bodies).toHaveLength(1)
+    expect(file.items.filter((i) => i.kind === 'feature' && i.body === file.bodies[0]?.object)).toHaveLength(5)
 
     // Opened again, it replays to the same part.
     const opened = data<{ output: { designs: Summary[] } }>(await h.call('slicerx_design_open', { path: saved.path })).output.designs

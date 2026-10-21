@@ -6,28 +6,9 @@
 // coordinates, and the preview, the tower the engine reports and the no-print areas come back to the plate.
 import type { PlateObject, PrimeTowerPlacement } from '@slicerx/contracts'
 
-export type Origin = readonly [number, number]
+import { areaOrigin, point, type Origin } from '@slicerx/threemf/area'
 
-export function point(v: unknown): [number, number] | null {
-  if (Array.isArray(v) && v.length >= 2) {
-    const x = Number(v[0])
-    const y = Number(v[1])
-    return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null
-  }
-  if (typeof v === 'string') {
-    const m = /^\s*(-?\d+(?:\.\d+)?(?:e-?\d+)?)\s*x\s*(-?\d+(?:\.\d+)?(?:e-?\d+)?)\s*$/i.exec(v)
-    if (m) return [Number(m[1]), Number(m[2])]
-  }
-  return null
-}
-
-/** The front left corner of a printable area in machine coordinates: where the plate's 0, 0 sits on the machine. */
-export function areaOrigin(area: unknown): Origin {
-  const items = typeof area === 'string' ? area.split(',') : Array.isArray(area) ? (area as unknown[]) : []
-  const pts = items.map(point).filter((p): p is [number, number] => p !== null)
-  if (pts.length < 3) return [0, 0]
-  return [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1]))]
-}
+export { areaOrigin, point, type Origin }
 
 /** The width and depth of a printable area, or null when it names no area. */
 export function areaSize(area: unknown): { widthMm: number; depthMm: number } | null {
