@@ -35,7 +35,9 @@ import { planChoiceCard } from './plan-card'
 import { partHandlers } from './part-actions'
 import { MEMORY_CARDS } from './remember-chip'
 import { RUN_APPROVAL_CARDS, runCard, runChoiceCard } from './run-cards'
+import { cardWaits } from './card-waits'
 import './mimir.css'
+import './mimir-phone.css'
 
 /** The chat column's width: 420 px to start, 340 px at least and half the window at most. */
 export const CHAT_WIDTH = { start: 420, min: 340 } as const
@@ -250,6 +252,18 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+  // On a phone the view folds while a card waits for an answer and comes back once it is answered. The chat's top edge
+  // moves with it, so a reader who has scrolled up keeps the same lines where they were: a card's button just pressed
+  // stays under the finger. At the bottom the observer above keeps the end in view, which holds them still too.
+  const waits = phone && cardWaits(transcript)
+  const chatTop = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const el = body.current
+    if (!el) return
+    const top = el.getBoundingClientRect().top
+    if (chatTop.current !== null && !stick.current) el.scrollTop += top - chatTop.current
+    chatTop.current = top
+  }, [waits])
   // While a sheet waits and its record is scrolled out of the chat, a pill brings it back.
   const waiting = useSheetUi((s) => (sheetMode(s) === 'confirm' ? s.shown!.sheet.id : null))
   const [away, setAway] = useState(false)
@@ -283,6 +297,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       data-testid="mimir-chat"
       data-resizing={resizing || undefined}
       data-drop={dropping || undefined}
+      data-card-waits={waits || undefined}
       aria-label={ASSISTANT_NAME}
       style={{ '--w-chat': `${width}px` } as CSSProperties}
       onDragOver={(e) => {
