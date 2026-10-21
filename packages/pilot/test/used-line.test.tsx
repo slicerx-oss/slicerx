@@ -20,6 +20,17 @@ function view(events: PilotEvent[]) {
   return render(<TranscriptView transcript={s} showThinking={false} approvals={{ onApprove: async () => {}, onCancel: async () => {} }} />).container
 }
 
+describe('the model line', () => {
+  it('names a model by its plain name, and never shows a model id', () => {
+    const named = view([{ type: 'model_switch', model: 'claude-sonnet-5-5', label: 'Sonnet 5.5', reason: 'request' }])
+    expect(named.querySelector('[data-testid="mimir-model-switch"]')?.textContent).toBe('Using Sonnet 5.5 for this one.')
+    cleanup()
+    const raw = view([{ type: 'model_switch', model: 'gpt-5.6-terra', label: 'gpt-5.6-terra', reason: 'request' }])
+    expect(raw.querySelector('[data-testid="mimir-model-switch"]')).toBeNull()
+    expect(raw.textContent).not.toContain('gpt-5.6-terra')
+  })
+})
+
 describe('integrations in a reply', () => {
   it('a reply that used no integration shows no plugin text', () => {
     const el = view([...PLUGINS, { type: 'text', delta: 'Slot 2 has PETG.' }, { type: 'text_done' }])

@@ -15,7 +15,7 @@ import { sendLedger } from '../src/plate/send-ledger'
 import { compose } from '../src/plate/transform'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { plateFingerprint } from '../src/workspaces/mimir/print-run'
-import { SendCard } from '../src/workspaces/mimir/send-card'
+import { plateName, SendCard, sendRows } from '../src/workspaces/mimir/send-card'
 
 const SHA = 'ab'.repeat(32)
 const info: PrinterInfo = { id: 'bay-2', name: 'Bay 2', vendor: 'Bambu Lab', model: 'P1S', plugin: 'bambu-lan', nozzleCount: 1 }
@@ -78,16 +78,31 @@ afterEach(() => {
 })
 
 describe('the send card', () => {
-  it('shows the printer, each filament, the time, the grams and the file', async () => {
+  it('names the slot and the filament used apart, and the plate by its own name, never the file', () => {
+    const send = { printerId: 'bay-6', fileName: 'plate-native-slice-1.gcode.3mf', fileKind: 'gcode.3mf' as const, sha256: SHA, slots: { 1: 'A4' }, timeS: 960, grams: 1.8 }
+    const check = { slots: [{ id: 'A4', material: 'PLA', color: '#50fa7b' }] }
+    const rows = sendRows(send, check, 'Bay 6', 'Plate 1')
+    expect(rows).toEqual([['Printer', 'Bay 6'], ['Slot', 'A4, PLA, Green'], ['Time', '16m'], ['Filament used', '1.8 g'], ['Plate', 'Plate 1']])
+    expect(rows.flat().join(' ')).not.toContain('gcode')
+    // two filaments: each slot says which filament it feeds
+    const two = sendRows({ ...send, slots: { 2: 'A2', 1: 'A4' } }, check, 'Bay 6', 'Plate 1')
+    expect(two.map(([k]) => k)).toEqual(['Printer', 'Slot, filament 1', 'Slot, filament 2', 'Time', 'Filament used', 'Plate'])
+    expect(plateName([{ name: 'Brackets' }], 1)).toBe('Brackets')
+    expect(plateName([{ name: 'Brackets' }, { name: '  ' }], 2)).toBe('Plate 2')
+    expect(plateName([], 3)).toBe('Plate 3')
+  })
+
+  it('shows the printer, each filament, the time, the grams and the plate', async () => {
     await card()
     await checked()
     expect(screen.getByText('Print on Bay 2?')).toBeTruthy()
     const row = (k: string) => screen.getByTestId('mimir-send').querySelector(`[data-row="${k}"] .sheet-rec-v`)?.textContent
     expect(row('Printer')).toBe('Bay 2')
-    expect(row('Filament 1')).toBe('slot A2, PETG, Black')
+    expect(row('Slot')).toBe('A2, PETG, Black')
     expect(row('Time')).toBe('1h 0m')
-    expect(row('Filament')).toBe('12.0 g')
-    expect(row('File')).toBe('clip.gcode.3mf')
+    expect(row('Filament used')).toBe('12.0 g')
+    expect(row('Plate')).toBe(plateName(get().plates, 1))
+    expect(screen.getByTestId('mimir-send').textContent).not.toContain('clip.gcode.3mf')
     expect(screen.getByText('The bed is clear and the right build plate is on it')).toBeTruthy()
     expect(screen.getByTestId('mimir-send-cancel').textContent).toBe('Not now')
   })

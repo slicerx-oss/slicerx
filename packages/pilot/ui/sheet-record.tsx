@@ -90,7 +90,8 @@ export function SheetRecord({
           const used = valueOf(d.key, d.value)
           const yours = answer ? answer.changed.includes(d.key) : used !== d.value
           const guess = assumed.includes(d)
-          const tag = yours ? 'yours' : d.source === 'guess' && !guess && !answer ? 'kept' : TAG[d.source]
+          // a guess the person kept, or confirmed with the sheet, is no longer a guess
+          const tag = yours ? 'yours' : d.source === 'guess' && !guess && (!answer || answer.confirmed) ? 'kept' : TAG[d.source]
           const id = `sheet-rec-${sheet.id}-${d.key}`
           return (
             <li key={d.key} className="sheet-rec-row" data-dim={d.key} data-source={d.source} data-guess={guess ? '' : undefined}>

@@ -131,7 +131,7 @@ const backplate: ScriptStep[] = [
   {
     reasoning: 'The photo shows a round thermostat on a rectangular trim plate.',
     text: 'That looks like a round smart thermostat on a rectangular trim plate.',
-    calls: [{ name: 'pilot.ask', args: { title: 'Confirm model', question: 'Is this the thermostat on your wall?', choices: [{ id: 'same', label: 'Yes, that one' }, { id: 'other', label: 'A different model' }] } }],
+    calls: [{ name: 'pilot.ask', args: { title: 'Confirm the part', question: 'Is this the thermostat on your wall?', choices: [{ id: 'same', label: 'Yes, that one' }, { id: 'other', label: 'A different model' }] } }],
   },
   (messages) =>
     lastPick(messages) === 'other'

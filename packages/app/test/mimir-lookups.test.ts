@@ -62,7 +62,7 @@ describe('the scripted mimir', () => {
 
   it('confirms the thermostat, then shows the trim plate it found', async () => {
     const events = await play('Hey mimir, I need a wall mount for this thermostat. Can we print it?', 'same')
-    expect(events.find((e) => e.type === 'ask')).toMatchObject({ title: 'Confirm model' })
+    expect(events.find((e) => e.type === 'ask')).toMatchObject({ title: 'Confirm the part' })
     const lookup = events.find((e) => e.type === 'lookup')
     expect(lookup).toMatchObject({ lookup: { title: 'Reference found', fields: expect.arrayContaining([['Trim plate', '150.4 x 110.4 mm']]) } })
     // scripted sources are examples, never real pages

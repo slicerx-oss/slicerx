@@ -652,6 +652,11 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let shown = modelFor(opts.config, HUGINN)
     // the model last asked for; mimir cloud may answer with another one, which its reply names
     let asked = shown
+    // a move to another model shows only under a plain name the chat knows; never as a model id
+    const switched = (model: string): void => {
+      const label = modelLabel(model)
+      if (label) emit({ type: 'model_switch', model, label, reason: why })
+    }
     let fails = 0
     const called = new Map<string, string>()
     const watch = (e: PilotEvent) => {
@@ -694,7 +699,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       const model = modelFor(opts.config, tier)
       if (model !== asked) {
         asked = model
-        if (model !== shown) emit({ type: 'model_switch', model, label: modelLabel(model), reason: why })
+        if (model !== shown) switched(model)
         shown = model
       }
       const req = {
@@ -730,7 +735,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
             case 'model':
               // mimir cloud says which model answered (a stronger one on a hard turn, or the base one past its limits)
               if (ev.model !== shown) {
-                emit({ type: 'model_switch', model: ev.model, label: modelLabel(ev.model), reason: why })
+                switched(ev.model)
                 shown = ev.model
               }
               break

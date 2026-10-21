@@ -175,7 +175,7 @@ test.describe('the mimir tab', () => {
     await expect(page.getByTestId('mimir-attachment')).toHaveCount(0)
   })
 
-  test('the battle ravens stand still and faint behind the chat, centered and out of the way', async ({ page }) => {
+  test('the battle ravens stand still and faint behind the whole chat, centered and out of the way', async ({ page }) => {
     const ravens = page.getByTestId('mimir-ravens')
     await expect(ravens).toBeVisible()
     // one color at about 4%, so it reads as texture
@@ -200,6 +200,19 @@ test.describe('the mimir tab', () => {
     const c = (await page.getByTestId('mimir-composer').boundingBox())!
     const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid]')?.getAttribute('data-testid'), [c.x + c.width / 2, c.y + c.height / 2])
     expect(hit).toBe('mimir-composer')
+    // a reply comes in: the ravens stay where they were, as faint and as still, behind the whole conversation
+    await askTab(page, 'Hey mimir, I need a wall mount for this thermostat. Can we print it?')
+    const choice = page.getByTestId('mimir-choice')
+    await expect(choice).toBeVisible({ timeout: 30_000 })
+    await expect(ravens).toBeVisible()
+    const after = (await ravens.boundingBox())!
+    expect(Math.max(Math.abs(after.x - r.x), Math.abs(after.y - r.y), Math.abs(after.width - r.width), Math.abs(after.height - r.height))).toBeLessThanOrEqual(0.5)
+    expect(await ravens.evaluate((e) => e.getAnimations({ subtree: true }).length)).toBe(0)
+    await expect(ravens).toHaveAttribute('aria-hidden', 'true')
+    // scripted replies name no model, and no reply ever shows a model id
+    await expect(page.getByTestId('mimir-model-switch')).toHaveCount(0)
+    await expect(page.getByTestId('mimir-transcript')).not.toContainText(/gpt-|claude-|for this one\./)
+    await choice.getByRole('button', { name: 'A different model' }).click()
   })
 
   test("the top bar's button opens the tab and keeps its place there; Mod+/ opens it from anywhere", async ({ page }) => {
@@ -263,8 +276,8 @@ test.describe('the mimir tab', () => {
     const chips = choice.getByRole('button')
     const before = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
     await choice.getByRole('button', { name: 'Yes, that one' }).click()
-    // the ravens go once the conversation starts, so nothing shows behind a reply, and the bubble has no prompt glyph
-    await expect(page.getByTestId('mimir-ravens')).toHaveCount(0)
+    // the ravens stay behind the whole conversation, and the bubble has no prompt glyph
+    await expect(page.getByTestId('mimir-ravens')).toBeVisible()
     await expect(page.locator('.mimir-chat .bubble .pg')).toBeHidden()
     await expect(choice).toHaveAttribute('data-picked', 'same')
     const after = await chips.evaluateAll((els) => els.map((e) => e.getBoundingClientRect().toJSON() as DOMRect))
