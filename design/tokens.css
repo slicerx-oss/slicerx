@@ -57,9 +57,16 @@
   --red: #ff5555;
   --blue: #82aaff;
   /* the viewport gizmo's axis colors, shared with the X, Y and Z number fields */
-  --axis-x: #ff6b6b;
+  --axis-x: #ff928a;
   --axis-y: #51cf66;
-  --axis-z: #4dabf7;
+  --axis-z: #57b9ff;
+  /* the rest of the move, rotate and scale handles: the scale gizmo's uniform corners, a hovered or dragged handle,
+     the handle a held key pins, and the thin outline under every handle. Every handle color stays at least 9:1 off
+     the outline, so on any bed, plate, shadow or part one of the two keeps 3:1 (the scheme does not change them). */
+  --axis-uniform: #8be9fd;
+  --gizmo-hot: #ffe066;
+  --gizmo-pinned: #b4b4b4;
+  --gizmo-halo: #08090c;
   --grad-from: var(--purple);
   --grad-to: var(--pink);
   --grad-angle: 135deg;

@@ -162,7 +162,7 @@ void main(){
 }`
 
 /** How each build plate surface looks: base color, roughness, how coarse its texture is, and a touch of metal. */
-const PLATE_SURFACES: Record<Exclude<PlateStyle, 'grid'>, { color: string; roughness: number; grain: number; metalness: number }> = {
+export const PLATE_SURFACES: Record<Exclude<PlateStyle, 'grid'>, { color: string; roughness: number; grain: number; metalness: number }> = {
   'textured-pei': { color: '#7a6a4f', roughness: 0.7, grain: 1, metalness: 0.2 },
   'smooth-pei': { color: '#8a7552', roughness: 0.32, grain: 0.12, metalness: 0.25 },
   cool: { color: '#2c2f36', roughness: 0.5, grain: 0.25, metalness: 0 },

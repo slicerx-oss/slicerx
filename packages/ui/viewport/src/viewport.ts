@@ -48,7 +48,7 @@ import { Painter, type PaintHit } from './painter'
 import { ScaleGizmo } from './gizmo'
 import { alongAxis, arrowDir, ARROW_PX, MoveArrows, rayToSegment, type ArrowAxis } from './arrows'
 import { applyToAll } from './group'
-import { RingSet, angleAround, pickRing, rayPlane, ringAxes, rotateAbout, snapAngle, turnVector, unit, unwrapAngle, type RingAxis, type RotateSpace } from './rings'
+import { RingSet, angleAround, axisRingColors, pickRing, rayPlane, ringAxes, rotateAbout, snapAngle, turnVector, unit, unwrapAngle, type RingAxis, type RotateSpace } from './rings'
 import { CutGizmo, CutPreview, extentAlong, movePlane, tiltAxes, type CutKeep } from './cutplane'
 import { DimensionLayer, EdgePreview, OpPreviewLook, PushPreview, SketchLayer, fromPlane, rayOnPlane, setSketchResolution, type DimensionMark, type SketchCursor, type SketchScene, type V2 } from './cadtools'
 import { clampScale, factorsFor, handleAxis, handleLocal, minFactorFor, nearestOnLine, pivotFor, ratioLine, ratioPivotFor, ratioPlane, ratioPoint, scaleTransform, snapScale, type HandleId, type V3 } from './scaling'
@@ -389,6 +389,8 @@ class ViewportImpl implements Viewport {
   private arrowDrag: { entry: ObjectEntry; group: Map<string, number[]> | null; axis: ArrowAxis; start: number[]; origin: [number, number, number]; t0: number; minDelta: number; delta: number } | null = null
   private readonly cutGizmo = new CutGizmo()
   private readonly cutRings = new RingSet<'u' | 'v'>(['u', 'v'], { u: '#ff79c6', v: '#bd93f9' })
+  /** The move, rotate and scale handles and the cut plane's tilt rings, drawn over the graded frame. */
+  private readonly handleGroups = [this.gizmo.group, this.moveArrows.group, this.rotRings.group, this.cutRings.group]
   private readonly cutPreview = new CutPreview()
   private cut: { entry: ObjectEntry; point: V3; normal: V3; keep: CutKeep; place: boolean } | null = null
   private cutDrag: ({ kind: 'move'; point0: V3; extent: [number, number]; t0: number | null; mmPerPx: number; x0: number; y0: number } | (RingDrag & { kind: 'tilt'; ring: 'u' | 'v'; normal0: V3 })) | null = null
@@ -927,7 +929,8 @@ class ViewportImpl implements Viewport {
     const firstPreviewFrame = this.previewSetAt !== null && this.pathsShown()
     this.stage.bakePendingContact()
     this.stage.placeViewLights(this.camera)
-    this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++ })
+    // the handles draw over the finished picture, so their contrast colors reach the screen untouched by the grade
+    this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++, overlay: this.handleGroups })
     // the new decor holds its programs now, so what it replaced can go without them being compiled again
     this.stage.releaseRetired()
     const swap = this.hold.takeSwap()
@@ -3026,6 +3029,12 @@ class ViewportImpl implements Viewport {
     this.guides.setColor(t.scene.selection)
     this.brim.setColors(t.scene)
     this.cutRings.setColor('v', t.scene.selection)
+    // the move, rotate and scale handles, and the cut plane's tilt rings' hot and outline colors
+    this.gizmo.setColors(t.scene)
+    this.moveArrows.setColors(t.scene)
+    for (const [id, c] of Object.entries(axisRingColors(t.scene)) as [RingAxis, string][]) this.rotRings.setColor(id, c)
+    this.rotRings.setHandleColors(t.scene)
+    this.cutRings.setHandleColors(t.scene)
     this.sketchLayer.setAccent(t.scene.selection)
     this.opLook.setColors(t.scene.addPreview, t.scene.overhangRed, lightStudio(t.scene.bgTop))
     this.sketchLight = lightStudio(t.scene.bgTop)
