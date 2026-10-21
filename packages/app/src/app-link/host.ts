@@ -52,11 +52,17 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
       return
     }
     inFlight.add(c.client.id)
+    // The guard ends before the answer goes out: the hub hands the answer to the agent before it tells this window it
+    // delivered it, so an agent that calls again at once can reach this window while the reply is still settling.
+    const answer = (out: Parameters<BridgeAppLink['reply']>[1]) => {
+      inFlight.delete(c.client.id)
+      return link.reply(c.callId, out)
+    }
     runCall(c.method, c.args, c.client)
       .then(
-        (value) => link.reply(c.callId, { ok: true, value: value ?? null }),
+        (value) => answer({ ok: true, value: value ?? null }),
         (e: unknown) =>
-          link.reply(c.callId, {
+          answer({
             ok: false,
             code: e instanceof LinkError ? e.code : 'app_error',
             message: e instanceof Error ? e.message : String(e),
@@ -64,7 +70,6 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
           }),
       )
       .catch(() => undefined)
-      .finally(() => inFlight.delete(c.client.id))
   })
   const stopAsk = link.onAsk((a) => {
     // A client asks again only after its last question ended, so a repeat replaces it in place.
