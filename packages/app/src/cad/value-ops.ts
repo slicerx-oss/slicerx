@@ -24,6 +24,13 @@ export function setValue(name: string, expr: string): void {
   set({ namedValues: at < 0 ? [...values, next] : values.map((v, i) => (i === at ? next : v)) })
 }
 
+/** Adds a new value `name`. Throws with a sentence when the name cannot be used, one already taken included. */
+export function addValue(name: string, expr: string): void {
+  const why = validName(name, get().namedValues.map((v) => v.name))
+  if (why) throw new Error(why)
+  setValue(name, expr)
+}
+
 /** Every entry on every plate, the one in view included. */
 function allEntries(): PlateEntry[] {
   const s = get()

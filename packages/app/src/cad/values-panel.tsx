@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { get, useApp } from '../state/store'
 import { lengthText } from './units'
 import { Actions, close, errorText, Message, Note, Shell } from './panel-kit'
-import { removeValue, setValue, stepsUsing } from './value-ops'
+import { addValue, removeValue, setValue, stepsUsing } from './value-ops'
 import { builtIns, valueTable } from './value-table'
 
 // values are mm; with inches shown, the inch value follows
@@ -69,7 +69,7 @@ export function ValuesPanel() {
   const [note, setNote] = useState<string | null>(null)
   const add = () => {
     try {
-      setValue(name.trim(), expr.trim() || '0')
+      addValue(name.trim(), expr.trim() || '0')
       setName('')
       setExpr('')
       setNote(null)
