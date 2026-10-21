@@ -1,0 +1,56 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The mimir tab on a phone: room for a card that waits for an answer, and a touch target of at least 44 x 44 px
+   (--h-lg) for everything a finger presses in the tab. Where the look should stay compact, the control keeps its size
+   and an invisible box around it takes the touch (a ::before, or padding offset by a negative margin where the control
+   clips its own overflow). Nothing here changes on press, so a pressed control never moves. */
+
+/* While a card waits for the person (a print to approve, a question or a plan to answer) the view folds to a strip,
+   so the card fits whole in the chat with its buttons above the composer. The view comes back once it is answered.
+   A waiting size sheet keeps the view, since its drawing is there. */
+:root[data-phone] .studio[data-model-mode="mimir"]:has(> .mimir-chat[data-card-waits]) { --mimir-view-h: 20%; }
+
+/* the header: the buttons keep their 44 px and the design name gives way first, then the chip */
+:root[data-phone] .mimir-chat-head { gap: var(--s-1); padding: 0 var(--s-1) 0 var(--s-3); }
+:root[data-phone] .mimir-chat-head .sx-btn { flex: none; }
+:root[data-phone] .mimir-chat-head .mimir-chat-scripted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* the message box: one line is 44 px, six lines at most */
+:root[data-phone] .mimir-chat .composer-row { --composer-lh: 24px; --composer-pad: 10px; }
+:root[data-phone] .mimir-chat .composer-text { height: calc(var(--composer-lh) + 2 * var(--composer-pad)); font-size: 16px; }
+:root[data-phone] .mimir-chat .composer-row > .sx-btn { margin-bottom: 0; }
+
+/* the view's buttons, as on the phone's Model tab */
+:root[data-phone] .studio[data-model-mode="mimir"] .hud .sx-btn[data-icon-only] { width: var(--h-lg); height: var(--h-lg); }
+/* the timeline's tab: its touch box reaches up into the view, never down over the chat */
+:root[data-phone] .studio[data-model-mode="mimir"] .sx-edge-tab[data-side="bottom"]::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: var(--h-lg); }
+/* the lookup cards over the view */
+:root[data-phone] .mimir-lookup-h .sx-btn { position: relative; }
+:root[data-phone] .mimir-lookup-h .sx-btn::before { content: ''; position: absolute; inset: calc((100% - var(--h-lg)) / 2); }
+:root[data-phone] .mimir-lookup-more { position: relative; }
+:root[data-phone] .mimir-lookup-more::before { content: ''; position: absolute; inset: calc((100% - var(--h-lg)) / 2) 0; }
+:root[data-phone] .mimir-lookup-s { padding: 14px 0; margin: -14px 0; }
+
+/* the drawing's numbered callouts: a 44 px circle around each takes the touch */
+.mimir-drawing .mimir-callout > circle.mimir-callout-hit { fill: transparent; stroke: none; }
+
+/* in the conversation */
+:root[data-phone] .mimir-chat .think-h { position: relative; }
+:root[data-phone] .mimir-chat .think-h::before { content: ''; position: absolute; inset: calc((100% - var(--h-lg)) / 2) 0; }
+:root[data-phone] .mimir-chat .tfold { min-height: var(--h-lg); }
+:root[data-phone] .mimir-chat .part-main { min-height: var(--h-lg); }
+/* chips keep their look; their touch boxes meet across the row gap */
+:root[data-phone] .mimir-chat :is(.choice-a, .follow-reply) { gap: var(--s-3); }
+:root[data-phone] .mimir-chat :is(.choice-chip, .sugg) { position: relative; }
+:root[data-phone] .mimir-chat :is(.choice-chip, .sugg)::before { content: ''; position: absolute; inset: calc((100% - var(--h-lg)) / 2) 0; }
+:root[data-phone] .mimir-chat .lookup-rec-s { position: relative; }
+:root[data-phone] .mimir-chat a.lookup-rec-s::before { content: ''; position: absolute; inset: calc((100% - var(--h-lg)) / 2) 0; }
+:root[data-phone] .mimir-chat .sheet-rec-src { position: relative; }
+:root[data-phone] .mimir-chat .sheet-rec-src::before { content: ''; position: absolute; inset: calc((100% - var(--h-lg)) / 2) 0; }
+:root[data-phone] .mimir-chat .att-x { position: relative; }
+:root[data-phone] .mimir-chat .att-x::before { content: ''; position: absolute; inset: calc((100% - var(--h-lg)) / 2); }
+/* the size fields on a sheet or plan: 44 px tall to type in */
+:root[data-phone] .mimir-chat .sheet-rec-field, :root[data-phone] .mimir-chat .plan-rec .sheet-rec-field { height: auto; }
+:root[data-phone] .mimir-chat .sheet-rec-field .sx-scrub { height: auto; }
+:root[data-phone] .mimir-chat .sheet-rec-field .sx-scrub-input { height: var(--h-lg); font-size: 16px; }
+:root[data-phone] .mimir-chat .sheet-rec-foot .sx-btn { min-height: var(--h-lg); }
