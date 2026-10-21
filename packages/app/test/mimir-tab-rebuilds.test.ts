@@ -24,7 +24,7 @@ import { registerCommands, registerCommandsLater } from '../src/commands/registr
 import { NEUTRAL } from '../src/edition'
 import { registerMimirCloud } from '../src/pilot-connect/cloud'
 import { get, set } from '../src/state/store'
-import { liveCommands, resetTabMimir, tabMimir } from '../src/workspaces/mimir/session'
+import { COMMANDS_WAIT_MS, GONE_REPLY, liveCommands, resetTabMimir, tabMimir } from '../src/workspaces/mimir/session'
 
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] })
 const host = { kind: 'desktop', capabilities: {}, slicer: { loadParts: async (name: string, _parts: MeshPart[]) => handle(name) }, build: { version: '0.0.0-test' } } as unknown as Host
@@ -99,6 +99,50 @@ describe('the mimir tab runtime across a layout trip', () => {
     const cmd = liveCommands().find((c) => c.id === 'goal-strong')
     await cmd?.run()
     expect(ran).toEqual(['goal-strong again'])
+  })
+
+  it("a command the runtime was made with runs only while it is the same, there and on", async () => {
+    const [made] = liveCommands().filter((c) => c.id === 'goal-strong')
+    const goal = builtins('desktop')[1]!
+    // the same command registered again: the live one runs
+    let off = registerCommands([{ ...goal, run: () => void ran.push('goal-strong same') }])
+    expect(await made!.run()).toBeUndefined()
+    expect(ran).toEqual(['goal-strong same'])
+    off()
+    // a changed one under the same id is refused
+    off = registerCommands([{ ...goal, title: 'Goal: Stronger', run: () => void ran.push('goal-strong changed') }])
+    expect(await made!.run()).toEqual({ status: 'error', message: GONE_REPLY })
+    off()
+    // gone: refused the same way
+    offBuiltins?.()
+    offBuiltins = null
+    expect(await made!.run()).toEqual({ status: 'error', message: GONE_REPLY })
+    // the same command turned off is refused
+    off = registerCommands([{ ...goal, enabled: () => false, run: () => void ran.push('goal-strong off') }])
+    expect(await made!.run()).toEqual({ status: 'error', message: 'Goal: Strong is not available right now.' })
+    off()
+    expect(ran).toEqual(['goal-strong same'])
+  })
+
+  it('commands that never finish loading hold the runtime back only a short while', async () => {
+    resetTabMimir()
+    let release: () => void = () => undefined
+    const off = registerCommandsLater(() => new Promise<readonly CommandSpec[]>((resolve) => (release = () => resolve([]))))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      let done = false
+      const p = tabMimir(host, NEUTRAL).then((pilot) => ((done = true), pilot))
+      await vi.advanceTimersByTimeAsync(COMMANDS_WAIT_MS - 100)
+      expect(done).toBe(false)
+      expect(made.count).toBe(0)
+      await vi.advanceTimersByTimeAsync(200)
+      expect(await p).toBeTruthy()
+      expect(made.count).toBe(1)
+    } finally {
+      vi.useRealTimers()
+      release()
+      off()
+    }
   })
 
   it('a command mimir has as a tool arriving (pairing a printer) makes the runtime again, once', async () => {
