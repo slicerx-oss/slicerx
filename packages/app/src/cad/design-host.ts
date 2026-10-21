@@ -5,9 +5,10 @@
 // design waits off the plate until its first step makes a body. A first body built off the bed (around the origin, the
 // bed's front left corner), or with its brim or skirt off it or in an excluded area, moves once to the middle of the
 // plate, or the first free spot, like a person's move: from then on the design's coordinates are the plate's, and the
-// call that made it says how far it moved. A later step or replay that leaves the part, or what prints around it, off
-// the bed or in an excluded area lands it again the same way, in the same undo step, and says so; a part that still
-// prints where it stands, or a locked one, stays put.
+// call that made it says how far it moved. A later step or replay that takes a part that printed on the bed, or what
+// prints around it, off the bed or into an excluded area lands it again the same way, in the same undo step, and says
+// so. A part that still prints where it stands stays put; one parked off the bed before the step, or a locked one,
+// stays where it is, and the step says it is off the bed.
 import { HISTORY_VERSION, appendStep, stepId, type Design, type DesignCommit, type DesignHost, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
@@ -264,9 +265,10 @@ export function appDesignHost(loader: Loader): DesignHost {
 
   /**
    * For an edit of design `id` on the plate: the land hook applyHistory asks at the commit, and what it did. The part
-   * lands again, with the landing a new part gets, only when with its new shape it, or what prints around it, is off
-   * the bed or in an excluded area (printsOnBed). A locked part, or one with no room anywhere, stays where it is, and
-   * the edit's result says so.
+   * lands again, with the landing a new part gets, only when it printed on the bed before the edit (printsOnBed, with
+   * its old parts where it stands now) and with its new shape it, or what prints around it, no longer does. A part
+   * already off the bed before the edit was parked there, so it stays; so does a locked part, or one with no room
+   * anywhere. Each says so in the edit's result.
    */
   function afterEdit(id: string): { land: (latest: PlateEntry, parts: PlateEntry['parts']) => Mat4 | undefined; landed: () => Landed | undefined } {
     let out: Landed | undefined
@@ -275,6 +277,10 @@ export function appDesignHost(loader: Loader): DesignHost {
       const s = get()
       const item = { id, parts, transform: [...latest.transform] }
       if (printsOnBed(item, s.bed)) return undefined
+      if (!printsOnBed({ parts: latest.parts, transform: latest.transform }, s.bed)) {
+        out = { offBed: true, edit: true, parked: true }
+        return undefined
+      }
       if (latest.locked) {
         out = { offBed: true, edit: true, locked: true }
         return undefined

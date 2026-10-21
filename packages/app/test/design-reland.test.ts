@@ -1,10 +1,10 @@
 // @vitest-environment node
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// A part made in the tab stands on the bed, then its skirt grows (a wider skirt picked for the plate) so that it reaches
-// past the bed edge. The next step, a hole made another size through the tab's geom.hole, lands it again the way a new
-// part lands, says how far it moved, and reads the hole back where it went. Runs against the geometry engine (live
-// wasm when built, recorded replies otherwise).
+// A part made in the tab stands on the bed with room for its skirt. A tab joined to it through the tab's geom.extrude
+// pushes the skirt past the bed edge, so the part lands again the way a new part lands, and the step says how far it
+// moved; a hole made another size through geom.hole then finds the hole where the part went. Runs against the geometry
+// engine (live wasm when built, recorded replies otherwise).
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { designToolset } from '@slicerx/mcp/toolset'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -22,8 +22,8 @@ const skirt = (reach: number): PrintMargins => ({ grow: () => 0, reach: () => re
 
 afterEach(() => setMarginSource(() => NO_MARGINS))
 
-describe('a hole edit on a part whose skirt now reaches off the bed', () => {
-  it('lands the part again, says so, and reads the hole back where it moved', { timeout: 60_000 }, async () => {
+describe('a step through the tools of the tab that pushes the skirt of a part off the bed', () => {
+  it('lands the part again, says so, and the next step works on it where it went', { timeout: 60_000 }, async () => {
     set({ plate: [], selection: null, selectedIds: [], historyEdit: null, bed: { widthMm: 256, depthMm: 256, heightMm: 256 } })
     setMarginSource(() => skirt(10))
     const tools = new Map(designToolset(appDesignHost(loader), {}, {}).map((t) => [t.name, t]))
@@ -40,17 +40,18 @@ describe('a hole edit on a part whose skirt now reaches off the bed', () => {
     await run('geom.extrude', { design: d, shape: { type: 'circle', diameterMm: 6 }, frame: { origin: [0, 0, 5], normal: [0, 0, 1] }, placement: { center: [215, 115] }, distance_mm: 5, operation: 'cut' })
     const e = () => get().plate.find((p) => p.id === d)!
     expect(printsOnBed(e(), get().bed)).toBe(true)
-    // a 30 mm skirt now: it reaches 260 mm on the 256 mm bed
-    setMarginSource(() => skirt(30))
-    expect(printsOnBed(e(), get().bed)).toBe(false)
-    const r = await run<{ landed?: string; before: { center: number[] }; after: { center: number[]; diameterMm: number } }>('geom.hole', { design: d, center: [215, 115, 5], axis: [0, 0, -1], diameter_mm: 3.4, counterbore: { diameter_mm: 6.5, depth_mm: 3 } })
+    // a tab out to 250 mm: the skirt would reach 260 mm on the 256 mm bed
+    const tab = await run<{ landed?: string }>('geom.extrude', { design: d, shape: { type: 'rectangle', widthMm: 20, heightMm: 20 }, placement: { center: [240, 115] }, distance_mm: 5, operation: 'join' })
+    const note = 'Clip did not fit on the bed where it stood, so it moved by (-97, 13) mm.'
+    expect(tab.summary).toContain(note)
+    expect(tab.output.landed).toBe(note)
     expect(printsOnBed(e(), get().bed)).toBe(true)
     const b = bounds(e().parts, e().transform)!
     expect([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2]).toEqual([128, 128])
-    expect(r.summary).toContain('Clip did not fit on the bed where it stood, so it moved by (-87, 13) mm.')
-    expect(r.output.landed).toBe('Clip did not fit on the bed where it stood, so it moved by (-87, 13) mm.')
-    expect(r.output.before.center).toEqual([215, 115, 5])
-    r.output.after.center.forEach((v, k) => expect(v).toBeCloseTo([128, 128, 5][k]!, 3))
+    // the hole moved with the part, from (215, 115) to (118, 128); a step that keeps the part on the bed moves nothing
+    const r = await run<{ landed?: string; after: { center: number[]; diameterMm: number } }>('geom.hole', { design: d, center: [118, 128, 5], axis: [0, 0, -1], diameter_mm: 3.4, counterbore: { diameter_mm: 6.5, depth_mm: 3 } })
+    expect(r.output.landed).toBeUndefined()
+    r.output.after.center.forEach((v, k) => expect(v).toBeCloseTo([118, 128, 5][k]!, 3))
     expect(r.output.after.diameterMm).toBeCloseTo(3.4, 3)
   })
 })
