@@ -70,6 +70,20 @@ const NAMES: readonly [string, string][] = [
   ['Pink', '#e91e63'],
   ['Brown', '#6d4c41'],
   ['Beige', '#e6d3b3'],
+  // Second anchors for names whose common filament colors sit far from the first one: bright and amber oranges, gold,
+  // olive, pale and bright yellows, hot and light pinks, a redder brown, and the plain web teal and navy.
+  ['Orange', '#ff8000'],
+  ['Orange', '#ffa500'],
+  ['Gold', '#d4af37'],
+  ['Gold', '#ffd700'],
+  ['Olive', '#808000'],
+  ['Pink', '#ff69b4'],
+  ['Pink', '#ffc0cb'],
+  ['Brown', '#8b4513'],
+  ['Yellow', '#ffff00'],
+  ['Yellow', '#fff59d'],
+  ['Teal', '#008080'],
+  ['Navy', '#000080'],
 ]
 
 /** A #rrggbb color in CIELAB (D65), where distance follows how far apart people see two colors. Null when unreadable. */
