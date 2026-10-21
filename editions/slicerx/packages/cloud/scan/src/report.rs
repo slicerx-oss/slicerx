@@ -76,8 +76,17 @@ pub struct ScanReport {
     pub size_bytes: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub triangle_count: Option<u64>,
+    /// Where the model prints, Z up: the bounds of one plate with the build item and component transforms applied.
+    /// A project on several plates is measured on its largest, never across them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bounds_mm: Option<Bounds>,
+    /// The plate `bounds_mm` is for, numbered as the file numbers them (1 for an STL or a plain 3MF). The library
+    /// keeps a 3MF's size only from a report that names it: older scans measured the first plate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bounds_plate: Option<u32>,
+    /// How many plates the file has.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plate_count: Option<u32>,
     /// Entries removed from the archive, as `name: reason`.
     pub stripped: Vec<String>,
     pub scanner: ScannerInfo,
