@@ -3,14 +3,17 @@
 // The app's design host: a design is an object on the plate, and a step made through the host lands in its history
 // the way a person's edit does, in one store update, undoable and editable in Model's tree and timeline. An empty
 // design waits off the plate until its first step makes a body. A first body built off the bed (around the origin, the
-// bed's front left corner) moves once to the middle of the plate, or the first free spot, like a person's move: from
-// then on the design's coordinates are the plate's, and the call that made it says how far it moved.
+// bed's front left corner), or with its brim or skirt off it or in an excluded area, moves once to the middle of the
+// plate, or the first free spot, like a person's move: from then on the design's coordinates are the plate's, and the
+// call that made it says how far it moved. A later step or replay that leaves the part, or what prints around it, off
+// the bed or in an excluded area lands it again the same way, in the same undo step, and says so; a part that still
+// prints where it stands, or a locked one, stays put.
 import { HISTORY_VERSION, appendStep, stepId, type Design, type DesignCommit, type DesignHost, type FaceFrame, type History, type HistoryMesh, type Landed, type Mat4, type Step, type StepParams } from '@slicerx/cad-history'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { brandAccent } from '../edition'
 import { geom } from '../geom/client'
 import { getArrangeOptions } from '../plate/edit'
-import { landOnBed, placedOnBed } from '../plate/arrange'
+import { landOnBed, printsOnBed } from '../plate/arrange'
 import { identity } from '../plate/transform'
 import { get, markStale, set, type PlateEntry } from '../state/store'
 import { applyHistory, runReplay } from './history/ops'
@@ -123,8 +126,12 @@ export function appDesignHost(loader: Loader): DesignHost {
         Object.assign(d, host.get(d.id))
         return
       }
-      if (d.history.steps.length) await applyHistory(loader, d.id, d.history, undefined, guard)
-      else {
+      let landed: Landed | undefined
+      if (d.history.steps.length) {
+        const after = afterEdit(d.id)
+        await applyHistory(loader, d.id, d.history, undefined, guard, undefined, after.land)
+        landed = after.landed()
+      } else {
         // Every step undone: the object goes back to its base parts, or off the plate while it has none.
         const base = d.history.base
         if (!base.length) {
@@ -140,7 +147,7 @@ export function appDesignHost(loader: Loader): DesignHost {
         markStale()
       }
       redo.set(d.id, d.redo)
-      Object.assign(d, host.get(d.id))
+      Object.assign(d, host.get(d.id), landed ? { landed } : {})
     },
 
     sketch(id) {
@@ -183,10 +190,12 @@ export function appDesignHost(loader: Loader): DesignHost {
       moved = await place(d.id, d.name, next, w.transform, step.id, guard, capture)
       if (!committed) empty.delete(d.id)
     } else {
-      await applyHistory(loader, d.id, next, step.id, guard, capture).catch((e: unknown) => {
+      const after = afterEdit(d.id)
+      await applyHistory(loader, d.id, next, step.id, guard, capture, after.land).catch((e: unknown) => {
         if (e instanceof Error && 'code' in e && e.code === 'stale_body') throw e
         throw new Error(`The step did not go through: ${e instanceof Error ? e.message : String(e)}. The design is unchanged.`)
       })
+      moved = after.landed()
     }
     if (committed) {
       if (moved) (committed as DesignCommit).design.landed = moved
@@ -240,18 +249,47 @@ export function appDesignHost(loader: Loader): DesignHost {
   }
 
   /**
-   * Where a new body goes on the shown plate: where it was built when that is on the bed, else the middle of the bed or
-   * the first free spot. A body with no room anywhere stays where it was built, and says so.
+   * Where a new body goes on the shown plate: where it was built when it prints there (printsOnBed: on the bed, and its
+   * brim and skirt too), else the middle of the bed or the first free spot. A body with no room anywhere stays where it
+   * was built, and says so.
    */
   function landing(id: string, parts: PlateEntry['parts'], transform: Mat4): { transform: Mat4; moved?: Landed } {
     const s = get()
     const item = { id, parts, transform: [...transform] }
-    if (placedOnBed(item, s.bed)) return { transform: item.transform }
+    if (printsOnBed(item, s.bed)) return { transform: item.transform }
     const to = landOnBed(item, s.plate.filter((p) => p.id !== id), s.bed, getArrangeOptions())
     if (!to) return { transform: item.transform, moved: { offBed: true } }
-    const r2 = (v: number) => Math.round(v * 100) / 100
-    return { transform: to, moved: { dxMm: r2((to[12] ?? 0) - (transform[12] ?? 0)), dyMm: r2((to[13] ?? 0) - (transform[13] ?? 0)) } }
+    return { transform: to, moved: shiftOf(transform, to) }
+  }
+
+  /**
+   * For an edit of design `id` on the plate: the land hook applyHistory asks at the commit, and what it did. The part
+   * lands again, with the landing a new part gets, only when with its new shape it, or what prints around it, is off
+   * the bed or in an excluded area (printsOnBed). A locked part, or one with no room anywhere, stays where it is, and
+   * the edit's result says so.
+   */
+  function afterEdit(id: string): { land: (latest: PlateEntry, parts: PlateEntry['parts']) => Mat4 | undefined; landed: () => Landed | undefined } {
+    let out: Landed | undefined
+    const land = (latest: PlateEntry, parts: PlateEntry['parts']): Mat4 | undefined => {
+      out = undefined
+      const s = get()
+      const item = { id, parts, transform: [...latest.transform] }
+      if (printsOnBed(item, s.bed)) return undefined
+      if (latest.locked) {
+        out = { offBed: true, edit: true, locked: true }
+        return undefined
+      }
+      const to = landOnBed(item, s.plate.filter((p) => p.id !== id), s.bed, getArrangeOptions())
+      out = to ? { ...shiftOf(latest.transform, to), edit: true } : { offBed: true, edit: true }
+      return to ?? undefined
+    }
+    return { land, landed: () => out }
   }
 
   return host
 }
+
+const r2 = (v: number) => Math.round(v * 100) / 100
+
+/** How far a landing moved a part, mm, in X and Y. */
+const shiftOf = (from: Mat4, to: Mat4) => ({ dxMm: r2((to[12] ?? 0) - (from[12] ?? 0)), dyMm: r2((to[13] ?? 0) - (from[13] ?? 0)) })

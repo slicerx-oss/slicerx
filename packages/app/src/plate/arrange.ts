@@ -10,7 +10,7 @@
 import type { Bed } from '@slicerx/contracts'
 import { excludedPolygons } from '../viewport/bed-exclude'
 import { bedCircle, boxInBed } from './bed-shape'
-import { bounds, compose, decompose, multiply, type Box, type Mat4 } from './transform'
+import { bounds, compose, decompose, fitsBed, multiply, reachFrom, type Box, type Mat4 } from './transform'
 
 export interface ArrangeItem {
   id: string
@@ -322,6 +322,26 @@ export function placedOnBed(item: Pick<ArrangeItem, 'parts' | 'transform'>, bed:
   if (!boxInBed(bed, b.min[0], b.min[1], b.max[0], b.max[1], -ON_BED_TOL_MM)) return false
   const t = ON_BED_TOL_MM
   return !avoid.some((z) => b.min[0] < z.x + z.w - t && z.x + t < b.max[0] && b.min[1] < z.y + z.h - t && z.y + t < b.max[1])
+}
+
+/** True when what prints around the object (brim, raft, support pad, skirt) goes past the bed edge or onto an excluded area. */
+export function printPastBed(b: Box, bed: Bed, margins: PrintMargins, outlineReach?: number): boolean {
+  const reach = margins.reach(printSizeOf(b))
+  const grown: Box = { min: [b.min[0] - reach, b.min[1] - reach, b.min[2]], max: [b.max[0] + reach, b.max[1] + reach, b.max[2]] }
+  // On a round bed what prints around the outline is a band of `reach` mm, so the outline plus the reach must stay inside the circle.
+  if (!fitsBed(grown, bed, 0.01, outlineReach === undefined ? undefined : outlineReach + reach)) return true
+  return [...avoid, ...margins.keepOut].some((z) => grown.min[0] < z.x + z.w && z.x < grown.max[0] && grown.min[1] < z.y + z.h && z.y < grown.max[1])
+}
+
+/**
+ * True when an object prints where it stands: it is placed on the bed (placedOnBed), and what prints around it (brim,
+ * raft, support pad, skirt, by the installed margins) stays on the bed and off the excluded areas and the prime tower.
+ */
+export function printsOnBed(item: Pick<ArrangeItem, 'parts' | 'transform'>, bed: Bed, margins: PrintMargins = marginSource()): boolean {
+  if (!placedOnBed(item, bed)) return false
+  const b = bounds(item.parts, item.transform)
+  if (!b) return true
+  return !printPastBed(b, bed, margins, bed.round ? reachFrom(item.parts, item.transform, bed.widthMm / 2, bed.depthMm / 2) : undefined)
 }
 
 /** The room a landed part keeps from the bed edge and excluded areas when the plate gives no brim or skirt, mm. */

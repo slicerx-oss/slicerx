@@ -49,7 +49,7 @@ export function modelingTools(deps: { files: ModelingFiles; designs?: DesignHost
   }
   const added = (d: Design, verb: string) => {
     const s = d.history.steps[d.history.steps.length - 1]
-    return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed)}` : ''}`, output: designSummary(d) }
+    return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
   }
   /** The text laid out on the step's frame against the picked face's outline, both in that frame. */
   const textFitOn = async (ds: DesignHost, d: Design, f: { part: number; triangle: number }, frame: FaceFrame, at: V3, text: string, sizeMm: number) => {

@@ -208,7 +208,7 @@ function oneOf(i: { model?: string | undefined; design?: string | undefined }): 
 /** What a modeling tool returns for a design: the step it added and the design as it is now. */
 function stepOut(d: Design, verb: string): { summary: string; output: Record<string, unknown> } {
   const s = d.history.steps[d.history.steps.length - 1]
-  return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed)}` : ''}`, output: designSummary(d) }
+  return { summary: `${verb}: step ${d.history.steps.length}${s ? `, ${stepName(s)}` : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
 }
 
 /**
@@ -935,6 +935,11 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
       })
       const verb = (h: FoundHole, s: HoleSpec) => `Made the ${r3(h.diameterMm)} mm hole ${r3(s.diameterMm)} mm${s.counterbore ? ' with a counterbore' : s.countersink ? ' with a countersink' : ''}`
       const onAxis = (h: FoundHole) => ({ at: h.entry, axis: h.axis })
+      // the hole as it stands after the edit: when the edit landed the part again (Design.landed), it moved with the part
+      const movedWith = (h: FoundHole, was: readonly number[], body: Design): FoundHole => {
+        if (!body.landed || !('dxMm' in body.landed)) return h
+        return { ...h, entry: [h.entry[0] + (body.transform[12] ?? 0) - (was[12] ?? 0), h.entry[1] + (body.transform[13] ?? 0) - (was[13] ?? 0), h.entry[2]] }
+      }
       if (i.design) {
         const reference = i.face?.topology
         let applied = false
@@ -968,6 +973,7 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
             before = hit.hole
           }
           const s = spec(before)
+          const was = [...d.transform]
           if (reference) {
             checkedManifest(d.id, reference.revision)
             const initial = verifyHole(before, before, {})
@@ -989,9 +995,10 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
             let after: Record<string, unknown> | null = null
             let verification: ReturnType<typeof verifyHole> | { status: 'failed'; reason: string }
             try {
-              const shaft = await find(part, onAxis(before), commit.design)
-              verification = verifyHole(before, shaft, i)
-              if (verification.checks.finite && verification.measuredDepthMm !== null) after = readHole({ ...before, diameterMm: shaft.diameterMm, depthMm: verification.measuredDepthMm, through: shaft.through })
+              const at = movedWith(before, was, commit.design)
+              const shaft = await find(part, onAxis(at), commit.design)
+              verification = verifyHole(at, shaft, i)
+              if (verification.checks.finite && verification.measuredDepthMm !== null) after = readHole({ ...at, diameterMm: shaft.diameterMm, depthMm: verification.measuredDepthMm, through: shaft.through })
             }
             catch (e) { verification = { status: 'failed', reason: e instanceof Error ? e.message : String(e) } }
             return { summary: `${out.summary}${verification.status === 'failed' ? '; the edit was applied but its read-back failed' : verification.status === 'unverified' ? '; head dimensions remain unverified' : ''}`, output: {
@@ -1001,7 +1008,8 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
                 measurements: { source: 'tessellation', before: readHole(before), after } },
             } }
           }
-          const after = readMade(before, await find(part, onAxis(before)), i)
+          const at = movedWith(before, was, d)
+          const after = readMade(at, await find(part, onAxis(at)), i)
           const out = stepOut(d, verb(before, s))
           return { summary: out.summary, output: { ...out.output, part, before: readHole(before), after } }
         } catch (e) {

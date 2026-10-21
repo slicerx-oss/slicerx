@@ -6,10 +6,11 @@
 // Runs against the geometry engine (live wasm when built, recorded replies otherwise).
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import type { HistoryMesh, StepParams } from '@slicerx/cad-history'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { appDesignHost, DesignNotFound } from '../src/cad/design-host'
 import { toPart } from '../src/cad/history/ops'
-import { placedOnBed } from '../src/plate/arrange'
+import { NO_MARGINS, placedOnBed, printsOnBed, setAvoidAreas, setMarginSource, type PrintMargins } from '../src/plate/arrange'
+import { createHistory } from '../src/plate/history'
 import { bounds } from '../src/plate/transform'
 import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
@@ -225,4 +226,115 @@ describe('the app design host', () => {
     expect(() => appDesignHost(loader).get('obj_nope')).toThrow(DesignNotFound)
   })
 
+})
+
+describe('an edit that leaves a design off the bed', () => {
+  /** A skirt `reach` mm out from every part, as the plate's margins would give it. */
+  const skirt = (reach: number): PrintMargins => ({ grow: () => 0, reach: () => reach, skirt: true, keepOut: [] })
+  /** A step that adds a box to the design, as a feature that grows the body would (no engine call). */
+  const grow = (min: [number, number, number], max: [number, number, number]): StepParams => ({ op: 'parts.add', label: 'Tab', parts: [box(min, max)] })
+  const entry = (id: string) => get().plate.find((p) => p.id === id)!
+  const footprint = (id: string) => bounds(entry(id).parts, entry(id).transform)!
+
+  afterEach(() => {
+    setMarginSource(() => NO_MARGINS)
+    setAvoidAreas([])
+  })
+
+  it('lands a part again when an edit pushes its skirt past the bed edge, in the same undo step, and says how far it moved', async () => {
+    setMarginSource(() => skirt(10))
+    const host = appDesignHost(loader)
+    // built on the bed near its right edge: 26 mm to the edge, the 10 mm skirt fits
+    const d = await host.create('Clip', [box([200, 100, 0], [230, 130, 10])])
+    expect(d.landed).toBeUndefined()
+    const was = [...entry(d.id).transform]
+    const history = createHistory()
+    try {
+      // a tab out to 250 mm: the skirt now reaches 260 mm on a 256 mm bed
+      await host.add(d, -1, grow([230, 100, 0], [250, 130, 10]))
+      const b = footprint(d.id)
+      expect(b.max[0] - b.min[0]).toBeCloseTo(50)
+      expect(printsOnBed(entry(d.id), get().bed)).toBe(true)
+      // the landing a new part gets: the middle of the bed
+      expect([(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2]).toEqual([128, 128])
+      expect(d.landed).toEqual({ dxMm: -97, dyMm: 13, edit: true })
+      expect(d.transform).toEqual(entry(d.id).transform)
+      // one undo takes back the edit and the move together
+      history.undo()
+      expect(entry(d.id).transform).toEqual(was)
+      expect(entry(d.id).parts).toHaveLength(1)
+    } finally {
+      history.dispose()
+    }
+  })
+
+  it('lands a part again when an edit grows it into an excluded area', async () => {
+    setAvoidAreas([{ x: 0, y: 0, w: 40, h: 40 }])
+    const host = appDesignHost(loader)
+    const d = await host.create('Bracket', [box([45, 45, 0], [75, 75, 10])])
+    expect(d.landed).toBeUndefined()
+    // a foot out to (30, 30): inside the excluded corner
+    await host.add(d, -1, grow([30, 30, 0], [45, 45, 2]))
+    expect(placedOnBed(entry(d.id), get().bed)).toBe(true)
+    expect(d.landed).toMatchObject({ edit: true })
+    const b = footprint(d.id)
+    expect(b.min[0] >= 40 || b.min[1] >= 40).toBe(true)
+  })
+
+  it('lands a new part built on the bed whose skirt reaches past the edge, as one built off the bed', async () => {
+    setMarginSource(() => skirt(10))
+    const host = appDesignHost(loader)
+    // on the bed, but 6 mm from its right edge: the 10 mm skirt would not fit
+    const d = await host.create('Clip', [box([220, 100, 0], [250, 130, 10])])
+    expect(d.landed).toEqual({ dxMm: -107, dyMm: 13 })
+    expect(printsOnBed(entry(d.id), get().bed)).toBe(true)
+  })
+
+  it('leaves a part that still prints where it stands after the edit', async () => {
+    setMarginSource(() => skirt(10))
+    const host = appDesignHost(loader)
+    const d = await host.create('Clip', [box([200, 100, 0], [230, 130, 10])])
+    const was = [...entry(d.id).transform]
+    // out to 240 mm: the skirt reaches 250 mm, still on the bed
+    await host.add(d, -1, grow([230, 100, 0], [240, 130, 10]))
+    expect(entry(d.id).transform).toEqual(was)
+    expect(footprint(d.id).max[0]).toBe(240)
+    expect(d.landed).toBeUndefined()
+  })
+
+  it('lands it again when a replay of an edited step grows it off the bed', async () => {
+    setMarginSource(() => skirt(10))
+    const host = appDesignHost(loader)
+    const d = await host.create('Clip', [box([200, 100, 0], [230, 130, 10])])
+    await host.add(d, -1, grow([230, 100, 0], [240, 130, 10]))
+    expect(d.landed).toBeUndefined()
+    // the tab's step edited to reach 250 mm
+    d.history = { ...d.history, steps: d.history.steps.map((s) => ({ ...s, params: grow([230, 100, 0], [250, 130, 10]) })) }
+    await host.replay(d)
+    expect(printsOnBed(entry(d.id), get().bed)).toBe(true)
+    expect(d.landed).toMatchObject({ edit: true })
+  })
+
+  it('says so and leaves the part where it is when it fits nowhere after the edit', async () => {
+    setMarginSource(() => skirt(10))
+    const host = appDesignHost(loader)
+    const d = await host.create('Clip', [box([100, 100, 0], [130, 130, 10])])
+    const was = [...entry(d.id).transform]
+    // 250 mm wide with a 10 mm skirt each side: 270 mm on a 256 mm bed
+    await host.add(d, -1, grow([0, 100, 0], [250, 130, 10]))
+    expect(d.landed).toEqual({ offBed: true, edit: true })
+    expect(entry(d.id).transform).toEqual(was)
+    expect(entry(d.id).parts).toHaveLength(2)
+  })
+
+  it('never moves a locked part, and says it stays', async () => {
+    setMarginSource(() => skirt(10))
+    const host = appDesignHost(loader)
+    const d = await host.create('Clip', [box([200, 100, 0], [230, 130, 10])])
+    set((s) => ({ plate: s.plate.map((p) => (p.id === d.id ? { ...p, locked: true } : p)) }))
+    const was = [...entry(d.id).transform]
+    await host.add(d, -1, grow([230, 100, 0], [250, 130, 10]))
+    expect(entry(d.id).transform).toEqual(was)
+    expect(d.landed).toEqual({ offBed: true, edit: true, locked: true })
+  })
 })

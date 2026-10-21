@@ -14,7 +14,7 @@ import { colorsFor, commitMade } from '../commit'
 import { objectsFor } from '../dimensions'
 import { currentValues } from '../value-table'
 import { bindFor } from '../values'
-import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, type History, type HistoryMesh, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { direction, followField, followFor, followsOf, invert, madeName, mainNumber, multiply, point, replayHistory, type History, type HistoryMesh, type Mat4, type ReplayRequest, type ReplayResult, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { sessionFonts, takeBind } from './record'
 import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
@@ -102,8 +102,10 @@ export const replaying = (objectId: string): boolean => running.has(objectId)
  * marks, kept dimensions found again. Throws the broken step's sentence when nothing is left to
  * show (a body whose only step fails), or when the step `need` (a new step) does not go through.
  * A newer call for the same object cancels this one.
+ * `land`, when given, is asked where the object goes with its new parts, as it is at the commit; a transform it returns
+ * is written with the result, in the same store update, so the edit and the move are one undo step.
  */
-export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
+export async function applyHistory(host: Loader, objectId: string, next: History, need?: string, guard?: () => void, committed?: () => void, land?: (latest: PlateEntry, parts: PlateEntry['parts']) => Mat4 | undefined): Promise<{ status: StepStatus[]; moved: Record<string, MovedFace> }> {
   guard?.()
   running.get(objectId)?.abort()
   const ac = new AbortController()
@@ -132,7 +134,10 @@ export async function applyHistory(host: Loader, objectId: string, next: History
     if (still?.objectId === objectId) quietly(() => set((s) => ({ plate: s.plate.map((e) => (e.id === objectId ? still.original : e)), historyEdit: null })))
     // The geometry, history and dimensions are this job's; placement, colors and the rest are as they are now, since
     // the person may have moved or recolored the object while it ran. A deleted object takes nothing.
-    const made = commitMade(objectId, (latest) => ({ handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}) }), { exactReplay: next.exact === true })
+    const made = commitMade(objectId, (latest) => {
+      const transform = land?.(latest, parts)
+      return { handle, parts, history, colors: colorsFor(parts.length, latest.colors, brandAccent()), ...(dimensions ? { dimensions } : {}), ...(transform ? { transform } : {}) }
+    }, { exactReplay: next.exact === true })
     if (!made && still?.objectId !== objectId) throw abortError()
     committed?.()
     markStale()
