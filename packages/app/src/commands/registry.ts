@@ -54,6 +54,16 @@ export function registerCommandsLater(load: () => Promise<readonly CommandSpec[]
   }
 }
 
+/** Whether a module's commands are still loading (registerCommandsLater), so the list is about to change. */
+export function commandsLoading(): boolean {
+  return loading.size > 0
+}
+
+/** Resolves once no module's commands are loading: the ones on their way have landed, or failed to load. */
+export async function commandsLoaded(): Promise<void> {
+  while (loading.size) await Promise.all(loading)
+}
+
 export function getCommand(id: string): CommandSpec | undefined {
   return commands.get(id)
 }
