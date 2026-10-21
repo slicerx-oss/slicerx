@@ -12,7 +12,7 @@ import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { setSessionSource } from '../../app-link/sessions'
 import { appDesignHost } from '../../cad/design-host'
-import { listCommands, useCommands } from '../../commands/registry'
+import { commandsLoaded, commandsLoading, getCommand, isEnabled, listCommands, useCommands } from '../../commands/registry'
 import { useEdition } from '../../edition'
 import { projectExportHost } from '../../export/actions'
 import { geom } from '../../geom/client'
@@ -23,6 +23,7 @@ import { useMimirCloudHost } from '../../pilot-connect/cloud'
 import { editionToolGroups, withBrain } from '../../pilot-connect/brain'
 import { chatNotesGo, pilotMemory, useMemoryAccount } from '../../pilot-connect/memory'
 import { pilotModel, pilotTransport } from '../../pilot-connect/llm'
+import { isStandInLlm } from '../../pilot-connect/stand-in-llm'
 import { slicePlate } from '../../state/actions'
 import { plateSliceConfig } from '../../state/slice-plate'
 import { hostSlices } from '../../state/model-mode'
@@ -106,6 +107,18 @@ export function modelingCommands(commands: readonly CommandSpec[]): CommandSpec[
 /** app.slice's reply when no slice ran and the one on screen no longer matches the plate. */
 export const STALE_REPLY = 'The slice on screen is out of date because the plate changed after it. Slice the plate again.'
 
+/**
+ * The registered commands, each running the command registered under its id when it runs: the same commands
+ * registering again (a layout change brings the built-in ones back) keep the runtime, which then calls the new ones.
+ */
+export function liveCommands(commands: readonly CommandSpec[] = listCommands()): CommandSpec[] {
+  return commands.map((c) => ({
+    ...c,
+    ...(c.enabled ? { enabled: () => isEnabled(getCommand(c.id) ?? c) } : {}),
+    run: (input?: unknown, cx?: CommandToolContext) => ((getCommand(c.id) ?? c).run as (input: unknown, cx?: CommandToolContext) => unknown)(input, cx),
+  }))
+}
+
 export function mimirCommands(host: Host, commands: readonly CommandSpec[]): CommandSpec[] {
   return commands.map((c) =>
     c.id !== 'slice'
@@ -157,7 +170,7 @@ const NO_LLM = {} as LlmTransport
  */
 export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: PilotConfig; kb: KnowledgeBase; tools: readonly PilotTool<never>[]; client?: LlmClient; share?: CreatePilotOptions['share']; commands?: readonly CommandSpec[]; memory?: CreatePilotOptions['memory']; toolGroups?: CreatePilotOptions['toolGroups'] }): CreatePilotOptions {
   const slices = hostSlices()
-  const commands = mimirCommands(host, parts.commands ?? listCommands())
+  const commands = mimirCommands(host, parts.commands ?? liveCommands())
   return {
     host: {
       printers: guardedPrinters(host, { ledger: sendLedger }) ?? host.printers ?? NO_PRINTERS,
@@ -197,9 +210,21 @@ function scripted(host: Host, kb: KnowledgeBase, edition: EditionConfig): Pilot 
   return createPilot(tabPilotOptions(host, { llm: NO_LLM, config: SCRIPTED_CONFIG, kb, tools: toolsFor(host.slicer), client, memory: pilotMemory(edition, { where: chatNotesGo(SCRIPTED_CONFIG, false) }), toolGroups: editionToolGroups(edition) }))
 }
 
-/** The app commands mimir has as tools, by id: they load after first paint, and mimir's app tools are made from them. */
+/**
+ * The app commands mimir has as tools, as it sees them: id, title, section, workspace, permission and input schema, in
+ * id order (mimir's app tools are made from these). The same commands registering again give the same signature; a
+ * changed one, or one more or fewer, gives a new one.
+ */
 function toolCommands(): string {
-  return listCommands().flatMap((c) => (c.tool ? [c.id] : [])).sort().join(',')
+  const seen = hostSlices() ? listCommands() : modelingCommands(listCommands())
+  const rows = seen.flatMap((c) => (c.tool ? [[c.id, c.title, c.section, c.workspace ?? null, c.tool.permission, c.tool.inputSchema ?? null] as const] : []))
+  rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+  return JSON.stringify(rows)
+}
+
+/** Which transport the host offers mimir: none, the browser build's stand-in, or its own; and whether it has secure storage (pairing brings it). */
+function transportOf(host: Host): [number, number] {
+  return [host.llm ? (isStandInLlm(host.llm) ? 2 : 1) : 0, host.capabilities.secureStorage ? 1 : 0]
 }
 
 /** A number per mimir cloud host, so signing in (a new host) makes the runtime again. */
@@ -214,11 +239,12 @@ function cloudId(cloud: unknown): number {
 }
 
 /**
- * The setup the tab would use now: what Settings > mimir chose, or the edition's own, the mimir cloud host, the app's
- * commands and whether the edition keeps notes (ai.brain.memory.local). A change makes the runtime again.
+ * The setup the tab would use now: what Settings > mimir chose, or the edition's own, the mimir cloud host, the host's
+ * transport, whether the host slices, the app commands mimir has as tools (by what they are, not which objects they
+ * are) and whether the edition keeps notes (ai.brain.memory.local). A change makes the runtime again.
  */
 function setupKey(host: Host, edition: EditionConfig, pref: PilotPref | null, cloud: unknown): string {
-  return JSON.stringify([edition.id, pref, cloudId(cloud), host.llm ? 1 : 0, toolCommands(), edition.ai.brain.memory.local])
+  return JSON.stringify([edition.id, pref, cloudId(cloud), transportOf(host), hostSlices(), toolCommands(), edition.ai.brain.memory.local])
 }
 
 /**
@@ -226,6 +252,9 @@ function setupKey(host: Host, edition: EditionConfig, pref: PilotPref | null, cl
  * answers, the scripted stub otherwise. Sets the chat's link to match.
  */
 export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknown = null): Promise<Pilot> {
+  // commands on their way (a layout change takes the built-in ones away until they load again): the setup is read once
+  // they land, so the gap never makes a runtime of its own
+  if (commandsLoading()) await commandsLoaded()
   const pref = get().pilot
   const key = setupKey(host, edition, pref, cloud)
   if (current?.key === key) {
