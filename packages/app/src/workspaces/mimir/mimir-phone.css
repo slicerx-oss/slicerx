@@ -54,3 +54,7 @@
 :root[data-phone] .mimir-chat .sheet-rec-field .sx-scrub { height: auto; }
 :root[data-phone] .mimir-chat .sheet-rec-field .sx-scrub-input { height: var(--h-lg); font-size: 16px; }
 :root[data-phone] .mimir-chat .sheet-rec-foot .sx-btn { min-height: var(--h-lg); }
+/* the sheet's status (its assumed values are why it asks) takes the whole width over the buttons and wraps, never cut
+   off; it keeps two lines' room, so a shorter status does not move the buttons */
+:root[data-phone] .mimir-chat .sheet-rec-foot:has(> [data-testid="mimir-sheet-status"]) { flex-wrap: wrap; justify-content: flex-end; }
+:root[data-phone] .mimir-chat .sheet-rec-foot > [data-testid="mimir-sheet-status"] { flex: 1 0 100%; display: block; min-height: calc(2 * 18px); overflow: visible; -webkit-line-clamp: unset; }

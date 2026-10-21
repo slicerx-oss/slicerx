@@ -194,7 +194,41 @@ journey.describe('the mimir tab fits a phone', () => {
     await expect(sheet).toBeVisible({ timeout: 30_000 })
     await expect(page.getByTestId('mimir-sheet-callout').first()).toBeVisible()
     expect(await smallTargets(page), 'the waiting sheet').toEqual([])
-    await shots(page, info, 'sheet-waiting')
+    // each callout's touch circle is centered on its badge, 44 px across, and a tap on the badge lands on that callout,
+    // in Top and iso and in Front or Right alone
+    const drawing = page.getByTestId('mimir-sheet-drawing')
+    for (const pane of ['main', 'front', 'side', 'main'] as const) {
+      await page.getByTestId(`mimir-drawing-view-${pane}`).tap()
+      await expect(page.getByTestId(`mimir-drawing-view-${pane}`)).toHaveAttribute('aria-checked', 'true')
+      const missed = await drawing.locator('[data-testid="mimir-sheet-callout"]').evaluateAll((els) =>
+        els.flatMap((el) => {
+          const hit = el.querySelector('circle.mimir-callout-hit')?.getBoundingClientRect()
+          const dot = el.querySelector('circle:not(.mimir-callout-hit)')!.getBoundingClientRect()
+          const [x, y] = [dot.x + dot.width / 2, dot.y + dot.height / 2]
+          const view = el.closest('.mimir-drawing-cell')?.getAttribute('data-view')
+          const name = `${view} ${el.getAttribute('data-key')}`
+          if (!hit) return [`${name}: no touch circle`]
+          const out: string[] = []
+          if (hit.width < 44 - 0.5 || hit.height < 44 - 0.5) out.push(`${name}: touch ${Math.round(hit.width)} x ${Math.round(hit.height)}`)
+          if (Math.abs(hit.x + hit.width / 2 - x) > 0.5 || Math.abs(hit.y + hit.height / 2 - y) > 0.5) out.push(`${name}: touch off its badge`)
+          if (document.elementFromPoint(x, y)?.closest('[data-testid="mimir-sheet-callout"]') !== el) out.push(`${name}: a tap on the badge lands elsewhere`)
+          return out
+        }),
+      )
+      expect(missed, `the callouts in ${pane}`).toEqual([])
+    }
+    // the assumed values are why the person is asked to confirm, so their line wraps instead of being cut off
+    await page.setViewportSize(PHONES[1])
+    const status = sheet.getByTestId('mimir-sheet-status')
+    await status.scrollIntoViewIfNeeded()
+    await expect(status).toContainText('1 assumed value: thickness 3 mm')
+    expect(await status.evaluate((el) => [el.scrollHeight <= el.clientHeight + 0.5, el.scrollWidth <= el.clientWidth + 0.5])).toEqual([true, true])
+    const said = (await status.boundingBox())!
+    expect(said.y + said.height).toBeLessThanOrEqual((await page.getByTestId('mimir-composer').boundingBox())!.y + 0.5)
+    await page.setViewportSize(PHONES[0])
+    await shots(page, info, 'sheet-waiting', async () => {
+      await sheet.getByTestId('mimir-sheet-status').scrollIntoViewIfNeeded()
+    })
     await sheet.getByTestId('mimir-sheet-confirm').click()
     await expect(page.getByTestId('mimir-transcript')).toContainText('The backplate is on the plate', { timeout: 60_000 })
     await expect(page.getByTestId('mimir-part').last()).toBeVisible()
