@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use sx_cloud::backend::Backend;
 use sx_cloud::http::About;
 use sx_cloud::{App, MemoryBackend, WorkerConfig, router, sha256_hex, worker};
+use tokio::sync::{Notify, watch};
 use tower::ServiceExt;
 
 const RV: &str = "00000000-0000-4000-8000-0000000000a1";
@@ -30,6 +31,7 @@ const MB: u64 = 1024 * 1024;
 struct Harness {
     backend: Arc<MemoryBackend>,
     app: Router,
+    job_queued: Arc<Notify>,
 }
 
 fn harness() -> Harness {
@@ -45,6 +47,7 @@ fn harness() -> Harness {
     backend.grant_access(ASH, 1000, 50 * MB);
     backend.add_token(CY_TOKEN, CY, &["cloud_slice"]);
     backend.add_token(CY_LINK, CY, &["link"]);
+    let job_queued = Arc::new(Notify::new());
     let app = router(Arc::new(App {
         backend: backend.clone(),
         poll_step: Duration::from_millis(20),
@@ -54,8 +57,13 @@ fn harness() -> Harness {
             source_url: Some("https://example.com/source".into()),
         },
         trust_forwarded: false,
+        job_queued: job_queued.clone(),
     }));
-    Harness { backend, app }
+    Harness {
+        backend,
+        app,
+        job_queued,
+    }
 }
 
 impl Harness {
@@ -109,6 +117,7 @@ impl Harness {
             id: "test-worker".into(),
             idle_poll: Duration::from_millis(10),
             heartbeat: Duration::from_secs(5),
+            wake: Arc::default(),
         };
         let job = self
             .backend
@@ -543,6 +552,7 @@ async fn cancel_and_active_limit() {
         id: "w".into(),
         idle_poll: Duration::from_millis(10),
         heartbeat: Duration::from_secs(5),
+        wake: Arc::default(),
     };
     worker::process(h.backend.as_ref(), &cfg, job.clone())
         .await
@@ -809,4 +819,45 @@ fn plate_progress_reaches_the_end_with_the_real_slicer() {
         "{}",
         progress.fraction()
     );
+}
+
+#[tokio::test]
+async fn a_queued_job_wakes_an_idle_worker() {
+    let h = harness();
+    let sha = h.upload(RV_TOKEN, &cube_stl()).await;
+    let (stop_tx, stop_rx) = watch::channel(false);
+    // The worker's first claim finds nothing; it then waits out a minute
+    // unless the API wakes it.
+    let cfg = WorkerConfig {
+        id: "idle-worker".into(),
+        idle_poll: Duration::from_secs(60),
+        heartbeat: Duration::from_secs(5),
+        wake: h.job_queued.clone(),
+    };
+    let task = tokio::spawn(worker::run(h.backend.clone(), cfg, stop_rx));
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let (s, job) = h
+        .json(
+            Method::POST,
+            "/v1/jobs",
+            RV_TOKEN,
+            Some(json!({ "request": plate(&sha) })),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED);
+    let id = job["id"].as_str().unwrap().to_owned();
+    let finished = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let job = h.backend.job(RV, &id).await.unwrap().unwrap();
+            if !job.status.is_active() {
+                return job;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the job ran well before the worker's idle poll came round");
+    assert_eq!(serde_json::to_value(finished.status).unwrap(), "succeeded");
+    stop_tx.send(true).unwrap();
+    task.await.unwrap();
 }

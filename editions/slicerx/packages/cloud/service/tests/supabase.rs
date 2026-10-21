@@ -213,6 +213,7 @@ async fn slices_and_delivers_on_the_stack() {
         poll_step: Duration::from_millis(200),
         about: sx_cloud::http::About::default(),
         trust_forwarded: false,
+        job_queued: Arc::default(),
     }));
     let files = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (tracked, user_id) = (files.clone(), user.clone());
@@ -297,6 +298,7 @@ async fn slices_and_delivers_on_the_stack() {
             id: format!("test-{run}"),
             idle_poll: Duration::from_millis(100),
             heartbeat: Duration::from_secs(5),
+            wake: Arc::default(),
         };
         // Other jobs may be queued on a shared stack; run claims until ours is done.
         for _ in 0..20 {

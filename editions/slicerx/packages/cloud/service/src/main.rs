@@ -105,6 +105,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(async move { idle::exit_when_idle(after, &stop_tx).await });
     }
 
+    // Lets the API wake an idle worker in this process when it queues a job.
+    let job_queued = Arc::new(tokio::sync::Notify::new());
     let mut workers = Vec::new();
     if role != "api"
         && let Some(scanner) = make_scanner()?
@@ -133,6 +135,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 id: format!("{prefix}-{}-{n}", std::process::id()),
                 idle_poll: Duration::from_secs(2),
                 heartbeat: Duration::from_secs(20),
+                wake: job_queued.clone(),
             };
             workers.push(tokio::spawn(worker::run(backend.clone(), cfg, stop_rx.clone())));
         }
@@ -163,6 +166,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             poll_step: Duration::from_secs(1),
             about,
             trust_forwarded: env("SX_CLOUD_TRUST_FORWARDED").as_deref() == Some("1"),
+            job_queued,
         });
         let routes = if slicing { router(app) } else { status_router(app) };
         // Every request but the platform's health check counts as activity.

@@ -11,7 +11,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 use sx_core::api::{self, SliceRequest, SliceRun};
 use sx_core::{Mesh, Progress, Stage};
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 
 use crate::backend::{Backend, Bucket, Job, Outcome, mesh_path, result_paths};
 use crate::error::{Error, Result};
@@ -25,6 +25,9 @@ pub struct WorkerConfig {
     /// Progress is re-sent this often during a slice, as the heartbeat that
     /// keeps the job from being reclaimed (the database waits 120 s).
     pub heartbeat: Duration,
+    /// Notified when the API in this process queues a job, so an idle worker
+    /// claims it at once instead of sleeping out `idle_poll`.
+    pub wake: Arc<Notify>,
 }
 
 /// Claims and runs jobs until `stop` turns true.
@@ -43,6 +46,7 @@ pub async fn run(backend: Arc<dyn Backend>, cfg: WorkerConfig, mut stop: watch::
         }
         tokio::select! {
             () = tokio::time::sleep(cfg.idle_poll) => {}
+            () = cfg.wake.notified() => {}
             _ = stop.changed() => {}
         }
     }

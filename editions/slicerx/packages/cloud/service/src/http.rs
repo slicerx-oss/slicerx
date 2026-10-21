@@ -46,6 +46,8 @@ pub struct App {
     /// Take the caller's address from `X-Forwarded-For`. Only for deployments
     /// behind a proxy that sets it; otherwise the socket address is used.
     pub trust_forwarded: bool,
+    /// Notified after each queued job, to wake this process's idle workers.
+    pub job_queued: Arc<tokio::sync::Notify>,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -487,6 +489,7 @@ async fn create_job(
             target_printer_id: body.target_printer_id,
         })
         .await?;
+    app.job_queued.notify_one();
     Ok((StatusCode::ACCEPTED, Json(job.into())))
 }
 
