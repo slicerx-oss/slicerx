@@ -21,6 +21,8 @@ import { sessionFonts } from './history/record'
 import { applyArray, applyExtrude, arraySpec, extrudeParams, type ExtrudeInput, BED_FRAME, describeFeature, featurePoints, loopsOf, previewArray, readout, type ArrayKind } from './cad-ops'
 import { Actions, Choice, close, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, Vec, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
+import { pushLimit } from './push'
+import { sizeWords } from './op-preview'
 import { SvgFileField } from './svg-file'
 import { KIND_NAMES, dimensionText, keepDimension, keepableKinds, removeDimension, type ObjectPick } from './dimensions'
 import { useDimensionResults } from './dimension-view'
@@ -176,7 +178,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   const placed = Number.isFinite(num(x)) && Number.isFinite(num(y)) && Number.isFinite(num(turn))
   const depthOk = Number.isFinite(num(distance)) && num(distance) > 0
   const pattern = patternFromFields(patternFields, num)
-  const problem = typeof shape === 'string' ? shape : !placed ? 'Position and rotation need numbers.' : !depthOk ? 'The distance must be more than 0 mm.' : pattern ? patternProblem(pattern) : null
+  const problem = typeof shape === 'string' ? shape : !placed ? 'Position and rotation need numbers.' : !depthOk ? 'The distance must be more than 0 mm.' : (pushLimit(num(distance)) ?? (pattern ? patternProblem(pattern) : null))
   const patternKey = JSON.stringify(pattern)
 
   // The outline about to be extruded, drawn on the face a moment after the last change.
@@ -242,7 +244,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
       setFace(null)
       return true
     } catch (e) {
-      setNote(errorText(e))
+      setNote(sizeWords(errorText(e), num(distance)))
     } finally {
       setBusy(false)
     }
