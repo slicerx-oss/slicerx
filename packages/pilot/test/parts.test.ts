@@ -19,6 +19,7 @@ import { createScriptedClient } from '../src/provider/scripted'
 import { CAD_TOOLS, createPilot } from '../src/runtime'
 import { builtinTools } from '../src/tools/index'
 import { lookupParts, partsTool, sizeText } from '../src/tools/parts'
+import { lookupTool } from '../src/tools/ask'
 import { defineTool, type PilotTool, type ToolContext } from '../src/tool'
 import { z } from 'zod'
 
@@ -238,6 +239,18 @@ describe('parts.lookup', () => {
     expect((await run({ name: 'Galaxy S24' })).lookup).toBeUndefined()
   })
 
+  it('shows no card for a near name, only for a name the request is all about', async () => {
+    const bundled = await bundledPartsTable()
+    // whole word matching finds the iPhone 15 and the Pixel 8 Pro in these, but neither is the phone asked for
+    for (const near of ['iPhone 15 mini', 'Pixel 8 Pro Fold']) {
+      const out = lookupParts(bundled, near)
+      expect(out.ok, near).not.toBe(false)
+      expect(out.lookup, near).toBeUndefined()
+    }
+    // the exact name, its full name, and the name with a few words around it still show the card
+    for (const exact of ['iPhone 15', 'Apple iPhone 15', 'a case for my iPhone 15', 'Pixel 8 Pro phone holder']) expect(lookupParts(bundled, exact).lookup?.title, exact).toMatch(/^(Apple iPhone 15|Google Pixel 8 Pro)$/)
+  })
+
   it('a lookup in a chat puts the card in the view', async () => {
     const pilot = createPilot({
       host: { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport },
@@ -250,6 +263,21 @@ describe('parts.lookup', () => {
     const events: { type: string }[] = []
     for await (const e of pilot.run('s', 'case for my iPhone 15')) events.push(e)
     expect(events.filter((e) => e.type === 'lookup')).toEqual([{ type: 'lookup', lookup: expect.objectContaining({ id: expect.stringMatching(/^lk_/), title: 'Apple iPhone 15' }) }])
+  })
+
+  it('a lookup.show of the same page in that turn adds no second card, and one of another page does', async () => {
+    const show = (url: string) => ({ name: 'lookup.show', args: { title: 'iPhone 15 size', fields: [['Depth', '7.8 mm']], source: { title: 'Apple', url } } })
+    const pilot = createPilot({
+      host: { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport },
+      config: { ...DEFAULT_CONFIG, webSearch: false },
+      policy: DEFAULT_POLICY,
+      client: createScriptedClient([{ calls: [{ name: 'parts.lookup', args: { name: 'iPhone 15' } }] }, { calls: [show('https://support.apple.com/en-us/111831')] }, { calls: [show('https://example.com/iphone-15')] }, { text: 'Done.' }], { chunk: false }),
+      builtins: false,
+      tools: [partsTool(table()), lookupTool()],
+    })
+    const events: { type: string; lookup?: { title: string } }[] = []
+    for await (const e of pilot.run('s', 'case for my iPhone 15')) events.push(e as never)
+    expect(events.filter((e) => e.type === 'lookup').map((e) => e.lookup!.title)).toEqual(['Apple iPhone 15', 'iPhone 15 size'])
   })
 
   it('writes values the way people read them', () => {
