@@ -128,6 +128,34 @@ describe('the bottom panel', () => {
     expect(p.open).toBe(false)
   })
 
+  it('resting on the tab opens nothing from the band, so the tab stays under the pointer for its click', () => {
+    // the pointer comes down through the band onto the tab and rests there
+    p.band(true)
+    p.tab(true)
+    vi.advanceTimersByTime(OPEN_DELAY_MS * 10)
+    expect(changes).toEqual([])
+    // the click opens it from the tab, and the pointer over the tab of the open panel holds it
+    p.toggle()
+    expect(p.open).toBe(true)
+    vi.advanceTimersByTime(CLOSE_DELAY_MS * 4)
+    expect(p.open).toBe(true)
+    // off the tab and out of the band it closes as before
+    p.tab(false)
+    p.band(false)
+    vi.advanceTimersByTime(CLOSE_DELAY_MS)
+    expect(p.open).toBe(false)
+    // sliding off the tab along the band opens it after the usual rest
+    p.band(true)
+    p.tab(true)
+    vi.advanceTimersByTime(OPEN_DELAY_MS * 2)
+    expect(p.open).toBe(false)
+    p.tab(false)
+    vi.advanceTimersByTime(OPEN_DELAY_MS - 1)
+    expect(p.open).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(p.open).toBe(true)
+  })
+
   it('stays open when pinned, and Escape does not close it', () => {
     p.pin(true)
     expect(p.open).toBe(true)

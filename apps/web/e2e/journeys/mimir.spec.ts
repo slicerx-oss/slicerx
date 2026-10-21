@@ -293,8 +293,9 @@ test.describe('the mimir tab', () => {
       await page.mouse.click(t.x + t.width / 2, t.y + t.height / 2)
       await page.mouse.move(700, 300)
     }
+    // (in the band beside the tab: resting on the tab itself opens nothing)
     const view = (await page.locator('.studio > .vp').boundingBox())!
-    await page.mouse.move(view.x + view.width / 2, view.y + view.height - 12)
+    await page.mouse.move(view.x + view.width / 2 - 160, view.y + view.height - 12)
     await expect(timeline).toBeVisible()
     await press()
     // past the attention window and the close delay
@@ -333,23 +334,27 @@ test.describe('the mimir tab', () => {
     expect(await card.boundingBox()).toEqual(settled)
     await page.mouse.move(700, 300)
     if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/mimir-lookup-dark.png` })
-    // the open timeline pushes the card up instead of sitting under it: the pointer comes down onto its tab and
-    // clicks, as a person does
+    // the open timeline pushes the card up instead of sitting under it: the pointer comes down onto its tab, rests and
+    // clicks, as a person does. Resting on the tab past the band's delay opens nothing and moves nothing, so the click
+    // lands on the tab. (One move from above the band, so it never rests in the band beside the tab.)
     await expect(timeline).toBeHidden()
     const t = (await tab.boundingBox())!
     await page.mouse.move(t.x + t.width / 2, t.y - 120)
-    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 4 })
+    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2)
+    await page.waitForTimeout(300)
+    await expect(timeline).toBeHidden()
+    expect(await tab.boundingBox()).toEqual(t)
     await page.mouse.down()
     await page.mouse.up()
     await expect(tab).toHaveAttribute('aria-expanded', 'true')
     await expect(timeline).toBeVisible()
     await expect.poll(async () => (await card.boundingBox())!.y + (await card.boundingBox())!.height <= (await timeline.boundingBox())!.y).toBe(true)
     await clearOfBottom(page, card)
-    // and by keyboard: Enter on the focused tab shuts it, and again opens it with the card still clear
+    // opened from its tab, it shuts once the pointer leaves; then by keyboard: Enter on the focused tab opens it with
+    // the card still clear, and again shuts it
     await page.mouse.move(700, 300)
-    await tab.focus()
-    await page.keyboard.press('Enter')
     await expect(timeline).toBeHidden()
+    await tab.focus()
     await page.keyboard.press('Enter')
     await expect(timeline).toBeVisible()
     await expect.poll(async () => (await card.boundingBox())!.y + (await card.boundingBox())!.height <= (await timeline.boundingBox())!.y).toBe(true)
