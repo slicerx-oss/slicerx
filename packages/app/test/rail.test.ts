@@ -65,6 +65,8 @@ describe('slot labels', () => {
     expect(['#808000', '#6b8e23'].map(colorName)).toEqual(['Olive', 'Olive'])
     expect(['#ffc0cb', '#ff69b4', '#e91e63'].map(colorName)).toEqual(['Pink', 'Pink', 'Pink'])
     expect(['#ffff00', '#fbc02d'].map(colorName)).toEqual(['Yellow', 'Yellow'])
+    // pure and lime greens sit nearer the bright yellow than the darker green anchor without a green of their own
+    expect(['#00ff00', '#76ff03', '#388e3c'].map(colorName)).toEqual(['Green', 'Green', 'Green'])
     expect(slotLabel({ label: 'A2', type: 'PETG', color: '#ffffff' })).toBe('A2 PETG White')
   })
 })
