@@ -7,7 +7,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Collision, Host, SliceResult } from '@slicerx/contracts'
 import { arrangePlate } from '../src/plate/edit'
 import { installPrintMargins } from '../src/plate/footprint'
-import { clearanceProblems, hullDistance, sequenceProblem } from '../src/plate/sequence-check'
+import { hullOf } from '../src/plate/arrange'
+import { clearanceProblems, footprint, hullDistance, sequenceProblem } from '../src/plate/sequence-check'
 import { exportGcode3mf } from '../src/export/actions'
 import { exportGcode, jobFileName, jobName, sendToPrinter, slicePlate } from '../src/state/actions'
 import { get, set } from '../src/state/store'
@@ -225,5 +226,39 @@ describe('the job name', () => {
     const one = { ...(s as object), plate: [plate[1]] } as never
     expect(jobName(one)).toBe('Layered X')
     expect(jobFileName(one, 'Layered X_PLA_40m.gcode')).toBe('Layered X_PLA_40m.gcode')
+  })
+})
+
+describe('the footprint of a big model', () => {
+  /** The hull as it was taken before: every vertex placed by the transform, then the hull of them all. */
+  const plain = (lists: Float32Array[], m: number[]) => {
+    const pts: [number, number][] = []
+    for (const p of lists) for (let i = 0; i + 2 < p.length; i += 3) pts.push([m[0]! * p[i]! + m[4]! * p[i + 1]! + m[8]! * p[i + 2]! + m[12]!, m[1]! * p[i]! + m[5]! * p[i + 1]! + m[9]! * p[i + 2]! + m[13]!])
+    return hullOf(pts)
+  }
+  let seed = 7
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648)
+  const turned = (deg: number, x: number, y: number) => {
+    const [c, s] = [Math.cos((deg * Math.PI) / 180), Math.sin((deg * Math.PI) / 180)]
+    return [c, s, 0, 0, -s, c, 0, 0, 0, 0, 1, 0, x, y, 0, 1]
+  }
+  const clouds: [string, Float32Array[]][] = [
+    ['a ball of points', [Float32Array.from({ length: 3 * 4000 }, () => rand() * 50 - 25)]],
+    ['a grid with ties on every side', [Float32Array.from({ length: 3 * 21 * 21 }, (_, i) => [Math.floor(i / 3 / 21), (i / 3) % 21, 5][i % 3]! * 1)]],
+    ['points along one line', [Float32Array.from({ length: 3 * 50 }, (_, i) => [i / 3, i / 3, 0][i % 3]!)]],
+    ['one point', [new Float32Array([3, 4, 5])]],
+    ['two parts', [Float32Array.from({ length: 3 * 500 }, () => rand() * 10), Float32Array.from({ length: 3 * 500 }, () => 40 + rand() * 10)]],
+  ]
+  for (const [what, lists] of clouds) {
+    it(`takes the same hull as every vertex would, for ${what}`, () => {
+      for (const m of [turned(0, 0, 0), turned(33, 120, 80), turned(90, 10, 10), [2, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 5, 5, 0, 1]]) {
+        expect(footprint(lists, m).hull).toEqual(plain(lists, m))
+      }
+    })
+  }
+
+  it('keeps the top of the placed model', () => {
+    const lists = [new Float32Array([0, 0, 0, 1, 0, 7, 0, 1, 3])]
+    expect(footprint(lists, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 1, 1]).top).toBe(15)
   })
 })
