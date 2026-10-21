@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { createElement } from 'react'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { answerAsk, hostAppLink, linkAsks } from '../src/app-link/host'
 import { APP_LINK_METHODS, LinkError, runCall, useLinkSession } from '../src/app-link/methods'
 import { AppLinkPrompt, ARM_MS } from '../src/app-link/prompt'
@@ -470,6 +470,30 @@ describe('hosting the link', () => {
     // Once it answered, the agent may call again.
     f.call({ callId: 4, method: 'app.info', args: {}, client: { id: 'c1', name: 'A' } })
     await vi.waitFor(() => expect(f.link.reply).toHaveBeenCalledWith(4, expect.objectContaining({ ok: true })))
+  })
+
+  it('takes the next call from an agent that calls again as soon as it has its answer', async () => {
+    const f = fakeLink()
+    hostAppLink(f.link)
+    const a = { id: 'c1', name: 'A' }
+    // The hub hands the answer to the agent before it tells the app it delivered it, so the agent's next call can
+    // reach the app first. Here the agent calls again the moment its answer is sent, and the hub never confirms.
+    let next = 2
+    const reply = f.link.reply as unknown as Mock<BridgeAppLink['reply']>
+    reply.mockImplementation((callId) => {
+      if (callId < 3) f.call({ callId: next++, method: 'app.info', args: {}, client: a })
+      return new Promise<void>(() => undefined)
+    })
+    f.call({ callId: 1, method: 'app.info', args: {}, client: a })
+    await vi.waitFor(() => expect(f.link.reply).toHaveBeenCalledTimes(3))
+    for (const callId of [1, 2, 3]) expect(f.link.reply).toHaveBeenCalledWith(callId, expect.objectContaining({ ok: true }))
+    // The guard still holds while a call runs.
+    reply.mockImplementation(async () => undefined)
+    f.call({ callId: 4, method: 'app.info', args: {}, client: a })
+    f.call({ callId: 5, method: 'app.info', args: {}, client: a })
+    await vi.waitFor(() => expect(f.link.reply).toHaveBeenCalledTimes(5))
+    expect(f.link.reply).toHaveBeenCalledWith(4, expect.objectContaining({ ok: true }))
+    expect(f.link.reply).toHaveBeenCalledWith(5, expect.objectContaining({ ok: false, code: 'busy' }))
   })
 
   it('keeps one question per client and at most three waiting', async () => {
