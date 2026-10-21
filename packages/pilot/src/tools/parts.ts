@@ -77,6 +77,17 @@ function brief(r: PartRecord): string {
   return `${r.name}${shown.length ? `: ${shown.map((s) => `${label(s.key)} ${sizeText(s)}`).join(', ')}` : ''}`
 }
 
+/**
+ * The one part found as a card in the view, as lookup.show shows one, so a looked-up size is always on screen with its
+ * page: up to four published sizes from the page the first one came from. None when no size has a page.
+ */
+function cardOf(r: PartRecord): ToolOutput['lookup'] {
+  const page = r.sizes.find((s) => s.value !== null && s.source_url)?.source_url
+  if (!page) return undefined
+  const shown = r.sizes.filter((s) => s.value !== null && s.source_url === page && !s.unit?.startsWith('formula:') && !/tolerance/.test(s.key)).slice(0, 4)
+  return { title: r.name.slice(0, 60), fields: shown.map((s) => [label(s.key).slice(0, 32), sizeText(s).slice(0, 80)]), source: { title: `${r.name} (${host(page)})`.slice(0, 80), url: page } }
+}
+
 /** Looks `name` up in `table` and shapes the answer for the model, the chat and an MCP client. */
 export function lookupParts(table: PartsTable, name: string, category?: string): ToolOutput {
   const res = matchParts(table, name, category)
@@ -106,6 +117,7 @@ export function lookupParts(table: PartsTable, name: string, category?: string):
     },
     display,
     citations: citationsFor(parts),
+    ...(parts.length === 1 && cardOf(parts[0]!) ? { lookup: cardOf(parts[0]!)! } : {}),
   }
 }
 
