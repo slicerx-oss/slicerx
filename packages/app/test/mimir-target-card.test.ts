@@ -229,6 +229,17 @@ describe('a new printer lands the parts its bed leaves off', () => {
     expect(Math.min(b.min[0], b.min[1], 256 - b.max[0], 256 - b.max[1])).toBeGreaterThanOrEqual(8)
   })
 
+  it('a part whose outline fits on the new bed but whose skirt hangs off lands with room for it', async () => {
+    // 40 mm wide at x 210: its outline ends at 250 on the 256 mm bed, but a 10 mm skirt reaches 260
+    set({ plate: [at(clip, 210, 100)] })
+    setMarginSource(() => ({ grow: () => 0, reach: () => 10, skirt: true, keepOut: [] }))
+    loads(P1S)
+    expect(placedOnBed(get().plate[0]!, P1S)).toBe(true)
+    expect(await target()).toMatchObject({ moved: [{ name: 'Clip', plate: 'Plate 1' }], offBed: [] })
+    const b = box('a')
+    expect(Math.min(b.min[0], b.min[1], 256 - b.max[0], 256 - b.max[1])).toBeGreaterThanOrEqual(10)
+  })
+
   it('a part with no room on the new bed stays where it was and is named', async () => {
     const wide: PlateEntry = { ...clip, parts: [{ ...boxMesh(300, 20, 10), name: 'Body', slot: 1 }] }
     set({ plate: [at(wide, 20, 100)] })

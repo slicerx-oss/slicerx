@@ -327,6 +327,20 @@ describe('an edit that leaves a design off the bed', () => {
     expect(entry(d.id).parts).toHaveLength(2)
   })
 
+  it('leaves a part parked off the bed where it is after an edit, and says it is off the bed', async () => {
+    setMarginSource(() => skirt(10))
+    const host = appDesignHost(loader)
+    const d = await host.create('Clip', [box([100, 100, 0], [130, 130, 10])])
+    // the person parks it past the right edge, as a drag would
+    set((s) => ({ plate: s.plate.map((p) => (p.id === d.id ? { ...p, transform: p.transform.map((v, k) => (k === 12 ? v + 200 : v)) } : p)) }))
+    const parked = [...entry(d.id).transform]
+    expect(printsOnBed(entry(d.id), get().bed)).toBe(false)
+    await host.add(d, -1, grow([130, 100, 0], [135, 130, 10]))
+    expect(entry(d.id).transform).toEqual(parked)
+    expect(entry(d.id).parts).toHaveLength(2)
+    expect(d.landed).toEqual({ offBed: true, edit: true, parked: true })
+  })
+
   it('never moves a locked part, and says it stays', async () => {
     setMarginSource(() => skirt(10))
     const host = appDesignHost(loader)
