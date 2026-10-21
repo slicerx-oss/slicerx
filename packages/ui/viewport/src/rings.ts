@@ -6,7 +6,9 @@
 // ring's plane (GLGizmoRotate::on_dragging); a ring seen edge on turns by the cursor's travel along
 // the ring's screen tangent instead. Everything is in bed coordinates (mm, Z up). The math is pure
 // and unit tested; RingSet only draws.
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial, Quaternion, TorusGeometry, Vector3 } from 'three'
+import { BufferAttribute, BufferGeometry, DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial, Quaternion, TorusGeometry, Vector3 } from 'three'
+import { handleMaterial } from './gizmo'
+import { SCENE, type HandleColors } from './palette'
 import type { V3 } from './scaling'
 
 export type RingAxis = 'x' | 'y' | 'z'
@@ -112,30 +114,48 @@ export function turnVector(v: V3, axis: V3, rad: number): V3 {
   return new Vector3(...v).applyAxisAngle(new Vector3(...axis), rad).toArray() as V3
 }
 
-const RING_COLOR: Record<RingAxis, string> = { x: '#ff6b6b', y: '#51cf66', z: '#4dabf7' }
-const HOT = '#ffe066'
+/** The rotate rings' colors: the theme's axis colors. */
+export function axisRingColors(c: Pick<HandleColors, 'axisX' | 'axisY' | 'axisZ'>): Record<RingAxis, string> {
+  return { x: c.axisX, y: c.axisY, z: c.axisZ }
+}
+
 const FAN_STEPS = 360
+/** Tube radius of a ring and of the outline under it, in ring radii. */
+const TUBE = 0.012
+const HALO_TUBE = 0.02
 
 /**
  * The rings and the swept sector of a running drag. Lives in the bed frame (add `group` under the bed root). `place`
- * is called from the render pass, so it only writes transforms and colors; geometry is built once.
+ * is called from the render pass, so it only writes transforms and colors; geometry is built once. Each ring draws
+ * over a slightly thicker ring in the halo color, so it reads on a light bed and on a plate surface.
  */
 export class RingSet<K extends string = RingAxis> {
   readonly group = new Group()
   private readonly rings = new Map<K, Mesh>()
+  private readonly halos = new Map<K, Mesh>()
+  private readonly haloMat: MeshBasicMaterial
   private readonly fan: Mesh
+  private hot: string
   private hover: K | null = null
   private active: K | null = null
 
-  constructor(ids: readonly K[], colors: Partial<Record<K, string>> = RING_COLOR as Partial<Record<K, string>>) {
+  constructor(ids: readonly K[], colors: Record<K, string> = axisRingColors(SCENE) as unknown as Record<K, string>, look: Pick<HandleColors, 'handleHot' | 'handleHalo'> = SCENE) {
     this.group.name = 'ring-gizmo'
     this.group.visible = false
-    const torus = new TorusGeometry(1, 0.012, 6, 128)
+    this.hot = look.handleHot
+    const torus = new TorusGeometry(1, TUBE, 6, 128)
+    const haloTorus = new TorusGeometry(1, HALO_TUBE, 6, 128)
+    this.haloMat = handleMaterial(look.handleHalo)
     for (const id of ids) {
-      const m = new Mesh(torus, new MeshBasicMaterial({ color: new Color(colors[id] ?? '#ffffff'), depthTest: false, transparent: true, opacity: 0.95, toneMapped: false }))
+      const halo = new Mesh(haloTorus, this.haloMat)
+      halo.renderOrder = 8
+      halo.raycast = () => {}
+      this.halos.set(id, halo)
+      this.group.add(halo)
+      const m = new Mesh(torus, handleMaterial(colors[id]))
       m.renderOrder = 10
       m.raycast = () => {}
-      m.userData.color = colors[id] ?? '#ffffff'
+      m.userData.color = colors[id]
       this.rings.set(id, m)
       this.group.add(m)
     }
@@ -148,7 +168,7 @@ export class RingSet<K extends string = RingAxis> {
     }
     const g = new BufferGeometry()
     g.setAttribute('position', new BufferAttribute(pos, 3))
-    this.fan = new Mesh(g, new MeshBasicMaterial({ color: new Color(HOT), side: DoubleSide, depthTest: false, transparent: true, opacity: 0.22, toneMapped: false }))
+    this.fan = new Mesh(g, new MeshBasicMaterial({ color: look.handleHot, side: DoubleSide, depthTest: false, depthWrite: false, transparent: true, opacity: 0.22, toneMapped: false }))
     this.fan.renderOrder = 9
     this.fan.raycast = () => {}
     this.fan.visible = false
@@ -162,7 +182,20 @@ export class RingSet<K extends string = RingAxis> {
     m.position.set(center[0], center[1], center[2])
     m.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), new Vector3(...axis))
     m.scale.setScalar(radius)
-    ;(m.material as MeshBasicMaterial).color.set(id === (this.active ?? this.hover) ? HOT : (m.userData.color as string))
+    const halo = this.halos.get(id)
+    if (halo) {
+      halo.position.copy(m.position)
+      halo.quaternion.copy(m.quaternion)
+      halo.scale.setScalar(radius)
+    }
+    ;(m.material as MeshBasicMaterial).color.set(id === (this.active ?? this.hover) ? this.hot : (m.userData.color as string))
+  }
+
+  /** The theme's hot and outline colors; a hovered or dragged ring takes the new hot color when it is placed again. */
+  setHandleColors(look: Pick<HandleColors, 'handleHot' | 'handleHalo'>): void {
+    this.hot = look.handleHot
+    this.haloMat.color.set(look.handleHalo)
+    ;(this.fan.material as MeshBasicMaterial).color.set(look.handleHot)
   }
 
   show(on: boolean): void {
@@ -209,11 +242,13 @@ export class RingSet<K extends string = RingAxis> {
 
   dispose(): void {
     const geos = new Set<BufferGeometry>()
-    for (const m of [...this.rings.values(), this.fan]) {
+    const mats = new Set<MeshBasicMaterial>()
+    for (const m of [...this.rings.values(), ...this.halos.values(), this.fan]) {
       geos.add(m.geometry)
-      ;(m.material as MeshBasicMaterial).dispose()
+      mats.add(m.material as MeshBasicMaterial)
     }
     for (const g of geos) g.dispose()
+    for (const m of mats) m.dispose()
     this.group.removeFromParent()
   }
 }

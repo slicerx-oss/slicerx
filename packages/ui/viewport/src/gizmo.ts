@@ -4,39 +4,72 @@
 // each side at the middle of the bottom edges, one z handle at the top, four uniform handles at the
 // bottom corners of the selected model's box (in the model's own axes). They keep a constant size on
 // screen and draw over the model.
-import { BoxGeometry, Box3, Color, Group, Mesh, MeshBasicMaterial, Raycaster, Vector3, type Camera, type Object3D } from 'three'
+import { BoxGeometry, Box3, BufferGeometry, Group, Mesh, MeshBasicMaterial, Raycaster, Vector3, type Camera, type Object3D } from 'three'
+import { SCENE, type HandleColors } from './palette'
 import { handleAxis, handleIds, handleLocal, oppositeHandle, type HandleId, type ScaleLayout, type V3 } from './scaling'
 
-// Orca colors: the axis colors, cyan for uniform handles, gray for the handle that Ctrl pins.
-const AXIS: Record<'x' | 'y' | 'z' | 'uniform', string> = { x: '#ff6b6b', y: '#51cf66', z: '#4dabf7', uniform: '#00ffff' }
-const CONSTRAINED = '#808080'
-const HOT = '#ffe066'
 const SIZE_PX = 9
+/** Width of the outline under each handle, px; a stem's is thinner, so the stem keeps its color. */
+export const HALO_PX = 1.5
+const STEM_HALO_PX = 1
+/** A stem's width as a share of a handle's. */
+const STEM = 0.28
 const ALL_IDS = handleIds('faces')
+
+/** The fill of a handle on `axis`: the axis colors, and the uniform color for the corners. */
+export function axisFill(c: HandleColors, axis: 'x' | 'y' | 'z' | 'uniform'): string {
+  return axis === 'x' ? c.axisX : axis === 'y' ? c.axisY : axis === 'z' ? c.axisZ : c.axisUniform
+}
+
+/**
+ * A handle material: unlit, fully opaque and drawn over everything in the theme's color. The view draws the handles over
+ * its finished picture (FrameOptions.overlay), so the token color is what reaches the screen and the 3:1 it is chosen
+ * for holds there. No depth: the handles never hide anything from the frame's depth.
+ */
+export function handleMaterial(color: string): MeshBasicMaterial {
+  return new MeshBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity: 1, toneMapped: false })
+}
 
 export class ScaleGizmo {
   readonly group = new Group()
   private readonly handles = new Map<HandleId, Mesh>()
   private readonly lines = new Map<HandleId, Mesh>()
+  /** The outline under each handle and under each stem: the same shape a little wider, in the halo color. */
+  private readonly halos = new Map<HandleId, Mesh>()
+  private readonly lineHalos = new Map<HandleId, Mesh>()
+  private readonly haloMat: MeshBasicMaterial
+  private readonly cube = new BoxGeometry(1, 1, 1)
+  private colors: HandleColors
   private hover: HandleId | null = null
   private dragging: HandleId | null = null
 
-  constructor() {
+  constructor(colors: HandleColors = SCENE) {
+    this.colors = { ...colors }
     this.group.name = 'scale-gizmo'
     this.group.visible = false
+    this.haloMat = handleMaterial(colors.handleHalo)
+    const add = (mat: MeshBasicMaterial, order: number): Mesh => {
+      const m = new Mesh(this.cube, mat)
+      m.renderOrder = order
+      this.group.add(m)
+      return m
+    }
     for (const id of ALL_IDS) {
       const axis = handleAxis(id)
-      const h = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial({ color: new Color(AXIS[axis]), depthTest: false, transparent: true, opacity: 0.95, toneMapped: false }))
-      h.renderOrder = 10
+      // outlines first (7, 8), then the stems (9), then the handles (10): every fill sits on its outline
+      const halo = add(this.haloMat, 8)
+      halo.raycast = () => {}
+      this.halos.set(id, halo)
+      const h = add(handleMaterial(axisFill(colors, axis)), 10)
       h.userData.handle = id
       this.handles.set(id, h)
-      this.group.add(h)
       if (axis !== 'uniform') {
-        const l = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial({ color: new Color(AXIS[axis]), depthTest: false, transparent: true, opacity: 0.6, toneMapped: false }))
-        l.renderOrder = 9
+        const lh = add(this.haloMat, 7)
+        lh.raycast = () => {}
+        this.lineHalos.set(id, lh)
+        const l = add(handleMaterial(axisFill(colors, axis)), 9)
         l.raycast = () => {}
         this.lines.set(id, l)
-        this.group.add(l)
       }
     }
   }
@@ -44,6 +77,18 @@ export class ScaleGizmo {
   private layout: ScaleLayout = 'bottom'
   private uniformOnly = false
   private rootPivot: 'bottom-center' | 'center' = 'bottom-center'
+
+  /** The theme's handle colors. A hovered, dragged or pinned handle takes its color at the next update. */
+  setColors(colors: HandleColors): void {
+    this.colors = { ...colors }
+    this.haloMat.color.set(colors.handleHalo)
+    for (const [id, h] of this.handles) {
+      const fill = axisFill(colors, handleAxis(id))
+      ;(h.material as MeshBasicMaterial).color.set(fill)
+      const l = this.lines.get(id)
+      if (l) (l.material as MeshBasicMaterial).color.set(fill)
+    }
+  }
 
   /** World position of each handle of the current layout for a model whose local box is `box`. */
   positions(obj: Object3D, box: Box3): Partial<Record<HandleId, Vector3>> {
@@ -70,24 +115,38 @@ export class ScaleGizmo {
     const shown = new Set(this.shownIds())
     const active = this.dragging ?? this.hover
     for (const [id, h] of this.handles) {
-      h.visible = shown.has(id)
-      const line0 = this.lines.get(id)
-      if (line0) line0.visible = shown.has(id)
+      const on = shown.has(id)
+      h.visible = on
+      const halo = this.halos.get(id) as Mesh
+      halo.visible = on
+      const line = this.lines.get(id)
+      const lineHalo = this.lineHalos.get(id)
+      if (line) line.visible = on
+      if (lineHalo) lineHalo.visible = on
       const p = pos[id]
       if (!p) continue
       const dist = camera.position.distanceTo(p)
-      const size = (2 * dist * Math.tan((fovDeg * Math.PI) / 360) * SIZE_PX) / Math.max(1, viewHeightPx)
+      const mmPerPx = (2 * dist * Math.tan((fovDeg * Math.PI) / 360)) / Math.max(1, viewHeightPx)
+      const size = mmPerPx * SIZE_PX
+      const edge = 2 * HALO_PX * mmPerPx
+      const s = size * (handleAxis(id) === 'uniform' ? 1.15 : 1)
       h.position.copy(p)
-      h.scale.setScalar(size * (handleAxis(id) === 'uniform' ? 1.15 : 1))
+      h.scale.setScalar(s)
+      halo.position.copy(p)
+      halo.scale.setScalar(s + edge)
       const pinned = ctrl && active !== null && oppositeHandle(active, this.layout) === id
-      const color = id === active ? HOT : pinned ? CONSTRAINED : AXIS[handleAxis(id)]
+      const color = id === active ? this.colors.handleHot : pinned ? this.colors.handlePinned : axisFill(this.colors, handleAxis(id))
       ;(h.material as MeshBasicMaterial).color.set(color)
-      const line = this.lines.get(id)
-      if (line) {
+      if (line && lineHalo) {
         const len = root.distanceTo(p)
-        line.position.copy(root).lerp(p, 0.5)
-        if (len > 1e-6) line.lookAt(p)
-        line.scale.set(size * 0.2, size * 0.2, Math.max(len, 1e-6))
+        for (const m of [lineHalo, line]) {
+          m.position.copy(root).lerp(p, 0.5)
+          if (len > 1e-6) m.lookAt(p)
+        }
+        const w = size * STEM
+        const wh = w + 2 * STEM_HALO_PX * mmPerPx
+        line.scale.set(w, w, Math.max(len, 1e-6))
+        lineHalo.scale.set(wh, wh, Math.max(len, 1e-6))
         ;(line.material as MeshBasicMaterial).color.set(color)
       }
     }
@@ -127,10 +186,14 @@ export class ScaleGizmo {
   }
 
   dispose(): void {
-    for (const m of [...this.handles.values(), ...this.lines.values()]) {
-      m.geometry.dispose()
-      ;(m.material as MeshBasicMaterial).dispose()
+    const geos = new Set<BufferGeometry>()
+    const mats = new Set<MeshBasicMaterial>()
+    for (const m of [...this.handles.values(), ...this.lines.values(), ...this.halos.values(), ...this.lineHalos.values()]) {
+      geos.add(m.geometry)
+      mats.add(m.material as MeshBasicMaterial)
     }
+    for (const g of geos) g.dispose()
+    for (const m of mats) m.dispose()
     this.group.removeFromParent()
   }
 }

@@ -16,6 +16,7 @@ import {
   Mesh,
   NearestFilter,
   NoBlending,
+  NormalBlending,
   OneFactor,
   ShaderMaterial,
   UnsignedByteType,
@@ -248,6 +249,22 @@ void main() {
 }
 `
 
+// The overlay (the move, rotate and scale handles) laid over the graded picture: its colors reach the screen as given,
+// with no tone curve, AO, outline or vignette. The target holds linear color with coverage in alpha after the MSAA resolve.
+const OVERLAY_FS = /* glsl */ `
+uniform sampler2D tColor;
+varying vec2 vUv;
+vec3 toSRGB(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+}
+void main() {
+  vec4 c = texture2D(tColor, vUv);
+  if (c.a <= 0.0) discard;
+  gl_FragColor = vec4(toSRGB(c.rgb / c.a), c.a);
+}
+`
+
 function srgb01(hex: string): [number, number, number] {
   const [r, g, b] = hexToRgb(hex)
   return [r / 255, g / 255, b / 255]
@@ -268,6 +285,11 @@ export interface FrameOptions {
   silhouette?: boolean
   /** Increments per frame so AO noise rotates; still frames average it away. */
   frameIndex: number
+  /**
+   * Drawn over the finished picture instead of in the scene: the move, rotate and scale handles, whose colors are
+   * chosen for contrast and must reach the screen as they are. They draw in order, over everything, without depth.
+   */
+  overlay?: readonly Object3D[]
 }
 
 export class Pipeline {
@@ -285,6 +307,7 @@ export class Pipeline {
   private readonly maskMat: ShaderMaterial
   private readonly gradeMat: ShaderMaterial
   private readonly fxaaMat: ShaderMaterial
+  private readonly overlayMat: ShaderMaterial
   private readonly quad = new FullScreenQuad()
   private width = 1
   private height = 1
@@ -441,6 +464,15 @@ export class Pipeline {
       depthWrite: false,
       blending: NoBlending,
     })
+    this.overlayMat = new ShaderMaterial({
+      uniforms: { tColor: { value: null } },
+      vertexShader: QUAD_VS,
+      fragmentShader: OVERLAY_FS,
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      blending: NormalBlending,
+    })
     this.mask.texture.minFilter = LinearFilter
     this.ao.texture.magFilter = LinearFilter
     depthTexture.minFilter = NearestFilter
@@ -527,7 +559,10 @@ export class Pipeline {
     r.setRenderTarget(target)
     r.setClearColor(0x000000, 0)
     r.clear(true, true, true)
+    const overlay = (opts.overlay ?? []).filter((o) => o.visible)
+    for (const o of overlay) o.visible = false
     r.render(scene, camera)
+    for (const o of overlay) o.visible = true
 
     const g = this.gradeMat.uniforms
     const ao = opts.ao
@@ -567,6 +602,24 @@ export class Pipeline {
     } else {
       this.pass(this.gradeMat, null)
     }
+    if (overlay.length) this.drawOverlay(overlay, camera, target)
+  }
+
+  /**
+   * Draws `overlay` into the frame's own target, free once the grade has read it (its MSAA smooths the edges), and lays
+   * it over the canvas. Only color is cleared: the depth stays for anything that reads it after the frame.
+   */
+  private drawOverlay(overlay: readonly Object3D[], camera: Camera, target: WebGLRenderTarget): void {
+    const r = this.renderer
+    r.setRenderTarget(target)
+    r.setClearColor(0x000000, 0)
+    r.clear(true, false, false)
+    const auto = r.autoClear
+    r.autoClear = false
+    for (const o of overlay) r.render(o, camera)
+    r.autoClear = auto
+    if (this.overlayMat.uniforms.tColor) this.overlayMat.uniforms.tColor.value = target.texture
+    this.pass(this.overlayMat, null)
   }
 
   private pass(mat: Material, target: WebGLRenderTarget | null): void {
@@ -620,6 +673,7 @@ export class Pipeline {
     this.maskMat.dispose()
     this.gradeMat.dispose()
     this.fxaaMat.dispose()
+    this.overlayMat.dispose()
     this.quad.dispose()
     this.probe.dispose()
   }

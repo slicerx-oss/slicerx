@@ -4,6 +4,14 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+### Added
+
+- Handle scene colors `axisX`, `axisY`, `axisZ`, `axisUniform`, `handleHot`, `handlePinned` and `handleHalo`: the move arrows, rotate rings and scale handles take their colors from the theme instead of fixed values.
+
+### Fixed
+
+- Move, rotate and scale handles read on every bed. Each one draws over a thin near black outline, and every handle color is at least 9:1 off it, so the fill or the outline keeps 3:1 against anything behind a handle: a light or dark studio, any plate surface, a part's shadow or the part itself. Before, the fills fell to about 1.1:1 on the light studio and the PEI surfaces. The X and Z colors and the pinned gray are lighter for this, and the handles draw fully opaque.
+
 ## [0.1.8] - 2026-10-18
 
 ### Added
