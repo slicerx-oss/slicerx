@@ -6,7 +6,7 @@
 // looks it up instead of using a size from memory.
 import type { Citation, ToolDisplay } from '@slicerx/contracts'
 import { z } from 'zod'
-import { matchParts } from '../parts/match'
+import { matchParts, words, type PartMatch } from '../parts/match'
 import { bundledPartsTable, type PartRecord, type PartSize, type PartsTable } from '../parts/table'
 import { defineTool, type PilotTool, type ToolOutput } from '../tool'
 
@@ -77,6 +77,19 @@ function brief(r: PartRecord): string {
   return `${r.name}${shown.length ? `: ${shown.map((s) => `${label(s.key)} ${sizeText(s)}`).join(', ')}` : ''}`
 }
 
+/** Text cut to the card's room, ending in an ellipsis when it was cut. */
+const clip = (s: string, n: number): string => (s.length <= n ? s : `${s.slice(0, n - 1)}\u2026`)
+
+// Words a request names a part with that are not part of its name: "a case for my iPhone 15" still names the iPhone 15.
+const FILLER = new Set(['a', 'an', 'the', 'my', 'our', 'your', 'for', 'of', 'to', 'with', 'and', 'case', 'holder', 'dock', 'stand', 'tray', 'mount', 'bracket', 'bumper', 'cover', 'adapter', 'plate'])
+
+/** True when the matched name is the whole of what the request names, so "iPhone 15 mini" is not taken for the iPhone 15. */
+function coversQuery(m: PartMatch, query: string, table: PartsTable): boolean {
+  const own = new Set([...words(m.matched), ...words(m.record.name)])
+  const category = new Set(table.categories.find((c) => c.id === m.record.category)?.words.flatMap((w) => words(w)) ?? [])
+  return words(query).every((w) => own.has(w) || FILLER.has(w) || category.has(w) || category.has(w.replace(/s$/, '')))
+}
+
 /**
  * The one part found as a card in the view, as lookup.show shows one, so a looked-up size is always on screen with its
  * page: up to four published sizes from the page the first one came from. None when no size has a page.
@@ -85,7 +98,7 @@ function cardOf(r: PartRecord): ToolOutput['lookup'] {
   const page = r.sizes.find((s) => s.value !== null && s.source_url)?.source_url
   if (!page) return undefined
   const shown = r.sizes.filter((s) => s.value !== null && s.source_url === page && !s.unit?.startsWith('formula:') && !/tolerance/.test(s.key)).slice(0, 4)
-  return { title: r.name.slice(0, 60), fields: shown.map((s) => [label(s.key).slice(0, 32), sizeText(s).slice(0, 80)]), source: { title: `${r.name} (${host(page)})`.slice(0, 80), url: page } }
+  return { title: clip(r.name, 60), fields: shown.map((s) => [clip(label(s.key), 32), clip(sizeText(s), 80)]), source: { title: clip(`${r.name} (${host(page)})`, 80), url: page } }
 }
 
 /** Looks `name` up in `table` and shapes the answer for the model, the chat and an MCP client. */
@@ -100,6 +113,8 @@ export function lookupParts(table: PartsTable, name: string, category?: string):
     }
   }
   const parts = res.matches.slice(0, MAX_PARTS).map((m) => m.record)
+  // a card only for one part whose name is all the request names: a near name ("iPhone 15 mini") gets none
+  const card = res.matches.length === 1 && coversQuery(res.matches[0]!, name, table) ? cardOf(parts[0]!) : undefined
   const scopes = new Map(table.categories.map((c) => [c.id, c.scope]))
   const display: ToolDisplay[] = parts.map((r) => ({
     kind: 'table',
@@ -117,7 +132,7 @@ export function lookupParts(table: PartsTable, name: string, category?: string):
     },
     display,
     citations: citationsFor(parts),
-    ...(parts.length === 1 && cardOf(parts[0]!) ? { lookup: cardOf(parts[0]!)! } : {}),
+    ...(card ? { lookup: card } : {}),
   }
 }
 
