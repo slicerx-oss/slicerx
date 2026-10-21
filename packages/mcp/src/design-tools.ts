@@ -181,6 +181,7 @@ export function designSummary(d: Design): Record<string, unknown> {
 export function landedNote(l: NonNullable<Design['landed']>, name = 'The part'): string {
   if (l.edit) {
     if (!('offBed' in l)) return `${name} did not fit on the bed where it stood, so it moved by (${l.dxMm}, ${l.dyMm}) mm.`
+    if (l.parked) return `${name} is off the bed, so it stays where it is. Move it onto the bed to print it.`
     if (l.locked) return `${name} does not fit on the bed where it stands, and it is locked, so it stays. Unlock it or undo the step.`
     return `${name} does not fit on the bed. Make it smaller or undo the step.`
   }

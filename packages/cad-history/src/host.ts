@@ -28,9 +28,9 @@ export interface Design {
  * A first body built off the bed: moved by (dxMm, dyMm) onto it, after which the design's coordinates are the plate's;
  * or offBed when no spot on the bed holds it, so it stays where it was built. Off the bed counts what prints around the
  * part (brim, skirt) and the excluded areas. `edit` marks a part an edit left off the bed, landed again the same way;
- * `locked` one that stayed.
+ * `locked` one that stayed, and `parked` one that was off the bed before the edit and stays there.
  */
-export type Landed = { dxMm: number; dyMm: number; edit?: true } | { offBed: true; edit?: true; locked?: true }
+export type Landed = { dxMm: number; dyMm: number; edit?: true } | { offBed: true; edit?: true; locked?: true; parked?: true }
 
 export interface DesignCommit {
   step: Step

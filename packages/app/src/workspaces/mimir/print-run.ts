@@ -10,7 +10,7 @@ import type { PrintRunHost, RunLanded, RunTarget } from '@slicerx/pilot'
 import { moveToSpool } from '../../filament/pick'
 import { followPrinterSlot } from '../../filament/slot-rail'
 import { effectiveSlot, mapSlot } from '../../filament/slots'
-import { landOnBed, placedOnBed } from '../../plate/arrange'
+import { landOnBed, printsOnBed } from '../../plate/arrange'
 import { getArrangeOptions } from '../../plate/edit'
 import { activeMeta } from '../../plate/plates'
 import type { Mat4 } from '../../plate/transform'
@@ -137,16 +137,16 @@ function moveSlots(t: RunTarget): void {
 }
 
 /**
- * Lands every plate's parts that the bed in the store leaves hanging off it or in an excluded area, with the landing a
- * new part gets (landOnBed): the middle of the bed or the first free spot, clear of the brim and skirt of the parts
- * around it. A part that stands on the bed stays put, and so does a locked one. A part with no room stays where it was.
+ * Lands every plate's parts that the bed in the store leaves hanging off it or in an excluded area, themselves or what
+ * prints around them (brim, skirt: printsOnBed), with the landing a new part gets (landOnBed): the middle of the bed or
+ * the first free spot, clear of the brim and skirt of the parts around it. A part that prints where it stands stays put, and so does a locked one. A part with no room stays where it was.
  * Each part is named with its plate. All moves are one store write, so one undo step brings every part back.
  */
 export function landOnNewBed(): RunLanded {
   const s = get()
   const out: RunLanded = { moved: [], offBed: [], ...(s.plates.length > 1 ? { manyPlates: true } : {}) }
   const land = (objects: PlateEntry[], plate: string): PlateEntry[] => {
-    const off = objects.filter((o) => !o.locked && !placedOnBed(o, s.bed))
+    const off = objects.filter((o) => !o.locked && !printsOnBed(o, s.bed))
     if (!off.length) return objects
     // the parts that stay are what the moved ones keep clear of; a part not landed yet is no obstacle
     const placed = objects.filter((o) => !off.includes(o))
