@@ -173,12 +173,17 @@ export function designSummary(d: Design): Record<string, unknown> {
     parts,
     ...(d.stl ? { stlPath: d.stl } : {}),
     ...(d.history.ended ? { ended: d.history.ended } : {}),
-    ...(d.landed ? { landed: landedNote(d.landed) } : {}),
+    ...(d.landed ? { landed: landedNote(d.landed, d.name) } : {}),
   }
 }
 
-/** What a client hears when the first body landed on the bed, or could not. */
-export function landedNote(l: NonNullable<Design['landed']>): string {
+/** What a client hears when the first body landed on the bed, or an edit moved the part, or either could not. */
+export function landedNote(l: NonNullable<Design['landed']>, name = 'The part'): string {
+  if (l.edit) {
+    if (!('offBed' in l)) return `${name} did not fit on the bed where it stood, so it moved by (${l.dxMm}, ${l.dyMm}) mm.`
+    if (l.locked) return `${name} does not fit on the bed where it stands, and it is locked, so it stays. Unlock it or undo the step.`
+    return `${name} does not fit on the bed. Make it smaller or undo the step.`
+  }
   if ('offBed' in l) return 'The part does not fit on the bed anywhere, so it stays where it was built, off the bed.'
   return `The part was off the bed, so it moved to the plate by (${l.dxMm}, ${l.dyMm}) mm. Its coordinates are now the plate's.`
 }
@@ -252,7 +257,7 @@ export function designTools(designs: DesignHost, files: DesignFiles, opts: Desig
     async run(i) {
       const base = i.from ? await files.model(i.from, i.name) : []
       const d = await designs.create(i.name, base, undefined, undefined, { exact: i.exact === true })
-      return { summary: `Started ${d.name} (${d.id})${base.length ? ' from the model' : ''}${d.landed ? `. ${landedNote(d.landed)}` : ''}`, output: designSummary(d) }
+      return { summary: `Started ${d.name} (${d.id})${base.length ? ' from the model' : ''}${d.landed ? `. ${landedNote(d.landed, d.name)}` : ''}`, output: designSummary(d) }
     },
   })
 

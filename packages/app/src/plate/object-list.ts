@@ -5,7 +5,7 @@
 // extruder column per object and part. Each is one store update, so one undo step.
 import { get, markStale, selectedIds, set, type AppState, type PlateEntry } from '../state/store'
 import { effectiveSlot } from '../filament/slots'
-import { avoidAreas, currentMargins, printSizeOf, type PrintMargins } from './arrange'
+import { currentMargins, printPastBed, type PrintMargins } from './arrange'
 import { bounds, fitsBed, reachFrom } from './transform'
 
 import { ROLE_LABEL } from './volumes'
@@ -131,15 +131,6 @@ export function moveObject(id: string, toIndex: number): boolean {
   set({ plate: next })
   markStale()
   return true
-}
-
-/** True when what prints around the object (brim, raft, support pad, skirt) goes past the bed edge or onto an excluded area. */
-export function printPastBed(b: NonNullable<ReturnType<typeof bounds>>, bed: AppState['bed'], margins: PrintMargins, outlineReach?: number): boolean {
-  const reach = margins.reach(printSizeOf(b))
-  const grown = { min: [b.min[0] - reach, b.min[1] - reach, b.min[2]] as [number, number, number], max: [b.max[0] + reach, b.max[1] + reach, b.max[2]] as [number, number, number] }
-  // On a round bed what prints around the outline is a band of `reach` mm, so the outline plus the reach must stay inside the circle.
-  if (!fitsBed(grown, bed, 0.01, outlineReach === undefined ? undefined : outlineReach + reach)) return true
-  return [...avoidAreas(), ...margins.keepOut].some((z) => grown.min[0] < z.x + z.w && z.x < grown.max[0] && grown.min[1] < z.y + z.h && z.y < grown.max[1])
 }
 
 /** What the list flags on an object, the way PrusaSlicer's object list does: off the bed, or a filament the printer does not have. */
