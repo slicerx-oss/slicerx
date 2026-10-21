@@ -242,10 +242,8 @@ test.describe('edge tabs', () => {
     const timeline = page.locator('.bpanel-body')
     await expect(bottom).toHaveAttribute('data-panel', 'model-timeline')
     await expect(timeline).toBeHidden()
-    // One press where the tab is, not locator.click(): the pointer on the tab is in the band that opens the panel by
-    // itself after a moment, and the tab then moves up above the panel. A click that Playwright retries chases the tab
-    // there and shuts the panel again. A press that lands after the band opened it falls on the panel, which stays
-    // open, as it does for a person.
+    // One press where the tab is, as a person does. The pointer resting on the tab opens nothing from the band, so the
+    // tab is still there when the press lands.
     const tabBox = (await bottom.boundingBox())!
     await page.mouse.click(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2)
     await expect(timeline).toBeVisible()
