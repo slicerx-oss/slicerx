@@ -75,6 +75,7 @@ export { DataStore, resolveDataPaths } from './data'
 export { DEFAULT_POLICY_PATH, loadPolicy } from './policy'
 export { design3mf, readDesigns, type Design } from './design'
 export { gcode3mf } from './gcode3mf'
+export type { SliceSummary } from './slicer'
 
 export type EngineMode = 'auto' | 'sx' | 'stub'
 

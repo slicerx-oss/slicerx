@@ -378,6 +378,8 @@ describe('.gcode.3mf', () => {
     expect(zip.text('Metadata/plate_1.gcode')).toMatch(/^; header\n\n?G28\n/)
     expect(zip.text('_rels/.rels')).toMatch(/cover-thumbnail-middle/)
     expect(zip.text('Metadata/model_settings.config')).toMatch(/thumbnail_file" value="Metadata\/plate_1.png"/)
+    // This G-code gives no first layer time, so slice_info.config states none.
+    expect(zip.text('Metadata/slice_info.config')).not.toMatch(/first_layer_time/)
   })
 
   it('packs the plate the way Bambu Lab printers read it', () => {
