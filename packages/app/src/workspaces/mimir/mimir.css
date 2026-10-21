@@ -121,6 +121,23 @@
 .mimir-callout[data-source="photo"] circle { stroke: var(--pink); }
 .mimir-callout[data-on] circle { fill: var(--accent); stroke: var(--accent); stroke-dasharray: none; }
 .mimir-callout[data-on] text { fill: var(--on-grad); }
+/* On a phone (drawing-pick.ts) Top and Isometric share the frame side by side, or Front or Right fills it, each view's
+   label in a band of its own above the drawing so no callout can cover it. The header holds the view picker and the 44 px fold control at one height, folded or not, so
+   neither moves when pressed. Folded, the view shrinks to the header and the chat under it gets the room. */
+.mimir-drawing[data-phone] { padding-top: var(--s-2); }
+.mimir-drawing[data-phone] .mimir-drawing-head { gap: var(--s-1); height: calc(var(--h-lg) + 6px + 2 * var(--s-1)); padding: 0 var(--s-1) 0 var(--s-2); }
+.mimir-drawing-views { flex: 1; min-width: 0; }
+.mimir-drawing .mimir-drawing-views .sx-seg > button { flex: 1 1 auto; height: var(--h-lg); padding: 0 var(--s-2); }
+.mimir-drawing .mimir-drawing-head .mimir-drawing-fold.sx-btn { flex: none; width: var(--h-lg); height: var(--h-lg); margin-left: auto; }
+.mimir-drawing-folded { flex: 1; min-width: 0; padding-left: var(--s-1); color: var(--fg); font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.mimir-drawing .mimir-drawing-grid[hidden], .mimir-drawing[data-folded] .mimir-drawing-strip { display: none; }
+.mimir-drawing[data-phone] .mimir-drawing-grid { grid-template-columns: none; grid-template-rows: minmax(0, 1fr); grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.mimir-drawing[data-phone] .mimir-drawing-cell { border: 0; }
+.mimir-drawing[data-phone] .mimir-drawing-cell + .mimir-drawing-cell { border-left: 1px solid var(--line-soft); }
+.mimir-drawing[data-phone] .mimir-drawing-cell > svg { top: 22px; }
+.mimir-drawing[data-phone] .mimir-drawing-label { top: var(--s-1); line-height: 16px; }
+/* folded: the top padding, the header and its border, and the strip kept clear for the timeline's tab */
+:root[data-phone] .studio[data-model-mode="mimir"]:has(> .vp[data-mimir-drawing="folded"]) { --mimir-view-h: calc(var(--s-2) + var(--h-lg) + 6px + 2 * var(--s-1) + 2px + 56px); }
 /* the panel: flat, docked, full height of the view */
 .mimir-sheet-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 3; width: var(--mimir-sheet-w); display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; background: var(--ink-1); border-left: 1px solid var(--line-soft); outline: none; }
 .mimir-sheet-panel:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
