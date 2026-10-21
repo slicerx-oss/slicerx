@@ -107,16 +107,33 @@ export function modelingCommands(commands: readonly CommandSpec[]): CommandSpec[
 /** app.slice's reply when no slice ran and the one on screen no longer matches the plate. */
 export const STALE_REPLY = 'The slice on screen is out of date because the plate changed after it. Slice the plate again.'
 
+/** What mimir's tool for a command is made from: id, title, section, workspace, permission and input schema. */
+function commandSignature(c: CommandSpec): string {
+  return JSON.stringify([c.id, c.title, c.section, c.workspace ?? null, c.tool?.permission ?? null, c.tool?.inputSchema ?? null])
+}
+
+/** app.<id>'s reply when the command it was made from changed or went away since: it did not run. */
+export const GONE_REPLY = 'This command changed or is gone since mimir started, so it did not run.'
+
 /**
  * The registered commands, each running the command registered under its id when it runs: the same commands
  * registering again (a layout change brings the built-in ones back) keep the runtime, which then calls the new ones.
+ * Only a command the same as the one the tool was made from runs: a changed one, one gone, or one turned off is
+ * refused (a runtime that was replaced may still have a card waiting to run it).
  */
 export function liveCommands(commands: readonly CommandSpec[] = listCommands()): CommandSpec[] {
-  return commands.map((c) => ({
-    ...c,
-    ...(c.enabled ? { enabled: () => isEnabled(getCommand(c.id) ?? c) } : {}),
-    run: (input?: unknown, cx?: CommandToolContext) => ((getCommand(c.id) ?? c).run as (input: unknown, cx?: CommandToolContext) => unknown)(input, cx),
-  }))
+  return commands.map((c) => {
+    const made = commandSignature(c)
+    return {
+      ...c,
+      run: (input?: unknown, cx?: CommandToolContext) => {
+        const live = getCommand(c.id)
+        if (!live || commandSignature(live) !== made) return { status: 'error', message: GONE_REPLY }
+        if (!isEnabled(live)) return { status: 'error', message: `${live.title} is not available right now.` }
+        return (live.run as (input: unknown, cx?: CommandToolContext) => unknown)(input, cx)
+      },
+    }
+  })
 }
 
 export function mimirCommands(host: Host, commands: readonly CommandSpec[]): CommandSpec[] {
@@ -217,9 +234,9 @@ function scripted(host: Host, kb: KnowledgeBase, edition: EditionConfig): Pilot 
  */
 function toolCommands(): string {
   const seen = hostSlices() ? listCommands() : modelingCommands(listCommands())
-  const rows = seen.flatMap((c) => (c.tool ? [[c.id, c.title, c.section, c.workspace ?? null, c.tool.permission, c.tool.inputSchema ?? null] as const] : []))
-  rows.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-  return JSON.stringify(rows)
+  const rows = seen.flatMap((c) => (c.tool ? [{ id: c.id, sig: commandSignature(c) }] : []))
+  rows.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  return JSON.stringify(rows.map((r) => r.sig))
 }
 
 /** Which transport the host offers mimir: none, the browser build's stand-in, or its own; and whether it has secure storage (pairing brings it). */
@@ -238,6 +255,18 @@ function cloudId(cloud: unknown): number {
   return id
 }
 
+/** How long the tab waits for commands on their way before it makes the runtime without them. */
+export const COMMANDS_WAIT_MS = 3000
+
+/** Commands on their way landing, or COMMANDS_WAIT_MS passing (an import that never settles, such as a stalled fetch). */
+function commandsLanded(): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, COMMANDS_WAIT_MS)
+  })
+  return Promise.race([commandsLoaded(), late]).finally(() => clearTimeout(timer))
+}
+
 /**
  * The setup the tab would use now: what Settings > mimir chose, or the edition's own, the mimir cloud host, the host's
  * transport, whether the host slices, the app commands mimir has as tools (by what they are, not which objects they
@@ -254,7 +283,7 @@ function setupKey(host: Host, edition: EditionConfig, pref: PilotPref | null, cl
 export async function tabMimir(host: Host, edition: EditionConfig, cloud: unknown = null): Promise<Pilot> {
   // commands on their way (a layout change takes the built-in ones away until they load again): the setup is read once
   // they land, so the gap never makes a runtime of its own
-  if (commandsLoading()) await commandsLoaded()
+  if (commandsLoading()) await commandsLanded()
   const pref = get().pilot
   const key = setupKey(host, edition, pref, cloud)
   if (current?.key === key) {
