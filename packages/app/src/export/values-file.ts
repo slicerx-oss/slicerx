@@ -8,10 +8,8 @@ import { validName, type NamedValue } from '../cad/value-names'
 const MAX_VALUES = 200
 const MAX_EXPR = 200
 
-/** The part's text, or null when the table is empty so nothing is added. */
-export function valuesJson(values: readonly NamedValue[]): string | null {
-  return values.length ? JSON.stringify({ version: 1, values: values.map(({ name, expr }) => ({ name, expr })) }, null, 2) : null
-}
+/** The part's text, or null when the table is empty so nothing is added (the 3MF writer's). */
+export { valuesJson } from '@slicerx/threemf/project'
 
 export function parseValues(files: ReadonlyMap<string, Uint8Array>): NamedValue[] {
   const bytes = files.get('Metadata/slicerx_values.json')

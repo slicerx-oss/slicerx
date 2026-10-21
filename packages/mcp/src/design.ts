@@ -6,12 +6,14 @@
 // and its reason returned: a design never keeps a broken edit the client did not ask for.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, historyFiles, parseHistories, replayHistory, stepId, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
+import { HISTORY_VERSION, IDENTITY, appendStep, bakeMesh, parseHistories, replayHistory, stepId, type DesignHost, type EngineCall, type History, type HistoryMesh, type Mat4, type PaintTexts, type Step, type StepParams, type StepStatus } from '@slicerx/cad-history'
 import { soup, slug, type Design, type DesignFiles } from './design-tools'
 import { writeBinaryStl, readStlPositions } from './mesh'
 import { resolveModel, ToolInputError, type PathPolicy } from './models'
 import { readZip, writeZip } from './zip'
 import { BodyRevisions } from '@slicerx/cad-history/body-revisions'
+import { productName } from '@slicerx/contracts'
+import { entryData, projectFiles } from '@slicerx/threemf'
 
 export { designArg, designSummary, designTools, faceAt, item, partAt, type Design, type DesignFiles } from './design-tools'
 
@@ -162,67 +164,22 @@ export function stlMesh(buf: Buffer, name: string): HistoryMesh {
   return { name, slot: 1, positions, indices }
 }
 
-/** The paint attributes Bambu Studio and OrcaSlicer write on a painted triangle, by layer. */
-const PAINT_ATTR = { color: 'paint_color', seam: 'paint_seam', support: 'paint_supports', fuzzy: 'paint_fuzzy_skin' } as const
-
-/** A triangle's paint as 3MF attributes (none when it is not painted), so every slicer sees the colors. */
-function paintAttrs(p: HistoryMesh, t: number): string {
-  if (!p.paint) return ''
-  let out = ''
-  for (const [layer, attr] of Object.entries(PAINT_ATTR) as [keyof typeof PAINT_ATTR, string][]) {
-    const text = p.paint[layer]?.[t]
-    if (text && /^[0-9A-Fa-f]+$/.test(text)) out += ` ${attr}="${text}"`
-  }
-  return out
-}
-
-const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-const num = (v: number): string => String(Math.fround(v))
-
-/** 3MF row-major 3x4 transform from a column-major Mat4. */
-const transformAttr = (m: Mat4): string => [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14].map((i) => num(m[i] ?? 0)).join(' ')
-
 /**
- * A design as a 3MF project: one object whose parts are components with their filament slots (Orca and Bambu
- * Studio's model_settings.config), and the CAD history beside it (Metadata/slicerx_history.json).
+ * A design as a 3MF project, written by the app's own writer (@slicerx/threemf): one object on plate 1 whose parts are
+ * components with their filament slots and paint (Orca and Bambu Studio's model_settings.config), and the CAD history
+ * beside it as the design timeline the app saves (Metadata/slicerx_history.json), so it opens in the app as the
+ * app's own files do. A design carries no print settings, so the file has none: a slicer opens it as a model and
+ * places it on its bed.
  */
 export function design3mf(d: Design): Buffer {
   if (!d.parts.length) throw new ToolInputError('The design has no parts yet; add a step that makes a body first.')
-  const n = d.parts.length
-  const objectId = n + 1
-  const meshes = d.parts
-    .map((p, i) => {
-      const v: string[] = []
-      for (let k = 0; k + 2 < p.positions.length; k += 3) v.push(`<vertex x="${num(p.positions[k]!)}" y="${num(p.positions[k + 1]!)}" z="${num(p.positions[k + 2]!)}"/>`)
-      const t: string[] = []
-      for (let k = 0; k + 2 < p.indices.length; k += 3) t.push(`<triangle v1="${p.indices[k]}" v2="${p.indices[k + 1]}" v3="${p.indices[k + 2]}"${paintAttrs(p, k / 3)}/>`)
-      return `<object id="${i + 1}" type="model" name="${esc(p.name)}"><mesh><vertices>${v.join('')}</vertices><triangles>${t.join('')}</triangles></mesh></object>`
-    })
-    .join('')
-  const components = d.parts.map((_, i) => `<component objectid="${i + 1}"/>`).join('')
-  const identity = d.transform.every((v, i) => v === IDENTITY[i])
-  const model =
-    `<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">SlicerX</metadata><resources>${meshes}` +
-    `<object id="${objectId}" type="model" name="${esc(d.name)}"><components>${components}</components></object></resources>` +
-    `<build><item objectid="${objectId}"${identity ? '' : ` transform="${transformAttr(d.transform)}"`} printable="1"/></build></model>`
-  const meta = (k: string, v: string | number): string => `<metadata key="${k}" value="${esc(String(v))}"/>`
-  const settings =
-    `<?xml version="1.0" encoding="UTF-8"?>\n<config><object id="${objectId}">${meta('name', d.name)}${meta('extruder', d.parts[0]!.slot)}` +
-    d.parts.map((p, i) => `<part id="${i + 1}" subtype="normal_part">${meta('name', p.name)}${meta('extruder', p.slot)}</part>`).join('') +
-    `</object></config>`
-  return writeZip([
-    {
-      name: '[Content_Types].xml',
-      data: `<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/><Default Extension="config" ContentType="text/xml"/><Default Extension="json" ContentType="application/json"/><Default Extension="bin" ContentType="application/octet-stream"/></Types>`,
-    },
-    {
-      name: '_rels/.rels',
-      data: `<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`,
-    },
-    { name: '3D/3dmodel.model', data: model },
-    { name: 'Metadata/model_settings.config', data: settings },
-    ...historyFiles([{ id: d.id, history: d.history }], new Map([[d.id, objectId]])),
-  ])
+  const paint = Object.fromEntries(d.parts.flatMap((p, i) => (p.paint ? [[i, p.paint] as const] : [])))
+  const files = projectFiles({
+    plates: [{ name: '', objects: [{ id: d.id, name: d.name, parts: d.parts, paint, transform: d.transform, history: d.history }], settings: {} }],
+    bed: { widthMm: 0, depthMm: 0 },
+    application: productName(),
+  })
+  return writeZip(entryData(files))
 }
 
 /** A part as the engine's 3MF reader (sx-geom `format.read3mf`) gives it, its mesh as numbers. */

@@ -87,6 +87,7 @@
     "@slicerx/pilot": "workspace:*",
     "@slicerx/printer-catalog": "workspace:*",
     "@slicerx/settings": "workspace:*",
+    "@slicerx/threemf": "workspace:*",
     "@slicerx/ui": "workspace:*",
     "@types/node": "24.19.0",
     "ajv": "8.20.0",
