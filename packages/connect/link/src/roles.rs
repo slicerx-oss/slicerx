@@ -101,7 +101,9 @@ pub(crate) enum LinkClass {
 
 /// methods on the open project, classified as read or edit. no printing, accounts or connection settings.
 /// geometry volumes, two view preferences and Model's selection are allowed, and `model.push_set` only types a distance
-/// into the open Push and pull. each method needs its pinned test entry.
+/// into the open Push and pull. the window is read (`ui.get`) and switched between workspaces and tabs (`ui.set`,
+/// read); setting the selection and opening or closing panels (`ui.select`) is an edit, since the person's next click
+/// acts on it. the printer is read there, never picked. each method needs its pinned test entry.
 pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("app.info", LinkClass::Read),
     ("history.get", LinkClass::Read),
@@ -156,6 +158,12 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // read: these change only how the window behaves; project print settings have separate methods.
     ("look.get", LinkClass::Read),
     ("look.set", LinkClass::Read),
+    // The window as the person sees it (workspace, tab, selection, plate shown, printer chosen, panels open).
+    // Switching workspace or tab is read: only what the window shows. Selection and panels are an edit: the person's
+    // next click acts on them. Never the project; the printer is read, never picked.
+    ("ui.get", LinkClass::Read),
+    ("ui.set", LinkClass::Read),
+    ("ui.select", LinkClass::Edit),
     // The open sketch's dimension boxes: read them, and type a value into one, as the person does on the shape.
     ("sketch.boxes", LinkClass::Read),
     ("sketch.box_set", LinkClass::Edit),
@@ -469,6 +477,9 @@ mod tests {
         ("plates.move", LinkClass::Edit),
         ("look.get", LinkClass::Read),
         ("look.set", LinkClass::Read),
+        ("ui.get", LinkClass::Read),
+        ("ui.set", LinkClass::Read),
+        ("ui.select", LinkClass::Edit),
         ("sketch.boxes", LinkClass::Read),
         ("sketch.box_set", LinkClass::Edit),
         ("model.push", LinkClass::Read),

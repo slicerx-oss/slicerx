@@ -38,7 +38,7 @@ const cut = (t: string, n: number): string => (t.length > n ? `${t.slice(0, n)}.
 const num = (v: number | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 
 /** The name each printer is shown by, by id. A printer the app no longer knows gets no name, never its id. */
-async function namesOf(ids: readonly string[]): Promise<Map<string, string>> {
+export async function namesOf(ids: readonly string[]): Promise<Map<string, string>> {
   const out = new Map<string, string>()
   const host = printers?.()
   if (!host || ids.length === 0) return out

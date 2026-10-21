@@ -1,39 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Settings: sections that features add (Account) and the base's own (Phone access, Look and feel).
-import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Button, Dialog, Icon, Switch, type IconName } from '@slicerx/ui'
+import { Button, Dialog, Icon, Switch } from '@slicerx/ui'
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useEdition, appName } from '../edition'
 import { useFeatures } from '../features'
-import { bridgeConnector } from '../link/connector'
 import { LookSettingsSection, SlicingSettingsSection } from '../first-run/look-settings'
 
 import { usePhoneAccess, usePhoneState, type PhoneAccess } from '../lib/phone'
 import { PairDialog } from '../features/phone/pair-dialog'
 import { PendingRemovals, RemoteRows } from '../features/phone/remote-rows'
-import { hostSlices } from '../state/model-mode'
 import { set, useApp } from '../state/store'
 import { Loading } from './loading'
+import { AGENTS_ID, APPS_ID, BRIDGE_ID, CONTROLS_ID, LOOK_ID, MEMORY_ID, PHONE_ID, PILOT_ID, PRESETS_ID, settingsSections, SLICING_ID } from './settings-sections'
 import { usePhoneLayout } from '../lib/phone-layout'
 
-const PHONE_ID = 'phone'
 const PilotSettingsSection = lazy(() => import('../pilot-connect/settings-section').then((m) => ({ default: m.PilotSettingsSection })))
 const PresetsSection = lazy(() => import('../presets/section').then((m) => ({ default: m.PresetsSection })))
 const BridgeSection = lazy(() => import('../link/section').then((m) => ({ default: m.BridgeSection })))
-const BRIDGE_ID = 'bridge'
 const ConnectedAppsSection = lazy(() => import('../connected-apps/section').then((m) => ({ default: m.ConnectedAppsSection })))
-const APPS_ID = 'apps'
 const ControlsSection = lazy(() => import('../controls/section').then((m) => ({ default: m.ControlsSection })))
-const CONTROLS_ID = 'controls'
-const PRESETS_ID = 'presets'
-const LOOK_ID = 'look'
-const SLICING_ID = 'slicing'
-const PILOT_ID = 'pilot'
 const MemorySection = lazy(() => import('../pilot-connect/memory-section').then((m) => ({ default: m.MemorySection })))
-const MEMORY_ID = 'memory'
 const AgentsSection = lazy(() => import('../app-link/section').then((m) => ({ default: m.AgentsSection })))
-const AGENTS_ID = 'agents'
 
 export function SettingsDialog() {
   const open = useApp((s) => s.settingsOpen)
@@ -41,29 +29,7 @@ export function SettingsDialog() {
   const { settings } = useFeatures()
   const edition = useEdition()
   const [picked, setPicked] = useState<string | null>(null)
-  // the CAD-only browser build has no printers, presets or slicing to set
-  const slices = hostSlices()
-  const hasBridge = slices && bridgeConnector() !== null
-  // Only the desktop app hosts the app link; the browser build's bridge never offers it.
-  const hasAgents = bridgeConnector()?.automatic === true
-  const sections: { id: string; label: string; icon: IconName }[] = [
-    ...settings.map((s) => ({ id: s.id, label: s.label, icon: s.icon })),
-    ...(edition.features.phonePairing && slices ? [{ id: PHONE_ID, label: 'Phone access', icon: 'phone' as IconName }] : []),
-    ...(hasBridge
-      ? [
-          { id: BRIDGE_ID, label: 'Printer bridge', icon: 'connect-lan' as IconName },
-          { id: APPS_ID, label: 'Connected apps', icon: 'plugin' as IconName },
-        ]
-      : []),
-    ...(hasAgents ? [{ id: AGENTS_ID, label: 'Agents', icon: 'mcp' as IconName }] : []),
-    ...(slices ? [{ id: PRESETS_ID, label: 'Presets', icon: 'save' as IconName }] : []),
-    { id: CONTROLS_ID, label: 'Controls', icon: 'keyboard' },
-    { id: LOOK_ID, label: 'Look and feel', icon: 'sliders' },
-    slices ? { id: SLICING_ID, label: 'Slicing and modeling', icon: 'slice' } : { id: SLICING_ID, label: 'Modeling', icon: 'shapes' },
-    ...(settings.some((s) => s.id === PILOT_ID) ? [] : [{ id: PILOT_ID, label: ASSISTANT_NAME, icon: 'mimir' as IconName }]),
-    // what mimir remembers, under its own section; an edition that keeps no notes has none to show
-    ...(edition.ai.brain.memory.local ? [{ id: MEMORY_ID, label: 'Memory', icon: 'bookmark' as IconName }] : []),
-  ]
+  const sections = settingsSections(edition, settings)
   const id = [want, picked].find((x) => x && sections.some((s) => s.id === x)) ?? sections[0]?.id
   // A phone opens on the list of sections, and a section on its own page with Back; a section asked for from
   // elsewhere opens straight on its page.

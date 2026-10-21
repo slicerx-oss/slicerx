@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-242 tools.
+245 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -50,6 +50,9 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_app_sketch_box_set` |  |  | slice | Type a value into one dimension box of the sketch open in SlicerX, as the person does on the shape: the value becomes a driving dimension and the sketch's solver moves the shape to meet it. |
 | `slicerx_app_sketch_boxes` |  |  | read | Read the dimension boxes of the sketch open in SlicerX: every rectangle (width, height), line (length, angle from the sketch's X axis) and circle (diameter) with its value now and whether a dimension sets it (driving moves the shape, driven only reports it), plus the sketch's dimensions and the degrees of freedom left. |
 | `slicerx_app_step_bind` |  |  | slice | Bind a history step's main number to an expression in the open project, or pass expression:null to keep the number and stop following it. |
+| `slicerx_app_ui` |  |  | read | Read SlicerX's window as the person sees it: workspace (with workspaces, the ids and labels the top bar offers), tab (the first workspace's mode: slice, design for Model, or mimir; tabs lists the ones shown), selection (primary and objects on the shown plate, primary first, each with id and name), plate (the plate shown: number from 1, id, name and count), printer (the one the project slices for: name, vendor, model, nozzleMm and fromProject for an opened project's own printer; null when none is chosen; never an id, serial, access code or address) and panels (open: the dialogs and panels up, such as settings, command, about, shortcuts, expert, printerChooser, printerSettings or setup; settingsSection, the Settings section shown; settable, the panels slicerx_app_ui_select opens). |
+| `slicerx_app_ui_select` |  |  | slice | Set what is selected in SlicerX's window and which panel is open, the way the person does: selection (object ids or names on the shown plate, primary first; [] selects nothing), open (one panel: settings, command, about, shortcuts, expert, printerChooser, printerSettings; expert, printerChooser and printerSettings open in Slice) with section for Settings (a section id such as look, controls or agents), and close (a panel, or all). |
+| `slicerx_app_ui_set` |  |  | read | Switch SlicerX's window the way the person does: workspace (an id from slicerx_app_ui) or tab (slice, design or mimir, in the first workspace). |
 | `slicerx_app_undo` |  |  | slice | Undo one recorded project edit using the same history as the toolbar, including object transforms, plate edits and design changes. |
 | `slicerx_app_units` |  |  | read | Read Model display units and precision from Settings, including the remembered precision of each unit. |
 | `slicerx_app_units_set` |  |  | read | Set Model display units (mm or in) and precision as in Settings. |
