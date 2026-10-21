@@ -406,9 +406,11 @@ test('scoped exact hole edits use app revisions across a visible undo', async ({
       try {
         type Summary = { design: string; exact: boolean; parts: { sizeMm: number[]; volumeMm3: number }[] }
         const design = ((await editor.ok('design_new', { name: 'Scoped bracket', exact: true })) as Summary).design
-        await editor.ok('geom_extrude', { design, shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [15, 5] }, distance_mm: 3 })
-        await editor.ok('geom_extrude', { design, shape: { type: 'circle', diameterMm: 3 }, frame: { origin: [0, 0, 3], normal: [0, 0, 1] }, placement: { center: [5, 5] }, distance_mm: 3, operation: 'cut' })
-        const before: Summary = await editor.ok('geom_extrude', { design, shape: { type: 'rectangle', widthMm: 6, heightMm: 8 }, placement: { center: [50, 5] }, distance_mm: 4 })
+        // built clear of the bed edges with room for a skirt, so the first body prints where it is built and does not land
+        const first = await editor.ok('geom_extrude', { design, shape: { type: 'rectangle', widthMm: 30, heightMm: 10 }, placement: { center: [95, 85] }, distance_mm: 3 })
+        expect(first.landed).toBeUndefined()
+        await editor.ok('geom_extrude', { design, shape: { type: 'circle', diameterMm: 3 }, frame: { origin: [0, 0, 3], normal: [0, 0, 1] }, placement: { center: [85, 85] }, distance_mm: 3, operation: 'cut' })
+        const before: Summary = await editor.ok('geom_extrude', { design, shape: { type: 'rectangle', widthMm: 6, heightMm: 8 }, placement: { center: [130, 85] }, distance_mm: 4 })
         const topology = async (): Promise<TopologyManifest> => (await editor.ok('geom_faces', { design, format: 'topology' })).topology
         const read = await topology()
         expect(read).toMatchObject({ representation: 'exact', capabilities: { meshFallback: false, revisionGuard: true } })
