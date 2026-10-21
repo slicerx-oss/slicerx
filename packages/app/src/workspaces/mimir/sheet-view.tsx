@@ -171,6 +171,8 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
                     aria-label={`${d.n}, ${dim.label}`}
                     onClick={() => onPick(d.key)}
                   >
+                    {/* on a phone, an invisible circle 44 px across takes the touch around the 20 px badge */}
+                    {phone ? <circle className="mimir-callout-hit" cx={d.badge[0]} cy={d.badge[1]} r={22} /> : null}
                     <circle cx={d.badge[0]} cy={d.badge[1]} r={10} />
                     <text x={d.badge[0]} y={d.badge[1] + 0.5}>
                       {d.n}

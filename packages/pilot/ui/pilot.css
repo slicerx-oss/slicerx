@@ -351,8 +351,11 @@
 /* composer: floats at the foot of the chat, so it is lifted (.sx-overlay) */
 .sx-pilot .composer{display:flex;flex-direction:column;gap:6px;padding:6px;border-radius:var(--r-md)}
 .sx-pilot .composer .att-row{justify-content:flex-start;padding:2px 2px 0}
-.sx-pilot .composer-row{display:flex;align-items:center;gap:4px}
-.sx-pilot .composer-text{flex:1;min-width:0;height:32px;border:0;background:none;color:var(--fg);font:inherit;font-size:14px;outline:none;padding:0 4px}
+/* the text grows a line at a time to six lines (COMPOSER_MAX_LINES), then scrolls inside; attach and send stay at the
+   foot of the row, level with the last line, so growing never moves them sideways or off the text's end */
+.sx-pilot .composer-row{display:flex;align-items:flex-end;gap:4px;--composer-lh:20px;--composer-pad:6px}
+.sx-pilot .composer-row>.sx-btn{flex:none;margin-bottom:calc((var(--composer-lh) + 2 * var(--composer-pad) - var(--h-sm)) / 2)}
+.sx-pilot .composer-text{display:block;flex:1;min-width:0;box-sizing:border-box;min-height:calc(var(--composer-lh) + 2 * var(--composer-pad));height:calc(var(--composer-lh) + 2 * var(--composer-pad));max-height:calc(6 * var(--composer-lh) + 2 * var(--composer-pad));margin:0;resize:none;overflow-y:auto;overflow-wrap:anywhere;border:0;background:none;color:var(--fg);font:inherit;font-size:14px;line-height:var(--composer-lh);outline:none;padding:var(--composer-pad) 4px}
 .sx-pilot .composer-text::placeholder{color:var(--dim)}
 /* the box draws the field's ring */
 .sx-pilot .composer:has(.composer-text:focus-visible){border-color:var(--accent);box-shadow:var(--shadow-float),var(--focus-field)}
