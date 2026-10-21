@@ -35,7 +35,7 @@ import { mimirPlans } from './plans'
 import { answersReachTheirRun, forgetReplaced, retire } from './answers'
 import { appPrintRun } from './print-run'
 import { appProject, pilotSlicer } from './project'
-import { mimirTools, NO_APPROVALS, NO_PRINTERS, scriptRouter } from './scripted'
+import { mimirTools, NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter } from './scripted'
 import { SCRIPTS } from './scripts'
 
 export const mimirLogs = createMemorySessionStore()
@@ -172,8 +172,11 @@ export function mimirCommands(host: Host, commands: readonly CommandSpec[]): Com
   )
 }
 
-/** The scripted stub's setup: a provider and model of its own, so nobody mistakes it for a model. */
-const SCRIPTED_CONFIG: PilotConfig = { ...DEFAULT_CONFIG, provider: 'scripted', model: 'scripted' }
+/**
+ * The scripted stub's setup: a provider and model of its own, so nobody mistakes it for a model. Its tiers are the stub
+ * too, so a deep turn never names a model.
+ */
+const SCRIPTED_CONFIG: PilotConfig = { ...DEFAULT_CONFIG, provider: 'scripted', model: 'scripted', models: SCRIPTED_TIERS }
 const NO_LLM = {} as LlmTransport
 
 /**

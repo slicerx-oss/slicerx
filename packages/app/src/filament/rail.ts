@@ -72,12 +72,35 @@ const NAMES: readonly [string, string][] = [
   ['Beige', '#e6d3b3'],
 ]
 
-/** The nearest plain color name, for labels such as "1 PLA Black". */
+/** A #rrggbb color in CIELAB (D65), where distance follows how far apart people see two colors. Null when unreadable. */
+function lab(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-f]{6})/i.exec(hex)
+  if (!m) return null
+  const n = parseInt(m[1]!, 16)
+  const lin = (c: number) => {
+    const v = c / 255
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  }
+  const [r, g, b] = [lin((n >> 16) & 255), lin((n >> 8) & 255), lin(n & 255)]
+  const f = (t: number) => (t > 216 / 24389 ? Math.cbrt(t) : (24389 / 27 * t + 16) / 116)
+  const x = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047)
+  const y = f(0.2126 * r + 0.7152 * g + 0.0722 * b)
+  const z = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883)
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)]
+}
+
+/**
+ * The nearest plain color name, for labels such as "1 PLA Black". Nearest as people see it (CIELAB): a bright green
+ * such as #50fa7b is as far from Gray as from Green in plain RGB, and RGB picked Gray.
+ */
 export function colorName(hex: string): string {
+  const c = lab(hex)
+  if (!c) return NAMES[0]![0]
   let best = NAMES[0]!
   let d = Number.POSITIVE_INFINITY
   for (const n of NAMES) {
-    const e = colorDistance(hex, n[1])
+    const w = lab(n[1])!
+    const e = Math.hypot(c[0] - w[0], c[1] - w[1], c[2] - w[2])
     if (e < d) [best, d] = [n, e]
   }
   return best[0]

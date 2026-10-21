@@ -101,6 +101,12 @@ describe('the sheet record', () => {
     expect(screen.queryByTestId('mimir-sheet-open')).toBeNull()
   })
 
+  it('drops the guess tag once the sheet is confirmed as shown', () => {
+    render(<SheetRecord sheet={SHEET} answer={{ confirmed: true, values: { phone_width: 71.5, lean: 70, stand_width: 70 }, changed: [] }} />)
+    expect(row('lean').textContent).not.toContain('guess')
+    expect(row('lean').textContent).toContain('kept')
+  })
+
   it('brings the panel back with Edit sizes once its rows drive the steps', () => {
     const opened: string[] = []
     const done = { confirmed: true, values: { phone_width: 71.5, lean: 70, stand_width: 70 }, changed: [] }

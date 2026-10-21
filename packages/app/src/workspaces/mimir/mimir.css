@@ -16,22 +16,25 @@
 /* Before a model is connected: the shared setup, in the chat's place. */
 .mimir-connect { position: relative; display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); }
 .mimir-connect p { margin: 0; }
-.mimir-chat-scripted { flex: none; padding: 2px 8px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--muted); font-size: 11px; }
+.mimir-chat-scripted { flex: none; padding: 2px 8px; border: 1px solid var(--line-soft); border-radius: var(--r-pill); color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
 /* the prompt glyph is the terminal's; the chat's bubble is plain */
 .mimir-chat .bubble .pg { display: none; }
 .mimir-turns { display: flex; flex-direction: column; gap: var(--s-4); }
-.mimir-chat-design { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; color: var(--muted); font-size: var(--fs-sm); }
+/* the design's name keeps one place beside the heading, with or without the sample replies line after it */
+.mimir-chat-design { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-sm); }
 .mimir-transcript { min-height: 0; overflow: auto; padding: var(--s-4) var(--s-3); }
 .mimir-stage { position: relative; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr); container-type: size; --mark: min(66cqw, 400px); }
 .mimir-stage > .mimir-transcript { position: relative; z-index: 1; min-height: 0; }
-/* The battle ravens: a still, single-color watermark centered behind the empty chat, about 4% so it reads as
-   texture in either theme. It goes once the conversation starts, so nothing shows behind the replies. */
+/* The battle ravens: a still, single-color watermark centered behind the chat, about 4% so it reads as texture in
+   either theme. It stays for the whole conversation: the transcript scrolls over it and it never fades or moves. */
 .mimir-ravens { position: absolute; left: 50%; top: 50%; z-index: 0; width: var(--mark); aspect-ratio: 1; transform: translate(-50%, -50%); color: light-dark(color-mix(in srgb, var(--fg) 5%, transparent), color-mix(in srgb, var(--fg) 4%, transparent)); pointer-events: none; }
 .mimir-ravens .sx-raven-mark { width: 100%; height: 100%; }
 /* the empty state sits under the ring, at reading width */
 .mimir-empty { position: absolute; left: 50%; top: calc(50% + var(--mark) / 2 + var(--s-4)); width: min(300px, calc(100% - 2 * var(--s-4))); transform: translateX(-50%); text-align: center; color: var(--muted); }
-.mimir-notice { position: relative; padding: var(--s-3); }
+.mimir-notice { position: relative; }
 .mimir-empty p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; }
+/* a phone's chat is short: the note sits on the stage's bottom edge, clear of the composer, over the ring's lower part */
+:root[data-phone] .mimir-empty { top: auto; bottom: var(--s-4); }
 .mimir-chat-foot { padding: 0 var(--s-3) var(--s-3); }
 /* back to a waiting sheet's sizes once its record has scrolled out of the chat; floats, so nothing under it moves */
 .mimir-sizes-pill { position: absolute; z-index: 2; left: 50%; bottom: var(--s-3); transform: translateX(-50%); display: inline-flex; align-items: center; gap: 6px; height: var(--h-md); padding: 0 12px 0 10px; border-radius: var(--r-pill); color: var(--fg); font: var(--fw-medium) var(--fs-sm) var(--f-body); cursor: pointer; }
@@ -163,8 +166,17 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .mimir-split { display: none; }
 :root[data-phone] .mimir-chat-head { height: 44px; }
 :root[data-phone] .mimir-chat-head .sx-btn { width: 44px; height: 44px; }
-:root[data-phone] .mimir-lookups { left: 0; right: 0; bottom: 8px; max-width: none; padding: 0 12px; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(232px, 78%); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; }
+/* a phone's header has no room for the design's name beside the sample replies line; the name stays in the top bar */
+:root[data-phone] .mimir-chat-design:has(+ .mimir-chat-scripted) { display: none; }
+:root[data-phone] .mimir-lookups { left: 0; right: 0; bottom: var(--mimir-tab-room); max-width: none; padding: 0 12px; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(232px, 78%); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; }
 :root[data-phone] .mimir-lookup { scroll-snap-align: start; }
+/* The timeline's edge tab sits centered on the view's bottom edge (22 px), where a phone's narrow view puts it under
+   the size pill and the lookup cards: both stand above it. While the timeline is open they sit above it as on the
+   desktop. A lookup card covers the size pill's place, so the pill steps aside while one shows. */
+:root[data-phone] .studio[data-model-mode="mimir"] > .vp { --mimir-tab-room: calc(22px + var(--s-2)); }
+:root[data-phone] .studio[data-model-mode="mimir"] > .vp:not([data-bpanel-open]) .hud-bl { bottom: var(--mimir-tab-room); }
+:root[data-phone] .vp[data-bpanel-open] .mimir-lookups { bottom: calc(var(--bpanel-h) + 8px); }
+:root[data-phone] .vp:has(.mimir-lookup) .hud-bl .dims { visibility: hidden; }
 :root[data-phone] .mimir-lookup-h .sx-btn { width: 32px; height: 32px; }
 :root[data-phone] .vp[data-mimir-sheet] .mimir-lookups { right: 0; max-width: none; }
 :root[data-phone] .studio > .vp { --mimir-sheet-w: 0px; }

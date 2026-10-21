@@ -271,7 +271,11 @@ test.describe('a print run in the mimir chat', () => {
     const card = sendCard(page)
     await expect(card).toBeVisible({ timeout: 60_000 })
     await expect(card.locator('[data-row="Printer"]')).toContainText('Bay 6')
-    await expect(card.locator('[data-row^="Filament "]')).toContainText('slot A4, PLA')
+    // the slot and the filament used read apart, the spool by the color it is (green, as asked), and the plate by its name
+    await expect(card.locator('[data-row="Slot"]')).toHaveText(/A4, PLA, Green$/)
+    await expect(card.locator('[data-row="Filament used"]')).toContainText(' g')
+    await expect(card.locator('[data-row="Plate"]')).toContainText(/^Plate/)
+    await expect(card).not.toContainText('.gcode')
     await checked(card)
     await shots(page, info, 'run-send', card, false)
     await card.getByTestId('mimir-send-bed').check()
@@ -366,7 +370,7 @@ test.describe('a print run in the mimir chat', () => {
     await expect(card).toBeVisible({ timeout: 60_000 })
     await expect(card.locator('[data-row="Printer"]')).toContainText('Bay 2')
     // the box's filament moved to the green spool's slot, so it is filament 2 on this plate
-    await expect(card.locator('[data-row^="Filament "]')).toContainText('slot A2, PLA, Green')
+    await expect(card.locator('[data-row^="Slot"]')).toContainText('A2, PLA, Green')
     await checked(card)
     const print = card.getByTestId('danger-mimir-send-print')
     const bed = card.getByTestId('mimir-send-bed')

@@ -73,7 +73,8 @@ const BlockView = memo(function BlockView({ block, showThinking, approvals, word
     case 'perm':
       return <PermLine mode={block.mode} message={block.message} />
     case 'model':
-      return <ModelLine label={block.label} reason={block.reason} />
+      // a saved log from before plain names may carry a model id as its label: that line stays out
+      return block.label && block.label !== block.model ? <ModelLine label={block.label} reason={block.reason} /> : null
     case 'approval': {
       // a host's own card is only for the runtime's own tools (source 'command', or the runtime's builtin flag); a
       // plugin's tool of the same name, or an event with neither, gets the ordinary card

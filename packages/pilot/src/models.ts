@@ -72,9 +72,9 @@ const LABELS: Record<string, string> = {
   'gpt-6-sol': 'GPT-6 sol',
 }
 
-/** How the chat names a model. */
-export function modelLabel(id: string): string {
-  return LABELS[id] ?? id
+/** How the chat names a model: its plain name, or null when the chat has none for it. A model id never shows. */
+export function modelLabel(id: string): string | null {
+  return LABELS[id] ?? null
 }
 
 /** What a design request carries that decides its tier: the files on the message, by media type. */

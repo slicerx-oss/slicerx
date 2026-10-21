@@ -5,6 +5,7 @@
 // covers and the edge of a third, a start screen with no gutter, and the mimir tab with its chat under the view. What a phone shares with
 // the desktop runs there. The tests with the shared page (journey) are on a phone-sized page; the cold ones start the
 // app from nothing, as the desktop ones in boot-session.spec.ts do.
+import type { Locator } from '@playwright/test'
 import { journey, expect } from '../journey'
 import { goTab, plateReady, test as cold } from '../fixtures'
 import {
@@ -139,6 +140,58 @@ journey.describe('mimir on a phone', () => {
     await expect.poll(async () => (await page.evaluate(() => (window as unknown as { __sx: { getState(): { selectedIds: string[] } } }).__sx.getState().selectedIds))).toEqual([id])
     await noHorizontalScroll(page)
     if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/phone-part-select.png` })
+  })
+
+  // The timeline's edge tab sits centered on the view's bottom edge. On a phone the lookup card and the size pill stand
+  // above it, at 390 and at 360 wide, and the pill steps aside while a card covers its place.
+  journey('the lookup card and the size pill keep clear of the timeline tab at 390 and 360 px', async ({ page }, info) => {
+    await debugOn(page)
+    await goTab(page, 'prepare')
+    await setPilot(page, 'scripted')
+    await setState(page, { plate: [], selection: null, selectedIds: [] })
+    await page.locator('[data-testid="phone-tabs"] [data-tab="mimir"]').click()
+    const chat = page.getByTestId('mimir-chat')
+    await chat.getByRole('button', { name: 'New conversation' }).click()
+    await askTab(page, 'Hey mimir, I need a wall mount for this thermostat. Can we print it?')
+    await page.getByTestId('mimir-choice').getByRole('button', { name: 'Yes, that one' }).click()
+    await page.getByTestId('mimir-sheet-confirm').click()
+    await expect(page.getByTestId('mimir-transcript')).toContainText('The backplate is on the plate', { timeout: 30_000 })
+    const tab = page.locator('.studio > .vp .bpanel .sx-edge-tab')
+    const card = page.getByTestId('mimir-lookup-card').first()
+    const pill = page.locator('.studio > .vp .hud-bl .dims')
+    // the share of a's box that b covers, 0 when they do not touch
+    const overlap = async (a: Locator, b: Locator): Promise<number> => {
+      const p = (await a.boundingBox())!
+      const q = (await b.boundingBox())!
+      const w = Math.min(p.x + p.width, q.x + q.width) - Math.max(p.x, q.x)
+      const h = Math.min(p.y + p.height, q.y + q.height) - Math.max(p.y, q.y)
+      return w > 0 && h > 0 ? (w * h) / (p.width * p.height) : 0
+    }
+    const was = page.viewportSize()!
+    try {
+      for (const [w, h] of [[390, 844], [360, 780]] as const) {
+        await page.setViewportSize({ width: w, height: h })
+        await expect(tab).toBeVisible()
+        await expect(card).toBeVisible()
+        // the build may open the timeline for a moment; the card stands clear of its tab either way
+        await expect.poll(() => overlap(card, tab), { message: `card over the tab at ${w}` }).toBe(0)
+        // the pill is under the card's place, so it steps aside while the card shows
+        await expect(pill).toBeHidden()
+        if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/phone-lookup-clear-${w}.png` })
+      }
+      await card.getByTestId('mimir-lookup-close').tap()
+      await expect(page.getByTestId('mimir-lookup-card')).toHaveCount(0)
+      for (const [w, h] of [[390, 844], [360, 780]] as const) {
+        await page.setViewportSize({ width: w, height: h })
+        await expect(pill).toBeVisible()
+        await expect(pill).toContainText('mm')
+        await expect.poll(() => overlap(pill, tab), { message: `pill over the tab at ${w}` }).toBe(0)
+        if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/phone-pill-clear-${w}.png` })
+      }
+    } finally {
+      await page.setViewportSize(was)
+    }
+    await noHorizontalScroll(page)
   })
 })
 

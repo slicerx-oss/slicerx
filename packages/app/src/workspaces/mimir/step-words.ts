@@ -14,6 +14,9 @@ export interface Words {
 
 const WORDS: Record<string, Words | null> = {
   'pilot.ask': null,
+  // the sheet's record says how it was answered; a row saying it again would show it twice
+  'pilot.sheet': null,
+  'pilot.sheet_bind': { doing: 'Linking the sizes to the part', done: 'Linked the sizes to the part' },
   'lookup.show': null,
   'design.plan': null,
   'design.new': { doing: 'Starting the design', done: 'Started the design' },
