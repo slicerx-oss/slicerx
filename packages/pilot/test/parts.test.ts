@@ -226,6 +226,32 @@ describe('parts.lookup', () => {
     expect(scope(lookupParts(await bundledPartsTable(), 'iPhone 15'))).toMatch(/pocket at least the phone's depth deep, plus clearance\.$/)
   })
 
+  it('shows the one part it found as a card in the view, with its sizes and the page they came from', async () => {
+    const out = await run({ name: 'iPhone 15' })
+    expect(out.lookup).toEqual({
+      title: 'Apple iPhone 15',
+      fields: [['height', '147.6 mm'], ['width', '71.6 mm'], ['depth', '7.8 mm']],
+      source: { title: 'Apple iPhone 15 (support.apple.com)', url: 'https://support.apple.com/en-us/111831' },
+    })
+    // a family of several parts, or none, shows no card: the model asks which one
+    expect((await run({ name: 'Raspberry Pi' })).lookup).toBeUndefined()
+    expect((await run({ name: 'Galaxy S24' })).lookup).toBeUndefined()
+  })
+
+  it('a lookup in a chat puts the card in the view', async () => {
+    const pilot = createPilot({
+      host: { printers: { list: async () => [], plugins: async () => [] } as unknown as PrinterHost, approvals: {} as ApprovalHost, llm: {} as LlmTransport },
+      config: { ...DEFAULT_CONFIG, webSearch: false },
+      policy: DEFAULT_POLICY,
+      client: createScriptedClient([{ calls: [{ name: 'parts.lookup', args: { name: 'iPhone 15' } }] }, { text: 'Found it.' }], { chunk: false }),
+      builtins: false,
+      tools: [partsTool(table())],
+    })
+    const events: { type: string }[] = []
+    for await (const e of pilot.run('s', 'case for my iPhone 15')) events.push(e)
+    expect(events.filter((e) => e.type === 'lookup')).toEqual([{ type: 'lookup', lookup: expect.objectContaining({ id: expect.stringMatching(/^lk_/), title: 'Apple iPhone 15' }) }])
+  })
+
   it('writes values the way people read them', () => {
     expect(sizeText({ key: 'bore', value: 8, unit: 'mm', source_url: NSK })).toBe('8 mm')
     expect(sizeText({ key: 'outline_xy', value: [85, 56], unit: 'mm', source_url: NSK })).toBe('85 x 56 mm')
