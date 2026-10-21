@@ -10,7 +10,7 @@ import { plateConfig } from './plates'
 import { plateSequence } from './plate-sequence'
 import type { AppState, PlateEntry } from '../state/store'
 import { hullOf } from './arrange'
-import { apply } from './transform'
+import type { Mat4 } from './transform'
 
 type Pt = [number, number]
 
@@ -29,19 +29,110 @@ const shapes = new WeakMap<PlateEntry, { hull: Pt[]; top: number }>()
 function shapeOf(e: PlateEntry): { hull: Pt[]; top: number } {
   const kept = shapes.get(e)
   if (kept) return kept
-  const pts: Pt[] = []
-  let top = 0
-  for (const part of e.parts) {
-    const p = part.positions
-    for (let i = 0; i + 2 < p.length; i += 3) {
-      const w = apply(e.transform, [p[i] ?? 0, p[i + 1] ?? 0, p[i + 2] ?? 0])
-      pts.push([w[0], w[1]])
-      top = Math.max(top, w[2])
-    }
-  }
-  const shape = { hull: hullOf(pts), top }
+  const shape = footprint(e.parts.map((p) => p.positions), e.transform)
   shapes.set(e, shape)
   return shape
+}
+
+/** Directions the footprint's first pass finds the extreme points along, the corners of a polygon inside the hull. */
+const SIDES = 32
+const AX = Float64Array.from({ length: SIDES }, (_, k) => Math.cos((2 * Math.PI * k) / SIDES))
+const AY = Float64Array.from({ length: SIDES }, (_, k) => Math.sin((2 * Math.PI * k) / SIDES))
+
+/**
+ * The convex hull on the bed of these vertex lists placed by `m`, and their top. A big model has millions of vertices,
+ * so the points strictly inside the polygon of the extreme ones along 32 directions (which no hull can have as corners)
+ * are left out before the hull is taken: the same hull, 130 ms instead of 450 for a round part of 1.57 million
+ * vertices. Each pass is a function of its own with plain locals, which WebKit compiles quickly; one function with
+ * every loop in it ran ten times slower on some calls.
+ */
+export function footprint(lists: readonly ArrayLike<number>[], m: Mat4): { hull: Pt[]; top: number } {
+  let count = 0
+  for (const p of lists) count += Math.floor(p.length / 3)
+  const xs = new Float64Array(count)
+  const ys = new Float64Array(count)
+  let top = 0
+  let next = 0
+  for (const p of lists) {
+    top = Math.max(top, place(p, m, xs, ys, next))
+    next += Math.floor(p.length / 3)
+  }
+  const ring = corners(xs, ys)
+  return { hull: hullOf(outside(xs, ys, ring)), top }
+}
+
+/** Writes the vertices of `p` placed by `m` from index `from` on, and answers their top. */
+function place(p: ArrayLike<number>, m: Mat4, xs: Float64Array, ys: Float64Array, from: number): number {
+  const a = m[0] ?? 0
+  const b = m[1] ?? 0
+  const c = m[2] ?? 0
+  const d = m[4] ?? 0
+  const e = m[5] ?? 0
+  const f = m[6] ?? 0
+  const g = m[8] ?? 0
+  const h = m[9] ?? 0
+  const k = m[10] ?? 0
+  const l = m[12] ?? 0
+  const n = m[13] ?? 0
+  const o = m[14] ?? 0
+  let top = 0
+  let at = from
+  for (let i = 0; i + 2 < p.length; i += 3) {
+    const px = p[i] ?? 0
+    const py = p[i + 1] ?? 0
+    const pz = p[i + 2] ?? 0
+    xs[at] = a * px + d * py + g * pz + l
+    ys[at] = b * px + e * py + h * pz + n
+    const z = c * px + f * py + k * pz + o
+    if (z > top) top = z
+    at++
+  }
+  return top
+}
+
+/** The extreme point along each direction, counterclockwise, with repeats next to each other left out. */
+function corners(xs: Float64Array, ys: Float64Array): number[] {
+  const best = new Int32Array(SIDES)
+  const score = new Float64Array(SIDES).fill(-Infinity)
+  for (let i = 0; i < xs.length; i++) {
+    const x = xs[i]!
+    const y = ys[i]!
+    for (let j = 0; j < SIDES; j++) {
+      const v = AX[j]! * x + AY[j]! * y
+      if (v > score[j]!) {
+        score[j] = v
+        best[j] = i
+      }
+    }
+  }
+  return [...best].filter((v, j) => v !== best[(j + SIDES - 1) % SIDES])
+}
+
+/** The points not strictly inside the polygon through `ring`, by a margin, so rounding never drops a corner. */
+function outside(xs: Float64Array, ys: Float64Array, ring: number[]): Pt[] {
+  const sides = ring.length
+  const ex = new Float64Array(sides)
+  const ey = new Float64Array(sides)
+  const ec = new Float64Array(sides)
+  let span = 0
+  for (let j = 0; j < sides; j++) {
+    const p = ring[j]!
+    const q = ring[(j + 1) % sides]!
+    ex[j] = ys[p]! - ys[q]!
+    ey[j] = xs[q]! - xs[p]!
+    ec[j] = ex[j]! * xs[p]! + ey[j]! * ys[p]!
+    span = Math.max(span, Math.abs(ex[j]!), Math.abs(ey[j]!))
+  }
+  const margin = 1e-9 * span * span
+  const pts: Pt[] = []
+  for (let i = 0; i < xs.length; i++) {
+    const x = xs[i]!
+    const y = ys[i]!
+    let j = 0
+    while (j < sides && ex[j]! * x + ey[j]! * y - ec[j]! > margin) j++
+    if (j < sides || sides < 3) pts.push([x, y])
+  }
+  return pts
 }
 
 function segmentDistance(p: Pt, a: Pt, b: Pt): number {
