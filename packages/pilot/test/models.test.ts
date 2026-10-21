@@ -71,7 +71,25 @@ describe('huginn and muninn', () => {
     expect(modelFor({ ...base, billing: 'key', auto: true, modelChoice: 'pinned-one' }, MUNINN)).toBe('pinned-one')
     expect(parsePilotConfig({ provider: 'anthropic', model: 'm', maxSteps: 8, maxToolCalls: 20, auto: true }).auto).toBe(true)
     expect(modelLabel('claude-sonnet-5-5')).toBe('Sonnet 5.5')
-    expect(modelLabel('some-local-model')).toBe('some-local-model')
+    // a model id never shows: no plain name, no line
+    expect(modelLabel('some-local-model')).toBeNull()
+    expect(modelLabel('gpt-5.6-terra')).toBeNull()
+    expect(modelLabel('scripted')).toBeNull()
+  })
+
+  it('shows no model line for a model with no plain name', async () => {
+    const machine = { printer: 'bambu_x1c', material: 'pla', nozzle: 0.4 }
+    const run = async (config: Record<string, unknown>) => {
+      const client = createScriptedClient([{ calls: [{ name: 'diagnose', args: { symptom: 'layer shift at layer 212' } }] }, { text: 'Belt tension.' }], { chunk: false })
+      const env = createEvalEnv({ client, machine, objects: [], config })
+      const ev: PilotEvent[] = []
+      for await (const e of env.pilot.run('t', 'Why did Bay 4 fail overnight?', { context: { project: 'eval', machine, objects: [] } })) ev.push(e)
+      return { ev, models: client.requests.filter((r) => !r.webSearch).map((r) => r.model) }
+    }
+    // the plan's muninn has no plain name: the run moves to it and says nothing
+    const plan = await run({ models: { huginn: 'gpt-5.6-luna', muninn: 'gpt-5.6-terra' }, billing: 'plan' })
+    expect(plan.models).toContain('gpt-5.6-terra')
+    expect(plan.ev.some((e) => e.type === 'model_switch')).toBe(false)
   })
 
   const machine = { printer: 'bambu_x1c', material: 'pla', nozzle: 0.4 }

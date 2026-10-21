@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The card that starts a print from the run's slice, in place of the approval card for the runtime's own printer.queue
-// (docs/safety.md). It shows the printer, each filament's slot, the time, the grams and the file, runs the send preflight
+// (docs/safety.md). It shows the printer, each filament's slot, the time, the grams used and the plate, runs the send preflight
 // against the printer as it is now, and asks the bed question every time. Print turns on only with the tick, a passing
 // preflight, a fresh slice, an idle or finished printer and a request that has not expired. Pressing Print writes the
 // send ledger entry for this request, printer and file, so the guard skips its second card once, then approves with
@@ -51,16 +51,30 @@ function useBoundSend(request: ApprovalRequest, run: PrintRun | null | undefined
 
 const isHex = (c: string | undefined): c is string => typeof c === 'string' && /^#?[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c)
 
-function filamentRows(send: RunSend, check: SendCheck | null): [string, string][] {
-  return Object.entries(send.slots)
+/** Each filament's slot: "Slot" for a plate on one filament, "Slot, filament 2" when there are more. */
+function slotRows(send: RunSend, check: Pick<SendCheck, 'slots'> | null): [string, string][] {
+  const list = Object.entries(send.slots)
     .map(([k, id]) => [Number(k), id] as const)
     .sort((a, b) => a[0] - b[0])
-    .map(([n, id]) => {
-      const slot = check?.slots.find((s) => s.id === id)
-      const color = slot?.color
-      const what = [slot?.material, isHex(color) ? colorName(color.startsWith('#') ? color.slice(0, 7) : `#${color.slice(0, 6)}`) : undefined].filter(Boolean)
-      return [`Filament ${n}`, [`slot ${id}`, ...what].join(', ')]
-    })
+  return list.map(([n, id]) => {
+    const slot = check?.slots.find((s) => s.id === id)
+    const color = slot?.color
+    const what = [slot?.material, isHex(color) ? colorName(color.startsWith('#') ? color.slice(0, 7) : `#${color.slice(0, 6)}`) : undefined].filter(Boolean)
+    return [list.length === 1 ? 'Slot' : `Slot, filament ${n}`, [id, ...what].join(', ')]
+  })
+}
+
+/**
+ * The card's rows, label then value: the printer, each filament's slot, the time, the filament it uses and the plate
+ * by its own name. The file's name stays out; it is the app's, not the person's.
+ */
+export function sendRows(send: RunSend, check: Pick<SendCheck, 'slots'> | null, printer: string, plate: string): [string, string][] {
+  return [['Printer', printer], ...slotRows(send, check), ['Time', formatDuration(send.timeS)], ['Filament used', `${send.grams.toFixed(1)} g`], ['Plate', plate]]
+}
+
+/** A plate's own name, or "Plate 2" for one with none. */
+export function plateName(plates: readonly { name?: string | undefined }[], n: number): string {
+  return plates[n - 1]?.name?.trim() || `Plate ${n}`
 }
 
 /** What a card says when its answer could not be delivered. */
@@ -91,6 +105,7 @@ export function SendCard({ request, resolution, actionable, onApprove, onCancel,
   const expired = left <= 0
   // the slice's plate as it is now, as the slice card reads it: the run the card was drawn with may be older than an edit
   const fingerprintNow = useApp((s) => plateFingerprint(s, run?.slice?.plate ?? 1))
+  const plate = useApp((s) => plateName(s.plates, run?.slice?.plate ?? 1))
 
   // the preflight against the printer as it is now: when the card shows, and again when the bed is ticked
   useEffect(() => {
@@ -141,9 +156,7 @@ export function SendCard({ request, resolution, actionable, onApprove, onCancel,
     onCancel(request).catch(fail)
   }
 
-  const rows: [string, string][] = send
-    ? [['Printer', name], ...filamentRows(send, check), ['Time', formatDuration(send.timeS)], ['Filament', `${send.grams.toFixed(1)} g`], ['File', send.fileName]]
-    : [['Printer', name], ...(file ? ([['File', file.name]] as [string, string][]) : [])]
+  const rows: [string, string][] = send ? sendRows(send, check, name, plate) : [['Printer', name]]
 
   const problems: ReactNode[] = []
   if (live && stale) problems.push(<li key="stale">{STALE_SLICE}</li>)

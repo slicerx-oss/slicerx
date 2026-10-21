@@ -85,11 +85,15 @@ export function mimirTools(extra: readonly PilotTool<never>[] = []): PilotTool<n
   return [...own, ...extra.filter((t) => !names.has(t.name))]
 }
 
+/** The scripted stub's huginn and muninn: the stub, never a real model's id. */
+export const SCRIPTED_TIERS = { huginn: 'scripted', muninn: 'scripted' }
+
 /** The runtime over the given tools alone, answering with the scripts (the tab gives its stub the whole toolset, session.ts). */
 export function scriptedMimir(scripts: readonly MimirScript[], tools: readonly PilotTool<never>[], opts: { delayMs?: number; callDelayMs?: number; store?: SessionStore } = {}): Pilot {
   return createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: NO_LLM },
-    config: { ...DEFAULT_CONFIG, provider: 'scripted', model: 'scripted', maxSteps: 40, maxToolCalls: 60 },
+    // both tiers are the stub too, so a deep turn names no model (the plan's default tiers would show one)
+    config: { ...DEFAULT_CONFIG, provider: 'scripted', model: 'scripted', models: SCRIPTED_TIERS, maxSteps: 40, maxToolCalls: 60 },
     policy: DEFAULT_POLICY,
     client: scriptRouter(scripts, opts),
     builtins: false,

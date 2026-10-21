@@ -131,6 +131,20 @@ describe('scripted mimir builds', () => {
     expect(stepWords(row('app.plate_clear', 'Clear the plate done'))?.done).toBe('Clear the plate done')
     expect(stepWords(row('kb.search', '3 results'))?.done).toBe('3 results')
     expect(stepWords(row('design.sketch', 'Sketch 1'))?.done).toBe('Design step done')
+    // the sheet's record says how it was answered, so it has no row; binding its sizes reads plainly
+    expect(stepWords(row('pilot.sheet', 'Confirmed as shown'))).toBeNull()
+    expect(stepWords(row('pilot.sheet_bind', 'Tied 3 rows to the design'))?.done).toBe('Linked the sizes to the part')
+  })
+
+  it('scripted replies never name a model, even on a turn that goes to muninn', async () => {
+    const p = scriptedMimir(SCRIPTS, mimirTools(designToolset(appDesignHost(loader))))
+    const events: PilotEvent[] = []
+    for await (const e of p.run('s', 'Why did my thermostat mount fail? wall mount for my thermostat')) {
+      events.push(e)
+      if (e.type === 'ask') void p.answer!(e.askId, 'other')
+    }
+    expect(events.some((e) => e.type === 'start')).toBe(true)
+    expect(events.filter((e) => e.type === 'model_switch')).toEqual([])
   })
 
   it('stops with words, not a broken part, when the person names another thermostat', async () => {

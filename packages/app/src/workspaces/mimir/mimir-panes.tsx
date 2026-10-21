@@ -311,8 +311,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
         </span>
         {/* Shown while the stub answers, so nobody mistakes it for a model. */}
         {link === 'scripted' && !connecting ? (
-        <span className="mimir-chat-scripted sx-mono" {...tipAttrs({ title: 'Scripted replies', body: `${ASSISTANT_NAME} plays scripted turns here until a model is set up in Settings > mimir. The tools it calls are real.` })}>
-          Scripted replies
+        <span className="mimir-chat-scripted" {...tipAttrs({ title: 'Sample replies, no model set up', body: `${ASSISTANT_NAME} plays sample replies here until a model is set up in Settings > mimir. The tools it calls are real.` })}>
+          Sample replies
         </span>
         ) : null}
         <HoldButton running={run.running} held={transcript.held} onHold={(on) => pilot.hold?.(sessionId, on)} />
@@ -328,12 +328,10 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
         {announcement}
       </p>
       <div className="mimir-stage" hidden={more}>
-        {/* The battle ravens: a faint, still watermark while the chat is empty; never behind a reply. */}
-        {transcript.turns.length === 0 ? (
-          <div className="mimir-ravens" data-testid="mimir-ravens" aria-hidden="true">
-            <RavenMark />
-          </div>
-        ) : null}
+        {/* The battle ravens: a faint, still watermark behind the whole conversation, from the empty chat on. */}
+        <div className="mimir-ravens" data-testid="mimir-ravens" aria-hidden="true">
+          <RavenMark />
+        </div>
         <div
           ref={body}
           className="mimir-transcript"
