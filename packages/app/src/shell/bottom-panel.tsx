@@ -46,12 +46,15 @@ export function BottomPanel({ label, memory, panel, attention = 0, children }: {
 
   // The band: the bottom of the view the panel sits in. Touch and pen have no hover, so only a mouse opens it there.
   // Watched on the window in the capture phase: the 3D view handles its own pointer events and does not pass them on.
+  // The tab is told apart, since resting on it opens nothing (auto-panel.ts).
   useEffect(() => {
     const view = root.current?.parentElement
     if (!view) return
     const move = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse') return
       const r = view.getBoundingClientRect()
+      const tab = root.current?.querySelector('.sx-edge-tab')
+      ctl.current?.tab(!!tab && e.target instanceof Node && tab.contains(e.target))
       ctl.current?.band(e.clientY >= r.bottom - BAND_PX && e.clientY <= r.bottom && e.clientX >= r.left && e.clientX <= r.right)
     }
     window.addEventListener('pointermove', move, true)

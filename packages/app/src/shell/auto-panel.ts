@@ -6,7 +6,9 @@
 // leaves both the band and the panel, and never while the pointer is over it, focus is inside it, a menu from it is
 // open or a drag in it is under way. Pinned, it stays open. Touch has no hover: a tap on the tab toggles it. A press
 // on the tab while it is open by itself (for attention, or from the band) keeps it open until the next press: the
-// person did not open it, so the press means keep it.
+// person did not open it, so the press means keep it. The pointer resting on the tab opens nothing from the band: the
+// tab rides up with the panel, so opening there would pull it out from under the pointer and a click aimed at it would
+// land on the panel. Over the tab of an open panel, the pointer holds it open like the panel itself.
 
 export const OPEN_DELAY_MS = 120
 export const CLOSE_DELAY_MS = 600
@@ -20,6 +22,7 @@ export class AutoPanel {
   open = false
   private inBand = false
   private overPanel = false
+  private overTab = false
   private focused = false
   private menu = false
   private dragging = false
@@ -57,7 +60,7 @@ export class AutoPanel {
 
   /** Something keeps it open right now. */
   private held(): boolean {
-    return this.pinned || this.kept || this.inBand || this.overPanel || this.focused || this.menu || this.dragging
+    return this.pinned || this.kept || this.inBand || this.overPanel || this.overTab || this.focused || this.menu || this.dragging
   }
 
   private scheduleClose(delay = CLOSE_DELAY_MS): void {
@@ -76,17 +79,33 @@ export class AutoPanel {
     this.inBand = inside
     if (inside) {
       clearTimeout(this.closeTimer)
-      if (!this.open && this.openTimer === undefined) {
-        this.openTimer = setTimeout(() => {
-          this.openTimer = undefined
-          if (this.inBand) this.set(true)
-        }, OPEN_DELAY_MS)
-      }
+      this.armOpen()
     } else {
       clearTimeout(this.openTimer)
       this.openTimer = undefined
       if (this.open) this.scheduleClose()
     }
+  }
+
+  /** Starts the band's open delay, unless it is open, already waiting, or the pointer is on the tab. */
+  private armOpen(): void {
+    if (this.open || this.overTab || this.openTimer !== undefined) return
+    this.openTimer = setTimeout(() => {
+      this.openTimer = undefined
+      if (this.inBand && !this.overTab) this.set(true)
+    }, OPEN_DELAY_MS)
+  }
+
+  /** The pointer on the tab: the band waits while it rests there, and an open panel stays open. */
+  tab(over: boolean): void {
+    if (over === this.overTab) return
+    this.overTab = over
+    if (over) {
+      clearTimeout(this.openTimer)
+      this.openTimer = undefined
+      clearTimeout(this.closeTimer)
+    } else if (this.open) this.scheduleClose()
+    else if (this.inBand) this.armOpen()
   }
 
   panel(over: boolean): void {
