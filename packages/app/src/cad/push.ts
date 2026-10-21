@@ -45,8 +45,25 @@ export function parseDistance(text: string): number | null {
 export const PUSH_MAX_MM = 10_000
 
 /** What is wrong with a push distance the engine would refuse, in words, or null when it can run. */
-export function pushLimit(d: number | null): string | null {
-  return d !== null && Math.abs(d) > PUSH_MAX_MM ? `The distance is too large. The most is ${len(PUSH_MAX_MM)}.` : null
+export function pushLimit(d: number | null, name = 'The distance'): string | null {
+  return d !== null && Math.abs(d) > PUSH_MAX_MM ? `${name} is too large. The most is ${len(PUSH_MAX_MM)}.` : null
+}
+
+/**
+ * What is wrong with an extrude's numbers, in a sentence, or null when the engine can take them. The engine checks
+ * the same limit as a push, and its own words for a distance over it ("must not be zero") would read wrong.
+ */
+export function extrudeProblem(s: { distanceMm: number; distance2Mm?: number; taperDeg?: number }): string | null {
+  if (!(s.distanceMm > 0)) return 'The distance must be more than 0 mm.'
+  const far = pushLimit(s.distanceMm)
+  if (far) return far
+  if (s.distance2Mm !== undefined) {
+    if (!(s.distance2Mm > 0)) return 'The second distance must be more than 0 mm.'
+    const far2 = pushLimit(s.distance2Mm, 'The second distance')
+    if (far2) return far2
+  }
+  if (s.taperDeg !== undefined && !(Number.isFinite(s.taperDeg) && Math.abs(s.taperDeg) <= 45)) return 'The draft is between -45 and 45 degrees.'
+  return null
 }
 
 /** Why Push and pull can't run yet, for under the button, or null when it can. */

@@ -46,6 +46,8 @@ import { onModelFeel, sketchBoxesFor } from './model-feel-flag'
 import { applyReason, CHECKING, profileState, provideSketchBoxes, provideSketchLook, setSketchMode, solidCard, surfaceOf } from './sketch-mode'
 import { Actions, Card, Choice, close, type ChoiceOption, errorText, Message, Note, num, Num, pickWords, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { useDraft, useDraftObject } from './park'
+import { extrudeProblem } from './push'
+import { sizeWords } from './op-preview'
 import { formatLength, fraction, parseLength, type UnitPrefs } from './units'
 import { currentValues } from './value-table'
 import {
@@ -1550,11 +1552,10 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       let r: { message: string; warn: boolean }
       if (finish === 'extrude') {
         const d = num(distance)
-        if (!(d > 0)) throw new Error('The distance must be more than 0 mm.')
         const d2 = num(distance2)
-        if (extentKind === 'twoSides' && !(d2 > 0)) throw new Error('The second distance must be more than 0 mm.')
         const tp = num(taper)
-        if (!Number.isFinite(tp) || Math.abs(tp) > 45) throw new Error('The draft is between -45 and 45 degrees.')
+        const wrong = extrudeProblem({ distanceMm: d, ...(extentKind === 'twoSides' ? { distance2Mm: d2 } : {}), taperDeg: tp })
+        if (wrong) throw new Error(wrong)
         const pattern = patternFromFields(patternFields, num)
         const bad = pattern ? patternProblem(pattern) : null
         if (bad) throw new Error(bad)
@@ -1574,7 +1575,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
       toast(r.message, r.warn ? 'warn' : 'ok')
       set({ objectTool: null })
     } catch (e) {
-      setNote(errorText(e))
+      setNote(sizeWords(errorText(e), finish === 'extrude' ? num(distance) : undefined))
     } finally {
       sketchNext(null)
       setBusy(false)

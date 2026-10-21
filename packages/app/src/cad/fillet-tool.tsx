@@ -263,7 +263,7 @@ export function FilletTool() {
       live.current.ring = null
       return true
     } catch (err) {
-      setNote(errorText(err))
+      setNote(sizeWords(errorText(err)))
     } finally {
       setBusy(false)
     }

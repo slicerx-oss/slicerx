@@ -18,6 +18,7 @@ import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
+import { sizeWords } from './op-preview'
 import { threadSpecFor } from './thread-spec'
 
 interface Picked {
@@ -108,7 +109,7 @@ export function ThreadTool() {
       setPicked(null)
       return true
     } catch (err) {
-      setNote(errorText(err))
+      setNote(sizeWords(errorText(err)))
     } finally {
       setBusy(false)
     }
