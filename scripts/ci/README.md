@@ -305,7 +305,8 @@ reports. `SX_PUBLISH_ALLOW_RED=1` lets a red commit through with a loud warning:
 The read uses `gh api` when gh is installed and works. When gh is missing, fails, or `SX_GREEN_GH=0` is set (a machine
 where gh is not signed in), the script reads `api.github.com` anonymously with `curl`, follows the `Link` pages, parses
 the JSON with `node`, and prints one note on stderr. This works for a public repository only. Anonymous reads are
-limited to 60 per hour, so in that mode the poll interval is at least 300 seconds unless `SX_GREEN_POLL` is set, and a
-403 or 429 reply ends the run with exit 2 and a rate limit message. With no repository argument the script asks gh, then
+limited to 60 per hour, so in that mode each wait spreads the reads GitHub says are left (keeping 10 spare) over the
+time to its reset: between 20 and 300 seconds, until the reset when none are spare, and 300 seconds when the reply has no
+rate limit headers. `SX_GREEN_POLL` overrides it. A 403 or 429 reply ends the run with exit 2 and a rate limit message. With no repository argument the script asks gh, then
 reads it from the `origin` URL. `require-green.test.mjs` covers the fallback with a fake `curl` and no network.
 Keep `required-checks.txt` in step with the jobs in `ci.yml`.

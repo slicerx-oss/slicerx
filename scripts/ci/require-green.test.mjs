@@ -105,13 +105,34 @@ test('waits for a pending check and goes green on the next read', () => {
   assert.match(still.result.stderr, /e2e: in_progress/)
 })
 
-test('polls no faster than every 300 s when anonymous, unless SX_GREEN_POLL is set', () => {
+test('polls every 300 s when anonymous and the reply has no rate limit headers, unless SX_GREEN_POLL is set', () => {
   const pending = allGreen().map((r) => (r.name === 'e2e' ? run(r.id, r.name, 'queued') : r))
   const dflt = gate([reply(200, pending), reply(200, allGreen())], undefined, { SX_GREEN_WAIT: '400' })
   assert.equal(dflt.result.status, 0, dflt.result.stderr)
   assert.deepEqual(dflt.sleeps, ['300'])
   const explicit = gate([reply(200, pending), reply(200, allGreen())], undefined, { SX_GREEN_WAIT: '400', SX_GREEN_POLL: '7' })
   assert.deepEqual(explicit.sleeps, ['7'])
+})
+
+test('paces anonymous polls by the reads left until the rate limit resets', () => {
+  const pending = allGreen().map((r) => (r.name === 'e2e' ? run(r.id, r.name, 'queued') : r))
+  const limit = (left, inSecs) => [`x-ratelimit-remaining: ${left}`, `x-ratelimit-reset: ${Math.floor(Date.now() / 1000) + inSecs}`]
+  const slept = (left, inSecs, env = {}) => {
+    const { result, sleeps } = gate([reply(200, pending, limit(left, inSecs)), reply(200, allGreen())], undefined, { SX_GREEN_WAIT: '4000', ...env })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(sleeps.length, 1)
+    return Number(sleeps[0])
+  }
+  // 49 spare reads over 3500 s: about 72 s, not 300
+  const fresh = slept(59, 3500)
+  assert.ok(fresh >= 70 && fresh <= 73, String(fresh))
+  // never faster than 20 s, never slower than 300 s while reads are spare
+  assert.equal(slept(59, 60), 20)
+  assert.equal(slept(12, 3000), 300)
+  // none spare: wait for the reset
+  const out = slept(10, 100)
+  assert.ok(out >= 99 && out <= 101, String(out))
+  assert.equal(slept(59, 3500, { SX_GREEN_POLL: '7' }), 7)
 })
 
 test('a 403 or 429 reply is an API error, exit 2, with a rate limit message', () => {
