@@ -317,7 +317,7 @@ function usedFilaments(gcode: string): { id: number; m: number; g: number }[] {
  * Metadata/slice_info.config for the sliced plates, in the layout Bambu Studio's and Orca 2.4.2's files have: a
  * header, then per plate its index, the
  * printer's facts (extruder and nozzle volume type, model id, nozzle diameters, timelapse type), the
- * estimate (seconds) and weight (g) from the G-code footer, the first layer time from its header, whether
+ * estimate (seconds) and weight (g) from the G-code footer, the first layer time from its header when it has one, whether
  * the toolpaths leave the bed, whether supports print, one `<object identify_id name skipped/>` per object,
  * one `<filament>` per filament the plate uses and the nozzle. The printer's own skip dialog lists those
  * objects, so identify_id is the id the G-code labels the object with: the engine lists them from 1 in the
@@ -330,7 +330,8 @@ export function sliceInfoXml(plates: { index: number; gcode: string; names: read
     const ids = gcodeLabelIds(gcode)
     const seconds = footerSeconds(gcode)
     const grams = /^; total filament used \[g\] = ([\d.]+)/m.exec(gcode)?.[1]
-    const firstLayer = gcodeSeconds(gcode, 'estimated first layer printing time \\(normal mode\\)') ?? 0
+    // Left out when the G-code does not give it, rather than claiming a first layer of no time.
+    const firstLayer = gcodeSeconds(gcode, 'estimated first layer printing time \\(normal mode\\)')
     const used = usedFilaments(gcode)
     const map = plateFilamentMap(machine, plate, gcode)
     // Each filament's extruder (0-based) and nozzle, the left one for every filament on a printer with one.
@@ -351,7 +352,7 @@ export function sliceInfoXml(plates: { index: number; gcode: string; names: read
       meta('timelapse_type', machine.timelapseType) +
       (seconds !== undefined ? meta('prediction', seconds) : '') +
       (grams !== undefined ? meta('weight', grams) : '') +
-      meta('first_layer_time', firstLayer.toFixed(6)) +
+      (firstLayer !== undefined ? meta('first_layer_time', firstLayer.toFixed(6)) : '') +
       meta('outside', Boolean(outside)) +
       meta('support_used', machine.supportUsed) +
       meta('label_object_enabled', ids.length > 0) +
