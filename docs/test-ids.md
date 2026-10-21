@@ -104,7 +104,10 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `mimir-sheet-status` | The record's status beside its buttons: the assumed values (`data-assumed`) while guesses remain, then whether it was confirmed or canceled |
 | `mimir-sizes-pill` | Sizes, floating over the chat while a waiting sheet's record is scrolled out of view; it scrolls the record back and focuses the first assumed size |
 | `mimir-sheet-open` | On a built sheet's record in the tab: Edit sizes, once its rows drive the built steps |
-| `mimir-sheet-drawing` | The drawing that covers the view while a sheet waits: front, right, top and iso, with callouts |
+| `mimir-sheet-drawing` | The drawing that covers the view while a sheet waits: front, right, top and iso, with callouts. On a phone (`data-phone`) it shows Top and Isometric side by side, or Front or Right alone, picked in its header, and `data-folded` while folded to the header |
+| `mimir-drawing-views` | On a phone, the drawing's view picker (a radio group named Drawing view): Top and iso, Front and Right, opening on Top and iso |
+| `mimir-drawing-view-<choice>` | One choice on `mimir-drawing-views`: `mimir-drawing-view-main` (Top and iso), `-front` and `-side` (Right); `aria-checked` on the one showing |
+| `mimir-drawing-fold` | On a phone, the 44 px control at the right of the drawing's header: Hide drawing folds it to the header and gives the chat the room, Show drawing opens it on the choice it had (`aria-expanded`) |
 | `mimir-sheet-callout` | A numbered callout on the drawing (`data-key` is its row); clicking it picks the row |
 | `mimir-sheet-panel` | The sizes panel docked on the view's right (`data-mode` confirm or drive) |
 | `mimir-sheet-row` | One size in the panel (`data-key`, `data-guess` while an unchanged guess, `data-on` while edited) |

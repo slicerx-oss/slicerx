@@ -4,12 +4,14 @@
 // (front, right, top and iso, with a numbered callout for each size) and the sheet's record in the chat is where the
 // sizes are typed, row numbers matching the callouts. Nothing builds until the record's build button. After the build
 // a panel docked on the right comes back from the record, and editing a tied row there edits the step it set. Picking
-// a callout picks its row and the other way round.
+// a callout picks its row and the other way round. A phone shows Top and Isometric, or Front or Right on their own,
+// picked by name, and can fold the drawing to its header (drawing-pick.ts).
+import { drawingPick, foldDrawing, PANE_NAMES, PANE_VIEWS, paneShowing, PHONE_PANES, pickFor, showPane, usePhoneDrawing, type PhonePane } from './drawing-pick'
 import { assistantText } from '@slicerx/contracts'
 import type { PilotDim, PilotSheet } from '@slicerx/contracts'
-import { Button, Icon, ScrubNumber, tipAttrs, type IconName } from '@slicerx/ui'
+import { Button, Icon, ScrubNumber, Seg, tipAttrs, type IconName } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { arrowHead, drawView, fitScale, SHEET_VIEWS, VIEWS, type ViewName } from './sheet-draw'
+import { arrowHead, drawView, fitScale, SHEET_VIEWS, VIEWS, viewsFor } from './sheet-draw'
 import { closeSheet, setDraft, setLive, sheetMode, useSheetUi } from './sheet-ui'
 import './mimir.css'
 
@@ -46,40 +48,86 @@ function focusRow(sheetId: string, key: string): void {
 
 /** Room around a view's drawing for its view label and callouts, in px. */
 const PAD = 24
+/** On a phone the view's label has a band of its own over the drawing, so no callout can cover it. */
+const PHONE_LABEL_H = 22
 
-/** The drawing: four views in a 2 x 2 frame, the flat ones at one scale, its title, units and state on the frame's bottom edge. */
+/**
+ * The drawing: four views in a 2 x 2 frame, the flat ones at one scale, its title, units and state on the frame's
+ * bottom edge. On a phone Top and Isometric share the frame side by side, a picker in the header swaps them for Front
+ * or Right, and a 44 px control folds the drawing to its header (the view gives the chat the room).
+ */
 function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: string | null; onPick: (key: string) => void }) {
   // a guess stays marked until its row is typed in or kept with Enter
   const draft = useSheetUi((s) => s.draft)
   const assumed = (key: string): boolean => sheet.dims.some((d) => d.key === key && d.source === 'guess') && !(key in draft)
+  const { phone, pane, folded } = usePhoneDrawing(sheet.id)
+  const cols = phone ? PANE_VIEWS[pane].length : 2
   const ref = useRef<HTMLDivElement>(null)
   const [cell, setCell] = useState<{ w: number; h: number } | null>(null)
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
+    // a phone draws its views in one row of the whole frame, under their labels' band
+    const [rows, band] = phone ? [1, PHONE_LABEL_H] : [2, 0]
     const measure = () => {
       const r = el.getBoundingClientRect()
-      setCell({ w: Math.max(80, Math.floor(r.width / 2)), h: Math.max(60, Math.floor(r.height / 2)) })
+      setCell({ w: Math.max(80, Math.floor(r.width / cols)), h: Math.max(60, Math.floor(r.height / rows) - band) })
     }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [phone, cols])
   const part = sheet.part ?? []
   const views = useMemo(() => {
     if (!cell) return null
+    const shownViews = phone ? PANE_VIEWS[pane] : SHEET_VIEWS
     // the flat views share one scale, as a print drawing does; the iso view fits its own cell
     const flat = Math.min(...SHEET_VIEWS.filter((v) => v !== 'iso').map((v) => fitScale(part, sheet.dims, v, cell.w, cell.h, PAD, sheet.views)))
-    return SHEET_VIEWS.map((v) => ({ v, drawn: drawView(part, sheet.dims, v, cell.w, cell.h, { pad: PAD, order: sheet.views, ...(v === 'iso' ? {} : { scale: flat }) }) }))
-  }, [cell, part, sheet.dims, sheet.views])
+    return shownViews.map((v) => ({ v, drawn: drawView(part, sheet.dims, v, cell.w, cell.h, { pad: PAD, order: sheet.views, ...(v === 'iso' ? {} : { scale: flat }) }) }))
+  }, [cell, part, sheet.dims, sheet.views, phone, pane])
+  // a row picked on the record shows its callout: a phone moves to Top and iso when Front or Right does not draw it
+  useEffect(() => {
+    if (!phone || !editing) return
+    const has = viewsFor(sheet.dims, sheet.views ?? []).get(editing)
+    if (has) showPane(sheet.id, paneShowing(pickFor(drawingPick.getState(), sheet.id).pane, (v) => has.includes(v)))
+  }, [phone, editing, sheet.id, sheet.dims, sheet.views])
+  // folded, the view gives the chat its room (mimir.css)
+  useEffect(() => {
+    const vp = document.querySelector<HTMLElement>('.studio > .vp')
+    if (!vp) return
+    if (folded) vp.dataset['mimirDrawing'] = 'folded'
+    else delete vp.dataset['mimirDrawing']
+    return () => {
+      delete vp.dataset['mimirDrawing']
+    }
+  }, [folded])
   return (
-    <div className="mimir-drawing" data-testid="mimir-sheet-drawing">
+    <div className="mimir-drawing" data-testid="mimir-sheet-drawing" data-phone={phone || undefined} data-folded={folded || undefined}>
       <div className="mimir-drawing-card">
       <div className="mimir-drawing-head">
-        <span className="mimir-drawing-title sx-mono">Drawing, four views</span>
+        {!phone ? (
+          <span className="mimir-drawing-title sx-mono">Drawing, four views</span>
+        ) : folded ? (
+          <span className="mimir-drawing-folded">Drawing</span>
+        ) : (
+          <div className="mimir-drawing-views" data-testid="mimir-drawing-views">
+            <Seg<PhonePane> label="Drawing view" value={pane} onChange={(p) => showPane(sheet.id, p)} full options={PHONE_PANES.map((p) => ({ value: p, label: PANE_NAMES[p], testId: `mimir-drawing-view-${p}` }))} />
+          </div>
+        )}
+        {phone ? (
+          <Button
+            variant="ghost"
+            icon={folded ? 'chevron-down' : 'chevron-up'}
+            className="mimir-drawing-fold"
+            data-testid="mimir-drawing-fold"
+            aria-label={folded ? 'Show drawing' : 'Hide drawing'}
+            aria-expanded={!folded}
+            onClick={() => foldDrawing(sheet.id)}
+          />
+        ) : null}
       </div>
-      <div ref={ref} className="mimir-drawing-grid">
+      <div ref={ref} className="mimir-drawing-grid" hidden={folded}>
         {views?.map(({ v, drawn }) => (
           <div key={v} className="mimir-drawing-cell" data-view={v}>
             <svg width={cell!.w} height={cell!.h} viewBox={`0 0 ${cell!.w} ${cell!.h}`} role="img" aria-label={`${sheet.title}, ${VIEWS[v].label}`}>
