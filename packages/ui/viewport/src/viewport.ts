@@ -113,10 +113,11 @@ import type {
 /** How long the camera takes to reach a newly opened model from the old one's framing. */
 const SWAP_REFRAME_MS = 250
 /**
- * A part this big (triangles) gets its creased normals and feature edges from the mesh workers, when there are some:
- * about a quarter of a second of main thread work on a fast desktop, seconds on a big scan or sculpt.
+ * A part this big (triangles) gets its creased normals and feature edges from the mesh workers, when there are some,
+ * and shows its stand-in until they come. Made here, they cost about a millisecond per 800 triangles on a fast desktop
+ * (two 92,000 triangle parts 0.2 s), while stand-ins for parts of 1.4 and 1.7 million triangles take 60 ms together.
  */
-const ASYNC_BUILD_TRIANGLES = 200_000
+const ASYNC_BUILD_TRIANGLES = 20_000
 /** How long a model added beside the others takes to fade in. */
 const FADE_IN_MS = 220
 
