@@ -262,7 +262,12 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     const ro = new ResizeObserver(() => {
       const f = document.activeElement
       if (!(f instanceof HTMLElement) || !el.contains(f) || !f.matches('input, textarea')) return
-      ;(f.closest<HTMLElement>('li') ?? f).scrollIntoView({ block: 'nearest' })
+      const row = f.closest<HTMLElement>('li') ?? f
+      row.scrollIntoView({ block: 'nearest' })
+      // on a record, its Confirm too when it fits in the chat with the row
+      const foot = row.closest('[data-testid="mimir-sheet-record"]')?.querySelector<HTMLElement>('.sheet-rec-foot')
+      const log = body.current
+      if (foot && log && foot.getBoundingClientRect().bottom - row.getBoundingClientRect().top <= log.clientHeight) foot.scrollIntoView({ block: 'nearest' })
     })
     ro.observe(el)
     return () => ro.disconnect()

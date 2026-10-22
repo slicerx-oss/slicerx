@@ -4,8 +4,9 @@
 // view above the keys, whether it is the composer, a size on the waiting sheet's record or a size in the sizes panel,
 // and the composer, the record's Confirm and the panel's Done stay in reach. The keyboard is a stand-in that shrinks
 // the visual viewport as a phone does (lib/phone-keyboard.ts). With the sizes panel open the view keeps its 42% while
-// the keyboard is down and folds away while it is up, so a whole row and its field show; shutting the keyboard brings
-// the view back.
+// the keyboard is down and folds away while it is up, so a whole row and its field show; a waiting sheet's drawing folds
+// to its header while one of the record's sizes is typed in. Shutting the keyboard brings both back. The panel's hint
+// line keeps room for its tallest hint only, one line when they all fit one, and keeps it as the rows are edited.
 import type { Locator, Page } from '@playwright/test'
 import { journey, expect } from '../journey'
 import { goTab } from '../fixtures'
@@ -37,6 +38,25 @@ async function nothingPushedOff(page: Page, at: number): Promise<void> {
     expect(p.bottom, `${what} at ${at} px`).toBeLessThanOrEqual(p.shownBottom + 0.5)
   }
   await noHorizontalScroll(page)
+}
+
+/** Fails unless the whole of `el` is above the composer and below the top of `room` (the box it scrolls in). */
+async function wholeAboveComposer(page: Page, el: Locator, room: Locator, what: string): Promise<void> {
+  const b = (await el.boundingBox())!
+  const r = (await room.boundingBox())!
+  const composer = (await page.getByTestId('mimir-composer').boundingBox())!
+  expect(b.y, `${what} below the top of its box`).toBeGreaterThanOrEqual(r.y - 0.5)
+  expect(b.y + b.height, `${what} wholly above the composer`).toBeLessThanOrEqual(composer.y + 0.5)
+  expect(b.y + b.height, `${what} wholly inside its box`).toBeLessThanOrEqual(r.y + r.height + 0.5)
+}
+
+/** The sizes panel's hint line: its height, and the tallest hint it holds room for (both without its padding). */
+async function hintRoom(panel: Locator): Promise<{ height: number; tallest: number; line: number }> {
+  return panel.locator('.mimir-sheet-hint').evaluate((p) => {
+    const cs = getComputedStyle(p)
+    const spans = [...p.children].map((c) => c.getBoundingClientRect().height)
+    return { height: Math.round(p.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)), tallest: Math.round(Math.max(...spans)), line: Math.round(parseFloat(cs.lineHeight)) }
+  })
 }
 
 /** Focuses a field the way a tap does, with the keyboard down, then opens the keyboard. */
@@ -90,22 +110,42 @@ journey.describe('the mimir tab with the keyboard up on a phone', () => {
     await expect(rec.getByTestId('mimir-sheet-confirm')).toBeVisible({ timeout: 30_000 })
     const fields = rec.locator('.sheet-rec-field input')
     expect(await fields.count()).toBeGreaterThan(1)
+    const drawing = page.getByTestId('mimir-sheet-drawing')
+    const log = page.getByTestId('mimir-transcript')
+    const confirm = rec.getByTestId('mimir-sheet-confirm')
+    const view = page.locator('.studio > .vp')
+    const studio = page.locator('.studio[data-model-mode="mimir"]')
+    const share = async () => (await view.boundingBox())!.height / (await studio.boundingBox())!.height
     for (const phone of PHONES) {
       await page.setViewportSize(phone)
+      await keyboard(page, 0)
+      expect(await share(), `the drawing's share at ${phone.width} px`).toBeCloseTo(0.42, 2)
       for (const field of [fields.first(), fields.last()]) {
         await typeIn(page, field, phone.keys)
+        // the drawing folds to its header while a size is typed in, its fold control out of the way
+        await expect(drawing, `the drawing at ${phone.width} px`).toHaveAttribute('data-folded', 'true')
+        await expect(page.getByTestId('mimir-drawing-fold')).toHaveCount(0)
         await clearOfKeys(field, `a record size at ${phone.width} px`)
+        await wholeAboveComposer(page, field, log, `a record size at ${phone.width} px`)
         await clearOfKeys(page.getByTestId('mimir-composer'), `the composer at ${phone.width} px`)
         // a size being typed in keeps the record in view, so the pill that brings it back covers nothing
         await expect(page.getByTestId('mimir-sizes-pill'), `the Sizes pill at ${phone.width} px`).toBeHidden()
         await nothingPushedOff(page, phone.width)
       }
-      // Confirm is a scroll away inside the chat, never under the keys
-      const confirm = rec.getByTestId('mimir-sheet-confirm')
+      // the last size brings Confirm along with it: the whole button shows above the composer, nothing over it
+      await clearOfKeys(confirm, `Confirm with the last size at ${phone.width} px`)
+      await wholeAboveComposer(page, confirm, log, `Confirm with the last size at ${phone.width} px`)
+      // from the first size, Confirm is a scroll away inside the chat, never under the keys or the composer
+      await typeIn(page, fields.first(), phone.keys)
       await confirm.scrollIntoViewIfNeeded()
       await clearOfKeys(confirm, `Confirm at ${phone.width} px`)
-      await expect(fields.last()).toBeFocused()
+      await wholeAboveComposer(page, confirm, log, `Confirm at ${phone.width} px`)
+      await expect(fields.first()).toBeFocused()
+      // the keyboard goes: the drawing opens again at its 42%, with its fold control
       await keyboard(page, 0)
+      await expect(drawing).not.toHaveAttribute('data-folded')
+      await expect(page.getByTestId('mimir-drawing-fold')).toBeVisible()
+      expect(await share(), `the drawing back at ${phone.width} px`).toBeCloseTo(0.42, 2)
     }
   })
 
@@ -134,8 +174,14 @@ journey.describe('the mimir tab with the keyboard up on a phone', () => {
       // keyboard down: the view keeps its 42%, so the part shows changing while a size is edited
       const share = async () => (await view.boundingBox())!.height / (await studio.boundingBox())!.height
       expect(await share(), `the view's share at ${phone.width} px`).toBeCloseTo(0.42, 2)
+      // the hint line keeps room for the tallest hint the panel can show, and no more: one line when they all fit one
+      const hint = await hintRoom(panel)
+      expect(hint.height, `the hint's height at ${phone.width} px`).toBeLessThanOrEqual(hint.tallest + 1)
+      expect(hint.height).toBeGreaterThanOrEqual(hint.line - 1)
       for (const field of [fields.first(), fields.last()]) {
         await typeIn(page, field, phone.keys)
+        // moving between rows keeps the hint's height, so nothing above or below it moves
+        expect((await hintRoom(panel)).height, `the hint's height with a row picked at ${phone.width} px`).toBe(hint.height)
         // keyboard up: the view folds, and a whole row with its field shows above the keys
         await expect(view).toHaveJSProperty('offsetHeight', 0)
         const rows = await rowsInView(panel)
@@ -143,6 +189,7 @@ journey.describe('the mimir tab with the keyboard up on a phone', () => {
         await clearOfKeys(field.locator('xpath=ancestor::li[1]'), `the edited row at ${phone.width} px`)
         await clearOfKeys(field, `the edited size at ${phone.width} px`)
         await clearOfKeys(page.getByTestId('mimir-sheet-close'), `Done at ${phone.width} px`)
+        await wholeAboveComposer(page, page.getByTestId('mimir-sheet-close'), panel, `Done at ${phone.width} px`)
         await clearOfKeys(page.getByTestId('mimir-composer'), `the composer at ${phone.width} px`)
         await nothingPushedOff(page, phone.width)
       }

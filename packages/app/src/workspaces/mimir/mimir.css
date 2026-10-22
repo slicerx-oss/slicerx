@@ -171,8 +171,11 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 .mimir-chip[data-source="lookup"] { color: var(--cyan); background: var(--cyan-tint); }
 .mimir-chip[data-source="photo"] { color: var(--pink); background: var(--pink-tint); }
 .mimir-chip[data-source="guess"] { color: var(--orange); border: 1px dashed color-mix(in srgb, var(--orange) 75%, transparent); }
-/* two lines always, so a long note never moves the footer */
-.mimir-sheet-hint { margin: 0; padding: 8px 16px; min-height: calc(2lh + 16px); max-height: calc(2lh + 16px); overflow: hidden; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
+/* The hint shows in a stack with every other hint the sheet can show, kept out of sight, so its height is the tallest
+   of them (two lines at most) and stays put as the rows are edited: one line when they all fit one (sheet-view.tsx). */
+.mimir-sheet-hint { display: grid; margin: 0; padding: 8px 16px; max-height: calc(2lh + 16px); overflow: hidden; border-top: 1px solid var(--line-soft); color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
+.mimir-sheet-hint > span { grid-area: 1 / 1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.mimir-sheet-hint > .mimir-sheet-hint-room { visibility: hidden; }
 .mimir-sheet-hint[data-bad] { color: var(--red); }
 .mimir-sheet-foot { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-top: 1px solid var(--line-soft); }
 .mimir-sheet-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: var(--fs-sm); }
