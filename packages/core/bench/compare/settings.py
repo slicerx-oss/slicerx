@@ -110,6 +110,8 @@ def sx_config():
         "nozzle_diameter": [m["nozzle_diameter"]],
         "nozzle_temperature": [m["nozzle_temperature"]],
         "hot_plate_temp": m["bed_temperature"],
+        # the first layer bed temperature too, since a start macro reads it (bed_temperature_initial_layer_single)
+        "hot_plate_temp_initial_layer": m["bed_temperature"],
         "filament_diameter": m["filament_diameter"],
         "filament_density": [m["filament_density"]],
         "filament_flow_ratio": [1],
