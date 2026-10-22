@@ -255,6 +255,42 @@ export function placeAbove(bar: Rect, anchorX: number, tip: { w: number; h: numb
   return y >= EDGE ? { x, y, side: 'top' } : null
 }
 
+/**
+ * A tip beside a side panel opens over the view, level with its anchor. When that covers a control or its label there
+ * (the playback bar's sliders under a Print button at the foot of the panel), it moves up, or down when that is
+ * nearer, by as little as clears them all. `clear` are the boxes to keep clear of. A tip with no clear place keeps the
+ * one it had.
+ */
+export function clearOf(pos: { x: number; y: number; side: Side }, tip: { w: number; h: number }, clear: readonly Rect[], view = { w: window.innerWidth, h: window.innerHeight }): { x: number; y: number; side: Side } {
+  const boxes = clear.filter((c) => c.width > 0 && c.height > 0 && pos.x < c.right && c.left < pos.x + tip.w)
+  const hits = (y: number) => boxes.filter((c) => y < c.bottom && c.top < y + tip.h)
+  if (!hits(pos.y).length) return pos
+  const go = (dir: -1 | 1): number | null => {
+    let y = pos.y
+    for (let i = 0; i < 12; i++) {
+      const hit = hits(y)
+      if (!hit.length) return y >= EDGE && y + tip.h <= view.h - EDGE ? y : null
+      y = dir < 0 ? Math.min(...hit.map((c) => c.top)) - GAP - tip.h : Math.max(...hit.map((c) => c.bottom)) + GAP
+    }
+    return null
+  }
+  const up = go(-1)
+  const down = go(1)
+  const y = up === null ? down : down === null ? up : Math.abs(up - pos.y) <= Math.abs(down - pos.y) ? up : down
+  return y === null ? pos : { ...pos, y }
+}
+
+/** What a tip over the view keeps clear of: the controls and their labels outside the anchor's own panel. */
+function viewControls(panel: Element | null): Rect[] {
+  const out: Rect[] = []
+  for (const c of Array.from(document.querySelectorAll<HTMLElement>(`${CONTROLS}, label, output`))) {
+    if ((panel && panel.contains(c)) || c.closest('#sx-tip')) continue
+    const b = c.getBoundingClientRect()
+    if (b.width && b.height && !unseen(c)) out.push(b)
+  }
+  return out
+}
+
 /** True for a part that is hidden or see-through, which takes no room on screen. */
 function unseen(el: HTMLElement): boolean {
   const st = getComputedStyle(el)
@@ -595,7 +631,10 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
       const r = el.getBoundingClientRect()
       const tip = { w: r.width, h: r.height }
       const view = { w: window.innerWidth, h: window.innerHeight }
-      setPos(aboveBar(shown.anchor, tip, view) ?? (shown.touch ? place(avoidBox(shown.anchor).getBoundingClientRect(), tip, 'top', view) : place(anchorRect(shown.anchor), tip, sideFor(shown.anchor), view, rowList(shown.anchor) !== null)))
+      const panel = shown.touch ? null : sidePanel(shown.anchor)
+      const placed = aboveBar(shown.anchor, tip, view) ?? (shown.touch ? place(avoidBox(shown.anchor).getBoundingClientRect(), tip, 'top', view) : place(anchorRect(shown.anchor), tip, sideFor(shown.anchor), view, rowList(shown.anchor) !== null))
+      // beside a side panel the tip is over the view: it never covers a control there
+      setPos(panel && placed.side === panel.side ? clearOf(placed, tip, viewControls(shown.anchor.closest('.sx-rail')), view) : placed)
     }
     measure()
     const ro = new ResizeObserver(measure)

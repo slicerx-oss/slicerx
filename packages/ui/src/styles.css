@@ -91,6 +91,9 @@ button { cursor: pointer; }
 .sx-btn[aria-pressed="true"] { color: var(--fg); background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 0 0 0 1px var(--accent-ring); border-color: transparent; }
 .sx-linkbtn { background: none; border: 0; padding: 0; color: var(--muted); font: var(--fw-semibold) var(--fs-md) var(--f-body); display: inline-flex; align-items: center; gap: 6px; }
 .sx-linkbtn:hover { color: var(--fg); }
+/* clickable words are never bare (spec 7): a link button is underlined; a disclosure has its chevron instead */
+.sx-linkbtn:not([aria-expanded]) { text-decoration: underline 1px color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.sx-linkbtn:not([aria-expanded]):hover { text-decoration-color: currentColor; }
 .sx-linkbtn .sx-ic { width: 15px; height: 15px; transition: transform var(--t-base) var(--ease); }
 .sx-linkbtn[aria-expanded="true"] .sx-ic { transform: rotate(180deg); }
 
@@ -195,6 +198,8 @@ button { cursor: pointer; }
 /* segmented control */
 .sx-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--field-bg); border: 1px solid var(--field-line); --muted: var(--field-muted); --dim: var(--field-dim); }
 .sx-seg[data-full] { display: flex; width: 100%; }
+/* A control that sets the text size or weight draws at the default ones, so pressing it never moves or resizes it (spec 8). */
+.sx-type-steady { --text-scale: 1; --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-body: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-title: 28px; --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-bold: 700; }
 .sx-seg[data-full] > button { flex: 1; }
 .sx-seg > button { height: 28px; padding: 0 11px; border: 0; border-radius: 7px; background: none; color: var(--muted); font: var(--fw-semibold) var(--fs-sm) var(--f-body); white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
 .sx-seg > button:hover { color: var(--fg); }
@@ -254,6 +259,8 @@ button { cursor: pointer; }
 .sx-menu-anchor { position: relative; display: inline-block; }
 .sx-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--z-menu); width: max-content; min-width: 200px; max-width: 300px; padding: 5px; border-radius: var(--r-md); background: var(--surface-menu); border: 1px solid var(--line); box-shadow: var(--shadow-pop); }
 .sx-menu[data-align="end"] { left: auto; right: 0; }
+/* headings and descriptions use the shades lifted for raised surfaces, so they read on the menu (spec 5) */
+.sx-menu { --muted: var(--field-muted); --dim: var(--field-dim); }
 .sx-menu[data-side="top"] { top: auto; bottom: calc(100% + 4px); }
 .sx-menu[data-static] { position: static; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .sx-menu-heading { padding: 6px 10px 4px; font: var(--fw-semibold) var(--fs-xs) var(--f-body); color: var(--dim); letter-spacing: 0.04em; text-transform: uppercase; }
@@ -716,3 +723,10 @@ button { cursor: pointer; }
 .sx-raven-mark { display: block; fill: none; stroke: currentColor; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; }
 .sx-raven-mark > circle:not(.sx-raven-mark-dot) { stroke-width: 0.6; }
 .sx-raven-mark .sx-raven-mark-dot, .sx-raven-mark .sx-raven-mark-eye, .sx-raven-mark .sx-raven-mark-spark { fill: currentColor; stroke: none; }
+
+/* Steady: a label that keeps the width of its widest form (components/steady.tsx) */
+.sx-steady { display: inline-grid; grid-template-columns: minmax(0, max-content); justify-items: center; max-width: 100%; vertical-align: top; }
+.sx-steady[data-align="start"] { justify-items: start; }
+.sx-steady > * { grid-area: 1 / 1; min-width: 0; }
+.sx-steady-sizer::before { content: attr(data-sizer); visibility: hidden; white-space: nowrap; }
+.sx-steady[data-clip] > * { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
