@@ -34,6 +34,8 @@ export interface BambuExtra {
   external?: { type: string; color: string }
   /** What `ams_filament_setting` wrote per AMS slot (0 based), reported back as the printer does. */
   trays?: Record<number, { info: string; min: number; max: number }>
+  /** On an H2D, what `ams_filament_setting` wrote to an AMS HT slot (`128:0`, unit and tray) or an external spool (`255:254`, `255:255`), reported in place of the fixture's tray. */
+  written?: Record<string, Record<string, unknown>>
   /** AMS slots (0 based) holding a spool with a Bambu Lab RFID tag, reported with a `tray_uuid`. */
   tagged?: number[]
   /** Exact grams left per AMS slot (0 based), reported as `remain_g` the way newer firmware does; absent elsewhere. */
@@ -125,6 +127,16 @@ function diff(now: Record<string, unknown>, was: Record<string, unknown>): Recor
   return out
 }
 
+/** An AMS unit's trays from the machine's slots, with what `ams_filament_setting` wrote and the `grams` and `tagged` knobs. */
+function amsTrays(m: MockMachine, x: BambuExtra): Record<string, unknown>[] {
+  return m.fx.slots.slice(0, 4).map((s, i) => ({
+    id: String(i), tray_type: s.material ?? '', tray_color: s.color ? `${s.color.replace('#', '').toUpperCase()}FF` : '', remain: s.remainingPct ?? -1,
+    ...(x.trays?.[i] ? { tray_info_idx: x.trays[i].info, nozzle_temp_min: String(x.trays[i].min), nozzle_temp_max: String(x.trays[i].max) } : {}),
+    ...(x.grams?.[i] !== undefined ? { remain_g: x.grams[i] } : {}),
+    ...(x.tagged?.includes(i) ? { tray_uuid: `A1B2C3D4E5F6071829304A5B6C7D8E${String(i).padStart(2, '0')}` } : {}),
+  }))
+}
+
 let h2d: Record<string, unknown> | undefined
 /** The H2D hardware part of a report: nozzles, AMS units and external spools. */
 function h2dHardware(m: MockMachine, x: BambuExtra): Record<string, unknown> {
@@ -137,12 +149,31 @@ function h2dHardware(m: MockMachine, x: BambuExtra): Record<string, unknown> {
   if (n && first) first.temp = (Math.round(n.target) << 16) | Math.round(n.current)
   // `external` loads the right nozzle's external spool (255), which the fixture leaves empty.
   const ext = x.external
-  const virt = ext
-    ? (vir_slot as { id: string }[]).map((t) => (t.id === '255' ? { id: '255', tray_type: ext.type, tray_color: `${ext.color.replace('#', '').toUpperCase()}FF`, remain: -1 } : t))
-    : vir_slot
+  // A tray `ams_filament_setting` wrote takes the place of the fixture's, its fill level kept.
+  const written = (key: string, t: { id: string; remain?: unknown }) => {
+    const w = x.written?.[key]
+    return w ? { id: t.id, ...w, remain: t.remain ?? -1 } : t
+  }
+  const virt = (vir_slot as { id: string }[])
+    .map((t) => (ext && t.id === '255' ? { id: '255', tray_type: ext.type, tray_color: `${ext.color.replace('#', '').toUpperCase()}FF`, remain: -1 } : t))
+    .map((t) => written(`255:${t.id}`, t))
+  // The units keep the fixture's layout (ids, kind, humidity, temperature); what they hold is the fake's state: the
+  // AMS (unit 0) holds the machine's slots, as on every Bambu fake, and the AMS HT (unit 128) its fixture spool until
+  // a slot is written.
+  // An AMS tray keeps the fixture's sub brand (what the printer shows, "PLA Basic") while it holds the same material
+  // and nothing was written to it.
+  type Tray = { id: string; remain?: unknown; tray_type?: string; tray_sub_brands?: string }
+  const units = (ams as { ams: { id: string; tray: Tray[] }[] }).ams.map((u) => {
+    if (u.id !== '0') return { ...u, tray: u.tray.map((t) => written(`${u.id}:${t.id}`, t)) }
+    const tray = amsTrays(m, x).map((t, i) => {
+      const was = u.tray.find((f) => f.id === t.id)
+      return was?.tray_sub_brands && was.tray_type === t.tray_type && !x.trays?.[i] ? { ...t, tray_sub_brands: was.tray_sub_brands } : t
+    })
+    return { ...u, tray }
+  })
   const chamber = m.fx.chamber
   const ctc = x.chamberTarget !== undefined && chamber ? { ctc: { state: 0, info: { temp: (Math.round(x.chamberTarget) << 16) | Math.round(chamber.current) } } } : {}
-  return { device: { ...d, ...ctc }, ams, vir_slot: virt, nozzle_diameter, nozzle_type, fun, sdcard }
+  return { device: { ...d, ...ctc }, ams: { ...(ams as object), ams: units }, vir_slot: virt, nozzle_diameter, nozzle_type, fun, sdcard }
 }
 
 /** The answer to an SSDP search, laid out as a recorded H2D answer, for the printer at `host`. */
@@ -202,12 +233,7 @@ export function reportFor(m: MockMachine, x: BambuExtra = { skipped: [], printEr
       },
       ams: {
         ams: m.fx.filamentSystem === 'ams' && x.ams !== 'none'
-          ? [{ id: '0', tray: m.fx.slots.slice(0, 4).map((s, i) => ({
-              id: String(i), tray_type: s.material ?? '', tray_color: s.color ? `${s.color.replace('#', '').toUpperCase()}FF` : '', remain: s.remainingPct ?? -1,
-              ...(x.trays?.[i] ? { tray_info_idx: x.trays[i].info, nozzle_temp_min: String(x.trays[i].min), nozzle_temp_max: String(x.trays[i].max) } : {}),
-              ...(x.grams?.[i] !== undefined ? { remain_g: x.grams[i] } : {}),
-              ...(x.tagged?.includes(i) ? { tray_uuid: `A1B2C3D4E5F6071829304A5B6C7D8E${String(i).padStart(2, '0')}` } : {}),
-            })) }]
+          ? [{ id: '0', tray: amsTrays(m, x) }]
           : [],
       },
       ...(x.external && x.model !== 'O1D' ? { vt_tray: { id: '254', tray_type: x.external.type, tray_color: `${x.external.color.replace('#', '').toUpperCase()}FF`, remain: -1 } } : {}),
@@ -377,15 +403,30 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
           break
         }
         case 'ams_filament_setting': {
-          // The printer takes the slot's preset id, type, color and nozzle range, and answers on the report topic.
+          // The printer takes the slot's preset id, type, color and nozzle range, and answers on the report topic. Unit 0
+          // is the AMS. On an H2D unit 128 is the AMS HT (one slot), and 255 the external spools, the spool's id (254
+          // left, 255 right) as the tray; elsewhere 255 is the one external spool, tray 254. Which id the H2D takes for
+          // its right spool is a guess until a capture shows it.
           const slot = Number(pr.slot_id)
-          const fx = Number(pr.ams_id) === 0 ? m.fx.slots[slot] : undefined
-          const answer = { ...pr, result: fx ? 'success' : 'fail', reason: fx ? '' : 'no such slot' }
+          const ams = Number(pr.ams_id)
+          const tray = Number(pr.tray_id)
+          const h2dPrinter = extra.model === 'O1D'
+          const fx = ams === 0 ? m.fx.slots[slot] : undefined
+          const other = h2dPrinter ? (ams === 128 && slot === 0) || (ams === 255 && (tray === 254 || tray === 255)) : ams === 255 && tray === 254
+          const ok = fx !== undefined || other
+          const answer = { ...pr, result: ok ? 'success' : 'fail', reason: ok ? '' : 'no such slot' }
           for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, Buffer.from(JSON.stringify({ print: answer }))))
-          if (!fx) return
-          fx.material = String(pr.tray_type)
-          fx.color = `#${String(pr.tray_color).slice(0, 6).toLowerCase()}`
-          extra.trays = { ...extra.trays, [slot]: { info: String(pr.tray_info_idx), min: Number(pr.nozzle_temp_min), max: Number(pr.nozzle_temp_max) } }
+          if (!ok) return
+          if (fx) {
+            fx.material = String(pr.tray_type)
+            fx.color = `#${String(pr.tray_color).slice(0, 6).toLowerCase()}`
+            extra.trays = { ...extra.trays, [slot]: { info: String(pr.tray_info_idx), min: Number(pr.nozzle_temp_min), max: Number(pr.nozzle_temp_max) } }
+          } else if (h2dPrinter) {
+            const key = `${ams}:${ams === 255 ? tray : slot}`
+            extra.written = { ...extra.written, [key]: { tray_type: String(pr.tray_type), tray_color: String(pr.tray_color).toUpperCase(), tray_info_idx: String(pr.tray_info_idx), nozzle_temp_min: String(pr.nozzle_temp_min), nozzle_temp_max: String(pr.nozzle_temp_max) } }
+          } else {
+            extra.external = { type: String(pr.tray_type), color: `#${String(pr.tray_color).slice(0, 6).toLowerCase()}` }
+          }
           log.push(`ams_filament_setting ${JSON.stringify({ ams_id: pr.ams_id, slot_id: pr.slot_id, tray_id: pr.tray_id, tray_info_idx: pr.tray_info_idx, setting_id: pr.setting_id, tray_color: pr.tray_color, nozzle_temp_min: pr.nozzle_temp_min, nozzle_temp_max: pr.nozzle_temp_max, tray_type: pr.tray_type })}`)
           break
         }
