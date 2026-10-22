@@ -767,7 +767,17 @@ fn box_3mf_with(settings: Option<&serde_json::Value>, extra: &[(&str, &str)]) ->
 
 /// [`box_3mf_with`] with `settings` as the bytes of its `Metadata/project_settings.config`, JSON or not.
 fn box_3mf_raw(settings: Option<&[u8]>, extra: &[(&str, &str)]) -> Vec<u8> {
-    let model = r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-01.10.02.73</metadata><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>"#;
+    box_3mf_by(Some("BambuStudio-01.10.02.73"), settings, extra)
+}
+
+/// [`box_3mf_raw`] as `app` wrote it (the model's `Application` metadata), or with no app named.
+fn box_3mf_by(app: Option<&str>, settings: Option<&[u8]>, extra: &[(&str, &str)]) -> Vec<u8> {
+    let app = app.map_or_else(String::new, |a| {
+        format!(r#"<metadata name="Application">{a}</metadata>"#)
+    });
+    let model = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">{app}<resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/><vertex x="20" y="0" z="10"/><vertex x="20" y="20" z="10"/><vertex x="0" y="20" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>"#
+    );
     let mut entries: Vec<(&str, &[u8])> = vec![("3D/3dmodel.model", model.as_bytes())];
     if let Some(s) = settings {
         entries.push(("Metadata/project_settings.config", s));
@@ -841,6 +851,76 @@ fn a_project_whose_settings_are_not_json_still_slices() {
             .is_some_and(|s| s.contains("INI style settings")),
         "{v}"
     );
+}
+
+/// Bambu Studio turns the prime tower's rib wall on and off with `prime_tower_rib_wall`, and its project saved
+/// before that switch existed means the rib wall, that app's default. A project of another app with neither the
+/// switch nor `wipe_tower_wall_type` keeps the engine's plain wall.
+#[test]
+fn a_projects_rib_wall_switch_picks_its_prime_tower_wall() {
+    let dir = temp_dir(format!("sx-cli-project-rib-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // The box on an A1 tower (type 1) with its infill in a second filament, so every layer purges on the tower.
+    let tower = |app: &str, rib: Option<&str>| -> [f64; 2] {
+        let mut s = serde_json::json!({
+            "printer_model": "Bambu Lab A1",
+            "sparse_infill_filament_id": "2",
+            "enable_prime_tower": "1",
+            "prime_tower_auto_position": "0",
+            "wipe_tower_x": ["15"],
+            "wipe_tower_y": ["220"],
+            "prime_tower_width": "35",
+            "prime_tower_brim_width": "0",
+        });
+        if let Some(r) = rib {
+            s["prime_tower_rib_wall"] = serde_json::json!(r);
+        }
+        let name = format!("{app}-{}.3mf", rib.unwrap_or("none"));
+        let path = dir.join(&name);
+        let text = s.to_string();
+        std::fs::write(&path, box_3mf_by(Some(app), Some(text.as_bytes()), &[])).unwrap();
+        let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        // The tower's extrusions on layer 10: its width and depth.
+        let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+        let (mut layer, mut on) = (0, false);
+        for l in String::from_utf8_lossy(&out.stdout).lines() {
+            if l == "; CHANGE_LAYER" {
+                layer += 1;
+            } else if let Some(f) = l.strip_prefix("; FEATURE: ") {
+                on = f == "Prime tower";
+            } else if on && layer == 10 && l.starts_with("G1 X") && l.contains(" E") && !l.contains(" E-") {
+                let at = |axis: char| {
+                    l.split(' ')
+                        .find_map(|w| w.strip_prefix(axis))
+                        .and_then(|v| v.parse::<f64>().ok())
+                };
+                if let (Some(x), Some(y)) = (at('X'), at('Y')) {
+                    lo = [lo[0].min(x), lo[1].min(y)];
+                    hi = [hi[0].max(x), hi[1].max(y)];
+                }
+            }
+        }
+        assert!(hi[0] > lo[0], "{name}: no prime tower on layer 10");
+        [hi[0] - lo[0], hi[1] - lo[1]]
+    };
+    // The rib wall's tower is square; the plain one is prime_tower_width wide and as deep as its purges.
+    let rib = |[w, d]: [f64; 2]| (w - d).abs() < 1.0 && w < 30.0;
+    let plain = |[w, d]: [f64; 2]| w > 30.0 && d < w - 10.0;
+    for app in ["BambuStudio-02.03.00.70", "OrcaSlicer-2.3.1"] {
+        let on = tower(app, Some("1"));
+        assert!(rib(on), "{app} switch on: {on:?}");
+        let off = tower(app, Some("0"));
+        assert!(plain(off), "{app} switch off: {off:?}");
+    }
+    let bambu = tower("BambuStudio-02.03.00.70", None);
+    assert!(rib(bambu), "a Bambu Studio project without the switch: {bambu:?}");
+    let orca = tower("OrcaSlicer-2.3.1", None);
+    assert!(plain(orca), "an OrcaSlicer project without the switch: {orca:?}");
 }
 
 /// The layer count `sx slice` reports on stderr ("N layers, ...").
