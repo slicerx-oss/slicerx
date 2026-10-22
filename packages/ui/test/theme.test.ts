@@ -84,7 +84,7 @@ describe('theme', () => {
   })
 
   it('no component hard-codes a color or a font', () => {
-    const files = walk(resolve(here, '../src')).filter((f) => /\.(tsx?|css)$/.test(f) && !/theme(s|-provider|file|-library)?\.tsx?$|fonts\.ts$|icon-paths\.ts$|tokens\.css$/.test(f))
+    const files = walk(resolve(here, '../src')).filter((f) => /\.(tsx?|css)$/.test(f) && !/theme(s|-provider|file|-library)?\.tsx?$|surface-text\.ts$|fonts\.ts$|icon-paths\.ts$|tokens\.css$/.test(f))
     expect(files.length).toBeGreaterThan(15)
     for (const f of files) {
       const text = readFileSync(f, 'utf8').replace(/url\("data:[^"]*"\)/g, '')

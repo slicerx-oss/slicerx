@@ -106,10 +106,10 @@ button { cursor: pointer; }
 .sx-chip[data-mono] { font-family: var(--f-mono); font-weight: var(--fw-medium); }
 .sx-pill { display: inline-flex; align-items: center; gap: 6px; font: var(--fw-semibold) var(--fs-sm) var(--f-body); white-space: nowrap; }
 .sx-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
-.sx-pill[data-state="ok"] { color: var(--green); }
-.sx-pill[data-state="run"] { color: var(--cyan); }
-.sx-pill[data-state="warn"] { color: var(--orange); }
-.sx-pill[data-state="bad"] { color: var(--red); }
+.sx-pill[data-state="ok"] { color: var(--green-text); }
+.sx-pill[data-state="run"] { color: var(--cyan-text); }
+.sx-pill[data-state="warn"] { color: var(--orange-text); }
+.sx-pill[data-state="bad"] { color: var(--red-text); }
 .sx-pill[data-state="off"] { color: var(--dim); }
 .sx-pill[data-state="run"]::before { box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent); }
 .sx-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px var(--green-tint); display: inline-block; }
@@ -181,9 +181,9 @@ button { cursor: pointer; }
 .sx-scrub-handle { flex: none; align-self: stretch; display: grid; place-items: center; width: 22px; font: var(--fw-bold) var(--fs-xs)/1 var(--f-body); letter-spacing: 0.02em; color: var(--dim); border-radius: calc(var(--r-sm) - 1px); cursor: ew-resize; touch-action: none; user-select: none; -webkit-user-select: none; }
 .sx-scrub-handle:not([data-axis])::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 /* the gizmo's colors, a step darker on light themes so the letter stays readable */
-.sx-scrub-handle[data-axis="x"] { color: light-dark(color-mix(in oklab, var(--axis-x) 72%, black), var(--axis-x)); }
-.sx-scrub-handle[data-axis="y"] { color: light-dark(color-mix(in oklab, var(--axis-y) 66%, black), var(--axis-y)); }
-.sx-scrub-handle[data-axis="z"] { color: light-dark(color-mix(in oklab, var(--axis-z) 72%, black), var(--axis-z)); }
+.sx-scrub-handle[data-axis="x"] { color: light-dark(color-mix(in oklab, var(--axis-x) 72%, black), var(--axis-x-text)); }
+.sx-scrub-handle[data-axis="y"] { color: light-dark(color-mix(in oklab, var(--axis-y) 66%, black), var(--axis-y-text)); }
+.sx-scrub-handle[data-axis="z"] { color: light-dark(color-mix(in oklab, var(--axis-z) 72%, black), var(--axis-z-text)); }
 .sx-scrub-handle:hover, .sx-scrub[data-dragging] .sx-scrub-handle { background: var(--accent-tint); }
 .sx-scrub[data-disabled] .sx-scrub-handle { cursor: default; opacity: 0.5; }
 /* a refused entry: the field flags it, and the reason floats under it for a moment */
@@ -193,7 +193,7 @@ button { cursor: pointer; }
 .sx-field-hint[data-tone="error"] { color: var(--red); }
 
 /* segmented control */
-.sx-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--field-bg); border: 1px solid var(--field-line); }
+.sx-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--field-bg); border: 1px solid var(--field-line); --muted: var(--field-muted); --dim: var(--field-dim); }
 .sx-seg[data-full] { display: flex; width: 100%; }
 .sx-seg[data-full] > button { flex: 1; }
 .sx-seg > button { height: 28px; padding: 0 11px; border: 0; border-radius: 7px; background: none; color: var(--muted); font: var(--fw-semibold) var(--fs-sm) var(--f-body); white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
@@ -202,7 +202,9 @@ button { cursor: pointer; }
 .sx-seg > button:disabled { opacity: 0.45; cursor: not-allowed; }
 .sx-seg > button:disabled:hover { color: var(--muted); }
 .sx-seg > button:focus-visible { outline-offset: var(--focus-offset-inset); }
-.sx-seg > button[aria-checked="true"] { background: var(--control-selected); color: var(--fg); box-shadow: inset 0 0 0 1px var(--control-selected-line); }
+/* the selected segment's own text and icons read on its fill: its label, secondary lines and accent icon take the
+   control-selected inks */
+.sx-seg > button[aria-checked="true"] { background: var(--control-selected); color: var(--control-selected-fg); box-shadow: inset 0 0 0 1px var(--control-selected-line); --fg: var(--control-selected-fg); --muted: var(--control-selected-muted); --dim: var(--control-selected-muted); --accent: var(--control-selected-mark); }
 .sx-seg > button[aria-checked="true"] .sx-ic { color: var(--accent); }
 .sx-seg > button .sx-ic { width: 15px; height: 15px; }
 .sx-seg[data-size="sm"] > button { height: calc(var(--h-sm) - 6px); padding: 0 9px; font-size: var(--fs-xs); }
