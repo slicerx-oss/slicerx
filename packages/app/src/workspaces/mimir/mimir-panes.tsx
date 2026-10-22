@@ -252,6 +252,21 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+  // A phone's keyboard makes the chat shorter, and the view folding or coming back for it changes it again: the field
+  // being typed in, in the conversation or the sizes panel, scrolls back into view with its whole row. This observer is
+  // made after the one above, so it runs after it, and following the stream never takes the field out of view.
+  const stage = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = stage.current
+    if (!el || !phone) return
+    const ro = new ResizeObserver(() => {
+      const f = document.activeElement
+      if (!(f instanceof HTMLElement) || !el.contains(f) || !f.matches('input, textarea')) return
+      ;(f.closest<HTMLElement>('li') ?? f).scrollIntoView({ block: 'nearest' })
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [phone])
   // On a phone the view folds while a card waits for an answer and comes back once it is answered. The chat's top edge
   // moves with it, so a reader who has scrolled up keeps the same lines where they were: a card's button just pressed
   // stays under the finger. At the bottom the observer above keeps the end in view, which holds them still too.
@@ -342,7 +357,7 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       <p className="sr-only" role="status" aria-live="polite">
         {announcement}
       </p>
-      <div className="mimir-stage" hidden={more}>
+      <div ref={stage} className="mimir-stage" hidden={more}>
         {/* The battle ravens: a faint, still watermark while the chat is empty; never behind a reply. */}
         {transcript.turns.length === 0 ? (
           <div className="mimir-ravens" data-testid="mimir-ravens" aria-hidden="true">

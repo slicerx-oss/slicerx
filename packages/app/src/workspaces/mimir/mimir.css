@@ -198,6 +198,22 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .mimir-sheet-foot .sx-btn { min-height: 44px; }
 :root[data-phone] .mimir-chat .composer-text { height: 40px; font-size: 16px; }
 :root[data-phone] .mimir-chat .composer .sx-btn { width: 44px; height: 44px; }
+/* With the on-screen keyboard up (shell/phone-keyboard.ts) the tab fits the part of the window still in view, whatever
+   the keyboard's height: the app moves down with that part when the browser pans it to a field, the tab bar (under the
+   keys anyway) gives up its room, and the composer sits on the keys. The field being typed in scrolls back into view as
+   the chat gets shorter (mimir-panes.tsx). */
+:root[data-phone][data-phone-kb]:has(.studio[data-model-mode="mimir"]) { --phone-tabbar-h: 0px; }
+:root[data-phone][data-phone-kb]:has(.studio[data-model-mode="mimir"]) .sx-frame-root { position: relative; top: var(--phone-vv-top); height: var(--phone-vv-h); }
+:root[data-phone][data-phone-kb]:has(.studio[data-model-mode="mimir"]) .phone-tabs { display: none; }
+:root[data-phone][data-phone-kb] .studio[data-model-mode="mimir"] { height: calc(var(--phone-vv-h) - var(--h-bar)); }
+/* A size being typed in on the record keeps the record in view, so the pill that brings it back gives way rather than
+   lying over its Confirm in the shorter chat. */
+:root[data-phone] .mimir-stage:has([data-testid="mimir-sheet-record"]:focus-within) > .mimir-sizes-pill { display: none; }
+/* With the sizes panel open the view keeps its 42% while the keyboard is down, so the part shows changing as a size is
+   edited. With the keyboard up the 42% view leaves no whole row above the keys at 390 or 360 px, so the view folds away
+   while it is up and comes back when it goes. */
+:root[data-phone][data-phone-kb] .studio[data-model-mode="mimir"]:has(.mimir-sheet-slot > .mimir-sheet-panel) { --mimir-view-h: 0px; }
+:root[data-phone][data-phone-kb] .studio[data-model-mode="mimir"]:has(.mimir-sheet-slot > .mimir-sheet-panel) > .vp { visibility: hidden; }
 /* The surface ladder (spec 4b) in the surface tokens: the page tone under the chat, its cards one step up with a 1 px
    border, the composer one more as a field. Same steps in dark and light. */
 .mimir-chat :is(.lookup-rec, .tools, .choice) { border-color: var(--surface-line); background: var(--surface-card); }
