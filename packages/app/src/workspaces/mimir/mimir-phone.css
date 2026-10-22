@@ -54,6 +54,12 @@
 :root[data-phone] .mimir-chat .sheet-rec-field .sx-scrub { height: auto; }
 :root[data-phone] .mimir-chat .sheet-rec-field .sx-scrub-input { height: var(--h-lg); font-size: 16px; }
 :root[data-phone] .mimir-chat .sheet-rec-foot .sx-btn { min-height: var(--h-lg); }
+/* the sizes panel (Edit sizes): its fields are 44 px tall to type in, and a size's source link takes a 44 px touch.
+   The link's text truncates inside its own span, so the link can let its touch box out. */
+:root[data-phone] .mimir-sheet-panel .mimir-sheet-field .sx-scrub { height: auto; }
+:root[data-phone] .mimir-sheet-panel .mimir-sheet-field .sx-scrub-input { height: var(--h-lg); font-size: 16px; }
+:root[data-phone] .mimir-sheet-panel a.mimir-chip { position: relative; overflow: visible; }
+:root[data-phone] .mimir-sheet-panel a.mimir-chip::before { content: ''; position: absolute; inset: calc((100% - var(--h-lg)) / 2) 0; }
 /* the sheet's status (its assumed values are why it asks) takes the whole width over the buttons and wraps, never cut
    off; it keeps two lines' room, so a shorter status does not move the buttons */
 :root[data-phone] .mimir-chat .sheet-rec-foot:has(> [data-testid="mimir-sheet-status"]) { flex-wrap: wrap; justify-content: flex-end; }
