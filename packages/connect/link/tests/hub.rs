@@ -3333,6 +3333,63 @@ async fn an_ams_slot_is_written_only_from_the_app_with_a_card_a_person_approved(
     assert!(r["error"]["message"].as_str().unwrap().contains("RFID"), "{r}");
 }
 
+// On an H2D, a slot set from the app shows in the printer's next report, in the AMS and in the AMS
+// HT (slot E1), so the read-back finds it and the Filament panel shows the new filament.
+#[tokio::test]
+async fn an_h2d_slot_set_from_the_app_reads_back_in_the_ams_and_the_ams_ht() {
+    let link = hub(None).await;
+    let mocks = common::Mocks::start("bambu", &[]).await;
+    mocks.control("/bambu", json!({ "model": "O1D" })).await;
+    let mut app = paired(&link).await;
+    add_bambu(&mut app, &mocks).await;
+    until(&mut app, "status", |r| {
+        r["result"]["slots"]
+            .as_array()
+            .is_some_and(|s| s.iter().any(|x| x["id"] == "E1"))
+    })
+    .await;
+    for (n, slot, color) in [(0_u64, "A2", "#1a2b3c"), (1, "E1", "#3c2b1a")] {
+        let setting = json!({ "slot": slot, "filamentId": "GFG99", "material": "PETG", "color": color, "nozzleTempMin": 220, "nozzleTempMax": 260 });
+        let card = format!("h-{n}");
+        let _ = call(
+            &mut app,
+            20 + n * 3,
+            "approvals.register",
+            json!({ "request": slot_card(&card, &setting) }),
+        )
+        .await;
+        let t = call(
+            &mut app,
+            21 + n * 3,
+            "approvals.grant",
+            json!({ "requestId": card }),
+        )
+        .await["result"]
+            .clone();
+        let r = call(
+            &mut app,
+            22 + n * 3,
+            "adjust.slot",
+            json!({ "printerId": "bay-1", "setting": setting, "token": t }),
+        )
+        .await;
+        assert_eq!(r["result"]["shown"], true, "{slot}: {r}");
+        assert_eq!(r["result"]["slot"]["id"], slot, "{r}");
+        assert_eq!(r["result"]["slot"]["material"], "PETG", "{r}");
+        assert_eq!(r["result"]["slot"]["color"], color, "{r}");
+    }
+    let sent: Vec<String> = bambu_log(&mocks)
+        .await
+        .into_iter()
+        .filter(|l| l.starts_with("ams_filament_setting"))
+        .collect();
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(
+        sent[1].contains(r#""ams_id":128,"slot_id":0,"tray_id":0"#),
+        "{sent:?}"
+    );
+}
+
 #[tokio::test]
 async fn the_chamber_light_switches_from_the_app_only() {
     let link = hub(None).await;

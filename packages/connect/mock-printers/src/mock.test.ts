@@ -585,6 +585,63 @@ test('Snapmaker U1: Moonraker with the U1 identity, a webcam showing the chosen 
   }
 })
 
+// An H2D reports its AMS from the fake's state, so a slot written with `ams_filament_setting` shows in the next report:
+// an AMS slot (unit 0), the AMS HT (unit 128) and an external spool (255, the left nozzle's 254).
+test('the H2D fake reports slots written in the AMS, the AMS HT and the external spool', async () => {
+  const { MOCK_ACCESS_CODE, MOCK_SERIAL } = await import('./bambu.ts')
+  const { encode, publish, PacketReader, parsePublish } = await import('./mqtt.ts')
+  const { connect: tlsConnect } = await import('node:tls')
+  const mocks = await startMocks({ only: ['bambu'], state: 'idle' })
+  assert.equal((await post(mocks, '/bambu', { model: 'O1D' })).status, 200)
+  const sock = tlsConnect({ host: '127.0.0.1', port: mocks.ports.bambu, rejectUnauthorized: false })
+  try {
+    await new Promise((r, j) => { sock.once('secureConnect', r); sock.once('error', j) })
+    const str = (s: string) => Buffer.concat([Buffer.from([0, Buffer.byteLength(s)]), Buffer.from(s)])
+    const reader = new PacketReader()
+    const state: Record<string, any> = {}
+    const merge = (into: any, from: any) => {
+      for (const [k, v] of Object.entries(from)) {
+        if (v && typeof v === 'object' && !Array.isArray(v) && into[k] && typeof into[k] === 'object') merge(into[k], v)
+        else into[k] = v
+      }
+    }
+    const answers: Record<string, any>[] = []
+    sock.on('data', (c: Buffer) => {
+      for (const p of reader.push(c)) {
+        if (p.type !== 3) continue
+        const m = JSON.parse(parsePublish(p).payload.toString('utf8'))
+        if (m.print?.command === 'push_status') merge(state, m.print)
+        else if (m.print) answers.push(m.print)
+      }
+    })
+    sock.write(encode(1, 0, Buffer.concat([str('MQTT'), Buffer.from([4, 0xc2, 0, 60]), str('h2d-ams'), str('bblp'), str(MOCK_ACCESS_CODE)])))
+    sock.write(encode(8, 2, Buffer.concat([Buffer.from([0, 1]), str(`device/${MOCK_SERIAL}/report`), Buffer.from([0])])))
+    await new Promise((r) => setTimeout(r, 300))
+    const req = (o: unknown) => sock.write(publish(`device/${MOCK_SERIAL}/request`, Buffer.from(JSON.stringify(o))))
+    req({ pushing: { command: 'pushall' } })
+    await new Promise((r) => setTimeout(r, 400))
+    const unit = (id: string) => state.ams?.ams?.find((u: any) => u.id === id)
+    const tray = (u: string, t: string) => unit(u)?.tray?.find((x: any) => x.id === t)
+    assert.equal(tray('128', '0')?.tray_type, 'PAHT-CF')
+    assert.equal(unit('128')?.humidity, '3')
+    const set = (ams: number, slot: number, trayId: number, type: string, color: string) =>
+      req({ print: { command: 'ams_filament_setting', sequence_id: String(ams), ams_id: ams, slot_id: slot, tray_id: trayId, tray_info_idx: 'GFG99', setting_id: '', tray_color: color, nozzle_temp_min: 220, nozzle_temp_max: 260, tray_type: type } })
+    set(0, 1, 1, 'PETG', '1A2B3CFF')
+    set(128, 0, 0, 'PETG', '3C2B1AFF')
+    set(255, 0, 254, 'PLA', '00AE42FF')
+    await new Promise((r) => setTimeout(r, 800))
+    assert.deepEqual(answers.filter((a) => a.command === 'ams_filament_setting').map((a) => [a.ams_id, a.result]), [[0, 'success'], [128, 'success'], [255, 'success']])
+    assert.deepEqual([tray('0', '1')?.tray_type, tray('0', '1')?.tray_color, tray('0', '1')?.tray_info_idx], ['PETG', '1A2B3CFF', 'GFG99'])
+    const ht = tray('128', '0')
+    assert.deepEqual([ht?.tray_type, ht?.tray_color, ht?.tray_info_idx, ht?.tray_sub_brands], ['PETG', '3C2B1AFF', 'GFG99', undefined])
+    const left = state.vir_slot?.find((t: any) => t.id === '254')
+    assert.deepEqual([left?.tray_type, left?.tray_color, left?.tray_info_idx], ['PLA', '00AE42FF', 'GFG99'])
+  } finally {
+    sock.destroy()
+    await mocks.stop()
+  }
+})
+
 test('Bambu: the camera follows POST /camera, and faults are not modeled', async () => {
   const { HAND_FRAME } = await import('./frames.ts')
   const { MOCK_ACCESS_CODE } = await import('./bambu.ts')
