@@ -1547,7 +1547,13 @@ pub(crate) fn settle_cooling(out: &mut SliceOutput, config: &PrintConfig) {
             if chunk.error.is_some() {
                 return None;
             }
-            let beyond = crate::cooling::layer_time(&chunk.bytes) - planned;
+            // A spiral layer goes on from where the layer below ended, with no move to its start: the
+            // cooling time counts its first extrusion from there.
+            let start = (l.spiral && !l.spiral_start)
+                .then(|| l.paths.first().and_then(|p| l.path_points(p).first().copied()))
+                .flatten()
+                .map(|p| [p.x_mm(), p.y_mm(), f64::from(l.z) - f64::from(l.height)]);
+            let beyond = crate::cooling::layer_time_from(&chunk.bytes, start) - planned;
             let relaid = crate::paths::recool(l, c, &fc, beyond);
             #[allow(clippy::cast_possible_truncation, reason = "layer times are small")]
             let (planned, beyond) = (planned as f32, beyond as f32);

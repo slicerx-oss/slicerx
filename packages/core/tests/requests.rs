@@ -6007,3 +6007,115 @@ fn bambu_zig_zag_is_rectilinear_in_every_pattern_key() {
         "zigzag sliced like rectilinear"
     );
 }
+
+/// Per layer of a finished file (the start sequence left out): the feed rates its moves along the loop run at
+/// (mm/min), their time at those feeds (s) and the part fan speeds they run under (0 to 255).
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "feed rates and fan speeds are small"
+)]
+fn extrusion_stats(g: &str) -> Vec<(Vec<i64>, f64, Vec<i64>)> {
+    let (mut feed, mut fan, mut at) = (0.0_f64, 0_i64, [0.0_f64; 3]);
+    let mut out = Vec::new();
+    for (k, part) in g.split(sx_core::extras::layer_mark(g)).enumerate() {
+        let (mut feeds, mut time, mut fans) = (Vec::new(), 0.0, Vec::new());
+        for line in part.lines() {
+            let code = line.split(';').next().unwrap_or("").trim();
+            match code.split_whitespace().next() {
+                Some("M106") if !code.contains(" P") || code.contains(" P0") => {
+                    if let Some(s) = field(code, 'S') {
+                        fan = s.round() as i64;
+                    }
+                }
+                Some("M107") => fan = 0,
+                Some(g @ ("G0" | "G1" | "G2" | "G3")) => {
+                    if let Some(f) = field(code, 'F') {
+                        feed = f;
+                    }
+                    let to = [
+                        field(code, 'X').unwrap_or(at[0]),
+                        field(code, 'Y').unwrap_or(at[1]),
+                        field(code, 'Z').unwrap_or(at[2]),
+                    ];
+                    let len =
+                        ((to[0] - at[0]).powi(2) + (to[1] - at[1]).powi(2) + (to[2] - at[2]).powi(2)).sqrt();
+                    // Moves of the loop: the ramped flow of the last one may come down to no extrusion at all.
+                    if g == "G1" && field(code, 'E').is_some_and(|e| e >= 0.0) && len > 0.0 && feed > 0.0 {
+                        let f = feed.round() as i64;
+                        if !feeds.contains(&f) {
+                            feeds.push(f);
+                        }
+                        if !fans.contains(&fan) {
+                            fans.push(fan);
+                        }
+                        time += len / (feed / 60.0);
+                    }
+                    at = to;
+                }
+                _ => {}
+            }
+        }
+        if k > 0 {
+            out.push((feeds, time, fans));
+        }
+    }
+    out
+}
+
+/// The vase block with the cooling slowdown on: 8 s layers, the outer wall at 200 mm/s, the fan from 30 to 100
+/// percent between 8 and 60 s.
+fn vase_cooling(extra: Value) -> Vec<(Vec<i64>, f64, Vec<i64>)> {
+    let mut c = json!({
+        "slow_down_for_layer_cooling": true, "slow_down_layer_time": 8, "slow_down_min_speed": 5,
+        "outer_wall_speed": 200, "fan_min_speed": 30, "fan_max_speed": 100, "fan_cooling_layer_time": 60,
+    });
+    c.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    let stats = extrusion_stats(&vase_run(c));
+    assert_eq!(stats.len(), 20);
+    stats
+}
+
+#[test]
+fn spiral_layers_hold_the_minimum_layer_time() {
+    // The block's 80 mm loop takes 0.4 s at 200 mm/s. Every spiral layer slows to the 8 s minimum: the layers
+    // after the first, which go on from the layer below with no move to their start, as much as the first.
+    let stats = vase_cooling(json!({}));
+    let first = stats[2].0.clone();
+    assert_eq!(first.len(), 1, "{first:?}");
+    assert!(first[0] < 1200, "the first spiral layer runs at F{}", first[0]);
+    for (i, (feeds, time, _)) in stats.iter().enumerate().skip(2) {
+        if i < 19 {
+            assert_eq!(feeds.len(), 1, "layer {i}: {feeds:?}");
+            assert!(
+                (feeds[0] - first[0]).abs() * 100 <= first[0],
+                "layer {i} runs at F{} after F{}",
+                feeds[0],
+                first[0]
+            );
+        }
+        // The last layer's loop and the loop repeated over it are slowed together.
+        assert!(*time > 7.8, "layer {i} takes {time} s");
+    }
+}
+
+#[test]
+fn spiral_layers_slow_down_no_further_than_the_minimum_speed() {
+    // At 50 mm/s the loop still takes only 1.6 s: every spiral layer runs at the floor, with the fan at its maximum.
+    let stats = vase_cooling(json!({"slow_down_min_speed": 50}));
+    for (i, (feeds, _, fans)) in stats.iter().enumerate().skip(2) {
+        assert_eq!(feeds, &[3000], "layer {i}");
+        assert_eq!(fans, &[255], "layer {i}");
+    }
+}
+
+#[test]
+fn slowed_spiral_layers_run_the_fan_at_its_maximum() {
+    // A layer the slowdown stretched to its target is a short layer: fan_max_speed, on the spiral layers that go on
+    // from the layer below as on the first.
+    let stats = vase_cooling(json!({}));
+    for (i, (_, _, fans)) in stats.iter().enumerate().skip(2) {
+        assert_eq!(fans, &[255], "layer {i}");
+    }
+}
