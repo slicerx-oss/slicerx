@@ -32,6 +32,8 @@ export interface ThemeFile {
   muted: string
   accent: string
   selection?: string
+  /** The selected segment's fill in a segmented control. Unset: the app's step (30% toward the text on a dark theme, an accent tint on a light one). */
+  selectedFill?: string
   /** 16 terminal colors: 1 red, 2 green, 3 yellow, 4 blue, 5 magenta, 6 cyan are used. */
   ansi: string[]
   working?: string
@@ -241,6 +243,7 @@ export function themeColors(t: ThemeFile, opts: PaletteOptions = {}): ThemeColor
     red: p.red,
     blue: p.blue,
     onGrad: p.onAccent,
+    ...(t.selectedFill ? { controlSelected: t.selectedFill } : {}),
     shadow: t.isDark ? 'rgb(0 0 0 / 70%)' : 'rgb(42 40 51 / 20%)',
   }
 }
@@ -267,7 +270,7 @@ export type ThemeResult = { ok: true; theme: ThemeFile; warnings: string[] } | {
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,39}$/
 const COLOR_KEYS = ['background', 'surface', 'surfaceAlt', 'border', 'text', 'muted', 'accent'] as const
-const OPTIONAL_COLOR_KEYS = ['selection', 'working', 'waiting', 'failed'] as const
+const OPTIONAL_COLOR_KEYS = ['selection', 'selectedFill', 'working', 'waiting', 'failed'] as const
 /** A theme file is small. Anything bigger is not a theme. */
 export const MAX_THEME_BYTES = 16 * 1024
 
@@ -381,7 +384,7 @@ export function parseThemeText(text: string): ThemeResult {
   return validateThemeFile(json)
 }
 
-const KEY_ORDER = ['version', 'id', 'name', 'family', 'familyName', 'flavor', 'isDark', 'background', 'surface', 'surfaceAlt', 'border', 'text', 'muted', 'accent', 'selection', 'ansi', 'working', 'waiting', 'failed', 'fonts', 'scene', 'credit'] as const
+const KEY_ORDER = ['version', 'id', 'name', 'family', 'familyName', 'flavor', 'isDark', 'background', 'surface', 'surfaceAlt', 'border', 'text', 'muted', 'accent', 'selection', 'selectedFill', 'ansi', 'working', 'waiting', 'failed', 'fonts', 'scene', 'credit'] as const
 
 /** Pretty JSON in the documented key order, ready to share. */
 export function serializeTheme(t: ThemeFile): string {

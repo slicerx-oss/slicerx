@@ -46,6 +46,13 @@
   --control-selected-fg: #f8f8f2;
   --control-selected-muted: #eff0ed;
   --control-selected-lift: 45%;
+  /* the share for each accent choice; the look points --control-selected-lift at the chosen one */
+  --control-selected-lift-purple: 45%;
+  --control-selected-lift-pink: 45%;
+  --control-selected-lift-cyan: 45%;
+  --control-selected-lift-green: 45%;
+  --control-selected-lift-orange: 45%;
+  --control-selected-lift-blue: 45%;
   --control-selected-mark: color-mix(in srgb, var(--accent), var(--control-selected-fg) var(--control-selected-lift));
   /* status colors as text: pills, roles and state words, on any surface and on their own tint */
   --red-text: #ffaaaa;
@@ -299,6 +306,12 @@
   --control-selected-fg: var(--fg);
   --control-selected-muted: var(--muted);
   --control-selected-lift: 0%;
+  --control-selected-lift-purple: 0%;
+  --control-selected-lift-pink: 0%;
+  --control-selected-lift-cyan: 0%;
+  --control-selected-lift-green: 0%;
+  --control-selected-lift-orange: 0%;
+  --control-selected-lift-blue: 0%;
   --red-text: var(--red);
   --green-text: var(--green);
   --orange-text: var(--orange);

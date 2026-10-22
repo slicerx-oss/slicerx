@@ -82,6 +82,8 @@ export function lookToVars(look: LookSpec): Record<string, string> {
   const md = ROW[look.rowHeight]
   return {
     '--accent': `var(--${look.accent})`,
+    // the selected segment's icon moves toward its label by the share this accent needs (surface-text.ts)
+    '--control-selected-lift': `var(--control-selected-lift-${look.accent}, var(--control-selected-lift-purple))`,
     '--r-xs': `${r.xs}px`,
     '--r-sm': `${r.sm}px`,
     '--r-md': `${r.md}px`,

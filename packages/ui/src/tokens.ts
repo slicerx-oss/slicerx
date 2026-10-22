@@ -7,7 +7,7 @@ import { motionReduced } from './motion'
 import { subban } from './theme'
 
 /** Values of the Subban palette. Component styles use the CSS variables, never these. */
-export const SUBBAN = subban.colors as Required<typeof subban.colors>
+export const SUBBAN = subban.colors as Required<Omit<typeof subban.colors, 'controlSelected'>>
 
 export type SubbanColor = keyof typeof SUBBAN
 
