@@ -10,8 +10,9 @@
    A waiting size sheet keeps the view, since its drawing is there. */
 :root[data-phone] .studio[data-model-mode="mimir"]:has(> .mimir-chat[data-card-waits]) { --mimir-view-h: 20%; }
 
-/* the header: the buttons keep their 44 px and the design name gives way first, then the chip */
-:root[data-phone] .mimir-chat-head { gap: var(--s-1); padding: 0 var(--s-1) 0 var(--s-3); }
+/* the header, from the 16 px gutter: the buttons keep their 44 px, and the Sample replies badge gives way only if it
+   must (beside it the design's name is hidden, since the top bar shows it) */
+:root[data-phone] .mimir-chat-head { gap: var(--s-1); padding: 0 var(--s-1) 0 var(--s-4); }
 :root[data-phone] .mimir-chat-head .sx-btn { flex: none; }
 :root[data-phone] .mimir-chat-head .mimir-chat-scripted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
