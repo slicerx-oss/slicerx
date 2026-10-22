@@ -924,7 +924,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* Minimal sidebar details */
 .fil-unused { display: flex; align-items: center; gap: 6px; width: 100%; padding: 6px 0 2px; border: 0; background: none; color: var(--dim); font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-body); text-align: left; cursor: pointer; }
 .fil-unused:hover { color: var(--muted); }
-.slice-lite { display: grid; gap: 8px; }
+/* One column that may be narrower than its content: a long printer name is cut inside Print, never past the footer's edge. */
+.slice-lite { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
 .est-line { margin: 0; font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-body); color: var(--dim); }
 .hud .sx-btn[data-icon-only] { width: 32px; height: 32px; padding: 0; border-radius: var(--r-sm); background: var(--overlay); border: 1px solid var(--line-soft); }
 .hud .sx-btn[data-icon-only]:hover { border-color: var(--line); }

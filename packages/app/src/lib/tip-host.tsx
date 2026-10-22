@@ -61,9 +61,9 @@ export function resolveTip(el: HTMLElement, map: Readonly<Record<string, string 
   const title = entry?.title ?? el.getAttribute('data-tip-title')
   if (!title) return null
   // data-tip-if-cut: the tip only repeats the label until the label is cut, so it opens only while a part named by the
-  // selector is cut (an ellipsis), measured now, as the tip would open.
+  // selector is cut (an ellipsis, or marked data-cut), measured now, as the tip would open.
   const cut = el.getAttribute('data-tip-if-cut')
-  if (cut !== null && !Array.from(el.querySelectorAll(cut)).some((p) => p.scrollWidth > p.clientWidth)) return null
+  if (cut !== null && !Array.from(el.querySelectorAll(cut)).some((p) => p.scrollWidth > p.clientWidth || p.hasAttribute('data-cut'))) return null
   const fixed = el.getAttribute('data-tip-key')
   const chord = entry?.key ? (entry.action ? map[entry.key as KeyAction] : entry.key) : fixed
   const demo = demoFor(entry?.demo ?? el.getAttribute('data-tip-demo'))
