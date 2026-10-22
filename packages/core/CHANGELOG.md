@@ -13,6 +13,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 - Two extruder printers whose extruder variants give a process setting one value per extruder (the X2D's Bowden extruder, an H2D with a high flow nozzle) now print each filament at its own extruder's speeds and accelerations; all filaments used the first extruder's before. `PrintConfig::for_extruder` and `PrintConfig::for_slot` give the settings one extruder prints with.
 - `sx slice <file.3mf>` slices each build item as an object of its own, as `sx slice --request` and the app already did: one object label per item (`EXCLUDE_OBJECT`, `M486`, and the `M624` ids on Bambu Lab printers), with its parts, modifiers and negative volumes inside it. It runs the same collision and clearance check as `--request`, refuses with exit code 3 where that check does, and takes `--allow-collisions`. It also takes the brim ears a project paints on each object. On plates of several objects the print order, travels and brims can change; single-object files change only in their label names.
 - A 3MF object without a name is called `Object_<n>` (the build item's place, from 1), not after the file.
+- A slice of a Bambu Lab plate with more than 64 objects warns that the printer can't skip any of them, since such plates get no object labels.
 
 ### Fixed
 

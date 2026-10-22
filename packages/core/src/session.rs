@@ -2146,6 +2146,11 @@ impl SliceSession {
             }
             out.chamber = Some(chamber);
         }
+        if let Some(w) = crate::firmware::label_limit_warning(&out.objects, config, config.gcode_flavor)
+            && !out.warnings.contains(&w)
+        {
+            out.warnings.push(w);
+        }
         Ok(out)
     }
 
