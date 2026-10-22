@@ -3,8 +3,9 @@
 //! With the `stock-gcode` feature, writes `$OUT_DIR/stock-gcode.json` for src/stock.rs from the settings package's
 //! own data (Apache-2.0; the stock profiles in packages/profiles stay out of `sx`): the makers' stock G-code
 //! fingerprints (profiles/stock-gcode.json), the printer names that identify a model (knowledge.json, with
-//! printer-models.json from knowledge ids to the table's model ids), and each model's `OrcaSlicer` vendor, whose
-//! filament presets the filament G-code is checked against.
+//! printer-models.json from knowledge ids to the table's model ids, then each model's vendor and model name from
+//! profiles/printers.json), and each model's `OrcaSlicer` vendor, whose filament presets the filament G-code is
+//! checked against.
 
 use serde_json::{Map, Value, json};
 use std::path::Path;
@@ -55,6 +56,22 @@ fn main() {
         }
         if let Some(v) = orca_vendor(entry) {
             vendors.insert(model.clone(), Value::String(v));
+        }
+    }
+
+    // A Bambu Studio or Orca project names its printer by profile, `<vendor> <model> 0.4 nozzle`, so each model the
+    // stock table covers is also found by the settings package's vendor and model. The knowledge names come first.
+    let printers = read(&root, "profiles/printers.json");
+    for p in printers["printers"].as_array().into_iter().flatten() {
+        let (Some(id), Some(vendor), Some(model)) =
+            (p["id"].as_str(), p["vendor"].as_str(), p["model"].as_str())
+        else {
+            continue;
+        };
+        if stock["models"].get(id).is_some() {
+            names
+                .entry(format!("{vendor} {model}"))
+                .or_insert_with(|| json!([id]));
         }
     }
 

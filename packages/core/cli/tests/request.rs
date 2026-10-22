@@ -461,6 +461,72 @@ fn a_projects_stock_start_gcode_runs_as_the_maker_wrote_it() {
     }
 }
 
+/// A project that names its printer by `profile`, as Bambu Studio saves it, with `start` as its start G-code.
+#[cfg(feature = "stock-gcode")]
+fn slice_named(profile: &str, start: &str) -> std::process::Output {
+    slice_with(
+        &[
+            (
+                "printer_settings_id",
+                serde_json::Value::String(profile.to_owned()),
+            ),
+            ("machine_start_gcode", serde_json::Value::String(start.to_owned())),
+        ],
+        &serde_json::json!({}),
+    )
+}
+
+/// The X2D and the H2D Pro starts turn the soft endstops off (`M211 X0 Y0 Z0`) and save calibration data
+/// (`M500`), which only the maker's own unchanged text may do. sx finds these printers by the name their
+/// projects give them, so their stock start runs.
+#[cfg(feature = "stock-gcode")]
+#[test]
+fn x2d_and_h2d_pro_projects_run_their_stock_start() {
+    let mut refused = Vec::new();
+    for (model, profile) in [
+        ("bambu-x2d", "Bambu Lab X2D 0.4 nozzle"),
+        ("bambu-h2d-pro", "Bambu Lab H2D Pro 0.4 nozzle"),
+    ] {
+        let start = shipped_start(model);
+        assert!(
+            start.lines().any(|l| l.trim_start().starts_with("M211 X0 Y0 Z0"))
+                && start.lines().any(|l| l.trim_start().starts_with("M500")),
+            "{model}: the start turns the endstops off and saves calibration data"
+        );
+        let out = slice_named(profile, &start);
+        if !out.status.success() {
+            refused.push(format!(
+                "{model}: {}",
+                String::from_utf8_lossy(&out.stderr).trim_end()
+            ));
+        }
+    }
+    assert!(refused.is_empty(), "{}", refused.join("\n"));
+}
+
+/// Trust stays exact: one changed command line in the X2D start, and its endstop and memory lines are refused.
+#[cfg(feature = "stock-gcode")]
+#[test]
+fn an_edited_x2d_start_is_still_refused() {
+    let stock = shipped_start("bambu-x2d");
+    let edited = stock.replacen("\nM400 S1\n", "\nM400 S2\n", 1);
+    assert_ne!(edited, stock, "the X2D start has the line this test edits");
+    let out = slice_named("Bambu Lab X2D 0.4 nozzle", &edited);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(err.matches("blocked by the safety preflight").count(), 1, "{err}");
+    assert!(err.contains("M211 changes the software endstops"), "{err}");
+    assert!(
+        err.contains("M500 writes settings to the printer's memory"),
+        "{err}"
+    );
+}
+
 #[test]
 fn stock_text_is_trusted_only_for_its_own_printer_and_only_as_written() {
     let p1s = shipped_start("bambu-p1s");
