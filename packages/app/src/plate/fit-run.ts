@@ -6,6 +6,7 @@
 // meet print as one piece by accident.
 import { fitCheck, type FitGap, type FitReport } from '../geom/cad'
 import { toGeom, usesWorker, type GeomMesh } from '../geom/client'
+import { keepFitMeshes } from '../geom/fit-client'
 import { bounds, type Box } from './transform'
 import type { PlateEntry } from '../state/store'
 import { setFit, type Touch } from './fit-state'
@@ -29,6 +30,11 @@ export function objectGaps(report: FitReport): FitGap[] {
  */
 function fitMesh(part: PlateEntry['parts'][number]): GeomMesh {
   return usesWorker() ? ({ positions: part.positions, indices: part.indices } as unknown as GeomMesh) : toGeom(part)
+}
+
+/** The fit check's worker keeps the meshes of these objects and drops the rest. */
+export function keepPlateMeshes(entries: readonly Pick<PlateEntry, 'parts'>[]): void {
+  if (usesWorker()) keepFitMeshes(entries.flatMap((e) => e.parts.map((p) => p.positions)))
 }
 
 /** Whether two boxes come within `reach` of each other on every axis. */
