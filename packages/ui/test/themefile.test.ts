@@ -89,6 +89,17 @@ describe('derived palette follows the documented rules', () => {
       }
     }
   })
+  it('lifts secondary and dim text on the cards a dark theme raises, and keeps the text unless a raised surface needs it', () => {
+    for (const t of BUNDLED_THEMES) {
+      const p = derivePalette(t)
+      const card = t.isDark ? mixHex(p.pane, p.text, 0.07) : t.surface
+      for (const k of ['text', 'secondary', 'dim'] as const) expect(contrast(p[k], card), `${t.id} ${k} on a card`).toBeGreaterThanOrEqual(TEXT_CONTRAST)
+      expect(contrast(p.text, t.surfaceAlt), `${t.id} text on surfaceAlt`).toBeGreaterThanOrEqual(TEXT_CONTRAST)
+      if (t.id !== 'solarized-dark' && t.id !== 'tokyo-night-day') expect(p.text, t.id).toBe(t.text)
+    }
+    const sol = derivePalette(BUNDLED_THEMES.find((t) => t.id === 'solarized-dark') as ThemeFile)
+    expect(contrast(sol.text, mixHex(sol.pane, sol.text, 0.14))).toBeGreaterThanOrEqual(TEXT_CONTRAST)
+  })
   it('survives a theme with terrible contrast by lifting the derived shades', () => {
     const t: ThemeFile = { ...slicerxDark, muted: '#303040', ansi: slicerxDark.ansi.map(() => '#2a2c38') }
     const p = derivePalette(t)
@@ -344,7 +355,7 @@ describe('contrast of every bundled theme', () => {
     })
     it(`${t.name}: higher contrast reaches 7:1 for secondary text and 4.5:1 for glyphs`, () => {
       const p = derivePalette(t, { contrast: 'higher' })
-      for (const k of ['secondary', 'dim'] as const) expect(atLeast(p[k], t, HIGH_TEXT_CONTRAST) || p[k] === t.text, `${t.id} ${k}`).toBe(true)
+      for (const k of ['secondary', 'dim'] as const) expect(atLeast(p[k], t, HIGH_TEXT_CONTRAST) || p[k] === p.text, `${t.id} ${k}`).toBe(true)
       for (const k of ['red', 'green', 'orange', 'accent'] as const) expect(atLeast(p[k], t, TEXT_CONTRAST) || p[k] === t.text, `${t.id} ${k}`).toBe(true)
       expect(contrast(p.border, t.background)).toBeGreaterThan(contrast(t.border, t.background))
     })

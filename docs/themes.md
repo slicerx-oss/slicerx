@@ -107,14 +107,14 @@ Let `mix(a, b, t)` mean `a` moved the fraction `t` of the way to `b`, per channe
 | Hairline | `mix(background, border, 0.7)` |
 | Chip | `mix(background, border, 0.62)` |
 | Strong chip (raised fills) | `mix(surface, border, 0.6)` |
-| Secondary text | `mix(muted, text, 0.37)`, lifted to 4.5:1 |
-| Dim text (captions, placeholders) | `muted`, lifted to 4.5:1 |
+| Secondary text | `mix(muted, text, 0.37)`, lifted to 4.5:1, cards included |
+| Dim text (captions, placeholders) | `muted`, lifted to 4.5:1, cards included |
 | Accent | as written on a dark theme; on a light theme lifted to 3:1 |
 | Ink on the accent | `mix(background, black, 0.25)` on a dark theme, white on a light theme, whichever of that and the opposite end reads better on the accent |
 | Red, green, yellow, blue, magenta, cyan | ANSI slots 1, 2, 3, 4, 5, 6 (or `failed`, `working` for red and green), lifted to 3:1 |
 | Orange | `waiting`, or ANSI 3 turned to orange, lifted to 3:1 |
 
-"Lifted to N:1" means: if the color already reaches contrast N on both `background` and `surface`, it is used as written. Otherwise it is mixed toward `text` in 5% steps until it does. On a dark theme that brightens it, on a light theme it deepens it.
+"Lifted to N:1" means: if the color already reaches contrast N on both `background` and `surface`, it is used as written. Otherwise it is mixed toward `text` in 5% steps until it does. On a dark theme that brightens it, on a light theme it deepens it. "Cards included" adds the card the app raises over the panes (on a dark theme 7% of the way from the pane to `text`; on a light theme the surface).
 
 The app then maps the derived colors onto its variables: `--ink-0` is the background, `--ink-1` the pane, `--ink-2` the surface, `--ink-3` the alternate surface, `--ink-4` the strong chip, `--line` the border and `--line-soft` the hairline.
 
@@ -139,7 +139,8 @@ The bundled theme files spell their scene block out, so you can copy one and cha
 - Text (main, secondary, dim) reaches 4.5:1 on the background and the surface, in every bundled theme. A test checks it, with each color vision setting too.
 - Glyph colors (status colors, the accent on a light theme) reach 3:1.
 - With Higher contrast, secondary and dim text reach 7:1 and glyph colors and the accent 4.5:1. The same test checks it.
-- If a theme misses these, the derived shades are lifted, so the app stays readable. Your base `text` is never changed, so give it enough contrast.
+- Text and marks on the raised surfaces reach the same ratios on them. On a dark theme fields and segmented tracks sit 14% of the way from the pane to `text`, and the selected segment 30%; on a light theme fields are white and the selected segment is a light accent tint. The app works out separate shades for them from the theme's colors: secondary and dim text on fields, the selected segment's label and secondary line (4.5:1), its accent icon (3:1 for every accent choice), status colors used as text in pills (4.5:1 on any surface and on their own tint) and the X, Y and Z letters on number fields. Each is moved toward white on a dark theme or black on a light one, so it keeps its hue, and a color that already reads is used as written.
+- If a theme misses these, the derived shades are lifted, so the app stays readable. Your base `text` is changed only when `surfaceAlt` or a card or field of the theme would take it under 4.5:1; then it is moved toward white or black in 5% steps (Solarized Dark and Tokyo Night Day are the bundled themes where this happens). Give it enough contrast on `background` and `surface` yourself.
 
 ## Make a theme
 
