@@ -1825,6 +1825,7 @@ mod tests {
         let l = Labels::new(&objs, &cfg, GcodeFlavor::Klipper).unwrap();
         let path = |feature: Feature, owner: u16| crate::output::PathInfo {
             tower_wipe: false,
+            tower_hop: false,
             start: 0,
             end: 2,
             tool: 1,
