@@ -136,6 +136,10 @@ impl std::fmt::Debug for FirstInfoMemo {
 
 /// Parts of a plate ready to cut, plus the layer plan.
 #[derive(Debug, Clone)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent flags of one plate's session"
+)]
 pub struct SliceSession {
     /// Per-layer results that the layers around one layer share (`shells::Cache`).
     cache: crate::shells::Cache,
@@ -292,6 +296,8 @@ pub struct SliceSession {
     collide: Option<std::sync::Arc<crate::collide::Model>>,
     /// The report's facts on a plate without a model (printed by layer): its objects and keep-out zones.
     collide_meta: Option<std::sync::Arc<crate::collide::Meta>>,
+    /// Set by `shed`: what only slicing reads is gone, the collision model with it.
+    shed_done: bool,
     /// The tower's rows before the saves of a type 2 tower (`tower::plan_rows_unsaved`), which the saves are
     /// measured on.
     tower_rows0: f64,
@@ -1747,6 +1753,7 @@ impl SliceSession {
             nozzle_map: None,
             collide: None,
             collide_meta: None,
+            shed_done: false,
             tower_rows0: 1.0,
         };
         if crate::spiral::enabled(config) {
@@ -2220,13 +2227,23 @@ impl SliceSession {
     }
 
     pub(crate) fn collide(&self) -> Option<&crate::collide::Model> {
+        debug_assert!(
+            !self.shed_done,
+            "the collision model is dropped once slicing is done"
+        );
         self.collide.as_deref()
     }
 
     /// Drops what only slicing reads (meshes, caches, support and paint data), for a one-shot run whose last layer
-    /// range is cut. Keeps what writing the output reads: the layer plan, the print layers, the collision data and
-    /// the filament map.
+    /// range is cut. Keeps what writing the output reads: the layer plan, the print layers, the collision report's
+    /// facts and the filament map.
     pub(crate) fn shed(&mut self) {
+        // Only cutting the layers walks the collision model, and its obstacles hold the plate's loaded meshes, so
+        // only its facts stay for the report.
+        if let Some(model) = self.collide.take() {
+            self.collide_meta = Some(std::sync::Arc::new(model.meta.clone()));
+        }
+        self.shed_done = true;
         self.parts = Vec::new();
         self.volumes = Vec::new();
         self.cache = crate::shells::Cache::default();
