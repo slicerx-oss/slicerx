@@ -1098,6 +1098,7 @@ mod tests {
                 height: 0.2,
                 points: pts,
                 paths: vec![PathInfo {
+                    tower_wipe: false,
                     start: 0,
                     end: n,
                     tool: 1,

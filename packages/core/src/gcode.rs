@@ -2026,6 +2026,8 @@ fn emit_layer(
     let mut change_time = 0.0f64;
     let mut change_i = 0usize;
     let mut first_path = true;
+    // A tool change happened and its wipe on the tower has not started yet (`prime_tower_skip_points`).
+    let mut wipe_due = false;
     // A spiral layer goes on from where the layer below ended: no travel to the loop's start.
     // Otherwise it starts where the layer below ended, when that is known.
     let mut cursor: Option<Point> = if spiral && !l.spiral_start {
@@ -2257,6 +2259,7 @@ fn emit_layer(
         {
             if p.tool != tool && tool != u8::MAX {
                 chunk.tool_changes += 1;
+                wipe_due = true;
             }
             let next = i64::from(p.tool.max(1) - 1);
             let from = (tool != u8::MAX).then(|| i64::from(tool.max(1) - 1));
@@ -2957,7 +2960,44 @@ fn emit_layer(
             });
         #[allow(clippy::cast_possible_truncation, reason = "z in thousandths fits in i64")]
         let z_i = |v: f32| (f64::from(v) * 1000.0).round() as i64;
-        if let Some((zv, fv)) = spans {
+        // The first row of the wipe after a tool change on a Bambu Lab type tower starts with a short nozzle wipe.
+        let nozzle_wipe = (p.tower_wipe
+            && p.feature == Feature::PrimeTower
+            && wipe_due
+            && spans.is_none()
+            && pts.get(1).is_some_and(|&q| start.dist_mm(q) > 1e-3))
+        .then(|| {
+            wipe_due = false;
+            let travel_lines = if accel_on {
+                motion.travel_lines(false, Feature::PrimeTower, &mut motion_now)
+            } else {
+                String::new()
+            };
+            let print_lines = if accel_on {
+                motion.accel_lines(Feature::PrimeTower, &mut motion_now)
+            } else {
+                String::new()
+            };
+            NozzleWipe {
+                style,
+                retract,
+                retract_feed,
+                row_feed: f,
+                spiral: crate::tower::flag(c, "prime_tower_flat_ironing").then(|| {
+                    let area = crate::tower::per_slot_raw(c, "filament_tower_ironing_area", p.tool, 4.0);
+                    spiral_loops(area, f64::from(p.width_mm))
+                }),
+                angle: out.prime_tower.as_ref().map_or(0.0, |t| t.angle),
+                travel_lines,
+                print_lines,
+                reheat: tower_reheat(c, p.tool, l.index, printer_extruder(c, out, p.tool)),
+            }
+        });
+        if let Some(nw) = nozzle_wipe {
+            let (e, end) = write_nozzle_wipe(b, &nw, pts, &line_e);
+            e_sum += e;
+            prev = end;
+        } else if let Some((zv, fv)) = spans {
             // A scarf rise starts below the layer: the nozzle goes down to it before extruding.
             if !spiral
                 && let Some(&z0) = zv.first()
@@ -4322,6 +4362,184 @@ fn e_mode_line(cfg: &PrintConfig, flavor: GcodeFlavor) -> Vec<u8> {
 
 /// Closes a bambu tower block: the plain one, or a change's with orca's travel feed, a planner flush and the
 /// extruder reset (`WipeTower::tool_change_new`).
+/// The nozzle wipe that starts the first row of a wipe after a tool change on a Bambu Lab type tower
+/// (`prime_tower_skip_points`), as the writer needs it.
+struct NozzleWipe {
+    style: Retraction,
+    /// The new filament's retraction length (E units) and feed rate.
+    retract: i64,
+    retract_feed: i64,
+    /// The row's feed rate, mm/min.
+    row_feed: i64,
+    /// With `prime_tower_flat_ironing`: the square spiral's loops and its step (the tower's bead width), mm.
+    spiral: Option<(u32, f64)>,
+    /// The tower's rotation, degrees: the spiral runs along the tower's own axes.
+    angle: f64,
+    /// The acceleration lines before the travels and before the row resumes.
+    travel_lines: String,
+    print_lines: String,
+    /// The line that heats the nozzle back up from `filament_cooling_before_tower`.
+    reheat: Option<String>,
+}
+
+/// Length of the row printed before the nozzle wipe, mm (shorter rows are printed whole).
+const NOZZLE_WIPE_LEAD: f64 = 3.0;
+/// Feed rates of the nozzle wipe's travels back over the row start and forward again, mm/min.
+const NOZZLE_WIPE_BACK_FEED: i64 = 600;
+const NOZZLE_WIPE_FORWARD_FEED: i64 = 240;
+
+/// The loops of the flat ironing spiral for an area of `area` mm2 at bead width `w` mm: enough that the
+/// spiral's side reaches the side of a square of that area.
+fn spiral_loops(area: f64, w: f64) -> (u32, f64) {
+    if area <= 0.0 || w <= 0.0 {
+        return (0, w);
+    }
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a small loop count"
+    )]
+    let n = (area.sqrt() / w / 2.0).ceil().clamp(0.0, 1000.0) as u32;
+    (n, w)
+}
+
+/// The extruder the printer's commands name for filament `slot` (0-based): its extruder in the filament map, as the
+/// printer numbers them (`physical_extruder_map`); 0 without a map.
+fn printer_extruder(c: &PrintConfig, out: &SliceOutput, slot: u8) -> usize {
+    let logical = out.filament_map.as_ref().map_or(0, |m| m.extruder_of(slot));
+    crate::nozzles::int_list(c, "physical_extruder_map")
+        .get(logical)
+        .and_then(|&e| usize::try_from(e).ok())
+        .unwrap_or(logical)
+}
+
+/// `M104` that heats the new filament's nozzle (on `extruder`, 0-based) back to its print temperature before the
+/// wipe, when the filament cools down before the tower (`filament_cooling_before_tower`, 10 when the profile leaves
+/// it out); never on the first layer.
+fn tower_reheat(c: &PrintConfig, slot: u8, layer: u32, extruder: usize) -> Option<String> {
+    if layer == 0 || crate::tower::per_slot_raw(c, "filament_cooling_before_tower", slot, 10.0) <= 0.0 {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "temperatures are small")]
+    let temp = print_temp(c, slot, layer).round() as i64;
+    Some(format!(
+        "M104 T{extruder} S{temp} N0 ;Wipe tower reheat before wipe\n"
+    ))
+}
+
+/// A `G1` travel from `from` to `to` with only the axes that change, and the feed rate when given.
+fn put_travel(b: &mut Vec<u8>, from: Point, to: Point, f: Option<i64>) {
+    let (a, q) = (crate::griffin::shifted(from), crate::griffin::shifted(to));
+    let (ax, ay) = (round_div(i64::from(a.x), 10), round_div(i64::from(a.y), 10));
+    let (qx, qy) = (round_div(i64::from(q.x), 10), round_div(i64::from(q.y), 10));
+    b.extend_from_slice(b"G1");
+    if qx != ax || qy == ay {
+        b.extend_from_slice(b" X");
+        put_fixed(b, qx, 3);
+    }
+    if qy != ay {
+        b.extend_from_slice(b" Y");
+        put_fixed(b, qy, 3);
+    }
+    if let Some(f) = f {
+        b.extend_from_slice(b" F");
+        put_int(b, f);
+    }
+    b.push(b'\n');
+}
+
+/// Writes the first row of a wipe with its nozzle wipe: 3 mm of the row (the whole row when shorter), a
+/// retraction, a travel back 1.5 times that length over the row start at 10 mm/s and forward to where the
+/// extrusion stopped at 4 mm/s (with flat ironing: half that length forward to the row start, a square spiral
+/// round it, and back at the row's feed), the unretraction, then the rest of the row. Returns the extrusion
+/// written and where the nozzle ends.
+fn write_nozzle_wipe(
+    b: &mut Vec<u8>,
+    w: &NozzleWipe,
+    pts: &[Point],
+    line_e: &dyn Fn(f64) -> i64,
+) -> (i64, Point) {
+    let (Some(&s), Some(&e)) = (pts.first(), pts.get(1)) else {
+        return (0, Point::new(0, 0));
+    };
+    let row = s.dist_mm(e);
+    let lead = row.min(NOZZLE_WIPE_LEAD);
+    let (dx, dy) = ((e.x_mm() - s.x_mm()) / row, (e.y_mm() - s.y_mm()) / row);
+    let along = |t: f64| Point::from_mm(s.x_mm() + t * dx, s.y_mm() + t * dy);
+    let mid = if lead >= row { e } else { along(lead) };
+    let mut e_sum = 0i64;
+    let first = line_e(lead);
+    b.extend_from_slice(b"G1");
+    put_xy(b, mid);
+    b.extend_from_slice(b" E");
+    put_fixed(b, first.max(0), 5);
+    b.push(b'\n');
+    e_sum += first.max(0);
+    let retracts = w.style.active(w.retract);
+    if retracts {
+        retract_move(b, w.style, -w.retract, w.retract_feed);
+    }
+    b.extend_from_slice(w.travel_lines.as_bytes());
+    let back = along(-0.5 * lead);
+    put_travel(b, mid, back, Some(NOZZLE_WIPE_BACK_FEED));
+    match w.spiral {
+        None => put_travel(b, back, mid, Some(NOZZLE_WIPE_FORWARD_FEED)),
+        Some((loops, step)) => {
+            put_travel(b, back, s, Some(NOZZLE_WIPE_FORWARD_FEED));
+            // The tower's own axes on the plate.
+            let (sin, cos) = w.angle.to_radians().m_sin_cos();
+            let at =
+                |u: f64, v: f64| Point::from_mm(s.x_mm() + u * cos - v * sin, s.y_mm() + u * sin + v * cos);
+            // Loop k goes out to k beads on each side: +X, +Y, -X, -Y in the tower's frame.
+            let mut v = 0.0;
+            let mut cur = s;
+            let mut feed = Some(NOZZLE_WIPE_BACK_FEED);
+            for k in 1..=loops {
+                let r = f64::from(k) * step;
+                for (cu, cv) in [(r, v), (r, r), (-r, r), (-r, -r)] {
+                    let q = at(cu, cv);
+                    put_travel(b, cur, q, feed.take());
+                    cur = q;
+                }
+                v = -r;
+            }
+            put_travel(b, cur, mid, Some(w.row_feed));
+        }
+    }
+    if retracts {
+        retract_move(b, w.style, w.retract, w.retract_feed);
+    }
+    if let Some(line) = &w.reheat {
+        b.extend_from_slice(line.as_bytes());
+    }
+    b.extend_from_slice(w.print_lines.as_bytes());
+    // The rest of the row and the step to the next one, the feed rate written again on the first line.
+    let mut feed = Some(w.row_feed);
+    let mut prev = mid;
+    let rest = std::iter::once(e)
+        .filter(|_| lead < row)
+        .chain(pts.iter().skip(2).copied());
+    for q in rest {
+        let len = prev.dist_mm(q);
+        let de = line_e(len);
+        if de <= 0 {
+            continue;
+        }
+        b.extend_from_slice(b"G1");
+        put_xy(b, q);
+        b.extend_from_slice(b" E");
+        put_fixed(b, de, 5);
+        if let Some(f) = feed.take() {
+            b.extend_from_slice(b" F");
+            put_int(b, f);
+        }
+        b.push(b'\n');
+        e_sum += de;
+        prev = q;
+    }
+    (e_sum, prev)
+}
+
 fn close_tower_block(b: &mut Vec<u8>, changed: bool, c: &PrintConfig) {
     b.extend_from_slice(b"; WIPE_TOWER_END\n");
     if changed {
@@ -5280,5 +5498,119 @@ mod tests {
             String::from_utf8(b).unwrap(),
             "G1 E-0.8 F1800\nM103 ; extruder off\nM101 ; extruder on\nG1 E0.8 F1800\n"
         );
+    }
+
+    /// The nozzle wipe of a row from `from` to `to` with a 0.8 mm retraction, 1 mm of E per mm of row.
+    fn nozzle_wipe_text(from: (f64, f64), to: (f64, f64), spiral: Option<(u32, f64)>, angle: f64) -> String {
+        let w = NozzleWipe {
+            style: Retraction {
+                flavor: GcodeFlavor::Bambu,
+                firmware: false,
+                reset_e: false,
+            },
+            retract: e_units(0.8),
+            retract_feed: 1800,
+            row_feed: 1782,
+            spiral,
+            angle,
+            travel_lines: "M204 S500\n".into(),
+            print_lines: "M204 S1500\n".into(),
+            reheat: Some("M104 T0 S220 N0 ;Wipe tower reheat before wipe\n".into()),
+        };
+        let pts = [Point::from_mm(from.0, from.1), Point::from_mm(to.0, to.1)];
+        let mut b = Vec::new();
+        let (e, end) = write_nozzle_wipe(&mut b, &w, &pts, &|len| e_units(len));
+        assert_eq!(end, pts[1]);
+        assert_eq!(
+            e,
+            e_units(pts[0].dist_mm(pts[1])),
+            "the row extrudes what it would without the wipe"
+        );
+        String::from_utf8(b).unwrap()
+    }
+
+    #[test]
+    fn a_nozzle_wipe_prints_3_mm_then_travels_back_and_forward_slowly() {
+        // A row toward lower X, as the first row of a later layer.
+        assert_eq!(
+            nozzle_wipe_text((45.645, 212.785), (25.645, 212.785), None, 0.0),
+            "G1 X42.645 Y212.785 E3\nG1 E-0.8 F1800\nM204 S500\nG1 X47.145 F600\nG1 X42.645 F240\n\
+             G1 E0.8 F1800\nM104 T0 S220 N0 ;Wipe tower reheat before wipe\nM204 S1500\n\
+             G1 X25.645 Y212.785 E17 F1782\n"
+        );
+    }
+
+    #[test]
+    fn a_row_shorter_than_3_mm_is_printed_whole_before_the_wipe() {
+        // The travels are 1.5 times the row: 3 mm back, 3 mm forward to the row's end.
+        assert_eq!(
+            nozzle_wipe_text((10.0, 5.0), (12.0, 5.0), None, 0.0),
+            "G1 X12 Y5 E2\nG1 E-0.8 F1800\nM204 S500\nG1 X9 F600\nG1 X12 F240\nG1 E0.8 F1800\n\
+             M104 T0 S220 N0 ;Wipe tower reheat before wipe\nM204 S1500\n"
+        );
+    }
+
+    #[test]
+    fn flat_ironing_spirals_round_the_row_start() {
+        // 4 mm2 at a 0.5 mm bead is two loops.
+        assert_eq!(spiral_loops(4.0, 0.5), (2, 0.5));
+        assert_eq!(spiral_loops(0.0, 0.5).0, 0);
+        let text = nozzle_wipe_text(
+            (62.484, 236.33),
+            (84.484, 236.33),
+            Some(spiral_loops(4.0, 0.5)),
+            0.0,
+        );
+        assert_eq!(
+            text,
+            "G1 X65.484 Y236.33 E3\nG1 E-0.8 F1800\nM204 S500\nG1 X60.984 F600\nG1 X62.484 F240\n\
+             G1 X62.984 F600\nG1 Y236.83\nG1 X61.984\nG1 Y235.83\nG1 X63.484\nG1 Y237.33\nG1 X61.484\n\
+             G1 Y235.33\nG1 X65.484 Y236.33 F1782\nG1 E0.8 F1800\nM104 T0 S220 N0 ;Wipe tower reheat before wipe\n\
+             M204 S1500\nG1 X84.484 Y236.33 E19 F1782\n"
+        );
+        // No area, no spiral: the move forward to the row start and the way back stay.
+        let none = nozzle_wipe_text(
+            (62.484, 236.33),
+            (84.484, 236.33),
+            Some(spiral_loops(0.0, 0.5)),
+            0.0,
+        );
+        assert!(
+            none.contains("G1 X60.984 F600\nG1 X62.484 F240\nG1 X65.484 F1782\nG1 E0.8"),
+            "{none}"
+        );
+    }
+
+    #[test]
+    fn the_spiral_follows_a_turned_tower() {
+        // Turned a quarter turn the tower's X runs along the plate's Y: the first spiral move goes +Y.
+        let text = nozzle_wipe_text((10.0, 10.0), (10.0, 30.0), Some((1, 0.5)), 90.0);
+        let spiral: Vec<&str> = text
+            .lines()
+            .skip_while(|l| !l.ends_with("F240"))
+            .skip(1)
+            .take(4)
+            .collect();
+        assert_eq!(
+            spiral,
+            ["G1 Y10.5 F600", "G1 X9.5", "G1 Y9.5", "G1 X10.5"],
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn the_reheat_skips_the_first_layer_and_a_filament_that_does_not_cool() {
+        let mut c = PrintConfig {
+            nozzle_temperature: vec![220.0, 230.0],
+            ..PrintConfig::default()
+        };
+        c.raw
+            .insert("filament_cooling_before_tower".into(), serde_json::json!([10, 0]));
+        assert_eq!(tower_reheat(&c, 1, 0, 0), None);
+        assert_eq!(
+            tower_reheat(&c, 1, 3, 1).as_deref(),
+            Some("M104 T1 S220 N0 ;Wipe tower reheat before wipe\n")
+        );
+        assert_eq!(tower_reheat(&c, 2, 3, 0), None);
     }
 }
