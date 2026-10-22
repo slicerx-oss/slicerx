@@ -125,8 +125,10 @@
 /* On a phone (drawing-pick.ts) Top and Isometric share the frame side by side, or Front or Right fills it, each view's
    label in a band of its own above the drawing so no callout can cover it. The header holds the view picker and the 44 px fold control at one height, folded or not, so
    neither moves when pressed. Folded, the view shrinks to the header and the chat under it gets the room. */
+/* the header's height: the 44 px picker or fold control with 8 px for the picker's track and 4 px above and below */
+:root[data-phone] { --mimir-drawing-head: calc(var(--h-lg) + var(--s-2) + 2 * var(--s-1)); }
 .mimir-drawing[data-phone] { padding-top: var(--s-2); }
-.mimir-drawing[data-phone] .mimir-drawing-head { gap: var(--s-1); height: calc(var(--h-lg) + 6px + 2 * var(--s-1)); padding: 0 var(--s-1) 0 var(--s-2); }
+.mimir-drawing[data-phone] .mimir-drawing-head { gap: var(--s-1); height: var(--mimir-drawing-head); padding: 0 var(--s-1) 0 var(--s-2); }
 .mimir-drawing-views { flex: 1; min-width: 0; }
 .mimir-drawing .mimir-drawing-views .sx-seg > button { flex: 1 1 auto; height: var(--h-lg); padding: 0 var(--s-2); }
 .mimir-drawing .mimir-drawing-head .mimir-drawing-fold.sx-btn { flex: none; width: var(--h-lg); height: var(--h-lg); margin-left: auto; }
@@ -138,7 +140,7 @@
 .mimir-drawing[data-phone] .mimir-drawing-cell > svg { top: 22px; }
 .mimir-drawing[data-phone] .mimir-drawing-label { top: var(--s-1); line-height: 16px; }
 /* folded: the top padding, the header and its border, and the strip kept clear for the timeline's tab */
-:root[data-phone] .studio[data-model-mode="mimir"]:has(> .vp[data-mimir-drawing="folded"]) { --mimir-view-h: calc(var(--s-2) + var(--h-lg) + 6px + 2 * var(--s-1) + 2px + 56px); }
+:root[data-phone] .studio[data-model-mode="mimir"]:has(> .vp[data-mimir-drawing="folded"]) { --mimir-view-h: calc(var(--s-2) + var(--mimir-drawing-head) + 2px + 56px); }
 /* the panel: flat, docked, full height of the view */
 .mimir-sheet-panel { position: absolute; right: 0; top: 0; bottom: 0; z-index: 3; width: var(--mimir-sheet-w); display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; background: var(--ink-1); border-left: 1px solid var(--line-soft); outline: none; }
 .mimir-sheet-panel:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
@@ -227,6 +229,11 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
    while it is up and comes back when it goes. */
 :root[data-phone][data-phone-kb] .studio[data-model-mode="mimir"]:has(.mimir-sheet-slot > .mimir-sheet-panel) { --mimir-view-h: 0px; }
 :root[data-phone][data-phone-kb] .studio[data-model-mode="mimir"]:has(.mimir-sheet-slot > .mimir-sheet-panel) > .vp { visibility: hidden; }
+/* The timeline's tab gives way while the keyboard is up, and so does the strip a folded drawing keeps clear for it;
+   both come back when the keyboard goes. */
+:root[data-phone][data-phone-kb] .studio[data-model-mode="mimir"] .sx-edge-tab[data-side="bottom"] { display: none; }
+:root[data-phone][data-phone-kb] .studio[data-model-mode="mimir"]:has(> .vp[data-mimir-drawing="folded"]) { --mimir-view-h: calc(var(--s-2) + var(--mimir-drawing-head) + 2px); }
+:root[data-phone][data-phone-kb] .mimir-drawing[data-phone][data-folded] { padding-bottom: 0; }
 /* The surface ladder (spec 4b) in the surface tokens: the page tone under the chat, its cards one step up with a 1 px
    border, the composer one more as a field. Same steps in dark and light. */
 .mimir-chat :is(.lookup-rec, .tools, .choice) { border-color: var(--surface-line); background: var(--surface-card); }
