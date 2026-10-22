@@ -3,6 +3,7 @@
 // Themes: a typed object that maps onto the CSS variables every component reads. Subban is the
 // default. Integrators build their own with createTheme() and apply it at runtime with
 // applyTheme() or <ThemeProvider>. See THEMING.md.
+import { surfaceTextVars } from './surface-text'
 import { clearVisualTokens, setVisualTokens, type VisualTokens } from './theme-visuals'
 
 export type ColorScheme = 'dark' | 'light'
@@ -128,8 +129,8 @@ export const subban: Theme = {
     line: '#44475a',
     lineSoft: '#3c3e4f',
     fg: '#f8f8f2',
-    muted: '#9aa4c1',
-    dim: '#8f9abb',
+    muted: '#9fa8c3',
+    dim: '#9ea8c3',
     purple: '#bd93f9',
     pink: '#ff79c6',
     cyan: '#8be9fd',
@@ -219,6 +220,8 @@ export function themeToVars(theme: Theme): Record<string, string> {
     const v = theme.colors[key]
     if (v !== undefined) vars[COLOR_VARS[key]] = v
   }
+  // text and marks on cards, fields, the selected segment and status pills, worked out from these colors
+  Object.assign(vars, surfaceTextVars(theme.colors, theme.scheme))
   vars['--grad-from'] = theme.gradient.from
   vars['--grad-to'] = theme.gradient.to
   vars['--grad-angle'] = theme.gradient.angle

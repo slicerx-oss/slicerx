@@ -37,14 +37,43 @@
   /* a disabled field reads apart from an enabled one; dark keeps today's look */
   --field-disabled-bg: var(--field-bg);
   --field-disabled-line: var(--field-line);
+  /* text and marks on raised surfaces reach the spec ratios on them (4.5:1 text, 3:1 marks). applyTheme works these
+     out from the theme's colors (surface-text.ts); the values here are Subban's. Secondary and dim text on fields,
+     segmented tracks and menus: */
+  --field-muted: #b5bccf;
+  --field-dim: #b5bccf;
+  /* the selected segment's label, its secondary line, and its accent icon, which keeps its hue and moves the lift
+     toward the label */
+  --control-selected-fg: #f8f8f2;
+  --control-selected-muted: #eff0ed;
+  --control-selected-lift: 45%;
+  --control-selected-mark: color-mix(in srgb, var(--accent), var(--control-selected-fg) var(--control-selected-lift));
+  /* status colors as text: pills, roles and state words, on any surface and on their own tint */
+  --red-text: #ffaaaa;
+  --green-text: #50fa7b;
+  --orange-text: #fab570;
+  --cyan-text: #8be9fd;
+  --pink-text: #ffa1d7;
+  --purple-text: #d1b3fb;
+  /* the X, Y and Z letters on number fields (dark; light deepens the axis colors in styles.css) */
+  --axis-x-text: #ffa8a1;
+  --axis-y-text: #62d475;
+  --axis-z-text: #79c7ff;
+  /* small marks filled with a data color (filament dots): an edge that reads on any panel, and the halo around the
+     toolpath marker keys, dark under the bright markers of a dark legend */
+  --mark-edge: var(--dim);
+  --mark-halo: var(--ink-0);
+  /* text and icons on the dark scrim over a picture (the creator banner's buttons); light in both schemes */
+  --scrim-ink: var(--fg);
+  --scrim-ink-soft: var(--muted);
   /* a switch that is off: its track and knob */
   --switch-track: var(--ink-3);
   --switch-knob: var(--muted);
 
   /* text */
   --fg: #f8f8f2;
-  --muted: #9aa4c1;
-  --dim: #8f9abb;
+  --muted: #9fa8c3;
+  --dim: #9ea8c3;
 
   /* meaning: purple accent and focus, pink creators and Vault, cyan progress and live data,
      green ok, orange attention, red error, yellow only for string literals in code views */
@@ -265,6 +294,22 @@
   --chat-bubble: var(--ink-3);
   --switch-track: #ffffff;
   --switch-knob: color-mix(in srgb, var(--fg) 55%, var(--ink-0));
+  /* a light theme's text on raised surfaces until applyTheme works out its own: as the theme sets it */
+  --field-muted: var(--muted);
+  --field-dim: var(--dim);
+  --control-selected-fg: var(--fg);
+  --control-selected-muted: var(--muted);
+  --control-selected-lift: 0%;
+  --red-text: var(--red);
+  --green-text: var(--green);
+  --orange-text: var(--orange);
+  --cyan-text: var(--cyan);
+  --pink-text: var(--pink);
+  --purple-text: var(--purple);
+  /* the white of a light legend: the marker keys take the same edge as the filament dots */
+  --mark-halo: var(--mark-edge);
+  --scrim-ink: #f8f8f2;
+  --scrim-ink-soft: #f0f0f4;
 }
 
 /* The approved Subban brand kit colors for the brand pages. design/sync.mjs appends this after the

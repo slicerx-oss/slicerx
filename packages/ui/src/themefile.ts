@@ -8,6 +8,8 @@ import { FONT_IDS } from './fonts-ids'
 import type { Theme, ThemeColors, ThemeScene } from './theme'
 import { subban } from './theme'
 import { resolveFonts, THEME_FONT_CHOICE, type FontChoice } from './fonts'
+import { contrast, formatHex, mixHex, parseHex, readable } from './color'
+import { SURFACE_STEPS } from './surface-text'
 
 export const THEME_FILE_VERSION = 1
 
@@ -42,58 +44,9 @@ export interface ThemeFile {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Hex math
+// Hex math (in color.ts, re-exported here for the existing imports)
 
-type Rgb = { r: number; g: number; b: number }
-
-/** Parses "#rrggbb" or "#rrggbbaa" (alpha ignored) into 0 to 1 components, or null. */
-export function parseHex(s: string): Rgb | null {
-  const m = /^#([0-9a-fA-F]{6})([0-9a-fA-F]{2})?$/.exec(s)
-  if (!m) return null
-  const n = Number.parseInt(m[1] as string, 16)
-  return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 }
-}
-
-export function formatHex(c: Rgb): string {
-  const byte = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255))).toString(16).padStart(2, '0')
-  return `#${byte(c.r)}${byte(c.g)}${byte(c.b)}`
-}
-
-/** Moves `from` the fraction `amount` of the way to `to`. */
-export function mixHex(from: string, to: string, amount: number): string {
-  const f = parseHex(from)
-  const t = parseHex(to)
-  if (!f || !t) return from
-  return formatHex({ r: f.r + (t.r - f.r) * amount, g: f.g + (t.g - f.g) * amount, b: f.b + (t.b - f.b) * amount })
-}
-
-/** WCAG contrast ratio, 1 to 21. */
-export function contrast(a: string, b: string): number {
-  const lin = (v: number) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
-  const lum = (h: string) => {
-    const c = parseHex(h)
-    return c ? 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b) : 0
-  }
-  const x = lum(a)
-  const y = lum(b)
-  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
-}
-
-/**
- * `hex` mixed toward `toward` in 5% steps until it reaches `min` contrast on every ground.
- * Unchanged when it already does. On a light theme `toward` is the dark text, so colors deepen;
- * on a dark theme they brighten.
- */
-export function readable(hex: string, grounds: readonly string[], toward: string, min: number): string {
-  if (!parseHex(hex)) return hex
-  const reads = (c: string) => grounds.every((g) => contrast(c, g) >= min)
-  if (reads(hex)) return hex
-  for (let t = 0.05; t < 1; t += 0.05) {
-    const m = mixHex(hex, toward, t)
-    if (reads(m)) return m
-  }
-  return toward
-}
+export { contrast, formatHex, mixHex, parseHex, readable } from './color'
 
 /** Same brightness as `hex` with its saturation at least `minSat`, moved to `hue` degrees. */
 export function rehue(hex: string, hue: number, minSat: number): string {
@@ -191,6 +144,20 @@ export function derivePalette(t: ThemeFile, opts: PaletteOptions = {}): DerivedP
   const high = opts.contrast === 'higher'
   const textMin = high ? HIGH_TEXT_CONTRAST : TEXT_CONTRAST
   const glyphMin = high ? TEXT_CONTRAST : GLYPH_CONTRAST
+  const pane = m(t.background, t.surface, 0.5)
+  // the steps tokens.css raises over the pane: cards and fields. Dark builds them from the text color; light keeps
+  // the surface for cards and white for fields
+  const raised = (ink: string) => (t.isDark ? [m(pane, ink, SURFACE_STEPS.card), m(pane, ink, SURFACE_STEPS.field)] : [t.surface, '#ffffff'])
+  // the text as written, unless the raised surfaces of this theme (surfaceAlt under hovered and current rows, cards,
+  // fields) would take it under 4.5:1; then it moves toward white (dark) or black (light) in 5% steps until it reads
+  // on all of them
+  const end = t.isDark ? '#ffffff' : '#000000'
+  let fg = t.text
+  for (let s = 0.05; s < 1 && [...grounds, t.surfaceAlt, ...raised(fg)].some((g) => contrast(fg, g) < TEXT_CONTRAST); s += 0.05) fg = m(t.text, end, s)
+  // secondary and dim text read on the page, the surface and the cards that sit on them; fields have their own
+  // field-muted and field-dim (surface-text.ts)
+  const textGrounds = [...grounds, raised(fg)[0] as string]
+  const onCard = (hex: string, min: number) => readable(hex, textGrounds, fg, min)
   const cv = opts.colorVision && opts.colorVision !== 'standard' ? COLOR_VISION[opts.colorVision][t.isDark ? 'dark' : 'light'] : {}
   const accent = t.isDark && !high ? t.accent : text(t.accent, glyphMin)
   const ink = t.isDark ? m(t.background, '#000000', 0.25) : '#ffffff'
@@ -198,16 +165,16 @@ export function derivePalette(t: ThemeFile, opts: PaletteOptions = {}): DerivedP
   const border = high ? m(t.border, t.text, 0.3) : t.border
   return {
     background: t.background,
-    pane: m(t.background, t.surface, 0.5),
+    pane,
     surface: t.surface,
     surfaceAlt: t.surfaceAlt,
     chip: m(t.background, border, 0.62),
     chipStrong: m(t.surface, border, 0.6),
     border,
     hairline: high ? t.border : m(t.background, t.border, 0.7),
-    text: t.text,
-    secondary: text(m(t.muted, t.text, 0.37), textMin),
-    dim: text(t.muted, textMin),
+    text: fg,
+    secondary: onCard(m(t.muted, t.text, 0.37), textMin),
+    dim: onCard(t.muted, textMin),
     accent,
     onAccent: contrast(ink, accent) >= contrast(other, accent) ? ink : other,
     selection: t.selection ?? t.border,
@@ -219,6 +186,11 @@ export function derivePalette(t: ThemeFile, opts: PaletteOptions = {}): DerivedP
     magenta: text(a(5), glyphMin),
     cyan: text(cv.cyan ?? a(6), glyphMin),
   }
+}
+
+/** Secondary text lifted on the page and the surface only: the floor grid of a dark studio keeps this shade. */
+function pageSecondary(t: ThemeFile, opts: PaletteOptions): string {
+  return readable(mixHex(t.muted, t.text, 0.37), [t.background, t.surface], t.text, opts.contrast === 'higher' ? HIGH_TEXT_CONTRAST : TEXT_CONTRAST)
 }
 
 /** The scene keys a theme file may set. */
@@ -233,7 +205,7 @@ export function deriveScene(t: ThemeFile, opts: PaletteOptions = {}): ThemeScene
   const p = derivePalette(t, opts)
   const m = mixHex
   const derived: ThemeScene = t.isDark
-    ? { top: t.surface, bottom: m(t.background, '#000000', 0.2), glow: p.chipStrong, plate: p.chipStrong, grid: p.secondary, edge: m(t.background, '#000000', 0.45) }
+    ? { top: t.surface, bottom: m(t.background, '#000000', 0.2), glow: p.chipStrong, plate: p.chipStrong, grid: pageSecondary(t, opts), edge: m(t.background, '#000000', 0.45) }
     : {
         top: m(t.background, '#ffffff', 0.55),
         bottom: m(t.surfaceAlt, t.border, 0.6),
