@@ -2,12 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Journey (phone project): the phone legs of the slice journeys. The layer pins on the playback bar by finger (each pin
 // its own tap, close ones open a list, the pins over the Layer track in the opened bar, a tip that covers no control),
-// the plate picker naming the plate only, and the live view of one printer. The desktop legs are in
+// the plate picker naming the plate only, the Print tip clear of the estimate, and the live view of one printer. The desktop legs are in
 // slicing-preview.spec.ts and printer-bridge.spec.ts.
 // A phone page is shared by a worker's tests (journey.ts); the box is sliced once and each test puts the bar back.
 import { type Page } from '@playwright/test'
 import { expect, journey as test } from '../journey'
-import { calm, center, clear, debugHooks, layeredX, layerCount, layerHi, marks, pin, printerHud, sliceLayered, state, tapFor, thumbX, tipCovers, transport } from './lib/slice'
+import { calm, center, clear, debugHooks, layeredX, layerCount, layerHi, marks, nameFleet, patch, pin, printerHud, sliceLayered, state, tapFor, thumbX, tipCovers, transport } from './lib/slice'
 
 test.skip(({ isMobile }) => !isMobile, 'Phone layout')
 
@@ -144,6 +144,54 @@ test('on a phone, the plate picker names the plate only, whatever the object is 
   await expect(page.getByTestId('plate-picker-current').locator('.pp-no')).toHaveText('Plate 1')
   await expect(page.getByTestId('plate-picker-current')).not.toContainText('Very_long')
   await expect.poll(() => page.getByTestId('plate-picker').evaluate((el) => el.getBoundingClientRect().right <= innerWidth)).toBe(true)
+})
+
+test('on a phone a Print tip that only repeats the button is not shown', async ({ page }) => {
+  await sliceLayered(page)
+  // the estimate and Print float over the view, under the playback bar, while the sheet is shut
+  const print = page.getByTestId('danger-slice-print')
+  await expect(print).toBeEnabled()
+  await page.mouse.move(1, 1)
+  await print.hover()
+  // the tip would open after 450 ms: a second on, none is up
+  await page.waitForTimeout(1000)
+  await expect(page.locator('#sx-tip')).toHaveCount(0)
+})
+
+test('on a phone a held Print opens its reason above the whole estimate, clear of the figures and the bar', async ({ page }) => {
+  await sliceLayered(page)
+  const print = page.getByTestId('danger-slice-print')
+  const tip = page.locator('#sx-tip')
+  const foot = page.getByTestId('slice-estimate')
+  // Print held, for a printer with a long name and a reason: the tip is long, and it stays above the estimate.
+  await nameFleet(page, 'Workshop enclosure printer with the hardened nozzle, bay 12 A')
+  await patch(page, { plateLoading: true })
+  try {
+    await expect(print).toHaveAttribute('aria-disabled', 'true')
+    await page.mouse.move(1, 1)
+    await expect(tip).toHaveCount(0)
+    await print.hover()
+    await expect(tip).toContainText('The model is still loading.')
+    expect(await tipCovers(page, tip)).toEqual([])
+    const t = (await tip.boundingBox())!
+    const f = (await foot.boundingBox())!
+    // above the whole footer, and inside the window
+    expect(t.y + t.height).toBeLessThanOrEqual(f.y)
+    // a gutter of 16 px from either side of the window (the spec's phone gutter)
+    expect(t.x).toBeGreaterThanOrEqual(16)
+    expect(t.x + t.width).toBeLessThanOrEqual(390 - 16)
+    expect(t.y).toBeGreaterThanOrEqual(0)
+    for (const spot of [foot.locator('.est-anchor'), foot.locator('.est-fig').first(), foot.locator('.est-fig').last()]) expect(clear(t, (await spot.boundingBox())!)).toBe(true)
+    // and clear of the playback bar over the footer
+    const dock = page.getByRole('group', { name: 'Layers and moves' })
+    await expect(dock).toBeVisible()
+    expect(clear(t, (await dock.boundingBox())!)).toBe(true)
+    await page.screenshot({ path: test.info().outputPath('held-print-tip.png') })
+  } finally {
+    await patch(page, { plateLoading: false })
+    await nameFleet(page, null)
+    await page.mouse.move(1, 1)
+  }
 })
 
 test('a printer opens in its live view with drawers, and Pause asks first', async ({ page, isMobile }) => {

@@ -7,6 +7,7 @@ import { lazy, Suspense, useState, type CSSProperties } from 'react'
 import { useHost } from '../../host'
 import { slicedIn } from '../../lib/estimate-line'
 import { isExportOnly } from '../../lib/hand-printers'
+import { useCompactLayout } from '../../lib/phone-layout'
 import { formatCost, formatDuration, formatGrams } from '../../lib/preview-stats'
 import { useSliceNote } from '../../lib/slice-note'
 import { MiddleName, shortPrinterName } from '../../lib/short-name'
@@ -63,12 +64,24 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   // The timeline rolled back: Print and Export say what they use, as the notice under them does.
   const rolled = useApp(rolledBackNote)
 
+  // Under 900 px the footer floats over the view, under the playback bar and the plate chip, and a tip centered on the
+  // button lands on the estimate. It opens above the whole footer instead, lifted over the bar and the chip (above);
+  // where the footer sits in a pane, above the footer's own box, and it keeps the phone's 16 px gutter from the window's
+  // sides. Wider, the tip opens beside the panel.
+  const compact = useCompactLayout()
+  const aboveFooter = compact ? { 'data-tip-above': '.slice-float', 'data-tip-side': 'top', 'data-tip-avoid': '.slice-done', 'data-tip-gutter': '16' } : {}
+
   // Why the main action waits, as its tooltip.
   const reason = plate.length === 0 ? 'Add a model to the plate.' : loading ? 'The model is still loading.' : unsafe !== null ? unsafe : heads !== null && !done ? heads : !fresh ? (auto ? 'The slice is updating.' : 'Slice the plate first.') : undefined
   const run = (fn: () => Promise<unknown>) => {
     setMenu(false)
     void fn().catch((e: unknown) => toast(e instanceof Error ? e.message : String(e), 'error'))
   }
+  // Print's tip says something the button does not: why it waits, the note on a rolled back timeline, or the printer's
+  // name when the button shows less of it (a project's name dropped, or the label cut with an ellipsis, which the tip
+  // finds out as it opens). A tip that only repeats the label is left out.
+  const printName = target ? `Print on ${target.name}` : 'Print'
+  const nameTip = target === undefined ? {} : shortPrinterName(target.name) !== target.name ? { tip: { title: printName } } : { tip: { title: printName }, 'data-tip-if-cut': '.mid-head, .mid-tail' }
   const outputMenu = (
     <Menu open={menu} onClose={() => setMenu(false)} label="Output" align="end">
       <MenuItem icon="sd-card" data-testid="slice-output-export-gcode" aria-disabled={!fresh ? true : undefined} {...(!fresh && reason ? tipAttrs({ title: 'Export G-code', reason }) : {})} onClick={() => fresh && run(() => exportGcode(host))}>
@@ -87,11 +100,11 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       {done && !done.stale ? 'Slice again' : label}
     </Button>
   ) : exportOnly ? (
-    <SplitButton variant="primary" size="lg" full icon="sd-card" data-testid="slice-estimate-export-gcode" disabled={!fresh || loading} {...(reason ? { tip: { title: 'Export G-code', reason } } : rolled ? { tip: { title: 'Export G-code', body: rolled } } : {})} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => void exportGcode(host)}>
+    <SplitButton variant="primary" size="lg" full icon="sd-card" data-testid="slice-estimate-export-gcode" disabled={!fresh || loading} {...aboveFooter} {...(reason ? { tip: { title: 'Export G-code', reason } } : rolled ? { tip: { title: 'Export G-code', body: rolled } } : {})} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => void exportGcode(host)}>
       Export G-code
     </SplitButton>
   ) : (
-    <SplitButton variant="primary" size="lg" full icon="send-to-printer" data-testid="danger-slice-print" aria-label={target ? `Print on ${target.name}` : 'Print'} disabled={!fresh || loading} {...(reason ? { tip: { title: target ? `Print on ${target.name}` : 'Print', reason } } : target || rolled ? { tip: { title: target ? `Print on ${target.name}` : 'Print', ...(rolled ? { body: rolled } : {}) } } : {})} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
+    <SplitButton variant="primary" size="lg" full icon="send-to-printer" data-testid="danger-slice-print" aria-label={printName} disabled={!fresh || loading} {...aboveFooter} {...(reason ? { tip: { title: printName, reason } } : rolled ? { tip: { title: printName, body: rolled } } : nameTip)} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
       {target ? (
         <span className="btn-name">
           Print on <MiddleName name={shortPrinterName(target.name)} />
