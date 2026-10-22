@@ -603,6 +603,12 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
                 .collect()
         });
     let app = crate::threemf::application(bytes);
+    if let Some(wall) = tower_wall_type(&settings, app.as_deref()) {
+        settings.insert(
+            "wipe_tower_wall_type".to_owned(),
+            serde_json::Value::String(wall.to_owned()),
+        );
+    }
     let walls = project_walls(&settings, changed.as_ref(), app.as_deref());
     let mut kept = Vec::new();
     if let Some(changed) = changed {
@@ -627,6 +633,25 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
         walls,
         skipped: None,
     }))
+}
+
+/// The prime tower wall a project's settings give when they do not name ours (`wipe_tower_wall_type`): Bambu Studio's
+/// switch for it (`prime_tower_rib_wall`, 1 for the rib wall, 0 for the plain one), and, when a Bambu Studio project
+/// does not have the switch (one saved before it existed), the rib wall, that app's default.
+/// Other projects without either keep the engine's default.
+fn tower_wall_type(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    app: Option<&str>,
+) -> Option<&'static str> {
+    if settings.contains_key("wipe_tower_wall_type") {
+        return None;
+    }
+    match settings.get("prime_tower_rib_wall") {
+        Some(v) if same_value(v, &serde_json::Value::Bool(true)) => Some("rib"),
+        Some(v) if same_value(v, &serde_json::Value::Bool(false)) => Some("rectangle"),
+        Some(_) => None,
+        None => app.is_some_and(|a| a.starts_with("BambuStudio")).then_some("rib"),
+    }
 }
 
 /// The walls a project's settings give, by the rule that keeps our engine choices: ours where the project inherited

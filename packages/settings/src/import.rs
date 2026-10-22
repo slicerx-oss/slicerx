@@ -222,6 +222,10 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
         {
             continue;
         }
+        // Bambu Studio's rib wall switch reads as our wall type (legacy.json); the file's own wall type wins.
+        if raw_key == "prime_tower_rib_wall" && merged.contains_key("wipe_tower_wall_type") {
+            continue;
+        }
         if rules.ignored.contains(raw_key) && setting_def(raw_key).is_none() {
             ignored.insert(raw_key.clone());
             continue;

@@ -182,6 +182,36 @@ fn bambu_infill_retraction_mode() {
 }
 
 #[test]
+fn bambu_prime_tower_rib_wall() {
+    // Bambu Studio's switch for the prime tower's rib wall is our wall type: 1 the rib wall, 0 the plain one.
+    let read = |extra: serde_json::Value| {
+        let mut p = json!({"name": "p", "type": "process"});
+        if let (Some(o), Some(e)) = (p.as_object_mut(), extra.as_object()) {
+            o.extend(e.clone());
+        }
+        let r = import_orca(&p, &|_| None).unwrap();
+        assert!(r.unknown_keys.is_empty(), "{:?}", r.unknown_keys);
+        assert!(r.invalid_keys.is_empty(), "{:?}", r.invalid_keys);
+        get_json(&r.config, "wipe_tower_wall_type")
+    };
+    assert_eq!(read(json!({"prime_tower_rib_wall": "1"})), json!("rib"));
+    assert_eq!(read(json!({"prime_tower_rib_wall": "0"})), json!("rectangle"));
+    assert_eq!(read(json!({"prime_tower_rib_wall": "true"})), json!("rib"));
+    assert_eq!(read(json!({"prime_tower_rib_wall": "false"})), json!("rectangle"));
+    // The file's own wall type wins when it has both.
+    assert_eq!(
+        read(json!({"prime_tower_rib_wall": "1", "wipe_tower_wall_type": "rectangle"})),
+        json!("rectangle")
+    );
+    assert_eq!(
+        read(json!({"prime_tower_rib_wall": "0", "wipe_tower_wall_type": "rib"})),
+        json!("rib")
+    );
+    // A profile without either sets no wall type.
+    assert_eq!(read(json!({})), serde_json::Value::Null);
+}
+
+#[test]
 fn bambu_auto_sentinels() {
     // Bambu Studio writes -1 for auto: its raft first layer grows 2 mm, and its auto wall count is Orca's 0.
     let r = import_orca(
