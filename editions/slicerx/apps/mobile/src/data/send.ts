@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { runCloudSlice, type Material, type PhoneModel, type SlicePhase } from '../cloud/slice-job'
+import { estimateOf, runCloudSlice, type Material, type PhoneModel, type SlicePhase } from '../cloud/slice-job'
 import { boxStl } from '../cloud/stl'
 import { createCloudStub } from '../cloud/stub'
 import type { PrinterView } from '../components/printers/printer-bits'
@@ -131,7 +131,7 @@ export function useEstimate() {
     }
     setEstimating(true)
     runCloudSlice(estimator.current, input, () => undefined).then(
-      (o) => mine === seq.current && setEstimate({ timeS: o.timeS, grams: o.grams, plates: 1 }),
+      (o) => mine === seq.current && setEstimate(estimateOf(o)),
       () => mine === seq.current && setEstimate(null),
     ).finally(() => mine === seq.current && setEstimating(false))
   }, [])
