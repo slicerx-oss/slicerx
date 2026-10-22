@@ -692,6 +692,16 @@ pub fn with_bambu_tower_keys(settings: &serde_json::Value) -> std::borrow::Cow<'
     }
 }
 
+/// A request's own settings for an object or a part, with Bambu Studio's prime tower keys read as ours
+/// ([`bambu_tower_keys`]).
+fn own_settings(
+    settings: &BTreeMap<String, serde_json::Value>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut m = settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+    bambu_tower_keys(&mut m);
+    m
+}
+
 /// The walls a project's settings give, by the rule that keeps our engine choices: ours where the project inherited
 /// its generator (`different_settings_to_system` does not list it), else the project's own.
 fn project_walls(
@@ -913,12 +923,11 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
             .filter(|(k, _)| !o.part_settings.contains_key(k))
             .cloned()
             .collect();
-        part_settings.extend(o.part_settings.iter().map(|(k, v)| {
-            (
-                k.clone(),
-                serde_json::Value::Object(v.iter().map(|(a, b)| (a.clone(), b.clone())).collect()),
-            )
-        }));
+        part_settings.extend(
+            o.part_settings
+                .iter()
+                .map(|(k, v)| (k.clone(), serde_json::Value::Object(own_settings(v)))),
+        );
         // The volumes the file marks come first, then the request's own.
         let mut volumes = crate::plate::file_volumes(&mesh);
         volumes.reserve(o.volumes.len());
@@ -965,12 +974,10 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
             Some(file) => {
                 let mut m = file.clone();
                 bambu_tower_keys(&mut m);
-                m.extend(o.settings.iter().map(|(k, v)| (k.clone(), v.clone())));
+                m.extend(own_settings(&o.settings));
                 serde_json::Value::Object(m)
             }
-            None if differing => {
-                serde_json::Value::Object(o.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
-            }
+            None if differing => serde_json::Value::Object(own_settings(&o.settings)),
             None => serde_json::Value::Null,
         };
         objects.push(PlateObject {
@@ -1007,7 +1014,7 @@ fn object_settings(req: &SliceRequest) -> Option<serde_json::Value> {
         .first()
         .map(|o| &o.settings)
         .filter(|m| !m.is_empty())
-        .map(|m| serde_json::Value::Object(m.iter().map(|(k, v)| (k.clone(), v.clone())).collect()))
+        .map(|m| serde_json::Value::Object(own_settings(m)))
 }
 
 /// Parses the request's config and applies the flavor override. Settings
@@ -2040,6 +2047,36 @@ pub const RESULT_SCHEMA: &str = r#"{
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A request's own object and part settings read Bambu Studio's prime tower keys as ours, and a key under our
+    /// own name keeps its value.
+    #[test]
+    fn a_requests_object_and_part_settings_read_bambu_tower_keys() {
+        let req: SliceRequest = serde_json::from_value(serde_json::json!({
+            "plate": {"objects": [{
+                "id": "c",
+                "mesh": "c",
+                "settings": {"prime_tower_rib_wall": 1, "prime_tower_rib_width": 4, "wipe_tower_fillet_wall": 0,
+                    "prime_tower_fillet_wall": 1},
+                "partSettings": {"cube": {"prime_tower_rib_wall": 0, "prime_tower_extra_rib_length": 5}},
+            }]},
+        }))
+        .unwrap();
+        let plate = build_plate(&req, &|_| Ok(cube())).unwrap();
+        let part = &plate.objects[0]
+            .part_settings
+            .iter()
+            .find(|(n, _)| n == "cube")
+            .unwrap()
+            .1;
+        assert_eq!(part["wipe_tower_wall_type"], "rectangle");
+        assert_eq!(part["wipe_tower_extra_rib_length"], 5);
+        // One object's own settings are the plate's.
+        let over = object_settings(&req).unwrap();
+        assert_eq!(over["wipe_tower_wall_type"], "rib");
+        assert_eq!(over["wipe_tower_rib_width"], 4);
+        assert_eq!(over["wipe_tower_fillet_wall"], 0);
+    }
 
     fn cube() -> Arc<Mesh> {
         let positions = vec![
