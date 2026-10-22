@@ -46,6 +46,8 @@ pub(crate) fn convex_hull(mut pts: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
         }
         hull.pop();
     }
+    // Sized for twice the points: keep only the corners, as a footprint is held for the whole session.
+    hull.shrink_to_fit();
     hull
 }
 
@@ -1795,6 +1797,15 @@ mod tests {
         ]);
         assert_eq!(h.len(), 4);
         assert!((area(&h) - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hull_keeps_only_its_corners() {
+        let mut pts = vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]];
+        pts.extend((0..1000).map(|i| [1.0 + f64::from(i % 8), 1.0 + f64::from(i / 125)]));
+        let h = convex_hull(pts);
+        assert_eq!(h, vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]);
+        assert_eq!(h.capacity(), h.len());
     }
 
     fn square(name: &str, x: f64, y: f64) -> ObjectFootprint {

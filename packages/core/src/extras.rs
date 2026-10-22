@@ -366,25 +366,25 @@ pub fn relative(layers: &[(u32, LayerExtras)]) -> (Vec<SegExtra>, Vec<u8>) {
 }
 
 /// The extras of the whole file as two tables, the lines made absolute. `gcode` is the final text and
-/// `first_emitted` the index of the first layer that has G-code (0, or the resume layer).
-pub fn finish(layers: &[(u32, LayerExtras)], first_emitted: u32, gcode: &str) -> (Vec<SegExtra>, Vec<u8>) {
+/// `first_emitted` the index of the first layer that has G-code (0, or the resume layer). The tables are sized up
+/// front and each layer's extras are freed once copied.
+pub fn finish(layers: Vec<(u32, LayerExtras)>, first_emitted: u32, gcode: &str) -> (Vec<SegExtra>, Vec<u8>) {
     let marker_lines = layer_lines(gcode);
     let progress = progress_lines(gcode);
-    let mut segs = Vec::new();
-    let mut travels = Vec::new();
+    let mut segs = Vec::with_capacity(layers.iter().map(|l| l.1.segs.len()).sum());
+    let mut travels = Vec::with_capacity(layers.iter().map(|l| l.1.travels.len()).sum());
     for (index, extras) in layers {
         let base = index
             .checked_sub(first_emitted)
             .and_then(|k| marker_lines.get(k as usize))
             .copied();
-        for s in &extras.segs {
-            let mut s = *s;
+        segs.extend(extras.segs.into_iter().map(|mut s| {
             s.line = match base {
                 Some(b) if extras.matched => file_line(b, s.line, &progress),
                 _ => 0,
             };
-            segs.push(s);
-        }
+            s
+        }));
         travels.extend_from_slice(&extras.travels);
     }
     (segs, travels)
