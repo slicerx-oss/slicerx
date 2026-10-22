@@ -116,4 +116,25 @@ test.describe('toasts on a phone', () => {
     await closeSheet(page)
     await toastAwayFromPlate(page)
   })
+
+  test('a tap on a toast beside its text reaches the view under it, and its button still works', async ({ page }, info) => {
+    type Sx = { getState(): { selection: string | null }; setState(p: unknown): void }
+    const id = await box(page)
+    await dismiss(page)
+    await page.evaluate((id) => (window as unknown as { __sx: Sx }).__sx.setState({ selection: id, selectedIds: [id] }), id)
+    const card = await postToast(page, 'Saved the plate.')
+    // the card's own edge, left of its text: the 3D view takes the tap and clears the selection, as on empty space
+    const at = { x: card.x + 4, y: card.y + card.height / 2 }
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid="toasts"]') === null, at)).toBe(true)
+    if (process.env['SX_SHOTS']) await page.screenshot({ path: info.outputPath('toast-over-view.png') })
+    await page.touchscreen.tap(at.x, at.y)
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().selection)).toBe(null)
+    if (process.env['SX_SHOTS']) await page.screenshot({ path: info.outputPath('toast-tap-reached-view.png') })
+    await page.evaluate(() => {
+      const w = window as unknown as { __sx: Sx; __undone?: boolean }
+      w.__sx.setState({ toast: { id: Date.now(), text: 'Removed the box.', tone: 'info', action: { label: 'Undo', run: () => (w.__undone = true) } } })
+    })
+    await page.getByTestId('toast').filter({ hasText: 'Removed the box.' }).getByTestId('toast-action').tap()
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __undone?: boolean }).__undone === true)).toBe(true)
+  })
 })
