@@ -6,7 +6,7 @@
 // number's unit beside its label, the settings rows' sizes), choices that never run past the edge, messages as
 // sentences, and the action row with the primary action on the right. Probe mode for the view lives here too.
 import type { PickEvent } from '@slicerx/viewport'
-import { Block, Button, Icon, Input, Menu, MenuItem, Seg, Select, SplitButton, VectorField, type Axis, type IconName, type SegOption, type TipSpec } from '@slicerx/ui'
+import { Block, Button, Icon, Input, Menu, MenuItem, Seg, Select, SplitButton, Steady, VectorField, type Axis, type IconName, type SegOption, type TipSpec } from '@slicerx/ui'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { takePicks } from '../plate/sub-pick'
 import { cameraBus, setProbeHandler, setTool, toolStore } from '../plate/tools'
@@ -17,7 +17,7 @@ import { fromMmText, lengthText, toMmText } from './units'
 import { useLength } from './use-units'
 import { usePhoneLayout } from '../lib/phone-layout'
 import { touchWords } from './touch-words'
-import { choiceFit, choiceMeasure, selectFits, sentence, type ChoiceFit } from './tool-panel'
+import { choiceFit, choiceMeasure, selectPlace, sentence, type ChoiceFit } from './tool-panel'
 import './cad.css'
 
 /** A typed number: plain, or arithmetic over the project's named values (`wall * 2`). NaN when it does not read. */
@@ -201,8 +201,9 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
   const probe = useRef<HTMLSpanElement>(null)
   const icons = options.length > 0 && options.every((o) => o.icon)
   const [fit, setFit] = useState<ChoiceFit>(() => choiceFit({ labels: options.map(() => 0), words: options.map(() => 0), width: 0, icons }))
-  // a select whose longest option fits the control column sits there, like a settings row's; a longer one goes under the label
-  const [inline, setInline] = useState(true)
+  // a select whose longest option fits the control column sits there, like a settings row's; one that needs the next
+  // step grows to it and the panel's whole column follows (spec 2b); a longer one goes under the label
+  const [place, setPlace] = useState<'fits' | 'grows' | 'stacks'>('fits')
   const words = options.map((o) => o.label).join('\n')
   const glyphs = options.map((o) => (o.glyph ? 1 : 0)).join('')
   useLayoutEffect(() => {
@@ -217,7 +218,7 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
     const measure = () => {
       const labels = words.split('\n')
       setFit(choiceFit({ ...choiceMeasure(labels, [...glyphs].map((g) => g === '1'), width), width: el.clientWidth, icons }))
-      setInline(selectFits(Math.max(0, ...labels.map((l) => width(l, 'select')))))
+      setPlace(selectPlace(Math.max(0, ...labels.map((l) => width(l, 'select')))))
     }
     measure()
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
@@ -236,7 +237,7 @@ export function Choice<V extends string>({ id, label, ariaLabel, bare = false, v
     ...(o.testId ? { testId: o.testId } : {}),
   }))
   return (
-    <div ref={box} className="tp-row tp-choice" data-wide={fit === 'select' && inline ? undefined : ''} data-fit={fit} data-bare={bare ? '' : undefined}>
+    <div ref={box} className="tp-row tp-choice" data-wide={fit === 'select' && place !== 'stacks' ? undefined : ''} data-grow={fit === 'select' && place === 'grows' ? '' : undefined} data-fit={fit} data-bare={bare ? '' : undefined}>
       <span ref={probe} className="tp-seg-probe" aria-hidden="true" />
       {bare ? null : (
         <span className="tp-label" id={`${id}-label`}>
@@ -284,7 +285,7 @@ export function Card({ title, sub, state, muted = false, dense = false, reason, 
  * state an optional `action` that belongs to the whole tool, such as the sketch's Other plane. `section` names it for
  * the sidebar and the specs (the modeling tools are cad-tool, Cut is cut-tool).
  */
-export function Shell({ title, aside, action, section = 'cad-tool', children }: { title: string; aside?: string; action?: ReactNode; section?: string; children: ReactNode }) {
+export function Shell({ title, aside, action, section = 'cad-tool', column = 'auto', children }: { title: string; aside?: string; action?: ReactNode; section?: string; column?: 'auto' | 'grown'; children: ReactNode }) {
   // The tool was picked from a menu further down the sidebar, so its panel is brought into view.
   useEffect(() => {
     document.querySelector(`[data-section="${section}"]`)?.scrollIntoView({ block: 'nearest' })
@@ -304,7 +305,7 @@ export function Shell({ title, aside, action, section = 'cad-tool', children }: 
       </>
     ) : undefined
   return (
-    <Block title={title} data-section={section} aside={head} className="cad tp">
+    <Block title={title} data-section={section} data-column={column === 'grown' ? 'grown' : undefined} aside={head} className="cad tp">
       {children}
     </Block>
   )
@@ -322,22 +323,8 @@ export function ToolState({ text, crumb = false }: { text: string; crumb?: boole
 /** A tool's apply: true when it went through, so Apply can close the tool. */
 export type ApplyRun = () => unknown
 
-/**
- * A button label that keeps the width of its widest form, so the button never changes size when the verb changes
- * with a choice ("Round" and "Bevel") or while it works.
- */
-export function Steady({ text, forms }: { text: string; forms: readonly string[] }) {
-  return (
-    <span className="tp-steady">
-      {[...new Set(forms)]
-        .filter((f) => f !== text)
-        .map((f) => (
-          <span key={f} className="tp-steady-sizer" aria-hidden="true" data-sizer={f} />
-        ))}
-      <span>{text}</span>
-    </span>
-  )
-}
+/** A button label that keeps the width of its widest form ("Round" and "Bevel", and "Working" while it works). */
+export { Steady }
 
 /**
  * The action row every tool panel ends in: the quiet action (Cancel, Close, Clear) on the left, the primary on the

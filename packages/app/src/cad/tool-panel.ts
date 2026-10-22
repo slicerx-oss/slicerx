@@ -77,9 +77,17 @@ export function choiceFit(m: ChoiceMeasure): ChoiceFit {
 export const SELECT_WIDTH = 96
 const SELECT_FRAME = 10 + 26 + 2
 
+/** The column's next step (--w-sel), px: a number field or select grows to it before its row stacks (spec 2b). */
+export const SELECT_GROWN = 128
+
 /** A select fits the control column when its longest option's text (px, in the select's face) fits inside it. */
 export function selectFits(longest: number): boolean {
   return longest + SELECT_FRAME <= SELECT_WIDTH
+}
+
+/** Where a select goes: in the control column, in the column grown to its next step, or under its label. */
+export function selectPlace(longest: number): 'fits' | 'grows' | 'stacks' {
+  return selectFits(longest) ? 'fits' : longest + SELECT_FRAME <= SELECT_GROWN ? 'grows' : 'stacks'
 }
 
 /**

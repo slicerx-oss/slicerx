@@ -111,7 +111,7 @@ export function HoleTool() {
 
   const h = picked?.hole
   return (
-    <Shell title="Hole" aside={edit ? `Editing step ${edit.index + 1}` : h ? `${mm(h.diameterMm)}, ${h.through ? 'through' : `${mm(h.depthMm)} deep`}` : 'No hole yet'}>
+    <Shell title="Hole" column="grown" aside={edit ? `Editing step ${edit.index + 1}` : h ? `${mm(h.diameterMm)}, ${h.through ? 'through' : `${mm(h.depthMm)} deep`}` : 'No hole yet'}>
       <PointerHint text={h ? 'Click another hole to change that one instead.' : 'Click the wall of a round hole.'} />
       <Choice
         id="hole-purpose"
