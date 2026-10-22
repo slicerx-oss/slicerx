@@ -186,6 +186,9 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .studio[data-model-mode="mimir"] > .vp { order: 0; flex: none; height: var(--mimir-view-h); min-height: 0; }
 :root[data-phone] .studio[data-model-mode="mimir"] > .mimir-chat { order: 1; flex: 1; width: 100%; min-height: 0; border-right: 0; border-top: 1px solid var(--line-soft); }
 :root[data-phone] .mimir-split { display: none; }
+/* the chat column keeps the phone's 16 px gutters (spec 9): the conversation, the composer and the header's start */
+:root[data-phone] .mimir-transcript { padding-inline: var(--s-4); }
+:root[data-phone] .mimir-chat-foot { padding-inline: var(--s-4); }
 :root[data-phone] .mimir-chat-head { height: 44px; }
 :root[data-phone] .mimir-chat-head .sx-btn { width: 44px; height: 44px; }
 :root[data-phone] .mimir-lookups { left: 0; right: 0; bottom: 8px; max-width: none; padding: 0 12px; grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(232px, 78%); overflow-x: auto; scrollbar-width: none; scroll-snap-type: x mandatory; }

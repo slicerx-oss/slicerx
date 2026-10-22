@@ -10,10 +10,13 @@
    A waiting size sheet keeps the view, since its drawing is there. */
 :root[data-phone] .studio[data-model-mode="mimir"]:has(> .mimir-chat[data-card-waits]) { --mimir-view-h: 20%; }
 
-/* the header: the buttons keep their 44 px and the design name gives way first, then the chip */
-:root[data-phone] .mimir-chat-head { gap: var(--s-1); padding: 0 var(--s-1) 0 var(--s-3); }
+/* the header, from the 16 px gutter: the buttons keep their 44 px. Beside the Scripted replies badge the design's name
+   takes its own width up to 6em, so a short name shows whole and the badge truncates first; a longer name truncates
+   at 6em. Without the badge the name takes the room. */
+:root[data-phone] .mimir-chat-head { gap: var(--s-1); padding: 0 var(--s-1) 0 var(--s-4); }
 :root[data-phone] .mimir-chat-head .sx-btn { flex: none; }
 :root[data-phone] .mimir-chat-head .mimir-chat-scripted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-phone] .mimir-chat-head:has(> .mimir-chat-scripted) .mimir-chat-design { flex: none; max-width: 6em; margin-left: auto; }
 
 /* the message box: one line is 44 px (a 20 px line and 12 px above and below), six lines at most */
 :root[data-phone] .mimir-chat .composer-row { --composer-lh: 20px; --composer-pad: var(--s-3); }
