@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+
+- Bambu Lab H2D and X2D: the start and filament change G-code write -1 as the hotend id (`B` of `M620.11`, `H` of `M620 S..A`, `T..` and `M620.6`, and `M620 D`), as the maker's slicer does, instead of 0.
+
 ## [0.2.0] - 2026-10-22
 
 ### Changed
