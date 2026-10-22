@@ -8,6 +8,7 @@ import type { BridgeAppLink } from '../link/bridge'
 import { LinkError, runCall, useDesignHost, useLinkSession } from './methods'
 import { bindRunPrinters } from './mimir-run'
 import { bindPreviewSource } from './preview-source'
+import { bindVaultStore } from './vault'
 
 export interface LinkAsk {
   askId: number
@@ -40,6 +41,7 @@ export async function answerAsk(ask: LinkAsk, decision: 'allow' | 'read' | 'deny
 export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useDesignHost>[0], session?: () => Promise<boolean>, host?: Host): () => void {
   const releasePreviewSource = bindPreviewSource(host)
   const releaseRunPrinters = bindRunPrinters(host)
+  const releaseVaultStore = bindVaultStore(host)
   linkAsks.setState({ link, asks: [] })
   if (loader) void useDesignHost(loader).catch(() => undefined)
   useLinkSession(session ?? null)
@@ -87,6 +89,7 @@ export function hostAppLink(link: BridgeAppLink, loader?: Parameters<typeof useD
   return () => {
     releasePreviewSource()
     releaseRunPrinters()
+    releaseVaultStore()
     stopCall()
     stopAsk()
     stopEnded()
