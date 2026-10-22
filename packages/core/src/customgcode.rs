@@ -457,6 +457,13 @@ fn change_filament_path(cfg: &PrintConfig, out: &SliceOutput) -> [[f64; 2]; 3] {
     }
 }
 
+/// Printers whose hotend ids (`current_hotend`, `next_hotend`, `initial_no_support_hotend`) are -1 although each
+/// extruder holds one nozzle: Bambu Studio 2.8 and Orca 2.4.2, as black boxes (2026-10-22), write -1 in every hotend
+/// slot of the start and filament change G-code on these models, with one or two filaments and whatever the first
+/// filament. No machine setting tells them apart from the H2D Pro, which is not checked yet, so the list is read from
+/// `printer_model`, as the profile names it.
+const UNSET_HOTEND_PRINTERS: &[&str] = &["Bambu Lab H2D", "Bambu Lab X2D"];
+
 /// The variables of a print: settings the core parses, then the plate.
 pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a> {
     // the start loads the first filament that is not support; `[name]` reads the first filament's entry
@@ -492,7 +499,8 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
         Some(serde_json::Value::String(t)) => t.clone(),
         _ => "Standard".to_owned(),
     };
-    // An extruder with several nozzles (the H2C's right one holds six) makes the hotend ids -1, as in Orca.
+    // An extruder with several nozzles (the H2C's right one holds six) makes the hotend ids -1, as in Orca, and so
+    // does a printer in [`UNSET_HOTEND_PRINTERS`].
     let multi_nozzle = match cfg.raw.get("extruder_max_nozzle_count") {
         Some(serde_json::Value::Array(a))
             if a.iter().any(|v| {
@@ -504,6 +512,14 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
             -1.0
         }
         _ if cfg.raw_number("extruder_max_nozzle_count", 1.0) > 1.0 => -1.0,
+        _ if cfg
+            .raw
+            .get("printer_model")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|m| UNSET_HOTEND_PRINTERS.contains(&m)) =>
+        {
+            -1.0
+        }
         _ => 0.0,
     };
     // Orca GCode.cpp (`wipe_tower_center_pos_*`): beside the tower on the side of the bed's middle, clamped to the bed.
@@ -630,7 +646,7 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
         ("farthest_point_timelapse_enabled", Value::Bool(false)),
         ("initial_filament_id", n(f64::from(first_id))),
         ("initial_no_support_filament_id", n(f64::from(solid_id))),
-        // Nozzles and hotends: one nozzle in one hotend here. Orca gives the H2C's several-nozzle hotend -1.
+        // Nozzles and hotends: one nozzle in one hotend here, the hotend id from `multi_nozzle` (-1 or 0).
         ("current_hotend", n(multi_nozzle)),
         ("next_hotend", n(multi_nozzle)),
         ("initial_no_support_hotend", n(multi_nozzle)),
