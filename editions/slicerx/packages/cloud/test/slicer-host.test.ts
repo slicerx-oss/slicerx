@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { type MeshHandle, type MeshPart, readPreview, type SliceOptions, type SliceRequest, type SlicerHost } from '@slicerx/contracts'
 import { createCloudClient } from '../src/client'
 import { sha256Hex } from '../src/hash'
-import { cloudRoutedSlicer, createCloudSlicer, encodeParts } from '../src/slicer-host'
+import { cloudRoutedSlicer, createCloudSlicer, encodeParts, lineStarts } from '../src/slicer-host'
 import { MOCK_GCODE, mockCloudService } from './mock-service'
 
 /** A local slicer that hands out handles and records what it was asked to do. */
@@ -24,6 +24,13 @@ function fakeLocal() {
     },
     getPreview: async () => new ArrayBuffer(0),
     exportGcode: async () => ({ fileName: 'local.gcode', bytes: 0, sha256: '' }),
+    // As the desktop shell does: it knows only its own slices.
+    gcodeLineStarts: async (id) => {
+      throw new Error(`the local slicer has no slice ${id}`)
+    },
+    gcodeBytes: async (id) => {
+      throw new Error(`the local slicer has no slice ${id}`)
+    },
     release: (id) => void released.push(id),
   }
   return { local, released, sliced }
@@ -95,6 +102,40 @@ describe('cloud slicing through the app slicer', () => {
     expect(released).toEqual([])
     slicer.release(h.id)
     expect(released).toEqual([h.id])
+  })
+})
+
+describe('a cloud slice afterwards', () => {
+  it('gives the G-code line view its lines from the cloud result, downloading the text once', async () => {
+    const { svc, slicer } = setup()
+    const h = await slicer.loadParts('Body', [part('Body')])
+    const r = await slicer.slice({ plate: plate([{ id: 'a', name: 'Body', mesh: h.id, transform: T }]), config: {} as never })
+    const starts = await slicer.gcodeLineStarts!(r.id)
+    expect([...starts]).toEqual([...lineStarts(new TextEncoder().encode(MOCK_GCODE))])
+    expect(starts.length - 1).toBe(3)
+    const line2 = await slicer.gcodeBytes!(r.id, starts[1]!, starts[2]!)
+    expect(new TextDecoder().decode(line2)).toBe('G28\n')
+    await slicer.exportGcode(r.id, { kind: 'blob' })
+    expect(svc.calls.filter((c) => c.path.endsWith('/gcode'))).toHaveLength(1)
+  })
+
+  it('counts lines as the line view does', () => {
+    const enc = (t: string) => [...lineStarts(new TextEncoder().encode(t))]
+    expect(enc('a\nb\n')).toEqual([0, 2, 4])
+    expect(enc('a\nb')).toEqual([0, 2, 3])
+    expect(enc('')).toEqual([0])
+  })
+
+  it('names the job, and so the G-code file, after the project and plate, not the objects', async () => {
+    const { svc, slicer } = setup()
+    const a = await slicer.loadParts('Base', [part('Base')])
+    const b = await slicer.loadParts('Lid', [part('Lid')])
+    const objects = [{ id: 'a', name: 'Base', mesh: a.id, transform: T }, { id: 'b', name: 'Lid', mesh: b.id, transform: T }]
+    const first = await slicer.slice({ plate: plate(objects), config: {} as never, options: { modelName: 'Deck box', plateName: 'Plate 1', plateNumber: 1 } })
+    await slicer.slice({ plate: plate(objects), config: {} as never, options: { modelName: 'Deck box', plateName: 'Lids', plateNumber: 2 } })
+    await slicer.slice({ plate: plate(objects), config: {} as never, options: { plateName: 'Plate 3', plateNumber: 3 } })
+    expect(svc.names).toEqual(['Deck box', 'Deck box Lids', 'Plate 3'])
+    expect((await slicer.exportGcode(first.id, { kind: 'blob' })).fileName).toBe('Deck box.gcode')
   })
 })
 
