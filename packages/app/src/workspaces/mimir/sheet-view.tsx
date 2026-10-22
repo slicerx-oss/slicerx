@@ -14,6 +14,7 @@ import { Button, Icon, ScrubNumber, Seg, tipAttrs, type IconName } from '@slicer
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { usePhoneLayout } from '../../lib/phone-layout'
+import { usePhoneKeyboardUp } from '../../shell/phone-keyboard'
 import { arrowHead, drawView, fitScale, SHEET_VIEWS, VIEWS, viewsFor } from './sheet-draw'
 import { closeSheet, setDraft, setLive, sheetMode, useSheetUi } from './sheet-ui'
 import './mimir.css'
@@ -64,7 +65,13 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
   // a guess stays marked until its row is typed in or kept with Enter
   const draft = useSheetUi((s) => s.draft)
   const assumed = (key: string): boolean => sheet.dims.some((d) => d.key === key && d.source === 'guess') && !(key in draft)
-  const { phone, pane: picked, folded } = usePhoneDrawing(sheet.id)
+  const { phone, pane: picked, folded: foldedByHand } = usePhoneDrawing(sheet.id)
+  // With the keyboard up for a size on the record, the drawing folds to its header so the record and its Confirm have
+  // the room, and opens again when the keyboard goes. Its fold control gives way meanwhile, since a tap on it would take
+  // the focus from the size and the keyboard with it.
+  const keyboardUp = usePhoneKeyboardUp()
+  const typing = phone && keyboardUp && editing !== null
+  const folded = foldedByHand || typing
   // Front or Right with no callout of this sheet's would show nothing to edit, so the picker leaves it out
   const offered = useMemo(() => panesFor(viewsFor(sheet.dims, sheet.views ?? [])), [sheet.dims, sheet.views])
   const pane = paneOffered(picked, offered)
@@ -126,7 +133,7 @@ function SheetDrawing({ sheet, editing, onPick }: { sheet: PilotSheet; editing: 
             <Seg<PhonePane> label="Drawing view" value={pane} onChange={(p) => showPane(sheet.id, p, offered)} full options={offered.map((p) => ({ value: p, label: PANE_NAMES[p], testId: `mimir-drawing-view-${p}` }))} />
           </div>
         )}
-        {phone ? (
+        {phone && !typing ? (
           <Button
             variant="ghost"
             icon={folded ? 'chevron-down' : 'chevron-up'}
@@ -271,6 +278,9 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
     setNote({ ok: out.ok, text: out.summary })
   }
   const hint = note && mode === 'drive' ? note.text : hintFor(dim, mode, dim ? tied(dim.key) : false)
+  // every hint this sheet can show: the line takes the tallest of them, one line or two, so moving between rows never
+  // moves the rows or the footer, and a sheet whose hints all fit one line keeps one line
+  const room = [...new Set([hintFor(undefined, mode, false), ...sheet.dims.filter((d) => mode === 'confirm' || tied(d.key)).map((d) => hintFor(d, mode, tied(d.key))), ...(note && mode === 'drive' ? [note.text] : [])])]
   return (
     <aside className="mimir-sheet-panel" data-testid="mimir-sheet-panel" data-mode={mode} aria-label={`${sheet.title}, sizes`} tabIndex={-1}>
       <header className="mimir-sheet-head">
@@ -332,8 +342,15 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
           )
         })}
       </ol>
-      <p className="mimir-sheet-hint" data-testid="mimir-sheet-hint" data-bad={(note && !note.ok && mode === 'drive') || undefined} aria-live="polite">
-        {hint}
+      <p className="mimir-sheet-hint" data-bad={(note && !note.ok && mode === 'drive') || undefined}>
+        <span data-testid="mimir-sheet-hint" aria-live="polite">
+          {hint}
+        </span>
+        {room.map((t) => (
+          <span key={t} className="mimir-sheet-hint-room" aria-hidden="true">
+            {t}
+          </span>
+        ))}
       </p>
       <footer className="mimir-sheet-foot">
         <span className="mimir-sheet-msg">{mode === 'confirm' ? (guesses ? `${guesses} ${guesses === 1 ? 'guess' : 'guesses'} to check` : 'Every size checked') : bound ? `Tied to ${bound.binds.length} step${bound.binds.length === 1 ? '' : 's'}` : ''}</span>
