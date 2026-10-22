@@ -25,9 +25,9 @@
 //! Klipper plans motion differently, so a file for the Klipper flavor gets the model its documentation
 //! (Kinematics and the config reference) describes instead of the jerk rules above:
 //! - One acceleration for every toolhead move, as the last `SET_VELOCITY_LIMIT ACCEL`, `M204 S` or
-//!   `M204 P T` (the smaller of the two) set it; Klipper may go past the configured maximum, so it is
-//!   not clamped. `max_velocity` caps the toolhead speed along the path and the Z limits cut moves
-//!   that climb. Retractions and other extruder-only moves keep to the extrude-only limits, which
+//!   `M204 P T` (the smaller of the two) set it, under the profile's machine acceleration limit when it
+//!   has one (its stand-in for printer.cfg; without one it is not clamped). `max_velocity` caps the
+//!   toolhead speed along the path and the Z limits cut moves that climb. Retractions and other extruder-only moves keep to the extrude-only limits, which
 //!   Klipper derives from a move with a cross section of 4 nozzle diameters squared.
 //! - A junction runs at the approximated centripetal speed: with the square corner velocity `v` and
 //!   `s` the sine of half the angle at the corner (180 degrees straight on),
@@ -437,6 +437,11 @@ struct KlipperState {
     /// `max_extrude_only_velocity` and `max_extrude_only_accel`.
     extrude_only_speed: f64,
     extrude_only_accel: f64,
+    /// The profile's stand-in for printer.cfg `max_accel` and `max_velocity`, when it sets them: caps on what
+    /// the file asks for. Klipper itself takes higher values from `SET_VELOCITY_LIMIT` and `M204`, but the
+    /// profile is the only record of the printer's configuration we have; without one nothing is capped.
+    accel_cap: Option<f64>,
+    speed_cap: Option<f64>,
 }
 
 impl KlipperState {
@@ -451,12 +456,34 @@ impl KlipperState {
         } else {
             1.0
         };
+        let set = |keys: &[&str]| {
+            keys.iter()
+                .find_map(|k| crate::motion::raw_f(cfg, k))
+                .filter(|v| *v > 0.0)
+        };
         Self {
             cruise_ratio: KLIPPER_CRUISE_RATIO,
             accel_to_decel: None,
             extrude_only_speed: env.speed[0] * ratio,
             extrude_only_accel: accel * ratio,
+            // Klipper has one acceleration for every move, so the print limit stands for it, else the travel one.
+            accel_cap: set(&[
+                "machine_max_acceleration_extruding",
+                "machine_max_acceleration_travel",
+            ]),
+            // `max_velocity` applies along the path; the X limit stands for it, else the Y one.
+            speed_cap: set(&["machine_max_speed_x", "machine_max_speed_y"]),
         }
+    }
+
+    /// An acceleration the file asks for, under the profile's cap.
+    fn accel(&self, a: f64) -> f64 {
+        self.accel_cap.map_or(a, |c| a.min(c))
+    }
+
+    /// A top speed the file asks for, under the profile's cap.
+    fn speed(&self, v: f64) -> f64 {
+        self.speed_cap.map_or(v, |c| v.min(c))
     }
 
     /// The virtual acceleration of the smoothed pass for a move at `accel`.
@@ -1602,8 +1629,8 @@ impl Reader {
                     let a = value(words, b'S')
                         .or_else(|| value(words, b'P').zip(value(words, b'T')).map(|(p, t)| p.min(t)));
                     if let Some(a) = a {
-                        self.m.acceleration = a;
-                        self.m.travel = a;
+                        self.m.acceleration = self.m.klipper.accel(a);
+                        self.m.travel = self.m.acceleration;
                     }
                     return;
                 }
@@ -1755,7 +1782,8 @@ impl Reader {
 
     /// Klipper's `SET_VELOCITY_LIMIT`: the square corner velocity (kept as the X and Y jerk), the
     /// acceleration of every move, the top speed, and the minimum cruise ratio or the older explicit
-    /// `ACCEL_TO_DECEL`. Klipper takes values past the configured limits, so none is clamped.
+    /// `ACCEL_TO_DECEL`. The acceleration and top speed stay under the profile's machine limits when it
+    /// sets them (see [`KlipperState`]).
     fn velocity_limit(&mut self, code: &str) {
         let find = |key: &str| {
             code.split_ascii_whitespace().find_map(|w| {
@@ -1772,10 +1800,11 @@ impl Reader {
             self.m.env.jerk[1] = j;
         }
         if let Some(a) = find("ACCEL") {
-            self.m.acceleration = a;
-            self.m.travel = a;
+            self.m.acceleration = self.m.klipper.accel(a);
+            self.m.travel = self.m.acceleration;
         }
         if let Some(v) = find("VELOCITY") {
+            let v = self.m.klipper.speed(v);
             self.m.env.speed[0] = v;
             self.m.env.speed[1] = v;
         }
@@ -2361,6 +2390,30 @@ mod tests {
             klipper_time("", "M201 X100 Y100\nM203 X10 Y10\nG1 X100 F6000\n"),
             1.1,
         );
+    }
+
+    #[test]
+    fn klipper_profile_limits_cap_what_the_file_asks_for() {
+        // The profile's 1000 mm/s2 caps ACCEL=2000; without a profile limit 2000 applies: 2.5 mm up in
+        // 0.05 s, 95 mm at speed, 2.5 mm down.
+        close(
+            klipper_time("", "SET_VELOCITY_LIMIT ACCEL=2000\nG1 X100 F6000\n"),
+            1.1,
+        );
+        close(klipper_time("", "M204 S2000\nG1 X100 F6000\n"), 1.1);
+        let mut open = klipper();
+        open.raw.remove("machine_max_acceleration_extruding");
+        let text = "SET_VELOCITY_LIMIT ACCEL=2000\nG1 X100 F6000\n";
+        close(estimate(text.as_bytes(), &open, false).total, 1.05);
+        // A 50 mm/s speed limit caps VELOCITY=200 and the 100 mm/s feed: 1.25 mm up in 0.05 s, 97.5 mm at
+        // 50 mm/s, 1.25 mm down.
+        let mut slow = klipper();
+        slow.raw
+            .insert("machine_max_speed_x".into(), serde_json::json!([50]));
+        let text = "SET_VELOCITY_LIMIT ACCEL=1000 VELOCITY=200\nG1 X100 F6000\n";
+        close(estimate(text.as_bytes(), &slow, false).total, 2.05);
+        // Unset, the file's velocity is the top speed and the feed rate is under it.
+        close(estimate(text.as_bytes(), &klipper(), false).total, 1.1);
     }
 
     #[test]
