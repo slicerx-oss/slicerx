@@ -482,6 +482,18 @@ fn half_spacing(w: i32, layer_mm: f64) -> i32 {
     (w - units(layer_mm * (1.0 - std::f64::consts::FRAC_PI_4))) / 2 + 5
 }
 
+/// The islands of an overhang that get interface under them: those wider than 0.55 support lines `w`. A
+/// narrower strip (each layer of a slope steeper than about 41 degrees at 0.2 mm layers) is held up by base
+/// support only.
+fn contact_part(hang: &Shapes, w: i32) -> Shapes {
+    #[allow(clippy::cast_possible_truncation, reason = "a fraction of a line width")]
+    let r = (f64::from(w) * 0.275).round() as i32;
+    hang.iter()
+        .filter(|sh| !perimeters::offset(&vec![(*sh).clone()], -r).is_empty())
+        .cloned()
+        .collect()
+}
+
 /// [`columns`] with the layer each column starts on given per overhang: `starts[i]` lists the
 /// overhang layers whose column begins on layer `i`. With `landing`, also returns, per layer, the
 /// part of its top surface that columns from above come down on.
@@ -555,10 +567,9 @@ pub(crate) fn columns_from(
         column = perimeters::difference(&column, &blocked);
         let mut area = column.clone();
         // The grid style stretches the islands to a coarse grid, then trims them by the part again
-        // (Orca's `project_support_to_grid`). Support that must reach the bed stays tight: stretching it would
-        // leave rims beside the part.
+        // (Orca's `project_support_to_grid`), also when support must reach the bed: what stands over the part
+        // below is taken away after.
         if matches!(cfg.style, SupportStyle::Default | SupportStyle::Grid)
-            && !cfg.on_build_plate_only
             && let Some(g) = GridPattern::new(
                 &area,
                 &blocked,
@@ -588,6 +599,13 @@ pub(crate) fn columns_from(
             area = crate::smooth::smooth_outward(&closed, w);
             column.clone_from(&area);
         }
+        // An overhang strip that starts its column here joins it trimmed by the part only, not by the xy gap.
+        // Under a slope the part has moved back a layer down, so the gap leaves the strip from there on; trimmed
+        // here, the strips of a steep slope (each narrower than the gap) would all go before they could meet.
+        if !fresh.is_empty() {
+            let kept = perimeters::difference(&fresh, &perimeters::union_all(&near));
+            column = perimeters::union_all(&[&column, &kept]);
+        }
         if let Some(Some(a)) = allowed.get(i) {
             // Only from the bed: nothing stands where the part is below.
             area = perimeters::difference(&area, a);
@@ -602,13 +620,12 @@ pub(crate) fn columns_from(
         let mut iface: Shapes = Vec::new();
         // The contact layer counts besides the interface layers (OrcaSlicer prints three for a setting of two).
         for k in 0..=cfg.interface_top_layers as usize {
-            let h = starting(i + k);
+            let h = contact_part(&starting(i + k), w);
             if !h.is_empty() {
                 iface = perimeters::union_all(&[&iface, &h]);
             }
         }
-        let grid =
-            matches!(cfg.style, SupportStyle::Default | SupportStyle::Grid) && !cfg.on_build_plate_only;
+        let grid = matches!(cfg.style, SupportStyle::Default | SupportStyle::Grid);
         let to_grid = |f: &Shapes| -> Shapes {
             if !grid {
                 return f.clone();
@@ -1150,10 +1167,15 @@ pub(crate) fn stack(
 
     // The area of each layer, kept clear of the part.
     let empty: Shapes = Vec::new();
-    let grid = matches!(cfg.style, SupportStyle::Default | SupportStyle::Grid) && !cfg.on_build_plate_only;
+    let grid = matches!(cfg.style, SupportStyle::Default | SupportStyle::Grid);
     let grow = half_spacing(w, layer_mm);
     let footprint = |ls: &[usize]| -> Shapes {
-        let sets: Vec<&Shapes> = ls.iter().filter_map(|&l| hang.get(l)).collect();
+        let parts: Vec<Shapes> = ls
+            .iter()
+            .filter_map(|&l| hang.get(l))
+            .map(|h| contact_part(h, w))
+            .collect();
+        let sets: Vec<&Shapes> = parts.iter().collect();
         let f = perimeters::union_all(&sets);
         if grid {
             GridPattern::new(
