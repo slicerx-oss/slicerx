@@ -54,6 +54,7 @@ mod cooling;
 mod copies;
 mod counterbore;
 mod equalizer;
+mod fanlead;
 mod fm;
 mod memory;
 mod owners;

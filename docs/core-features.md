@@ -48,6 +48,7 @@ Speed, acceleration, cooling
 - Per-feature speeds (outer wall, inner wall, small perimeters, sparse and solid infill, top surface, gap fill, support, support interface, bridge, travel, first layer, first layer infill).
 - Per-feature accelerations and jerk or junction deviation; max volumetric speed cap per filament.
 - Minimum layer time slowdown, fan by layer time, first layers fan off, overhang and bridge fan overrides, auxiliary and chamber fans.
+- Fan lead time (`pre_start_fan_time`, 0 to 5 s per filament): the part fan speeds up that much print time before an overhang, bridge or support interface, so it is already at speed when the path starts. The early command goes between moves and never before the layer start, another fan command or a tool change. At 0 the G-code is unchanged.
 - Temperatures: first layer and other layers, bed per plate type, chamber.
 
 Gap fill and small areas

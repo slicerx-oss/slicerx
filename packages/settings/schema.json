@@ -7597,6 +7597,25 @@
    ]
   },
   {
+   "key": "pre_start_fan_time",
+   "section": "filament",
+   "type": "floats",
+   "label": "Fan lead time",
+   "unit": "s",
+   "min": 0,
+   "max": 5,
+   "mode": "advanced",
+   "default": [
+    0
+   ],
+   "group": "cooling",
+   "invalidates": "gcode",
+   "effect": {
+    "increase": "The part fan speeds up earlier, so it is at speed when an overhang or bridge starts",
+    "decrease": "The part fan speeds up closer to the overhang or bridge that needs it"
+   }
+  },
+  {
    "key": "reduce_fan_stop_start_freq",
    "section": "filament",
    "type": "bools",
