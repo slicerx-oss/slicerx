@@ -14,8 +14,11 @@
 //!   objects share, or inside two objects that overlap, always goes to the same one;
 //! - a cut adds a point on the segment: the same line, the same extrusion, no travel;
 //! - skirt, prime tower and custom paths belong to no object; a brim to the object it goes round, none when it
-//!   goes round several; support to the object above it (the first layer up where the support's start point lies
-//!   inside an object), else the nearest object on its own layer.
+//!   goes round several; support to the object above it (the first layer up where an object comes within the
+//!   support's margin of the middle of the path's box), else the nearest object on its own layer;
+//! - a support path whose box reaches under two objects (tree support under two shelves, merged on the first
+//!   layers) is cut like a wall where it passes from under one object to under another: a point takes the first
+//!   object up whose slice holds it, the path's own owner where none does.
 
 use crate::geom::{Point, SCALE};
 use crate::output::{Feature, LayerPaths, PathInfo};
@@ -166,6 +169,8 @@ pub(crate) fn assign(
     let mut flows: Vec<f32> = Vec::new();
     let mut paths: Vec<PathInfo> = Vec::with_capacity(old_paths.len());
     let owner_at = |p: Point| holder(here, p).unwrap_or(OBJECT_NONE);
+    // What a support path on this layer can lie under ([`Reach`]), worked out for the first one that asks.
+    let mut reach: Option<Reach> = None;
     for p in &old_paths {
         let range = p.start as usize..p.end as usize;
         let pts = old_points.get(range.clone()).unwrap_or_default();
@@ -181,33 +186,52 @@ pub(crate) fn assign(
                 flows.push(zf.1.unwrap_or(1.0));
             }
         };
+        // A support path whose box reaches under two objects is cut like a wall: each point takes the first
+        // object up whose slice holds it ([`Reach::under_at`]), the path's own owner where none does.
+        let mut support = None;
         if !by_place(p.feature) {
             let owner = match p.feature {
                 Feature::Brim => brim_owner(here, pts),
                 Feature::Support | Feature::SupportInterface => support_owner(here, pts, above),
                 _ => OBJECT_NONE,
             };
-            let start = u32::try_from(points.len()).unwrap_or(u32::MAX);
-            for (k, &q) in pts.iter().enumerate() {
-                push_point(&mut points, &mut zs, &mut flows, q, z_of(range.start + k));
+            let two = matches!(p.feature, Feature::Support | Feature::SupportInterface)
+                && bbox(pts).is_some_and(|b| reach.get_or_insert_with(|| Reach::new(above)).under_two(b));
+            if two {
+                support = Some(owner);
+            } else {
+                let start = u32::try_from(points.len()).unwrap_or(u32::MAX);
+                for (k, &q) in pts.iter().enumerate() {
+                    push_point(&mut points, &mut zs, &mut flows, q, z_of(range.start + k));
+                }
+                paths.push(PathInfo {
+                    start,
+                    end: u32::try_from(points.len()).unwrap_or(u32::MAX),
+                    owner,
+                    ..*p
+                });
+                continue;
             }
-            paths.push(PathInfo {
-                start,
-                end: u32::try_from(points.len()).unwrap_or(u32::MAX),
-                owner,
-                ..*p
-            });
-            continue;
         }
+        let owner_of = |q: Point| match support {
+            Some(whole) => reach.as_ref().map_or(whole, |r| r.under_at(q, whole)),
+            None => owner_at(q),
+        };
         // Walk the path; where the owner changes along a segment, end the piece at the crossing.
         let Some(&first) = pts.first() else { continue };
         let mut start = u32::try_from(points.len()).unwrap_or(u32::MAX);
-        let mut owner = owner_at(first);
+        let mut owner = owner_of(first);
         push_point(&mut points, &mut zs, &mut flows, first, z_of(range.start));
         for (k, w) in pts.windows(2).enumerate() {
             let [a, b] = w else { continue };
             let (za, zb) = (z_of(range.start + k), z_of(range.start + k + 1));
-            for (q, t, next) in crossings(*a, *b, &owner_at, here) {
+            // Support is sampled along a segment only when its ends differ: its points stand close together.
+            let cuts = if support.is_some() && owner_of(*b) == owner {
+                Vec::new()
+            } else {
+                crossings(*a, *b, &owner_of, support.is_none().then_some(here))
+            };
+            for (q, t, next) in cuts {
                 let lerp = |x: Option<f32>, y: Option<f32>| match (x, y) {
                     #[allow(
                         clippy::cast_possible_truncation,
@@ -266,11 +290,13 @@ pub(crate) fn assign(
 }
 
 /// Where the owner changes along `a`-`b`: each crossing point, its share of the segment and the owner after it.
+/// `here`, the slices `owner_at` reads, lets a long segment no outline comes near skip the sampling ([`steady`]);
+/// None samples every segment.
 fn crossings(
     a: Point,
     b: Point,
     owner_at: &dyn Fn(Point) -> u16,
-    here: &[ObjectSlice],
+    here: Option<&[ObjectSlice]>,
 ) -> Vec<(Point, f64, u16)> {
     let at = |t: f64| {
         #[allow(
@@ -295,7 +321,7 @@ fn crossings(
     )]
     let steps = (len / 0.1).ceil().clamp(1.0, 100_000.0) as u32;
     // A long segment that no outline comes near keeps one owner along every sample: it is not sampled.
-    if steps > STEADY_STEPS && steady(here, a, b) {
+    if steps > STEADY_STEPS && here.is_some_and(|h| steady(h, a, b)) {
         return Vec::new();
     }
     let mut out = Vec::new();
@@ -423,26 +449,86 @@ fn brim_owner(here: &[ObjectSlice], pts: &[Point]) -> u16 {
     }
 }
 
-/// Support's object: the first one up from this layer within the support's margin of the middle of the path
-/// (what it holds up), passing over objects already beside the path on its own layer while another is found;
-/// else the nearest on its own layer.
+/// The box of `pts`, `[x0, y0, x1, y1]`; None when there are none.
+fn bbox(pts: &[Point]) -> Option<[i32; 4]> {
+    let &first = pts.first()?;
+    Some(pts.iter().fold([first.x, first.y, first.x, first.y], |b, q| {
+        [b[0].min(q.x), b[1].min(q.y), b[2].max(q.x), b[3].max(q.y)]
+    }))
+}
+
+/// The objects' slices on the layers above a layer (up to [`SUPPORT_REACH`]), and each object's bounds over them:
+/// what a support path on the layer can lie under.
+struct Reach {
+    layers: Vec<std::sync::Arc<Slices>>,
+    bounds: Vec<(u16, [i32; 4])>,
+}
+
+impl Reach {
+    fn new(above: &dyn Fn(usize) -> Option<std::sync::Arc<Slices>>) -> Self {
+        let layers: Vec<_> = (1..=SUPPORT_REACH).map_while(above).collect();
+        let mut bounds: Vec<(u16, [i32; 4])> = Vec::new();
+        for o in layers.iter().flat_map(|s| s.iter()) {
+            let b = o.bounds;
+            match bounds.iter_mut().find(|(n, _)| *n == o.object) {
+                Some((_, u)) => *u = [u[0].min(b[0]), u[1].min(b[1]), u[2].max(b[2]), u[3].max(b[3])],
+                None => bounds.push((o.object, b)),
+            }
+        }
+        Self { layers, bounds }
+    }
+
+    /// True when a support path's box `b` meets two objects' bounds, so its points may lie under different
+    /// objects.
+    fn under_two(&self, b: [i32; 4]) -> bool {
+        self.bounds
+            .iter()
+            .filter(|(_, u)| b[0] <= u[2] && b[2] >= u[0] && b[1] <= u[3] && b[3] >= u[1])
+            .nth(1)
+            .is_some()
+    }
+
+    /// The object support at `q` lies under: the first one up whose slice holds `q`, else `whole` (the path's own
+    /// owner). Unlike [`support_owner_at`] it takes no margin, so support that runs close round a neighbor stays
+    /// with the object it holds up.
+    fn under_at(&self, q: Point, whole: u16) -> u16 {
+        // Only an object whose bounds hold `q` can; when that is none but `whole`, the answer is `whole`.
+        if self
+            .bounds
+            .iter()
+            .all(|(o, u)| *o == whole || q.x < u[0] || q.x > u[2] || q.y < u[1] || q.y > u[3])
+        {
+            return whole;
+        }
+        self.layers.iter().find_map(|s| holder(s, q)).unwrap_or(whole)
+    }
+}
+
+/// Support's object: the one [`support_owner_at`] gives the middle of the path's box (a support path's ends may
+/// come close to a neighbor it does not hold up).
 fn support_owner(
     here: &[ObjectSlice],
     pts: &[Point],
     above: &dyn Fn(usize) -> Option<std::sync::Arc<Slices>>,
 ) -> u16 {
-    // The middle of the path's box: a support path's ends may come close to a neighbor it does not hold up.
-    let Some(&first) = pts.first() else {
+    let Some([x0, y0, x1, y1]) = bbox(pts) else {
         return OBJECT_NONE;
     };
-    let (mut x0, mut y0, mut x1, mut y1) = (first.x, first.y, first.x, first.y);
-    for q in pts {
-        x0 = x0.min(q.x);
-        y0 = y0.min(q.y);
-        x1 = x1.max(q.x);
-        y1 = y1.max(q.y);
-    }
-    let mid = Point::new(i32::midpoint(x0, x1), i32::midpoint(y0, y1));
+    support_owner_at(
+        here,
+        Point::new(i32::midpoint(x0, x1), i32::midpoint(y0, y1)),
+        above,
+    )
+}
+
+/// The object support at `mid` holds up: the first one up from this layer within the support's margin of it,
+/// passing over objects already beside it on its own layer while another is found; else the nearest on its own
+/// layer.
+fn support_owner_at(
+    here: &[ObjectSlice],
+    mid: Point,
+    above: &dyn Fn(usize) -> Option<std::sync::Arc<Slices>>,
+) -> u16 {
     // An object already standing beside the path on its own layer is a neighbor the support passes, not the
     // one it holds up (border support on the first layer runs close round a neighbor that rises past the
     // overhang). Look for an object above that is not beside it first, then for any.
@@ -577,7 +663,7 @@ mod tests {
         // One that crosses the edge is sampled and cut where it leaves the object.
         let (a, b) = (Point::from_mm(1.0, 5.0), Point::from_mm(15.0, 5.0));
         assert!(!steady(&here, a, b));
-        assert_eq!(crossings(a, b, &owner_at, &here).len(), 1);
+        assert_eq!(crossings(a, b, &owner_at, Some(&here)).len(), 1);
         // Runs along the top edge two units inside it: not steady either, though it never leaves the object.
         let top = crate::geom::mm(10.0) - 2;
         let (a, b) = (
@@ -585,7 +671,7 @@ mod tests {
             Point::new(crate::geom::mm(9.0), top),
         );
         assert!(!steady(&here, a, b));
-        assert!(crossings(a, b, &owner_at, &here).is_empty());
+        assert!(crossings(a, b, &owner_at, Some(&here)).is_empty());
         // Well inside: steady.
         assert!(steady(&here, Point::from_mm(1.0, 5.0), Point::from_mm(9.0, 5.0)));
     }
@@ -646,6 +732,43 @@ mod tests {
             })
         });
         assert_eq!(l.paths[0].owner, 0);
+    }
+
+    #[test]
+    fn support_under_two_objects_is_cut_where_its_owner_changes() {
+        // A support only layer under two shelves two layers up, with a 2 mm gap between them from x 9 to 11.
+        let up = std::sync::Arc::new(vec![
+            square(0, 0.0, 0.0, 9.0, 10.0),
+            square(1, 11.0, 0.0, 20.0, 10.0),
+        ]);
+        let above = |k: usize| {
+            (k <= 2).then(|| {
+                if k == 2 {
+                    up.clone()
+                } else {
+                    std::sync::Arc::new(Vec::new())
+                }
+            })
+        };
+        let mut l = layer(&[(2.0, 5.0), (18.0, 5.0)], Feature::Support);
+        let before = length(&l);
+        assign(&mut l, &[], &above);
+        assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0, 1]);
+        // Under the gap the path keeps its own owner (the first shelf, nearest its middle on a tie), so it is cut
+        // where it comes under the second shelf, on the same line.
+        let cut = l.path_points(&l.paths[0]).last().copied().unwrap();
+        assert!(
+            (mm(cut)[0] - 11.0).abs() < 0.01 && (mm(cut)[1] - 5.0).abs() < 1e-6,
+            "{cut:?}"
+        );
+        assert_eq!(l.path_points(&l.paths[1]).first().copied(), Some(cut));
+        assert!((length(&l) - before).abs() < 1e-6);
+        // Under one object only, the path keeps one owner and its points.
+        let one = std::sync::Arc::new(vec![square(0, 0.0, 0.0, 20.0, 10.0)]);
+        let mut l = layer(&[(2.0, 5.0), (18.0, 5.0)], Feature::Support);
+        assign(&mut l, &[], &|k| (k <= 2).then(|| one.clone()));
+        assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0]);
+        assert_eq!(l.points.len(), 2);
     }
 
     #[test]
