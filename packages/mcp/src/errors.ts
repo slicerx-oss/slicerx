@@ -28,6 +28,7 @@ export const ERROR_CODES = [
   'collision',
   'not_configured',
   'auth_failed',
+  'signed_out',
   'not_invited',
   'quota_exceeded',
   'rate_limited',
