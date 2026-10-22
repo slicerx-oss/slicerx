@@ -58,6 +58,8 @@ export interface BambuExtra {
   refusePlays?: number
   /** The camera drops a PLAY that comes less than this many milliseconds after its last session ended. */
   dropWithinMs?: number
+  /** How long the camera takes to answer PLAY, in milliseconds, so a test can end an open while PLAY is on the wire. */
+  playDelayMs?: number
   /** When set (ms since the epoch), the camera sessions playing then stop sending frames and keep their connections open. */
   stalledAt?: number
   /** `print.printer_type` in every report (`C12`, or `3DPrinter-X1` as old X1 firmware sends it); absent when unset. */
@@ -532,7 +534,7 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
     get qop() { return extra.digestQop === true },
   }
   // live555 holds a session a while after its connection drops without TEARDOWN.
-  const rtsps = await startRtsp({ tls, login, oneSession: { holdMs: 3000 }, sharedLog: log, dropPlay: () => extra.dropEveryPlay === true || ((extra.dropPlays ?? 0) > 0 && (extra.dropPlays = (extra.dropPlays ?? 0) - 1, true)), refusePlay: () => (extra.refusePlays ?? 0) > 0 && (extra.refusePlays = (extra.refusePlays ?? 0) - 1, true), dropWithinMs: () => extra.dropWithinMs ?? 0, stalled: (startedAt) => extra.stalledAt !== undefined && startedAt <= extra.stalledAt, path: '/streaming/live/1', accept: () => extra.liveview !== false, inBand: () => extra.inBandParameterSets === true })
+  const rtsps = await startRtsp({ tls, login, oneSession: { holdMs: 3000 }, sharedLog: log, dropPlay: () => extra.dropEveryPlay === true || ((extra.dropPlays ?? 0) > 0 && (extra.dropPlays = (extra.dropPlays ?? 0) - 1, true)), refusePlay: () => (extra.refusePlays ?? 0) > 0 && (extra.refusePlays = (extra.refusePlays ?? 0) - 1, true), dropWithinMs: () => extra.dropWithinMs ?? 0, playDelayMs: () => extra.playDelayMs ?? 0, stalled: (startedAt) => extra.stalledAt !== undefined && startedAt <= extra.stalledAt, path: '/streaming/live/1', accept: () => extra.liveview !== false, inBand: () => extra.inBandParameterSets === true })
 
   // SSDP on a loopback UDP port (2021 and 1990 on a real printer): a search for Bambu printers gets
   // the answer by unicast, as a real printer gives it.

@@ -388,10 +388,16 @@ impl Auth {
     }
 }
 
+/// A session being set up. Until [`play`] takes its connection, dropping it ends a session SETUP
+/// made (see its `Drop`): an open given up partway (a time limit on it, a phone that closed its
+/// view) or a PLAY the camera refused.
 struct Client {
     /// For the connection log.
     who: Target,
-    io: Box<dyn Io>,
+    /// The connection, until [`play`] takes it.
+    io: Option<Box<dyn Io>>,
+    /// The URL PLAY and TEARDOWN name.
+    base: String,
     cseq: u32,
     auth: Auth,
     login: Option<(String, String)>,
@@ -434,12 +440,16 @@ impl Client {
     async fn request(&mut self, method: &str, uri: &str, extra: &[(&str, &str)]) -> Option<Response> {
         for attempt in 0..2 {
             let req = self.compose(method, uri, extra);
-            if let Err(e) = self.io.write_all(req.as_bytes()).await {
+            let Some(io) = self.io.as_mut() else {
+                self.closed = true;
+                return None;
+            };
+            if let Err(e) = io.write_all(req.as_bytes()).await {
                 trace(&self.who, format_args!("{method}: not sent: {e}"));
                 self.closed = true;
                 return None;
             }
-            let resp = match tokio::time::timeout(STEP_TIMEOUT, read_response(&mut self.io)).await {
+            let resp = match tokio::time::timeout(STEP_TIMEOUT, read_response(io)).await {
                 Ok(Some(r)) => r,
                 Ok(None) => {
                     trace(
@@ -621,7 +631,8 @@ pub(crate) async fn open(target: &Target) -> Result<FrameStream, Failure> {
     let base = format!("{scheme}://{host}:{}{}", target.port, target.path);
     let mut client = Client {
         who: target.clone(),
-        io,
+        io: Some(io),
+        base: base.clone(),
         cseq: 0,
         auth: Auth::None,
         login: target.login.clone(),
@@ -670,67 +681,74 @@ pub(crate) async fn open(target: &Target) -> Result<FrameStream, Failure> {
         Some(r) => refused(&r),
         None => Err(step_failed(target, "PLAY")),
     };
-    if let Err(f) = played {
-        end_unplayed(client, &base);
-        return Err(f);
-    }
+    // A refused PLAY drops the client here, which ends the session SETUP made.
+    played?;
     let target = target.clone();
     let sps_pps = sdp.sps_pps;
-    Ok(spawn_stream(move |tx| play(target, client, base, sps_pps, tx)))
+    Ok(spawn_stream(move |tx| play(target, client, sps_pps, tx)))
 }
 
-/// Ends a session that was set up but did not play. While the connection is open (the camera refused
-/// PLAY with a status, or did not answer it), TEARDOWN goes out on it, as for a playing session, so
-/// the camera does not keep a session nobody uses. When the camera already closed the connection
-/// nothing is sent: a new connection only to end the session would be one more login on a camera
-/// that is turning sessions away, and live555 ends a session it hears nothing from by itself.
-fn end_unplayed(mut client: Client, base: &str) {
-    if client.session.is_none() {
-        return;
+/// Ends a session that was set up but is not playing for a viewer: the camera refused PLAY, or the
+/// open was given up partway (its future dropped by a time limit, or an aborted task). While the
+/// connection is open, TEARDOWN goes out on it, as for a playing session, so the camera does not keep
+/// a session nobody uses, and the next open of this camera waits for it (`PENDING`). When the camera
+/// already closed the connection nothing is sent: a new connection only to end the session would be
+/// one more login on a camera that is turning sessions away, and live555 ends a session it hears
+/// nothing from by itself. Once [`play`] has taken the connection there is nothing here to end, so a
+/// stream gets one TEARDOWN, from [`Control`].
+impl Drop for Client {
+    fn drop(&mut self) {
+        if self.session.is_none() {
+            return;
+        }
+        let Some(io) = self.io.take() else {
+            return;
+        };
+        if self.closed {
+            trace(
+                &self.who,
+                "TEARDOWN not sent: the camera closed the connection; it ends the session itself",
+            );
+            return;
+        }
+        let Ok(rt) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let base = std::mem::take(&mut self.base);
+        let req = self.compose("TEARDOWN", &base, &[]);
+        let answer = format!("CSeq: {}\r\n", self.cseq);
+        let target = self.who.clone();
+        let done = closing(&target);
+        let (rd, wr) = tokio::io::split(io);
+        rt.spawn(async move {
+            let how = teardown(rd, wr, req.as_bytes(), answer.as_bytes()).await;
+            trace(
+                &target,
+                format_args!("TEARDOWN of a session the open did not finish: {how}"),
+            );
+            drop(done);
+        });
     }
-    if client.closed {
-        trace(
-            &client.who,
-            "TEARDOWN not sent: the camera closed the connection; it ends the session itself",
-        );
-        return;
-    }
-    let Ok(rt) = tokio::runtime::Handle::try_current() else {
-        return;
-    };
-    let req = client.compose("TEARDOWN", base, &[]);
-    let answer = format!("CSeq: {}\r\n", client.cseq);
-    let target = client.who.clone();
-    let done = closing(&target);
-    let (rd, wr) = tokio::io::split(client.io);
-    rt.spawn(async move {
-        let how = teardown(rd, wr, req.as_bytes(), answer.as_bytes()).await;
-        trace(
-            &target,
-            format_args!("TEARDOWN of the session that did not play: {how}"),
-        );
-        drop(done);
-    });
 }
 
 /// Reads a playing stream into frames until it ends, with a keepalive every [`KEEPALIVE`], and logs
 /// the first frames and why it ended.
 async fn play(
     target: Target,
-    client: Client,
-    base: String,
+    mut client: Client,
     sps_pps: Vec<Vec<u8>>,
     tx: tokio::sync::mpsc::Sender<CameraFrame>,
 ) {
-    let Client {
-        who: _,
-        io,
-        auth,
-        login,
-        session,
-        cseq,
-        closed: _,
-    } = client;
+    // From here `Control` ends the session; the client is left with nothing to end.
+    let Some(io) = client.io.take() else {
+        return;
+    };
+    let base = std::mem::take(&mut client.base);
+    let session = client.session.take();
+    let auth = std::mem::replace(&mut client.auth, Auth::None);
+    let login = client.login.take();
+    let cseq = client.cseq;
+    drop(client);
     let (rd, wr) = tokio::io::split(io);
     let mut ctl = Control {
         rd: Some(rd),
@@ -940,14 +958,21 @@ impl Drop for Closing {
 
 /// Waits (at most a little longer than a TEARDOWN may take) for sessions of `t` being ended.
 async fn after_teardowns(t: &Target) {
+    let key = camera_key(t);
+    wait_pending(|k| k == key).await;
+}
+
+/// Waits as [`after_teardowns`] does for sessions being ended of any camera on `host`.
+pub(crate) async fn after_host_teardowns(host: &str) {
+    let prefix = format!("{host}:");
+    wait_pending(|k| k.starts_with(&prefix)).await;
+}
+
+async fn wait_pending(of: impl Fn(&str) -> bool) {
     let waits: Vec<_> = {
         let mut p = PENDING.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         p.retain(|(_, r)| !*r.borrow());
-        let key = camera_key(t);
-        p.iter()
-            .filter(|(k, _)| *k == key)
-            .map(|(_, r)| r.clone())
-            .collect()
+        p.iter().filter(|(k, _)| of(k)).map(|(_, r)| r.clone()).collect()
     };
     for mut w in waits {
         let _ = tokio::time::timeout(TEARDOWN_WAIT * 3, w.wait_for(|done| *done)).await;

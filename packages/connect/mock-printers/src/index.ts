@@ -254,7 +254,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // in (null: the placeholder again); `cameraFrameFile` sends that JPEG file instead, a photo for a capture (null: off).
     if (req.path === '/bambu' && req.method === 'POST') {
       if (!bambuExtra) return { status: 404 }
-      const b = req.json() as { refuse?: string | null; refuseControl?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; grams?: Record<number, number>; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropEveryPlay?: boolean; refusePlays?: number; dropWithinMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; authorizationControl?: BambuExtra['authorizationControl'] | null; storageFull?: boolean; stage?: number | null; chamberTarget?: number | null; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null; dropMqtt?: boolean }
+      const b = req.json() as { refuse?: string | null; refuseControl?: string | null; model?: string; ams?: BambuExtra['ams']; external?: BambuExtra['external'] | null; tagged?: number[]; grams?: Record<number, number>; liveview?: boolean; inBandParameterSets?: boolean; cameraCode?: string | null; digestQop?: boolean; dropPlays?: number; dropEveryPlay?: boolean; refusePlays?: number; dropWithinMs?: number; playDelayMs?: number; stallCamera?: boolean; printerType?: string; storage?: BambuExtra['storage']; emmc?: boolean; developerMode?: boolean | null; authorizationControl?: BambuExtra['authorizationControl'] | null; storageFull?: boolean; stage?: number | null; chamberTarget?: number | null; cameraFrame?: 'hand' | null; cameraFrameFile?: string | null; dropMqtt?: boolean }
       if (b.dropMqtt) bambuDropMqtt?.()
       if (b.printerType !== undefined) bambuExtra.printerType = b.printerType
       if (b.refuseControl === null) delete bambuExtra.refuseControl
@@ -286,6 +286,7 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
       if (b.dropEveryPlay !== undefined) bambuExtra.dropEveryPlay = b.dropEveryPlay
       if (b.refusePlays !== undefined) bambuExtra.refusePlays = b.refusePlays
       if (b.dropWithinMs !== undefined) bambuExtra.dropWithinMs = b.dropWithinMs
+      if (b.playDelayMs !== undefined) bambuExtra.playDelayMs = b.playDelayMs
       if (b.stallCamera) bambuExtra.stalledAt = Date.now()
       if (b.tagged) bambuExtra.tagged = b.tagged
       if (b.grams) bambuExtra.grams = b.grams

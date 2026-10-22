@@ -331,6 +331,52 @@ async fn play_lines(mocks: &Mocks) -> Vec<String> {
         .collect()
 }
 
+// An open given up while PLAY is on the wire (the bridge's open limit, or a phone that closed its
+// view) still ends the session with TEARDOWN. Without it live555 holds the session it was not told
+// about, and the next open is turned away as busy.
+#[tokio::test]
+async fn an_h2d_open_given_up_during_play_frees_the_camera_for_the_next_one() {
+    let mocks = Mocks::start("bambu", &[]).await;
+    mocks
+        .control(
+            "/bambu",
+            serde_json::json!({ "model": "O1D", "playDelayMs": 1500 }),
+        )
+        .await;
+    let session = bambu_session(&mocks, &bambu_config(&mocks)).await;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    let mut open = Box::pin(session.stream());
+    let mut asked = false;
+    for _ in 0..100 {
+        tokio::select! {
+            _ = &mut open => panic!("PLAY is answered only after 1.5 s"),
+            () = tokio::time::sleep(Duration::from_millis(20)) => {}
+        }
+        if play_lines(&mocks).await == ["rtsp PLAY ok"] {
+            asked = true;
+            break;
+        }
+    }
+    assert!(asked, "the open got as far as PLAY");
+    drop(open);
+    mocks
+        .control("/bambu", serde_json::json!({ "playDelayMs": 0 }))
+        .await;
+    // The next open, right away: it waits for that TEARDOWN, then plays.
+    let next = session.stream().await;
+    let lines = play_lines(&mocks).await;
+    let mut s = match next {
+        Ok(Some(s)) => s,
+        Ok(None) => panic!("no stream; the camera saw {lines:?}"),
+        Err(e) => panic!("the next open did not play: {e}; the camera saw {lines:?}"),
+    };
+    take(&mut s, 2).await;
+    assert_eq!(
+        play_lines(&mocks).await,
+        ["rtsp PLAY ok", "rtsp TEARDOWN ok", "rtsp PLAY ok"]
+    );
+}
+
 // A camera that refuses PLAY with a status keeps the connection open. The session SETUP made is
 // ended with TEARDOWN there and then, so the camera does not hold a session nobody uses until it
 // times out. One that closed the connection at PLAY gets no new connection only to end it.

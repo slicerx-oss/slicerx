@@ -2027,6 +2027,64 @@ async fn stills_and_the_live_view_share_one_camera_session() {
     );
 }
 
+// A printer removed while its camera feed plays (a phone or a remote viewer still reading) ends the
+// camera session at once, instead of keeping the H2D's one session for a printer that is gone.
+#[tokio::test]
+async fn removing_a_printer_ends_its_camera_session() {
+    let mocks = common::Mocks::start("bambu", &[]).await;
+    mocks.control("/bambu", json!({ "model": "O1D" })).await;
+    let link = serve(
+        mdns_rig(MdnsConfig::default()),
+        Arc::new(MemoryGate::new()),
+        Arc::new(MemorySecrets::new()),
+    )
+    .await
+    .unwrap();
+    let mut ws = paired(&link).await;
+    let r = call(
+        &mut ws,
+        2,
+        "secrets.set",
+        json!({ "name": "bambu-code", "value": mocks.str("accessCode") }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    let r = call(
+        &mut ws,
+        3,
+        "printers.add",
+        json!({ "config": {
+            "id": "h2d", "name": "H2D", "plugin": "bambu-lan", "host": "127.0.0.1", "port": mocks.port("bambu"),
+            "serial": mocks.str("serial"), "credentialRef": "bambu-code",
+            "rtspPort": mocks.port("bambu-rtsps"),
+        } }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    let r = call(
+        &mut ws,
+        4,
+        "camera.open",
+        json!({ "printerId": "h2d", "quality": "high" }),
+    )
+    .await;
+    assert!(r["result"]["stream"].is_u64(), "{r}");
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert_eq!(rtsp_lines(&mocks.state().await), ["rtsp PLAY ok"]);
+    // The view stays open; only the printer goes.
+    let r = call(&mut ws, 5, "printers.remove", json!({ "printerId": "h2d" })).await;
+    assert_eq!(r["result"]["removed"], true, "{r}");
+    let mut lines = Vec::new();
+    for _ in 0..30 {
+        lines = rtsp_lines(&mocks.state().await);
+        if lines.len() >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(lines, ["rtsp PLAY ok", "rtsp TEARDOWN ok"]);
+}
+
 // rc13: the H2D dropped PLAY 5 to 10 s after a TEARDOWN and the view sat on "did not start" for
 // good. Now the live view opens anyway, hears camera.status retrying, and gets frames once the
 // feed's next try gets in, 2 s later.
