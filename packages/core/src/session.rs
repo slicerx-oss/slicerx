@@ -1410,11 +1410,7 @@ impl SliceSession {
                     min_z = min_z.min(v[2]);
                     xy = [xy[0].min(v[0]), xy[1].min(v[1]), xy[2].max(v[0]), xy[3].max(v[1])];
                 }
-                let paint: crate::paint::Facets = part
-                    .paint
-                    .iter()
-                    .map(|f| (f.v.map(|p| obj.apply(p)), f.state))
-                    .collect();
+                let paint = crate::paint::Facets::placed(&part.paint, &obj.transform);
                 painted_supports.extend(
                     part.support_paint
                         .iter()
@@ -1427,10 +1423,7 @@ impl SliceSession {
                 if !part.fuzzy_paint.is_empty() {
                     fuzzy_paint.push((
                         raw.len(),
-                        part.fuzzy_paint
-                            .iter()
-                            .map(|f| (f.v.map(|p| obj.apply(p)), f.state))
-                            .collect(),
+                        crate::paint::Facets::placed(&part.fuzzy_paint, &obj.transform),
                     ));
                 }
                 raw.push((slot, verts, tris, paint));
@@ -1586,7 +1579,7 @@ impl SliceSession {
         }
         let mut slots: Vec<u8> = parts
             .iter()
-            .flat_map(|p| std::iter::once(p.slot).chain(p.paint.iter().map(|f| f.1)))
+            .flat_map(|p| std::iter::once(p.slot).chain(p.paint.states()))
             .collect();
         slots.sort_unstable();
         slots.dedup();
@@ -3707,7 +3700,7 @@ impl SliceSession {
             let Some(p) = self.parts.get(*k) else { continue };
             let (lo, hi) = facets
                 .iter()
-                .flat_map(|(t, _)| t.iter().map(|v| v[2]))
+                .flat_map(|(t, _)| t.map(|v| v[2]))
                 .fold((f64::MAX, f64::MIN), |(a, b), v| (a.min(v), b.max(v)));
             if z < lo - 1e-6 || z > hi + 1e-6 {
                 continue;
@@ -3718,7 +3711,7 @@ impl SliceSession {
                 continue;
             }
             let shapes = perimeters::shapes_from_loops(&loops);
-            let painted: crate::paint::Facets = facets.iter().filter(|(_, s)| *s == 1).copied().collect();
+            let painted = facets.with_state(1);
             let ctx = crate::paint::LayerPaint {
                 default_slot: 0,
                 shapes: &shapes,
@@ -9582,7 +9575,7 @@ fn keep_color_bands(
 ) -> Result<(LayerPlan, Option<crate::output::VaryLayerCost>)> {
     let mut slots: Vec<u8> = raw
         .iter()
-        .flat_map(|r| std::iter::once(r.0).chain(r.3.iter().map(|f| f.1)))
+        .flat_map(|r| std::iter::once(r.0).chain(r.3.states()))
         .collect();
     slots.sort_unstable();
     slots.dedup();
@@ -9782,7 +9775,8 @@ fn plan_tools(
         if let Some((a, b)) = layers_of(lo, hi) {
             spans.push((p.slot, a, b));
         }
-        for (tri, state) in &p.paint {
+        for (tri, state) in p.paint.iter() {
+            let (tri, state) = (&tri, &state);
             let zs = tri.map(|v| v[2]);
             let (flo, fhi) = (zs[0].min(zs[1]).min(zs[2]), zs[0].max(zs[1]).max(zs[2]));
             if fhi - flo < 1e-6 {

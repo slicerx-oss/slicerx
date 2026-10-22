@@ -183,8 +183,79 @@ type EdgeId = (usize, usize, bool);
 type Seg = ((f64, f64), (f64, f64));
 /// A flat painted face's filament, whether it faces up, and how many layers it is from the layer at hand.
 type FlatKey = (u8, bool, usize);
-/// Painted pieces of a part in mm, with the filament each carries.
-pub(crate) type Facets = Vec<([[f64; 3]; 3], u8)>;
+/// Painted pieces of a part, with the filament each carries, read in mm on the bed ([`Facets::iter`]).
+///
+/// A painted file holds hundreds of thousands of pieces per part (the Pochita keychain: 566,000 over two objects).
+/// Kept as the file gives them, f32 corners in the object's own frame with the object's transform, a piece takes
+/// 40 bytes instead of the 80 of its corners in mm, and every read works out the same mm values the corners had
+/// when they were kept in mm ([`crate::plate::PlateObject::apply_with`]).
+#[derive(Debug, Clone)]
+pub(crate) enum Facets {
+    /// Corners in mm on the bed.
+    Mm(Vec<([[f64; 3]; 3], u8)>),
+    /// Corners in the object's own frame, and the object's column-major transform.
+    Placed(Vec<PaintFacet>, [f32; 16]),
+}
+
+impl Default for Facets {
+    fn default() -> Self {
+        Self::Mm(Vec::new())
+    }
+}
+
+impl From<Vec<([[f64; 3]; 3], u8)>> for Facets {
+    fn from(v: Vec<([[f64; 3]; 3], u8)>) -> Self {
+        Self::Mm(v)
+    }
+}
+
+impl Facets {
+    /// `facets` of an object placed by `transform`, kept as they are (the pieces' room beyond their count is given
+    /// back).
+    pub(crate) fn placed(facets: &[PaintFacet], transform: &[f32; 16]) -> Self {
+        Self::Placed(facets.to_vec(), *transform)
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Self::Mm(v) => v.len(),
+            Self::Placed(v, _) => v.len(),
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Each piece's corners in mm on the bed, with its filament.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = ([[f64; 3]; 3], u8)> + '_ {
+        let (mm, placed) = match self {
+            Self::Mm(v) => (&v[..], None),
+            Self::Placed(v, t) => (&[][..], Some((&v[..], t))),
+        };
+        mm.iter().copied().chain(placed.into_iter().flat_map(|(v, t)| {
+            v.iter()
+                .map(move |f| (f.v.map(|p| crate::plate::PlateObject::apply_with(t, p)), f.state))
+        }))
+    }
+
+    /// Each piece's filament, in the order [`Self::iter`] gives the pieces.
+    pub(crate) fn states(&self) -> impl Iterator<Item = u8> + '_ {
+        let (mm, placed) = match self {
+            Self::Mm(v) => (&v[..], &[][..]),
+            Self::Placed(v, _) => (&[][..], &v[..]),
+        };
+        mm.iter().map(|f| f.1).chain(placed.iter().map(|f| f.state))
+    }
+
+    /// The pieces that carry filament `state`, kept the way these are.
+    pub(crate) fn with_state(&self, state: u8) -> Self {
+        match self {
+            Self::Mm(v) => Self::Mm(v.iter().filter(|f| f.1 == state).copied().collect()),
+            Self::Placed(v, t) => Self::Placed(v.iter().filter(|f| f.state == state).copied().collect(), *t),
+        }
+    }
+}
 
 /// What a part needs to split its outline on one layer.
 pub(crate) struct LayerPaint<'a> {
@@ -847,6 +918,7 @@ impl LayerPaint<'_> {
         // Flat painted faces near this layer.
         let mut flat_tris: BTreeMap<FlatKey, Vec<Vec<IntPoint<i32>>>> = BTreeMap::new();
         for (tri, state) in self.facets.iter().flat_map(|f| f.iter()) {
+            let (tri, state) = (&tri, &state);
             let [a, b, c] = *tri;
             let Some(nz) = unit_nz(tri) else {
                 continue;
@@ -1225,6 +1297,48 @@ mod tests {
     )]
     use super::*;
 
+    /// Pieces kept in the object's frame read back as the same mm values as pieces placed when they were read, in the
+    /// same order, at half the bytes.
+    #[test]
+    fn placed_pieces_read_as_their_corners_in_mm() {
+        let file = [
+            PaintFacet {
+                v: [[0.1, 0.2, 0.3], [1.7, -2.25, 0.5], [3.3, 4.1, 9.9]],
+                state: 2,
+            },
+            PaintFacet {
+                v: [[-5.5, 0.0, 1.0], [2.0, 2.0, 2.0], [0.333, 0.667, 0.999]],
+                state: 1,
+            },
+            PaintFacet {
+                v: [[7.0, 8.0, 9.0], [7.5, 8.5, 9.0], [7.0, 8.5, 9.5]],
+                state: 2,
+            },
+        ];
+        // a turn about z, a scale and a move, column-major
+        let t: [f32; 16] = [
+            0.8, 0.6, 0.0, 0.0, -0.6, 0.8, 0.0, 0.0, 0.0, 0.0, 1.25, 0.0, 128.3, 97.1, 0.0, 1.0,
+        ];
+        let placed = Facets::placed(&file, &t);
+        let mm: Vec<([[f64; 3]; 3], u8)> = file
+            .iter()
+            .map(|f| (f.v.map(|p| crate::plate::PlateObject::apply_with(&t, p)), f.state))
+            .collect();
+        assert_eq!(placed.iter().collect::<Vec<_>>(), mm);
+        assert_eq!(placed.len(), 3);
+        assert_eq!(placed.states().collect::<Vec<_>>(), [2, 1, 2]);
+        let twos = placed.with_state(2);
+        assert_eq!(twos.iter().collect::<Vec<_>>(), [mm[0], mm[2]]);
+        let as_mm = Facets::from(mm.clone());
+        assert_eq!(as_mm.iter().collect::<Vec<_>>(), mm);
+        assert_eq!(as_mm.with_state(1).iter().collect::<Vec<_>>(), [mm[1]]);
+        assert!(Facets::default().is_empty());
+        assert_eq!(
+            std::mem::size_of::<PaintFacet>() * 2,
+            std::mem::size_of::<([[f64; 3]; 3], u8)>()
+        );
+    }
+
     #[test]
     fn the_grid_budget_spaces_layers_out_past_its_cap() {
         static B: GridBudget = GridBudget {
@@ -1381,7 +1495,7 @@ mod tests {
     fn a_painted_wall_takes_the_wedge_nearest_it() {
         let plan = LayerPlan::new(10.0, 0.2, 0.2);
         let outline = square(118.0, 118.0, 138.0, 138.0);
-        let facets: Facets = vec![
+        let facets: Facets = Facets::Mm(vec![
             (
                 [[138.0, 118.0, 0.0], [138.0, 138.0, 0.0], [138.0, 138.0, 10.0]],
                 2,
@@ -1390,7 +1504,7 @@ mod tests {
                 [[138.0, 118.0, 0.0], [138.0, 138.0, 10.0], [138.0, 118.0, 10.0]],
                 2,
             ),
-        ];
+        ]);
         let above = vec![outline.clone(); 5];
         let below = vec![outline.clone(); 3];
         let ctx = LayerPaint {
@@ -1429,7 +1543,7 @@ mod tests {
         // below by about 0.4 mm there.
         let right = |z: f64| 136.0 + 2.0 * z;
         let outline_at = |k: usize| square(118.0, 118.0, right(plan.slice_z[k]), 138.0);
-        let leaning: Facets = vec![
+        let leaning: Facets = Facets::Mm(vec![
             (
                 [
                     [136.0, 118.0, 0.0],
@@ -1446,7 +1560,7 @@ mod tests {
                 ],
                 2,
             ),
-        ];
+        ]);
         let above: Vec<Shapes> = (4..9).map(outline_at).collect();
         let below: Vec<Shapes> = (0..3).rev().map(outline_at).collect();
         let outline = outline_at(3);
@@ -1477,7 +1591,7 @@ mod tests {
 
         // An upright painted side over an unpainted bed face: no paint on the first layer.
         let outline = square(118.0, 118.0, 138.0, 138.0);
-        let upright: Facets = vec![
+        let upright: Facets = Facets::Mm(vec![
             (
                 [[138.0, 118.0, 0.0], [138.0, 138.0, 0.0], [138.0, 138.0, 10.0]],
                 2,
@@ -1486,7 +1600,7 @@ mod tests {
                 [[138.0, 118.0, 0.0], [138.0, 138.0, 10.0], [138.0, 118.0, 10.0]],
                 2,
             ),
-        ];
+        ]);
         let column = vec![outline.clone(); 5];
         let none = vec![Vec::new(); 3];
         let at = |layer: u32, above: &[Shapes], below: &[Shapes]| {
@@ -1514,7 +1628,7 @@ mod tests {
     fn a_painted_top_fills_its_layer_and_reaches_a_step_in_below() {
         let plan = LayerPlan::new(10.0, 0.2, 0.2);
         let outline = square(100.0, 100.0, 160.0, 160.0);
-        let facets: Facets = vec![
+        let facets: Facets = Facets::Mm(vec![
             (
                 [[100.0, 100.0, 10.0], [160.0, 100.0, 10.0], [160.0, 160.0, 10.0]],
                 2,
@@ -1523,7 +1637,7 @@ mod tests {
                 [[100.0, 100.0, 10.0], [160.0, 160.0, 10.0], [100.0, 160.0, 10.0]],
                 2,
             ),
-        ];
+        ]);
         let top = plan.first_at_or_above(10.0) - 1;
         let colors = |layer: usize, above: &[Shapes]| {
             let ctx = LayerPaint {
