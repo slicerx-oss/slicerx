@@ -935,10 +935,15 @@ async fn only_the_app_pages_get_cors_headers() {
             "bearer auth, no credentials mode"
         );
 
+        assert_eq!(hd.get_all("vary").iter().count(), 1, "{origin}: {hd:?}");
+        assert_eq!(hd["vary"], "origin");
+
         let (s, hd) = from_origin(&app, Method::GET, "/v1/access", origin, false).await;
         assert_eq!(s, StatusCode::OK, "{origin}");
         assert_eq!(hd["access-control-allow-origin"], origin);
         assert!(hd.get("access-control-allow-credentials").is_none());
+        assert_eq!(hd.get_all("vary").iter().count(), 1, "{origin}: {hd:?}");
+        assert_eq!(hd["vary"], "origin");
     }
     for origin in [
         "https://evil.example",
@@ -961,5 +966,27 @@ async fn only_the_app_pages_get_cors_headers() {
             !hd.keys().any(|k| k.as_str().starts_with("access-control-")),
             "request from {origin}: {hd:?}"
         );
+        assert_eq!(
+            hd["vary"], "origin",
+            "a cache must not serve this answer to an app page: {origin}"
+        );
+        let (_, hd) = from_origin(&app, Method::OPTIONS, &mesh, origin, true).await;
+        assert_eq!(hd["vary"], "origin", "preflight from {origin}");
     }
+    // A request with no Origin at all (a script or the MCP server) is answered the same way, and says it could differ.
+    let req = Request::builder()
+        .uri("/v1/access")
+        .header("authorization", format!("Bearer {RV_TOKEN}"))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.headers()["vary"], "origin");
+    assert!(
+        !res.headers()
+            .keys()
+            .any(|k| k.as_str().starts_with("access-control-")),
+        "{:?}",
+        res.headers()
+    );
 }
