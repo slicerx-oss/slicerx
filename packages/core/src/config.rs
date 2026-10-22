@@ -1395,6 +1395,20 @@ impl PrintConfig {
                 }
             }
         }
+        // The fan lead time of each filament, in seconds: 0 to 5, as Bambu Studio takes it.
+        let leads: Vec<&Value> = match self.raw.get("pre_start_fan_time") {
+            Some(Value::Array(a)) => a.iter().collect(),
+            Some(v) => vec![v],
+            None => Vec::new(),
+        };
+        for v in leads {
+            if v.as_str().is_some_and(|s| s.trim() == "nil") {
+                continue;
+            }
+            if let Some(n) = num(v) {
+                range("pre_start_fan_time", n, 0.0, crate::fanlead::MAX_LEAD_S)?;
+            }
+        }
         // Geometry tolerances and overlaps Orca bounds only from below (internal_bridge_flow 0 to 2 as Orca
         // has it): values far past anything the settings offer overflow the scaled outlines.
         for (key, default, lo, hi) in [

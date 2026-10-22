@@ -393,7 +393,6 @@
   "no_slow_down_for_cooling_on_outwalls",
   "override_filament_scarf_seam_setting",
   "override_process_overhang_speed",
-  "pre_start_fan_time",
   "prime_tower_enhance_type",
   "prime_tower_lift_height",
   "prime_tower_lift_speed",
