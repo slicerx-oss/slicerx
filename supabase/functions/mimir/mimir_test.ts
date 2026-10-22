@@ -10,6 +10,18 @@ import { allowedOrigin, clientIp, dayKey, type Env, handle, marked, withoutThink
 import { Jwks, verifySession } from './jwt.ts'
 import geomCut from './geom_cut_0.1.4.json' with { type: 'json' }
 
+// A turn hands its settle and its stored transcript (a digest) to waitUntil, so they run past the reply. Every test
+// waits for that work before it ends, or Deno reports the digest as a leak.
+const PENDING: Promise<unknown>[] = []
+const test = (name: string, fn: () => void | Promise<void>) =>
+  Deno.test(name, async () => {
+    try {
+      await fn()
+    } finally {
+      await Promise.all(PENDING.splice(0))
+    }
+  })
+
 type Obj = Record<string, unknown>
 const TOOL = { name: 'design_box', description: 'A box.', input_schema: { type: 'object', properties: {} } }
 const ok = (raw: unknown) => {
@@ -21,7 +33,7 @@ const base = (extra: Obj = {}) => ({ messages: [{ role: 'user', content: 'a 20 m
 
 const SONNET = 'claude-sonnet-5-5'
 
-Deno.test('the model is pinned and the reply capped', () => {
+test('the model is pinned and the reply capped', () => {
   const s = ok(base({ model: 'claude-opus-5-5', max_tokens: 100000 }))
   assertEquals(s.body['model'], MODEL)
   // the turn's model is the proxy's pick, whatever the client names
@@ -33,18 +45,18 @@ Deno.test('the model is pinned and the reply capped', () => {
   assertEquals(ok(base({ max_tokens: 500 })).body['max_tokens'], 500)
 })
 
-Deno.test('thinking is adaptive whatever the client asks', () => {
+test('thinking is adaptive whatever the client asks', () => {
   const s = ok(base({ thinking: { type: 'enabled', budget_tokens: 10000 } }))
   assertEquals(s.body['thinking'], { type: 'adaptive' })
   assertEquals(s.body['output_config'], { effort: 'medium' })
 })
 
-Deno.test('fields outside the allowlist are dropped', () => {
+test('fields outside the allowlist are dropped', () => {
   const s = ok(base({ fallbacks: 'default', mcp_servers: [{ url: 'https://x' }], container: 'c', temperature: 1, metadata: { user_id: 'x' } }))
   for (const k of ['fallbacks', 'mcp_servers', 'container', 'temperature', 'metadata']) assert(!(k in s.body), k)
 })
 
-Deno.test('only client tools and web search pass, with searches capped', () => {
+test('only client tools and web search pass, with searches capped', () => {
   const s = ok(base({ tools: [TOOL, { type: 'web_search_20260209', name: 'web_search', max_uses: 50, allowed_domains: ['x.com'] }] }))
   const tools = s.body['tools'] as Obj[]
   assertEquals(tools[1], { type: 'web_search_20250305', name: 'web_search', max_uses: 3 })
@@ -66,7 +78,7 @@ const GEOM_CUT: Obj = geomCut
 const VEC3 = { type: 'array', prefixItems: [{ type: 'number' }, { type: 'number' }, { type: 'number' }], items: false, minItems: 3, maxItems: 3 }
 const schemaOf = (input_schema: Obj) => (ok(base({ tools: [{ name: 'slicerx_geom_cut', input_schema }] })).body['tools'] as Obj[])[0]!['input_schema'] as Obj
 
-Deno.test('draft-07 tuples go out as 2020-12 prefixItems', () => {
+test('draft-07 tuples go out as 2020-12 prefixItems', () => {
   const sent = structuredClone(GEOM_CUT)
   const s = schemaOf(sent)
   assertEquals(sent, GEOM_CUT)
@@ -83,7 +95,7 @@ Deno.test('draft-07 tuples go out as 2020-12 prefixItems', () => {
   assertEquals(s, rest)
 })
 
-Deno.test('nested tuples are rewritten at every depth', () => {
+test('nested tuples are rewritten at every depth', () => {
   const num = { type: 'number' }
   const pair = { type: 'array', items: [num, num], additionalItems: false }
   const s = schemaOf({
@@ -110,7 +122,7 @@ Deno.test('nested tuples are rewritten at every depth', () => {
   assertEquals(s['definitions'], { p: p2 })
 })
 
-Deno.test('a schema without tuples passes unchanged', () => {
+test('a schema without tuples passes unchanged', () => {
   const plain = {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     type: 'object',
@@ -121,7 +133,7 @@ Deno.test('a schema without tuples passes unchanged', () => {
   assertEquals(schemaOf(structuredClone(plain)), plain)
 })
 
-Deno.test('cache points go on the last tool and system block, and the tail', () => {
+test('cache points go on the last tool and system block, and the tail', () => {
   const s = ok(base({ tools: [TOOL, { ...TOOL, name: 'design_cyl' }], system: 'You are mimir.' }))
   const tools = s.body['tools'] as Obj[]
   assertEquals(tools[0]!['cache_control'], undefined)
@@ -130,7 +142,7 @@ Deno.test('cache points go on the last tool and system block, and the tail', () 
   assertEquals(s.body['cache_control'], { type: 'ephemeral' })
 })
 
-Deno.test('client cache points are kept in 5-minute form and held to four', () => {
+test('client cache points are kept in 5-minute form and held to four', () => {
   const marked = { type: 'text', text: 'x', cache_control: { type: 'ephemeral', ttl: '1h' } }
   const s = ok({
     system: [{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral', ttl: '1h' } }],
@@ -142,7 +154,7 @@ Deno.test('client cache points are kept in 5-minute form and held to four', () =
   assertEquals(s.body['cache_control'], undefined)
 })
 
-Deno.test('replayed history keeps no long cache points', () => {
+test('replayed history keeps no long cache points', () => {
   const s = ok({
     messages: [
       { role: 'user', content: 'look it up' },
@@ -161,7 +173,7 @@ Deno.test('replayed history keeps no long cache points', () => {
   assert(!JSON.stringify(s.body).includes('1h'))
 })
 
-Deno.test('the estimate never undercounts: a token a byte, images at their most, searches in full', () => {
+test('the estimate never undercounts: a token a byte, images at their most, searches in full', () => {
   const text = 'x'.repeat(10_000)
   assert(ok(base({ messages: [{ role: 'user', content: text }] })).promptEstimate >= 10_000)
   // a field named data that is not an image counts as text
@@ -172,7 +184,7 @@ Deno.test('the estimate never undercounts: a token a byte, images at their most,
   assertEquals(worstInput(950_000, 8192, 3), 4 * 1_000_000)
 })
 
-Deno.test('an object shaped like an image outside an image block counts a token a byte', () => {
+test('an object shaped like an image outside an image block counts a token a byte', () => {
   // the re-review's payload: 1.9 MB of text dressed as an image in a tool's input and in a tool's schema
   const fake = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'x'.repeat(1_900_000) } }
   const inInput = base({
@@ -191,7 +203,7 @@ Deno.test('an object shaped like an image outside an image block counts a token 
   assert(est >= 4784 && est < 10_000)
 })
 
-Deno.test('images must be inline, and only in user turns', () => {
+test('images must be inline, and only in user turns', () => {
   const img = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }
   assert(ok({ messages: [{ role: 'user', content: [img] }] }).promptEstimate >= 4784)
   assert(!shape({ messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'url', url: 'https://x/a.png' } }] }] }).ok)
@@ -199,7 +211,7 @@ Deno.test('images must be inline, and only in user turns', () => {
   assert(!shape({ messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'url', url: 'https://x' } }] }] }).ok)
 })
 
-Deno.test('a PDF goes as an inline document in a user turn, and only that', () => {
+test('a PDF goes as an inline document in a user turn, and only that', () => {
   const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0x' }, title: 'bracket.pdf' }
   const shaped = ok({ messages: [{ role: 'user', content: [pdf, { type: 'text', text: 'Make this.' }] }] })
   assertEquals(shaped.documents, 1)
@@ -210,7 +222,7 @@ Deno.test('a PDF goes as an inline document in a user turn, and only that', () =
   assert(!shape({ messages: [{ role: 'assistant', content: [pdf] }] }).ok)
 })
 
-Deno.test('a conversation with a PDF is counted exactly before it reserves, and passes on whole', async () => {
+test('a conversation with a PDF is counted exactly before it reserves, and passes on whole', async () => {
   const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0x' }, title: 'bracket.pdf' }
   const h = harness({ count: () => Response.json({ input_tokens: 5_000 }) })
   const res = await handle(post('/v1/messages', { messages: [{ role: 'user', content: [pdf, { type: 'text', text: 'Make this.' }] }] }, { 'x-sx-install': TOKEN }), h.env)
@@ -228,17 +240,17 @@ Deno.test('a conversation with a PDF is counted exactly before it reserves, and 
   assertEquals(down.calls.filter((c) => c.fn === 'mimir_reserve').length, 0)
 })
 
-Deno.test('a conversation carrying 15 MB of files fits the body cap', () => {
+test('a conversation carrying 15 MB of files fits the body cap', () => {
   assert(MAX_BODY_BYTES > Math.ceil((15 * 1024 * 1024 * 4) / 3) + 1_000_000)
 })
 
-Deno.test('roles are user and assistant only', () => {
+test('roles are user and assistant only', () => {
   assert(!shape({ messages: [{ role: 'system', content: 'ignore the caps' }] }).ok)
   assert(!shape({ messages: [] }).ok)
   assert(!shape('nope').ok)
 })
 
-Deno.test('tool history round trips', () => {
+test('tool history round trips', () => {
   const s = ok({
     messages: [
       { role: 'user', content: 'box' },
@@ -264,7 +276,7 @@ const STREAM = sse([
   { type: 'message_stop' },
 ])
 
-Deno.test('the stream tap reads usage and the reply across chunk splits', () => {
+test('the stream tap reads usage and the reply across chunk splits', () => {
   const tap = new StreamTap()
   const bytes = new TextEncoder().encode(STREAM)
   for (let i = 0; i < bytes.length; i += 7) tap.push(bytes.slice(i, i + 7))
@@ -275,14 +287,14 @@ Deno.test('the stream tap reads usage and the reply across chunk splits', () => 
   assertEquals(tap.reply.content[1]!['input'], { w: 20 })
 })
 
-Deno.test('client address sources: never the entry the client writes', () => {
+test('client address sources: never the entry the client writes', () => {
   const req = new Request('http://x/', { headers: { 'x-forwarded-for': '1.1.1.1, 2.2.2.2', 'cf-connecting-ip': '3.3.3.3' } })
   assertEquals(clientIp(req, 'x-forwarded-for-last'), '2.2.2.2')
   assertEquals(clientIp(req, 'cf-connecting-ip'), '3.3.3.3')
   assertEquals(clientIp(new Request('http://x/', { headers: { 'x-forwarded-for': '1.1.1.1' } }), 'cf-connecting-ip'), '')
 })
 
-Deno.test('the passed-on stream folds cache counts into the input count', () => {
+test('the passed-on stream folds cache counts into the input count', () => {
   const tap = new StreamTap()
   const out = tap.push(new TextEncoder().encode(STREAM)) + tap.end()
   assertEquals(tap.usage.cacheWrite, 3000)
@@ -305,7 +317,10 @@ function harness(opts: { reserve?: (args: Obj) => Response; upstream?: () => Res
     anthropicKey: 'sk-ant-test',
     upstream: 'http://provider',
     ipSource: 'cf-connecting-ip',
-    waitUntil: (p) => pending.push(p),
+    waitUntil: (p) => {
+      pending.push(p)
+      PENDING.push(p)
+    },
     fetch: async (input, rawInit) => {
       const init = rawInit as { body?: unknown; headers?: HeadersInit } | undefined
       const url = String(input)
@@ -338,7 +353,7 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
     body: JSON.stringify(body),
   })
 
-Deno.test('a call reserves, streams through, and settles what it used', async () => {
+test('a call reserves, streams through, and settles what it used', async () => {
   const h = harness()
   const res = await handle(post('/v1/messages', base({ tools: [TOOL] }), { 'x-sx-install': TOKEN }), h.env)
   assertEquals(res.status, 200)
@@ -363,7 +378,7 @@ const STEP = { 'x-sx-install': TOKEN, 'x-sx-tier': 'step' }
 const SAVED = ['mimir_reserve', 'mimir_settle', 'mimir_save_chat']
 const toSonnet = () => Response.json(SONNET)
 
-Deno.test('a step hint gets the step-up model', async () => {
+test('a step hint gets the step-up model', async () => {
   const h = harness({ turnModel: toSonnet })
   const res = await handle(post('/v1/messages', base(), STEP), h.env)
   assertEquals(res.status, 200)
@@ -387,7 +402,7 @@ Deno.test('a step hint gets the step-up model', async () => {
   assertEquals(down.sent[0]!.body['model'], MODEL)
 })
 
-Deno.test('a signed-in member asks for a step-up as the web edition', async () => {
+test('a signed-in member asks for a step-up as the web edition', async () => {
   const h = webHarness()
   const res = await handle(post('/v1/messages', base(), { ...bearer(await session()), 'x-sx-tier': 'step' }), h.env)
   assertEquals(res.status, 200)
@@ -398,7 +413,7 @@ Deno.test('a signed-in member asks for a step-up as the web edition', async () =
   assertEquals(h.calls[1]!.args, { p_edition: 'slicerx-web', p_tier: 'step' })
 })
 
-Deno.test('a client model id is still ignored', async () => {
+test('a client model id is still ignored', async () => {
   // the model comes from mimir_turn_model, never the body
   const h = harness({ turnModel: toSonnet })
   await (await handle(post('/v1/messages', base({ model: 'claude-opus-5-5' }), STEP), h.env)).text()
@@ -416,7 +431,7 @@ Deno.test('a client model id is still ignored', async () => {
   }
 })
 
-Deno.test('a capped install falls back to the base model', async () => {
+test('a capped install falls back to the base model', async () => {
   const capped = (args: Obj) =>
     args['p_model'] === SONNET ? Response.json({ message: 'daily limit', hint: 'install_daily' }, { status: 400 }) : Response.json('33333333-3333-3333-3333-333333333333')
   const h = harness({ turnModel: toSonnet, reserve: capped })
@@ -444,7 +459,7 @@ Deno.test('a capped install falls back to the base model', async () => {
   assertEquals(busy.calls.filter((c) => c.fn === 'mimir_reserve').map((c) => c.args['p_model']), [SONNET])
 })
 
-Deno.test('a step-up turn whose PDF count fails goes on the base model', async () => {
+test('a step-up turn whose PDF count fails goes on the base model', async () => {
   const pdf = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0x' } }
   const body = { messages: [{ role: 'user', content: [pdf, { type: 'text', text: 'Make this.' }] }] }
   const counts = (h: ReturnType<typeof harness>) => h.sent.filter((x) => x.url.endsWith('/count_tokens')).map((x) => x.body['model'])
@@ -471,7 +486,7 @@ Deno.test('a step-up turn whose PDF count fails goes on the base model', async (
   assertEquals(counts(base1), [MODEL])
 })
 
-Deno.test('reserve, settle and save use the turn\'s model', async () => {
+test('reserve, settle and save use the turn\'s model', async () => {
   const h = harness({ turnModel: toSonnet })
   await (await handle(post('/v1/messages', base(), STEP), h.env)).text()
   await Promise.all(h.pending)
@@ -484,14 +499,14 @@ Deno.test('reserve, settle and save use the turn\'s model', async () => {
   assertEquals(capped.calls.find((c) => c.fn === 'mimir_settle')!.args['p_model'], SONNET)
 })
 
-Deno.test('the client never sets provider headers', async () => {
+test('the client never sets provider headers', async () => {
   const h = harness()
   await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN, 'anthropic-beta': 'server-side-fallback-2026-07-01', 'x-api-key': 'sk-ant-theirs' }), h.env)
   assertEquals(h.sent[0]!.headers.get('anthropic-beta'), null)
   assertEquals(h.sent[0]!.headers.get('x-api-key'), 'sk-ant-test')
 })
 
-Deno.test('a saved chat keeps no image data, files its prompt apart, and follows the client', async () => {
+test('a saved chat keeps no image data, files its prompt apart, and follows the client', async () => {
   const img = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'QUJD'.repeat(100) } }
   const msg = { system: 'You are mimir.', tools: [TOOL], messages: [{ role: 'user', content: [img, { type: 'text', text: 'like this' }] }] }
   const h = harness()
@@ -524,13 +539,13 @@ Deno.test('a saved chat keeps no image data, files its prompt apart, and follows
   assert(!off.calls.some((c) => c.fn === 'mimir_save_chat'))
 })
 
-Deno.test('the session key for a client without one is the Melbourne day', () => {
+test('the session key for a client without one is the Melbourne day', () => {
   // 2026-10-13 14:30 UTC is already the 14th in Melbourne
   assertEquals(dayKey(new Date('2026-10-13T14:30:00Z')), 'day-20261014')
   assertEquals(dayKey(new Date('2026-10-13T12:00:00Z')), 'day-20261013')
 })
 
-Deno.test('a saved reply keeps every tool call whole, however long the text before it', async () => {
+test('a saved reply keeps every tool call whole, however long the text before it', async () => {
   const input = { ops: Array.from({ length: 400 }, (_, i) => ({ op: 'extrude', sketch: `s${i}`, distance: 2.5 })) }
   const json = JSON.stringify(input)
   const stream = sse([
@@ -549,7 +564,7 @@ Deno.test('a saved reply keeps every tool call whole, however long the text befo
   assertEquals(reply[1]!['input'], input)
 })
 
-Deno.test('a failed, refused or cut-short call stores no session', async () => {
+test('a failed, refused or cut-short call stores no session', async () => {
   const shared = { 'x-sx-install': TOKEN, 'x-sx-share': '1', 'x-sx-session': 's-1', 'x-sx-version': '0.2.0' }
   const streams = [
     sse([{ type: 'message_start', message: { usage: { input_tokens: 5 } } }, { type: 'error', error: { type: 'overloaded_error', message: 'busy' } }]),
@@ -572,7 +587,7 @@ Deno.test('a failed, refused or cut-short call stores no session', async () => {
   assert(!refused.calls.some((c) => c.fn === 'mimir_save_chat'))
 })
 
-Deno.test('a turn over 1 MB is not stored', async () => {
+test('a turn over 1 MB is not stored', async () => {
   const h = harness()
   const big = { messages: [{ role: 'user', content: 'x'.repeat(1_100_000) }] }
   await (await handle(post('/v1/messages', big, { 'x-sx-install': TOKEN, 'x-sx-share': '1', 'x-sx-session': 's-1', 'x-sx-version': '0.2.0' }), h.env)).text()
@@ -580,7 +595,7 @@ Deno.test('a turn over 1 MB is not stored', async () => {
   assert(!h.calls.some((c) => c.fn === 'mimir_save_chat'))
 })
 
-Deno.test('when the byte estimate hits a daily cap, the exact count gets one more try', async () => {
+test('when the byte estimate hits a daily cap, the exact count gets one more try', async () => {
   let n = 0
   const h = harness({
     reserve: () => (n++ === 0 ? Response.json({ message: 'daily limit', hint: 'install_daily' }, { status: 400 }) : Response.json('22222222-2222-2222-2222-222222222222')),
@@ -602,7 +617,7 @@ Deno.test('when the byte estimate hits a daily cap, the exact count gets one mor
   }
 })
 
-Deno.test('the exact count leaves out thinking blocks signed in another conversation, and counts them a token a byte', async () => {
+test('the exact count leaves out thinking blocks signed in another conversation, and counts them a token a byte', async () => {
   // an agent turn as LayerMate sends it: its earlier thinking, signed by the provider for that conversation
   const signed = { type: 'thinking', thinking: 'Plan the hook: a plate, an arm, an upturned tip.', signature: 'EqQBCkYIBxgCKkB'.repeat(40) }
   const redacted = { type: 'redacted_thinking', data: 'EmwKAhgBEgy3va3pzix'.repeat(20) }
@@ -645,14 +660,14 @@ Deno.test('the exact count leaves out thinking blocks signed in another conversa
   assertEquals(((sent['messages'] as Obj[])[1]!['content'] as Obj[])[0]!['signature'], signed.signature)
 })
 
-Deno.test('a turn with no thinking blocks is counted as it is', () => {
+test('a turn with no thinking blocks is counted as it is', () => {
   const m = [{ role: 'user', content: 'hi' }, { role: 'assistant', content: [{ type: 'text', text: 'hello' }] }]
   const out = withoutThinking(m)
   assertEquals(out.bytes, 0)
   assertEquals(out.messages, m)
 })
 
-Deno.test('a refused call counts toward the rates, once per request', async () => {
+test('a refused call counts toward the rates, once per request', async () => {
   for (const hint of ['install_daily', 'ip_busy', 'edition_busy']) {
     const h = harness({ reserve: () => Response.json({ message: 'no', hint }, { status: 400 }) })
     assertEquals((await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)).status, hint === 'edition_busy' ? 503 : 429)
@@ -666,7 +681,7 @@ Deno.test('a refused call counts toward the rates, once per request', async () =
   }
 })
 
-Deno.test('each install caches apart: a mark after the shared tools and system prompt', async () => {
+test('each install caches apart: a mark after the shared tools and system prompt', async () => {
   const sys = { system: [{ type: 'text', text: 'You are mimir.' }], tools: [TOOL] }
   const one = harness()
   await (await handle(post('/v1/messages', base(sys), { 'x-sx-install': TOKEN }), one.env)).text()
@@ -685,7 +700,7 @@ Deno.test('each install caches apart: a mark after the shared tools and system p
   assertEquals(marked({ messages: [] }, 'ab')['system'], [{ type: 'text', text: 'scope ab' }])
 })
 
-Deno.test('a cap answers 429 with its reason and never reaches the provider', async () => {
+test('a cap answers 429 with its reason and never reaches the provider', async () => {
   const h = harness({ reserve: () => Response.json({ message: 'daily limit', hint: 'install_daily' }, { status: 400 }) })
   const res = await handle(post('/v1/messages', base(), { 'x-sx-install': TOKEN }), h.env)
   assertEquals(res.status, 429)
@@ -699,7 +714,7 @@ Deno.test('a cap answers 429 with its reason and never reaches the provider', as
   assert(!h.sent.some((x) => x.url.endsWith('/v1/messages')), 'nothing reaches the model')
 })
 
-Deno.test('requests without a token, too large, or refused never reach the database', async () => {
+test('requests without a token, too large, or refused never reach the database', async () => {
   const h = harness()
   const none = await handle(post('/v1/messages', base()), h.env)
   assertEquals([none.status, ((await none.json()) as { error: Obj }).error['code']], [401, 'not_registered'])
@@ -714,7 +729,7 @@ Deno.test('requests without a token, too large, or refused never reach the datab
   assertEquals(h.calls.length, 0)
 })
 
-Deno.test('a provider failure settles at nothing and says so plainly', async () => {
+test('a provider failure settles at nothing and says so plainly', async () => {
   const zero = { p_input: 0, p_cache_write: 0, p_cache_read: 0, p_output: 0, p_searches: 0 }
   const cases = [
     [529, 'overloaded_error', 503, 'provider_busy', /^The model is busy right now\. Try again in a moment\. \(error [0-9a-f]{8}\)$/],
@@ -778,7 +793,7 @@ async function captureLogs(run: () => Promise<void>): Promise<{ info: Obj[]; err
   return { info, error, raw }
 }
 
-Deno.test('a provider error logs one JSON line, with the provider\'s words kept to 300 characters, never the key or the prompt', async () => {
+test('a provider error logs one JSON line, with the provider\'s words kept to 300 characters, never the key or the prompt', async () => {
   const long = 'tools.3.custom.input_schema: bad ' + 'x'.repeat(400)
   const logs = await captureLogs(async () => {
     const h = harness({ upstream: () => Response.json({ type: 'error', error: { type: 'invalid_request_error', message: long } }, { status: 400 }) })
@@ -800,7 +815,7 @@ Deno.test('a provider error logs one JSON line, with the provider\'s words kept 
   assert(!logs.raw.includes('a 20 mm cube'), 'no prompt in the log')
 })
 
-Deno.test('every refusal reads plainly, with its code', async () => {
+test('every refusal reads plainly, with its code', async () => {
   const caps: [string, number, string, RegExp][] = [
     ['install_daily', 429, 'day_used', /^You've used today's free mimir\. It resets in /],
     ['ip_daily', 429, 'day_used', /^You've used today's free mimir\./],
@@ -848,7 +863,7 @@ Deno.test('every refusal reads plainly, with its code', async () => {
   }
 })
 
-Deno.test('a provider out of credit, or refusing our key, pauses free mimir plainly and alerts us once', async () => {
+test('a provider out of credit, or refusing our key, pauses free mimir plainly and alerts us once', async () => {
   const refusals = [
     [400, 'invalid_request_error', 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'],
     [402, 'billing_error', 'payment required'],
@@ -878,7 +893,7 @@ Deno.test('a provider out of credit, or refusing our key, pauses free mimir plai
   }
 })
 
-Deno.test('an error on our side reads plainly, with an id', async () => {
+test('an error on our side reads plainly, with an id', async () => {
   const h = harness({ forget: () => Response.json({ message: 'boom' }, { status: 500 }) })
   const logs = await captureLogs(async () => {
     const res = await handle(post('/forget', {}, { 'x-sx-install': TOKEN }), h.env)
@@ -892,7 +907,7 @@ Deno.test('an error on our side reads plainly, with an id', async () => {
   assertEquals([nope.status, ((await nope.json()) as { error: Obj }).error['code']], [404, 'not_found'])
 })
 
-Deno.test('quota keeps its v1 fields and adds v2 for the usage page', async () => {
+test('quota keeps its v1 fields and adds v2 for the usage page', async () => {
   const h = harness()
   const res = await handle(new Request('http://fn/functions/v1/mimir/quota', { headers: { 'x-sx-install': TOKEN, 'cf-connecting-ip': '9.9.9.9' } }), h.env)
   assertEquals(res.status, 200)
@@ -900,7 +915,7 @@ Deno.test('quota keeps its v1 fields and adds v2 for the usage page', async () =
   assertEquals(h.calls.find((c) => c.fn === 'mimir_usage')!.args, { p_token: TOKEN })
 })
 
-Deno.test('the reset is the next midnight in Melbourne, either side of daylight saving', () => {
+test('the reset is the next midnight in Melbourne, either side of daylight saving', () => {
   assertEquals(resetsAt(new Date('2026-10-13T03:00:00Z')).toISOString(), '2026-10-13T13:00:00.000Z')
   assertEquals(resetsAt(new Date('2026-06-01T03:00:00Z')).toISOString(), '2026-06-01T14:00:00.000Z')
   // the night daylight saving starts (4 October 2026, 02:00 becomes 03:00)
@@ -912,7 +927,7 @@ Deno.test('the reset is the next midnight in Melbourne, either side of daylight 
   assertEquals(inWords(1_000), '1 min')
 })
 
-Deno.test('register, quota and forget', async () => {
+test('register, quota and forget', async () => {
   const h = harness()
   const key = 'layermate-build-key-1'
   const r = await handle(post('/register', { edition: 'layermate', key }), h.env)
@@ -927,7 +942,7 @@ Deno.test('register, quota and forget', async () => {
   assertEquals((await handle(new Request('http://fn/functions/v1/mimir/nope'), h.env)).status, 404)
 })
 
-Deno.test('browsers call from the web app only, with CORS on every answer', async () => {
+test('browsers call from the web app only, with CORS on every answer', async () => {
   assert(allowedOrigin('https://slicerx.app'))
   for (const o of ['http://localhost:5173', 'http://127.0.0.1:4391', 'https://evil.example', 'http://slicerx.app', 'https://slicerx.app.evil.example', 'http://localhost.evil.example', 'null']) assert(!allowedOrigin(o), o)
   const h = harness()
@@ -984,7 +999,7 @@ function webHarness() {
 }
 const bearer = (t: string) => ({ authorization: `Bearer ${t}` })
 
-Deno.test('a signed-in member calls as the web edition, keyed by their id, on the web key', async () => {
+test('a signed-in member calls as the web edition, keyed by their id, on the web key', async () => {
   const h = webHarness()
   const res = await handle(post('/v1/messages', base(), { ...bearer(await session()), origin: 'https://slicerx.app' }), h.env)
   assertEquals(res.status, 200)
@@ -1006,7 +1021,7 @@ Deno.test('a signed-in member calls as the web edition, keyed by their id, on th
   assertMatch(pre.headers.get('access-control-allow-headers') ?? '', /authorization/)
 })
 
-Deno.test('no session, an expired one, another project\'s, or a forged one is refused before the database', async () => {
+test('no session, an expired one, another project\'s, or a forged one is refused before the database', async () => {
   const h = webHarness()
   const now = Math.floor(Date.now() / 1000)
   const refused: [string, Record<string, string>][] = [
@@ -1034,7 +1049,7 @@ Deno.test('no session, an expired one, another project\'s, or a forged one is re
   assertEquals(h.sent.length, 0)
 })
 
-Deno.test('the session check, on its own', async () => {
+test('the session check, on its own', async () => {
   const jwks = new Jwks('x', (async () => Response.json({ keys: [ourJwk] })) as typeof fetch)
   assertEquals(await verifySession(await session(), jwks, ISSUER), { ok: true, user: USER })
   assertEquals(await verifySession(await session({ exp: Math.floor(Date.now() / 1000) - 10 }), jwks, ISSUER), { ok: true, user: USER }, 'within the skew')
@@ -1052,7 +1067,7 @@ Deno.test('the session check, on its own', async () => {
   assertEquals(n, 2)
 })
 
-Deno.test('a server without the web key or key set refuses sessions, and desktop installs never use the web key', async () => {
+test('a server without the web key or key set refuses sessions, and desktop installs never use the web key', async () => {
   const h = harness()
   const res = await handle(post('/v1/messages', base(), bearer(await session())), h.env)
   assertEquals(res.status, 503)
