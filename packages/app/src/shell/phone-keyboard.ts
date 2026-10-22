@@ -6,7 +6,7 @@
 // the viewport (and the VirtualKeyboard API where a browser has it), never from an assumed keyboard height:
 // --phone-kb is how far the keys reach up over the page's bottom, --phone-vv-top and --phone-vv-h are where the visible
 // part starts and how tall it is, and data-phone-kb is set while the keyboard is up. The mimir tab fits itself to them.
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 
 /** How far an on-screen keyboard covers the bottom of the window, px: the layout height below the visible part. */
 export function keyboardLift(innerHeight: number, vv: { height: number; offsetTop: number }): number {
@@ -40,6 +40,27 @@ const TEXT = 'textarea, [contenteditable=""], [contenteditable="true"], input:no
 
 type VirtualKeyboard = EventTarget & { boundingRect: DOMRectReadOnly }
 
+// whether the keyboard is up, for components that change with it (the mimir drawing folds while a size is typed in)
+let keyboardUp = false
+const listeners = new Set<() => void>()
+function setKeyboardUp(up: boolean): void {
+  if (up === keyboardUp) return
+  keyboardUp = up
+  for (const l of listeners) l()
+}
+
+/** True while a phone's on-screen keyboard is up (html[data-phone-kb]). */
+export function usePhoneKeyboardUp(): boolean {
+  return useSyncExternalStore(
+    (l) => {
+      listeners.add(l)
+      return () => listeners.delete(l)
+    },
+    () => keyboardUp,
+    () => false,
+  )
+}
+
 /** Keeps the root's keyboard properties current while the phone layout applies. */
 export function usePhoneKeyboard(phone: boolean): void {
   useEffect(() => {
@@ -64,6 +85,7 @@ export function usePhoneKeyboard(phone: boolean): void {
       root.style.setProperty('--phone-vv-top', `${s.top}px`)
       root.style.setProperty('--phone-vv-h', `${s.shown}px`)
       root.toggleAttribute('data-phone-kb', s.up)
+      setKeyboardUp(s.up)
     }
     // focus moving from one field to the next passes through the page: read once it has landed
     let frame = 0
@@ -88,6 +110,7 @@ export function usePhoneKeyboard(phone: boolean): void {
       document.removeEventListener('focusout', later)
       for (const p of ['--phone-kb', '--phone-vv-top', '--phone-vv-h']) root.style.removeProperty(p)
       root.removeAttribute('data-phone-kb')
+      setKeyboardUp(false)
     }
   }, [phone])
 }
