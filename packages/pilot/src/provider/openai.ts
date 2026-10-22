@@ -12,6 +12,9 @@ const DEFAULT_BASE = 'https://api.openai.com/v1'
 export const encodeToolName = (name: string): string => name.replaceAll('.', '__')
 export const decodeToolName = (name: string): string => name.replaceAll('__', '.')
 
+/** OpenAI-style APIs refuse a request with more tools than this ("array too long ... maximum length 128"). */
+export const OPENAI_MAX_TOOLS = 128
+
 type Obj = Record<string, unknown>
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
@@ -76,6 +79,7 @@ function replayable(item: Obj): Obj | null {
 export function createOpenAiAdapter(): LlmAdapter {
   return {
     id: 'openai',
+    maxTools: OPENAI_MAX_TOOLS,
     build(req: LlmRequest, opts?: { baseUrl?: string }): LlmHttpRequest {
       const tools: unknown[] = req.tools.map((t) => ({
         type: 'function',
