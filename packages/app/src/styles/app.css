@@ -754,7 +754,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .obj-set-hits { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; }
 .obj-set-hits button { width: 100%; text-align: left; border: 0; background: none; color: var(--fg); padding: 5px 6px; border-radius: var(--r-xs); font: var(--fs-sm) var(--f-body); cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
 .obj-set-hits button:hover { background: var(--ink-3); }
-.tool-form { display: flex; flex-direction: column; gap: 10px; min-width: min(360px, 80vw); }
+.tool-form { --tp-ctl: var(--w-ctl); display: flex; flex-direction: column; gap: 10px; min-width: min(360px, 80vw); }
+.tool-form .tp-num { height: var(--h-md); font-size: var(--fs-body); }
+.tool-form .tp-row > .sx-seg { justify-self: end; }
 .tool-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--fs-md); }
 .obj-actions .sx-menu-anchor:nth-last-child(2) { margin-left: auto; }
 .obj-actions .sx-menu-anchor:last-child { margin-left: 0; }

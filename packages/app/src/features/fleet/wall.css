@@ -23,7 +23,8 @@
 .wall-count-label { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-md); color: var(--muted); }
 .wall-count-label::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--tone); flex: none; }
 .wall-count-n { font: var(--fw-semibold) calc(28px * var(--text-scale))/1 var(--f-body); font-variant-numeric: tabular-nums; }
-.wall-count-sub { font-size: var(--fs-sm); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+/* a long line takes two before it is cut (spec 2b); the cards of a row share one height */
+.wall-count-sub { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: var(--fs-sm); line-height: 1.35; color: var(--dim); font-variant-numeric: tabular-nums; }
 
 .wall-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(290px, 100%), 1fr)); gap: var(--s-4); }
 .wall-skeleton { min-height: 240px; }

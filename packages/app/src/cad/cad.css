@@ -116,11 +116,18 @@
    settings, one 34 px control height, every single field or compact select 96 px wide at the right edge, radii 6 for
    controls and 10 for cards, and the unit once beside the label. */
 .cad.tp { --tp-gap: var(--s-3); --tp-ctl: var(--w-ctl); gap: var(--tp-gap); }
+/* a choice whose select needs the next step grows the whole column to it, so edges stay aligned and no row stacks
+   between inline ones (spec 2, 2b); a tool whose wide row comes and goes keeps the grown column (column="grown") so a
+   press never resizes the controls above */
+.cad.tp:has(.tp-choice[data-grow]), .cad.tp[data-column='grown'] { --tp-ctl: var(--w-sel); }
 .cad.tp > .sx-block-h { margin-bottom: 0; }
 .cad.tp > .sx-block-h h3 { flex: none; }
 /* the tool's state, on the right of its header, then the header's own action: the state gives way, never the name */
 .cad.tp > .sx-block-h .sx-block-aside { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-2); min-width: 0; font: var(--fw-medium) var(--fs-sm) / 1.2 var(--f-body); color: var(--dim); }
 .tp-state { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* beside a header action (the sketch's Other plane) the state takes two lines before it is cut, so a long object name
+   stays readable; the action is taller than two lines, so the header keeps its height */
+.cad.tp > .sx-block-h:has(.tp-head-action) .tp-state { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 1.2; text-align: right; }
 .tp-head-action { flex: none; display: flex; }
 .cad.tp > .sx-block-h + div { display: flex; flex-direction: column; gap: var(--tp-gap); min-width: 0; }
 /* groups that came in their own wrapper stack with the same gap */
@@ -196,9 +203,6 @@
 .tp-actions-start > .sx-btn[data-variant='ghost']:first-child, .tp-actions-extra > .sx-btn[data-variant='ghost']:first-child { padding-inline: 0 var(--s-2); border-left-width: 0; }
 .tp-actions-start > .sx-btn[data-variant='ghost']:first-child:hover, .tp-actions-extra > .sx-btn[data-variant='ghost']:first-child:hover { background: none; }
 /* a button's label keeps the width of its widest form */
-.tp-steady { display: inline-grid; justify-items: center; }
-.tp-steady > * { grid-area: 1 / 1; }
-.tp-steady-sizer::before { content: attr(data-sizer); visibility: hidden; }
 .tp-line { display: block; }
 .tp-aside { margin-left: var(--s-1); font-size: var(--fs-xs); color: var(--dim); }
 /* a row whose label is a sentence about the control beside it */
