@@ -68,6 +68,7 @@
   "prime_tower_extra_rib_length": "wipe_tower_extra_rib_length",
   "prime_tower_rib_width": "wipe_tower_rib_width",
   "prime_tower_fillet_wall": "wipe_tower_fillet_wall",
+  "prime_tower_rib_wall": "wipe_tower_wall_type",
   "extruder_clearance_max_radius": "extruder_clearance_radius",
   "machine_switch_extruder_time": "machine_tool_change_time"
  },
@@ -271,6 +272,26 @@
    "key": "support_ironing_pattern",
    "from": "zig-zag",
    "to": "rectilinear"
+  },
+  {
+   "key": "prime_tower_rib_wall",
+   "from": "1",
+   "to": "rib"
+  },
+  {
+   "key": "prime_tower_rib_wall",
+   "from": "0",
+   "to": "rectangle"
+  },
+  {
+   "key": "prime_tower_rib_wall",
+   "from": "true",
+   "to": "rib"
+  },
+  {
+   "key": "prime_tower_rib_wall",
+   "from": "false",
+   "to": "rectangle"
   }
  ],
  "drop_if_percent": [

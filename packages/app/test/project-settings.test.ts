@@ -26,6 +26,13 @@ describe('project settings', () => {
     expect(projectSettingChanges({ reduce_infill_retraction: '1' }, baseConfig()).values['reduce_infill_retraction']).toBe(true)
   })
 
+  it("reads Bambu Studio's prime_tower_rib_wall as the prime tower wall type", () => {
+    const rib = projectSettingChanges({ prime_tower_rib_wall: '1' }, { ...baseConfig(), wipe_tower_wall_type: 'rectangle' })
+    expect(rib.values['wipe_tower_wall_type']).toBe('rib')
+    const plain = projectSettingChanges({ prime_tower_rib_wall: '0' }, { ...baseConfig(), wipe_tower_wall_type: 'rib' })
+    expect(plain.values['wipe_tower_wall_type']).toBe('rectangle')
+  })
+
   it('leaves out G-code, scripts, credentials and printer settings', () => {
     const r = projectSettingChanges(
       { machine_start_gcode: 'M104 S300', post_process: ['rm -rf /'], printhost_apikey: 'secret', printable_height: '999', nozzle_temperature: ['215'] },

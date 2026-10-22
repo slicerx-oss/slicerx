@@ -116,6 +116,22 @@ describe('errors and legacy keys', () => {
     expect(read({ reduce_infill_retraction_mode: 'Sometimes', reduce_infill_retraction: '1' }).v).toBe(true)
     expect(read({}).v).toBeUndefined()
   })
+  it("reads Bambu Studio's prime_tower_rib_wall as the prime tower wall type", () => {
+    const read = (extra: Record<string, unknown>) => {
+      const r = importFlat(extra)
+      expect(r.unknownKeys).toEqual([])
+      expect(r.invalidKeys).toEqual([])
+      return r.config['wipe_tower_wall_type']
+    }
+    expect(read({ prime_tower_rib_wall: '1' })).toBe('rib')
+    expect(read({ prime_tower_rib_wall: '0' })).toBe('rectangle')
+    expect(read({ prime_tower_rib_wall: 'true' })).toBe('rib')
+    expect(read({ prime_tower_rib_wall: 'false' })).toBe('rectangle')
+    // The file's own wall type wins when it has both, in either order.
+    expect(read({ prime_tower_rib_wall: '1', wipe_tower_wall_type: 'rectangle' })).toBe('rectangle')
+    expect(read({ wipe_tower_wall_type: 'rib', prime_tower_rib_wall: '0' })).toBe('rib')
+    expect(read({})).toBeUndefined()
+  })
   it('reports unknown keys and bad values instead of guessing', () => {
     const r = importOrcaProfile({ name: 'p', type: 'process', made_up_key: '1', layer_height: 'thick', wall_loops: '3' }, () => undefined)
     expect(r.unknownKeys).toEqual(['made_up_key'])

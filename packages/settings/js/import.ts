@@ -109,6 +109,8 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
     if (PROFILE_META_KEYS.has(rawKey)) continue
     // The mode replaces the old switch when the file has both (see infillRetractionFromMode).
     if (fromMode !== undefined && (rawKey === 'reduce_infill_retraction_mode' || rawKey === 'reduce_infill_retraction')) continue
+    // Bambu Studio's rib wall switch reads as our wall type (legacy.json); the file's own wall type wins.
+    if (rawKey === 'prime_tower_rib_wall' && 'wipe_tower_wall_type' in merged) continue
     if (OBSOLETE.has(rawKey) && !settingDef(rawKey)) {
       ignoredKeys.push(rawKey)
       continue
