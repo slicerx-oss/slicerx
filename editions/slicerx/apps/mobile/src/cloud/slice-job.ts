@@ -4,8 +4,9 @@
 // cloud slicer (Host['cloud'], a SlicerHost), and the G-code comes back as a
 // JobFile ready for PrinterHost.upload. Nothing here touches a printer; sending
 // is a separate, approval-gated step (screens/slice.tsx).
-import type { EasySettings, GcodeFlavor, JobFile, PrintConfig, PrinterInfo, SliceStage, SlicerHost } from '@slicerx/contracts'
+import type { EasySettings, GcodeFlavor, JobFile, PlateObject, PrintConfig, PrinterInfo, SliceStage, SlicerHost } from '@slicerx/contracts'
 import { applyEasy, defaultConfig } from '@slicerx/settings'
+import { meshBounds } from './stl'
 
 export const MATERIALS = ['pla', 'petg', 'abs', 'tpu'] as const
 export type Material = (typeof MATERIALS)[number]
@@ -52,7 +53,8 @@ export interface CloudSliceOutcome {
   timeS: number
   grams: number
   layerHeight: number
-  sizeMm: [number, number, number]
+  /** Only for a file the phone could measure (an STL). */
+  sizeMm?: [number, number, number]
   warnings: string[]
 }
 
@@ -89,6 +91,15 @@ export function phoneConfig(easy: EasySettings, printer: PrinterInfo, material: 
   return cfg
 }
 
+/**
+ * The send screen's time and filament estimate from a local run. The local estimator sizes a model
+ * from its bounds, so a file the phone could not measure (3MF, OBJ) gets no estimate until the cloud
+ * slices it.
+ */
+export function estimateOf(o: Pick<CloudSliceOutcome, 'timeS' | 'grams' | 'sizeMm'>): { timeS: number; grams: number; plates: number } | null {
+  return o.sizeMm ? { timeS: o.timeS, grams: o.grams, plates: 1 } : null
+}
+
 function abortError(): DOMException {
   return new DOMException('Slice canceled', 'AbortError')
 }
@@ -103,20 +114,26 @@ export async function runCloudSlice(
   onPhase({ kind: 'uploading' })
   const data = await input.model.load()
   if (signal?.aborted) throw abortError()
+  // The phone measures only STL, and only for the build volume warning. No file gets a transform:
+  // the cloud slicer centers the real mesh on the bed and sets it down, wherever its coordinates sit.
+  const bounds = meshBounds(data)
   const mesh = await cloud.loadModel(data, input.model.name)
   const shape = machineFor(input.printer)
   const [bw, bd, bh] = shape.bed
-  const [mx, my, mz] = mesh.bboxMm
   const warnings: string[] = []
-  if (mx > bw || my > bd || mz > bh) warnings.push(`${input.model.name} is ${mx} x ${my} x ${mz} mm, larger than the ${bw} x ${bd} x ${bh} mm build volume of ${input.printer.name}`)
+  if (bounds.measured) {
+    const [mx, my, mz] = bounds.sizeMm
+    if (mx > bw || my > bd || mz > bh) warnings.push(`${input.model.name} is ${mx} x ${my} x ${mz} mm, larger than the ${bw} x ${bd} x ${bh} mm build volume of ${input.printer.name}`)
+  }
+  // PlateObject asks for a transform, but the cloud slicer sends a missing one as missing, and the
+  // service then centers the mesh on the bed and sets it down (sx-core build_plate).
+  const object = { id: 'obj-1', name: input.model.name, mesh: mesh.id } as PlateObject
   const config = phoneConfig(input.easy, input.printer, input.material)
-  // Centered on the bed, Z up, column-major.
-  const transform = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, (bw - mx) / 2, (bd - my) / 2, 0, 1]
   onPhase({ kind: 'queued' })
   try {
     const result = await cloud.slice(
       {
-        plate: { bed: { widthMm: bw, depthMm: bd, heightMm: bh }, objects: [{ id: 'obj-1', name: input.model.name, mesh: mesh.id, transform }] },
+        plate: { bed: { widthMm: bw, depthMm: bd, heightMm: bh }, objects: [object] },
         config,
         options: { flavor: shape.flavor, emitGcode: true, emitPreview: false },
       },
@@ -134,7 +151,7 @@ export async function runCloudSlice(
       timeS: result.stats.timeS,
       grams: result.stats.filamentG.reduce((a, b) => a + b, 0),
       layerHeight: config.layer_height,
-      sizeMm: mesh.bboxMm,
+      ...(bounds.measured ? { sizeMm: bounds.sizeMm } : {}),
       warnings,
     }
   } finally {
