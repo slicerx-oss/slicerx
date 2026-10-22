@@ -5,7 +5,7 @@
 // the host transport sends none. Reasoning effort and hosted web search do not
 // exist on this API and are ignored.
 import type { LlmHttpRequest } from '@slicerx/contracts'
-import { decodeToolName, encodeToolName } from './openai'
+import { decodeToolName, encodeToolName, OPENAI_MAX_TOOLS } from './openai'
 import { parseSse } from './sse'
 import type { LlmAdapter, LlmEvent, LlmRequest, LlmStop } from './types'
 
@@ -60,6 +60,8 @@ function messageList(req: LlmRequest): Obj[] {
 export function createOpenAiCompatibleAdapter(): LlmAdapter {
   return {
     id: 'openai-compatible',
+    // the servers that speak this API follow OpenAI's limit on tools per request
+    maxTools: OPENAI_MAX_TOOLS,
     build(req: LlmRequest, opts?: { baseUrl?: string }): LlmHttpRequest {
       const body: Obj = { model: req.model, messages: messageList(req), stream: true, stream_options: { include_usage: true } }
       if (req.tools.length > 0) {

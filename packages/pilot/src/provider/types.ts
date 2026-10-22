@@ -77,6 +77,8 @@ export type LlmEvent =
 /** Builds one HTTP request and parses its SSE body. Never sees a key. */
 export interface LlmAdapter {
   id: string
+  /** The most tools one request may carry, when the API has a limit; unset has none. The runtime stays at or under it. */
+  maxTools?: number
   build(req: LlmRequest, opts?: { baseUrl?: string }): LlmHttpRequest
   parse(body: AsyncIterable<Uint8Array>): AsyncIterable<LlmEvent>
 }
@@ -84,5 +86,7 @@ export interface LlmAdapter {
 /** What the agent loop calls. An adapter plus a transport, or a scripted stand-in. */
 export interface LlmClient {
   provider: string
+  /** The adapter's tool limit (LlmAdapter.maxTools); unset has none. */
+  maxTools?: number
   stream(req: LlmRequest, signal?: AbortSignal): AsyncIterable<LlmEvent>
 }

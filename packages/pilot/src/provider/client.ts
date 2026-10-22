@@ -79,6 +79,7 @@ export function createTransportClient(transport: LlmTransport, provider: string,
   }
   return {
     provider,
+    ...(adapter.maxTools === undefined ? {} : { maxTools: adapter.maxTools }),
     async *stream(req: LlmRequest, signal?: AbortSignal): AsyncIterable<LlmEvent> {
       let http = adapter.build(req, opts.baseUrl === undefined ? {} : { baseUrl: opts.baseUrl })
       if (cloud) http = { ...http, provider: MIMIR_CLOUD, headers: { ...http.headers, ...cloudHeaders(opts.share?.(), req.session, req.tier) } }
