@@ -34,7 +34,9 @@ fn main() {
     if std::env::var_os("CARGO_FEATURE_STOCK_GCODE").is_none() {
         return;
     }
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../settings");
+    // Read at run time, as in the core's build script: a shared target dir reuses this binary across worktrees.
+    let root = Path::new(&std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR"))
+        .join("../../settings");
     let stock = read(&root, "profiles/stock-gcode.json");
     let knowledge = read(&root, "knowledge.json");
     let models = read(&root, "printer-models.json");
