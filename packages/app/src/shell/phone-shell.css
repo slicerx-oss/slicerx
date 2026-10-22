@@ -7,8 +7,11 @@
 :root[data-phone] {
   --h-bar: 48px;
   --phone-tabbar-h: 0px;
-  /* how far the on-screen keyboard reaches up from the bottom edge (phone-tabs.tsx), 0 when it is shut */
+  /* how far the on-screen keyboard reaches up from the bottom edge, 0 when it is shut, and the part of the window
+     still in view: its top and height (phone-keyboard.ts; html[data-phone-kb] while the keyboard is up) */
   --phone-kb: 0px;
+  --phone-vv-top: 0px;
+  --phone-vv-h: 100dvh;
   /* toasts rest just above the tab bar */
   --toast-floor: 12px;
 }

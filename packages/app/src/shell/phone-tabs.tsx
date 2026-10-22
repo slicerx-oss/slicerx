@@ -11,6 +11,7 @@ import { useHasFeature } from '../features'
 import { usePhoneLayout } from '../lib/phone-layout'
 import { useInMimir } from '../state/model-mode'
 import { setModelMode, useApp } from '../state/store'
+import { usePhoneKeyboard } from './phone-keyboard'
 import { openTab, useShellTabs } from './top-bar'
 import './phone-shell.css'
 
@@ -56,25 +57,4 @@ export function PhoneTabs() {
       ))}
     </nav>
   )
-}
-
-/** Keeps --phone-kb at the height the on-screen keyboard covers, so mimir's composer stays above it. */
-function usePhoneKeyboard(phone: boolean): void {
-  useEffect(() => {
-    const vv = typeof window === 'undefined' ? undefined : window.visualViewport
-    const root = document.documentElement
-    if (!phone || !vv) return
-    const on = () => {
-      const covered = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
-      root.style.setProperty('--phone-kb', `${covered}px`)
-    }
-    on()
-    vv.addEventListener('resize', on)
-    vv.addEventListener('scroll', on)
-    return () => {
-      vv.removeEventListener('resize', on)
-      vv.removeEventListener('scroll', on)
-      root.style.removeProperty('--phone-kb')
-    }
-  }, [phone])
 }

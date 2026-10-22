@@ -23,6 +23,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from 'react-dom'
 import { usePhoneLayout } from '../lib/phone-layout'
 import { useSheetFold } from '../shell/sheet-fold'
+import { keyboardLift } from '../shell/phone-keyboard'
 import { claimPhoneSketchSlot, usePhoneSketchSlot } from '../workspaces/design/phone-slot'
 import { touchWords } from './touch-words'
 import { FAMILIES, familyName, familyOf, SketchVariants, VARIANTS, type Family } from './sketch-variants'
@@ -187,10 +188,8 @@ export interface SketchLook {
 }
 let sessionLook: SketchLook = { grid: true, snap: true, step: '1', section: false, profiles: true, points: true, dimensions: true, constraints: true }
 
-/** How far an on-screen keyboard covers the bottom of the window, px: the layout height below the visible part. */
-export function keyboardLift(innerHeight: number, vv: { height: number; offsetTop: number }): number {
-  return Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))
-}
+// the phone's keyboard reading lives with the shell's (shell/phone-keyboard.ts); the sketch sheet's tests reach it here
+export { keyboardLift }
 
 /** The sketch as one undo step holds it. */
 interface SketchSnap {
