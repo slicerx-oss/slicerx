@@ -62,7 +62,6 @@ pub fn load_3mf_plates(bytes: &[u8], file_name: &str) -> Result<Vec<(u32, Mesh)>
     crate::threemf::load_plates(bytes, file_name)
 }
 
-/// Every plate of a 3MF project with each build item as a mesh of its own, named after its object.
 /// The memory available to the slices of this process, bytes, as the host reads it (`None`: unknown). Give it before the
 /// first slice; without it the engine reads the system's own figure where it can (Linux, macOS). The guards that keep a
 /// big slice within a share of it read it ([`crate::paint`]'s painted-layer grids).
@@ -70,8 +69,29 @@ pub fn set_available_memory(bytes: Option<u64>) {
     crate::memory::set_available(bytes);
 }
 
+/// Every plate of a 3MF project with each build item as a mesh of its own, named after its object.
 pub fn load_3mf_plate_objects(bytes: &[u8], file_name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
     crate::threemf::load_plate_objects(bytes, file_name)
+}
+
+/// The build items of plate `plate` of a 3MF project (its first plate when `None`) and that plate's number, `None`
+/// when the file has no such plate. Each printable build item is a mesh of its own, with its parts, cuts, modifiers and
+/// support volumes, named after its object (`Object_<n>`, the item's place in the build, for an object without a
+/// name): one object of the plate, so one label in the G-code and one body for the collision check. Two items of one
+/// object are two meshes. `sx slice <file.3mf>` makes its plate of them ([`Plate::items_on`]), and a request's 3MF
+/// without a transform becomes one object per item, placed by [`crate::plate::items_transform`].
+pub fn load_3mf_items(bytes: &[u8], file_name: &str, plate: Option<u32>) -> Result<Option<(u32, Vec<Mesh>)>> {
+    let plates = crate::threemf::load_plate_objects(bytes, file_name)?;
+    Ok(match plate {
+        Some(n) => plates.into_iter().find(|(p, _)| *p == n),
+        None => plates.into_iter().next(),
+    })
+}
+
+/// True when [`load_mesh`] reads the file as a 3MF project (by its name, or a ZIP of another name), whose build items
+/// [`load_3mf_items`] gives.
+pub fn is_3mf(bytes: &[u8], file_name: &str) -> bool {
+    Mesh::is_3mf(bytes, file_name)
 }
 
 /// The pause, color change and custom G-code marks a project file sets on plate `plate` (1-based), as the
@@ -1157,28 +1177,7 @@ fn build_session_with(
         return Err(Error::Cancelled);
     }
     progress.report(Stage::Layers, LAYERS_OBJECTS);
-    let zones = crate::collide::plate::zones(config);
-    let kinds: Vec<u8> = zones.iter().map(|z| z.0).collect();
-    if let Some(m) = collide_model(req, plate, config, &session, kinds.clone()) {
-        session.set_collide(Arc::new(m));
-    } else if plate.objects.len() > 1 || !kinds.is_empty() {
-        // no model (by layer, or one object): paths may still cross, and print paths may enter a keep-out zone
-        #[allow(clippy::cast_possible_truncation, reason = "plate positions in mm")]
-        let objects = session
-            .footprints()
-            .iter()
-            .map(|f| crate::collide::MetaObject {
-                id: f.id.clone(),
-                height: 0.0,
-                center: [f.center[0] as f32, f.center[1] as f32],
-            })
-            .collect();
-        session.set_collide_meta(crate::collide::Meta {
-            objects,
-            zones: kinds,
-            ..crate::collide::Meta::default()
-        });
-    }
+    set_collision_check(&mut session, plate, config, req.options.printer_id.as_deref());
     for k in req.plate.objects.iter().flat_map(|o| o.settings.keys()) {
         if !crate::config::READ_KEYS.contains(&k.as_str()) && !crate::config::FUZZY_KEYS.contains(&k.as_str())
         {
@@ -1233,11 +1232,67 @@ fn build_session_with(
     Ok(session)
 }
 
+/// Gives the session of `plate` what the collision check reads, as every slice of a plate has it: heimdall's model on a
+/// by-object plate of two objects or more (the head, gantry and tool changer of the printer profile `printer_id`, else
+/// of the settings' `printer_model`, else a generic head), and otherwise, on a plate of several objects or with zones
+/// the printer keeps clear, what the report needs to name crossing paths and paths into those zones. [`check_paths`]
+/// then checks each layer range's paths, and [`collision_report`] reads the hits.
+pub fn set_collision_check(
+    session: &mut SliceSession,
+    plate: &Plate,
+    config: &PrintConfig,
+    printer_id: Option<&str>,
+) {
+    let zones = crate::collide::plate::zones(config);
+    let kinds: Vec<u8> = zones.iter().map(|z| z.0).collect();
+    if let Some(m) = collide_model(printer_id, plate, config, session, kinds.clone()) {
+        session.set_collide(Arc::new(m));
+    } else if plate.objects.len() > 1 || !kinds.is_empty() {
+        // no model (by layer, or one object): paths may still cross, and print paths may enter a keep-out zone
+        #[allow(clippy::cast_possible_truncation, reason = "plate positions in mm")]
+        let objects = session
+            .footprints()
+            .iter()
+            .map(|f| crate::collide::MetaObject {
+                id: f.id.clone(),
+                height: 0.0,
+                center: [f.center[0] as f32, f.center[1] as f32],
+            })
+            .collect();
+        session.set_collide_meta(crate::collide::Meta {
+            objects,
+            zones: kinds,
+            ..crate::collide::Meta::default()
+        });
+    }
+}
+
+/// What every slice does to a layer range's paths once they are cut: on a plate printed by layer, a join of a solid
+/// surface that would cross another path stays a travel; then, on a session given the check
+/// ([`set_collision_check`]), the paths are checked for crossings between objects, paths into keep-out zones and, by
+/// object, the head and gantry, into `out.collisions`.
+pub fn check_paths(session: &SliceSession, config: &PrintConfig, out: &mut SliceOutput) {
+    if !config.print_by_object() {
+        crate::collide::plate::drop_crossing_joins(out);
+    }
+    if session.collide_meta().is_some() {
+        let zones = crate::collide::plate::zones(config);
+        let found = crate::collide::plate::check(
+            out,
+            &zones,
+            !config.print_by_object(),
+            config.nozzle_diameter,
+            crate::zoneroute::Router::of(config).as_ref(),
+        );
+        out.collisions.merge(found);
+    }
+}
+
 /// heimdall's model of a by-object plate with two objects or more: the plate's objects (before any shrinkage
-/// compensation, a fraction of a percent the head's 2 mm margin covers), the request's printer and the session's
+/// compensation, a fraction of a percent the head's 2 mm margin covers), the printer and the session's
 /// filament map.
 fn collide_model(
-    req: &SliceRequest,
+    printer_id: Option<&str>,
     plate: &Plate,
     config: &PrintConfig,
     session: &SliceSession,
@@ -1260,7 +1315,7 @@ fn collide_model(
     Some(crate::collide::Model::new(
         &printable,
         config,
-        req.options.printer_id.as_deref(),
+        printer_id,
         map,
         session.could_print_by_layer(config),
         zones,
@@ -1311,21 +1366,7 @@ fn slice_shard_paths(
     if progress.cancelled() {
         return Err(Error::Cancelled);
     }
-    // A join of a solid surface never crosses another path of its layer: it stays a travel there.
-    if !config.print_by_object() {
-        crate::collide::plate::drop_crossing_joins(&mut out);
-    }
-    if session.collide_meta().is_some() {
-        let zones = crate::collide::plate::zones(config);
-        let found = crate::collide::plate::check(
-            &out,
-            &zones,
-            !config.print_by_object(),
-            config.nozzle_diameter,
-            crate::zoneroute::Router::of(config).as_ref(),
-        );
-        out.collisions.merge(found);
-    }
+    check_paths(session, config, &mut out);
     if let Some(z) = req.options.resume_z.as_ref().map(|z| z.z_mm)
         && req.options.resume_from_layer.is_some_and(|r| r > 0)
     {

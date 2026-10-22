@@ -4,13 +4,19 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- Bambu Lab H2D and X2D: the start and filament change G-code write -1 as the hotend id (`B` of `M620.11`, `H` of `M620 S..A`, `T..` and `M620.6`, and `M620 D`), as the maker's slicer does, instead of 0.
+- `load_3mf_items`: the build items of one 3MF plate, each a mesh of its own, and `is_3mf`. `Plate::items_on` makes a plate of them (one object per item, placed as the file places it) and `plate::items_transform` is the one translation they share. `set_collision_check` and `check_paths` are the collision check every slice of a plate runs, for hosts that slice a `Plate` themselves.
 
 ### Changed
 
 - Two extruder printers whose extruder variants give a process setting one value per extruder (the X2D's Bowden extruder, an H2D with a high flow nozzle) now print each filament at its own extruder's speeds and accelerations; all filaments used the first extruder's before. `PrintConfig::for_extruder` and `PrintConfig::for_slot` give the settings one extruder prints with.
+- `sx slice <file.3mf>` slices each build item as an object of its own, as `sx slice --request` and the app already did: one object label per item (`EXCLUDE_OBJECT`, `M486`, and the `M624` ids on Bambu Lab printers), with its parts, modifiers and negative volumes inside it. It runs the same collision and clearance check as `--request`, refuses with exit code 3 where that check does, and takes `--allow-collisions`. It also takes the brim ears a project paints on each object. On plates of several objects the print order, travels and brims can change; single-object files change only in their label names.
+- A 3MF object without a name is called `Object_<n>` (the build item's place, from 1), not after the file.
+
+### Fixed
+
+- Bambu Lab H2D and X2D: the start and filament change G-code write -1 as the hotend id (`B` of `M620.11`, `H` of `M620 S..A`, `T..` and `M620.6`, and `M620 D`), as the maker's slicer does, instead of 0.
 
 ## [0.2.0] - 2026-10-22
 

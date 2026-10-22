@@ -114,50 +114,77 @@ impl Plate {
     }
 
     /// One mesh centered on the printable area `(min_x, min_y, max_x, max_y)` of a profile, resting on z = 0.
-    #[allow(clippy::cast_possible_truncation, reason = "bed sizes in mm fit f32")]
     pub fn single_on(mesh: Mesh, area: [f64; 4], height_mm: f64) -> Self {
-        // A profile without a printable area leaves the default bed.
-        if !(area[2] > area[0] && area[3] > area[1]) {
-            return Self::single(mesh);
+        match on_area(area, height_mm) {
+            Some((bed, center)) => Self::single_at(mesh, bed, Some(center)),
+            // A profile without a printable area leaves the default bed.
+            None => Self::single(mesh),
         }
-        let bed = Bed {
-            width_mm: (area[2] - area[0]) as f32,
-            depth_mm: (area[3] - area[1]) as f32,
-            height_mm: height_mm as f32,
-        };
-        let center = [
-            f64::midpoint(area[0], area[2]) as f32,
-            f64::midpoint(area[1], area[3]) as f32,
-        ];
-        Self::single_at(mesh, bed, Some(center))
     }
 
     fn single_at(mesh: Mesh, bed: Bed, center: Option<[f32; 2]>) -> Self {
-        let mut transform = centered_transform(&mesh, bed);
-        if let Some(c) = center
-            && let Some((lo, hi)) = mesh.bounds()
-        {
-            transform[12] = c[0] - f32::midpoint(lo[0], hi[0]);
-            transform[13] = c[1] - f32::midpoint(lo[1], hi[1]);
-        }
-        let volumes = file_volumes(&mesh);
-        let part_settings = mesh.part_settings.clone();
-        let brim_points = mesh.brim_points.clone();
-        let object = PlateObject {
-            id: "object-1".to_owned(),
-            name: mesh.name.clone(),
-            mesh: Arc::new(mesh),
-            transform,
-            slot_overrides: Vec::new(),
-            part_settings,
-            volumes,
-            settings: serde_json::Value::Null,
-            brim_points,
-        };
+        let transform = placed(mesh.bounds(), bed, center);
+        let object = item_object(mesh, 0, transform);
         Self {
             bed,
             objects: vec![object],
         }
+    }
+
+    /// The build items of one 3MF plate ([`crate::api::load_3mf_items`]) as objects of their own, so each is one
+    /// label, one footprint and one body for the collision check: where the file puts them, the plate as a whole
+    /// centered on the printable area `(min_x, min_y, max_x, max_y)` of a profile and set down on z = 0 (on the
+    /// default bed without an area), as [`Plate::single_on`] places one mesh. The parts, cuts, modifiers and support
+    /// volumes of an item stay in its object. Ids are `object-1` on in build order; each object takes its item's
+    /// name and painted brim ears, and the plate's settings (its `settings` are `Null`).
+    pub fn items_on(items: Vec<Mesh>, area: [f64; 4], height_mm: f64) -> Self {
+        let (bed, center) = match on_area(area, height_mm) {
+            Some((bed, center)) => (bed, Some(center)),
+            None => (Bed::default(), None),
+        };
+        let transform = items_transform(&items, bed, center);
+        Self {
+            bed,
+            objects: items
+                .into_iter()
+                .enumerate()
+                .map(|(k, mesh)| item_object(mesh, k, transform))
+                .collect(),
+        }
+    }
+}
+
+/// The bed of a profile's printable area `(min_x, min_y, max_x, max_y)` and the area's center; `None` when the
+/// profile has no area.
+#[allow(clippy::cast_possible_truncation, reason = "bed sizes in mm fit f32")]
+fn on_area(area: [f64; 4], height_mm: f64) -> Option<(Bed, [f32; 2])> {
+    if !(area[2] > area[0] && area[3] > area[1]) {
+        return None;
+    }
+    let bed = Bed {
+        width_mm: (area[2] - area[0]) as f32,
+        depth_mm: (area[3] - area[1]) as f32,
+        height_mm: height_mm as f32,
+    };
+    let center = [
+        f64::midpoint(area[0], area[2]) as f32,
+        f64::midpoint(area[1], area[3]) as f32,
+    ];
+    Some((bed, center))
+}
+
+/// Object `k` (0-based) of a plate: one mesh with the volumes and part settings its file marks.
+fn item_object(mesh: Mesh, k: usize, transform: [f32; 16]) -> PlateObject {
+    PlateObject {
+        id: format!("object-{}", k + 1),
+        name: mesh.name.clone(),
+        volumes: file_volumes(&mesh),
+        part_settings: mesh.part_settings.clone(),
+        brim_points: mesh.brim_points.clone(),
+        mesh: Arc::new(mesh),
+        transform,
+        slot_overrides: Vec::new(),
+        settings: serde_json::Value::Null,
     }
 }
 
@@ -182,12 +209,37 @@ pub fn file_volumes(mesh: &Mesh) -> Vec<PlateVolume> {
 
 /// A translation that centers the mesh on the bed and drops it to z = 0.
 pub fn centered_transform(mesh: &Mesh, bed: Bed) -> [f32; 16] {
-    let Some((lo, hi)) = mesh.bounds() else {
+    placed(mesh.bounds(), bed, None)
+}
+
+/// The one translation every build item of a 3MF plate takes: the items as a whole centered on the bed (on `center`
+/// when given) and set down on z = 0, so each keeps its place in the file and to the others. The request path gives it
+/// to the objects a project splits into, and [`Plate::items_on`] to its own.
+pub fn items_transform(items: &[Mesh], bed: Bed, center: Option<[f32; 2]>) -> [f32; 16] {
+    let bounds = items
+        .iter()
+        .filter_map(Mesh::bounds)
+        .reduce(|(mut lo, mut hi), (l, h)| {
+            for (a, b) in lo.iter_mut().zip(l) {
+                *a = a.min(b);
+            }
+            for (a, b) in hi.iter_mut().zip(h) {
+                *a = a.max(b);
+            }
+            (lo, hi)
+        });
+    placed(bounds, bed, center)
+}
+
+/// A translation that puts the middle of `bounds` on the bed's center (or `center`) and their bottom on z = 0.
+fn placed(bounds: Option<([f32; 3], [f32; 3])>, bed: Bed, center: Option<[f32; 2]>) -> [f32; 16] {
+    let Some((lo, hi)) = bounds else {
         return IDENTITY;
     };
+    let [cx, cy] = center.unwrap_or([bed.width_mm / 2.0, bed.depth_mm / 2.0]);
     let mut t = IDENTITY;
-    t[12] = bed.width_mm / 2.0 - f32::midpoint(lo[0], hi[0]);
-    t[13] = bed.depth_mm / 2.0 - f32::midpoint(lo[1], hi[1]);
+    t[12] = cx - f32::midpoint(lo[0], hi[0]);
+    t[13] = cy - f32::midpoint(lo[1], hi[1]);
     t[14] = -lo[2];
     t
 }

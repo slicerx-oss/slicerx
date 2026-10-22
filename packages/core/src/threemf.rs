@@ -168,7 +168,7 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
             .cloned()
             .or_else(|| main.objects.get(&item.object).map(|o| o.name.clone()))
             .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| name.to_owned());
+            .unwrap_or_else(|| unnamed(item_no));
         // Settings go by part name; a part sharing its name with another is named after its id as well.
         let mut part_settings = Vec::with_capacity(with_settings.len());
         for (k, id, settings) in with_settings {
@@ -388,7 +388,7 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
             serde_json::Value::Object(object)
         };
         let own = if o.name.is_empty() {
-            name.to_owned()
+            unnamed(item_no)
         } else {
             o.name
         };
@@ -406,6 +406,12 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
         return Err(Error::mesh(name, "the 3MF file has no printable objects"));
     }
     Ok(plates.into_iter().collect())
+}
+
+/// The name of build item `item_no` (0-based, in build order) whose object has none: `Object_1` on, as the desktop
+/// slicers name such an object, and not the file's name, which would label every object of the file the same.
+fn unnamed(item_no: usize) -> String {
+    format!("Object_{}", item_no + 1)
 }
 
 /// One part placed by the build item's transform and its components, with its paint decoded in place, as
