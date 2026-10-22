@@ -813,3 +813,65 @@ fn auto_support_covers_a_slope_inside_the_threshold() {
     let run = slice(&with(part, &[]), auto).unwrap();
     assert_eq!(support_length(&run), 0.0, "35 degrees");
 }
+
+/// Support path length (mm) of one feature of a print.
+fn feature_length(run: &SliceRun, feature: &str) -> f64 {
+    moves(run)
+        .iter()
+        .filter(|m| m.feature == feature)
+        .map(Move::len)
+        .sum()
+}
+
+#[test]
+fn auto_support_covers_steep_slopes_under_a_high_threshold() {
+    // At 50 and 59 degrees each layer of the wing steps out by less than the support's xy gap from the part.
+    let auto =
+        json!({ "enable_support": true, "support_type": "normal(auto)", "support_threshold_angle": 60 });
+    for degrees in [50.0, 59.0] {
+        let part = vec![("normal_part", ramp(degrees), String::new())];
+        let run = slice(&with(part, &[]), auto.clone()).unwrap();
+        assert!(
+            support_length(&run) > 100.0,
+            "{degrees} degrees: {} mm",
+            support_length(&run)
+        );
+    }
+    let part = vec![("normal_part", ramp(61.0), String::new())];
+    let run = slice(&with(part, &[]), auto).unwrap();
+    assert_eq!(support_length(&run), 0.0, "61 degrees");
+}
+
+#[test]
+fn support_from_the_build_plate_only_covers_a_slope() {
+    let cfg = json!({
+        "enable_support": true,
+        "support_type": "normal(auto)",
+        "support_threshold_angle": 30,
+        "support_on_build_plate_only": true
+    });
+    for degrees in [20.0, 30.0] {
+        let part = vec![("normal_part", ramp(degrees), String::new())];
+        let run = slice(&with(part, &[]), cfg.clone()).unwrap();
+        assert!(
+            support_length(&run) > 100.0,
+            "{degrees} degrees: {} mm",
+            support_length(&run)
+        );
+    }
+}
+
+#[test]
+fn a_steep_slope_gets_base_support_without_interface() {
+    let auto =
+        json!({ "enable_support": true, "support_type": "normal(auto)", "support_threshold_angle": 60 });
+    let run = |degrees: f32| {
+        let part = vec![("normal_part", ramp(degrees), String::new())];
+        slice(&with(part, &[]), auto.clone()).unwrap()
+    };
+    let steep = run(50.0);
+    assert!(feature_length(&steep, "Support") > 100.0);
+    assert_eq!(feature_length(&steep, "Support interface"), 0.0, "50 degrees");
+    let gentle = run(30.0);
+    assert!(feature_length(&gentle, "Support interface") > 10.0, "30 degrees");
+}
