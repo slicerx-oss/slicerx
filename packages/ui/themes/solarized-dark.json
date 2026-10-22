@@ -14,6 +14,7 @@
   "muted": "#657b83",
   "accent": "#268bd2",
   "selection": "#073642",
+  "selectedFill": "#153e48",
   "ansi": [
     "#073642",
     "#dc322f",
