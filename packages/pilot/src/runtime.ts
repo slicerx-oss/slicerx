@@ -44,7 +44,8 @@ import { fitContext, MIMIR_CONTEXT } from './context'
 import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type ToolSurface } from './surfaces'
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
-import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type WebLookup } from './tool'
+import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
+import { capLine, capTools, turnNeeds, type ToolCapReport } from './toolsets'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
@@ -110,6 +111,11 @@ export interface CreatePilotOptions {
   printRun?: PrintRunHost
   /** How long an approval card waits before it expires, ms. */
   approvalTimeoutMs?: number
+  /**
+   * The host's log, for lines about the run that are not part of the chat: a turn that left toolsets out because the
+   * provider takes fewer tools than there are (see toolsets.ts).
+   */
+  log?: (line: string) => void
   now?: () => number
   newId?: () => string
 }
@@ -199,6 +205,13 @@ function dropOldImages(messages: LlmMessage[], keep: number): void {
   }
 }
 
+/** The tools the conversation has called so far, by name. */
+function calledTools(messages: readonly LlmMessage[]): Set<string> {
+  const names = new Set<string>()
+  for (const m of messages) if (m.role === 'assistant') for (const c of m.toolCalls ?? []) names.add(c.name)
+  return names
+}
+
 export function toolMessage(out: ToolOutput): string {
   const body: Record<string, unknown> = { ok: out.ok !== false, summary: out.summary }
   if (out.output !== undefined) body['result'] = out.untrusted ? { untrusted: true, note: UNTRUSTED_NOTE, data: out.output } : out.output
@@ -263,6 +276,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   forgetRun(sessionId: string): void
   /** True while a run is going, or a card, a question or a sheet waits for its answer here. */
   waiting(): boolean
+  /** The session's last turn when it left toolsets out to stay under the provider's tool limit; null when it sent every tool. */
+  toolCap(sessionId: string): ToolCapReport | null
 } {
   const now = opts.now ?? (() => Date.now())
   const newId = opts.newId ?? randomId
@@ -282,6 +297,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const confirmed = new Set<string>()
   const usedSheet = new Set<string>()
   const approvalTimeout = opts.approvalTimeoutMs ?? 5 * 60 * 1000
+  // the last turn of each session that left toolsets out (toolsets.ts)
+  const caps = new Map<string, ToolCapReport>()
   // one book per print run host, so a runtime made again keeps the runs; a started print's watch logs how it ended to
   // the chat's session, whether or not the chat is on screen
   const runBook = opts.printRun ? runBookFor(opts.printRun, now, { printers: opts.host.printers, log: (sessionId, e) => void log(sessionId, e) }) : null
@@ -636,7 +653,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { message: toolMessage(out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
   }
 
-  async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN): Promise<PilotEvent & { type: 'done' }> {
+  async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set()): Promise<PilotEvent & { type: 'done' }> {
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
@@ -672,6 +689,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let said = false
     let reply = ''
     let looked = false
+    // the last left-out set this run logged, so a run logs a change once and not every step
+    let loggedCap = ''
     for (let step = 0; step <= opts.config.maxSteps; step++) {
       // a held run waits here, before its next model request
       await whileHeld(sessionId, signal)
@@ -684,7 +703,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         wrap = true
         messages.push({ role: 'user', content: WRAP_NOTE })
       }
-      const visible = allTools().filter((t) => (restrict ? restrict(t) : true))
+      // over the provider's tool limit, the turn sends core, the tools the chat called and the toolsets it needs
+      const capped = capTools(
+        allTools().filter((t) => (restrict ? restrict(t) : true)),
+        { cap: client.maxTools, needs, called: calledTools(messages) },
+      )
+      const visible = capped.tools
       const specs = visible.map((t) => toolSpec(t))
       const toolDefs = specs.map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
       // A local model has a small context and its runner cuts an overlong prompt from the start.
@@ -697,6 +721,14 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       let failedCode: string | undefined
       let cut = false
       const model = modelFor(opts.config, tier)
+      if (capped.report) {
+        caps.set(sessionId, capped.report)
+        const line = capLine(capped.report, { assistant: ASSISTANT_NAME, model, provider: client.provider })
+        if (line !== loggedCap) {
+          loggedCap = line
+          opts.log?.(line)
+        }
+      } else caps.delete(sessionId)
       if (model !== asked) {
         asked = model
         if (model !== shown) switched(model)
@@ -978,7 +1010,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         })
         let done: PilotEvent & { type: 'done' }
         try {
-          done = await loop(sessionId, messages, context, emit, signal, undefined, startTier)
+          done = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context }))
         } catch (e) {
           emit({ type: 'error', message: errorText(e), retryable: false })
           done = { type: 'done', stopReason: signal.aborted ? 'canceled' : 'error', ms: 0 }
@@ -994,6 +1026,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     },
     waiting(): boolean {
       return going.size > 0 || pending.size > 0 || asks.size > 0 || sheets.size > 0
+    },
+    toolCap(sessionId: string): ToolCapReport | null {
+      return caps.get(sessionId) ?? null
     },
     watchRun(sessionId: string, on: (e: PilotEvent) => void): () => void {
       return runBook ? runBook.watch(sessionId, on) : () => {}
@@ -1033,7 +1068,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
             role: 'user',
             content: `The user switched from ${from.material} on ${from.printer} with a ${from.nozzle} mm nozzle to ${to.material} on ${to.printer} with a ${to.nozzle} mm nozzle. ${productName()} already applied and showed this settings diff:\n${rows}\nExplain the two or three changes that matter most in at most three sentences. Do not call tools unless something in the diff looks wrong.`,
           })
-          const done = await loop(sessionId, messages, { machine: to }, emit, signal, (t) => t.permission === 'read')
+          const done = await loop(sessionId, messages, { machine: to }, emit, signal, (t) => t.permission === 'read', HUGINN, new Set<Toolset>(['settings', 'kb']))
           emit({ ...done, ms: now() - t0 })
           return
         }

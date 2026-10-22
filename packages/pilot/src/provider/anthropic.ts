@@ -88,6 +88,7 @@ function messageList(req: LlmRequest): { system: string; messages: Obj[] } {
   return { system: system.join('\n\n'), messages }
 }
 
+// No maxTools: the Messages API documents no limit on the number of tools in a request.
 export function createAnthropicAdapter(): LlmAdapter {
   return {
     id: 'anthropic',
