@@ -28,6 +28,15 @@ const gpu = process.env['SX_E2E_GPU'] === '1'
 // @nightly. Pull requests and the merge queue leave them out.
 const nightly = process.env['SX_E2E_NIGHTLY'] === '1'
 const leaveOut = nightly ? {} : { testIgnore: 'nightly/**', grepInvert: /@nightly/ }
+// The nightly specs that time frames or wait on settled layout, drawn in software. Run beside other workers they get a
+// fraction of the CPU (74 frames in 7 s instead of 310) and miss their budgets, so at night they leave the desktop and
+// phone projects for the timing ones, which run one test at a time in a step of their own (scripts/ci/run.sh nightly).
+// The GPU lane keeps them in its projects: it picks its timing tests by tag (@gpu-timing).
+const timing = ['nightly/autosave-frames.spec.ts', 'nightly/no-flicker.spec.ts', 'nightly/plate-reveal.spec.ts', 'nightly/layout-stability.spec.ts']
+const timingApart = nightly && !gpu
+const desktopUse = { browserName: 'chromium', viewport: { width: 1440, height: 900 } } as const
+const phoneUse = { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } as const
+const phoneMatch = nightly ? ['journeys/phone-*.spec.ts', 'nightly/**/*.spec.ts'] : 'journeys/phone-*.spec.ts'
 
 export default defineConfig({
   testDir: 'e2e',
@@ -62,13 +71,14 @@ export default defineConfig({
   // The desktop project runs every spec; a phone-only describe in it skips. The phone project runs only the phone
   // journeys (e2e/journeys/phone-*.spec.ts), plus the nightly specs at night.
   projects: [
-    { name: 'desktop', ...leaveOut, use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } } },
-    {
-      name: 'phone',
-      ...leaveOut,
-      testMatch: nightly ? ['journeys/phone-*.spec.ts', 'nightly/**/*.spec.ts'] : 'journeys/phone-*.spec.ts',
-      use: { browserName: 'chromium', viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
-    },
+    { name: 'desktop', ...leaveOut, ...(timingApart ? { testIgnore: timing } : {}), use: desktopUse },
+    { name: 'phone', ...leaveOut, testMatch: phoneMatch, ...(timingApart ? { testIgnore: timing } : {}), use: phoneUse },
+    ...(timingApart
+      ? [
+          { name: 'desktop-timing', testMatch: timing, workers: 1, use: desktopUse },
+          { name: 'phone-timing', testMatch: timing, workers: 1, use: phoneUse },
+        ]
+      : []),
   ],
   // Always build and serve a fresh bundle with the test environment. A server left running from an earlier build hides changes (and lacks the relay URL the phone pairing tests need).
   // The build leaves the WebAssembly slicer out (SLICERX_WEB_SLICING=0) and slices through the native test host.
