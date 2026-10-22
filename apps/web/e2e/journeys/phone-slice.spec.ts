@@ -181,6 +181,10 @@ test('on a phone a held Print opens its reason above the whole estimate, clear o
     expect(t.x).toBeGreaterThanOrEqual(16)
     expect(t.x + t.width).toBeLessThanOrEqual(390 - 16)
     expect(t.y).toBeGreaterThanOrEqual(0)
+    // the long name does not push the button out of the footer
+    const b = (await print.boundingBox())!
+    expect(b.x).toBeGreaterThanOrEqual(f.x - 0.5)
+    expect(b.x + b.width).toBeLessThanOrEqual(f.x + f.width + 0.5)
     for (const spot of [foot.locator('.est-anchor'), foot.locator('.est-fig').first(), foot.locator('.est-fig').last()]) expect(clear(t, (await spot.boundingBox())!)).toBe(true)
     // and clear of the playback bar over the footer
     const dock = page.getByRole('group', { name: 'Layers and moves' })
@@ -189,6 +193,48 @@ test('on a phone a held Print opens its reason above the whole estimate, clear o
     await page.screenshot({ path: test.info().outputPath('held-print-tip.png') })
   } finally {
     await patch(page, { plateLoading: false })
+    await nameFleet(page, null)
+    await page.mouse.move(1, 1)
+  }
+})
+
+test('on a phone a 60-character printer name is cut inside the footer, and the tip reads the whole name', async ({ page }) => {
+  await sliceLayered(page)
+  const name = 'Workshop enclosure printer with the hardened nozzle, bay 12 A'
+  const print = page.getByTestId('danger-slice-print')
+  const tip = page.locator('#sx-tip')
+  const foot = page.getByTestId('slice-estimate')
+  await nameFleet(page, name)
+  try {
+    await expect(print).toBeEnabled()
+    await expect(print).toHaveAccessibleName(`Print on ${name}`)
+    // the label gives way with an ellipsis: the button stays inside the footer
+    const f = (await foot.boundingBox())!
+    const b = (await print.boundingBox())!
+    expect(b.x).toBeGreaterThanOrEqual(f.x - 0.5)
+    expect(b.x + b.width).toBeLessThanOrEqual(f.x + f.width + 0.5)
+    // only the start of the name is cut: it ends in an ellipsis that touches the comma, and the end reads whole
+    await expect(print.locator('.btn-name')).toHaveText(/^Print on Workshop .+\u2026, bay 12 A$/)
+    const label = await print.locator('.mid-head').evaluate((el) => {
+      const run = document.createRange()
+      run.selectNodeContents(el)
+      return { text: run.getBoundingClientRect().width, box: el.getBoundingClientRect().width, tail: el.nextElementSibling!.scrollWidth - el.nextElementSibling!.clientWidth }
+    })
+    // no room left over after the ellipsis, and the end is not clipped
+    expect(Math.abs(label.text - label.box)).toBeLessThan(1)
+    expect(label.tail).toBeLessThanOrEqual(0)
+    const inside = await print.locator('.btn-name').evaluate((el) => el.scrollWidth <= el.clientWidth)
+    expect(inside).toBe(true)
+    // the cut name is read whole in the tip, clear of the estimate and the bar
+    await page.mouse.move(1, 1)
+    await expect(tip).toHaveCount(0)
+    await print.hover()
+    await expect(tip).toContainText(name)
+    expect(await tipCovers(page, tip)).toEqual([])
+    const t = (await tip.boundingBox())!
+    expect(t.x).toBeGreaterThanOrEqual(16)
+    expect(t.x + t.width).toBeLessThanOrEqual(390 - 16)
+  } finally {
     await nameFleet(page, null)
     await page.mouse.move(1, 1)
   }
