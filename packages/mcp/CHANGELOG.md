@@ -4,6 +4,13 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
+### Breaking
+
+- `slicerx_mimir_dock` is removed, with the docked chat it read. Use `slicerx_mimir_tab`; `slicerx_mimir_ask` and `slicerx_mimir_session` reach the mimir tab's conversation (see Removed).
+- mimir's local memory is on by default: `ai.brain.memory.local` in the edition config defaults to `true`, so every edition's mimir gets `memory.remember`, `memory.recall` and the notes block unless the edition sets `local: false` (see Notes for partners).
+
 ### Added
 
 - `slicerx_app_ui` reads the open app's window over the app link (`ui.get`, read class): `workspace` and the `workspaces` the top bar offers, `tab` (`slice`, `design` or `mimir`) and the `tabs` shown, `selection` on the shown plate (`primary` and `objects`, primary first, each with `id` and `name`), `plate` (the plate shown: `number`, `id`, `name`, `count`), `printer` (the one the project slices for: `name`, `vendor`, `model`, `nozzleMm`, `fromProject`; `null` when none is chosen) and `panels` (`open`, `settingsSection`, `settable`). The printer never carries its id, which is a serial on some printers, or an access code or address. `slicerx_app_ui_set` switches the `workspace` or `tab` (`ui.set`, read class), which changes only what the window shows. `slicerx_app_ui_select` sets the `selection` (ids or names, primary first; `[]` selects nothing), opens one panel (`settings` with an optional `section`, `command`, `about`, `shortcuts`, `expert`, `printerChooser` or `printerSettings`; the last three open in Slice) and closes a panel or `all` (`ui.select`, edit class, since the person's next click acts on them; a client allowed to read only is refused). It opens only the panel asked for and closes only the ones named, and answers `busy`, changing nothing, when that would close or cover another dialog or a panel to close has the person's work under way (a command or search typed, an unsaved field in Settings). Both setters answer `busy` while the person has a tool open, a file is opening, the print sheet or a question about an opened project is up, a phone is being paired or first-run setup is up, check everything before anything changes, and answer with the window read back. Neither changes the project: showing another plate stays with `slicerx_app_plate_show`, and the printer is picked by the person.
@@ -23,6 +30,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 ### Removed
 
 - `slicerx_mimir_dock`: the docked chat is gone from the app. Read the mimir tab with `slicerx_mimir_tab` instead; `slicerx_mimir_ask` and `slicerx_mimir_session` now reach the tab's conversation.
+
+### Fixed
+
+- mimir no longer fails on an OpenAI-style provider when a turn offers more than 128 tools, the provider's limit (which a host's own tools or plugins can push it past). It sends the tools already called in the chat, the core tools and the toolsets the turn needs, fills any room left by a fixed priority up to 128, and notes in the app log which toolsets were left out. Under the limit, and on providers without one, nothing changes.
 
 ### Notes for partners
 

@@ -4,6 +4,8 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
 ### Added
 
 - Handle scene colors `axisX`, `axisY`, `axisZ`, `axisUniform`, `handleHot`, `handlePinned` and `handleHalo`: the move arrows, rotate rings and scale handles take their colors from the theme instead of fixed values.
