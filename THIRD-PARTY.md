@@ -31,6 +31,7 @@ Exact solids for the modeling tools come from SMLib and its C API, SM_API, by NV
 | aws-lc-rs and aws-lc-sys | ISC, Apache-2.0, MIT and BSD-3-Clause | TLS crypto through rustls. aws-lc-sys bundles AWS-LC, which carries several of these licenses. |
 | openh264 (crate) 0.9.8 | BSD-2-Clause | Rust bindings for the decoder below |
 | ort 2.0.0-rc.13 | MIT or Apache-2.0 | ONNX Runtime bindings for the print watch model |
+| tikv-jemallocator 0.7.0 (with tikv-jemalloc-sys 0.7.1) | MIT or Apache-2.0; the jemalloc 5.3.1 it builds is BSD-2-Clause | The memory allocator of the sx command line tool on macOS and Linux. jemalloc is Copyright (C) 2002-present Jason Evans, Copyright (C) 2007-2012 Mozilla Foundation and Copyright (C) 2009-present Facebook, Inc. |
 | boostvoronoi, i_overlay, cpp_map | see above | Wall generation and polygon clipping |
 
 ## Downloaded at run time
