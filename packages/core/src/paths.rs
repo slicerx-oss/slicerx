@@ -328,6 +328,7 @@ impl Builder<'_> {
                 dz: 0.0,
                 overhang_fan: false,
                 owner: crate::preview::OBJECT_NONE,
+                tower_wipe: false,
             });
         } else {
             self.out.points.truncate(start as usize);
@@ -1701,6 +1702,7 @@ pub(crate) fn plan_layer_paths(
         for t in &w.tower {
             b.width_mm = t.width_mm;
             b.flow = if t.flow > 0.0 { t.flow } else { 1.0 };
+            let before = b.out.paths.len();
             b.push(
                 w.tool,
                 Feature::PrimeTower,
@@ -1711,6 +1713,12 @@ pub(crate) fn plan_layer_paths(
                 },
                 t.points.iter().copied(),
             );
+            if t.nozzle_wipe
+                && b.out.paths.len() > before
+                && let Some(p) = b.out.paths.last_mut()
+            {
+                p.tower_wipe = true;
+            }
         }
         b.width_mm = line_width;
         b.flow = line_flow;

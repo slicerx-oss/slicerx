@@ -1824,6 +1824,7 @@ mod tests {
         cfg.raw.insert("exclude_object".into(), serde_json::json!(true));
         let l = Labels::new(&objs, &cfg, GcodeFlavor::Klipper).unwrap();
         let path = |feature: Feature, owner: u16| crate::output::PathInfo {
+            tower_wipe: false,
             start: 0,
             end: 2,
             tool: 1,
