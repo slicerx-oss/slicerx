@@ -603,10 +603,16 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
                 .collect()
         });
     let app = crate::threemf::application(bytes);
-    if let Some(wall) = tower_wall_type(&settings, app.as_deref()) {
+    bambu_tower_keys(&mut settings);
+    // A Bambu Studio project saved before the rib wall switch existed has neither key: the rib wall, that app's
+    // default. Other projects without either keep the engine's default.
+    if app.as_deref().is_some_and(|a| a.starts_with("BambuStudio"))
+        && !settings.contains_key("wipe_tower_wall_type")
+        && !settings.contains_key("prime_tower_rib_wall")
+    {
         settings.insert(
             "wipe_tower_wall_type".to_owned(),
-            serde_json::Value::String(wall.to_owned()),
+            serde_json::Value::String("rib".to_owned()),
         );
     }
     let walls = project_walls(&settings, changed.as_ref(), app.as_deref());
@@ -635,23 +641,34 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
     }))
 }
 
-/// The prime tower wall a project's settings give when they do not name ours (`wipe_tower_wall_type`): Bambu Studio's
-/// switch for it (`prime_tower_rib_wall`, 1 for the rib wall, 0 for the plain one), and, when a Bambu Studio project
-/// does not have the switch (one saved before it existed), the rib wall, that app's default.
-/// Other projects without either keep the engine's default.
-fn tower_wall_type(
-    settings: &serde_json::Map<String, serde_json::Value>,
-    app: Option<&str>,
-) -> Option<&'static str> {
+/// Bambu Studio's prime tower keys under the names the engine reads, for a project's settings or a preset: the rib
+/// wall switch (`prime_tower_rib_wall`, 1 for the rib wall, 0 for the plain one) as `wipe_tower_wall_type`, and the
+/// rib's width, extra length and fillet as `wipe_tower_rib_width`, `wipe_tower_extra_rib_length` and
+/// `wipe_tower_fillet_wall`. A key the settings already have under our name keeps its own value.
+pub fn bambu_tower_keys(settings: &mut serde_json::Map<String, serde_json::Value>) {
+    for (from, to) in [
+        ("prime_tower_rib_width", "wipe_tower_rib_width"),
+        ("prime_tower_extra_rib_length", "wipe_tower_extra_rib_length"),
+        ("prime_tower_fillet_wall", "wipe_tower_fillet_wall"),
+    ] {
+        if !settings.contains_key(to)
+            && let Some(v) = settings.get(from).cloned()
+        {
+            settings.insert(to.to_owned(), v);
+        }
+    }
     if settings.contains_key("wipe_tower_wall_type") {
-        return None;
+        return;
     }
-    match settings.get("prime_tower_rib_wall") {
-        Some(v) if same_value(v, &serde_json::Value::Bool(true)) => Some("rib"),
-        Some(v) if same_value(v, &serde_json::Value::Bool(false)) => Some("rectangle"),
-        Some(_) => None,
-        None => app.is_some_and(|a| a.starts_with("BambuStudio")).then_some("rib"),
-    }
+    let wall = match settings.get("prime_tower_rib_wall") {
+        Some(v) if same_value(v, &serde_json::Value::Bool(true)) => "rib",
+        Some(v) if same_value(v, &serde_json::Value::Bool(false)) => "rectangle",
+        _ => return,
+    };
+    settings.insert(
+        "wipe_tower_wall_type".to_owned(),
+        serde_json::Value::String(wall.to_owned()),
+    );
 }
 
 /// The walls a project's settings give, by the rule that keeps our engine choices: ours where the project inherited

@@ -853,6 +853,82 @@ fn a_project_whose_settings_are_not_json_still_slices() {
     );
 }
 
+/// The prime tower's width and depth on layer 10 of a box on an A1 tower (type 1) with its infill in a second
+/// filament, so every layer purges on the tower: the box as a project `app` wrote with `extra` in its settings, sliced
+/// with `config` as its `--config` preset when given.
+fn rib_tower(
+    dir: &Path,
+    name: &str,
+    app: Option<&str>,
+    extra: &serde_json::Value,
+    config: Option<&serde_json::Value>,
+) -> [f64; 2] {
+    let mut s = serde_json::json!({
+        "printer_model": "Bambu Lab A1",
+        "sparse_infill_filament_id": "2",
+        "enable_prime_tower": "1",
+        "prime_tower_auto_position": "0",
+        "wipe_tower_x": ["15"],
+        "wipe_tower_y": ["220"],
+        "prime_tower_width": "35",
+        "prime_tower_brim_width": "0",
+    });
+    if let (Some(o), Some(e)) = (s.as_object_mut(), extra.as_object()) {
+        o.extend(e.clone());
+    }
+    let path = dir.join(format!("{name}.3mf"));
+    let text = s.to_string();
+    std::fs::write(&path, box_3mf_by(app, Some(text.as_bytes()), &[])).unwrap();
+    let mut cmd = sx();
+    cmd.arg("slice").arg(&path).args(["-o", "-"]);
+    if let Some(c) = config {
+        let preset = dir.join(format!("{name}-preset.json"));
+        std::fs::write(&preset, c.to_string()).unwrap();
+        cmd.arg("--config").arg(&preset);
+    }
+    let out = cmd.output().unwrap();
+    assert!(
+        out.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+    let (mut layer, mut on) = (0, false);
+    for l in String::from_utf8_lossy(&out.stdout).lines() {
+        if l == "; CHANGE_LAYER" {
+            layer += 1;
+        } else if let Some(f) = l.strip_prefix("; FEATURE: ") {
+            on = f == "Prime tower";
+        } else if on && layer == 10 && l.starts_with("G1 X") && l.contains(" E") && !l.contains(" E-") {
+            let at = |axis: char| {
+                l.split(' ')
+                    .find_map(|w| w.strip_prefix(axis))
+                    .and_then(|v| v.parse::<f64>().ok())
+            };
+            if let (Some(x), Some(y)) = (at('X'), at('Y')) {
+                lo = [lo[0].min(x), lo[1].min(y)];
+                hi = [hi[0].max(x), hi[1].max(y)];
+            }
+        }
+    }
+    assert!(hi[0] > lo[0], "{name}: no prime tower on layer 10");
+    [hi[0] - lo[0], hi[1] - lo[1]]
+}
+
+/// The rib wall's tower is square; the plain one is `prime_tower_width` wide and as deep as its purges.
+fn is_rib([w, d]: [f64; 2]) -> bool {
+    (w - d).abs() < 1.0 && w < 30.0
+}
+
+fn is_plain([w, d]: [f64; 2]) -> bool {
+    w > 30.0 && d < w - 10.0
+}
+
+/// Two footprints the same to a micron (the G-code writes 3 decimals).
+fn same_size(a: [f64; 2], b: [f64; 2]) -> bool {
+    (a[0] - b[0]).abs() < 1e-6 && (a[1] - b[1]).abs() < 1e-6
+}
+
 /// Bambu Studio turns the prime tower's rib wall on and off with `prime_tower_rib_wall`, and its project saved
 /// before that switch existed means the rib wall, that app's default. A project of another app with neither the
 /// switch nor `wipe_tower_wall_type` keeps the engine's plain wall.
@@ -860,67 +936,97 @@ fn a_project_whose_settings_are_not_json_still_slices() {
 fn a_projects_rib_wall_switch_picks_its_prime_tower_wall() {
     let dir = temp_dir(format!("sx-cli-project-rib-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    // The box on an A1 tower (type 1) with its infill in a second filament, so every layer purges on the tower.
-    let tower = |app: &str, rib: Option<&str>| -> [f64; 2] {
-        let mut s = serde_json::json!({
-            "printer_model": "Bambu Lab A1",
-            "sparse_infill_filament_id": "2",
-            "enable_prime_tower": "1",
-            "prime_tower_auto_position": "0",
-            "wipe_tower_x": ["15"],
-            "wipe_tower_y": ["220"],
-            "prime_tower_width": "35",
-            "prime_tower_brim_width": "0",
-        });
-        if let Some(r) = rib {
-            s["prime_tower_rib_wall"] = serde_json::json!(r);
-        }
-        let name = format!("{app}-{}.3mf", rib.unwrap_or("none"));
-        let path = dir.join(&name);
-        let text = s.to_string();
-        std::fs::write(&path, box_3mf_by(Some(app), Some(text.as_bytes()), &[])).unwrap();
-        let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
-        assert!(
-            out.status.success(),
-            "{name}: {}",
-            String::from_utf8_lossy(&out.stderr)
+    let tower = |app: &str, rib: Option<&str>| {
+        let extra = rib.map_or_else(
+            || serde_json::json!({}),
+            |r| serde_json::json!({"prime_tower_rib_wall": r}),
         );
-        // The tower's extrusions on layer 10: its width and depth.
-        let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
-        let (mut layer, mut on) = (0, false);
-        for l in String::from_utf8_lossy(&out.stdout).lines() {
-            if l == "; CHANGE_LAYER" {
-                layer += 1;
-            } else if let Some(f) = l.strip_prefix("; FEATURE: ") {
-                on = f == "Prime tower";
-            } else if on && layer == 10 && l.starts_with("G1 X") && l.contains(" E") && !l.contains(" E-") {
-                let at = |axis: char| {
-                    l.split(' ')
-                        .find_map(|w| w.strip_prefix(axis))
-                        .and_then(|v| v.parse::<f64>().ok())
-                };
-                if let (Some(x), Some(y)) = (at('X'), at('Y')) {
-                    lo = [lo[0].min(x), lo[1].min(y)];
-                    hi = [hi[0].max(x), hi[1].max(y)];
-                }
-            }
-        }
-        assert!(hi[0] > lo[0], "{name}: no prime tower on layer 10");
-        [hi[0] - lo[0], hi[1] - lo[1]]
+        rib_tower(
+            &dir,
+            &format!("{app}-{}", rib.unwrap_or("none")),
+            Some(app),
+            &extra,
+            None,
+        )
     };
-    // The rib wall's tower is square; the plain one is prime_tower_width wide and as deep as its purges.
-    let rib = |[w, d]: [f64; 2]| (w - d).abs() < 1.0 && w < 30.0;
-    let plain = |[w, d]: [f64; 2]| w > 30.0 && d < w - 10.0;
     for app in ["BambuStudio-02.03.00.70", "OrcaSlicer-2.3.1"] {
         let on = tower(app, Some("1"));
-        assert!(rib(on), "{app} switch on: {on:?}");
+        assert!(is_rib(on), "{app} switch on: {on:?}");
         let off = tower(app, Some("0"));
-        assert!(plain(off), "{app} switch off: {off:?}");
+        assert!(is_plain(off), "{app} switch off: {off:?}");
     }
     let bambu = tower("BambuStudio-02.03.00.70", None);
-    assert!(rib(bambu), "a Bambu Studio project without the switch: {bambu:?}");
+    assert!(
+        is_rib(bambu),
+        "a Bambu Studio project without the switch: {bambu:?}"
+    );
     let orca = tower("OrcaSlicer-2.3.1", None);
-    assert!(plain(orca), "an OrcaSlicer project without the switch: {orca:?}");
+    assert!(
+        is_plain(orca),
+        "an OrcaSlicer project without the switch: {orca:?}"
+    );
+}
+
+/// Bambu Studio's rib keys (`prime_tower_rib_width`, and the switch) shape the tower whether they come in a project
+/// or in a `--config` preset; a key under our own name keeps its value.
+#[test]
+fn bambu_rib_keys_shape_the_tower_from_a_project_or_a_preset() {
+    let dir = temp_dir(format!("sx-cli-rib-keys-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bambu = Some("BambuStudio-02.03.00.70");
+    let width = |w: &str| serde_json::json!({"prime_tower_rib_wall": "1", "prime_tower_rib_width": w});
+    // From the project: narrower ribs make a smaller tower than the 8 mm default.
+    let wide = rib_tower(
+        &dir,
+        "project-8",
+        bambu,
+        &serde_json::json!({"prime_tower_rib_wall": "1"}),
+        None,
+    );
+    let narrow = rib_tower(&dir, "project-4", bambu, &width("4"), None);
+    assert!(is_rib(narrow), "{narrow:?}");
+    assert!(
+        narrow[0] < wide[0] - 1.0,
+        "rib width 4 {narrow:?} against 8 {wide:?}"
+    );
+    // Our own key wins over Bambu Studio's in the same settings.
+    let mut ours = width("4");
+    ours["wipe_tower_rib_width"] = serde_json::json!("8");
+    assert!(same_size(
+        rib_tower(&dir, "project-ours", bambu, &ours, None),
+        wide
+    ));
+    // From a preset, on a project that names no app and no wall: the switch picks the wall, the width its size.
+    let none = serde_json::json!({});
+    let on = rib_tower(
+        &dir,
+        "preset-1",
+        None,
+        &none,
+        Some(&serde_json::json!({"prime_tower_rib_wall": "1"})),
+    );
+    assert!(same_size(on, wide));
+    let off = rib_tower(
+        &dir,
+        "preset-0",
+        None,
+        &none,
+        Some(&serde_json::json!({"prime_tower_rib_wall": "0"})),
+    );
+    assert!(is_plain(off), "{off:?}");
+    assert!(same_size(
+        rib_tower(&dir, "preset-4", None, &none, Some(&width("4"))),
+        narrow
+    ));
+    // A preset's switch also turns off the rib wall a Bambu Studio project has by default.
+    let off = rib_tower(
+        &dir,
+        "bambu-preset-0",
+        bambu,
+        &none,
+        Some(&serde_json::json!({"prime_tower_rib_wall": "0"})),
+    );
+    assert!(is_plain(off), "{off:?}");
 }
 
 /// The layer count `sx slice` reports on stderr ("N layers, ...").
