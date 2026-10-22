@@ -74,3 +74,14 @@ Orca is told not to arrange (`--arrange 0`) in every comparison that slices a ge
 - Bambu Studio and OrcaSlicer have a fixed startup cost that dominates the smallest models (tens of milliseconds before slicing begins). That is part of using them from a script and is reported as measured, with the phase split next to it.
 - One printer profile family per slicer (a generic Marlin printer for Orca, a P1S for Bambu). Other profiles change the numbers.
 - The harness does not check that G-code prints. It checks that it exists and reads it for the columns above.
+
+## Part subtypes
+
+`probe_part_subtypes.py` reshapes the corpus project `packages/geom/tests/corpus/bambu-subtypes.3mf` into cases where each volume has a measurable effect, and checks the filament inside boxes of the object: a modifier over half the body with infill and wall settings (and each alone), and a slab on two pillars with no volumes, a blocker, an enforcer, a blocker over the whole gap with and without the enforcer, in auto, manual and off support. SlicerX is held to fixed expectations; Bambu Studio and OrcaSlicer, when given, must agree with it within 10 percent or 3 mm of filament per box.
+
+```
+python3 probe_part_subtypes.py --sx path/to/sx [--bambu [path]] [--orca [path]]
+python3 probe_part_subtypes.py --selftest      # builds every case and checks the G-code reader, no slicer needed
+```
+
+Run the reference slicers with the same Python and a native `sx` (Windows Python with `sx.exe` on Windows). It exits 1 when any check fails.
