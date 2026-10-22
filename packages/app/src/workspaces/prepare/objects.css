@@ -17,7 +17,7 @@
 .objects-card .obj-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.2; }
 /* Apart, so two dots never read as one switch. */
 .obj-swatches { display: inline-flex; align-items: center; gap: 5px; flex: none; }
-.obj-swatches i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line); }
+.obj-swatches i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px var(--mark-edge); }
 .obj-swatches b { font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--muted); }
 .obj-badge { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 0 4px; font: var(--fw-medium) var(--fs-xs) var(--f-mono); color: var(--fg); border-radius: var(--r-xs); }
 .obj-badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
