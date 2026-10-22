@@ -50,7 +50,8 @@ fn origin_of(url: &str) -> Option<String> {
 }
 
 /// The routes with CORS for `origins` only: a preflight from one of them is
-/// answered here, and its other requests get the origin echoed back.
+/// answered here, and its other requests get the origin echoed back. Every
+/// response says `Vary: Origin`, allowed or not.
 pub fn with_cors(routes: Router, origins: Vec<String>) -> Router {
     let origins: Arc<[String]> = origins.into();
     routes.layer(axum::middleware::from_fn(move |req: Request, next: Next| {
@@ -63,7 +64,11 @@ pub fn with_cors(routes: Router, origins: Vec<String>) -> Router {
                 .filter(|o| origins.iter().any(|a| a == o))
                 .and_then(|o| HeaderValue::from_str(o).ok());
             let Some(origin) = allowed else {
-                return next.run(req).await;
+                // The answer depends on the Origin even here (an allowed page gets CORS headers), so a cache must
+                // not hand this copy to an app page.
+                let mut res = next.run(req).await;
+                res.headers_mut().append(VARY, HeaderValue::from_static("origin"));
+                return res;
             };
             if req.method() == Method::OPTIONS && req.headers().contains_key(ACCESS_CONTROL_REQUEST_METHOD) {
                 let mut res = StatusCode::NO_CONTENT.into_response();
