@@ -1231,6 +1231,69 @@ async fn m5_remote_stills_are_shared_and_requests_per_session_are_bounded() {
     assert!(stills.iter().all(|t| *t == stills[0]), "{stills:?}");
 }
 
+/// The camera's PLAY and TEARDOWN lines from the Bambu fake's log.
+fn rtsp_lines(state: &Value) -> Vec<String> {
+    state["log"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l.as_str())
+        .filter(|l| l.starts_with("rtsp PLAY") || l.starts_with("rtsp TEARDOWN"))
+        .map(str::to_owned)
+        .collect()
+}
+
+// A phone that closes its live view while the hub is still opening the camera (PLAY sent, not
+// answered yet) ends the stream task mid open. The camera session still ends with TEARDOWN, so the
+// H2D does not hold it and turn the next view away as busy.
+#[tokio::test]
+async fn a_phone_view_closed_while_the_camera_opens_still_ends_the_session() {
+    let mocks = common::Mocks::start("bambu", &[]).await;
+    mocks
+        .control("/bambu", json!({ "model": "O1D", "playDelayMs": 1500 }))
+        .await;
+    let mut s = setup().await;
+    let r = call(
+        &mut s.app,
+        10,
+        "secrets.set",
+        json!({ "name": "bambu-code", "value": mocks.str("accessCode") }),
+    )
+    .await;
+    assert!(r["error"].is_null(), "{r}");
+    let cfg = json!({
+        "id": "h2d", "name": "H2D", "plugin": "bambu-lan", "host": "127.0.0.1", "port": mocks.port("bambu"),
+        "serial": mocks.str("serial"), "credentialRef": "bambu-code", "rtspPort": mocks.port("bambu-rtsps"),
+    });
+    let r = call(&mut s.app, 11, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["id"], "h2d", "{r}");
+    let key: [u8; 32] = rand_bytes();
+    put(&mut s.app, &key, "phone", 64).await;
+    let mut phone = Device::open(&s.relay, &key).await.expect("a session");
+    let cam = phone.call("camera.open", json!({ "printerId": "h2d" })).await;
+    let stream = cam["r"]["stream"].as_u64().unwrap_or_else(|| panic!("{cam}"));
+    let mut asked = false;
+    for _ in 0..100 {
+        if rtsp_lines(&mocks.state().await) == ["rtsp PLAY ok"] {
+            asked = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(asked, "the hub got as far as PLAY");
+    let closed = phone.call("camera.close", json!({ "stream": stream })).await;
+    assert_eq!(closed["ok"], true, "{closed}");
+    let mut lines = Vec::new();
+    for _ in 0..30 {
+        lines = rtsp_lines(&mocks.state().await);
+        if lines.len() >= 2 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(lines, ["rtsp PLAY ok", "rtsp TEARDOWN ok"]);
+}
+
 #[tokio::test]
 async fn l1_a_replayed_init_never_drops_a_live_session() {
     let mut s = setup().await;

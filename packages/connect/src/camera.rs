@@ -187,6 +187,22 @@ where
     })
 }
 
+/// Waits for the printer's camera sessions still being ended (a TEARDOWN on its way), which an open
+/// of the camera waits for first. A caller that puts a time limit on the open waits here before
+/// starting it, so waiting out an earlier session never uses up the new open's time.
+pub async fn after_teardowns(cfg: &crate::types::PrinterConfig) {
+    crate::rtsp::after_host_teardowns(&cfg.host).await;
+    let url_host = cfg
+        .camera_url
+        .as_deref()
+        .and_then(|u| crate::rtsp::parse_url(u, None))
+        .map(|t| t.host)
+        .filter(|h| *h != cfg.host);
+    if let Some(h) = url_host {
+        crate::rtsp::after_host_teardowns(&h).await;
+    }
+}
+
 /// Opens the camera named by `cfg.camera_url`: RTSP or RTSPS (H.264), an `onvif://` address, or an MJPEG URL. The login, when
 /// there is one, comes from `cfg.camera_credential_ref` as `user:password`. `None` when there is no
 /// such URL or the camera does not answer.

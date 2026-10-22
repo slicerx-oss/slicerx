@@ -178,6 +178,8 @@ struct Feed {
     want_key: Arc<AtomicBool>,
     /// Set once a viewer reads it: then it lingers after its last reader, and retries.
     viewed: Arc<AtomicBool>,
+    /// Set by [`Feeds::close`]: the feed ends now, readers or not.
+    stop: Arc<AtomicBool>,
     status: watch::Receiver<FeedStatus>,
 }
 
@@ -401,6 +403,7 @@ impl Feeds {
         }));
         let want_key = Arc::new(AtomicBool::new(false));
         let lingers = Arc::new(AtomicBool::new(viewer));
+        let stop = Arc::new(AtomicBool::new(false));
         // A viewer's feed that did not open starts out retrying, so its first reader hears so.
         let initial = match &first {
             Err(e) if viewer => {
@@ -424,6 +427,7 @@ impl Feeds {
                 rate: rate.clone(),
                 want_key: want_key.clone(),
                 viewed: lingers.clone(),
+                stop: stop.clone(),
                 status,
             },
         );
@@ -436,11 +440,20 @@ impl Feeds {
             rate,
             want_key: want_key.clone(),
             viewed: lingers,
+            stop,
             status: status_tx,
             reopen,
         };
         tokio::spawn(pump.run(first));
         reader(rx, Vec::new(), false, want_key)
+    }
+
+    /// Ends the printer's feed now, readers or not (the printer was removed). Its pump drops the
+    /// source within a tick, which ends the camera session with TEARDOWN, and its readers end.
+    pub(crate) fn close(&self, printer: &str) {
+        if let Some(feed) = lock(&self.live).remove(printer) {
+            feed.stop.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Ends the feed when nobody reads it. Done under the same lock subscribers take, so none can
@@ -475,6 +488,7 @@ struct Pump {
     rate: Arc<StdMutex<Rate>>,
     want_key: Arc<AtomicBool>,
     viewed: Arc<AtomicBool>,
+    stop: Arc<AtomicBool>,
     status: watch::Sender<FeedStatus>,
     reopen: Opener,
 }
@@ -486,6 +500,8 @@ enum Ended {
     Stopped,
     /// A viewer reads it but no frame came, or no key frame for a viewer that needs one.
     Stalled(String),
+    /// Closed by [`Feeds::close`].
+    Closed,
 }
 
 impl Pump {
@@ -499,6 +515,7 @@ impl Pump {
             let reason = match next {
                 Ok(src) => match self.read(src).await {
                     Ended::Idle => break "no one watching".to_owned(),
+                    Ended::Closed => break "the printer was removed".to_owned(),
                     Ended::Stopped => {
                         attempt = 0;
                         "the camera stopped sending".to_owned()
@@ -595,6 +612,9 @@ impl Pump {
                 }
                 _ = tick.tick() => {}
             }
+            if self.stop.load(Ordering::Relaxed) {
+                return Ended::Closed;
+            }
             self.log_rate();
             let watched = self.tx.receiver_count() > 0 && self.viewed.load(Ordering::Relaxed);
             if watched {
@@ -669,6 +689,9 @@ impl Pump {
     async fn wait(&self, d: Duration) -> bool {
         let end = Instant::now() + d;
         while Instant::now() < end {
+            if self.stop.load(Ordering::Relaxed) {
+                return false;
+            }
             if self.tx.receiver_count() == 0 && self.feeds.close_if_idle(&self.printer, self.generation) {
                 return false;
             }
