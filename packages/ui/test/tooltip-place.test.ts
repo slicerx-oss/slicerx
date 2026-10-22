@@ -3,7 +3,7 @@
 // A tip on a row of a stacked list (the Preview legend's markers) opens beside the list or above the row, so the
 // next row stays in view; a tip anywhere else keeps its side.
 import { describe, expect, it } from 'vitest'
-import { place, placeAbove, stackedRow, type Rect } from '../src/components/tooltip'
+import { clearOf, place, placeAbove, stackedRow, type Rect } from '../src/components/tooltip'
 
 const box = (left: number, top: number, width: number, height: number): Rect => ({ left, top, width, height, right: left + width, bottom: top + height })
 const overlaps = (a: Rect, b: Rect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
@@ -84,5 +84,44 @@ describe('tip placement over a bar', () => {
   it('keeps the tip inside the view at its edges', () => {
     expect(placeAbove(bar, 2, t, [], view)!.x).toBe(8)
     expect(placeAbove(bar, 1439, t, [], view)!.x).toBe(1440 - 8 - t.w)
+  })
+})
+
+describe('a tip beside a side panel, over the view', () => {
+  // the Print button at the foot of the left panel, and the playback bar's slider rows beside it in the view
+  const view = { w: 1440, h: 900 }
+  const tip = { w: 168, h: 39 }
+  const time = box(433, 716, 660, 18)
+  const layer = box(433, 790, 660, 18)
+  const moves = box(433, 812, 660, 18)
+  const transport = box(433, 680, 300, 30)
+
+  it('moves off the sliders it would cover, to the nearest clear place', () => {
+    const at = { x: 429, y: 806, side: 'right' as const }
+    const p = clearOf(at, tip, [transport, time, layer, moves], view)
+    for (const c of [transport, time, layer, moves]) expect(overlaps(tipBox(p, tip), c)).toBe(false)
+    expect(p.x).toBe(at.x)
+    // under the Moves row is nearer than the band between Time and Layer
+    expect(p.y).toBeGreaterThan(moves.bottom)
+  })
+
+  it('takes the nearer clear place above when the window has no room below', () => {
+    const at = { x: 429, y: 806, side: 'right' as const }
+    const p = clearOf(at, tip, [transport, time, layer, moves], { w: 1440, h: 860 })
+    for (const c of [transport, time, layer, moves]) expect(overlaps(tipBox(p, tip), c)).toBe(false)
+    // the band between Time and Layer
+    expect(p.y).toBeGreaterThan(time.bottom)
+    expect(p.y + tip.h).toBeLessThan(layer.top)
+  })
+
+  it('stays where it was when it covers nothing', () => {
+    const at = { x: 429, y: 300, side: 'right' as const }
+    expect(clearOf(at, tip, [time, layer, moves], view)).toEqual(at)
+  })
+
+  it('keeps its place when no clear place fits in the window', () => {
+    const wall = box(0, 0, 1440, 900)
+    const at = { x: 429, y: 806, side: 'right' as const }
+    expect(clearOf(at, tip, [wall], view)).toEqual(at)
   })
 })
