@@ -112,7 +112,10 @@ pub(crate) fn overhangs(
                 return open(&perimeters::difference(here, &reach), w);
             }
             let lower_mm = thickness.get(i - 1).copied().unwrap_or(layer_mm);
-            open(&normal_overhang(here, model(i - 1), i, lower_mm, cfg), w)
+            // Not opened here: under a slope inside the threshold each layer steps out by less than the 1.5 lines
+            // an opening keeps, so every layer's ring would go, and the column the rings stack into with them.
+            // The columns are opened once stacked (`columns_from`, `stack`).
+            normal_overhang(here, model(i - 1), i, lower_mm, cfg)
         })
         .collect();
     // Manual supports come only from enforcers; blockers take the found overhangs away, and enforcers then add
