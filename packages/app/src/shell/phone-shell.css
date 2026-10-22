@@ -13,6 +13,10 @@
   --toast-floor: 12px;
 }
 :root[data-phone][data-phone-tabs] { --phone-tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px)); --toast-floor: 68px; }
+/* A toast sits over the framed model: only its text and buttons take a tap, and one on the card around them reaches
+   the model. */
+:root[data-phone] .sx-toasts:not(:empty) { pointer-events: none; }
+:root[data-phone] .sx-toast-text { pointer-events: auto; }
 
 :root[data-phone], :root[data-phone] body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 :root[data-phone] #root { height: 100%; }
