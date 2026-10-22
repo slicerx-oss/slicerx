@@ -160,11 +160,16 @@ export function tauriConfig(config: EditionConfig, target: 'desktop' | 'mobile')
   const updates = config.release.updates
   const updater = updates ? { updater: { endpoints: updates.endpoints, pubkey: updates.pubkey, requireSignedVersion: true, windows: { installMode: 'passive' } } } : {}
   // The desktop page calls Supabase itself (the library, bug reports), so its origin joins connect-src, and it shows
-  // the Vault's covers and creator logos from the project's public storage, so that path joins img-src.
+  // the Vault's covers and creator logos from the project's public storage, so that path joins img-src. Cloud
+  // slicing calls the edition's cloud service from the page too, so that exact origin joins connect-src.
   // Tauri merges this over the CSP directives in tauri.conf.json; only these two change.
   const sbUrl = config.backend.supabase?.url
   const supabase = sbUrl ? new URL(sbUrl).origin : null
-  const csp = sbUrl && supabase ? { csp: { 'connect-src': `${DESKTOP_CONNECT_SRC} ${supabase}`, 'img-src': `${DESKTOP_IMG_SRC} ${publicStorageSource(sbUrl)}` } } : {}
+  const cloudApi = config.backend.cloudApi ? new URL(config.backend.cloudApi).origin : null
+  const connect = [supabase, cloudApi].filter((o): o is string => o !== null)
+  const csp = connect.length
+    ? { csp: { 'connect-src': [DESKTOP_CONNECT_SRC, ...connect].join(' '), ...(sbUrl ? { 'img-src': `${DESKTOP_IMG_SRC} ${publicStorageSource(sbUrl)}` } : {}) } }
+    : {}
   // The shell opens only the pages its capabilities allow: the shared ones, and exactly the edition's own links.
   const security = { security: { ...csp, capabilities: [...DESKTOP_CAPABILITIES, editionLinksCapability(config)] } }
   // mimir cloud's one host for the desktop's model transport (src-tauri llm.rs init_cloud); set only at startup

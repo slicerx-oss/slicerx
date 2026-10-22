@@ -147,10 +147,19 @@ describe('edition config', () => {
 
   it('lets the desktop page reach the backend and leaves the phone CSP alone', () => {
     const c = defineEditionConfig({}, { extends: harbor as never })
-    expect(tauriConfig(c, 'desktop')).toMatchObject({ app: { security: { csp: { 'connect-src': `${DESKTOP_CONNECT_SRC} https://abcdefghijklmnop.supabase.co` } } } })
+    expect(tauriConfig(c, 'desktop')).toMatchObject({ app: { security: { csp: { 'connect-src': `${DESKTOP_CONNECT_SRC} https://abcdefghijklmnop.supabase.co https://cloud.harborprint.example` } } } })
     expect(tauriConfig(c, 'mobile')).not.toHaveProperty('app')
-    const bare = defineEditionConfig({ backend: { supabase: null }, ai: { keySource: 'keychain' }, features: { store: false, feed: false, creators: false } }, { extends: harbor as never })
+    const bare = defineEditionConfig({ backend: { supabase: null, cloudApi: null }, ai: { keySource: 'keychain' }, features: { store: false, feed: false, creators: false, cloudSlicing: false } }, { extends: harbor as never })
     expect(tauriConfig(bare, 'desktop')).not.toHaveProperty('app.security.csp')
+  })
+
+  it("lets the desktop page reach the edition's cloud slicing service by its exact origin", () => {
+    const cloudOnly = defineEditionConfig({ backend: { supabase: null, cloudApi: 'https://cloud.harborprint.example:8443/api/' }, ai: { keySource: 'keychain' }, features: { store: false, feed: false, creators: false } }, { extends: harbor as never })
+    const csp = (tauriConfig(cloudOnly, 'desktop') as { app: { security: { csp: Record<string, string> } } }).app.security.csp
+    expect(csp['connect-src']).toBe(`${DESKTOP_CONNECT_SRC} https://cloud.harborprint.example:8443`)
+    expect(csp['connect-src']!.split(' ')).not.toContain('https:')
+    // No backend storage, so img-src stays the app's own.
+    expect(csp).not.toHaveProperty('img-src')
   })
 
   it("keeps the desktop page's own connect-src, the printer bridge included, when the backend is added", () => {
