@@ -502,6 +502,31 @@ fn review_config_scripts(
     }
 }
 
+/// A custom G-code refusal, with one more line when `sx` doesn't know the printer the settings name: then even the
+/// maker's own text is checked as custom G-code, which is the real reason for the refusal.
+fn with_printer_note(why: String, config: Option<&serde_json::Map<String, Value>>) -> String {
+    #[cfg(feature = "stock-gcode")]
+    {
+        if why.contains("safety preflight: custom G-code")
+            && let Some(name) = config.and_then(stock::unknown_printer)
+        {
+            return format!(
+                "{why}\nsx doesn't know the printer this project names ({name}), so its G-code is checked as custom G-code."
+            );
+        }
+    }
+    #[cfg(not(feature = "stock-gcode"))]
+    let _ = config;
+    why
+}
+
+/// `with_printer_note` for a request: only the stock check can trust its text, not a request a person already
+/// approved nor an explicit script target.
+fn request_refusal(why: String, req: &sx_core::api::SliceRequest, args: &[String]) -> String {
+    let stock_checked = !req.options.trusted_gcode.unwrap_or(false) && !has(args, "--script-printer");
+    with_printer_note(why, stock_checked.then(|| req.config.as_object()).flatten())
+}
+
 fn review_request_scripts(
     req: &mut sx_core::api::SliceRequest,
     selected: Option<&sx_core::script_review::Identity>,
@@ -611,7 +636,7 @@ fn cmd_request(args: &[String]) -> ExitCode {
         ) => {
             return fail(EXIT_INPUT, e.to_string());
         }
-        Err(e) => return fail(EXIT_SLICE, e.to_string()),
+        Err(e) => return fail(EXIT_SLICE, request_refusal(e.to_string(), &req, args)),
     };
     if let Some(why) = collision_refusal(&run.report, &req.plate.objects, args) {
         return fail(EXIT_INPUT, why);
@@ -1033,7 +1058,10 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     if let Some(code) = settings_notes(args, &report, skipped) {
         return Ok(code);
     }
-    config.trusted_gcode_keys = review_config_scripts(&config.raw, script_target(args)?.as_ref(), None)?.0;
+    let target = script_target(args)?;
+    config.trusted_gcode_keys = review_config_scripts(&config.raw, target.as_ref(), None)?.0;
+    // With no explicit script target, only the stock check can trust the project's text.
+    let stock_checked = target.is_none();
     // The same limits every entry point applies: settings past the nozzle and machine limits are lowered.
     let issues = sx_core::preflight::clamp_config(&mut config, &sx_core::gcode_lint::Limits::default());
     if sx_core::preflight::blocks(&issues) {
@@ -1045,9 +1073,10 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     // The mesh goes to the middle of the profile's bed, as the desktop slicers do.
     let plate = Plate::single_on(mesh, config.bed_rect(), config.printable_height);
     let t = Instant::now();
-    let out = sx_core::slice(&plate, &config, &SliceOptions::default())?;
+    let refused = |e: sx_core::Error| with_printer_note(e.to_string(), stock_checked.then_some(&config.raw));
+    let out = sx_core::slice(&plate, &config, &SliceOptions::default()).map_err(refused)?;
     let mut gcode = Vec::new();
-    let stats = sx_core::emit_gcode(&out, &config, config.gcode_flavor, &mut gcode)?;
+    let stats = sx_core::emit_gcode(&out, &config, config.gcode_flavor, &mut gcode).map_err(refused)?;
     let (gcode, timing) = sx_core::firmware::finalize_timed(&gcode, None, Some(&config));
     let time_s = sx_core::firmware::footer_time(&gcode).unwrap_or(stats.time_s);
     // The name `filename_format` gives the file, from the model's file name.

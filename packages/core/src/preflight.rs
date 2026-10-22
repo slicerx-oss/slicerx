@@ -91,23 +91,34 @@ pub fn vet_custom(
     } else {
         crate::gcode_lint::Trust::Trusted
     };
-    vet_text(section, text, trust, &cfg.limits)
+    vet_text(section, text, trust, &cfg.limits, &[])
 }
 
-/// Lints rendered custom G-code as `trust` says. Errors block.
+/// Lints rendered custom G-code as `trust` says. Errors block. A finding names its line by `source_lines`, the
+/// template line each rendered line came from, when that has it, so the number is the one the person sees in their
+/// settings; else by the rendered line.
 pub(crate) fn vet_text(
     section: crate::gcode_lint::Section,
     text: &str,
     trust: crate::gcode_lint::Trust,
     limits: &crate::gcode_lint::Limits,
+    source_lines: &[u32],
 ) -> crate::error::Result<()> {
     let report = crate::gcode_lint::lint(text, section, trust, limits);
     if report.ok() {
         Ok(())
     } else {
+        let line = |rendered: u32| {
+            usize::try_from(rendered)
+                .ok()
+                .and_then(|l| l.checked_sub(1))
+                .and_then(|i| source_lines.get(i))
+                .copied()
+                .unwrap_or(rendered)
+        };
         let errs: Vec<String> = report
             .errors()
-            .map(|f| format!("line {}: {} ({})", f.line, f.message, f.code))
+            .map(|f| format!("line {}: {} ({})", line(f.line), f.message, f.code))
             .collect();
         Err(crate::error::Error::Blocked(format!(
             "custom G-code: {}",

@@ -107,6 +107,20 @@ pub fn stock_keys(config: &Map<String, Value>) -> Vec<String> {
         .collect()
 }
 
+/// The printer the settings name when `sx` doesn't know it, so a refusal can say why the maker's text was not
+/// recognized.
+pub fn unknown_printer(config: &Map<String, Value>) -> Option<String> {
+    if !models_of(&table(), config).is_empty() {
+        return None;
+    }
+    ["printer_settings_id", "inherits", "printer_model"]
+        .iter()
+        .filter_map(|k| first_str(config.get(*k)))
+        .map(str::trim)
+        .find(|n| !n.is_empty())
+        .map(str::to_owned)
+}
+
 /// extracts current declarations for both recognition and replacement.
 pub fn declarations(
     config: &Map<String, Value>,
