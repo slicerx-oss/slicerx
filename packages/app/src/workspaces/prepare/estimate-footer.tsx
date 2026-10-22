@@ -107,7 +107,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
     <SplitButton variant="primary" size="lg" full icon="send-to-printer" data-testid="danger-slice-print" aria-label={printName} disabled={!fresh || loading} {...aboveFooter} {...(reason ? { tip: { title: printName, reason } } : rolled ? { tip: { title: printName, body: rolled } } : nameTip)} menuLabel="More output" menuOpen={menu} onMenu={() => setMenu(!menu)} menuProps={{ 'data-testid': 'slice-output-menu' }} menu={outputMenu} onClick={() => (target ? void sendToPrinter(host, target) : showSliced())}>
       {target ? (
         <span className="btn-name">
-          Print on <MiddleName name={shortPrinterName(target.name)} />
+          Print on <MiddleName name={shortPrinterName(target.name)} exact />
         </span>
       ) : (
         'Print'
