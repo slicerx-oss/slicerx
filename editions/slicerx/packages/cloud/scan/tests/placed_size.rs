@@ -240,6 +240,111 @@ async fn single_plate_files_name_plate_one() {
 }
 
 #[tokio::test]
+async fn a_later_plate_gets_the_mesh_checks() {
+    // Plate 2 is a box of no size: every triangle is degenerate.
+    let o = scan_with(
+        Limits::default(),
+        "plates.3mf",
+        plates(&[[10.0, 10.0, 10.0], [0.0, 0.0, 0.0]]),
+    )
+    .await;
+    assert_eq!(o.report.verdict, Verdict::Rejected);
+    assert_eq!(o.report.reason_codes, vec!["mesh_empty"]);
+    assert!(
+        o.report.reasons[0].starts_with("plate 2: "),
+        "{:?}",
+        o.report.reasons
+    );
+    // A coordinate that is not a finite number, on plate 2 or plate 1: the engine refuses it as it reads the 3MF,
+    // and the code says why.
+    for plate in [2, 1] {
+        let o = scan_with(
+            Limits::default(),
+            "plates.3mf",
+            plates_with_vertex(&[[10.0, 10.0, 10.0], [20.0, 20.0, 20.0]], plate, "NaN"),
+        )
+        .await;
+        assert_eq!(o.report.verdict, Verdict::Rejected);
+        assert_eq!(
+            o.report.reason_codes,
+            vec!["mesh_not_finite"],
+            "{:?}",
+            o.report.reasons
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_triangle_limit_counts_every_plate() {
+    // 12 triangles a plate: each plate is under 20, the project is not.
+    let limits = Limits {
+        max_triangles: 20,
+        ..Limits::default()
+    };
+    let o = scan_with(
+        limits.clone(),
+        "plates.3mf",
+        plates(&[[10.0, 10.0, 10.0], [20.0, 20.0, 20.0]]),
+    )
+    .await;
+    assert_eq!(o.report.verdict, Verdict::Rejected);
+    assert_eq!(o.report.reason_codes, vec!["too_many_triangles"]);
+    let o = scan_with(limits, "box.3mf", plates(&[[10.0, 10.0, 10.0]])).await;
+    assert_eq!(o.report.verdict, Verdict::Clean, "{:?}", o.report.reasons);
+}
+
+#[tokio::test]
+async fn an_empty_later_plate_is_left_out() {
+    let config = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<config><object id=\"1\"><metadata key=\"name\" value=\"Box 1\"/></object>\
+<plate><metadata key=\"plater_id\" value=\"1\"/><model_instance><metadata key=\"object_id\" value=\"1\"/></model_instance></plate>\
+<plate><metadata key=\"plater_id\" value=\"2\"/></plate></config>";
+    let o = scan(
+        "plates.3mf",
+        package(
+            &format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model unit=\"millimeter\" \
+xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\"><resources>{}</resources><build><item objectid=\"1\"/></build></model>",
+                box_object(1, BOX)
+            ),
+            Some(config),
+        ),
+    )
+    .await;
+    assert_eq!(size(&o), BOX);
+}
+
+/// `plates`, with the first vertex of plate `plate`'s box set to `x` (any text, such as `NaN`).
+fn plates_with_vertex(sizes: &[[f32; 3]], plate: u32, x: &str) -> Vec<u8> {
+    let mut objects = String::new();
+    let mut items = String::new();
+    let mut config = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<config>");
+    for (n, s) in sizes.iter().enumerate() {
+        let id = u32::try_from(n + 1).unwrap();
+        let mut object = box_object(id, *s);
+        if id == plate {
+            object = object.replacen("<vertex x=\"0\"", &format!("<vertex x=\"{x}\""), 1);
+        }
+        objects.push_str(&object);
+        items.push_str(&format!(
+            "<item objectid=\"{id}\" transform=\"1 0 0 0 1 0 0 0 1 {} 0 0\"/>",
+            300 * n
+        ));
+        config.push_str(&format!(
+            "<object id=\"{id}\"><metadata key=\"name\" value=\"Box {id}\"/></object><plate><metadata key=\"plater_id\" value=\"{id}\"/>\
+<model_instance><metadata key=\"object_id\" value=\"{id}\"/></model_instance></plate>"
+        ));
+    }
+    config.push_str("</config>");
+    package(
+        &format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model unit=\"millimeter\" \
+xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\"><resources>{objects}</resources><build>{items}</build></model>"
+        ),
+        Some(&config),
+    )
+}
+
+#[tokio::test]
 async fn a_plate_past_the_size_limit_is_refused() {
     let limits = Limits {
         max_extent_mm: 100.0,
