@@ -2601,6 +2601,27 @@ fn emit_layer(
             }
         }
         first_path = false;
+        // A piece of a Bambu Lab type tower's wall after an opening: the nozzle hops the opening retracted, at
+        // 10 mm/s, so the start of the wipe there is left clear (`prime_tower_skip_points`).
+        if p.tower_hop
+            && within_tower
+            && !retracted
+            && pending_lift.is_none()
+            && let Some(from) = cursor.filter(|&q| q != start)
+        {
+            let retracts = style.active(retract);
+            if retracts {
+                retract_move(b, style, -retract, retract_feed);
+            }
+            if accel_on {
+                b.extend_from_slice(motion.travel_lines(false, p.feature, &mut motion_now).as_bytes());
+            }
+            put_travel(b, from, start, Some(NOZZLE_WIPE_BACK_FEED));
+            if retracts {
+                retract_move(b, style, retract, retract_feed);
+            }
+            cursor = Some(start);
+        }
         // Travel.
         let dist = cursor.map_or(f64::INFINITY, |cur| cur.dist_mm(start));
         // Combing and the internal-region test, when the profile asks for either, then round the keep-out zones,

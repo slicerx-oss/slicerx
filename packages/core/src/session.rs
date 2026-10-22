@@ -3069,6 +3069,7 @@ impl SliceSession {
         crate::sorting::sort_by_key(&mut works, |w| w.tool != tool);
         let mut current = tool;
         let mut used_rows = 0.0;
+        let mut wipe_starts: Vec<(f64, f64)> = Vec::new();
         for w in &mut works {
             if w.tool != current && self.tool_count > 1 {
                 let mut v = crate::tower::change_purge(cfg, self.tool_count, current, w.tool).wipe;
@@ -3077,6 +3078,7 @@ impl SliceSession {
                 }
                 if let (true, Some(t)) = (v > 0.5, self.tower(cfg)) {
                     let t = self.tower_origin.map_or(t, |o| t.at(o));
+                    wipe_starts.push(t.row_start(used_rows));
                     let (path, rows) = t.purge(v, pl.height, false, used_rows);
                     used_rows += rows;
                     w.tower.extend(path);
@@ -3097,7 +3099,8 @@ impl SliceSession {
             && let Some(tower) = self.tower(cfg)
         {
             let tower = self.tower_origin.map_or(tower, |o| tower.at(o));
-            work.tower.insert(0, tower.wall(false, pl.top));
+            work.tower
+                .splice(0..0, tower.wall_pieces(false, pl.top, &wipe_starts));
         }
         paths::plan_layer(
             &mut out,
@@ -8399,6 +8402,10 @@ impl SliceSession {
                         .map(|t0| t0.shaped(t.width(), t.angle()).at(t.origin()))
                 });
             let mut first_purge = true;
+            // Where the layer's wall is in its work's tower paths, and where each wipe after a change starts (the
+            // wall opens level with them).
+            let mut wall_slot: Option<(usize, usize)> = None;
+            let mut wipe_starts: Vec<(f64, f64)> = Vec::new();
             for i in 0..works.len() {
                 let Some(next_tool) = works.get(i).map(|w| w.tool) else {
                     continue;
@@ -8419,6 +8426,7 @@ impl SliceSession {
                 }
                 let Some(work) = works.get_mut(i) else { continue };
                 if let (true, Some(tower)) = (i == wall_at && walled, tower.as_ref()) {
+                    wall_slot = Some((i, work.tower.len()));
                     work.tower.push(tower.wall(first, self.plan.top(layer)));
                     // a type 1 tower's brim narrows over the first layers (orca's brim chamfer)
                     if crate::tower::type1(cfg) {
@@ -8456,6 +8464,9 @@ impl SliceSession {
                     }
                     first_purge = false;
                     if let (true, Some(tower)) = (v > 0.5, tower.as_ref()) {
+                        if lead.is_none() {
+                            wipe_starts.push(tower.row_start(used_rows));
+                        }
                         let (path, rows) = tower.purge_lead(v, h, first, used_rows, lead);
                         used_rows += rows;
                         work.tower.extend(path);
@@ -8463,6 +8474,13 @@ impl SliceSession {
                     }
                 }
                 current = work.tool;
+            }
+            if let (Some((wi, at)), Some(tower)) = (wall_slot, tower.as_ref())
+                && let Some(work) = works.get_mut(wi)
+                && at < work.tower.len()
+            {
+                let pieces = tower.wall_pieces(first, self.plan.top(layer), &wipe_starts);
+                work.tower.splice(at..=at, pieces);
             }
             // The depth the purges left free is filled by the filament of the last purge (Orca's
             // finish block), or with the outline when the layer purged nothing.

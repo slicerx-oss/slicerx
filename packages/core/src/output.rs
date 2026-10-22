@@ -149,6 +149,9 @@ pub struct PathInfo {
     /// The first row of a prime tower wipe after a tool change that starts with a short nozzle wipe
     /// (`prime_tower_skip_points` on a Bambu Lab type tower).
     pub tower_wipe: bool,
+    /// A piece of the prime tower's wall that the nozzle reaches by hopping the opening before it, retracted
+    /// (`prime_tower_skip_points` on a Bambu Lab type tower).
+    pub tower_hop: bool,
 }
 
 /// a layer's last path, which the next layer's change retraction wipes along (orca's `Wipe` path)
