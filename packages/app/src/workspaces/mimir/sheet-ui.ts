@@ -57,17 +57,27 @@ export function setSheetActions(actions: SheetActions | null): void {
   sheetUi.setState({ actions })
 }
 
+/** The sheet whose record's Edit sizes opened the panel, for handing focus back when it closes. */
+let openedFrom: string | null = null
+
 /** Brings the panel up for a sheet in the conversation (its record's button). */
 export function openSheet(sheetId: string): void {
   const s = sheetUi.getState()
   if (s.shown?.sheet.id !== sheetId) return
+  openedFrom = sheetId
   sheetUi.setState({ open: true })
   // to its first field, once the panel is up
   requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-testid="mimir-sheet-panel"] input:not([disabled])')?.focus())
 }
 
+/** Puts the panel away (Done, or Escape inside it) and hands focus back to the Edit sizes that opened it. */
 export function closeSheet(): void {
+  const from = openedFrom
+  openedFrom = null
   sheetUi.setState({ open: false })
+  if (!from) return
+  // once the panel is gone and the record shows again; the conversation stays where it was
+  requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-testid="mimir-sheet-record"][data-sheet-id="${CSS.escape(from)}"] [data-testid="mimir-sheet-open"]`)?.focus({ preventScroll: true }))
 }
 
 export function setLive(key: string, value: number): void {
