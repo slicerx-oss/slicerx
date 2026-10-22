@@ -170,10 +170,14 @@ pub(crate) fn to_plate(l: &mut LayerPaths, object: u16) {
 
 /// The owners of `l`'s paths from the objects' slices on its layer (`here`) and above it (`above(k)`: the
 /// slices `k` layers up, None past the top), cutting the paths that cross from one object into another.
+///
+/// `min_held` (mm, the support's line spacing) is how long a support path must pass under an object in all for
+/// that object to count in it ([`support_cuts`]).
 pub(crate) fn assign(
     l: &mut LayerPaths,
     here: &[ObjectSlice],
     above: &dyn Fn(usize) -> Option<std::sync::Arc<Slices>>,
+    min_held: f64,
 ) {
     let old_points = std::mem::take(&mut l.points);
     let old_zs = std::mem::take(&mut l.zs);
@@ -216,7 +220,7 @@ pub(crate) fn assign(
             if two {
                 plan = reach
                     .as_ref()
-                    .map(|r| support_cuts(pts, r, owner, f64::from(p.width_mm)));
+                    .map(|r| support_cuts(pts, r, owner, f64::from(p.width_mm), min_held));
             } else {
                 let start = u32::try_from(points.len()).unwrap_or(u32::MAX);
                 for (k, &q) in pts.iter().enumerate() {
@@ -547,8 +551,10 @@ type Stretch = (f64, u16, Option<(usize, Point, f64)>);
 /// one up whose slice holds it ([`Reach::under_at`]). A stretch under none takes the object of the nearer
 /// stretch under one along the path, round it for a loop: one between stretches of two objects is split where
 /// it is equally far from each. A path whose ends are no more than `width` (its line width, mm) apart is a loop.
-/// A path under no object at all keeps `whole`, its own owner.
-fn support_cuts(pts: &[Point], r: &Reach, whole: u16, width: f64) -> (u16, Cuts) {
+/// An object the path passes under for less than `min_held` mm in all does not count, unless the path is under it
+/// longest: a loop that only grazes a second object's shadow keeps one owner. A path under no object at all keeps
+/// `whole`, its own owner.
+fn support_cuts(pts: &[Point], r: &Reach, whole: u16, width: f64, min_held: f64) -> (u16, Cuts) {
     let under = |q: Point| r.under_at(q, OBJECT_NONE);
     let gap = |a: Point, b: Point| {
         let (dx, dy) = (f64::from(b.x - a.x) / SCALE, f64::from(b.y - a.y) / SCALE);
@@ -584,6 +590,41 @@ fn support_cuts(pts: &[Point], r: &Reach, whole: u16, width: f64) -> (u16, Cuts)
         if parts.last().is_some_and(|s| s.1 != end) {
             parts.push((s0 + len, end, Some((k, *b, 1.0))));
         }
+    }
+    // How long the path passes under each object; one under for less than `min_held` that is not the longest
+    // (the first along the path on a tie) is a graze, and its stretches count as under none.
+    let mut held: Vec<(u16, f64)> = Vec::new();
+    for (i, &(s0, o, _)) in parts.iter().enumerate() {
+        if o == OBJECT_NONE {
+            continue;
+        }
+        let len = parts.get(i + 1).map_or(total, |n| n.0) - s0;
+        match held.iter_mut().find(|h| h.0 == o) {
+            Some(h) => h.1 += len,
+            None => held.push((o, len)),
+        }
+    }
+    let longest = held
+        .iter()
+        .fold(None::<(u16, f64)>, |b, &h| match b {
+            Some(x) if x.1 >= h.1 => Some(x),
+            _ => Some(h),
+        })
+        .map(|h| h.0);
+    let grazed: Vec<u16> = held
+        .iter()
+        .filter(|h| h.1 < min_held && Some(h.0) != longest)
+        .map(|h| h.0)
+        .collect();
+    if !grazed.is_empty() {
+        let mut kept: Vec<Stretch> = Vec::with_capacity(parts.len());
+        for &(s0, o, on) in &parts {
+            let o = if grazed.contains(&o) { OBJECT_NONE } else { o };
+            if kept.last().is_none_or(|k| k.1 != o) {
+                kept.push((s0, o, on));
+            }
+        }
+        parts = kept;
     }
     if parts.iter().all(|s| s.1 == OBJECT_NONE) {
         return (whole, Vec::new());
@@ -859,7 +900,7 @@ mod tests {
         let here = vec![square(0, 0.0, 0.0, 10.0, 10.0), square(1, 10.0, 0.0, 20.0, 10.0)];
         let mut l = layer(&[(2.0, 5.0), (18.0, 5.0)], Feature::SparseInfill);
         let before = length(&l);
-        assign(&mut l, &here, &|_| None);
+        assign(&mut l, &here, &|_| None, 2.5);
         assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0, 1]);
         // The cut is on the seam (the first object takes the shared boundary), on the same line.
         let cut = l.path_points(&l.paths[0]).last().copied().unwrap();
@@ -934,7 +975,7 @@ mod tests {
     fn overlapping_objects_give_the_first_in_plate_order() {
         let here = vec![square(0, 0.0, 0.0, 10.0, 10.0), square(1, 5.0, 0.0, 15.0, 10.0)];
         let mut l = layer(&[(6.0, 5.0), (9.0, 5.0)], Feature::InternalSolid);
-        assign(&mut l, &here, &|_| None);
+        assign(&mut l, &here, &|_| None, 2.5);
         assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0]);
     }
 
@@ -944,15 +985,20 @@ mod tests {
         let here = vec![square(0, 0.0, 0.0, 5.0, 5.0), square(1, 21.0, 0.0, 26.0, 5.0)];
         let up = std::sync::Arc::new(vec![square(0, 0.0, 0.0, 22.0, 5.0)]);
         let mut l = layer(&[(20.0, 2.0), (20.0, 4.0)], Feature::Support);
-        assign(&mut l, &here, &|k| {
-            (k <= 2).then(|| {
-                if k == 2 {
-                    up.clone()
-                } else {
-                    std::sync::Arc::new(Vec::new())
-                }
-            })
-        });
+        assign(
+            &mut l,
+            &here,
+            &|k| {
+                (k <= 2).then(|| {
+                    if k == 2 {
+                        up.clone()
+                    } else {
+                        std::sync::Arc::new(Vec::new())
+                    }
+                })
+            },
+            2.5,
+        );
         assert_eq!(l.paths[0].owner, 0);
     }
 
@@ -974,7 +1020,7 @@ mod tests {
         };
         let mut l = layer(&[(2.0, 5.0), (18.0, 5.0)], Feature::Support);
         let before = length(&l);
-        assign(&mut l, &[], &above);
+        assign(&mut l, &[], &above, 2.5);
         assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0, 1]);
         // The stretch under the gap goes to the nearer shelf along the path, so it is cut in the gap's middle, on
         // the same line.
@@ -988,7 +1034,7 @@ mod tests {
         // Under one object only, the path keeps one owner and its points.
         let one = std::sync::Arc::new(vec![square(0, 0.0, 0.0, 20.0, 10.0)]);
         let mut l = layer(&[(2.0, 5.0), (18.0, 5.0)], Feature::Support);
-        assign(&mut l, &[], &|k| (k <= 2).then(|| one.clone()));
+        assign(&mut l, &[], &|k| (k <= 2).then(|| one.clone()), 2.5);
         assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0]);
         assert_eq!(l.points.len(), 2);
     }
@@ -1014,7 +1060,7 @@ mod tests {
         let ring = [(2.0, 5.0), (18.0, 5.0), (18.0, 15.0), (2.0, 15.0), (2.0, 5.0)];
         let mut l = layer(&ring, Feature::Support);
         let before = length(&l);
-        assign(&mut l, &[], &above);
+        assign(&mut l, &[], &above, 2.5);
         assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0, 1, 0]);
         // Cut in the gap's middle on y 5, and halfway round the outer arc on y 15.
         let cuts: Vec<[f64; 2]> = l.paths[..2]
@@ -1042,11 +1088,34 @@ mod tests {
     }
 
     #[test]
+    fn a_support_loop_that_grazes_a_second_shadow_keeps_one_owner() {
+        // The loop runs under shelf 0 (x 0 to 9) and out past it; at its far corner it passes under shelf 1
+        // (x 11 to 20, y 0 to 6) for 1.5 mm, less than the 2.5 mm line spacing: shelf 1 does not count, and the
+        // whole loop is shelf 0's.
+        let up = std::sync::Arc::new(vec![
+            square(0, 0.0, 0.0, 9.0, 10.0),
+            square(1, 11.0, 0.0, 20.0, 6.0),
+        ]);
+        let above = |k: usize| (k == 1).then(|| up.clone());
+        let ring = [(2.0, 5.0), (11.5, 5.0), (11.5, 15.0), (2.0, 15.0), (2.0, 5.0)];
+        let mut l = layer(&ring, Feature::Support);
+        let before = length(&l);
+        assign(&mut l, &[], &above, 2.5);
+        assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0]);
+        assert_eq!(l.points.len(), ring.len());
+        assert!((length(&l) - before).abs() < 1e-6);
+        // With no minimum, the graze would take part of the loop.
+        let mut l = layer(&ring, Feature::Support);
+        assign(&mut l, &[], &above, 0.0);
+        assert!(l.paths.iter().any(|p| p.owner == 1));
+    }
+
+    #[test]
     fn skirt_and_tower_belong_to_no_object() {
         let here = vec![square(0, 0.0, 0.0, 10.0, 10.0)];
         for f in [Feature::Skirt, Feature::PrimeTower] {
             let mut l = layer(&[(2.0, 5.0), (8.0, 5.0)], f);
-            assign(&mut l, &here, &|_| None);
+            assign(&mut l, &here, &|_| None, 2.5);
             assert_eq!(l.paths[0].owner, OBJECT_NONE);
         }
     }

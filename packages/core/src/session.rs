@@ -2188,8 +2188,9 @@ impl SliceSession {
     }
 
     /// The owners of a print layer's paths (`owners.rs`): `object` is the object layer it prints (None for a raft
-    /// or support only layer, `next` then the first object layer over it).
-    fn stamp_owners(&self, l: &mut LayerPaths, object: Option<u32>, next: Option<u32>) {
+    /// or support only layer, `next` then the first object layer over it). `min_held` is the support's line spacing
+    /// (`owners::assign`).
+    fn stamp_owners(&self, l: &mut LayerPaths, object: Option<u32>, next: Option<u32>, min_held: f64) {
         let mut objects = self.part_object.clone();
         objects.sort_unstable();
         objects.dedup();
@@ -2206,7 +2207,7 @@ impl SliceSession {
                     let b = base? as usize;
                     self.object_slices_at(b + k)
                 };
-                crate::owners::assign(l, &here, &above);
+                crate::owners::assign(l, &here, &above, min_held);
             }
         }
     }
@@ -3588,7 +3589,7 @@ impl SliceSession {
                         .and_then(|r| r.iter().find_map(|l| l.object)),
                 ),
             };
-            self.stamp_owners(&mut p, object, next);
+            self.stamp_owners(&mut p, object, next, config.support.base_spacing);
             p
         };
         // The first layer's area and outlines are worked out next to the layers' paths.
