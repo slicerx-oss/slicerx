@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The mimir tab on a phone, at 390 and 360 px wide: the send card's bed check and Print stay above the composer, a long
 // message wraps in the composer with its start in view, the empty chat's hint stays whole above a composer grown to six
-// lines, and everything a finger presses in the tab takes a 44 x 44 px
+// lines, Edit sizes opens the sizes panel whole above the composer with Done in reach, and everything a finger presses
+// in the tab takes a 44 x 44 px
 // touch. A touch box counts the control itself, an invisible box drawn around it (an absolutely placed ::before or
 // ::after), and for a checkbox the label it sits in, since a tap on any of those lands on the control.
 import type { Locator, Page, TestInfo } from '@playwright/test'
@@ -277,6 +278,64 @@ journey.describe('the mimir tab fits a phone', () => {
     await print.tap()
     await expect(page.getByTestId('mimir-progress').last()).toBeVisible({ timeout: 30_000 })
     await expect(page.getByTestId('mimir-chat')).not.toHaveAttribute('data-card-waits')
+    await page.setViewportSize(PHONES[0])
+  })
+
+  journey('Edit sizes opens the sizes panel whole above the composer at 390 and 360 px, and Done brings the chat back', async ({ page }, info) => {
+    journey.slow()
+    await phoneMimir(page)
+    await askTab(page, 'Make me a stand for my phone')
+    await page.getByTestId('mimir-choice').getByRole('button', { name: 'An iPhone 15' }).click()
+    const rec = page.getByTestId('mimir-sheet-record').last()
+    await expect(rec.getByTestId('mimir-sheet-confirm')).toBeVisible({ timeout: 30_000 })
+    await rec.getByTestId('mimir-sheet-confirm').click()
+    const log = page.getByTestId('mimir-transcript')
+    await expect(log).toContainText('The stand is on the plate', { timeout: 60_000 })
+    // the run has ended once the spool pick is under the part
+    await expect(page.getByTestId('mimir-filament')).toBeVisible({ timeout: 30_000 })
+    const panel = page.getByTestId('mimir-sheet-panel')
+    const done = page.getByTestId('mimir-sheet-close')
+    const open = rec.getByTestId('mimir-sheet-open')
+    for (const phone of PHONES) {
+      await page.setViewportSize(phone)
+      await open.scrollIntoViewIfNeeded()
+      const at = await log.evaluate((el) => el.scrollTop)
+      await open.tap()
+      await expect(panel).toHaveAttribute('data-mode', 'drive')
+      if (phone === PHONES[0]) await shots(page, info, 'sizes-panel', async () => page.mouse.move(0, 0))
+      // the panel takes the chat's place: whole on screen, under the view and above the composer, with the chat out of
+      // sight behind it rather than showing around it
+      const p = (await panel.boundingBox())!
+      const view = (await page.locator('.studio > .vp').boundingBox())!
+      const composer = (await page.getByTestId('mimir-composer').boundingBox())!
+      expect(p.x).toBeGreaterThanOrEqual(-0.5)
+      expect(p.x + p.width).toBeLessThanOrEqual(phone.width + 0.5)
+      expect(p.y, `the panel under the view at ${phone.width} px`).toBeGreaterThanOrEqual(view.y + view.height - 0.5)
+      expect(p.y + p.height, `the panel above the composer at ${phone.width} px`).toBeLessThanOrEqual(composer.y + 0.5)
+      await expect(page.getByTestId('mimir-composer')).toBeVisible()
+      await expect(page.getByTestId('mimir-transcript')).toBeHidden()
+      // Done is 44 px either way, inside the panel, and nothing lies over it
+      const d = (await done.boundingBox())!
+      expect(d.width, `Done at ${phone.width} px`).toBeGreaterThanOrEqual(44 - 0.5)
+      expect(d.height).toBeGreaterThanOrEqual(44 - 0.5)
+      expect(d.y).toBeGreaterThanOrEqual(p.y - 0.5)
+      expect(d.y + d.height).toBeLessThanOrEqual(Math.min(p.y + p.height, composer.y) + 0.5)
+      const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('[data-testid]')?.getAttribute('data-testid') ?? null, [d.x + d.width / 2, d.y + d.height / 2])
+      expect(hit, `what lies at Done's middle at ${phone.width} px`).toBe('mimir-sheet-close')
+      // a row's field takes a tap too
+      const width = panel.locator('[data-testid="mimir-sheet-row"][data-key="stand_width"] input')
+      await expect(width).toBeEnabled()
+      expect(await smallTargets(page), `the sizes panel at ${phone.width} px`).toEqual([])
+      await noHorizontalScroll(page)
+      // Done closes it and the chat comes back, the record where it was
+      await done.tap()
+      await expect(panel).toHaveCount(0)
+      await expect(log).toBeVisible()
+      await expect(page.getByTestId('mimir-composer')).toBeVisible()
+      // the conversation comes back where it was, Edit sizes under the finger
+      expect(await log.evaluate((el) => el.scrollTop)).toBe(at)
+      await expect(open).toBeInViewport()
+    }
     await page.setViewportSize(PHONES[0])
   })
 })

@@ -388,6 +388,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
             <Icon name="chevron-down" size={14} />
           </button>
         ) : null}
+        {/* on a phone the sizes panel opens here, in the conversation's place (sheet-view.tsx) */}
+        {phone ? <div className="mimir-sheet-slot" /> : null}
       </div>
       <div className="mimir-chat-foot" hidden={more}>
         <Composer attachments={attachments} running={run.running} sendOff={ready === null || notice} onStop={run.cancel} onSend={(text, files) => send(text, files)} />
