@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-245 tools.
+246 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -250,4 +250,5 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_toolhead_mapping` |  |  | read | Read the Snapmaker U1 loaded toolheads and match each job filament by exact color (Delta E at most 2), then nearest color, with material breaking ties and unused spools preferred. |
 | `slicerx_update_fleet` | Change a fleet color or icon | fleets | read, ungated | Set or clear (null) the color and icon of a fleet. |
 | `slicerx_validate_config` | Validate a config | settings | read, ungated | Check a full or partial OrcaSlicer config: unknown keys, wrong types, values outside OrcaSlicer limits or the usual range, keys that have no effect, and cross-key problems (layer height against nozzle, fan order, nozzle temperature against the filament). |
+| `slicerx_vault_list` |  |  | read | List Vault designs in SlicerX as its Vault shows them, read by the open app with its own store and the person's session: list is all (the approved catalog, signed in or out), saved (the person's Saved list) or mine (the person's own uploads in every status, with their review status); saved and mine answer signed_out while nobody is signed in. |
 | `slicerx_walls` |  |  | slice | Make the walls (or the floor) of a part already in the project thicker or thinner, such as a case, box or tray: give the new thickness (wallMm) or the change (byMm). |
