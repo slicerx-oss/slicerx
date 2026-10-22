@@ -152,17 +152,45 @@ fn placed_plate(plates: &[PlateBounds], limits: &Limits) -> Result<Placed, Rejec
     })
 }
 
+/// Gives every plate after the first the checks the first gets below, and holds the whole project to the triangle
+/// limit, so nothing on a later plate skips the scan. A plate with no vertices is an empty plate and is left out.
+fn check_later_plates(plates: &[(u32, Mesh)], limits: &Limits) -> Result<(), Reject> {
+    let triangles: usize = plates.iter().map(|(_, m)| m.triangle_count()).sum();
+    if triangles > limits.max_triangles {
+        return Err(Reject::new(
+            "too_many_triangles",
+            format!(
+                "the project has {triangles} triangles over its plates, the limit is {}",
+                limits.max_triangles
+            ),
+        ));
+    }
+    for (n, mesh) in plates.iter().skip(1) {
+        if mesh.bounds().is_none() {
+            continue;
+        }
+        model::check_mesh(mesh, limits)
+            .map_err(|r| Reject::new(r.code, format!("plate {n}: {}", r.message)))?;
+    }
+    Ok(())
+}
+
 /// The reject code for a model the engine refuses to load. Its refusals read "refused <code> <object> <element>
-/// <value>": an empty STL is `mesh_empty` and a coordinate that is not a finite number `mesh_not_finite`, as when
-/// the checks here find them; anything else malformed is `mesh_parse`.
+/// <value>", after the 3MF entry's name for a 3MF ("3D/3dmodel.model: refused ..."): an empty STL is `mesh_empty`
+/// and a coordinate that is not a finite number `mesh_not_finite`, as when the checks here find them; anything else
+/// malformed is `mesh_parse`.
 fn load_reject_code(e: &sx_core::Error) -> &'static str {
     let sx_core::Error::Mesh { reason, .. } = e else {
         return "mesh_parse";
     };
-    let mut words = reason.split(' ');
-    if words.next() != Some("refused") {
-        return "mesh_parse";
-    }
+    let refusal = match reason.split_once(": refused ") {
+        Some((_, rest)) => rest,
+        None => match reason.strip_prefix("refused ") {
+            Some(rest) => rest,
+            None => return "mesh_parse",
+        },
+    };
+    let mut words = refusal.split(' ');
     match (words.next(), words.nth(2)) {
         (Some("stl-empty"), _) => "mesh_empty",
         (Some("stl-number"), _) => "mesh_not_finite",
@@ -184,8 +212,8 @@ fn build(bytes: &[u8], sniffed: Sniffed, limits: &Limits, listing: &ListingMeta)
         ),
         Sniffed::Zip => {
             let clean = archive::sanitize_3mf(bytes, limits)?;
-            // Every plate, as the engine places them. The checks, the preview and the triangle count read the first
-            // plate, as a 3MF opens; the size reads the largest.
+            // Every plate, as the engine places them. The preview and the triangle count read the first plate, as a
+            // 3MF opens; the size reads the largest.
             let mut plates = parse(|| sx_core::api::load_3mf_plates(&clean.bytes, "upload.3mf"))?;
             if plates.is_empty() {
                 return Err(Reject::new(
@@ -193,6 +221,7 @@ fn build(bytes: &[u8], sniffed: Sniffed, limits: &Limits, listing: &ListingMeta)
                     "the file does not parse as a mesh: the 3MF file has no printable objects",
                 ));
             }
+            check_later_plates(&plates, limits)?;
             let bounds = plates.iter().map(|(n, m)| (*n, m.bounds())).collect();
             let mesh = std::mem::take(&mut plates[0].1);
             let detected = if convert::is_sx3mf(&clean.bytes) {
