@@ -22,6 +22,14 @@ const TOKEN = 'sxk_integration_test_token'
 let child: ChildProcess | null = null
 let baseUrl = ''
 
+// The service's address, read from its startup log. sx-cloud writes that line to an unbuffered stderr in pieces (the
+// text, the host, the port, the newline), so one read can end inside the address. Only a line that is complete counts:
+// a cut address such as http://127.0 never answers and used to run into the test limit, and http://127.0.0.1 is refused
+// at once, which was the failure with no clear cause.
+function listeningUrl(log: string): string | null {
+  return /listening on (http:\/\/\S+)\n/.exec(log)?.[1] ?? null
+}
+
 function cubeStl(): Uint8Array {
   const s = 20
   const v = [
@@ -47,6 +55,18 @@ function cubeStl(): Uint8Array {
   return out
 }
 
+describe('reading the service address from its startup log', () => {
+  const log = 'sx-cloud: memory backend; nothing is saved\nsx-cloud: listening on http://127.0.0.1:65040\nsx-cloud: browser pages allowed from tauri://localhost\n'
+  it('waits for the whole line, however the reads are cut', () => {
+    for (let at = 0; at <= log.length; at++) {
+      const first = listeningUrl(log.slice(0, at))
+      // Before the newline of the listening line arrives there is no address, never a cut one.
+      expect(first === null || first === 'http://127.0.0.1:65040', `cut at ${at}: ${first}`).toBe(true)
+    }
+    expect(listeningUrl(log)).toBe('http://127.0.0.1:65040')
+  })
+})
+
 describe.skipIf(!existsSync(bin))('sx-cloud service (memory backend)', () => {
   beforeAll(async () => {
     child = spawn(bin, [], {
@@ -63,8 +83,8 @@ describe.skipIf(!existsSync(bin))('sx-cloud service (memory backend)', () => {
       let buf = ''
       child?.stderr?.on('data', (chunk: Buffer) => {
         buf += chunk.toString()
-        const m = /listening on (http:\/\/\S+)/.exec(buf)
-        if (m?.[1]) resolve(m[1])
+        const url = listeningUrl(buf)
+        if (url) resolve(url)
       })
       child?.on('exit', (code) => reject(new Error(`sx-cloud exited with ${code}: ${buf}`)))
     })
@@ -78,7 +98,7 @@ describe.skipIf(!existsSync(bin))('sx-cloud service (memory backend)', () => {
     const client = createCloudClient({ baseUrl, credential: () => TOKEN })
     const about = await client.about()
     // The client's own error, if any, is the failure message.
-    if (!about.ok) throw new Error(`/v1/about: ${about.code}: ${about.message}`)
+    if (!about.ok) throw new Error(`${baseUrl}/v1/about: ${about.code}: ${about.message}`)
     expect(about.value.sourceUrl).toMatch(/^https:\/\//)
     const device = await client.registerDevice('Workshop bridge', 'link')
     if (!device.ok) throw new Error(device.message)
