@@ -85,6 +85,15 @@ function seedColors(slug: string, tags: readonly string[]): VersionRow['colors']
   return { colors, parts }
 }
 
+/**
+ * A model's placed size from its slug alone (no PRNG draws, so the rest of the seed stays put): x and y 20 to 180 mm,
+ * z 5 to 150 mm, to a tenth. The scan report holds the bounds it came from, as a scan writes them.
+ */
+function seedSize(slug: string): [number, number, number] {
+  const [a, b, c] = hash128(`size:${slug}`)
+  return [(200 + (a % 1600)) / 10, (200 + (b % 1600)) / 10, (50 + (c % 1450)) / 10]
+}
+
 /** A stable UUID (version 5 layout, variant 10) derived from a label. */
 export function seedId(label: string): string {
   const [a, b, c, d] = hash128(`slicerx-seed:${label}`)
@@ -227,6 +236,7 @@ export function generateSeed(): SeedData {
         const fileName = `${l.slug}-${v.version}.${ext}`
         const size = 400_000 + Math.floor(rand() * 9_000_000)
         const versionCreated = created + vi * 9 * DAY + HOUR
+        const sizeMm = seedSize(l.slug)
         versions.push({
           id: versionId,
           listing_id: listingId,
@@ -237,11 +247,12 @@ export function generateSeed(): SeedData {
           format: ext,
           size_bytes: size,
           scan_status: 'clean',
-          scan_report: { ok: true, checks: ['extension', 'signature', 'structure', 'size'], size_bytes: size },
+          scan_report: { ok: true, checks: ['extension', 'signature', 'structure', 'size'], size_bytes: size, detectedType: 'sx3mf', boundsMm: { min: [0, 0, 0], max: sizeMm }, boundsPlate: 1, plateCount: 1 },
           scanned_at: iso(versionCreated + 300_000),
           review_status: reviewStatus,
           created_at: iso(versionCreated),
           colors: seedColors(l.slug, l.tags),
+          size_mm: sizeMm,
         })
         files.push({ id: seedId(`file:${versionId}:model`), version_id: versionId, name: fileName, role: 'model', format: ext, size_bytes: size, sha256: fakeSha256(`file:${versionId}:model`) })
         files.push({ id: seedId(`file:${versionId}:cover`), version_id: versionId, name: 'cover.webp', role: 'image', format: null, size_bytes: 40_000 + Math.floor(rand() * 60_000), sha256: fakeSha256(`file:${versionId}:cover`) })

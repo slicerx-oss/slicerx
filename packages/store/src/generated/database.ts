@@ -957,6 +957,7 @@ export type Database = {
           scanned_at: string | null
           sha256: string
           size_bytes: number
+          size_mm: number[] | null
           storage_path: string
           version: string
         }
@@ -976,6 +977,7 @@ export type Database = {
           scanned_at?: string | null
           sha256: string
           size_bytes: number
+          size_mm?: number[] | null
           storage_path: string
           version: string
         }
@@ -995,6 +997,7 @@ export type Database = {
           scanned_at?: string | null
           sha256?: string
           size_bytes?: number
+          size_mm?: number[] | null
           storage_path?: string
           version?: string
         }

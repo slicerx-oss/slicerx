@@ -37,7 +37,7 @@ interface Fake {
 }
 
 /** Answers each table with its rows, filtered by eq and in. */
-function fake(tables: Record<string, Record<string, unknown>[]>, opts: { signError?: string; noColors?: boolean } = {}): Fake & { refused: number } {
+function fake(tables: Record<string, Record<string, unknown>[]>, opts: { signError?: string; noColors?: boolean; noSize?: boolean } = {}): Fake & { refused: number } {
   const counted: string[] = []
   const signed: string[] = []
   let refused = 0
@@ -50,6 +50,11 @@ function fake(tables: Record<string, Record<string, unknown>[]>, opts: { signErr
         if (opts.noColors && table === 'listing_versions' && cols.includes('colors')) {
           refused++
           error = { code: '42703', message: 'column listing_versions.colors does not exist' }
+        }
+        // A project without 0030_listing_size.
+        if (opts.noSize && table === 'listing_versions' && cols.includes('size_mm')) {
+          refused++
+          error = { code: '42703', message: 'column listing_versions.size_mm does not exist' }
         }
         return q
       },
@@ -151,5 +156,30 @@ describe('listing colors', () => {
   it('checks colors before writing them', async () => {
     const r = await supabaseStore(fake(tables(colors)).db).setVersionColors(version(1, '1.0.0', 'cube.sx3mf').id, { colors: [{ hex: '#000000' }], parts: [{ name: 'Body', colors: [3], ams: false }] })
     expect(r).toMatchObject({ ok: false, code: 'invalid' })
+  })
+})
+
+describe('listing size', () => {
+  const tables = (s: unknown) => ({ listings: [listing(THEIRS)], listing_versions: [{ ...version(1, '1.0.0', 'cube.sx3mf'), size_mm: s }], creators: [creator, other], print_profiles: [], likes: [] })
+
+  it('reads the placed size with the version, and drops one that does not check out', async () => {
+    expect((await supabaseStore(fake(tables([30, 12, 8])).db).getListing(LISTING))?.listing.currentVersion?.sizeMm).toEqual([30, 12, 8])
+    for (const bad of [null, [30, 12], [30, -1, 8], ['30', 12, 8], [30, 12, Number.NaN]]) {
+      expect((await supabaseStore(fake(tables(bad)).db).getListing(LISTING))?.listing.currentVersion, JSON.stringify(bad)).not.toHaveProperty('sizeMm')
+    }
+  })
+
+  it('still reads listings on a project without the column, and stops asking for it', async () => {
+    const f = fake(tables(undefined), { noSize: true })
+    const store = supabaseStore(f.db)
+    expect((await store.getListing(LISTING))?.listing.currentVersion).toMatchObject({ version: '1.0.0' })
+    const asked = f.refused
+    expect((await store.getListing(LISTING))?.listing.currentVersion?.sizeMm).toBeUndefined()
+    expect(f.refused).toBe(asked)
+  })
+
+  it('reads a project with neither column', async () => {
+    const f = fake(tables(undefined), { noSize: true, noColors: true })
+    expect((await supabaseStore(f.db).getListing(LISTING))?.listing.currentVersion).toMatchObject({ version: '1.0.0' })
   })
 })

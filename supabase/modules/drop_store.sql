@@ -47,7 +47,7 @@ drop function if exists
   public.guard_creator_update(), public.guard_creator_insert(), public.promote_creator(),
   public.check_creator_link(), public.check_featured(), public.unfeature_listing(),
   public.queue_listing_cleanup(), public.guard_comment_update(), public.delete_comment(uuid),
-  public.listing_colors_ok(jsonb), public.creator_listed(uuid),
+  public.listing_colors_ok(jsonb), public.listing_size_mm(jsonb), public.creator_listed(uuid),
   public.review_approve(uuid, text, jsonb), public.review_send_back(uuid, text, jsonb),
   public.external_review_queue(), public.review_listing_external(uuid, text, text, text),
   public.external_review_posted(uuid, text), public.external_review_closed(uuid);

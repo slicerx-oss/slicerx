@@ -92,6 +92,8 @@ export const versionRow = z.object({
   created_at: ts,
   // 0016_listing_colors; absent on a project without it. Checked again when mapped.
   colors: z.unknown().optional(),
+  // 0030_listing_size, set by the scan; absent on a project without it. Checked again when mapped.
+  size_mm: z.unknown().optional(),
 })
 
 export const fileRow = z.object({
