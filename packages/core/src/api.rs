@@ -1628,6 +1628,8 @@ fn run_prepared_timed(
     let mut gcode_sha = String::new();
     if want_gcode {
         let image = given.or_else(|| renderer.map(crate::thumbnail::Renderer::finish));
+        // The raw text grew by doubling: give the slack back before the finished copy is made.
+        run.gcode.shrink_to_fit();
         let (finished, timing) = crate::firmware::finalize_timed(&run.gcode, image.as_ref(), Some(&config));
         run.gcode = finished;
         // The whole file's time, as the footer states it (the shards' own sums leave out the joins).
@@ -1669,7 +1671,7 @@ fn run_prepared_timed(
         let (lines, (last, sha)) = crate::par::join(
             || {
                 (want_preview && !binary)
-                    .then(|| crate::extras::finish(&extras, resume_at, &String::from_utf8_lossy(&text)))
+                    .then(|| crate::extras::finish(extras, resume_at, &String::from_utf8_lossy(&text)))
             },
             || {
                 let last = if numbered {
