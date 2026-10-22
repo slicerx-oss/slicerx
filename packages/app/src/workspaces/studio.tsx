@@ -19,7 +19,7 @@ import { sizeText, type UnitPrefs } from '../cad/units'
 import { get, isCadTool, railOpen, setRail, showsLayers, useApp, type PlateEntry } from '../state/store'
 import { bounds, sizeOf } from '../plate/transform'
 import { usePrinter } from '../lib/use-printer'
-import { useRightAttention } from '../lib/right-attention'
+import { printResultKey, useRightAttention } from '../lib/right-attention'
 import { ViewportHost } from '../viewport/viewport-host'
 import { ZoneLegend } from './zone-legend'
 import { PrepareLeft, PrepareObjects, SliceBlock } from './prepare/prepare-panes'
@@ -177,8 +177,7 @@ export function Studio() {
     if (!railOpen(get().rails, ws, other, wide)) setRail(ws, other, true)
   }, [modelToolOpen, other])
   const { printer } = usePrinter()
-  const printState = printer?.status.state
-  const printResult = printer && (printState === 'finished' || printState === 'error') ? `${printer.id}:${printState}:${printer.status.updatedAt}` : null
+  const printResult = printResultKey(printer)
   const rightAttention = useRightAttention(rightOpen, printResult)
   const rightSections = [...(objectsRight ? [OBJECTS_SECTION] : []), ...(hasPreview ? (manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT) : [])]
   // Toasts center over the viewport and sit above the plate bar and the playback bar, below the toolbar and the view

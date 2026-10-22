@@ -3,6 +3,7 @@
 // When Slice's shut right pane wants a look: a finished slice with warnings, an object problem (off the bed, a missing
 // filament and so on), a fit check note, or a print that finished or failed. Each gives a key; the pane's edge tab
 // glows for a key the person has not seen with the pane open. A clean slice gives none, so the tab stays calm.
+import type { PrinterStatus } from '@slicerx/contracts'
 import { useEffect } from 'react'
 import { allTouches, objectFit, useFits } from '../plate/fit-state'
 import { objectWarnings } from '../plate/object-list'
@@ -20,6 +21,32 @@ export function attentionKey(s: Pick<AppState, 'slice' | 'plate' | 'bed' | 'prin
   if (fitIds.length) parts.push(`fit:${[...fitIds].sort().join(',')}`)
   if (printResult) parts.push(`print:${printResult}`)
   return parts.length ? parts.join('|') : null
+}
+
+/** Per printer: the result shown last (state and job) and the status time at which the printer first reported it. */
+const ends = new Map<string, { what: string; at: string }>()
+
+/**
+ * A print that finished or failed, as a key naming the end itself: the status time at which the printer first reported
+ * it. A finished printer keeps sending statuses (Bambu Lab printers stay Finished until the next job, and each cooling
+ * step is a new status), and those are the same print, so they keep the key and the tab does not glow again for a
+ * print the person has seen. One that drops off and comes back still Finished is the same print too. Null while there
+ * is no result to show.
+ */
+export function printResultKey(printer: { id: string; status: Pick<PrinterStatus, 'state' | 'jobName' | 'updatedAt'> } | undefined): string | null {
+  if (!printer) return null
+  const { state, jobName, updatedAt } = printer.status
+  if (state !== 'finished' && state !== 'error') {
+    if (state !== 'offline') ends.delete(printer.id)
+    return null
+  }
+  const what = `${state}:${jobName ?? ''}`
+  let end = ends.get(printer.id)
+  if (end?.what !== what) {
+    end = { what, at: updatedAt }
+    ends.set(printer.id, end)
+  }
+  return `${printer.id}:${state}:${end.at}`
 }
 
 /**
