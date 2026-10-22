@@ -282,7 +282,21 @@ function SheetPanel({ sheet, mode, editing, setEditing }: { sheet: PilotSheet; m
   // moves the rows or the footer, and a sheet whose hints all fit one line keeps one line
   const room = [...new Set([hintFor(undefined, mode, false), ...sheet.dims.filter((d) => mode === 'confirm' || tied(d.key)).map((d) => hintFor(d, mode, tied(d.key))), ...(note && mode === 'drive' ? [note.text] : [])])]
   return (
-    <aside className="mimir-sheet-panel" data-testid="mimir-sheet-panel" data-mode={mode} aria-label={`${sheet.title}, sizes`} tabIndex={-1}>
+    <aside
+      className="mimir-sheet-panel"
+      data-testid="mimir-sheet-panel"
+      data-mode={mode}
+      aria-label={`${sheet.title}, sizes`}
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        // Escape puts away the panel the person opened after the build, from a field (whose typing it drops) or a
+        // button; a waiting sheet's panel is its question and stays until it is answered
+        if (e.key !== 'Escape' || mode !== 'drive' || e.defaultPrevented) return
+        e.preventDefault()
+        e.stopPropagation()
+        closeSheet()
+      }}
+    >
       <header className="mimir-sheet-head">
         <h3>{mode === 'confirm' ? 'Sizes' : sheet.title}</h3>
         <p>{mode === 'confirm' ? 'Numbers match the callouts in the drawing.' : 'Change a size to edit its step.'}</p>
