@@ -5,12 +5,15 @@
 // sizes are typed, row numbers matching the callouts. Nothing builds until the record's build button. After the build
 // a panel docked on the right comes back from the record, and editing a tied row there edits the step it set. Picking
 // a callout picks its row and the other way round. A phone shows Top and Isometric, or Front or Right on their own,
-// picked by name, and can fold the drawing to its header (drawing-pick.ts).
+// picked by name, and can fold the drawing to its header (drawing-pick.ts). On a phone the panel takes the chat's place
+// instead, between its header and the composer.
 import { drawingPick, foldDrawing, PANE_NAMES, PANE_VIEWS, paneShowing, PHONE_PANES, pickFor, showPane, usePhoneDrawing, type PhonePane } from './drawing-pick'
 import { assistantText } from '@slicerx/contracts'
 import type { PilotDim, PilotSheet } from '@slicerx/contracts'
 import { Button, Icon, ScrubNumber, Seg, tipAttrs, type IconName } from '@slicerx/ui'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { usePhoneLayout } from '../../lib/phone-layout'
 import { arrowHead, drawView, fitScale, SHEET_VIEWS, VIEWS, viewsFor } from './sheet-draw'
 import { closeSheet, setDraft, setLive, sheetMode, useSheetUi } from './sheet-ui'
 import './mimir.css'
@@ -398,11 +401,17 @@ export function MimirSheet() {
       delete vp.dataset['mimirSheet']
     }
   }, [mode, shown?.sheet.part?.length])
+  const drawing = !!shown && mode === 'confirm' && (shown.sheet.part?.length ?? 0) > 0
+  // On a phone the view is a strip over the chat and paints in a stacking context of its own, so a panel inside it sits
+  // under the chat and its composer. There the panel takes the conversation's place in the chat column instead, between
+  // its header and the composer, and the conversation comes back where it was once the panel closes.
+  const phone = usePhoneLayout()
+  const panelUp = !!shown && !!mode && !drawing
+  const [slot, setSlot] = useState<HTMLElement | null>(null)
+  useLayoutEffect(() => setSlot(phone && panelUp ? document.querySelector<HTMLElement>('[data-testid="mimir-chat"] .mimir-sheet-slot') : null), [phone, panelUp])
   if (!shown || !mode) return null
-  const drawing = mode === 'confirm' && (shown.sheet.part?.length ?? 0) > 0
-  return (
-    <>
-      {drawing ? <SheetDrawing sheet={shown.sheet} editing={editing} onPick={(k) => focusRow(shown.sheet.id, k)} /> : <SheetPanel sheet={shown.sheet} mode={mode} editing={editing} setEditing={setEditing} />}
-    </>
-  )
+  if (drawing) return <SheetDrawing sheet={shown.sheet} editing={editing} onPick={(k) => focusRow(shown.sheet.id, k)} />
+  const panel = <SheetPanel sheet={shown.sheet} mode={mode} editing={editing} setEditing={setEditing} />
+  if (!phone) return panel
+  return slot ? createPortal(panel, slot) : null
 }

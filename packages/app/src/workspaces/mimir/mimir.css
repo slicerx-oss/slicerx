@@ -198,7 +198,12 @@ a.mimir-chip { text-decoration: underline; text-underline-offset: 2px; text-deco
 :root[data-phone] .mimir-lookup-h .sx-btn { width: 32px; height: 32px; }
 :root[data-phone] .vp[data-mimir-sheet] .mimir-lookups { right: 0; max-width: none; }
 :root[data-phone] .studio > .vp { --mimir-sheet-w: 0px; }
-:root[data-phone] .mimir-sheet-panel { position: fixed; left: 0; right: 0; top: calc(var(--h-bar) + (100dvh - var(--h-bar) - var(--phone-tabbar-h)) * 0.42); bottom: var(--phone-tabbar-h); width: auto; z-index: 6; border-left: 0; border-top: 1px solid var(--line-soft); }
+/* On a phone the sizes panel opens in the chat column, in the conversation's place between the chat's header and the
+   composer, so it grows and shrinks with them and nothing lies over it. It is part of the page there, so it stays flat
+   (spec 4). The conversation keeps its scroll under it, out of sight, and shows again where it was once Done closes it. */
+.mimir-sheet-slot { display: contents; }
+:root[data-phone] .mimir-sheet-slot > .mimir-sheet-panel { position: absolute; inset: 0; z-index: 3; width: auto; border-left: 0; background: var(--surface-page); }
+:root[data-phone] .mimir-stage:has(> .mimir-sheet-slot > .mimir-sheet-panel) > :not(.mimir-sheet-slot) { visibility: hidden; }
 :root[data-phone] .mimir-sheet-row { min-height: 48px; grid-template-columns: 22px minmax(0, 1fr) 84px 92px; }
 :root[data-phone] .mimir-sheet-foot .sx-btn { min-height: 44px; }
 :root[data-phone] .mimir-chat .composer-text { height: 40px; font-size: 16px; }
