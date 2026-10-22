@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { gunzipSync } from 'node:zlib'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cloudFromEnv, type CloudOptions } from '../src/cloud'
@@ -66,14 +67,16 @@ describe('cloud slicing against the API contract', () => {
   function fakeCloud(
     access: Record<string, unknown> = { invited: true, jobsPerDay: 20, jobsToday: 3, maxUploadBytes: 25 * 1_048_576 },
     override?: Override,
-  ): { cloud: CloudOptions; calls: { method: string; url: string; body: unknown; auth: string | null }[] } {
+  ): { cloud: CloudOptions; calls: { method: string; url: string; body: unknown; auth: string | null }[]; puts: { encoding: string | null; bytes: Uint8Array }[] } {
     const calls: { method: string; url: string; body: unknown; auth: string | null }[] = []
+    const puts: { encoding: string | null; bytes: Uint8Array }[] = []
     const job = { id: 'job-1', name: 'cube.stl', status: 'queued', progress: 0, stage: null, result: null, error: null, createdAt: '2026-10-03T00:00:00Z', finishedAt: null }
     const fetch = (async (url: string, init: RequestInit) => {
       const method = init.method ?? 'GET'
       const auth = new Headers(init.headers).get('authorization')
       const body = typeof init.body === 'string' ? JSON.parse(init.body) : init.body instanceof Blob ? 'bytes' : undefined
       calls.push({ method, url, body, auth })
+      if (method === 'PUT' && init.body instanceof Blob) puts.push({ encoding: new Headers(init.headers).get('content-encoding'), bytes: new Uint8Array(await init.body.arrayBuffer()) })
       const path = new URL(url).pathname
       const o = override?.(method, path)
       if (o) return o
@@ -86,11 +89,11 @@ describe('cloud slicing against the API contract', () => {
       if (path === '/v1/jobs') return Response.json([job])
       return Response.json({ error: { code: 'not_found', message: 'no such job' } }, { status: 404 })
     }) as typeof globalThis.fetch
-    return { cloud: { apiUrl: 'https://cloud.example.com', token: 'sxk_test', fetch }, calls }
+    return { cloud: { apiUrl: 'https://cloud.example.com', token: 'sxk_test', fetch }, calls, puts }
   }
 
   it('uploads the mesh by its hash, queues a job with no printer, and reads it back', async () => {
-    const { cloud, calls } = fakeCloud()
+    const { cloud, calls, puts } = fakeCloud()
     const h = await connect({ cloud })
     const r = await h.call('slicerx_cloud_slice', { model: join(h.dir, 'cube.stl'), overrides: { layer_height: 0.16 } })
     expect(r.isError, text(r)).toBeFalsy()
@@ -102,6 +105,9 @@ describe('cloud slicing against the API contract', () => {
     expect(submitted.request.plate.objects[0]?.mesh).toBe(sha)
     expect(submitted.request.config['layer_height']).toBe(0.16)
     expect(data<{ output: { jobId: string } }>(r).output.jobId).toBe('job-1')
+    expect(puts).toHaveLength(1)
+    expect(puts[0]?.encoding).toBe('gzip')
+    expect(createHash('sha256').update(gunzipSync(puts[0]!.bytes)).digest('hex')).toBe(sha)
 
     const got = data<{ output: { status: string; links?: { gcode: string }; linksNote: string } }>(await h.call('slicerx_cloud_jobs', { job_id: 'job-1' })).output
     expect(got.status).toBe('succeeded')
@@ -133,15 +139,30 @@ describe('cloud slicing against the API contract', () => {
     f = fakeCloud({ invited: true, jobsPerDay: 20, jobsToday: 20, maxUploadBytes: 1e9 })
     expect(await sliceWith(f.cloud)).toMatch(/used all 20 cloud jobs/)
     expect(f.calls).toHaveLength(1)
-    f = fakeCloud({ invited: true, jobsPerDay: 20, jobsToday: 0, maxUploadBytes: 100 })
-    expect(await sliceWith(f.cloud)).toMatch(/over this account's cloud upload limit/)
+    f = fakeCloud({ invited: true, jobsPerDay: 20, jobsToday: 0, maxUploadBytes: 20 })
+    expect(await sliceWith(f.cloud)).toMatch(/The model is [0-9.]+ (bytes|KB|MB) \([0-9.]+ (bytes|KB) compressed\), over this account's cloud upload limit of 20 bytes\. Simplify it or slice on this machine with slicerx_slice_file\.$/)
     expect(f.calls).toHaveLength(1)
   }, 30_000)
+
+  it('checks the compressed size against the upload limit', async () => {
+    const probe = await connect()
+    const raw = readFileSync(join(probe.dir, 'cube.stl')).length
+    const { cloud, puts } = fakeCloud({ invited: true, jobsPerDay: 20, jobsToday: 0, maxUploadBytes: raw - 1 })
+    const h = await connect({ cloud })
+    const r = await h.call('slicerx_cloud_slice', { model: join(h.dir, 'cube.stl') })
+    expect(r.isError, text(r)).toBeFalsy()
+    expect(puts[0]!.bytes.length).toBeLessThan(raw)
+  })
 
   // Five servers in a row: about 2 s alone on Windows, over 5 s beside other heavy work.
   it('maps not_invited, upload too large, the daily job limit and the rate limit to clear errors', async () => {
     expect(await sliceWith(fakeCloud(undefined, (m, p) => (p.startsWith('/v1/meshes/') ? err(403, 'not_invited', 'not invited') : undefined)).cloud)).toMatch(/not invited to cloud slicing/)
-    expect(await sliceWith(fakeCloud(undefined, (m) => (m === 'PUT' ? err(413, 'limit', 'the mesh is over 25 MB') : undefined)).cloud)).toMatch(/larger than this account's cloud upload limit \(the mesh is over 25 MB\)/)
+    expect(await sliceWith(fakeCloud(undefined, (m) => (m === 'PUT' ? err(413, 'limit', "This model is 26.1 MB compressed, over this account's cloud upload limit of 25 MB.") : undefined)).cloud)).toContain(
+      "This model is 26.1 MB compressed, over this account's cloud upload limit of 25 MB. Simplify it or slice on this machine with slicerx_slice_file.",
+    )
+    expect(await sliceWith(fakeCloud(undefined, (m) => (m === 'PUT' ? new Response('length limit exceeded', { status: 413 }) : undefined)).cloud)).toMatch(
+      /The model is [0-9.]+ (bytes|KB|MB) \([0-9.]+ (bytes|KB) compressed\), over the cloud upload limit\. Simplify it or slice on this machine with slicerx_slice_file\.$/,
+    )
     expect(await sliceWith(fakeCloud(undefined, (m, p) => (m === 'POST' && p === '/v1/jobs' ? err(429, 'limit', '20 jobs a day') : undefined)).cloud)).toMatch(/reached its cloud job limit/)
     expect(await sliceWith(fakeCloud(undefined, (m, p) => (p === '/v1/access' ? err(429, 'limit', 'slow down', { 'retry-after': '12' }) : undefined)).cloud)).toMatch(/rate limiting this token; try again in 12 s/)
     expect(await sliceWith(fakeCloud(undefined, (_m, p) => (p === '/v1/access' ? err(403, 'forbidden', 'missing scope') : undefined)).cloud)).toMatch(/cloud_slice scope/)
