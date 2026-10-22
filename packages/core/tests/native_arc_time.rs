@@ -63,7 +63,7 @@ fn generic_marlin_keeps_its_segmented_arc_model() {
 }
 
 #[test]
-fn native_arcs_respect_axis_and_extruder_speed_limits() {
+fn native_arcs_respect_axis_limits_and_carry_the_extruder_speed() {
     let code = circles(1, false);
     let mut cfg = profile(true);
     cfg.raw
@@ -71,13 +71,12 @@ fn native_arcs_respect_axis_and_extruder_speed_limits() {
     let xy = printtime::estimate(&code, &cfg, false).total;
     let length = 100.0 * 20.0 * std::f64::consts::PI;
     assert!((xy - length / 100.0).abs() < 0.3, "xy={xy}");
+    // A Bambu Lab arc takes its extruder speed from the move before it (here none) instead of its own filament per
+    // mm, so the extruder limit does not slow it, as in Bambu Studio's estimate.
     cfg.raw
         .insert("machine_max_speed_e".into(), serde_json::json!([0.5]));
     let extrusion = printtime::estimate(&code, &cfg, false).total;
-    assert!(
-        (extrusion - length * 0.03 / 0.5).abs() < 0.3,
-        "extrusion={extrusion}"
-    );
+    assert!((extrusion - xy).abs() < 1e-9, "extrusion={extrusion}, xy={xy}");
 }
 
 #[test]
