@@ -30,6 +30,26 @@ describe('feature tooltips', () => {
     expect(OPTION_TIPS['wall_generator.aegis']?.body).toBe('aegis varies wall width to fit the part, so thin features print solid and walls stay even, with fewer width changes than Arachne on the shapes we measured.')
   })
 
+  it('opens a tip marked data-tip-if-cut only while a named part of its label is cut', () => {
+    const el = document.createElement('button')
+    el.setAttribute('data-tip-title', 'Print on Bay 2')
+    el.setAttribute('data-tip-if-cut', '.mid-head')
+    const head = document.createElement('span')
+    head.className = 'mid-head'
+    el.append(head)
+    const size = (scroll: number, client: number) => {
+      Object.defineProperty(head, 'scrollWidth', { value: scroll, configurable: true })
+      Object.defineProperty(head, 'clientWidth', { value: client, configurable: true })
+    }
+    size(80, 80)
+    expect(resolveTip(el, {})).toBeNull()
+    size(300, 80)
+    expect(resolveTip(el, {})?.title).toBe('Print on Bay 2')
+    el.removeAttribute('data-tip-if-cut')
+    size(80, 80)
+    expect(resolveTip(el, {})?.title).toBe('Print on Bay 2')
+  })
+
   it('shows the key from the active keymap', async () => {
     const el = document.createElement('button')
     el.setAttribute('data-tip', 'tool.move')
