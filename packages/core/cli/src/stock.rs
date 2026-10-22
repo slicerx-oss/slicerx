@@ -298,6 +298,45 @@ mod tests {
         assert!(models_of(&table(), &config(json!({}))).is_empty());
     }
 
+    /// A Bambu Studio or Orca project names its printer by profile, `<vendor> <model> 0.4 nozzle`, so every model
+    /// the stock table covers is found from the name the settings package gives it (the X2D, the H2D Pro and the
+    /// X1 among them).
+    #[test]
+    fn every_stock_model_is_found_by_its_profile_name() {
+        let printers: Value = serde_json::from_str(
+            &std::fs::read_to_string(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../settings/profiles/printers.json"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let t = table();
+        let mut missing = Vec::new();
+        for p in printers["printers"].as_array().unwrap() {
+            let id = p["id"].as_str().unwrap();
+            if t["models"].get(id).is_none() {
+                continue;
+            }
+            let name = format!(
+                "{} {} 0.4 nozzle",
+                p["vendor"].as_str().unwrap(),
+                p["model"].as_str().unwrap()
+            );
+            if !models_of(&t, &config(json!({ "printer_settings_id": name }))).contains(&id) {
+                missing.push(format!("{id} ({name})"));
+            }
+        }
+        assert!(missing.is_empty(), "not found by name: {}", missing.join(", "));
+        assert_eq!(
+            models_of(
+                &t,
+                &config(json!({ "printer_settings_id": "Bambu Lab X2D 0.4 nozzle" }))
+            ),
+            ["bambu-x2d"]
+        );
+    }
+
     #[test]
     fn stock_text_counts_for_its_printer_and_only_unchanged() {
         let p1s = shipped("bambu-p1s", "start");
