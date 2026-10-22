@@ -17,9 +17,10 @@ pub(crate) fn layer_time(text: &[u8]) -> f64 {
     layer_time_from(text, None)
 }
 
-/// Seconds the cooling buffer gives the layer whose G-code is `text`. `start` (X, Y and Z, mm) is where a layer
-/// begins that does not move there first: a spiral vase layer goes on from where the layer below ended. Without
-/// it, the first extrusion of such a layer would run from the origin.
+/// Seconds the cooling buffer gives the layer whose G-code is `text`. `start` (X, Y and Z, mm) is where the
+/// writer has the nozzle when the layer begins, when it knows: a layer that goes on from where the layer below
+/// ended (a spiral vase layer, or a loop that starts on the last one's end) writes no move to its start, and
+/// without it the first extrusion of such a layer would run from the origin.
 pub(crate) fn layer_time_from(text: &[u8], start: Option<[f64; 3]>) -> f64 {
     let mut at = [0.0f64; 4];
     if let Some([x, y, z]) = start {
@@ -126,6 +127,57 @@ pub(crate) fn layer_time_from(text: &[u8], start: Option<[f64; 3]>) -> f64 {
     t
 }
 
+/// Whether the layer whose G-code is `text` moves in X or Y before its first extrusion, so the time of that
+/// extrusion does not depend on where the layer is taken to start.
+pub(crate) fn moves_before_first_extrusion(text: &[u8]) -> bool {
+    let mut relative_e = true;
+    let mut e_at = 0.0;
+    for line in text.split(|&b| b == b'\n') {
+        let line = line.split(|&b| b == b';').next().unwrap_or(&[]);
+        let Ok(line) = std::str::from_utf8(line) else {
+            continue;
+        };
+        let mut words = line.split_ascii_whitespace();
+        let value = |w: &str| w.get(1..).and_then(|v| v.parse::<f64>().ok());
+        match words.next() {
+            Some("M82") => relative_e = false,
+            Some("M83") => relative_e = true,
+            Some("G92") => {
+                for w in words {
+                    if let (Some("E" | "e"), Some(v)) = (w.get(..1), value(w)) {
+                        e_at = v;
+                    }
+                }
+            }
+            Some("G0" | "G1" | "G2" | "G3") => {
+                let (mut xy, mut e) = (false, None);
+                for w in words {
+                    match w.get(..1) {
+                        Some("X" | "Y" | "x" | "y") => xy = true,
+                        Some("E" | "e") => e = value(w),
+                        _ => {}
+                    }
+                }
+                let extrudes = match e {
+                    Some(v) if relative_e => v > 0.0,
+                    Some(v) => v > e_at,
+                    None => false,
+                };
+                if let Some(v) = e
+                    && !relative_e
+                {
+                    e_at = v;
+                }
+                if xy {
+                    return !extrudes;
+                }
+            }
+            _ => {}
+        }
+    }
+    true
+}
+
 /// The length of the arc from `a` to `b` around `c`, counterclockwise when `ccw`; a full circle when they
 /// meet.
 fn arc_length(a: [f64; 2], b: [f64; 2], c: [f64; 2], ccw: bool) -> f64 {
@@ -185,5 +237,20 @@ mod tests {
     #[test]
     fn a_layer_with_no_extrusion_takes_no_time() {
         assert!(layer_time(b"G1 Z1 F600\nG0 X100 F6000\nG4 S2\n").abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn tells_a_layer_that_extrudes_before_it_moves() {
+        let nl = |s: &str| s.replace('|', "\n");
+        // The retract, the layer change and the unretract are not moves to the start.
+        let g = nl("G1 E-0.8 F1800|G1 Z0.6 F30000|G1 E0.8 F1800|G1 F12000|G1 X100.21 Y139.79 E1.241|");
+        assert!(!moves_before_first_extrusion(g.as_bytes()));
+        let g = nl("G1 E-0.8 F1800|G1 Z0.6|G0 X100 Y140 F30000|G1 E0.8|G1 X100.21 Y139.79 E1.241|");
+        assert!(moves_before_first_extrusion(g.as_bytes()));
+        // With absolute extrusion, a move whose E does not go past the last one is no extrusion.
+        let g = nl("M82|G92 E0|G1 E-0.8|G1 X100 Y140 E-0.8 F30000|G1 E0|G1 X101 Y140 E0.05|");
+        assert!(moves_before_first_extrusion(g.as_bytes()));
+        let g = nl("M82|G92 E5|G1 X101 Y140 E5.05|");
+        assert!(!moves_before_first_extrusion(g.as_bytes()));
     }
 }
