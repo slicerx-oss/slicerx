@@ -42,6 +42,9 @@ const MAX_BRANCH_RADIUS_FIRST_LAYER: f64 = 12.0;
 /// Orca's `g_config_tree_support_collision_resolution`, mm.
 const RESOLUTION_MM: f64 = 0.2;
 const EPS: f64 = 1e-4;
+/// The most support layers drawn at once. Each layer in flight holds its branch circles and their unions,
+/// megabytes on a big layer, so peak memory would otherwise grow with the core count.
+const DRAW_JOBS: u32 = 8;
 
 fn u(mm: f64) -> i32 {
     (mm * SCALE).round() as i32
@@ -1692,8 +1695,7 @@ fn draw(
         .map(|l| l.iter().map(|(s, _)| s.clone()).collect())
         .collect();
     // Each layer is drawn on its own, so the layers run in parallel.
-    crate::par::map_range(0..u32::try_from(n).unwrap_or(u32::MAX), |layer| {
-        let layer = layer as usize;
+    let draw_layer = |layer: usize| -> TreeLayer {
         let ids = &nodes.layers[layer];
         if ids.is_empty() {
             return TreeLayer::default();
@@ -1986,7 +1988,25 @@ fn draw(
             roof_first: drop_small_holes(roof1_s),
             floor: drop_small_holes(floor_s),
         }
-    })
+    };
+    // DRAW_JOBS jobs, each taking the next layer not yet drawn until none is left. A job never waits, so no
+    // more layers are in flight than there are jobs or threads.
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let drawn: Vec<Vec<(usize, TreeLayer)>> = crate::par::map_range(0..DRAW_JOBS, |_| {
+        let mut done = Vec::new();
+        loop {
+            let layer = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if layer >= n {
+                break done;
+            }
+            done.push((layer, draw_layer(layer)));
+        }
+    });
+    let mut out: Vec<TreeLayer> = vec![TreeLayer::default(); n];
+    for (layer, t) in drawn.into_iter().flatten() {
+        out[layer] = t;
+    }
+    out
 }
 
 /// Orca's `TreeSupport::get_trim_support_regions` for support layer `layer` on the object's layers.
