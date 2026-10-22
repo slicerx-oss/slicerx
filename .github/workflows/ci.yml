@@ -1095,17 +1095,25 @@ jobs:
         run: |
           echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin \
             || echo "::warning::ghcr.io sign in failed, pulling anonymously"
-      # The first start pulls every image the job's three stacks use and tries again after a pause when a pull is
-      # refused. The later starts in the scripts find them pulled.
-      - name: supabase start (retries refused image pulls)
+      # supabase/setup-cli pins the image registry to ghcr.io (SUPABASE_INTERNAL_IMAGE_REGISTRY), and ghcr.io refuses
+      # shared runners' pulls even when signed in. The CLI takes every service image from that one registry, and the
+      # same images are published to public.ecr.aws and docker.io, so the first start moves on to those when a registry
+      # keeps refusing. It pulls every image the job's three stacks use; the registry it pulled from goes to GITHUB_ENV,
+      # so the tests and the later starts in the scripts use those images and pull nothing more.
+      - name: supabase start (falls back to other registries when pulls are refused)
         run: |
-          for wait in 20 60 120 0; do
-            supabase start -x studio,imgproxy,logflare,vector,supavisor,realtime,mailpit && exit 0
-            [ "$wait" = 0 ] && exit 1
-            echo "supabase start failed, trying again in $wait s"
-            supabase stop --no-backup || true
-            sleep "$wait"
+          for registry in ghcr.io public.ecr.aws docker.io; do
+            for wait in 30 0; do
+              if SUPABASE_INTERNAL_IMAGE_REGISTRY=$registry supabase start -x studio,imgproxy,logflare,vector,supavisor,realtime,mailpit; then
+                echo "SUPABASE_INTERNAL_IMAGE_REGISTRY=$registry" >> "$GITHUB_ENV"
+                exit 0
+              fi
+              supabase stop --no-backup || true
+              echo "supabase start failed with images from $registry"
+              sleep "$wait"
+            done
           done
+          exit 1
       - run: supabase test db
       - run: sh supabase/modules/check-drop.sh
       - run: supabase stop --no-backup
