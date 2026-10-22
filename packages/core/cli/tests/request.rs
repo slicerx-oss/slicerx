@@ -915,6 +915,28 @@ fn bambu_cube_3mf(settings: &serde_json::Value, slot: u8, own: &[(&str, &str)]) 
     ])
 }
 
+/// A Bambu Studio project plate of two 20 mm boxes, 10 and 4 mm tall, 80 mm apart, on filaments 1 and 2, with
+/// `settings` as its project settings.
+fn bambu_two_boxes_3mf(settings: &serde_json::Value) -> Vec<u8> {
+    let object = |id: u32, h: u32| {
+        format!(
+            r#"<object id="{id}" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="{h}"/><vertex x="20" y="0" z="{h}"/><vertex x="20" y="20" z="{h}"/><vertex x="0" y="20" z="{h}"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object>"#
+        )
+    };
+    let model = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-02.08.02.61</metadata><resources>{}{}</resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 50 100 0"/><item objectid="2" transform="1 0 0 0 1 0 0 0 1 150 100 0"/></build></model>"#,
+        object(1, 10),
+        object(2, 4)
+    );
+    let objects = r#"<?xml version="1.0" encoding="UTF-8"?><config><object id="1"><metadata key="name" value="tall"/><metadata key="extruder" value="1"/></object><object id="2"><metadata key="name" value="short"/><metadata key="extruder" value="2"/></object><plate><metadata key="plater_id" value="1"/><model_instance><metadata key="object_id" value="1"/></model_instance><model_instance><metadata key="object_id" value="2"/></model_instance></plate></config>"#;
+    let settings = settings.to_string();
+    zip(&[
+        ("3D/3dmodel.model", model.as_bytes()),
+        ("Metadata/project_settings.config", settings.as_bytes()),
+        ("Metadata/model_settings.config", objects.as_bytes()),
+    ])
+}
+
 /// Filament changes in G-code text (`T<n>` lines that change the tool), and the filaments (1-based) the lines of
 /// `feature` print with.
 fn changes_and_tools(gcode: &str, feature: &str) -> (usize, std::collections::BTreeSet<u8>) {
@@ -995,6 +1017,52 @@ fn a_bambu_studio_projects_feature_filaments_print_on_their_filament() {
         "Sparse infill",
     );
     assert_eq!(one, (92, [1].into()));
+}
+
+/// `sx slice project.3mf --plate 1` slices a plate's build items as objects of their own, as `sx slice --request`
+/// does. Printed by object, two boxes on two filaments change filament once, between the boxes, and need no prime
+/// tower even though the project turns it on and stands it between them; one merged mesh would change filament on
+/// every layer and print a tower. A `--config` file keeps that.
+#[test]
+fn a_by_object_project_plate_changes_filament_between_its_objects() {
+    let dir = temp_dir(format!("sx-cli-by-object-plate-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = serde_json::json!({
+        "print_sequence": "by object", "enable_prime_tower": "1", "wipe_tower_x": ["110"], "wipe_tower_y": ["100"],
+        "filament_colour": ["#ff0000", "#00ff00"], "nozzle_temperature": ["220", "225"],
+        "layer_height": "0.2", "initial_layer_print_height": "0.2", "brim_width": "0", "skirt_loops": "0"
+    });
+    let project = dir.join("two.3mf");
+    std::fs::write(&project, bambu_two_boxes_3mf(&settings)).unwrap();
+    let preset = dir.join("preset.json");
+    std::fs::write(&preset, r#"{"wall_loops": 3}"#).unwrap();
+    for extra in [&[][..], &["--config", preset.to_str().unwrap()][..]] {
+        let out = sx()
+            .arg("slice")
+            .arg(&project)
+            .args(["--plate", "1"])
+            .args(extra)
+            .args(["-o", "-"])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{extra:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        // 50 layers of the tall box, then 20 of the short one
+        assert_eq!(layers(&out.stderr), 70, "{extra:?}");
+        let gcode = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !gcode.contains("; FEATURE: Prime tower"),
+            "{extra:?}: a prime tower was printed"
+        );
+        assert_eq!(
+            changes_and_tools(&gcode, "Outer wall"),
+            (1, [1, 2].into()),
+            "{extra:?}"
+        );
+    }
 }
 
 /// A project whose `project_settings.config` is not JSON still slices: an empty one as a plain 3MF, JSON after a byte
@@ -2351,4 +2419,322 @@ fn a_skirt_further_past_the_edge_or_on_another_printer_is_refused() {
         err.contains("toolpaths lie outside the printable area") && err.contains("skirt"),
         "{err}"
     );
+}
+
+/// A plain 3MF of boxes (width, depth, height, mm) placed by build items: `objects` are the boxes, `items` an object's
+/// index and the item's x and y each. Its objects have no names.
+fn boxes_3mf(objects: &[[f32; 3]], items: &[(usize, f32, f32)]) -> Vec<u8> {
+    use std::fmt::Write as _;
+    const TRIANGLES: [[u8; 3]; 12] = [
+        [0, 2, 1],
+        [1, 2, 3],
+        [4, 5, 6],
+        [5, 7, 6],
+        [0, 1, 4],
+        [1, 5, 4],
+        [2, 6, 3],
+        [3, 6, 7],
+        [0, 4, 2],
+        [2, 4, 6],
+        [1, 3, 5],
+        [3, 7, 5],
+    ];
+    let mut res = String::new();
+    for (i, [w, d, h]) in objects.iter().enumerate() {
+        let (x, y) = (w / 2.0, d / 2.0);
+        let _ = write!(res, r#"<object id="{}" type="model"><mesh><vertices>"#, i + 1);
+        for z in [0.0, *h] {
+            for (a, b) in [(-x, -y), (x, -y), (-x, y), (x, y)] {
+                let _ = write!(res, r#"<vertex x="{a}" y="{b}" z="{z}"/>"#);
+            }
+        }
+        res.push_str("</vertices><triangles>");
+        for [a, b, c] in TRIANGLES {
+            let _ = write!(res, r#"<triangle v1="{a}" v2="{b}" v3="{c}"/>"#);
+        }
+        res.push_str("</triangles></mesh></object>");
+    }
+    let mut build = String::new();
+    for (o, x, y) in items {
+        let _ = write!(
+            build,
+            r#"<item objectid="{}" transform="1 0 0 0 1 0 0 0 1 {x} {y} 0"/>"#,
+            o + 1
+        );
+    }
+    let model = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>{res}</resources><build>{build}</build></model>"#
+    );
+    zip(&[("3D/3dmodel.model", model.as_bytes())])
+}
+
+/// Three different boxes, three build items.
+const A3: [[f32; 3]; 3] = [[20.0, 20.0, 8.0], [14.0, 14.0, 6.0], [10.0, 10.0, 10.0]];
+const A3_ITEMS: [(usize, f32, f32); 3] = [(0, 90.0, 128.0), (1, 128.0, 128.0), (2, 166.0, 128.0)];
+
+/// `sx slice <model>` with only `config` for settings (written in `dir`): the G-code.
+fn plain_slice(dir: &Path, model: &Path, config: &serde_json::Value, extra: &[&str]) -> String {
+    let preset = dir.join(format!("{}.config.json", rand_tag()));
+    std::fs::write(&preset, config.to_string()).unwrap();
+    let out = sx()
+        .arg("slice")
+        .arg(model)
+        .args(["--no-project-settings", "--config"])
+        .arg(&preset)
+        .args(["-o", "-"])
+        .args(extra)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}: {}",
+        model.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+fn klipper() -> serde_json::Value {
+    serde_json::json!({"gcode_flavor": "klipper", "exclude_object": "1", "gcode_label_objects": "1"})
+}
+
+fn bambu_a1() -> serde_json::Value {
+    serde_json::json!({"printer_model": "Bambu Lab A1", "gcode_flavor": "marlin", "gcode_label_objects": "1"})
+}
+
+/// The objects a Klipper file defines, by name.
+fn klipper_names(gcode: &str) -> Vec<String> {
+    gcode
+        .lines()
+        .filter_map(|l| l.strip_prefix("EXCLUDE_OBJECT_DEFINE NAME="))
+        .map(|l| l.split(' ').next().unwrap_or("").to_owned())
+        .collect()
+}
+
+/// The label ids of a file for a Bambu Lab printer, from its `; model label id:` line.
+fn bambu_ids(gcode: &str) -> Vec<usize> {
+    gcode
+        .lines()
+        .find_map(|l| l.strip_prefix("; model label id: "))
+        .map(|ids| ids.split(',').map(|n| n.trim().parse().unwrap()).collect())
+        .unwrap_or_default()
+}
+
+/// A 3MF gets one object label per build item, from `sx slice <file.3mf>` as from a request: three different objects
+/// or one object placed three times give three, a single object one, named `Object_1` when the file names none. The
+/// parts, cuts, modifiers and support volumes of an item stay in its label (the Bambu Studio subtypes file is one object
+/// of five parts; the `PrusaSlicer` one, five objects).
+#[test]
+fn a_3mf_gets_a_label_per_build_item() {
+    let dir = temp_dir(format!("sx-cli-labels-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let corpus = |name: &str| {
+        PathBuf::from(format!(
+            "{}/../../geom/tests/corpus/{name}",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+    };
+    let write = |name: &str, bytes: Vec<u8>| {
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p
+    };
+    let a3 = write("a3.3mf", boxes_3mf(&A3, &A3_ITEMS));
+    let b3 = write(
+        "b3.3mf",
+        boxes_3mf(
+            &A3[..1],
+            &[(0, 90.0, 128.0), (0, 128.0, 128.0), (0, 166.0, 128.0)],
+        ),
+    );
+    let c1 = write("c1.3mf", boxes_3mf(&A3[..1], &[(0, 128.0, 128.0)]));
+    for (model, n) in [
+        (corpus("prusa-subtypes.3mf"), 5),
+        (corpus("bambu-subtypes.3mf"), 1),
+        (a3.clone(), 3),
+        (b3, 3),
+        (c1.clone(), 1),
+    ] {
+        let k = klipper_names(&plain_slice(&dir, &model, &klipper(), &[]));
+        assert_eq!(k.len(), n, "{}: {k:?}", model.display());
+        // numbered from 0 in build order
+        for (i, name) in k.iter().enumerate() {
+            assert!(name.ends_with(&format!("_id_{i}_copy_0")), "{name}");
+        }
+        let b = bambu_ids(&plain_slice(&dir, &model, &bambu_a1(), &[]));
+        assert_eq!(b, (1..=n).collect::<Vec<_>>(), "{}", model.display());
+    }
+    assert_eq!(
+        klipper_names(&plain_slice(&dir, &c1, &klipper(), &[])),
+        ["Object_1_id_0_copy_0"]
+    );
+    let gcode = plain_slice(&dir, &c1, &bambu_a1(), &[]);
+    assert!(
+        gcode.contains("; printing object Object_1 id:1 copy 0"),
+        "{}",
+        &gcode[..2000.min(gcode.len())]
+    );
+    // the request path splits the same file the same way
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "plate": {"objects": [{"id": "p", "mesh": a3.to_str().unwrap()}]},
+        "config": klipper(),
+    });
+    let path = dir.join("request.json");
+    std::fs::write(&path, req.to_string()).unwrap();
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&path)
+        .arg("--out-dir")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let names = klipper_names(&std::fs::read_to_string(dir.join("slice.gcode")).unwrap());
+    assert_eq!(
+        names,
+        [
+            "Object_1_id_0_copy_0",
+            "Object_2_id_1_copy_0",
+            "Object_3_id_2_copy_0"
+        ]
+    );
+}
+
+/// Skipping one build item of a plate skips only its own moves: every extrusion inside an object's
+/// `EXCLUDE_OBJECT_START` and `_END` lies on that object, and without one object's blocks nothing is printed on it
+/// while the others keep every move.
+#[test]
+fn skipping_one_item_removes_only_its_moves() {
+    let dir = temp_dir(format!("sx-cli-skip-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let a3 = dir.join("a3.3mf");
+    std::fs::write(&a3, boxes_3mf(&A3, &A3_ITEMS)).unwrap();
+    let gcode = plain_slice(&dir, &a3, &klipper(), &[]);
+    // each object's footprint, from its definition
+    let mut boxes: Vec<(String, [f64; 4])> = Vec::new();
+    for l in gcode.lines() {
+        let Some(rest) = l.strip_prefix("EXCLUDE_OBJECT_DEFINE NAME=") else {
+            continue;
+        };
+        let (name, poly) = rest.split_once(' ').unwrap();
+        let poly = poly.split_once("POLYGON=").unwrap().1;
+        let pts: Vec<[f64; 2]> = serde_json::from_str(poly).unwrap();
+        let b = pts.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
+            [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
+        });
+        boxes.push((name.to_owned(), b));
+    }
+    assert_eq!(boxes.len(), 3);
+    let on = |b: &[f64; 4], x: f64, y: f64| {
+        x >= b[0] - 1.0 && x <= b[2] + 1.0 && y >= b[1] - 1.0 && y <= b[3] + 1.0
+    };
+    // extrusions by the object block they are in (None outside any) and where they end
+    let mut moves: Vec<(Option<String>, f64, f64)> = Vec::new();
+    let (mut x, mut y, mut current) = (0.0, 0.0, None::<String>);
+    for l in gcode.lines() {
+        if let Some(n) = l.strip_prefix("EXCLUDE_OBJECT_START NAME=") {
+            current = Some(n.trim().to_owned());
+            continue;
+        }
+        if l.starts_with("EXCLUDE_OBJECT_END") {
+            current = None;
+            continue;
+        }
+        if !l.starts_with("G1 ") && !l.starts_with("G0 ") {
+            continue;
+        }
+        // a move that extrudes along X or Y (an unretraction in place prints nothing)
+        let (mut extrudes, mut moves_xy) = (false, false);
+        for w in l.split(';').next().unwrap_or("").split_whitespace().skip(1) {
+            let (k, v) = w.split_at(1);
+            let v: f64 = v.parse().unwrap_or(0.0);
+            match k {
+                "X" => (x, moves_xy) = (v, true),
+                "Y" => (y, moves_xy) = (v, true),
+                "E" => extrudes = v > 0.0,
+                _ => {}
+            }
+        }
+        if extrudes && moves_xy {
+            moves.push((current.clone(), x, y));
+        }
+    }
+    for (name, b) in &boxes {
+        let mine: Vec<_> = moves.iter().filter(|m| m.0.as_deref() == Some(name)).collect();
+        assert!(!mine.is_empty(), "{name} prints nothing");
+        assert!(
+            mine.iter().all(|m| on(b, m.1, m.2)),
+            "{name} prints off its object"
+        );
+        // no other object prints on it
+        let kept: Vec<_> = moves.iter().filter(|m| m.0.as_deref() != Some(name)).collect();
+        assert!(
+            !kept.iter().any(|m| on(b, m.1, m.2) && m.0.is_some()),
+            "{name}: another object prints on it"
+        );
+        // and nothing on it prints outside its own blocks, so skipping it leaves none of it
+        assert!(
+            moves
+                .iter()
+                .filter(|m| on(b, m.1, m.2))
+                .all(|m| m.0.as_deref() == Some(name)),
+            "{name} has moves outside its blocks"
+        );
+    }
+}
+
+/// `sx slice <file.3mf>` refuses a plate the collision check refuses, as `sx slice --request` does with the same file,
+/// in the same words; `--allow-collisions` slices it anyway.
+#[test]
+fn a_3mf_slice_takes_the_requests_collision_check() {
+    let dir = temp_dir(format!("sx-cli-3mf-collide-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let model = dir.join("two-boxes.3mf");
+    std::fs::copy(fixture("two-boxes.3mf"), &model).unwrap();
+    // a gantry 3 mm over the nozzle passes through the 10 mm box while the 4 mm one prints
+    let config = serde_json::json!({
+        "print_sequence": "by object", "layer_height": 0.2, "initial_layer_print_height": 0.2,
+        "brim_width": 0, "skirt_loops": 0, "extruder_clearance_radius": 40, "extruder_clearance_height_to_rod": 3
+    });
+    let preset = dir.join("by-object.json");
+    std::fs::write(&preset, config.to_string()).unwrap();
+    let run = |extra: &[&str]| {
+        sx().arg("slice")
+            .arg(&model)
+            .args(["--no-project-settings", "--config"])
+            .arg(&preset)
+            .args(["-o", "-"])
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let out = run(&[]);
+    assert_eq!(out.status.code(), Some(3));
+    assert!(out.stdout.is_empty());
+    let err = String::from_utf8_lossy(&out.stderr);
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "plate": {"objects": [{"id": "p", "mesh": model.to_str().unwrap()}]},
+        "config": config,
+    });
+    let path = dir.join("request.json");
+    std::fs::write(&path, req.to_string()).unwrap();
+    let by_request = sx().args(["slice", "--request"]).arg(&path).output().unwrap();
+    assert_eq!(by_request.status.code(), Some(3));
+    let words = |e: &str| {
+        e.lines()
+            .find(|l| l.starts_with("sx slice: "))
+            .unwrap_or("")
+            .to_owned()
+    };
+    assert_eq!(words(&err), words(&String::from_utf8_lossy(&by_request.stderr)));
+    assert!(err.contains("The gantry hits tall."), "{err}");
+    assert!(
+        err.contains("To slice it anyway, add --allow-collisions."),
+        "{err}"
+    );
+    let out = run(&["--allow-collisions"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(!out.stdout.is_empty());
 }

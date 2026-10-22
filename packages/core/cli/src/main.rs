@@ -3,7 +3,7 @@
 //! sx: slice from the command line and run the slicing benchmark.
 //!
 //! sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode | -o -] [--preview out.sxpv]
-//!          [--strict]
+//!          [--allow-collisions] [--strict]
 //! sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]
 //! sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]
 //! sx schema [request | result]
@@ -24,7 +24,10 @@
 //! change (`packages/settings/engine-choices.json`); `--config` goes over them,
 //! and `--no-project-settings` leaves them out. What the settings set that the
 //! engine does not use is listed on stderr, and `--strict` refuses the slice
-//! over it (exit code 3).
+//! over it (exit code 3). A 3MF slices as the build items of its first plate (`--plate N` picks another), each an
+//! object of its own with its own label, as a request and the app slice it; the same collision and clearance check
+//! as `--request` refuses the slice where it finds a collision (exit code 3), unless `--allow-collisions` asks for it
+//! anyway.
 //!
 //! `sx slice --request` reads a `SliceRequest` JSON (`sx schema request`) from
 //! a file or stdin and prints a result JSON (`sx schema result`) with
@@ -55,7 +58,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 use sx_core::validate::validate_gcode;
-use sx_core::{Mesh, Plate, PrintConfig, SliceOptions, SliceOutput, SliceSession, preview};
+use sx_core::{Mesh, Plate, PrintConfig, SliceOutput, SliceSession, preview};
 
 type Res<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -91,7 +94,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
+                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
             );
             return ExitCode::from(2);
         }
@@ -303,9 +306,10 @@ fn split_ref(full: &str) -> (&str, Option<u32>) {
     }
 }
 
-/// A 3MF plate given without a transform becomes one object per build item, each where the file
-/// puts it with the plate centered on the bed, so print by object and its clearance checks see the
-/// objects and not one merged mesh. Returns their meshes under the new keys.
+/// A 3MF plate given without a transform becomes one object per build item ([`sx_core::api::load_3mf_items`]), each
+/// where the file puts it with the plate centered on the bed, so print by object, its clearance checks and the object
+/// labels see the objects and not one merged mesh. Returns their meshes under the new keys (a plate of one item keeps
+/// its key, with the item's mesh).
 fn split_projects(
     req: &mut sx_core::api::SliceRequest,
     base: &Path,
@@ -338,12 +342,11 @@ fn split_projects(
             name: path.display().to_string(),
             reason: e.to_string(),
         })?;
-        let plates = api::load_3mf_plate_objects(&bytes, rel)?;
-        let (plate_no, items) = match plate {
-            Some(n) => plates.into_iter().find(|(p, _)| *p == n),
-            None => plates.into_iter().next(),
-        }
-        .unwrap_or_default();
+        let Some((plate_no, items)) = api::load_3mf_items(&bytes, rel, plate)? else {
+            // loading it names the plate the file does not have
+            out.push(o);
+            continue;
+        };
         // The marks the project sets on this plate's layers go in unless the request brings its own.
         if req.options.layer_gcode.is_none() {
             let marks = api::load_3mf_layer_gcode(&bytes, plate_no);
@@ -352,21 +355,17 @@ fn split_projects(
             }
         }
         if items.len() < 2 {
-            // One object keeps its mesh; the ears the file paints on it go with it.
+            // One object keeps its key and is centered as the plate; the ears the file paints on it go with it, and
+            // its mesh is named after its object, not the file.
             let mut o = o;
-            if let Some(one) = items.first() {
+            if let Some(one) = items.into_iter().next() {
                 o.brim_points.clone_from(&one.brim_points);
+                cache.insert(key, std::sync::Arc::new(one));
             }
             out.push(o);
             continue;
         }
-        // the plate is centered as a whole, as the merged mesh would be
-        let merged = Mesh {
-            name: rel.to_owned(),
-            parts: items.iter().flat_map(|m| m.parts.iter().cloned()).collect(),
-            ..Mesh::default()
-        };
-        let at = sx_core::plate::centered_transform(&merged, bed);
+        let at = sx_core::plate::items_transform(&items, bed, None);
         for (k, mesh) in items.into_iter().enumerate() {
             let id = format!("{key}@{}", k + 1);
             let mut one = o.clone();
@@ -638,7 +637,7 @@ fn cmd_request(args: &[String]) -> ExitCode {
         }
         Err(e) => return fail(EXIT_SLICE, request_refusal(e.to_string(), &req, args)),
     };
-    if let Some(why) = collision_refusal(&run.report, &req.plate.objects, args) {
+    if let Some(why) = request_collision_refusal(&run.report, &req.plate.objects, args) {
         return fail(EXIT_INPUT, why);
     }
     print_chamber(run.report.chamber_cooling.as_ref(), None);
@@ -717,33 +716,42 @@ fn print_config_report(r: &sx_core::api::ConfigReport) {
 /// How many keys the stderr block lists one per line.
 const REPORT_LINES: usize = 50;
 
-/// Why a slice is refused when its head, gantry or tool changer would meet a printed part, two objects' paths cross,
-/// or a path enters a zone the printer keeps clear, unless `--allow-collisions` asks for it anyway. The engine reports
-/// codes and numbers; the words are the command line's.
-fn collision_refusal(
+/// [`collision_refusal`] of a request's slice, with its objects' names.
+fn request_collision_refusal(
     report: &sx_core::api::SliceReport,
     objects: &[sx_core::api::ObjectSpec],
     args: &[String],
 ) -> Option<String> {
+    let names: Vec<(&str, &str)> = objects.iter().map(|o| (o.id.as_str(), o.name.as_str())).collect();
+    collision_refusal(&report.collisions, &report.collision_fixes, &names, args)
+}
+
+/// Why a slice is refused when its head, gantry or tool changer would meet a printed part, two objects' paths cross,
+/// or a path enters a zone the printer keeps clear, unless `--allow-collisions` asks for it anyway: the same rule for
+/// `sx slice <model>` and `sx slice --request`. `names` are the objects' ids and names (the id stands in for an empty
+/// name). The engine reports codes and numbers; the words are the command line's.
+fn collision_refusal(
+    collisions: &[sx_core::collide::Collision],
+    collision_fixes: &[sx_core::collide::CollisionFix],
+    names: &[(&str, &str)],
+    args: &[String],
+) -> Option<String> {
     use sx_core::collide::{Kind, Part, Severity};
-    let named = |id: &str| {
-        objects
-            .iter()
-            .find(|o| o.id == id)
-            .map_or(id, |o| if o.name.is_empty() { id } else { o.name.as_str() })
-            .to_owned()
-    };
     let name = |id: &str| match id {
         "prime-tower" => "the prime tower".to_owned(),
         "exclusion-area" => "the exclusion area".to_owned(),
         "wrap-check-zone" => "the nozzle wrap check corner".to_owned(),
-        _ => named(id),
+        _ => names
+            .iter()
+            .find(|(i, n)| *i == id && !n.is_empty())
+            .map_or(id, |(_, n)| n)
+            .to_owned(),
     };
     // The machine's clearance holds for a plate printed by object; crossing paths and keep-out zones are the plate's
     // own, in either order, so they get their own words.
     let mut machine = Vec::new();
     let mut plate = Vec::new();
-    for c in report.collisions.iter().filter(|c| c.severity == Severity::Hit) {
+    for c in collisions.iter().filter(|c| c.severity == Severity::Hit) {
         let a = name(&c.object_id);
         let b = name(&c.hit_id);
         let layers = if c.last_layer > c.layer {
@@ -799,7 +807,7 @@ fn collision_refusal(
     why.extend(plate);
     // The fixes the engine offers, in the command line's words, and the way past the refusal.
     let mut fixes = Vec::new();
-    for f in &report.collision_fixes {
+    for f in collision_fixes {
         use sx_core::collide::report::FixKind;
         let mm = f.mm.unwrap_or(0.0);
         fixes.push(match f.kind {
@@ -934,25 +942,29 @@ fn read_config_value(config: &mut PrintConfig, value: &Value) -> Res<sx_core::ap
     Ok(report)
 }
 
+/// The settings `sx slice <model>` prints with ([`layered_config`]) and what came with them.
+struct Layered {
+    config: PrintConfig,
+    /// What the settings set that the engine does not use.
+    report: sx_core::api::ConfigReport,
+    /// Which layer set `chamber_cooling_mode` last: `project` for the project's or the object's settings, `preset` for
+    /// `--config`.
+    chamber_from: Option<&'static str>,
+    /// Why a project's settings were left out, when they could not be read.
+    skipped: Option<String>,
+    /// The `--config` settings, which go over an object's own as over the plate's.
+    preset: Option<Value>,
+}
+
 /// The settings `sx slice <model>` prints with, lowest first: the engine's defaults, a project's own settings (our
-/// engine choices kept where it did not change them), the object's own settings, then `--config`; and what they set
-/// that the engine does not use; which of them set `chamber_cooling_mode` last (`project` for the project's or the
-/// object's settings, `preset` for `--config`); and why a project's settings were left out, when they could not be read.
-fn layered_config(
-    args: &[String],
-    model: &str,
-    bytes: &[u8],
-    mesh: &Mesh,
-) -> Res<(
-    PrintConfig,
-    sx_core::api::ConfigReport,
-    Option<&'static str>,
-    Option<String>,
-)> {
+/// engine choices kept where it did not change them), the object settings every object of the plate shares
+/// (`object`), then `--config`.
+fn layered_config(args: &[String], model: &str, bytes: &[u8], object: &Value) -> Res<Layered> {
     let mut config = PrintConfig::default();
     let mut report = sx_core::api::ConfigReport::default();
     let mut chamber_from = None;
     let mut skipped = None;
+    let mut preset = None;
     let sets_chamber = |v: &Value| v.get(sx_core::chamber::KEY).is_some();
     let is_3mf = Path::new(model)
         .extension()
@@ -972,11 +984,11 @@ fn layered_config(
         report.kept = project.kept;
         report.walls = project.walls;
     }
-    if let Some(m) = mesh.settings.as_object().filter(|m| !m.is_empty()) {
-        if sets_chamber(&mesh.settings) {
+    if let Some(m) = object.as_object().filter(|m| !m.is_empty()) {
+        if sets_chamber(object) {
             chamber_from = Some("project");
         }
-        let own = sx_core::api::with_bambu_tower_keys(&mesh.settings);
+        let own = sx_core::api::with_bambu_tower_keys(object);
         report.merge(read_config_value(&mut config, &own)?);
         if let Some(g) = sx_core::api::WallsNote::named(m) {
             report.walls = Some(sx_core::api::WallsNote {
@@ -1003,6 +1015,7 @@ fn layered_config(
                 source: "config".to_owned(),
             });
         }
+        preset = Some(value);
     }
     if report.walls.is_none() {
         report.walls = Some(sx_core::api::WallsNote::of_request(
@@ -1010,7 +1023,13 @@ fn layered_config(
             "the settings",
         ));
     }
-    Ok((config, report, chamber_from, skipped))
+    Ok(Layered {
+        config,
+        report,
+        chamber_from,
+        skipped,
+        preset,
+    })
 }
 
 /// Prints why a project's settings were left out, the walls the slice runs and what the settings set that the engine
@@ -1037,24 +1056,145 @@ fn settings_notes(
     None
 }
 
+/// The slice a request makes of `plate`, with its collision check: the paths, what the check's report reads besides
+/// the hits, and the hits.
+fn slice_checked(
+    plate: &Plate,
+    config: &PrintConfig,
+) -> Result<
+    (
+        SliceOutput,
+        Option<sx_core::collide::Meta>,
+        sx_core::collide::Hits,
+    ),
+    sx_core::Error,
+> {
+    let mut session = SliceSession::new(plate, config)?;
+    sx_core::api::set_collision_check(&mut session, plate, config, None);
+    let mut out = session.slice_range_with(config, 0..session.layer_count(), &sx_core::NoProgress)?;
+    sx_core::api::check_paths(&session, config, &mut out);
+    let meta = session.collide_meta().cloned();
+    let hits = std::mem::take(&mut out.collisions);
+    Ok((out, meta, hits))
+}
+
+/// The collision check's refusal of the plate `sx slice <model>` sliced, in the words and by the rule of `--request`
+/// ([`collision_refusal`]): the hits read with the layers' times of the finished file (`file_times`, seconds per layer
+/// and before the first) as a request reads them.
+fn plate_refusal(
+    meta: Option<&sx_core::collide::Meta>,
+    hits: &sx_core::collide::Hits,
+    file_times: (&[f64], f64),
+    out: &SliceOutput,
+    plate: &Plate,
+    args: &[String],
+) -> Option<String> {
+    let (file_s, prepare_s) = file_times;
+    #[allow(clippy::cast_possible_truncation, reason = "seconds of a layer")]
+    let layer_s: Vec<f32> = if file_s.len() == out.layers.len() && !file_s.is_empty() {
+        file_s.iter().map(|&t| t as f32).collect()
+    } else {
+        out.layers.iter().map(|l| l.time_s).collect()
+    };
+    let found = sx_core::api::collision_report(meta, hits, &layer_s, prepare_s);
+    let names: Vec<(&str, &str)> = plate
+        .objects
+        .iter()
+        .map(|o| (o.id.as_str(), o.name.as_str()))
+        .collect();
+    collision_refusal(&found.collisions, &found.fixes, &names, args)
+}
+
+/// What `sx slice <model>` slices: a 3MF plate's build items, or one mesh of any other format.
+enum Model {
+    Items(Vec<Mesh>),
+    One(Mesh),
+}
+
+impl Model {
+    /// A 3MF slices as the build items of a plate (`--plate N`, else its first), each an object of its own, as a
+    /// request and the app slice it.
+    fn load(args: &[String], model: &str, bytes: &[u8]) -> Res<Self> {
+        let want = flag(args, "--plate").map(str::parse::<u32>).transpose()?;
+        if want.is_none() && !sx_core::api::is_3mf(bytes, model) {
+            return Ok(Model::One(Mesh::load(bytes, model)?));
+        }
+        let (_, items) = sx_core::api::load_3mf_items(bytes, model, want)?
+            .ok_or_else(|| format!("{model} has no plate {}", want.unwrap_or(1)))?;
+        Ok(Model::Items(items))
+    }
+
+    /// The object settings that go in with the plate's ([`layered_config`]): the mesh's own, or those every build item
+    /// shares, `Null` when the items' differ (each object then slices with its own, see [`Model::plate`]).
+    fn shared_settings(&self) -> Value {
+        match self {
+            Model::One(mesh) => mesh.settings.clone(),
+            Model::Items(items) => {
+                let first = items.first().map_or(Value::Null, |m| m.settings.clone());
+                if items.iter().all(|m| m.settings == first) {
+                    first
+                } else {
+                    Value::Null
+                }
+            }
+        }
+    }
+
+    /// The plate, centered on the profile's bed: one object per build item, each printing with its own object settings
+    /// and `preset` (`--config`) over them when the items' settings differ.
+    fn plate(self, config: &PrintConfig, preset: Option<&Value>) -> Plate {
+        let differ = self.shared_settings().is_null();
+        match self {
+            Model::One(mesh) => Plate::single_on(mesh, config.bed_rect(), config.printable_height),
+            Model::Items(items) => {
+                let mut plate = Plate::items_on(items, config.bed_rect(), config.printable_height);
+                for o in plate.objects.iter_mut().filter(|_| differ) {
+                    if let Some(own) = o.mesh.settings.as_object().filter(|m| !m.is_empty()) {
+                        let mut m = own.clone();
+                        if let Some(p) = preset.and_then(Value::as_object) {
+                            m.extend(p.iter().map(|(k, v)| (k.clone(), v.clone())));
+                        }
+                        o.settings = Value::Object(m);
+                    }
+                }
+                plate
+            }
+        }
+    }
+}
+
+/// The name `filename_format` gives the G-code of `sx slice <model>`, from the model's file name.
+fn slice_file_name(config: &PrintConfig, model: &str, gcode: &[u8]) -> Res<String> {
+    let names = sx_core::outname::NameInfo {
+        objects: vec![
+            Path::new(model)
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+        ],
+        ..Default::default()
+    };
+    Ok(sx_core::outname::file_name(
+        config,
+        &names,
+        gcode,
+        sx_core::firmware::truthy(config, "binary_gcode"),
+    )?)
+}
+
 fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     let model = args
         .first()
         .filter(|a| !a.starts_with('-'))
         .ok_or("missing model path")?;
     let bytes = std::fs::read(model)?;
-    let mesh = match flag(args, "--plate") {
-        Some(n) => {
-            let want: u32 = n.parse()?;
-            sx_core::api::load_3mf_plates(&bytes, model)?
-                .into_iter()
-                .find(|(p, _)| *p == want)
-                .map(|(_, m)| m)
-                .ok_or_else(|| format!("{model} has no plate {want}"))?
-        }
-        None => Mesh::load(&bytes, model)?,
-    };
-    let (mut config, report, chamber_from, skipped) = layered_config(args, model, &bytes, &mesh)?;
+    let model_file = Model::load(args, model, &bytes)?;
+    let Layered {
+        mut config,
+        report,
+        chamber_from,
+        skipped,
+        preset,
+    } = layered_config(args, model, &bytes, &model_file.shared_settings())?;
     if let Some(code) = settings_notes(args, &report, skipped) {
         return Ok(code);
     }
@@ -1070,30 +1210,27 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     for i in &issues {
         eprintln!("warning: {}", i.message);
     }
-    // The mesh goes to the middle of the profile's bed, as the desktop slicers do.
-    let plate = Plate::single_on(mesh, config.bed_rect(), config.printable_height);
+    // The model goes to the middle of the profile's bed, as the desktop slicers do.
+    let plate = model_file.plate(&config, preset.as_ref());
     let t = Instant::now();
     let refused = |e: sx_core::Error| with_printer_note(e.to_string(), stock_checked.then_some(&config.raw));
-    let out = sx_core::slice(&plate, &config, &SliceOptions::default()).map_err(refused)?;
+    let (out, meta, hits) = slice_checked(&plate, &config).map_err(refused)?;
     let mut gcode = Vec::new();
     let stats = sx_core::emit_gcode(&out, &config, config.gcode_flavor, &mut gcode).map_err(refused)?;
     let (gcode, timing) = sx_core::firmware::finalize_timed(&gcode, None, Some(&config));
     let time_s = sx_core::firmware::footer_time(&gcode).unwrap_or(stats.time_s);
-    // The name `filename_format` gives the file, from the model's file name.
-    let names = sx_core::outname::NameInfo {
-        objects: vec![
-            Path::new(model)
-                .file_name()
-                .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
-        ],
-        ..Default::default()
-    };
-    let file_name = sx_core::outname::file_name(
-        &config,
-        &names,
-        &gcode,
-        sx_core::firmware::truthy(&config, "binary_gcode"),
-    )?;
+    if let Some(why) = plate_refusal(
+        meta.as_ref(),
+        &hits,
+        (&timing.layer_s, timing.prepare_s),
+        &out,
+        &plate,
+        args,
+    ) {
+        eprintln!("sx slice: {why}");
+        return Ok(ExitCode::from(EXIT_INPUT));
+    }
+    let file_name = slice_file_name(&config, model, &gcode)?;
     let (gcode, failed) = sx_core::firmware::substitute(gcode, &config)?;
     for f in failed {
         eprintln!("warning: G-code substitution {f} was skipped");
