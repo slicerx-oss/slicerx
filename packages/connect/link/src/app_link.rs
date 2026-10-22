@@ -78,6 +78,8 @@ const APP_CODES: &[&str] = &[
     "stale_body",
     "missing_face",
     "ambiguous_face",
+    // a call that reads the person's own account data while nobody is signed in to the app
+    "signed_out",
 ];
 /// The largest `details` object an answer may carry, as JSON; a larger one is dropped, the refusal still goes through.
 const MAX_DETAILS: usize = 32 * 1024;
