@@ -2030,6 +2030,11 @@ fn arc_steps(radius: f64, angle: f64, deviation: f64) -> usize {
 
 /// The print time of `gcode` under the settings `cfg`; with `per_line`, also the time at each line.
 pub fn estimate(gcode: &[u8], cfg: &PrintConfig, per_line: bool) -> Estimate {
+    estimate_counting(gcode, cfg, per_line, bbl::COUNT_END_WAIT)
+}
+
+/// [`estimate`], with the Bambu Lab rules' end waits counted in the total or not (`count_end_wait`).
+fn estimate_counting(gcode: &[u8], cfg: &PrintConfig, per_line: bool, count_end_wait: bool) -> Estimate {
     let line_count = if per_line {
         gcode.split(|&b| b == b'\n').count()
     } else {
@@ -2068,7 +2073,7 @@ pub fn estimate(gcode: &[u8], cfg: &PrintConfig, per_line: bool) -> Estimate {
         ahead = next;
     }
     if r.m.bbl {
-        r.m.bbl_finish();
+        r.m.bbl_finish(count_end_wait);
     } else {
         r.m.calculate(0, 0.0, Kind::Noop, true);
     }
