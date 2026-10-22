@@ -1361,7 +1361,23 @@ pub fn run_request_with(
 ) -> Result<SliceRun> {
     let timer = Timer::start();
     let prepared = prepare_with(req, meshes, progress)?;
-    run_prepared_timed(req, &prepared, progress, &timer)
+    run_prepared_timed(req, Held::Owned(Box::new(prepared)), progress, &timer)
+}
+
+/// The session a run slices: one a host keeps for later runs, or a one-shot run's own, which it sheds once its last
+/// layer range is cut ([`SliceSession::shed`]).
+enum Held<'a> {
+    Kept(&'a Prepared),
+    Owned(Box<Prepared>),
+}
+
+impl Held<'_> {
+    fn get(&self) -> &Prepared {
+        match self {
+            Held::Kept(p) => p,
+            Held::Owned(p) => p,
+        }
+    }
 }
 
 /// A request's plate made into a session ([`build_session`]): the part of a slice a host may keep and slice again
@@ -1449,18 +1465,19 @@ fn with_lone_settings(
 /// the same bytes as a fresh run. The session keeps what slicing works out (shells, bridges, support and the
 /// other plans), so a second run on it does less.
 pub fn run_prepared(req: &SliceRequest, prepared: &Prepared, progress: &dyn Progress) -> Result<SliceRun> {
-    run_prepared_timed(req, prepared, progress, &Timer::start())
+    run_prepared_timed(req, Held::Kept(prepared), progress, &Timer::start())
 }
 
 fn run_prepared_timed(
     req: &SliceRequest,
-    prepared: &Prepared,
+    mut held: Held<'_>,
     progress: &dyn Progress,
     timer: &Timer,
 ) -> Result<SliceRun> {
     let (config, config_issues, config_report) = request_config_report(req)?;
-    let (mut config, mut config_issues) = with_lone_settings(config, config_issues, &prepared.lone_settings)?;
-    let session = &prepared.session;
+    let (mut config, mut config_issues) =
+        with_lone_settings(config, config_issues, &held.get().lone_settings)?;
+    let session = &held.get().session;
     if !config.variant_sources.is_empty() {
         config = session.mapped_config(&config).into_owned();
         for issue in config.refresh_variants()? {
@@ -1510,7 +1527,13 @@ fn run_prepared_timed(
         let mut sink = Vec::new();
         let target: &mut Vec<u8> = if want_gcode { &mut run.gcode } else { &mut sink };
         let before = target.len();
-        let mut out = slice_shard_paths(req, session, &config, lo..hi, progress)?;
+        let mut out = slice_shard_paths(req, &held.get().session, &config, lo..hi, progress)?;
+        if s + 1 == shards
+            && let Held::Owned(p) = &mut held
+        {
+            p.session.shed();
+        }
+        let session = &held.get().session;
         hits.merge(std::mem::take(&mut out.collisions));
         feature_use.add(&out);
         let drawing = if draw {
@@ -1723,7 +1746,7 @@ fn run_prepared_timed(
         gcode_sha = sha;
     }
     let collisions = collision_report(
-        session.collide_meta(),
+        held.get().session.collide_meta(),
         &hits,
         &report.layer_time_s,
         report.stats.prepare_s,
