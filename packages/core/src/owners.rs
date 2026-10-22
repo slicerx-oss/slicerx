@@ -15,7 +15,8 @@
 //! - a cut adds a point on the segment: the same line, the same extrusion, no travel;
 //! - skirt, prime tower and custom paths belong to no object; a brim to the object it goes round, none when it
 //!   goes round several; support to the object above it (the first layer up where an object comes within the
-//!   support's margin of the middle of the path's box), else the nearest object on its own layer;
+//!   support's margin of the middle of the path's box), else the nearest object on its own layer, else the nearest
+//!   on any layer up, however far: every support path carries an object's label;
 //! - a support path whose box reaches under two objects (tree support under two shelves, merged on the first
 //!   layers) is cut like a wall where it passes from under one object to under another: a point takes the first
 //!   object up whose slice holds it, the path's own owner where none does.
@@ -86,7 +87,6 @@ fn nearest_of(slices: &[ObjectSlice], p: Point, reach: f64, keep: &dyn Fn(u16) -
     if let Some(s) = kept().find(|s| holder(std::slice::from_ref(*s), p).is_some()) {
         return Some(s.object);
     }
-    let q = mm(p);
     let mut best: Option<(f64, u16)> = None;
     for s in kept() {
         let r = reach * SCALE;
@@ -98,27 +98,40 @@ fn nearest_of(slices: &[ObjectSlice], p: Point, reach: f64, keep: &dyn Fn(u16) -
         if p.x < s.bounds[0] - r || p.x > s.bounds[2] + r || p.y < s.bounds[1] - r || p.y > s.bounds[3] + r {
             continue;
         }
-        let d = s
-            .shapes
-            .iter()
-            .flatten()
-            .flat_map(|ring| {
-                let n = ring.len();
-                (0..n).filter_map(move |i| Some((ring.get(i)?, ring.get((i + 1) % n)?)))
-            })
-            .map(|(a, b)| {
-                seg_dist(
-                    q,
-                    [f64::from(a.x) / SCALE, f64::from(a.y) / SCALE],
-                    [f64::from(b.x) / SCALE, f64::from(b.y) / SCALE],
-                )
-            })
-            .fold(f64::INFINITY, f64::min);
+        let d = edge_dist(s, p);
         if d <= reach && best.is_none_or(|(bd, _)| d < bd) {
             best = Some((d, s.object));
         }
     }
     best.map(|(_, o)| o)
+}
+
+/// How far `p` is from the nearest edge of `s`'s slice, mm.
+fn edge_dist(s: &ObjectSlice, p: Point) -> f64 {
+    let q = mm(p);
+    s.shapes
+        .iter()
+        .flatten()
+        .flat_map(|ring| {
+            let n = ring.len();
+            (0..n).filter_map(move |i| Some((ring.get(i)?, ring.get((i + 1) % n)?)))
+        })
+        .map(|(a, b)| {
+            seg_dist(
+                q,
+                [f64::from(a.x) / SCALE, f64::from(a.y) / SCALE],
+                [f64::from(b.x) / SCALE, f64::from(b.y) / SCALE],
+            )
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// How far `p` is from `s`'s box, mm: never more than [`edge_dist`].
+fn box_dist(s: &ObjectSlice, p: Point) -> f64 {
+    let [x0, y0, x1, y1] = s.bounds;
+    let dx = f64::from(x0.saturating_sub(p.x).max(p.x.saturating_sub(x1)).max(0)) / SCALE;
+    let dy = f64::from(y0.saturating_sub(p.y).max(p.y.saturating_sub(y1)).max(0)) / SCALE;
+    (dx * dx + dy * dy).sqrt()
 }
 
 /// Paths that are cut where they cross from one object into another, and owned by the object holding them.
@@ -523,7 +536,7 @@ fn support_owner(
 
 /// The object support at `mid` holds up: the first one up from this layer within the support's margin of it,
 /// passing over objects already beside it on its own layer while another is found; else the nearest on its own
-/// layer.
+/// layer; else [`nearest_up`].
 fn support_owner_at(
     here: &[ObjectSlice],
     mid: Point,
@@ -549,7 +562,42 @@ fn support_owner_at(
             }
         }
     }
-    nearest(here, mid, NEAR_MM).unwrap_or(OBJECT_NONE)
+    nearest(here, mid, NEAR_MM)
+        .or_else(|| nearest_up(here, mid, above))
+        .unwrap_or(OBJECT_NONE)
+}
+
+/// The object nearest `mid` on its own layer or any layer up to [`SUPPORT_REACH`], however far: the last resort
+/// for a support path that holds up nothing within the margin and has no object near it on its own layer (tree
+/// branches that lean out round an object), so that no support is left without an object's label. A printer
+/// that skips an object cannot skip support of no object; it always prints. The first found wins a tie.
+fn nearest_up(
+    here: &[ObjectSlice],
+    mid: Point,
+    above: &dyn Fn(usize) -> Option<std::sync::Arc<Slices>>,
+) -> Option<u16> {
+    let mut best: Option<(f64, u16)> = None;
+    let mut look = |slices: &[ObjectSlice]| {
+        for s in slices {
+            if best.is_some_and(|(d, _)| box_dist(s, mid) >= d) {
+                continue;
+            }
+            let d = if holder(std::slice::from_ref(s), mid).is_some() {
+                0.0
+            } else {
+                edge_dist(s, mid)
+            };
+            if best.is_none_or(|(bd, _)| d < bd) {
+                best = Some((d, s.object));
+            }
+        }
+    };
+    look(here);
+    for k in 1..=SUPPORT_REACH {
+        let Some(s) = above(k) else { break };
+        look(&s);
+    }
+    best.map(|(_, o)| o)
 }
 
 /// The slices of the objects `part_object` names, made from their parts' loops on a layer (`loops`: per part).
