@@ -11,6 +11,7 @@ import { createCombinedPlanner, createMemorySessionStore, createPilot, DEFAULT_C
 import { motionReduced } from '@slicerx/ui'
 import { useEffect, useState } from 'react'
 import { setSessionSource } from '../../app-link/sessions'
+import { note } from '../../bugs/log'
 import { appDesignHost } from '../../cad/design-host'
 import { commandsLoaded, commandsLoading, getCommand, isEnabled, listCommands, useCommands } from '../../commands/registry'
 import { useEdition } from '../../edition'
@@ -212,6 +213,8 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
     project: appProject(host),
     tools: [...parts.tools],
     store: mimirLogs,
+    // a turn that leaves toolsets out to stay under the provider's tool limit says so in the app log
+    log: note,
     printRun: appPrintRun(host),
     ...(parts.client ? { client: parts.client } : {}),
     ...(parts.share ? { share: parts.share } : {}),
