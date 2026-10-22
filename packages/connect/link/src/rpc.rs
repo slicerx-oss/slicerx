@@ -835,6 +835,9 @@ async fn dispatch(
         "printers.remove" => {
             let id = str_arg(&p, "printerId")?;
             b.printers.lock().await.remove(&id);
+            // A viewer still reading (a phone, a remote view) would keep the camera session open for
+            // a printer that is gone.
+            b.feeds.close(&id);
             b.sessions.lock().await.remove(&id);
             b.fleets.lock().await.forget_printer(&id);
             crate::hub::lock(&b.hub.beds).remove(&id);
@@ -2275,6 +2278,9 @@ async fn open_camera_source(b: &Arc<Bridge>, id: &str) -> Rpc<sx_connect::camera
             session(b, id).await?.stream().await.map_err(RpcError::from)
         }
     };
+    // The 10 s start after any earlier session of this camera has been ended: waiting out its
+    // TEARDOWN never uses up the open's time.
+    sx_connect::camera::after_teardowns(&config).await;
     let got = match tokio::time::timeout(Duration::from_secs(10), open).await {
         Ok(Ok(Some(s))) => Ok(s),
         Ok(Ok(None)) => Err(RpcError::new(

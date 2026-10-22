@@ -39,6 +39,8 @@ export interface RtspOptions {
   refusePlay?: () => boolean
   /** Drops a PLAY that comes less than this many milliseconds after the last session ended, as the H2D does 5 to 10 s after a TEARDOWN. */
   dropWithinMs?: () => number
+  /** How long the camera takes to answer PLAY, in milliseconds (asked once per PLAY). A TEARDOWN in that time ends the session before it plays. */
+  playDelayMs?: () => number
   /** True for a session that started playing at `startedAt` (ms) and should stop sending frames, its connection left open. */
   stalled?: (startedAt: number) => boolean
   /** Where request lines go besides `log`, prefixed `rtsp `. */
@@ -134,6 +136,8 @@ export async function startRtsp(o: RtspOptions = {}): Promise<RunningRtsp> {
     let timer: NodeJS.Timeout | undefined
     // Whether this connection's session got as far as playing, for the TEARDOWN line.
     let played = false
+    // Set by TEARDOWN: a PLAY answer still waiting (`playDelayMs`) is not sent.
+    let tornDown = false
     sock.on('close', () => {
       if (timer) {
         clearInterval(timer)
@@ -194,26 +198,21 @@ export async function startRtsp(o: RtspOptions = {}): Promise<RunningRtsp> {
         else if (method === 'PLAY') {
           playing = sock
           played = true
-          reply('200 OK', ['Session: abc123', 'Range: npt=0.000-'])
-          const startedAt = Date.now()
-          timer = setInterval(() => {
-            if (o.stalled?.(startedAt)) return
-            const key = n % 10 === 0
-            const ts = n * Math.round(90000 / (o.fps ?? 15))
-            n++
-            if (key && o.inBand?.()) {
-              sock.write(rtpPacket(seq++, ts, true, SPS))
-              sock.write(rtpPacket(seq++, ts, true, PPS))
-            }
-            if (key) {
-              sock.write(rtpPacket(seq++, ts, false, Buffer.concat([Buffer.from([0x7c, 0x85]), Buffer.alloc(40, 1)])))
-              sock.write(rtpPacket(seq++, ts, true, Buffer.concat([Buffer.from([0x7c, 0x45]), Buffer.alloc(40, 2)])))
-            } else {
-              sock.write(rtpPacket(seq++, ts, true, Buffer.concat([Buffer.from([0x41]), Buffer.alloc(20, 3)])))
-            }
-          }, Math.round(1000 / (o.fps ?? 15)))
-          timers.add(timer)
+          const delay = o.playDelayMs?.() ?? 0
+          const start = () => {
+            if (tornDown || sock.destroyed) return
+            reply('200 OK', ['Session: abc123', 'Range: npt=0.000-'])
+            stream()
+          }
+          if (delay > 0) {
+            const t = setTimeout(() => {
+              timers.delete(t)
+              start()
+            }, delay)
+            timers.add(t)
+          } else start()
         } else if (method === 'TEARDOWN') {
+          tornDown = true
           if (timer) {
             clearInterval(timer)
             timers.delete(timer)
@@ -227,6 +226,27 @@ export async function startRtsp(o: RtspOptions = {}): Promise<RunningRtsp> {
         } else reply('200 OK')
       }
     })
+    // Frames for a session that plays, until its connection or a TEARDOWN ends it.
+    const stream = () => {
+      const startedAt = Date.now()
+      timer = setInterval(() => {
+        if (o.stalled?.(startedAt)) return
+        const key = n % 10 === 0
+        const ts = n * Math.round(90000 / (o.fps ?? 15))
+        n++
+        if (key && o.inBand?.()) {
+          sock.write(rtpPacket(seq++, ts, true, SPS))
+          sock.write(rtpPacket(seq++, ts, true, PPS))
+        }
+        if (key) {
+          sock.write(rtpPacket(seq++, ts, false, Buffer.concat([Buffer.from([0x7c, 0x85]), Buffer.alloc(40, 1)])))
+          sock.write(rtpPacket(seq++, ts, true, Buffer.concat([Buffer.from([0x7c, 0x45]), Buffer.alloc(40, 2)])))
+        } else {
+          sock.write(rtpPacket(seq++, ts, true, Buffer.concat([Buffer.from([0x41]), Buffer.alloc(20, 3)])))
+        }
+      }, Math.round(1000 / (o.fps ?? 15)))
+      timers.add(timer)
+    }
   }
   const server = o.tls ? createTlsServer(o.tls, onSocket) : createTcpServer(onSocket)
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
