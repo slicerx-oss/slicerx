@@ -21,9 +21,9 @@ export function setGeomProvider(p: GeomProvider | null): void {
  * millions of triangles leaves the engine holding hundreds of megabytes until the worker goes, so a worker holding more
  * than BIG_BYTES ends soon after; a new one starts in a fraction of a second.
  */
-const IDLE_MS = 30_000
-const BIG_IDLE_MS = 2_000
-const BIG_BYTES = 256 * 1024 * 1024
+export const IDLE_MS = 30_000
+export const BIG_IDLE_MS = 2_000
+export const BIG_BYTES = 256 * 1024 * 1024
 
 /**
  * The app's own geometry worker: its answers and failures so far, by operation, the last failure's message, and the
@@ -38,6 +38,16 @@ const calls = { answered: {} as Record<string, number>, failed: {} as Record<str
  */
 export function geomCalls(): { answered: Record<string, number>; failed: Record<string, number>; lastError: string | null; loadError: LoadError | null } {
   return { answered: { ...calls.answered }, failed: { ...calls.failed }, lastError: calls.lastError, loadError: calls.loadError && { ...calls.loadError } }
+}
+
+/** Counts an answer of `op`, or with `error` its failure, for geomCalls (the fit check's worker, fit-client.ts). */
+export function noteCall(op: string, error?: Error): void {
+  if (!error) {
+    calls.answered[op] = (calls.answered[op] ?? 0) + 1
+    return
+  }
+  calls.failed[op] = (calls.failed[op] ?? 0) + 1
+  calls.lastError = error.message
 }
 
 /** Load failures already logged, so a worker that starts again and fails the same way is not logged again. */
