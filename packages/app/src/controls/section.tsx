@@ -4,7 +4,7 @@
 // buttons and wheel, then a searchable shortcut list where any key can be changed, cleared or put back.
 // Changes are stored next to the look choice and apply at once.
 import type { LookAndFeelChoice } from '@slicerx/contracts'
-import { Button, Select, Seg, SettingRow, Switch, tipAttrs } from '@slicerx/ui'
+import { Button, Select, Seg, SettingRow, Steady, Switch, tipAttrs } from '@slicerx/ui'
 import { controlsPreset, withGizmo, withRemap, type ButtonRemap, type GizmoOverrides, type ModKey } from '@slicerx/viewport'
 import { useEffect, useMemo, useState } from 'react'
 import { controlOverrides, controlsFor, withControlOverrides, type ControlOverrides } from '../first-run/controls'
@@ -160,15 +160,16 @@ function Row({ action, choice, onChange, capturing, setCapturing }: { action: Ke
   const on = capturing === action
   const tab = useTabLabel('prepare')
   const label = actionLabel(action, tab)
+  const chord = cur ? formatShortcut(cur) : 'None'
   return (
     <li className="key-row" data-edited={edited ? 'true' : undefined}>
       <span className="key-label">{label}</span>
       <kbd className="key-chord sx-mono" aria-label={`${label}: ${cur ? formatShortcut(cur) : 'no key'}`}>
-        {on ? 'Press a key' : cur ? formatShortcut(cur) : 'None'}
+        <Steady text={on ? 'Press a key' : chord} forms={['Press a key', chord]} />
       </kbd>
       <span className="key-act">
         <Button size="sm" variant="ghost" aria-label={`Change the key for ${label}`} aria-pressed={on} onClick={() => setCapturing(on ? null : action)}>
-          {on ? 'Cancel' : 'Change'}
+          <Steady text={on ? 'Cancel' : 'Change'} forms={['Change', 'Cancel']} />
         </Button>
         <Button size="sm" variant="ghost" aria-label={`Clear the key for ${label}`} disabled={!cur} onClick={() => onChange(withKey(choice, action, ''))}>
           Clear
