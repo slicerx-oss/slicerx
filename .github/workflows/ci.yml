@@ -1078,12 +1078,34 @@ jobs:
     if: needs.detect.outputs.pgtap == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
           version: 2.62.10
-      - run: supabase start -x studio,imgproxy,logflare,vector,edge-runtime,supavisor,realtime,mailpit,postgres-meta,postgrest
+      # The stack's images come from ghcr.io, which turns away anonymous pulls from shared runners ("toomanyrequests").
+      # Signed in with the job's token the limit is much higher. A token that can't sign in (a fork's pull request)
+      # leaves the pulls anonymous and the retries below carry them.
+      - name: sign in to ghcr.io
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin \
+            || echo "::warning::ghcr.io sign in failed, pulling anonymously"
+      # The first start pulls every image the job's three stacks use and tries again after a pause when a pull is
+      # refused. The later starts in the scripts find them pulled.
+      - name: supabase start (retries refused image pulls)
+        run: |
+          for wait in 20 60 120 0; do
+            supabase start -x studio,imgproxy,logflare,vector,supavisor,realtime,mailpit && exit 0
+            [ "$wait" = 0 ] && exit 1
+            echo "supabase start failed, trying again in $wait s"
+            supabase stop --no-backup || true
+            sleep "$wait"
+          done
       - run: supabase test db
       - run: sh supabase/modules/check-drop.sh
       - run: supabase stop --no-backup
