@@ -45,6 +45,8 @@
 use crate::config::{GcodeFlavor, PrintConfig};
 use crate::fm::Fm as _;
 
+mod bbl;
+
 /// The time of a file.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Estimate {
@@ -57,6 +59,17 @@ pub struct Estimate {
     pub segments: Vec<f64>,
     /// Seconds into the print at the end of each line (empty unless asked for).
     pub lines: Vec<f64>,
+    /// Seconds per feature, the way Bambu Studio's preview lists them: by the latest `; FEATURE:` tag, with
+    /// travel moves as `Undefined` (inside the start and end G-code they keep `Custom`), filament changes as
+    /// `Flush`, and a wait counted with the move it lands on. In order of first use.
+    pub features: Vec<(String, f64)>,
+    /// Seconds of travel moves, the start sequence's left out.
+    pub travel: f64,
+    /// Seconds of the start sequence: the moves under the first `Custom` feature tag, when it comes before any move.
+    pub prepare: f64,
+    /// Seconds of waits with no move after them at the end of the file (the end G-code's last dwells). Whether
+    /// the total counts them depends on the printer's rules.
+    pub end_wait: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +114,10 @@ struct Block {
     smooth_entry: f64,
     /// Klipper: a cap on `smooth_entry` once the move before has been timed and dropped.
     smooth_max: f64,
+    /// The feature the move counts under, an index into [`Machine::features`].
+    role: u16,
+    /// Whether the move belongs to the start sequence.
+    prepare: bool,
 }
 
 fn accel_distance(from: f64, to: f64, a: f64) -> f64 {
@@ -513,6 +530,22 @@ struct Machine {
     first_layer: f64,
     segments: Vec<f64>,
     lines: Option<Vec<f64>>,
+    /// The Bambu Lab rules of [`bbl`] instead of the planner above.
+    bbl: bool,
+    /// Under those rules: the waits not yet carried by a move, oldest first.
+    waits: Vec<bbl::Wait>,
+    features: Vec<(String, f64)>,
+    travel_time: f64,
+    prepare_time: f64,
+    end_wait: f64,
+}
+
+/// Where a wait was booked when it was read: its stretch of the file, its line and whether it was in the first layer.
+#[derive(Debug, Clone, Copy)]
+struct Book {
+    segment: usize,
+    line: usize,
+    first: bool,
 }
 
 const QUEUE: usize = 64;
@@ -532,7 +565,9 @@ impl Machine {
             env.min_extruding = 0.0;
             env.min_travel = 0.0;
         }
-        let max_travel = if matches!(fw, Fw::Repetier | Fw::Marlin2 | Fw::RepRap) {
+        let bbl = bbl::applies(cfg, fw);
+        // Under the Bambu Lab rules the travel acceleration has the (extruding) limit as its ceiling too.
+        let max_travel = if bbl || matches!(fw, Fw::Repetier | Fw::Marlin2 | Fw::RepRap) {
             env.travel
         } else {
             0.0
@@ -561,6 +596,50 @@ impl Machine {
             first_layer: 0.0,
             segments: Vec::new(),
             lines: None,
+            bbl,
+            waits: Vec::new(),
+            features: vec![("Undefined".to_owned(), 0.0)],
+            travel_time: 0.0,
+            prepare_time: 0.0,
+            end_wait: 0.0,
+        }
+    }
+
+    /// The index of feature `name` in [`Self::features`], added on first use.
+    fn role_id(&mut self, name: &str) -> u16 {
+        let i = self
+            .features
+            .iter()
+            .position(|(n, _)| n == name)
+            .unwrap_or_else(|| {
+                self.features.push((name.to_owned(), 0.0));
+                self.features.len() - 1
+            });
+        u16::try_from(i).unwrap_or(0)
+    }
+
+    /// Adds a timed move: `motion` is its own time, `t` that plus the wait it carries.
+    fn account(&mut self, b: &Block, motion: f64, t: f64) {
+        self.time += t;
+        if b.layer == 1 {
+            self.first_layer += motion;
+        }
+        if self.segments.len() <= b.segment {
+            self.segments.resize(b.segment + 1, 0.0);
+        }
+        if let Some(s) = self.segments.get_mut(b.segment) {
+            *s += motion;
+        }
+        if let Some(slot) = self.lines.as_mut().and_then(|l| l.get_mut(b.line)) {
+            *slot += motion;
+        }
+        if let Some(f) = self.features.get_mut(usize::from(b.role)) {
+            f.1 += t;
+        }
+        if b.prepare {
+            self.prepare_time += t;
+        } else if b.kind == Kind::Travel {
+            self.travel_time += t;
         }
     }
 
@@ -658,7 +737,10 @@ impl Machine {
         }
         let process = n.saturating_sub(keep);
         let mut idx = 0usize;
-        for b in self.blocks.iter().take(process) {
+        for i in 0..process {
+            let Some(b) = self.blocks.get(i).copied() else {
+                break;
+            };
             let motion = b.time();
             let mut t = motion;
             if let Some(&(k, extra)) = merged.get(idx)
@@ -667,19 +749,7 @@ impl Machine {
                 t += extra;
                 idx += 1;
             }
-            self.time += t;
-            if b.layer == 1 {
-                self.first_layer += motion;
-            }
-            if self.segments.len() <= b.segment {
-                self.segments.resize(b.segment + 1, 0.0);
-            }
-            if let Some(s) = self.segments.get_mut(b.segment) {
-                *s += motion;
-            }
-            if let Some(slot) = self.lines.as_mut().and_then(|l| l.get_mut(b.line)) {
-                *slot += motion;
-            }
+            self.account(&b, motion, t);
         }
         if let Some(rest) = merged.get(idx..)
             && !rest.is_empty()
@@ -688,6 +758,7 @@ impl Machine {
                 // Nothing left to carry it: it counts in the total only.
                 let leftover: f64 = rest.iter().map(|r| r.1).sum();
                 self.time += leftover;
+                self.end_wait += leftover;
             } else {
                 self.pending.extend_from_slice(rest);
             }
@@ -703,8 +774,12 @@ impl Machine {
         }
     }
 
-    fn synchronize(&mut self, additional: f64, target: Kind) {
-        self.calculate(0, additional, target, false);
+    fn synchronize(&mut self, additional: f64, target: Kind, book: Book) {
+        if self.bbl {
+            self.wait(additional, target, book);
+        } else {
+            self.calculate(0, additional, target, false);
+        }
     }
 }
 
@@ -738,6 +813,12 @@ struct Reader {
     retract_speed: Vec<f64>,
     deretract_speed: Vec<f64>,
     restart_extra: Vec<f64>,
+    /// The current feature ([`Machine::role_id`]), whether it is `Custom`, whether a motion line has been read
+    /// yet, and whether the moves belong to the start sequence.
+    role: u16,
+    custom: bool,
+    moved: bool,
+    prepare: bool,
 }
 
 /// A printer retraction list by filament: the printer's, with each filament's own `filament_` value in its place
@@ -907,6 +988,28 @@ impl Reader {
             retract_speed: retract_list(cfg, "retraction_speed", filaments),
             deretract_speed: retract_list(cfg, "deretraction_speed", filaments),
             restart_extra: retract_list(cfg, "retract_restart_extra", filaments),
+            role: 0,
+            custom: false,
+            moved: false,
+            prepare: false,
+        }
+    }
+
+    /// Where a wait read now is booked.
+    fn book(&self) -> Book {
+        Book {
+            segment: self.segment,
+            line: self.line,
+            first: self.layer <= 1,
+        }
+    }
+
+    /// The feature a move of `kind` counts under: travel has none, except in the start and end G-code.
+    fn role_of(&self, kind: Kind) -> u16 {
+        if kind == Kind::Travel && !self.custom {
+            0
+        } else {
+            self.role
         }
     }
 
@@ -945,7 +1048,8 @@ impl Reader {
 
     fn sync(&mut self, extra: f64) {
         self.delay(extra);
-        self.m.synchronize(extra, Kind::Noop);
+        let book = self.book();
+        self.m.synchronize(extra, Kind::Noop, book);
     }
 
     /// `process_G1`: a straight move to absolute `target`, with the feed rate in mm/min when given.
@@ -993,10 +1097,16 @@ impl Reader {
             self.klipper_move(kind, d, distance, xyz && sq > 0.0);
             return;
         }
+        if self.m.bbl {
+            self.bbl_move(kind, d, distance);
+            return;
+        }
         // curved axes use their peak speed share, not the endpoint chord.
         let envelope_delta = curve.map_or(d, |c| [c.plane, c.plane, d[2], d[3]]);
         let inv = 1.0 / distance;
         let extrusion_only = !xyz && d[3] != 0.0;
+        let role = self.role_of(kind);
+        let prepare = self.prepare;
         let m = &mut self.m;
         let mut curr = Motion {
             feedrate: if d[3] == 0.0 {
@@ -1182,6 +1292,8 @@ impl Reader {
             smooth: 0.0,
             smooth_entry: 0.0,
             smooth_max: f64::INFINITY,
+            role,
+            prepare,
         };
         block.calculate_trapezoid();
         if let Some(c) = curve {
@@ -1199,6 +1311,8 @@ impl Reader {
 
     /// A straight move as Klipper plans it (see the module notes); `d` is the move in X, Y, Z and E.
     fn klipper_move(&mut self, kind: Kind, d: [f64; 4], distance: f64, xyz: bool) {
+        let role = self.role_of(kind);
+        let prepare = self.prepare;
         let m = &mut self.m;
         let mut top = self.feedrate;
         let mut acceleration = m.acceleration;
@@ -1257,6 +1371,8 @@ impl Reader {
             smooth: m.klipper.smooth(acceleration),
             smooth_entry: 0.0,
             smooth_max: f64::INFINITY,
+            role,
+            prepare,
         });
         if m.blocks.len() > REFRESH {
             m.calculate(QUEUE, 0.0, Kind::Noop, false);
@@ -1274,6 +1390,7 @@ impl Reader {
     /// [`Self::line`] for a `G0` or `G1` line read ahead ([`plain_move`]).
     fn plain(&mut self, m: &Move) {
         self.start = self.end;
+        self.moved = true;
         let mut target = [0.0; 4];
         for (i, (t, v)) in target.iter_mut().zip(m).enumerate() {
             *t = self.axis_target(i, *v);
@@ -1441,6 +1558,10 @@ impl Reader {
     }
 
     fn filament_change(&mut self, id: usize) {
+        if self.m.bbl {
+            self.bbl_filament_change(id);
+            return;
+        }
         let next_extruder = self.filament_map.get(id).copied().unwrap_or(0);
         let prev_extruder = self.extruder;
         let prev_filament = prev_extruder.and_then(|e| self.filament_of.get(e).copied().flatten());
@@ -1488,7 +1609,13 @@ impl Reader {
             }
             extra += self.change_time;
         }
-        // A zero length block takes the stop, so the delay lands on the change itself.
+        self.change_stop(extra);
+    }
+
+    /// A zero length move of feature `Flush` that takes the stop of a filament change, so the delay lands on the
+    /// change itself.
+    fn change_stop(&mut self, extra: f64) {
+        let role = self.m.role_id("Flush");
         let mut b = Block {
             kind: Kind::ToolChange,
             distance: 0.0,
@@ -1508,11 +1635,14 @@ impl Reader {
             smooth: 0.0,
             smooth_entry: 0.0,
             smooth_max: 0.0,
+            role,
+            prepare: self.prepare,
         };
         b.calculate_trapezoid();
         self.m.blocks.push(b);
         self.delay(extra);
-        self.m.synchronize(extra, Kind::ToolChange);
+        let book = self.book();
+        self.m.synchronize(extra, Kind::ToolChange, book);
     }
 
     fn tool(&mut self, cmd: &str) {
@@ -1531,7 +1661,18 @@ impl Reader {
 
     fn tag(&mut self, comment: &str) {
         let c = comment.trim_end();
-        if c.starts_with("@L ") {
+        if let Some(name) = c.trim_start().strip_prefix("FEATURE:") {
+            let name = name.trim();
+            // Bambu Studio lists the floating vertical shell with the internal solid infill.
+            let name = if name == "Floating vertical shell" {
+                "Internal solid infill"
+            } else {
+                name
+            };
+            self.custom = name == "Custom";
+            self.prepare = self.custom && !self.moved;
+            self.role = self.m.role_id(name);
+        } else if c.starts_with("@L ") {
             self.segment += 1;
         } else if c == "LAYER_CHANGE" || c == " CHANGE_LAYER" {
             self.layer += 1;
@@ -1636,6 +1777,12 @@ impl Reader {
                 }
                 _ => {}
             }
+        }
+        if matches!(upper.as_ref(), "G0" | "G1" | "G2" | "G3" | "G28") {
+            self.moved = true;
+        }
+        if self.m.bbl && self.bbl_line(upper.as_ref(), words) {
+            return;
         }
         match upper.as_ref() {
             "G0" | "G1" => self.g1(words),
@@ -1920,7 +2067,11 @@ pub fn estimate(gcode: &[u8], cfg: &PrintConfig, per_line: bool) -> Estimate {
         );
         ahead = next;
     }
-    r.m.calculate(0, 0.0, Kind::Noop, true);
+    if r.m.bbl {
+        r.m.bbl_finish();
+    } else {
+        r.m.calculate(0, 0.0, Kind::Noop, true);
+    }
     let mut segments = std::mem::take(&mut r.m.segments);
     if segments.len() <= r.segment {
         segments.resize(r.segment + 1, 0.0);
@@ -1939,6 +2090,10 @@ pub fn estimate(gcode: &[u8], cfg: &PrintConfig, per_line: bool) -> Estimate {
         first_layer: r.m.first_layer,
         segments,
         lines,
+        features: std::mem::take(&mut r.m.features),
+        travel: r.m.travel_time,
+        prepare: r.m.prepare_time,
+        end_wait: r.m.end_wait,
     }
 }
 
