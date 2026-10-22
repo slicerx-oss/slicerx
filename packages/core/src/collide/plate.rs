@@ -391,6 +391,29 @@ pub(crate) fn drop_crossing_joins(out: &mut SliceOutput) -> usize {
     dropped
 }
 
+/// The 1 mm bed cell of a coordinate.
+#[allow(clippy::cast_possible_truncation, reason = "1 mm cells of the bed")]
+fn cell(v: f64) -> i32 {
+    v.floor() as i32
+}
+
+/// The 1 mm cells within `r` of the segment `a`-`b`: in each column, the rows its stretch there spans, `r` and a hair
+/// wider so that a point on a cell's edge reads both cells.
+fn cells_on(a: [f64; 2], b: [f64; 2], r: f64) -> impl Iterator<Item = (i32, i32)> {
+    const HAIR: f64 = 1e-6;
+    let (lo, hi) = (cell(a[1].min(b[1]) - r), cell(a[1].max(b[1]) + r));
+    (cell(a[0].min(b[0]) - r)..=cell(a[0].max(b[0]) + r)).flat_map(move |x| {
+        let t = |v: f64| ((v - a[0]) / (b[0] - a[0])).clamp(0.0, 1.0);
+        let (t0, t1) = if (b[0] - a[0]).abs() < HAIR {
+            (0.0, 1.0)
+        } else {
+            (t(f64::from(x) - r - HAIR), t(f64::from(x) + 1.0 + r + HAIR))
+        };
+        let (y0, y1) = (a[1] + (b[1] - a[1]) * t0, a[1] + (b[1] - a[1]) * t1);
+        (cell(y0.min(y1) - r - HAIR).max(lo)..=cell(y0.max(y1) + r + HAIR).min(hi)).map(move |y| (x, y))
+    })
+}
+
 /// Which of a layer's paths [`drop_crossing_joins`] keeps, or `None` when the layer has no joins.
 fn crossing_keep(l: &LayerPaths) -> Option<Vec<bool>> {
     let surface = |f: Feature| {
@@ -421,33 +444,24 @@ fn crossing_keep(l: &LayerPaths) -> Option<Vec<bool>> {
                 .collect::<Vec<_>>()
         })
         .collect();
-    #[allow(clippy::cast_possible_truncation, reason = "1 mm cells of the bed")]
-    let cell = |v: f64| v.floor() as i32;
-    // Only the cells a join that may go reads are filled (a bitmap over their box says which), so the grid stays
-    // small on a layer of many segments.
-    let mut cells: Vec<(i32, i32)> = Vec::new();
-    for p in &l.paths {
-        if !surface(p.feature) {
-            continue;
-        }
-        let [pa, pb] = l.path_points(p) else { continue };
-        if !joins.contains(&(*pa, *pb)) {
-            continue;
-        }
-        let (a, b) = (mm(*pa), mm(*pb));
-        for x in cell(a[0].min(b[0]))..=cell(a[0].max(b[0])) {
-            for y in cell(a[1].min(b[1]))..=cell(a[1].max(b[1])) {
-                cells.push((x, y));
-            }
-        }
-    }
-    let (x0, y0) = cells
+    let is_join = |p: &crate::output::PathInfo| {
+        surface(p.feature) && matches!(l.path_points(p), [a, b] if joins.contains(&(*a, *b)))
+    };
+    let ends = l
+        .paths
         .iter()
-        .fold((i32::MAX, i32::MAX), |m, c| (m.0.min(c.0), m.1.min(c.1)));
-    let (x1, y1) = cells
-        .iter()
-        .fold((i32::MIN, i32::MIN), |m, c| (m.0.max(c.0), m.1.max(c.1)));
-    if cells.is_empty() {
+        .filter(|p| is_join(p))
+        .flat_map(|p| l.path_points(p))
+        .map(|p| mm(*p));
+    let (x0, y0, x1, y1) = ends.fold((i32::MAX, i32::MAX, i32::MIN, i32::MIN), |m, p| {
+        (
+            m.0.min(cell(p[0])),
+            m.1.min(cell(p[1])),
+            m.2.max(cell(p[0])),
+            m.3.max(cell(p[1])),
+        )
+    });
+    if x0 > x1 {
         return None;
     }
     #[allow(clippy::cast_sign_loss, reason = "offsets inside the box")]
@@ -455,21 +469,23 @@ fn crossing_keep(l: &LayerPaths) -> Option<Vec<bool>> {
         (x >= x0 && x <= x1 && y >= y0 && y <= y1)
             .then(|| (y - y0) as usize * (x1 - x0 + 1) as usize + (x - x0) as usize)
     };
+    // Only the cells a join that may go passes through are filled (a bitmap over their box says which), so the grid
+    // stays small on a layer of many segments.
     let mut wanted = vec![false; at(x1, y1).map_or(0, |i| i + 1)];
-    for &(x, y) in &cells {
-        if let Some(w) = at(x, y).and_then(|i| wanted.get_mut(i)) {
-            *w = true;
+    for p in l.paths.iter().filter(|p| is_join(p)) {
+        if let [a, b] = l.path_points(p) {
+            for (x, y) in cells_on(mm(*a), mm(*b), 0.0) {
+                if let Some(w) = at(x, y).and_then(|i| wanted.get_mut(i)) {
+                    *w = true;
+                }
+            }
         }
     }
     let mut grid: HashMap<(i32, i32), Vec<usize>> = HashMap::new();
     for (k, &(_, c, d)) in segs.iter().enumerate() {
-        for x in cell(c[0].min(d[0]) - JOIN_CLEAR_MM).max(x0)..=cell(c[0].max(d[0]) + JOIN_CLEAR_MM).min(x1) {
-            for y in
-                cell(c[1].min(d[1]) - JOIN_CLEAR_MM).max(y0)..=cell(c[1].max(d[1]) + JOIN_CLEAR_MM).min(y1)
-            {
-                if at(x, y).and_then(|i| wanted.get(i)).copied().unwrap_or(false) {
-                    grid.entry((x, y)).or_default().push(k);
-                }
+        for (x, y) in cells_on(c, d, JOIN_CLEAR_MM) {
+            if at(x, y).and_then(|i| wanted.get(i)).copied().unwrap_or(false) {
+                grid.entry((x, y)).or_default().push(k);
             }
         }
     }
@@ -478,22 +494,16 @@ fn crossing_keep(l: &LayerPaths) -> Option<Vec<bool>> {
         .iter()
         .enumerate()
         .map(|(i, p)| {
-            if !surface(p.feature) {
-                return true;
-            }
             let [pa, pb] = l.path_points(p) else { return true };
-            if !joins.contains(&(*pa, *pb)) {
+            if !is_join(p) {
                 return true;
             }
             let (a, b) = (mm(*pa), mm(*pb));
-            let mut near: Vec<usize> = Vec::new();
-            for x in cell(a[0].min(b[0]))..=cell(a[0].max(b[0])) {
-                for y in cell(a[1].min(b[1]))..=cell(a[1].max(b[1])) {
-                    if let Some(ks) = grid.get(&(x, y)) {
-                        near.extend_from_slice(ks);
-                    }
-                }
-            }
+            // A segment within reach of the join is filed under the cell of the join's nearest point.
+            let near = cells_on(a, b, 0.0)
+                .filter_map(|c| grid.get(&c))
+                .flatten()
+                .copied();
             // The fill's own lines and joins (two-point paths of the same surface, tool and width) are laid out by
             // the neighbor rules and may end right beside a turn; everything else counts.
             let own = |o: &crate::output::PathInfo| {
@@ -502,7 +512,7 @@ fn crossing_keep(l: &LayerPaths) -> Option<Vec<bool>> {
                     && o.end - o.start == 2
                     && (o.width_mm - p.width_mm).abs() < 1e-4
             };
-            !near.into_iter().filter_map(|k| segs.get(k)).any(|&(j, c, d)| {
+            !near.filter_map(|k| segs.get(k)).any(|&(j, c, d)| {
                 j != i
                     && !l.paths.get(j).is_some_and(own)
                     && !(same(c, a) || same(c, b) || same(d, a) || same(d, b))
@@ -803,6 +813,102 @@ mod tests {
         let mut out = joined_lines(Feature::InternalSolid, 0.42);
         assert_eq!(drop_crossing_joins(&mut out), 0);
         assert_eq!(out.layers[0].paths.len(), 4);
+    }
+
+    /// The paths the crossing check kept before it walked a join's cells: every segment filed under any cell of the
+    /// join's box, read once per cell. Also returns how many of those reads were repeats.
+    fn box_keep(l: &LayerPaths) -> (Vec<bool>, usize) {
+        let joins: std::collections::HashSet<(Point, Point)> =
+            l.joins.iter().flat_map(|&[a, b]| [(a, b), (b, a)]).collect();
+        let segs: Vec<(usize, [f64; 2], [f64; 2])> = (l.paths.iter().enumerate())
+            .flat_map(|(i, p)| l.path_points(p).windows(2).map(move |w| (i, mm(w[0]), mm(w[1]))))
+            .collect();
+        let span = |u: f64, v: f64, r: f64| cell(u.min(v) - r)..=cell(u.max(v) + r);
+        let mut repeats = 0;
+        let keep = (l.paths.iter().enumerate())
+            .map(|(i, p)| {
+                let [pa, pb] = l.path_points(p) else { return true };
+                if p.feature != Feature::InternalSolid || !joins.contains(&(*pa, *pb)) {
+                    return true;
+                }
+                let (a, b) = (mm(*pa), mm(*pb));
+                let mut near = Vec::new();
+                for x in span(a[0], b[0], 0.0) {
+                    for y in span(a[1], b[1], 0.0) {
+                        near.extend((segs.iter().enumerate()).filter(|&(_, &(_, c, d))| {
+                            span(c[0], d[0], JOIN_CLEAR_MM).contains(&x)
+                                && span(c[1], d[1], JOIN_CLEAR_MM).contains(&y)
+                        }));
+                    }
+                }
+                let mut seen = std::collections::HashSet::new();
+                repeats += near.iter().filter(|(k, _)| !seen.insert(*k)).count();
+                let same =
+                    |p: [f64; 2], q: [f64; 2]| (p[0] - q[0]).abs() < 1e-3 && (p[1] - q[1]).abs() < 1e-3;
+                let own = |o: &PathInfo| o.feature == p.feature && o.end - o.start == 2;
+                !near.iter().any(|&(_, &(j, c, d))| {
+                    j != i
+                        && !own(&l.paths[j])
+                        && !(same(c, a) || same(c, b) || same(d, a) || same(d, b))
+                        && seg_dist(a, b, c, d) < JOIN_CLEAR_MM
+                })
+            })
+            .collect();
+        (keep, repeats)
+    }
+
+    #[test]
+    fn walking_a_joins_cells_keeps_what_its_box_of_cells_kept() {
+        // Long diagonal joins, each filed under many cells of the others' boxes, one long wall across them, and a short
+        // wall beside each join, so some joins go and some stay.
+        let mut seed = 7u64;
+        let mut rand = |n: f64| {
+            seed = seed
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            #[allow(clippy::cast_precision_loss, reason = "a test's pseudo random numbers")]
+            let u = (seed >> 11) as f64 / (1u64 << 53) as f64;
+            u * n
+        };
+        let mut l = LayerPaths::default();
+        let add = |l: &mut LayerPaths, pts: &[(f64, f64)], feature: Feature| {
+            let start = u32::try_from(l.points.len()).unwrap_or(0);
+            l.points.extend(pts.iter().map(|&(x, y)| Point::from_mm(x, y)));
+            l.paths.push(path(
+                start,
+                start + u32::try_from(pts.len()).unwrap_or(0),
+                feature,
+            ));
+        };
+        for k in 0..40 {
+            let (a, b) = ((rand(30.0), rand(30.0)), (rand(30.0), rand(30.0)));
+            add(&mut l, &[a, b], Feature::InternalSolid);
+            l.joins.push([Point::from_mm(a.0, a.1), Point::from_mm(b.0, b.1)]);
+            // A short wall beside the join at a random place along it, 0.03 mm off it (in reach) on every other join
+            // and 0.08 mm (clear) on the rest. It is filed under few cells, so a cell the walk skips loses it.
+            let len = crate::fm::Fm::m_hypot(b.0 - a.0, b.1 - a.1).max(1e-3);
+            let off = if k % 2 == 0 { 0.03 } else { 0.08 };
+            let (nx, ny) = (-(b.1 - a.1) / len * off, (b.0 - a.0) / len * off);
+            let t = rand(1.0);
+            let at = |t: f64| (a.0 + (b.0 - a.0) * t + nx, a.1 + (b.1 - a.1) * t + ny);
+            add(&mut l, &[at(t), at(t + 0.01 / len)], Feature::InnerWall);
+        }
+        let pts: Vec<(f64, f64)> = (0..4).map(|_| (rand(30.0), rand(30.0))).collect();
+        add(&mut l, &pts, Feature::OuterWall);
+        // Joins along a cell edge with a wall in reach across it, in the next row or column of cells.
+        for (a, b, w) in [
+            ((40.0, 5.98), (50.0, 5.98), [(44.0, 6.01), (44.01, 6.01)]),
+            ((45.98, 10.0), (45.98, 20.0), [(46.01, 14.0), (46.01, 14.01)]),
+        ] {
+            add(&mut l, &[a, b], Feature::InternalSolid);
+            l.joins.push([Point::from_mm(a.0, a.1), Point::from_mm(b.0, b.1)]);
+            add(&mut l, &w, Feature::InnerWall);
+        }
+        let (old, repeats) = box_keep(&l);
+        assert!(repeats > 1000, "the box read segments again and again: {repeats}");
+        let dropped = old.iter().filter(|k| !**k).count();
+        assert!(dropped > 3 && dropped < 39, "{dropped} of 42 joins go");
+        assert_eq!(crossing_keep(&l), Some(old));
     }
 
     #[test]
