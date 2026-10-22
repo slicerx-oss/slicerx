@@ -5000,6 +5000,43 @@ mod tests {
         assert_eq!(layer_fan(&c, 3, 60.0, 1), 0);
     }
 
+    #[test]
+    fn fan_percent_to_pwm_at_the_edges() {
+        // The integer reference slicer's output for a flat fan of each percent on the A1 cube: 255.5 per hundred,
+        // cut to an integer, so 29 and 49 percent give 74 and 125 (2.55 per percent would give 73 and 124), and only
+        // 100 percent gives 255.
+        let mut c = PrintConfig::default();
+        let pwm: Vec<i64> = [0.0, 1.0, 29.0, 49.0, 50.0, 99.0, 99.9, 100.0, 120.0]
+            .iter()
+            .map(|&p| fan_pwm(&c, p))
+            .collect();
+        assert_eq!(pwm, vec![0, 2, 74, 125, 127, 252, 252, 255, 255]);
+        c.raw
+            .insert("part_cooling_fan_min_pwm".into(), serde_json::json!(30));
+        assert_eq!(fan_pwm(&c, 0.0), 0);
+        assert_eq!(fan_pwm(&c, 1.0), 76);
+        assert_eq!(fan_pwm(&c, 99.0), 252);
+    }
+
+    #[test]
+    fn a1_strict_case_fans() {
+        // The A1 cube of the strict printer comparison: fan 20 to 100 %, 5 s and 60 s, no slowdown. A layer under
+        // 5 s runs at 100 % (S255); one just over it blends to 99 % (S252), as the reference writes on its layer 99.
+        let c = PrintConfig {
+            close_fan_the_first_x_layers: 1,
+            fan_min_speed: 20.0,
+            fan_max_speed: 100.0,
+            slow_down_layer_time: 5.0,
+            fan_cooling_layer_time: 60.0,
+            slow_down_for_layer_cooling: false,
+            ..PrintConfig::default()
+        };
+        assert_eq!(layer_fan(&c, 0, 4.0, 1), 0);
+        assert_eq!(layer_fan(&c, 1, 4.35, 1), 255);
+        assert_eq!(layer_fan(&c, 98, 5.3, 1), 252);
+        assert_eq!(layer_fan(&c, 98, 5.0, 1), 255);
+    }
+
     fn s(v: i64, d: u32) -> String {
         let mut b = Vec::new();
         put_fixed(&mut b, v, d);
