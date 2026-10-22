@@ -6119,3 +6119,40 @@ fn slowed_spiral_layers_run_the_fan_at_its_maximum() {
         assert_eq!(fans, &[255], "layer {i}");
     }
 }
+
+#[test]
+fn single_wall_layers_hold_the_minimum_layer_time() {
+    // A 40 mm square tube with one wall and no seam gap: each layer's loop starts where the layer below ended,
+    // so its G-code has no travel to its start. The 160 mm loop takes 0.8 s at 200 mm/s; every layer above the
+    // first slows down to the 4 s minimum, as the first does.
+    let mesh = Arc::new(Mesh {
+        name: "tube".into(),
+        parts: vec![cuboid([0.0, 40.0], [0.0, 40.0], [0.0, 10.0], "tube")],
+        ..Mesh::default()
+    });
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"mesh": "t", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
+        "config": {
+            "wall_loops": 1, "top_shell_layers": 0, "bottom_shell_layers": 0, "sparse_infill_density": 0,
+            "brim_width": 0, "seam_gap": 0, "slow_down_layer_time": 4,
+        },
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let run = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    assert_valid(&run);
+    let stats = extrusion_stats(&text(&run));
+    assert_eq!(stats.len(), 50);
+    let second = stats[1].0.clone();
+    assert_eq!(second.len(), 1, "{second:?}");
+    for (i, (feeds, time, _)) in stats.iter().enumerate().skip(1) {
+        assert_eq!(feeds.len(), 1, "layer {i}: {feeds:?}");
+        assert!(
+            (feeds[0] - second[0]).abs() * 100 <= second[0],
+            "layer {i} runs at F{} after F{}",
+            feeds[0],
+            second[0]
+        );
+        assert!(*time > 3.8, "layer {i} takes {time} s");
+    }
+}

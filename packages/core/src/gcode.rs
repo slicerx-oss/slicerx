@@ -46,6 +46,8 @@ pub(crate) struct LayerChunk {
     tool_changes: u32,
     /// A custom G-code template that failed to render.
     error: Option<String>,
+    /// Where the writer has the nozzle when the layer starts (X, Y and Z, mm, as written), when it knows.
+    start: Option<[f64; 3]>,
 }
 
 fn custom(
@@ -1547,12 +1549,15 @@ pub(crate) fn settle_cooling(out: &mut SliceOutput, config: &PrintConfig) {
             if chunk.error.is_some() {
                 return None;
             }
-            // A spiral layer goes on from where the layer below ended, with no move to its start: the
-            // cooling time counts its first extrusion from there.
-            let start = (l.spiral && !l.spiral_start)
-                .then(|| l.paths.first().and_then(|p| l.path_points(p).first().copied()))
-                .flatten()
-                .map(|p| [p.x_mm(), p.y_mm(), f64::from(l.z) - f64::from(l.height)]);
+            // A layer that goes on from where the layer below ended (a spiral layer, or a loop that starts on
+            // the last one's end) writes no move to its start: the cooling time counts its first extrusion
+            // from where the writer has the nozzle.
+            let start = chunk.start;
+            debug_assert!(
+                start.is_some() || crate::cooling::moves_before_first_extrusion(&chunk.bytes),
+                "layer {} extrudes before any move to its start, so its cooling time counts from the origin",
+                l.index
+            );
             let beyond = crate::cooling::layer_time_from(&chunk.bytes, start) - planned;
             let relaid = crate::paths::recool(l, c, &fc, beyond);
             #[allow(clippy::cast_possible_truncation, reason = "layer times are small")]
@@ -1607,6 +1612,7 @@ fn emit_layer(
         change_time_s: 0.0,
         tool_changes: 0,
         error: None,
+        start: None,
     };
     // Custom G-code of this layer, rendered only when the profile or the request has some.
     let wants_templates = [
@@ -2027,6 +2033,13 @@ fn emit_layer(
     } else {
         start_at.or(layer_wiped.as_ref().map(|w| w.end)).or(entry)
     };
+    #[allow(clippy::cast_precision_loss, reason = "z in thousandths is small")]
+    {
+        chunk.start = cursor.map(|p| {
+            let p = crate::griffin::shifted(p);
+            [p.x_mm(), p.y_mm(), z_below as f64 / 1000.0]
+        });
+    }
     // Where the nozzle really is when the layer starts, for the travel round the keep-out zones.
     let mut zone_from: Option<Point> = if spiral && !l.spiral_start {
         cursor
@@ -4637,6 +4650,107 @@ mod tests {
 
     fn near(a: f64, b: f64) -> bool {
         (a - b).abs() < 1e-9
+    }
+
+    /// The layers of a 40 x 40 x 2 mm block at X100 Y100 sliced with `config`, and the config they used.
+    fn block_layers(config: &serde_json::Value) -> (SliceOutput, PrintConfig) {
+        let mut positions = Vec::new();
+        for z in [0.0, 2.0] {
+            for (x, y) in [(100.0, 100.0), (140.0, 100.0), (140.0, 140.0), (100.0, 140.0)] {
+                positions.push([x, y, z]);
+            }
+        }
+        let mut triangles = vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7]];
+        for k in 0..4u32 {
+            let n = (k + 1) % 4;
+            triangles.push([k, n, 4 + n]);
+            triangles.push([k, 4 + n, 4 + k]);
+        }
+        let mesh = std::sync::Arc::new(crate::mesh::Mesh {
+            name: "block".into(),
+            parts: vec![crate::mesh::MeshPart {
+                name: "block".into(),
+                slot: 1,
+                color: None,
+                positions,
+                triangles,
+                paint: Vec::new(),
+                support_paint: Vec::new(),
+                seam_paint: Vec::new(),
+                fuzzy_paint: Vec::new(),
+                paint_texts: Vec::new(),
+            }],
+            ..crate::mesh::Mesh::default()
+        });
+        let req: crate::api::SliceRequest = serde_json::from_value(serde_json::json!({
+            "plate": {"objects": [{"mesh": "b", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]}]},
+            "config": config,
+        }))
+        .unwrap();
+        let plate = crate::api::build_plate(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+        let config = crate::api::request_config(&req).unwrap();
+        let out = crate::slice(&plate, &config, &crate::SliceOptions::default()).unwrap();
+        (out, config)
+    }
+
+    #[test]
+    fn a_layer_knows_where_the_writer_starts_it() {
+        let starts = |config: serde_json::Value| {
+            let (out, config) = block_layers(&config);
+            let shared = Shared::new(&out, &config);
+            out.layers
+                .iter()
+                .map(|l| {
+                    let chunk = emit_layer(l, &out, &config, config.gcode_flavor, false, &[], &shared);
+                    let first = l.paths.first().and_then(|p| l.path_points(p).first().copied());
+                    (l.index, l.z, l.spiral && !l.spiral_start, first, chunk)
+                })
+                .collect::<Vec<_>>()
+        };
+        let at = |start: Option<[f64; 3]>, p: Option<Point>, z: f64| {
+            let (Some(s), Some(p)) = (start, p) else {
+                return false;
+            };
+            (s[0] - p.x_mm()).abs() < 1e-3 && (s[1] - p.y_mm()).abs() < 1e-3 && (s[2] - z).abs() < 1e-3
+        };
+        // One wall and no seam gap: each loop starts on the end of the one below, so the layer writes no move
+        // to its start, and its start is that point at the height of the layer below.
+        let walls = starts(serde_json::json!({
+            "wall_loops": 1, "top_shell_layers": 0, "bottom_shell_layers": 0, "sparse_infill_density": 0,
+            "brim_width": 0, "skirt_loops": 0, "seam_gap": 0, "seam_position": "back",
+        }));
+        assert_eq!(walls.len(), 10);
+        let mut unmoved = 0;
+        for w in walls.windows(2) {
+            let ((_, below, ..), (i, _, _, first, chunk)) = (&w[0], &w[1]);
+            assert!(chunk.start.is_some(), "layer {i}");
+            if !crate::cooling::moves_before_first_extrusion(&chunk.bytes) {
+                unmoved += 1;
+                assert!(
+                    at(chunk.start, *first, f64::from(*below)),
+                    "layer {i}: {:?} {first:?}",
+                    chunk.start
+                );
+            }
+        }
+        assert!(unmoved >= 6, "{unmoved} layers start without a move");
+        // A spiral layer goes on from where the layer below ended: the start of its loop.
+        let vase = starts(serde_json::json!({
+            "spiral_mode": true, "bottom_shell_layers": 2, "brim_width": 0, "skirt_loops": 0,
+        }));
+        let mut spirals = 0;
+        for w in vase.windows(2) {
+            let ((_, below, ..), (i, _, spiral, first, chunk)) = (&w[0], &w[1]);
+            if *spiral {
+                spirals += 1;
+                assert!(
+                    at(chunk.start, *first, f64::from(*below)),
+                    "layer {i}: {:?} {first:?}",
+                    chunk.start
+                );
+            }
+        }
+        assert!(spirals >= 6, "{spirals} spiral layers");
     }
 
     #[test]
