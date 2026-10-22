@@ -99,8 +99,11 @@ fn moves(g: &str) -> Vec<Move> {
     for line in g.lines() {
         if let Some(rest) = line.strip_prefix("; printing object ") {
             label = rest.split(" id:").next().map(str::to_owned);
-        } else if line.starts_with("; stop printing object ") {
+        } else if line.starts_with("; stop printing object ") || line.starts_with("EXCLUDE_OBJECT_END") {
             label = None;
+        } else if let Some(rest) = line.strip_prefix("EXCLUDE_OBJECT_START NAME=") {
+            // Klipper names an object `<name>_id_<n>_copy_<n>`.
+            label = rest.trim().split("_id_").next().map(str::to_owned);
         } else if let Some(t) = line.strip_prefix(";TYPE:") {
             t.clone_into(&mut feature);
         } else if let Some(v) = line.strip_prefix(";Z:") {
@@ -285,8 +288,111 @@ fn support_belongs_to_the_object_it_holds_up() {
         .sum();
     assert!(
         wrong < 1e-6,
-        "{wrong} mm of the shelf's support not labelled shelf"
+        "{wrong} mm of the shelf's support not labeled shelf"
     );
+}
+
+/// The shelf and post plate of `support_belongs_to_the_object_it_holds_up`.
+fn shelf_and_post() -> [(&'static str, &'static [[f32; 6]], f32, f32); 2] {
+    const SHELF: &[[f32; 6]] = &[
+        [0.0, 0.0, 0.0, 10.0, 10.0, 10.0],
+        [10.0, 0.0, 8.0, 20.0, 10.0, 10.0],
+    ];
+    const POST: &[[f32; 6]] = &[[21.0, 0.0, 0.0, 26.0, 10.0, 10.0]];
+    [("shelf", SHELF, 80.0, 100.0), ("post", POST, 80.0, 100.0)]
+}
+
+/// Support extrusions not labeled `owner`, in mm, and all support extrusions, in mm.
+fn support_not_labelled(moves: &[Move], owner: &str) -> (f64, f64) {
+    let support = moves.iter().filter(|m| m.feature.starts_with("Support"));
+    let total: f64 = support.clone().map(|m| m.len).sum();
+    let wrong = support
+        .filter(|m| m.label.as_deref() != Some(owner))
+        .map(|m| m.len)
+        .sum();
+    (wrong, total)
+}
+
+#[test]
+fn the_first_layer_of_support_is_labelled_with_its_object() {
+    let g = slice(
+        &shelf_and_post(),
+        json!({"enable_support": true, "support_type": "normal(auto)"}),
+    );
+    let all = moves(&g);
+    let first = all
+        .iter()
+        .filter(|m| m.feature.starts_with("Support"))
+        .map(|m| m.z)
+        .fold(f64::INFINITY, f64::min);
+    let low: Vec<Move> = all.into_iter().filter(|m| m.z <= first + 1e-6).collect();
+    let (wrong, total) = support_not_labelled(&low, "shelf");
+    assert!(total > 10.0, "{total} mm of support on the first support layer");
+    assert!(
+        wrong < 1e-6,
+        "{wrong} of {total} mm of the first support layer not labeled shelf"
+    );
+}
+
+#[test]
+fn klipper_wraps_each_objects_support_in_its_exclude_object_block() {
+    let g = slice(
+        &shelf_and_post(),
+        json!({
+            "enable_support": true, "support_type": "normal(auto)",
+            "gcode_label_objects": false, "gcode_flavor": "klipper", "exclude_object": true,
+        }),
+    );
+    assert!(
+        g.contains("EXCLUDE_OBJECT_START NAME="),
+        "no EXCLUDE_OBJECT blocks"
+    );
+    let (wrong, total) = support_not_labelled(&moves(&g), "shelf");
+    assert!(total > 100.0, "{total} mm of support");
+    assert!(
+        wrong < 1e-6,
+        "{wrong} of {total} mm of support outside the shelf's EXCLUDE_OBJECT block"
+    );
+}
+
+#[test]
+fn tree_support_under_two_objects_keeps_each_objects_label() {
+    // Two shelves reaching toward each other over one gap, so the tree branches under them stand close together.
+    let left: &[[f32; 6]] = &[
+        [0.0, 0.0, 0.0, 10.0, 10.0, 12.0],
+        [10.0, 0.0, 10.0, 19.0, 10.0, 12.0],
+    ];
+    let right: &[[f32; 6]] = &[
+        [30.0, 0.0, 0.0, 40.0, 10.0, 12.0],
+        [21.0, 0.0, 10.0, 30.0, 10.0, 12.0],
+    ];
+    let plate = [("left", left, 80.0, 100.0), ("right", right, 80.0, 100.0)];
+    let g = slice(
+        &plate,
+        json!({"enable_support": true, "support_type": "tree(auto)"}),
+    );
+    let all = moves(&g);
+    let support: Vec<&Move> = all.iter().filter(|m| m.feature.starts_with("Support")).collect();
+    let total: f64 = support.iter().map(|m| m.len).sum();
+    assert!(total > 50.0, "{total} mm of tree support");
+    let unlabelled: f64 = support.iter().filter(|m| m.label.is_none()).map(|m| m.len).sum();
+    assert!(
+        unlabelled < 1e-6,
+        "{unlabelled} of {total} mm of tree support has no label"
+    );
+    // Well inside each shelf's shadow, the support is that shelf's.
+    for (name, x0, x1) in [("left", 90.5, 98.0), ("right", 102.0, 109.5)] {
+        let wrong: f64 = support
+            .iter()
+            .filter(|m| (x0..=x1).contains(&m.mid[0]) && (100.5..=109.5).contains(&m.mid[1]))
+            .filter(|m| m.label.as_deref() != Some(name))
+            .map(|m| m.len)
+            .sum();
+        assert!(
+            wrong < 1e-6,
+            "{wrong} mm under the {name} shelf not labeled {name}"
+        );
+    }
 }
 
 #[test]
@@ -352,6 +458,6 @@ fn stacked_objects_with_one_footprint_keep_their_own_labels() {
     assert_eq!(by_label.len(), 2, "{by_label:?}");
     assert!(
         wrong < 1e-6,
-        "{wrong} mm labelled with an object that is not at that height ({by_label:?})"
+        "{wrong} mm labeled with an object that is not at that height ({by_label:?})"
     );
 }
