@@ -2223,6 +2223,31 @@ impl SliceSession {
         self.collide.as_deref()
     }
 
+    /// Drops what only slicing reads (meshes, caches, support and paint data), for a one-shot run whose last layer
+    /// range is cut. Keeps what writing the output reads: the layer plan, the print layers, the collision data and
+    /// the filament map.
+    pub(crate) fn shed(&mut self) {
+        self.parts = Vec::new();
+        self.volumes = Vec::new();
+        self.cache = crate::shells::Cache::default();
+        self.paint = crate::paint::Cache::default();
+        self.painted_supports = Vec::new();
+        self.seam_faces = Vec::new();
+        self.fuzzy_paint = Vec::new();
+        self.object_slices
+            .iter_mut()
+            .for_each(|s| *s = std::sync::OnceLock::new());
+        self.support = std::sync::OnceLock::new();
+        self.organic_raft = std::sync::OnceLock::new();
+        self.organic2 = std::sync::OnceLock::new();
+        self.interlock = std::sync::OnceLock::new();
+        self.conical = std::sync::OnceLock::new();
+        self.polyholes = std::sync::OnceLock::new();
+        self.stack = Vec::new();
+        self.whole_plate = None;
+        self.followers.iter_mut().for_each(Self::shed);
+    }
+
     /// What the collision report needs besides the hits, on a by-object plate.
     pub fn collide_meta(&self) -> Option<&crate::collide::Meta> {
         self.collide
