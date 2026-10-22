@@ -21,6 +21,26 @@
 //! - A filament change adds the machine's unload and load times (and its tool change time when the
 //!   nozzle changes), as a stop in the motion.
 //! - `G29` takes 260 s (on Bambu Lab printers only inside an `M622 J1` block), `M191` above 40 °C 720 s.
+//!
+//! Klipper plans motion differently, so a file for the Klipper flavor gets the model its documentation
+//! (Kinematics and the config reference) describes instead of the jerk rules above:
+//! - One acceleration for every toolhead move, as the last `SET_VELOCITY_LIMIT ACCEL`, `M204 S` or
+//!   `M204 P T` (the smaller of the two) set it; Klipper may go past the configured maximum, so it is
+//!   not clamped. `max_velocity` caps the toolhead speed along the path and the Z limits cut moves
+//!   that climb. Retractions and other extruder-only moves keep to the extrude-only limits, which
+//!   Klipper derives from a move with a cross section of 4 nozzle diameters squared.
+//! - A junction runs at the approximated centripetal speed: with the square corner velocity `v` and
+//!   `s` the sine of half the angle at the corner (180 degrees straight on),
+//!   `speed^2 = v^2 (sqrt(2) - 1) s / (1 - s)`,
+//!   exactly `v` at 90 degrees, 0 on a reversal, unlimited straight on. The extruder may change its
+//!   speed by at most 1 mm/s at a junction (`instantaneous_corner_velocity`'s default), and a move
+//!   without X, Y or Z movement starts and ends at rest.
+//! - Lookahead runs forward and backward over the whole queue, which stops at its end. A second pass
+//!   at the virtual "acceleration to deceleration" rate (`acceleration * (1 - minimum_cruise_ratio)`,
+//!   or an explicit `ACCEL_TO_DECEL` from older firmware) caps each move's top speed at what it could
+//!   reach at that rate, so a short zigzag keeps a stretch at cruise speed.
+//! - Arcs are cut into 1 mm segments (the `[gcode_arcs]` default resolution). `M201`, `M203`,
+//!   `M205` and `M566` are not Klipper commands and change nothing.
 
 use crate::config::{GcodeFlavor, PrintConfig};
 use crate::fm::Fm as _;
@@ -73,6 +93,14 @@ struct Block {
     layer: u32,
     segment: usize,
     line: usize,
+    /// Klipper: the move's requested top speed, before the lookahead caps it into `cruise`.
+    limit: f64,
+    /// Klipper: the virtual acceleration of the smoothed pass.
+    smooth: f64,
+    /// Klipper: the smoothed pass's speed at the start of the move, from the last plan.
+    smooth_entry: f64,
+    /// Klipper: a cap on `smooth_entry` once the move before has been timed and dropped.
+    smooth_max: f64,
 }
 
 fn accel_distance(from: f64, to: f64, a: f64) -> f64 {
@@ -191,6 +219,106 @@ fn recalculate_trapezoids(blocks: &mut [Block]) {
     }
 }
 
+/// The square of the highest speed at each junction of `blocks` (one more entry than blocks: the last is
+/// the end of the queue) that is reachable from both sides at the rate `accel` gives each move, under the
+/// caps in `start` (squared) and `head` on the first.
+fn reachable(start: &[f64], blocks: &[Block], accel: impl Fn(&Block) -> f64, head: f64) -> Vec<f64> {
+    let mut out = Vec::with_capacity(start.len());
+    let mut v = head;
+    let mut moves = blocks.iter();
+    for s in start {
+        v = v.min(*s);
+        out.push(v);
+        if let Some(b) = moves.next() {
+            v += 2.0 * accel(b) * b.distance;
+        }
+    }
+    let mut v = 0.0f64;
+    if let Some(last) = out.last_mut() {
+        *last = 0.0;
+    }
+    for ((o, s), b) in out
+        .iter_mut()
+        .rev()
+        .skip(1)
+        .zip(start.iter().rev().skip(1))
+        .zip(blocks.iter().rev())
+    {
+        v = (v + 2.0 * accel(b) * b.distance).min(*s);
+        *o = o.min(v);
+    }
+    out
+}
+
+/// Klipper's lookahead over the queue (see the module notes): junction speeds from both directions, each
+/// move's top speed cut to what the smoothed pass can reach in it, then the real passes at the moves'
+/// accelerations. The queue ends at rest.
+fn plan_klipper(blocks: &mut [Block]) {
+    let mut cap: Vec<f64> = blocks.iter().map(|b| b.limit * b.limit).collect();
+    let junctions = |cap: &[f64], blocks: &[Block]| -> Vec<f64> {
+        let mut start = Vec::with_capacity(blocks.len() + 1);
+        let mut before = f64::INFINITY;
+        for (b, c) in blocks.iter().zip(cap) {
+            start.push((b.max_entry * b.max_entry).min(before).min(*c));
+            before = *c;
+        }
+        start.push(0.0);
+        start
+    };
+    let start = junctions(&cap, blocks);
+    let head = blocks
+        .first()
+        .map_or(f64::INFINITY, |b| b.smooth_max * b.smooth_max);
+    let smooth = reachable(&start, blocks, |b| b.smooth, head);
+    for ((c, b), w) in cap.iter_mut().zip(blocks.iter()).zip(smooth.windows(2)) {
+        if let [s0, s1] = *w {
+            // The peak of a move that speeds up from s0 and slows to s1 at the virtual rate.
+            let d2 = 2.0 * b.smooth * b.distance;
+            let peak = if (s0 - s1).abs() <= d2 {
+                0.5 * (s0 + s1 + d2)
+            } else {
+                s0.min(s1) + d2
+            };
+            *c = c.min(peak);
+        }
+    }
+    let start = junctions(&cap, blocks);
+    let real = reachable(&start, blocks, |b| b.acceleration, f64::INFINITY);
+    for (((b, w), c), s) in blocks.iter_mut().zip(real.windows(2)).zip(&cap).zip(&smooth) {
+        if let [v0, v1] = *w {
+            b.entry = v0.sqrt();
+            b.exit = v1.sqrt();
+            b.cruise = c.sqrt();
+            b.smooth_entry = s.sqrt();
+            b.calculate_trapezoid();
+            b.recalculate = false;
+        }
+    }
+}
+
+/// The square of the speed Klipper allows through a junction for the square corner velocity `scv`,
+/// with `cos` the cosine of the angle between the two paths' directions (1 straight on, -1 a reversal).
+fn corner_speed2(scv: f64, cos: f64) -> f64 {
+    if cos > 0.999_999 {
+        return f64::INFINITY;
+    }
+    if cos < -0.999_999 {
+        return 0.0;
+    }
+    // The sine of half the angle at the corner, which is 180 degrees straight on and 90 at a square corner.
+    let s = f64::midpoint(1.0, cos).sqrt();
+    scv * scv * (std::f64::consts::SQRT_2 - 1.0) * s / (1.0 - s)
+}
+
+/// Klipper's default `instantaneous_corner_velocity`: the extruder's largest speed change at a junction.
+const KLIPPER_EXTRUDER_CORNER: f64 = 1.0;
+/// Klipper's default `minimum_cruise_ratio`.
+const KLIPPER_CRUISE_RATIO: f64 = 0.5;
+/// Klipper's default `square_corner_velocity`.
+const KLIPPER_SQUARE_CORNER: f64 = 5.0;
+/// Klipper's default `[gcode_arcs]` resolution, mm per segment.
+const KLIPPER_ARC_SEGMENT: f64 = 1.0;
+
 #[derive(Clone, Copy)]
 struct CurveMotion {
     distance: f64,
@@ -294,6 +422,50 @@ struct Motion {
     safe: f64,
     axis: [f64; 4],
     dir: [f64; 3],
+    /// Klipper: whether the move had X, Y or Z movement, and its filament per mm of path.
+    xyz: bool,
+    e_ratio: f64,
+}
+
+/// Klipper's state beyond the shared envelope.
+#[derive(Debug, Clone, Copy)]
+struct KlipperState {
+    /// `minimum_cruise_ratio`.
+    cruise_ratio: f64,
+    /// An explicit `ACCEL_TO_DECEL` (firmware before the cruise ratio), which wins while set.
+    accel_to_decel: Option<f64>,
+    /// `max_extrude_only_velocity` and `max_extrude_only_accel`.
+    extrude_only_speed: f64,
+    extrude_only_accel: f64,
+}
+
+impl KlipperState {
+    fn new(cfg: &PrintConfig, env: &Envelope, accel: f64) -> Self {
+        // An extruder-only move may go as fast as the filament of a print move at the top speed and
+        // acceleration with a cross section of 4 nozzle diameters squared.
+        let nozzle = crate::motion::raw_f(cfg, "nozzle_diameter").unwrap_or(cfg.nozzle_diameter);
+        let filament = crate::motion::raw_f(cfg, "filament_diameter").unwrap_or(cfg.filament_diameter);
+        let area = std::f64::consts::PI * 0.25 * filament * filament;
+        let ratio = if area > 0.0 && nozzle > 0.0 {
+            4.0 * nozzle * nozzle / area
+        } else {
+            1.0
+        };
+        Self {
+            cruise_ratio: KLIPPER_CRUISE_RATIO,
+            accel_to_decel: None,
+            extrude_only_speed: env.speed[0] * ratio,
+            extrude_only_accel: accel * ratio,
+        }
+    }
+
+    /// The virtual acceleration of the smoothed pass for a move at `accel`.
+    fn smooth(&self, accel: f64) -> f64 {
+        match self.accel_to_decel {
+            Some(a) => a.min(accel).max(0.0),
+            None => accel * (1.0 - self.cruise_ratio),
+        }
+    }
 }
 
 struct Machine {
@@ -306,6 +478,7 @@ struct Machine {
     travel: f64,
     max_travel: f64,
     e_factor: f64,
+    klipper: KlipperState,
     blocks: Vec<Block>,
     prev: Motion,
     pending: Vec<(Kind, f64)>,
@@ -338,8 +511,14 @@ impl Machine {
             0.0
         };
         let or = |v: f64, d: f64| if v > 0.0 { v } else { d };
+        if fw == Fw::Klipper && crate::motion::raw_f(cfg, "machine_max_jerk_x").is_none() {
+            env.jerk[0] = KLIPPER_SQUARE_CORNER;
+            env.jerk[1] = KLIPPER_SQUARE_CORNER;
+        }
+        let klipper = KlipperState::new(cfg, &env, or(env.extruding, 1500.0));
         Self {
             fw,
+            klipper,
             acceleration: or(env.extruding, 1500.0),
             max_acceleration: env.extruding,
             retract: or(env.retracting, 1500.0),
@@ -410,7 +589,9 @@ impl Machine {
     /// Times the queued blocks, keeping the last `keep` for later passes (`TimeMachine::calculate_time`).
     fn calculate(&mut self, keep: usize, additional: f64, target: Kind, last: bool) {
         let drain = last && !self.pending.is_empty();
-        if self.blocks.len() < 2 && !drain {
+        // The Marlin style queue leaves a lone block untimed; Klipper runs every move it is given.
+        let least = if self.fw == Fw::Klipper { 1 } else { 2 };
+        if self.blocks.len() < least && !drain {
             if additional > 0.0 {
                 self.pending.push((target, additional));
             }
@@ -429,21 +610,25 @@ impl Machine {
             }
         }
         let n = self.blocks.len();
-        for i in (1..n).rev() {
-            if let Some((head, tail)) = self.blocks.split_at_mut_checked(i)
-                && let (Some(curr), Some(next)) = (head.last_mut(), tail.first())
-            {
-                reverse_kernel(curr, next);
+        if self.fw == Fw::Klipper {
+            plan_klipper(&mut self.blocks);
+        } else {
+            for i in (1..n).rev() {
+                if let Some((head, tail)) = self.blocks.split_at_mut_checked(i)
+                    && let (Some(curr), Some(next)) = (head.last_mut(), tail.first())
+                {
+                    reverse_kernel(curr, next);
+                }
             }
-        }
-        for i in 0..n.saturating_sub(1) {
-            if let Some((head, tail)) = self.blocks.split_at_mut_checked(i + 1)
-                && let (Some(prev), Some(curr)) = (head.last(), tail.first_mut())
-            {
-                forward_kernel(prev, curr);
+            for i in 0..n.saturating_sub(1) {
+                if let Some((head, tail)) = self.blocks.split_at_mut_checked(i + 1)
+                    && let (Some(prev), Some(curr)) = (head.last(), tail.first_mut())
+                {
+                    forward_kernel(prev, curr);
+                }
             }
+            recalculate_trapezoids(&mut self.blocks);
         }
-        recalculate_trapezoids(&mut self.blocks);
         let process = n.saturating_sub(keep);
         let mut idx = 0usize;
         for b in self.blocks.iter().take(process) {
@@ -484,6 +669,7 @@ impl Machine {
             self.blocks.drain(..process);
             if let Some(first) = self.blocks.first_mut() {
                 first.max_entry = first.entry;
+                first.smooth_max = first.smooth_entry;
             }
         } else {
             self.blocks.clear();
@@ -776,6 +962,10 @@ impl Reader {
         };
         let sq = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
         let distance = curve.map_or_else(|| if sq > 0.0 { sq.sqrt() } else { d[3].abs() }, |c| c.distance);
+        if self.m.fw == Fw::Klipper {
+            self.klipper_move(kind, d, distance, xyz && sq > 0.0);
+            return;
+        }
         // curved axes use their peak speed share, not the endpoint chord.
         let envelope_delta = curve.map_or(d, |c| [c.plane, c.plane, d[2], d[3]]);
         let inv = 1.0 / distance;
@@ -961,6 +1151,10 @@ impl Reader {
             layer: self.layer.max(1),
             segment: self.segment,
             line: self.line,
+            limit: cruise,
+            smooth: 0.0,
+            smooth_entry: 0.0,
+            smooth_max: f64::INFINITY,
         };
         block.calculate_trapezoid();
         if let Some(c) = curve {
@@ -971,6 +1165,72 @@ impl Reader {
         }
         m.prev = curr;
         m.blocks.push(block);
+        if m.blocks.len() > REFRESH {
+            m.calculate(QUEUE, 0.0, Kind::Noop, false);
+        }
+    }
+
+    /// A straight move as Klipper plans it (see the module notes); `d` is the move in X, Y, Z and E.
+    fn klipper_move(&mut self, kind: Kind, d: [f64; 4], distance: f64, xyz: bool) {
+        let m = &mut self.m;
+        let mut top = self.feedrate;
+        let mut acceleration = m.acceleration;
+        let mut curr = Motion {
+            xyz,
+            ..Motion::default()
+        };
+        if xyz {
+            top = top.min(m.env.speed[0]);
+            let climb = d[2].abs() / distance;
+            if climb > 0.0 {
+                if m.env.speed[2] > 0.0 {
+                    top = top.min(m.env.speed[2] / climb);
+                }
+                if m.env.accel[2] > 0.0 {
+                    acceleration = acceleration.min(m.env.accel[2] / climb);
+                }
+            }
+            curr.dir = [d[0] / distance, d[1] / distance, d[2] / distance];
+            curr.e_ratio = d[3] * m.e_factor / distance;
+        } else {
+            top = top.min(m.klipper.extrude_only_speed);
+            acceleration = m.klipper.extrude_only_accel;
+        }
+        let prev = m.prev;
+        let junction = if m.blocks.is_empty() || !xyz || !prev.xyz {
+            0.0
+        } else {
+            let cos = prev.dir[0] * curr.dir[0] + prev.dir[1] * curr.dir[1] + prev.dir[2] * curr.dir[2];
+            let mut v2 = corner_speed2(m.env.jerk[0], cos);
+            let change = (curr.e_ratio - prev.e_ratio).abs();
+            if change > 1e-12 {
+                let e = KLIPPER_EXTRUDER_CORNER / change;
+                v2 = v2.min(e * e);
+            }
+            v2.sqrt()
+        };
+        curr.feedrate = top;
+        m.prev = curr;
+        m.blocks.push(Block {
+            kind,
+            distance,
+            acceleration,
+            entry: 0.0,
+            cruise: top,
+            exit: 0.0,
+            max_entry: junction,
+            safe: 0.0,
+            nominal_length: false,
+            recalculate: true,
+            trap: Trapezoid::default(),
+            layer: self.layer.max(1),
+            segment: self.segment,
+            line: self.line,
+            limit: top,
+            smooth: m.klipper.smooth(acceleration),
+            smooth_entry: 0.0,
+            smooth_max: f64::INFINITY,
+        });
         if m.blocks.len() > REFRESH {
             m.calculate(QUEUE, 0.0, Kind::Noop, false);
         }
@@ -1090,6 +1350,14 @@ impl Reader {
             )]
             let n = (radius * angle.abs() / seg + 0.8) as usize;
             n.max(1)
+        } else if self.m.fw == Fw::Klipper {
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a segment count"
+            )]
+            let n = (length.abs() / KLIPPER_ARC_SEGMENT).floor() as usize;
+            n.max(1)
         } else {
             arc_steps(start_radius, angle.abs(), 0.0125)
         };
@@ -1098,7 +1366,7 @@ impl Reader {
         let theta = angle * per;
         let z_per = dz * per;
         let e_per = extrusion.map_or(0.0, |e| e * per);
-        let (cos_t, sin_t) = if self.m.fw == Fw::Marlin2 {
+        let (cos_t, sin_t) = if matches!(self.m.fw, Fw::Marlin2 | Fw::Klipper) {
             (theta.m_cos(), theta.m_sin())
         } else {
             (1.0 - 0.5 * theta * theta, theta - theta * theta * theta / 6.0)
@@ -1209,6 +1477,10 @@ impl Reader {
             layer: self.layer.max(1),
             segment: self.segment,
             line: self.line,
+            limit: 0.0,
+            smooth: 0.0,
+            smooth_entry: 0.0,
+            smooth_max: 0.0,
         };
         b.calculate_trapezoid();
         self.m.blocks.push(b);
@@ -1321,6 +1593,23 @@ impl Reader {
         } else {
             cmd.into()
         };
+        if self.m.fw == Fw::Klipper {
+            match upper.as_ref() {
+                // Not Klipper commands: the firmware reports them as unknown and moves on.
+                "M201" | "M203" | "M205" | "M566" => return,
+                // `M204 S`, or `M204 P T` as the smaller of the two; P or T alone does nothing.
+                "M204" => {
+                    let a = value(words, b'S')
+                        .or_else(|| value(words, b'P').zip(value(words, b'T')).map(|(p, t)| p.min(t)));
+                    if let Some(a) = a {
+                        self.m.acceleration = a;
+                        self.m.travel = a;
+                    }
+                    return;
+                }
+                _ => {}
+            }
+        }
         match upper.as_ref() {
             "G0" | "G1" => self.g1(words),
             "G2" => self.arc(words, true),
@@ -1464,8 +1753,9 @@ impl Reader {
         }
     }
 
-    /// Klipper's `SET_VELOCITY_LIMIT`: square corner velocity as the X and Y jerk, the acceleration
-    /// for print and travel moves, and the velocity as the X and Y top speed.
+    /// Klipper's `SET_VELOCITY_LIMIT`: the square corner velocity (kept as the X and Y jerk), the
+    /// acceleration of every move, the top speed, and the minimum cruise ratio or the older explicit
+    /// `ACCEL_TO_DECEL`. Klipper takes values past the configured limits, so none is clamped.
     fn velocity_limit(&mut self, code: &str) {
         let find = |key: &str| {
             code.split_ascii_whitespace().find_map(|w| {
@@ -1482,12 +1772,19 @@ impl Reader {
             self.m.env.jerk[1] = j;
         }
         if let Some(a) = find("ACCEL") {
-            self.m.set_acceleration(a);
-            self.m.set_travel(a);
+            self.m.acceleration = a;
+            self.m.travel = a;
         }
         if let Some(v) = find("VELOCITY") {
             self.m.env.speed[0] = v;
             self.m.env.speed[1] = v;
+        }
+        if let Some(r) = find("MINIMUM_CRUISE_RATIO") {
+            self.m.klipper.cruise_ratio = r.clamp(0.0, 1.0);
+            self.m.klipper.accel_to_decel = None;
+        }
+        if let Some(a) = find("ACCEL_TO_DECEL") {
+            self.m.klipper.accel_to_decel = Some(a);
         }
     }
 
@@ -1944,5 +2241,152 @@ mod tests {
             panic!()
         };
         assert!(a > 0.0 && (b - a).abs() < 1e-12 && c > b);
+    }
+
+    fn klipper() -> PrintConfig {
+        let mut c = cfg(&[
+            ("machine_max_acceleration_extruding", serde_json::json!([1000])),
+            ("nozzle_diameter", serde_json::json!([0.4])),
+            ("filament_diameter", serde_json::json!([1.75])),
+        ]);
+        c.gcode_flavor = GcodeFlavor::Klipper;
+        c
+    }
+
+    /// Klipper's time for `moves` after setting 1000 mm/s2, a 5 mm/s square corner velocity and `extra`.
+    fn klipper_time(extra: &str, moves: &str) -> f64 {
+        let text = format!("SET_VELOCITY_LIMIT ACCEL=1000 SQUARE_CORNER_VELOCITY=5 {extra}\n{moves}");
+        estimate(text.as_bytes(), &klipper(), false).total
+    }
+
+    /// Within 0.1 microsecond: a ramp that ends at rest takes a square root of a difference near zero, so
+    /// rounding in the last bit of a speed shows up around 1e-9 s.
+    fn close(actual: f64, expected: f64) {
+        assert!((actual - expected).abs() < 1e-7, "{actual} vs {expected}");
+    }
+
+    #[test]
+    fn klipper_corner_speed_is_the_square_corner_velocity_at_90_degrees() {
+        close(corner_speed2(5.0, 0.0), 25.0);
+        close(corner_speed2(5.0, -1.0), 0.0);
+        assert!(corner_speed2(5.0, 1.0).is_infinite());
+        // A 120 degree corner (the path turns through 60): s = sin(60), so 25 (sqrt(2) - 1) s / (1 - s).
+        let s = 0.75f64.sqrt();
+        close(
+            corner_speed2(5.0, 0.5),
+            25.0 * (2.0f64.sqrt() - 1.0) * s / (1.0 - s),
+        );
+        // Zero allows no speed through any corner, but straight on is still free.
+        close(corner_speed2(0.0, 0.0), 0.0);
+        assert!(corner_speed2(0.0, 1.0).is_infinite());
+    }
+
+    #[test]
+    fn klipper_straight_move_is_one_trapezoid() {
+        // 100 mm at 100 mm/s and 1000 mm/s2 from rest to rest: 5 mm up in 0.1 s, 90 mm at speed, 5 mm down.
+        // The smoothed pass (500 mm/s2) could reach sqrt(500 * 100) = 224 mm/s, so it does not bind.
+        close(klipper_time("", "G1 X100 F6000\n"), 0.1 + 0.9 + 0.1);
+        // A lone move is timed (the firmware runs it).
+        close(klipper_time("MINIMUM_CRUISE_RATIO=0", "G1 X100 F6000\n"), 1.1);
+    }
+
+    #[test]
+    fn klipper_square_corner_runs_at_the_square_corner_velocity() {
+        // Each leg: up to 100 mm/s in 5 mm and 0.1 s, down to 5 mm/s in (100^2 - 5^2) / 2000 = 4.9875 mm
+        // and 0.095 s, the other 90.0125 mm at 100 mm/s.
+        let leg = 0.1 + 0.095 + 90.0125 / 100.0;
+        close(klipper_time("", "G1 X100 F6000\nG1 Y100\n"), 2.0 * leg);
+        // With a square corner velocity of 0 the corner stops: two lone trapezoids.
+        let stop = "SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=0\nG1 X100 F6000\nG1 Y100\n";
+        close(klipper_time("", stop), 2.2);
+    }
+
+    #[test]
+    fn klipper_minimum_cruise_ratio_caps_short_zigzags() {
+        // Ten 2 mm moves that reverse each time, so every junction is a stop. At a ratio of 0.5 the
+        // virtual rate is 500 mm/s2 and the top speed sqrt(500 * 2) = 31.6 mm/s: 0.5 mm up, 1 mm at speed,
+        // 0.5 mm down, 3 * 31.6 / 1000 s a move. Without it each move peaks at sqrt(1000 * 2) = 44.7 mm/s
+        // and takes 2 * 44.7 / 1000 s.
+        let zigzag = "G1 X2 F6000\nG1 X0\n".repeat(5);
+        let capped = 10.0 * 3.0 * 1000.0f64.sqrt() / 1000.0;
+        close(klipper_time("", &zigzag), capped);
+        close(klipper_time("MINIMUM_CRUISE_RATIO=0.5", &zigzag), capped);
+        close(
+            klipper_time("MINIMUM_CRUISE_RATIO=0", &zigzag),
+            10.0 * 2.0 * 2000.0f64.sqrt() / 1000.0,
+        );
+        // The older firmware's explicit rate: half the acceleration is the same cap.
+        close(klipper_time("ACCEL_TO_DECEL=500", &zigzag), capped);
+        // The documented example: a lone 1.5 mm move at 0.5 cruises for 0.75 mm. Its peak is
+        // sqrt(500 * 1.5) mm/s, reached after 0.375 mm.
+        let peak = 750.0f64.sqrt();
+        close(
+            klipper_time("", "G1 X1.5 F6000\n"),
+            2.0 * peak / 1000.0 + 0.75 / peak,
+        );
+    }
+
+    #[test]
+    fn klipper_staircase_combines_corners_and_the_cruise_ratio() {
+        // Six 2 mm moves turning 90 degrees each time (junctions at 5 mm/s). An inner move's smoothed peak
+        // is (25 + 25) / 2 + 500 * 2 = 1025 mm2/s2, the end ones (0 + 25) / 2 + 1000 = 1012.5.
+        let inner = |s0: f64, s1: f64, peak2: f64| {
+            let (v0, v1, v) = (s0.sqrt(), s1.sqrt(), peak2.sqrt());
+            let ramps = (peak2 - s0) / 2000.0 + (peak2 - s1) / 2000.0;
+            (v - v0) / 1000.0 + (v - v1) / 1000.0 + (2.0 - ramps) / v
+        };
+        let expected = 2.0 * inner(0.0, 25.0, 1012.5) + 4.0 * inner(25.0, 25.0, 1025.0);
+        let stairs = "G1 X2 F6000\nG1 Y2\nG1 X4\nG1 Y4\nG1 X6\nG1 Y6\n";
+        close(klipper_time("", stairs), expected);
+    }
+
+    #[test]
+    fn klipper_limits_the_extruder_speed_change_at_a_junction() {
+        // A travel straight into an extrusion of 0.04 mm per mm: the extruder may change by 1 mm/s, so the
+        // junction runs at 25 mm/s. Each 50 mm leg: 5 mm up (0.1 s), (100^2 - 25^2) / 2000 = 4.6875 mm
+        // down (0.075 s), 40.3125 mm at 100 mm/s.
+        let leg = 0.1 + 0.075 + 40.3125 / 100.0;
+        close(klipper_time("", "M83\nG1 X50 F6000\nG1 X100 E2\n"), 2.0 * leg);
+        close(klipper_time("", "M83\nG1 X50 F6000\nG1 X100\n"), 1.1);
+    }
+
+    #[test]
+    fn klipper_m204_needs_s_or_both_p_and_t() {
+        close(klipper_time("", "M204 P500\nG1 X100 F6000\n"), 1.1);
+        // 500 mm/s2: 10 mm up in 0.2 s, 80 mm at speed, 10 mm down.
+        close(klipper_time("", "M204 P500 T800\nG1 X100 F6000\n"), 1.2);
+        close(klipper_time("", "M204 S500\nG1 X100 F6000\n"), 1.2);
+        // Machine limit commands are not Klipper's.
+        close(
+            klipper_time("", "M201 X100 Y100\nM203 X10 Y10\nG1 X100 F6000\n"),
+            1.1,
+        );
+    }
+
+    #[test]
+    fn klipper_arcs_run_in_one_millimeter_segments() {
+        use crate::fm::Fm as _;
+        // A quarter circle of radius 10 (15.7 mm) is 15 chords of 2 * 10 * sin(3 degrees), each turn
+        // gentle enough to keep 10 mm/s; the start and the stop each cost 10 / 1000 s more than cruising.
+        let chords = 15.0 * 20.0 * (std::f64::consts::PI / 60.0).m_sin();
+        close(klipper_time("", "G2 X10 Y10 I10 J0 F600\n"), chords / 10.0 + 0.01);
+    }
+
+    #[test]
+    fn klipper_keeps_its_plan_across_queue_refills() {
+        use std::fmt::Write as _;
+        // Thousands of moves are planned in batches; the result matches the lone-batch sum of identical
+        // stair steps (each inner step as in the staircase test).
+        let mut steps = String::new();
+        for i in 1..=600 {
+            let _ = writeln!(steps, "G1 X{} F6000\nG1 Y{}", 2 * i, 2 * i);
+        }
+        let inner = 1025.0f64.sqrt();
+        let one = 2.0 * (inner - 5.0) / 1000.0 + (2.0 - 2.0 * 1000.0 / 2000.0) / inner;
+        let end = {
+            let v = 1012.5f64.sqrt();
+            v / 1000.0 + (v - 5.0) / 1000.0 + (2.0 - (1012.5 / 2000.0 + 987.5 / 2000.0)) / v
+        };
+        close(klipper_time("", &steps), 2.0 * end + 1198.0 * one);
     }
 }
