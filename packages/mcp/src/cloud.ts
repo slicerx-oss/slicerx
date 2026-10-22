@@ -9,6 +9,8 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
+import { promisify } from 'node:util'
+import { gzip } from 'node:zlib'
 import { defineTool, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import { resolveSliceConfig } from './config'
@@ -97,7 +99,14 @@ interface CloudAccess {
 
 const NOT_INVITED = 'This account is not invited to cloud slicing. Ask the cloud operator to add it to the invite list, or slice on this machine with slicerx_slice_file.'
 const EXPIRY_NOTE = 'G-code and preview links expire 7 days after the job finishes; download them before then.'
-const mb = (n: number): string => `${Math.round((n / 1_048_576) * 10) / 10} MB`
+/** A size as people read it: bytes under 1 KB, KB under 0.1 MB, else MB with one decimal (MB of 1024 KB, as the limits count). */
+function sizeText(n: number): string {
+  if (n < 1024) return `${n} bytes`
+  if (n < 104_858) return `${Math.round(n / 1024)} KB`
+  return `${Math.round((n / 1_048_576) * 10) / 10} MB`
+}
+const gzipAsync = promisify(gzip)
+const TOO_BIG = 'Simplify it or slice on this machine with slicerx_slice_file.'
 
 export interface CloudToolDeps {
   cloud: CloudOptions | undefined
@@ -114,7 +123,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     return deps.cloud
   }
 
-  const request = async (c: CloudOptions, method: string, path: string, body?: { json?: unknown; bytes?: Buffer }): Promise<Response> => {
+  const request = async (c: CloudOptions, method: string, path: string, body?: { json?: unknown; bytes?: Buffer; gzip?: boolean; size?: string }): Promise<Response> => {
     const token = c.token ?? readCloudKey(c.keyRef ?? 'slicerx-cloud')
     const headers: Record<string, string> = { authorization: `Bearer ${token}` }
     let payload: string | Blob | undefined
@@ -123,13 +132,17 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
       payload = JSON.stringify(body.json)
     } else if (body?.bytes) {
       headers['content-type'] = 'application/octet-stream'
+      if (body.gzip) headers['content-encoding'] = 'gzip'
       payload = new Blob([new Uint8Array(body.bytes)])
     }
     let res: Response
     try {
       res = await (c.fetch ?? globalThis.fetch)(`${c.apiUrl}${path}`, { method, headers, ...(payload !== undefined ? { body: payload } : {}), signal: AbortSignal.timeout(120_000) })
     } catch (e) {
-      throw new ToolInputError(`The cloud service at ${c.apiUrl} could not be reached: ${e instanceof Error ? e.message : String(e)}`, 'service_error')
+      const why = e instanceof Error ? e.message : String(e)
+      // A body far over the limit can be cut off before the service answers.
+      if (body?.size) throw new ToolInputError(`The upload of the model, ${body.size}, was cut off before the cloud service answered (${why}); it may be over the cloud upload limit. ${TOO_BIG}`, 'service_error')
+      throw new ToolInputError(`The cloud service at ${c.apiUrl} could not be reached: ${why}`, 'service_error')
     }
     if (res.ok || (method === 'GET' && res.status === 404 && path.startsWith('/v1/meshes/'))) return res
     const err = (await res.json().catch(() => null)) as { error?: { code?: string; message?: string } } | null
@@ -137,7 +150,11 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     const why = err?.error?.message ?? `it answered ${res.status}`
     if (res.status === 403 && code === 'not_invited') throw new ToolInputError(NOT_INVITED, 'not_invited')
     if (res.status === 401 || res.status === 403) throw new ToolInputError(`The cloud service refused the token (${why}). It needs an sxk_ token with the cloud_slice scope.`, 'auth_failed')
-    if (res.status === 413) throw new ToolInputError(`The model is larger than this account's cloud upload limit (${why}). Simplify it or slice on this machine with slicerx_slice_file.`, 'quota_exceeded')
+    if (res.status === 413) {
+      // The service says the size and the limit; a bare 413 says neither, so name the size here.
+      const said = err?.error?.message ? why.replace(/[^.!?]$/, '$&.') : `The model is ${body?.size ?? 'too large'}, over the cloud upload limit.`
+      throw new ToolInputError(`${said} ${TOO_BIG}`, 'quota_exceeded')
+    }
     if (res.status === 429) {
       const after = res.headers.get('retry-after')
       if (method === 'POST' && path === '/v1/jobs' && !after) throw new ToolInputError(`This account has reached its cloud job limit (${why}). Jobs count over a rolling 24 hours; try later or slice on this machine with slicerx_slice_file.`, 'quota_exceeded')
@@ -170,7 +187,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     source: 'command',
     permission: 'slice',
     description:
-      "Slice a model in the integrator's cloud instead of on this machine: checks the account is invited and within its daily job and upload limits, uploads the STL (only if the cloud does not have it yet), queues a job with the settings (schema defaults, then each profile, then overrides) and returns the job id. Follow it with slicerx_cloud_jobs. The job names no printer, so it never starts a print. Answers that cloud slicing is not configured when this server has no cloud API.",
+      "Slice a model in the integrator's cloud instead of on this machine: checks the account is invited and within its daily job and upload limits, uploads the STL gzip compressed (only if the cloud does not have it yet; the upload limit counts the compressed size), queues a job with the settings (schema defaults, then each profile, then overrides) and returns the job id. Follow it with slicerx_cloud_jobs. The job names no printer, so it never starts a print. Answers that cloud slicing is not configured when this server has no cloud API.",
     input: z.object({
       model: z.string().min(1).describe('Absolute path to an STL file, an http(s) URL, or a built-in test model such as sample:cube-20'),
       profiles: z.array(z.string()).max(8).default([]).describe('Profiles applied in order, by id or name from slicerx_list_profiles'),
@@ -189,11 +206,16 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
       if (!access.invited) throw new ToolInputError(NOT_INVITED, 'not_invited')
       if (access.jobsPerDay !== undefined && access.jobsToday !== undefined && access.jobsToday >= access.jobsPerDay)
         throw new ToolInputError(`This account has used all ${access.jobsPerDay} cloud jobs of the last 24 hours. Try later or slice on this machine with slicerx_slice_file.`, 'quota_exceeded')
-      if (access.maxUploadBytes !== undefined && bytes.length > access.maxUploadBytes)
-        throw new ToolInputError(`The model is ${mb(bytes.length)}, over this account's cloud upload limit of ${mb(access.maxUploadBytes)}. Simplify it or slice on this machine with slicerx_slice_file.`, 'quota_exceeded')
+      // Sent gzip compressed when that is smaller; the limit reads the size as sent.
+      const packed = await gzipAsync(bytes)
+      const compressed = packed.length < bytes.length
+      const body = compressed ? packed : bytes
+      const size = compressed ? `${sizeText(bytes.length)} (${sizeText(packed.length)} compressed)` : sizeText(bytes.length)
+      if (access.maxUploadBytes !== undefined && body.length > access.maxUploadBytes)
+        throw new ToolInputError(`The model is ${size}, over this account's cloud upload limit of ${sizeText(access.maxUploadBytes)}. ${TOO_BIG}`, 'quota_exceeded')
       const sha = createHash('sha256').update(bytes).digest('hex')
       const has = await request(c, 'GET', `/v1/meshes/${sha}`)
-      if (has.status === 404) await request(c, 'PUT', `/v1/meshes/${sha}`, { bytes })
+      if (has.status === 404) await request(c, 'PUT', `/v1/meshes/${sha}`, { bytes: body, gzip: compressed, size })
       const name = i.name ?? basename(path)
       const job = (await (
         await request(c, 'POST', '/v1/jobs', {
