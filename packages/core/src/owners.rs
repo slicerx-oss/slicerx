@@ -19,7 +19,8 @@
 //!   on any layer up, however far: every support path carries an object's label;
 //! - a support path whose box reaches under two objects (tree support under two shelves, merged on the first
 //!   layers) is cut like a wall where it passes from under one object to under another: a point takes the first
-//!   object up whose slice holds it, the path's own owner where none does.
+//!   object up whose slice holds it. A stretch under no object takes the object of the nearer stretch under one,
+//!   along the path (round it, for a loop), so skipping one object never leaves half of the other's loop.
 
 use crate::geom::{Point, SCALE};
 use crate::output::{Feature, LayerPaths, PathInfo};
@@ -39,6 +40,8 @@ pub(crate) struct ObjectSlice {
 /// The objects' slices on one layer, in plate order.
 pub(crate) type Slices = Vec<ObjectSlice>;
 
+/// Support segments longer than this, mm, are sampled for a change of owner even when their ends agree.
+const SUPPORT_STEP_MM: f64 = 1.0;
 /// How far up the support's owner is looked for, layers.
 const SUPPORT_REACH: usize = 400;
 /// How far past the object above it a support path may start and still be that object's, mm.
@@ -199,9 +202,9 @@ pub(crate) fn assign(
                 flows.push(zf.1.unwrap_or(1.0));
             }
         };
-        // A support path whose box reaches under two objects is cut like a wall: each point takes the first
-        // object up whose slice holds it ([`Reach::under_at`]), the path's own owner where none does.
-        let mut support = None;
+        // A support path whose box reaches under two objects is cut where it passes from under one object to
+        // under another ([`support_cuts`]).
+        let mut plan = None;
         if !by_place(p.feature) {
             let owner = match p.feature {
                 Feature::Brim => brim_owner(here, pts),
@@ -211,7 +214,9 @@ pub(crate) fn assign(
             let two = matches!(p.feature, Feature::Support | Feature::SupportInterface)
                 && bbox(pts).is_some_and(|b| reach.get_or_insert_with(|| Reach::new(above)).under_two(b));
             if two {
-                support = Some(owner);
+                plan = reach
+                    .as_ref()
+                    .map(|r| support_cuts(pts, r, owner, f64::from(p.width_mm)));
             } else {
                 let start = u32::try_from(points.len()).unwrap_or(u32::MAX);
                 for (k, &q) in pts.iter().enumerate() {
@@ -226,25 +231,25 @@ pub(crate) fn assign(
                 continue;
             }
         }
-        let owner_of = |q: Point| match support {
-            Some(whole) => reach.as_ref().map_or(whole, |r| r.under_at(q, whole)),
-            None => owner_at(q),
-        };
         // Walk the path; where the owner changes along a segment, end the piece at the crossing.
         let Some(&first) = pts.first() else { continue };
         let mut start = u32::try_from(points.len()).unwrap_or(u32::MAX);
-        let mut owner = owner_of(first);
+        let mut owner = plan.as_ref().map_or_else(|| owner_at(first), |(o, _)| *o);
         push_point(&mut points, &mut zs, &mut flows, first, z_of(range.start));
         for (k, w) in pts.windows(2).enumerate() {
             let [a, b] = w else { continue };
             let (za, zb) = (z_of(range.start + k), z_of(range.start + k + 1));
-            // Support is sampled along a segment only when its ends differ: its points stand close together.
-            let cuts = if support.is_some() && owner_of(*b) == owner {
-                Vec::new()
-            } else {
-                crossings(*a, *b, &owner_of, support.is_none().then_some(here))
+            let cuts = match plan.as_mut() {
+                Some((_, per)) => per.get_mut(k).map(std::mem::take).unwrap_or_default(),
+                None => crossings(*a, *b, &owner_at, Some(here)),
             };
+            // A support cut can fall on the segment's end point: the piece ends there, with no point added.
+            let mut at_b = None;
             for (q, t, next) in cuts {
+                if q == *b {
+                    at_b = Some(next);
+                    continue;
+                }
                 let lerp = |x: Option<f32>, y: Option<f32>| match (x, y) {
                     #[allow(
                         clippy::cast_possible_truncation,
@@ -274,6 +279,19 @@ pub(crate) fn assign(
                 owner = next;
             }
             push_point(&mut points, &mut zs, &mut flows, *b, zb);
+            if let Some(next) = at_b {
+                let end = u32::try_from(points.len()).unwrap_or(u32::MAX);
+                if end > start + 1 {
+                    paths.push(PathInfo {
+                        start,
+                        end,
+                        owner,
+                        ..*p
+                    });
+                }
+                start = end - 1;
+                owner = next;
+            }
         }
         let end = u32::try_from(points.len()).unwrap_or(u32::MAX);
         if end > start + 1 {
@@ -514,6 +532,162 @@ impl Reach {
             return whole;
         }
         self.layers.iter().find_map(|s| holder(s, q)).unwrap_or(whole)
+    }
+}
+
+/// One support path's cuts, per segment: the point, its share of the segment and the owner after it.
+type Cuts = Vec<Vec<(Point, f64, u16)>>;
+
+/// Where a stretch of a support path starts: its length along the path, its owner and, when it starts where
+/// [`crossings`] found a change, that segment, point and share.
+type Stretch = (f64, u16, Option<(usize, Point, f64)>);
+
+/// How a support path whose box reaches under two objects is cut: the owner at its start, and per segment the
+/// cuts on it (a cut at the segment's end point ends the piece there). A point under an object takes the first
+/// one up whose slice holds it ([`Reach::under_at`]). A stretch under none takes the object of the nearer
+/// stretch under one along the path, round it for a loop: one between stretches of two objects is split where
+/// it is equally far from each. A path whose ends are no more than `width` (its line width, mm) apart is a loop.
+/// A path under no object at all keeps `whole`, its own owner.
+fn support_cuts(pts: &[Point], r: &Reach, whole: u16, width: f64) -> (u16, Cuts) {
+    let under = |q: Point| r.under_at(q, OBJECT_NONE);
+    let gap = |a: Point, b: Point| {
+        let (dx, dy) = (f64::from(b.x - a.x) / SCALE, f64::from(b.y - a.y) / SCALE);
+        (dx * dx + dy * dy).sqrt()
+    };
+    let Some(&first) = pts.first() else {
+        return (whole, Vec::new());
+    };
+    // The length along the path to each point.
+    let mut at = Vec::with_capacity(pts.len());
+    let mut total = 0.0;
+    let mut prev = first;
+    for &q in pts {
+        total += gap(prev, q);
+        at.push(total);
+        prev = q;
+    }
+    // The stretches by what they lie under. A short segment is sampled only when its ends differ (support's points
+    // mostly stand close together); a longer one (a line of the first layer's base) always is.
+    let mut parts: Vec<Stretch> = vec![(0.0, under(first), None)];
+    for (k, w) in pts.windows(2).enumerate() {
+        let [a, b] = w else { continue };
+        let now = parts.last().map_or(OBJECT_NONE, |s| s.1);
+        let end = under(*b);
+        let (s0, len) = (at.get(k).copied().unwrap_or(0.0), gap(*a, *b));
+        if end == now && len <= SUPPORT_STEP_MM {
+            continue;
+        }
+        for (q, t, next) in crossings(*a, *b, &under, None) {
+            parts.push((s0 + t * len, next, Some((k, q, t))));
+        }
+        // A change found only at the end point (crossings leaves those out) starts there.
+        if parts.last().is_some_and(|s| s.1 != end) {
+            parts.push((s0 + len, end, Some((k, *b, 1.0))));
+        }
+    }
+    if parts.iter().all(|s| s.1 == OBJECT_NONE) {
+        return (whole, Vec::new());
+    }
+    let n = parts.len();
+    // A loop's last point stands a little short of its first.
+    let shut = pts.last().map_or(0.0, |&q| gap(q, first));
+    let closed = pts.len() > 2 && shut <= width;
+    let start_of = |i: usize| parts.get(i).map_or(total, |s| s.0);
+    let owner_of = |i: usize| parts.get(i).map_or(OBJECT_NONE, |s| s.1);
+    // A loop that starts and ends under no object has one such stretch round its start: its last part and its
+    // first.
+    let wraps = closed && n > 2 && owner_of(0) == OBJECT_NONE && owner_of(n - 1) == OBJECT_NONE;
+    let mut out: Vec<Stretch> = Vec::with_capacity(n + 2);
+    for (i, &(s0, o, on)) in parts.iter().enumerate() {
+        let s1 = start_of(i + 1);
+        if o != OBJECT_NONE {
+            out.push((s0, o, on));
+            continue;
+        }
+        // The owners before and after the stretch, how far into it this part starts, and its length.
+        let (before, after, into, len) = if wraps && (i == 0 || i == n - 1) {
+            let tail = total + shut - start_of(n - 1);
+            let into = if i == 0 { tail } else { 0.0 };
+            (owner_of(n - 2), owner_of(1), into, tail + start_of(1))
+        } else {
+            let before = match i.checked_sub(1) {
+                Some(j) => owner_of(j),
+                None if closed => owner_of(n - 1),
+                None => OBJECT_NONE,
+            };
+            let after = if i + 1 < n {
+                owner_of(i + 1)
+            } else if closed {
+                owner_of(0)
+            } else {
+                OBJECT_NONE
+            };
+            (before, after, 0.0, s1 - s0)
+        };
+        let (before, after) = match (before, after) {
+            (OBJECT_NONE, x) | (x, OBJECT_NONE) => (x, x),
+            pair => pair,
+        };
+        // Split at the stretch's middle: up to it the owner before, from it the owner after.
+        let split = s0 + len / 2.0 - into;
+        if before == after || split >= s1 {
+            out.push((s0, before, on));
+        } else if split <= s0 {
+            out.push((s0, after, on));
+        } else {
+            out.push((s0, before, on));
+            out.push((split, after, None));
+        }
+    }
+    // The owner changes, each placed on its segment.
+    let mut cuts: Cuts = vec![Vec::new(); pts.len().saturating_sub(1)];
+    let mut start = out.first().map_or(whole, |s| s.1);
+    let mut owner = start;
+    for &(s, o, on) in out.iter().skip(1) {
+        if o == owner {
+            continue;
+        }
+        owner = o;
+        let (k, q, t) = on.unwrap_or_else(|| place(pts, &at, s));
+        // A split that rounds onto the path's first point changes the owner at its start.
+        if k == 0 && q == first {
+            start = o;
+            continue;
+        }
+        if let Some(c) = cuts.get_mut(k) {
+            c.push((q, t, o));
+        }
+    }
+    (start, cuts)
+}
+
+/// The point `s` along the path through `pts` (`at`: the length along it to each point): its segment, the point
+/// and its share of the segment. A point that rounds onto a segment's start is the previous segment's end.
+fn place(pts: &[Point], at: &[f64], s: f64) -> (usize, Point, f64) {
+    let k = at.partition_point(|&v| v < s).saturating_sub(1);
+    let (Some(&a), Some(&b)) = (pts.get(k), pts.get(k + 1)) else {
+        return (k, pts.last().copied().unwrap_or_default(), 1.0);
+    };
+    let (s0, s1) = (
+        at.get(k).copied().unwrap_or(0.0),
+        at.get(k + 1).copied().unwrap_or(s),
+    );
+    let t = if s1 > s0 {
+        ((s - s0) / (s1 - s0)).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a point between two in internal units"
+    )]
+    let q = Point::new(
+        (f64::from(a.x) + (f64::from(b.x) - f64::from(a.x)) * t).round() as i32,
+        (f64::from(a.y) + (f64::from(b.y) - f64::from(a.y)) * t).round() as i32,
+    );
+    match k.checked_sub(1) {
+        Some(j) if q == a => (j, a, 1.0),
+        _ => (k, q, t),
     }
 }
 
@@ -802,11 +976,11 @@ mod tests {
         let before = length(&l);
         assign(&mut l, &[], &above);
         assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0, 1]);
-        // Under the gap the path keeps its own owner (the first shelf, nearest its middle on a tie), so it is cut
-        // where it comes under the second shelf, on the same line.
+        // The stretch under the gap goes to the nearer shelf along the path, so it is cut in the gap's middle, on
+        // the same line.
         let cut = l.path_points(&l.paths[0]).last().copied().unwrap();
         assert!(
-            (mm(cut)[0] - 11.0).abs() < 0.01 && (mm(cut)[1] - 5.0).abs() < 1e-6,
+            (mm(cut)[0] - 10.0).abs() < 0.01 && (mm(cut)[1] - 5.0).abs() < 1e-6,
             "{cut:?}"
         );
         assert_eq!(l.path_points(&l.paths[1]).first().copied(), Some(cut));
@@ -817,6 +991,54 @@ mod tests {
         assign(&mut l, &[], &|k| (k <= 2).then(|| one.clone()));
         assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0]);
         assert_eq!(l.points.len(), 2);
+    }
+
+    #[test]
+    fn a_support_loops_arc_under_no_object_goes_to_the_nearer_one_along_it() {
+        // Two shelves two layers up, x 0 to 9 and 11 to 20, y 0 to 10. A support loop runs under both along y 5
+        // and back along y 15, outside both: its arc past y 10 is split where it is equally far along the loop
+        // from each shelf, so each shelf's half of the loop carries that shelf's label.
+        let up = std::sync::Arc::new(vec![
+            square(0, 0.0, 0.0, 9.0, 10.0),
+            square(1, 11.0, 0.0, 20.0, 10.0),
+        ]);
+        let above = |k: usize| {
+            (k <= 2).then(|| {
+                if k == 2 {
+                    up.clone()
+                } else {
+                    std::sync::Arc::new(Vec::new())
+                }
+            })
+        };
+        let ring = [(2.0, 5.0), (18.0, 5.0), (18.0, 15.0), (2.0, 15.0), (2.0, 5.0)];
+        let mut l = layer(&ring, Feature::Support);
+        let before = length(&l);
+        assign(&mut l, &[], &above);
+        assert_eq!(l.paths.iter().map(|p| p.owner).collect::<Vec<_>>(), [0, 1, 0]);
+        // Cut in the gap's middle on y 5, and halfway round the outer arc on y 15.
+        let cuts: Vec<[f64; 2]> = l.paths[..2]
+            .iter()
+            .map(|p| mm(l.path_points(p).last().copied().unwrap()))
+            .collect();
+        for (cut, want) in cuts.iter().zip([[10.0, 5.0], [10.0, 15.0]]) {
+            assert!(
+                (cut[0] - want[0]).abs() < 0.01 && (cut[1] - want[1]).abs() < 1e-6,
+                "{cut:?}"
+            );
+        }
+        assert!((length(&l) - before).abs() < 1e-6);
+        let of = |o: u16| {
+            let mut one = l.clone();
+            one.paths.retain(|p| p.owner == o);
+            length(&one)
+        };
+        assert!(
+            (of(0) - 26.0).abs() < 0.01 && (of(1) - 26.0).abs() < 0.01,
+            "{} {}",
+            of(0),
+            of(1)
+        );
     }
 
     #[test]
