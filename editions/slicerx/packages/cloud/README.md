@@ -16,7 +16,7 @@ The SlicerX edition hosts cloud slicing for invited accounts only. A donations-f
 
 - The switch is `features.cloudSlicing` in the edition config. `editions/slicerx/edition.config.ts` turns it on when `SLICERX_CLOUD_API_URL` names a deployed service and leaves it off otherwise; `SLICERX_FEATURES` can override it.
 - With the switch off, `sx-cloud` serves only `/healthz` and `/v1/about` and runs the library upload scan and the account purge. Jobs, meshes, devices and deliveries are not served, and no slicing worker starts.
-- With it on, only accounts in `cloud_access` (`0006_cloud_access.sql`) can upload meshes, queue jobs, read results or act as a bridge. Each row sets jobs per rolling 24 hours (default 20, canceled jobs count) and the largest mesh upload (default 25 MB, at most the bucket's 50 MB). A banned account loses access while it stays listed. The service role manages the list with `grant_cloud_access(email, jobs_per_day, max_upload_mb, note)` and `revoke_cloud_access(email)`; both are audited, and revoking cancels the account's queued jobs.
+- With it on, only accounts in `cloud_access` (`0006_cloud_access.sql`) can upload meshes, queue jobs, read results or act as a bridge. Each row sets jobs per rolling 24 hours (default 20, canceled jobs count) and the largest mesh upload (default 25 MB, at most the bucket's 50 MB), counted as sent, so after gzip compression when the client compresses. A banned account loses access while it stays listed. The service role manages the list with `grant_cloud_access(email, jobs_per_day, max_upload_mb, note)` and `revoke_cloud_access(email)`; both are audited, and revoking cancels the account's queued jobs.
 - The database enforces access and the daily limit in the job trigger, and the storage policy hides an uninvited member's cloud files. The service checks the list on every slicing and bridge request and refuses uploads over the account's limit.
 - The upload scan is independent of this: the library needs it.
 
@@ -35,7 +35,7 @@ Every route except `/healthz` and `/v1/about` needs `Authorization: Bearer <cred
 | `GET /v1/about` | brand name, version and the source link (`legal.sourceUrl`); no credential |
 | `GET /v1/access` | `{ invited: false }`, or `{ invited: true, jobsPerDay, jobsToday, maxUploadBytes }`; needs `cloud_slice` but no invite |
 | `GET /v1/meshes/{sha256}` | 200 when the caller has uploaded this mesh, else 404 |
-| `PUT /v1/meshes/{sha256}` | uploads a mesh (STL, raw `SXMP` parts or the benchmark JSON, up to the account's limit); the body must hash to the path |
+| `PUT /v1/meshes/{sha256}` | uploads a mesh (STL, raw `SXMP` parts or the benchmark JSON), as it is or gzip compressed with `Content-Encoding: gzip`; the mesh must hash to the path. The account's limit and the 50 MB request limit read the size as sent, which is also what is stored; a gzip body may inflate to at most 200 MB |
 | `POST /v1/jobs` | `{ name?, request, targetPrinterId? }` queues a job; `request` is an `sx slice --request` body whose object `mesh` values are SHA-256 ids of uploaded meshes |
 | `GET /v1/jobs`, `GET /v1/jobs/{id}` | the caller's jobs with status, progress, stage, the result JSON and download paths |
 | `POST /v1/jobs/{id}/cancel` | cancels a queued or running job |
