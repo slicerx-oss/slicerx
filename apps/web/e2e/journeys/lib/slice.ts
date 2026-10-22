@@ -499,7 +499,7 @@ export async function thumbX(page: Page, layer: number): Promise<number> {
 
 /**
  * Every control on the page whose box the settled tip touches: the tip covers none of the playback bar's controls
- * (play, back, the sliders, the plate chip over it) and no other pin.
+ * (play, back, the sliders, the plate chip over it), no other pin, and none of the estimate's figures (time, grams, cost).
  */
 export async function tipCovers(page: Page, tip: Locator): Promise<string[]> {
   await expect(tip).toHaveAttribute('data-ready', 'true')
@@ -513,7 +513,8 @@ export async function tipCovers(page: Page, tip: Locator): Promise<string[]> {
   const t = (await tip.boundingBox())!
   return page.evaluate((t) => {
     const out: string[] = []
-    const controls = 'button, a[href], input, select, textarea, summary, [role=button], [role=slider], [role=tab], [role=menuitem], [role=switch], [role=radio], [role=checkbox]'
+    // The estimate's figures are text, not controls, and the tip covers them just as much.
+    const controls = 'button, a[href], input, select, textarea, summary, [role=button], [role=slider], [role=tab], [role=menuitem], [role=switch], [role=radio], [role=checkbox], [data-section=estimate] .est-fig, [data-section=estimate] .est-anchor'
     for (const el of Array.from(document.querySelectorAll<HTMLElement>(controls))) {
       if (el.closest('#sx-tip')) continue
       const r = el.getBoundingClientRect()
@@ -523,6 +524,33 @@ export async function tipCovers(page: Page, tip: Locator): Promise<string[]> {
     }
     return out
   }, t)
+}
+
+/**
+ * Gives every printer in the app's fleet list this name, as a printer added under a long name has; `null` puts the names
+ * back as they were (the page lives for the whole worker, and a later test looks printers up by name). The list lives in
+ * the app's query cache, which a test reaches through the provider on the React tree.
+ */
+export async function nameFleet(page: Page, name: string | null): Promise<void> {
+  const done = await page.evaluate((name) => {
+    const host = Array.from(document.querySelectorAll<HTMLElement>('body *')).find((el) => Object.keys(el).some((k) => k.startsWith('__reactFiber$')))
+    if (!host) return false
+    type Row = { id: string; name: string }
+    type Fiber = { return: Fiber | null; memoizedProps?: { client?: { setQueriesData(f: { queryKey: string[] }, up: (rows: Row[] | undefined) => unknown): void } } }
+    let fiber = (host as unknown as Record<string, Fiber>)[Object.keys(host).find((k) => k.startsWith('__reactFiber$'))!] ?? null
+    while (fiber && !fiber.memoizedProps?.client?.setQueriesData) fiber = fiber.return
+    if (!fiber) return false
+    const w = window as unknown as { __fleetNames?: Record<string, string> | undefined }
+    fiber.memoizedProps!.client!.setQueriesData({ queryKey: ['fleet'] }, (rows) => {
+      if (!rows) return rows
+      if (name !== null) w.__fleetNames ??= Object.fromEntries(rows.map((r) => [r.id, r.name]))
+      const was = w.__fleetNames
+      if (name === null) w.__fleetNames = undefined
+      return rows.map((r) => ({ ...r, name: name ?? was?.[r.id] ?? r.name }))
+    })
+    return true
+  }, name)
+  expect(done, 'the fleet list is in the app query cache').toBe(true)
 }
 
 /** The bar's play and back buttons, which a tip over the bar must never touch. */

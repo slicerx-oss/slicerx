@@ -243,8 +243,8 @@ const CONTROLS = 'button, a[href], input, select, textarea, summary, [role=butto
  * parts that stick out of it, such as a tab on its edge or a panel opening upward), then higher while it would cover a
  * control. `controls` are the boxes of the controls outside the bar. Null when there is no room above.
  */
-export function placeAbove(bar: Rect, anchorX: number, tip: { w: number; h: number }, controls: readonly Rect[], view = { w: window.innerWidth, h: window.innerHeight }): { x: number; y: number; side: Side } | null {
-  const x = Math.max(EDGE, Math.min(anchorX - tip.w / 2, view.w - EDGE - tip.w))
+export function placeAbove(bar: Rect, anchorX: number, tip: { w: number; h: number }, controls: readonly Rect[], view = { w: window.innerWidth, h: window.innerHeight }, gutter = EDGE): { x: number; y: number; side: Side } | null {
+  const x = Math.max(gutter, Math.min(anchorX - tip.w / 2, view.w - gutter - tip.w))
   let y = bar.top - GAP - tip.h
   // each pass lifts the tip over the highest control it still touches, so a handful settles it
   for (let i = 0; i < 8; i++) {
@@ -314,7 +314,7 @@ function paintedBox(el: HTMLElement): Rect {
 
 /**
  * The tip's place for an anchor that names a bar to open over (data-tip-above, a selector for an ancestor such as the
- * playback bar): over the bar's top edge and clear of every control there. Null when the anchor names none, or the
+ * playback bar): over the bar's top edge and clear of every control there (data-tip-gutter widens its distance from the window's sides). Null when the anchor names none, or the
  * view has no room above the bar.
  */
 function aboveBar(anchor: HTMLElement, tip: { w: number; h: number }, view: { w: number; h: number }): { x: number; y: number; side: Side } | null {
@@ -328,7 +328,9 @@ function aboveBar(anchor: HTMLElement, tip: { w: number; h: number }, view: { w:
     const b = c.getBoundingClientRect()
     if (b.width && b.height && !unseen(c)) controls.push(b)
   }
-  return placeAbove(paintedBox(bar), a.left + a.width / 2, tip, controls, view)
+  // data-tip-gutter: how far the tip keeps from the window's sides, where the screen's own gutter is wider than the default
+  const gutter = Number(anchor.getAttribute('data-tip-gutter'))
+  return placeAbove(paintedBox(bar), a.left + a.width / 2, tip, controls, view, gutter >= EDGE ? gutter : EDGE)
 }
 
 /** Where a tip renders: inside the anchor's open dialog, so a modal dialog's inert backdrop does not swallow it, else the body. */
@@ -628,8 +630,10 @@ export function TooltipHost({ resolve, enabled = true, media = true, summonKey =
     if (!shown || !el) return
     toTopLayer(el)
     const measure = () => {
+      // The tip's own size: its box while it slides in is scaled down a little, and a tip placed by that size lands
+      // closer to the window's edge than its gutter once it settles.
       const r = el.getBoundingClientRect()
-      const tip = { w: r.width, h: r.height }
+      const tip = { w: Math.max(r.width, el.offsetWidth), h: Math.max(r.height, el.offsetHeight) }
       const view = { w: window.innerWidth, h: window.innerHeight }
       const panel = shown.touch ? null : sidePanel(shown.anchor)
       const placed = aboveBar(shown.anchor, tip, view) ?? (shown.touch ? place(avoidBox(shown.anchor).getBoundingClientRect(), tip, 'top', view) : place(anchorRect(shown.anchor), tip, sideFor(shown.anchor), view, rowList(shown.anchor) !== null))
