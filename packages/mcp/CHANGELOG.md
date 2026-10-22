@@ -4,11 +4,17 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
+### Breaking
+
+- `slicerx_mimir_dock` is removed, with the docked chat it read. Use `slicerx_mimir_tab`; `slicerx_mimir_ask` and `slicerx_mimir_session` reach the mimir tab's conversation (see Removed).
+- mimir's local memory is on by default: `ai.brain.memory.local` in the edition config defaults to `true`, so every edition's mimir gets `memory.remember`, `memory.recall` and the notes block unless the edition sets `local: false` (see Notes for partners).
+
 ### Added
 
 - `slicerx_vault_list` lists Vault designs as the open app's Vault shows them, over the app link (`vault.list`, read class). The app reads them with its own store client and the person's session; this server holds no account key or session. `list` is `all` (the approved catalog, signed in or out, the default), `saved` (the person's Saved list) or `mine` (their own uploads in every status), and the last two answer `signed_out` while nobody is signed in. Each design has `id`, `slug`, `title`, `creator` (`handle`, `displayName`), `license`, `tags`, `status`, `publishedAt`, `version` (`version`, `format`, `colors`, `sizeMm` from the upload scan or `null` when it could not vouch for a size, and `print`: the creator's first tested printer with `timeS` and `grams`), `stats` (`downloads`, `makes`, `likes`) and, signed in, `liked` and `saved`. `query`, `tag` and `sort` (`new` or `popular`, with `all` only) filter as the Vault's search, category and sort do, and `limit` (1 to 50, default 24) with `cursor` (`next` from the page before) pages through. It never carries a file, a download link or a token, and never downloads, likes or saves a design.
 - The `signed_out` error code, for a call that reads the person's own account data in the open app while nobody is signed in there.
-
 - `slicerx_app_ui` reads the open app's window over the app link (`ui.get`, read class): `workspace` and the `workspaces` the top bar offers, `tab` (`slice`, `design` or `mimir`) and the `tabs` shown, `selection` on the shown plate (`primary` and `objects`, primary first, each with `id` and `name`), `plate` (the plate shown: `number`, `id`, `name`, `count`), `printer` (the one the project slices for: `name`, `vendor`, `model`, `nozzleMm`, `fromProject`; `null` when none is chosen) and `panels` (`open`, `settingsSection`, `settable`). The printer never carries its id, which is a serial on some printers, or an access code or address. `slicerx_app_ui_set` switches the `workspace` or `tab` (`ui.set`, read class), which changes only what the window shows. `slicerx_app_ui_select` sets the `selection` (ids or names, primary first; `[]` selects nothing), opens one panel (`settings` with an optional `section`, `command`, `about`, `shortcuts`, `expert`, `printerChooser` or `printerSettings`; the last three open in Slice) and closes a panel or `all` (`ui.select`, edit class, since the person's next click acts on them; a client allowed to read only is refused). It opens only the panel asked for and closes only the ones named, and answers `busy`, changing nothing, when that would close or cover another dialog or a panel to close has the person's work under way (a command or search typed, an unsaved field in Settings). Both setters answer `busy` while the person has a tool open, a file is opening, the print sheet or a question about an opened project is up, a phone is being paired or first-run setup is up, check everything before anything changes, and answer with the window read back. Neither changes the project: showing another plate stays with `slicerx_app_plate_show`, and the printer is picked by the person.
 - `gcode3mf` and the `SliceSummary` type it takes are exported from the package root beside `design3mf`, for hosts that start the server in-process and write a sliced plate's `.gcode.3mf` themselves.
 - `slicerx_mimir_run` reads back mimir's print run for one chat in the open app over the app link (`mimir.run`, read class): `steps` (design, plate, target, slice, send and print, each `done`, `now`, `todo` or `off`), `slice` (`timeS`, `grams`, `cost`, `warnings`, `stale`), `send` (`printerName`, `fileName`, `slots`) and `print` (`printerName`, `state`, `layer`, `layerCount`, `timeLeftS`, `progress`, `outcome`), or `null` before the mimir tab first opens. It reads the chat the mimir tab has open, else the newest mimir session, unless `sessionId` names another. It never carries the file, its SHA-256, approval tokens, request ids, printer ids, access codes or serial numbers. Nothing on the app link approves a print, so `slicerx_printer_queue` still waits for the person in the app.
@@ -26,6 +32,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 ### Removed
 
 - `slicerx_mimir_dock`: the docked chat is gone from the app. Read the mimir tab with `slicerx_mimir_tab` instead; `slicerx_mimir_ask` and `slicerx_mimir_session` now reach the tab's conversation.
+
+### Fixed
+
+- mimir no longer fails on an OpenAI-style provider when a turn offers more than 128 tools, the provider's limit (which a host's own tools or plugins can push it past). It sends the tools already called in the chat, the core tools and the toolsets the turn needs, fills any room left by a fixed priority up to 128, and notes in the app log which toolsets were left out. Under the limit, and on providers without one, nothing changes.
 
 ### Notes for partners
 

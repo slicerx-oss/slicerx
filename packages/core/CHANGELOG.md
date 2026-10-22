@@ -4,6 +4,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-22
+
 ### Changed
 
 - `project_metadata` and `project_config` no longer fail on a `Metadata/project_settings.config` that is not JSON. An empty one is a project without settings, JSON after a byte order mark is read, and anything else (INI style lines, a damaged file) is left out with the reason in `ProjectMetadata::settings_skipped` and `ProjectConfig::skipped`. `sx slice <project.3mf>` prints that reason and slices with the other settings; `--strict` refuses such a file.
