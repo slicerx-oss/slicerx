@@ -7522,7 +7522,8 @@ impl SliceSession {
                 .get(k as usize)
                 .cloned()
         });
-        let mut qualities: Vec<(&PrintConfig, std::sync::Arc<crate::quality::Context>)> = Vec::new();
+        // Keyed by the region's settings and the extruder (its wall speeds are the reference).
+        let mut qualities: Vec<(&PrintConfig, usize, std::sync::Arc<crate::quality::Context>)> = Vec::new();
         // The layer above, for `only_one_wall_top`: top surfaces keep one wall.
         let upper_slice: Option<Shapes> = layer
             .checked_add(1)
@@ -7607,17 +7608,21 @@ impl SliceSession {
                     .as_ref()
                     .filter(|_| crate::quality::overhang_speed_on(cfg))
                     .map(|low| {
-                        if let Some((_, q)) = qualities.iter().find(|(qc, _)| std::ptr::eq(*qc, cfg)) {
+                        let e = crate::nozzles::extruder_of_slot(cfg, *slot);
+                        if let Some((_, _, q)) = qualities
+                            .iter()
+                            .find(|(qc, qe, _)| std::ptr::eq(*qc, cfg) && *qe == e)
+                        {
                             return q.clone();
                         }
                         #[allow(clippy::cast_possible_truncation, reason = "a layer height in mm")]
                         let q = std::sync::Arc::new(crate::quality::Context::new(
-                            cfg,
+                            &cfg.for_extruder(e),
                             low.clone(),
                             curled.clone(),
                             self.plan.thickness(layer) as f32,
                         ));
-                        qualities.push((cfg, q.clone()));
+                        qualities.push((cfg, e, q.clone()));
                         q
                     }),
                 fuzzy_paint: fuzzy_mask.clone(),

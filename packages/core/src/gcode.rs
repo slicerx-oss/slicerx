@@ -2166,7 +2166,13 @@ fn emit_layer(
     let arcs = crate::firmware::truthy(c, "enable_arc_fitting") && !spiral && smoothing.is_none();
     // Acceleration and jerk last written in this layer (0: not yet), and the lines that set them.
     let mut motion_now = crate::motion::Written::default();
-    let mut motion = crate::motion::Motion::new(c, flavor, l.index == 0);
+    // One per filament slot: each path accelerates as its extruder's settings say ([`PrintConfig::for_slot`]).
+    let top_tool = l.paths.iter().map(|p| p.tool).max().unwrap_or(0);
+    let slot_cfgs: Vec<std::borrow::Cow<'_, PrintConfig>> = (0..=top_tool).map(|t| c.for_slot(t)).collect();
+    let mut motions: Vec<crate::motion::Motion<'_>> = slot_cfgs
+        .iter()
+        .map(|s| crate::motion::Motion::new(s, flavor, l.index == 0))
+        .collect();
     // The nozzle's height in thousandths while it extrudes (a scarf rise starts below the layer).
     let mut cur_z: i64 = z;
     // orca's bambu tower writer frames each tower block: `WIPE_TOWER_START` to `END`, and a change in
@@ -2613,7 +2619,7 @@ fn emit_layer(
             if retracts {
                 retract_move(b, style, -retract, retract_feed);
             }
-            if accel_on {
+            if accel_on && let Some(motion) = motions.get_mut(usize::from(p.tool)) {
                 b.extend_from_slice(motion.travel_lines(false, p.feature, &mut motion_now).as_bytes());
             }
             put_travel(b, from, start, Some(NOZZLE_WIPE_BACK_FEED));
@@ -2698,8 +2704,10 @@ fn emit_layer(
         if accel_on && (cursor != Some(start) || pending_lift.is_some()) {
             // A travel shorter than the retraction minimum is short whether or not it retracts.
             let short = dist < rc.retraction_minimum_travel;
-            let lines = motion.travel_lines(short, p.feature, &mut motion_now);
-            b.extend_from_slice(lines.as_bytes());
+            if let Some(motion) = motions.get_mut(usize::from(p.tool)) {
+                let lines = motion.travel_lines(short, p.feature, &mut motion_now);
+                b.extend_from_slice(lines.as_bytes());
+            }
         }
         let mut lifted = std::mem::take(&mut pending_drop);
         // A slope lift too steep for its travel climbs on the travel move itself (Orca's `travel_to_xyz`).
@@ -2838,8 +2846,10 @@ fn emit_layer(
         }
         if accel_on {
             // After a travel the jerk is the default again; the feature's own comes back with the extrusion.
-            let lines = motion.accel_lines(p.feature, &mut motion_now);
-            b.extend_from_slice(lines.as_bytes());
+            if let Some(motion) = motions.get_mut(usize::from(p.tool)) {
+                let lines = motion.accel_lines(p.feature, &mut motion_now);
+                b.extend_from_slice(lines.as_bytes());
+            }
         }
         if feature != Some(p.feature) {
             if let Some(rc) = role_ctx.as_mut() {
@@ -2989,16 +2999,11 @@ fn emit_layer(
             && pts.get(1).is_some_and(|&q| start.dist_mm(q) > 1e-3))
         .then(|| {
             wipe_due = false;
-            let travel_lines = if accel_on {
-                motion.travel_lines(false, Feature::PrimeTower, &mut motion_now)
-            } else {
-                String::new()
-            };
-            let print_lines = if accel_on {
-                motion.accel_lines(Feature::PrimeTower, &mut motion_now)
-            } else {
-                String::new()
-            };
+            let motion = motions.get_mut(usize::from(p.tool)).filter(|_| accel_on);
+            let (travel_lines, print_lines) = motion.map_or_else(Default::default, |m| {
+                let travel = m.travel_lines(false, Feature::PrimeTower, &mut motion_now);
+                (travel, m.accel_lines(Feature::PrimeTower, &mut motion_now))
+            });
             NozzleWipe {
                 style,
                 retract,

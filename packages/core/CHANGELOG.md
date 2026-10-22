@@ -8,6 +8,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 - Bambu Lab H2D and X2D: the start and filament change G-code write -1 as the hotend id (`B` of `M620.11`, `H` of `M620 S..A`, `T..` and `M620.6`, and `M620 D`), as the maker's slicer does, instead of 0.
 
+### Changed
+
+- Two extruder printers whose extruder variants give a process setting one value per extruder (the X2D's Bowden extruder, an H2D with a high flow nozzle) now print each filament at its own extruder's speeds and accelerations; all filaments used the first extruder's before. `PrintConfig::for_extruder` and `PrintConfig::for_slot` give the settings one extruder prints with.
+
 ## [0.2.0] - 2026-10-22
 
 ### Changed
