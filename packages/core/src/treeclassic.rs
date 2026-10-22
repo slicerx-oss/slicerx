@@ -1842,7 +1842,7 @@ fn draw(
         }
         let un = |v: &Vec<Shapes>| -> Shapes {
             let refs: Vec<&Shapes> = v.iter().collect();
-            perimeters::union_all(&refs)
+            perimeters::union_swept(&refs)
         };
         let close = |s: &Shapes| perimeters::offset(&perimeters::offset(s, w_line), -w_line);
         let roof_s = perimeters::intersection(&perimeters::difference(&close(&un(&roof)), &col_base), &bed);

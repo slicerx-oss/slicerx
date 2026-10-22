@@ -433,6 +433,23 @@ pub(crate) fn union_min_area(sets: &[&Shapes], min_area: u64) -> Shapes {
     Overlay::new_custom(capacity, options, solver_for(capacity)).simplify_source(&all, FillRule::NonZero)
 }
 
+/// [`union_all`] with the list sweep at every size, for many small rings that overlap heavily, such as tree
+/// branches drawn as circles, a few hundred to a layer. Their crossings split them into short pieces that
+/// the sweep finishes sooner than the interval tree: about a third less time for one model's branches,
+/// at up to 45,000 edges a layer. The result is the same as [`union_all`]'s (see [`solver_for`]).
+pub(crate) fn union_swept(sets: &[&Shapes]) -> Shapes {
+    let mut all: Shapes = Vec::new();
+    for s in sets {
+        all.extend(s.iter().cloned());
+    }
+    if all.is_empty() {
+        return all;
+    }
+    let capacity = all.iter().flatten().map(Vec::len).sum();
+    Overlay::new_custom(capacity, IntOverlayOptions::default(), Solver::LIST)
+        .simplify_source(&all, FillRule::NonZero)
+}
+
 /// How `i_overlay` finds crossings. Its automatic choice sweeps over x below 4000 edges and moves to an
 /// interval tree above, also partway through when splitting pushes the count past 4000. Raw offset loops
 /// that fold back over each other split into many pieces, and finishing them in the tree took 2.5 to 4
