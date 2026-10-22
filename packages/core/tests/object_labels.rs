@@ -57,6 +57,11 @@ fn object(boxes: &[[f32; 6]]) -> Arc<Mesh> {
 
 /// Slices `objects` (name, boxes, at x, y) with object labels on, and `extra` settings.
 fn slice(objects: &[(&str, &[[f32; 6]], f32, f32)], extra: Value) -> String {
+    String::from_utf8(run(objects, extra).gcode).unwrap()
+}
+
+/// [`slice`], the whole run.
+fn run(objects: &[(&str, &[[f32; 6]], f32, f32)], extra: Value) -> sx_core::api::SliceRun {
     let mut cfg = json!({"brim_width": 0, "skirt_loops": 0, "gcode_label_objects": true});
     if let (Some(c), Some(e)) = (cfg.as_object_mut(), extra.as_object()) {
         c.extend(e.clone());
@@ -73,15 +78,14 @@ fn slice(objects: &[(&str, &[[f32; 6]], f32, f32)], extra: Value) -> String {
         .iter()
         .map(|(n, b, _, _)| ((*n).to_owned(), object(b)))
         .collect();
-    let run = common::run_request(&req, &move |id: &str| {
+    common::run_request(&req, &move |id: &str| {
         Ok(meshes
             .iter()
             .find(|(n, _)| n == id)
             .map(|(_, m)| m.clone())
             .unwrap())
     })
-    .unwrap();
-    String::from_utf8(run.gcode).unwrap()
+    .unwrap()
 }
 
 /// One extruding move: the active label, the feature, its middle, its length and Z.
@@ -496,4 +500,66 @@ fn stacked_objects_with_one_footprint_keep_their_own_labels() {
         wrong < 1e-6,
         "{wrong} mm labeled with an object that is not at that height ({by_label:?})"
     );
+}
+
+/// The warning for a Bambu Lab plate whose objects get no labels.
+const TOO_MANY: &str = "This plate has more than 64 objects, so the printer can't skip any of them";
+
+/// `n` small boxes in rows of nine, sliced with `extra`: the G-code and the warnings.
+fn grid(n: u16, extra: Value) -> (String, Vec<String>) {
+    const DOT: &[[f32; 6]] = &[[0.0, 0.0, 0.0, 4.0, 4.0, 0.6]];
+    let names: Vec<String> = (0..n).map(|i| format!("o{i}")).collect();
+    let objects: Vec<(&str, &[[f32; 6]], f32, f32)> = (0..n)
+        .zip(&names)
+        .map(|(i, name)| {
+            (
+                name.as_str(),
+                DOT,
+                30.0 + 12.0 * f32::from(i % 9),
+                30.0 + 12.0 * f32::from(i / 9),
+            )
+        })
+        .collect();
+    let run = run(&objects, extra);
+    let warnings = run.report.warnings.iter().map(|w| w.message.clone()).collect();
+    (String::from_utf8(run.gcode).unwrap(), warnings)
+}
+
+/// Lines of `g` that start with `prefix`.
+fn count(g: &str, prefix: &str) -> usize {
+    g.lines().filter(|l| l.starts_with(prefix)).count()
+}
+
+#[test]
+fn a_bambu_plate_over_64_objects_gets_no_labels_and_says_so() {
+    let bambu = json!({"printer_model": "Bambu Lab A1"});
+    // 64 objects fill the label mask: every object is labelled, no warning.
+    let (g, warnings) = grid(64, bambu.clone());
+    let ids: Vec<String> = (1..=64).map(|i: u32| i.to_string()).collect();
+    assert_eq!(count(&g, &format!("; model label id: {}", ids.join(","))), 1);
+    assert_eq!(count(&g, "; start printing object, unique label id: 64"), 3);
+    assert!(count(&g, "M624 ") > 0);
+    assert!(!warnings.iter().any(|w| w == TOO_MANY), "{warnings:?}");
+    // One more and the mask cannot hold them: no firmware labels, and one line that says the printer can't skip.
+    let (g, warnings) = grid(65, bambu);
+    assert_eq!(count(&g, "; model label id:"), 0);
+    assert_eq!(count(&g, "; start printing object, unique label id:"), 0);
+    assert_eq!(count(&g, "M624 "), 0);
+    assert_eq!(
+        warnings.iter().filter(|w| *w == TOO_MANY).count(),
+        1,
+        "{warnings:?}"
+    );
+}
+
+#[test]
+fn klipper_and_marlin_plates_over_64_objects_keep_their_labels() {
+    let (g, warnings) = grid(65, json!({"gcode_flavor": "klipper", "exclude_object": true}));
+    assert_eq!(count(&g, "EXCLUDE_OBJECT_DEFINE NAME="), 65);
+    assert_eq!(count(&g, "EXCLUDE_OBJECT_START NAME=o64_id_64_copy_0"), 3);
+    assert!(!warnings.iter().any(|w| w == TOO_MANY), "{warnings:?}");
+    let (g, warnings) = grid(65, json!({"gcode_flavor": "marlin2", "exclude_object": true}));
+    assert_eq!(count(&g, "M486 A"), 65);
+    assert_eq!(count(&g, "M486 S64"), 4);
+    assert!(!warnings.iter().any(|w| w == TOO_MANY), "{warnings:?}");
 }

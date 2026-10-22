@@ -6,7 +6,7 @@
 
 use crate::config::{GcodeFlavor, PrintConfig};
 use crate::fm::Fm as _;
-use crate::output::{Feature, ObjectFootprint};
+use crate::output::{Feature, ObjectFootprint, SliceWarning, WarningCode};
 use crate::plate::Plate;
 use std::fmt::Write as _;
 
@@ -147,6 +147,20 @@ enum Firmware {
 
 /// Most objects Bambu firmware can skip: the label mask is 64 bits (Orca's `g_max_label_object`).
 const BAMBU_MAX_LABELS: usize = 64;
+
+/// The warning for a Bambu Lab plate with more objects than the label mask holds: [`Labels::new`] writes no
+/// firmware labels for it, so the printer cannot skip any of them.
+pub(crate) fn label_limit_warning(
+    objects: &[ObjectFootprint],
+    cfg: &PrintConfig,
+    flavor: GcodeFlavor,
+) -> Option<SliceWarning> {
+    (bambu_printer(cfg, flavor) && objects.len() > BAMBU_MAX_LABELS).then(|| SliceWarning {
+        code: WarningCode::UnsupportedSetting,
+        message: "This plate has more than 64 objects, so the printer can't skip any of them".to_owned(),
+        layer: None,
+    })
+}
 
 /// A Bambu Lab printer: the `bambu` flavor, or a `printer_model` that starts with "Bambu Lab" (the rule
 /// Orca's command line uses for `Print::is_BBL_printer`, since Bambu presets say `marlin`).
