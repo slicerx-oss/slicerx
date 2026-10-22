@@ -7,7 +7,7 @@
 //! Orca's `coPercent` and `coPercents`), one per line, so the configuration block writes them with their `%`,
 //! and the whole number keys (`int` and `ints`, Orca's `coInt` and `coInts`), which the placeholder language
 //! reads as integers, and copies `packages/settings/defaults.json` next to them, with the `PrusaSlicer` key map
-//! (`packages/settings/prusa-map.json`) and the head shapes the collision check uses
+//! (`packages/settings/prusa-map.json`), the older setting names (`packages/settings/legacy.json`) and the head shapes the collision check uses
 //! (`packages/ui/viewport/data/head-shapes.json`).
 //!
 //! The published crate has neither folder, so it reads the copies in `data/` instead.
@@ -67,6 +67,7 @@ fn main() {
             &out.join("engine-choices.json"),
         );
         copy(&settings.join("prusa-map.json"), &out.join("prusa-map.json"));
+        copy(&settings.join("legacy.json"), &out.join("legacy.json"));
     } else {
         for file in [
             "variant_process_keys.txt",
@@ -76,6 +77,7 @@ fn main() {
             "defaults.json",
             "engine-choices.json",
             "prusa-map.json",
+            "legacy.json",
         ] {
             copy(&here.join("data").join(file), &out.join(file));
         }

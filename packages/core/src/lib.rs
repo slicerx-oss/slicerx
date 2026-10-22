@@ -132,6 +132,7 @@ pub mod ironing;
 #[doc(hidden)]
 pub mod jpeg;
 mod layers;
+mod legacy;
 mod lightning;
 mod lightning2;
 #[doc(hidden)]
