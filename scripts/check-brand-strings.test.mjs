@@ -48,7 +48,6 @@ test('skips comments, identifiers, tests and the kept categories', () => {
     'export { defineSlicerXElements } from "./elements"',
     'const SLICERX_APP = 1',
     '// Copyright (C) 2026 The SlicerX contributors',
-    "      <metadata name=\"Application\">SlicerX</metadata>",
     `  title: \`\${productName()} print knowledge\`,`,
     '      {/* SlicerX in a JSX comment */}',
     "      <p>{appName()} is ready</p> {/* not SlicerX */}",
@@ -57,5 +56,6 @@ test('skips comments, identifiers, tests and the kept categories', () => {
   const rs = ['/// SlicerX in a doc comment', 'let s = format!("{} walls", app_name());', '#[cfg(test)]', 'mod tests {', '    assert!(s.contains("SlicerX"));', '}'].join('\n')
   assert.deepEqual(scan('packages/core/src/api.rs', rs), [])
   // a kept text is kept only in its own file
-  assert.equal(scan('packages/mcp/src/other.ts', '  data: `<metadata name="Application">SlicerX</metadata>`').length, 1)
+  assert.deepEqual(scan('packages/mcp/src/mesh.ts', "  const header = 'SlicerX plate'"), [])
+  assert.equal(scan('packages/mcp/src/other.ts', "  const header = 'SlicerX plate'").length, 1)
 })
