@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Typed client for the cloud slicing service (editions/slicerx/packages/cloud/service).
+import type { PlateVolume, SettingValue, SliceOptions } from '@slicerx/contracts'
 import { z } from 'zod'
 import { sha256Hex } from './hash'
 import { type CloudErrorCode, type CloudResult, fail, ok } from './result'
@@ -44,16 +45,31 @@ export interface CloudSliceRequest {
   schemaVersion?: 1
   plate: {
     bed?: { widthMm: number; depthMm: number; heightMm: number }
-    objects: {
-      id: string
-      name?: string
-      mesh: string
-      transform?: number[]
-      slotOverrides?: Record<string, number>
-    }[]
+    objects: CloudSliceObject[]
   }
   config?: Record<string, unknown>
-  options?: { engine?: 'sx'; flavor?: string; shards?: number; emitGcode?: boolean; emitPreview?: boolean }
+  options?: CloudSliceOptions
+}
+
+/** A plate object as the service takes it: `mesh`, and each volume's `mesh`, name an uploaded mesh. */
+export interface CloudSliceObject {
+  id: string
+  name?: string
+  mesh: string
+  transform?: number[]
+  slotOverrides?: Record<string, number>
+  /** Negative volumes, support blockers and enforcers, and modifiers, in the space of `mesh`. */
+  volumes?: PlateVolume[]
+  settings?: Record<string, SettingValue>
+  partSettings?: Record<string, Record<string, SettingValue>>
+  brimPoints?: [number, number, number, number][]
+}
+
+/** The slice options the service reads: the engine's own, with the thumbnail's pixels as base64. */
+export type CloudSliceOptions = Omit<SliceOptions, 'engine' | 'flavor' | 'thumbnail'> & {
+  engine?: 'sx'
+  flavor?: string
+  thumbnail?: { width: number; height: number; rgba: string }
 }
 
 export interface SubmitJobInput {
@@ -98,7 +114,7 @@ export interface CloudClient {
   /** Uploads a mesh unless the service already has it; returns its SHA-256. */
   uploadMesh(bytes: Uint8Array | ArrayBuffer): Promise<CloudResult<string>>
   submitJob(input: SubmitJobInput): Promise<CloudResult<CloudJob>>
-  /** Uploads the plate's meshes, then submits it. Object `mesh` values are keys of `meshes`. */
+  /** Uploads the plate's meshes, then submits it. Object and volume `mesh` values are keys of `meshes`. */
   slicePlate(input: PlateInput): Promise<CloudResult<CloudJob>>
   job(id: string): Promise<CloudResult<CloudJob>>
   jobs(limit?: number): Promise<CloudResult<CloudJob[]>>
@@ -276,11 +292,17 @@ export function createCloudClient(opts: CloudClientOptions): CloudClient {
         if (!up.ok) return up
         hashes[key] = up.value
       }
-      const objects = []
+      const objects: CloudSliceObject[] = []
       for (const o of request.plate.objects) {
         const sha = hashes[o.mesh]
         if (!sha) return fail('bad_request', `object ${o.id} names mesh ${o.mesh}, which is not in meshes`)
-        objects.push({ ...o, mesh: sha })
+        const volumes: PlateVolume[] = []
+        for (const v of o.volumes ?? []) {
+          const vsha = hashes[v.mesh]
+          if (!vsha) return fail('bad_request', `a volume of object ${o.id} names mesh ${v.mesh}, which is not in meshes`)
+          volumes.push({ ...v, mesh: vsha })
+        }
+        objects.push({ ...o, mesh: sha, ...(o.volumes ? { volumes } : {}) })
       }
       return client.submitJob({ ...rest, request: { ...request, plate: { ...request.plate, objects } } })
     },

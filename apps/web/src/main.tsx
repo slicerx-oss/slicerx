@@ -139,7 +139,7 @@ if (__SX_FEATURE_STORE__) {
   const cloudApi = config.backend.cloudApi
   if (__SX_FEATURE_CLOUD__ && cloudApi) {
     // Cloud slicing signs requests with the member's session token, kept current by the store.
-    const [{ createCloudClient, createCloudSlicer }, { cloudSlicing }] = await Promise.all([import('@slicerx/cloud'), import('../../../packages/app/src/features/cloud/index')])
+    const [{ cloudRoutedSlicer, createCloudClient, createCloudSlicer }, { cloudSlicing }] = await Promise.all([import('@slicerx/cloud'), import('../../../packages/app/src/features/cloud/index')])
     let token: string | null = null
     store.onTokenChange((t) => {
       token = t
@@ -148,21 +148,11 @@ if (__SX_FEATURE_STORE__) {
       token = t
     })
     const local = host.slicer
+    // Models load through the cloud slicer (opened projects and painted copies too), so a cloud slice has their bytes;
+    // handles are the local ones either way.
     const cloud = createCloudSlicer({ client: createCloudClient({ baseUrl: cloudApi, credential: () => token }), local })
     edition.cloud = cloud
-    // Meshes load locally either way, so handles match; only slices and their outputs move.
-    const clouded = new Set<string>()
-    host.slicer = {
-      ...local,
-      slice: async (req, opts) => {
-        if (!cloudSlicing()) return local.slice(req, opts)
-        const r = await cloud.slice({ ...req, config: (await import('@slicerx/settings')).resolveAuto(req.config) }, opts)
-        clouded.add(r.id)
-        return r
-      },
-      getPreview: (id) => (clouded.has(id) ? cloud.getPreview(id) : local.getPreview(id)),
-      exportGcode: (id, target) => (clouded.has(id) ? cloud.exportGcode(id, target) : local.exportGcode(id, target)),
-    }
+    host.slicer = cloudRoutedSlicer({ local, cloud, enabled: cloudSlicing, prepare: async (req) => ({ ...req, config: (await import('@slicerx/settings')).resolveAuto(req.config) }) })
   }
   edition.auth = {
     redirectUrl: () => `${location.origin}${location.pathname}`,

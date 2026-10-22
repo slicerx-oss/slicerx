@@ -6,6 +6,8 @@ export {
   createCloudClient,
   type CloudClient,
   type CloudClientOptions,
+  type CloudSliceObject,
+  type CloudSliceOptions,
   type CloudSliceRequest,
   type LinkPrinterInput,
   type PlateInput,
@@ -36,5 +38,5 @@ export type {
   JobStatus,
   SliceReport,
 } from './schemas'
-export { createCloudSlicer, type CloudSlicerOptions } from './slicer-host'
+export { cloudRoutedSlicer, createCloudSlicer, type CloudRouteOptions, type CloudSlicerOptions } from './slicer-host'
 export * from './sync/index'
