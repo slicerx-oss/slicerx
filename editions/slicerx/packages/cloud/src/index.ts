@@ -10,10 +10,14 @@ export {
   type CloudSliceOptions,
   type CloudSliceRequest,
   type LinkPrinterInput,
+  type MeshData,
+  type PackedMesh,
+  packedSize,
   type PlateInput,
   type SubmitJobInput,
   type WaitOptions,
 } from './client'
+export { type Gzip, sizeText, streamGzip } from './compress'
 export { createDeliveryAgent, type DeliveryAgent, type DeliveryAgentOptions, type DeliveryEvent } from './delivery'
 export { sha256Hex } from './hash'
 export { memoryStore, type KeyValueStore } from './kv'
