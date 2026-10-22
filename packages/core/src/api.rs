@@ -641,16 +641,13 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
     }))
 }
 
-/// Bambu Studio's prime tower keys under the names the engine reads, for a project's settings or a preset: the rib
-/// wall switch (`prime_tower_rib_wall`, 1 for the rib wall, 0 for the plain one) as `wipe_tower_wall_type`, and the
-/// rib's width, extra length and fillet as `wipe_tower_rib_width`, `wipe_tower_extra_rib_length` and
-/// `wipe_tower_fillet_wall`. A key the settings already have under our name keeps its own value.
+/// Bambu Studio's prime tower keys under the names the engine reads, for a project's settings, a preset, a request's
+/// config or an object's own settings: the rib wall switch (`prime_tower_rib_wall`, 1 for the rib wall, 0 for the
+/// plain one) as `wipe_tower_wall_type`, and the rib's width, extra length and fillet as `wipe_tower_rib_width`,
+/// `wipe_tower_extra_rib_length` and `wipe_tower_fillet_wall`. A key the settings already have under our name keeps
+/// its own value.
 pub fn bambu_tower_keys(settings: &mut serde_json::Map<String, serde_json::Value>) {
-    for (from, to) in [
-        ("prime_tower_rib_width", "wipe_tower_rib_width"),
-        ("prime_tower_extra_rib_length", "wipe_tower_extra_rib_length"),
-        ("prime_tower_fillet_wall", "wipe_tower_fillet_wall"),
-    ] {
+    for (from, to) in BAMBU_TOWER_RENAMES {
         if !settings.contains_key(to)
             && let Some(v) = settings.get(from).cloned()
         {
@@ -669,6 +666,30 @@ pub fn bambu_tower_keys(settings: &mut serde_json::Map<String, serde_json::Value
         "wipe_tower_wall_type".to_owned(),
         serde_json::Value::String(wall.to_owned()),
     );
+}
+
+/// Bambu Studio's rib sizes and the names the engine reads them by (see [`bambu_tower_keys`]).
+const BAMBU_TOWER_RENAMES: [(&str, &str); 3] = [
+    ("prime_tower_rib_width", "wipe_tower_rib_width"),
+    ("prime_tower_extra_rib_length", "wipe_tower_extra_rib_length"),
+    ("prime_tower_fillet_wall", "wipe_tower_fillet_wall"),
+];
+
+/// `settings` with Bambu Studio's prime tower keys read as ours ([`bambu_tower_keys`]): for a request's config and
+/// an object's own settings from its file. Settings that are not an object, or have none of those keys, come back as
+/// they are.
+pub fn with_bambu_tower_keys(settings: &serde_json::Value) -> std::borrow::Cow<'_, serde_json::Value> {
+    match settings.as_object() {
+        Some(m)
+            if m.contains_key("prime_tower_rib_wall")
+                || BAMBU_TOWER_RENAMES.iter().any(|(from, _)| m.contains_key(*from)) =>
+        {
+            let mut m = m.clone();
+            bambu_tower_keys(&mut m);
+            std::borrow::Cow::Owned(serde_json::Value::Object(m))
+        }
+        _ => std::borrow::Cow::Borrowed(settings),
+    }
 }
 
 /// The walls a project's settings give, by the rule that keeps our engine choices: ours where the project inherited
@@ -937,11 +958,13 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
                 ),
             });
         }
-        // The object's settings from its file, with the request's over them. Without file settings, as before:
-        // the request's own when objects differ (the same ones go into the plate's config).
+        // The object's settings from its file (Bambu Studio's rib keys read as ours), with the request's over them.
+        // Without file settings, as before: the request's own when objects differ (the same ones go into the plate's
+        // config).
         let settings = match mesh.settings.as_object().filter(|m| !m.is_empty()) {
             Some(file) => {
                 let mut m = file.clone();
+                bambu_tower_keys(&mut m);
                 m.extend(o.settings.iter().map(|(k, v)| (k.clone(), v.clone())));
                 serde_json::Value::Object(m)
             }
@@ -1021,14 +1044,16 @@ pub fn request_config_report(
     // again (the app, with the profile's value back) expect. The browser build never lists (its host leaves both
     // options off), so the report's code stays out of the WebAssembly module and its size budget.
     let listed = cfg!(not(target_arch = "wasm32")) && (strict || req.options.config_report.unwrap_or(false));
-    if !req.config.is_null() {
+    // A hand-written config may name the prime tower's rib keys as Bambu Studio does.
+    let given = with_bambu_tower_keys(&req.config);
+    if !given.is_null() {
         if listed {
-            report.invalid = config.apply_value_lenient(&req.config)?;
+            report.invalid = config.apply_value_lenient(&given)?;
         } else {
-            config = PrintConfig::from_value(&req.config)?;
+            config = PrintConfig::from_value(&given)?;
         }
     }
-    if listed && let Some(map) = req.config.as_object() {
+    if listed && let Some(map) = given.as_object() {
         report.walls = Some(WallsNote::of_request(map, "the request"));
         let placeholders = crate::config::placeholder_keys(map);
         report.not_applied = map

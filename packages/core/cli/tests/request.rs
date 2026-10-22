@@ -863,6 +863,11 @@ fn rib_tower(
     extra: &serde_json::Value,
     config: Option<&serde_json::Value>,
 ) -> [f64; 2] {
+    rib_tower_with(dir, name, app, extra, config, &[])
+}
+
+/// The settings [`rib_tower`] slices with, `extra` over them.
+fn tower_settings(extra: &serde_json::Value) -> serde_json::Value {
     let mut s = serde_json::json!({
         "printer_model": "Bambu Lab A1",
         "sparse_infill_filament_id": "2",
@@ -876,9 +881,21 @@ fn rib_tower(
     if let (Some(o), Some(e)) = (s.as_object_mut(), extra.as_object()) {
         o.extend(e.clone());
     }
+    s
+}
+
+/// [`rib_tower`] with more files in the project, such as its `Metadata/model_settings.config`.
+fn rib_tower_with(
+    dir: &Path,
+    name: &str,
+    app: Option<&str>,
+    extra: &serde_json::Value,
+    config: Option<&serde_json::Value>,
+    files: &[(&str, &str)],
+) -> [f64; 2] {
     let path = dir.join(format!("{name}.3mf"));
-    let text = s.to_string();
-    std::fs::write(&path, box_3mf_by(app, Some(text.as_bytes()), &[])).unwrap();
+    let text = tower_settings(extra).to_string();
+    std::fs::write(&path, box_3mf_by(app, Some(text.as_bytes()), files)).unwrap();
     let mut cmd = sx();
     cmd.arg("slice").arg(&path).args(["-o", "-"]);
     if let Some(c) = config {
@@ -892,9 +909,14 @@ fn rib_tower(
         "{name}: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    tower_size(name, &String::from_utf8_lossy(&out.stdout))
+}
+
+/// The prime tower's width and depth on layer 10 of `gcode`.
+fn tower_size(name: &str, gcode: &str) -> [f64; 2] {
     let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
     let (mut layer, mut on) = (0, false);
-    for l in String::from_utf8_lossy(&out.stdout).lines() {
+    for l in gcode.lines() {
         if l == "; CHANGE_LAYER" {
             layer += 1;
         } else if let Some(f) = l.strip_prefix("; FEATURE: ") {
@@ -1027,6 +1049,141 @@ fn bambu_rib_keys_shape_the_tower_from_a_project_or_a_preset() {
         Some(&serde_json::json!({"prime_tower_rib_wall": "0"})),
     );
     assert!(is_plain(off), "{off:?}");
+}
+
+/// A `Metadata/model_settings.config` that gives the box (object 1) `settings` as its own.
+fn object_settings(settings: &[(&str, &str)]) -> String {
+    use std::fmt::Write as _;
+    let mut keys = String::new();
+    for (k, v) in settings {
+        let _ = write!(keys, r#"<metadata key="{k}" value="{v}"/>"#);
+    }
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><config><object id="1"><metadata key="name" value="box"/>{keys}</object></config>"#
+    )
+}
+
+/// [`rib_tower`] for `sx slice --request`: the box from a project with no settings and no app, `object` as its own
+/// settings, and [`rib_tower`]'s settings with `extra` over them as the request's config.
+fn request_tower(dir: &Path, name: &str, extra: &serde_json::Value, object: &[(&str, &str)]) -> [f64; 2] {
+    let model = dir.join(format!("{name}.3mf"));
+    let settings = object_settings(object);
+    let files: &[(&str, &str)] = if object.is_empty() {
+        &[]
+    } else {
+        &[("Metadata/model_settings.config", settings.as_str())]
+    };
+    std::fs::write(&model, box_3mf_by(None, None, files)).unwrap();
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": {"box": model.display().to_string()},
+        "plate": {
+            "bed": {"widthMm": 256, "depthMm": 256, "heightMm": 256},
+            "objects": [{"id": "box", "mesh": "box"}],
+        },
+        "config": tower_settings(extra),
+    });
+    let request = dir.join(format!("{name}.json"));
+    std::fs::write(&request, req.to_string()).unwrap();
+    let out_dir = dir.join(name);
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&request)
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let gcode = std::fs::read(out_dir.join("slice.gcode")).unwrap();
+    tower_size(name, &String::from_utf8_lossy(&gcode))
+}
+
+/// A hand-written request's config may name the rib keys as Bambu Studio does: the switch picks the tower's wall and
+/// the rib width its size, and a key under our own name keeps its value.
+#[test]
+fn a_requests_bambu_rib_keys_shape_the_tower() {
+    let dir = temp_dir(format!("sx-cli-request-rib-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let tower = |name: &str, extra: serde_json::Value| request_tower(&dir, name, &extra, &[]);
+    let plain = tower("none", serde_json::json!({}));
+    assert!(is_plain(plain), "no rib keys: {plain:?}");
+    let wide = tower("rib-1", serde_json::json!({"prime_tower_rib_wall": 1}));
+    assert!(is_rib(wide), "switch 1: {wide:?}");
+    let ours = tower("ours-rib", serde_json::json!({"wipe_tower_wall_type": "rib"}));
+    assert!(same_size(wide, ours), "{wide:?} against our key's {ours:?}");
+    let off = tower("rib-0", serde_json::json!({"prime_tower_rib_wall": 0}));
+    assert!(same_size(off, plain), "switch 0: {off:?}");
+    let narrow = tower(
+        "rib-1-width-4",
+        serde_json::json!({"prime_tower_rib_wall": 1, "prime_tower_rib_width": 4}),
+    );
+    assert!(is_rib(narrow), "{narrow:?}");
+    assert!(
+        narrow[0] < wide[0] - 1.0,
+        "rib width 4 {narrow:?} against 8 {wide:?}"
+    );
+    // Our own keys win over Bambu Studio's in the same config.
+    let both = tower(
+        "both",
+        serde_json::json!({
+            "prime_tower_rib_wall": 0,
+            "wipe_tower_wall_type": "rib",
+            "prime_tower_rib_width": 4,
+            "wipe_tower_rib_width": 8,
+        }),
+    );
+    assert!(same_size(both, wide), "{both:?} against {wide:?}");
+}
+
+/// An object's own settings in its project may name the rib keys as Bambu Studio does, in a request and in
+/// `sx slice <project.3mf>`: they are the plate's settings, over the request's config or the project's.
+#[test]
+fn an_objects_own_bambu_rib_keys_shape_the_tower() {
+    let dir = temp_dir(format!("sx-cli-object-rib-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let none = serde_json::json!({});
+    let rib = serde_json::json!({"wipe_tower_wall_type": "rib"});
+    let narrow_keys = [("prime_tower_rib_wall", "1"), ("prime_tower_rib_width", "4")];
+    // A request: the object's switch and width over a config with neither.
+    let wide = request_tower(&dir, "req-ours", &rib, &[]);
+    let narrow = request_tower(&dir, "req-object-4", &none, &narrow_keys);
+    assert!(is_rib(narrow), "{narrow:?}");
+    assert!(
+        narrow[0] < wide[0] - 1.0,
+        "the object's rib width 4 {narrow:?} against 8 {wide:?}"
+    );
+    // The object's switch 0 turns off the rib wall the request's config asks for.
+    let off = request_tower(&dir, "req-object-0", &rib, &[("prime_tower_rib_wall", "0")]);
+    assert!(is_plain(off), "{off:?}");
+    // A project slice: the object's settings over the project's, which name no app and no wall.
+    let project = |name: &str, object: &[(&str, &str)]| {
+        let settings = object_settings(object);
+        rib_tower_with(
+            &dir,
+            name,
+            None,
+            &none,
+            None,
+            &[("Metadata/model_settings.config", settings.as_str())],
+        )
+    };
+    let ours = |name: &str, extra: serde_json::Value| rib_tower(&dir, name, None, &extra, None);
+    let project_wide = ours("project-ours", rib);
+    let project_narrow = ours(
+        "project-ours-4",
+        serde_json::json!({"wipe_tower_wall_type": "rib", "wipe_tower_rib_width": "4"}),
+    );
+    let on = project("project-object-1", &[("prime_tower_rib_wall", "1")]);
+    assert!(same_size(on, project_wide), "{on:?} against {project_wide:?}");
+    let small = project("project-object-4", &narrow_keys);
+    assert!(
+        same_size(small, project_narrow),
+        "{small:?} against {project_narrow:?}"
+    );
 }
 
 /// The layer count `sx slice` reports on stderr ("N layers, ...").
