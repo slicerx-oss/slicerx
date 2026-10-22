@@ -139,6 +139,7 @@ mod tests {
             paths: features
                 .iter()
                 .map(|&feature| PathInfo {
+                    tower_wipe: false,
                     start: 0,
                     end: 0,
                     tool: 1,

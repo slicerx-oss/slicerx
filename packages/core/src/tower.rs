@@ -22,6 +22,10 @@ pub(crate) struct TowerPath {
     pub(crate) speed_mm_s: f32,
     /// Flow against a bead of this width at the layer's height.
     pub(crate) flow: f32,
+    /// The first row of the new filament's wipe after a tool change, where the nozzle wipes its start blob off
+    /// (`prime_tower_skip_points`): the writer prints 3 mm of the row, retracts, travels back over the row's start
+    /// and forward again slowly, primes and finishes the row.
+    pub(crate) nozzle_wipe: bool,
 }
 
 /// The tower's geometry for a plate.
@@ -49,6 +53,8 @@ pub(crate) struct Tower {
     type1: bool,
     /// The purge prints whole rows (type 1, and `PrusaSlicer`'s wipe, which fills the rows it planned).
     whole_rows: bool,
+    /// Each wipe after a tool change starts with a short nozzle wipe (`prime_tower_skip_points` on a type 1 tower).
+    skip_points: bool,
     /// Orca's rib wall, once the tower's height is known ([`Tower::ribbed`]).
     rib: Option<Rib>,
 }
@@ -773,6 +779,7 @@ impl Tower {
             },
             type1: type1(cfg),
             whole_rows: type1(cfg) || prusa_tools(cfg),
+            skip_points: type1(cfg) && flag_or(cfg, "prime_tower_skip_points", true),
             rib: None,
         })
     }
@@ -870,6 +877,7 @@ impl Tower {
             width_mm: to_f32(self.wall_w),
             speed_mm_s: to_f32(if first { self.first_speed } else { self.wall_speed }),
             flow: 1.0,
+            nozzle_wipe: false,
         }
     }
 
@@ -903,6 +911,7 @@ impl Tower {
             width_mm: to_f32(w),
             speed_mm_s: speed,
             flow: 1.0,
+            nozzle_wipe: false,
         };
         let mut out = vec![path(vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)])];
         let dy = y1 - y0 - w;
@@ -1016,6 +1025,7 @@ impl Tower {
                     self.wall_speed
                 }),
                 flow: 1.0,
+                nozzle_wipe: false,
             });
         }
         out
@@ -1049,6 +1059,7 @@ impl Tower {
                     width_mm: to_f32(self.wall_w),
                     speed_mm_s: to_f32(self.first_speed),
                     flow: 1.0,
+                    nozzle_wipe: false,
                 }
             })
             .collect()
@@ -1186,6 +1197,8 @@ impl Tower {
                 width_mm: to_f32(self.wipe_w),
                 speed_mm_s: to_f32(speed),
                 flow: 1.0,
+                // A row a tool changer's ramming leads into is not the wipe's own start.
+                nozzle_wipe: k == 0 && self.skip_points && !lead_row,
             });
         }
         (paths, n)
@@ -1253,6 +1266,7 @@ impl Tower {
             width_mm: to_f32(w),
             speed_mm_s: to_f32(speed),
             flow: 1.0,
+            nozzle_wipe: false,
         };
         (vec![path], rows, end.filter(|_| !p.nozzle_change))
     }
@@ -1348,6 +1362,7 @@ pub(crate) fn prime_section(
             30.0
         }),
         flow: 1.0,
+        nozzle_wipe: false,
     }
 }
 
