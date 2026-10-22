@@ -559,6 +559,7 @@ mod tests {
     fn path(start: u32, end: u32, feature: Feature) -> PathInfo {
         PathInfo {
             tower_wipe: false,
+            tower_hop: false,
             start,
             end,
             tool: 1,

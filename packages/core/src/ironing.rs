@@ -243,6 +243,7 @@ pub(crate) fn add(
         #[allow(clippy::cast_possible_truncation, reason = "speeds and widths are small")]
         out.paths.push(PathInfo {
             tower_wipe: false,
+            tower_hop: false,
             start,
             end,
             tool,

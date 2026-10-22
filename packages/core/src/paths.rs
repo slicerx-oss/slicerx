@@ -329,6 +329,7 @@ impl Builder<'_> {
                 overhang_fan: false,
                 owner: crate::preview::OBJECT_NONE,
                 tower_wipe: false,
+                tower_hop: false,
             });
         } else {
             self.out.points.truncate(start as usize);
@@ -1713,11 +1714,11 @@ pub(crate) fn plan_layer_paths(
                 },
                 t.points.iter().copied(),
             );
-            if t.nozzle_wipe
-                && b.out.paths.len() > before
+            if b.out.paths.len() > before
                 && let Some(p) = b.out.paths.last_mut()
             {
-                p.tower_wipe = true;
+                p.tower_wipe = t.nozzle_wipe;
+                p.tower_hop = t.hop;
             }
         }
         b.width_mm = line_width;

@@ -26,6 +26,9 @@ pub(crate) struct TowerPath {
     /// (`prime_tower_skip_points`): the writer prints 3 mm of the row, retracts, travels back over the row's start
     /// and forward again slowly, primes and finishes the row.
     pub(crate) nozzle_wipe: bool,
+    /// A piece of the wall that the nozzle reaches by hopping the opening before it (`prime_tower_skip_points`):
+    /// retracted, at 10 mm/s.
+    pub(crate) hop: bool,
 }
 
 /// The tower's geometry for a plate.
@@ -47,6 +50,9 @@ pub(crate) struct Tower {
     brim: f64,
     /// Speeds, mm/s: the first layer, the walls and the purge rows above it.
     first_speed: f64,
+    /// The type 1 tower's speed cap and the target its wipe rows speed up to, mm/s (`prime_tower_max_speed`, 90
+    /// when the settings leave it out); its first layer takes the lower of it and `initial_layer_speed`.
+    max_speed: f64,
     wall_speed: f64,
     purge_speed: f64,
     /// Orca's type 1 (Bambu Lab) tower.
@@ -753,12 +759,19 @@ impl Tower {
         let width = cfg.raw_number("prime_tower_width", 35.0).max(5.0);
         let rows = rows.max(1.0);
         let max_purge = cfg.raw_number("wipe_tower_max_purge_speed", 90.0).max(1.0);
-        let first_speed = if cfg.initial_layer_speed > 0.0 {
+        let first_layer = if cfg.initial_layer_speed > 0.0 {
             cfg.initial_layer_speed
         } else {
             30.0
         };
         let positive = |v: f64| if v > 0.0 { v } else { 80.0 };
+        // A type 1 tower caps everything it prints, wipe rows, wall and fill, by `prime_tower_max_speed`.
+        let max_speed = positive(cfg.raw_number("prime_tower_max_speed", 90.0));
+        let first_speed = if type1(cfg) {
+            first_layer.min(max_speed)
+        } else {
+            first_layer
+        };
         Some(Self {
             x: cfg.raw_number("wipe_tower_x", 15.0),
             y: cfg.raw_number("wipe_tower_y", 220.0),
@@ -770,7 +783,12 @@ impl Tower {
             angle: cfg.raw_number("wipe_tower_rotation_angle", 0.0),
             brim: cfg.raw_number("prime_tower_brim_width", 3.0),
             first_speed,
-            wall_speed: max_purge.min(positive(cfg.inner_wall_speed)),
+            max_speed,
+            wall_speed: if type1(cfg) {
+                max_speed
+            } else {
+                max_purge.min(positive(cfg.inner_wall_speed))
+            },
             // PrusaSlicer wipes at the infill speed with no cap of its own (`WipeTower::toolchange_Wipe`).
             purge_speed: if prusa_tools(cfg) {
                 positive(cfg.sparse_infill_speed)
@@ -878,7 +896,164 @@ impl Tower {
             speed_mm_s: to_f32(if first { self.first_speed } else { self.wall_speed }),
             flow: 1.0,
             nozzle_wipe: false,
+            hop: false,
         }
+    }
+
+    /// Where the first row of a wipe from row `start` begins, in the tower's own frame: the wipe's nozzle wipe
+    /// starts there, and the wall opens level with it.
+    pub(crate) fn row_start(&self, start: f64) -> (f64, f64) {
+        let edge = if self.type1 {
+            self.wall_w
+        } else {
+            2.0 * self.wall_w
+        };
+        (edge, 2.0 * self.wall_w + start * self.spacing)
+    }
+
+    /// The wall loop at height `z` with an opening level with each wipe start in `starts` (the tower's own frame),
+    /// when `prime_tower_skip_points` is on a type 1 tower: from the start, straight out to the nearer side, the
+    /// opening is centered where that line meets the wall and runs 2.5 beads along the wall each way; openings that
+    /// overlap merge. The wall prints as the pieces between them, from the piece that starts nearest the loop's own
+    /// start, and the nozzle hops each opening it meets on the way round. Without openings, [`Self::wall`].
+    pub(crate) fn wall_pieces(&self, first: bool, z: f64, starts: &[(f64, f64)]) -> Vec<TowerPath> {
+        let whole = self.wall(first, z);
+        if !self.skip_points || starts.is_empty() {
+            return vec![whole];
+        }
+        let h = self.wall_w / 2.0;
+        let mut ring: Vec<(f64, f64)> = if self.rib.is_some() {
+            self.wall_polygon(z)
+        } else {
+            vec![
+                (h, h),
+                (self.width - h, h),
+                (self.width - h, self.depth - h),
+                (h, self.depth - h),
+            ]
+        };
+        let Some(&first_pt) = ring.first() else {
+            return vec![whole];
+        };
+        ring.push(first_pt);
+        let seg = |a: (f64, f64), b: (f64, f64)| (b.0 - a.0).m_hypot(b.1 - a.1);
+        let mut along = vec![0.0];
+        for w in ring.windows(2) {
+            if let [a, b] = w {
+                along.push(along.last().copied().unwrap_or(0.0) + seg(*a, *b));
+            }
+        }
+        let perimeter = along.last().copied().unwrap_or(0.0);
+        let half = 2.5 * self.wall_w;
+        if perimeter <= 4.0 * half {
+            return vec![whole];
+        }
+        // Each opening as its start along the loop and its length.
+        let mut gaps: Vec<(f64, f64)> = starts
+            .iter()
+            .filter_map(|&(sx, sy)| {
+                let left = sx < self.width / 2.0;
+                let mut best: Option<(f64, f64)> = None;
+                for (i, w) in ring.windows(2).enumerate() {
+                    let [a, b] = w else { continue };
+                    if (a.1 - sy) * (b.1 - sy) > 0.0 || (b.1 - a.1).abs() < 1e-12 {
+                        continue;
+                    }
+                    let t = (sy - a.1) / (b.1 - a.1);
+                    let x = a.0 + t * (b.0 - a.0);
+                    let out = if left { sx - x } else { x - sx };
+                    if out < -1e-9 {
+                        continue;
+                    }
+                    let at = along.get(i).copied().unwrap_or(0.0) + t * seg(*a, *b);
+                    if best.is_none_or(|(d, _)| out < d) {
+                        best = Some((out, at));
+                    }
+                }
+                best.map(|(_, at)| ((at - half).rem_euclid(perimeter), 2.0 * half))
+            })
+            .collect();
+        if gaps.is_empty() {
+            return vec![whole];
+        }
+        gaps.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut merged: Vec<(f64, f64)> = Vec::new();
+        for (a, len) in gaps {
+            match merged.last_mut() {
+                Some(m) if a <= m.0 + m.1 + 1e-9 => m.1 = m.1.max(a + len - m.0),
+                _ => merged.push((a, len)),
+            }
+        }
+        // The last opening may run past the loop's start into the first one.
+        if merged.len() > 1
+            && let (Some(&last), Some(&head)) = (merged.last(), merged.first())
+            && last.0 + last.1 - perimeter >= head.0 - 1e-9
+        {
+            merged.pop();
+            if let Some(f) = merged.first_mut() {
+                let end = (last.0 + last.1 - perimeter).max(f.0 + f.1);
+                *f = (last.0 - perimeter, end - (last.0 - perimeter));
+            }
+        }
+        if merged.iter().map(|g| g.1).sum::<f64>() >= perimeter - 1e-6 {
+            return vec![whole];
+        }
+        let point_at = |d: f64| -> (f64, f64) {
+            let d = d.rem_euclid(perimeter);
+            let i = along.partition_point(|&v| v <= d).saturating_sub(1);
+            match (ring.get(i), ring.get(i + 1), along.get(i), along.get(i + 1)) {
+                (Some(&a), Some(&b), Some(&da), Some(&db)) if db > da => {
+                    let t = (d - da) / (db - da);
+                    (a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1))
+                }
+                (Some(&a), ..) => a,
+                _ => first_pt,
+            }
+        };
+        // The pieces between the openings, along the loop.
+        let n = merged.len();
+        let pieces: Vec<Vec<(f64, f64)>> = (0..n)
+            .filter_map(|k| {
+                let g = merged.get(k)?;
+                let next = merged.get((k + 1) % n)?;
+                let from = g.0 + g.1;
+                let mut to = next.0;
+                while to <= from {
+                    to += perimeter;
+                }
+                let mut pts = vec![point_at(from)];
+                // the loop's corners inside the piece, over one or two laps of the loop
+                for lap in [-perimeter, 0.0, perimeter, 2.0 * perimeter] {
+                    for (i, &d) in along.iter().enumerate().take(ring.len() - 1) {
+                        let d = d + lap;
+                        if d > from + 1e-9
+                            && d < to - 1e-9
+                            && let Some(&q) = ring.get(i)
+                        {
+                            pts.push(q);
+                        }
+                    }
+                }
+                pts.push(point_at(to));
+                Some(pts)
+            })
+            .collect();
+        let first_piece = pieces
+            .iter()
+            .enumerate()
+            .min_by(|a, b| {
+                let d = |p: &Vec<(f64, f64)>| p.first().map_or(f64::MAX, |&q| seg(q, first_pt));
+                d(a.1).total_cmp(&d(b.1))
+            })
+            .map_or(0, |(k, _)| k);
+        (0..n)
+            .filter_map(|j| pieces.get((first_piece + j) % n).map(|p| (j, p)))
+            .map(|(j, p)| TowerPath {
+                points: p.iter().map(|&(x, y)| self.place_point(x, y)).collect(),
+                hop: j > 0,
+                ..whole.clone()
+            })
+            .collect()
     }
 
     /// What fills the depth a layer's purges leave free, so the purges of the layers above have
@@ -912,6 +1087,7 @@ impl Tower {
             speed_mm_s: speed,
             flow: 1.0,
             nozzle_wipe: false,
+            hop: false,
         };
         let mut out = vec![path(vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)])];
         let dy = y1 - y0 - w;
@@ -1026,6 +1202,7 @@ impl Tower {
                 }),
                 flow: 1.0,
                 nozzle_wipe: false,
+                hop: false,
             });
         }
         out
@@ -1060,6 +1237,7 @@ impl Tower {
                     speed_mm_s: to_f32(self.first_speed),
                     flow: 1.0,
                     nozzle_wipe: false,
+                    hop: false,
                 }
             })
             .collect()
@@ -1090,8 +1268,10 @@ impl Tower {
     /// tool change's box below the next). Returns one path per row (each with the step to the next
     /// row) and the rows taken. The rows speed up as Orca's do (`WipeTower::toolchange_wipe_new`,
     /// `WipeTower2::toolchange_Wipe`): a third of the target speed, then 0.375, 0.458 and 0.875 of
-    /// it, then 50 mm/min more a row up to the target, which is 80 mm/s on a type 1 tower and the
-    /// purge speed on a type 2 one (the first layer's speed on the first layer).
+    /// it, then 50 mm/min more a row up to the target on a type 2 tower, where the target is the purge speed
+    /// (the first layer's speed on the first layer). A type 1 tower's target is `prime_tower_max_speed` (on the
+    /// first layer the lower of it and the first layer's speed), and from the fifth row on it holds 0.875 of it
+    /// plus 50 mm/min.
     pub(crate) fn purge(&self, volume: f64, layer_h: f64, first: bool, start: f64) -> (Vec<TowerPath>, f64) {
         self.purge_lead(volume, layer_h, first, start, None)
     }
@@ -1165,7 +1345,7 @@ impl Tower {
             }
         }
         let target = if self.type1 {
-            if first { self.first_speed.min(80.0) } else { 80.0 }
+            if first { self.first_speed } else { self.max_speed }
         } else if first {
             self.first_speed
         } else {
@@ -1181,6 +1361,9 @@ impl Tower {
                     0.458 * target
                 } else if speed < 0.46 * target {
                     0.875 * target
+                } else if self.type1 {
+                    // A type 1 tower holds one speed from the fifth row on.
+                    (0.875 * target + 50.0 / 60.0).min(target)
                 } else {
                     (speed + 50.0 / 60.0).min(target)
                 };
@@ -1199,6 +1382,7 @@ impl Tower {
                 flow: 1.0,
                 // A row a tool changer's ramming leads into is not the wipe's own start.
                 nozzle_wipe: k == 0 && self.skip_points && !lead_row,
+                hop: false,
             });
         }
         (paths, n)
@@ -1267,6 +1451,7 @@ impl Tower {
             speed_mm_s: to_f32(speed),
             flow: 1.0,
             nozzle_wipe: false,
+            hop: false,
         };
         (vec![path], rows, end.filter(|_| !p.nozzle_change))
     }
@@ -1363,6 +1548,7 @@ pub(crate) fn prime_section(
         }),
         flow: 1.0,
         nozzle_wipe: false,
+        hop: false,
     }
 }
 
@@ -2123,7 +2309,10 @@ mod tests {
         let count = |v: usize| f64::from(u32::try_from(v).unwrap_or(u32::MAX));
         assert!((count(rows.len()) - n).abs() < 1e-9);
         let speeds: Vec<f32> = rows.iter().map(|r| r.speed_mm_s).collect();
-        for (got, want) in speeds.iter().zip([26.4, 30.0, 36.64, 70.0, 70.0 + 50.0 / 60.0]) {
+        // A third of `prime_tower_max_speed` (90 mm/s when unset), then 0.375, 0.458 and 0.875 of it, then 0.875 of it
+        // plus 50 mm/min on every row after.
+        let hold = 78.75 + 50.0 / 60.0;
+        for (got, want) in speeds.iter().zip([29.7, 33.75, 41.22, 78.75, hold, hold, hold]) {
             assert!((f64::from(*got) - want).abs() < 1e-3, "{speeds:?}");
         }
         // Each row ends where the next begins, so the rows print as one zigzag.
@@ -2145,6 +2334,89 @@ mod tests {
         }
         // Nothing to fill when the purges take the whole depth.
         assert!(t.fill(&c, 40.0, false).is_empty());
+    }
+
+    #[test]
+    fn the_wall_opens_level_with_each_wipe_start() {
+        // A P1S rectangle tower 20 by 10 mm at the origin.
+        let c = cfg(&[
+            ("enable_prime_tower", serde_json::json!(true)),
+            ("printer_model", serde_json::json!("Bambu Lab P1S")),
+            ("wipe_tower_wall_type", serde_json::json!("rectangle")),
+        ]);
+        let Some(t) = Tower::new(&c, 2, 10.0).map(|t| t.shaped(20.0, 0.0).at([0.0, 0.0])) else {
+            panic!("tower")
+        };
+        let w = t.wall_w;
+        let pts = |p: &TowerPath| p.points.iter().map(|q| (q.x_mm(), q.y_mm())).collect::<Vec<_>>();
+        let walk = |pieces: &[TowerPath]| -> f64 {
+            pieces
+                .iter()
+                .flat_map(|p| p.points.windows(2).map(|s| s[0].dist_mm(s[1])))
+                .sum()
+        };
+        let whole = walk(&[t.wall(false, 1.0)]);
+        // Two wipes, one in the middle of the left side and one near the front left corner: two openings, the
+        // second wrapping the corner. The wall starts after one of them and hops the other.
+        let starts = [t.row_start(0.0), t.row_start(8.0)];
+        let pieces = t.wall_pieces(false, 1.0, &starts);
+        assert_eq!(pieces.len(), 2);
+        assert_eq!(pieces.iter().map(|p| p.hop).collect::<Vec<_>>(), [false, true]);
+        assert!(
+            (whole - walk(&pieces) - 2.0 * 5.0 * w).abs() < 1e-3,
+            "5 beads of wall left out per opening"
+        );
+        // Each opening spans 2.5 beads either side of the wall's crossing with the wipe's row, on the left side.
+        let (s0, s1) = (starts[0], starts[1]);
+        let ends: Vec<(f64, f64)> = pieces
+            .iter()
+            .flat_map(|p| [pts(p)[0], *pts(p).last().unwrap()])
+            .collect();
+        let near = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-3 && (a.1 - b.1).abs() < 1e-3;
+        assert!(
+            ends.iter().any(|&e| near(e, (w / 2.0, s1.1 + 2.5 * w))),
+            "{ends:?}"
+        );
+        assert!(
+            ends.iter().any(|&e| near(e, (w / 2.0, s1.1 - 2.5 * w))),
+            "{ends:?}"
+        );
+        // The opening at the corner runs 2.5 beads up the side from the row and the rest along the front.
+        let below = s0.1 - w / 2.0;
+        assert!(
+            ends.iter().any(|&e| near(e, (w / 2.0, s0.1 + 2.5 * w))),
+            "{ends:?}"
+        );
+        assert!(
+            ends.iter()
+                .any(|&e| near(e, (w / 2.0 + 2.5 * w - below, w / 2.0))),
+            "{ends:?}"
+        );
+        // Openings that overlap merge; a type 2 tower and skip points off keep the closed wall.
+        let merged = t.wall_pieces(false, 1.0, &[t.row_start(4.0), t.row_start(5.0)]);
+        assert_eq!(merged.len(), 1);
+        let off = Tower::new(
+            &cfg(&[
+                ("enable_prime_tower", serde_json::json!(true)),
+                ("printer_model", serde_json::json!("Bambu Lab P1S")),
+                ("prime_tower_skip_points", serde_json::json!(false)),
+            ]),
+            2,
+            10.0,
+        )
+        .map(|t| t.shaped(20.0, 0.0))
+        .unwrap();
+        assert_eq!(off.wall_pieces(false, 1.0, &starts).len(), 1);
+        let type2 = Tower::new(
+            &cfg(&[
+                ("enable_prime_tower", serde_json::json!(true)),
+                ("wipe_tower_type", serde_json::json!("type2")),
+            ]),
+            2,
+            10.0,
+        )
+        .unwrap();
+        assert_eq!(type2.wall_pieces(false, 1.0, &starts).len(), 1);
     }
 
     #[test]
