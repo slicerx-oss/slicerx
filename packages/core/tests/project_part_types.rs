@@ -492,6 +492,51 @@ fn manual_support_prints_only_under_enforcers() {
     }
 }
 
+/// A 10 x 10 mm column with a wing on its +x side whose underside rises `degrees` from horizontal over 20 mm:
+/// the profile (x, z) is (0, 0), (10, 0), (10, 10), (30, 10 + rise), (30, top), (0, top), extruded over y 0 to 10.
+fn ramp(degrees: f32) -> Solid {
+    let rise = 20.0 * degrees.to_radians().tan();
+    let top = rise + 12.0;
+    let profile = [
+        [0.0, 0.0],
+        [10.0, 0.0],
+        [10.0, 10.0],
+        [30.0, 10.0 + rise],
+        [30.0, top],
+        [0.0, top],
+    ];
+    let mut verts: Vec<[f32; 3]> = profile.iter().map(|p| [p[0], 0.0, p[1]]).collect();
+    verts.extend(profile.iter().map(|p| [p[0], 10.0, p[1]]));
+    let tris = vec![
+        [0, 2, 1],
+        [6, 7, 8],
+        [0, 5, 2],
+        [6, 8, 11],
+        [2, 4, 3],
+        [8, 9, 10],
+        [2, 5, 4],
+        [8, 10, 11],
+        [0, 7, 1],
+        [0, 6, 7],
+        [1, 8, 2],
+        [1, 7, 8],
+        [2, 9, 3],
+        [2, 8, 9],
+        [3, 10, 4],
+        [3, 9, 10],
+        [4, 11, 5],
+        [4, 10, 11],
+        [5, 6, 0],
+        [5, 11, 6],
+    ];
+    (verts, tris)
+}
+
+/// Total support length (mm of path) of a print.
+fn support_length(run: &SliceRun) -> f64 {
+    moves(run).iter().filter(|m| is_support(m)).map(Move::len).sum()
+}
+
 #[test]
 fn enforcers_with_support_off_print_none_and_say_so() {
     let enforced = with(tee(), &[("support_enforcer", cuboid(RIGHT_ARM.0, RIGHT_ARM.1))]);
@@ -746,4 +791,25 @@ fn a_prusaslicer_objects_layer_height_reaches_a_lone_slice() {
     )
     .unwrap();
     assert_eq!(run.report.layer_count, 133);
+}
+
+#[test]
+fn auto_support_covers_a_slope_inside_the_threshold() {
+    // Each layer of a wing rising 20 to 30 degrees steps out by less than a support line and a half, so no single
+    // layer's overhang is wide enough to print alone; the column under the whole slope is.
+    let auto =
+        json!({ "enable_support": true, "support_type": "normal(auto)", "support_threshold_angle": 30 });
+    for degrees in [20.0, 25.0, 30.0] {
+        let part = vec![("normal_part", ramp(degrees), String::new())];
+        let run = slice(&with(part, &[]), auto.clone()).unwrap();
+        assert!(
+            support_length(&run) > 100.0,
+            "{degrees} degrees: {} mm",
+            support_length(&run)
+        );
+    }
+    // Past the threshold there is nothing to hold up.
+    let part = vec![("normal_part", ramp(35.0), String::new())];
+    let run = slice(&with(part, &[]), auto).unwrap();
+    assert_eq!(support_length(&run), 0.0, "35 degrees");
 }
