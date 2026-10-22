@@ -367,6 +367,37 @@ fn a_repeat_and_any_layer_ranges_on_a_kept_session_give_a_fresh_ones_bytes() {
     }
 }
 
+/// A one-shot run sheds its session once the last layer range is cut; it writes the bytes of a kept session, which
+/// never sheds.
+#[test]
+fn a_one_shot_run_gives_a_kept_sessions_bytes() {
+    for case in ci_cases() {
+        let load = |id: &str| case.mesh(id);
+        let prepared = api::prepare(&case.req, &load).unwrap();
+        for shards in [1, 3] {
+            let mut req = case.req.clone();
+            req.options.shards = Some(shards);
+            let one_shot = api::run_request(&req, &load).unwrap();
+            let kept = api::run_prepared(&req, &prepared, &sx_core::NoProgress).unwrap();
+            assert!(
+                !kept.gcode.is_empty() && !kept.preview.is_empty(),
+                "{}",
+                case.name
+            );
+            assert!(
+                one_shot.gcode == kept.gcode,
+                "{} in {shards} ranges: other G-code",
+                case.name
+            );
+            assert!(
+                one_shot.preview == kept.preview,
+                "{} in {shards} ranges: other preview",
+                case.name
+            );
+        }
+    }
+}
+
 #[test]
 fn a_setting_of_each_class_keeps_or_replaces_the_session_as_it_should() {
     let defs = schema();
