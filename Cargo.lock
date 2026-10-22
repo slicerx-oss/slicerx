@@ -5588,6 +5588,7 @@ dependencies = [
  "sx-upload-scan",
  "sx3mf",
  "thiserror 2.0.21",
+ "tikv-jemallocator",
  "tokio",
  "tower",
  "zip",

@@ -45,6 +45,11 @@ use sx_edition_config::EditionConfig;
 use sx_upload_scan::{Clamd, ClamdAddr, HashBlocklist, Limits, Scanner};
 use tokio::sync::watch;
 
+/// jemalloc, as in the sx command line tool: slicing jobs give the pages they free back to the system.
+#[cfg(all(not(target_env = "msvc"), not(target_arch = "wasm32")))]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }

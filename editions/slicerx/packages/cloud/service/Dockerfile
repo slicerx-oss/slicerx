@@ -5,6 +5,10 @@
 #   docker build -f editions/slicerx/packages/cloud/service/Dockerfile -t sx-cloud .
 # Dockerfile.dockerignore next to this file keeps node_modules, target and media out.
 FROM rust:1.98.1-slim-bookworm AS build
+# jemalloc builds with make, which the slim image does not have.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends make \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
 RUN cargo build --release --locked -p sx-cloud
