@@ -265,8 +265,15 @@ def print_time(path):
     return None
 
 
-def time_row(sx_s, orca_s, tol=TIME_TOL):
-    """The print time row of a comparison: within `tol` of Orca's."""
+def time_row(sx_s, orca_s, tol=TIME_TOL, flavor=None):
+    """The print time row of a comparison: within `tol` of Orca's, except for Klipper files (`flavor`)."""
+    if str(flavor or "").strip().lower() == "klipper":
+        # SlicerX times Klipper files by Klipper's documented motion rules (square corner velocity, minimum
+        # cruise ratio, one acceleration for every move), while the reference times them with Marlin's jerk
+        # rules. Matching its number would copy that error, so the row is shown but does not gate. The real
+        # check is a print time measured on a Klipper printer.
+        return {"what": "print time s", "sx": sx_s, "orca": orca_s, "tol": None, "ok": True,
+                "note": "not gated: Klipper motion model"}
     ok = bool(sx_s) and bool(orca_s) and abs(sx_s / orca_s - 1) <= tol
     return {"what": "print time s", "sx": sx_s, "orca": orca_s, "tol": tol, "ok": ok}
 
@@ -280,9 +287,12 @@ def parse(path):
     feats = {}
     by_layer = {}
     layers = 0
+    flavor = None
     with open(path, errors="replace") as f:
         for ln in f:
             if ln[0] == ";":
+                if ln.startswith("; gcode_flavor = "):
+                    flavor = ln.split("=", 1)[1].strip()
                 tag = plain(ln)
                 if tag.startswith(";TYPE:"):
                     kind = tag[6:].strip()
@@ -326,7 +336,7 @@ def parse(path):
                         b[0], b[1], b[2], b[3] = min(b[0], px), min(b[1], py), max(b[2], px), max(b[3], py)
             x, y = nx, ny
     return {"layers": layers, "features": feats, "total_mm": sum(d["mm"] for d in feats.values()),
-            "time_s": print_time(path), "by_layer": by_layer}
+            "time_s": print_time(path), "by_layer": by_layer, "flavor": flavor}
 
 
 class ParityOrca(slicers.Orca):
@@ -438,7 +448,8 @@ def compare(name, c, a, b):
     rows.append({"what": "total filament mm", "sx": round(a["total_mm"], 1), "orca": round(b["total_mm"], 1),
                  "ok": abs(a["total_mm"] - b["total_mm"]) <= max(rel * b["total_mm"], 30.0)})
     ok &= rows[-1]["ok"]
-    rows.append(time_row(a.get("time_s"), b.get("time_s")))
+    # SlicerX's G-code has no settings block, so the flavor comes from the reference file of the same case.
+    rows.append(time_row(a.get("time_s"), b.get("time_s"), flavor=b.get("flavor") or a.get("flavor")))
     ok &= rows[-1]["ok"]
     for feat, (tol, floor) in c["checks"].items():
         fa, fb = a["features"].get(feat), b["features"].get(feat)
