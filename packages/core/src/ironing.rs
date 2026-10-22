@@ -242,6 +242,7 @@ pub(crate) fn add(
         let end = u32::try_from(out.points.len()).unwrap_or(u32::MAX);
         #[allow(clippy::cast_possible_truncation, reason = "speeds and widths are small")]
         out.paths.push(PathInfo {
+            tower_wipe: false,
             start,
             end,
             tool,

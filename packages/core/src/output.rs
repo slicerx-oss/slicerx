@@ -146,6 +146,9 @@ pub struct PathInfo {
     /// share). Set as the layer is made (`owners.rs`); the object labels, the preview's object pick and the
     /// plate check all read it.
     pub owner: u16,
+    /// The first row of a prime tower wipe after a tool change that starts with a short nozzle wipe
+    /// (`prime_tower_skip_points` on a Bambu Lab type tower).
+    pub tower_wipe: bool,
 }
 
 /// a layer's last path, which the next layer's change retraction wipes along (orca's `Wipe` path)

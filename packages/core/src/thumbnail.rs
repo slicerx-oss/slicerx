@@ -955,6 +955,7 @@ mod tests {
                 height: 0.2,
                 points: pts,
                 paths: vec![PathInfo {
+                    tower_wipe: false,
                     start: 0,
                     end: 5,
                     tool: 1,
@@ -1083,6 +1084,7 @@ mod tests {
                                     .push(Point::from_mm(cx + unit() * 12.0 - 6.0, cy + unit() * 12.0 - 6.0));
                             }
                             paths.push(PathInfo {
+                                tower_wipe: false,
                                 start: start as u32,
                                 end: points.len() as u32,
                                 tool: 1,
