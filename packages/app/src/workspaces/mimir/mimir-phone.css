@@ -15,8 +15,8 @@
 :root[data-phone] .mimir-chat-head .sx-btn { flex: none; }
 :root[data-phone] .mimir-chat-head .mimir-chat-scripted { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* the message box: one line is 44 px, six lines at most */
-:root[data-phone] .mimir-chat .composer-row { --composer-lh: 24px; --composer-pad: 10px; }
+/* the message box: one line is 44 px (a 20 px line and 12 px above and below), six lines at most */
+:root[data-phone] .mimir-chat .composer-row { --composer-lh: 20px; --composer-pad: var(--s-3); }
 :root[data-phone] .mimir-chat .composer-text { height: calc(var(--composer-lh) + 2 * var(--composer-pad)); font-size: 16px; }
 :root[data-phone] .mimir-chat .composer-row > .sx-btn { margin-bottom: 0; }
 

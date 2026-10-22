@@ -116,6 +116,13 @@ journey.describe('the mimir tab with the keyboard up on a phone', () => {
     const view = page.locator('.studio > .vp')
     const studio = page.locator('.studio[data-model-mode="mimir"]')
     const share = async () => (await view.boundingBox())!.height / (await studio.boundingBox())!.height
+    const timelineTab = page.locator('.studio[data-model-mode="mimir"] .sx-edge-tab[data-side="bottom"]')
+    // the view's height below the drawing's card: the strip kept clear for the timeline's tab
+    const stripUnder = async () => {
+      const v = (await view.boundingBox())!
+      const card = (await drawing.locator('.mimir-drawing-card').boundingBox())!
+      return Math.round(v.y + v.height - (card.y + card.height))
+    }
     for (const phone of PHONES) {
       await page.setViewportSize(phone)
       await keyboard(page, 0)
@@ -125,6 +132,9 @@ journey.describe('the mimir tab with the keyboard up on a phone', () => {
         // the drawing folds to its header while a size is typed in, its fold control out of the way
         await expect(drawing, `the drawing at ${phone.width} px`).toHaveAttribute('data-folded', 'true')
         await expect(page.getByTestId('mimir-drawing-fold')).toHaveCount(0)
+        // and the timeline's tab gives way with the strip kept for it: the view ends at the drawing's header
+        await expect(timelineTab, `the timeline's tab at ${phone.width} px`).toBeHidden()
+        expect(await stripUnder(), `the strip under the folded drawing at ${phone.width} px`).toBeLessThanOrEqual(2)
         await clearOfKeys(field, `a record size at ${phone.width} px`)
         await wholeAboveComposer(page, field, log, `a record size at ${phone.width} px`)
         await clearOfKeys(page.getByTestId('mimir-composer'), `the composer at ${phone.width} px`)
@@ -146,6 +156,14 @@ journey.describe('the mimir tab with the keyboard up on a phone', () => {
       await expect(drawing).not.toHaveAttribute('data-folded')
       await expect(page.getByTestId('mimir-drawing-fold')).toBeVisible()
       expect(await share(), `the drawing back at ${phone.width} px`).toBeCloseTo(0.42, 2)
+      await expect(timelineTab, `the timeline's tab back at ${phone.width} px`).toBeVisible()
+      // folded by hand with the keyboard down, the drawing keeps the strip clear for the timeline's tab again
+      await page.getByTestId('mimir-drawing-fold').tap()
+      await expect(drawing).toHaveAttribute('data-folded', 'true')
+      expect(await stripUnder(), `the strip under a drawing folded by hand at ${phone.width} px`).toBeGreaterThanOrEqual(55)
+      await expect(timelineTab).toBeVisible()
+      await page.getByTestId('mimir-drawing-fold').tap()
+      await expect(drawing).not.toHaveAttribute('data-folded')
     }
   })
 
