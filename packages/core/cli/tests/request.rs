@@ -525,6 +525,50 @@ fn an_edited_x2d_start_is_still_refused() {
         err.contains("M500 writes settings to the printer's memory"),
         "{err}"
     );
+    // Each refused line is named by its line in the project's text, not in the rendered start, whose `{if}`
+    // blocks drop lines. sx knows the printer, so there is no note about it.
+    for (i, line) in edited.lines().enumerate() {
+        let line = line.trim_start();
+        if line.starts_with("M211 X0") || line.starts_with("M500") {
+            let command = line.split_whitespace().next().unwrap_or_default();
+            assert!(err.contains(&format!("line {}: {command} ", i + 1)), "{err}");
+        }
+    }
+    assert!(!err.contains("doesn't know the printer"), "{err}");
+}
+
+/// When sx doesn't know the printer a project names, the refusal says so in one more line, since then even the
+/// maker's text is checked as custom G-code. Its line numbers are the project's own.
+#[cfg(feature = "stock-gcode")]
+#[test]
+fn a_refusal_names_a_printer_sx_does_not_know() {
+    let start = "G28\n{if layer_height > 1}\nG1 X1\nG1 X2\n{endif}\nM500 ; save\n";
+    let want = "blocked by the safety preflight: custom G-code: line 6: M500 writes settings to the printer's memory (eeprom_write)\nsx doesn't know the printer this project names (Someone's Printer 0.4 nozzle), so its G-code is checked as custom G-code.";
+    let out = slice_named("Someone's Printer 0.4 nozzle", start);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr).trim_end(),
+        format!("sx slice: {want}")
+    );
+
+    // The same from a project file.
+    let dir = temp_dir(format!("sx-cli-unknown-printer-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let project = dir.join("project.3mf");
+    let settings = serde_json::json!({
+        "printer_settings_id": "Someone's Printer 0.4 nozzle",
+        "machine_start_gcode": start,
+    });
+    std::fs::write(&project, box_3mf(Some(&settings))).unwrap();
+    let out = sx()
+        .arg("slice")
+        .arg(&project)
+        .args(["-o", "-"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.trim_end().ends_with(&format!("sx: {want}")), "{err}");
 }
 
 #[test]

@@ -1051,6 +1051,36 @@ enum Node2 {
     /// Orca's legacy `[name[index]]`: entry `index` (a variable) of the list `name`, the first past the end.
     VarAt(String, String),
     If(Vec<(Expr, Vec<Node2>)>, Vec<Node2>),
+    /// The template line (1-based) the next node starts on, for `render_lines`; it writes nothing.
+    Src(u32),
+}
+
+/// The template line each line of the output starts on, kept while rendering for `render_lines`.
+struct Lines {
+    /// The template line the text being written comes from.
+    cur: u32,
+    /// How much of the output has been looked at.
+    seen: usize,
+    starts: Vec<u32>,
+}
+
+impl Lines {
+    /// Notes the template line of each output line that began since the last call.
+    fn note(&mut self, out: &str) {
+        let bytes = out.as_bytes();
+        let mut at_start = self
+            .seen
+            .checked_sub(1)
+            .and_then(|p| bytes.get(p))
+            .is_none_or(|c| *c == b'\n');
+        for c in bytes.get(self.seen..).unwrap_or(&[]) {
+            if at_start {
+                self.starts.push(self.cur);
+            }
+            at_start = *c == b'\n';
+        }
+        self.seen = bytes.len();
+    }
 }
 
 /// Renders `template` with the variables of `ctx`.
@@ -1061,8 +1091,27 @@ pub fn render(template: &str, ctx: &Context<'_>) -> Result<String, String> {
         locals: HashMap::new(),
     };
     let mut out = String::with_capacity(template.len());
-    exec(&nodes, &mut run, &mut out)?;
+    exec(&nodes, &mut run, &mut out, None)?;
     Ok(out)
+}
+
+/// Renders `template` as `render` does, with the template line (1-based) each line of the output starts on, so a
+/// problem found in the output can name the line as the person sees it in their settings. Text a `{...}` block
+/// writes counts as the line the block starts on.
+pub fn render_lines(template: &str, ctx: &Context<'_>) -> Result<(String, Vec<u32>), String> {
+    let nodes = parse_text(template)?;
+    let mut run = Run {
+        ctx,
+        locals: HashMap::new(),
+    };
+    let mut out = String::with_capacity(template.len());
+    let mut lines = Lines {
+        cur: 1,
+        seen: 0,
+        starts: Vec::new(),
+    };
+    exec(&nodes, &mut run, &mut out, Some(&mut lines))?;
+    Ok((out, lines.starts))
 }
 
 /// checks template syntax without evaluating expressions or changing state.
@@ -1070,9 +1119,19 @@ pub(crate) fn validate(template: &str) -> Result<(), String> {
     parse_text(template).map(|_| ())
 }
 
-fn exec(nodes: &[Node2], run: &mut Run<'_, '_>, out: &mut String) -> Result<(), String> {
+fn exec(
+    nodes: &[Node2],
+    run: &mut Run<'_, '_>,
+    out: &mut String,
+    mut lines: Option<&mut Lines>,
+) -> Result<(), String> {
     for n in nodes {
         match n {
+            Node2::Src(line) => {
+                if let Some(l) = lines.as_deref_mut() {
+                    l.cur = *line;
+                }
+            }
             Node2::Text(t) => out.push_str(t),
             Node2::Script(block) => run.run(block, out)?,
             Node2::Var(name) => {
@@ -1119,15 +1178,18 @@ fn exec(nodes: &[Node2], run: &mut Run<'_, '_>, out: &mut String) -> Result<(), 
                 let mut taken = false;
                 for (c, body) in branches {
                     if run.eval(c)?.truthy() {
-                        exec(body, run, out)?;
+                        exec(body, run, out, lines.as_deref_mut())?;
                         taken = true;
                         break;
                     }
                 }
                 if !taken {
-                    exec(other, run, out)?;
+                    exec(other, run, out, lines.as_deref_mut())?;
                 }
             }
+        }
+        if let Some(l) = lines.as_deref_mut() {
+            l.note(out);
         }
     }
     Ok(())
@@ -1157,9 +1219,24 @@ fn parse_text(src: &str) -> Result<Vec<Node2>, String> {
     let mut pieces: Vec<Piece> = Vec::new();
     let mut lit = String::new();
     let mut i = 0;
-    let flush = |lit: &mut String, pieces: &mut Vec<Piece>| {
+    // The template line at `i`, and the one the pending literal text started on. Each literal ends at a line break,
+    // so every node is marked with the line it starts on.
+    let mut line = 1u32;
+    let mut lit_line = 1u32;
+    let flush = |lit: &mut String, lit_line: u32, pieces: &mut Vec<Piece>| {
         if !lit.is_empty() {
+            pieces.push(Piece::Node(Node2::Src(lit_line)));
             pieces.push(Piece::Node(Node2::Text(std::mem::take(lit))));
+        }
+    };
+    let literal = |c: char, lit: &mut String, lit_line: &mut u32, line: &mut u32, pieces: &mut Vec<Piece>| {
+        if lit.is_empty() {
+            *lit_line = *line;
+        }
+        lit.push(c);
+        if c == '\n' {
+            flush(lit, *lit_line, pieces);
+            *line += 1;
         }
     };
     while let Some(&c) = cs.get(i) {
@@ -1183,7 +1260,15 @@ fn parse_text(src: &str) -> Result<Vec<Node2>, String> {
                 return Err("unclosed { in template".to_owned());
             }
             let body: String = cs.get(i + 1..j).unwrap_or(&[]).iter().collect();
-            flush(&mut lit, &mut pieces);
+            flush(&mut lit, lit_line, &mut pieces);
+            let at = line;
+            #[allow(
+                clippy::cast_possible_truncation,
+                reason = "a template has far fewer lines than u32::MAX"
+            )]
+            {
+                line += body.matches('\n').count() as u32;
+            }
             let t = body.trim();
             let starts = |w: &str| {
                 t.strip_prefix(w)
@@ -1201,6 +1286,7 @@ fn parse_text(src: &str) -> Result<Vec<Node2>, String> {
             } else {
                 let mut p = Parser { t: lex(&body)?, i: 0 };
                 let block = p.block(&[])?;
+                pieces.push(Piece::Node(Node2::Src(at)));
                 Piece::Node(Node2::Script(block))
             };
             pieces.push(piece);
@@ -1226,28 +1312,30 @@ fn parse_text(src: &str) -> Result<Vec<Node2>, String> {
                 && cs.get(k) == Some(&']')
                 && cs.get(k + 1) == Some(&']')
             {
-                flush(&mut lit, &mut pieces);
+                flush(&mut lit, lit_line, &mut pieces);
+                pieces.push(Piece::Node(Node2::Src(line)));
                 pieces.push(Piece::Node(Node2::VarAt(
                     cs.get(i + 1..j).unwrap_or(&[]).iter().collect(),
                     cs.get(j + 1..k).unwrap_or(&[]).iter().collect(),
                 )));
                 i = k + 2;
             } else if first_ok && cs.get(j) == Some(&']') {
-                flush(&mut lit, &mut pieces);
+                flush(&mut lit, lit_line, &mut pieces);
+                pieces.push(Piece::Node(Node2::Src(line)));
                 pieces.push(Piece::Node(Node2::Var(
                     cs.get(i + 1..j).unwrap_or(&[]).iter().collect(),
                 )));
                 i = j + 1;
             } else {
-                lit.push(c);
+                literal(c, &mut lit, &mut lit_line, &mut line, &mut pieces);
                 i += 1;
             }
         } else {
-            lit.push(c);
+            literal(c, &mut lit, &mut lit_line, &mut line, &mut pieces);
             i += 1;
         }
     }
-    flush(&mut lit, &mut pieces);
+    flush(&mut lit, lit_line, &mut pieces);
 
     // Nest the if blocks.
     fn build(it: &mut std::vec::IntoIter<Piece>, top: bool) -> Result<(Vec<Node2>, Option<Piece>), String> {
@@ -1388,6 +1476,21 @@ mod tests {
             r("{if layer_num == 3 && layer_z < 1}a\n{if layer_num > 5}b{endif}c{endif}"),
             "a\nc"
         );
+    }
+
+    /// Each rendered line knows the template line it came from: a false `{if}` drops lines, and a block spread over
+    /// lines writes on the line it starts on.
+    #[test]
+    fn rendered_lines_know_their_template_line() {
+        let t = "G28\n{if layer_num > 5}\nG1 X1\nG1 X2\n{endif}\nM104 S[first_layer_temperature]\n{\n  layer_num\n}\nM500 ; {layer_num}\nG4";
+        let (out, lines) = render_lines(t, &ctx()).unwrap();
+        assert_eq!(out, r(t));
+        assert_eq!(
+            out.lines().collect::<Vec<_>>(),
+            ["G28", "", "M104 S215", "3", "M500 ; 3", "G4"]
+        );
+        assert_eq!(lines, [1, 5, 6, 7, 10, 11]);
+        assert_eq!(render_lines("", &ctx()).unwrap(), (String::new(), Vec::new()));
     }
 
     #[test]

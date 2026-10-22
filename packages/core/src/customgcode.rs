@@ -714,7 +714,7 @@ pub(crate) fn context<'a>(cfg: &'a PrintConfig, out: &SliceOutput) -> Context<'a
 pub(crate) fn render(cfg: &PrintConfig, ctx: &Context<'_>, key: &str) -> Result<Option<String>, String> {
     let Some(t) = text(cfg, key) else { return Ok(None) };
     let rendered = template::render(t, ctx).map_err(|e| format!("{key}: {e}"))?;
-    vet(key, &rendered, cfg)?;
+    vet_rendered(key, t, &rendered, ctx, cfg)?;
     Ok(Some(rendered))
 }
 
@@ -729,7 +729,7 @@ pub(crate) fn render_slot(
         return Ok(None);
     };
     let rendered = template::render(&t, ctx).map_err(|e| format!("{key}: {e}"))?;
-    vet(key, &rendered, cfg)?;
+    vet_rendered(key, &t, &rendered, ctx, cfg)?;
     Ok(Some(rendered))
 }
 
@@ -750,23 +750,41 @@ fn section_of(key: &str) -> crate::gcode_lint::Section {
 /// Runs the G-code linter over the rendered text of `key`, as trusted when the caller checked the key's text is
 /// the maker's stock text. A finding that blocks is reported as `safety: ...`, which the writer turns into a
 /// blocked slice.
-fn vet(key: &str, text: &str, cfg: &PrintConfig) -> Result<(), String> {
+fn vet(key: &str, text: &str, source_lines: &[u32], cfg: &PrintConfig) -> Result<(), String> {
     let trust = if cfg.untrusted_gcode && !cfg.trusted_gcode_keys.iter().any(|k| k == key) {
         crate::gcode_lint::Trust::Untrusted
     } else {
         crate::gcode_lint::Trust::Trusted
     };
-    vet_section(section_of(key), text, trust, cfg)
+    vet_section(section_of(key), text, trust, source_lines, cfg)
 }
 
+/// `vet` for the text `template` rendered to. A refusal names the template's own line numbers, which `{if}`
+/// blocks and values of several lines move away from the rendered ones; they are worked out only then, so text
+/// that passes renders once.
+fn vet_rendered(
+    key: &str,
+    template: &str,
+    rendered: &str,
+    ctx: &Context<'_>,
+    cfg: &PrintConfig,
+) -> Result<(), String> {
+    vet(key, rendered, &[], cfg).or_else(|_| {
+        let lines = template::render_lines(template, ctx).map_or_else(|_| Vec::new(), |(_, lines)| lines);
+        vet(key, rendered, &lines, cfg)
+    })
+}
+
+/// Lints `text`, naming each finding by `source_lines` (the template line of each rendered line) when given.
 fn vet_section(
     section: crate::gcode_lint::Section,
     text: &str,
     trust: crate::gcode_lint::Trust,
+    source_lines: &[u32],
     cfg: &PrintConfig,
 ) -> Result<(), String> {
     // The inner reason only: the writer wraps it in `Error::Blocked` again, whose text names the preflight.
-    crate::preflight::vet_text(section, text, trust, &cfg.limits).map_err(|e| match e {
+    crate::preflight::vet_text(section, text, trust, &cfg.limits, source_lines).map_err(|e| match e {
         crate::error::Error::Blocked(why) => format!("safety: {why}"),
         other => format!("safety: {other}"),
     })
@@ -781,6 +799,7 @@ pub(crate) fn render_text(t: &str, ctx: &Context<'_>, what: &str) -> Result<Stri
         crate::gcode_lint::Section::LayerChange,
         &rendered,
         crate::gcode_lint::Trust::Untrusted,
+        &[],
         &PrintConfig::default(),
     )?;
     Ok(rendered)
@@ -855,7 +874,7 @@ pub(crate) fn role_change(
             continue;
         };
         let rendered = template::render(&t, ctx).map_err(|e| format!("{key}: {e}"))?;
-        vet(key, &rendered, cfg)?;
+        vet_rendered(key, &t, &rendered, ctx, cfg)?;
         out.push_str(&rendered);
         out.push('\n');
     }
