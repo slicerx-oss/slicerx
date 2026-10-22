@@ -6119,3 +6119,96 @@ fn slowed_spiral_layers_run_the_fan_at_its_maximum() {
         assert_eq!(fans, &[255], "layer {i}");
     }
 }
+
+/// The vase block on a Bambu Lab printer with two nozzles, which takes its timelapse photo at the end of each layer,
+/// with a 0.8 mm retraction and a 0.4 mm spiral lift. `shot` is the template's spiral mode branch; the other branch
+/// lifts and parks the head. Each layer's text, from its layer change to the next.
+fn vase_timelapse(shot: &str) -> Vec<String> {
+    let g = vase_run(json!({
+        "printer_model": "Bambu Lab H2D", "nozzle_diameter": [0.4, 0.4],
+        "retraction_length": 0.8, "z_hop": 0.4, "z_hop_types": "Spiral Lift",
+        "time_lapse_gcode": format!(
+            "; shot\n{{if spiral_mode}}\n{shot}\n{{else}}\nG1 Z{{max_layer_z + 0.4}} F1200\nG1 Y295 F30000\n{{endif}}\n"
+        ),
+    }));
+    let layers: Vec<String> = g
+        .split(sx_core::extras::layer_mark(&g))
+        .skip(1)
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(layers.len(), 20);
+    layers
+}
+
+/// The lines of a layer from its last extrusion before the timelapse photo to the photo, and from the photo to the
+/// end of the layer, and the top of the layer's extrusions.
+fn around_the_shot(l: &str) -> (Vec<&str>, Vec<&str>, f64) {
+    let lines: Vec<&str> = l.lines().filter(|x| !x.starts_with("M73 ")).collect();
+    let k = lines
+        .iter()
+        .position(|x| *x == "; shot")
+        .expect("a timelapse photo");
+    let extrudes = |x: &str| x.starts_with("G1 X") && field(x, 'E').is_some_and(|e| e > 0.0);
+    let last = lines[..k]
+        .iter()
+        .rposition(|x| extrudes(x))
+        .expect("an extrusion");
+    let top = lines
+        .iter()
+        .filter(|x| extrudes(x))
+        .filter_map(|x| field(x, 'Z'))
+        .fold(0.0, f64::max);
+    (lines[last + 1..k].to_vec(), lines[k..].to_vec(), top)
+}
+
+fn moves_up(lines: &[&str], top: f64) -> bool {
+    lines
+        .iter()
+        .any(|x| x.starts_with('G') && field(x, 'Z').is_some_and(|z| z > top + 1e-6))
+}
+
+#[test]
+fn spiral_layers_take_the_timelapse_photo_without_a_retraction_or_lift() {
+    let layers = vase_timelapse("M971 S11 C10 O0");
+    for (i, l) in layers.iter().enumerate() {
+        let (before, after, top) = around_the_shot(l);
+        let retracts = before.iter().any(|x| x.starts_with("G1 E-"));
+        if i < 2 {
+            // The solid base still retracts and lifts before the photo.
+            assert!(retracts, "layer {i}: {before:?}");
+            assert!(moves_up(&before, top), "layer {i}: {before:?}");
+            continue;
+        }
+        if i == 19 {
+            // The print's last layer makes its closing retraction before the photo.
+            continue;
+        }
+        // The wall goes on into the next layer from where it stopped: the photo with no retraction, lift, travel or
+        // prime around it.
+        assert!(!retracts, "layer {i}: {before:?}");
+        assert!(!moves_up(&before, top), "layer {i}: {before:?}");
+        assert!(
+            !after.iter().any(|x| x.starts_with("G1 E")
+                || x.starts_with("G0 ")
+                || x.starts_with("G2 ")
+                || x.starts_with("G3 ")),
+            "layer {i}: {after:?}"
+        );
+        assert!(after.contains(&"M971 S11 C10 O0"), "layer {i}: {after:?}");
+        // Above the first spiral layer, which travels in from the base, nothing retracts at all.
+        assert!(i == 2 || !l.contains("E-"), "layer {i} retracts");
+    }
+}
+
+#[test]
+fn a_spiral_timelapse_block_that_moves_the_head_keeps_its_retraction_and_lift() {
+    let layers = vase_timelapse("G1 X0 Y128 F18000\nM971 S11 C10 O0");
+    for (i, l) in layers.iter().enumerate().take(19) {
+        let (before, _, top) = around_the_shot(l);
+        assert!(
+            before.iter().any(|x| x.starts_with("G1 E-")),
+            "layer {i}: {before:?}"
+        );
+        assert!(moves_up(&before, top), "layer {i}: {before:?}");
+    }
+}
