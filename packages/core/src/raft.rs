@@ -73,6 +73,12 @@ pub(crate) fn layers_asked(cfg: &PrintConfig) -> u32 {
 
 /// The raft for these settings, or none.
 pub(crate) fn plan(cfg: &PrintConfig) -> Option<Plan> {
+    plan_with(cfg, cfg.independent_support_layer_height())
+}
+
+/// [`plan`] with support on layers of its own height (`independent`) or on the object's: that decides whether the
+/// gap to the part is exact or whole layers.
+pub(crate) fn plan_with(cfg: &PrintConfig, independent: bool) -> Option<Plan> {
     let n = layers_asked(cfg) as usize;
     if n == 0 {
         return None;
@@ -139,7 +145,6 @@ pub(crate) fn plan(cfg: &PrintConfig) -> Option<Plan> {
     // The gap to the part: zero when the interface or the raft contact distance is zero, else the contact
     // distance in whole layers (unless the support layers have their own height).
     let contact_distance = cfg.raw_number("raft_contact_distance", 0.1).max(0.0);
-    let independent = cfg.independent_support_layer_height();
     let gap = if contact_distance == 0.0 || cfg.support.top_z_distance == 0.0 {
         0.0
     } else if independent {
