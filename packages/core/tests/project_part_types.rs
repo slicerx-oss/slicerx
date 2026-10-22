@@ -538,6 +538,31 @@ fn support_length(run: &SliceRun) -> f64 {
 }
 
 #[test]
+fn an_enforcer_gets_support_on_a_slope_that_auto_support_skips() {
+    // The wing's underside rises 40 degrees from horizontal, past the 30 degree threshold, so auto support leaves it.
+    let part = || vec![("normal_part", ramp(40.0), String::new())];
+    let auto =
+        json!({ "enable_support": true, "support_type": "normal(auto)", "support_threshold_angle": 30 });
+    let plain = slice(&with(part(), &[]), auto.clone()).unwrap();
+    assert_eq!(
+        support_length(&plain),
+        0.0,
+        "auto support skips a slope past the threshold"
+    );
+    let enforced = with(
+        part(),
+        &[("support_enforcer", cuboid([9.0, -1.0, 5.0], [31.0, 11.0, 60.0]))],
+    );
+    let run = slice(&enforced, auto).unwrap();
+    assert!(
+        support_length(&run) > 100.0,
+        "an enforcer asks for support on the same slope: {} mm, {:?}",
+        support_length(&run),
+        warnings(&run)
+    );
+}
+
+#[test]
 fn enforcers_with_support_off_print_none_and_say_so() {
     let enforced = with(tee(), &[("support_enforcer", cuboid(RIGHT_ARM.0, RIGHT_ARM.1))]);
     let run = slice(&enforced, json!({ "enable_support": false })).unwrap();
