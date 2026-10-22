@@ -3114,7 +3114,11 @@ fn emit_layer(
         .iter()
         .filter(|(s, _)| !closing && *s == crate::timelapse::Spot::End)
     {
-        let primed = !retracted && style.active(retract);
+        // A spiral layer's wall goes on into the next layer's without a break. A block that leaves the nozzle where
+        // it is (the photo a timelapse template takes in spiral mode) goes in as it is, with no retraction, lift or
+        // prime around it to leave a seam or a blob on the wall.
+        let in_place = spiral && !crate::timelapse::moves_head(text) && !crate::timelapse::moves_z(text);
+        let primed = !in_place && !retracted && style.active(retract);
         if primed {
             retract_move(b, style, -retract, retract_feed);
         }
@@ -3123,7 +3127,7 @@ fn emit_layer(
                 b.extend_from_slice(t.as_bytes());
             }
         }
-        if lift_ok && style.active(retract) {
+        if !in_place && lift_ok && style.active(retract) {
             write_eager_lift(
                 b,
                 &rc,
@@ -3147,7 +3151,7 @@ fn emit_layer(
             put_int(b, travel_feed);
             b.push(b'\n');
         }
-        if crate::timelapse::moves_z(text) || (lift_ok && style.active(retract)) {
+        if crate::timelapse::moves_z(text) || (!in_place && lift_ok && style.active(retract)) {
             b.extend_from_slice(b"G1 Z");
             put_fixed(b, cur_z, 3);
             b.extend_from_slice(b" F");
