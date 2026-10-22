@@ -543,7 +543,8 @@ pub(crate) fn offset(shapes: &Shapes, delta: i32) -> Shapes {
     if delta > 0 {
         // Growing shapes can merge, so they go through one union.
         let all: Vec<Vec<IntPoint<i32>>> = shapes.iter().flat_map(|s| s.iter().cloned()).collect();
-        return clipper_offset(&all, delta);
+        let hole: Vec<bool> = shapes.iter().flat_map(|s| (0..s.len()).map(|i| i > 0)).collect();
+        return grow_union(&all, &hole, delta);
     }
     let mut out = Vec::with_capacity(shapes.len());
     for shape in shapes {
@@ -598,6 +599,130 @@ fn clipper_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Shapes {
     let solver = solver_for(edge_count(&[&frame, &grown]));
     Overlay::from_subj_and_clip_custom(&frame, &grown, IntOverlayOptions::default(), solver)
         .overlay(OverlayRule::Difference, FillRule::NonZero)
+}
+
+/// Growing unions of at least this many points, most of them in holes turned inside out, leave out the holes
+/// that close. Smaller unions have smaller buffers and go through as they are.
+const CLOSED_HOLES_MIN: usize = 32_000;
+
+/// [`clipper_offset`] of `contours` grown by `delta` (positive), as one union; `hole` marks the holes. A hole
+/// narrower than twice the offset closes: its moved contour turns inside out, crosses itself, and the union
+/// fills it. A painted layer has thousands, and the union's buffers grow with every edge and crossing, so small
+/// holes that provably close are left out first. The result is the same, point for point. When the proof
+/// fails, all of them go through, as before.
+fn grow_union(contours: &[Vec<IntPoint<i32>>], hole: &[bool], delta: i32) -> Shapes {
+    let d = f64::from(delta);
+    let (mut raw, mut turned) = (Vec::new(), Vec::new());
+    for (c, &h) in contours.iter().zip(hole).filter(|(c, _)| c.len() >= 3) {
+        let Some(r) = raw_loop(c, d, true) else {
+            return clipper_offset(contours, delta);
+        };
+        // A hole that closes winds nowhere below zero, so its moved contour has a positive area.
+        turned.push(h && crate::geom::area2_int(&r) > 0);
+        raw.push(r);
+    }
+    let total: usize = raw.iter().map(Vec::len).sum();
+    let in_turned: usize = raw
+        .iter()
+        .zip(&turned)
+        .filter(|(_, t)| **t)
+        .map(|(r, _)| r.len())
+        .sum();
+    let gone = if total < CLOSED_HOLES_MIN || in_turned * 2 < total {
+        Vec::new()
+    } else {
+        untouched(&raw, &turned, delta)
+    };
+    if !gone.contains(&true) {
+        return simplified(&raw, FillRule::Positive);
+    }
+    let pick = |g: bool| -> Vec<Vec<IntPoint<i32>>> {
+        raw.iter()
+            .zip(&gone)
+            .filter(|(_, x)| **x == g)
+            .map(|(r, _)| r.clone())
+            .collect()
+    };
+    let (kept, left) = (pick(false), pick(true));
+    // The solver of the whole union, so the edges kept are split the same way.
+    let capacity = kept.iter().map(Vec::len).sum();
+    let out = Overlay::new_custom(capacity, IntOverlayOptions::default(), solver_for(total))
+        .simplify_source(&kept, FillRule::Positive);
+    // No edge comes near a hole left out, so the loops kept wind the same number of times all over its bounds.
+    // When that is at least once and the holes left out wind nowhere below zero, together the loops wind at
+    // least once there, the union covers it, and none of the edges left out is on its outline.
+    let covered = left
+        .iter()
+        .all(|r| r.first().is_some_and(|&p| winding(&out, p) > 0));
+    if covered
+        && left
+            .chunks(256)
+            .all(|b| simplified(b, FillRule::Negative).is_empty())
+    {
+        return out;
+    }
+    simplified(&raw, FillRule::Positive)
+}
+
+/// Which loops of `raw` that `turned` marks can be left out of the union: those no edge of a loop kept comes
+/// near, within 0.1 mm of their bounds, past the drift of the points the union snaps over its passes (the snap
+/// radius doubles its square each pass; this covers about sixteen). Their edges then meet no edge kept, so no
+/// edge kept is split differently.
+fn untouched(raw: &[Vec<IntPoint<i32>>], turned: &[bool], delta: i32) -> Vec<bool> {
+    const MARGIN: i32 = 1_000;
+    let boxes: Vec<([i32; 4], usize)> = raw
+        .iter()
+        .zip(turned)
+        .enumerate()
+        .filter_map(|(i, (r, &t))| {
+            let [x0, y0, x1, y1] = ring_bounds(r).filter(|_| t)?;
+            Some((
+                [
+                    x0.saturating_sub(MARGIN),
+                    y0.saturating_sub(MARGIN),
+                    x1.saturating_add(MARGIN),
+                    y1.saturating_add(MARGIN),
+                ],
+                i,
+            ))
+        })
+        .collect();
+    let mut out = vec![false; raw.len()];
+    for (_, i) in &boxes {
+        if let Some(o) = out.get_mut(*i) {
+            *o = true;
+        }
+    }
+    // Most are small: sorted by their lowest y, those an edge can meet are a short run. The few tall ones are
+    // looked at for every edge.
+    let tall = delta.saturating_mul(16);
+    let (mut small, big): (Vec<_>, Vec<_>) = boxes.into_iter().partition(|(b, _)| b[3] - b[1] <= tall);
+    small.sort_unstable_by_key(|(b, _)| b[1]);
+    // A loop kept brings its edges in, until none comes near a loop left out.
+    let mut fresh: Vec<usize> = (0..raw.len()).filter(|&i| out.get(i) == Some(&false)).collect();
+    while !fresh.is_empty() {
+        let mut next = Vec::new();
+        for (a, b) in fresh
+            .iter()
+            .filter_map(|&k| raw.get(k))
+            .flat_map(|r| ring_edges(r))
+        {
+            let e = [a.x.min(b.x), a.y.min(b.y), a.x.max(b.x), a.y.max(b.y)];
+            let lo = small.partition_point(|(bx, _)| bx[1] < e[1].saturating_sub(tall));
+            let hi = small.partition_point(|(bx, _)| bx[1] <= e[3]);
+            for (bx, i) in small.get(lo..hi).unwrap_or(&[]).iter().chain(&big) {
+                if let Some(o) = out.get_mut(*i)
+                    && *o
+                    && overlaps(Some(*bx), Some(e))
+                {
+                    *o = false;
+                    next.push(*i);
+                }
+            }
+        }
+        fresh = next;
+    }
+    out
 }
 
 /// Grows `shapes` by `delta` (positive) with round corners: the offset of Orca's `jtRound`, which the brim
@@ -1555,6 +1680,187 @@ fn has_gaps(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The plain union of every moved contour, as growing offsets were before closed holes were left out.
+    fn grow_all(shapes: &Shapes, delta: i32) -> Shapes {
+        let all: Vec<Vec<IntPoint<i32>>> = shapes.iter().flat_map(|s| s.iter().cloned()).collect();
+        clipper_offset(&all, delta)
+    }
+
+    /// A hole: a ten-pointed star, clockwise, `2 r` across, so its moved contour crosses itself.
+    fn star_hole(cx: i32, cy: i32, r: i32) -> Vec<IntPoint<i32>> {
+        // Directions every 36 degrees, in thousandths.
+        const DIRS: [(i32, i32); 10] = [
+            (1_000, 0),
+            (809, 588),
+            (309, 951),
+            (-309, 951),
+            (-809, 588),
+            (-1_000, 0),
+            (-809, -588),
+            (-309, -951),
+            (309, -951),
+            (809, -588),
+        ];
+        DIRS.iter()
+            .enumerate()
+            .rev()
+            .map(|(i, &(x, y))| {
+                let k = if i % 2 == 0 { r } else { r * 2 / 5 };
+                IntPoint::new(cx + x * k / 1_000, cy + y * k / 1_000)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn growing_past_many_small_holes_gives_the_plain_union() {
+        // Two plates with a few thousand holes, one to a 0.65 mm cell, between 0.02 and 0.58 mm across: most
+        // close at 0.2 mm, some stay, some sit by the edge, neighbors come close, and a ring inside a large hole
+        // has small holes of its own.
+        let mut seed = 0x2545_f491_u32;
+        let mut next = |m: u32| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            i32::try_from(seed % m).unwrap_or(0)
+        };
+        let big = [100_000, 100_000, 200_000, 200_000];
+        let mut shapes: Shapes = Vec::new();
+        for (x0, w) in [(0, 300_000), (400_000, 200_000)] {
+            let mut shape = vec![rect(x0, 0, x0 + w, 300_000)];
+            if x0 == 0 {
+                shape.push(rect(big[0], big[1], big[2], big[3]).into_iter().rev().collect());
+            }
+            for cy in (3_250..300_000).step_by(6_500) {
+                for cx in (x0 + 3_250..x0 + w).step_by(6_500) {
+                    let r = 100 + next(2_800);
+                    let (cx, cy) = (cx + next(400) - 200, cy + next(400) - 200);
+                    if x0 == 0 && cx + r >= big[0] && cx - r <= big[2] && cy + r >= big[1] && cy - r <= big[3]
+                    {
+                        continue;
+                    }
+                    if next(3) == 0 {
+                        shape.push(
+                            rect(cx - r, cy - r / 2, cx + r, cy + r / 2)
+                                .into_iter()
+                                .rev()
+                                .collect(),
+                        );
+                    } else {
+                        shape.push(star_hole(cx, cy, r));
+                    }
+                }
+            }
+            shapes.push(shape);
+        }
+        // An island in the large hole, with small holes of its own.
+        let mut island = vec![rect(120_000, 120_000, 180_000, 180_000)];
+        for i in 0..40 {
+            island.push(star_hole(
+                125_000 + (i % 8) * 7_000,
+                125_000 + (i / 8) * 11_000,
+                300 + i * 40,
+            ));
+        }
+        shapes.push(island);
+        let all: Vec<Vec<IntPoint<i32>>> = shapes.iter().flat_map(|s| s.iter().cloned()).collect();
+        let hole: Vec<bool> = shapes.iter().flat_map(|s| (0..s.len()).map(|i| i > 0)).collect();
+        for delta in [2_000, 6_000] {
+            let (raw, turned) = moved(&all, &hole, delta);
+            let total: usize = raw.iter().map(Vec::len).sum();
+            let gone = untouched(&raw, &turned, delta);
+            let (n, holes) = (
+                gone.iter().filter(|g| **g).count(),
+                hole.iter().filter(|h| **h).count(),
+            );
+            assert!(
+                n > 0 && n < holes && (delta > 2_000 || n > holes / 4),
+                "delta {delta}: {n} of {holes} holes left out"
+            );
+            let kept: Vec<Vec<IntPoint<i32>>> = raw
+                .iter()
+                .zip(&gone)
+                .filter(|(_, g)| !**g)
+                .map(|(r, _)| r.clone())
+                .collect();
+            let plain = grow_all(&shapes, delta);
+            assert_eq!(
+                Overlay::new_custom(total, IntOverlayOptions::default(), solver_for(total))
+                    .simplify_source(&kept, FillRule::Positive),
+                plain,
+                "delta {delta}"
+            );
+            assert_eq!(grow_union(&all, &hole, delta), plain, "delta {delta}");
+            if delta == 2_000 {
+                assert!(takes_lean_path(&raw, &turned));
+            }
+        }
+    }
+
+    /// The moved contours, and which are holes turned inside out.
+    fn moved(all: &[Vec<IntPoint<i32>>], hole: &[bool], delta: i32) -> (Vec<Vec<IntPoint<i32>>>, Vec<bool>) {
+        all.iter()
+            .zip(hole)
+            .filter_map(|(c, &h)| {
+                let r = raw_loop(c, f64::from(delta), true)?;
+                let t = h && crate::geom::area2_int(&r) > 0;
+                Some((r, t))
+            })
+            .unzip()
+    }
+
+    /// Whether the union is large enough, with enough holes turned inside out, for holes to be left out.
+    fn takes_lean_path(raw: &[Vec<IntPoint<i32>>], turned: &[bool]) -> bool {
+        let total: usize = raw.iter().map(Vec::len).sum();
+        let t: usize = raw
+            .iter()
+            .zip(turned)
+            .filter(|(_, t)| **t)
+            .map(|(r, _)| r.len())
+            .sum();
+        total >= CLOSED_HOLES_MIN && t * 2 >= total
+    }
+
+    #[test]
+    fn holes_with_nothing_around_them_take_the_plain_union() {
+        // Holes that close, outside the only outline: the loops kept wind zero times around them.
+        let mut all = vec![rect(0, 0, 10_000, 10_000)];
+        for k in 0..3_300 {
+            all.push(star_hole(
+                20_000 + (k % 60) * 6_500,
+                20_000 + (k / 60) * 6_500,
+                1_000,
+            ));
+        }
+        let hole: Vec<bool> = (0..all.len()).map(|i| i > 0).collect();
+        let (raw, turned) = moved(&all, &hole, 2_000);
+        assert!(takes_lean_path(&raw, &turned));
+        assert!(untouched(&raw, &turned, 2_000).iter().skip(1).all(|g| *g));
+        assert_eq!(grow_union(&all, &hole, 2_000), clipper_offset(&all, 2_000));
+    }
+
+    #[test]
+    fn untouched_keeps_holes_that_stay_open_or_touch_the_outline() {
+        let d = 2_000;
+        let mut shape = vec![rect(0, 0, 200_000, 100_000)];
+        // Closes: 1 mm wide, far from everything.
+        shape.push(rect(50_000, 50_000, 52_000, 51_000).into_iter().rev().collect());
+        // Stays open: 3 mm across.
+        shape.push(rect(100_000, 40_000, 130_000, 70_000).into_iter().rev().collect());
+        // Closes, but its box meets the moved outline.
+        shape.push(rect(180_000, 99_000, 182_000, 99_500).into_iter().rev().collect());
+        let raw: Vec<Vec<IntPoint<i32>>> = shape
+            .iter()
+            .filter_map(|c| raw_loop(c, f64::from(d), true))
+            .collect();
+        let turned: Vec<bool> = raw
+            .iter()
+            .enumerate()
+            .map(|(i, r)| i > 0 && crate::geom::area2_int(r) > 0)
+            .collect();
+        assert_eq!(turned, vec![false, true, false, true]);
+        assert_eq!(untouched(&raw, &turned, d), vec![false, true, false, false]);
+    }
 
     #[test]
     fn classic_top_keeps_covered_bridging_and_narrow_ledge_walls() {
