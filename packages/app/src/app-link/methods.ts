@@ -175,6 +175,9 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.brain': 'read',
   // one chat's print run: its steps, the last slice, what was sent and the print; never a file, hash, token or serial
   'mimir.run': 'read',
+  // Vault designs as the Vault lists them, with the store session the app already has: the catalog, and the person's
+  // saved and uploaded designs when signed in; never a file, a download link or a token
+  'vault.list': 'read',
 }
 
 export { LinkError } from './methods-error'
@@ -502,6 +505,7 @@ const HANDLERS: Record<string, Handler> = {
   'mimir.memory_remember': async (args) => (await import('./mimir-memory')).rememberFact(args),
   'mimir.brain': async () => (await import('./mimir-brain')).brainState(),
   'mimir.run': async (args) => (await import('./mimir-run')).readRun(args),
+  'vault.list': async (args) => (await import('./vault')).listVault(args),
   'mimir.share': async () => {
     const [{ cloudReady }, { pilotModel }, { CLOUD_NOTICE_VERSION }] = await Promise.all([import('../pilot-connect/cloud-edition'), import('../pilot-connect/llm'), import('../pilot-connect/cloud-notice')])
     const s = get()
