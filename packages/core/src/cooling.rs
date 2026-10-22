@@ -11,9 +11,20 @@
 
 use crate::fm::Fm as _;
 
-/// Seconds the cooling buffer gives the layer whose G-code is `text`.
+/// [`layer_time_from`] of a layer that moves to its start.
+#[cfg(test)]
 pub(crate) fn layer_time(text: &[u8]) -> f64 {
+    layer_time_from(text, None)
+}
+
+/// Seconds the cooling buffer gives the layer whose G-code is `text`. `start` (X, Y and Z, mm) is where a layer
+/// begins that does not move there first: a spiral vase layer goes on from where the layer below ended. Without
+/// it, the first extrusion of such a layer would run from the origin.
+pub(crate) fn layer_time_from(text: &[u8], start: Option<[f64; 3]>) -> f64 {
     let mut at = [0.0f64; 4];
+    if let Some([x, y, z]) = start {
+        at = [x, y, z, 0.0];
+    }
     let mut feed = 0.0;
     let mut relative = false;
     let mut relative_e = true;
@@ -154,6 +165,21 @@ mod tests {
         let t = layer_time(g.as_bytes());
         let want = 10.0 / 10.0 + 20.0 / 20.0 + 0.5 + 1.0;
         assert!((t - want).abs() < 1e-9, "{t} {want}");
+    }
+
+    #[test]
+    fn a_layer_that_starts_without_a_move_counts_from_its_start() {
+        // A spiral vase layer: the nozzle is at the end of the layer below, and the G-code goes straight on.
+        let g = "G1 Z0.6 F600\nG1 F1200\nG1 X20 Y10 Z0.7 E0.5\nG1 X20 Y20 Z0.8 E0.5\n";
+        let t = layer_time_from(g.as_bytes(), Some([10.0, 10.0, 0.6]));
+        let want = 2.0 * (10.0_f64 * 10.0 + 0.1 * 0.1).sqrt() / 20.0;
+        assert!((t - want).abs() < 1e-9, "{t} {want}");
+        // The same as a layer that travels there first.
+        let travelled = format!("G0 X10 Y10 F6000\n{g}");
+        assert!((layer_time(travelled.as_bytes()) - want).abs() < 1e-9);
+        // Without the start the first extrusion runs from the origin: 22.4 mm where it is 10.
+        assert!(layer_time(g.as_bytes()) > want + 0.5);
+        assert!((layer_time_from(g.as_bytes(), None) - layer_time(g.as_bytes())).abs() < f64::EPSILON);
     }
 
     #[test]
