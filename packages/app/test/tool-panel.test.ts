@@ -8,7 +8,7 @@ import { flushSync } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Actions, Card, Choice, Message, Shell, ToolFooter } from '../src/cad/panel-kit'
-import { choiceFit, choiceMeasure, GLYPH_WIDTH, selectFits, sentence } from '../src/cad/tool-panel'
+import { choiceFit, choiceMeasure, GLYPH_WIDTH, selectFits, selectPlace, sentence } from '../src/cad/tool-panel'
 import { get, set } from '../src/state/store'
 
 const roots: Root[] = []
@@ -76,6 +76,14 @@ describe('how choices fit', () => {
     expect(selectFits(52)).toBe(true)
     expect(selectFits(58)).toBe(true)
     expect(selectFits(59)).toBe(false)
+  })
+
+  it('grows the column to 128 px for a select that needs it, before its row stacks under the label', () => {
+    expect(selectPlace(58)).toBe('fits')
+    // "Countersink" in the select's face needs the next step; the whole column follows, so no row stacks
+    expect(selectPlace(80)).toBe('grows')
+    expect(selectPlace(90)).toBe('grows')
+    expect(selectPlace(91)).toBe('stacks')
   })
 
   it('counts a glyph with its label and with the word it sits before', () => {
@@ -212,7 +220,7 @@ describe('the action row', () => {
     const el = render(createElement(ToolFooter, { verb: 'Round', verbs: ['Round', 'Bevel'], onApply: () => true }))
     const button = el.querySelector('[data-testid="model-tool-apply"]')!
     expect(button.textContent).toBe('Round')
-    const sizers = [...button.querySelectorAll('.tp-steady-sizer')].map((s) => s.getAttribute('data-sizer'))
+    const sizers = [...button.querySelectorAll('.sx-steady-sizer')].map((s) => s.getAttribute('data-sizer'))
     expect(sizers.sort()).toEqual(['Bevel', 'Working'])
   })
 

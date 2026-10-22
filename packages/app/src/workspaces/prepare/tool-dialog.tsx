@@ -2,9 +2,10 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The small dialogs of the Tools menu (simplify, hollow, subtract a shape), loaded when one opens. Sizes take
 // named values (cad/values.ts); the hollow's wall thickness can follow one.
-import { Button, Dialog, Field, Input, Seg } from '@slicerx/ui'
+import { Button, Dialog, Seg } from '@slicerx/ui'
 import { useState, type ReactNode } from 'react'
 import { bindNext } from '../../cad/history/record'
+import { Num, Row } from '../../cad/panel-kit'
 import { sizeWords } from '../../cad/op-preview'
 import { sentence } from '../../cad/tool-panel'
 import { typedNumber } from '../../cad/value-table'
@@ -16,13 +17,8 @@ export type DialogTool = 'simplify' | 'hollow' | 'hole'
 
 const num = (s: string) => typedNumber(s)
 
-function NumberField({ id, label, unit, value, onChange }: { id: string; label: string; unit: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <Field htmlFor={id} label={label}>
-      <Input id={id} mono unit={unit} inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)} />
-    </Field>
-  )
-}
+/** A number row like a tool panel's: the label with its unit once, and a 96 px field at the right edge (spec 2). */
+const NumberField = Num
 
 export function ToolDialog({ tool, onClose }: { tool: DialogTool; onClose: () => void }) {
   const host = useHost()
@@ -62,10 +58,9 @@ export function ToolDialog({ tool, onClose }: { tool: DialogTool; onClose: () =>
     case 'hole':
       body = (
         <>
-          <div className="tool-row">
-            <span>Shape</span>
+          <Row label="Shape" labelId="hole-shape-label">
             <Seg label="Shape" size="sm" value={shape} onChange={setShape} options={[{ value: 'cylinder', label: 'Cylinder' }, { value: 'box', label: 'Box' }]} />
-          </div>
+          </Row>
           <NumberField id="hole-size" label={shape === 'cylinder' ? 'Diameter' : 'Width'} unit="mm" value={size} onChange={setSize} />
           <NumberField id="hole-depth" label="Depth from the top" unit="mm" value={depth} onChange={setDepth} />
           <p className="sx-small sx-muted">Cut into the object from the top, centered.</p>

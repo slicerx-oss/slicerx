@@ -39,7 +39,9 @@
 .fr-muted { color: var(--muted); font-size: var(--fs-md); }
 .fr-eyebrow { display: flex; align-items: center; gap: 6px; font: var(--fw-semibold) var(--fs-xs) var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin: 0 0 var(--s-2); }
 .fr-textbtn { border: 0; background: none; padding: 2px 4px; color: var(--accent); font: var(--fw-medium) var(--fs-md) var(--f-body); cursor: pointer; border-radius: var(--r-xs); display: inline-flex; align-items: center; gap: 6px; }
-.fr-textbtn:hover { text-decoration: underline; }
+/* clickable words are never bare (spec 7): underlined at rest, the full color on hover */
+.fr-textbtn { text-decoration: underline 1px color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.fr-textbtn:hover { text-decoration-color: currentColor; }
 .fr-note { color: var(--muted); font-size: var(--fs-md); margin: var(--s-3) 0 0; }
 .fr-warn { display: flex; align-items: flex-start; gap: 8px; color: var(--orange); font-size: var(--fs-md); margin: var(--s-2) 0 0; }
 .fr-check { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); cursor: pointer; margin: var(--s-3) 0; }
