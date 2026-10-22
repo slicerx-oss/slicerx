@@ -91,6 +91,24 @@ pub struct MeshVolume {
 }
 
 impl Mesh {
+    /// True when [`Mesh::load`] reads the file as a 3MF project: a `.3mf` name, or a ZIP named other than the mesh
+    /// formats (an `.sx3mf`). The app's raw parts are never one.
+    pub fn is_3mf(bytes: &[u8], file_name: &str) -> bool {
+        let ext = std::path::Path::new(file_name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("");
+        !bytes.starts_with(RAW_MAGIC)
+            && !["json", "stl", "obj", "amf"]
+                .iter()
+                .any(|m| ext.eq_ignore_ascii_case(m))
+            && Self::zip_or_3mf(bytes, ext)
+    }
+
+    fn zip_or_3mf(bytes: &[u8], ext: &str) -> bool {
+        ext.eq_ignore_ascii_case("3mf") || bytes.starts_with(b"PK\x03\x04")
+    }
+
     /// Loads a model, picking the format from the file name and the bytes.
     pub fn load(bytes: &[u8], file_name: &str) -> Result<Self> {
         let ext = std::path::Path::new(file_name)
@@ -112,7 +130,7 @@ impl Mesh {
         if ext.eq_ignore_ascii_case("obj") || ext.eq_ignore_ascii_case("amf") {
             return Self::from_import(bytes, file_name, ext);
         }
-        if ext.eq_ignore_ascii_case("3mf") || bytes.starts_with(b"PK\x03\x04") {
+        if Self::zip_or_3mf(bytes, ext) {
             return crate::threemf::load(bytes, file_name);
         }
         if bytes.starts_with(RAW_MAGIC) {
