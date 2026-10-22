@@ -16,7 +16,10 @@
 use std::path::Path;
 
 fn main() {
-    let here = Path::new(env!("CARGO_MANIFEST_DIR"));
+    // Read at run time, not compiled in: a target dir shared by several worktrees reuses this script's binary, and a
+    // path compiled in would point at whichever worktree built it first.
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+    let here = Path::new(&manifest_dir);
     let out = Path::new(&std::env::var("OUT_DIR").unwrap_or_default()).to_path_buf();
     let settings = here.join("../settings");
     let schema = settings.join("schema.json");
