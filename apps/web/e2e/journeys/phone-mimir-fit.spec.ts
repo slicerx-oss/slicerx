@@ -132,7 +132,7 @@ journey.describe('the mimir tab fits a phone', () => {
     expect(await box.inputValue()).toContain('\nand a second line')
     await box.fill(Array.from({ length: 10 }, (_, i) => `Line ${i + 1}`).join('\n'))
     const capped = (await box.boundingBox())!
-    expect(capped.height).toBeLessThanOrEqual(6 * 24 + 20 + 1)
+    expect(capped.height).toBeLessThanOrEqual(6 * 20 + 2 * 12 + 1)
     expect(await box.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true)
     await box.fill('')
     await page.setViewportSize(PHONES[0])
@@ -158,7 +158,7 @@ journey.describe('the mimir tab fits a phone', () => {
       expect(one.y, `the hint at ${phone.width} px`).toBeGreaterThanOrEqual(ravens.y + ravens.height / 2)
       expect(one.y + one.height).toBeLessThanOrEqual(room.y + room.height + 0.5)
       await box.fill(six)
-      expect((await box.boundingBox())!.height).toBeGreaterThanOrEqual(6 * 24 + 20 - 1)
+      expect((await box.boundingBox())!.height).toBeGreaterThanOrEqual(6 * 20 + 2 * 12 - 1)
       // the composer at six lines: the hint moves up, whole, and ends above it
       const h = (await hint.boundingBox())!
       const log = (await page.getByTestId('mimir-transcript').boundingBox())!
