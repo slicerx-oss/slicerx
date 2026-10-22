@@ -1675,33 +1675,33 @@ fn draw(
     let bottom_layers = inp.cfg.interface_bottom_layers as usize;
     let bottom_gap = inp.cfg.bottom_z_distance;
     let layer_h = inp.thickness.first().copied().unwrap_or(0.2);
-    let tops_surf: Vec<Shapes> = (0..n_obj)
-        .map(|i| {
-            let above = inp.models.get(i + 1).cloned().unwrap_or_default();
-            let mut s = perimeters::difference(&inp.models[i], &above);
-            if i > 0 {
-                s = perimeters::union_all(&[&s, &perimeters::difference(&inp.models[i], &inp.models[i - 1])]);
-            } else {
-                s = perimeters::union_all(&[&s, &inp.models[0]]);
-            }
-            s
-        })
-        .collect();
+    let tops_surf: Vec<Shapes> = crate::par::map_range(0..u32::try_from(n_obj).unwrap_or(u32::MAX), |i| {
+        let i = i as usize;
+        let above = inp.models.get(i + 1).cloned().unwrap_or_default();
+        let mut s = perimeters::difference(&inp.models[i], &above);
+        if i > 0 {
+            s = perimeters::union_all(&[&s, &perimeters::difference(&inp.models[i], &inp.models[i - 1])]);
+        } else {
+            s = perimeters::union_all(&[&s, &inp.models[0]]);
+        }
+        s
+    });
     let tail_shapes: Vec<Shapes> = oh
         .sharp_tails
         .iter()
         .map(|l| l.iter().map(|(s, _)| s.clone()).collect())
         .collect();
-    let mut out: Vec<TreeLayer> = vec![TreeLayer::default(); n];
-    for layer in 0..n {
+    // Each layer is drawn on its own, so the layers run in parallel.
+    crate::par::map_range(0..u32::try_from(n).unwrap_or(u32::MAX), |layer| {
+        let layer = layer as usize;
         let ids = &nodes.layers[layer];
         if ids.is_empty() {
-            continue;
+            return TreeLayer::default();
         }
         let obj = heights[layer].obj.min(n_obj - 1);
         let height = heights[layer].h;
         if height < EPS {
-            continue;
+            return TreeLayer::default();
         }
         let collision = |sharp: bool| -> Shapes {
             let off = if sharp {
@@ -1969,7 +1969,7 @@ fn draw(
                 .collect()
         };
         let base_s = drop_small_holes(base_s);
-        out[layer] = TreeLayer {
+        TreeLayer {
             base: base_s
                 .into_iter()
                 .map(|sh| {
@@ -1985,9 +1985,8 @@ fn draw(
             roof: drop_small_holes(roof_s),
             roof_first: drop_small_holes(roof1_s),
             floor: drop_small_holes(floor_s),
-        };
-    }
-    out
+        }
+    })
 }
 
 /// Orca's `TreeSupport::get_trim_support_regions` for support layer `layer` on the object's layers.
