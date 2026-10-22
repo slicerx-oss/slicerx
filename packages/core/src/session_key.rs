@@ -297,6 +297,7 @@ pub const SESSION_FREE_KEYS: &[&str] = &[
     "pellet_flow_coefficient",
     "pellet_modded_printer",
     "physical_extruder_map",
+    "pre_start_fan_time",
     "preferred_orientation",
     "preheat_steps",
     "preheat_time",

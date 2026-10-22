@@ -398,6 +398,7 @@
   "ironing_fan_speed": "Part cooling fan speed while ironing, in percent; -1 leaves the fan as it is. Lower can keep the nozzle from clogging at ironing's low flow.",
   "overhang_fan_speed": "Part cooling fan speed on bridges and steep overhangs, in percent. More cooling sets them before they sag.",
   "overhang_fan_threshold": "How much a wall must overhang before the overhang fan speed applies. Bridges always get it; at 0 percent every outer wall does.",
+  "pre_start_fan_time": "Turns the part cooling fan up this many seconds before an overhang, bridge or support interface that needs more cooling, so it is at speed when that path starts. 0 turns it up as the path starts.",
   "reduce_fan_stop_start_freq": "Keeps the part cooling fan at least at its minimum speed instead of stopping it between layers, which spares the fan constant restarts.",
   "slow_down_for_layer_cooling": "Slows printing on layers that would finish faster than the minimum layer time, so small parts and tips get time to cool. Leave it on for small details.",
   "slow_down_layer_time": "Layers that would print faster than this many seconds are slowed down to give them time to cool.",

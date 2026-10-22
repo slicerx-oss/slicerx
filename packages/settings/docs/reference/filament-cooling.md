@@ -1,6 +1,6 @@
 # Filament: Cooling
 
-30 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+31 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `activate_air_filtration`
 
@@ -273,6 +273,18 @@ How much a wall must overhang before the overhang fan speed applies. Bridges and
 - Values: `0%` (Every outer wall), `10%` (10 percent overhang), `25%` (25 percent overhang), `50%` (50 percent overhang), `75%` (75 percent overhang), `95%` (Bridges (95 percent))
 - Changing it redoes: G-code only
 - mimir class: edit (may change in a plate override)
+
+### `pre_start_fan_time`
+
+**Fan lead time**
+
+- Type: list of numbers, one per extruder
+- Unit: s
+- Default: [0]
+- Recommended range: 0 to 5
+- Changing it redoes: G-code only
+- mimir class: read (not in the catalog: never written)
+- Effect: higher: The part fan speeds up earlier, so it is at speed when an overhang or bridge starts. lower: The part fan speeds up closer to the overhang or bridge that needs it
 
 ### `reduce_fan_stop_start_freq`
 

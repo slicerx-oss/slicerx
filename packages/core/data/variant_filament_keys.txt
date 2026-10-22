@@ -131,6 +131,7 @@ nozzle_temperature_range_low
 overhang_fan_speed
 overhang_fan_threshold
 pellet_flow_coefficient
+pre_start_fan_time
 pressure_advance
 reduce_fan_stop_start_freq
 required_nozzle_HRC

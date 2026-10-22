@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 749 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 750 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -26,7 +26,7 @@ Print settings: layers, walls, infill, speeds, supports, adhesion.
 
 Material settings: temperatures, cooling, flow, retraction, drying.
 
-- [Cooling](filament-cooling.md): 30 settings
+- [Cooling](filament-cooling.md): 31 settings
 - [Drying](filament-drying.md): 8 settings
 - [Extrusion](filament-extrusion.md): 13 settings
 - [Filament properties](filament-filament.md): 10 settings
@@ -500,6 +500,7 @@ Alphabetical, each linking to its group file.
 - `physical_extruder_map`: Physical extruder map, [printer/multimaterial](printer-multimaterial.md#physical_extruder_map)
 - `plugins`: Plugins, [process/profile](process-profile.md#plugins)
 - `post_process`: Post process, [process/gcode](process-gcode.md#post_process)
+- `pre_start_fan_time`: Fan lead time, [filament/cooling](filament-cooling.md#pre_start_fan_time)
 - `precise_outer_wall`: Precise wall, [process/quality](process-quality.md#precise_outer_wall)
 - `precise_z_height`: Precise Z height, [process/quality](process-quality.md#precise_z_height)
 - `preferred_orientation`: Preferred orientation, [printer/machine](printer-machine.md#preferred_orientation)

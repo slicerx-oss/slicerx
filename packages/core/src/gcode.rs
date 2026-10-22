@@ -1689,6 +1689,9 @@ fn emit_layer(
         + l.cooling_extra_s;
     let mut layer_fan_value = layer_fan(c, l.local, layer_time, crate::paths::first_slot(l));
     let mut fan_now = layer_fan_value;
+    // `pre_start_fan_time`: raises inside the layer are marked and moved earlier once the layer is written
+    // (fanlead.rs). With no lead on any filament nothing is marked, and the layer is written as before.
+    let lead_on = crate::fanlead::any_lead(c, out.tool_count);
     // cura writes the fan after the layer change on an ultimaker. Elsewhere the layer's fan goes before the layer
     // change, marked: finalize drops it when the fan already runs at that speed, as Orca's cooling buffer writes a fan
     // only when it changes. One layer cannot know the fan of the layer before it in another shard.
@@ -2570,6 +2573,10 @@ fn emit_layer(
             rc = shared.filament(l.cfg, tool.max(1));
             (retract, retract_feed) = (e_units(rc.retraction_length), feed(rc.retraction_speed));
             (hop, lift_ok, restart, deretract_feed) = lift_and_restart(&rc, f64::from(l.z));
+            // no raise moves back across a tool change
+            if lead_on {
+                b.extend_from_slice(crate::fanlead::WALL);
+            }
         }
         first_path = false;
         // Travel.
@@ -2863,7 +2870,17 @@ fn emit_layer(
                 layer_fan_value
             };
             if want != fan_now {
-                b.extend_from_slice(fan_cmd(flavor, want).as_bytes());
+                // A raise may start ahead of its path by the filament's lead; ironing's never does.
+                let lead = if lead_on && want > fan_now && p.feature != Feature::Ironing {
+                    crate::fanlead::lead_s(c, p.tool)
+                } else {
+                    0.0
+                };
+                if lead > 0.0 {
+                    b.extend_from_slice(crate::fanlead::raise_line(&fan_cmd(flavor, want), lead).as_bytes());
+                } else {
+                    b.extend_from_slice(fan_cmd(flavor, want).as_bytes());
+                }
                 fan_now = want;
             }
         }
@@ -3132,6 +3149,9 @@ fn emit_layer(
         if let Some(t) = lb.fw_end(prev) {
             b.extend_from_slice(t.as_bytes());
         }
+    }
+    if lead_on {
+        chunk.bytes = crate::fanlead::apply(&chunk.bytes, flavor);
     }
     if let Some(p) = smoothing.as_ref() {
         chunk.bytes = crate::equalizer::apply(&chunk.bytes, p);
