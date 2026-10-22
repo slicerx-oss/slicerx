@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A stand-in for the cloud service's slicing routes, in memory: access, mesh uploads, jobs that finish at once, and
 // the finished G-code and preview. It records every call, upload and job request so tests can read them back.
+import { gunzipSync } from 'node:zlib'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_VERSION } from '@slicerx/contracts'
 import { sha256Hex } from '../src/hash'
 
@@ -11,8 +12,12 @@ const USER = '00000000-0000-4000-8000-0000000000a1'
 export interface MockCloudService {
   fetch: typeof globalThis.fetch
   calls: { method: string; path: string }[]
-  /** Uploaded meshes by SHA-256. */
+  /** Uploaded meshes by SHA-256, inflated. */
   uploads: Map<string, Uint8Array>
+  /** Each upload as sent: its size on the wire and its Content-Encoding. */
+  sent: { sha256: string; bytes: number; encoding: string | null }[]
+  /** When set, what a mesh upload is answered with instead of storing it. */
+  refuseUpload?: () => Response
   /** The `request` of each submitted job, in order. */
   requests: Record<string, unknown>[]
   /** The name of each submitted job, in order. */
@@ -43,7 +48,8 @@ export function mockCloudService(): MockCloudService {
   const requests: Record<string, unknown>[] = []
   const jobs = new Map<string, Record<string, unknown>>()
   const names: string[] = []
-  const svc: MockCloudService = { fetch: undefined as never, calls, uploads, requests, names, access: { invited: true, jobsPerDay: 50, jobsToday: 0, maxUploadBytes: 25 * 1024 * 1024 } }
+  const sent: MockCloudService['sent'] = []
+  const svc: MockCloudService = { fetch: undefined as never, calls, uploads, sent, requests, names, access: { invited: true, jobsPerDay: 50, jobsToday: 0, maxUploadBytes: 25 * 1024 * 1024 } }
   const gcode = new TextEncoder().encode(MOCK_GCODE)
   const preview = onePreview()
   svc.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
@@ -56,7 +62,11 @@ export function mockCloudService(): MockCloudService {
     if (mesh) {
       const sha = mesh[1]!
       if (method === 'GET') return uploads.has(sha) ? json(200, { sha256: sha }) : json(404, { error: { code: 'not_found', message: 'no such mesh' } })
-      const body = new Uint8Array(init.body as ArrayBuffer | Uint8Array)
+      if (svc.refuseUpload) return svc.refuseUpload()
+      const wire = new Uint8Array(init.body as ArrayBuffer | Uint8Array)
+      const encoding = new Headers(init.headers).get('content-encoding')
+      sent.push({ sha256: sha, bytes: wire.length, encoding })
+      const body = encoding === 'gzip' ? new Uint8Array(gunzipSync(wire)) : wire
       if ((await sha256Hex(body)) !== sha) return json(400, { error: { code: 'bad_request', message: 'the mesh does not match its hash' } })
       uploads.set(sha, body)
       return json(201, { sha256: sha, bytes: body.length })
