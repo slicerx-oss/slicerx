@@ -4,6 +4,7 @@
 """Per-printer G-code parity: every printer of the settings package, sliced by SlicerX and by OrcaSlicer.
 
     python3 printer_gcode_parity.py --sx <sx> --orca <OrcaSlicer> [--printers bambu-a1,voron-0.1] [--plates center,corner,skirt] [--workdir DIR]
+    python3 printer_gcode_parity.py --selftest
 
 parity_gcode.py compares the custom G-code of each template family on one generic machine. This
 script goes one step further and runs each printer with its own machine settings (machine.json:
@@ -49,15 +50,55 @@ PLATES = {
 }
 
 
+PART_FAN = re.compile(r"^(M106|M107)\b", re.I)
+
+
+def part_fan_speed(line):
+    """The speed a part fan line sets (M106 without a fan index, or M107), None for any other line."""
+    if not PART_FAN.match(line) or re.search(r"\bP\d", line, re.I):
+        return None
+    m = re.search(r"\bS(\d*\.?\d+)", line, re.I)
+    return float(m.group(1)) if m and line[:4].upper() == "M106" else 0.0
+
+
 def control_commands(path, strict=False):
     """The file as a list of control commands: no comments, no moves, none of the slicers' own lines."""
+    return control_lines(open(path, errors="replace").read().splitlines(), strict)
+
+
+def control_lines(lines, strict=False):
+    """`control_commands` on lines already read. A part fan line that sets the speed the fan already runs at is
+    left out: it changes nothing on the printer, and SlicerX writes the fan only when it changes, so with --strict
+    such a repeat would shift every later line of the comparison."""
     out = []
-    for ln in open(path, errors="replace").read().splitlines():
+    fan = None
+    for ln in lines:
         ln = ln.split(";", 1)[0].strip()
-        if not ln or pg.OWN.match(ln) or MOVE.match(ln) or (not strict and SOFT.match(ln)):
+        # the fan state follows every part fan line, the off lines the comparison leaves out included
+        speed = part_fan_speed(ln)
+        repeat = speed is not None and speed == fan
+        if speed is not None:
+            fan = speed
+        if not ln or repeat or pg.OWN.match(ln) or MOVE.match(ln) or (not strict and SOFT.match(ln)):
             continue
         out.append(ln)
     return out
+
+
+def selftest():
+    """The strict comparison on a few lines: repeated part fan speeds drop out, changes and other fans stay."""
+    lines = ["M106 S255", "G1 X1 E1", "M106 S255 ; again", "M106 P2 S255", "M106 S252", "M106 S252.0", "M107",
+             "M106 S252"]
+    got = control_lines(lines, strict=True)
+    want = ["M106 S255", "M106 P2 S255", "M106 S252", "M106 S252"]
+    if got != want:
+        print(f"selftest failed: strict gave {got}, expected {want}", file=sys.stderr)
+        return 1
+    if control_lines(lines) != []:
+        print(f"selftest failed: fan lines kept without --strict: {control_lines(lines)}", file=sys.stderr)
+        return 1
+    print("selftest ok")
+    return 0
 
 
 def layers(path):
@@ -201,7 +242,10 @@ def main():
     ap.add_argument("--plates", default="center", help="comma list of " + ", ".join(PLATES))
     ap.add_argument("--workdir", default="printer-gcode-work")
     ap.add_argument("--out", default="printer-gcode-results.json")
+    ap.add_argument("--selftest", action="store_true", help="check the strict fan comparison on built-in lines and exit")
     a = ap.parse_args()
+    if a.selftest:
+        return selftest()
     sx, orca = slicers.SlicerX(a.sx), slicers.Orca(a.orca)
     if not (sx.available() and orca.available()):
         print("need sx and OrcaSlicer (--sx, --orca)", file=sys.stderr)
