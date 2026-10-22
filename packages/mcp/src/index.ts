@@ -61,6 +61,7 @@ import { localAiTools, type LocalAiOptions } from './localai'
 import { mimirQuotaTools } from './mimir-quota'
 import { appAssistantTools } from './app-assistant'
 import { mimirMemoryTools } from './mimir-memory'
+import { appVaultTools } from './vault-list'
 
 export { createSlicerxServer, SERVER_NAME, SERVER_VERSION, serverTools, type ServerContext } from './server'
 export { startHttp, type HttpOptions } from './http'
@@ -217,6 +218,8 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const locked = sxlockTools({ sxlock: opts.sxlock, policy })
   const localAi = localAiTools(opts.localAi)
   const mimir = [...appAssistantTools(appLink, productName()), ...mimirQuotaTools(appLink, productName()), ...mimirCloudTools(appLink, productName()), ...mimirTabTools(appLink, productName()), ...mimirMemoryTools(appLink, productName()), ...mimirBrainTools(appLink, productName()), ...mimirRunTools(appLink, productName())]
+  // Vault designs as the open app's Vault lists them, read with the app's own store session.
+  const vault = appVaultTools(appLink, productName())
   // The app's plates, and showing one of them as its plate picker does.
   const plates = [...appPlateTools(appLink, productName()), ...appValueTools(appLink, productName())]
   // The app's window: workspace, tab, selection, plate shown, printer chosen and panels open, and changing what it shows.
@@ -250,7 +253,7 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   const asks = appLink ? mimirAskTools(appLink, productName()) : []
   // The first tool of a name is the one served, so the extra tools go first and replace base tools of the same name.
   // Listed last, they lost to the CAD tools the server adds only when it finds sx-geom, so they worked on some machines.
-  const tools = [...(opts.extraTools ?? []), ...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...ui, ...history, ...appPaintTools(appLink, productName()), ...look, ...appSettingsTools(appLink, productName()), ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir].filter((t) => printers || t.source !== 'plugin')
+  const tools = [...(opts.extraTools ?? []), ...registry, ...route(local), ...geom, ...sheets, ...asks, ...plates, ...ui, ...history, ...appPaintTools(appLink, productName()), ...look, ...appSettingsTools(appLink, productName()), ...sketchBoxes, ...select, ...push, ...opPreview, ...volumes, ...cloud, ...locked, ...localAi, ...mimir, ...vault].filter((t) => printers || t.source !== 'plugin')
 
   return {
     store,

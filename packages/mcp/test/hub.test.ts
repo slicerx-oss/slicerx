@@ -459,3 +459,96 @@ describe('the mimir tab through a scripted hub', () => {
     expect(text(off)).toMatch(/--printers link/)
   })
 })
+
+describe('Vault designs through a scripted hub', () => {
+  const link = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+  const design = (n: number, sizeMm: [number, number, number] | null) => ({
+    id: `listing-${n}`,
+    slug: `cable-clip-${n}`,
+    title: `Cable clip ${n}`,
+    creator: { handle: 'oddfellow', displayName: 'Odd Fellow' },
+    license: 'cc-by',
+    tags: ['functional'],
+    status: 'approved',
+    publishedAt: '2026-10-01T09:00:00.000Z',
+    version: { version: '1.0.0', format: 'sx3mf', colors: [{ hex: '#ff5555', name: 'Red' }], sizeMm, print: { printer: 'Bambu Lab A1', timeS: 1800, grams: 9 } },
+    stats: { downloads: 12, makes: 3, likes: 5 },
+    liked: false,
+    saved: n === 1,
+  })
+  const DESIGNS = [design(1, [42, 18.5, 12]), design(2, null), design(3, [60, 60, 4])]
+
+  /** The app's side of vault.list: two designs a page, and the person's own lists only while signed in. */
+  function vaultApp(signedIn: () => boolean) {
+    return (method: string, args: Record<string, unknown>) => {
+      if (method !== 'vault.list') throw { code: 'bad_request', message: `unknown method ${method}` }
+      const list = (args['list'] as string | undefined) ?? 'all'
+      if (list !== 'all' && !signedIn()) throw { code: 'signed_out', message: 'nobody is signed in to the Vault in SlicerX, so there is no Saved list to read; the person signs in from the Vault' }
+      const items = list === 'saved' ? DESIGNS.filter((d) => d.saved) : DESIGNS
+      const start = Number(args['cursor'] ?? 0)
+      const end = start + ((args['limit'] as number | undefined) ?? 24)
+      return { list, signedIn: signedIn(), items: items.slice(start, end), next: end < items.length ? String(end) : null }
+    }
+  }
+  const calls = (hub: ReturnType<typeof scriptedHub>) => hub.sent().filter((s) => s.method === 'app.call').map((s) => s.params)
+
+  it('lists designs with their size, null where the scan gave none, page by page', async () => {
+    const hub = scriptedHub({ ok: true }, true, undefined, vaultApp(() => true))
+    const h = await connect(link(hub))
+    const listed = (await h.client.listTools()).tools.find((t) => t.name === 'slicerx_vault_list')
+    expect(listed?.annotations?.readOnlyHint).toBe(true)
+    const first = await h.call('slicerx_vault_list', { limit: 2 })
+    expect(first.isError, text(first)).toBeFalsy()
+    const page = data<{ output: { list: string; signedIn: boolean; items: { id: string; version: { sizeMm: unknown } }[]; next: string | null } }>(first).output
+    expect(page).toMatchObject({ list: 'all', signedIn: true, next: '2' })
+    expect(page.items.map((d) => d.version.sizeMm)).toEqual([[42, 18.5, 12], null])
+    expect(page.items[0]).toEqual(DESIGNS[0])
+    expect(text(first)).toContain('"summary":"2 designs in the SlicerX Vault, 1 with a size; more with cursor 2."')
+    expect(calls(hub).at(-1)).toEqual({ method: 'vault.list', args: { limit: 2 } })
+    const second = await h.call('slicerx_vault_list', { limit: 2, cursor: page.next })
+    const rest = data<{ output: { items: { id: string; version: { sizeMm: unknown } }[]; next: string | null } }>(second).output
+    expect(rest.items.map((d) => [d.id, d.version.sizeMm])).toEqual([['listing-3', [60, 60, 4]]])
+    expect(rest.next).toBeNull()
+    expect(calls(hub).at(-1)).toEqual({ method: 'vault.list', args: { limit: 2, cursor: '2' } })
+  })
+
+  it('answers signed_out for the person\'s own lists while nobody is signed in, and still reads the catalog', async () => {
+    let signedIn = false
+    const hub = scriptedHub({ ok: true }, true, undefined, vaultApp(() => signedIn))
+    const h = await connect(link(hub))
+    for (const list of ['saved', 'mine']) {
+      const r = await h.call('slicerx_vault_list', { list })
+      expect(r.isError, list).toBe(true)
+      expect(data<{ error: { code: string } }>(r).error.code).toBe('signed_out')
+      expect(text(r)).toMatch(/^Error: signed_out: nobody is signed in to the Vault in SlicerX/)
+    }
+    const all = await h.call('slicerx_vault_list', {})
+    expect(all.isError, text(all)).toBeFalsy()
+    expect(text(all)).toContain('"summary":"3 designs in the SlicerX Vault, 2 with a size (signed out)."')
+    signedIn = true
+    const saved = await h.call('slicerx_vault_list', { list: 'saved' })
+    expect(data<{ output: { items: { id: string }[] } }>(saved).output.items.map((d) => d.id)).toEqual(['listing-1'])
+    expect(text(saved)).toContain('"summary":"1 design on the Saved list in SlicerX, 1 with a size."')
+  })
+
+  it('checks the input before anything reaches the app', async () => {
+    const hub = scriptedHub({ ok: true }, true, undefined, vaultApp(() => true))
+    const h = await connect(link(hub))
+    for (const bad of [{ list: 'saved', sort: 'popular' }, { list: 'liked' }, { limit: 0 }, { limit: 51 }, { cursor: 'next' }, { query: '' }]) {
+      const r = await h.call('slicerx_vault_list', bad)
+      expect(r.isError, JSON.stringify(bad)).toBe(true)
+      expect(text(r), JSON.stringify(bad)).toMatch(/^Input validation error: Invalid arguments for tool slicerx_vault_list/)
+    }
+    expect(calls(hub)).toEqual([])
+  })
+
+  it('says how to reach the app while the link is off, or without sx-link', async () => {
+    const h = await connect(link(scriptedHub({ ok: true })))
+    const r = await h.call('slicerx_vault_list', {})
+    expect(r.isError).toBe(true)
+    expect(data<{ error: { code: string } }>(r).error.code).toBe('not_configured')
+    const demo = await connect({ printers: 'demo' })
+    const off = await demo.call('slicerx_vault_list', {})
+    expect(text(off)).toMatch(/^Error: not_configured: .*--printers link/)
+  })
+})

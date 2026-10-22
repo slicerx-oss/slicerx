@@ -50,5 +50,7 @@ describe('the tool registry', () => {
     expect(doc).toContain('| `slicerx_mimir_memory_remember` |  |  | profile |')
     // the print run read-back is a read; starting a print stays with printer.queue and the person
     expect(doc).toContain('| `slicerx_mimir_run` |  |  | read |')
+    // the Vault list reads with the app's own session and changes nothing
+    expect(doc).toContain('| `slicerx_vault_list` |  |  | read |')
   })
 })

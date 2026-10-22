@@ -326,6 +326,7 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 | `collision` | Paths cross on the plate or enter a keep-out zone; `details.collisions` has the objects and layers. `allow_collisions: true` slices it anyway, when the person asks |
 | `not_configured` | The feature needs a cloud API or an account service the server does not have |
 | `auth_failed` | No token, or the service refused it |
+| `signed_out` | The call reads the person's own account data in the open app, such as their Saved list in the Vault, and nobody is signed in there. The person signs in from the app; a client never does |
 | `not_invited` | The account is not on the cloud's invite list |
 | `quota_exceeded` | A cloud upload or daily job limit was reached |
 | `rate_limited` | Too many requests; try again later |
