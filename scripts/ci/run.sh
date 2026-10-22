@@ -149,7 +149,7 @@ rerun_once() { # step names command...
       # shellcheck disable=SC2086
       ( "$@" -- --exact $names ) > "$rl" 2>&1
       while IFS= read -r n; do grep -qxF -- "test $n ... ok" "$rl" && echo "$n"; done <<< "$names" ;;
-    e2e)
+    e2e|e2e-timing)
       files=$(grep -oE '[^ ]+\.spec\.[cm]?[jt]s' <<< "$names" | sort -u | tr '\n' ' ')
       [ -n "$files" ] || return 0
       # shellcheck disable=SC2086
@@ -290,7 +290,10 @@ else
   # Drawing in software, macOS manages about 13 frames a second under the full suite, so frame budgets get the same 3x
   # as GitHub's software runners (SX_SLOW_GL, e2e/frames.ts).
   slow_gl=1; [ "$platform" = macos ] && slow_gl=3
-  step e2e env SX_E2E_NIGHTLY=1 SX_SLOW_GL="${SX_SLOW_GL:-$slow_gl}" pnpm --filter @slicerx/web e2e --reporter=list --grep-invert @gpu
+  step e2e env SX_E2E_NIGHTLY=1 SX_SLOW_GL="${SX_SLOW_GL:-$slow_gl}" pnpm --filter @slicerx/web e2e --reporter=list --grep-invert @gpu --project=desktop --project=phone
+  # The specs that time frames or wait on settled layout, after the rest and one at a time, so no other browser
+  # shares the CPU while they measure (apps/web/playwright.config.ts, timing).
+  step e2e-timing env SX_E2E_NIGHTLY=1 SX_SLOW_GL="${SX_SLOW_GL:-$slow_gl}" pnpm --filter @slicerx/web e2e --reporter=list --grep-invert @gpu --project=desktop-timing --project=phone-timing --workers=1
   step devkit sh -c 'cargo build -p sx-cli --release && SLICERX_SX_BIN="${CARGO_TARGET_DIR:-$PWD/target}/release/sx" node examples/integrator-sample/scripts/integration.mjs'
   if [ "${SX_CI_BENCH:-0}" = 1 ]; then step speed-benchmark pnpm bench; else skip speed-benchmark "not the reference machine"; fi
 fi
