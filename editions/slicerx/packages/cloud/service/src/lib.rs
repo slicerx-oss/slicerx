@@ -9,6 +9,7 @@
 //! outbound connection and asks the user before anything reaches the printer.
 
 pub mod backend;
+pub mod cors;
 pub mod error;
 pub mod http;
 pub mod idle;
