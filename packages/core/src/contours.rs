@@ -69,7 +69,7 @@ impl PreparedPart {
             tris,
             bucket_start,
             bucket_tris,
-            paint: Vec::new(),
+            paint: crate::paint::Facets::default(),
         }
     }
 
