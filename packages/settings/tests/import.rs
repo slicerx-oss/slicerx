@@ -132,6 +132,33 @@ fn legacy_keys_and_values() {
     assert!(r.unknown_keys.is_empty());
 }
 
+/// Bambu Studio's per-feature filament names: `wall_filament` is both walls, and its numbers are filaments (1 is
+/// filament 1, 0 the object's own). `OrcaSlicer`'s older and `PrusaSlicer`'s names keep 1 as the object's own.
+#[test]
+fn feature_filament_names() {
+    let r = |v: serde_json::Value| {
+        let mut p = json!({"name": "p", "type": "process"});
+        p.as_object_mut().unwrap().extend(v.as_object().unwrap().clone());
+        import_orca(&p, &|_| None).unwrap().config
+    };
+    let c = r(json!({"wall_filament": "2", "sparse_infill_filament": "1", "solid_infill_filament": "0"}));
+    assert_eq!(get_json(&c, "outer_wall_filament_id"), json!(2));
+    assert_eq!(get_json(&c, "inner_wall_filament_id"), json!(2));
+    assert_eq!(get_json(&c, "sparse_infill_filament_id"), json!(1));
+    assert_eq!(get_json(&c, "internal_solid_filament_id"), json!(0));
+    let c = r(json!({"infill_extruder": "1", "perimeter_extruder": "1", "solid_infill_extruder": "3"}));
+    assert_eq!(get_json(&c, "sparse_infill_filament_id"), json!(0));
+    assert_eq!(get_json(&c, "outer_wall_filament_id"), json!(0));
+    assert_eq!(get_json(&c, "internal_solid_filament_id"), json!(3));
+    // our own name in the same file wins
+    let c = r(
+        json!({"wall_filament": "2", "inner_wall_filament_id": "3", "sparse_infill_filament": "2", "sparse_infill_filament_id": "1"}),
+    );
+    assert_eq!(get_json(&c, "outer_wall_filament_id"), json!(2));
+    assert_eq!(get_json(&c, "inner_wall_filament_id"), json!(3));
+    assert_eq!(get_json(&c, "sparse_infill_filament_id"), json!(1));
+}
+
 #[test]
 fn bambu_infill_retraction_mode() {
     let read = |extra: serde_json::Value| {

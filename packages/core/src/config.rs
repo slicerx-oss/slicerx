@@ -798,6 +798,9 @@ impl PrintConfig {
                 reason: "expected an object".to_owned(),
             });
         };
+        // Older and other slicers' names of the per-feature filament keys set ours too (`crate::legacy`).
+        let current = crate::legacy::with_current_names(map);
+        let map = current.as_ref().unwrap_or(map);
         // Bambu Studio writes `zig-zag` for rectilinear in its pattern keys (the importers rename it; a request that
         // skips them still means rectilinear). Our layer-consistent zigzag is `zigzag`, without the dash.
         let renamed;
@@ -2083,7 +2086,9 @@ pub fn is_used_key(_key: &str) -> bool {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn is_used_key(key: &str) -> bool {
     let named = |k: &str| READ_KEYS.contains(&k) || FUZZY_KEYS.contains(&k) || engine_keys().contains(k);
-    META_KEYS.contains(&key) || named(key) || built_key(key, &named)
+    // An older name of a filament key is read as ours.
+    let renamed = || crate::legacy::targets(key).iter().any(|t| named(t));
+    META_KEYS.contains(&key) || named(key) || built_key(key, &named) || renamed()
 }
 
 /// A key the code builds from a template (see `build.rs`): `filament_retraction_speed` from `filament_{key}` with

@@ -93,6 +93,25 @@ describe('errors and legacy keys', () => {
     expect(r.config['wall_sequence']).toBe('outer wall/inner wall')
     expect(r.unknownKeys).toEqual([])
   })
+  it("reads Bambu Studio's per-feature filaments: wall_filament is both walls, and 1 is filament 1", () => {
+    const c = importFlat({ wall_filament: '2', sparse_infill_filament: '1', solid_infill_filament: '0' }).config as Record<string, unknown>
+    expect(c['outer_wall_filament_id']).toBe(2)
+    expect(c['inner_wall_filament_id']).toBe(2)
+    expect(c['sparse_infill_filament_id']).toBe(1)
+    expect(c['internal_solid_filament_id']).toBe(0)
+  })
+  it("keeps 1 as the object's own filament for OrcaSlicer's older and PrusaSlicer's names", () => {
+    const c = importFlat({ infill_extruder: '1', perimeter_extruder: '1', solid_infill_extruder: '3' }).config as Record<string, unknown>
+    expect(c['sparse_infill_filament_id']).toBe(0)
+    expect(c['outer_wall_filament_id']).toBe(0)
+    expect(c['internal_solid_filament_id']).toBe(3)
+  })
+  it('lets our own name win over an older one in the same file', () => {
+    const c = importFlat({ wall_filament: '2', inner_wall_filament_id: '3', sparse_infill_filament: '2', sparse_infill_filament_id: '1' }).config as Record<string, unknown>
+    expect(c['outer_wall_filament_id']).toBe(2)
+    expect(c['inner_wall_filament_id']).toBe(3)
+    expect(c['sparse_infill_filament_id']).toBe(1)
+  })
   it("reads Bambu Studio's reduce_infill_retraction_mode as the reduce_infill_retraction switch", () => {
     const read = (extra: Record<string, unknown>) => {
       const r = importFlat(extra)

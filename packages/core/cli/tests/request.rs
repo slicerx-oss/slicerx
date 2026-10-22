@@ -786,6 +786,107 @@ fn box_3mf_by(app: Option<&str>, settings: Option<&[u8]>, extra: &[(&str, &str)]
     zip(&entries)
 }
 
+/// A Bambu Studio project of one 20 mm cube on filament `slot`, with `settings` as its project settings and `own` as
+/// the object's own settings in `Metadata/model_settings.config`.
+fn bambu_cube_3mf(settings: &serde_json::Value, slot: u8, own: &[(&str, &str)]) -> Vec<u8> {
+    let model = r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-02.08.02.61</metadata><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="20"/><vertex x="20" y="0" z="20"/><vertex x="20" y="20" z="20"/><vertex x="0" y="20" z="20"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/></build></model>"#;
+    let meta: String = own
+        .iter()
+        .map(|(k, v)| [r#"<metadata key=""#, k, r#"" value=""#, v, r#""/>"#].concat())
+        .collect();
+    let objects = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><config><object id="1"><metadata key="name" value="cube"/><metadata key="extruder" value="{slot}"/>{meta}</object></config>"#
+    );
+    let settings = settings.to_string();
+    zip(&[
+        ("3D/3dmodel.model", model.as_bytes()),
+        ("Metadata/project_settings.config", settings.as_bytes()),
+        ("Metadata/model_settings.config", objects.as_bytes()),
+    ])
+}
+
+/// Filament changes in G-code text (`T<n>` lines that change the tool), and the filaments (1-based) the lines of
+/// `feature` print with.
+fn changes_and_tools(gcode: &str, feature: &str) -> (usize, std::collections::BTreeSet<u8>) {
+    let (mut tool, mut changes, mut here, mut on) = (None::<u8>, 0, false, std::collections::BTreeSet::new());
+    for l in gcode.lines() {
+        if let Some(n) = l
+            .strip_prefix('T')
+            .and_then(|t| t.split_whitespace().next())
+            .and_then(|n| n.parse::<u8>().ok())
+        {
+            if tool.is_some_and(|t| t != n) {
+                changes += 1;
+            }
+            tool = Some(n);
+        } else if let Some(f) = l.strip_prefix("; FEATURE: ").or_else(|| l.strip_prefix(";TYPE:")) {
+            here = f.trim() == feature;
+        } else if here && l.starts_with("G1 ") && l.contains(" E") && (l.contains(" X") || l.contains(" Y")) {
+            on.extend(tool.map(|t| t + 1));
+        }
+    }
+    (changes, on)
+}
+
+/// Bambu Studio writes the per-feature filaments under its own names, as strings. `sx slice project.3mf` prints the
+/// features on them, as Studio 2.8 does for the same cube: 92 changes with the sparse infill on filament 2, 100 with
+/// both walls on it, and filament 1 for the infill of a cube on filament 2 when the infill asks for "1".
+#[test]
+fn a_bambu_studio_projects_feature_filaments_print_on_their_filament() {
+    let dir = temp_dir(format!("sx-cli-feature-filaments-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let base = |extra: serde_json::Value| {
+        let mut c = serde_json::json!({"printer_model": "Bambu Lab X2D", "filament_colour": ["#ff0000", "#00ff00"],
+            "nozzle_temperature": ["220", "225"], "enable_prime_tower": "1", "brim_width": "0",
+            // Bambu Studio's 0.20 mm Standard shells and infill, so the layers with each feature are Studio's.
+            "top_shell_layers": "5", "top_shell_thickness": "1", "bottom_shell_layers": "3",
+            "sparse_infill_density": "15%", "sparse_infill_pattern": "grid"});
+        c.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        c
+    };
+    let run = |name: &str, bytes: Vec<u8>, feature: &str| {
+        let path = dir.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        changes_and_tools(&String::from_utf8_lossy(&out.stdout), feature)
+    };
+    let sparse = run(
+        "sparse.3mf",
+        bambu_cube_3mf(&base(serde_json::json!({"sparse_infill_filament": "2"})), 1, &[]),
+        "Sparse infill",
+    );
+    assert_eq!(sparse, (92, [2].into()));
+    let own = run(
+        "own.3mf",
+        bambu_cube_3mf(
+            &base(serde_json::json!({})),
+            1,
+            &[("sparse_infill_filament", "2")],
+        ),
+        "Sparse infill",
+    );
+    assert_eq!(own, (92, [2].into()), "the object's own setting");
+    let walls = run(
+        "walls.3mf",
+        bambu_cube_3mf(&base(serde_json::json!({"wall_filament": "2"})), 1, &[]),
+        "Inner wall",
+    );
+    assert_eq!(walls, (100, [2].into()));
+    let one = run(
+        "one.3mf",
+        bambu_cube_3mf(&base(serde_json::json!({"sparse_infill_filament": "1"})), 2, &[]),
+        "Sparse infill",
+    );
+    assert_eq!(one, (92, [1].into()));
+}
+
 /// A project whose `project_settings.config` is not JSON still slices: an empty one as a plain 3MF, JSON after a byte
 /// order mark with its own settings, and INI style lines or a damaged file with the defaults and a note saying the
 /// settings were left out. `--strict` refuses those, and `sx metadata` gives the reason.
