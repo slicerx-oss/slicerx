@@ -148,6 +148,11 @@ export interface ListingVersion {
   printProfiles?: Record<string, { process: string; filament: string; timeS?: number; grams?: number }>
   /** The filament colors the model prints in and which parts need more than one. */
   colors?: ListingColors
+  /**
+   * How big the model prints, x, y and z in mm with Z up, as the upload scan measured it: its build transforms
+   * applied, and a project on several plates measured on its largest. Absent when the scan could not vouch for it.
+   */
+  sizeMm?: [number, number, number]
 }
 
 /** One filament color of a model: `#rrggbb` and the creator's name for it ("Silk gold"). */

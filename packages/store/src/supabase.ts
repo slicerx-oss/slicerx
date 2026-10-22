@@ -125,13 +125,19 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
   // listing_versions.colors comes with 0016_listing_colors. A project without it is read and written without colors.
   let colorsColumn = true
   const noColorsColumn = (e: DbError) => Boolean(e && (e.code === '42703' || e.code === 'PGRST204') && /colors/.test(e.message))
+  // listing_versions.size_mm comes with 0030_listing_size. A project without it is read without sizes.
+  let sizeColumn = true
+  const noSizeColumn = (e: DbError) => Boolean(e && (e.code === '42703' || e.code === 'PGRST204') && /size_mm/.test(e.message))
   async function readVersions(q: (columns: string) => PromiseLike<{ data: unknown; error: DbError }>): Promise<VersionRow[]> {
-    if (colorsColumn) {
-      const r = await q(`${VERSION_COLUMNS}, colors`)
-      if (!noColorsColumn(r.error)) return read(versionRow, Promise.resolve(r))
-      colorsColumn = false
+    // Reads run side by side, so each one goes by the columns it asked for, not what another has learned since.
+    for (;;) {
+      const colors = colorsColumn
+      const size = sizeColumn
+      const r = await q(`${VERSION_COLUMNS}${colors ? ', colors' : ''}${size ? ', size_mm' : ''}`)
+      if (size && noSizeColumn(r.error)) sizeColumn = false
+      else if (colors && noColorsColumn(r.error)) colorsColumn = false
+      else return read(versionRow, Promise.resolve(r))
     }
-    return read(versionRow, q(VERSION_COLUMNS))
   }
 
   // library_listings comes with 0017_qa_accounts. A project without it lists from the listings table.
@@ -716,11 +722,17 @@ export function supabaseStore(sb: Db, conn?: Pick<SupabaseOptions, 'url' | 'anon
         colors = c.value
       }
       if (!(await uid())) return fail('not_signed_in', 'Sign in first')
-      const { data, error } = await sb
-        .from('listing_versions')
-        .update({ colors: colors as unknown as Json })
-        .eq('id', versionId)
-        .select(`${VERSION_COLUMNS}, colors`)
+      const update = (withSize: boolean) =>
+        sb
+          .from('listing_versions')
+          .update({ colors: colors as unknown as Json })
+          .eq('id', versionId)
+          .select(`${VERSION_COLUMNS}, colors${withSize ? ', size_mm' : ''}`)
+      let { data, error } = await update(sizeColumn)
+      if (sizeColumn && noSizeColumn(error)) {
+        sizeColumn = false
+        ;({ data, error } = await update(false))
+      }
       if (noColorsColumn(error)) return fail('unavailable', 'This Vault does not keep colors yet')
       if (error) return failed(error)
       const row = rows(versionRow, data)[0]

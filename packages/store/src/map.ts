@@ -120,6 +120,7 @@ export const toVersion = (r: VersionRow, profiles: readonly PrintProfileRow[] = 
     ...opt('changelog', r.changelog),
     ...(profiles.length > 0 ? { printProfiles } : {}),
     ...colorsOf(r.colors),
+    ...sizeOf(r.size_mm),
   }
 }
 
@@ -257,6 +258,12 @@ export function latestVersion<T extends { version: string }>(versions: readonly 
     }
     return 0
   })[0]
+}
+
+/** A version's placed size, or nothing when the scan gave none or it does not check out. */
+function sizeOf(v: unknown): { sizeMm?: [number, number, number] } {
+  if (!Array.isArray(v) || v.length !== 3 || !v.every((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0)) return {}
+  return { sizeMm: [v[0], v[1], v[2]] as [number, number, number] }
 }
 
 /** A version's stored colors, or nothing when there are none or they do not check out. */

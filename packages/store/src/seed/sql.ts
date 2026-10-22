@@ -3,7 +3,7 @@
 // Renders SeedData as supabase/seed/*.sql for the local stack, one file per module.
 import type { SeedData, SeedTable } from '../rows'
 
-type Cell = string | number | boolean | null | readonly string[] | { readonly [k: string]: unknown }
+type Cell = string | number | boolean | null | readonly string[] | readonly number[] | { readonly [k: string]: unknown }
 
 function literal(v: Cell): string {
   if (v === null) return 'null'
@@ -13,7 +13,10 @@ function literal(v: Cell): string {
     return String(v)
   }
   if (typeof v === 'string') return `'${v.replaceAll("'", "''")}'`
-  if (Array.isArray(v)) return v.length === 0 ? "'{}'::text[]" : `array[${(v as readonly string[]).map((s) => literal(s)).join(', ')}]::text[]`
+  if (Array.isArray(v)) {
+    if (v.length > 0 && v.every((n) => typeof n === 'number')) return `array[${(v as readonly number[]).map((n) => literal(n)).join(', ')}]::real[]`
+    return v.length === 0 ? "'{}'::text[]" : `array[${(v as readonly string[]).map((s) => literal(s)).join(', ')}]::text[]`
+  }
   return `'${JSON.stringify(v).replaceAll("'", "''")}'::jsonb`
 }
 

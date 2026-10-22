@@ -17,7 +17,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 4640460
+   "size_bytes": 4640460,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     74.5,
+     63.7,
+     95.4
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-03T01:05:00Z",
   "review_status": "approved",
@@ -38,7 +53,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   74.5,
+   63.7,
+   95.4
+  ]
  },
  {
   "id": "1d9a9c06-6ddc-55de-9134-33d821725a00",
@@ -58,7 +78,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 5626426
+   "size_bytes": 5626426,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     74.5,
+     63.7,
+     95.4
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-12T01:05:00Z",
   "review_status": "approved",
@@ -79,7 +114,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   74.5,
+   63.7,
+   95.4
+  ]
  },
  {
   "id": "5234cee4-afb6-50b1-b920-2e3144a24064",
@@ -99,7 +139,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 2292840
+   "size_bytes": 2292840,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     36.4,
+     170.9,
+     121
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-28T01:05:00Z",
   "review_status": "approved",
@@ -142,7 +197,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   36.4,
+   170.9,
+   121
+  ]
  },
  {
   "id": "03027603-7e2d-5dff-bf15-59e9023a1215",
@@ -162,7 +222,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 8462889
+   "size_bytes": 8462889,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     65.8,
+     159.7,
+     15.5
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-07-22T01:05:00Z",
   "review_status": "approved",
@@ -183,7 +258,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   65.8,
+   159.7,
+   15.5
+  ]
  },
  {
   "id": "ba919515-090b-51c6-bf41-34fdccdb202e",
@@ -203,7 +283,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 7726081
+   "size_bytes": 7726081,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     65.8,
+     159.7,
+     15.5
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-07-31T01:05:00Z",
   "review_status": "approved",
@@ -224,7 +319,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   65.8,
+   159.7,
+   15.5
+  ]
  },
  {
   "id": "ea367271-660c-532e-9228-ffdcde12ae83",
@@ -244,7 +344,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 8435001
+   "size_bytes": 8435001,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     98.8,
+     118.7,
+     143.7
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-08-17T01:05:00Z",
   "review_status": "approved",
@@ -331,7 +446,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   98.8,
+   118.7,
+   143.7
+  ]
  },
  {
   "id": "0637e6e7-0839-5079-a86d-2bd66663fd48",
@@ -351,7 +471,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 7445700
+   "size_bytes": 7445700,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     112.8,
+     157.8,
+     140.2
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-09-25T11:05:00Z",
   "review_status": "pending",
@@ -372,7 +507,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   112.8,
+   157.8,
+   140.2
+  ]
  },
  {
   "id": "ccd029fb-968f-5bf8-a441-af76fe1ecd75",
@@ -392,7 +532,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 5417927
+   "size_bytes": 5417927,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     63.9,
+     80.9,
+     108.2
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-07T01:05:00Z",
   "review_status": "approved",
@@ -413,7 +568,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   63.9,
+   80.9,
+   108.2
+  ]
  },
  {
   "id": "3bb047d9-dd63-5302-9045-40b6f696b46d",
@@ -433,7 +593,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 2843825
+   "size_bytes": 2843825,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     80.6,
+     149.7,
+     140.4
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-07-03T01:05:00Z",
   "review_status": "approved",
@@ -481,7 +656,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   80.6,
+   149.7,
+   140.4
+  ]
  },
  {
   "id": "a5bcee79-a985-51e4-9c4b-fbeb90720476",
@@ -501,7 +681,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 7355461
+   "size_bytes": 7355461,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     80.9,
+     135,
+     89.4
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-07-28T01:05:00Z",
   "review_status": "approved",
@@ -533,7 +728,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   80.9,
+   135,
+   89.4
+  ]
  },
  {
   "id": "e0b3b26e-6994-5e96-8fff-be7146d83289",
@@ -553,7 +753,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 4474528
+   "size_bytes": 4474528,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     80.9,
+     135,
+     89.4
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-08-06T01:05:00Z",
   "review_status": "approved",
@@ -585,7 +800,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   80.9,
+   135,
+   89.4
+  ]
  },
  {
   "id": "4f353bfa-7578-53f6-bfe7-da0fc5aa8203",
@@ -605,7 +825,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 2957705
+   "size_bytes": 2957705,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     65,
+     83.4,
+     128.8
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-08-20T01:05:00Z",
   "review_status": "approved",
@@ -631,7 +866,12 @@
      "ams": true
     }
    ]
-  }
+  },
+  "size_mm": [
+   65,
+   83.4,
+   128.8
+  ]
  },
  {
   "id": "99fc88ca-ab79-5f25-91da-7ef9235f6916",
@@ -651,7 +891,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 3920852
+   "size_bytes": 3920852,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     64.3,
+     64.8,
+     33.1
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-09-26T11:05:00Z",
   "review_status": "pending",
@@ -672,7 +927,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   64.3,
+   64.8,
+   33.1
+  ]
  },
  {
   "id": "8b5a39f6-e74d-50fc-835b-c0866f4cf98c",
@@ -692,7 +952,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 8168736
+   "size_bytes": 8168736,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     97.5,
+     130.6,
+     125
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-11T01:05:00Z",
   "review_status": "approved",
@@ -713,7 +988,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   97.5,
+   130.6,
+   125
+  ]
  },
  {
   "id": "641f86f9-d180-558c-8fa5-29007a3a6a75",
@@ -733,7 +1013,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 578851
+   "size_bytes": 578851,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     97.5,
+     130.6,
+     125
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-20T01:05:00Z",
   "review_status": "approved",
@@ -754,7 +1049,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   97.5,
+   130.6,
+   125
+  ]
  },
  {
   "id": "35375079-c2bc-51c5-8973-84347ef85588",
@@ -774,7 +1074,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 7194641
+   "size_bytes": 7194641,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     97.5,
+     130.6,
+     125
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-29T01:05:00Z",
   "review_status": "approved",
@@ -795,7 +1110,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   97.5,
+   130.6,
+   125
+  ]
  },
  {
   "id": "9fa3d7e2-9c48-593c-b351-a76930ba09b7",
@@ -815,7 +1135,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 7706181
+   "size_bytes": 7706181,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     26.1,
+     136.4,
+     138.6
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-07-08T01:05:00Z",
   "review_status": "approved",
@@ -869,7 +1204,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   26.1,
+   136.4,
+   138.6
+  ]
  },
  {
   "id": "2c160ade-a51b-5dc9-a285-64966b88b381",
@@ -889,7 +1229,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 8184803
+   "size_bytes": 8184803,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     92.7,
+     136.2,
+     11.1
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-08-01T01:05:00Z",
   "review_status": "approved",
@@ -910,7 +1265,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   92.7,
+   136.2,
+   11.1
+  ]
  },
  {
   "id": "490770df-6481-5fdb-adc2-24160044db12",
@@ -930,7 +1290,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 4473082
+   "size_bytes": 4473082,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     170.3,
+     142.1,
+     33.1
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-08-27T01:05:00Z",
   "review_status": "approved",
@@ -956,7 +1331,12 @@
      "ams": true
     }
    ]
-  }
+  },
+  "size_mm": [
+   170.3,
+   142.1,
+   33.1
+  ]
  },
  {
   "id": "4e44372f-7242-537b-9e23-2c3062250864",
@@ -976,7 +1356,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 6681671
+   "size_bytes": 6681671,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     34.1,
+     79.7,
+     31.9
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-09-27T11:05:00Z",
   "review_status": "pending",
@@ -1008,7 +1403,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   34.1,
+   79.7,
+   31.9
+  ]
  },
  {
   "id": "58cee525-e3ee-55f3-a9fc-cfc8d2dc6f1e",
@@ -1028,7 +1428,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 8541324
+   "size_bytes": 8541324,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     71.8,
+     30.3,
+     128
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-18T01:05:00Z",
   "review_status": "approved",
@@ -1060,7 +1475,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   71.8,
+   30.3,
+   128
+  ]
  },
  {
   "id": "cc4f0593-bfa0-5145-a4ff-e6861710d250",
@@ -1080,7 +1500,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 4320642
+   "size_bytes": 4320642,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     71.8,
+     30.3,
+     128
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-27T01:05:00Z",
   "review_status": "approved",
@@ -1112,7 +1547,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   71.8,
+   30.3,
+   128
+  ]
  },
  {
   "id": "ca2c7504-0ca6-5b9b-a8a9-a664ae2318fb",
@@ -1132,7 +1572,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 9315402
+   "size_bytes": 9315402,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     165.2,
+     86.6,
+     8.4
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-07-12T01:05:00Z",
   "review_status": "approved",
@@ -1153,7 +1608,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   165.2,
+   86.6,
+   8.4
+  ]
  },
  {
   "id": "6668f440-dcd3-578c-92fa-c37f284100b3",
@@ -1173,7 +1633,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 3607303
+   "size_bytes": 3607303,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     122.6,
+     167,
+     42.2
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-08-05T01:05:00Z",
   "review_status": "approved",
@@ -1216,7 +1691,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   122.6,
+   167,
+   42.2
+  ]
  },
  {
   "id": "d182df8b-b2af-5135-aab9-a9d7c994c769",
@@ -1236,7 +1716,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 7832809
+   "size_bytes": 7832809,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     79.6,
+     127.4,
+     132.6
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-09-01T01:05:00Z",
   "review_status": "approved",
@@ -1262,7 +1757,12 @@
      "ams": true
     }
    ]
-  }
+  },
+  "size_mm": [
+   79.6,
+   127.4,
+   132.6
+  ]
  },
  {
   "id": "a8263c83-4fd5-5fbc-87d7-a8e0a024ebdf",
@@ -1282,7 +1782,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 3282922
+   "size_bytes": 3282922,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     114.9,
+     85,
+     132.1
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-09-15T11:05:00Z",
   "review_status": "rejected",
@@ -1314,7 +1829,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   114.9,
+   85,
+   132.1
+  ]
  },
  {
   "id": "174c901e-8fbb-5e53-bbb4-d5c1a3431b8c",
@@ -1334,7 +1854,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 502637
+   "size_bytes": 502637,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     114.1,
+     95.9,
+     83.1
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-08-10T11:05:00Z",
   "review_status": "approved",
@@ -1371,7 +1906,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   114.1,
+   95.9,
+   83.1
+  ]
  },
  {
   "id": "099aa9d2-f0c3-5306-a93b-32a01062a874",
@@ -1391,7 +1931,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 3346579
+   "size_bytes": 3346579,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     115.4,
+     76.5,
+     103
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-21T01:05:00Z",
   "review_status": "approved",
@@ -1445,7 +2000,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   115.4,
+   76.5,
+   103
+  ]
  },
  {
   "id": "d2e816a0-19ce-5eb9-97f3-680d1cd57014",
@@ -1465,7 +2025,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 3140040
+   "size_bytes": 3140040,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     115.4,
+     76.5,
+     103
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-06-30T01:05:00Z",
   "review_status": "approved",
@@ -1519,7 +2094,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   115.4,
+   76.5,
+   103
+  ]
  },
  {
   "id": "9d8e5f5e-d18e-5d8f-8979-d66d857904bc",
@@ -1539,7 +2119,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 4379151
+   "size_bytes": 4379151,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     162.9,
+     156.6,
+     8.6
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-07-16T01:05:00Z",
   "review_status": "approved",
@@ -1560,7 +2155,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   162.9,
+   156.6,
+   8.6
+  ]
  },
  {
   "id": "4df56d6e-0620-5aa9-9153-f5291a86d2ee",
@@ -1580,7 +2180,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 7144670
+   "size_bytes": 7144670,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     144.4,
+     83.6,
+     76.6
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-08-10T01:05:00Z",
   "review_status": "approved",
@@ -1623,7 +2238,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   144.4,
+   83.6,
+   76.6
+  ]
  },
  {
   "id": "2d7fe7b1-b5de-5771-a1ad-c8ba790cf87a",
@@ -1643,7 +2263,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 5557718
+   "size_bytes": 5557718,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     114,
+     147.7,
+     59.1
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-09-04T01:05:00Z",
   "review_status": "approved",
@@ -1664,7 +2299,12 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   114,
+   147.7,
+   59.1
+  ]
  },
  {
   "id": "464fdd41-c3f4-59ba-b9b0-c525bc0ba1de",
@@ -1684,7 +2324,22 @@
     "structure",
     "size"
    ],
-   "size_bytes": 1194668
+   "size_bytes": 1194668,
+   "detectedType": "sx3mf",
+   "boundsMm": {
+    "min": [
+     0,
+     0,
+     0
+    ],
+    "max": [
+     120.6,
+     124.8,
+     90.3
+    ]
+   },
+   "boundsPlate": 1,
+   "plateCount": 1
   },
   "scanned_at": "2026-08-01T11:05:00Z",
   "review_status": "approved",
@@ -1721,6 +2376,11 @@
      "ams": false
     }
    ]
-  }
+  },
+  "size_mm": [
+   120.6,
+   124.8,
+   90.3
+  ]
  }
 ]
