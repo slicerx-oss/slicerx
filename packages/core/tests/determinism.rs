@@ -2,8 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! The same request gives the same G-code bytes at every thread count, and when several slices share one
 //! pool. The cases cover the paths with per-thread memos and the most parallel work: Arachne walls (the
-//! Voronoi diagrams and wall results kept per thread) and organic tree supports (branch growth and
-//! smoothing run as parallel maps). Each slice runs on its own pool of 1, 3 and 8 threads; the larger pools
+//! Voronoi diagrams and wall results kept per thread), organic tree supports (branch growth and
+//! smoothing run as parallel maps) and hybrid tree supports (each support layer drawn as its own job). Each slice runs on its own pool of 1, 3 and 8 threads; the larger pools
 //! also run three slices at once, as tests share the global pool. `SX_DETERMINISM_ROUNDS` repeats the
 //! shared rounds for longer runs by hand.
 
@@ -114,6 +114,18 @@ fn organic_tree_supports_are_the_same_at_every_thread_count() {
         &json!({
             "enable_support": true, "support_type": "tree(auto)", "support_style": "organic",
             "support_on_build_plate_only": false, "brim_width": 0,
+        }),
+    );
+    assert!(g.contains(";TYPE:Support"), "no supports");
+}
+
+#[test]
+fn hybrid_tree_supports_are_the_same_at_every_thread_count() {
+    let g = same_at_every_thread_count(
+        &[(mesh("table.stl"), [128.0, 128.0])],
+        &json!({
+            "enable_support": true, "support_type": "tree(auto)", "support_style": "tree_hybrid",
+            "support_threshold_angle": 60, "support_on_build_plate_only": false, "brim_width": 0,
         }),
     );
     assert!(g.contains(";TYPE:Support"), "no supports");
