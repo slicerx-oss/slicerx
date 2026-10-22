@@ -1857,15 +1857,26 @@ fn draw(
             let top_z = heights[layer].z;
             let bottom_z = top_z - height;
             let mut new_base: Shapes = Vec::new();
+            // Only the top surfaces that can act on this layer are tested: those whose bottom gap or floor
+            // layers reach its bottom, and none above it. The loop below skips the others anyway, but each
+            // overlap test first cost most of the drawing time on a tall part.
+            let acts = |z: f64| {
+                let gap_top = z + bottom_gap;
+                top_z >= z - EPS
+                    && ((bottom_gap > EPS && bottom_z < gap_top - EPS)
+                        || (bottom_layers > 0
+                            && bottom_z >= gap_top - EPS
+                            && bottom_z < gap_top + iface_h - EPS))
+            };
             for comp in &base_s {
                 let mut c = one(comp);
-                let mut bands: Vec<(f64, Shapes)> = Vec::new();
+                let mut bands: Vec<(f64, &Shapes)> = Vec::new();
                 for idx in (0..=obj).rev() {
                     let s = &tops_surf[idx];
-                    if s.is_empty() || !overlaps(&c, s) {
+                    if s.is_empty() || !acts(inp.tops[idx]) || !overlaps(&c, s) {
                         continue;
                     }
-                    bands.push((inp.tops[idx], s.clone()));
+                    bands.push((inp.tops[idx], s));
                 }
                 if bands.is_empty() {
                     new_base.extend(c);
