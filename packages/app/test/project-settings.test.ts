@@ -33,6 +33,19 @@ describe('project settings', () => {
     expect(plain.values['wipe_tower_wall_type']).toBe('rectangle')
   })
 
+  it("puts a Bambu Studio project's wall_filament on both walls", () => {
+    const r = projectSettingChanges({ wall_filament: '2' }, baseConfig())
+    expect(r.values['outer_wall_filament_id']).toBe(2)
+    expect(r.values['inner_wall_filament_id']).toBe(2)
+  })
+
+  it("reads a Bambu Studio project's filament 1 as filament 1, not the object's own", () => {
+    // Studio 2.8 prints the infill of a cube on filament 2 with filament 1 here.
+    expect(projectSettingChanges({ sparse_infill_filament: '1' }, baseConfig()).values['sparse_infill_filament_id']).toBe(1)
+    expect(projectSettingChanges({ sparse_infill_filament: '2' }, baseConfig()).values['sparse_infill_filament_id']).toBe(2)
+    expect(projectSettingChanges({ sparse_infill_filament: '0' }, baseConfig()).values).toEqual({})
+  })
+
   it('leaves out G-code, scripts, credentials and printer settings', () => {
     const r = projectSettingChanges(
       { machine_start_gcode: 'M104 S300', post_process: ['rm -rf /'], printhost_apikey: 'secret', printable_height: '999', nozzle_temperature: ['215'] },

@@ -1021,6 +1021,23 @@ impl SliceSession {
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
     ) -> Result<Self> {
+        // Older names of the per-feature filament keys in the plate's own settings read as ours (`crate::legacy`).
+        let renamed_plate = crate::legacy::plate_with_current_names(plate);
+        let plate = renamed_plate.as_ref().unwrap_or(plate);
+        let renamed_ranges: Option<Vec<HeightRange>> = ranges
+            .iter()
+            .any(|r| crate::legacy::value_with_current_names(&r.settings).is_some())
+            .then(|| {
+                ranges
+                    .iter()
+                    .map(|r| HeightRange {
+                        settings: crate::legacy::value_with_current_names(&r.settings)
+                            .unwrap_or_else(|| r.settings.clone()),
+                        ..r.clone()
+                    })
+                    .collect()
+            });
+        let ranges = renamed_ranges.as_deref().unwrap_or(ranges);
         check_extent(plate)?;
         let map = if crate::nozzles::shared(config) {
             let usage = crate::nozzles::Usage::of_plate(plate, config);
@@ -2310,7 +2327,7 @@ impl SliceSession {
     }
 
     /// Supports printed with a filament of their own (`support_filament`, `support_interface_filament`;
-    /// 0 is whichever filament is active, as in Orca): those filaments join the tool order of the
+    /// 0 is whichever filament is active: for the base as in Orca, for the interface as Bambu Studio prints it): those filaments join the tool order of the
     /// layers that have support, and the prime tower is planned again for them.
     fn plan_support_tools(&mut self, config: &PrintConfig) -> Result<()> {
         let (base, iface) = (
@@ -2331,9 +2348,8 @@ impl SliceSession {
                     return Vec::new();
                 };
                 let mut v = Vec::new();
-                // The interface prints with the base filament when it has none of its own.
-                let base_here = !sl.base.is_empty() || (iface == 0 && !sl.interface.is_empty());
-                if base > 0 && base_here {
+                // An interface without a filament of its own prints with the active one (see `support_tools`).
+                if base > 0 && !sl.base.is_empty() {
                     v.push(base);
                 }
                 if iface > 0 && !sl.interface.is_empty() {
@@ -9237,52 +9253,34 @@ struct FeatureTools {
     bottom: u8,
 }
 
-/// Per-feature filament keys, and the older names Orca reads for them (`1` meant the default there).
-const FEATURE_KEYS: [(&str, &[&str]); 6] = [
-    (
-        "outer_wall_filament_id",
-        &["outer_wall_filament", "wall_filament", "perimeter_extruder"],
-    ),
-    ("inner_wall_filament_id", &["inner_wall_filament"]),
-    (
-        "sparse_infill_filament_id",
-        &["sparse_infill_filament", "infill_extruder"],
-    ),
-    (
-        "internal_solid_filament_id",
-        &["solid_infill_filament", "solid_infill_extruder"],
-    ),
-    ("top_surface_filament_id", &["top_solid_infill_filament"]),
-    ("bottom_surface_filament_id", &["bottom_solid_infill_filament"]),
+/// Per-feature filament keys. Older and other slicers' names for them are set under these names when the settings
+/// are read (`crate::legacy`).
+const FEATURE_KEYS: [&str; 6] = [
+    "outer_wall_filament_id",
+    "inner_wall_filament_id",
+    "sparse_infill_filament_id",
+    "internal_solid_filament_id",
+    "top_surface_filament_id",
+    "bottom_surface_filament_id",
 ];
 
-/// A per-feature filament from settings read through `get`: the key, or an older name for it.
-fn feature_id_of<'v>(get: impl Fn(&str) -> Option<&'v serde_json::Value>, key: &str, legacy: &[&str]) -> u8 {
-    let num = |k: &str| -> Option<f64> {
-        let x = match get(k)? {
-            serde_json::Value::Array(a) => a.first()?.clone(),
-            other => other.clone(),
-        };
-        match x {
-            serde_json::Value::Number(n) => n.as_f64(),
-            serde_json::Value::String(t) => t.trim().parse().ok(),
-            _ => None,
-        }
+/// A per-feature filament from settings read through `get`, 0 when unset.
+fn feature_id_of<'v>(get: impl Fn(&str) -> Option<&'v serde_json::Value>, key: &str) -> u8 {
+    let x = match get(key) {
+        Some(serde_json::Value::Array(a)) => a.first(),
+        other => other,
+    };
+    let n = match x {
+        Some(serde_json::Value::Number(n)) => n.as_f64(),
+        Some(serde_json::Value::String(t)) => t.trim().parse().ok(),
+        _ => None,
     };
     #[allow(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
         reason = "a filament slot"
     )]
-    let slot = |x: f64| x.clamp(0.0, 255.0).round() as u8;
-    if let Some(x) = num(key) {
-        return slot(x);
-    }
-    // A legacy key's 1 is the default (the object's filament).
-    legacy
-        .iter()
-        .find_map(|k| num(k))
-        .map_or(0, |x| if slot(x) == 1 { 0 } else { slot(x) })
+    n.map_or(0, |x| x.clamp(0.0, 255.0).round() as u8)
 }
 
 fn feature_tools(cfg: &PrintConfig, slot: u8) -> FeatureTools {
@@ -9303,8 +9301,7 @@ fn feature_tools_from<'v>(
     get: impl Fn(&str) -> Option<&'v serde_json::Value> + Copy,
     slot: u8,
 ) -> FeatureTools {
-    let [outer, inner, sparse, mut solid, mut top, mut bottom] =
-        FEATURE_KEYS.map(|(k, legacy)| feature_id_of(get, k, legacy));
+    let [outer, inner, sparse, mut solid, mut top, mut bottom] = FEATURE_KEYS.map(|k| feature_id_of(get, k));
     let bambu = get("printer_model")
         .and_then(serde_json::Value::as_str)
         .is_some_and(|m| m.starts_with("Bambu Lab"));
@@ -9339,7 +9336,7 @@ fn uses_feature_tools(values: &[&serde_json::Value]) -> bool {
     values.iter().any(|v| {
         FEATURE_KEYS
             .iter()
-            .any(|(k, legacy)| feature_id_of(|name| v.get(name), k, legacy) > 0)
+            .any(|k| feature_id_of(|name| v.get(name), k) > 0)
     })
 }
 
@@ -9558,8 +9555,10 @@ fn support_tools(cfg: &PrintConfig, active: u8) -> (u8, u8) {
         0 => active,
         t => t,
     };
+    // An interface without a filament of its own prints with the active one too, not the base's: Bambu Studio prints
+    // it with the object's filament when only the base has its own.
     let iface = match support_slot(cfg, "support_interface_filament") {
-        0 => base,
+        0 => active,
         t => t,
     };
     (base, iface)
@@ -10414,22 +10413,65 @@ mod tag_tests {
 #[cfg(test)]
 mod feature_slot_tests {
     use super::feature_slots;
+    use crate::config::PrintConfig;
     use serde_json::json;
 
     /// The filaments of outer and inner wall, sparse and internal solid infill, top and bottom surface of a part on
-    /// filament 1 with these settings.
-    fn slots(cfg: &serde_json::Value) -> [u8; 6] {
-        feature_slots(|k| cfg.get(k), 1)
+    /// `slot` with these settings, read as a slice reads them: over the engine's defaults.
+    fn slots_on(c: &serde_json::Value, slot: u8) -> [u8; 6] {
+        let cfg = PrintConfig::from_value(c).expect("the settings read");
+        feature_slots(|k| cfg.raw.get(k), slot)
+    }
+
+    fn slots(c: &serde_json::Value) -> [u8; 6] {
+        slots_on(c, 1)
     }
 
     #[test]
     fn on_a_bambu_printer_solid_infill_stays_on_the_parts_filament_when_only_sparse_moves() {
         // Bambu Studio: walls on 2, sparse on 3, solid unset: solid infill and the surfaces print with filament 1.
-        let c = json!({"printer_model": "Bambu Lab H2D", "wall_filament": 2, "inner_wall_filament": 2, "sparse_infill_filament": 3});
+        let c = json!({"printer_model": "Bambu Lab H2D", "wall_filament": 2, "sparse_infill_filament": 3});
         assert_eq!(slots(&c), [2, 2, 3, 1, 1, 1]);
         // Solid infill set: the surfaces follow it.
         let c = json!({"printer_model": "Bambu Lab P1S", "sparse_infill_filament": 2, "solid_infill_filament": 3});
         assert_eq!(slots(&c), [1, 1, 2, 3, 3, 3]);
+    }
+
+    #[test]
+    fn bambu_studio_names_are_read_as_strings_or_numbers() {
+        // Bambu Studio writes every value as a string.
+        for v in [json!("2"), json!(2)] {
+            let c = json!({"printer_model": "Bambu Lab X2D", "sparse_infill_filament": v});
+            assert_eq!(slots(&c), [1, 1, 2, 1, 1, 1], "sparse_infill_filament {v}");
+        }
+        // `wall_filament` is both walls in Bambu Studio.
+        let c = json!({"printer_model": "Bambu Lab X2D", "wall_filament": "2"});
+        assert_eq!(slots(&c), [2, 2, 1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn a_bambu_studio_one_is_filament_one_and_zero_is_the_parts_own() {
+        // Studio 2.8 is 1 based with 0 for the part's own filament: a part on 2 with infill on "1" prints infill
+        // with filament 1.
+        let c = json!({"printer_model": "Bambu Lab X2D", "sparse_infill_filament": "1"});
+        assert_eq!(slots_on(&c, 2), [2, 2, 1, 2, 2, 2]);
+        let c = json!({"printer_model": "Bambu Lab X2D", "sparse_infill_filament": "0"});
+        assert_eq!(slots_on(&c, 2), [2, 2, 2, 2, 2, 2]);
+    }
+
+    #[test]
+    fn orca_and_prusaslicer_names_keep_one_as_the_parts_own() {
+        // Not measured against their output yet: the old rule stays for these names.
+        let c = json!({"infill_extruder": 1, "perimeter_extruder": "1"});
+        assert_eq!(slots_on(&c, 2), [2, 2, 2, 2, 2, 2]);
+        let c = json!({"infill_extruder": 3});
+        assert_eq!(slots_on(&c, 2), [2, 2, 3, 3, 3, 3]);
+    }
+
+    #[test]
+    fn our_own_name_wins_over_an_older_one_in_the_same_settings() {
+        let c = json!({"sparse_infill_filament": "3", "sparse_infill_filament_id": 2});
+        assert_eq!(slots(&c), [1, 1, 2, 2, 2, 2]);
     }
 
     #[test]

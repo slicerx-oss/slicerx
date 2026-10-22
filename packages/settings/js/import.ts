@@ -9,6 +9,8 @@ import legacyJson from '../legacy.json'
 interface LegacyRules {
   meta: string[]
   rename: Record<string, string>
+  /** More of our keys an older key sets (Bambu Studio's `wall_filament` is both walls). */
+  rename_also: Record<string, string[]>
   value_map: { key: string; from: string; to: string }[]
   drop_if_percent: string[]
   obsolete: string[]
@@ -119,17 +121,25 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
       ignoredKeys.push(rawKey)
       continue
     }
-    const key = settingDef(rawKey) ? rawKey : (LEGACY.rename[rawKey] ?? rawKey)
+    const renamed = !settingDef(rawKey) && LEGACY.rename[rawKey] !== undefined
+    const key = renamed ? LEGACY.rename[rawKey]! : rawKey
     const def = settingDef(key)
     if (!def) {
       unknownKeys.push(rawKey)
       continue
     }
+    // Our own name in the same file wins over an older one.
+    if (renamed && key in merged) continue
     const raw = mapLegacyValue(rawKey, rawValue)
-    const c = coerce(def, raw)
-    if (c.ok === true) config[key] = c.value
-    else if (c.ok === 'nil') nilKeys.push(key)
-    else invalidKeys.push(key)
+    for (const k of [key, ...(renamed ? (LEGACY.rename_also[rawKey] ?? []) : [])]) {
+      if (k !== key && k in merged) continue
+      const d = settingDef(k)
+      if (!d) continue
+      const c = coerce(d, raw)
+      if (c.ok === true) config[k] = c.value
+      else if (c.ok === 'nil') nilKeys.push(k)
+      else invalidKeys.push(k)
+    }
   }
   if (fromMode !== undefined) config['reduce_infill_retraction'] = fromMode
   return { config, unknownKeys: unknownKeys.sort(), ignoredKeys: ignoredKeys.sort(), nilKeys: nilKeys.sort(), invalidKeys: invalidKeys.sort() }

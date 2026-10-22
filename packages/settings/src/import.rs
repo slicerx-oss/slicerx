@@ -23,6 +23,8 @@ struct ValueMap {
 struct Legacy {
     meta: Vec<String>,
     rename: HashMap<String, String>,
+    #[serde(default)]
+    rename_also: HashMap<String, Vec<String>>,
     value_map: Vec<ValueMap>,
     drop_if_percent: Vec<String>,
     obsolete: Vec<String>,
@@ -32,6 +34,8 @@ struct Legacy {
 struct Rules {
     meta: HashSet<String>,
     rename: HashMap<String, String>,
+    /// More of our keys an older key sets (Bambu Studio's `wall_filament` is both walls).
+    rename_also: HashMap<String, Vec<String>>,
     value_map: Vec<ValueMap>,
     drop_if_percent: HashSet<String>,
     ignored: HashSet<String>,
@@ -44,6 +48,7 @@ fn rules() -> &'static Rules {
         let l: Legacy = serde_json::from_str(include_str!("../legacy.json")).unwrap_or(Legacy {
             meta: Vec::new(),
             rename: HashMap::new(),
+            rename_also: HashMap::new(),
             value_map: Vec::new(),
             drop_if_percent: Vec::new(),
             obsolete: Vec::new(),
@@ -52,6 +57,7 @@ fn rules() -> &'static Rules {
         Rules {
             meta: l.meta.into_iter().collect(),
             rename: l.rename,
+            rename_also: l.rename_also,
             value_map: l.value_map,
             drop_if_percent: l.drop_if_percent.into_iter().collect(),
             ignored: l.obsolete.iter().cloned().chain(l.foreign).collect(),
@@ -234,26 +240,35 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
             ignored.insert(raw_key.clone());
             continue;
         }
-        let key = if setting_def(raw_key).is_some() {
-            raw_key.clone()
-        } else {
-            rules
-                .rename
-                .get(raw_key)
-                .cloned()
-                .unwrap_or_else(|| raw_key.clone())
-        };
-        let Some(def) = setting_def(&key) else {
+        let renamed = setting_def(raw_key)
+            .is_none()
+            .then(|| rules.rename.get(raw_key))
+            .flatten();
+        let key = renamed.cloned().unwrap_or_else(|| raw_key.clone());
+        if setting_def(&key).is_none() {
             unknown.insert(raw_key.clone());
             continue;
-        };
-        match coerce(def, &map_legacy_value(raw_key, raw_value)) {
-            Coerced::Ok(v) => config.set(key, v),
-            Coerced::Nil => {
-                nil.insert(key);
-            }
-            Coerced::Invalid => {
-                invalid.insert(key);
+        }
+        // Our own name in the same file wins over an older one.
+        if renamed.is_some() && merged.contains_key(&key) {
+            continue;
+        }
+        let also = renamed
+            .and_then(|_| rules.rename_also.get(raw_key))
+            .map_or(&[][..], Vec::as_slice)
+            .iter()
+            .filter(|k| !merged.contains_key(*k));
+        let value = map_legacy_value(raw_key, raw_value);
+        for k in std::iter::once(&key).chain(also) {
+            let Some(def) = setting_def(k) else { continue };
+            match coerce(def, &value) {
+                Coerced::Ok(v) => config.set(k.clone(), v),
+                Coerced::Nil => {
+                    nil.insert(k.clone());
+                }
+                Coerced::Invalid => {
+                    invalid.insert(k.clone());
+                }
             }
         }
     }

@@ -72,6 +72,11 @@
   "extruder_clearance_max_radius": "extruder_clearance_radius",
   "machine_switch_extruder_time": "machine_tool_change_time"
  },
+ "rename_also": {
+  "wall_filament": [
+   "inner_wall_filament_id"
+  ]
+ },
  "value_map": [
   {
    "key": "wall_generator",
@@ -89,17 +94,7 @@
    "to": "0"
   },
   {
-   "key": "sparse_infill_filament",
-   "from": "1",
-   "to": "0"
-  },
-  {
    "key": "solid_infill_extruder",
-   "from": "1",
-   "to": "0"
-  },
-  {
-   "key": "solid_infill_filament",
    "from": "1",
    "to": "0"
   },
@@ -115,11 +110,6 @@
   },
   {
    "key": "perimeter_extruder",
-   "from": "1",
-   "to": "0"
-  },
-  {
-   "key": "wall_filament",
    "from": "1",
    "to": "0"
   },
