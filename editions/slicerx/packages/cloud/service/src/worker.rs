@@ -15,6 +15,8 @@ use tokio::sync::watch;
 
 use crate::backend::{Backend, Bucket, Job, Outcome, mesh_path, result_paths};
 use crate::error::{Error, Result};
+use crate::gzip::{inflate, is_gzip};
+use crate::http::MAX_INFLATED_MESH_BYTES;
 
 #[derive(Debug, Clone)]
 pub struct WorkerConfig {
@@ -146,9 +148,7 @@ async fn fetch_meshes(
             return Ok(Err(format!("mesh {sha} was not uploaded")));
         };
         let loaded = tokio::task::spawn_blocking(move || {
-            if sha256_hex(&bytes) != sha {
-                return Err(format!("mesh {sha} does not match its hash"));
-            }
+            let bytes = stored_mesh(bytes, &sha)?;
             api::load_mesh(&bytes, &sha)
                 .map(|m| (sha, Arc::new(m)))
                 .map_err(|e| e.to_string())
@@ -163,6 +163,24 @@ async fn fetch_meshes(
         }
     }
     Ok(Ok(meshes))
+}
+
+/// A stored mesh as the engine reads it: the bytes themselves when they match the hash, else a gzip upload inflated
+/// (with the same output limit as the upload) and checked against the hash.
+fn stored_mesh(bytes: Vec<u8>, sha: &str) -> Result<Vec<u8>, String> {
+    if sha256_hex(&bytes) == sha {
+        return Ok(bytes);
+    }
+    let mismatch = || format!("mesh {sha} does not match its hash");
+    if !is_gzip(&bytes) {
+        return Err(mismatch());
+    }
+    let mesh = inflate(&bytes, MAX_INFLATED_MESH_BYTES).map_err(|_| mismatch())?;
+    if sha256_hex(&mesh) == sha {
+        Ok(mesh)
+    } else {
+        Err(mismatch())
+    }
 }
 
 /// Turns the core's per-range stage reports into one fraction for the plate.

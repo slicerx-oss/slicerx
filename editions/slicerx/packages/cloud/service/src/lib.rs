@@ -11,6 +11,7 @@
 pub mod backend;
 pub mod cors;
 pub mod error;
+pub mod gzip;
 pub mod http;
 pub mod idle;
 pub mod memory;

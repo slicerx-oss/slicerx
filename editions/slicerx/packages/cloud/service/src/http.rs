@@ -10,9 +10,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::Bytes;
+use axum::extract::rejection::BytesRejection;
 use axum::extract::{DefaultBodyLimit, FromRequestParts, Path, Query, State};
 use axum::http::request::Parts;
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
@@ -25,10 +26,15 @@ use crate::backend::{
     LinkPrinter, NewJob, Principal, mesh_path,
 };
 use crate::error::{Error, Result};
+use crate::gzip::{Inflate, inflate};
 use crate::worker::{sha256_hex, volume_mesh_ref};
 
-/// Largest mesh upload, matching the cloud-inputs bucket limit.
+/// Largest mesh upload as sent (gzip compressed or not), matching the cloud-inputs bucket limit: the service stores
+/// the bytes it was sent, so this, the bucket and the account's limit all read the same size.
 pub const MAX_MESH_BYTES: usize = 50 * 1024 * 1024;
+/// Largest mesh a gzip upload may inflate to: four times the largest upload. Meshes compress about 2.5 to 1, so a
+/// real model stays well under it; a body that would inflate past it is refused before it is all in memory.
+pub const MAX_INFLATED_MESH_BYTES: usize = 4 * MAX_MESH_BYTES;
 /// Largest job body (the request JSON without meshes).
 pub const MAX_JOB_BYTES: usize = 256 * 1024;
 pub const MAX_OBJECTS: usize = 64;
@@ -309,12 +315,57 @@ async fn mesh_exists(
     }
 }
 
+/// A size in MB (MiB, as every limit here counts them), with one decimal when it has one.
+fn mb(bytes: u64) -> String {
+    #[allow(clippy::cast_precision_loss, reason = "sizes are far below 2^52")]
+    let tenths = (bytes as f64 / (1024.0 * 1024.0) * 10.0).round() / 10.0;
+    format!("{tenths} MB")
+}
+
+/// The upload's `Content-Encoding`: true for gzip, false for none or identity.
+fn gzip_encoded(headers: &HeaderMap) -> Result<bool> {
+    let Some(value) = headers.get(header::CONTENT_ENCODING) else {
+        return Ok(false);
+    };
+    let enc = value.to_str().unwrap_or_default().trim().to_ascii_lowercase();
+    match enc.as_str() {
+        "" | "identity" => Ok(false),
+        "gzip" | "x-gzip" => Ok(true),
+        _ => Err(Error::BadRequest(format!(
+            "meshes are uploaded as they are or gzip compressed, not {enc}"
+        ))),
+    }
+}
+
+/// Stores a mesh under its SHA-256. The body may be gzip compressed (`Content-Encoding: gzip`): the limits read the
+/// size as sent, which is also what is stored, and the hash is checked on the inflated mesh.
 async fn upload_mesh(
     State(app): State<Arc<App>>,
     Slicer(who, quota): Slicer,
     Path(sha): Path<String>,
-    body: Bytes,
+    headers: HeaderMap,
+    body: std::result::Result<Bytes, BytesRejection>,
 ) -> Result<(StatusCode, Json<Value>)> {
+    let gzip = gzip_encoded(&headers)?;
+    let compressed = if gzip { " compressed" } else { "" };
+    let body = match body {
+        Ok(b) => b,
+        Err(e) if e.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            let size = headers
+                .get(header::CONTENT_LENGTH)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok());
+            let limit = mb(MAX_MESH_BYTES as u64);
+            return Err(Error::TooLarge(match size {
+                Some(n) => format!(
+                    "This model is {}{compressed}, over the cloud upload limit of {limit}.",
+                    mb(n)
+                ),
+                None => format!("This model is over the cloud upload limit of {limit}."),
+            }));
+        }
+        Err(e) => return Err(Error::BadRequest(e.body_text())),
+    };
     if !is_sha256(&sha) {
         return Err(Error::BadRequest("mesh ids are lowercase hex SHA-256".into()));
     }
@@ -323,29 +374,50 @@ async fn upload_mesh(
     }
     if body.len() as u64 > quota.max_upload_bytes {
         return Err(Error::TooLarge(format!(
-            "this account can upload meshes up to {} MB",
-            quota.max_upload_bytes / (1024 * 1024)
+            "This model is {}{compressed}, over this account's cloud upload limit of {}.",
+            mb(body.len() as u64),
+            mb(quota.max_upload_bytes)
         )));
     }
-    let bytes = body.to_vec();
-    let actual = tokio::task::spawn_blocking({
+    let (actual, len) = tokio::task::spawn_blocking({
         let b = body.clone();
-        move || sha256_hex(&b)
+        move || -> Result<(String, usize)> {
+            if !gzip {
+                return Ok((sha256_hex(&b), b.len()));
+            }
+            let mesh = inflate(&b, MAX_INFLATED_MESH_BYTES).map_err(|e| match e {
+                Inflate::TooLarge => Error::TooLarge(format!(
+                    "This model is over {} uncompressed, the most the cloud slices.",
+                    mb(MAX_INFLATED_MESH_BYTES as u64)
+                )),
+                Inflate::Invalid => {
+                    Error::BadRequest("the upload is marked gzip compressed but is not valid gzip".into())
+                }
+            })?;
+            Ok((sha256_hex(&mesh), mesh.len()))
+        }
     })
     .await
-    .map_err(|e| Error::Backend(e.to_string()))?;
+    .map_err(|e| Error::Backend(e.to_string()))??;
+    if len == 0 {
+        return Err(Error::BadRequest("the mesh is empty".into()));
+    }
     if actual != sha {
         return Err(Error::BadRequest(format!(
             "the upload hashes to {actual}, not {sha}"
         )));
     }
-    let len = bytes.len();
+    let content_type = if gzip {
+        "application/gzip"
+    } else {
+        "application/octet-stream"
+    };
     app.backend
         .put_object(
             Bucket::Inputs,
             &mesh_path(&who.user_id, &sha),
-            bytes,
-            "application/octet-stream",
+            body.to_vec(),
+            content_type,
         )
         .await?;
     Ok((StatusCode::CREATED, Json(json!({ "sha256": sha, "bytes": len }))))

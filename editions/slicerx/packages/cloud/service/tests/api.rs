@@ -10,8 +10,8 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{Value, json};
-use sx_cloud::backend::Backend;
-use sx_cloud::http::About;
+use sx_cloud::backend::{Backend, Bucket, mesh_path};
+use sx_cloud::http::{About, MAX_INFLATED_MESH_BYTES, MAX_MESH_BYTES};
 use sx_cloud::{App, MemoryBackend, WorkerConfig, router, sha256_hex, worker};
 use tower::ServiceExt;
 
@@ -103,6 +103,34 @@ impl Harness {
         sha
     }
 
+    /// `PUT /v1/meshes/{sha}` with `body` as sent, and `Content-Encoding` when given.
+    async fn put_mesh(
+        &self,
+        token: &str,
+        sha: &str,
+        body: Vec<u8>,
+        encoding: Option<&str>,
+    ) -> (StatusCode, Value) {
+        let mut req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/meshes/{sha}"))
+            .header("authorization", format!("Bearer {token}"))
+            .header("content-type", "application/octet-stream")
+            .header("content-length", body.len());
+        if let Some(e) = encoding {
+            req = req.header("content-encoding", e);
+        }
+        let res = self
+            .app
+            .clone()
+            .oneshot(req.body(Body::from(body)).unwrap())
+            .await
+            .unwrap();
+        let status = res.status();
+        let bytes = res.into_body().collect().await.unwrap().to_bytes();
+        (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
     /// Claims and runs the next job the way a worker does.
     async fn work(&self) {
         let cfg = WorkerConfig {
@@ -163,6 +191,14 @@ fn box_stl(s: f32) -> Vec<u8> {
         out.extend_from_slice(&[0u8; 2]);
     }
     out
+}
+
+/// `bytes` gzip compressed, as the clients send a mesh.
+fn gzip(bytes: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    e.write_all(bytes).unwrap();
+    e.finish().unwrap()
 }
 
 fn plate(sha: &str) -> Value {
@@ -336,6 +372,145 @@ async fn uploads_are_checked_against_their_hash() {
         .json(Method::GET, &format!("/v1/meshes/{sha}"), ASH_TOKEN, None)
         .await;
     assert_eq!(s, StatusCode::NOT_FOUND, "uploads are per member");
+}
+
+#[tokio::test]
+async fn a_gzip_upload_is_inflated_checked_and_sliced() {
+    let h = harness();
+    let stl = cube_stl();
+    let sha = sha256_hex(&stl);
+    let packed = gzip(&stl);
+    assert!(packed.len() < stl.len());
+
+    // The hash names the mesh, not the compressed bytes.
+    let (s, body) = h
+        .put_mesh(RV_TOKEN, &sha256_hex(&packed), packed.clone(), Some("gzip"))
+        .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]["message"].as_str().unwrap().contains(&sha),
+        "{body}"
+    );
+    let (s, body) = h.put_mesh(RV_TOKEN, &sha, stl.clone(), Some("gzip")).await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "a body that is not gzip: {body}");
+    let (s, body) = h.put_mesh(RV_TOKEN, &sha, packed.clone(), Some("br")).await;
+    assert_eq!(
+        s,
+        StatusCode::BAD_REQUEST,
+        "an encoding the service does not read: {body}"
+    );
+    assert!(
+        !h.backend
+            .object_exists(Bucket::Inputs, &mesh_path(RV, &sha))
+            .await
+            .unwrap(),
+        "nothing refused is stored"
+    );
+
+    let (s, body) = h.put_mesh(RV_TOKEN, &sha, packed.clone(), Some("gzip")).await;
+    assert_eq!(s, StatusCode::CREATED, "{body}");
+    assert_eq!(body["sha256"], sha);
+    assert_eq!(body["bytes"], stl.len(), "the mesh's own size");
+    let stored = h
+        .backend
+        .get_object(Bucket::Inputs, &mesh_path(RV, &sha))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        stored, packed,
+        "stored as sent, so the bucket limit reads the same bytes as the upload limit"
+    );
+
+    let (s, job) = h
+        .json(
+            Method::POST,
+            "/v1/jobs",
+            RV_TOKEN,
+            Some(json!({ "request": plate(&sha) })),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{job}");
+    let id = job["id"].as_str().unwrap().to_owned();
+    h.work().await;
+    let (_, job) = h
+        .json(Method::GET, &format!("/v1/jobs/{id}"), RV_TOKEN, None)
+        .await;
+    assert_eq!(job["status"], "succeeded", "{job}");
+    assert_eq!(job["result"]["layerCount"], 100);
+
+    // An uncompressed upload of the same mesh still works, with identity named or not.
+    for encoding in [None, Some("identity")] {
+        let (s, body) = h.put_mesh(ASH_TOKEN, &sha, stl.clone(), encoding).await;
+        assert_eq!(s, StatusCode::CREATED, "{encoding:?}: {body}");
+    }
+}
+
+#[tokio::test]
+async fn the_upload_limit_reads_the_compressed_size() {
+    let h = harness();
+    // 1 MB uploads.
+    h.backend.grant_access(CY, 5, MB);
+    let mesh = vec![7u8; 3 * usize::try_from(MB).unwrap()];
+    let sha = sha256_hex(&mesh);
+    let (s, body) = h.put_mesh(CY_TOKEN, &sha, mesh.clone(), None).await;
+    assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert_eq!(body["error"]["code"], "limit");
+    assert_eq!(
+        body["error"]["message"],
+        "This model is 3 MB, over this account's cloud upload limit of 1 MB."
+    );
+    let (s, body) = h.put_mesh(CY_TOKEN, &sha, gzip(&mesh), Some("gzip")).await;
+    assert_eq!(
+        s,
+        StatusCode::CREATED,
+        "3 MB that compresses under 1 MB fits: {body}"
+    );
+}
+
+#[tokio::test]
+async fn an_upload_over_the_body_limit_gets_a_plain_answer() {
+    let h = harness();
+    let body = vec![1u8; MAX_MESH_BYTES + 3 * 1024 * 1024];
+    let sha = sha256_hex(&body);
+    let (s, res) = h.put_mesh(RV_TOKEN, &sha, body, None).await;
+    assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(res["error"]["code"], "limit", "{res}");
+    assert_eq!(
+        res["error"]["message"],
+        "This model is 53 MB, over the cloud upload limit of 50 MB."
+    );
+}
+
+#[tokio::test]
+async fn a_gzip_bomb_is_refused() {
+    use std::io::Write;
+    let h = harness();
+    // Zeros, one byte past what the service inflates: a few hundred KB on the wire.
+    let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    let chunk = vec![0u8; 1024 * 1024];
+    let mut left = MAX_INFLATED_MESH_BYTES + 1;
+    while left > 0 {
+        let n = left.min(chunk.len());
+        e.write_all(&chunk[..n]).unwrap();
+        left -= n;
+    }
+    let bomb = e.finish().unwrap();
+    assert!(bomb.len() < 2 * 1024 * 1024, "{}", bomb.len());
+    let sha = "b".repeat(64);
+    let (s, body) = h.put_mesh(RV_TOKEN, &sha, bomb, Some("gzip")).await;
+    assert_eq!(s, StatusCode::PAYLOAD_TOO_LARGE, "{body}");
+    assert_eq!(body["error"]["code"], "limit");
+    assert_eq!(
+        body["error"]["message"],
+        "This model is over 200 MB uncompressed, the most the cloud slices."
+    );
+    assert!(
+        !h.backend
+            .object_exists(Bucket::Inputs, &mesh_path(RV, &sha))
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
