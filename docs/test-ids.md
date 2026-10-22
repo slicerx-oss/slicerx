@@ -283,12 +283,14 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `account-uploads`, `account-creator-page`, `account-review`, `account-settings`, `account-sign-out` | Its items |
 | `vault-featured` | The featured design; `data-listing` is its listing id |
 | `vault-featured-open` | Its Open in SlicerX |
+| `vault-featured-size` | Its Size fact (dt and dd), when the scan measured one |
 | `vault-card` | A design card in a row or the grid; `data-listing` is its listing id |
 | `vault-card-details`, `vault-card-save` | The card's picture (opens its sheet) and its Save |
 | `vault-creator` | A creator in New creators; `data-handle` is the handle |
 | `vault-listing-sheet`, `vault-listing-close` | A design's sheet and its close button |
 | `vault-detail` | The design in the sheet; `data-listing` is its listing id |
 | `vault-detail-open`, `vault-detail-download` | Open in SlicerX and Download .sx3mf |
+| `vault-detail-size` | The Size fact in the sheet (dt and dd), "30.0 x 12.0 x 8.0 mm", when the scan measured one |
 | `vault-download-status` | Download progress or failure; `data-state` is downloading or error |
 | `vault-download-retry` | Try again after a failed download |
 
