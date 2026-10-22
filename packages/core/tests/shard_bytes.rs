@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! Layer ranges sliced apart concatenate to the bytes of one range, and a session that already sliced other
 //! ranges (in any order) gives the bytes a fresh one gives: the web pool's workers each slice ranges of the
-//! plate, and a kept session must not change what a range prints.
+//! plate, and a kept session must not change what a range prints. Tree supports are planned over the whole
+//! object, so a range that starts or ends inside a tree prints the same branches as one range does.
 
 mod common;
 
@@ -173,4 +174,109 @@ fn by_object_ranges_end_at_the_plates_top() {
     same_bytes_every_way(&req, &move |id: &str| {
         Ok(if id == "tall" { tall.clone() } else { short.clone() })
     });
+}
+
+/// The table fixture: a top on four legs, with an overhang under the top that tree supports reach up to.
+fn table() -> Arc<Mesh> {
+    let path = format!("{}/cli/tests/fixtures/table.stl", env!("CARGO_MANIFEST_DIR"));
+    Arc::new(Mesh::load(&std::fs::read(path).unwrap(), "table.stl").unwrap())
+}
+
+/// Slices `req` in the ranges between `cuts`, on a fresh session each, or all on one session from the top
+/// range down. Returns each range's G-code, in plate order.
+fn cut(
+    req: &SliceRequest,
+    meshes: &dyn Fn(&str) -> sx_core::Result<Arc<Mesh>>,
+    cuts: &[u32],
+    kept: bool,
+) -> Vec<Vec<u8>> {
+    let (config, _) = api::request_config_checked(req).unwrap();
+    let plate = api::build_plate(req, meshes).unwrap();
+    let one = api::build_session(req, &plate, &config).unwrap();
+    let mut bounds = vec![0];
+    bounds.extend_from_slice(cuts);
+    bounds.push(one.layer_count());
+    let mut out = vec![Vec::new(); bounds.len() - 1];
+    for i in (0..out.len()).rev() {
+        let own;
+        let session = if kept {
+            &one
+        } else {
+            own = api::build_session(req, &plate, &config).unwrap();
+            &own
+        };
+        api::slice_shard(
+            req,
+            session,
+            &config,
+            bounds[i]..bounds[i + 1],
+            &sx_core::NoProgress,
+            &mut out[i],
+        )
+        .unwrap();
+    }
+    out
+}
+
+fn has_support(g: &[u8]) -> bool {
+    String::from_utf8_lossy(g).contains(";TYPE:Support")
+}
+
+#[test]
+fn tree_supports_slice_the_same_in_any_ranges() {
+    let mesh = table();
+    let meshes = move |_: &str| Ok(mesh.clone());
+    for style in [
+        json!({"support_style": "organic"}),
+        json!({"support_style": "organic", "organic_support_engine": "v2"}),
+        json!({"support_style": "tree_hybrid"}),
+        json!({"support_style": "tree_slim"}),
+        json!({"support_style": "tree_strong"}),
+    ] {
+        let mut config = json!({
+            "enable_support": true, "support_type": "tree(auto)", "support_on_build_plate_only": false,
+            "brim_width": 0,
+        });
+        for (k, v) in style.as_object().unwrap() {
+            config[k] = v.clone();
+        }
+        let req = request(&[("t", [128.0, 128.0])], &config);
+        let one = cut(&req, &meshes, &[], false).concat();
+        assert!(has_support(&one), "{style}: no supports");
+        let (c, _) = api::request_config_checked(&req).unwrap();
+        let n = api::build_session(&req, &api::build_plate(&req, &meshes).unwrap(), &c)
+            .unwrap()
+            .layer_count();
+        // Uneven ranges, the first boundary inside the trees: both ranges beside it print support.
+        let uneven = [n / 5 + 1, n / 2 + 3, n - 7];
+        let parts = cut(&req, &meshes, &uneven, false);
+        assert!(
+            has_support(&parts[0]) && has_support(&parts[1]),
+            "{style}: the boundary at layer {} is not inside a tree",
+            uneven[0]
+        );
+        let mut splits: Vec<(String, Vec<u32>)> = [2, 3, 4, 7]
+            .iter()
+            .map(|&k| (format!("{k} ranges"), (1..k).map(|s| n * s / k).collect()))
+            .collect();
+        splits.push(("uneven ranges".into(), uneven.to_vec()));
+        for (name, cuts) in &splits {
+            for kept in [false, true] {
+                let joined = cut(&req, &meshes, cuts, kept).concat();
+                assert!(
+                    joined == one,
+                    "{style}, {name}{}: {}",
+                    if kept { " on one session" } else { "" },
+                    first_difference(&one, &joined)
+                );
+            }
+        }
+        let every: Vec<u32> = (1..n).collect();
+        let joined = cut(&req, &meshes, &every, true).concat();
+        assert!(
+            joined == one,
+            "{style}, one range per layer: {}",
+            first_difference(&one, &joined)
+        );
+    }
 }
