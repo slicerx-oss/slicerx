@@ -43,6 +43,15 @@ export const unitMm = (u: Pick<UnitPrefs, 'length'>) => UNIT_MM[u.length]!
  * A length in mm as the shown number, without the unit: mm trimmed to its decimals (12.5), inches to a fixed count
  * (0.500) or a fraction (1 1/2).
  */
+/**
+ * A model's size, x, y and z in mm, as the 3D view shows it: "30.0 x 12.0 x 8.0 mm", or in the display unit at its
+ * precision when `units` is given. The Vault shows a listing's size the same way.
+ */
+export function sizeText(size: readonly [number, number, number], units?: UnitPrefs): string {
+  if (units) return `${size.map((v) => fixedLength(v, units)).join(' x ')} ${units.length}`
+  return `${size.map((v) => v.toFixed(1)).join(' x ')} mm`
+}
+
 /** A readout's length: always the precision's decimals (or its fraction), so a column of them lines up. */
 export function fixedLength(mm: number, u: UnitPrefs): string {
   if (!Number.isFinite(mm)) return ''

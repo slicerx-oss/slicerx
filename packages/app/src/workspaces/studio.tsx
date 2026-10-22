@@ -15,7 +15,7 @@ import { PlatePicker } from './prepare/plate-picker'
 import { useHost } from '../host'
 import { SidePane, type PaneSection } from '../shell/pane'
 import { seedExamplePlate } from '../state/actions'
-import { fixedLength, type UnitPrefs } from '../cad/units'
+import { sizeText, type UnitPrefs } from '../cad/units'
 import { get, isCadTool, railOpen, setRail, showsLayers, useApp, type PlateEntry } from '../state/store'
 import { bounds, sizeOf } from '../plate/transform'
 import { usePrinter } from '../lib/use-printer'
@@ -104,9 +104,7 @@ const GcodePanel = lazy(() => import('./preview/gcode-panel').then((m) => ({ def
  */
 export function modelSizeText(entry: Pick<PlateEntry, 'parts' | 'transform'> | undefined, units?: UnitPrefs): string | null {
   const b = entry ? bounds(entry.parts, entry.transform) : null
-  if (!b) return null
-  if (units) return `${sizeOf(b).map((v) => fixedLength(v, units)).join(' x ')} ${units.length}`
-  return `${sizeOf(b).map((v) => v.toFixed(1)).join(' x ')} mm`
+  return b ? sizeText(sizeOf(b), units) : null
 }
 
 /** The size of the selected object, or of the first one with nothing selected; it follows scaling as it happens. */

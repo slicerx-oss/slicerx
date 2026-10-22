@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The size under the 3D view is the object as it sits on the plate: scaling it (the handles or the fields) changes it.
 import { describe, expect, it } from 'vitest'
+import { sizeText } from '../src/cad/units'
 import { modelSizeText } from '../src/workspaces/studio'
 
 // A 10 x 20 x 30 mm box from two corners is enough for its bounds.
@@ -27,5 +28,12 @@ describe('the model size under the view', () => {
 
   it('is nothing with no object', () => {
     expect(modelSizeText(undefined)).toBeNull()
+  })
+})
+
+describe('a size as text', () => {
+  it('reads like the view, so the Vault shows a size the same way', () => {
+    expect(sizeText([30, 12, 8])).toBe('30.0 x 12.0 x 8.0 mm')
+    expect(sizeText([29.96, 0.04, 150])).toBe('30.0 x 0.0 x 150.0 mm')
   })
 })

@@ -12,6 +12,7 @@ export { registerAgentInstall, registerAgentMarks, type AgentInstallHost, type A
 export { registerCommand, registerCommands, listCommands, searchCommands, runCommand, commandTools, commandIdForTool } from './commands/registry'
 export { fuzzyScore } from './commands/fuzzy'
 export { setWorkspace, toast, useApp } from './state/store'
+export { sizeText } from './cad/units'
 export { openModelBytes, loadDemoModel, askApproval, buildApproval } from './state/actions'
 export { DEMO_MODELS, DEFAULT_MODEL, type DemoModel } from './lib/demo-models'
 export { LayerArt, Swatch } from './parts'

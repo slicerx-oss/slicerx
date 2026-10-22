@@ -9,7 +9,7 @@ import type { Creator, Listing, ListingCard } from '@slicerx/contracts'
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, Chip, Icon, Menu, MenuAnchor, MenuItem, Seg } from '@slicerx/ui'
-import { openModelBytes, openSettings, setWorkspace, toast, useEdition, useHost } from '@slicerx/app'
+import { openModelBytes, openSettings, setWorkspace, sizeText, toast, useEdition, useHost } from '@slicerx/app'
 import { DrawingArt } from './drawing-art'
 import { coverFor } from './art'
 import { ColorDots, ColorFacts } from './colors'
@@ -407,6 +407,7 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
   const edition = useEdition()
   const cover = coverFor(listing)
   const facts = printFacts(listing)
+  const size = listing.currentVersion?.sizeMm
   const save = useSave(listing)
   const openIn = useOpenInApp(item)
   return (
@@ -423,7 +424,7 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
           <Uploader creator={creator} />
         </div>
         {listing.description ? <p className="lib-hero-d">{listing.description}</p> : null}
-        {facts.time || facts.grams || listing.currentVersion?.colors ? (
+        {facts.time || facts.grams || size || listing.currentVersion?.colors ? (
           <dl className="lib-spec">
             {facts.time ? (
               <div>
@@ -435,6 +436,12 @@ function Featured({ item, weekly }: { item: ListingCard; weekly: boolean }) {
               <div>
                 <dt>Filament</dt>
                 <dd>{facts.grams}</dd>
+              </div>
+            ) : null}
+            {size ? (
+              <div data-testid="vault-featured-size">
+                <dt>Size</dt>
+                <dd>{sizeText(size)}</dd>
               </div>
             ) : null}
             {listing.currentVersion?.colors ? (
@@ -604,9 +611,11 @@ export function Detail({ item }: { item: ListingCard }) {
   const [busy, setBusy] = useState(false)
   const [needSignIn, setNeedSignIn] = useState(false)
   const p = printFacts(listing)
-  const facts: [string, string][] = []
+  // [label, value, test id]
+  const facts: [string, string, string?][] = []
   if (got) facts.push(['Format', got.format || formatLabel(version?.format)], ['Version', got.version])
   else if (version) facts.push(['Format', formatLabel(version.format)], ['Version', version.version])
+  if (version?.sizeMm) facts.push(['Size', sizeText(version.sizeMm), 'vault-detail-size'])
   if (p.printer) facts.push(['Printer', p.printer])
   if (p.time) facts.push(['Print time', p.time])
   if (p.grams) facts.push(['Filament', p.grams])
@@ -652,8 +661,8 @@ export function Detail({ item }: { item: ListingCard }) {
       {version?.colors ? <ColorFacts colors={version.colors} /> : null}
       {facts.length ? (
         <dl className="used">
-          {facts.map(([k, v]) => (
-            <div key={k}>
+          {facts.map(([k, v, testId]) => (
+            <div key={k} data-testid={testId}>
               <dt>{k}</dt>
               <dd>{v}</dd>
             </div>
