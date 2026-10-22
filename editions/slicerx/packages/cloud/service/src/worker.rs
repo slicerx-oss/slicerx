@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
-use sx_core::api::{self, SliceRequest, SliceRun};
+use sx_core::api::{self, SliceRequest, SliceRun, VolumeSpec};
 use sx_core::{Mesh, Progress, Stage};
 use tokio::sync::watch;
 
@@ -112,7 +112,15 @@ pub async fn process(backend: &dyn Backend, cfg: &WorkerConfig, job: Job) -> Res
     Ok(())
 }
 
-/// Downloads each distinct mesh once, checks it against its hash and loads it.
+/// A volume's mesh reference as a string, as `ObjectSpec::mesh_ref` reads an object's.
+pub fn volume_mesh_ref(v: &VolumeSpec) -> String {
+    match &v.mesh {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// Downloads each distinct mesh once (objects and their volumes), checks it against its hash and loads it.
 /// The inner error is a reason to fail the job.
 async fn fetch_meshes(
     backend: &dyn Backend,
@@ -120,8 +128,16 @@ async fn fetch_meshes(
     req: &SliceRequest,
 ) -> Result<Result<HashMap<String, Arc<Mesh>>, String>> {
     let mut meshes = HashMap::new();
-    for object in &req.plate.objects {
-        let sha = object.mesh_ref();
+    // Each object's mesh and its volumes' meshes.
+    let refs: Vec<String> = req
+        .plate
+        .objects
+        .iter()
+        .flat_map(|object| {
+            std::iter::once(object.mesh_ref()).chain(object.volumes.iter().map(volume_mesh_ref))
+        })
+        .collect();
+    for sha in refs {
         if meshes.contains_key(&sha) {
             continue;
         }

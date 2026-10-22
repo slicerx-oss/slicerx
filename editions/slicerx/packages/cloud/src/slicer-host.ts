@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A SlicerHost that slices in the cloud, for `EditionHost.cloud`. Models load
 // through the local slicer (for handles and bounds) and their bytes are kept
-// so the plate can be uploaded when it is sliced.
+// so the plate can be uploaded when it is sliced. `cloudRoutedSlicer` puts it
+// in front of the app's slicer, so every model the app loads is kept.
 import {
   type GcodeExport,
   type GcodeTarget,
@@ -17,13 +18,18 @@ import {
   type SliceWarningCode,
   type SlicerHost,
 } from '@slicerx/contracts'
-import type { CloudClient, CloudSliceRequest } from './client'
+import type { CloudClient, CloudSliceObject, CloudSliceOptions, CloudSliceRequest } from './client'
 import type { CloudJob } from './schemas'
 
 export interface CloudSlicerOptions {
   client: CloudClient
   /** The host's own slicer; used to load models and build handles. */
   local: Pick<SlicerHost, 'loadModel' | 'loadParts' | 'release'>
+  /**
+   * The local slicer's parts encoder, so the uploaded copy is the mesh the local engine loads, paint included.
+   * Default: `encodeParts` here, which writes the geometry without paint.
+   */
+  encodeParts?: (parts: MeshPart[]) => Uint8Array
   /** Job poll interval, default 1000 ms. */
   pollMs?: number
 }
@@ -103,13 +109,59 @@ function toResult(job: CloudJob): SliceResult {
   }
 }
 
+const MB = 1024 * 1024
+const mb = (n: number): string => `${Math.round((n / MB) * 10) / 10} MB`
+
+/** Raw bytes as base64, for the thumbnail the service reads as text. */
+function base64(bytes: Uint8Array): string {
+  let bin = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(bin)
+}
+
+/** The request's options as the service reads them: everything the local engine gets, the thumbnail as base64. */
+function cloudOptions(o: SliceRequest['options']): CloudSliceOptions {
+  const { thumbnail, engine: _engine, ...rest } = o ?? {}
+  return {
+    ...rest,
+    engine: 'sx',
+    ...(thumbnail ? { thumbnail: { width: thumbnail.width, height: thumbnail.height, rgba: base64(thumbnail.rgba) } } : {}),
+  }
+}
+
+/** An object as the service reads it: placement, slots, volumes, object and part settings and brim ears. */
+function cloudObject(obj: SliceRequest['plate']['objects'][number]): CloudSliceObject {
+  return {
+    id: obj.id,
+    name: obj.name,
+    mesh: obj.mesh,
+    transform: obj.transform,
+    ...(obj.slotOverrides ? { slotOverrides: obj.slotOverrides } : {}),
+    ...(obj.volumes?.length ? { volumes: obj.volumes.map((v) => ({ ...v })) } : {}),
+    ...(obj.settings && Object.keys(obj.settings).length ? { settings: { ...obj.settings } } : {}),
+    ...(obj.partSettings && Object.keys(obj.partSettings).length ? { partSettings: obj.partSettings } : {}),
+    ...(obj.brimPoints?.length ? { brimPoints: obj.brimPoints } : {}),
+  }
+}
+
 export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
-  const meshBytes = new Map<string, Uint8Array>()
+  // Bytes of each loaded model; parts are kept as given and encoded on the first cloud slice that needs them, so a
+  // person who slices on this device pays nothing for the copy.
+  const sources = new Map<string, Uint8Array | MeshPart[]>()
   const jobs = new Map<string, CloudJob>()
+  const encode = opts.encodeParts ?? encodeParts
 
   const unwrap = <T>(res: { ok: true; value: T } | { ok: false; message: string }): T => {
     if (!res.ok) throw new Error(res.message)
     return res.value
+  }
+
+  const bytesOf = (id: string): Uint8Array | undefined => {
+    const src = sources.get(id)
+    if (!src || src instanceof Uint8Array) return src
+    const bytes = encode(src)
+    sources.set(id, bytes)
+    return bytes
   }
 
   return {
@@ -117,42 +169,43 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
       // Copy first: the local slicer may transfer the buffer to a worker.
       const copy = new Uint8Array(data.slice(0))
       const handle = await opts.local.loadModel(data, fileName)
-      meshBytes.set(handle.id, copy)
+      sources.set(handle.id, copy)
       return handle
     },
 
     async loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> {
-      const encoded = encodeParts(parts)
       const handle = await opts.local.loadParts(name, parts)
-      meshBytes.set(handle.id, encoded)
+      sources.set(handle.id, parts)
       return handle
     },
 
     async slice(req: SliceRequest, o = {}): Promise<SliceResult> {
+      // Every mesh the plate names: each object's own and its volumes'.
       const meshes: Record<string, Uint8Array> = {}
-      for (const obj of req.plate.objects) {
-        const bytes = meshBytes.get(obj.mesh)
-        if (!bytes) throw new Error(`model ${obj.name} was not loaded through this slicer`)
-        meshes[obj.mesh] = bytes
+      const need = (id: string, what: string) => {
+        if (meshes[id]) return
+        const bytes = bytesOf(id)
+        if (!bytes) throw new Error(`${what} was not loaded through this slicer`)
+        meshes[id] = bytes
       }
-      const options: NonNullable<CloudSliceRequest['options']> = { engine: 'sx' }
-      if (req.options?.flavor) options.flavor = req.options.flavor
-      if (req.options?.emitGcode !== undefined) options.emitGcode = req.options.emitGcode
-      if (req.options?.emitPreview !== undefined) options.emitPreview = req.options.emitPreview
+      for (const obj of req.plate.objects) {
+        need(obj.mesh, `model ${obj.name}`)
+        for (const v of obj.volumes ?? []) need(v.mesh, `volume ${v.name ?? v.role} of ${obj.name}`)
+      }
+      // Ask first, as the service expects: an account that is not invited, out of jobs or over its upload size
+      // hears why before anything is uploaded.
+      const access = unwrap(await opts.client.access())
+      if (!access.invited) throw new Error('This account is not invited to cloud slicing yet. Slice on this device instead.')
+      if (access.jobsToday >= access.jobsPerDay)
+        throw new Error(`This account has used all ${access.jobsPerDay} cloud slices for the last 24 hours. Slice on this device instead.`)
+      const biggest = Object.values(meshes).reduce((n, b) => Math.max(n, b.byteLength), 0)
+      if (biggest > access.maxUploadBytes)
+        throw new Error(`A model on this plate is ${mb(biggest)}, over this account's cloud upload limit of ${mb(access.maxUploadBytes)}. Slice on this device instead.`)
       const request: CloudSliceRequest = {
         schemaVersion: 1,
-        plate: {
-          bed: req.plate.bed,
-          objects: req.plate.objects.map((obj) => ({
-            id: obj.id,
-            name: obj.name,
-            mesh: obj.mesh,
-            transform: obj.transform,
-            ...(obj.slotOverrides ? { slotOverrides: obj.slotOverrides } : {}),
-          })),
-        },
+        plate: { bed: req.plate.bed, objects: req.plate.objects.map(cloudObject) },
         config: req.config as unknown as Record<string, unknown>,
-        options,
+        options: cloudOptions(req.options),
       }
       const name = req.plate.objects.map((obj) => obj.name).join(', ').slice(0, 200) || 'Cloud slice'
       const submitted = unwrap(await opts.client.slicePlate({ name, meshes, request }))
@@ -194,9 +247,48 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
     },
 
     release(id: string) {
-      meshBytes.delete(id)
-      jobs.delete(id)
+      // A cloud slice has nothing in the local slicer.
+      if (jobs.delete(id)) return
+      sources.delete(id)
       opts.local.release(id)
+    },
+  }
+}
+
+export interface CloudRouteOptions {
+  /** The app's own slicer. */
+  local: SlicerHost
+  /** A cloud slicer made with `createCloudSlicer` over the same local slicer. */
+  cloud: SlicerHost
+  /** Whether the person chose cloud slicing; read on every slice. */
+  enabled: () => boolean
+  /** Turns a request into the one the cloud slices, such as resolving the settings the local engine resolves itself. */
+  prepare?: (req: SliceRequest) => SliceRequest | Promise<SliceRequest>
+}
+
+/**
+ * The app's slicer with cloud slicing behind a switch. Models load through the cloud slicer, which loads each one in
+ * the local slicer too and keeps its bytes: handles are the local ones either way, and a cloud slice has every mesh
+ * the plate names to upload. Slices go to the cloud while `enabled()`; previews and G-code come from where the slice ran.
+ */
+export function cloudRoutedSlicer(o: CloudRouteOptions): SlicerHost {
+  const { local, cloud } = o
+  const clouded = new Set<string>()
+  return {
+    ...local,
+    loadModel: (data, fileName) => cloud.loadModel(data, fileName),
+    loadParts: (name, parts) => cloud.loadParts(name, parts),
+    slice: async (req, opts) => {
+      if (!o.enabled()) return local.slice(req, opts)
+      const r = await cloud.slice(o.prepare ? await o.prepare(req) : req, opts)
+      clouded.add(r.id)
+      return r
+    },
+    getPreview: (id) => (clouded.has(id) ? cloud.getPreview(id) : local.getPreview(id)),
+    exportGcode: (id, target) => (clouded.has(id) ? cloud.exportGcode(id, target) : local.exportGcode(id, target)),
+    release: (id) => {
+      clouded.delete(id)
+      cloud.release(id)
     },
   }
 }
