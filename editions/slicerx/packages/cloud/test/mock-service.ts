@@ -15,6 +15,8 @@ export interface MockCloudService {
   uploads: Map<string, Uint8Array>
   /** The `request` of each submitted job, in order. */
   requests: Record<string, unknown>[]
+  /** The name of each submitted job, in order. */
+  names: string[]
   /** What `GET /v1/access` answers; tests change it. */
   access: Record<string, unknown>
 }
@@ -40,7 +42,8 @@ export function mockCloudService(): MockCloudService {
   const uploads = new Map<string, Uint8Array>()
   const requests: Record<string, unknown>[] = []
   const jobs = new Map<string, Record<string, unknown>>()
-  const svc: MockCloudService = { fetch: undefined as never, calls, uploads, requests, access: { invited: true, jobsPerDay: 50, jobsToday: 0, maxUploadBytes: 25 * 1024 * 1024 } }
+  const names: string[] = []
+  const svc: MockCloudService = { fetch: undefined as never, calls, uploads, requests, names, access: { invited: true, jobsPerDay: 50, jobsToday: 0, maxUploadBytes: 25 * 1024 * 1024 } }
   const gcode = new TextEncoder().encode(MOCK_GCODE)
   const preview = onePreview()
   svc.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
@@ -61,6 +64,7 @@ export function mockCloudService(): MockCloudService {
     if (method === 'POST' && path === '/v1/jobs') {
       const body = JSON.parse(String(init.body)) as { name?: string; request: Record<string, unknown> }
       requests.push(body.request)
+      names.push(body.name ?? '')
       const id = `00000000-0000-4000-8000-${String(jobs.size + 1).padStart(12, '0')}`
       const job = {
         id,

@@ -21,6 +21,8 @@ vi.mock('@tauri-apps/api/core', () => ({
       return { id: tauri.loads.length, name, triangles: 12, hash: `h${tauri.loads.length}`, bboxMm: [20, 20, 20], parts: [{ name, slot: 1, triangles: 12 }] }
     }
     if (cmd === 'slice') throw new Error('the native engine was not meant to slice')
+    // The shell reads only its own slices, by number; a cloud job id is not one.
+    if (cmd.startsWith('get_gcode') && !Number.isInteger((args as { id: number }).id)) throw new Error(`invalid args \`id\` for command \`${cmd}\``)
     return null
   },
 }))
@@ -34,6 +36,9 @@ const { openModelBytes, slicePlate } = await import('../../../packages/app/src/s
 const { zip } = await import('../../../packages/app/src/export/zip')
 const { profileReady } = await import('../../../packages/app/src/state/profile-sync')
 const { get, set } = await import('../../../packages/app/src/state/store')
+const { holdText } = await import('../../../packages/app/src/workspaces/preview/gcode-source')
+const { exportGcode3mf } = await import('../../../packages/app/src/export/actions')
+const { unzipEntries } = await import('../../../packages/app/src/export/import3mf')
 
 function cube(id: string, name: string): string {
   const v = [[0, 0, 0], [20, 0, 0], [20, 20, 0], [0, 20, 0], [0, 0, 20], [20, 0, 20], [20, 20, 20], [0, 20, 20]]
@@ -80,5 +85,32 @@ describe('cloud slicing on the desktop', () => {
     const id = state.status === 'done' ? state.result.id : ''
     const out = await host.slicer.exportGcode(id, { kind: 'blob' })
     expect(await out.blob!.text()).toBe(MOCK_GCODE)
+  })
+
+  it("shows a cloud slice's G-code lines and exports it as .gcode.3mf", async () => {
+    const svc = mockCloudService()
+    const client = createCloudClient({ baseUrl: 'http://cloud.test', credential: () => 'session-token', fetch: svc.fetch })
+    const { slicer } = withCloudSlicing(createTauriSlicer(), client, () => true)
+    const saved: { name: string; blob: Blob }[] = []
+    const files = { save: async (name: string, blob: Blob) => (saved.push({ name, blob }), { name }) }
+    const host = { kind: 'desktop', capabilities: { threads: 1 }, slicer, files } as unknown as Host
+    await openModelBytes(host, 'Two cubes.3mf', project(), undefined, { fresh: true })
+    await slicePlate(host)
+    expect(get().slice.status).toBe('done')
+
+    // The G-code panel's lines come from the cloud's text.
+    const hold = holdText(host)
+    const src = await hold.source!
+    const ix = await src.window(1, 3)
+    expect(src.count).toBe(3)
+    expect(new TextDecoder().decode(ix.bytes.subarray(ix.starts[1]! - (ix.base ?? 0), ix.starts[2]! - (ix.base ?? 0)))).toBe('G28\n')
+    hold.release()
+
+    // The print file carries the cloud's G-code as the plate's.
+    expect(await exportGcode3mf(host)).toBe(true)
+    expect(saved[0]!.name).toMatch(/\.gcode\.3mf$/)
+    const entries = await unzipEntries(new Uint8Array(await saved[0]!.blob.arrayBuffer()))
+    const plate = [...entries].find(([n]) => n === 'Metadata/plate_1.gcode')
+    expect(plate && new TextDecoder().decode(plate[1])).toBe(MOCK_GCODE)
   })
 })

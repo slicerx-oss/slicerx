@@ -144,11 +144,32 @@ function cloudObject(obj: SliceRequest['plate']['objects'][number]): CloudSliceO
   }
 }
 
+/**
+ * The job's name, which also names its G-code file: the project's name, with the plate's after a first plate, else
+ * the plate's name. Never the objects' names joined.
+ */
+function jobName(o: SliceRequest['options']): string {
+  const model = o?.modelName?.trim() ?? ''
+  const plate = o?.plateName?.trim() ?? ''
+  const name = model ? (plate && (o?.plateNumber ?? 1) > 1 ? `${model} ${plate}` : model) : plate
+  return name.slice(0, 200) || 'Cloud slice'
+}
+
+/** Where each line starts in a text, then one past its end (a final line break opens no empty line). */
+export function lineStarts(bytes: Uint8Array): Uint32Array {
+  const out: number[] = [0]
+  for (let i = bytes.indexOf(10); i >= 0; i = bytes.indexOf(10, i + 1)) out.push(i + 1)
+  if (out[out.length - 1] !== bytes.length) out.push(bytes.length)
+  return Uint32Array.from(bytes.length === 0 ? [0] : out)
+}
+
 export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
   // Bytes of each loaded model; parts are kept as given and encoded on the first cloud slice that needs them, so a
   // person who slices on this device pays nothing for the copy.
   const sources = new Map<string, Uint8Array | MeshPart[]>()
   const jobs = new Map<string, CloudJob>()
+  // A slice's G-code, downloaded once and kept while the line view or an export reads it.
+  const texts = new Map<string, Promise<Uint8Array>>()
   const encode = opts.encodeParts ?? encodeParts
 
   const unwrap = <T>(res: { ok: true; value: T } | { ok: false; message: string }): T => {
@@ -162,6 +183,19 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
     const bytes = encode(src)
     sources.set(id, bytes)
     return bytes
+  }
+
+  const gcodeOf = (sliceId: string): Promise<Uint8Array> => {
+    let hit = texts.get(sliceId)
+    if (!hit) {
+      const job = jobs.get(sliceId)
+      if (!job?.result) return Promise.reject(new Error(`no cloud slice ${sliceId}`))
+      hit = opts.client.downloadGcode(job).then(unwrap)
+      texts.set(sliceId, hit)
+      // A failed download is not kept: the next read tries again.
+      hit.catch(() => texts.get(sliceId) === hit && texts.delete(sliceId))
+    }
+    return hit
   }
 
   return {
@@ -207,7 +241,7 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
         config: req.config as unknown as Record<string, unknown>,
         options: cloudOptions(req.options),
       }
-      const name = req.plate.objects.map((obj) => obj.name).join(', ').slice(0, 200) || 'Cloud slice'
+      const name = jobName(req.options)
       const submitted = unwrap(await opts.client.slicePlate({ name, meshes, request }))
       const onAbort = () => void opts.client.cancelJob(submitted.id)
       o.signal?.addEventListener('abort', onAbort, { once: true })
@@ -237,7 +271,7 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
       const job = jobs.get(sliceId)
       if (!job?.result) throw new Error(`no cloud slice ${sliceId}`)
       if (target.kind !== 'blob') throw new Error('cloud slices export as a download; save the blob with the file host')
-      const data = unwrap(await opts.client.downloadGcode(job))
+      const data = await gcodeOf(sliceId)
       return {
         fileName: `${job.name.replace(/[^A-Za-z0-9 ._-]/g, '_')}.gcode`,
         bytes: data.length,
@@ -246,8 +280,17 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
       }
     },
 
+    async gcodeLineStarts(sliceId: string): Promise<Uint32Array> {
+      return lineStarts(await gcodeOf(sliceId))
+    },
+
+    async gcodeBytes(sliceId: string, start: number, end: number): Promise<Uint8Array> {
+      return (await gcodeOf(sliceId)).slice(start, end)
+    },
+
     release(id: string) {
       // A cloud slice has nothing in the local slicer.
+      texts.delete(id)
       if (jobs.delete(id)) return
       sources.delete(id)
       opts.local.release(id)
@@ -271,6 +314,13 @@ export interface CloudRouteOptions {
  * the local slicer too and keeps its bytes: handles are the local ones either way, and a cloud slice has every mesh
  * the plate names to upload. Slices go to the cloud while `enabled()`; previews and G-code come from where the slice ran.
  */
+/** The whole G-code of a slice, for a slicer that cannot read it a range at a time. */
+async function gcodeText(slicer: SlicerHost, id: string): Promise<Uint8Array> {
+  const out = await slicer.exportGcode(id, { kind: 'blob' })
+  if (!out.blob) throw new Error('The slicer returned no G-code')
+  return new Uint8Array(await out.blob.arrayBuffer())
+}
+
 export function cloudRoutedSlicer(o: CloudRouteOptions): SlicerHost {
   const { local, cloud } = o
   const clouded = new Set<string>()
@@ -286,6 +336,22 @@ export function cloudRoutedSlicer(o: CloudRouteOptions): SlicerHost {
     },
     getPreview: (id) => (clouded.has(id) ? cloud.getPreview(id) : local.getPreview(id)),
     exportGcode: (id, target) => (clouded.has(id) ? cloud.exportGcode(id, target) : local.exportGcode(id, target)),
+    // The G-code line view reads a cloud slice's text from the cloud result; the local slicer has never seen its id.
+    gcodeLineStarts: async (id) => {
+      if (clouded.has(id) && cloud.gcodeLineStarts) return cloud.gcodeLineStarts(id)
+      if (local.gcodeLineStarts) return local.gcodeLineStarts(id)
+      return lineStarts(await gcodeText(local, id))
+    },
+    gcodeBytes: async (id, start, end) => {
+      if (clouded.has(id) && cloud.gcodeBytes) return cloud.gcodeBytes(id, start, end)
+      if (local.gcodeBytes) return local.gcodeBytes(id, start, end)
+      return (await gcodeText(local, id)).slice(start, end)
+    },
+    // A .gcode.3mf of a cloud slice is made from its G-code by whoever packs it (the app, mimir), never by the local
+    // slicer, which has no such slice; so only local slices reach the local packer.
+    ...(local.exportGcode3mf
+      ? { exportGcode3mf: (id: string, opts?: { plate?: number }) => (clouded.has(id) ? Promise.reject(new Error('A cloud slice is packed as .gcode.3mf from its G-code, not by this slicer')) : local.exportGcode3mf!(id, opts)) }
+      : {}),
     release: (id) => {
       clouded.delete(id)
       cloud.release(id)
