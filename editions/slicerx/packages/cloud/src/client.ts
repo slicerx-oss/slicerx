@@ -3,6 +3,7 @@
 // Typed client for the cloud slicing service (editions/slicerx/packages/cloud/service).
 import type { PlateVolume, SettingValue, SliceOptions } from '@slicerx/contracts'
 import { z } from 'zod'
+import { type Gzip, sizeText, streamGzip } from './compress'
 import { sha256Hex } from './hash'
 import { type CloudErrorCode, type CloudResult, fail, ok } from './result'
 import {
@@ -35,6 +36,28 @@ export interface CloudClientOptions {
    */
   credential: () => string | null | Promise<string | null>
   fetch?: typeof globalThis.fetch
+  /**
+   * Compresses mesh uploads, which go out with `Content-Encoding: gzip` when that makes them smaller. Default: the
+   * runtime's CompressionStream when it has one. Null sends every mesh as it is.
+   */
+  gzip?: Gzip | null
+}
+
+/** A mesh ready to upload: its SHA-256 and size, and the body as sent, gzip compressed when that is smaller. */
+export interface PackedMesh {
+  sha256: string
+  /** The mesh's own size in bytes. */
+  size: number
+  body: Uint8Array
+  encoding?: 'gzip'
+}
+
+/** Mesh bytes, or a mesh already packed with `packMesh`. */
+export type MeshData = Uint8Array | ArrayBuffer | PackedMesh
+
+/** The size of a packed mesh in words: "54.7 MB (22.3 MB compressed)". */
+export function packedSize(p: PackedMesh): string {
+  return p.encoding ? `${sizeText(p.size)} (${sizeText(p.body.length)} compressed)` : sizeText(p.size)
 }
 
 /**
@@ -82,7 +105,7 @@ export interface SubmitJobInput {
 /** A plate with mesh bytes instead of hashes; `slicePlate` uploads what is missing. */
 export interface PlateInput {
   name?: string
-  meshes: Record<string, Uint8Array | ArrayBuffer>
+  meshes: Record<string, MeshData>
   request: CloudSliceRequest
   targetPrinterId?: string
 }
@@ -111,8 +134,13 @@ export interface CloudClient {
    */
   access(): Promise<CloudResult<CloudAccess>>
   hasMesh(sha256: string): Promise<CloudResult<boolean>>
-  /** Uploads a mesh unless the service already has it; returns its SHA-256. */
-  uploadMesh(bytes: Uint8Array | ArrayBuffer): Promise<CloudResult<string>>
+  /**
+   * Hashes a mesh and compresses it for upload. The account's upload limit reads the body as sent, so compare
+   * `body.length` with `maxUploadBytes` from `access()`.
+   */
+  packMesh(bytes: Uint8Array | ArrayBuffer): Promise<PackedMesh>
+  /** Uploads a mesh, gzip compressed where that is smaller, unless the service already has it; returns its SHA-256. */
+  uploadMesh(mesh: MeshData): Promise<CloudResult<string>>
   submitJob(input: SubmitJobInput): Promise<CloudResult<CloudJob>>
   /** Uploads the plate's meshes, then submits it. Object and volume `mesh` values are keys of `meshes`. */
   slicePlate(input: PlateInput): Promise<CloudResult<CloudJob>>
@@ -155,8 +183,8 @@ function codeForStatus(status: number): CloudErrorCode {
   if (status === 403) return 'forbidden'
   if (status === 404) return 'not_found'
   if (status === 409) return 'conflict'
-  if (status === 429) return 'limit'
-  if (status === 400 || status === 422 || status === 413) return 'bad_request'
+  if (status === 429 || status === 413) return 'limit'
+  if (status === 400 || status === 422) return 'bad_request'
   return 'unavailable'
 }
 
@@ -173,14 +201,18 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     )
   })
 
+/** What a 413 with no readable body says until the upload adds the model's size. */
+const TOO_LARGE = 'the upload is over the cloud upload limit'
+
 export function createCloudClient(opts: CloudClientOptions): CloudClient {
   const base = opts.baseUrl.replace(/\/+$/, '')
   const doFetch = opts.fetch ?? globalThis.fetch.bind(globalThis)
+  const gzip = opts.gzip === undefined ? streamGzip() : opts.gzip
 
   async function send(
     method: string,
     path: string,
-    init: { json?: unknown; body?: Uint8Array; signal?: AbortSignal | undefined } = {},
+    init: { json?: unknown; body?: Uint8Array; encoding?: 'gzip' | undefined; signal?: AbortSignal | undefined } = {},
   ): Promise<CloudResult<Response>> {
     const credential = await opts.credential()
     if (!credential) return fail('unauthorized', 'sign in or add an API token with the cloud_slice scope')
@@ -191,6 +223,7 @@ export function createCloudClient(opts: CloudClientOptions): CloudClient {
       body = JSON.stringify(init.json)
     } else if (init.body) {
       headers['content-type'] = 'application/octet-stream'
+      if (init.encoding) headers['content-encoding'] = init.encoding
       body = init.body as Uint8Array<ArrayBuffer>
     }
     let res: Response
@@ -216,6 +249,7 @@ export function createCloudClient(opts: CloudClientOptions): CloudClient {
       const code = KNOWN_CODES.find((c) => c === err.data.error.code) ?? codeForStatus(res.status)
       return fail(code, err.data.error.message)
     }
+    if (res.status === 413) return fail('limit', TOO_LARGE)
     return fail(codeForStatus(res.status), `the cloud service answered ${res.status}`)
   }
 
@@ -273,14 +307,32 @@ export function createCloudClient(opts: CloudClientOptions): CloudClient {
       return res.code === 'not_found' ? ok(false) : res
     },
 
+    async packMesh(data) {
+      const mesh = data instanceof Uint8Array ? data : new Uint8Array(data)
+      const sha256 = await sha256Hex(mesh)
+      if (gzip) {
+        try {
+          const packed = await gzip(mesh)
+          if (packed.length < mesh.length) return { sha256, size: mesh.length, body: packed, encoding: 'gzip' }
+        } catch {
+          // Sent as it is.
+        }
+      }
+      return { sha256, size: mesh.length, body: mesh }
+    },
+
     async uploadMesh(data) {
-      const buf = data instanceof Uint8Array ? data : new Uint8Array(data)
-      const sha = await sha256Hex(buf)
-      const has = await client.hasMesh(sha)
+      const p = data instanceof Uint8Array || data instanceof ArrayBuffer ? await client.packMesh(data) : data
+      const has = await client.hasMesh(p.sha256)
       if (!has.ok) return has
-      if (has.value) return ok(sha)
-      const up = await json(meshUpload, 'PUT', `/v1/meshes/${sha}`, { body: buf })
-      return up.ok ? ok(up.value.sha256) : up
+      if (has.value) return ok(p.sha256)
+      const up = await json(meshUpload, 'PUT', `/v1/meshes/${p.sha256}`, { body: p.body, encoding: p.encoding })
+      if (up.ok) return ok(up.value.sha256)
+      if (up.code === 'limit' && up.message === TOO_LARGE) return fail('limit', `This model is ${packedSize(p)}, over the cloud upload limit.`)
+      // A body far over the limit can be cut off before the service answers.
+      if (up.code === 'offline')
+        return fail('offline', `The upload of this ${packedSize(p)} model was cut off before the cloud service answered (${up.message}); it may be over the cloud upload limit.`)
+      return up
     },
 
     submitJob: (input) => json(cloudJob, 'POST', '/v1/jobs', { json: input }),

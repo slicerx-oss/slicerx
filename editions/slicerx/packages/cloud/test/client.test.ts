@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { describe, expect, it } from 'vitest'
+import { gunzipSync } from 'node:zlib'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCloudClient } from '../src/client'
 import { sha256Hex } from '../src/hash'
 import { memoryStore } from '../src/kv'
@@ -45,6 +46,8 @@ function job(extra: Record<string, unknown> = {}) {
     ...extra,
   }
 }
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('cloud client', () => {
   it('sends the credential and maps service errors to codes', async () => {
@@ -113,6 +116,78 @@ describe('cloud client', () => {
     expect(await c.uploadMesh(mesh)).toEqual({ ok: true, value: sha })
     expect(await c.uploadMesh(mesh)).toEqual({ ok: true, value: sha })
     expect(calls.map((x) => x.method)).toEqual(['GET', 'PUT', 'GET'])
+  })
+
+  it('gzips a mesh upload and names it by the hash of the mesh itself', async () => {
+    // Raw parts compress well: repeated vertices, like a real mesh's.
+    const mesh = new Uint8Array(200_000).map((_, i) => i % 7)
+    const sha = await sha256Hex(mesh)
+    const puts: { path: string; encoding: string | null; body: Uint8Array }[] = []
+    const { fetch } = fakeFetch((method, path, init) => {
+      if (method === 'GET') return json(404, { error: { code: 'not_found', message: 'mesh not found' } })
+      puts.push({ path, encoding: new Headers(init.headers).get('content-encoding'), body: new Uint8Array(init.body as Uint8Array) })
+      return json(201, { sha256: sha, bytes: mesh.length })
+    })
+    const c = createCloudClient({ baseUrl: 'http://cloud.test', credential: () => 't', fetch })
+    expect(await c.uploadMesh(mesh)).toEqual({ ok: true, value: sha })
+    expect(puts).toHaveLength(1)
+    expect(puts[0]!.path).toBe(`/v1/meshes/${sha}`)
+    expect(puts[0]!.encoding).toBe('gzip')
+    expect(puts[0]!.body.length).toBeLessThan(mesh.length / 4)
+    expect(new Uint8Array(gunzipSync(puts[0]!.body))).toEqual(mesh)
+  })
+
+  it('compresses where Blob has no stream(), as in some webviews and jsdom', async () => {
+    vi.stubGlobal('Blob', class {})
+    const c = createCloudClient({ baseUrl: 'http://cloud.test', credential: () => 't', fetch: fakeFetch(() => json(500, {})).fetch })
+    const mesh = new Uint8Array(50_000).map((_, i) => i % 5)
+    const packed = await c.packMesh(mesh)
+    expect(packed.encoding).toBe('gzip')
+    expect(new Uint8Array(gunzipSync(packed.body))).toEqual(mesh)
+  })
+
+  it('sends the mesh as it is where the runtime has no gzip, or where gzip saves nothing', async () => {
+    const encodings: (string | null)[] = []
+    const { fetch } = fakeFetch((method, _path, init) => {
+      if (method === 'GET') return json(404, { error: { code: 'not_found', message: 'mesh not found' } })
+      encodings.push(new Headers(init.headers).get('content-encoding'))
+      return json(201, { sha256: 'a'.repeat(64) })
+    })
+    const c = createCloudClient({ baseUrl: 'http://cloud.test', credential: () => 't', fetch })
+    // Random bytes do not compress.
+    const noise = new Uint8Array(4096)
+    crypto.getRandomValues(noise)
+    await c.uploadMesh(noise)
+    // A phone runtime without CompressionStream.
+    vi.stubGlobal('CompressionStream', undefined)
+    const plain = createCloudClient({ baseUrl: 'http://cloud.test', credential: () => 't', fetch })
+    const packed = await plain.packMesh(new Uint8Array(10_000))
+    expect(packed.encoding).toBeUndefined()
+    expect(packed.body.length).toBe(10_000)
+    await plain.uploadMesh(new Uint8Array(10_000))
+    expect(encodings).toEqual([null, null])
+  })
+
+  it('says how big the model is when the service refuses its size', async () => {
+    const mesh = new Uint8Array(3 * 1024 * 1024)
+    let answer: () => Response | Promise<Response> = () => new Response('length limit exceeded', { status: 413 })
+    const { fetch } = fakeFetch((method) => (method === 'GET' ? json(404, { error: { code: 'not_found', message: 'mesh not found' } }) : answer()))
+    const c = createCloudClient({ baseUrl: 'http://cloud.test', credential: () => 't', fetch })
+    const bare = await c.uploadMesh(mesh)
+    expect(bare.ok).toBe(false)
+    if (!bare.ok) {
+      expect(bare.code).toBe('limit')
+      expect(bare.message).toMatch(/^This model is 3 MB \([0-9.]+ (bytes|KB) compressed\), over the cloud upload limit\.$/)
+    }
+    answer = () => json(413, { error: { code: 'limit', message: "This model is 26.1 MB compressed, over this account's cloud upload limit of 25 MB." } })
+    expect(await c.uploadMesh(mesh)).toEqual({ ok: false, code: 'limit', message: "This model is 26.1 MB compressed, over this account's cloud upload limit of 25 MB." })
+    answer = () => Promise.reject(new TypeError('fetch failed'))
+    const reset = await c.uploadMesh(mesh)
+    expect(reset.ok).toBe(false)
+    if (!reset.ok) {
+      expect(reset.code).toBe('offline')
+      expect(reset.message).toMatch(/^The upload of this 3 MB \([0-9.]+ (bytes|KB) compressed\) model was cut off before the cloud service answered \(fetch failed\); it may be over the cloud upload limit\.$/)
+    }
   })
 
   it('refuses a G-code download that does not match the reported hash', async () => {

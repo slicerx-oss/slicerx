@@ -18,7 +18,8 @@ import {
   type SliceWarningCode,
   type SlicerHost,
 } from '@slicerx/contracts'
-import type { CloudClient, CloudSliceObject, CloudSliceOptions, CloudSliceRequest } from './client'
+import { type CloudClient, type CloudSliceObject, type CloudSliceOptions, type CloudSliceRequest, type PackedMesh, packedSize } from './client'
+import { sizeText } from './compress'
 import type { CloudJob } from './schemas'
 
 export interface CloudSlicerOptions {
@@ -109,9 +110,6 @@ function toResult(job: CloudJob): SliceResult {
   }
 }
 
-const MB = 1024 * 1024
-const mb = (n: number): string => `${Math.round((n / MB) * 10) / 10} MB`
-
 /** Raw bytes as base64, for the thumbnail the service reads as text. */
 function base64(bytes: Uint8Array): string {
   let bin = ''
@@ -170,6 +168,8 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
   const jobs = new Map<string, CloudJob>()
   // A slice's G-code, downloaded once and kept while the line view or an export reads it.
   const texts = new Map<string, Promise<Uint8Array>>()
+  // Each model as uploaded: hashed and compressed once, on the first cloud slice that needs it.
+  const packed = new Map<string, Promise<PackedMesh>>()
   const encode = opts.encodeParts ?? encodeParts
 
   const unwrap = <T>(res: { ok: true; value: T } | { ok: false; message: string }): T => {
@@ -232,9 +232,21 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
       if (!access.invited) throw new Error('This account is not invited to cloud slicing yet. Slice on this device instead.')
       if (access.jobsToday >= access.jobsPerDay)
         throw new Error(`This account has used all ${access.jobsPerDay} cloud slices for the last 24 hours. Slice on this device instead.`)
-      const biggest = Object.values(meshes).reduce((n, b) => Math.max(n, b.byteLength), 0)
-      if (biggest > access.maxUploadBytes)
-        throw new Error(`A model on this plate is ${mb(biggest)}, over this account's cloud upload limit of ${mb(access.maxUploadBytes)}. Slice on this device instead.`)
+      // The limit reads the upload as sent, so compressed where the runtime can compress.
+      const uploads: Record<string, PackedMesh> = {}
+      for (const [id, bytes] of Object.entries(meshes)) {
+        let hit = packed.get(id)
+        if (!hit) {
+          const next = opts.client.packMesh(bytes)
+          packed.set(id, next)
+          next.catch(() => packed.get(id) === next && packed.delete(id))
+          hit = next
+        }
+        uploads[id] = await hit
+      }
+      const biggest = Object.values(uploads).reduce<PackedMesh | null>((a, b) => (!a || b.body.length > a.body.length ? b : a), null)
+      if (biggest && biggest.body.length > access.maxUploadBytes)
+        throw new Error(`A model on this plate is ${packedSize(biggest)}, over this account's cloud upload limit of ${sizeText(access.maxUploadBytes)}. Slice on this device instead.`)
       const request: CloudSliceRequest = {
         schemaVersion: 1,
         plate: { bed: req.plate.bed, objects: req.plate.objects.map(cloudObject) },
@@ -242,7 +254,10 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
         options: cloudOptions(req.options),
       }
       const name = jobName(req.options)
-      const submitted = unwrap(await opts.client.slicePlate({ name, meshes, request }))
+      const sent = await opts.client.slicePlate({ name, meshes: uploads, request })
+      // A size or daily limit the service enforced: say what to do, as the checks above do.
+      if (!sent.ok && sent.code === 'limit') throw new Error(`${sent.message.replace(/[^.!?]$/, '$&.')} Slice on this device instead.`)
+      const submitted = unwrap(sent)
       const onAbort = () => void opts.client.cancelJob(submitted.id)
       o.signal?.addEventListener('abort', onAbort, { once: true })
       try {
@@ -293,6 +308,7 @@ export function createCloudSlicer(opts: CloudSlicerOptions): SlicerHost {
       texts.delete(id)
       if (jobs.delete(id)) return
       sources.delete(id)
+      packed.delete(id)
       opts.local.release(id)
     },
   }

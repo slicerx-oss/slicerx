@@ -231,10 +231,30 @@ describe('the account check before uploading', () => {
   })
 
   it('names the size and the limit when a model is over the upload limit', async () => {
-    // About 0.2 MB of vertices against a 0.1 MB limit.
-    const big = { ...part('Body'), positions: new Float32Array(3 * 17_476) }
+    // About 0.2 MB of random vertices, which hardly compress, against a 0.1 MB limit.
+    const positions = new Float32Array(3 * 17_476).map(() => Math.random() * 100)
+    const big = { ...part('Body'), positions }
     const { err, svc } = await refused({ invited: true, jobsPerDay: 5, jobsToday: 0, maxUploadBytes: 104_858 }, [big])
-    expect(err).toBe("A model on this plate is 0.2 MB, over this account's cloud upload limit of 0.1 MB. Slice on this device instead.")
+    expect(err).toBe("A model on this plate is 0.2 MB (0.2 MB compressed), over this account's cloud upload limit of 0.1 MB. Slice on this device instead.")
     expect(svc.uploads.size).toBe(0)
+  })
+
+  it('checks the compressed size against the limit, and uploads compressed', async () => {
+    // About 0.6 MB of vertices on a grid, which compress far under the 0.1 MB limit.
+    const positions = new Float32Array(3 * 50_000).map((_, i) => i % 3 === 2 ? 0 : (i % 40) * 0.5)
+    const { err, svc } = await refused({ invited: true, jobsPerDay: 5, jobsToday: 0, maxUploadBytes: 104_858 }, [{ ...part('Body'), positions }])
+    expect(err).toBeNull()
+    expect(svc.sent).toHaveLength(1)
+    expect(svc.sent[0]!.encoding).toBe('gzip')
+    expect(svc.sent[0]!.bytes).toBeLessThan(104_858)
+    expect([...svc.uploads.values()][0]!.length).toBeGreaterThan(600_000)
+  })
+
+  it('says how big the model is and what to do when the service refuses the upload', async () => {
+    const { svc, cloud } = setup()
+    svc.refuseUpload = () => new Response('length limit exceeded', { status: 413 })
+    const h = await cloud.loadParts('Body', [part('Body')])
+    const err = await cloud.slice({ plate: plate([{ id: 'a', name: 'Body', mesh: h.id, transform: T }]), config: {} as never }).then(() => null, (e: Error) => e.message)
+    expect(err).toMatch(/^This model is [0-9.]+ (bytes|KB|MB)( \([0-9.]+ (bytes|KB|MB) compressed\))?, over the cloud upload limit\. Slice on this device instead\.$/)
   })
 })
