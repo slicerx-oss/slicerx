@@ -259,13 +259,15 @@ fn support_tools(g: &str) -> SupportTools {
 }
 
 /// Support and its interface asked for filament 2 on `printer`, with support on layers of its own height
-/// (the default) and on the object's layers.
+/// (the default) and on the object's layers. The prime tower is off: with one, support prints on the object's
+/// layers anyway (see `with_a_prime_tower_support_prints_on_the_objects_layers`).
 fn support_on_two(printer: serde_json::Value) -> [(SupportTools, SliceRun); 2] {
     [true, false].map(|independent| {
         let mut extra = json!({
             "support_filament": 2,
             "support_interface_filament": 2,
             "independent_support_layer_height": independent,
+            "enable_prime_tower": false,
         });
         if let (Some(e), Some(p)) = (extra.as_object_mut(), printer.as_object()) {
             for (k, v) in p {
@@ -322,4 +324,80 @@ fn support_stays_on_its_filament_on_support_layers_of_their_own_with_two_nozzles
         "filament_map_mode": "Manual",
         "filament_map": [1, 2],
     }));
+}
+
+/// The tee on a Bambu Lab P1S with a prime tower, support on layers of its own height asked for (the default).
+fn with_tower(extra: serde_json::Value) -> (SupportTools, SliceRun) {
+    let mut e = json!({ "gcode_flavor": "marlin", "printer_model": "Bambu Lab P1S" });
+    if let (Some(o), Some(x)) = (e.as_object_mut(), extra.as_object()) {
+        o.extend(x.clone());
+    }
+    let run = one(e);
+    (support_tools(&String::from_utf8_lossy(&run.gcode)), run)
+}
+
+const ON_OBJECT_LAYERS: &str = "Support prints on the model's layers because this print uses a prime tower.";
+
+#[test]
+fn with_a_prime_tower_support_prints_on_the_objects_layers() {
+    // Bambu Studio 2.8 on this tee with a tower (P1S, A1, X2D): no support-only layers, 50 layers, 40 changes with
+    // support and interface on filament 2, 42 with the sparse infill on 2 and support on the object's filament.
+    let (sup, run) = with_tower(json!({ "support_filament": 2, "support_interface_filament": 2 }));
+    assert_eq!(run.report.layer_count, 50, "{:?}", run.report.layer_z);
+    assert_eq!(sup.changes, 40, "{:?}", tool_lines(&run));
+    assert!(sup.lines.iter().all(|((_, t), _)| t == "T1"), "{:?}", sup.lines);
+    // Every support layer is an object layer: the layer heights are the object's 0.2 mm.
+    assert!(
+        run.report
+            .layer_z
+            .windows(2)
+            .all(|w| (w[1] - w[0] - 0.2).abs() < 1e-3),
+        "{:?}",
+        run.report.layer_z
+    );
+    assert!(
+        warnings(&run).iter().any(|w| w.starts_with(ON_OBJECT_LAYERS)),
+        "{:?}",
+        warnings(&run)
+    );
+    let (_, run) = with_tower(json!({ "sparse_infill_filament_id": 2 }));
+    assert_eq!(run.report.layer_count, 50);
+    assert_eq!(run.report.stats.tool_changes, 42, "{:?}", tool_lines(&run));
+}
+
+#[test]
+fn without_a_tower_support_keeps_layers_of_its_own() {
+    // The tower off, or only one filament printing (no tower): the support-only layers stay (Studio keeps them too;
+    // their count depends on the support gaps, 26 with Studio's own settings).
+    let (_, off) = with_tower(
+        json!({ "support_filament": 2, "support_interface_filament": 2, "enable_prime_tower": false }),
+    );
+    assert!(off.report.layer_count > 50, "{}", off.report.layer_count);
+    assert!(!warnings(&off).iter().any(|w| w.starts_with(ON_OBJECT_LAYERS)));
+    let (_, one_printed) = with_tower(json!({ "support_filament": 0 }));
+    assert_eq!(one_printed.report.layer_count, off.report.layer_count);
+    assert_eq!(one_printed.report.stats.tool_changes, 0);
+    assert!(
+        !warnings(&one_printed)
+            .iter()
+            .any(|w| w.starts_with(ON_OBJECT_LAYERS))
+    );
+    // Asked off, it stays off without a note.
+    let (_, asked) = with_tower(json!({ "support_filament": 2, "independent_support_layer_height": false }));
+    assert_eq!(asked.report.layer_count, 50);
+    assert!(!warnings(&asked).iter().any(|w| w.starts_with(ON_OBJECT_LAYERS)));
+}
+
+#[test]
+fn over_a_raft_with_a_tower_the_part_sits_where_it_does_with_support_on_its_layers() {
+    // The raft is planned before the tower is known; its gap to the part follows the choice (whole layers on the
+    // object's layers), so the print is the one the setting off gives.
+    let raft = json!({ "support_filament": 2, "support_interface_filament": 2, "raft_layers": 3,
+        "raft_contact_distance": 0.15 });
+    let mut asked_off = raft.clone();
+    asked_off["independent_support_layer_height"] = json!(false);
+    let (_, tower) = with_tower(raft);
+    let (_, off) = with_tower(asked_off);
+    assert_eq!(tower.report.layer_z, off.report.layer_z);
+    assert_eq!(tower.report.stats.tool_changes, off.report.stats.tool_changes);
 }

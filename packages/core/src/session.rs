@@ -37,6 +37,8 @@ const NO_ENFORCERS: &str =
     "Manual supports print only where enforcers ask, and the plate has none, so none are printed";
 /// Support enforcers on a plate with support turned off.
 const ENFORCERS_UNUSED: &str = "Support enforcers are on the plate but support is off, so they print no support; turn on supports to use them";
+/// Why support printed on the object's layers although the settings ask for layers of its own height.
+const SUPPORT_ON_OBJECT_LAYERS: &str = "Support prints on the model's layers because this print uses a prime tower. That saves a filament change on every support layer.";
 
 /// Slot, welded plate-space vertices and triangles of one part.
 /// A part with settings of its own: its welded mesh and the settings.
@@ -1799,7 +1801,13 @@ impl SliceSession {
                 .map(|o| o.hull.iter().map(|p| IntPoint::new(mm(p[0]), mm(p[1]))).collect())
                 .collect();
         }
-        session.plan_print(config);
+        // Support on layers of its own height only when no prime tower prints (`own_support_layers`). The raft
+        // was planned with the setting, so its gap to the part follows the choice here.
+        let own = session.own_support_layers(config);
+        if own != config.independent_support_layer_height() && session.raft.is_some() {
+            session.raft = crate::raft::plan_with(config, own);
+        }
+        session.plan_print(config, own);
         if !interleaved {
             session.plan_raft(config);
         }
@@ -2898,11 +2906,39 @@ impl SliceSession {
         self.raft.as_ref().map_or(0, crate::raft::Plan::count)
     }
 
-    /// Plans support on layers of its own height when the settings ask for it
-    /// (`independent_support_layer_height`, Orca's default) and merges those layers with the
+    /// True when normal support prints on layers of its own height: the setting
+    /// (`independent_support_layer_height`) is on and no prime tower prints. With a tower, Bambu Studio prints support
+    /// on the object's layers, as with the setting off: every support-only layer would add a filament change and its
+    /// purge when the support or the object uses another filament. Slim, strong and hybrid trees and organic trees keep
+    /// the setting. When the tower turns it off, the slice says so.
+    fn own_support_layers(&mut self, config: &PrintConfig) -> bool {
+        let setting = config.independent_support_layer_height();
+        let s = &config.support;
+        if !setting
+            || !config.enable_support
+            || (s.manual && !self.has_enforcers())
+            || s.style.is_classic_tree()
+            || Self::is_organic(config)
+            || self.vase.is_some()
+        {
+            return setting;
+        }
+        if self.tower_top.is_none() || self.tower(config).is_none() {
+            return true;
+        }
+        self.push_warning(SliceWarning {
+            code: WarningCode::UnsupportedSetting,
+            message: SUPPORT_ON_OBJECT_LAYERS.to_owned(),
+            layer: None,
+        });
+        false
+    }
+
+    /// Plans support on layers of its own height when `own` says so ([`Self::own_support_layers`]: the settings ask
+    /// for it, `independent_support_layer_height` is Orca's default, and no prime tower prints) and merges those layers with the
     /// object's. Organic trees and spiral vases keep support on the object's layers (Orca turns
     /// support off in vase mode).
-    fn plan_print(&mut self, config: &PrintConfig) {
+    fn plan_print(&mut self, config: &PrintConfig, own: bool) {
         let s = &config.support;
         let tree = s.style.is_tree() || s.tree;
         // Organic trees stay on the object's layers in OrcaSlicer (they have no layer stack of their own).
@@ -2912,13 +2948,13 @@ impl SliceSession {
         if !(config.enable_support
             && (!s.manual || self.has_enforcers())
             && !organic
-            && !(classic && (self.raft.is_some() || !config.independent_support_layer_height()))
-            && (config.independent_support_layer_height() || (self.raft.is_some() && !tree))
+            && !(classic && (self.raft.is_some() || !own))
+            && (own || (self.raft.is_some() && !tree))
             && self.vase.is_none())
         {
             return;
         }
-        let independent = config.independent_support_layer_height();
+        let independent = own;
         let n = self.plan.count();
         let input = self.support_input(config);
         // Over a raft the object's layers are lifted by the raft and its gap, and support stands on
