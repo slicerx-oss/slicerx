@@ -1,0 +1,1 @@
+playback through a tool change on the H2C runs clean and keeps its frame rate | subydoo-ci | 2026-10-22 | https://github.com/slicerx-oss/slicerx/issues/1374 | its first try sometimes draws one frame every 400 ms in the GPU lane (2 frames against 100) and the retry passes; reproduced on main in 1 of 5 runs
