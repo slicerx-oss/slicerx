@@ -109,6 +109,7 @@ settings:
   - {key: fan_max_speed, label: Part fan maximum, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
   - {key: overhang_fan_speed, label: Overhang fan speed, group: cooling, scope: filament, type: percent, pilot: edit, bounds: {min: 0, max: 100}}
   - {key: overhang_fan_threshold, label: Overhang fan threshold, group: cooling, scope: filament, type: enum, pilot: edit}
+  - {key: pre_start_fan_time, label: Fan lead time, group: cooling, scope: filament, type: float, unit: s, pilot: edit, bounds: {min: 0, max: 5}}
   - {key: close_fan_the_first_x_layers, label: No cooling for first layers, group: cooling, scope: filament, type: int, pilot: edit, bounds: {min: 0, max: 20}}
   - {key: full_fan_speed_layer, label: Full fan speed at layer, group: cooling, scope: filament, type: int, pilot: edit, bounds: {min: 0, max: 50}}
   - {key: slow_down_layer_time, label: Minimum layer time, group: cooling, scope: filament, type: float, unit: s, pilot: edit, bounds: {min: 0, max: 60}}
