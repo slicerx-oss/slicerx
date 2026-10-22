@@ -4,7 +4,7 @@
 // Used inside the shared mimir setup (mimir-setup.tsx). The key stays in an uncontrolled field until it is
 // stored; it never enters React state, the app store or a log.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
-import { Button, Field, Icon, Input, LinkButton, Select, SwitchRow } from '@slicerx/ui'
+import { Button, Field, Icon, Input, LinkButton, Select, Steady, SwitchRow } from '@slicerx/ui'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useEdition } from '../edition'
 import { useHost } from '../host'
@@ -225,7 +225,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true, o
           hint={`${info.where} ${host.capabilities.secureStorage ? 'Stored in your system keychain.' : 'Stored encrypted in this browser.'}`}
           aside={
             <button type="button" className="fr-textbtn" aria-pressed={shown} aria-controls={`${idPrefix}-key`} onClick={() => setShown(!shown)}>
-              {shown ? 'Hide' : 'Show'}
+              <Steady text={shown ? 'Hide' : 'Show'} forms={['Show', 'Hide']} />
             </button>
           }
         >
@@ -282,7 +282,7 @@ export function ConnectPanel({ onConnected, idPrefix = 'pc', withLocal = true, o
                         </button>
                       ) : null}
                       <button type="button" className="fr-textbtn" aria-pressed={shown} aria-controls={`${idPrefix}-key`} onClick={() => setShown(!shown)}>
-                        {shown ? 'Hide' : 'Show'}
+                        <Steady text={shown ? 'Hide' : 'Show'} forms={['Show', 'Hide']} />
                       </button>
                     </>
                   }

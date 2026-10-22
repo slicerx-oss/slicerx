@@ -55,6 +55,24 @@ export function AccentGroup() {
   )
 }
 
+/**
+ * Keeps the pressed control where it was on screen when a choice rescales the page around it (text size, weight): once
+ * the new sizes are laid out, the scroll box under it moves by what the control moved. The control itself draws at the
+ * default type (sx-type-steady), so its own size never changes.
+ */
+export function holdInPlace(): void {
+  const el = typeof document === 'undefined' ? null : document.activeElement
+  if (!(el instanceof HTMLElement)) return
+  const top = el.getBoundingClientRect().top
+  requestAnimationFrame(() => {
+    if (!el.isConnected) return
+    const moved = el.getBoundingClientRect().top - top
+    let box = el.parentElement
+    while (box && !(box.scrollHeight > box.clientHeight && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement
+    if (box && Math.abs(moved) > 0.5) box.scrollTop += moved
+  })
+}
+
 export function TextSizeSeg({ full, short }: { full?: boolean; short?: boolean }) {
   const size = useApp((s) => s.appearance.textSize)
   const options: { value: Appearance['textSize']; label: string }[] = [
@@ -63,7 +81,7 @@ export function TextSizeSeg({ full, short }: { full?: boolean; short?: boolean }
     { value: 'large', label: 'Large' },
     { value: 'larger', label: 'Larger' },
   ]
-  return <Seg label="Text size" size="sm" full={Boolean(full)} value={size} onChange={(v) => setAppearance('textSize', v)} options={options} />
+  return <Seg label="Text size" size="sm" className="sx-type-steady" full={Boolean(full)} value={size} onChange={(v) => (holdInPlace(), setAppearance('textSize', v))} options={options} />
 }
 
 export function ToolbarSizeSeg() {
@@ -135,8 +153,9 @@ export function TextGroup() {
         <Seg
           label="Font weight"
           size="sm"
+          className="sx-type-steady"
           value={a.fontWeight}
-          onChange={(v) => setAppearance('fontWeight', v)}
+          onChange={(v) => (holdInPlace(), setAppearance('fontWeight', v))}
           options={[
             { value: 'light', label: 'Light' },
             { value: 'regular', label: 'Regular' },

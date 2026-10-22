@@ -15,18 +15,17 @@
 .th-name small { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font: var(--fw-regular) var(--fs-xs) var(--f-body); color: var(--dim); white-space: nowrap; }
 .th-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .th-pair[data-single] { grid-template-columns: 1fr; }
-/* The flavor pill sits on the card's name row, left of the check on the picked card. */
-.th-flavors { position: absolute; right: 7px; bottom: 6px; }
-.th-cell[data-on] .th-flavors { right: 28px; }
+/* The flavor pill sits on the card's name row, left of where the picked card's check goes, on every card, so picking
+   a card never moves its pill. */
+.th-flavors { position: absolute; right: 28px; bottom: 6px; }
 /* the open menu sits over the cards after this one */
 .th-cell:has(.th-pill[aria-expanded="true"]) { z-index: 3; }
-.th-cell:has(.th-flavors) .th-name { padding-right: 96px; }
-.th-cell[data-on]:has(.th-flavors) .th-name { padding-right: 116px; }
+.th-cell:has(.th-flavors) .th-name { padding-right: 116px; }
 /* a narrow card (two columns on a phone) keeps its name: the pill moves onto the preview's top right corner */
 .th-cell { container-type: inline-size; }
 @container (max-width: 210px) {
-  .th-flavors, .th-cell[data-on] .th-flavors { right: 11px; bottom: auto; top: 11px; }
-  .th-cell:has(.th-flavors) .th-name, .th-cell[data-on]:has(.th-flavors) .th-name { padding-right: 22px; }
+  .th-flavors { right: 11px; bottom: auto; top: 11px; }
+  .th-cell:has(.th-flavors) .th-name { padding-right: 22px; }
 }
 .th-pill { display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 5px 0 8px; font: var(--fw-medium) var(--fs-xs) var(--f-body); color: var(--muted); white-space: nowrap; cursor: pointer; background: var(--ink-1); border: 1px solid var(--line); border-radius: var(--r-pill); transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
 .th-pill[data-static] { padding: 0 8px; cursor: default; }

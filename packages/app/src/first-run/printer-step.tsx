@@ -9,7 +9,7 @@
 import { listPrinterProfiles } from '@slicerx/settings'
 import { get, set, toast } from '../state/store'
 import { connectionMethod, type ConnectionId, type ConnectionMethod, type FieldKey, type PrinterModel } from '@slicerx/printer-catalog'
-import { Button, Chip, Field, Icon, Input, LinkButton, Pill, Seg, Select, type IconName } from '@slicerx/ui'
+import { Button, Chip, Field, Icon, Input, LinkButton, Pill, Seg, Select, Steady, type IconName } from '@slicerx/ui'
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type FocusEvent, type ReactNode } from 'react'
 import { useEdition, appName } from '../edition'
 import { HostContext, useHost } from '../host'
@@ -628,7 +628,7 @@ function SecretInput({ id, fieldKey, label, required, placeholder, ctl, keychain
         : {
             aside: (
               <button type="button" className="fr-textbtn" aria-controls={id} aria-pressed={shown} onClick={() => setShown(!shown)}>
-                {shown ? 'Hide' : 'Show'}
+                <Steady text={shown ? 'Hide' : 'Show'} forms={['Show', 'Hide']} />
               </button>
             ),
           })}

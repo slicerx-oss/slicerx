@@ -4,7 +4,7 @@
 // plain words, and a way to clear it. The filter keys are Alt+1, Alt+2 and Alt+3, with Shift to add or drop a kind.
 // With faces or edges on one object, its name selects the object alone; with one face, a crumb names the step that
 // made it and opens that step. While a sketch is open it says the mode instead: "Sketching on a face · Line".
-import { Icon, keymapFor, tipAttrs } from '@slicerx/ui'
+import { Icon, keymapFor, Steady, tipAttrs } from '@slicerx/ui'
 import { beginEdit, toolFor, viewStep } from '../../cad/history/ops'
 import { stepName } from '@slicerx/cad-history'
 import { useLookChoice } from '../../first-run/look'
@@ -16,6 +16,7 @@ import { get, set, useApp } from '../../state/store'
 import { useMadeBy } from './use-made-by'
 import { useLengthWords } from '../../cad/use-units'
 import { sketchModeText, useSketchMode } from '../../cad/sketch-mode'
+import { TOOL_NAMES } from '../../cad/sketch-variants'
 
 const ICON: Readonly<Record<PickKind, 'select-object' | 'select-face' | 'select-edge'>> = { object: 'select-object', face: 'select-face', edge: 'select-edge' }
 
@@ -79,6 +80,9 @@ export function SelectPill() {
               {on1.name}
             </button>
           </>
+        ) : sketching ? (
+          // one width for every tool, so picking a tool never resizes the pill
+          <Steady text={readout} forms={TOOL_NAMES.map((tool) => sketchModeText({ ...sketching, tool }))} align="start" clip />
         ) : (
           readout
         )}

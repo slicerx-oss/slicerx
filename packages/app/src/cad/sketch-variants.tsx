@@ -32,6 +32,9 @@ export const VARIANTS: Partial<Record<Family, SegOption<DrawTool>[]>> = {
 
 export const familyOf = (t: DrawTool): Family => (Object.entries(VARIANTS).find(([, v]) => v.some((o) => o.value === t))?.[0] as Family | undefined) ?? (t as Family)
 
+/** Every tool name the view's mode pill can show, so the pill keeps one width as the tool changes. */
+export const TOOL_NAMES: readonly string[] = [...FAMILIES.map((o) => o.title ?? o.value), 'Extend']
+
 /** The family's name, as its icon's tooltip says it. */
 export const familyName = (f: Family): string => FAMILIES.find((o) => o.value === f)?.title ?? f
 
