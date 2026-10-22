@@ -150,6 +150,11 @@ fn seen(gcode: &str) -> Seen {
 
 /// The G-code of `objects` (mesh, slot, x) on `config`, with support when `support`.
 fn slice(config: &Value, objects: &[(Mesh, u8, f64)], support: bool) -> String {
+    slice_with(config, objects, support, &[])
+}
+
+/// [`slice`] with each object's settings of its own (`settings`, by object; none past its end or when null).
+fn slice_with(config: &Value, objects: &[(Mesh, u8, f64)], support: bool, settings: &[Value]) -> String {
     let mut cfg = config.clone();
     let map: Vec<Value> = (1..=2u8)
         .map(|s| json!(objects.iter().find(|o| o.1 == s).map_or(1, |o| o.1)))
@@ -173,8 +178,12 @@ fn slice(config: &Value, objects: &[(Mesh, u8, f64)], support: bool) -> String {
         .iter()
         .enumerate()
         .map(|(i, (_, _, x))| {
-            json!({"id": format!("o{i}"), "mesh": i.to_string(),
-                   "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, x,100,0,1]})
+            let mut o = json!({"id": format!("o{i}"), "mesh": i.to_string(),
+                   "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, x,100,0,1]});
+            if let Some(own) = settings.get(i).filter(|v| !v.is_null()) {
+                o["settings"] = own.clone();
+            }
+            o
         })
         .collect();
     let req: SliceRequest = serde_json::from_value(json!({
@@ -305,12 +314,16 @@ fn two_objects_on_two_extruders_each_print_with_their_own_values() {
         parts: vec![cuboid([0.0, 15.0], [0.0, 15.0], [0.0, 3.0], 1)],
         ..Mesh::default()
     };
-    let s = seen(&slice(&x2d(), &[(cube(), 1, 90.0), (cube(), 2, 150.0)], false));
-    for (slot, outer, inner, accel) in [(1, 200.0, 300.0, 5000), (2, 50.0, 200.0, 1000)] {
-        let (top, accels) = feature(&s, slot, "Outer wall");
-        assert!((top - outer).abs() < 0.5, "outer wall on slot {slot}: {top}");
-        assert_eq!(accels, &vec![accel], "outer wall on slot {slot}");
-        let (top, _) = feature(&s, slot, "Inner wall");
-        assert!((top - inner).abs() < 0.5, "inner wall on slot {slot}: {top}");
+    let objects = [(cube(), 1, 90.0), (cube(), 2, 150.0)];
+    // Also with settings of its own on the first cube: each cube slices on its own and the plate regroups the layer.
+    for own in [Value::Null, json!({"wall_loops": 3})] {
+        let s = seen(&slice_with(&x2d(), &objects, false, &[own]));
+        for (slot, outer, inner, accel) in [(1, 200.0, 300.0, 5000), (2, 50.0, 200.0, 1000)] {
+            let (top, accels) = feature(&s, slot, "Outer wall");
+            assert!((top - outer).abs() < 0.5, "outer wall on slot {slot}: {top}");
+            assert_eq!(accels, &vec![accel], "outer wall on slot {slot}");
+            let (top, _) = feature(&s, slot, "Inner wall");
+            assert!((top - inner).abs() < 0.5, "inner wall on slot {slot}: {top}");
+        }
     }
 }
