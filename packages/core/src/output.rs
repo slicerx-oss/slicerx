@@ -238,6 +238,21 @@ pub struct LayerPaths {
     /// The layer's G-code from `gcode::settle_cooling` when settling changed nothing, for the writer to take
     /// as it is (with the settings and flavor it was written for, and no custom G-code of the layer slider).
     pub(crate) written: Option<std::sync::Arc<crate::gcode::LayerChunk>>,
+    /// On a plate that prints its objects from sessions of their own, which prints one prime tower over all of them:
+    /// the first work of each filament on this object's layer, for the plate's purges (`sequence.rs`). Empty
+    /// otherwise.
+    pub(crate) turns: Vec<TurnRoom>,
+}
+
+/// The first work of a filament on a layer of one object: whether it prints its sparse infill first and what a
+/// change into it can flush into (sparse infill, solid infill and support), mm3.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct TurnRoom {
+    pub tool: u8,
+    pub flush_first: bool,
+    pub infill: f64,
+    pub solid: f64,
+    pub support: f64,
 }
 
 /// Where a travel to a support path needs no retraction (Orca `GCode::needs_retraction`): inside one support

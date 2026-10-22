@@ -40,6 +40,15 @@ const ENFORCERS_UNUSED: &str = "Support enforcers are on the plate but support i
 /// Why support printed on the object's layers although the settings ask for layers of its own height.
 const SUPPORT_ON_OBJECT_LAYERS: &str = "Support prints on the model's layers because this print uses a prime tower. That saves a filament change on every support layer.";
 
+/// A plate's first object as its own session saw itself: bounds, footprints, object settings and interleave flag
+/// ([`SliceSession::swap_own`]).
+type OwnView = (
+    [f64; 4],
+    Vec<crate::output::ObjectFootprint>,
+    Vec<serde_json::Value>,
+    bool,
+);
+
 /// Slot, welded plate-space vertices and triangles of one part.
 /// A part with settings of its own: its welded mesh and the settings.
 type PartRegion = (Vec<[f64; 3]>, Vec<[u32; 3]>, serde_json::Value);
@@ -178,6 +187,10 @@ pub struct SliceSession {
     /// Objects print layer by layer (each layer holds every object's paths) instead of one after
     /// the other.
     interleave: bool,
+    /// Objects printed layer by layer, each from a session of its own: the plate's tool order across them and the
+    /// prime tower they share (`sequence.rs` prints them by it, over all their paths). Every object's session holds
+    /// it, and leaves the tower out of its own layers.
+    plate_tools: Option<std::sync::Arc<PlateTools>>,
     /// Settings objects that height ranges apply, merged in order; layer `l`
     /// uses `overrides[layer_cfg[l] - 1]`, or the base config when 0.
     overrides: Vec<serde_json::Value>,
@@ -1201,6 +1214,7 @@ impl SliceSession {
         };
         let printable_index: Vec<u16> = printable.iter().map(|o| plate_index_of(o)).collect();
         let mut subs: Vec<Self> = Vec::with_capacity(sliced.len());
+        let mut own_cfgs: Vec<PrintConfig> = Vec::with_capacity(sliced.len());
         for obj in &sliced {
             let own_cfg = object_config(config, &obj.settings)?;
             let sub = Plate {
@@ -1234,6 +1248,7 @@ impl SliceSession {
             )?;
             one.plate_index = plate_index_of(obj);
             subs.push(one);
+            own_cfgs.push(own_cfg);
         }
         if interleaved && let Some(s) = subs.first_mut() {
             for w in layer_wide_conflicts(ranges) {
@@ -1257,6 +1272,13 @@ impl SliceSession {
             }
         }
         let mut first = subs.remove(0);
+        // The first object's own view, which its support layers are planned with once the plate's tower is known.
+        let mut first_own: OwnView = (
+            first.bounds,
+            first.objects.clone(),
+            first.object_settings.clone(),
+            first.interleave,
+        );
         for f in &subs {
             first.bounds = [
                 first.bounds[0].min(f.bounds[0]),
@@ -1298,6 +1320,28 @@ impl SliceSession {
         }
         if first.interleave {
             first.plan_interleaved();
+            first.plan_plate_tools(config)?;
+            // Each object plans its support layers as one session of the plate would: on the object's layers when
+            // the plate's tower prints (it now stands in each object's session). The plate's layers and filaments
+            // are planned again with them.
+            let mut cfgs = own_cfgs.iter();
+            if let Some(c) = cfgs.next() {
+                // As its own session saw itself: its bounds, footprint and settings, without the other objects.
+                let followers = std::mem::take(&mut first.followers);
+                first.swap_own(&mut first_own);
+                first.plan_support_layers(c);
+                first.swap_own(&mut first_own);
+                first.followers = followers;
+            }
+            for (f, c) in first.followers.iter_mut().zip(cfgs) {
+                f.plan_support_layers(c);
+            }
+            let said: Vec<SliceWarning> = first.followers.iter().flat_map(|f| f.warnings.clone()).collect();
+            for w in said {
+                first.push_warning(w);
+            }
+            first.plan_interleaved();
+            first.plan_plate_tools(config)?;
         }
         Ok(first)
     }
@@ -1709,6 +1753,7 @@ impl SliceSession {
             followers: Vec::new(),
             object_settings: Vec::new(),
             interleave: false,
+            plate_tools: None,
             overrides,
             objects: hulls,
             object_heights,
@@ -1801,17 +1846,30 @@ impl SliceSession {
                 .map(|o| o.hull.iter().map(|p| IntPoint::new(mm(p[0]), mm(p[1]))).collect())
                 .collect();
         }
-        // Support on layers of its own height only when no prime tower prints (`own_support_layers`). The raft
-        // was planned with the setting, so its gap to the part follows the choice here.
-        let own = session.own_support_layers(config);
-        if own != config.independent_support_layer_height() && session.raft.is_some() {
-            session.raft = crate::raft::plan_with(config, own);
-        }
-        session.plan_print(config, own);
+        // An object of a plate printed layer by layer plans them once the plate's tower is known (`build_plate`).
         if !interleaved {
+            session.plan_support_layers(config);
             session.plan_raft(config);
         }
         Ok(session)
+    }
+
+    /// Swaps the session's bounds, footprints, object settings and interleave flag with `own`.
+    fn swap_own(&mut self, own: &mut OwnView) {
+        std::mem::swap(&mut self.bounds, &mut own.0);
+        std::mem::swap(&mut self.objects, &mut own.1);
+        std::mem::swap(&mut self.object_settings, &mut own.2);
+        std::mem::swap(&mut self.interleave, &mut own.3);
+    }
+
+    /// Plans support on layers of its own height, only when no prime tower prints (`own_support_layers`). The raft
+    /// was planned with the setting, so its gap to the part follows the choice here.
+    fn plan_support_layers(&mut self, config: &PrintConfig) {
+        let own = self.own_support_layers(config);
+        if own != config.independent_support_layer_height() && self.raft.is_some() {
+            self.raft = crate::raft::plan_with(config, own);
+        }
+        self.plan_print(config, own);
     }
 
     /// With `draft_shield` enabled, the skirt follows the convex hull of the whole part on every layer.
@@ -1923,27 +1981,7 @@ impl SliceSession {
             if need <= 0.5 {
                 continue;
             }
-            let regions = self.layer_regions(l, fam, &micros);
-            let shapes: Vec<&Shapes> = regions
-                .regions
-                .iter()
-                .filter(|r| r.0 == to)
-                .map(|r| &r.1)
-                .collect();
-            // The infill area is what the walls leave; its extrusion is about density times area times height.
-            let walls = mm(f64::from(config.wall_loops) * config.line_width);
-            let inner = shapes_area(&perimeters::offset(&perimeters::union_all(&shapes), -walls));
-            let h = self.plan.thickness(l);
-            let to_mm2 = 1.0 / (crate::geom::SCALE * crate::geom::SCALE);
-            let mut room = 0.0;
-            if crate::tower::flag_or(config, "flush_into_infill", true)
-                || crate::tower::flag(config, "flush_into_objects")
-            {
-                room += inner * to_mm2 * h * config.sparse_infill_density / 100.0;
-            }
-            if crate::tower::flag(config, "flush_into_objects") {
-                room += inner * to_mm2 * h;
-            }
+            let room = self.purge_room(config, fam, &micros, l, to);
             // The room is an estimate: it has to beat the flush by a quarter, or the tower stays.
             if need * 1.25 > room + 0.5 {
                 top = Some(l);
@@ -1954,6 +1992,33 @@ impl SliceSession {
             self.place_tower(config)?;
         }
         Ok(())
+    }
+
+    /// What filament `to`'s infill (and objects, with `flush_into_objects`) on layer `l` can take up of a change's
+    /// flush, mm3, estimated from the layer's regions.
+    fn purge_room(&self, config: &PrintConfig, fam: Families, micros: &Micros, l: u32, to: u8) -> f64 {
+        let regions = self.layer_regions(l, fam, micros);
+        let shapes: Vec<&Shapes> = regions
+            .regions
+            .iter()
+            .filter(|r| r.0 == to)
+            .map(|r| &r.1)
+            .collect();
+        // The infill area is what the walls leave; its extrusion is about density times area times height.
+        let walls = mm(f64::from(config.wall_loops) * config.line_width);
+        let inner = shapes_area(&perimeters::offset(&perimeters::union_all(&shapes), -walls));
+        let h = self.plan.thickness(l);
+        let to_mm2 = 1.0 / (crate::geom::SCALE * crate::geom::SCALE);
+        let mut room = 0.0;
+        if crate::tower::flag_or(config, "flush_into_infill", true)
+            || crate::tower::flag(config, "flush_into_objects")
+        {
+            room += inner * to_mm2 * h * config.sparse_infill_density / 100.0;
+        }
+        if crate::tower::flag(config, "flush_into_objects") {
+            room += inner * to_mm2 * h;
+        }
+        room
     }
 
     /// Mesh edges without a matching reverse edge, over all parts. Counted
@@ -2415,7 +2480,11 @@ impl SliceSession {
 
     /// The prime tower as placed (shape and corner), for settings `cfg`.
     fn tower(&self, cfg: &PrintConfig) -> Option<crate::tower::Tower> {
-        let height = self.tower_top.map_or(0.0, |t| self.plan.top(t));
+        self.tower_with(cfg, self.tower_top.map_or(0.0, |t| self.plan.top(t)))
+    }
+
+    /// [`Self::tower`] for a tower `height` mm tall.
+    fn tower_with(&self, cfg: &PrintConfig, height: f64) -> Option<crate::tower::Tower> {
         match &self.tower_shape {
             Some(p) => p.tower(cfg, self.tool_count),
             None => crate::tower::Tower::new(cfg, self.tool_count, self.tower_rows),
@@ -2617,35 +2686,17 @@ impl SliceSession {
     /// With a filament map, the filament each nozzle holds when print layer `p` starts, from the planned
     /// orders of the layers below (`LayerPaths::held_before`).
     fn held_before(&self, p: u32) -> Vec<u8> {
-        let Some(map) = &self.nozzle_map else {
-            return Vec::new();
-        };
-        let nozzles = map.nozzle.iter().map(|&n| usize::from(n) + 1).max().unwrap_or(1);
-        let mut held = vec![0u8; nozzles];
-        for &t in self.tool_order.iter().take(p as usize).flatten() {
-            if let Some(h) = held.get_mut(map.nozzle_of(t)) {
-                *h = t;
-            }
-        }
-        held
+        held_in(self.nozzle_map.as_ref(), &self.tool_order, p as usize)
     }
 
     /// The tool changes the plan makes below print layer `p` (`LayerPaths::changes_before`).
     fn changes_before(&self, p: u32) -> u32 {
-        let mut order = self.tool_order.iter().take(p as usize).flatten();
-        let Some(&first) = order.next() else { return 0 };
-        order
-            .fold((first, 0u32), |(at, n), &t| (t, n + u32::from(t != at)))
-            .1
+        changes_in(&self.tool_order, p as usize)
     }
 
     /// The tools the plan prints with below print layer `p` (`LayerPaths::tools_before`).
     fn tools_before(&self, p: u32) -> u64 {
-        self.tool_order
-            .iter()
-            .take(p as usize)
-            .flatten()
-            .fold(0, |m, &t| m | 1u64 << u32::from(t.max(1) - 1).min(63))
+        tools_in(&self.tool_order, p as usize)
     }
 
     /// By object: the filament this object holds once its first `p` print layers are printed, from its plan
@@ -2816,6 +2867,347 @@ impl SliceSession {
     /// each object in it. Empty when the objects share their layers.
     pub(crate) fn interleaved_layers(&self) -> &[(f64, Vec<Option<u32>>)] {
         &self.interleaved
+    }
+
+    /// Plans the filaments of a plate whose objects print layer by layer from sessions of their own (their own
+    /// settings) as one session of the whole plate plans them: each plate layer prints the filaments of all its
+    /// objects in one order, starting on the one the layer below ended on, and one prime tower stands for the
+    /// plate's changes. The objects' sessions keep their own settings and plans and leave the tower to the plate,
+    /// which `sequence.rs` prints over their paths.
+    fn plan_plate_tools(&mut self, config: &PrintConfig) -> Result<()> {
+        if !self.instances.is_empty() || self.followers.is_empty() || self.plate_slots().len() < 2 {
+            return Ok(());
+        }
+        let layers: Vec<Vec<Option<u32>>> = if self.interleaved.is_empty() {
+            let n = self.sequence().map(Self::plan_count).max().unwrap_or(0);
+            (0..n)
+                .map(|g| {
+                    self.sequence()
+                        .map(|s| (g < s.plan_count()).then_some(g))
+                        .collect()
+                })
+                .collect()
+        } else {
+            self.interleaved.iter().map(|(_, of)| of.clone()).collect()
+        };
+        // Each object's support filaments of their own (0: the active one), for its layers of support only.
+        let support: Vec<(u8, u8)> = (0..self.sequence().count())
+            .map(|k| {
+                self.object_config(k, config).map(|c| {
+                    if c.enable_support {
+                        (
+                            support_slot(&c, "support_filament"),
+                            support_slot(&c, "support_interface_filament"),
+                        )
+                    } else {
+                        (0, 0)
+                    }
+                })
+            })
+            .collect::<Result<_>>()?;
+        let present = |g: usize| -> Vec<u8> {
+            let mut v: Vec<u8> = layers
+                .get(g)
+                .into_iter()
+                .flatten()
+                .zip(self.sequence())
+                .zip(&support)
+                .filter_map(|((p, s), &own)| p.map(|p| s.print_tools(p, own)))
+                .flatten()
+                .collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        let mut first: Vec<u8> = Vec::new();
+        for t in self.sequence().flat_map(|s| s.first_layer_order(config)) {
+            if !first.contains(&t) {
+                first.push(t);
+            }
+        }
+        let choice = crate::toolorder::Choice::of(config, self.tool_count);
+        let (orders, any_top, within_top) = order_layers(layers.len(), &present, &first, &choice);
+        let always = crate::tower::flag(config, "prime_tower_always");
+        let mut top = if always { any_top } else { within_top };
+        // As one session keeps the tower up to a change between layers whose flush the new filament's infill
+        // cannot take up, from the room in every object's layer.
+        if !always && let Some(last) = any_top.filter(|l| Some(*l) > top) {
+            let fam = Families::new(config);
+            let micros = Micros::default();
+            for g in top.map_or(0, |t| t + 1)..=last {
+                let ended = g
+                    .checked_sub(1)
+                    .and_then(|p| orders.get(p as usize))
+                    .and_then(|o| o.last())
+                    .copied();
+                let started = orders.get(g as usize).and_then(|o| o.first()).copied();
+                let (Some(from), Some(to)) = (ended, started) else {
+                    continue;
+                };
+                if from == to {
+                    continue;
+                }
+                let need = crate::tower::change_purge(config, self.tool_count, from, to).wipe;
+                if need <= 0.5 {
+                    continue;
+                }
+                let mut room = 0.0;
+                for (k, (p, s)) in layers
+                    .get(g as usize)
+                    .into_iter()
+                    .flatten()
+                    .zip(self.sequence())
+                    .enumerate()
+                {
+                    if let Some(l) = p.and_then(|p| s.object_layer(p)) {
+                        let c = self.object_config(k, config)?;
+                        room += s.purge_room(&c, fam, &micros, l, to);
+                    }
+                }
+                if need * 1.25 > room + 0.5 {
+                    top = Some(g);
+                }
+            }
+        }
+        // Each plate layer's height and top, from the first object that prints on it.
+        let slot = |g: usize| -> (f64, f64) {
+            layers
+                .get(g)
+                .into_iter()
+                .flatten()
+                .zip(self.sequence())
+                .find_map(|(p, s)| p.map(|p| (s.print_height(p), s.print_top(p))))
+                .unwrap_or((self.plan.height, 0.0))
+        };
+        let thickness = |g: usize| slot(g).0;
+        let tower_height = top.map_or(0.0, |t| slot(t as usize).1);
+        let tools = self.tool_count;
+        let shape = match top {
+            Some(t) => {
+                // What each object's first layer lays down past its hull, with its own settings.
+                let rooms: Vec<f64> = (0..self.objects.len())
+                    .map(|k| {
+                        self.object_config(k, config)
+                            .map_or_else(|_| crate::tower::room(config), |c| crate::tower::room(&c))
+                    })
+                    .collect();
+                let height = self.sequence().map(Self::plate_top).fold(0.0, f64::max);
+                crate::tower::place(
+                    config,
+                    tools,
+                    &|w| crate::tower::plan_rows(config, w, tools, &orders, &thickness, t as usize),
+                    crate::tower::rib_size(config, tools, &orders, &thickness, t as usize),
+                    &self.objects,
+                    &rooms,
+                    height,
+                )?
+            }
+            None => None,
+        };
+        let rows = shape.map_or(1.0, |p| p.rows);
+        let rows0 = match (top, shape) {
+            (Some(t), Some(p)) if crate::tower::saves_on_last_wipe(config) => {
+                crate::tower::plan_rows_unsaved(config, p.width, tools, &orders, &thickness, t as usize)
+            }
+            _ => rows,
+        };
+        let plate = std::sync::Arc::new(PlateTools {
+            orders,
+            layers,
+            tower_top: top,
+            tower_height,
+        });
+        let share = |s: &mut Self| {
+            s.tower_shape = shape;
+            s.tower_rows = rows;
+            s.tower_origin = shape.map(|p| p.origin);
+            s.tower_rows0 = rows0;
+            s.tower_top = top.map(|_| s.plan_layer_at(tower_height));
+            s.plate_tools = Some(plate.clone());
+        };
+        share(self);
+        for f in &mut self.followers {
+            share(f);
+        }
+        Ok(())
+    }
+
+    /// The plate's tool plan when its objects print layer by layer from sessions of their own; None otherwise.
+    pub(crate) fn plate_tools(&self) -> Option<&PlateTools> {
+        self.plate_tools.as_deref()
+    }
+
+    /// The tower's side of plate layer `g` when it starts on filament `start`, on a plate with [`PlateTools`]: its
+    /// place in the plan, and whether it holds only support. None when the tower does not stand on it (a raft
+    /// layer, or above the tower).
+    pub(crate) fn plate_tower_layer(
+        &self,
+        cfg: &PrintConfig,
+        g: u32,
+        start: u8,
+    ) -> Option<(TowerLayer, Option<bool>)> {
+        let tools = self.plate_tools.as_deref()?;
+        let of = tools.layers.get(g as usize)?;
+        let printing = || {
+            of.iter()
+                .zip(self.sequence())
+                .filter_map(|(p, s)| p.map(|p| (p, s)))
+        };
+        let tower = self
+            .tower_with(cfg, tools.tower_height)
+            .map(|t| self.tower_origin.map_or(t, |o| t.at(o)));
+        if let Some((l, s)) = printing().find_map(|(p, s)| s.object_layer(p).map(|l| (l, s))) {
+            let at = TowerLayer {
+                layer: l,
+                first: l == 0 && s.raft.is_none(),
+                h: s.plan.thickness(l),
+                top: s.plan.top(l),
+                tower_height: tools.tower_height,
+                start,
+                tower: tower.filter(|_| tools.tower_top.is_some_and(|t| g <= t)),
+            };
+            return Some((at, None));
+        }
+        // Support only: walled while an object layer under it is below the tower's top.
+        let (p, s) =
+            printing().find(|(p, s)| s.print.get(*p as usize).is_some_and(|l| l.support.is_some()))?;
+        let pl = s.print.get(p as usize)?;
+        let below = s
+            .print
+            .get(..p as usize)
+            .and_then(|r| r.iter().rev().find_map(|l| l.object));
+        let walled = below.is_some_and(|b| s.tower_top.is_some_and(|t| b < t));
+        let at = TowerLayer {
+            layer: below.unwrap_or(0),
+            first: false,
+            h: pl.height,
+            top: pl.top,
+            tower_height: tools.tower_height,
+            start,
+            tower,
+        };
+        Some((at, Some(walled)))
+    }
+
+    /// The tower's side of a plate layer that holds only support, over the filaments' turns: a purge into the tower
+    /// for each change, less what the support takes up, and the outline when `walled`. As one session prints a
+    /// support layer of its own.
+    pub(crate) fn support_tower_turns(
+        &self,
+        cfg: &PrintConfig,
+        at: &TowerLayer,
+        walled: bool,
+        turns: &mut [PlateTurn],
+    ) {
+        if self.tool_count < 2 {
+            return;
+        }
+        let mut current = at.start;
+        let mut used_rows = 0.0;
+        let mut wipe_starts: Vec<(f64, f64)> = Vec::new();
+        for w in turns.iter_mut() {
+            if current != 0 && w.tool != current {
+                let mut v = crate::tower::change_purge(cfg, self.tool_count, current, w.tool).wipe;
+                if crate::tower::flag_or(cfg, "flush_into_support", true) {
+                    v -= w.support;
+                }
+                if let (true, Some(t)) = (v > 0.5, at.tower) {
+                    wipe_starts.push(t.row_start(used_rows));
+                    let (path, rows) = t.purge(v, at.h, false, used_rows);
+                    used_rows += rows;
+                    w.tower.extend(path);
+                }
+            }
+            current = w.tool;
+        }
+        if walled
+            && crate::tower::flag_or(cfg, "prime_tower_outline", true)
+            && !crate::tower::flag(cfg, "wipe_tower_no_sparse_layers")
+            && let (Some(t), Some(w)) = (at.tower, turns.first_mut())
+        {
+            w.tower.splice(0..0, t.wall_pieces(false, at.top, &wipe_starts));
+        }
+    }
+
+    /// The filament the plan has plate layer `g` start on: the last one of the nearest layer below that prints any.
+    pub(crate) fn plate_start(&self, g: u32) -> u8 {
+        self.plate_tools.as_deref().map_or(0, |t| {
+            t.orders
+                .iter()
+                .take(g as usize)
+                .rev()
+                .find_map(|o| o.last().copied())
+                .unwrap_or(0)
+        })
+    }
+
+    /// What the plate's plan prints before plate layer `g`: the tools, the changes and, with a filament map, what
+    /// each nozzle holds (`LayerPaths::tools_before`, `changes_before`, `held_before`).
+    pub(crate) fn plate_before(&self, g: u32) -> (u64, u32, Vec<u8>) {
+        let Some(t) = self.plate_tools.as_deref() else {
+            return (0, 0, Vec::new());
+        };
+        let p = g as usize;
+        (
+            tools_in(&t.orders, p),
+            changes_in(&t.orders, p),
+            held_in(self.nozzle_map.as_ref(), &t.orders, p),
+        )
+    }
+
+    /// The filaments print layer `p` prints, as the plan has them: its planned order, or the one filament of an
+    /// object of one filament. A layer of support only prints the support's own filaments (`support`: base and
+    /// interface, 0 for the active one) where it has base or interface; a raft layer none.
+    fn print_tools(&self, p: u32, support: (u8, u8)) -> Vec<u8> {
+        let Some(l) = self.object_layer(p) else {
+            let Some(st) = self
+                .print
+                .get(p as usize)
+                .and_then(|l| l.support)
+                .and_then(|s| self.stack.get(s as usize))
+            else {
+                return Vec::new();
+            };
+            let mut v = Vec::new();
+            if support.0 > 0 && !st.layer.base.is_empty() {
+                v.push(support.0);
+            }
+            if support.1 > 0 && !st.layer.interface.is_empty() {
+                v.push(support.1);
+            }
+            return v;
+        };
+        match self.tool_order.get(l as usize) {
+            Some(o) if !o.is_empty() => o.clone(),
+            _ if self.slots.len() == 1 => self.slots.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The object layer print layer `p` prints, None for a support or raft layer.
+    fn object_layer(&self, p: u32) -> Option<u32> {
+        if self.print.is_empty() {
+            (p < self.plan.count()).then_some(p)
+        } else {
+            self.print.get(p as usize)?.object
+        }
+    }
+
+    /// Height of print layer `p`, mm.
+    fn print_height(&self, p: u32) -> f64 {
+        if self.print.is_empty() {
+            self.plan.thickness(p)
+        } else {
+            self.print.get(p as usize).map_or(self.plan.height, |l| l.height)
+        }
+    }
+
+    /// The last layer of the plan whose top is at most `z` mm (the first one when none is).
+    fn plan_layer_at(&self, z: f64) -> u32 {
+        (0..self.plan.count())
+            .take_while(|&l| self.plan.top(l) <= z + 1e-6)
+            .last()
+            .unwrap_or(0)
     }
 
     /// Print layers of this object: its own layers plus the support layers between them.
@@ -3174,7 +3566,7 @@ impl SliceSession {
                 if crate::tower::flag_or(cfg, "flush_into_support", true) {
                     v -= work_support_volume(w, cfg.line_width, pl.height);
                 }
-                if let (true, Some(t)) = (v > 0.5, self.tower(cfg)) {
+                if let (true, Some(t)) = (v > 0.5 && self.plate_tools.is_none(), self.tower(cfg)) {
                     let t = self.tower_origin.map_or(t, |o| t.at(o));
                     wipe_starts.push(t.row_start(used_rows));
                     let (path, rows) = t.purge(v, pl.height, false, used_rows);
@@ -3184,12 +3576,16 @@ impl SliceSession {
             }
             current = w.tool;
         }
+        if self.plate_tools.is_some() {
+            out.turns = turn_rooms(&works, cfg.line_width, pl.height);
+        }
         let Some(work) = works.first_mut() else {
             return out;
         };
         // The prime tower keeps rising through support layers up to its last object layer; it is
         // only walled here, as no filament changes on a support layer.
         if self.tool_count > 1
+            && self.plate_tools.is_none()
             && let Some(b) = below
             && self.tower_top.is_some_and(|t| b < t)
             && crate::tower::flag_or(cfg, "prime_tower_outline", true)
@@ -8365,6 +8761,154 @@ impl SliceSession {
         }
     }
 
+    /// The prime tower's part of a layer over the filaments' turns, in print order: its outline, the purge after each
+    /// change (less what the new filament's infill, objects or support take up), the old filament's ramming before
+    /// the change and the fill of the depth the purges left. Without a tower (`at.tower` None) only the flush into
+    /// infill is planned.
+    pub(crate) fn tower_turns<W: TowerTurn>(&self, cfg: &PrintConfig, at: &TowerLayer, works: &mut [W]) {
+        let TowerLayer {
+            layer,
+            first,
+            h,
+            top,
+            tower_height,
+            start,
+            tower,
+        } = *at;
+        let mut was = start;
+        let changes = works.iter().any(|w| {
+            let change = was != 0 && w.tool() != was;
+            was = w.tool();
+            change
+        });
+        // One plain outline per layer keeps the column from toppling (`prime_tower_outline`,
+        // on by default); with it off only the first layer is framed and the rows stack.
+        // `wipe_tower_no_sparse_layers` leaves out the layers without a tool change.
+        let walled = first
+            || (crate::tower::flag_or(cfg, "prime_tower_outline", true)
+                && (changes || !crate::tower::flag(cfg, "wipe_tower_no_sparse_layers")));
+        // Orca finishes the tower layer (outline and first-layer brim) with the layer's last filament;
+        // `wipe_tower_filament` prints the outline when that filament prints on the layer.
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a filament slot"
+        )]
+        let wall_tool = cfg.raw_number("wipe_tower_filament", 0.0).clamp(0.0, 255.0) as u8;
+        let wall_at = works
+            .iter()
+            .position(|w| wall_tool > 0 && w.tool() == wall_tool)
+            .unwrap_or(works.len().saturating_sub(1));
+        let mut current = start;
+        // Each purge of the layer starts where the one before it ended.
+        let mut used_rows = 0.0;
+        let mut last_purge: Option<usize> = None;
+        // Infill, objects and support take up a flush only where the tower purges the flush: a single
+        // nozzle's change. A tool changer's head and a nozzle of a filament map hold their own filament
+        // and prime a fixed volume (OrcaSlicer's type 2 tower without
+        // `purge_in_prime_tower`; Bambu Studio's prime volume beside the chute flush).
+        let absorbs =
+            !crate::nozzles::shared(cfg) && (crate::tower::type1(cfg) || crate::tower::flush_on_tower(cfg));
+        // As OrcaSlicer's type 2 towers save on the last wipe: the layer's first purge is cut by what
+        // finishing the layer (its wall and the fill over the purges) extrudes anyway, down to the new
+        // filament's `filament_minimal_purge_on_wipe_tower`.
+        // The save is measured on the tower as Orca first plans it, before the saves shrink it.
+        let saving = tower
+            .as_ref()
+            .filter(|_| crate::tower::saves_on_last_wipe(cfg))
+            .and_then(|t| {
+                crate::tower::Tower::new(cfg, self.tool_count, self.tower_rows0)
+                    .map(|t0| t0.shaped(t.width(), t.angle()).at(t.origin()))
+            });
+        let mut first_purge = true;
+        // Where the layer's wall is in its work's tower paths, and where each wipe after a change starts (the
+        // wall opens level with them).
+        let mut wall_slot: Option<(usize, usize)> = None;
+        let mut wipe_starts: Vec<(f64, f64)> = Vec::new();
+        for i in 0..works.len() {
+            let Some(next_tool) = works.get(i).map(TowerTurn::tool) else {
+                continue;
+            };
+            let change = current != 0 && next_tool != current;
+            let purge = change.then(|| crate::tower::change_purge(cfg, self.tool_count, current, next_tool));
+            // The old filament rams out before the change, printed with it at the end of its own work.
+            let mut lead = None;
+            if let (Some(p), Some(t), Some(prev)) = (purge, tower.as_ref(), i.checked_sub(1))
+                && p.ram > 0.0
+                && let Some(w) = works.get_mut(prev)
+            {
+                let (path, rows, end) = t.ramming(cfg, p, current, h, used_rows);
+                used_rows += rows;
+                lead = end;
+                w.tower_after().extend(path);
+            }
+            let Some(work) = works.get_mut(i) else { continue };
+            if let (true, Some(tower)) = (i == wall_at && walled, tower.as_ref()) {
+                wall_slot = Some((i, work.tower().len()));
+                work.tower().push(tower.wall(first, top));
+                // a type 1 tower's brim narrows over the first layers (orca's brim chamfer)
+                if crate::tower::type1(cfg) {
+                    work.tower().extend(tower.chamfer(layer, h, top, tower_height));
+                } else if first {
+                    work.tower()
+                        .extend(tower.brim(self.plan.thickness(0), tower_height));
+                }
+            }
+            if let Some(p) = purge {
+                let mut v = p.wipe;
+                // Flush into infill, objects or support: what the new filament prints anyway takes
+                // up the purge, and the tower (when there is one) purges the rest.
+                let mut taken = 0.0;
+                if absorbs {
+                    if crate::tower::flag_or(cfg, "flush_into_infill", true)
+                        || crate::tower::flag(cfg, "flush_into_objects")
+                    {
+                        taken += work.infill_volume(cfg.line_width, h);
+                        if taken > 0.0 {
+                            work.set_flush_first();
+                        }
+                    }
+                    if crate::tower::flag(cfg, "flush_into_objects") {
+                        taken += work.solid_volume(cfg.line_width, h);
+                    }
+                    if crate::tower::flag_or(cfg, "flush_into_support", true) {
+                        taken += work.support_volume(cfg.line_width, h);
+                    }
+                }
+                v = (v - taken).max(0.0);
+                if let Some(t0) = saving.as_ref().filter(|_| first_purge) {
+                    v = t0.saved_wipe(cfg, v, h, first, used_rows, work.tool());
+                }
+                first_purge = false;
+                if let (true, Some(tower)) = (v > 0.5, tower.as_ref()) {
+                    if lead.is_none() {
+                        wipe_starts.push(tower.row_start(used_rows));
+                    }
+                    let (path, rows) = tower.purge_lead(v, h, first, used_rows, lead);
+                    used_rows += rows;
+                    work.tower().extend(path);
+                    last_purge = Some(i);
+                }
+            }
+            current = work.tool();
+        }
+        if let (Some((wi, at)), Some(tower)) = (wall_slot, tower.as_ref())
+            && let Some(work) = works.get_mut(wi)
+            && at < work.tower().len()
+        {
+            let pieces = tower.wall_pieces(first, top, &wipe_starts);
+            work.tower().splice(at..=at, pieces);
+        }
+        // The depth the purges left free is filled by the filament of the last purge (Orca's
+        // finish block), or with the outline when the layer purged nothing.
+        let fill_at = last_purge.or((walled && !works.is_empty()).then_some(wall_at));
+        if let (Some(i), Some(tower)) = (fill_at, tower.as_ref())
+            && let Some(work) = works.get_mut(i)
+        {
+            work.tower().extend(tower.fill(cfg, used_rows, first));
+        }
+    }
+
     /// The rest of [`Self::layer_paths_with`] after [`Self::layer_start`]: the layer's support, then the order of
     /// its filaments, the prime tower, brim, skirt and the plan of its paths.
     #[allow(
@@ -8408,6 +8952,9 @@ impl SliceSession {
         let mut skirt_extra: Vec<IntPoint<i32>> = Vec::new();
         if skirt_here
             && self.skirt_groups.is_empty()
+            // A plate whose objects have settings of their own gives each object a skirt of its own: none of them
+            // goes round the plate's tower.
+            && self.plate_tools.is_none()
             && self.tower_top.is_some()
             && let Some(t) = self.tower(cfg).map(|t| self.tower_origin.map_or(t, |o| t.at(o)))
         {
@@ -8451,147 +8998,27 @@ impl SliceSession {
             self.changes_before(self.object_print.get(layer as usize).copied().unwrap_or(layer));
         out.held_before = self.held_before(self.object_print.get(layer as usize).copied().unwrap_or(layer));
         if self.tool_count > 1 {
-            let tower = self
-                .tower_top
-                .filter(|t| layer <= *t)
-                .and_then(|_| self.tower(cfg))
-                .map(|t| self.tower_origin.map_or(t, |o| t.at(o)));
-            let first = layer == 0 && self.raft.is_none();
-            let mut was = out.start_tool;
-            let changes = works.iter().any(|w| {
-                let change = was != 0 && w.tool != was;
-                was = w.tool;
-                change
-            });
-            // One plain outline per layer keeps the column from toppling (`prime_tower_outline`,
-            // on by default); with it off only the first layer is framed and the rows stack.
-            // `wipe_tower_no_sparse_layers` leaves out the layers without a tool change.
-            let walled = first
-                || (crate::tower::flag_or(cfg, "prime_tower_outline", true)
-                    && (changes || !crate::tower::flag(cfg, "wipe_tower_no_sparse_layers")));
-            // Orca finishes the tower layer (outline and first-layer brim) with the layer's last filament;
-            // `wipe_tower_filament` prints the outline when that filament prints on the layer.
-            #[allow(
-                clippy::cast_possible_truncation,
-                clippy::cast_sign_loss,
-                reason = "a filament slot"
-            )]
-            let wall_tool = cfg.raw_number("wipe_tower_filament", 0.0).clamp(0.0, 255.0) as u8;
-            let wall_at = works
-                .iter()
-                .position(|w| wall_tool > 0 && w.tool == wall_tool)
-                .unwrap_or(works.len().saturating_sub(1));
-            let tower_height = self.tower_top.map_or(0.0, |t| self.plan.top(t));
-            let mut current = out.start_tool;
-            // Each purge of the layer starts where the one before it ended.
-            let mut used_rows = 0.0;
-            let mut last_purge: Option<usize> = None;
-            let h = self.plan.thickness(layer);
-            // Infill, objects and support take up a flush only where the tower purges the flush: a single
-            // nozzle's change. A tool changer's head and a nozzle of a filament map hold their own filament
-            // and prime a fixed volume (OrcaSlicer's type 2 tower without
-            // `purge_in_prime_tower`; Bambu Studio's prime volume beside the chute flush).
-            let absorbs = !crate::nozzles::shared(cfg)
-                && (crate::tower::type1(cfg) || crate::tower::flush_on_tower(cfg));
-            // As OrcaSlicer's type 2 towers save on the last wipe: the layer's first purge is cut by what
-            // finishing the layer (its wall and the fill over the purges) extrudes anyway, down to the new
-            // filament's `filament_minimal_purge_on_wipe_tower`.
-            // The save is measured on the tower as Orca first plans it, before the saves shrink it.
-            let saving = tower
-                .as_ref()
-                .filter(|_| crate::tower::saves_on_last_wipe(cfg))
-                .and_then(|t| {
-                    crate::tower::Tower::new(cfg, self.tool_count, self.tower_rows0)
-                        .map(|t0| t0.shaped(t.width(), t.angle()).at(t.origin()))
-                });
-            let mut first_purge = true;
-            // Where the layer's wall is in its work's tower paths, and where each wipe after a change starts (the
-            // wall opens level with them).
-            let mut wall_slot: Option<(usize, usize)> = None;
-            let mut wipe_starts: Vec<(f64, f64)> = Vec::new();
-            for i in 0..works.len() {
-                let Some(next_tool) = works.get(i).map(|w| w.tool) else {
-                    continue;
-                };
-                let change = current != 0 && next_tool != current;
-                let purge =
-                    change.then(|| crate::tower::change_purge(cfg, self.tool_count, current, next_tool));
-                // The old filament rams out before the change, printed with it at the end of its own work.
-                let mut lead = None;
-                if let (Some(p), Some(t), Some(prev)) = (purge, tower.as_ref(), i.checked_sub(1))
-                    && p.ram > 0.0
-                    && let Some(w) = works.get_mut(prev)
-                {
-                    let (path, rows, end) = t.ramming(cfg, p, current, h, used_rows);
-                    used_rows += rows;
-                    lead = end;
-                    w.tower_after.extend(path);
-                }
-                let Some(work) = works.get_mut(i) else { continue };
-                if let (true, Some(tower)) = (i == wall_at && walled, tower.as_ref()) {
-                    wall_slot = Some((i, work.tower.len()));
-                    work.tower.push(tower.wall(first, self.plan.top(layer)));
-                    // a type 1 tower's brim narrows over the first layers (orca's brim chamfer)
-                    if crate::tower::type1(cfg) {
-                        work.tower
-                            .extend(tower.chamfer(layer, h, self.plan.top(layer), tower_height));
-                    } else if first {
-                        work.tower
-                            .extend(tower.brim(self.plan.thickness(0), tower_height));
-                    }
-                }
-                if let Some(p) = purge {
-                    let mut v = p.wipe;
-                    // Flush into infill, objects or support: what the new filament prints anyway takes
-                    // up the purge, and the tower (when there is one) purges the rest.
-                    let mut taken = 0.0;
-                    if absorbs {
-                        if crate::tower::flag_or(cfg, "flush_into_infill", true)
-                            || crate::tower::flag(cfg, "flush_into_objects")
-                        {
-                            taken += work_infill_volume(work, cfg.line_width, h);
-                            if taken > 0.0 {
-                                work.flush_first = true;
-                            }
-                        }
-                        if crate::tower::flag(cfg, "flush_into_objects") {
-                            taken += work_solid_volume(work, cfg.line_width, h);
-                        }
-                        if crate::tower::flag_or(cfg, "flush_into_support", true) {
-                            taken += work_support_volume(work, cfg.line_width, h);
-                        }
-                    }
-                    v = (v - taken).max(0.0);
-                    if let Some(t0) = saving.as_ref().filter(|_| first_purge) {
-                        v = t0.saved_wipe(cfg, v, h, first, used_rows, work.tool);
-                    }
-                    first_purge = false;
-                    if let (true, Some(tower)) = (v > 0.5, tower.as_ref()) {
-                        if lead.is_none() {
-                            wipe_starts.push(tower.row_start(used_rows));
-                        }
-                        let (path, rows) = tower.purge_lead(v, h, first, used_rows, lead);
-                        used_rows += rows;
-                        work.tower.extend(path);
-                        last_purge = Some(i);
-                    }
-                }
-                current = work.tool;
-            }
-            if let (Some((wi, at)), Some(tower)) = (wall_slot, tower.as_ref())
-                && let Some(work) = works.get_mut(wi)
-                && at < work.tower.len()
-            {
-                let pieces = tower.wall_pieces(first, self.plan.top(layer), &wipe_starts);
-                work.tower.splice(at..=at, pieces);
-            }
-            // The depth the purges left free is filled by the filament of the last purge (Orca's
-            // finish block), or with the outline when the layer purged nothing.
-            let fill_at = last_purge.or((walled && !works.is_empty()).then_some(wall_at));
-            if let (Some(i), Some(tower)) = (fill_at, tower.as_ref())
-                && let Some(work) = works.get_mut(i)
-            {
-                work.tower.extend(tower.fill(cfg, used_rows, first));
+            // A plate that prints its objects from sessions of their own prints one tower over all of them.
+            let tower = if self.plate_tools.is_some() {
+                None
+            } else {
+                self.tower_top
+                    .filter(|t| layer <= *t)
+                    .and_then(|_| self.tower(cfg))
+                    .map(|t| self.tower_origin.map_or(t, |o| t.at(o)))
+            };
+            let at = TowerLayer {
+                layer,
+                first: layer == 0 && self.raft.is_none(),
+                h: self.plan.thickness(layer),
+                top: self.plan.top(layer),
+                tower_height: self.tower_top.map_or(0.0, |t| self.plan.top(t)),
+                start: out.start_tool,
+                tower,
+            };
+            self.tower_turns(cfg, &at, &mut works);
+            if self.plate_tools.is_some() {
+                out.turns = turn_rooms(&works, cfg.line_width, at.h);
             }
         }
         let brim_kind = crate::brim::Kind::of(cfg);
@@ -9887,6 +10314,168 @@ pub(crate) struct HandOver {
     pub held: Vec<u8>,
 }
 
+/// The tool plan of a plate whose objects print layer by layer from sessions of their own (their own settings): one
+/// order of the filaments per plate layer across all of them, as one session of the whole plate plans it, and the
+/// prime tower they share.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct PlateTools {
+    /// Per plate layer (the objects' shared layers, or the layers [`SliceSession::interleaved_layers`] pairs by
+    /// height), the order its filaments print in.
+    pub orders: Vec<Vec<u8>>,
+    /// Per plate layer, the print layer of each object of the sequence on it.
+    pub layers: Vec<Vec<Option<u32>>>,
+    /// The last plate layer the prime tower stands on.
+    pub tower_top: Option<u32>,
+    /// The tower's height, mm.
+    pub tower_height: f64,
+}
+
+/// One layer of the prime tower, for [`SliceSession::tower_turns`].
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TowerLayer {
+    /// The layer's index in the plan.
+    pub layer: u32,
+    /// The print's first layer (no raft under it).
+    pub first: bool,
+    /// The layer's height and its top, mm.
+    pub h: f64,
+    pub top: f64,
+    /// The tower's height, mm.
+    pub tower_height: f64,
+    /// The filament the layer starts on (0 before the first one).
+    pub start: u8,
+    /// The tower as placed; None leaves it out.
+    pub tower: Option<crate::tower::Tower>,
+}
+
+/// One filament's turn on a layer, as the prime tower plans it: the turn's filament, what a change into it can flush
+/// into, and the tower pieces printed before and after it.
+pub(crate) trait TowerTurn {
+    fn tool(&self) -> u8;
+    /// The sparse infill, solid infill and support the turn starts with, mm3, for beads `width` wide and `height`
+    /// high.
+    fn infill_volume(&self, width: f64, height: f64) -> f64;
+    fn solid_volume(&self, width: f64, height: f64) -> f64;
+    fn support_volume(&self, width: f64, height: f64) -> f64;
+    /// The turn prints its sparse infill first, to take up the purge.
+    fn set_flush_first(&mut self);
+    fn tower(&mut self) -> &mut Vec<crate::tower::TowerPath>;
+    fn tower_after(&mut self) -> &mut Vec<crate::tower::TowerPath>;
+}
+
+impl TowerTurn for ToolWork {
+    fn tool(&self) -> u8 {
+        self.tool
+    }
+    fn infill_volume(&self, width: f64, height: f64) -> f64 {
+        work_infill_volume(self, width, height)
+    }
+    fn solid_volume(&self, width: f64, height: f64) -> f64 {
+        work_solid_volume(self, width, height)
+    }
+    fn support_volume(&self, width: f64, height: f64) -> f64 {
+        work_support_volume(self, width, height)
+    }
+    fn set_flush_first(&mut self) {
+        self.flush_first = true;
+    }
+    fn tower(&mut self) -> &mut Vec<crate::tower::TowerPath> {
+        &mut self.tower
+    }
+    fn tower_after(&mut self) -> &mut Vec<crate::tower::TowerPath> {
+        &mut self.tower_after
+    }
+}
+
+/// A filament's turn on a plate layer whose objects come from sessions of their own (`sequence.rs`): the volumes
+/// each object's first work of that filament reported (`LayerPaths::turns`), added up as the plate prints them.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PlateTurn {
+    pub tool: u8,
+    pub infill: f64,
+    pub solid: f64,
+    pub support: f64,
+    pub flush_first: bool,
+    pub tower: Vec<crate::tower::TowerPath>,
+    pub tower_after: Vec<crate::tower::TowerPath>,
+}
+
+impl TowerTurn for PlateTurn {
+    fn tool(&self) -> u8 {
+        self.tool
+    }
+    fn infill_volume(&self, _: f64, _: f64) -> f64 {
+        self.infill
+    }
+    fn solid_volume(&self, _: f64, _: f64) -> f64 {
+        self.solid
+    }
+    fn support_volume(&self, _: f64, _: f64) -> f64 {
+        self.support
+    }
+    fn set_flush_first(&mut self) {
+        self.flush_first = true;
+    }
+    fn tower(&mut self) -> &mut Vec<crate::tower::TowerPath> {
+        &mut self.tower
+    }
+    fn tower_after(&mut self) -> &mut Vec<crate::tower::TowerPath> {
+        &mut self.tower_after
+    }
+}
+
+/// The first work of each filament on a layer: whether it prints its sparse infill first, and the volumes a change
+/// into it can flush into.
+fn turn_rooms(works: &[ToolWork], width: f64, height: f64) -> Vec<crate::output::TurnRoom> {
+    let mut rooms: Vec<crate::output::TurnRoom> = Vec::new();
+    for w in works {
+        if rooms.iter().any(|r| r.tool == w.tool) {
+            continue;
+        }
+        rooms.push(crate::output::TurnRoom {
+            tool: w.tool,
+            flush_first: w.flush_first,
+            infill: work_infill_volume(w, width, height),
+            solid: work_solid_volume(w, width, height),
+            support: work_support_volume(w, width, height),
+        });
+    }
+    rooms
+}
+
+/// The tool changes `orders` makes in its first `p` layers.
+fn changes_in(orders: &[Vec<u8>], p: usize) -> u32 {
+    let mut order = orders.iter().take(p).flatten();
+    let Some(&first) = order.next() else { return 0 };
+    order
+        .fold((first, 0u32), |(at, n), &t| (t, n + u32::from(t != at)))
+        .1
+}
+
+/// The tools (bit per 0-based tool) `orders` prints with in its first `p` layers.
+fn tools_in(orders: &[Vec<u8>], p: usize) -> u64 {
+    orders
+        .iter()
+        .take(p)
+        .flatten()
+        .fold(0, |m, &t| m | 1u64 << u32::from(t.max(1) - 1).min(63))
+}
+
+/// With a filament map, the filament each nozzle holds after the first `p` layers of `orders`.
+fn held_in(map: Option<&crate::nozzles::Map>, orders: &[Vec<u8>], p: usize) -> Vec<u8> {
+    let Some(map) = map else {
+        return Vec::new();
+    };
+    let nozzles = map.nozzle.iter().map(|&n| usize::from(n) + 1).max().unwrap_or(1);
+    let mut held = vec![0u8; nozzles];
+    for &t in orders.iter().take(p).flatten() {
+        if let Some(h) = held.get_mut(map.nozzle_of(t)) {
+            *h = t;
+        }
+    }
+    held
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "the plate, its layers and the ways the order is chosen"
@@ -9960,6 +10549,19 @@ fn plan_tools(
         v.dedup();
         v
     };
+    order_layers(n, &present, first, choice)
+}
+
+/// The order the filaments of each of `n` layers print in, from the filaments each one has (`present`): a layer
+/// starts on the filament the layer below ended on and ends on one the next layer has, unless the first layer's
+/// order (`first`), the profile's sequences or the least flush (`choice`) say otherwise. Also the last layer with a
+/// change between layers or inside one, and the last with one inside.
+fn order_layers(
+    n: usize,
+    present: &dyn Fn(usize) -> Vec<u8>,
+    first: &[u8],
+    choice: &crate::toolorder::Choice,
+) -> (Vec<Vec<u8>>, Option<u32>, Option<u32>) {
     let mut orders: Vec<Vec<u8>> = Vec::with_capacity(n);
     // The last layer with a change between layers or inside one, and the last with one inside.
     let (mut cur, mut top, mut top_within) = (0u8, None, None);

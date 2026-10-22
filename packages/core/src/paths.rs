@@ -1047,6 +1047,82 @@ pub(crate) fn seam_index(
 /// Speed of the prime tower's wall and purge rows, mm/s.
 const PRIME_TOWER_SPEED: f32 = 60.0;
 
+/// Adds prime tower pieces printed with `tool` to the end of a layer's paths, as the layer's paths are planned with
+/// them: each at its own width, flow and speed. The pieces `before` a filament's turn (wall, purges, fill) are capped
+/// at the filament's volumetric speed and keep their nozzle wipes and wall hops; the ramming after it runs past the
+/// cap. Returns the seconds they print for.
+pub(crate) fn push_tower(
+    out: &mut LayerPaths,
+    cfg: &PrintConfig,
+    tool: u8,
+    pieces: &[crate::tower::TowerPath],
+    before: bool,
+) -> f64 {
+    let cap = if before {
+        crate::tower::per_slot_raw(cfg, "filament_max_volumetric_speed", tool, 0.0)
+    } else {
+        0.0
+    };
+    let per_point =
+        !out.zs.is_empty() && out.zs.len() == out.points.len() && out.flows.len() == out.points.len();
+    let mut seconds = 0.0;
+    for t in pieces.iter().filter(|t| t.points.len() >= 2) {
+        let (width, flow) = (t.width_mm, if t.flow > 0.0 { t.flow } else { 1.0 });
+        let mut speed = if t.speed_mm_s > 0.0 {
+            t.speed_mm_s
+        } else {
+            PRIME_TOWER_SPEED
+        };
+        let h = f64::from(out.height);
+        let area = h * (f64::from(width) - h * (1.0 - std::f64::consts::FRAC_PI_4)) * f64::from(flow);
+        if cap > 0.0 && area > 0.0 {
+            #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
+            {
+                speed = speed.min((cap / area) as f32);
+            }
+        }
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "per-layer point counts fit in u32"
+        )]
+        let start = out.points.len() as u32;
+        out.points.extend_from_slice(&t.points);
+        if per_point {
+            out.zs.resize(out.points.len(), out.z);
+            out.flows.resize(out.points.len(), 1.0);
+        }
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "per-layer point counts fit in u32"
+        )]
+        let end = out.points.len() as u32;
+        let len: f64 = t
+            .points
+            .windows(2)
+            .map(|w| match w {
+                [a, b] => a.dist_mm(*b),
+                _ => 0.0,
+            })
+            .sum();
+        seconds += len / f64::from(speed.max(1.0));
+        out.paths.push(PathInfo {
+            start,
+            end,
+            tool,
+            feature: Feature::PrimeTower,
+            speed_mm_s: speed,
+            width_mm: width,
+            flow,
+            dz: 0.0,
+            overhang_fan: false,
+            owner: crate::preview::OBJECT_NONE,
+            tower_wipe: before && t.nozzle_wipe,
+            tower_hop: before && t.hop,
+        });
+    }
+    seconds
+}
+
 /// The speed of gap beads in the fill: the gap infill speed, never above the inner wall's.
 #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
 fn fill_gap_speed(cfg: &PrintConfig, inner: f32) -> f32 {
