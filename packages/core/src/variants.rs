@@ -54,6 +54,18 @@ fn scope(key: &str) -> Option<Scope> {
     }
 }
 
+/// The process settings the printer's extruder variants give one value per variant (`print_extruder_variant`),
+/// which [`select`] turns into one value per extruder.
+pub(crate) fn process_keys() -> &'static [&'static str] {
+    static KEYS: OnceLock<Vec<&'static str>> = OnceLock::new();
+    KEYS.once(|| {
+        include_str!(concat!(env!("OUT_DIR"), "/variant_process_keys.txt"))
+            .lines()
+            .filter(|k| matches!(scope(k), Some(Scope::Process)))
+            .collect()
+    })
+}
+
 pub(crate) fn has_tables(raw: &Settings) -> bool {
     raw.contains_key("print_extruder_variant") || raw.contains_key("filament_extruder_variant")
 }

@@ -1636,7 +1636,11 @@ pub(crate) fn plan_layer_paths(
     vase: Option<&crate::spiral::VaseLayer>,
     object_hulls: &[Vec<IntPoint<i32>>],
 ) {
-    let speeds = Speeds::for_layer(cfg, layer);
+    // Each filament prints at its extruder's speeds where the extruders differ (a Bowden extruder, a high flow
+    // nozzle): the settings as that extruder prints with them, per filament slot.
+    let top_tool = works.iter().map(|w| w.tool).max().unwrap_or(0);
+    let slot_cfgs: Vec<std::borrow::Cow<'_, PrintConfig>> = (0..=top_tool).map(|t| cfg.for_slot(t)).collect();
+    let layer_cfg = cfg;
     // `skirt_speed` replaces the skirt's own speed when it is set.
     #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
     let skirt_speed = Some(cfg.raw_number("skirt_speed", 0.0))
@@ -1695,6 +1699,8 @@ pub(crate) fn plan_layer_paths(
     // Per work: its paths and how they slow down over the layer below.
     let mut vary: Vec<(usize, usize, &crate::quality::Context)> = Vec::new();
     for w in works {
+        let cfg: &PrintConfig = slot_cfgs.get(usize::from(w.tool)).map_or(layer_cfg, |c| c);
+        let speeds = Speeds::for_layer(cfg, layer);
         b.out.joins.extend_from_slice(&w.joins);
         b.fuzzy_mask.clone_from(&w.fuzzy_paint);
         b.hang = w.overhang.as_ref();
@@ -2761,6 +2767,8 @@ fn motion_time(l: &LayerPaths, cfg: &PrintConfig, lim: &crate::motion::Limits) -
     // Each path's filament has its own cross-section.
     let top_slot = l.paths.iter().map(|p| p.tool.max(1)).max().unwrap_or(1);
     let fil_areas: Vec<f64> = (1..=top_slot).map(|s| cfg.filament_area(s)).collect();
+    // Each path accelerates as its extruder's settings say ([`PrintConfig::for_slot`]).
+    let slot_cfgs: Vec<std::borrow::Cow<'_, PrintConfig>> = (0..=top_slot).map(|s| cfg.for_slot(s)).collect();
     let fil_area = |slot: u8| {
         fil_areas
             .get(usize::from(slot.max(1) - 1))
@@ -2812,8 +2820,9 @@ fn motion_time(l: &LayerPaths, cfg: &PrintConfig, lim: &crate::motion::Limits) -
             moves.push(e_move(retract));
             retracted = false;
         }
-        let accel = feature_accel(cfg, p.feature, first_layer);
-        let jerk = feature_jerk(cfg, p.feature, first_layer).unwrap_or(0.0);
+        let own: &PrintConfig = slot_cfgs.get(usize::from(p.tool)).map_or(cfg, |c| c);
+        let accel = feature_accel(own, p.feature, first_layer);
+        let jerk = feature_jerk(own, p.feature, first_layer).unwrap_or(0.0);
         let e_per_mm = crate::gcode::bead_area(f64::from(p.width_mm), h) / fil_area(p.tool)
             * cfg.flow_ratio(p.tool)
             * f64::from(p.flow);

@@ -296,6 +296,19 @@ impl Usage {
     }
 }
 
+/// The extruder (0-based) that prints filament slot `slot` (1-based): its `filament_map` entry, else one
+/// extruder per filament when the printer has several, else the one extruder.
+pub(crate) fn extruder_of_slot(cfg: &PrintConfig, slot: u8) -> usize {
+    let n = extruders(cfg);
+    let f = usize::from(slot.max(1) - 1);
+    int_list(cfg, "filament_map")
+        .get(f)
+        .map_or(if n > 1 { f } else { 0 }, |&e| {
+            usize::try_from(e.max(1) - 1).unwrap_or(0)
+        })
+        .min(n - 1)
+}
+
 /// A list of whole numbers from the raw settings (a list, or one number, or text joined by commas).
 #[allow(clippy::cast_possible_truncation, reason = "small whole numbers")]
 pub(crate) fn int_list(cfg: &PrintConfig, key: &str) -> Vec<i64> {

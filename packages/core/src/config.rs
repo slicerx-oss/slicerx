@@ -1798,6 +1798,45 @@ impl PrintConfig {
             .unwrap_or(self.retraction_length)
     }
 
+    /// This config as extruder `e` (0-based) prints with it: each process setting the printer's extruder variants
+    /// give one value per extruder (`print_extruder_variant`, such as the speeds and accelerations of a Bowden
+    /// extruder or a high flow nozzle) takes extruder `e`'s value. Borrowed for the first extruder, and when no such
+    /// value differs from the first extruder's.
+    pub fn for_extruder(&self, e: usize) -> std::borrow::Cow<'_, PrintConfig> {
+        let n = crate::nozzles::extruders(self);
+        if e == 0 || e >= n {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let own: serde_json::Map<String, Value> = crate::variants::process_keys()
+            .iter()
+            .filter_map(|&k| {
+                let list = self.raw.get(k)?.as_array().filter(|a| a.len() == n)?;
+                if list.first()? == list.get(e)? {
+                    return None;
+                }
+                // Extruder `e`'s value first, where every reader takes it.
+                let mut mine = list.clone();
+                mine.swap(0, e);
+                Some((k.to_owned(), Value::Array(mine)))
+            })
+            .collect();
+        if own.is_empty() {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let mut c = self.clone();
+        if c.apply_flat_value(&Value::Object(own)).is_err() {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let limits = c.limits;
+        let _ = crate::preflight::clamp_config(&mut c, &limits);
+        std::borrow::Cow::Owned(c)
+    }
+
+    /// [`Self::for_extruder`] of the extruder that prints filament `slot` (1-based), by `filament_map`.
+    pub fn for_slot(&self, slot: u8) -> std::borrow::Cow<'_, PrintConfig> {
+        self.for_extruder(crate::nozzles::extruder_of_slot(self, slot))
+    }
+
     /// This config as filament `slot` prints it: each retraction setting the filament overrides
     /// ([`FILAMENT_OVERRIDES`]) replaces the printer's value. Borrowed when the filament overrides nothing.
     pub fn for_filament(&self, slot: u8) -> std::borrow::Cow<'_, PrintConfig> {
