@@ -249,6 +249,9 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     // One chat's print run read back: its steps, the last slice, what was sent and the print. Never the file, its
     // hash, a card's token or request id, an access code or a serial; starting a print stays with the person.
     ("mimir.run", LinkClass::Read),
+    // Vault designs as the Vault lists them, read with the store session the app already has: the catalog, and the
+    // person's own saved and uploaded designs when signed in. Never a file, a download link or a token.
+    ("vault.list", LinkClass::Read),
 ];
 
 /// The class of an app link method, or None when the link has no such method.
@@ -540,6 +543,7 @@ mod tests {
         ("mimir.memory_remember", LinkClass::Edit),
         ("mimir.brain", LinkClass::Read),
         ("mimir.run", LinkClass::Read),
+        ("vault.list", LinkClass::Read),
     ];
 
     #[test]

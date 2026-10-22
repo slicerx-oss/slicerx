@@ -348,6 +348,18 @@ async fn the_person_allows_a_client_once_and_its_calls_go_through_the_host() {
     let (_, r) = pending.await.unwrap();
     assert_eq!(code(&r), "missing_face", "{r}");
     assert!(r["error"].get("details").is_none(), "{r}");
+    // A read of the person's own account data while nobody is signed in keeps its code too.
+    let pending = spawn_call(reconnect(&link, &key).await, "app.info", json!({}));
+    let c = event(&mut a, "appLink.call").await;
+    call(
+        &mut a,
+        73,
+        "appLink.reply",
+        json!({ "callId": c["callId"], "ok": false, "code": "signed_out", "message": "sign in first" }),
+    )
+    .await;
+    let (_, r) = pending.await.unwrap();
+    assert_eq!(code(&r), "signed_out", "{r}");
 
     let grants = call(&mut a, 8, "appLink.grants", json!({})).await;
     let g = grants["result"]
