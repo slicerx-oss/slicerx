@@ -91,6 +91,10 @@
       "$ref": "#/$defs/hex",
       "description": "Selected text and rows. Optional; defaults to border."
     },
+    "selectedFill": {
+      "$ref": "#/$defs/hex",
+      "description": "The selected segment's fill in a segmented control. Optional; defaults to a step toward text on a dark theme and an accent tint on a light one."
+    },
     "ansi": {
       "type": "array",
       "minItems": 16,

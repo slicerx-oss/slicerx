@@ -37,6 +37,8 @@ export interface ThemeColors {
   onGrad: string
   /** The color shadows are made of, including alpha. */
   shadow: string
+  /** The selected segment's fill, when the theme sets its own (Solarized Dark); unset uses the stylesheet's step. */
+  controlSelected?: string
 }
 
 /** The signature gradient: logo, the one primary action per screen, the active tab underline. */
@@ -198,6 +200,7 @@ const COLOR_VARS: Record<keyof ThemeColors, string> = {
   blue: '--blue',
   onGrad: '--on-grad',
   shadow: '--shadow-color',
+  controlSelected: '--control-selected',
 }
 
 /** The CSS variables the 3D viewport reads its studio colors from. */
@@ -267,6 +270,8 @@ export function applyTheme(theme: Theme, el?: HTMLElement): void {
   for (const [k, v] of Object.entries(vars)) target.style.setProperty(k, v)
   // Studio colors of an earlier theme must not linger when this one sets none.
   for (const k of Object.values(SCENE_VARS)) if (!(k in vars)) target.style.removeProperty(k)
+  // nor the selected fill an earlier theme set for itself
+  if (!('--control-selected' in vars)) target.style.removeProperty('--control-selected')
   setVisualTokens(target, visuals ?? {})
   target.style.setProperty('color-scheme', theme.scheme)
   // the surface tokens key on it (tokens.css): light-dark() in a custom property does not follow the scheme
@@ -282,6 +287,7 @@ export function clearTheme(el?: HTMLElement): void {
   clearVisualTokens(target)
   for (const k of Object.keys(themeToVars(subban))) target.style.removeProperty(k)
   for (const k of Object.values(SCENE_VARS)) target.style.removeProperty(k)
+  target.style.removeProperty('--control-selected')
   target.style.removeProperty('color-scheme')
   delete target.dataset['scheme']
   delete target.dataset['sxTheme']

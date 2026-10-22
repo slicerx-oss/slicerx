@@ -27,15 +27,15 @@ describe('text and marks on raised surfaces, every bundled theme', () => {
           const tag = `${t.id} ${level} ${vision}`
           const card = t.isDark ? mixHex(c.ink1, c.fg, SURFACE_STEPS.card) : c.ink2
           const field = t.isDark ? mixHex(c.ink1, c.fg, SURFACE_STEPS.field) : '#ffffff'
-          const selectedOn = (a: string) => (t.isDark ? mixHex(c.ink1, c.fg, SURFACE_STEPS.selected) : mixHex('#ffffff', a, SURFACE_STEPS.selectedTint))
+          const selectedOn = (a: string) => c.controlSelected ?? (t.isDark ? mixHex(c.ink1, c.fg, SURFACE_STEPS.selected) : mixHex('#ffffff', a, SURFACE_STEPS.selectedTint))
           // page text on the page, the surface and cards
           for (const g of [c.ink0, c.ink2, card]) for (const k of ['fg', 'muted', 'dim'] as const) expect(contrast(c[k], g), `${tag} ${k} on ${g}`).toBeGreaterThanOrEqual(4.5)
           // fields and segmented tracks
           for (const k of ['--field-muted', '--field-dim'] as const) expect(contrast(v[k] as string, field), `${tag} ${k}`).toBeGreaterThanOrEqual(4.5)
           expect(contrast(c.fg, field), `${tag} fg on field`).toBeGreaterThanOrEqual(4.5)
           // the selected segment, for each accent a person can pick
-          const lift = pct(v['--control-selected-lift'] as string)
-          for (const a of [c.purple, c.pink, c.cyan, c.green, c.orange, c.blue as string]) {
+          for (const [name, a] of [['purple', c.purple], ['pink', c.pink], ['cyan', c.cyan], ['green', c.green], ['orange', c.orange], ['blue', c.blue as string]] as const) {
+            const lift = pct(v[`--control-selected-lift-${name}`] as string)
             const sel = selectedOn(a)
             expect(contrast(v['--control-selected-fg'] as string, sel), `${tag} selected label on ${sel}`).toBeGreaterThanOrEqual(4.5)
             expect(contrast(v['--control-selected-muted'] as string, sel), `${tag} selected secondary on ${sel}`).toBeGreaterThanOrEqual(4.5)
@@ -52,6 +52,17 @@ describe('text and marks on raised surfaces, every bundled theme', () => {
       }
     })
   }
+
+  it('only Solarized Dark sets its own selected fill, and there the accent icon keeps its tone', () => {
+    for (const t of BUNDLED_THEMES) expect(themeColors(t).controlSelected, t.id).toBe(t.id === 'solarized-dark' ? '#153e48' : undefined)
+    const sol = themeColors(BUNDLED_THEMES.find((t) => t.id === 'solarized-dark') as (typeof BUNDLED_THEMES)[number])
+    const v = surfaceTextVars(sol, 'dark')
+    expect(v['--control-selected-lift']).toBe('0%')
+    expect(v['--control-selected-lift-purple']).toBe('0%')
+    expect(themeToVars({ ...subban, colors: sol })['--control-selected']).toBe('#153e48')
+    expect(contrast(sol.purple, '#153e48')).toBeGreaterThanOrEqual(3)
+    expect(contrast(v['--control-selected-fg'] as string, '#153e48')).toBeGreaterThanOrEqual(4.5)
+  })
 
   it('moves only lightness: the selected label and status text keep their hue family', () => {
     const v = surfaceTextVars(subban.colors, 'dark')

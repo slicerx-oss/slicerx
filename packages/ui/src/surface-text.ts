@@ -42,6 +42,8 @@ export interface SurfaceTextInput {
   orange: string
   red: string
   blue?: string | undefined
+  /** The theme's own selected segment fill, when it sets one. */
+  controlSelected?: string | undefined
 }
 
 /** Moves `hex` toward `end` in 5% steps until it reaches `min` on every ground; unchanged when it already does. */
@@ -66,7 +68,8 @@ export function surfaceTextVars(c: SurfaceTextInput, scheme: 'dark' | 'light'): 
   const end = dark ? '#ffffff' : '#000000'
   const card = dark ? mixHex(c.ink1, c.fg, SURFACE_STEPS.card) : c.ink2
   const field = dark ? mixHex(c.ink1, c.fg, SURFACE_STEPS.field) : '#ffffff'
-  const selectedOn = (accent: string) => (dark ? mixHex(c.ink1, c.fg, SURFACE_STEPS.selected) : mixHex('#ffffff', accent, SURFACE_STEPS.selectedTint))
+  const own = c.controlSelected && parseHex(c.controlSelected) ? c.controlSelected : null
+  const selectedOn = (accent: string) => own ?? (dark ? mixHex(c.ink1, c.fg, SURFACE_STEPS.selected) : mixHex('#ffffff', accent, SURFACE_STEPS.selectedTint))
 
   // fields, segmented tracks and menus: secondary and dim text toward the text color first, then toward the end
   const onField = (hex: string) => lift(lift(hex, [field], c.fg, TEXT), [field], end, TEXT)
@@ -78,8 +81,14 @@ export function surfaceTextVars(c: SurfaceTextInput, scheme: 'dark' | 'light'): 
   const selected = selectedOn(c.purple)
   const selectedFg = lift(c.fg, [selected], end, TEXT)
   const selectedMuted = lift(lift(c.muted, [selected], selectedFg, TEXT), [selected], end, TEXT)
-  const accents = [c.purple, c.pink, c.cyan, c.green, c.orange, ...(c.blue && parseHex(c.blue) ? [c.blue] : [])]
-  const selectedLift = Math.max(...accents.map((a) => liftPercent(a, selectedOn(a), selectedFg, MARK)))
+  // Each accent choice gets its own share (--control-selected-lift-purple and the rest; the look points
+  // --control-selected-lift at the chosen one). On the app's own fill every choice takes the share the palest one
+  // needs, so the icon looks the same whichever accent is picked; a theme that sets its own fill keeps each accent at
+  // the least it needs, often its plain tone.
+  const accents: [string, string][] = [['purple', c.purple], ['pink', c.pink], ['cyan', c.cyan], ['green', c.green], ['orange', c.orange], ...(c.blue && parseHex(c.blue) ? [['blue', c.blue] as [string, string]] : [])]
+  const lifts = accents.map(([name, a]) => [name, liftPercent(a, selectedOn(a), selectedFg, MARK)] as const)
+  const most = Math.max(...lifts.map(([, n]) => n))
+  const liftOf = (n: number) => `${own ? n : most}%`
 
   // status colors as text (pills, roles, state words): on every surface they sit on and on their own tint
   const statusText = (hex: string, tint: number) => {
@@ -95,7 +104,8 @@ export function surfaceTextVars(c: SurfaceTextInput, scheme: 'dark' | 'light'): 
     '--field-dim': fieldDim,
     '--control-selected-fg': selectedFg,
     '--control-selected-muted': selectedMuted,
-    '--control-selected-lift': `${selectedLift}%`,
+    '--control-selected-lift': liftOf(lifts[0]?.[1] ?? most),
+    ...Object.fromEntries(lifts.map(([name, n]) => [`--control-selected-lift-${name}`, liftOf(n)])),
     '--red-text': statusText(c.red, TINTS.red),
     '--green-text': statusText(c.green, TINTS.green),
     '--orange-text': statusText(c.orange, TINTS.orange),
