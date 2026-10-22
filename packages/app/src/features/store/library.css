@@ -136,7 +136,7 @@
 .cs-cover::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 30%, var(--ink-2)); }
 .cs-cover-art { position: absolute; inset: -20% 6% -60% 56%; opacity: 0.35; }
 .cs-cover-art > * { width: 100%; height: 100%; }
-.cs-close { position: absolute; top: 12px; right: 12px; z-index: 2; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: var(--r-sm); background: rgb(30 32 41 / 55%); color: var(--muted); cursor: pointer; }
+.cs-close { position: absolute; top: 12px; right: 12px; z-index: 2; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: var(--r-sm); background: rgb(30 32 41 / 55%); color: var(--scrim-ink-soft); cursor: pointer; }
 .cs-close:hover { color: var(--fg); background: var(--ink-4); }
 .cs-close[data-inline] { position: static; }
 .cs-id { position: relative; z-index: 1; display: grid; gap: 6px; margin-top: -44px; padding: 0 22px; }
@@ -150,8 +150,8 @@
 .cs-btn:disabled { opacity: 0.6; cursor: default; }
 .cs[data-preview] .cs-btn:disabled { opacity: 1; }
 .cs-roles { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-.cs-role { font: var(--fw-medium) calc(11px * var(--text-scale)) var(--f-mono); padding: 3px 8px; border-radius: var(--r-pill); background: var(--pink-tint); color: var(--pink); }
-.cs-role[data-staff] { background: var(--purple-tint); color: var(--purple); }
+.cs-role { font: var(--fw-medium) calc(11px * var(--text-scale)) var(--f-mono); padding: 3px 8px; border-radius: var(--r-pill); background: var(--pink-tint); color: var(--pink-text); }
+.cs-role[data-staff] { background: var(--purple-tint); color: var(--purple-text); }
 .cs-stats { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font: calc(12px * var(--text-scale)) var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 .cs-tabs { display: flex; gap: 2px; margin: 14px 22px 0; border-bottom: 1px solid var(--line-soft); }
 .cs-tab { padding: 8px 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: var(--fw-medium) calc(13px * var(--text-scale)) var(--f-body); cursor: pointer; }
@@ -224,7 +224,7 @@ button.cs-thumb:hover .cs-art { outline: 1px solid var(--line); }
 .ce-banner-art { position: absolute; inset: -20% 4% -60% 60%; opacity: 0.35; }
 .ce-banner-art > * { width: 100%; height: 100%; }
 .ce-banner .ce-ops { position: absolute; right: 10px; bottom: 10px; }
-.ce-banner .ce-file { background: rgb(30 32 41 / 75%); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.ce-banner .ce-file { color: var(--scrim-ink); background: rgb(30 32 41 / 75%); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .ce-ops { display: flex; flex-wrap: wrap; gap: 6px; }
 .ce-file { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--ink-3); color: var(--fg); font: var(--fw-semibold) calc(13px * var(--text-scale)) var(--f-body); cursor: pointer; }
 .ce-file:hover:not(:disabled) { border-color: var(--purple-ring); }

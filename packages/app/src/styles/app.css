@@ -231,7 +231,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .plate-thumb-bed { fill: var(--ink-1); stroke: var(--line); stroke-width: 1.5%; vector-effect: non-scaling-stroke; }
 .plate-thumb-obj { stroke: var(--ink-0); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .legend-cap { font-size: calc(11px * var(--text-scale)); color: var(--dim); }
-.legend .mark-key { width: 8px; height: 8px; display: block; box-shadow: 0 0 0 1.5px var(--ink-0); }
+.legend .mark-key { width: 8px; height: 8px; display: block; box-shadow: 0 0 0 1.5px var(--mark-halo); }
 .legend .mark-key.disc { border-radius: 50%; }
 .legend .mark-key.diamond { transform: rotate(45deg) scale(.85); }
 .legend i, .tlist i { width: 12px; height: 3px; border-radius: 2px; display: block; }
@@ -438,7 +438,7 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .seg-mark .sx-ic { width: 15px; height: 15px; color: var(--cyan); }
 .mark-sleipnir .sx-ic { color: var(--cyan); }
 .mark-atlas .sx-ic { color: var(--orange); }
-.sx-seg [aria-checked="true"] .seg-mark .sx-ic { color: var(--purple); }
+.sx-seg [aria-checked="true"] .seg-mark .sx-ic { color: var(--accent); }
 .expert-opts { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; }
 .expert-opts > span { margin-right: auto; }
 
@@ -1082,11 +1082,11 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .setup-note.block { border-left-color: var(--sx-danger, #ff5555); }
 .setup-note.warn { border-left-color: var(--sx-warn, #ffb86c); }
 
-.tuned-badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: calc(11px * var(--text-scale)); line-height: 16px; color: var(--sx-ok, #50fa7b); border: 1px solid currentColor; }
-.tuned-badge.retune { color: var(--sx-warn, #ffb86c); }
+.tuned-badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: calc(11px * var(--text-scale)); line-height: 16px; color: var(--green-text); border: 1px solid currentColor; }
+.tuned-badge.retune { color: var(--orange-text); }
 button.tuned-badge { background: none; font-family: inherit; cursor: pointer; }
 button.tuned-badge:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
-.tuned-badge.need { color: var(--sx-text-muted, #a0a4c0); }
+.tuned-badge.need { color: var(--muted); }
 .calib-plan { display: grid; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--sx-border, #44475a); border-radius: 8px; }
 .calib-plan h4 { margin: 0; font-size: calc(13px * var(--text-scale)); }
 .calib-plan ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

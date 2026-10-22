@@ -74,10 +74,10 @@ button.th-pill:hover, .th-pill[aria-expanded="true"] { color: var(--fg); border-
 .ap-swatch:focus-visible { outline: var(--focus-ring); outline-offset: 4px; }
 .ap-demo { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 4px 30px; }
 .ap-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 6px; border-radius: var(--r-pill); font: var(--fw-semibold) var(--fs-xs) var(--f-body); }
-.ap-pill[data-tone="ok"] { color: var(--green); background: var(--green-tint); }
-.ap-pill[data-tone="info"] { color: var(--cyan); background: var(--cyan-tint); }
-.ap-pill[data-tone="warn"] { color: var(--orange); background: var(--orange-tint); }
-.ap-pill[data-tone="err"] { color: var(--red); background: var(--red-tint); }
+.ap-pill[data-tone="ok"] { color: var(--green-text); background: var(--green-tint); }
+.ap-pill[data-tone="info"] { color: var(--cyan-text); background: var(--cyan-tint); }
+.ap-pill[data-tone="warn"] { color: var(--orange-text); background: var(--orange-tint); }
+.ap-pill[data-tone="err"] { color: var(--red-text); background: var(--red-tint); }
 
 /* the first-run quick reading options */
 .ap-easy { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--ink-1); }
