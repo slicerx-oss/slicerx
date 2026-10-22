@@ -1354,7 +1354,28 @@ impl LayerPaint<'_> {
         ]);
         // The grids below are megabytes each on a big layer, and the layers are cut side by side: past the budget, a
         // layer waits for others to finish theirs (the bytes are the same, only when it runs changes).
-        let _held = GRIDS.hold(g.len() * (5 * (walls.len() + 1) + 16), grid_cap);
+        // The painted segments by cell (`near` below) count too: an entry per cell a segment passes through, at most a
+        // step per half cell, and a map slot each at most.
+        let near_bytes: usize = walls
+            .values()
+            .flatten()
+            .map(|&(a, e)| {
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a step count"
+                )]
+                let steps = ((e.0 - a.0).m_hypot(e.1 - a.1) / (g.r * 0.5)).ceil().max(1.0) as usize;
+                steps + 1
+            })
+            .sum::<usize>()
+            .saturating_mul(
+                std::mem::size_of::<(u8, Seg)>() + std::mem::size_of::<(usize, Vec<(u8, Seg)>)>() + 1,
+            );
+        let _held = GRIDS.hold(
+            (g.len() * (5 * (walls.len() + 1) + 16)).saturating_add(near_bytes),
+            grid_cap,
+        );
         // Sources: the outline, each stretch in the color painted on it (paint off the outline does not count),
         // with short runs absorbed and short painted gaps closed, loop by loop.
         // Painted segments by the grid cells they pass through, for looking up the ones near a point.
