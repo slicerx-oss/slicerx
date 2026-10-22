@@ -254,6 +254,10 @@ pub struct SliceSession {
     /// slice of the whole plate at build time (as Orca collects the filaments of a plate). Empty
     /// otherwise.
     used_tools: Vec<Vec<u8>>,
+    /// The filaments of `used_tools` that each object layer prints without its support. With support
+    /// on layers of its own, an object layer prints only the support of its own print layer, not the
+    /// support `used_tools` counts on it.
+    object_tools: Vec<Vec<u8>>,
     /// The support filaments each object layer adds to the tool order (`support_filament`,
     /// `support_interface_filament`).
     support_tools: Vec<Vec<u8>>,
@@ -1719,6 +1723,7 @@ impl SliceSession {
             stack: Vec::new(),
             interleaved: Vec::new(),
             used_tools: Vec::new(),
+            object_tools: Vec::new(),
             support_tools: Vec::new(),
             print_lifted: false,
             independent: false,
@@ -2513,6 +2518,23 @@ impl SliceSession {
     ) -> Option<u8> {
         let used = get(l)?;
         let order = self.tool_order.get(l as usize)?;
+        // Support on layers of its own: `used_tools` and the tool order count the support planned on
+        // the object's layers, but this layer prints only the support of its own print layer (most of
+        // it prints on support-only layers between the object's).
+        if self.independent && !self.stack.is_empty() {
+            let mut tools: Vec<u8> = match self.object_tools.get(l as usize) {
+                Some(own) => own.clone(),
+                None => used.slots().collect(),
+            };
+            if cfg.enable_support
+                && (!cfg.support.manual || self.has_enforcers())
+                && let Some((sl, ..)) = self.support_at(cfg, l)
+                && let Some(&active) = tools.first()
+            {
+                tools.extend(support_order(cfg, sl, active));
+            }
+            return order.iter().rev().copied().find(|t| tools.contains(t));
+        }
         let (base, iface) = (
             support_slot(cfg, "support_filament"),
             support_slot(cfg, "support_interface_filament"),
@@ -2551,14 +2573,12 @@ impl SliceSession {
                         .support
                         .and_then(|s| self.stack.get(s as usize))
                         .and_then(|st| {
-                            let (b, i) = support_tools(cfg, self.print_start(cfg, at, get));
-                            if !st.layer.interface.is_empty() {
-                                Some(i)
-                            } else if st.layer.base.is_empty() {
-                                None
-                            } else {
-                                Some(b)
-                            }
+                            // As `support_only_paths` prints it: the filament the layer below ended
+                            // on first.
+                            let start = self.print_start(cfg, at, get);
+                            let mut tools = support_order(cfg, &st.layer, start);
+                            crate::sorting::sort_by_key(&mut tools, |t| *t != start);
+                            tools.last().copied()
                         }),
                 },
             };
@@ -2668,21 +2688,21 @@ impl SliceSession {
         }
         let n = self.plan.count();
         let out = self.slice_object_range(config, 0..n, &crate::NoProgress)?;
-        let used: Vec<Vec<u8>> = out
-            .layers
-            .iter()
-            .map(|l| {
-                let mut v: Vec<u8> = l
-                    .paths
-                    .iter()
-                    .filter(|p| p.feature != crate::output::Feature::PrimeTower)
-                    .map(|p| p.tool)
-                    .collect();
-                v.sort_unstable();
-                v.dedup();
-                v
-            })
-            .collect();
+        let tools_of = |l: &LayerPaths, support: bool| {
+            use crate::output::Feature;
+            let mut v: Vec<u8> = l
+                .paths
+                .iter()
+                .filter(|p| p.feature != Feature::PrimeTower)
+                .filter(|p| support || !matches!(p.feature, Feature::Support | Feature::SupportInterface))
+                .map(|p| p.tool)
+                .collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        let used: Vec<Vec<u8>> = out.layers.iter().map(|l| tools_of(l, true)).collect();
+        self.object_tools = out.layers.iter().map(|l| tools_of(l, false)).collect();
         for &t in used.iter().flatten() {
             if !self.slots.contains(&t) {
                 self.slots.push(t);
@@ -2705,16 +2725,26 @@ impl SliceSession {
             return;
         }
         let regions = self.whole_regions(Families::new(config), &Micros::default());
-        let used: Vec<Vec<u8>> = regions
+        let own: Vec<Vec<u8>> = regions
             .iter()
-            .enumerate()
-            .map(|(l, r)| {
+            .map(|r| {
                 let mut v: Vec<u8> = r
                     .regions
                     .iter()
                     .filter(|(_, s)| !s.is_empty())
                     .map(|(t, _)| *t)
                     .collect();
+                v.sort_unstable();
+                v.dedup();
+                v
+            })
+            .collect();
+        drop(regions);
+        self.used_tools = own
+            .iter()
+            .enumerate()
+            .map(|(l, v)| {
+                let mut v = v.clone();
                 if let Some(s) = self.support_tools.get(l) {
                     v.extend(s.iter().copied());
                 }
@@ -2723,8 +2753,7 @@ impl SliceSession {
                 v
             })
             .collect();
-        drop(regions);
-        self.used_tools = used;
+        self.object_tools = own;
     }
 
     /// Merges the print layers of the objects printed layer by layer, by height, when some object
@@ -9534,6 +9563,20 @@ fn support_tools(cfg: &PrintConfig, active: u8) -> (u8, u8) {
         t => t,
     };
     (base, iface)
+}
+
+/// The filaments support layer `sl` prints with on a layer that starts on `active`, in the order
+/// [`place_support`] adds their works: the base, then the interface.
+fn support_order(cfg: &PrintConfig, sl: &crate::support::SupportLayer, active: u8) -> Vec<u8> {
+    let (base, iface) = support_tools(cfg, active);
+    let mut v = Vec::new();
+    if !sl.base.is_empty() {
+        v.push(base);
+    }
+    if !sl.interface.is_empty() && !v.contains(&iface) {
+        v.push(iface);
+    }
+    v
 }
 
 /// Puts a layer's support into the work of its filaments, adding a work for a filament the layer
