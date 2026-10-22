@@ -130,7 +130,7 @@
 .mimir-drawing-views { flex: 1; min-width: 0; }
 .mimir-drawing .mimir-drawing-views .sx-seg > button { flex: 1 1 auto; height: var(--h-lg); padding: 0 var(--s-2); }
 .mimir-drawing .mimir-drawing-head .mimir-drawing-fold.sx-btn { flex: none; width: var(--h-lg); height: var(--h-lg); margin-left: auto; }
-.mimir-drawing-folded { flex: 1; min-width: 0; padding-left: var(--s-1); color: var(--fg); font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.mimir-drawing-name { flex: 1; min-width: 0; padding-left: var(--s-1); color: var(--fg); font-size: var(--fs-sm); font-weight: var(--fw-medium); }
 .mimir-drawing .mimir-drawing-grid[hidden], .mimir-drawing[data-folded] .mimir-drawing-strip { display: none; }
 .mimir-drawing[data-phone] .mimir-drawing-grid { grid-template-columns: none; grid-template-rows: minmax(0, 1fr); grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
 .mimir-drawing[data-phone] .mimir-drawing-cell { border: 0; }

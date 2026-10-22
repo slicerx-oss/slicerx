@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The phone's pick of what a sheet's drawing shows: it opens on Top and Isometric together, unfolded, with Front and
-// Right behind the picker; a pick or a fold holds for its sheet and starts over with the next one; and a picked row
-// moves the drawing back to Top and iso only when the view showing does not draw its callout.
+// Right behind the picker, each offered only when it draws a callout; a pick or a fold holds for its sheet and starts
+// over with the next one; and a picked row, or a choice no longer offered, moves the drawing back to Top and iso.
 import type { PilotDim, PilotSheetSolid } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { drawingPick, FIRST_PANE, foldDrawing, PANE_NAMES, PANE_VIEWS, paneShowing, PHONE_PANES, pickFor, pickPane, showPane, START, toggleFold } from '../src/workspaces/mimir/drawing-pick'
+import { drawingPick, FIRST_PANE, foldDrawing, PANE_NAMES, PANE_VIEWS, paneOffered, panesFor, paneShowing, PHONE_PANES, pickFor, pickPane, showPane, START, toggleFold, type PhonePane } from '../src/workspaces/mimir/drawing-pick'
 import { drawView, fitScale, viewsFor, type ViewName } from '../src/workspaces/mimir/sheet-draw'
-import { backplatePart } from '../src/workspaces/mimir/scripts'
+import { backplatePart, boxPart, clipPart, standPart } from '../src/workspaces/mimir/scripts'
+
+/** A scripted sheet's rows with their places on its drawing, at the values the script gives them. */
+function rowsOf(make: (v: Record<string, number>) => { at: Record<string, { at: unknown }> }, v: Record<string, number>): PilotDim[] {
+  return Object.entries(make(v).at).map(([key, x]) => ({ key, label: key, value: v[key] ?? 1, unit: 'mm', source: 'guess', at: x.at as NonNullable<PilotDim['at']> }))
+}
+
+/** A straight size from a to b, moved out by off. */
+const span = (key: string, a: [number, number, number], b: [number, number, number], off: [number, number, number]): PilotDim => ({ key, label: key, value: 1, unit: 'mm', source: 'guess', at: { a, b, off } })
 
 describe('the phone drawing pick', () => {
   beforeEach(() => drawingPick.setState(START, true))
@@ -76,6 +84,61 @@ describe('the phone drawing pick', () => {
         }
       }
     }
+  })
+
+  it('offers Top and iso always, and Front or Right only when it draws a callout', () => {
+    const offers = (shows: Record<string, ViewName[]>) => panesFor(new Map(Object.entries(shows)))
+    expect(offers({})).toEqual(['main'])
+    expect(offers({ a: ['iso'] })).toEqual(['main'])
+    expect(offers({ a: ['top', 'iso'], b: ['top', 'iso'] })).toEqual(['main'])
+    expect(offers({ a: ['front', 'iso'] })).toEqual(['main', 'front'])
+    expect(offers({ a: ['side', 'iso'], b: ['top', 'iso'] })).toEqual(['main', 'side'])
+    expect(offers({ a: ['side', 'iso'], b: ['front', 'iso'], c: ['top', 'iso'] })).toEqual(['main', 'front', 'side'])
+  })
+
+  it("leaves out the views a scripted sheet draws no callout in: Front for the flat backplate and the clip, Right for the box and the stand", () => {
+    type Make = (v: Record<string, number>) => { part: unknown[]; at: Record<string, { at: unknown }> }
+    const cases: [string, Make, Record<string, number>, ViewName[], PhonePane[]][] = [
+      ['backplate', backplatePart, { plate_width: 150.4, plate_height: 110.4, thickness: 3, center_hole: 30, screw_hole: 4.5, screw_spacing: 60 }, ['top', 'side'], ['main', 'side']],
+      ['box', boxPart, { width: 80, depth: 60, height: 40, wall: 2, lid_fit: 0.2, lip: 3 }, ['iso', 'front'], ['main', 'front']],
+      ['stand', standPart, { phone_width: 72, phone_thickness: 8.5, case_allowance: 1.5, lean: 70, stand_width: 70, base_depth: 80, lip_height: 12 }, ['side', 'front'], ['main', 'front']],
+      ['clip', clipPart, { length: 30, width: 12, height: 8 }, ['iso', 'top'], ['main', 'side']],
+    ]
+    for (const [name, make, v, order, want] of cases) {
+      const dims = rowsOf(make, v)
+      expect(panesFor(viewsFor(dims, order)), name).toEqual(want)
+      // what it leaves out really draws no callout, and what it offers draws at least one
+      for (const pane of PHONE_PANES) {
+        const drawn = PANE_VIEWS[pane].reduce((n, view) => n + drawView(make(v).part as PilotSheetSolid[], dims, view, 300, 200, { pad: 24, order }).dims.length, 0)
+        expect(drawn > 0, `${name}, ${pane}`).toBe(want.includes(pane))
+      }
+    }
+  })
+
+  it('offers all three for a block sized along each axis, and Top and iso alone for a plate sized only in its plane', () => {
+    const block = [span('length', [-20, -15, 0], [20, -15, 0], [0, -12, 0]), span('height', [-20, -15, 0], [-20, -15, 20], [-12, 0, 0]), span('depth', [20, -15, 0], [20, 15, 0], [0, 0, -12])]
+    expect(viewsFor(block, ['top', 'front', 'side', 'iso'])).toEqual(new Map([['length', ['top', 'iso']], ['height', ['front', 'iso']], ['depth', ['side', 'iso']]]))
+    expect(panesFor(viewsFor(block, ['top', 'front', 'side', 'iso']))).toEqual(['main', 'front', 'side'])
+    const plate = [span('width', [-30, -20, 2], [30, -20, 2], [0, -12, 0]), span('depth', [30, -20, 2], [30, 20, 2], [12, 0, 0])]
+    expect(panesFor(viewsFor(plate, ['top', 'iso']))).toEqual(['main'])
+    // a row without a place on the drawing draws nothing anywhere
+    expect(panesFor(viewsFor([{ key: 'fit', label: 'fit', value: 0.2, unit: 'mm', source: 'guess' }], []))).toEqual(['main'])
+  })
+
+  it('shows Top and iso when the choice picked is no longer offered, and never picks one the picker leaves out', () => {
+    expect(paneOffered('front', ['main', 'front', 'side'])).toBe('front')
+    expect(paneOffered('front', ['main', 'side'])).toBe('main')
+    expect(paneOffered('side', ['main'])).toBe('main')
+    expect(paneOffered('main', ['main'])).toBe('main')
+    const s = pickFor(START, 's1')
+    expect(pickPane(s, 'front', ['main', 'side'])).toBe(s)
+    expect(pickPane(s, 'side', ['main', 'side']).pane).toBe('side')
+    showPane('s1', 'side', ['main', 'side'])
+    showPane('s1', 'front', ['main', 'side'])
+    expect(drawingPick.getState().pane).toBe('side')
+    // the fallback the drawing applies when the sheet stops offering the choice on screen
+    showPane('s1', paneOffered('side', ['main']), ['main'])
+    expect(drawingPick.getState()).toEqual({ sheetId: 's1', pane: 'main', folded: false })
   })
 
   it('holds the store per sheet through showPane and foldDrawing', () => {

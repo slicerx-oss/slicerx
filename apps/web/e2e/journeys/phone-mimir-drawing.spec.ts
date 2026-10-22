@@ -2,13 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The size sheet's drawing on a phone, at 390, 360 and 430 px wide: it opens on Top and Isometric side by side, drawn
 // large, with every callout on the iso view; a picker in the drawing's header swaps them for Front or Right without
-// moving; no callout covers a view's label; a picked row moves back to Top and iso when the view showing does not draw
-// it; and a 44 px control folds the drawing to its header, giving the chat the room, and opens it again on the same
-// choice.
+// moving, offering each only when it draws a callout and not shown at all when neither does; no callout covers a view's
+// label; a picked row moves back to Top and iso when the view showing does not draw it; and a 44 px control folds the
+// drawing to its header, giving the chat the room, and opens it again on the same choice.
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import { journey, expect } from '../journey'
 import { goTab } from '../fixtures'
-import { askTab, debugOn, noHorizontalScroll, setPilot, setState, shotsDir, shotsOn } from './lib/session'
+import { answer, askTab, debugOn, lastUserText, noHorizontalScroll, setPilot, setState, shotsDir, shotsOn, signIn, stubProxy } from './lib/session'
 
 journey.use({ journeyPrefs: { workspace: 'prepare', settingsMode: 'advanced', cadTools: true } })
 
@@ -25,6 +25,28 @@ const PANES = [
   { id: 'front', name: 'Front', views: ['front'], labels: ['Front, XZ'] },
   { id: 'side', name: 'Right', views: ['side'], labels: ['Right, YZ'] },
 ] as const
+
+/** What the picker offers for the thermostat backplate: it is flat, so Front draws none of its sizes. */
+const BACKPLATE = [PANES[0], PANES[2]] as const
+
+/** A straight size from a to b, moved out by off, as a sheet row. */
+const span = (key: string, label: string, value: number, a: number[], b: number[], off: number[]) => ({ key, label, value, unit: 'mm', source: 'guess', at: { a, b, off } })
+
+/** Two sheets for a stubbed mimir: a block with a size read in each flat view, and a plate sized only from above. */
+const SHEETS = {
+  block: {
+    title: 'Block sizes',
+    views: ['top', 'front', 'side', 'iso'],
+    dims: [span('length', 'Length', 40, [-20, -15, 0], [20, -15, 0], [0, -12, 0]), span('height', 'Height', 20, [-20, -15, 0], [-20, -15, 20], [-12, 0, 0]), span('depth', 'Depth', 30, [20, -15, 0], [20, 15, 0], [0, 0, -12])],
+    part: [{ plane: 'xy', points: [[-20, -15], [20, -15], [20, 15], [-20, 15]], from: 0, to: 20 }],
+  },
+  plate: {
+    title: 'Plate sizes',
+    views: ['top', 'iso'],
+    dims: [span('width', 'Width', 60, [-30, -20, 2], [30, -20, 2], [0, -12, 0]), span('depth', 'Depth', 40, [30, -20, 2], [30, 20, 2], [12, 0, 0])],
+    part: [{ plane: 'xy', points: [[-30, -20], [30, -20], [30, 20], [-30, 20]], from: 0, to: 2 }],
+  },
+} as const
 
 type Box = { x: number; y: number; width: number; height: number }
 
@@ -90,7 +112,7 @@ async function shots(page: Page, info: TestInfo, name: string, before?: () => Pr
 journey.describe('the size drawing on a phone', () => {
   journey.skip(({ isMobile }) => !isMobile, 'The phone project')
 
-  journey('Top and iso first, Front and Right behind a picker, no callout over a label, and a 44 px fold', async ({ page }, info) => {
+  journey('Top and iso first, Right behind a picker with no Front for a flat part, no callout over a label, and a 44 px fold', async ({ page }, info) => {
     journey.slow()
     await phoneMimir(page)
     await askTab(page, 'Make a backplate for my thermostat')
@@ -109,8 +131,9 @@ journey.describe('the size drawing on a phone', () => {
 
     for (const phone of PHONES) {
       await page.setViewportSize(phone)
-      // it opens on Top and Isometric side by side, with the picker naming its three choices
-      await expect(picker.getByRole('radio')).toHaveText(PANES.map((p) => p.name))
+      // it opens on Top and Isometric side by side, with the picker naming the choices that draw a callout
+      await expect(picker.getByRole('radio')).toHaveText(BACKPLATE.map((p) => p.name))
+      await expect(page.getByTestId('mimir-drawing-view-front')).toHaveCount(0)
       await expect(page.getByTestId('mimir-drawing-view-main')).toHaveAttribute('aria-checked', 'true')
       await expect(drawing.locator('.mimir-drawing-cell')).toHaveCount(2)
       await expect(drawing.locator('.mimir-drawing-cell > svg')).toHaveCount(2)
@@ -122,7 +145,7 @@ journey.describe('the size drawing on a phone', () => {
       }
       const pickerAt = await box(picker)
       const foldAt = await box(fold)
-      for (const p of [PANES[0], PANES[1], PANES[2], PANES[0]]) {
+      for (const p of [PANES[0], PANES[2], PANES[0]]) {
         const radio = page.getByTestId(`mimir-drawing-view-${p.id}`)
         const at = await box(radio)
         await radio.tap()
@@ -152,27 +175,28 @@ journey.describe('the size drawing on a phone', () => {
       await noHorizontalScroll(page)
     }
     await page.setViewportSize(PHONES[0])
-    for (const p of PANES) {
+    for (const p of BACKPLATE) {
       await shots(page, info, `view-${p.id}`, async () => {
         await page.getByTestId(`mimir-drawing-view-${p.id}`).tap()
       })
     }
 
-    // a row picked on the record lights its callout; from Front, which does not draw the thickness, the drawing moves
+    // a row picked on the record lights its callout; from Right, which does not draw the center hole, the drawing moves
     // back to Top and iso
-    await page.getByTestId('mimir-drawing-view-front').tap()
-    const thickness = rec.locator('.sheet-rec-row[data-dim="thickness"] input')
-    await thickness.focus()
+    await page.getByTestId('mimir-drawing-view-side').tap()
+    const hole = rec.locator('.sheet-rec-row[data-dim="center_hole"] input')
+    await hole.focus()
     await expect(page.getByTestId('mimir-drawing-view-main')).toHaveAttribute('aria-checked', 'true')
     await expect(drawing.locator('.mimir-drawing-cell')).toHaveCount(2)
-    await expect(page.locator('[data-testid="mimir-sheet-callout"][data-key="thickness"][data-on]')).toHaveCount(1)
+    await expect(page.locator('[data-testid="mimir-sheet-callout"][data-key="center_hole"][data-on]')).toHaveCount(2)
     // and a callout picks its row
-    await drawing.locator('.mimir-drawing-cell[data-view="top"] [data-testid="mimir-sheet-callout"][data-key="center_hole"]').click()
-    await expect(rec.locator('.sheet-rec-row[data-dim="center_hole"] input')).toBeFocused()
-    await thickness.blur()
+    const screw = rec.locator('.sheet-rec-row[data-dim="screw_hole"] input')
+    await drawing.locator('.mimir-drawing-cell[data-view="top"] [data-testid="mimir-sheet-callout"][data-key="screw_hole"]').click()
+    await expect(screw).toBeFocused()
+    await screw.blur()
 
     // the fold: 44 px, named for what it does, folds the drawing to its header and gives the chat the room
-    await page.getByTestId('mimir-drawing-view-front').tap()
+    await page.getByTestId('mimir-drawing-view-side').tap()
     for (const phone of PHONES) {
       await page.setViewportSize(phone)
       await expect(fold).toHaveAccessibleName('Hide drawing')
@@ -198,7 +222,7 @@ journey.describe('the size drawing on a phone', () => {
       await fold.tap()
       await expect(fold).toHaveAccessibleName('Hide drawing')
       await expect(vp).not.toHaveAttribute('data-mimir-drawing')
-      await expect(drawing.locator('.mimir-drawing-cell')).toHaveAttribute('data-view', 'front')
+      await expect(drawing.locator('.mimir-drawing-cell')).toHaveAttribute('data-view', 'side')
       same(at, await box(fold), `the fold, opened at ${phone.width} px`)
       await expect.poll(async () => (await box(vp)).height).toBeGreaterThan(open.height - 1)
     }
@@ -211,5 +235,80 @@ journey.describe('the size drawing on a phone', () => {
     await expect(vp).not.toHaveAttribute('data-mimir-drawing')
     await expect(page.getByTestId('mimir-transcript')).toContainText('The backplate is on the plate', { timeout: 60_000 })
     await shots(page, info, 'lookup-card')
+  })
+
+  journey('the picker offers Front and Right only when they draw a callout, and is not shown when neither does', async ({ page }, info) => {
+    journey.slow()
+    await debugOn(page)
+    await goTab(page, 'prepare')
+    await setPilot(page, 'cloud')
+    await setState(page, { plate: [], selection: null, selectedIds: [], toast: null })
+    // a stubbed mimir answers "Size a block" and "Size a plate" with their sheets, and a sheet's answer with a line
+    await stubProxy(page, (body) => {
+      const text = lastUserText(body)
+      if (text.includes('tool_result')) return answer('Noted.')
+      const key = (['block', 'plate'] as const).find((k) => text.includes(`Size a ${k}`))
+      return key ? [{ type: 'tool_use', id: `tu_${key}`, name: 'pilot.sheet', input: SHEETS[key] }] : answer('Ok.')
+    })
+    await signIn(page)
+    await page.locator('[data-testid="phone-tabs"] [data-tab="mimir"]').click()
+    const chat = page.getByTestId('mimir-chat')
+    await expect(chat).toBeVisible()
+    const again = chat.getByRole('button', { name: 'New conversation' })
+    if (await again.isVisible()) await again.click()
+    const drawing = page.getByTestId('mimir-sheet-drawing')
+    const picker = drawing.getByRole('radiogroup', { name: 'Drawing view' })
+    const head = drawing.locator('.mimir-drawing-head')
+    const fold = page.getByTestId('mimir-drawing-fold')
+
+    // the block has a size in each flat view, so all three choices are offered and each draws its callout
+    await askTab(page, 'Size a block')
+    await expect(drawing).toBeVisible({ timeout: 30_000 })
+    await expect(drawing).toHaveAttribute('data-phone', 'true')
+    const heads: Box[] = []
+    for (const phone of PHONES) {
+      await page.setViewportSize(phone)
+      await expect(picker.getByRole('radio')).toHaveText(PANES.map((p) => p.name))
+      for (const p of [PANES[1], PANES[2], PANES[0]]) {
+        await page.getByTestId(`mimir-drawing-view-${p.id}`).tap()
+        await expect.poll(async () => (await shownViews(drawing)).map((s) => s.view)).toEqual([...p.views])
+        for (const s of await shownViews(drawing)) expect(s.dots.length, `callouts in ${s.view} at ${phone.width} px`).toBeGreaterThan(0)
+      }
+      heads.push(await box(head))
+      await noHorizontalScroll(page)
+    }
+    await page.setViewportSize(PHONES[0])
+    await shots(page, info, 'block-all-views')
+    await page.getByTestId('mimir-sheet-record').last().getByTestId('mimir-sheet-confirm').click()
+    await expect(drawing).toHaveCount(0)
+
+    // the plate is sized only from above: no picker, the header names the drawing at the same height, and the fold
+    // still folds it
+    await askTab(page, 'Size a plate')
+    await expect(drawing).toBeVisible({ timeout: 30_000 })
+    for (const [i, phone] of PHONES.entries()) {
+      await page.setViewportSize(phone)
+      await expect(picker).toHaveCount(0)
+      await expect(drawing.getByTestId('mimir-drawing-views')).toHaveCount(0)
+      await expect(drawing.getByTestId('mimir-drawing-name')).toHaveText('Drawing')
+      await expect.poll(async () => (await shownViews(drawing)).map((s) => s.view)).toEqual(['top', 'iso'])
+      const at = await box(head)
+      expect(Math.abs(at.height - heads[i]!.height), `the header's height at ${phone.width} px`).toBeLessThanOrEqual(0.5)
+      // the name runs up to the fold, so no gap is left where the picker was
+      const name = await box(drawing.getByTestId('mimir-drawing-name'))
+      const f = await box(fold)
+      expect(f.x - (name.x + name.width), `the gap before the fold at ${phone.width} px`).toBeLessThanOrEqual(8.5)
+      await noHorizontalScroll(page)
+    }
+    await page.setViewportSize(PHONES[0])
+    await shots(page, info, 'plate-no-picker')
+    const at = await box(fold)
+    await fold.tap()
+    await expect(drawing.locator('.mimir-drawing-grid')).toBeHidden()
+    await expect(drawing.getByTestId('mimir-drawing-name')).toHaveText('Drawing')
+    same(at, await box(fold), 'the fold, folded with no picker')
+    await fold.tap()
+    await expect(drawing.locator('.mimir-drawing-cell')).toHaveCount(2)
+    same(at, await box(fold), 'the fold, opened with no picker')
   })
 })

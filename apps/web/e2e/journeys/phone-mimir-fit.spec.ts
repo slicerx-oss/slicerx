@@ -196,9 +196,10 @@ journey.describe('the mimir tab fits a phone', () => {
     await expect(page.getByTestId('mimir-sheet-callout').first()).toBeVisible()
     expect(await smallTargets(page), 'the waiting sheet').toEqual([])
     // each callout's touch circle is centered on its badge, 44 px across, and a tap on the badge lands on that callout,
-    // in Top and iso and in Front or Right alone
+    // in Top and iso and in Right alone (the backplate draws nothing in Front, so the picker leaves it out)
     const drawing = page.getByTestId('mimir-sheet-drawing')
-    for (const pane of ['main', 'front', 'side', 'main'] as const) {
+    await expect(page.getByTestId('mimir-drawing-view-front')).toHaveCount(0)
+    for (const pane of ['main', 'side', 'main'] as const) {
       await page.getByTestId(`mimir-drawing-view-${pane}`).tap()
       await expect(page.getByTestId(`mimir-drawing-view-${pane}`)).toHaveAttribute('aria-checked', 'true')
       const missed = await drawing.locator('[data-testid="mimir-sheet-callout"]').evaluateAll((els) =>
