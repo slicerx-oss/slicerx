@@ -47,18 +47,36 @@ fn box_stl(size: [f64; 3]) -> Vec<u8> {
 /// Two 20 mm boxes 2 mm tall in two filaments on the stock A1 with the prime tower on, so every layer, the first
 /// included, changes filament; `extra` settings over it. Gives the G-code and the filament each slot used, mm.
 fn slice(extra: &[(&str, Value)]) -> (String, Vec<f64>) {
+    slice_boxes(2, extra)
+}
+
+/// [`slice`] with `n` boxes in `n` filaments (two or three), so each layer changes filament `n - 1` times.
+fn slice_boxes(n: usize, extra: &[(&str, Value)]) -> (String, Vec<f64>) {
     let path = format!(
         "{}/cli/tests/fixtures/xmark-2color-a1-request.json",
         env!("CARGO_MANIFEST_DIR")
     );
     let req: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let mut cfg = req["config"].clone();
+    // Per-filament lists of two get a third entry like the second.
+    if n > 2 {
+        for v in cfg.as_object_mut().unwrap().values_mut() {
+            if let Some(a) = v.as_array_mut()
+                && a.len() == 2
+            {
+                let last = a[1].clone();
+                a.push(last);
+            }
+        }
+        cfg["filament_colour"] = json!(["#F4EE2A", "#00AE42", "#1E5AA8"]);
+    }
     cfg["enable_prime_tower"] = json!(true);
     for (k, v) in extra {
         cfg[*k] = v.clone();
     }
-    let objects: Vec<Value> = [[60.0, 60.0], [120.0, 60.0]]
+    let objects: Vec<Value> = [[60.0, 60.0], [120.0, 60.0], [60.0, 120.0]]
         .iter()
+        .take(n)
         .enumerate()
         .map(|(index, corner)| {
             json!({"id": format!("o{index}"), "name": format!("box {}", index + 1), "mesh": "box",
@@ -273,13 +291,13 @@ fn every_wipe_after_a_tool_change_starts_with_the_nozzle_wipe() {
             assert_eq!(w.after, ["M204 S500"]);
         }
     }
-    // The wipe adds no extrusion.
+    // The wipe adds no extrusion; only the wall's openings print less.
     let (_, off) = slice(&[
         ("initial_layer_travel_acceleration", json!(1000)),
         ("prime_tower_skip_points", json!(false)),
     ]);
     for (a, b) in used.iter().zip(&off) {
-        assert!((a - b).abs() <= 1e-4 * b.max(1.0), "{used:?} against {off:?}");
+        assert!(a <= b && b - a < 2e-3 * b.max(1.0), "{used:?} against {off:?}");
     }
 }
 
@@ -349,4 +367,106 @@ fn a_type_2_tower_never_wipes_its_nozzle() {
     let on = type2(true);
     assert!(!on.contains(" F240\n") && !on.contains("Wipe tower reheat"));
     assert_eq!(on, type2(false), "the setting changes nothing on a type 2 tower");
+}
+
+/// The F words of the extruding moves in a block from its nozzle wipe on, in order, each written once.
+fn row_feeds(b: &Block) -> Vec<f64> {
+    let mut feeds: Vec<f64> = Vec::new();
+    let mut started = false;
+    let mut feed = 0.0;
+    for (text, mv) in &b.lines {
+        let Some(m) = mv else { continue };
+        if let Some(f) = m.f {
+            feed = f;
+        }
+        if m.e_only.is_some_and(|e| e < 0.0) && !started {
+            started = true;
+        }
+        if started && m.extrudes && feeds.last() != Some(&feed) && !text.is_empty() {
+            feeds.push(feed);
+        }
+    }
+    feeds
+}
+
+#[test]
+fn the_wall_opens_where_each_wipe_starts_and_hops_it() {
+    // Three filaments: two changes and two openings a layer, so the wall hops one of them.
+    let (gcode, _) = slice_boxes(3, &[]);
+    let lines: Vec<&str> = gcode.lines().collect();
+    let mut hops = 0;
+    for b in blocks(&gcode) {
+        let starts: Vec<[f64; 2]> = wipes(&b).iter().map(|w| w.lead.from).collect();
+        for (k, (_, mv)) in b.lines.iter().enumerate() {
+            // A hop: a retraction, one travel at 10 mm/s, the unretraction (acceleration lines may come between).
+            let Some(m) = mv else { continue };
+            if m.e_only.is_none_or(|e| e >= 0.0) {
+                continue;
+            }
+            let moves: Vec<&Move> = b.lines[k + 1..]
+                .iter()
+                .filter_map(|l| l.1.as_ref())
+                .take_while(|m| m.e_only.is_none())
+                .collect();
+            if moves.len() != 1 || moves[0].f != Some(600.0) {
+                continue;
+            }
+            hops += 1;
+            let hop = moves[0];
+            let chord = len(hop);
+            assert!(chord > 1.0 && chord < 2.5 + NEAR, "a 5 bead opening: {chord}");
+            let mid = [
+                f64::midpoint(hop.from[0], hop.to[0]),
+                f64::midpoint(hop.from[1], hop.to[1]),
+            ];
+            assert!(
+                starts
+                    .iter()
+                    .any(|s| (s[1] - mid[1]).abs() < 0.05 && s[0] > mid[0]),
+                "the opening at {mid:?} is level with a wipe start of the layer, on its near side: {starts:?}"
+            );
+        }
+    }
+    assert!(hops > 0, "the wall hops its openings");
+    assert!(
+        lines.iter().filter(|l| l.ends_with(" F600")).count() > hops,
+        "and the wipes travel at 10 mm/s too"
+    );
+    let (off, _) = slice_boxes(3, &[("prime_tower_skip_points", json!(false))]);
+    assert!(
+        !blocks(&off)
+            .iter()
+            .any(|b| b.lines.iter().any(|l| l.0.ends_with(" F600"))),
+        "no openings without skip points"
+    );
+}
+
+#[test]
+fn the_tower_follows_prime_tower_max_speed() {
+    // 50 mm/s: the wipe rows speed up to 0.875 of it plus 50 mm/min, the wall and fill print at it.
+    let (gcode, _) = slice(&[("prime_tower_max_speed", json!(50))]);
+    let later: Vec<Block> = blocks(&gcode).into_iter().filter(|b| b.layer > 0).collect();
+    assert!(!later.is_empty());
+    for b in &later {
+        let feeds = row_feeds(b);
+        assert_eq!(
+            &feeds[..5],
+            [990.0, 1125.0, 1374.0, 2625.0, 2675.0],
+            "layer {}: {feeds:?}",
+            b.layer
+        );
+        assert!(feeds.iter().all(|&f| f <= 3000.0), "{feeds:?}");
+    }
+    assert!(gcode.lines().any(|l| l == "G1 F3000"), "the wall at 50 mm/s");
+    assert!(
+        !gcode.lines().any(|l| l == "G1 F5400"),
+        "nothing on the tower at the 90 mm/s default"
+    );
+    // The first layer is capped by it too: at 100 mm/s first layer speed the first row runs at a third of 90.
+    let (gcode, _) = slice(&[("initial_layer_speed", json!([100]))]);
+    let first = blocks(&gcode)
+        .into_iter()
+        .find(|b| b.layer == 0)
+        .expect("a first layer change");
+    assert_eq!(row_feeds(&first).first(), Some(&1782.0));
 }

@@ -140,6 +140,7 @@ mod tests {
                 .iter()
                 .map(|&feature| PathInfo {
                     tower_wipe: false,
+                    tower_hop: false,
                     start: 0,
                     end: 0,
                     tool: 1,

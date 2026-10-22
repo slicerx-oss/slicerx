@@ -1878,6 +1878,31 @@
    "showWhen": "multicolor"
   },
   {
+   "key": "prime_tower_max_speed",
+   "section": "process",
+   "type": "float",
+   "label": "Prime tower max speed",
+   "unit": "mm/s",
+   "min": 10,
+   "mode": "expert",
+   "default": 90,
+   "group": "multimaterial",
+   "invalidates": "paths",
+   "enabledWhen": [
+    {
+     "key": "enable_prime_tower",
+     "op": "eq",
+     "value": true
+    }
+   ],
+   "intent": "multicolor",
+   "showWhen": "multicolor",
+   "effect": {
+    "increase": "The prime tower prints faster on Bambu Lab printers: its wipe rows, wall and fill",
+    "decrease": "The prime tower prints slower on Bambu Lab printers, which can help a tall, thin tower stay put"
+   }
+  },
+  {
    "key": "prime_tower_skip_points",
    "section": "process",
    "type": "bool",

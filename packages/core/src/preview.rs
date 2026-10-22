@@ -576,6 +576,7 @@ mod tests {
     fn output(objects: usize) -> SliceOutput {
         let path = |start: u32, end: u32, owner: u16| PathInfo {
             tower_wipe: false,
+            tower_hop: false,
             start,
             end,
             tool: 1,

@@ -194,6 +194,7 @@ prime_tower_brim_width
 prime_tower_enable_framework
 prime_tower_flat_ironing
 prime_tower_infill_gap
+prime_tower_max_speed
 prime_tower_skip_points
 prime_tower_width
 prime_volume

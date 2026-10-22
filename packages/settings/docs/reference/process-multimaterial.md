@@ -1,6 +1,6 @@
 # Process: Multi material
 
-42 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+43 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `bottom_surface_filament_id`
 
@@ -176,6 +176,20 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Tier: Expert, multicolor, shown with two or more filaments
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
+
+### `prime_tower_max_speed`
+
+**Prime tower max speed**
+
+- Type: number
+- Unit: mm/s
+- Default: 90
+- Recommended range: 10 to no maximum
+- Used only when: Prime tower (`enable_prime_tower`) is on
+- Tier: Expert, multicolor, shown with two or more filaments
+- Changing it redoes: paths
+- mimir class: read (not in the catalog: never written)
+- Effect: higher: The prime tower prints faster on Bambu Lab printers: its wipe rows, wall and fill. lower: The prime tower prints slower on Bambu Lab printers, which can help a tall, thin tower stay put
 
 ### `prime_tower_skip_points`
 

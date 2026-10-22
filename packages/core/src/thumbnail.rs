@@ -956,6 +956,7 @@ mod tests {
                 points: pts,
                 paths: vec![PathInfo {
                     tower_wipe: false,
+                    tower_hop: false,
                     start: 0,
                     end: 5,
                     tool: 1,
@@ -1085,6 +1086,7 @@ mod tests {
                             }
                             paths.push(PathInfo {
                                 tower_wipe: false,
+                                tower_hop: false,
                                 start: start as u32,
                                 end: points.len() as u32,
                                 tool: 1,

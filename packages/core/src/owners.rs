@@ -870,6 +870,7 @@ mod tests {
             points: points.iter().map(|&(x, y)| Point::from_mm(x, y)).collect(),
             paths: vec![PathInfo {
                 tower_wipe: false,
+                tower_hop: false,
                 start: 0,
                 end: u32::try_from(points.len()).unwrap(),
                 tool: 1,
