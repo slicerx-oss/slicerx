@@ -5,3 +5,10 @@
 # needs a backend; sx-wasm provides one that returns a fixed pseudo-random sequence.
 [target.wasm32-unknown-unknown]
 rustflags = ["--cfg", 'getrandom_backend="custom"']
+
+# The page decay of jemalloc, the allocator of the sx command line tool on macOS and Linux:
+# how long freed pages stay mapped before they go back to the system. Read when tikv-jemalloc-sys builds jemalloc.
+# 0 returns them at once, which gave the lowest peak memory in a slice with no clear cost in time.
+# packages/core/cli/tests/allocator.rs checks that the built sx runs with it.
+[env]
+JEMALLOC_SYS_WITH_MALLOC_CONF = "dirty_decay_ms:0,muzzy_decay_ms:0"

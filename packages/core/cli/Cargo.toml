@@ -27,5 +27,11 @@ rayon = "=1.12.0"
 serde_json = "=1.0.151"
 sha2 = { version = "=0.11.0", default-features = false, optional = true }
 
+# jemalloc returns the memory a slice frees to the system after a short decay, where the system allocators keep large
+# freed blocks cached. Its page decay times are set at build time in .cargo/config.toml. It does not build with MSVC,
+# so Windows keeps the system allocator.
+[target.'cfg(all(not(target_env = "msvc"), not(target_arch = "wasm32")))'.dependencies]
+tikv-jemallocator = "=0.7.0"
+
 [build-dependencies]
 serde_json = "=1.0.151"
