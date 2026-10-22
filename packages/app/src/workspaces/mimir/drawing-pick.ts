@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // What the sheet's drawing shows on a phone. A phone has no room for four views, so the drawing opens on Top and
-// Isometric side by side, drawn large, and a picker in its header swaps them for Front or Right, one at a time. A 44 px
+// Isometric side by side, drawn large, and a picker in its header swaps them for Front or Right, one at a time. The
+// picker offers Front or Right only when the sheet draws a callout in it, and with neither it is not shown. A 44 px
 // control folds the drawing down to its header, giving the sizes in the chat the room. The pick and the fold start over
 // with each new sheet. The desktop keeps its four views and uses none of this.
 import { createStore, useStore } from 'zustand'
@@ -38,9 +39,23 @@ export function pickFor(s: DrawingPick, sheetId: string): DrawingPick {
   return s.sheetId === sheetId ? s : { ...START, sheetId }
 }
 
+/**
+ * The choices the picker offers for a sheet, from the views each row's callout is drawn in (`viewsFor`): Top and iso
+ * always, and Front or Right only when it draws a callout, so no choice opens on a view with nothing to edit.
+ */
+export function panesFor(shows: ReadonlyMap<string, readonly ViewName[]>): PhonePane[] {
+  const drawn = new Set([...shows.values()].flat())
+  return PHONE_PANES.filter((p) => p === FIRST_PANE || PANE_VIEWS[p].some((v) => drawn.has(v)))
+}
+
+/** The choice on screen: the one picked while the picker offers it, else Top and iso. */
+export function paneOffered(pane: PhonePane, offered: readonly PhonePane[]): PhonePane {
+  return offered.includes(pane) ? pane : FIRST_PANE
+}
+
 /** Shows a choice. One the picker does not offer, or the one showing, leaves the pick as it is. */
-export function pickPane(s: DrawingPick, pane: PhonePane): DrawingPick {
-  return PHONE_PANES.includes(pane) && s.pane !== pane ? { ...s, pane } : s
+export function pickPane(s: DrawingPick, pane: PhonePane, offered: readonly PhonePane[] = PHONE_PANES): DrawingPick {
+  return offered.includes(pane) && s.pane !== pane ? { ...s, pane } : s
 }
 
 /** Folds the drawing down to its header, or opens it again on the choice it had. */
@@ -60,9 +75,9 @@ export function paneShowing(current: PhonePane, has: (v: ViewName) => boolean): 
 
 export const drawingPick = createStore<DrawingPick>()(() => START)
 
-/** Shows a choice of a sheet's drawing on a phone. */
-export function showPane(sheetId: string, pane: PhonePane): void {
-  drawingPick.setState((st) => pickPane(pickFor(st, sheetId), pane), true)
+/** Shows a choice of a sheet's drawing on a phone, when the picker offers it. */
+export function showPane(sheetId: string, pane: PhonePane, offered: readonly PhonePane[] = PHONE_PANES): void {
+  drawingPick.setState((st) => pickPane(pickFor(st, sheetId), pane, offered), true)
 }
 
 /** Folds a sheet's drawing on a phone, or opens it again. */
