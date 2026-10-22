@@ -4,7 +4,7 @@
 //!
 //! sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode | -o -] [--preview out.sxpv]
 //!          [--strict]
-//! sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]
+//! sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]
 //! sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]
 //! sx schema [request | result]
 //! script recognition: --script-printer <model-id> --script-firmware <flavor>
@@ -91,7 +91,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>]]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
+                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
             );
             return ExitCode::from(2);
         }
@@ -825,6 +825,27 @@ fn cmd_time(args: &[String]) -> Res<ExitCode> {
     let config = sx_core::firmware::map_from_gcode(&text, &config).unwrap_or(config);
     let trace = has(args, "--trace");
     let e = sx_core::printtime::estimate(&text, &config, trace);
+    if has(args, "--json") {
+        // The whole estimate for clients: total, first layer, start sequence, travel, end waits and each feature.
+        let features: serde_json::Map<String, Value> = e
+            .features
+            .iter()
+            .filter(|f| f.1 != 0.0)
+            .map(|(name, t)| (name.clone(), Value::from(*t)))
+            .collect();
+        println!(
+            "{}",
+            serde_json::json!({
+                "total_s": e.total,
+                "first_layer_s": e.first_layer,
+                "prepare_s": e.prepare,
+                "travel_s": e.travel,
+                "end_wait_s": e.end_wait,
+                "features_s": features,
+            })
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
     println!(
         "total {:.1} s ({}), first layer {:.1} s",
         e.total,
