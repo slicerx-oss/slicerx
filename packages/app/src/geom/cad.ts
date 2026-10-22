@@ -9,6 +9,7 @@
 // that replaces an input (a boolean result, a merged array, a join or cut) comes back in that
 // input's local frame, so the object keeps its transform.
 import { geom, usesWorker, type GeomMesh, type TypedGeomMesh } from './client'
+import { fitCall } from './fit-client'
 import type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, ThreadPlace, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
 
 export type { ArraySpec, EdgeRef, ExtrudeSpec, FaceFrame, FreeShape, Hole, HoleSpec, Mat4, MovedFace, OpenFace, Placement, Polygon, Shape, SketchLoop, SketchSegment, ThreadPlace, ThreadSize, ThreadSpec, ThreadTarget, Vec2, Vec3 } from '@slicerx/cad-history'
@@ -688,5 +689,6 @@ export function gapFromHoleTolerance(clearanceMm: number): number {
 /** Warns where separate parts of one object come closer than the printer can keep apart. */
 export function fitCheck(parts: MeshItem | MeshItem[], options: FitOptions, signal?: AbortSignal) {
   const where = Array.isArray(parts) ? { meshes: parts } : { mesh: parts }
-  return geom().call<FitReport>('fit.check', { ...where, ...options }, signal)
+  // the app's own engine runs it in a worker of its own, so a canceled check never holds up the next call
+  return usesWorker() ? fitCall<FitReport>({ ...where, ...options }, signal) : geom().call<FitReport>('fit.check', { ...where, ...options }, signal)
 }
