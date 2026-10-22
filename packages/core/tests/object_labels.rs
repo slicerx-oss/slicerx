@@ -396,6 +396,42 @@ fn tree_support_under_two_objects_keeps_each_objects_label() {
 }
 
 #[test]
+fn tree_support_that_leans_out_round_its_objects_carries_a_label() {
+    // Two x-marks 4 mm apart with tree support. Low branches lean out past the marks' long sides, 10 mm and more
+    // from the marks on their own layer and from anything they hold up within the support's margin, and some run
+    // through the gap between the marks. A printer that skips an object cannot skip support without a label (it
+    // always prints), so every support extrusion carries one of the two labels.
+    let path = format!("{}/bench/models/x-mark.stl", env!("CARGO_MANIFEST_DIR"));
+    let mark = Arc::new(Mesh::load(&std::fs::read(path).unwrap(), "x-mark.stl").unwrap());
+    let place = |name: &str, y: f32| json!({"id": name, "name": name, "mesh": "x", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 128,y,0,1]});
+    // The app's own settings (not the request tests' base), as the plate is sliced from the app.
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [place("a", 112.0), place("b", 142.0)]},
+        "config": {"gcode_label_objects": true, "enable_support": true, "support_type": "tree(auto)",
+                   "support_threshold_angle": 60},
+        "options": {"allowCollisions": true},
+    }))
+    .unwrap();
+    let run = sx_core::api::run_request(&req, &move |_: &str| Ok(mark.clone())).unwrap();
+    let g = String::from_utf8(run.gcode).unwrap();
+    let all = moves(&g);
+    let support: Vec<&Move> = all.iter().filter(|m| m.feature.starts_with("Support")).collect();
+    let total: f64 = support.iter().map(|m| m.len).sum();
+    assert!(total > 1000.0, "{total} mm of tree support");
+    let unlabelled: f64 = support.iter().filter(|m| m.label.is_none()).map(|m| m.len).sum();
+    assert!(
+        unlabelled < 1e-6,
+        "{unlabelled} of {total} mm of tree support has no label"
+    );
+    for name in ["a", "b"] {
+        assert!(
+            support.iter().any(|m| m.label.as_deref() == Some(name)),
+            "no support labeled {name}"
+        );
+    }
+}
+
+#[test]
 fn stacked_objects_with_one_footprint_keep_their_own_labels() {
     // The two-color x-mark: band objects A (Z 0 to 75.5) and B (Z 15.5 to 85.5) share one footprint, two build
     // items placed as the CLI and the MCP server place a 3MF plate.
