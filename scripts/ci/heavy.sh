@@ -201,7 +201,15 @@ case $lock in */.*) hist_default=$lock.history.log ;; */*) hist_default=${lock%/
 hist=${SX_HEAVY_HISTORY-$hist_default}
 
 case "$(uname -s)" in
-  Darwin) side=darwin ;;
+  Darwin)
+    side=darwin
+    # A shell started by ssh has only the system PATH, without Homebrew or cargo, so a command a caller passes
+    # (timeout, cargo, pnpm) would not be found. Their directories go at the end, so a caller's own PATH still wins.
+    for d in /opt/homebrew/bin /usr/local/bin "$HOME/.cargo/bin"; do
+      case ":$PATH:" in *":$d:"*) ;; *) [ -d "$d" ] && PATH=$PATH:$d ;; esac
+    done
+    export PATH
+    ;;
   Linux) if [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/sys/kernel/osrelease 2> /dev/null; then side=wsl; else side=linux; fi ;;
   *) side=msys ;;
 esac

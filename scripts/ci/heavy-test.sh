@@ -459,6 +459,17 @@ CARGO_TARGET_DIR=$tmp/own SX_HEAVY_LOCK=$lock bash "$heavy" sh -c 'printf %s "$C
 rm -f "$lock.target-dir"
 ok eval '[ "$(cat "$tmp/td1")" = "$tmp/shared-target" ] && [ "$(cat "$tmp/td2")" = "$tmp/own" ]'
 
+# On macOS a shell started by ssh has only the system PATH; the lock adds Homebrew's and cargo's directories, so a
+# command such as timeout is found, and a directory already on PATH keeps its place.
+if [ "$side" = darwin ] && [ -d /opt/homebrew/bin ]; then
+  name="on macOS a command from Homebrew runs from a bare ssh PATH, and the caller's PATH order is kept"
+  PATH=/usr/bin:/bin SX_HEAVY_LOCK=$lock /bin/bash "$heavy" sh -c 'command -v timeout > "$1"; printf %s "$PATH" > "$2"' \
+    sh "$tmp/tw" "$tmp/tp"
+  PATH=/opt/homebrew/bin:/usr/bin:/bin SX_HEAVY_LOCK=$lock /bin/bash "$heavy" sh -c 'printf %s "$PATH" > "$1"' sh "$tmp/tp2"
+  ok eval '[ -s "$tmp/tw" ] && case "$(cat "$tmp/tp")" in /usr/bin:/bin:*/opt/homebrew/bin*) true ;; *) false ;; esac \
+    && case "$(cat "$tmp/tp2")" in /opt/homebrew/bin:/usr/bin:/bin*) true ;; *) false ;; esac'
+fi
+
 # Max hold: a command that runs past it is stopped with its children (TERM, then KILL after the grace), the slot is
 # freed, heavy.sh exits 124, and the history says so.
 # A process that is gone, or a zombie no one reaped yet (its parent was killed too).
