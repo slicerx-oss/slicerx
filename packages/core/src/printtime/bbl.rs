@@ -16,7 +16,8 @@
 //!   the next move needs less. A move may enter at a speed the move before it could never reach, so ramping up over
 //!   many short moves costs almost nothing; braking is modeled in full.
 //! - An arc is one move, capped at `sqrt(print acceleration * radius)`; it starts from the previous move's rest
-//!   speed and extruder speed.
+//!   speed and extruder speed. Bambu Studio leaves arcs given by a radius (R, no I or J) untimed; here they take
+//!   the time of the same arc with its center.
 //! - A wait is carried by the oldest move still queued; waits with no move after them at the end of the file are
 //!   reported apart ([`COUNT_END_WAIT`]).
 //! - The travel acceleration has the extruding limit as its ceiling (the `marlin` flavor), `G4` and `M400` add
@@ -347,16 +348,32 @@ impl Reader {
         if let Some(f) = value(words, b'F') {
             self.feedrate = f / 60.0;
         }
-        let (i, j) = (value(words, b'I'), value(words, b'J'));
-        if i.is_none() && j.is_none() {
-            return;
-        }
         let closed = (end[0] - start[0]).m_hypot(end[1] - start[1]) <= 1e-6;
         if has(words, b'P') && !(closed && value(words, b'P') == Some(1.0)) {
             return;
         }
         let s = self.scale();
-        let center = (start[0] + i.unwrap_or(0.0) * s, start[1] + j.unwrap_or(0.0) * s);
+        let (i, j) = (value(words, b'I'), value(words, b'J'));
+        let center = if i.is_some() || j.is_some() {
+            (start[0] + i.unwrap_or(0.0) * s, start[1] + j.unwrap_or(0.0) * s)
+        } else {
+            // The radius form, which Bambu Studio does not time: the center from the radius and the chord. A
+            // positive R is the short way round, a negative one the long way; a closed arc has no center.
+            let Some(r) = value(words, b'R').filter(|r| *r != 0.0 && !closed) else {
+                return;
+            };
+            let r = r * s;
+            let (vx, vy) = (end[0] - start[0], end[1] - start[1]);
+            let chord = vx.m_hypot(vy);
+            // A radius under half the chord cannot reach the end: the arc becomes the half circle on the chord.
+            let h = (r * r - chord * chord / 4.0).max(0.0).sqrt();
+            // The short way round, the center sits right of the chord for G2 and left of it for G3.
+            let side = if (r > 0.0) == clockwise { -1.0 } else { 1.0 };
+            (
+                f64::midpoint(start[0], end[0]) - side * h * vy / chord,
+                f64::midpoint(start[1], end[1]) + side * h * vx / chord,
+            )
+        };
         let rs = (start[0] - center.0, start[1] - center.1);
         let re = (end[0] - center.0, end[1] - center.1);
         let radius = rs.0.m_hypot(rs.1);
@@ -892,6 +909,36 @@ mod tests {
         assert!((two - base).abs() < 1e-9, "{two} {base}");
         // The untimed arc still moves the head to X14, so the travel after it starts there.
         assert!(other < plain, "{other} {plain}");
+    }
+
+    #[test]
+    fn radius_arcs_take_the_time_of_the_same_arc_with_a_center() {
+        // From (10, 0) to (0, 10) on a circle of radius 10: the short way round has its center at (0, 0) for G3 and
+        // at (10, 10) for G2; the long way round (negative R) the other way.
+        let lead = "M83\nG1 X10 Y0 F6000\n";
+        let tail = "G1 X0 Y20\nG4 S0\n";
+        for (arc, center) in [
+            ("G3 X0 Y10 R10", "G3 X0 Y10 I-10 J0"),
+            ("G2 X0 Y10 R10", "G2 X0 Y10 I0 J10"),
+            ("G3 X0 Y10 R-10", "G3 X0 Y10 I0 J10"),
+            ("G2 X0 Y10 R-10", "G2 X0 Y10 I-10 J0"),
+        ] {
+            let r = total(&format!("{lead}{arc} E2\n{tail}"));
+            let c = total(&format!("{lead}{center} E2\n{tail}"));
+            assert!((r - c).abs() < 1e-9, "{arc}: {r} against {c}");
+            assert!(r > total(&format!("{lead}G1 X0 Y10 E2\n{tail}")), "{arc}");
+        }
+        // A radius under half the chord (14.14 mm here) is the half circle on the chord, either sign.
+        let half = total(&format!("{lead}G3 X0 Y10 I-5 J5 E2\n{tail}"));
+        for short in ["R5", "R-5"] {
+            let r = total(&format!("{lead}G3 X0 Y10 {short} E2\n{tail}"));
+            assert!((r - half).abs() < 1e-9, "{short}: {r} against {half}");
+        }
+        // No center to find: zero R, or an arc back to its start.
+        let plain = total(&format!("{lead}G1 X0 Y10 E2\n{tail}"));
+        let skipped = total(&format!("{lead}G3 X10 Y0 R5 E2\nG1 X0 Y10 E2\n{tail}"));
+        let zero = total(&format!("{lead}G3 X10 Y0 R0 E2\nG1 X0 Y10 E2\n{tail}"));
+        assert!((skipped - plain).abs() < 1e-9 && (zero - plain).abs() < 1e-9);
     }
 
     #[test]
