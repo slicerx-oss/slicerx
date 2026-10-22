@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! Print time the way Bambu Studio estimates it for Bambu Lab printers. The rules below were checked against
-//! Bambu Studio's own estimate on the H2D, A1, P1S and X1 Carbon; other printers keep the planner in the parent
-//! module.
+//! Bambu Studio's own estimate on the H2D, X2D, A1, P1S and X1 Carbon; other printers keep the planner in the
+//! parent module.
 //!
 //! What differs from that planner:
 //! - Junction speed: the two moves' unit directions are compared one axis at a time. Where they differ, the junction
@@ -29,9 +29,10 @@ use crate::config::PrintConfig;
 use crate::fm::Fm as _;
 
 /// Whether waits with no move after them at the end of the file count in the total. Bambu Studio leaves them out:
-/// on the H2D that is the end G-code's 361 s (two 180 s air purification waits and 1 s), which the printer runs only
-/// in part; on the X1 Carbon and A1 it is about 1 s. Kept counted until that choice is made; [`super::Estimate::end_wait`] reports them either way.
-const COUNT_END_WAIT: bool = true;
+/// on the H2D and X2D that is the end G-code's 361 s (two 180 s air purification waits and 1 s), which the printer
+/// runs only in part; on the X1 Carbon and A1 it is about 1 s. Kept counted until that choice is made;
+/// [`super::Estimate::end_wait`] reports them either way.
+pub(super) const COUNT_END_WAIT: bool = true;
 
 /// The highest junction speed, mm/s.
 const JUNCTION_CAP: f64 = 10_000.0;
@@ -177,12 +178,12 @@ impl Machine {
         }
     }
 
-    /// The end of the file: the last plan, and the waits no move carries.
-    pub(super) fn bbl_finish(&mut self) {
+    /// The end of the file: the last plan, and the waits no move carries, in the total when `count_end_wait`.
+    pub(super) fn bbl_finish(&mut self, count_end_wait: bool) {
         self.bbl_calculate(0);
         for x in std::mem::take(&mut self.waits) {
             self.end_wait += x.time;
-            if COUNT_END_WAIT {
+            if count_end_wait {
                 self.time += x.time;
             } else {
                 // Booked where it was read; take it back out.
@@ -455,8 +456,9 @@ impl Reader {
         );
     }
 
-    /// A filament change to filament `id`: the switch time when the nozzle changes, the unload time when that
-    /// nozzle held another filament, and the load time.
+    /// A filament change to filament `id`: the switch time when the nozzle changes, and the load time when that
+    /// nozzle's filament changes, with the unload time too when it held another one. A switch back to a nozzle
+    /// that still holds `id` takes the switch time only.
     pub(super) fn bbl_filament_change(&mut self, id: usize) {
         let next = self.filament_map.get(id).copied().unwrap_or(0);
         let active = self
@@ -465,13 +467,15 @@ impl Reader {
         if active == Some(id) {
             return;
         }
-        let mut extra = self.load_time;
+        let mut extra = 0.0;
         if self.extruder.is_some_and(|e| e != next) {
             extra += self.change_time;
         }
         if let Some(slot) = self.filament_of.get_mut(next) {
-            if slot.is_some_and(|f| f != id) {
-                extra += self.unload_time;
+            match *slot {
+                Some(f) if f == id => {}
+                Some(_) => extra += self.unload_time + self.load_time,
+                None => extra += self.load_time,
             }
             *slot = Some(id);
         }
@@ -974,6 +978,61 @@ mod tests {
         // `M1020 S` changes filament as `T` does.
         let m = with("G1 X10 F6000\nM1020 S0\nG1 X20\nG1 X30\nG4 S0\n");
         assert!((m.total - with("G1 X10 F6000\nT0\nG1 X20\nG1 X30\nG4 S0\n").total).abs() < 1e-9);
+    }
+
+    /// The `Flush` time of `text` on the H2D with filaments mapped to the nozzles of `map`.
+    fn flush_with_map(map: serde_json::Value, text: &str) -> f64 {
+        let mut c = h2d();
+        c.raw
+            .insert("filament_diameter".into(), serde_json::json!([1.75, 1.75]));
+        c.raw.insert("filament_map".into(), map);
+        let e = estimate(text.as_bytes(), &c, false);
+        e.features.iter().find(|f| f.0 == "Flush").map_or(0.0, |f| f.1)
+    }
+
+    const BACK_AND_FORTH: &str =
+        "G1 X10 F6000\nT0\nG1 X20\nT1\nG1 X30\nT0\nG1 X40\nT1\nG1 X50\nG1 X60\nG4 S0\n";
+
+    #[test]
+    fn a_switch_back_to_a_nozzle_that_holds_the_filament_takes_the_switch_time_only() {
+        // One filament per nozzle: each nozzle loads once (26 s), every switch takes 5.6 s.
+        let flush = flush_with_map(serde_json::json!(["1", "2"]), BACK_AND_FORTH);
+        assert!(
+            (flush - (26.0 + (5.6 + 26.0) + 5.6 + 5.6)).abs() < 1e-9,
+            "{flush}"
+        );
+    }
+
+    #[test]
+    fn filaments_sharing_a_nozzle_unload_and_load_on_each_change() {
+        // Both filaments on one nozzle: no switch, and each change unloads and loads (26 s each).
+        let flush = flush_with_map(serde_json::json!(["1", "1"]), BACK_AND_FORTH);
+        assert!((flush - (26.0 + 3.0 * 52.0)).abs() < 1e-9, "{flush}");
+    }
+
+    #[test]
+    fn end_waits_are_reported_and_counted_only_when_set() {
+        // The H2D end G-code's two 180 s waits and 1 s, with no move after them.
+        let body = "M83\nG1 X10 F6000\nG1 X20 E1\nG1 X30 E1\nG4 S0\n";
+        let text = format!("{body}M400 S180\nM400 S180\nG4 S1\n");
+        let base = super::super::estimate_counting(body.as_bytes(), &h2d(), false, true).total;
+        for count in [true, false] {
+            let e = super::super::estimate_counting(text.as_bytes(), &h2d(), true, count);
+            assert!((e.end_wait - 361.0).abs() < 1e-9, "{count}: {e:?}");
+            let want = if count { base + 361.0 } else { base };
+            assert!(
+                (e.total - want).abs() < 1e-9,
+                "{count}: {} against {want}",
+                e.total
+            );
+            // The time at the last line agrees with the total either way.
+            let last = e.lines.last().copied().unwrap_or(0.0);
+            assert!(
+                (last - e.total).abs() < 1e-9,
+                "{count}: {last} against {}",
+                e.total
+            );
+        }
     }
 
     #[test]
