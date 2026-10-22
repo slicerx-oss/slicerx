@@ -36,6 +36,9 @@ fn mm(v: i32) -> f32 {
     (f64::from(v) / crate::geom::SCALE) as f32
 }
 
+/// Spare room in a new buffer for the start G-code's moves (up to 4096), so [`with_start`] puts them in place.
+const START_ROOM: usize = 4096 * (SEGMENT_BYTES + OBJECT_BYTES + EXTRA_BYTES) + 8;
+
 /// Encodes stages 6 and 7 of `out` as one SXPV buffer, with travels.
 pub fn preview_buffers(out: &SliceOutput) -> Vec<u8> {
     let n = out.layers.len();
@@ -55,7 +58,7 @@ pub fn preview_buffers(out: &SliceOutput) -> Vec<u8> {
     } else {
         0
     };
-    let mut b = Vec::with_capacity(size + objects_size + segs * EXTRA_BYTES + travels + 3);
+    let mut b = Vec::with_capacity(size + objects_size + segs * EXTRA_BYTES + travels + 3 + START_ROOM);
     let u32le =
         |b: &mut Vec<u8>, v: usize| b.extend_from_slice(&u32::try_from(v).unwrap_or(u32::MAX).to_le_bytes());
     b.extend_from_slice(&MAGIC.to_le_bytes());
@@ -255,53 +258,50 @@ pub fn with_extras(mut b: Vec<u8>, segs: &[crate::extras::SegExtra], travels: &[
 }
 
 /// Puts the start G-code's extrusions ([`crate::startlines`]) at the front of the first layer, as custom
-/// paths, in a buffer that has no extras yet. Their extras go first in the table [`with_extras`] takes.
-pub fn with_start(b: Vec<u8>, moves: &[crate::startlines::StartMove]) -> Vec<u8> {
+/// paths, in a buffer that has no extras yet. Their extras go first in the table [`with_extras`] takes. Done in
+/// the buffer itself, so the preview is never held twice.
+pub fn with_start(mut b: Vec<u8>, moves: &[crate::startlines::StartMove]) -> Vec<u8> {
     let Ok(info) = read_info(&b) else { return b };
     if moves.is_empty() || info.layers == 0 || info.extras_at.is_some() {
         return b;
     }
     let n = moves.len();
-    let mut out = Vec::with_capacity(b.len() + n * (SEGMENT_BYTES + OBJECT_BYTES + EXTRA_BYTES) + 4);
-    out.extend_from_slice(b.get(..info.layer_start).unwrap_or_default());
     let count = u32::try_from(info.segments + n).unwrap_or(u32::MAX);
-    if let Some(d) = out.get_mut(8..12) {
+    if let Some(d) = b.get_mut(8..12) {
         d.copy_from_slice(&count.to_le_bytes());
     }
     // the first layer starts where it did; every later one starts n segments on
-    for k in 0..=info.layers {
-        let at = rd32(&b, info.layer_start + k * 4).unwrap_or(0);
-        let at = if k == 0 {
-            at
-        } else {
-            at.saturating_add(u32::try_from(n).unwrap_or(u32::MAX))
-        };
-        out.extend_from_slice(&at.to_le_bytes());
+    for k in 1..=info.layers {
+        let p = info.layer_start + k * 4;
+        let at = rd32(&b, p)
+            .unwrap_or(0)
+            .saturating_add(u32::try_from(n).unwrap_or(u32::MAX));
+        if let Some(d) = b.get_mut(p..p + 4) {
+            d.copy_from_slice(&at.to_le_bytes());
+        }
     }
-    out.extend_from_slice(b.get(info.layer_z..info.segments_at).unwrap_or_default());
+    let mut add = Vec::with_capacity(n * SEGMENT_BYTES);
     for m in moves {
         for v in [m.from.0, m.from.1, m.to.0, m.to.1, m.z] {
-            out.extend_from_slice(&v.to_le_bytes());
+            add.extend_from_slice(&v.to_le_bytes());
         }
-        out.extend_from_slice(&m.width_um.to_le_bytes());
-        out.extend_from_slice(&m.height_um.to_le_bytes());
-        out.push(Feature::Custom as u8);
-        out.push(m.tool);
-        out.extend_from_slice(&m.speed.to_le_bytes());
-        out.extend_from_slice(&m.flow.to_le_bytes());
+        add.extend_from_slice(&m.width_um.to_le_bytes());
+        add.extend_from_slice(&m.height_um.to_le_bytes());
+        add.push(Feature::Custom as u8);
+        add.push(m.tool);
+        add.extend_from_slice(&m.speed.to_le_bytes());
+        add.extend_from_slice(&m.flow.to_le_bytes());
     }
-    match info.objects_at {
-        Some(at) => {
-            out.extend_from_slice(b.get(info.segments_at..at).unwrap_or_default());
-            for _ in 0..n {
-                out.extend_from_slice(&OBJECT_NONE.to_le_bytes());
-            }
-            out.extend_from_slice(b.get(at..at + info.segments * OBJECT_BYTES).unwrap_or_default());
-            pad4(&mut out);
-        }
-        None => out.extend_from_slice(b.get(info.segments_at..).unwrap_or_default()),
+    b.splice(info.segments_at..info.segments_at, add);
+    if let Some(at) = info.objects_at.map(|at| at + n * SEGMENT_BYTES) {
+        b.splice(
+            at..at,
+            std::iter::repeat_n(OBJECT_NONE.to_le_bytes(), n).flatten(),
+        );
+        b.truncate(at + (info.segments + n) * OBJECT_BYTES);
+        pad4(&mut b);
     }
-    out
+    b
 }
 
 /// [`with_extras`] with the lines of each layer counted from its `;LAYER_CHANGE` line ([`FLAG_LAYER_LINES`]).
@@ -524,4 +524,123 @@ pub fn stitch_lines(chunks: &[&[u8]], layer_lines: &[u32], progress_lines: &[u32
         pad4(&mut b);
     }
     Ok(b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::output::{LayerPaths, ObjectFootprint, PathInfo, SliceOutput};
+    use crate::startlines::StartMove;
+
+    /// The start moves put in by copying the whole buffer, as before they went in place.
+    fn with_start_copied(b: &[u8], moves: &[StartMove]) -> Vec<u8> {
+        let info = read_info(b).unwrap();
+        let n = moves.len();
+        let mut out = b[..info.layer_start].to_vec();
+        out[8..12].copy_from_slice(&u32::try_from(info.segments + n).unwrap().to_le_bytes());
+        for k in 0..=info.layers {
+            let at = rd32(b, info.layer_start + k * 4).unwrap();
+            let at = if k == 0 {
+                at
+            } else {
+                at + u32::try_from(n).unwrap()
+            };
+            out.extend_from_slice(&at.to_le_bytes());
+        }
+        out.extend_from_slice(&b[info.layer_z..info.segments_at]);
+        for m in moves {
+            for v in [m.from.0, m.from.1, m.to.0, m.to.1, m.z] {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+            out.extend_from_slice(&m.width_um.to_le_bytes());
+            out.extend_from_slice(&m.height_um.to_le_bytes());
+            out.extend_from_slice(&[Feature::Custom as u8, m.tool]);
+            out.extend_from_slice(&m.speed.to_le_bytes());
+            out.extend_from_slice(&m.flow.to_le_bytes());
+        }
+        match info.objects_at {
+            Some(at) => {
+                out.extend_from_slice(&b[info.segments_at..at]);
+                for _ in 0..n {
+                    out.extend_from_slice(&OBJECT_NONE.to_le_bytes());
+                }
+                out.extend_from_slice(&b[at..at + info.segments * OBJECT_BYTES]);
+                pad4(&mut out);
+            }
+            None => out.extend_from_slice(&b[info.segments_at..]),
+        }
+        out
+    }
+
+    /// Two layers of two paths each (three segments a layer), on `objects` objects.
+    fn output(objects: usize) -> SliceOutput {
+        let path = |start: u32, end: u32, owner: u16| PathInfo {
+            start,
+            end,
+            tool: 1,
+            feature: Feature::OuterWall,
+            speed_mm_s: 50.0,
+            width_mm: 0.42,
+            flow: 1.0,
+            dz: 0.0,
+            overhang_fan: false,
+            owner,
+        };
+        let layer = |index: u8| LayerPaths {
+            index: u32::from(index),
+            z: 0.2 * (f32::from(index) + 1.0),
+            height: 0.2,
+            points: [(0, 0), (1000, 0), (1000, 1000), (3000, 0), (4000, 0)]
+                .map(|(x, y)| crate::geom::Point::new(x, y))
+                .to_vec(),
+            paths: vec![path(0, 3, 0), path(3, 5, 1)],
+            ..LayerPaths::default()
+        };
+        let footprint = ObjectFootprint {
+            id: "a".into(),
+            name: "a".into(),
+            hull: Vec::new(),
+            center: [0.0, 0.0],
+        };
+        SliceOutput {
+            layer_count: 2,
+            layer_height: 0.2,
+            tool_count: 1,
+            layers: vec![layer(0), layer(1)],
+            objects: vec![footprint; objects],
+            ..SliceOutput::default()
+        }
+    }
+
+    #[test]
+    fn start_moves_in_place_give_the_copied_bytes() {
+        let moves: Vec<StartMove> = (0..3u8)
+            .map(|i| StartMove {
+                from: (f32::from(i), 1.0),
+                to: (f32::from(i) + 5.0, 1.0),
+                z: 0.2,
+                width_um: 500,
+                height_um: 200,
+                tool: i,
+                speed: 300,
+                flow: 2.5,
+                line: u32::from(i) + 1,
+                path_start: i == 0,
+            })
+            .collect();
+        for objects in [1, 2] {
+            for k in [0, 1, 3] {
+                let b = preview_buffers(&output(objects));
+                let cap = b.capacity();
+                let want = with_start_copied(&b, &moves[..k]);
+                let got = with_start(b, &moves[..k]);
+                assert_eq!(got, want, "{objects} objects, {k} moves");
+                assert_eq!(
+                    got.capacity(),
+                    cap,
+                    "{objects} objects, {k} moves: the buffer moved"
+                );
+            }
+        }
+    }
 }
