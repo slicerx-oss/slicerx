@@ -25,7 +25,7 @@ use crate::backend::{
     LinkPrinter, NewJob, Principal, mesh_path,
 };
 use crate::error::{Error, Result};
-use crate::worker::sha256_hex;
+use crate::worker::{sha256_hex, volume_mesh_ref};
 
 /// Largest mesh upload, matching the cloud-inputs bucket limit.
 pub const MAX_MESH_BYTES: usize = 50 * 1024 * 1024;
@@ -426,12 +426,18 @@ async fn validate_request(app: &App, user_id: &str, raw: &Value) -> Result<()> {
         return Err(Error::BadRequest("shards can be at most 64".into()));
     }
     let mut seen: Vec<String> = Vec::new();
+    // Each object's mesh, then its volumes' (cuts, support regions and modifiers).
+    let mut refs: Vec<(String, String)> = Vec::new();
     for object in &req.plate.objects {
-        let sha = object.mesh_ref();
+        refs.push((format!("object {}", object.id), object.mesh_ref()));
+        for v in &object.volumes {
+            refs.push((format!("a volume of object {}", object.id), volume_mesh_ref(v)));
+        }
+    }
+    for (what, sha) in refs {
         if !is_sha256(&sha) {
             return Err(Error::BadRequest(format!(
-                "object {} must reference its mesh by lowercase hex SHA-256",
-                object.id
+                "{what} must reference its mesh by lowercase hex SHA-256"
             )));
         }
         if seen.contains(&sha) {

@@ -177,7 +177,7 @@ if (__SX_FEATURE_STORE__) {
   const cloudApi = config.backend.cloudApi
   if (__SX_FEATURE_CLOUD__ && cloudApi) {
     // Cloud slicing signs requests with the member's session token, kept current by the store.
-    const [{ createCloudClient, createCloudSlicer }, { cloudSlicing }] = await Promise.all([import('@slicerx/cloud'), import('../../../packages/app/src/features/cloud/index')])
+    const [{ createCloudClient }, { cloudSlicing }, { withCloudSlicing }] = await Promise.all([import('@slicerx/cloud'), import('../../../packages/app/src/features/cloud/index'), import('./host/cloud')])
     let token: string | null = null
     store.onTokenChange((t) => {
       token = t
@@ -185,22 +185,10 @@ if (__SX_FEATURE_STORE__) {
     void store.getAccessToken().then((t) => {
       token = t
     })
-    const local = host.slicer
-    const cloud = createCloudSlicer({ client: createCloudClient({ baseUrl: cloudApi, credential: () => token }), local })
-    edition.cloud = cloud
-    // Meshes load locally either way, so handles match; only slices and their outputs move.
-    const clouded = new Set<string>()
-    host.slicer = {
-      ...local,
-      slice: async (req, opts) => {
-        if (!cloudSlicing()) return local.slice(req, opts)
-        const r = await cloud.slice({ ...req, config: (await import('@slicerx/settings')).resolveAuto(req.config) }, opts)
-        clouded.add(r.id)
-        return r
-      },
-      getPreview: (id) => (clouded.has(id) ? cloud.getPreview(id) : local.getPreview(id)),
-      exportGcode: (id, target) => (clouded.has(id) ? cloud.exportGcode(id, target) : local.exportGcode(id, target)),
-    }
+    // Models load through the cloud slicer, so a cloud slice has their bytes; handles are the native ones either way.
+    const routed = withCloudSlicing(host.slicer, createCloudClient({ baseUrl: cloudApi, credential: () => token }), cloudSlicing)
+    edition.cloud = routed.cloud
+    host.slicer = routed.slicer
   }
 }
 if (__SX_AGENT_BRIDGE__) attachAgentBridge?.(host)

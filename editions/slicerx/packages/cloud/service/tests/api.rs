@@ -122,7 +122,11 @@ impl Harness {
 
 /// A 20 mm cube as binary STL.
 fn cube_stl() -> Vec<u8> {
-    let s = 20.0_f32;
+    box_stl(20.0)
+}
+
+/// A cube of side `s` mm as binary STL.
+fn box_stl(s: f32) -> Vec<u8> {
     let v = [
         [0.0, 0.0, 0.0],
         [s, 0.0, 0.0],
@@ -456,6 +460,65 @@ async fn slices_a_plate_and_stores_the_result() {
 
     let (_, list) = h.json(Method::GET, "/v1/jobs", RV_TOKEN, None).await;
     assert_eq!(list.as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_volume_mesh_is_checked_and_fetched_like_its_object() {
+    let h = harness();
+    let cube = h.upload(RV_TOKEN, &cube_stl()).await;
+    let cut_stl = box_stl(6.0);
+    let cut = sha256_hex(&cut_stl);
+    let mut req = plate(&cube);
+    req["plate"]["objects"][0]["volumes"] = json!([{ "name": "Cut", "role": "negative", "mesh": cut }]);
+    let (s, body) = h
+        .json(
+            Method::POST,
+            "/v1/jobs",
+            RV_TOKEN,
+            Some(json!({ "request": req })),
+        )
+        .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST, "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains(&format!("mesh {cut} has not been uploaded"))
+    );
+
+    let mut bad = plate(&cube);
+    bad["plate"]["objects"][0]["volumes"] = json!([{ "role": "negative", "mesh": "../cut.stl" }]);
+    let (s, body) = h
+        .json(
+            Method::POST,
+            "/v1/jobs",
+            RV_TOKEN,
+            Some(json!({ "request": bad })),
+        )
+        .await;
+    assert_eq!(
+        s,
+        StatusCode::BAD_REQUEST,
+        "a volume names an upload, never a path: {body}"
+    );
+
+    h.upload(RV_TOKEN, &cut_stl).await;
+    let (s, job) = h
+        .json(
+            Method::POST,
+            "/v1/jobs",
+            RV_TOKEN,
+            Some(json!({ "name": "Cube", "request": req })),
+        )
+        .await;
+    assert_eq!(s, StatusCode::ACCEPTED, "{job}");
+    let id = job["id"].as_str().unwrap().to_owned();
+    h.work().await;
+    let (_, job) = h
+        .json(Method::GET, &format!("/v1/jobs/{id}"), RV_TOKEN, None)
+        .await;
+    assert_eq!(job["status"], "succeeded", "{job}");
+    assert_eq!(job["result"]["layerCount"], 100);
 }
 
 #[tokio::test]
