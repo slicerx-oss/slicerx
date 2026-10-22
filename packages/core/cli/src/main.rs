@@ -930,7 +930,8 @@ fn layered_config(
         if sets_chamber(&mesh.settings) {
             chamber_from = Some("project");
         }
-        report.merge(read_config_value(&mut config, &mesh.settings)?);
+        let own = sx_core::api::with_bambu_tower_keys(&mesh.settings);
+        report.merge(read_config_value(&mut config, &own)?);
         if let Some(g) = sx_core::api::WallsNote::named(m) {
             report.walls = Some(sx_core::api::WallsNote {
                 text: format!("{g} walls, set by the object's own settings"),
