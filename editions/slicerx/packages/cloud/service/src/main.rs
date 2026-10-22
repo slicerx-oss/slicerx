@@ -165,6 +165,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             trust_forwarded: env("SX_CLOUD_TRUST_FORWARDED").as_deref() == Some("1"),
         });
         let routes = if slicing { router(app) } else { status_router(app) };
+        // The apps' own pages may call it from a browser engine: the desktop webview and the web app.
+        let origins = sx_cloud::cors::allowed_origins(edition.apps.web.origin.as_deref());
+        eprintln!("sx-cloud: browser pages allowed from {}", origins.join(", "));
+        let routes = sx_cloud::cors::with_cors(routes, origins);
         // Every request but the platform's health check counts as activity.
         let routes = routes.layer(axum::middleware::from_fn(
             |req: axum::extract::Request, next: axum::middleware::Next| async move {

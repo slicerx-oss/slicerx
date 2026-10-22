@@ -873,3 +873,93 @@ fn plate_progress_reaches_the_end_with_the_real_slicer() {
         progress.fraction()
     );
 }
+
+/// One request with an `Origin`, as a browser page sends it; returns the status and the CORS headers.
+async fn from_origin(
+    app: &Router,
+    method: Method,
+    uri: &str,
+    origin: &str,
+    preflight: bool,
+) -> (StatusCode, axum::http::HeaderMap) {
+    let mut req = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("origin", origin);
+    req = if preflight {
+        req.header("access-control-request-method", "PUT").header(
+            "access-control-request-headers",
+            "authorization, content-type, content-encoding",
+        )
+    } else {
+        req.header("authorization", format!("Bearer {RV_TOKEN}"))
+    };
+    let res = app
+        .clone()
+        .oneshot(req.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    (res.status(), res.headers().clone())
+}
+
+#[tokio::test]
+async fn only_the_app_pages_get_cors_headers() {
+    let h = harness();
+    let web = "https://studio.example";
+    let app = sx_cloud::cors::with_cors(
+        h.app.clone(),
+        sx_cloud::cors::allowed_origins(Some("https://studio.example/studio/")),
+    );
+    let mesh = format!("/v1/meshes/{}", "a".repeat(64));
+    for origin in [
+        "tauri://localhost",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        web,
+    ] {
+        let (s, hd) = from_origin(&app, Method::OPTIONS, &mesh, origin, true).await;
+        assert_eq!(s, StatusCode::NO_CONTENT, "{origin}");
+        assert_eq!(hd["access-control-allow-origin"], origin);
+        let allow = hd["access-control-allow-headers"].to_str().unwrap();
+        for need in ["authorization", "content-type", "content-encoding"] {
+            assert!(allow.contains(need), "{origin}: {allow}");
+        }
+        assert!(
+            hd["access-control-allow-methods"]
+                .to_str()
+                .unwrap()
+                .contains("PUT")
+        );
+        assert!(
+            hd.get("access-control-allow-credentials").is_none(),
+            "bearer auth, no credentials mode"
+        );
+
+        let (s, hd) = from_origin(&app, Method::GET, "/v1/access", origin, false).await;
+        assert_eq!(s, StatusCode::OK, "{origin}");
+        assert_eq!(hd["access-control-allow-origin"], origin);
+        assert!(hd.get("access-control-allow-credentials").is_none());
+    }
+    for origin in [
+        "https://evil.example",
+        "null",
+        "http://127.0.0.1:4891",
+        "https://studio.example.evil.example",
+    ] {
+        let (_, hd) = from_origin(&app, Method::OPTIONS, &mesh, origin, true).await;
+        assert!(
+            !hd.keys().any(|k| k.as_str().starts_with("access-control-")),
+            "preflight from {origin}: {hd:?}"
+        );
+        let (s, hd) = from_origin(&app, Method::GET, "/v1/access", origin, false).await;
+        assert_eq!(
+            s,
+            StatusCode::OK,
+            "the request itself still runs; only the page cannot read it"
+        );
+        assert!(
+            !hd.keys().any(|k| k.as_str().starts_with("access-control-")),
+            "request from {origin}: {hd:?}"
+        );
+    }
+}
