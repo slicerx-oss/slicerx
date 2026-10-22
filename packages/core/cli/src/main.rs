@@ -940,7 +940,11 @@ fn layered_config(
         }
     }
     if let Some(p) = flag(args, "--config") {
-        let value: Value = serde_json::from_slice(&std::fs::read(p)?)?;
+        let mut value: Value = serde_json::from_slice(&std::fs::read(p)?)?;
+        // A Bambu Studio preset names its prime tower keys its own way.
+        if let Some(m) = value.as_object_mut() {
+            sx_core::api::bambu_tower_keys(m);
+        }
         if sets_chamber(&value) {
             chamber_from = Some("preset");
         }
