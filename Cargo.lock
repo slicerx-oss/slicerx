@@ -5575,6 +5575,7 @@ version = "0.2.0"
 dependencies = [
  "async-trait",
  "axum",
+ "flate2",
  "http-body-util",
  "reqwest",
  "rustls",
