@@ -1621,6 +1621,104 @@ fn a_project_slices_with_its_painted_ears_and_layer_marks() {
     assert!(marked.contains(";TYPE:Brim"), "the painted ears are not printed");
     assert_eq!(marked.matches("M601").count(), 1, "the pause is not written once");
 }
+
+/// The layers (from 0) on which `gcode` writes the line `text`.
+fn layers_with(gcode: &str, text: &str) -> Vec<usize> {
+    let mut layer: Option<usize> = None;
+    let mut at = Vec::new();
+    for l in gcode.lines() {
+        if l.starts_with(";LAYER_CHANGE") || l.starts_with("; CHANGE_LAYER") {
+            layer = Some(layer.map_or(0, |n| n + 1));
+        } else if l.trim() == text
+            && let Some(n) = layer
+        {
+            at.push(n);
+        }
+    }
+    at
+}
+
+/// `sx slice project.3mf` writes the pause and the color change a project marks on its plate's layers on the layers
+/// `sx slice --request` writes them with the same project as its mesh, on a Bambu Lab A1 and on Klipper. A request's
+/// own `layerGcode` goes in instead of the project's marks.
+#[test]
+fn a_project_slice_writes_its_layer_marks_where_a_request_does() {
+    let dir = temp_dir(format!("sx-cli-plain-marks-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // A pause on the layer that reaches 2 mm and a color change on the one that reaches 6 mm, on 0.2 mm layers.
+    let marks = r##"<?xml version="1.0"?><custom_gcodes_per_layer><plate><plate_info id="1"/><layer top_z="2.0" type="1" extruder="1" color="" extra="" gcode="M601"/><layer top_z="6.0" type="0" extruder="1" color="#00FF00" extra="" gcode="M600"/></plate></custom_gcodes_per_layer>"##;
+    let project = dir.join("marked.3mf");
+    std::fs::write(
+        &project,
+        box_3mf_with(None, &[("Metadata/custom_gcode_per_layer.xml", marks)]),
+    )
+    .unwrap();
+    let by_request = |config: &serde_json::Value, options: serde_json::Value, name: &str| {
+        let out_dir = dir.join(format!("out-{name}"));
+        let req = serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": {"p": project},
+            "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+            "config": config,
+            "options": options,
+        });
+        let request = dir.join(format!("request-{name}.json"));
+        std::fs::write(&request, req.to_string()).unwrap();
+        let out = sx()
+            .args(["slice", "--request"])
+            .arg(&request)
+            .arg("--out-dir")
+            .arg(&out_dir)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap()
+    };
+    // The A1 with its own pause text; Klipper with none, so the pause is M601.
+    let mut a1 = bambu_a1();
+    a1["machine_pause_gcode"] = "M400 U1".into();
+    for (name, printer, pause, change) in [
+        ("a1", a1, "M400 U1", "M600"),
+        ("klipper", klipper(), "M601", "M600"),
+    ] {
+        let mut config = printer;
+        for (k, v) in [
+            ("layer_height", 0.2),
+            ("initial_layer_print_height", 0.2),
+            ("skirt_loops", 0.0),
+        ] {
+            config[k] = v.into();
+        }
+        let plain = plain_slice(&dir, &project, &config, &[]);
+        let request = by_request(&config, serde_json::json!({"emitGcode": true}), name);
+        assert_eq!(layers_with(&plain, pause), [9], "{name}: pause");
+        assert_eq!(layers_with(&plain, change), [29], "{name}: color change");
+        assert_eq!(
+            layers_with(&request, pause),
+            layers_with(&plain, pause),
+            "{name}: pause"
+        );
+        assert_eq!(
+            layers_with(&request, change),
+            layers_with(&plain, change),
+            "{name}: color change"
+        );
+        let own = by_request(
+            &config,
+            serde_json::json!({"emitGcode": true, "layerGcode": [{"zMm": 4.0, "kind": "pause"}]}),
+            &format!("{name}-own"),
+        );
+        assert_eq!(layers_with(&own, pause), [19], "{name}: the request's own pause");
+        assert!(
+            layers_with(&own, change).is_empty(),
+            "{name}: the project's color change went in with the request's own marks"
+        );
+    }
+}
 /// The first layer's brim runs of `gcode` as bounding boxes, and the box of its outer wall.
 fn first_brim(gcode: &str) -> (Vec<[f64; 4]>, [f64; 4]) {
     let num = |l: &str, k: char| -> Option<f64> {

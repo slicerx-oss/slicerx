@@ -1398,10 +1398,17 @@ fn emit_shard(
     Ok(stats)
 }
 
-/// The request's layer G-code on the session's layers. An entry by height goes on the first layer whose top
-/// reaches it (the last layer when none does), and of several by height on one layer the last one stays, as a
+/// Layer G-code (a request's `layerGcode`, or the marks [`load_3mf_layer_gcode`] reads from a project) on the
+/// session's layers, as [`crate::EmitOptions::layer_gcode`] takes it. An entry by height goes on the first layer whose
+/// top reaches it (the last layer when none does), and of several by height on one layer the last one stays, as a
 /// layer holds one mark; entries by layer index are kept as given and come first.
-fn layer_gcode(specs: &[LayerGcodeSpec], session: &SliceSession) -> Result<Vec<crate::gcode::LayerGcode>> {
+///
+/// # Errors
+/// [`Error::Config`] for an entry with neither a layer nor a height, or with a negative height.
+pub fn layer_gcode(
+    specs: &[LayerGcodeSpec],
+    session: &SliceSession,
+) -> Result<Vec<crate::gcode::LayerGcode>> {
     let bad = |i: usize, reason: &str| Error::Config {
         key: "options.layerGcode",
         reason: format!("entry {i} {reason}"),
