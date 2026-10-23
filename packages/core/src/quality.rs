@@ -522,9 +522,17 @@ pub(crate) fn overhang_speed_on(cfg: &crate::config::PrintConfig) -> bool {
     crate::tower::flag_or(cfg, "enable_overhang_speed", true)
 }
 
-/// A speed setting that may be a percent of the wall speed: mm/s, or minus the percent.
+/// A speed setting that may be a percent of the wall speed: mm/s, or minus the percent. A list (one value per
+/// extruder, as Bambu Lab profiles write it) gives its first value, which [`PrintConfig::for_extruder`] makes the
+/// extruder's own.
+///
+/// [`PrintConfig::for_extruder`]: crate::config::PrintConfig::for_extruder
 fn speed_or_percent(cfg: &crate::config::PrintConfig, key: &str) -> f64 {
-    match cfg.raw.get(key) {
+    let value = match cfg.raw.get(key) {
+        Some(serde_json::Value::Array(a)) => a.first(),
+        other => other,
+    };
+    match value {
         Some(serde_json::Value::String(t)) if t.trim().ends_with('%') => -t
             .trim()
             .trim_end_matches('%')
@@ -591,7 +599,8 @@ pub(crate) struct Stretch {
 
 impl Context {
     /// The speed of each stretch of a path (Orca `estimate_extrusion_quality` and the speed rules of
-    /// `GCode::_extrude`), or None when no stretch differs from `speed` by more than 1 mm/s.
+    /// `GCode::_extrude`), or None when no stretch differs from `speed` by more than 1 mm/s and none needs
+    /// the overhang fan.
     /// `outer` tells an outer wall (reference speed the outer wall's) from the other walls and bridges.
     #[allow(
         clippy::cast_possible_truncation,
@@ -747,9 +756,20 @@ impl Context {
                     .min(1.0 - (next.distance + artificial) * width_inv),
             );
         }
+        // The overhang fan runs over a stretch whose both ends overhang past the threshold (Orca `_extrude`:
+        // `pre_fan_enabled && cur_fan_enabled`).
+        let limit = self
+            .fan_overlap
+            .get(usize::from(tool.max(1) - 1))
+            .copied()
+            .flatten();
+        let fan_at = |i: usize| limit.is_some_and(|l| overlaps.get(i).is_some_and(|&o| o <= l));
+        // A path keeps its speed and its fan when no stretch slows and none needs the overhang fan. A wall whose
+        // overhang speeds equal its own speed still gets the fan where it hangs past the threshold.
         if !point_speeds
             .iter()
             .any(|s| (f64::from(*s) - f64::from(speed)).abs() > 1.0)
+            && !(1..ext.len()).any(|i| fan_at(i - 1) && fan_at(i))
         {
             return None;
         }
@@ -759,14 +779,6 @@ impl Context {
         let mut last_set = *point_speeds.first()?;
         let mut out = Vec::with_capacity(ext.len());
         let mut prev = first;
-        // The overhang fan runs over a stretch whose both ends overhang past the threshold (Orca `_extrude`:
-        // `pre_fan_enabled && cur_fan_enabled`).
-        let limit = self
-            .fan_overlap
-            .get(usize::from(tool.max(1) - 1))
-            .copied()
-            .flatten();
-        let fan_at = |i: usize| limit.is_some_and(|l| overlaps.get(i).is_some_and(|&o| o <= l));
         for (i, to) in ext.iter().enumerate().skip(1) {
             if norm(to.x - prev.x, to.y - prev.y) < EPSILON {
                 continue;
@@ -880,6 +892,61 @@ mod tests {
         let (bridge, early) = (fan_from(Some(0.05)).unwrap(), fan_from(Some(0.9)).unwrap());
         assert!(early < bridge, "{early} {bridge}");
         assert!(fan_from(None).is_none());
+    }
+
+    #[test]
+    fn overhang_speeds_read_from_a_list_of_one_per_extruder() {
+        // Bambu Lab profiles write each overhang speed as a list, one value per extruder.
+        let mut cfg = crate::config::PrintConfig::default();
+        for (k, v) in [
+            ("overhang_1_4_speed", serde_json::json!(["0"])),
+            ("overhang_2_4_speed", serde_json::json!(["50"])),
+            ("overhang_3_4_speed", serde_json::json!(["30%", "40%"])),
+            ("overhang_4_4_speed", serde_json::json!([10])),
+        ] {
+            cfg.raw.insert(k.into(), v);
+        }
+        let c = Context::new(&cfg, std::sync::Arc::new(Support::new(&Vec::new())), None, 0.2);
+        assert_eq!(c.overhang, [0.0, 50.0, -30.0, 10.0]);
+    }
+
+    /// A 0.42 mm outer wall along x = `x` with the layer below ending at x = 10, as a wedge's leaning side prints
+    /// it: the bead hangs `x + 0.21 - 10` mm past the edge.
+    fn leaning_wall(c: &Context, x: f64) -> Vec<Stretch> {
+        let wall = [(x, 1.0), (x, 9.0)];
+        c.speeds(&wall, 0.42, 0.08, 200.0, true, 1)
+            .map(|(_, st)| st)
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_wall_leaning_past_half_its_bead_gets_the_overhang_fan() {
+        let mut c = ctx(&square(0.0, 0.0, 10.0, 10.0));
+        c.fan_overlap = vec![fan_overlap_limit("50%")];
+        // 45 degrees at 0.2 mm layers: 0.200 mm past the edge, 48% of the bead. Slower, no fan.
+        let at45 = leaning_wall(&c, 10.0 + 0.2 - 0.21);
+        assert!(at45.iter().all(|s| s.speed < 200.0 && !s.fan), "{at45:?}");
+        // 50 degrees: 0.238 mm, 57%. Slower than overhang_2_4_speed, and the fan runs.
+        let at50 = leaning_wall(&c, 10.0 + 0.238 - 0.21);
+        assert!(at50.iter().all(|s| s.speed <= 50.0 && s.fan), "{at50:?}");
+    }
+
+    #[test]
+    fn the_overhang_fan_runs_when_the_overhang_speeds_change_nothing() {
+        // Overhang speeds off (0 keeps the wall's speed) and the bridge speed the wall's: no stretch slows, but
+        // the bead still hangs past the threshold.
+        let mut c = ctx(&square(0.0, 0.0, 10.0, 10.0));
+        c.overhang = [0.0; 4];
+        c.bridge_speed = 200.0;
+        c.fan_overlap = vec![fan_overlap_limit("50%")];
+        let st = leaning_wall(&c, 10.0 + 0.238 - 0.21);
+        assert!(
+            !st.is_empty() && st.iter().all(|s| s.speed == 200.0 && s.fan),
+            "{st:?}"
+        );
+        // With the fan threshold off the path is left as it is.
+        c.fan_overlap = vec![None];
+        assert!(leaning_wall(&c, 10.0 + 0.238 - 0.21).is_empty());
     }
 
     #[test]
