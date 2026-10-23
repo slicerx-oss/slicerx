@@ -96,15 +96,15 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     // A slice canceled while its plan runs goes no further; the plan stops unless the next slice takes it over.
     const planned = smart !== 'off' && !s.calibration[s.activePlate] ? await (await import('../plate/smart-layer')).planSmartLayers(toPrint, config, smart, abort.signal).catch(() => null) : null
     abort.signal.throwIfAborted()
-    // A project's settings by height: range keys by object, and layer height ranges as the plate's layer tops.
-    const { heightRangesOf, rangeLayerTops } = await import('../plate/layer-ranges')
-    const cfg = config as Record<string, unknown>
-    const rangeTops = smart === 'off' && !s.calibration[s.activePlate] ? rangeLayerTops(toPrint, Number(cfg['initial_layer_print_height'] ?? 0.2), Number(cfg['layer_height'] ?? 0.2)) : null
-    const heightRanges = [...(s.calibration[s.activePlate]?.ranges ?? []), ...heightRangesOf(toPrint)]
     // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan.
-    const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : (planned ?? rangeTops)
+    const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : planned
     // The engine warns about layer heights objects set for themselves only when it plans the layers; these tops are the app's.
     const replaces = planned && layerTopsMm === planned ? smartLayerWarning(s) : null
+    // A project's settings by height: range keys by object, and with no other plan, the layer heights by height the
+    // engine plans the plate's layers from.
+    const { heightRangesOf } = await import('../plate/layer-ranges')
+    const byRanges = smart === 'off' && !s.calibration[s.activePlate] && !layerTopsMm
+    const heightRanges = [...(s.calibration[s.activePlate]?.ranges ?? []), ...heightRangesOf(toPrint, { layerHeights: byRanges })]
     // Marks from the layer slider (pause, color change, custom G-code) go by height: the engine places them on its own
     // layers, so a plate whose layer plan only the engine knows (sleipnir color bands) slices once.
     const marks = get().layerMarks[s.activePlate] ?? []

@@ -1409,9 +1409,10 @@ fn z_heights(gcode: &str) -> Vec<f64> {
 
 /// A height range's own layer height plans the layers, as the app plans them: on the 20 mm box at 0.2 mm, a range of
 /// 0.1 mm layers from 5 to 10 mm gives 0.2 mm layers up to 5 mm, 0.1 mm layers from there to 10 mm and 0.2 mm layers
-/// to the top, 125 in all, with `sx slice project.3mf` and with a request whose mesh is the project. They are the
-/// layers of a request that sends the app's layer tops for the same project (`options.layerTopsMm`, what the app
-/// sends for it), and the range's layer height gets no note.
+/// to the top, 125 in all, with `sx slice project.3mf`, with a request whose mesh is the project and with the app's
+/// request for it (the range's layer height in `options.heightRanges`). They are the layers of a request that sends
+/// the tops the app planned for the same project before (`options.layerTopsMm`), and the range's layer height gets
+/// no note.
 #[test]
 fn a_height_ranges_layer_height_plans_the_layers_as_the_app_does() {
     let dir = temp_dir(format!("sx-cli-range-layer-height-{}", std::process::id()));
@@ -1460,11 +1461,19 @@ fn a_height_ranges_layer_height_plans_the_layers_as_the_app_does() {
         };
         assert!((step - want).abs() < 1e-9, "layer from {bottom} mm is {step} mm");
     }
-    // A request whose mesh is the project, and one that sends the app's tops for the project without its ranges.
+    // A request whose mesh is the project, the app's request (the range's layer height by height), and one that sends
+    // the app's former tops for the project without its ranges.
     let plain = dir.join("plain.3mf");
     std::fs::write(&plain, bambu_box_3mf(false, &settings, 1, Own::Object(&[]))).unwrap();
     for (name, mesh, options) in [
         ("project", &path, serde_json::json!({"emitGcode": true})),
+        (
+            "app ranges",
+            &plain,
+            serde_json::json!({"emitGcode": true, "heightRanges": [
+                {"zFromMm": 5.0, "zToMm": 10.0, "settings": {"layer_height": 0.1}, "objects": ["p"]}
+            ]}),
+        ),
         (
             "app tops",
             &plain,

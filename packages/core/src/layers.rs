@@ -274,6 +274,10 @@ pub struct RangeLayerHeight {
 /// The note for a plate whose printed objects change layer height at different heights.
 pub(crate) const LAYER_HEIGHTS_DIFFER: &str = "objects on this plate change layer height at different heights (height ranges); layers are plate-wide, so the plate keeps one layer height";
 
+/// The note for a request whose height ranges set a layer height while its layer tops come from elsewhere.
+pub(crate) const RANGE_LAYER_HEIGHT_UNUSED: &str =
+    "layer_height in a height range is not applied: the request's layer tops or sleipnir set the layers";
+
 /// Layers thinner than this at the top of a range plan join the layer below them, mm.
 const RANGE_SLIVER_MM: f64 = 0.04;
 
@@ -283,8 +287,8 @@ const RANGE_SLIVER_MM: f64 = 0.04;
 /// [`RANGE_SLIVER_MM`] under the top reaches the top instead, and a last layer thinner than that joins the one below
 /// it. Tops are rounded to a micron. `None` without ranges, or when the plate is no taller than its first layer.
 ///
-/// This is the app's plan for a project's layer height ranges (`rangeLayerTops` in the app's plate code), step for
-/// step, so a project slices with the same layers in the app and with `sx slice`.
+/// The app sends a project's layer height ranges in its request's height ranges and leaves the plan to this, so a
+/// project slices with the same layers in the app and with `sx slice`.
 #[must_use]
 pub fn range_layer_tops(
     ranges: &[RangeLayerHeight],
@@ -337,24 +341,108 @@ pub(crate) enum RangeTops {
     Differ,
 }
 
-/// The layer tops a plate's layer height ranges give it: every printed object (one with triangles) must have the same
-/// ranges, and the plan runs to the top of the highest one. The app plans a plate the same way.
-pub(crate) fn plate_range_tops(plate: &crate::Plate, first_layer: f64, layer_height: f64) -> RangeTops {
+/// A height range's own layer height (`layer_height` in its settings), mm, when it sets one.
+fn layer_height_of(r: &crate::HeightRange) -> Option<&serde_json::Value> {
+    r.settings.get("layer_height")
+}
+
+/// The ranges `ranges` without their `layer_height`, which plans the plate's layers ([`plate_range_tops`]) rather than
+/// changing a setting by height; a range left with no settings is dropped. The second value is true when a range sets
+/// a layer height. A range's layer height must be a number above 0, its heights must ascend, and the objects it names
+/// must be on `plate`.
+pub(crate) fn without_layer_heights<'a>(
+    plate: &crate::Plate,
+    ranges: &'a [crate::HeightRange],
+) -> crate::Result<(std::borrow::Cow<'a, [crate::HeightRange]>, bool)> {
+    if !ranges.iter().any(|r| layer_height_of(r).is_some()) {
+        return Ok((std::borrow::Cow::Borrowed(ranges), false));
+    }
+    let bad = |reason: String| crate::Error::Config {
+        key: "options.heightRanges",
+        reason,
+    };
+    let mut out = Vec::with_capacity(ranges.len());
+    for (i, r) in ranges.iter().enumerate() {
+        let Some(h) = layer_height_of(r) else {
+            out.push(r.clone());
+            continue;
+        };
+        if !h.as_f64().is_some_and(|h| h.is_finite() && h > 0.0) {
+            return Err(bad(format!(
+                "range {i}: layer_height must be a number above 0 mm"
+            )));
+        }
+        if !(r.z_from_mm.is_finite() && r.z_to_mm.is_finite() && r.z_from_mm < r.z_to_mm) {
+            return Err(bad(format!("range {i} needs zFromMm below zToMm")));
+        }
+        if let Some(id) = r
+            .objects
+            .iter()
+            .find(|id| !plate.objects.iter().any(|o| o.id == **id))
+        {
+            return Err(bad(format!(
+                "range {i} names object {id}, which is not on the plate"
+            )));
+        }
+        let mut settings = r.settings.clone();
+        if let Some(m) = settings.as_object_mut() {
+            m.remove("layer_height");
+            if m.is_empty() {
+                continue;
+            }
+        }
+        out.push(crate::HeightRange {
+            settings,
+            ..r.clone()
+        });
+    }
+    Ok((std::borrow::Cow::Owned(out), true))
+}
+
+/// The layer heights by height of plate object `o`: its project file's ([`crate::Mesh::layer_heights`]), then those of
+/// the ranges `ranges` that apply to it (every object's, or its own by id), in order.
+fn object_layer_heights(
+    o: &crate::plate::PlateObject,
+    ranges: &[crate::HeightRange],
+) -> Vec<RangeLayerHeight> {
+    let own = ranges
+        .iter()
+        .filter(|r| r.objects.is_empty() || r.objects.contains(&o.id))
+        .filter_map(|r| {
+            layer_height_of(r)
+                .and_then(serde_json::Value::as_f64)
+                .map(|height_mm| RangeLayerHeight {
+                    z_from_mm: r.z_from_mm,
+                    z_to_mm: r.z_to_mm,
+                    height_mm,
+                })
+        });
+    o.mesh.layer_heights.iter().copied().chain(own).collect()
+}
+
+/// The layer tops a plate's layer height ranges give it: those of its objects' project files and the `layer_height`
+/// of the request's height ranges `ranges`. Every printed object (one with triangles) must have the same ranges, and
+/// the plan runs to the top of the highest one. The app sends a project's ranges this way and lets this plan them.
+pub(crate) fn plate_range_tops(
+    plate: &crate::Plate,
+    ranges: &[crate::HeightRange],
+    first_layer: f64,
+    layer_height: f64,
+) -> RangeTops {
     let printed: Vec<&crate::plate::PlateObject> = plate
         .objects
         .iter()
         .filter(|o| o.mesh.parts.iter().any(|p| !p.triangles.is_empty()))
         .collect();
-    let Some(first) = printed.first() else {
+    let heights: Vec<Vec<RangeLayerHeight>> =
+        printed.iter().map(|o| object_layer_heights(o, ranges)).collect();
+    let Some(first) = heights.first() else {
         return RangeTops::None;
     };
-    if printed.iter().all(|o| o.mesh.layer_heights.is_empty()) {
+    if heights.iter().all(Vec::is_empty) {
         return RangeTops::None;
     }
-    if printed
-        .iter()
-        .any(|o| o.mesh.layer_heights != first.mesh.layer_heights)
-    {
+    if heights.iter().any(|h| h != first) {
         return RangeTops::Differ;
     }
     let top = printed
@@ -367,8 +455,7 @@ pub(crate) fn plate_range_tops(plate: &crate::Plate, first_layer: f64, layer_hei
                 .map(|&v| o.apply(v)[2])
         })
         .fold(0.0_f64, f64::max);
-    range_layer_tops(&first.mesh.layer_heights, top, first_layer, layer_height)
-        .map_or(RangeTops::None, RangeTops::Tops)
+    range_layer_tops(first, top, first_layer, layer_height).map_or(RangeTops::None, RangeTops::Tops)
 }
 
 #[cfg(test)]
@@ -496,17 +583,89 @@ mod tests {
             plate
         };
         assert_eq!(
-            plate_range_tops(&two(block(3.0, &range), block(4.0, &range)), 0.2, 0.2),
+            plate_range_tops(&two(block(3.0, &range), block(4.0, &range)), &[], 0.2, 0.2),
             RangeTops::Tops(range_layer_tops(&range, 4.0, 0.2, 0.2).unwrap())
         );
         assert_eq!(
-            plate_range_tops(&two(block(3.0, &range), block(4.0, &[])), 0.2, 0.2),
+            plate_range_tops(&two(block(3.0, &range), block(4.0, &[])), &[], 0.2, 0.2),
             RangeTops::Differ
         );
         assert_eq!(
-            plate_range_tops(&two(block(3.0, &[]), block(4.0, &[])), 0.2, 0.2),
+            plate_range_tops(&two(block(3.0, &[]), block(4.0, &[])), &[], 0.2, 0.2),
             RangeTops::None
         );
+        // A request's height ranges carry the same layer heights: for every object, or for each by id.
+        let asked = |objects: &[&str]| crate::HeightRange {
+            z_from_mm: 1.0,
+            z_to_mm: 2.0,
+            settings: serde_json::json!({"layer_height": 0.1}),
+            objects: objects.iter().map(|&o| o.to_owned()).collect(),
+        };
+        let plain = two(block(3.0, &[]), block(4.0, &[]));
+        let want = RangeTops::Tops(range_layer_tops(&range, 4.0, 0.2, 0.2).unwrap());
+        assert_eq!(plate_range_tops(&plain, &[asked(&[])], 0.2, 0.2), want);
+        let id = plain.objects[0].id.clone();
+        assert_eq!(
+            plate_range_tops(&plain, &[asked(&[&id]), asked(&["b"])], 0.2, 0.2),
+            want
+        );
+        assert_eq!(
+            plate_range_tops(&plain, &[asked(&["b"])], 0.2, 0.2),
+            RangeTops::Differ
+        );
+        // A range without a layer height plans nothing.
+        let walls = crate::HeightRange {
+            settings: serde_json::json!({"wall_loops": 4}),
+            ..asked(&[])
+        };
+        assert_eq!(plate_range_tops(&plain, &[walls], 0.2, 0.2), RangeTops::None);
+    }
+
+    #[test]
+    fn a_ranges_layer_height_leaves_its_settings_for_the_plan() {
+        let plate = crate::Plate::single(crate::Mesh::default());
+        let range = |settings: serde_json::Value, objects: Vec<String>| crate::HeightRange {
+            z_from_mm: 1.0,
+            z_to_mm: 2.0,
+            settings,
+            objects,
+        };
+        let walls = range(serde_json::json!({"wall_loops": 4}), Vec::new());
+        let (same, any) = without_layer_heights(&plate, std::slice::from_ref(&walls)).unwrap();
+        assert!(!any);
+        assert!(matches!(same, std::borrow::Cow::Borrowed(_)));
+        let both = range(
+            serde_json::json!({"layer_height": 0.1, "wall_loops": 4}),
+            Vec::new(),
+        );
+        let only = range(serde_json::json!({"layer_height": 0.1}), Vec::new());
+        let asked = [both, only, walls.clone()];
+        let (left, any) = without_layer_heights(&plate, &asked).unwrap();
+        assert!(any);
+        assert_eq!(left.as_ref(), [walls.clone(), walls]);
+        for bad in [
+            range(serde_json::json!({"layer_height": "0.1"}), Vec::new()),
+            range(serde_json::json!({"layer_height": 0}), Vec::new()),
+            crate::HeightRange {
+                z_to_mm: 1.0,
+                ..range(serde_json::json!({"layer_height": 0.1}), Vec::new())
+            },
+            range(
+                serde_json::json!({"layer_height": 0.1}),
+                vec!["nowhere".to_owned()],
+            ),
+        ] {
+            assert!(
+                matches!(
+                    without_layer_heights(&plate, std::slice::from_ref(&bad)),
+                    Err(crate::Error::Config {
+                        key: "options.heightRanges",
+                        ..
+                    })
+                ),
+                "{bad:?}"
+            );
+        }
     }
 
     #[test]

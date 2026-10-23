@@ -1043,11 +1043,19 @@ impl SliceSession {
         by_ranges: bool,
     ) -> Result<Self> {
         use crate::layers::RangeTops;
+        // A range's layer height plans the layers below; the rest of its settings change by height.
+        let (own, asked) = crate::layers::without_layer_heights(plate, ranges)?;
         // Without tops of the caller's (a request's own, or sleipnir's when its config turns `smart_layer` on), a
-        // project's layer height ranges (`Mesh::layer_heights`) plan the layers, as the app plans them before it
-        // sends its request.
-        let by_range = if tops.is_none() && by_ranges {
-            crate::layers::plate_range_tops(plate, config.initial_layer_print_height, config.layer_height)
+        // project's layer height ranges (`Mesh::layer_heights`, and the `layer_height` of the request's ranges, which
+        // is how the app sends them) plan the layers.
+        let planned = tops.is_none() && by_ranges;
+        let by_range = if planned {
+            crate::layers::plate_range_tops(
+                plate,
+                ranges,
+                config.initial_layer_print_height,
+                config.layer_height,
+            )
         } else {
             RangeTops::None
         };
@@ -1055,7 +1063,14 @@ impl SliceSession {
             RangeTops::Tops(t) => Some(t.as_slice()),
             _ => tops,
         };
-        let mut session = par::slice(|| Self::build(plate, config, tops, ranges))?;
+        let mut session = par::slice(|| Self::build(plate, config, tops, &own))?;
+        if asked && !planned {
+            session.push_warning(SliceWarning {
+                code: WarningCode::UnsupportedSetting,
+                message: crate::layers::RANGE_LAYER_HEIGHT_UNUSED.to_owned(),
+                layer: None,
+            });
+        }
         if by_range == RangeTops::Differ {
             session.push_warning(SliceWarning {
                 code: WarningCode::UnsupportedSetting,
