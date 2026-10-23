@@ -12,7 +12,7 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 /// The page decay: how long freed pages stay mapped before jemalloc returns them to the system. 0 returns them at once,
 /// which gives the lowest peak memory. On macOS that costs no clear time (-1.9% to +3.0% wall against the system
-/// allocator). On Linux x86_64 it cost 16% to 19% wall, all of it system time spent returning pages, so Linux waits
+/// allocator). On Linux `x86_64` it cost 16% to 19% wall, all of it system time spent returning pages, so Linux waits
 /// 100 ms, which still holds far less than the system allocator.
 #[cfg(target_os = "linux")]
 const CONF: &CStr = c"dirty_decay_ms:100,muzzy_decay_ms:0";
