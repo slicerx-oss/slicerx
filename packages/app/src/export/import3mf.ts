@@ -495,6 +495,7 @@ async function scanWithGeom(bytes: Uint8Array): Promise<ScannedProject | undefin
     files,
     models: new Map(),
     marks,
+    ...(meta.get('Application')?.trim() ? { application: meta.get('Application')!.trim() } : {}),
     ...(g.doctype ? { markError: 'The 3MF declares a DTD, which is unsafe and not allowed in a 3MF package.' } : {}),
     geom: g,
     unzippedAt,
@@ -592,6 +593,22 @@ async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; ite
     })
   }
   return { plateCfg, items }
+}
+
+/**
+ * Bambu Studio reads a missing first layer travel acceleration as 500 mm/s2, not as a share of the travel acceleration
+ * (our default), so a project it wrote that lacks the key travels the first layer at 500. The same rule as the engine's
+ * project import (`sx slice <project.3mf>`): Bambu Studio is the model's `Application` metadata starting with
+ * `BambuStudio`. A project that has the key keeps its value, and projects from other apps are unchanged.
+ */
+export function withBambuFirstLayerTravel(settings: Record<string, unknown>, application: string | undefined): Record<string, unknown> {
+  if (!application?.startsWith('BambuStudio') || 'initial_layer_travel_acceleration' in settings) return settings
+  const out: Record<string, unknown> = { ...settings, initial_layer_travel_acceleration: ['500'] }
+  // A project that lists what it changed from its presets (and a nozzle the app has no profile for) applies only those:
+  // this one counts as changed, as Bambu Studio's own reading of a missing key is not the preset's.
+  const changed = settings['different_settings_to_system']
+  if (Array.isArray(changed) && typeof changed[0] === 'string') out['different_settings_to_system'] = [`${changed[0].replace(/;\s*$/, '')}${changed[0].trim() ? ';' : ''}initial_layer_travel_acceleration`, ...changed.slice(1)]
+  return out
 }
 
 /** The objects of a project scanned in TypeScript (project-scan.ts), for hosts without the geometry engine. */
@@ -814,7 +831,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     if (Array.isArray(settings['filament_colour'])) colors = settings['filament_colour'].filter((c): c is string => typeof c === 'string')
   }
   if (read.settings) {
-    settings = read.settings
+    settings = withBambuFirstLayerTravel(read.settings, scanned.application)
     if (Array.isArray(settings['filament_colour'])) colors = settings['filament_colour'].filter((c): c is string => typeof c === 'string')
   }
   // A 3MF that is no slicer's project (no project settings: a CAD export, a downloaded model) is placed the way Orca
