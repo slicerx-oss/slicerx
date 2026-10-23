@@ -155,6 +155,11 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .opening-picture figcaption { font-size: 12px; color: var(--muted); }
 @keyframes opening-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .opening-picture { animation: none; } }
+/* A STEP file being read: its name and Cancel, in the middle of the view, clear of the bars along its edges
+   (workspaces/step-reading-bar.tsx). */
+.step-reading { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 8px 8px 8px 16px; border-radius: var(--r-md); font-size: var(--fs-md); animation: opening-in 160ms ease-out; }
+.step-reading-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .step-reading { animation: none; } }
 .vp-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
 /* No ring around the whole view: the browser counts any key pressed in it (the plate keys) as keyboard focus. Only focus
    that Tab brought gets a faint inner edge (viewport-host.tsx). */
