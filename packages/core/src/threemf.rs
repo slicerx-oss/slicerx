@@ -67,6 +67,13 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
                             .to_owned(),
                     );
                 }
+                // Layers are plate-wide: a range's layer height plans them when every object has the same.
+                let heights = objects.first().map(|o| o.layer_heights.clone()).unwrap_or_default();
+                if objects.iter().all(|o| o.layer_heights == heights) {
+                    mesh.layer_heights = heights;
+                } else {
+                    mesh.notes.push(crate::layers::LAYER_HEIGHTS_DIFFER.to_owned());
+                }
                 for o in objects {
                     mesh.parts.extend(o.parts);
                     mesh.volumes.extend(o.volumes);
@@ -132,11 +139,6 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
         .read("Metadata/layer_config_ranges.xml")
         .map(|x| parse_layer_ranges(&x))
         .unwrap_or_default();
-    let layer_height = if ranges.is_empty() {
-        None
-    } else {
-        project_layer_height(zip.read("Metadata/project_settings.config").ok().as_deref())
-    };
     let numbers = object_numbers(main.build.iter().map(|i| i.object));
     for (item_no, item) in main.build.iter().enumerate() {
         let plate = plate_of.get(&item.object).copied().unwrap_or(1);
@@ -211,9 +213,9 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
             .object(item.object)
             .filter(|m| !m.is_empty())
             .map_or(serde_json::Value::Null, |m| serde_json::Value::Object(m.clone()));
-        let height_ranges = numbers
+        let (height_ranges, layer_heights) = numbers
             .get(&item.object)
-            .map(|&n| height_ranges_of(&ranges, n, layer_height, &mut notes))
+            .map(|&n| height_ranges_of(&ranges, n, &mut notes))
             .unwrap_or_default();
         plates.entry(plate).or_default().push(Mesh {
             name: own,
@@ -224,6 +226,7 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
             settings,
             brim_points: ears_of(&ears, item_no, &item.transform, scale),
             height_ranges,
+            layer_heights,
         });
     }
     if plates.is_empty() {
@@ -283,11 +286,6 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
         .as_deref()
         .map(|x| parse_layer_ranges(x.as_bytes()))
         .unwrap_or_default();
-    let layer_height = if ranges.is_empty() {
-        None
-    } else {
-        project_layer_height(project.files.project_settings.as_deref().map(str::as_bytes))
-    };
     let numbers = object_numbers(project.objects.iter().map(|o| o.id));
     for (item_no, o) in project.objects.into_iter().enumerate() {
         if !o.printable {
@@ -422,9 +420,9 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
         } else {
             serde_json::Value::Object(object)
         };
-        let height_ranges = numbers
+        let (height_ranges, layer_heights) = numbers
             .get(&o.id)
-            .map(|&n| height_ranges_of(&ranges, n, layer_height, &mut notes))
+            .map(|&n| height_ranges_of(&ranges, n, &mut notes))
             .unwrap_or_default();
         let own = if o.name.is_empty() {
             unnamed(item_no)
@@ -440,6 +438,7 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
             settings,
             brim_points,
             height_ranges,
+            layer_heights,
         });
     }
     if plates.is_empty() {
@@ -669,21 +668,21 @@ fn parse_layer_ranges(xml: &[u8]) -> Vec<FileRange> {
 
 /// The height ranges of the object numbered `number` in `ranges` ([`FileRange`]) that the engine applies, with the
 /// keys a height range can change ([`crate::config::RANGE_KEYS`], under our names or the older ones
-/// `crate::legacy` reads as ours). Every other key is named in `notes` once. Layers are plate-wide, so a range's
-/// layer height is left out: silently when it is the project's own (`layer_height`), with a note otherwise.
+/// `crate::legacy` reads as ours), and the ranges' own layer heights, which plan the plate's layers
+/// ([`crate::range_layer_tops`]). Every other key, and a layer height that is not a positive number, is named in
+/// `notes` once.
 fn height_ranges_of(
     ranges: &[FileRange],
     number: u32,
-    layer_height: Option<f64>,
     notes: &mut Vec<String>,
-) -> Vec<crate::HeightRange> {
+) -> (Vec<crate::HeightRange>, Vec<crate::RangeLayerHeight>) {
     use crate::config::RANGE_KEYS;
     let can_change = |k: &str| {
         let targets = crate::legacy::targets(k);
         RANGE_KEYS.contains(&k)
             || (!targets.is_empty() && targets.iter().all(|t| RANGE_KEYS.contains(&t.as_str())))
     };
-    let mut out = Vec::new();
+    let (mut out, mut heights) = (Vec::new(), Vec::new());
     for (_, lo, hi, options) in ranges.iter().filter(|r| r.0 == number) {
         let mut settings = serde_json::Map::new();
         for (k, v) in options {
@@ -691,13 +690,18 @@ fn height_ranges_of(
                 settings.insert(k.clone(), serde_json::Value::String(v.clone()));
                 continue;
             }
-            let same_height = k == "layer_height"
-                && v.parse::<f64>()
-                    .ok()
-                    .zip(layer_height)
-                    .is_some_and(|(a, b)| (a - b).abs() < 1e-6);
+            if k == "layer_height"
+                && let Some(h) = v.trim().parse::<f64>().ok().filter(|h| h.is_finite() && *h > 0.0)
+            {
+                heights.push(crate::RangeLayerHeight {
+                    z_from_mm: *lo,
+                    z_to_mm: *hi,
+                    height_mm: h,
+                });
+                continue;
+            }
             let line = format!("{k} is not applied by this engine (height range)");
-            if !same_height && !notes.contains(&line) {
+            if !notes.contains(&line) {
                 notes.push(line);
             }
         }
@@ -710,17 +714,7 @@ fn height_ranges_of(
             });
         }
     }
-    out
-}
-
-/// The layer height a project's own settings (`Metadata/project_settings.config`) give, when they give one.
-fn project_layer_height(settings: Option<&[u8]>) -> Option<f64> {
-    let v = project_settings_of(settings?).ok()??;
-    match v.get("layer_height")? {
-        serde_json::Value::Number(n) => n.as_f64(),
-        serde_json::Value::String(s) => s.trim().parse().ok(),
-        _ => None,
-    }
+    (out, heights)
 }
 
 /// The number the project's files give each object id: its place among the objects the build places, from 1.
@@ -2759,8 +2753,37 @@ mod tests {
             "{:?}",
             merged.notes
         );
-        // A layer height of the range's own is named, since layers are plate-wide.
+        // A range's layer height is kept for the layer plan, whatever the project's, and without a note.
         let items = &load_plate_objects(&with("0.1"), "p.3mf").unwrap()[0].1;
+        assert!(items[0].layer_heights.is_empty());
+        assert_eq!(
+            items[1].layer_heights,
+            [crate::RangeLayerHeight {
+                z_from_mm: 8.0,
+                z_to_mm: 14.0,
+                height_mm: 0.2,
+            }]
+        );
+        assert!(
+            !items[1].notes.iter().any(|n| n.starts_with("layer_height")),
+            "{:?}",
+            items[1].notes
+        );
+        // Objects with different layer heights are one layer height on a merged plate, with a note.
+        let merged = &load_plates(&with("0.1"), "p.3mf").unwrap()[0].1;
+        assert!(merged.layer_heights.is_empty());
+        assert!(
+            merged
+                .notes
+                .contains(&crate::layers::LAYER_HEIGHTS_DIFFER.to_owned()),
+            "{:?}",
+            merged.notes
+        );
+        // One that is not a positive number is named.
+        let bad = ranges.replace(">0.2</option>", ">0</option>");
+        let bytes = two_items_with(&[("Metadata/layer_config_ranges.xml", bad.as_str())]);
+        let items = &load_plate_objects(&bytes, "p.3mf").unwrap()[0].1;
+        assert!(items[1].layer_heights.is_empty());
         assert!(
             items[1]
                 .notes

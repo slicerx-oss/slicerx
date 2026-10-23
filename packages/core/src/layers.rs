@@ -262,9 +262,252 @@ pub(crate) fn merge_layers(object: &[(f64, f64)], support: &[(f64, f64)]) -> Vec
     out
 }
 
+/// A height range's own layer height (`layer_height` in a project's `Metadata/layer_config_ranges.xml`): the layers
+/// whose bottom lies in `z_from_mm..z_to_mm` above the bed are `height_mm` thick.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RangeLayerHeight {
+    pub z_from_mm: f64,
+    pub z_to_mm: f64,
+    pub height_mm: f64,
+}
+
+/// The note for a plate whose printed objects change layer height at different heights.
+pub(crate) const LAYER_HEIGHTS_DIFFER: &str = "objects on this plate change layer height at different heights (height ranges); layers are plate-wide, so the plate keeps one layer height";
+
+/// Layers thinner than this at the top of a range plan join the layer below them, mm.
+const RANGE_SLIVER_MM: f64 = 0.04;
+
+/// The layer tops of a plate whose objects share the layer heights `ranges`, up to the plate's top `top`, mm. The
+/// first layer keeps its own height `first_layer`. Above it each layer takes the height of the first range its bottom
+/// lies in, else `layer_height`, and ends at the top at most. A layer that would leave less than
+/// [`RANGE_SLIVER_MM`] under the top reaches the top instead, and a last layer thinner than that joins the one below
+/// it. Tops are rounded to a micron. `None` without ranges, or when the plate is no taller than its first layer.
+///
+/// This is the app's plan for a project's layer height ranges (`rangeLayerTops` in the app's plate code), step for
+/// step, so a project slices with the same layers in the app and with `sx slice`.
+#[must_use]
+pub fn range_layer_tops(
+    ranges: &[RangeLayerHeight],
+    top: f64,
+    first_layer: f64,
+    layer_height: f64,
+) -> Option<Vec<f64>> {
+    let usable = |h: f64| h.is_finite() && h > 0.0;
+    if ranges.is_empty()
+        || !top.is_finite()
+        || top <= first_layer
+        || !usable(first_layer)
+        || !usable(layer_height)
+        || ranges.iter().any(|r| !usable(r.height_mm))
+    {
+        return None;
+    }
+    let mut tops = vec![first_layer];
+    let mut z = first_layer;
+    while top - z > 1e-6 {
+        let h = ranges
+            .iter()
+            .find(|r| z + 1e-6 >= r.z_from_mm && z + 1e-6 < r.z_to_mm)
+            .map_or(layer_height, |r| r.height_mm);
+        let mut next = top.min(z + h);
+        if top - next < RANGE_SLIVER_MM && next < top {
+            next = top;
+        }
+        z = next;
+        tops.push((z * 1e6).round() / 1e6);
+    }
+    let n = tops.len();
+    if n > 2
+        && let [.., below, last] = tops.as_slice()
+        && last - below < RANGE_SLIVER_MM
+    {
+        tops.remove(n - 2);
+    }
+    Some(tops)
+}
+
+/// What a plate's layer height ranges ([`crate::Mesh::layer_heights`]) give its layer plan.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum RangeTops {
+    /// No printed object has a layer height range.
+    None,
+    /// The plate's layer tops ([`range_layer_tops`]).
+    Tops(Vec<f64>),
+    /// The printed objects change layer height at different heights, which plate-wide layers cannot follow.
+    Differ,
+}
+
+/// The layer tops a plate's layer height ranges give it: every printed object (one with triangles) must have the same
+/// ranges, and the plan runs to the top of the highest one. The app plans a plate the same way.
+pub(crate) fn plate_range_tops(plate: &crate::Plate, first_layer: f64, layer_height: f64) -> RangeTops {
+    let printed: Vec<&crate::plate::PlateObject> = plate
+        .objects
+        .iter()
+        .filter(|o| o.mesh.parts.iter().any(|p| !p.triangles.is_empty()))
+        .collect();
+    let Some(first) = printed.first() else {
+        return RangeTops::None;
+    };
+    if printed.iter().all(|o| o.mesh.layer_heights.is_empty()) {
+        return RangeTops::None;
+    }
+    if printed
+        .iter()
+        .any(|o| o.mesh.layer_heights != first.mesh.layer_heights)
+    {
+        return RangeTops::Differ;
+    }
+    let top = printed
+        .iter()
+        .flat_map(|o| {
+            o.mesh
+                .parts
+                .iter()
+                .flat_map(|p| p.positions.iter())
+                .map(|&v| o.apply(v)[2])
+        })
+        .fold(0.0_f64, f64::max);
+    range_layer_tops(&first.mesh.layer_heights, top, first_layer, layer_height)
+        .map_or(RangeTops::None, RangeTops::Tops)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tops from `from` (exclusive) to `to` (inclusive) every `step`, mm, rounded to a micron.
+    fn every(from: f64, to: f64, step: f64) -> Vec<f64> {
+        (1..=100_000)
+            .map(|i| ((from + f64::from(i) * step) * 1e6).round() / 1e6)
+            .take_while(|z| *z <= to + 1e-9)
+            .collect()
+    }
+
+    /// A 20 mm plate at 0.2 mm with a range of 0.1 mm layers from 5 to 10 mm: 0.2 mm layers up to 5 mm, 0.1 mm
+    /// layers from there to 10 mm (the range ends where a layer's bottom reaches it), then 0.2 mm to the top.
+    #[test]
+    fn a_range_layer_height_steps_its_layers() {
+        let range = [RangeLayerHeight {
+            z_from_mm: 5.0,
+            z_to_mm: 10.0,
+            height_mm: 0.1,
+        }];
+        let tops = range_layer_tops(&range, 20.0, 0.2, 0.2).unwrap();
+        let want: Vec<f64> = every(0.0, 5.0, 0.2)
+            .into_iter()
+            .chain(every(5.0, 10.0, 0.1))
+            .chain(every(10.0, 20.0, 0.2))
+            .collect();
+        assert_eq!(tops, want);
+        assert_eq!(tops.len(), 125);
+        // The plan the slice takes from them.
+        let plan = LayerPlan::from_tops(20.0, &tops, 0.04, 0.8).unwrap();
+        assert_eq!(plan.count(), 125);
+        assert!((plan.thickness(25) - 0.1).abs() < 1e-9);
+        assert!((plan.thickness(75) - 0.2).abs() < 1e-9);
+    }
+
+    /// A range that ends off the layer grid: the layer that starts inside it keeps its height and crosses its top,
+    /// the layers above take the base height from there, and the last one ends at the top.
+    #[test]
+    fn a_layer_starting_in_a_range_keeps_its_height() {
+        let range = [RangeLayerHeight {
+            z_from_mm: 1.0,
+            z_to_mm: 1.25,
+            height_mm: 0.15,
+        }];
+        let tops = range_layer_tops(&range, 2.0, 0.2, 0.2).unwrap();
+        assert_eq!(tops, [0.2, 0.4, 0.6, 0.8, 1.0, 1.15, 1.3, 1.5, 1.7, 1.9, 2.0]);
+    }
+
+    /// A layer that would leave a sliver under the top reaches the top instead; nothing to plan without ranges or
+    /// above the first layer.
+    #[test]
+    fn range_tops_end_at_the_top() {
+        let range = [RangeLayerHeight {
+            z_from_mm: 0.0,
+            z_to_mm: 1.0,
+            height_mm: 0.1,
+        }];
+        let tops = range_layer_tops(&range, 2.03, 0.2, 0.2).unwrap();
+        assert!(
+            matches!(tops.as_slice(), [.., below, last] if (below - 1.8).abs() < 1e-9 && (last - 2.03).abs() < 1e-9)
+        );
+        assert_eq!(range_layer_tops(&[], 2.0, 0.2, 0.2), None);
+        assert_eq!(range_layer_tops(&range, 0.2, 0.2, 0.2), None);
+    }
+
+    /// A plate plans by its ranges only when every printed object has the same; the plan runs to the highest top.
+    #[test]
+    fn a_plate_plans_by_ranges_its_objects_share() {
+        let block = |z: f32, heights: &[RangeLayerHeight]| {
+            let positions = vec![
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],
+                [10.0, 10.0, 0.0],
+                [0.0, 10.0, 0.0],
+                [0.0, 0.0, z],
+                [10.0, 0.0, z],
+                [10.0, 10.0, z],
+                [0.0, 10.0, z],
+            ];
+            let triangles = vec![
+                [0, 2, 1],
+                [0, 3, 2],
+                [4, 5, 6],
+                [4, 6, 7],
+                [0, 1, 5],
+                [0, 5, 4],
+                [1, 2, 6],
+                [1, 6, 5],
+                [2, 3, 7],
+                [2, 7, 6],
+                [3, 0, 4],
+                [3, 4, 7],
+            ];
+            crate::Mesh {
+                parts: vec![crate::MeshPart {
+                    name: "block".to_owned(),
+                    slot: 1,
+                    color: None,
+                    positions,
+                    triangles,
+                    paint: Vec::new(),
+                    support_paint: Vec::new(),
+                    seam_paint: Vec::new(),
+                    fuzzy_paint: Vec::new(),
+                    paint_texts: Vec::new(),
+                }],
+                layer_heights: heights.to_vec(),
+                ..crate::Mesh::default()
+            }
+        };
+        let range = [RangeLayerHeight {
+            z_from_mm: 1.0,
+            z_to_mm: 2.0,
+            height_mm: 0.1,
+        }];
+        let two = |a: crate::Mesh, b: crate::Mesh| {
+            let mut plate = crate::Plate::single(a);
+            let mut other = plate.objects[0].clone();
+            other.id = "b".to_owned();
+            other.mesh = std::sync::Arc::new(b);
+            plate.objects.push(other);
+            plate
+        };
+        assert_eq!(
+            plate_range_tops(&two(block(3.0, &range), block(4.0, &range)), 0.2, 0.2),
+            RangeTops::Tops(range_layer_tops(&range, 4.0, 0.2, 0.2).unwrap())
+        );
+        assert_eq!(
+            plate_range_tops(&two(block(3.0, &range), block(4.0, &[])), 0.2, 0.2),
+            RangeTops::Differ
+        );
+        assert_eq!(
+            plate_range_tops(&two(block(3.0, &[]), block(4.0, &[])), 0.2, 0.2),
+            RangeTops::None
+        );
+    }
 
     #[test]
     fn reference_plate_has_508_layers() {
