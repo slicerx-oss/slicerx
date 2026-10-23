@@ -210,20 +210,14 @@ pub fn handle(app: &AppHandle, items: Vec<String>) {
                 if !confirmed_download(&app, &name) {
                     return;
                 }
-                let found = app
-                    .path()
-                    .download_dir()
-                    .ok()
-                    .and_then(|dir| find_download(&dir, &sha, std::time::SystemTime::now()));
+                let found = match app.path().download_dir() {
+                    Ok(dir) => downloaded_model(&dir, &sha, &name, std::time::SystemTime::now()),
+                    Err(_) => Err(not_in_downloads(&name)),
+                };
                 match found {
-                    Some(path) => announce(&app, vec![register(&app, path)]),
-                    None => {
-                        let _ = app.emit(
-                            "sx-open-failed",
-                            format!(
-                                "{name} is not in your Downloads folder. Open it from where you saved it."
-                            ),
-                        );
+                    Ok(path) => announce(&app, vec![register(&app, path)]),
+                    Err(e) => {
+                        let _ = app.emit("sx-open-failed", e);
                     }
                 }
             });
@@ -284,8 +278,8 @@ fn download_link_for(scheme: &str, url: &str) -> Option<(String, String)> {
 const DOWNLOAD_WINDOW: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
 /// The model file in `dir` changed in the last ten minutes, no bigger than a link may fetch, whose content hashes to
-/// `sha`. A browser that renames a second copy ("name (1).sx3mf") is still found by its content.
-fn find_download(dir: &Path, sha: &str, now: std::time::SystemTime) -> Option<PathBuf> {
+/// `sha`, with its bytes. A browser that renames a second copy ("name (1).sx3mf") is still found by its content.
+fn find_download(dir: &Path, sha: &str, now: std::time::SystemTime) -> Option<(PathBuf, Vec<u8>)> {
     use sha2::{Digest, Sha256};
     let mut candidates: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(dir)
         .ok()?
@@ -303,12 +297,69 @@ fn find_download(dir: &Path, sha: &str, now: std::time::SystemTime) -> Option<Pa
         .collect();
     // newest first: the file the page just saved
     candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
-    candidates.into_iter().map(|(_, p)| p).find(|p| {
-        std::fs::read(p).is_ok_and(|bytes| {
-            let digest = Sha256::digest(&bytes);
-            digest.iter().map(|b| format!("{b:02x}")).collect::<String>() == sha
-        })
+    candidates.into_iter().find_map(|(_, p)| {
+        let bytes = std::fs::read(&p).ok()?;
+        let digest = Sha256::digest(&bytes);
+        (digest.iter().map(|b| format!("{b:02x}")).collect::<String>() == sha).then_some((p, bytes))
     })
+}
+
+fn not_in_downloads(name: &str) -> String {
+    format!("{name} is not in your Downloads folder. Open it from where you saved it.")
+}
+
+/// The page's download, held to what a link's own download is held to: it must be the file the dialog named and
+/// the model its name says (looks_like_mesh). A browser's numbered copy of the name counts as that name.
+fn downloaded_model(
+    dir: &Path,
+    sha: &str,
+    shown: &str,
+    now: std::time::SystemTime,
+) -> Result<PathBuf, String> {
+    let product = &crate::brand::get().name;
+    let (path, bytes) = find_download(dir, sha, now).ok_or_else(|| not_in_downloads(shown))?;
+    let found = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if !same_download_name(shown, found) {
+        return Err(format!(
+            "The file in your Downloads folder is not {shown}, so {product} did not open it."
+        ));
+    }
+    if !looks_like_mesh(found, &bytes) {
+        return Err(format!("{shown} is not a model {product} can read."));
+    }
+    Ok(path)
+}
+
+/// True when `found` is `shown`, or a copy a browser numbered because the name was taken: "clip (1).sx3mf"
+/// (Chrome, Edge), "clip(1).sx3mf" (Firefox), "clip 2.sx3mf" or "clip-2.sx3mf". The type must be the same.
+fn same_download_name(shown: &str, found: &str) -> bool {
+    let split = |n: &str| -> Option<(String, String)> {
+        let p = Path::new(n);
+        let stem = p.file_stem()?.to_str()?.to_lowercase();
+        let ext = p.extension()?.to_str()?.to_ascii_lowercase();
+        Some((stem, ext))
+    };
+    let (Some((want, want_ext)), Some((got, got_ext))) = (split(shown), split(found)) else {
+        return false;
+    };
+    if want_ext != got_ext {
+        return false;
+    }
+    if got == want {
+        return true;
+    }
+    let Some(rest) = got.strip_prefix(&want) else {
+        return false;
+    };
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let numbered = |s: &str| {
+        s.strip_prefix('(')
+            .and_then(|s| s.strip_suffix(')'))
+            .is_some_and(digits)
+    };
+    rest.strip_prefix(' ').is_some_and(|r| numbered(r) || digits(r))
+        || numbered(rest)
+        || rest.strip_prefix('-').is_some_and(digits)
 }
 
 /// A link may only fetch a model: STL, 3MF or SlicerX project.
@@ -748,7 +799,10 @@ mod tests {
             .map(|b| format!("{b:02x}"))
             .collect();
         let now = std::time::SystemTime::now();
-        assert_eq!(find_download(&dir, &sha, now), Some(dir.join("clip (1).sx3mf")));
+        assert_eq!(
+            find_download(&dir, &sha, now),
+            Some((dir.join("clip (1).sx3mf"), b"design".to_vec()))
+        );
         // an hour later the same file is too old to be the page's
         assert_eq!(
             find_download(&dir, &sha, now + std::time::Duration::from_secs(3600)),
@@ -756,6 +810,84 @@ mod tests {
         );
         assert_eq!(find_download(&dir, &"00".repeat(32), now), None);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn sha_of(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    fn downloads(tag: &str, files: &[(&str, &[u8])]) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("sx-download-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, bytes) in files {
+            std::fs::write(dir.join(name), bytes).unwrap();
+        }
+        dir
+    }
+
+    const PROJECT: &[u8] = b"PK\x03\x04....3D/3dmodel.model....";
+
+    #[test]
+    fn a_download_must_be_the_model_its_name_says() {
+        let not_a_mesh: &[u8] = b"these bytes are no model";
+        let dir = downloads("content", &[("clip (1).sx3mf", PROJECT), ("box.stl", not_a_mesh)]);
+        let now = std::time::SystemTime::now();
+        assert_eq!(
+            downloaded_model(&dir, &sha_of(PROJECT), "clip.sx3mf", now),
+            Ok(dir.join("clip (1).sx3mf"))
+        );
+        // the hash matches and the name is the one asked about, but the content is not the type its name says
+        let refused = downloaded_model(&dir, &sha_of(not_a_mesh), "box.stl", now).unwrap_err();
+        assert!(refused.contains("box.stl is not a model"), "{refused}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_download_must_be_the_file_the_dialog_named() {
+        let dir = downloads("name", &[("bracket.3mf", PROJECT)]);
+        let now = std::time::SystemTime::now();
+        let sha = sha_of(PROJECT);
+        assert_eq!(
+            downloaded_model(&dir, &sha, "bracket.3mf", now),
+            Ok(dir.join("bracket.3mf"))
+        );
+        // the content the hash names sits under another name, or another type, than the dialog showed
+        for shown in ["clip.3mf", "bracket.stl", "bracket.sx3mf"] {
+            let refused = downloaded_model(&dir, &sha, shown, now).unwrap_err();
+            assert!(refused.contains(&format!("is not {shown}")), "{refused}");
+        }
+        assert_eq!(
+            downloaded_model(&dir, &"00".repeat(32), "bracket.3mf", now),
+            Err(not_in_downloads("bracket.3mf"))
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_browser_numbered_copy_keeps_its_name() {
+        for found in [
+            "clip.sx3mf",
+            "Clip.SX3MF",
+            "clip (1).sx3mf",
+            "clip(2).sx3mf",
+            "clip 2.sx3mf",
+            "clip-12.sx3mf",
+        ] {
+            assert!(same_download_name("clip.sx3mf", found), "{found}");
+        }
+        for found in [
+            "clip.3mf",
+            "clipper.sx3mf",
+            "clip (x).sx3mf",
+            "clip ().sx3mf",
+            "clip-.sx3mf",
+            "my clip.sx3mf",
+            "clip (1) (2).sx3mf",
+        ] {
+            assert!(!same_download_name("clip.sx3mf", found), "{found}");
+        }
     }
 
     #[test]
