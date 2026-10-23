@@ -1972,3 +1972,156 @@ fn a_projects_chamber_cooling_mode_comes_from_its_filaments_or_its_settings() {
         "{err}"
     );
 }
+
+/// The P1S fixture's request with `offset` as its `extruder_offset` (left out for None) and the x-mark
+/// at plate X 128, Y `y`. Gives the exit status, the G-code and the error text.
+fn p1s_slice(
+    offset: Option<serde_json::Value>,
+    y: f64,
+    config: &[(&str, serde_json::Value)],
+) -> (bool, String, String) {
+    let mut req: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture("xmark-p1s-request.json")).unwrap()).unwrap();
+    req["meshes"]["m"] = serde_json::Value::String(format!(
+        "{}/../bench/models/x-mark.stl",
+        env!("CARGO_MANIFEST_DIR")
+    ));
+    req["plate"]["objects"][0]["transform"] =
+        serde_json::json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 128, y, 0, 1]);
+    let cfg = req["config"].as_object_mut().unwrap();
+    match offset {
+        Some(v) => cfg.insert("extruder_offset".to_owned(), v),
+        None => cfg.remove("extruder_offset"),
+    };
+    for (k, v) in config {
+        cfg.insert((*k).to_owned(), v.clone());
+    }
+    let dir = temp_dir(format!("sx-cli-offset-{}-{}", std::process::id(), rand_tag()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("request.json");
+    std::fs::write(&path, serde_json::to_vec(&req).unwrap()).unwrap();
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&path)
+        .arg("--out-dir")
+        .arg(dir.join("out"))
+        .output()
+        .unwrap();
+    let gcode = std::fs::read_to_string(dir.join("out").join("slice.gcode")).unwrap_or_default();
+    (
+        out.status.success(),
+        gcode,
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// The lines of a G-code file without its echo of `extruder_offset` and its `M73` progress lines, which sit at
+/// byte positions and so move when a number gets a digit longer or shorter.
+fn moves_and_text(gcode: &str) -> Vec<&str> {
+    gcode
+        .lines()
+        .filter(|l| !l.starts_with("; extruder_offset = ") && !l.starts_with("M73 "))
+        .collect()
+}
+
+/// The value of one word (`X`, `Y`, ...) on a G-code line.
+fn word(line: &str, w: char) -> Option<f64> {
+    line.split(';')
+        .next()?
+        .split_whitespace()
+        .find_map(|t| t.strip_prefix(w).and_then(|v| v.parse().ok()))
+}
+
+#[test]
+fn a_p1s_writes_every_move_at_the_plate_position_less_its_nozzle_offset() {
+    let (ok, shifted, err) = p1s_slice(Some(serde_json::json!([[0, 2]])), 128.0, &[]);
+    assert!(ok, "{err}");
+    let (ok, plain, err) = p1s_slice(Some(serde_json::json!([[0, 0]])), 128.0, &[]);
+    assert!(ok, "{err}");
+    let (a, b) = (moves_and_text(&shifted), moves_and_text(&plain));
+    assert_eq!(a.len(), b.len());
+    let first_layer = b.iter().position(|l| l.starts_with("; CHANGE_LAYER")).unwrap();
+    // The end G-code is the profile's text, from its first line on.
+    let end = b
+        .iter()
+        .rposition(|l| l.starts_with(";===== date: 20230428"))
+        .unwrap();
+    let mut moved = 0;
+    for (i, (s, p)) in a.iter().zip(&b).enumerate() {
+        if s == p {
+            continue;
+        }
+        assert!(
+            i > first_layer && i < end,
+            "line {i} changed outside the toolpaths: {p:?} -> {s:?}"
+        );
+        assert!(
+            ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|g| p.starts_with(g)),
+            "{p:?} -> {s:?}"
+        );
+        // Y is 2 mm less; X, Z, E, F and the arc's I and J are the same.
+        assert!(
+            (word(s, 'Y').unwrap() - (word(p, 'Y').unwrap() - 2.0)).abs() < 1e-9,
+            "{p:?} -> {s:?}"
+        );
+        for w in ['X', 'Z', 'E', 'F', 'I', 'J'] {
+            assert_eq!(word(s, w), word(p, w), "{w}: {p:?} -> {s:?}");
+        }
+        moved += 1;
+    }
+    let plain_moves = b[first_layer..end]
+        .iter()
+        .filter(|l| ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|g| l.starts_with(g)) && word(l, 'Y').is_some())
+        .count();
+    assert_eq!(moved, plain_moves, "every move with a Y moves");
+    assert!(moved > 500, "{moved}");
+    // The start and end G-code are the profile's own moves, written as they are.
+    assert_eq!(a[..first_layer], b[..first_layer]);
+    assert_eq!(a[end..], b[end..]);
+    assert!(
+        b[..first_layer]
+            .iter()
+            .any(|l| l.starts_with("G1 X") && l.contains(" Y"))
+    );
+}
+
+#[test]
+fn a_printer_without_a_nozzle_offset_writes_the_same_bytes() {
+    let (ok, zero, err) = p1s_slice(Some(serde_json::json!([[0, 0]])), 128.0, &[]);
+    assert!(ok, "{err}");
+    for other in [
+        Some(serde_json::json!(["0X0"])),
+        Some(serde_json::json!(["0x0"])),
+        None,
+    ] {
+        let (ok, g, err) = p1s_slice(other.clone(), 128.0, &[]);
+        assert!(ok, "{other:?}: {err}");
+        let echo = |g: &str| -> Vec<String> {
+            g.lines()
+                .filter(|l| !l.starts_with("; extruder_offset = "))
+                .map(str::to_owned)
+                .collect()
+        };
+        assert_eq!(echo(&g), echo(&zero), "{other:?}");
+    }
+}
+
+#[test]
+fn a_printer_other_than_bambu_lab_keeps_its_moves_on_the_plate() {
+    // The Elegoo Neptune 4 Pro's profile carries a nozzle offset; its moves stay where they were.
+    let neptune = [
+        ("printer_model", serde_json::json!("Elegoo Neptune 4 Pro")),
+        ("gcode_flavor", serde_json::json!("klipper")),
+    ];
+    let (ok, offset, err) = p1s_slice(Some(serde_json::json!(["-2.5x-3.5"])), 128.0, &neptune);
+    assert!(ok, "{err}");
+    let (ok, zero, err) = p1s_slice(Some(serde_json::json!(["0x0"])), 128.0, &neptune);
+    assert!(ok, "{err}");
+    let echo = |g: &str| -> Vec<String> {
+        g.lines()
+            .filter(|l| !l.starts_with("; extruder_offset = "))
+            .map(str::to_owned)
+            .collect()
+    };
+    assert_eq!(echo(&offset), echo(&zero));
+}
