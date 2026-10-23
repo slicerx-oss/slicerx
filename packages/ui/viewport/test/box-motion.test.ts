@@ -167,6 +167,41 @@ describe('ResizeSettle', () => {
     expect(count.resizes).toBe(1)
   })
 
+  it('says a resize is pending through the wait and a wait on motion, and not once it has run', async () => {
+    let end!: () => void
+    let slide: Promise<void> | null = new Promise<void>((r) => (end = r))
+    const { s, count } = settle(() => slide)
+    expect(s.pending).toBe(false)
+    s.schedule()
+    expect(s.pending).toBe(true)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(s.pending).toBe(true)
+    slide = null
+    end()
+    await vi.advanceTimersByTimeAsync(100)
+    expect(count.resizes).toBe(1)
+    expect(s.pending).toBe(false)
+    s.schedule()
+    s.dispose()
+    expect(s.pending).toBe(false)
+  })
+
+  it('a slide that never ends and comes back on every read still settles: one resize, then nothing pending', async () => {
+    // A view that always has a box transition running beside it (a looping slide): each read finds a new one.
+    const { s, count } = settle(() => new Promise<void>(() => {}))
+    s.schedule()
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(count.resizes).toBe(1)
+    expect(s.pending).toBe(false)
+    // The next change of the box starts a new hold, bounded the same way.
+    s.schedule()
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(count.resizes).toBe(2)
+    expect(s.pending).toBe(false)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(count.resizes).toBe(2)
+  })
+
   it('never resizes after dispose, from the wait or from a slide still pending', async () => {
     let end!: () => void
     const slide = new Promise<void>((r) => (end = r))
