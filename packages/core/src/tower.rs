@@ -436,18 +436,17 @@ pub(crate) fn room_with(cfg: &PrintConfig, brim: f64) -> f64 {
     let support = if cfg.enable_support {
         let s = &cfg.support;
         let line = cfg.support_width().max(0.0);
-        let tree = s.style.is_tree() || s.tree;
-        let reach = if tree {
-            s.tree_settings.brim_width.max(0.0) + 0.5 * s.tree_settings.branch_diameter.max(0.0) + line
+        let pad = s.expansion.max(0.0) + cfg.raw_number("raft_first_layer_expansion", 2.0).max(0.0);
+        if s.style.is_tree() || s.tree {
+            pad + s.tree_settings.brim_width.max(0.0) + 0.5 * s.tree_settings.branch_diameter.max(0.0) + line
         } else if matches!(
             s.style,
             crate::config::SupportStyle::Default | crate::config::SupportStyle::Grid
         ) {
-            grid_reach(cfg, line)
+            grid_reach(cfg, line, pad)
         } else {
-            line
-        };
-        s.expansion.max(0.0) + cfg.raw_number("raft_first_layer_expansion", 2.0).max(0.0) + reach
+            pad + line
+        }
     } else {
         0.0
     };
@@ -459,17 +458,20 @@ pub(crate) fn room_with(cfg: &PrintConfig, brim: f64) -> f64 {
     under + cfg.skirt_distance.max(0.0) + f64::from(cfg.skirt_loops) * crate::session::skirt_spacing_mm(cfg)
 }
 
-/// How far grid style support can print past the overhang it holds up, mm: its islands are stretched to whole
-/// cells of the grid (a cell is `support_base_pattern_spacing` plus the line spacing, so an island that just
-/// reaches into a cell fills all of it), turned by `support_angle`, and printed half a line spacing past the
-/// cells. On a plate of mushroom-shaped parts the first layer pad reached 4.9 mm past the caps where the old
-/// estimate, the pad and one line, gave 2.45. `line` is the support line width.
-fn grid_reach(cfg: &PrintConfig, line: f64) -> f64 {
+/// How far grid style support's first layer can print past the overhang it holds up, mm. The islands are
+/// stretched to whole cells of the grid (a cell is `support_base_pattern_spacing` plus the line spacing, so an
+/// island that just reaches into a cell fills all of it), printed half a line spacing past the cells, and the
+/// first layer grows by `pad` (`raft_first_layer_expansion` and `support_expansion`) round that. The grid is
+/// turned by `support_angle`, and its corners with it, so measured along the plate's axes all of it reaches up
+/// to |cos| + |sin| of the angle as far. On a plate of mushroom-shaped parts the first layer pad reached 4.9 mm
+/// past the caps where the old estimate, the pad and one line, gave 2.45; with the grid at 30 degrees one part's
+/// pad reached 6.75 mm. `line` is the support line width.
+fn grid_reach(cfg: &PrintConfig, line: f64, pad: f64) -> f64 {
     let h = cfg.initial_layer_print_height.min(cfg.layer_height).max(0.01);
     let spacing = (line - h * (1.0 - std::f64::consts::FRAC_PI_4)).max(0.0);
     let cell = spacing + cfg.support.base_spacing.max(0.0);
     let turn = cfg.support.angle.to_radians();
-    cell * (turn.m_cos().abs() + turn.m_sin().abs()) + 0.5 * spacing + 0.01
+    (cell + 0.5 * spacing + pad) * (turn.m_cos().abs() + turn.m_sin().abs()) + 0.01
 }
 
 /// Boxes `[min x, min y, max x, max y]` the tower must stay out of besides the objects: every
