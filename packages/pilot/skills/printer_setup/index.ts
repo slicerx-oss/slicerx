@@ -138,7 +138,7 @@ export function createSetupTools() {
     version: '0.2.0',
     permission: 'read',
     description:
-      'Guides a new user through printer setup, one question at a time: optional look and feel, brand, model, nozzle, connection method, test connection, add the printer, first calibration suggestion. Call it with everything the user has said so far and it returns the current stage, the one question to ask with its options, and what it resolved from the printer catalog, including where the user finds each value on the printer. It changes nothing. Changes go through setup.look, printer_test and printer_add (profileId is resolved.model.id), each of which asks the user first. The where-to-find wording comes from vendor documentation and has not been checked on a printer; say so if the user cannot find a screen. ' +
+      'Guides a new user through printer setup, one question at a time: optional look and feel, brand, model, nozzle, connection method, test connection, add the printer, first calibration suggestion. Call it with everything the user has said so far. It returns the current stage, the question to ask with its options, and what it resolved from the printer catalog, with where to find each value on the printer. It changes nothing: setup.look, printer_test and printer_add (profileId is resolved.model.id) make the changes, each after asking the user. The where-to-find wording comes from vendor documentation and is unchecked on a printer; say so if the user cannot find a screen. ' +
       SECRET_RULE,
     input,
     args: (raw) => {
@@ -253,7 +253,7 @@ export function createSetupTools() {
     name: 'printer_discover',
     version: '0.1.0',
     permission: 'read',
-    description: 'Lists printers found on the local network or over USB. Passive: no credentials are sent and nothing on a printer changes. Each result has a connection family and an address.',
+    description: 'Lists printers found on the local network or over USB. Passive: no credentials are sent and nothing on a printer changes.',
     input: z.object({ timeoutMs: z.number().int().min(500).max(30000).optional().describe('How long to listen, in ms (default 5000)') }),
     args: () => '--scan',
     async run(i, ctx) {
@@ -293,7 +293,7 @@ export function createSetupTools() {
     name: 'setup.look',
     version: '0.1.0',
     permission: 'profile',
-    description: 'Sets the look and feel: camera and mouse controls, layout and theme. Ask the user which one first (printer_setup lists the options). The app asks to confirm.',
+    description: 'Sets the look and feel: camera and mouse controls, layout and theme. Ask the user which one first (printer_setup lists the options).',
     input: z.object({ look: z.enum(LOOK_IDS).describe('Look and feel id the user chose') }),
     args: (i) => i.look,
     async approval(i, ctx) {
