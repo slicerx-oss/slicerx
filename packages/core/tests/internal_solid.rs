@@ -371,15 +371,14 @@ fn band(d: f32, config: &Value) -> f64 {
 fn a_leaning_wall_keeps_a_band_from_079_solid_line_spacings() {
     // The band under the top is (top layers - 1) x d wide. The maker's slicer keeps it from 0.79 to 0.80 solid line
     // spacings (spacing = line width - layer height x (1 - pi/4)): 0.42 mm lines from d 0.075 with 5 top layers and
-    // from 0.100 with 4, 0.5 mm lines from 0.091, 0.6 mm lines from 0.115. The area is kept from 0.79 spacings here
-    // too, but with 0.42 mm lines the line fill prints nothing in a band under 0.85 spacings yet, so those are
-    // checked from d 0.080 and 0.107.
+    // from 0.100 with 4, 0.5 mm lines from 0.091, 0.6 mm lines from 0.115. A band that narrow prints as one line along
+    // its middle: 97 mm on layers 8 to 49 at d 0.075 and 90.8 at 0.100 with 4 top layers.
     let base = |extra: Value| settings(&narrow_off(&extra));
     for (none, kept, config) in [
-        (0.070, 0.080, base(json!({}))),
+        (0.070, 0.075, base(json!({}))),
         (
             0.0985,
-            0.107,
+            0.100,
             base(json!({"top_shell_layers": 4, "top_shell_thickness": 0})),
         ),
         (
@@ -393,6 +392,13 @@ fn a_leaning_wall_keeps_a_band_from_079_solid_line_spacings() {
         assert!(a < 2.0, "d {none}: {a:.1} mm of band");
         assert!(b > 10.0, "d {kept}: {b:.1} mm of band");
     }
+    let one = band(0.075, &base(json!({})));
+    assert!(within(one, 97.0, 0.05), "d 0.075: {one:.1} mm");
+    let four = band(
+        0.100,
+        &base(json!({"top_shell_layers": 4, "top_shell_thickness": 0})),
+    );
+    assert!(within(four, 90.8, 0.05), "d 0.100, 4 top layers: {four:.1} mm");
 }
 
 #[test]
@@ -415,9 +421,9 @@ fn the_band_threshold_ignores_the_walls() {
 
 #[test]
 fn the_bottom_shell_band_counts_the_bottom_layers() {
-    // A frustum of r 8 mm leaning out 0.16 mm a layer over 3 bottom layers: a 0.32 mm band with 0.42 mm lines,
+    // A frustum of r 8 mm leaning out 0.15 mm a layer over 3 bottom layers: a 0.30 mm band with 0.42 mm lines,
     // none with 0.5 mm lines.
-    let leaning = frustum(8.0, -0.16);
+    let leaning = frustum(8.0, -0.15);
     assert!(slice(leaning.clone(), &settings(&narrow_off(&json!({})))).1.mid() > 10.0);
     assert!(slice(leaning, &settings(&s_set(&narrow_off(&json!({}))))).1.mid() < 0.01);
 }
