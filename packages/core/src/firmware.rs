@@ -767,17 +767,23 @@ pub(crate) fn layer_fan_line(cmd: &str) -> String {
     format!("{} ;@N\n", cmd.trim_end())
 }
 
-/// What a line does to the fans, for dropping repeated layer fan lines.
+/// What a line does to the part fan, for dropping repeated layer fan lines.
 enum FanChange {
-    /// A fan command, its words one space apart.
+    /// A part fan command, as it sets the fan: its words one space apart, with no fan index word.
     Set(Vec<u8>),
+    /// Another fan's command (an auxiliary or chamber fan): the part fan keeps its speed.
+    Other,
     /// A pause: the fans are not known after it.
     Unknown,
+    /// A tool change (`T<n>`, or a Bambu Lab printer's `M620 S<n>`): the change G-code works the fans, so until the
+    /// next layer fan line every fan's command counts, as it did before the part fan was tracked on its own.
+    ToolChange,
 }
 
-/// What a line does to the fans, or None when it does nothing to them. Every fan command counts, the part fan's or
-/// another's: a layer fan line is dropped only after the very same command, so a line that is needed is never dropped.
-fn fan_change(line: &[u8]) -> Option<FanChange> {
+/// What a line does to the part fan, or None when it does nothing to the fans. The part fan is tracked on its own:
+/// a layer fan line is dropped only after the very same part fan command, whatever other fans' lines came between,
+/// so a line that is needed is never dropped. `bambu`: on a Bambu Lab printer `M106 P1` is the part fan as well.
+fn fan_change(line: &[u8], bambu: bool) -> Option<FanChange> {
     let code = line.split(|&b| b == b';').next().unwrap_or_default();
     let mut words = code.split(u8::is_ascii_whitespace).filter(|w| !w.is_empty());
     let first = words.next()?;
@@ -785,14 +791,44 @@ fn fan_change(line: &[u8]) -> Option<FanChange> {
         b"M106" | b"M107" | b"M126" | b"M127" => {
             let mut v = first.to_vec();
             for w in words {
+                if let Some(index) = w.strip_prefix(b"P") {
+                    match index {
+                        b"0" => continue,
+                        b"1" if bambu && first == b"M106" => continue,
+                        _ => return Some(FanChange::Other),
+                    }
+                }
                 v.push(b' ');
                 v.extend_from_slice(w);
             }
             Some(FanChange::Set(v))
         }
         b"M600" | b"M601" | b"M0" | b"M1" | b"M25" | b"PAUSE" => Some(FanChange::Unknown),
+        b"M620"
+            if words
+                .next()
+                .is_some_and(|w| w.starts_with(b"S") && !w.starts_with(b"S255")) =>
+        {
+            Some(FanChange::ToolChange)
+        }
+        t if t
+            .strip_prefix(b"T")
+            .is_some_and(|n| !n.is_empty() && n.iter().all(u8::is_ascii_digit)) =>
+        {
+            Some(FanChange::ToolChange)
+        }
         _ => None,
     }
+}
+
+/// A fan command of any fan as its words one space apart, fan index included.
+fn any_fan_text(line: &[u8]) -> Vec<u8> {
+    let code = line.split(|&b| b == b';').next().unwrap_or_default();
+    let words: Vec<&[u8]> = code
+        .split(u8::is_ascii_whitespace)
+        .filter(|w| !w.is_empty())
+        .collect();
+    words.join(&b' ')
 }
 
 /// Where the thumbnails go: `;@T` with the sizes the profile asks for. Nothing when it asks for none.
@@ -1279,16 +1315,18 @@ pub fn finalize_timed(
         )
     };
     let per_move = footer.m73 && total > 0.0 && !line_times.is_empty();
-    // The fan command in force, from the first layer's own fan line on (the start G-code's are not counted, as Orca's
+    // The part fan command in force, from the first layer's own fan line on (the start G-code's are not counted, as Orca's
     // cooling buffer writes the first layer's fan whatever the start did); None while it is not known.
     let mut fan: Option<Vec<u8>> = None;
     let mut fan_known = false;
+    // After a tool change, until the next layer fan line: the part fan lines between are the change's own.
+    let mut changing = false;
     while let Some((li, line)) = lines.next() {
         // The piece after the final newline has none of its own.
         let newline = lines.peek().is_some();
         if let Some(cmd) = line.strip_suffix(FAN_MARK) {
             let cmd = cmd.trim_ascii_end();
-            let now = match fan_change(cmd) {
+            let now = match fan_change(cmd, footer.blocks) {
                 Some(FanChange::Set(v)) => Some(v),
                 _ => None,
             };
@@ -1296,6 +1334,7 @@ pub fn finalize_timed(
                 continue;
             }
             fan_known = true;
+            changing = false;
             fan = now;
             out.extend_from_slice(cmd);
             if newline {
@@ -1303,11 +1342,14 @@ pub fn finalize_timed(
             }
             continue;
         }
-        if fan_known && let Some(change) = fan_change(line) {
-            fan = match change {
-                FanChange::Set(v) => Some(v),
-                FanChange::Unknown => None,
-            };
+        if fan_known && let Some(change) = fan_change(line, footer.blocks) {
+            match change {
+                FanChange::Set(_) | FanChange::Other if changing => fan = Some(any_fan_text(line)),
+                FanChange::Set(v) => fan = Some(v),
+                FanChange::Other => {}
+                FanChange::Unknown => fan = None,
+                FanChange::ToolChange => changing = true,
+            }
         }
         if line.starts_with(b";@L ") || line.starts_with(b";@S ") {
             continue;
@@ -1940,5 +1982,67 @@ mod tests {
         assert_eq!(rrf.header(), "M486 S0 A\"a.stl_id_0_copy_0\"\nM486 S-1\n");
         assert_eq!(rrf.fw_start(0).as_deref(), Some("M486 S0\n"));
         assert!(Labels::new(&objs, &cfg, GcodeFlavor::Smoothie).is_none());
+    }
+
+    #[test]
+    fn a_layer_fan_line_repeating_the_part_fan_is_dropped_past_other_fans() {
+        let part = |g: &[u8]| {
+            // A layer marker makes the file one to finish.
+            String::from_utf8(finalize(&[b";@L 1 0\n", g].concat()))
+                .unwrap()
+                .lines()
+                .filter(|l| l.starts_with("M106 S"))
+                .count()
+        };
+        // An auxiliary or chamber fan line between two equal part fan lines does not make the second one new.
+        assert_eq!(
+            part(b"M106 S255 ;@N\nG1 X1 E1\nM106 P2 S178\nG1 X2 E1\nM106 S255 ;@N\nG1 X3 E1\n"),
+            1
+        );
+        assert_eq!(
+            part(b"M106 S255 ;@N\nM106 P3 S50\nG1 X2 E1\nM106 S255 ;@N\nG1 X3 E1\n"),
+            1
+        );
+        // A part fan change between them, or a pause, keeps the line.
+        assert_eq!(
+            part(b"M106 S255 ;@N\nM106 S100\nG1 X2 E1\nM106 S255 ;@N\nG1 X3 E1\n"),
+            3
+        );
+        assert_eq!(
+            part(b"M106 S255 ;@N\nM600\nG1 X2 E1\nM106 S255 ;@N\nG1 X3 E1\n"),
+            2
+        );
+        // From a tool change to the next layer fan line every fan's command counts, as before: a chamber fan line
+        // after the restore keeps the next layer fan line, the restore alone does not.
+        let change =
+            b"M106 S186 ;@N\nM620 S1A\nM106 P1 S0\nT1\nM106 S186\nM106 P3 S200\nG1 X2 E1\nM106 S186 ;@N\n";
+        assert_eq!(part(change), 3);
+        assert_eq!(
+            part(b"M106 S186 ;@N\nT1\nM106 S186\nG1 X2 E1\nM106 S186 ;@N\nG1 X3 E1\n"),
+            2
+        );
+    }
+
+    #[test]
+    fn m106_p1_is_the_part_fan_on_a_bambu_lab_printer_only() {
+        let set = |line: &[u8], bambu: bool| match fan_change(line, bambu) {
+            Some(FanChange::Set(v)) => Some(String::from_utf8(v).unwrap()),
+            _ => None,
+        };
+        assert_eq!(set(b"M106 P1 S255", true).as_deref(), Some("M106 S255"));
+        assert_eq!(set(b"M106 P1 S255", false), None);
+        assert_eq!(set(b"M106 P0 S80", false).as_deref(), Some("M106 S80"));
+        assert!(matches!(
+            fan_change(b"M106 P2 S178", true),
+            Some(FanChange::Other)
+        ));
+        assert!(matches!(fan_change(b"M107 P3", false), Some(FanChange::Other)));
+        assert!(matches!(fan_change(b"T1", false), Some(FanChange::ToolChange)));
+        assert!(matches!(
+            fan_change(b"M620 S1A", true),
+            Some(FanChange::ToolChange)
+        ));
+        assert!(fan_change(b"M620 S255", true).is_none());
+        assert!(fan_change(b"TIMELAPSE_TAKE_FRAME", false).is_none());
     }
 }
