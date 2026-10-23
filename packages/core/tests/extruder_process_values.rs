@@ -244,7 +244,7 @@ fn check(
 
 // The values (mm/s, mm/s2) are the presets': X2D left 200 outer, 300 inner, 270 sparse, 250 solid at 10000 (outer
 // 5000), right 50, 200, 200, 200 at 1000; H2D left 200, 300, 350, 250 at 8000 (outer 5000), right high flow 500,
-// 600, 600, 600. Bridges accelerate at half the outer wall's; support at the default.
+// 600, 600, 600. These are Bambu Lab printers, so bridges and support accelerate at their extruder's default.
 
 #[test]
 fn outer_walls_print_at_their_extruders_speed() {
@@ -292,7 +292,7 @@ fn solid_infill_prints_at_its_extruders_speed() {
 
 #[test]
 fn bridges_accelerate_as_their_extruder_says() {
-    check("Bridge", (50.0, 500), (50.0, 2500), (50.0, 2500), (50.0, 2500));
+    check("Bridge", (50.0, 1000), (50.0, 10000), (50.0, 8000), (50.0, 8000));
 }
 
 #[test]
