@@ -161,8 +161,13 @@ pub struct Usage {
 impl Usage {
     /// The layers each filament spans, from the parts' heights on a plain layer grid (`layer_height` over
     /// `initial_layer_print_height`), with painted colors on the layers their triangles cross and the
-    /// support filaments on every layer when support is on.
-    pub fn of_plate(plate: &crate::plate::Plate, cfg: &PrintConfig) -> Self {
+    /// support filaments on every layer when support is on. The per-feature filaments of the objects, their parts,
+    /// their modifiers and the height `ranges` count where they reach.
+    pub fn of_plate(
+        plate: &crate::plate::Plate,
+        cfg: &PrintConfig,
+        ranges: &[crate::session::HeightRange],
+    ) -> Self {
         let first = cfg.initial_layer_print_height.max(0.01);
         let step = cfg.layer_height.max(0.01);
         let mut spans: Vec<(u8, f64, f64)> = Vec::new();
@@ -178,7 +183,41 @@ impl Usage {
                 *o = [o[0].min(p[0]), o[1].min(p[1]), o[2].max(p[0]), o[3].max(p[1])];
             }
         };
+        // The world box of a volume, `[min x, min y, min z, max x, max y, max z]`.
+        let bounds = |tr: &[f32; 16], mesh: &crate::mesh::Mesh| {
+            let mut b = [f64::MAX, f64::MAX, f64::MAX, f64::MIN, f64::MIN, f64::MIN];
+            for part in mesh.parts.iter().filter(|p| !p.triangles.is_empty()) {
+                for &v in &part.positions {
+                    let p = crate::plate::PlateObject::apply_with(tr, v);
+                    b = [
+                        b[0].min(p[0]),
+                        b[1].min(p[1]),
+                        b[2].min(p[2]),
+                        b[3].max(p[0]),
+                        b[4].max(p[1]),
+                        b[5].max(p[2]),
+                    ];
+                }
+            }
+            b
+        };
         for o in &plate.objects {
+            // The height ranges of this object, in order: a later one wins where they overlap.
+            let own_ranges: Vec<&crate::session::HeightRange> = ranges
+                .iter()
+                .filter(|r| r.objects.is_empty() || r.objects.contains(&o.id))
+                .collect();
+            let modifiers: Vec<([f64; 6], &serde_json::Value)> = o
+                .volumes
+                .iter()
+                .filter(|v| v.role == crate::plate::VolumeRole::Modifier)
+                .map(|v| {
+                    (
+                        bounds(v.transform.as_ref().unwrap_or(&o.transform), &v.mesh),
+                        &v.settings,
+                    )
+                })
+                .collect();
             for part in o.mesh.parts.iter().filter(|p| !p.triangles.is_empty()) {
                 let slot = o.slot_for(&part.name, part.slot);
                 let (mut lo, mut hi) = (f64::MAX, f64::MIN);
@@ -195,32 +234,92 @@ impl Usage {
                     ];
                 }
                 top = top.max(hi);
-                // Each feature prints with its filament (`sparse_infill_filament_id` and the like, the object's own
-                // settings first, the part's filament when unset) over the part's footprint: walls on every layer,
-                // sparse infill between the shells, solid infill and the surfaces on the shell layers at the bottom
-                // and the top. The part's own filament counts only for the features left on it: with every feature
-                // moved to others it prints nothing, as Bambu Studio maps it.
-                let get = |name: &str| o.settings.get(name).or_else(|| cfg.raw.get(name));
+                // Each feature prints with its filament (`sparse_infill_filament_id` and the like) over the part's
+                // footprint: walls on every layer, sparse infill between the shells, solid infill and the surfaces on
+                // the shell layers at the bottom and the top. The part's own filament counts only for the features
+                // left on it: with every feature moved to others it prints nothing. These
+                // move the features of the part's own, unpainted regions; paint keeps its own filament (below).
                 let (top_n, bottom_n) = cfg.shell_layers(step);
-                let bottom = lo + first + f64::from(bottom_n.saturating_sub(1)) * step;
-                let top = hi - f64::from(top_n) * step;
-                let [outer, inner, sparse, solid, top_f, bottom_f] = crate::session::feature_slots(get, slot);
-                let bands = [
-                    (outer, lo, hi),
-                    (inner, lo, hi),
-                    (sparse, bottom, top),
-                    (solid, lo, bottom),
-                    (solid, top, hi),
-                    (top_f, top, hi),
-                    (bottom_f, lo, bottom),
-                ];
-                for (f, a, b) in bands {
-                    let f = if f == 0 { slot } else { f };
-                    if b > a {
-                        spans.push((f, a, b));
-                        grow(&mut boxes, f, [footprint[0], footprint[1], 0.0]);
-                        grow(&mut boxes, f, [footprint[2], footprint[3], 0.0]);
+                let shell_bottom = lo + first + f64::from(bottom_n.saturating_sub(1)) * step;
+                let shell_top = hi - f64::from(top_n) * step;
+                let mut add = |tools: [u8; 6], z0: f64, z1: f64, area: [f64; 4]| {
+                    let [outer, inner, sparse, solid, top_f, bottom_f] = tools;
+                    let bands = [
+                        (outer, lo, hi),
+                        (inner, lo, hi),
+                        (sparse, shell_bottom, shell_top),
+                        (solid, lo, shell_bottom),
+                        (solid, shell_top, hi),
+                        (top_f, shell_top, hi),
+                        (bottom_f, lo, shell_bottom),
+                    ];
+                    for (f, a, b) in bands {
+                        let f = if f == 0 { slot } else { f };
+                        let (a, b) = (a.max(z0), b.min(z1));
+                        if b > a {
+                            spans.push((f, a, b));
+                            grow(&mut boxes, f, [area[0], area[1], 0.0]);
+                            grow(&mut boxes, f, [area[2], area[3], 0.0]);
+                        }
                     }
+                };
+                let object = |name: &str| o.settings.get(name).or_else(|| cfg.raw.get(name));
+                // A part with settings of its own prints like a modifier shaped as the part: its settings over the
+                // object's, and the height ranges leave it alone, as they leave a modifier.
+                let part_own = o
+                    .part_settings
+                    .iter()
+                    .find(|(n, _)| *n == part.name)
+                    .map(|(_, s)| s)
+                    .filter(|s| s.as_object().is_some_and(|m| !m.is_empty()));
+                if let Some(s) = part_own {
+                    let get = |name: &str| s.get(name).or_else(|| object(name));
+                    add(crate::session::feature_slots(get, slot), lo, hi, footprint);
+                } else {
+                    // The object's settings, with its height ranges' per-feature filaments on top where they reach.
+                    let mut cuts = vec![lo, hi];
+                    for r in &own_ranges {
+                        cuts.extend(
+                            [r.z_from_mm, r.z_to_mm]
+                                .into_iter()
+                                .filter(|z| *z > lo && *z < hi),
+                        );
+                    }
+                    cuts.sort_by(f64::total_cmp);
+                    cuts.dedup();
+                    for w in cuts.windows(2) {
+                        let &[z0, z1] = w else { continue };
+                        let mid = f64::midpoint(z0, z1);
+                        let get = |name: &str| {
+                            own_ranges
+                                .iter()
+                                .rev()
+                                .filter(|r| r.z_from_mm <= mid && mid < r.z_to_mm)
+                                .find_map(|r| {
+                                    crate::config::RANGE_KEYS
+                                        .contains(&name)
+                                        .then(|| r.settings.get(name))
+                                        .flatten()
+                                })
+                                .or_else(|| object(name))
+                        };
+                        add(crate::session::feature_slots(get, slot), z0, z1, footprint);
+                    }
+                }
+                // Inside a modifier the part prints with the modifier's settings over the object's (the height
+                // ranges do not reach in), over the heights and the area the two share.
+                for (b, s) in &modifiers {
+                    let area = [
+                        footprint[0].max(b[0]),
+                        footprint[1].max(b[1]),
+                        footprint[2].min(b[3]),
+                        footprint[3].min(b[4]),
+                    ];
+                    if area[2] <= area[0] || area[3] <= area[1] || b[5] <= lo || b[2] >= hi {
+                        continue;
+                    }
+                    let get = |name: &str| s.get(name).or_else(|| object(name));
+                    add(crate::session::feature_slots(get, slot), b[2], b[5], area);
                 }
                 for f in &part.paint {
                     let ps = f.v.map(|v| o.apply(v));
@@ -901,5 +1000,183 @@ mod tests {
         let w = |_: usize, _: u8, _: u8| 0.0;
         assert_eq!(g.order(&w, &[1, 2], &[1, 2], 2, &[2, 1]), vec![2, 1]);
         assert_eq!(g.order(&w, &[1, 2], &[1, 2], 1, &[2, 1]), vec![1, 2]);
+    }
+
+    /// A box `x0..x1` by `0..20` by `0..z` mm on filament 1.
+    fn boxed(x0: f32, x1: f32, z: f32) -> crate::mesh::MeshPart {
+        crate::mesh::MeshPart {
+            name: "box".to_owned(),
+            slot: 1,
+            color: None,
+            positions: vec![
+                [x0, 0.0, 0.0],
+                [x1, 0.0, 0.0],
+                [x1, 20.0, 0.0],
+                [x0, 20.0, 0.0],
+                [x0, 0.0, z],
+                [x1, 0.0, z],
+                [x1, 20.0, z],
+                [x0, 20.0, z],
+            ],
+            triangles: vec![
+                [0, 2, 1],
+                [0, 3, 2],
+                [4, 5, 6],
+                [4, 6, 7],
+                [0, 1, 5],
+                [0, 5, 4],
+                [1, 2, 6],
+                [1, 6, 5],
+                [2, 3, 7],
+                [2, 7, 6],
+                [3, 0, 4],
+                [3, 4, 7],
+            ],
+            paint: Vec::new(),
+            support_paint: Vec::new(),
+            seam_paint: Vec::new(),
+            fuzzy_paint: Vec::new(),
+            paint_texts: Vec::new(),
+        }
+    }
+
+    /// A 20 mm box on filament 1 at the bed's origin, with a modifier over `x0..x1` carrying `settings`.
+    fn box_with_modifier(x0: f32, x1: f32, settings: serde_json::Value) -> crate::plate::Plate {
+        let mesh = |part| crate::mesh::Mesh {
+            name: "box".to_owned(),
+            parts: vec![part],
+            ..crate::mesh::Mesh::default()
+        };
+        let mut plate = crate::plate::Plate::single(mesh(boxed(0.0, 20.0, 20.0)));
+        if let Some(o) = plate.objects.first_mut() {
+            o.transform = crate::plate::IDENTITY;
+            o.volumes.push(crate::plate::PlateVolume {
+                name: "modifier".to_owned(),
+                role: crate::plate::VolumeRole::Modifier,
+                mesh: std::sync::Arc::new(mesh(boxed(x0, x1, 20.0))),
+                transform: None,
+                settings,
+            });
+        }
+        plate
+    }
+
+    fn range(
+        from: f64,
+        to: f64,
+        settings: serde_json::Value,
+        objects: &[&str],
+    ) -> crate::session::HeightRange {
+        crate::session::HeightRange {
+            z_from_mm: from,
+            z_to_mm: to,
+            settings,
+            objects: objects.iter().map(|s| (*s).to_owned()).collect(),
+        }
+    }
+
+    /// The layers (by index) that print with `slot`.
+    fn layers_of(u: &Usage, slot: u8) -> Vec<usize> {
+        u.layers
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.contains(&slot))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    #[test]
+    fn a_modifier_s_wall_filament_counts_over_the_area_it_reaches() {
+        let walls = serde_json::json!({"outer_wall_filament_id": 3, "inner_wall_filament_id": 3});
+        let u = Usage::of_plate(&box_with_modifier(10.0, 20.0, walls.clone()), &h2d(&[]), &[]);
+        assert_eq!(
+            layers_of(&u, 3).len(),
+            u.layers.len(),
+            "every layer has walls on 3"
+        );
+        assert_eq!(
+            layers_of(&u, 1).len(),
+            u.layers.len(),
+            "the rest of the box stays on 1"
+        );
+        assert_eq!(u.boxes.get(2).copied().flatten(), Some([10.0, 0.0, 20.0, 20.0]));
+        // A modifier off to the side of the box changes nothing that prints.
+        let u = Usage::of_plate(&box_with_modifier(30.0, 40.0, walls), &h2d(&[]), &[]);
+        assert!(layers_of(&u, 3).is_empty());
+        // Nor does one without filaments of its own.
+        let loops = serde_json::json!({"wall_loops": 4});
+        let u = Usage::of_plate(&box_with_modifier(10.0, 20.0, loops), &h2d(&[]), &[]);
+        assert!(layers_of(&u, 3).is_empty());
+    }
+
+    #[test]
+    fn a_height_range_s_filaments_count_on_its_heights() {
+        let plate = box_with_modifier(30.0, 40.0, serde_json::Value::Null);
+        let cfg = h2d(&[]);
+        let sparse = serde_json::json!({"sparse_infill_filament_id": 3});
+        let u = Usage::of_plate(&plate, &cfg, &[range(8.0, 14.0, sparse.clone(), &[])]);
+        let on3 = layers_of(&u, 3);
+        assert!(!on3.is_empty());
+        let first = cfg.initial_layer_print_height;
+        let step = cfg.layer_height;
+        #[allow(clippy::cast_precision_loss, reason = "a layer index")]
+        let span = |l: usize| (first + (l as f64 - 1.0) * step, first + l as f64 * step);
+        for &l in &on3 {
+            let (z0, z1) = span(l);
+            assert!(z1 > 8.0 - 1e-9 && z0 < 14.0 + 1e-9, "layer {l} at {z0}..{z1}");
+        }
+        // A range for another object leaves this one alone, and a later range wins where they overlap.
+        let u = Usage::of_plate(&plate, &cfg, &[range(8.0, 14.0, sparse.clone(), &["other"])]);
+        assert!(layers_of(&u, 3).is_empty());
+        let back = serde_json::json!({"sparse_infill_filament_id": 0});
+        let u = Usage::of_plate(
+            &plate,
+            &cfg,
+            &[
+                range(8.0, 14.0, sparse, &["object-1"]),
+                range(0.0, 20.0, back, &[]),
+            ],
+        );
+        assert!(layers_of(&u, 3).is_empty());
+    }
+
+    #[test]
+    fn a_range_leaves_a_part_with_its_own_settings_alone() {
+        let walls = serde_json::json!({"outer_wall_filament_id": 3, "inner_wall_filament_id": 3});
+        let all = [range(0.0, 20.0, walls.clone(), &[])];
+        let mut plate = box_with_modifier(30.0, 40.0, serde_json::Value::Null);
+        if let Some(o) = plate.objects.first_mut() {
+            o.part_settings = vec![("box".to_owned(), serde_json::json!({"wall_loops": 3}))];
+        }
+        let u = Usage::of_plate(&plate, &h2d(&[]), &all);
+        assert!(
+            layers_of(&u, 3).is_empty(),
+            "a part with its own settings prints like a modifier"
+        );
+        if let Some(o) = plate.objects.first_mut() {
+            o.part_settings = vec![("box".to_owned(), walls)];
+        }
+        let u = Usage::of_plate(&plate, &h2d(&[]), &[]);
+        assert_eq!(
+            layers_of(&u, 3).len(),
+            u.layers.len(),
+            "a part's own wall filament counts"
+        );
+    }
+
+    #[test]
+    fn a_project_s_own_feature_filaments_count_for_nothing() {
+        // Read as a plate's settings, the three older names print on nothing, so filament 3 stays out.
+        let mut given = serde_json::Map::new();
+        for (k, v) in h2d(&[]).raw {
+            given.insert(k, v);
+        }
+        given.insert("wall_filament".into(), serde_json::json!("3"));
+        given.insert("sparse_infill_filament".into(), serde_json::json!("3"));
+        let Ok(cfg) = PrintConfig::from_value(&serde_json::Value::Object(given)) else {
+            panic!("a config")
+        };
+        let u = Usage::of_plate(&box_with_modifier(30.0, 40.0, serde_json::Value::Null), &cfg, &[]);
+        assert!(layers_of(&u, 3).is_empty());
     }
 }

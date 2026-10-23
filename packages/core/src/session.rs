@@ -1078,7 +1078,7 @@ impl SliceSession {
         let ranges = renamed_ranges.as_deref().unwrap_or(ranges);
         check_extent(plate)?;
         let map = if crate::nozzles::shared(config) {
-            let usage = crate::nozzles::Usage::of_plate(plate, config);
+            let usage = crate::nozzles::Usage::of_plate(plate, config, ranges);
             // Every filament of the project, not only up to the highest the plate prints with: Bambu Studio lists
             // the unused ones too, on the left extruder.
             let tools = usage
