@@ -1085,18 +1085,20 @@ fn a_painted_bambu_studio_project_keeps_its_colors_with_the_stock_feature_filame
     assert_eq!(stock, plain, "the stock feature filaments leave the paint alone");
 }
 
-/// A 30 x 30 x 20 mm box as Bambu Studio 2.8 writes it, with its front (-y) face painted in filament 4 when `painted`.
-fn bambu_box(painted: bool) -> String {
+/// The mesh of a box from `lo` to `hi` in a 3MF's own markup, with its front (-y) face painted in filament 4 when
+/// `painted`.
+fn box_mesh(lo: [i32; 3], hi: [i32; 3], painted: bool) -> String {
     use std::fmt::Write as _;
+    let ([x0, y0, z0], [x1, y1, z1]) = (lo, hi);
     let v = [
-        [-15, -15, 0],
-        [15, -15, 0],
-        [15, 15, 0],
-        [-15, 15, 0],
-        [-15, -15, 20],
-        [15, -15, 20],
-        [15, 15, 20],
-        [-15, 15, 20],
+        [x0, y0, z0],
+        [x1, y0, z0],
+        [x1, y1, z0],
+        [x0, y1, z0],
+        [x0, y0, z1],
+        [x1, y0, z1],
+        [x1, y1, z1],
+        [x0, y1, z1],
     ];
     let t: [([u8; 3], bool); 12] = [
         ([0, 2, 1], false),
@@ -1125,87 +1127,273 @@ fn bambu_box(painted: bool) -> String {
         };
         let _ = write!(triangles, r#"<triangle v1="{a}" v2="{b}" v3="{c}"{paint}/>"#);
     }
-    format!(
-        r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-02.08.02.61</metadata><resources><object id="1" type="model"><mesh><vertices>{vertices}</vertices><triangles>{triangles}</triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 128 128 0"/></build></model>"#
-    )
+    format!("<mesh><vertices>{vertices}</vertices><triangles>{triangles}</triangles></mesh>")
+}
+
+/// Where a case of the painted box sets its per-feature filaments: on the object, or on a modifier part over the right
+/// half of the box (x 0 to 20 mm, through its whole height and past its front and back).
+#[derive(Clone, Copy)]
+enum Own<'a> {
+    Object(&'a [(&'a str, &'a str)]),
+    Modifier(&'a [(&'a str, &'a str)]),
+}
+
+/// A 30 x 30 x 20 mm box centered on a Bambu Studio 2.8 project's bed, on filament `slot`, with its front (-y) face
+/// painted in filament 4 when `painted`, `settings` as the project's settings and `own` as its own.
+fn bambu_box_3mf(painted: bool, settings: &serde_json::Value, slot: u8, own: Own<'_>) -> Vec<u8> {
+    let meta = |keys: &[(&str, &str)]| -> String {
+        keys.iter()
+            .map(|(k, v)| [r#"<metadata key=""#, k, r#"" value=""#, v, r#""/>"#].concat())
+            .collect()
+    };
+    let body = box_mesh([-15, -15, 0], [15, 15, 20], painted);
+    let head = r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-02.08.02.61</metadata>"#;
+    let item = r#"transform="1 0 0 0 1 0 0 0 1 128 128 0""#;
+    let (model, objects) = if let Own::Modifier(keys) = own {
+        let modifier = box_mesh([0, -20, -1], [20, 20, 21], false);
+        let ident = "1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1";
+        (
+            format!(
+                r#"{head}<resources><object id="1" type="model">{body}</object><object id="2" type="model">{modifier}</object><object id="3" type="model"><components><component objectid="1"/><component objectid="2"/></components></object></resources><build><item objectid="3" {item}/></build></model>"#
+            ),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><config><object id="3"><metadata key="name" value="box"/><metadata key="extruder" value="{slot}"/><part id="1" subtype="normal_part"><metadata key="name" value="body"/><metadata key="matrix" value="{ident}"/></part><part id="2" subtype="modifier_part"><metadata key="name" value="modifier"/><metadata key="matrix" value="{ident}"/>{}</part></object></config>"#,
+                meta(keys)
+            ),
+        )
+    } else {
+        let Own::Object(keys) = own else { unreachable!() };
+        (
+            format!(
+                r#"{head}<resources><object id="1" type="model">{body}</object></resources><build><item objectid="1" {item}/></build></model>"#
+            ),
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?><config><object id="1"><metadata key="name" value="box"/><metadata key="extruder" value="{slot}"/>{}</object></config>"#,
+                meta(keys)
+            ),
+        )
+    };
+    let settings = settings.to_string();
+    zip(&[
+        ("3D/3dmodel.model", model.as_bytes()),
+        ("Metadata/project_settings.config", settings.as_bytes()),
+        ("Metadata/model_settings.config", objects.as_bytes()),
+    ])
+}
+
+/// The project settings of the painted box: Bambu Studio's 0.20 mm Standard on a P1S with four filaments, and
+/// `extra`.
+fn box_settings(extra: &serde_json::Value) -> serde_json::Value {
+    let mut settings = serde_json::json!({"printer_model": "Bambu Lab P1S",
+        "filament_colour": ["#FFFFFF", "#FF0000", "#00A0FF", "#202020"], "nozzle_temperature": ["220", "220", "220", "220"],
+        "enable_prime_tower": "1", "brim_width": "0", "layer_height": "0.2", "initial_layer_print_height": "0.2",
+        // Bambu Studio's 0.20 mm Standard shells and infill, so the layers with each feature are Studio's.
+        "top_shell_layers": "5", "top_shell_thickness": "1", "bottom_shell_layers": "3",
+        "sparse_infill_density": "15%", "sparse_infill_pattern": "grid"});
+    settings
+        .as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    settings
+}
+
+/// Slices a project with `sx slice`, and returns its G-code.
+fn slice_project(dir: &std::path::Path, name: &str, bytes: &[u8]) -> String {
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).unwrap();
+    let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// The filaments (1-based) the lines of `feature` print with on each side of x = `split` (bed coordinates): below it
+/// and at or above it. G-code of one filament selects none, so lines before any tool change count as filament 1.
+fn sides(gcode: &str, feature: &str, split: f64) -> [std::collections::BTreeSet<u8>; 2] {
+    let (mut tool, mut here) = (0u8, false);
+    let mut on: [std::collections::BTreeSet<u8>; 2] = Default::default();
+    for l in gcode.lines() {
+        if let Some(n) = l
+            .strip_prefix('T')
+            .and_then(|t| t.split_whitespace().next())
+            .and_then(|n| n.parse::<u8>().ok())
+        {
+            tool = n;
+        } else if let Some(f) = l.strip_prefix("; FEATURE: ").or_else(|| l.strip_prefix(";TYPE:")) {
+            here = f.trim() == feature;
+        } else if here && l.starts_with("G1 ") && l.contains(" E") {
+            let x = l
+                .split_whitespace()
+                .find_map(|w| w.strip_prefix('X'))
+                .and_then(|x| x.parse::<f64>().ok());
+            if let Some(x) = x {
+                on[usize::from(x >= split)].insert(tool + 1);
+            }
+        }
+    }
+    on
+}
+
+/// A modifier part with a wall filament of its own prints the object's walls inside it on that filament, painted or
+/// not: Bambu Studio's key and ours alike. Its walls used to join the walls of the rest of the object, which printed
+/// them all on the object's filament.
+#[test]
+fn a_modifiers_wall_filament_prints_the_walls_inside_it() {
+    let dir = temp_dir(format!("sx-cli-modifier-walls-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = box_settings(&serde_json::json!({}));
+    for (name, keys) in [
+        ("bambu", &[("wall_filament", "3")][..]),
+        (
+            "ours",
+            &[("outer_wall_filament_id", "3"), ("inner_wall_filament_id", "3")][..],
+        ),
+    ] {
+        let gcode = slice_project(
+            &dir,
+            &format!("{name}.3mf"),
+            &bambu_box_3mf(false, &settings, 1, Own::Modifier(keys)),
+        );
+        for feature in ["Outer wall", "Inner wall"] {
+            // The modifier starts at x 128 on the bed, where the walls of both sides end half a line width away.
+            let [left, right] = sides(&gcode, feature, 128.0);
+            assert_eq!(left, [1].into(), "{name}: {feature} left of the modifier");
+            assert!(
+                right.contains(&3),
+                "{name}: {feature} inside the modifier: {right:?}"
+            );
+        }
+        let (changes, _) = changes_and_tools(&gcode, "Outer wall");
+        assert!(changes > 0, "{name}: no filament changes");
+        assert_eq!(
+            sides(&gcode, "Sparse infill", 128.0),
+            [[1].into(), [1].into()],
+            "{name}: the infill stays on the object's filament"
+        );
+    }
 }
 
 /// A case of [`painted_facets_win_over_the_feature_filaments_as_bambu_studio_prints_them`]: its name, whether the box is
-/// painted, the object's filament, the project's keys, the object's own keys and Bambu Studio's tool changes.
-type PaintCase<'a> = (
-    &'a str,
-    bool,
-    u8,
-    serde_json::Value,
-    &'a [(&'a str, &'a str)],
-    usize,
-);
+/// painted, the object's filament, the project's keys, the box's own keys and Bambu Studio's tool changes.
+type PaintCase<'a> = (&'a str, bool, u8, serde_json::Value, Own<'a>, usize);
 
-/// Painted facets against the per-feature filaments, on a box with its front face painted in filament 4 (and the same
-/// box unpainted), with the tool changes Bambu Studio 2.8 makes for each (its walls, sparse infill and solid infill in
-/// the painted part print with the paint's filament in every case):
-/// - paint always wins: the painted regions keep their filament whatever the project or the object asks for;
-/// - the project's own `wall_filament`, `sparse_infill_filament` and `solid_infill_filament` print on nothing, "1" and
-///   others alike;
-/// - the object's own move the unpainted regions' features, where "1" is filament 1 and "0" the object's own.
-#[test]
-fn painted_facets_win_over_the_feature_filaments_as_bambu_studio_prints_them() {
-    let dir = temp_dir(format!("sx-cli-paint-features-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+/// The cases of [`painted_facets_win_over_the_feature_filaments_as_bambu_studio_prints_them`].
+fn paint_cases() -> Vec<PaintCase<'static>> {
     let all = |v: &str| serde_json::json!({"wall_filament": v, "sparse_infill_filament": v, "solid_infill_filament": v});
     let none = serde_json::json!({});
-    let cases: [PaintCase; 12] = [
-        ("a", true, 1, none.clone(), &[], 98),
-        ("b", true, 1, all("1"), &[], 98),
-        ("b-x3", true, 3, all("1"), &[], 98),
-        ("c", true, 1, serde_json::json!({"wall_filament": "2"}), &[], 98),
+    vec![
+        ("a", true, 1, none.clone(), Own::Object(&[]), 98),
+        ("b", true, 1, all("1"), Own::Object(&[]), 98),
+        ("b-x3", true, 3, all("1"), Own::Object(&[]), 98),
+        (
+            "c",
+            true,
+            1,
+            serde_json::json!({"wall_filament": "2"}),
+            Own::Object(&[]),
+            98,
+        ),
         (
             "d",
             true,
             1,
             serde_json::json!({"sparse_infill_filament": "3"}),
-            &[],
+            Own::Object(&[]),
             98,
         ),
-        ("e", true, 1, none.clone(), &[("wall_filament", "2")], 198),
-        ("e1-x3", true, 3, none.clone(), &[("wall_filament", "1")], 198),
+        (
+            "e",
+            true,
+            1,
+            none.clone(),
+            Own::Object(&[("wall_filament", "2")]),
+            198,
+        ),
+        (
+            "e1-x3",
+            true,
+            3,
+            none.clone(),
+            Own::Object(&[("wall_filament", "1")]),
+            198,
+        ),
         (
             "e-all",
             true,
             1,
             none.clone(),
-            &[
+            Own::Object(&[
                 ("wall_filament", "2"),
                 ("sparse_infill_filament", "3"),
                 ("solid_infill_filament", "2"),
-            ],
+            ]),
             190,
         ),
-        ("uc", false, 1, serde_json::json!({"wall_filament": "2"}), &[], 0),
-        ("ue", false, 1, none.clone(), &[("wall_filament", "2")], 100),
-        ("ue1-x3", false, 3, none.clone(), &[("wall_filament", "1")], 100),
-        ("ue0-x3", false, 3, none, &[("wall_filament", "0")], 0),
-    ];
-    for (name, painted, slot, project, own, studio) in cases {
-        let mut settings = serde_json::json!({"printer_model": "Bambu Lab P1S",
-            "filament_colour": ["#FFFFFF", "#FF0000", "#00A0FF", "#202020"], "nozzle_temperature": ["220", "220", "220", "220"],
-            "enable_prime_tower": "1", "brim_width": "0", "layer_height": "0.2", "initial_layer_print_height": "0.2",
-            // Bambu Studio's 0.20 mm Standard shells and infill, so the layers with each feature are Studio's.
-            "top_shell_layers": "5", "top_shell_thickness": "1", "bottom_shell_layers": "3",
-            "sparse_infill_density": "15%", "sparse_infill_pattern": "grid"});
-        settings
-            .as_object_mut()
-            .unwrap()
-            .extend(project.as_object().unwrap().clone());
-        let path = dir.join(format!("{name}.3mf"));
-        std::fs::write(&path, bambu_3mf(&bambu_box(painted), &settings, slot, own)).unwrap();
-        let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
-        assert!(
-            out.status.success(),
-            "{name}: {}",
-            String::from_utf8_lossy(&out.stderr)
+        (
+            "f2",
+            true,
+            1,
+            none.clone(),
+            Own::Modifier(&[("wall_filament", "3")]),
+            198,
+        ),
+        (
+            "uc",
+            false,
+            1,
+            serde_json::json!({"wall_filament": "2"}),
+            Own::Object(&[]),
+            0,
+        ),
+        (
+            "ue",
+            false,
+            1,
+            none.clone(),
+            Own::Object(&[("wall_filament", "2")]),
+            100,
+        ),
+        (
+            "ue1-x3",
+            false,
+            3,
+            none.clone(),
+            Own::Object(&[("wall_filament", "1")]),
+            100,
+        ),
+        (
+            "ue0-x3",
+            false,
+            3,
+            none,
+            Own::Object(&[("wall_filament", "0")]),
+            0,
+        ),
+    ]
+}
+
+/// Painted facets against the per-feature filaments, on a box with its front face painted in filament 4 (and the same
+/// box unpainted), with the tool changes Bambu Studio 2.8 makes for each (its walls, sparse infill and solid infill in
+/// the painted part print with the paint's filament in every case):
+/// - paint always wins: the painted regions keep their filament whatever the project, the object or a modifier asks
+///   for;
+/// - the project's own `wall_filament`, `sparse_infill_filament` and `solid_infill_filament` print on nothing, "1" and
+///   others alike;
+/// - the object's own move the unpainted regions' features, where "1" is filament 1 and "0" the object's own; a
+///   modifier's do the same inside its volume.
+#[test]
+fn painted_facets_win_over_the_feature_filaments_as_bambu_studio_prints_them() {
+    let dir = temp_dir(format!("sx-cli-paint-features-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for (name, painted, slot, project, own, studio) in paint_cases() {
+        let gcode = slice_project(
+            &dir,
+            &format!("{name}.3mf"),
+            &bambu_box_3mf(painted, &box_settings(&project), slot, own),
         );
-        let gcode = String::from_utf8_lossy(&out.stdout);
         let (changes, walls) = changes_and_tools(&gcode, "Outer wall");
         assert_eq!(changes, studio, "{name}: walls on {walls:?}");
         if painted {

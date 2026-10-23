@@ -7410,18 +7410,25 @@ impl SliceSession {
             k => mods.get(usize::from(k) - 1).unwrap_or(base_cfg),
         };
         // Regions of one filament whose walls are set alike share their walls, as in Orca: a
-        // modifier that only changes the infill does not put walls along its boundary.
+        // modifier that only changes the infill does not put walls along its boundary. Walls on other
+        // filaments (a modifier's own wall filament) are set apart: shared, they would print on the filament
+        // of the region that walls the group.
+        let key_of = |j: usize, slot: u8| {
+            let c = region_config(j);
+            let t = self.feature_tools(c, slot);
+            (wall_key(c), t.outer, t.inner)
+        };
         let group_of = |ri: usize| -> Vec<usize> {
             let Some((slot, _)) = here.regions.get(ri) else {
                 return Vec::new();
             };
-            let key = wall_key(region_config(ri));
+            let key = key_of(ri, *slot);
             (0..here.regions.len())
                 .filter(|&j| {
                     here.regions
                         .get(j)
                         .is_some_and(|(sl, sh)| sl == slot && !sh.is_empty())
-                        && wall_key(region_config(j)) == key
+                        && key_of(j, *slot) == key
                 })
                 .collect()
         };
