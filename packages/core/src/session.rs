@@ -1461,7 +1461,7 @@ impl SliceSession {
         for (obj_index, obj) in plate.objects.iter().enumerate() {
             let (mut lo, mut hi) = (f64::MAX, f64::MIN);
             let mut oxy = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
-            for part in &obj.mesh.parts {
+            for (part_index, part) in obj.mesh.parts.iter().enumerate() {
                 if part.triangles.is_empty() {
                     continue;
                 }
@@ -1487,7 +1487,9 @@ impl SliceSession {
                     min_z = min_z.min(v[2]);
                     xy = [xy[0].min(v[0]), xy[1].min(v[1]), xy[2].max(v[0]), xy[3].max(v[1])];
                 }
-                let paint = crate::paint::Facets::placed(&part.paint, &obj.transform);
+                // Read from the plate's mesh in place: a painted part's paint is tens of megabytes.
+                let paint =
+                    crate::paint::Facets::of_part(&obj.mesh, part_index, |p| &p.paint, &obj.transform);
                 painted_supports.extend(
                     part.support_paint
                         .iter()
@@ -1500,7 +1502,12 @@ impl SliceSession {
                 if !part.fuzzy_paint.is_empty() {
                     fuzzy_paint.push((
                         raw.len(),
-                        crate::paint::Facets::placed(&part.fuzzy_paint, &obj.transform),
+                        crate::paint::Facets::of_part(
+                            &obj.mesh,
+                            part_index,
+                            |p| &p.fuzzy_paint,
+                            &obj.transform,
+                        ),
                     ));
                 }
                 raw.push((slot, verts, tris, paint));
@@ -11392,5 +11399,154 @@ mod footprint_tests {
         assert_eq!(all[1], alone(1)[0]);
         let session = SliceSession::new(&plate, &PrintConfig::default()).expect("the plate builds");
         assert_eq!(session.footprints(), all.as_slice());
+    }
+}
+
+#[cfg(test)]
+mod shared_paint_tests {
+    use crate::api::{self, SliceRequest};
+    use crate::mesh::{Mesh, MeshPart};
+    use crate::paint::{Facets, PaintFacet, Pieces};
+    use std::sync::Arc;
+
+    /// `facets` with each piece moved `dx` mm along x and its filament changed by `state`.
+    fn moved(facets: &[PaintFacet], dx: f32, state: impl Fn(u8) -> u8) -> Vec<PaintFacet> {
+        facets
+            .iter()
+            .map(|f| PaintFacet {
+                v: f.v.map(|p| [p[0] + dx, p[1], p[2]]),
+                state: state(f.state),
+            })
+            .collect()
+    }
+
+    /// Two painted objects: the painted cube (top in filament 2, a side in fuzzy skin), and a model of three parts.
+    /// Its first part has paint but no triangles, so the session skips it; the second is the cube with its top in
+    /// filament 3; the third is the cube 25 mm along x, top in filament 2, no fuzzy skin. A part that read another
+    /// part's paint, or the paint at the wrong index, would print another color or none.
+    fn request() -> (SliceRequest, Arc<Mesh>, Arc<Mesh>) {
+        let cube = Mesh::load(include_bytes!("../tests/fixtures/painted-cube.sxmp"), "cube.3mf")
+            .expect("the painted cube loads");
+        let p = &cube.parts[0];
+        assert!(!p.paint.is_empty() && !p.fuzzy_paint.is_empty());
+        let empty = MeshPart {
+            name: "empty".to_owned(),
+            positions: Vec::new(),
+            triangles: Vec::new(),
+            paint: moved(&p.paint, 0.0, |_| 1),
+            fuzzy_paint: p.fuzzy_paint.clone(),
+            ..p.clone()
+        };
+        let third = MeshPart {
+            name: "third".to_owned(),
+            positions: p.positions.iter().map(|q| [q[0] + 25.0, q[1], q[2]]).collect(),
+            paint: moved(&p.paint, 25.0, |s| s),
+            support_paint: moved(&p.support_paint, 25.0, |s| s),
+            seam_paint: moved(&p.seam_paint, 25.0, |s| s),
+            fuzzy_paint: Vec::new(),
+            ..p.clone()
+        };
+        let second = MeshPart {
+            name: "second".to_owned(),
+            paint: moved(&p.paint, 0.0, |s| if s == 2 { 3 } else { s }),
+            ..p.clone()
+        };
+        let parts = Mesh {
+            name: "parts".to_owned(),
+            parts: vec![empty, second, third],
+            ..cube.clone()
+        };
+        let req: SliceRequest = serde_json::from_value(serde_json::json!({
+            "plate": { "objects": [
+                { "id": "a", "mesh": "cube", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 150, 150, 0, 1] },
+                { "id": "b", "mesh": "parts", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 40, 60, 0, 1] }
+            ] },
+            "config": { "filament_colour": ["#FF0000", "#0000FF", "#00FF00"], "enable_prime_tower": false, "fuzzy_skin": "none" },
+            "options": {}
+        }))
+        .expect("the request parses");
+        (req, Arc::new(cube), Arc::new(parts))
+    }
+
+    /// The session reads each part's color and fuzzy skin paint in place from the plate's mesh, and reads it as a
+    /// copy of the paint would: the same pieces part by part, and the same G-code.
+    #[test]
+    fn paint_read_in_place_prints_as_a_copy_of_it() {
+        let (req, cube, parts) = request();
+        let (config, _) = api::request_config_checked(&req).expect("the config builds");
+        let meshes = move |id: &str| Ok(if id == "cube" { cube.clone() } else { parts.clone() });
+        let plate = api::build_plate(&req, &meshes).expect("the plate builds");
+        let shared = api::build_session(&req, &plate, &config).expect("the session builds");
+        // The paint as the session copied it before, part by part in the session's order.
+        let mut copied = api::build_session(&req, &plate, &config).expect("the session builds");
+        let placed: Vec<(&MeshPart, &[f32; 16])> = plate
+            .objects
+            .iter()
+            .flat_map(|o| {
+                o.mesh
+                    .parts
+                    .iter()
+                    .filter(|p| !p.triangles.is_empty())
+                    .map(|p| (p, &o.transform))
+            })
+            .collect();
+        assert_eq!(placed.len(), 3);
+        assert_eq!(copied.parts.len(), placed.len());
+        for (part, (p, t)) in copied.parts.iter_mut().zip(&placed) {
+            part.paint = Facets::placed(&p.paint, t);
+        }
+        let fuzzy: Vec<(usize, Facets)> = placed
+            .iter()
+            .enumerate()
+            .filter(|(_, (p, _))| !p.fuzzy_paint.is_empty())
+            .map(|(k, (p, t))| (k, Facets::placed(&p.fuzzy_paint, t)))
+            .collect();
+        assert_eq!(fuzzy.iter().map(|f| f.0).collect::<Vec<_>>(), [0, 1]);
+        copied.fuzzy_paint = fuzzy;
+
+        let in_place = |f: &Facets| matches!(f, Facets::Placed(Pieces::Part(..), _));
+        assert_eq!(shared.parts.len(), copied.parts.len());
+        for (k, (a, b)) in shared.parts.iter().zip(&copied.parts).enumerate() {
+            assert!(
+                in_place(&a.paint),
+                "part {k}: the paint is read in place, not copied"
+            );
+            assert!(
+                a.paint.iter().eq(b.paint.iter()),
+                "part {k}: the same painted pieces"
+            );
+        }
+        assert_eq!(shared.fuzzy_paint.len(), copied.fuzzy_paint.len());
+        for ((i, a), (j, b)) in shared.fuzzy_paint.iter().zip(&copied.fuzzy_paint) {
+            assert_eq!(i, j);
+            assert!(in_place(a), "part {i}: the fuzzy skin paint is read in place");
+            assert!(a.iter().eq(b.iter()), "part {i}: the same fuzzy skin pieces");
+        }
+
+        let gcode = |session: &super::SliceSession| {
+            let mut out = Vec::new();
+            api::slice_shard(
+                &req,
+                session,
+                &config,
+                0..session.layer_count(),
+                &crate::NoProgress,
+                &mut out,
+            )
+            .expect("the plate slices");
+            out
+        };
+        let g = gcode(&shared);
+        assert!(
+            g == gcode(&copied),
+            "read in place, the paint prints the bytes its copy prints"
+        );
+        let text = String::from_utf8_lossy(&g);
+        for tool in ["T1", "T2"] {
+            assert!(
+                text.lines().any(|l| l.starts_with(tool)),
+                "a painted top prints with {tool}"
+            );
+        }
     }
 }
