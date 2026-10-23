@@ -1188,6 +1188,11 @@ fn build_session_with(
         return Err(Error::Cancelled);
     }
     progress.report(Stage::Layers, LAYERS_OBJECTS);
+    if planned.is_some()
+        && let Some(w) = smart_layer_warning(plate)
+    {
+        session.push_warning(w);
+    }
     set_collision_check(&mut session, plate, config, req.options.printer_id.as_deref());
     for k in req.plate.objects.iter().flat_map(|o| o.settings.keys()) {
         if !crate::config::is_object_key(k) {
@@ -1240,6 +1245,31 @@ fn build_session_with(
         });
     }
     Ok(session)
+}
+
+/// The warning for smart layer heights over layer heights objects set for themselves: the plan is one for the whole
+/// plate, so an object's own `layer_height` is not used. Names each such object with its height; none when no object
+/// sets one.
+fn smart_layer_warning(plate: &Plate) -> Option<SliceWarning> {
+    let own: Vec<String> = plate
+        .objects
+        .iter()
+        .filter_map(|o| {
+            let v = o.settings.get("layer_height")?;
+            let h = v
+                .as_f64()
+                .or_else(|| v.as_str().and_then(|t| t.trim().parse::<f64>().ok()))?;
+            Some(format!("{} {h} mm", o.name))
+        })
+        .collect();
+    (!own.is_empty()).then(|| SliceWarning {
+        code: WarningCode::UnsupportedSetting,
+        message: format!(
+            "Smart layer heights replace the layer heights objects set for themselves ({}).",
+            own.join(", ")
+        ),
+        layer: None,
+    })
 }
 
 /// Gives the session of `plate` what the collision check reads, as every slice of a plate has it: heimdall's model on a
@@ -2520,6 +2550,34 @@ mod tests {
         let on = layers(&format!(r#"{config},"smart_layer":"quality"}}"#));
         assert!((on[0] - 0.2).abs() < 1e-4, "{on:?}");
         assert!(steps(&on).iter().all(|s| (s - 0.2).abs() < 1e-4), "{on:?}");
+    }
+
+    #[cfg(feature = "sleipnir")]
+    #[test]
+    fn smart_layer_says_which_object_layer_heights_it_replaces() {
+        let mesh = house();
+        let run = |objects: &str, config: &str| {
+            let body = format!(r#"{{"plate":{{"objects":{objects}}},"config":{config},"options":{{}}}}"#);
+            let req: SliceRequest = serde_json::from_str(&body).unwrap();
+            run_request(&req, &|_: &str| Ok(mesh.clone()))
+                .unwrap()
+                .report
+                .warnings
+                .into_iter()
+                .filter(|w| w.message.starts_with("Smart layer heights"))
+                .map(|w| w.message)
+                .collect::<Vec<_>>()
+        };
+        let two = r#"[{"mesh":1,"name":"tuned","settings":{"layer_height":"0.3"},"transform":[1,0,0,0,0,1,0,0,0,0,1,0,80,100,0,1]},{"mesh":1,"name":"plain","transform":[1,0,0,0,0,1,0,0,0,0,1,0,150,100,0,1]}]"#;
+        let smart = r#"{"layer_height":0.2,"smart_layer":"quality","print_sequence":"by object"}"#;
+        assert_eq!(
+            run(two, smart),
+            ["Smart layer heights replace the layer heights objects set for themselves (tuned 0.3 mm)."]
+        );
+        // Without smart layers each object keeps its own, and nothing is said.
+        assert!(run(two, r#"{"layer_height":0.2,"print_sequence":"by object"}"#).is_empty());
+        // Nor when no object sets one.
+        assert!(run(r#"[{"mesh":1,"name":"plain"}]"#, smart).is_empty());
     }
 
     #[test]

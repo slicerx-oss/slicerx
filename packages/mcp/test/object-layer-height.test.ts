@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A project object's own layer height (object metadata in Metadata/model_settings.config) beats the smart layer
 // heights the default process profile turns on: slicerx_slice_file turns them off for that file and says so. Smart
-// layers a client asks for stay, and the slice says which layer heights they replace.
+// layers a client asks for stay, and the engine's warning, given once, says which layer heights they replace.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -28,7 +28,8 @@ function project(dir: string, own: Record<string, string>): string {
 }
 
 const OFF = 'Smart layer heights are off for this slice: objects in two.3mf set their own layer height (tuned 0.3 mm).'
-const KEPT = 'Smart layer heights replace the layer heights objects in two.3mf set for themselves (tuned 0.3 mm).'
+/** The engine's warning, for smart layers a client asks for; the tool adds none of its own then. */
+const KEPT = 'Smart layer heights replace the layer heights objects set for themselves (tuned 0.3 mm).'
 
 describe('the layer heights objects set in a project', () => {
   it('are read by object, on the plate asked for', async () => {
@@ -56,15 +57,14 @@ describe.skipIf(noSx())('slicerx_slice_file with the default smart layers', { ti
     const { out, text: t } = await slice({ layer_height: '0.3' }, {})
     // 12 mm: tuned 0.2 then 0.3 mm layers (40), plain 0.2 mm layers (60), one after the other
     expect(out.layer_count).toBe(100)
-    expect(out.warnings).toContain(OFF)
+    expect(out.warnings.filter((w) => w.startsWith('Smart layer heights'))).toEqual([OFF])
     expect(t).toContain(`Warning: ${OFF}`)
   })
 
   it('keep smart layers a client asks for, saying which layer heights they replace', async () => {
     const { out } = await slice({ layer_height: '0.3' }, { smart_layer: 'quality' })
     expect(out.layer_count).not.toBe(100)
-    expect(out.warnings).toContain(KEPT)
-    expect(out.warnings).not.toContain(OFF)
+    expect(out.warnings.filter((w) => w.startsWith('Smart layer heights'))).toEqual([KEPT])
   })
 
   it('leave smart layers on when no object sets a layer height', async () => {

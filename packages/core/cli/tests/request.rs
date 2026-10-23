@@ -3594,3 +3594,43 @@ fn a_3mf_slice_takes_the_requests_collision_check() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(!out.stdout.is_empty());
 }
+
+/// Smart layer heights a request turns on are planned once for the plate, so a layer height a project's object sets for
+/// itself is not used: the result says which, as for an app or client that slices it.
+#[test]
+fn smart_layers_name_the_object_layer_heights_they_replace() {
+    let dir = temp_dir(format!("sx-cli-smart-own-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("own.3mf");
+    std::fs::write(
+        &path,
+        bambu_cube_3mf(&serde_json::json!({}), 1, &[("layer_height", "0.3")]),
+    )
+    .unwrap();
+    let warnings = |config: serde_json::Value| {
+        let req = serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": {"p": path},
+            "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+            "config": config,
+        });
+        let request = dir.join("request.json");
+        std::fs::write(&request, req.to_string()).unwrap();
+        let out = sx().args(["slice", "--request"]).arg(&request).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        v["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|w| w["message"].as_str())
+            .filter(|m| m.starts_with("Smart layer heights"))
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        warnings(serde_json::json!({"layer_height": 0.2, "smart_layer": "quality"})),
+        ["Smart layer heights replace the layer heights objects set for themselves (cube 0.3 mm)."]
+    );
+    assert!(warnings(serde_json::json!({"layer_height": 0.2})).is_empty());
+}
