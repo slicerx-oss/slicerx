@@ -7,12 +7,14 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 ### Added
 
 - `load_3mf_items`: the build items of one 3MF plate, each a mesh of its own, and `is_3mf`. `Plate::items_on` makes a plate of them (one object per item, placed as the file places it) and `plate::items_transform` is the one translation they share. `set_collision_check` and `check_paths` are the collision check every slice of a plate runs, for hosts that slice a `Plate` themselves.
+- `layer_gcode`: layer G-code (a request's `layerGcode`, or the marks `load_3mf_layer_gcode` reads from a project) on a session's layers, as `EmitOptions::layer_gcode` takes it.
 
 ### Changed
 
 - Two extruder printers whose extruder variants give a process setting one value per extruder (the X2D's Bowden extruder, an H2D with a high flow nozzle) now print each filament at its own extruder's speeds and accelerations; all filaments used the first extruder's before. `PrintConfig::for_extruder` and `PrintConfig::for_slot` give the settings one extruder prints with.
 - `sx slice <file.3mf>` slices each build item as an object of its own, as `sx slice --request` and the app already did: one object label per item (`EXCLUDE_OBJECT`, `M486`, and the `M624` ids on Bambu Lab printers), with its parts, modifiers and negative volumes inside it. It runs the same collision and clearance check as `--request`, refuses with exit code 3 where that check does, and takes `--allow-collisions`. It also takes the brim ears a project paints on each object. On plates of several objects the print order, travels and brims can change; single-object files change only in their label names.
 - A 3MF object without a name is called `Object_<n>` (the build item's place, from 1), not after the file.
+- `sx slice <project.3mf>` writes the pauses, color changes and custom G-code the project sets on the plate's layers (`Metadata/custom_gcode_per_layer.xml`), on the layers `sx slice --request` writes them. Before, only the request path read them.
 - A slice of a Bambu Lab plate with more than 64 objects warns that the printer can't skip any of them, since such plates get no object labels.
 
 ### Fixed
