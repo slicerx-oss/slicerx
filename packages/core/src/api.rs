@@ -639,6 +639,16 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
             serde_json::Value::String("rib".to_owned()),
         );
     }
+    // Bambu Studio reads a missing first layer travel acceleration as 500 mm/s2, not as a share of the travel
+    // acceleration (our default), so a project of its that lacks the key travels the first layer at 500.
+    if app.as_deref().is_some_and(|a| a.starts_with("BambuStudio"))
+        && !settings.contains_key("initial_layer_travel_acceleration")
+    {
+        settings.insert(
+            "initial_layer_travel_acceleration".to_owned(),
+            serde_json::json!(["500"]),
+        );
+    }
     let walls = project_walls(&settings, changed.as_ref(), app.as_deref());
     let mut kept = Vec::new();
     if let Some(changed) = changed {
