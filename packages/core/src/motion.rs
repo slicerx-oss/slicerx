@@ -9,6 +9,7 @@
 use crate::config::PrintConfig;
 use crate::fm::Fm;
 use crate::output::Feature;
+use crate::par::Init as _;
 
 /// One straight move: axis distances in mm, the requested speed, and the acceleration to use.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -89,6 +90,40 @@ fn bridge_like(feature: Feature) -> bool {
     )
 }
 
+/// The acceleration of a bridge or internal bridge and of an overhanging wall, mm/s2. Bambu Lab printers do as
+/// Bambu Studio does, which has no bridge acceleration setting: bridges at the default acceleration and overhanging
+/// walls at the outer wall's. A `bridge_acceleration` set away from the schema default (by the person or a project)
+/// still wins for bridges there. Other printers take `bridge_acceleration` (a percent of the outer wall's, half of it
+/// when the key is absent) for all three.
+fn bridge_accels(cfg: &PrintConfig, default: f64, outer: f64) -> (f64, f64) {
+    let bridge = abs_value(cfg, "bridge_acceleration", outer).unwrap_or(0.5 * outer);
+    if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+        let set = cfg
+            .raw
+            .get("bridge_acceleration")
+            .is_some_and(|v| !is_schema_default("bridge_acceleration", v));
+        (if set { bridge } else { default }, outer)
+    } else {
+        (bridge, bridge)
+    }
+}
+
+/// Whether `value` is the settings schema's default for `key`, however it is written (`"50%"`, `["50%"]`). A value
+/// that reads as nothing (null, empty) counts as the default, as the key's absence does.
+fn is_schema_default(key: &str, value: &serde_json::Value) -> bool {
+    static DEFAULTS: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+    let defaults = DEFAULTS.once(|| serde_json::from_str(crate::config::SCHEMA_DEFAULTS).unwrap_or_default());
+    let Some(default) = defaults.get(key).and_then(|e| e.get(1)) else {
+        return false;
+    };
+    // A percent scales with its base and a number does not, so two bases tell "50%" from 0.5 or 2500.
+    let read = |v: &serde_json::Value, base: f64| crate::config::float_or_percent(v, base);
+    if read(value, 1.0).is_none() {
+        return true;
+    }
+    [1.0, 1000.0].iter().all(|&b| read(value, b) == read(default, b))
+}
+
 /// The acceleration `GCode::_extrude` asks for a path of `feature`, mm/s2, or 0 when `default_acceleration`
 /// is not above 0 (then none is written): the first layer's, else the bridge, sparse, solid, outer, inner
 /// or top surface one when it is above 0, else the default. Percentages follow Orca's `ratio_over`.
@@ -99,11 +134,13 @@ pub fn gcode_accel(cfg: &PrintConfig, feature: Feature, first_layer: bool) -> f6
     }
     let outer = num_or(cfg, "outer_wall_acceleration", 500.0);
     let initial = num_or(cfg, "initial_layer_acceleration", 300.0);
-    let bridge = abs_value(cfg, "bridge_acceleration", outer).unwrap_or(0.5 * outer);
+    let (bridge, overhang) = bridge_accels(cfg, default, outer);
     let sparse = abs_value(cfg, "sparse_infill_acceleration", default).unwrap_or(default);
     let solid = abs_value(cfg, "internal_solid_infill_acceleration", default).unwrap_or(default);
     let a = if first_layer && initial > 0.0 {
         initial
+    } else if overhang > 0.0 && feature == Feature::OverhangWall {
+        overhang
     } else if bridge > 0.0 && bridge_like(feature) {
         bridge
     } else if sparse > 0.0 && feature == Feature::SparseInfill {
@@ -578,9 +615,10 @@ fn travel_motion(cfg: &PrintConfig, short: bool, next: Feature, first_layer: boo
         if num_or(cfg, "default_acceleration", 500.0) > 0.0 {
             let outer = num_or(cfg, "outer_wall_acceleration", 500.0);
             if next == Feature::OverhangWall && short {
-                let bridge = abs_value(cfg, "bridge_acceleration", outer).unwrap_or(0.5 * outer);
-                if bridge > 0.0 {
-                    accel = rounded(bridge);
+                let default = num_or(cfg, "default_acceleration", 500.0);
+                let (_, overhang) = bridge_accels(cfg, default, outer);
+                if overhang > 0.0 {
+                    accel = rounded(overhang);
                 }
             } else if next == Feature::OuterWall && short {
                 if outer > 0.0 {
@@ -948,6 +986,114 @@ mod tests {
             &mut st,
         );
         assert_eq!(line, "SET_VELOCITY_LIMIT ACCEL=3000 SQUARE_CORNER_VELOCITY=7\n");
+    }
+
+    /// Bambu Lab printers print bridges and internal bridges at the default acceleration and overhanging walls at the
+    /// outer wall's, as Bambu Studio does; other printers keep half the outer wall's for all three.
+    #[test]
+    fn bambu_lab_bridges_take_the_default_and_overhangs_the_outer_wall_acceleration() {
+        use crate::config::GcodeFlavor as F;
+        let pairs = [
+            ("default_acceleration", serde_json::json!(6000)),
+            ("outer_wall_acceleration", serde_json::json!(5000)),
+            ("initial_layer_acceleration", serde_json::json!(500)),
+            ("travel_acceleration", serde_json::json!(10000)),
+            ("bridge_acceleration", serde_json::json!("50%")),
+        ];
+        let bambu = {
+            let mut c = with(&pairs);
+            c.raw
+                .insert("printer_model".into(), serde_json::json!("Bambu Lab A1"));
+            c.gcode_flavor = F::Marlin;
+            c
+        };
+        let other = {
+            let mut c = with(&pairs);
+            c.raw
+                .insert("printer_model".into(), serde_json::json!("Generic Marlin"));
+            c.gcode_flavor = F::Marlin;
+            c
+        };
+        let line =
+            |cfg: &PrintConfig, f: Feature| accel_lines(cfg, F::Marlin, f, false, &mut Written::default());
+        assert_eq!(line(&bambu, Feature::Bridge), "M204 S6000\n");
+        assert_eq!(line(&bambu, Feature::InternalBridge), "M204 S6000\n");
+        assert_eq!(line(&bambu, Feature::OverhangWall), "M204 S5000\n");
+        // The first layer still wins.
+        assert!((gcode_accel(&bambu, Feature::Bridge, true) - 500.0).abs() < 1e-9);
+        // A short travel on to an overhanging wall keeps that wall's acceleration.
+        assert_eq!(
+            travel_lines(
+                &bambu,
+                F::Marlin,
+                true,
+                Feature::OverhangWall,
+                false,
+                &mut Written::default()
+            ),
+            "M204 S5000\n"
+        );
+        // The bambu flavor alone marks a Bambu Lab printer too.
+        let mut flavored = with(&pairs);
+        flavored.gcode_flavor = F::Bambu;
+        assert!((gcode_accel(&flavored, Feature::Bridge, false) - 6000.0).abs() < 1e-9);
+        // Any other printer: half the outer wall, as before.
+        for f in [Feature::Bridge, Feature::InternalBridge, Feature::OverhangWall] {
+            assert_eq!(line(&other, f), "M204 S2500\n", "{f:?}");
+        }
+        assert_eq!(
+            travel_lines(
+                &other,
+                F::Marlin,
+                true,
+                Feature::OverhangWall,
+                false,
+                &mut Written::default()
+            ),
+            "M204 S2500\n"
+        );
+    }
+
+    /// A bridge acceleration the person or a project set wins on a Bambu Lab printer, for bridges only; the schema
+    /// default, however it is written, still gives the default acceleration.
+    #[test]
+    fn a_set_bridge_acceleration_wins_on_bambu_lab_printers() {
+        use crate::config::GcodeFlavor as F;
+        let cfg = |bridge: serde_json::Value| {
+            let mut c = with(&[
+                ("default_acceleration", serde_json::json!(6000)),
+                ("outer_wall_acceleration", serde_json::json!(5000)),
+                ("bridge_acceleration", bridge),
+            ]);
+            c.raw
+                .insert("printer_model".into(), serde_json::json!("Bambu Lab P1S"));
+            c.gcode_flavor = F::Marlin;
+            c
+        };
+        let a = |c: &PrintConfig, f: Feature| gcode_accel(c, f, false);
+        for set in [
+            serde_json::json!(3000),
+            serde_json::json!(["3000"]),
+            serde_json::json!("60%"),
+        ] {
+            let c = cfg(set.clone());
+            assert!((a(&c, Feature::Bridge) - 3000.0).abs() < 1e-9, "{set}");
+            assert!((a(&c, Feature::InternalBridge) - 3000.0).abs() < 1e-9, "{set}");
+            assert!((a(&c, Feature::OverhangWall) - 5000.0).abs() < 1e-9, "{set}");
+        }
+        // 2500 is what the default gives here, but it is a number the person typed: it wins.
+        assert!((a(&cfg(serde_json::json!(2500)), Feature::Bridge) - 2500.0).abs() < 1e-9);
+        for default in [
+            serde_json::json!("50%"),
+            serde_json::json!(["50%"]),
+            serde_json::json!(" 50 %"),
+            serde_json::Value::Null,
+        ] {
+            assert!(
+                (a(&cfg(default.clone()), Feature::Bridge) - 6000.0).abs() < 1e-9,
+                "{default}"
+            );
+        }
     }
 
     #[test]
