@@ -19,6 +19,14 @@ describe('error codes', () => {
     expect(data<Err>(await h.call('slicerx_get_profile', { profile: 'nope' })).error.code).toBe('unknown_profile')
   })
 
+  it('names preset types for a missing preset file', async () => {
+    const h = await connect()
+    const gone = join(h.dir, 'gone.json')
+    const r = await h.call('slicerx_slice_file', { model: join(h.dir, 'cube.stl'), profile_files: [gone] })
+    expect(r.isError).toBe(true)
+    expect(data<Err>(r).error).toEqual({ code: 'file_not_found', message: `File not found: ${gone}. Pass an absolute path to a .json, .bbscfg, .bbsflmt, .orca_printer, .orca_filament, .orca_bundle or .zip file.` })
+  })
+
   it('gives tools that run through the permission gate the same shape', async () => {
     const h = await connect()
     const r = await h.call('slicerx_sxlock_open', { file: join(h.dir, 'x.sxlock') })

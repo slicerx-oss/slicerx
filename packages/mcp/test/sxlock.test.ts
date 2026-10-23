@@ -52,6 +52,14 @@ function projectFile(dir: string): string {
 }
 
 describe('locked projects when no account service is configured', () => {
+  it('names the .sxlock type for a missing locked project', async () => {
+    const h = await connect()
+    const gone = join(h.dir, 'gone.sxlock')
+    const r = await h.call('slicerx_sxlock_inspect', { file: gone })
+    expect(r.isError).toBe(true)
+    expect(raw(r)).toMatchObject({ error: { code: 'file_not_found', message: `File not found: ${gone}. Pass an absolute path to a .sxlock file.` } })
+  })
+
   it('opening and exporting say how to enable them, without any network call', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const h = await connect()

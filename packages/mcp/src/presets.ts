@@ -11,6 +11,8 @@ import { readZip } from './zip'
 
 /** Preset bundles: Bambu Studio's printer and filament bundles, OrcaSlicer's, and a plain zip of presets. */
 export const BUNDLE_EXTENSIONS = ['.bbscfg', '.bbsflmt', '.orca_printer', '.orca_filament', '.orca_bundle', '.zip']
+/** What a preset file may be: a preset (.json) or a bundle. */
+export const PRESET_EXTENSIONS = ['.json', ...BUNDLE_EXTENSIONS]
 const MAX_BUNDLE_BYTES = 64 * 1024 * 1024
 
 const clean = (json: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(json).filter(([k]) => !isNeverImported(k)))
@@ -35,7 +37,7 @@ export async function readPresetFiles(policy: PathPolicy, paths: readonly string
   const files: PresetFile[] = []
   let printer: string | undefined
   for (const p of paths) {
-    const real = checkReadable(policy, p)
+    const real = checkReadable(policy, p, PRESET_EXTENSIONS)
     const ext = extname(real).toLowerCase()
     if (BUNDLE_EXTENSIONS.includes(ext)) {
       if (statSync(real).size > MAX_BUNDLE_BYTES) throw new ToolInputError(`${basename(real)} is over the ${MAX_BUNDLE_BYTES} byte limit for a preset bundle`, 'invalid_input')

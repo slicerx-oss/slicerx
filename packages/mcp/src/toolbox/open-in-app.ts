@@ -17,7 +17,7 @@ export default (d: ServerToolDeps) =>
     toolset: 'core',
     ungated: true,
     description:
-      `Open a model or project file (${APP_OPENS_TEXT}) in the ${productName()} desktop app on this computer, to slice and print it there, as the browser's Open in ${productName()} button does. The file goes to the app registered for its type, as a double-click would. A STEP file (.step or .stp) is turned into a mesh by the app as it opens it. Returns the file and the command that handed it over. The app adds it to the plate; nothing is sliced or printed until a person does it.`,
+      `Open a model, project or G-code file (${APP_OPENS_TEXT}) in the ${productName()} desktop app on this computer, to slice and print it there, as the browser's Open in ${productName()} button does. The file goes to the app registered for its type, as a double-click would. A STEP file (.step or .stp) is turned into a mesh by the app as it opens it, a locked project (.sxlock) opens only for the account that exported it, and G-code opens in the preview. Returns the file and the command that handed it over. The app adds it to the plate; nothing is sliced or printed until a person does it.`,
     input: z.object({ file: z.string().min(1).describe(`Absolute path or http(s) URL of a ${APP_OPENS_TEXT} file`) }),
     hints: { readOnly: false, destructive: false, idempotent: false, openWorld: false },
     async run(args) {

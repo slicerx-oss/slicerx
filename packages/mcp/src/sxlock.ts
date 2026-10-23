@@ -74,7 +74,7 @@ export interface SxlockToolDeps {
 const file = z.string().min(1)
 
 function readFile(policy: PathPolicy, path: string, ext: readonly string[]): Buffer {
-  const abs = checkReadable(policy, path)
+  const abs = checkReadable(policy, path, ext)
   if (!ext.includes(extname(abs).toLowerCase())) throw new ToolInputError(`Expected a ${ext.join(' or ')} file, not ${basename(abs)}`, 'unsupported_format')
   return readFileSync(abs)
 }
