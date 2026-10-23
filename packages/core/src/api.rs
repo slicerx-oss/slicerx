@@ -324,7 +324,9 @@ pub struct RequestOptions {
     pub stock_gcode_keys: Vec<String>,
     /// Setting overrides by height. Only wall count, temperature, flow,
     /// pressure advance, speeds, retraction and the per-feature filaments can
-    /// change by height.
+    /// change by height. A range's `layer_height` plans the plate's layers
+    /// instead, when every printed object has the same ones and the request
+    /// sends no layer tops and turns sleipnir off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height_ranges: Option<Vec<HeightRangeSpec>>,
     /// The plate's name, number (from 1) and the project's name, for `filename_format`
@@ -2004,7 +2006,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
             "properties": {
               "zFromMm": { "type": "number" },
               "zToMm": { "type": "number" },
-              "settings": { "type": "object", "description": "Orca keys; wall_loops, nozzle_temperature, filament_flow_ratio, enable_pressure_advance, pressure_advance, speeds, retraction and the per-feature filaments (outer_wall_filament_id and the other *_filament_id keys) only" },
+              "settings": { "type": "object", "description": "Orca keys; wall_loops, nozzle_temperature, filament_flow_ratio, enable_pressure_advance, pressure_advance, speeds, retraction and the per-feature filaments (outer_wall_filament_id and the other *_filament_id keys) only. layer_height plans the plate's layers instead (layers whose bottom lies in the range take it) when every printed object has the same layer heights by height and no layerTopsMm or sleipnir plan is given" },
               "objects": { "type": "array", "items": { "type": "string" }, "description": "Ids of the plate objects the range applies to; absent for every object. Objects printed layer by layer share the nozzle temperature, pressure advance and retraction of a layer" }
             }
           }

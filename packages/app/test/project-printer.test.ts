@@ -3,6 +3,8 @@
 // A Bambu Studio project opens as its own printer: a P1S 0.2 project on an empty plate switches to our P1S 0.2
 // profile with no question, takes the file's whole process and what it changed from its other presets, and slices
 // with its own machine G-code. Switching to another printer takes that printer's G-code and leaves the settings made for the 0.2 nozzle.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Host, MeshHandle, PrinterInfo, SettingValue, SliceRequest } from '@slicerx/contracts'
 import { resolveConfig } from '../src/adapters/config'
@@ -392,7 +394,7 @@ describe('a P1S 0.2 project on an empty plate', () => {
 })
 
 describe('settings by height', () => {
-  it('range keys go to the slice by object, layer heights as layer tops, the rest is named', async () => {
+  it('range keys and layer heights go to the slice by object, the rest is named', async () => {
     const { host, requests } = capture()
     await openModelBytes(host, 'pumpkin.3mf', project(P1S, RANGES))
     const e = get().plate[0]!
@@ -403,14 +405,36 @@ describe('settings by height', () => {
     expect(get().toast?.text).toBe('Opened as P1S 0.2 mm from the project. Not imported from its height ranges: infill density.')
     await slicePlate(host, { auto: true })
     const o = requests[0]!.options!
-    expect(o.heightRanges).toEqual([{ zFromMm: 0, zToMm: 1.2, settings: { wall_loops: 4 }, objects: [e.id] }])
-    const tops = o.layerTopsMm!
-    const steps = tops.slice(1).map((t, i) => Math.round((t - tops[i]!) * 1000) / 1000)
-    const at = (z: number) => tops.findIndex((t) => t > z)
-    expect(new Set(steps.slice(0, at(1.2) - 1))).toEqual(new Set([0.06]))
-    expect(steps[at(2) - 1]).toBe(0.14)
-    expect(steps[at(10) - 1]).toBe(0.08)
-    expect(tops[tops.length - 1]).toBe(20)
+    // The engine plans the layers from the ranges' layer heights (packages/core/src/layers.rs, plate_range_tops).
+    expect(o.heightRanges).toEqual([
+      { zFromMm: 0, zToMm: 1.2, settings: { layer_height: 0.06, wall_loops: 4 }, objects: [e.id] },
+      { zFromMm: 1.2, zToMm: 4, settings: { layer_height: 0.14 }, objects: [e.id] },
+    ])
+    expect(o).not.toHaveProperty('layerTopsMm')
+  })
+
+  it("the range box slices with the record's height ranges, which the engine plans its 125 layers from", async () => {
+    const record = JSON.parse(readFileSync(join(__dirname, '..', '..', 'core', 'tests', 'fixtures', 'range-layer-heights.json'), 'utf8')) as {
+      config: Record<string, number>
+      cases: { name: string; heightRanges: { objects: string[] }[] }[]
+    }
+    const box = record.cases.find((c) => c.name === 'range box')!
+    const ranges = `<?xml version="1.0" encoding="utf-8"?>
+<objects>
+ <object id="1">
+  <range min_z="5" max_z="10">
+   <option opt_key="layer_height">0.1</option>
+  </range>
+ </object>
+</objects>`
+    const { host, requests } = capture()
+    await openModelBytes(host, 'box.3mf', project({ ...P1S, layer_height: '0.2', initial_layer_print_height: '0.2' }, ranges))
+    const e = get().plate[0]!
+    await slicePlate(host, { auto: true })
+    const r = requests[0]!
+    expect({ layer_height: r.config['layer_height'], initial_layer_print_height: r.config['initial_layer_print_height'] }).toEqual(record.config)
+    expect(r.options!.heightRanges).toEqual(box.heightRanges.map((h) => ({ ...h, objects: [e.id] })))
+    expect(r.options).not.toHaveProperty('layerTopsMm')
   })
 })
 
@@ -434,7 +458,8 @@ describe('feature filaments by height in a Bambu Studio file', () => {
     expect(e.layerRanges).toEqual([{ minZ: 8, maxZ: 14, settings: { layer_height: 0.08, ...filaments } }])
     expect(get().toast?.text ?? '').not.toContain('Not imported from its height ranges')
     await slicePlate(host, { auto: true })
-    expect(requests[0]!.options!.heightRanges).toEqual([{ zFromMm: 8, zToMm: 14, settings: filaments, objects: [e.id] }])
+    // The range's layer height goes with it, for the engine's layer plan.
+    expect(requests[0]!.options!.heightRanges).toEqual([{ zFromMm: 8, zToMm: 14, settings: { ...filaments, layer_height: 0.08 }, objects: [e.id] }])
   })
 })
 
@@ -448,10 +473,16 @@ describe('layer heights by height that differ between objects', () => {
       { name: 'Metadata/project_settings.config', data: JSON.stringify(P1S) },
       { name: 'Metadata/layer_config_ranges.xml', data: ranges },
     ])
-    const { host } = capture()
+    const { host, requests } = capture()
     await openModelBytes(host, 'two.3mf', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer)
     expect(get().plate).toHaveLength(2)
     expect(get().toast?.text).toContain('Per-object layer heights are not imported yet')
+    // In the engine's words for the same plate (packages/core/tests/fixtures/range-layer-heights.json, note).
+    expect(get().toast?.text).toContain('change layer height at different heights')
+    // The plate keeps one layer height: no layer heights go to the slice.
+    await slicePlate(host, { auto: true })
+    expect(requests[0]!.options?.heightRanges?.some((r) => 'layer_height' in r.settings) ?? false).toBe(false)
+    expect(requests[0]!.options).not.toHaveProperty('layerTopsMm')
   })
 })
 
