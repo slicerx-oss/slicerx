@@ -55,7 +55,7 @@ export function createArrange(shared: ToolShared) {
     version: '1.8.0',
     permission: 'slice',
     description:
-      "Pack copies of an object onto plates. The layout keeps room for each copy's brim (sized from its first layer, as the slice sizes an automatic brim), raft and skirt, and stays clear of the printer's excluded areas and the prime tower's room. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. Changes only the project.",
+      'Pack copies of an object onto plates. It keeps room for brims and skirts, clear of excluded areas and the prime tower. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. Changes only the project.',
     input: z.object({
       objectId: z.string().optional().describe('Object id or name; defaults to the first object'),
       count: z.number().int().min(1).max(500).optional().describe('Total copies'),
