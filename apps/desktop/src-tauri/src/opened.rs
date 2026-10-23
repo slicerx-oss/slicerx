@@ -192,6 +192,55 @@ pub fn links_only<I: IntoIterator<Item = String>>(urls: I) -> Vec<String> {
         .collect()
 }
 
+/// The "Open in" link whose dialog or download is under way. Links are taken one at a time, so a page cannot stack up
+/// dialogs: the same link again while it is in hand is dropped (a cold start can also deliver it twice), and another
+/// link is refused with a message until the first is answered and done.
+static LINK_IN_HAND: Mutex<Option<String>> = Mutex::new(None);
+
+/// Holds the link's turn; the next link may come once it is dropped.
+struct LinkTurn(&'static Mutex<Option<String>>);
+
+impl Drop for LinkTurn {
+    fn drop(&mut self) {
+        *self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Claim {
+    Took,
+    Same,
+    Busy,
+}
+
+fn claim_link(slot: &'static Mutex<Option<String>>, link: &str) -> (Claim, Option<LinkTurn>) {
+    let mut held = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    match held.as_deref() {
+        Some(l) if l == link => (Claim::Same, None),
+        Some(_) => (Claim::Busy, None),
+        None => {
+            *held = Some(link.to_owned());
+            (Claim::Took, Some(LinkTurn(slot)))
+        }
+    }
+}
+
+/// This link's turn, or None when it is a repeat of the one in hand (dropped) or another link is in hand (refused,
+/// with a message).
+fn take_turn(app: &AppHandle, link: &str) -> Option<LinkTurn> {
+    let (claim, turn) = claim_link(&LINK_IN_HAND, link);
+    if claim == Claim::Busy {
+        let _ = app.emit(
+            "sx-open-failed",
+            format!(
+                "{} is already asking about a link. Answer that one first, then open this link again.",
+                crate::brand::get().name
+            ),
+        );
+    }
+    turn
+}
+
 /// Handles what the system passed: file paths, `file://` URLs and "Open in" links.
 pub fn handle(app: &AppHandle, items: Vec<String>) {
     let mut refs = Vec::new();
@@ -205,8 +254,12 @@ pub fn handle(app: &AppHandle, items: Vec<String>) {
             continue;
         }
         if let Some((sha, name)) = download_link(&item) {
+            let Some(turn) = take_turn(app, &item) else {
+                continue;
+            };
             let app = app.clone();
             std::thread::spawn(move || {
+                let _turn = turn;
                 if !confirmed_download(&app, &name) {
                     return;
                 }
@@ -224,10 +277,16 @@ pub fn handle(app: &AppHandle, items: Vec<String>) {
             continue;
         }
         if let Some(target) = link_target(&item) {
+            let Some(turn) = take_turn(app, &item) else {
+                continue;
+            };
             let app = app.clone();
             std::thread::spawn(move || {
-                match if confirmed(&app, &target) {
-                    download(&app, &target).map(Some)
+                let _turn = turn;
+                let host = host_of(&target).unwrap_or_else(|| "an unknown site".to_owned());
+                let name = name_from(&target).unwrap_or_default();
+                match if confirmed(&app, &host, &name, false) {
+                    download(&app, &target)
                 } else {
                     Ok(None)
                 } {
@@ -532,9 +591,12 @@ fn private_dir() -> Result<std::path::PathBuf, String> {
     Err("Could not download the file: no private temporary folder.".to_owned())
 }
 
+/// One request's answer: the status code, the body and the headers.
+type Fetched = Result<(u16, Vec<u8>, String), String>;
+
 /// One https GET to a vetted address, without following redirects, reading at most the cap plus one byte. Returns
 /// the status class, the body and the headers. Uses the system's curl so the app carries no second TLS stack.
-fn fetch_once(host: &str, ip: std::net::IpAddr, target: &str) -> Result<(u16, Vec<u8>, String), String> {
+fn fetch_once(host: &str, ip: std::net::IpAddr, target: &str) -> Fetched {
     use std::io::Read;
     let dir = private_dir()?;
     let hdr = dir.join("headers");
@@ -595,34 +657,59 @@ fn fetch_once(host: &str, ip: std::net::IpAddr, target: &str) -> Result<(u16, Ve
     Ok((code, body, headers))
 }
 
-/// Downloads a vetted model: every hop is https to a public address (resolved first and pinned), at most four
-/// redirects, a size cap, and the bytes must look like the model their name says. Nothing is run or opened.
-fn download(app: &AppHandle, target: &str) -> Result<PathBuf, String> {
-    let name = name_from(target)
-        .filter(|n| link_name(n))
-        .ok_or("That link does not point to an STL or 3MF file.")?;
+/// Follows a link to its file: at most four redirects, each to an https address. Every host the file is fetched
+/// from has been named to the person first: the link's own host in the first dialog, and any other host a redirect
+/// leads to in a dialog of its own (`ask`) before anything is fetched from it. Declining ends it with None.
+fn fetch_model(
+    target: &str,
+    fetch: &mut dyn FnMut(&str) -> Fetched,
+    ask: &mut dyn FnMut(&str) -> bool,
+) -> Result<Option<Vec<u8>>, String> {
     let mut url = target.to_owned();
-    let mut bytes = None;
+    let mut named: Vec<String> = host_of(target).into_iter().collect();
     for _ in 0..5 {
-        let (host, ip) = vet(&url, &system_resolve)?;
-        let (code, body, headers) = fetch_once(&host, ip, &url)?;
+        let (code, body, headers) = fetch(&url)?;
         match code {
-            200 => {
-                bytes = Some(body);
-                break;
-            }
+            200 => return Ok(Some(body)),
             301 | 302 | 303 | 307 | 308 => {
                 url = redirect_target(&url, &headers).ok_or_else(|| {
                     format!(
                         "The link redirected somewhere {} will not follow.",
                         crate::brand::get().name
                     )
-                })?
+                })?;
+                let host = host_of(&url).ok_or("That link is not a plain https address.")?;
+                if !named.contains(&host) {
+                    if !ask(&host) {
+                        return Ok(None);
+                    }
+                    named.push(host);
+                }
             }
             _ => return Err("Could not download the file from that link.".to_owned()),
         }
     }
-    let bytes = bytes.ok_or("The link redirected too many times.")?;
+    Err("The link redirected too many times.".to_owned())
+}
+
+/// Downloads a vetted model: every hop is https to a public address (resolved first and pinned), every host named to
+/// the person before it is fetched from, a size cap, and the bytes must look like the model their name says. Nothing
+/// is run or opened. None when the person declined a host a redirect led to.
+fn download(app: &AppHandle, target: &str) -> Result<Option<PathBuf>, String> {
+    let name = name_from(target)
+        .filter(|n| link_name(n))
+        .ok_or("That link does not point to an STL or 3MF file.")?;
+    let fetched = fetch_model(
+        target,
+        &mut |url| {
+            let (host, ip) = vet(url, &system_resolve)?;
+            fetch_once(&host, ip, url)
+        },
+        &mut |host| confirmed(app, host, &name, true),
+    )?;
+    let Some(bytes) = fetched else {
+        return Ok(None);
+    };
     let product = &crate::brand::get().name;
     if bytes.len() as u64 > MAX_DOWNLOAD {
         return Err(format!(
@@ -640,21 +727,36 @@ fn download(app: &AppHandle, target: &str) -> Result<PathBuf, String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let out = dir.join(&name);
     std::fs::write(&out, bytes).map_err(|e| e.to_string())?;
-    Ok(out)
+    Ok(Some(out))
 }
 
-/// Asks first, naming the whole host and the file. Nothing is fetched unless the person says Open.
-fn confirmed(app: &AppHandle, target: &str) -> bool {
+/// Asks first, naming the whole host and the file. Nothing is fetched from a host unless the person says Open; a
+/// redirect to another host (`moved`) asks again, naming that host.
+fn confirmed(app: &AppHandle, host: &str, name: &str, moved: bool) -> bool {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-    let host = host_of(target).unwrap_or_else(|| "an unknown site".to_owned());
-    let name = name_from(target).unwrap_or_default();
+    let product = &crate::brand::get().name;
+    let message = if moved {
+        format!(
+            "The link to {name} moved to {host}. Open this model from {host}?
+
+A web page asked {product} to download this file. It is checked and added to your plate; nothing is run."
+        )
+    } else {
+        format!(
+            "Open this model from {host}?
+
+{name}
+
+A web page asked {product} to download this file. It is checked and added to your plate; nothing is run."
+        )
+    };
     app.dialog()
-        .message(format!(
-            "Open this model from {host}?\n\n{name}\n\nA web page asked {} to download this file. It is checked and added to your plate; nothing is run.",
-            crate::brand::get().name
-        ))
+        .message(message)
         .title("Open from a link")
-        .buttons(MessageDialogButtons::OkCancelCustom("Open".to_owned(), "Cancel".to_owned()))
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Open".to_owned(),
+            "Cancel".to_owned(),
+        ))
         .blocking_show()
 }
 
@@ -1119,5 +1221,99 @@ mod tests {
             host_of("https://good.example.evil.test/a.stl").as_deref(),
             Some("good.example.evil.test")
         );
+    }
+
+    fn slot() -> &'static Mutex<Option<String>> {
+        Box::leak(Box::new(Mutex::new(None)))
+    }
+
+    #[test]
+    fn one_link_is_in_hand_at_a_time() {
+        let slot = slot();
+        let a = "slicerx://open?url=https://a.example/x.stl";
+        let b = format!("slicerx://open?download={}&name=clip.sx3mf", "ab".repeat(32));
+        let (claim, turn) = claim_link(slot, a);
+        assert_eq!(claim, Claim::Took);
+        // the same link again while it is in hand is dropped, another one is refused
+        assert!(matches!(claim_link(slot, a), (Claim::Same, None)));
+        assert!(matches!(claim_link(slot, &b), (Claim::Busy, None)));
+        drop(turn);
+        // once the first is done, the next one gets its turn, and holds it in its own right
+        let (claim, turn) = claim_link(slot, &b);
+        assert_eq!(claim, Claim::Took);
+        assert!(matches!(claim_link(slot, a), (Claim::Busy, None)));
+        drop(turn);
+        assert_eq!(claim_link(slot, a).0, Claim::Took);
+    }
+
+    /// A fake web: each address answers with a status and maybe a Location; records what was fetched.
+    fn web<'a>(
+        routes: &'static [(&'static str, u16, &'static str)],
+        fetched: &'a std::cell::RefCell<Vec<String>>,
+    ) -> impl FnMut(&str) -> Fetched + 'a {
+        move |url| {
+            fetched.borrow_mut().push(url.to_owned());
+            let (_, code, to) = routes.iter().find(|(u, _, _)| *u == url).expect(url);
+            Ok((
+                *code,
+                b"model".to_vec(),
+                format!(
+                    "location: {to}
+"
+                ),
+            ))
+        }
+    }
+
+    #[test]
+    fn a_redirect_to_another_host_asks_again_before_anything_is_fetched_from_it() {
+        static ROUTES: [(&str, u16, &str); 3] = [
+            ("https://a.example/x.stl", 302, "https://b.example/y.stl"),
+            ("https://b.example/y.stl", 302, "https://a.example/z.stl"),
+            ("https://a.example/z.stl", 200, ""),
+        ];
+        // declined: b is never fetched from
+        let fetched = std::cell::RefCell::new(Vec::new());
+        let mut asked = Vec::new();
+        let got = fetch_model("https://a.example/x.stl", &mut web(&ROUTES, &fetched), &mut |h| {
+            asked.push(h.to_owned());
+            false
+        });
+        assert_eq!(got, Ok(None));
+        assert_eq!(asked, ["b.example"]);
+        assert_eq!(*fetched.borrow(), ["https://a.example/x.stl"]);
+        // accepted: b is asked about once, and the way back to a, already named, asks nothing
+        let fetched = std::cell::RefCell::new(Vec::new());
+        let mut asked = Vec::new();
+        let got = fetch_model("https://a.example/x.stl", &mut web(&ROUTES, &fetched), &mut |h| {
+            asked.push(h.to_owned());
+            true
+        });
+        assert_eq!(got, Ok(Some(b"model".to_vec())));
+        assert_eq!(asked, ["b.example"]);
+        assert_eq!(fetched.borrow().len(), 3);
+    }
+
+    #[test]
+    fn a_redirect_on_the_same_host_asks_nothing() {
+        static ROUTES: [(&str, u16, &str); 2] = [
+            ("https://a.example/x.stl", 301, "/files/x.stl"),
+            ("https://a.example/files/x.stl", 200, ""),
+        ];
+        let fetched = std::cell::RefCell::new(Vec::new());
+        let got = fetch_model("https://a.example/x.stl", &mut web(&ROUTES, &fetched), &mut |h| {
+            panic!("asked about {h}")
+        });
+        assert_eq!(got, Ok(Some(b"model".to_vec())));
+        // and a loop of redirects still ends
+        static LOOP: [(&str, u16, &str); 1] = [("https://a.example/x.stl", 302, "https://a.example/x.stl")];
+        let fetched = std::cell::RefCell::new(Vec::new());
+        assert!(
+            fetch_model("https://a.example/x.stl", &mut web(&LOOP, &fetched), &mut |_| {
+                true
+            })
+            .is_err()
+        );
+        assert_eq!(fetched.borrow().len(), 5);
     }
 }
