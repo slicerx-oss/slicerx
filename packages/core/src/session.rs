@@ -2514,18 +2514,107 @@ impl SliceSession {
         .map(|t| t.ribbed(cfg, height, self.plan.top(0)))
     }
 
+    /// The object each first layer island belongs to: the one whose hull holds it (all 0 with one object).
+    fn island_owners(&self, union: &Shapes) -> Vec<usize> {
+        if self.objects.len() <= 1 {
+            return vec![0; union.len()];
+        }
+        let hulls: Vec<&[[f64; 2]]> = self.objects.iter().map(|o| o.hull.as_slice()).collect();
+        union
+            .iter()
+            .map(|island| crate::brim::owner(island, &hulls))
+            .collect()
+    }
+
+    /// `auto_brim`: the brim width (mm, before the islands' own limits) and the height of each object, by the owner
+    /// of each island of `union`. The brim is sized from each object's own height and first layer footprint (per
+    /// object, as Orca's auto brim does), never from the plate as a whole: four copies side by side get the
+    /// brim one of them gets.
+    fn auto_brim_widths(
+        &self,
+        cfg: &PrintConfig,
+        union: &Shapes,
+        owners: &[usize],
+        object_height: f64,
+    ) -> Vec<(f64, f64)> {
+        let objects = owners.iter().copied().max().map_or(1, |m| m + 1);
+        (0..objects)
+            .map(|k| {
+                let own: Shapes = union
+                    .iter()
+                    .zip(owners)
+                    .filter(|(_, o)| **o == k)
+                    .map(|(i, _)| i.clone())
+                    .collect();
+                let height = if self.objects.len() > 1 {
+                    self.object_heights
+                        .get(k)
+                        .copied()
+                        .unwrap_or(object_height)
+                        .min(object_height)
+                } else {
+                    object_height
+                };
+                let width = if own.is_empty() {
+                    0.0
+                } else {
+                    crate::brim::width(cfg, &own, height)
+                };
+                (width, height)
+            })
+            .collect()
+    }
+
+    /// How far each object's automatic brim reaches past its first layer, mm: the brim gap and the widest brim
+    /// any of its islands prints, in whole loops, the same widths the first layer then prints. Empty when the brim
+    /// is not automatic or a raft takes its place.
+    fn auto_brim_rooms(&self, config: &PrintConfig) -> Vec<f64> {
+        if crate::brim::Kind::of(config) != crate::brim::Kind::Auto || self.raft.is_some() {
+            return Vec::new();
+        }
+        let cfg = config.for_first_layer();
+        let here = self.layer_regions(0, Families::new(&cfg), &Micros::default());
+        let union = brim_outline(&cfg, &here);
+        let object_height = self.plan.top(self.plan.count().saturating_sub(1));
+        let owners = self.island_owners(&union);
+        let widths = self.auto_brim_widths(&cfg, &union, &owners, object_height);
+        let spacing = brim_spacing(&cfg);
+        let gap = cfg.raw_number("brim_object_gap", 0.0).clamp(0.0, 2.0);
+        let mut rooms: Vec<f64> = vec![0.0; self.objects.len().max(1)];
+        for (island, owner) in union.iter().zip(&owners) {
+            let (width, height) = widths.get(*owner).copied().unwrap_or((0.0, object_height));
+            let one: Shapes = vec![island.clone()];
+            let loops = brim_loops(crate::brim::island_width(width, &one, height, spacing), spacing);
+            if loops > 0
+                && let Some(room) = rooms.get_mut(*owner)
+            {
+                *room = room.max(gap + f64::from(loops) * spacing);
+            }
+        }
+        rooms
+    }
+
+    /// What each object's first layer lays down past its hull, with its own settings: its brim (the automatic
+    /// brim at the width the first layer prints), its support's pad and brim, a skirt of its own.
+    fn tower_rooms(&self, config: &PrintConfig) -> Vec<f64> {
+        let auto = self.auto_brim_rooms(config);
+        (0..self.objects.len())
+            .map(|k| {
+                let brim = auto.get(k).copied().unwrap_or(0.0);
+                self.object_config(k, config).map_or_else(
+                    |_| crate::tower::room_with(config, config.brim_width.max(brim)),
+                    |c| crate::tower::room_with(&c, c.brim_width.max(brim)),
+                )
+            })
+            .collect()
+    }
+
     /// Sizes the prime tower for its deepest layer and places it clear of the objects.
     fn place_tower(&mut self, config: &PrintConfig) -> Result<()> {
         let Some(top) = self.tower_top else {
             return Ok(());
         };
-        // What each object's first layer lays down past its hull, with its own settings.
-        let rooms: Vec<f64> = (0..self.objects.len())
-            .map(|k| {
-                self.object_config(k, config)
-                    .map_or_else(|_| crate::tower::room(config), |c| crate::tower::room(&c))
-            })
-            .collect();
+        let rooms = self.tower_rooms(config);
         let plan = &self.plan;
         let (tools, order) = (self.tool_count, &self.tool_order);
         self.tower_shape = crate::tower::place(
@@ -3006,13 +3095,7 @@ impl SliceSession {
         let tools = self.tool_count;
         let shape = match top {
             Some(t) => {
-                // What each object's first layer lays down past its hull, with its own settings.
-                let rooms: Vec<f64> = (0..self.objects.len())
-                    .map(|k| {
-                        self.object_config(k, config)
-                            .map_or_else(|_| crate::tower::room(config), |c| crate::tower::room(&c))
-                    })
-                    .collect();
+                let rooms = self.tower_rooms(config);
                 let height = self.sequence().map(Self::plate_top).fold(0.0, f64::max);
                 crate::tower::place(
                     config,
@@ -9051,21 +9134,9 @@ impl SliceSession {
             && brim_kind != crate::brim::Kind::Off
             && (cfg.brim_width > 0.0 || auto_brim)
         {
-            let all: Vec<&Shapes> = here.regions.iter().map(|(_, s)| s).collect();
-            // Orca's brim follows the outline before elephant foot compensation, unless
-            // `brim_use_efc_outline` asks for the compensated one.
-            let use_efc = crate::firmware::truthy(cfg, "brim_use_efc_outline")
-                && cfg.raw_number("elefant_foot_compensation", 0.0) > 0.0;
-            let union = match (&here.raw, use_efc) {
-                (Some(raw), false) => raw.clone(),
-                _ => perimeters::union_all(&all),
-            };
+            let union = brim_outline(cfg, here);
             let object_height = self.plan.top(n.saturating_sub(1));
-            // As in OrcaSlicer, the brim is an even number of line spacings wide, each loop one spacing
-            // (first layer line width less the rounded corners of the bead) from the last.
-            let spacing_mm = (cfg.line_width
-                - cfg.initial_layer_print_height * (1.0 - std::f64::consts::FRAC_PI_4))
-                .max(cfg.line_width * 0.5);
+            let spacing_mm = brim_spacing(cfg);
             // `brim_ears`: an object that carries painted ears prints them in place of the automatic ones, as
             // `painted` does; an object with none keeps the automatic ears. Empty for the other kinds, and when no
             // object carries any.
@@ -9091,14 +9162,10 @@ impl SliceSession {
                     Vec::new()
                 };
             // `auto_brim` sizes the brim from each object's own height and first layer footprint (per
-            // object, as OrcaSlicer's auto brim does), never from the plate as a whole: four copies
+            // object, as Orca's auto brim does), never from the plate as a whole: four copies
             // side by side get the brim one of them gets. Painted mouse ears go by object too.
-            let owners: Vec<usize> = if auto_brim && self.objects.len() > 1 {
-                let hulls: Vec<&[[f64; 2]]> = self.objects.iter().map(|o| o.hull.as_slice()).collect();
-                union
-                    .iter()
-                    .map(|island| crate::brim::owner(island, &hulls))
-                    .collect()
+            let owners: Vec<usize> = if auto_brim {
+                self.island_owners(&union)
             } else if own_ears.len() > 1 {
                 let hulls: Vec<&[[f64; 2]]> = self.ear_hulls.iter().map(Vec::as_slice).collect();
                 union
@@ -9109,32 +9176,7 @@ impl SliceSession {
                 vec![0; union.len()]
             };
             let per_object: Vec<(f64, f64)> = if auto_brim {
-                let objects = owners.iter().copied().max().map_or(1, |m| m + 1);
-                (0..objects)
-                    .map(|k| {
-                        let own: Shapes = union
-                            .iter()
-                            .zip(&owners)
-                            .filter(|(_, o)| **o == k)
-                            .map(|(i, _)| i.clone())
-                            .collect();
-                        let height = if self.objects.len() > 1 {
-                            self.object_heights
-                                .get(k)
-                                .copied()
-                                .unwrap_or(object_height)
-                                .min(object_height)
-                        } else {
-                            object_height
-                        };
-                        let width = if own.is_empty() {
-                            0.0
-                        } else {
-                            crate::brim::width(cfg, &own, height)
-                        };
-                        (width, height)
-                    })
-                    .collect()
+                self.auto_brim_widths(cfg, &union, &owners, object_height)
             } else {
                 Vec::new()
             };
@@ -9201,12 +9243,7 @@ impl SliceSession {
                 } else {
                     object_width
                 };
-                #[allow(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "brim loop count is small"
-                )]
-                let count = 2 * (brim_mm / spacing_mm / 2.0).floor().max(0.0) as i32;
+                let count = brim_loops(brim_mm, spacing_mm);
                 if count == 0 {
                     continue;
                 }
@@ -10471,6 +10508,35 @@ impl TowerTurn for PlateTurn {
 
 /// The first work of each filament on a layer: whether it prints its sparse infill first, and the volumes a change
 /// into it can flush into.
+/// The first layer outline the brim grows from: the outline before elephant foot compensation, as in Orca, unless
+/// `brim_use_efc_outline` asks for the compensated one.
+fn brim_outline(cfg: &PrintConfig, here: &LayerRegions) -> Shapes {
+    let use_efc = crate::firmware::truthy(cfg, "brim_use_efc_outline")
+        && cfg.raw_number("elefant_foot_compensation", 0.0) > 0.0;
+    match (&here.raw, use_efc) {
+        (Some(raw), false) => raw.clone(),
+        _ => perimeters::union_all(&here.regions.iter().map(|(_, s)| s).collect::<Vec<_>>()),
+    }
+}
+
+/// The distance between brim loops, mm: as in Orca, the first layer line width less the rounded corners of the
+/// bead.
+fn brim_spacing(cfg: &PrintConfig) -> f64 {
+    (cfg.line_width - cfg.initial_layer_print_height * (1.0 - std::f64::consts::FRAC_PI_4))
+        .max(cfg.line_width * 0.5)
+}
+
+/// How many loops a brim `width` mm wide prints: an even number of spacings, as in Orca.
+fn brim_loops(width: f64, spacing: f64) -> i32 {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "brim loop count is small"
+    )]
+    let pairs = (width / spacing / 2.0).floor().max(0.0) as i32;
+    2 * pairs
+}
+
 fn turn_rooms(works: &[ToolWork], width: f64, height: f64) -> Vec<crate::output::TurnRoom> {
     let mut rooms: Vec<crate::output::TurnRoom> = Vec::new();
     for w in works {
