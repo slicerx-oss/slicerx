@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! the real outline of a part on the bed: the union of its triangles seen from above
+//! the real outline of a part on the bed seen from above, and of its first layer for the brim
 
 use super::poly::{self, Region, Ring};
 use crate::mesh::TriMesh;
@@ -33,6 +33,11 @@ fn apply(m: &Mat4, p: [f64; 3]) -> [f64; 2] {
         m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12],
         m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13],
     ]
+}
+
+fn apply3(m: &Mat4, p: [f64; 3]) -> [f64; 3] {
+    let [x, y] = apply(m, p);
+    [x, y, m[2] * p[0] + m[6] * p[1] + m[10] * p[2] + m[14]]
 }
 
 /// what a part covers seen from above
@@ -72,12 +77,20 @@ pub fn silhouette(meshes: &[TriMesh], transform: Option<&Mat4>, opts: &Silhouett
             });
         }
     }
-    let mut out = poly::union_rings(&tris);
+    let out = poly::union_rings(&tris);
     let hull = poly::hull(
         &out.iter()
             .flat_map(|s| s.first().cloned().unwrap_or_default())
             .collect::<Vec<_>>(),
     );
+    Silhouette {
+        outline: simplified(out, opts),
+        hull,
+    }
+}
+
+/// `out` with its small holes filled, simplified so it still covers what it did
+fn simplified(mut out: Region, opts: &SilhouetteOptions) -> Region {
     for s in &mut out {
         let mut k = 0;
         s.retain(|ring| {
@@ -91,10 +104,74 @@ pub fn silhouette(meshes: &[TriMesh], transform: Option<&Mat4>, opts: &Silhouett
         tol *= 2.0;
         simple = poly::cover(&out, tol);
     }
-    Silhouette {
-        outline: simple,
-        hull,
+    simple
+}
+
+/// the part of a triangle at or below height `cut`, seen from above
+fn below(tri: [[f64; 3]; 3], cut: f64) -> Ring {
+    let mut out = Vec::with_capacity(4);
+    for (p, q) in tri.iter().zip(tri.iter().cycle().skip(1)) {
+        let (a, b) = (p[2] <= cut, q[2] <= cut);
+        if a {
+            out.push([p[0], p[1]]);
+        }
+        if a != b {
+            let t = (cut - p[2]) / (q[2] - p[2]);
+            out.push([p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])]);
+        }
     }
+    out
+}
+
+/// everything up to `height` above the lowest point, seen from above: the first layer the brim is sized from
+pub fn base(meshes: &[TriMesh], transform: Option<&Mat4>, height: f64, opts: &SilhouetteOptions) -> Region {
+    let id: Mat4 = [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    let m = transform.unwrap_or(&id);
+    let pts: Vec<Vec<[f64; 3]>> = meshes
+        .iter()
+        .map(|mesh| mesh.positions.iter().map(|p| apply3(m, *p)).collect())
+        .collect();
+    let low = meshes
+        .iter()
+        .zip(&pts)
+        .flat_map(|(mesh, v)| mesh.triangles.iter().flatten().filter_map(|&i| v.get(i as usize)))
+        .map(|p| p[2])
+        .fold(f64::INFINITY, f64::min);
+    if !low.is_finite() {
+        return Vec::new();
+    }
+    let cut = low + height.max(0.0);
+    let mut rings: Vec<Ring> = Vec::new();
+    for (mesh, v) in meshes.iter().zip(&pts) {
+        for t in &mesh.triangles {
+            let (Some(a), Some(b), Some(c)) =
+                (v.get(t[0] as usize), v.get(t[1] as usize), v.get(t[2] as usize))
+            else {
+                continue;
+            };
+            let mut r = below([*a, *b, *c], cut);
+            let o = if r.len() < 3 {
+                0.0
+            } else {
+                crate::poly2d::signed_area(&r)
+            };
+            if o.abs() < 1e-9 {
+                continue;
+            }
+            if o < 0.0 {
+                r.reverse();
+            }
+            rings.push(r);
+        }
+    }
+    // a thin wall stays as thin: the brim depends on it
+    let fine = SilhouetteOptions {
+        tolerance_mm: opts.tolerance_mm.min(0.01),
+        ..*opts
+    };
+    simplified(poly::union_rings(&rings), &fine)
 }
 
 #[cfg(test)]
@@ -150,6 +227,41 @@ mod tests {
         assert!(b.w() > 20.0 && b.w() < 20.3);
         let h = poly::ring_bbox(&s.hull);
         assert!((h.w() - 20.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_base_is_what_the_part_stands_on() {
+        // a mushroom: its outline is the cap, its first layer the stem
+        let mut m = block([-2.0, -2.0, 0.0], [2.0, 2.0, 10.0]);
+        m.append(&block([-10.0, -10.0, 10.0], [10.0, 10.0, 12.0]));
+        let b = base(&[m.clone()], None, 0.1, &SilhouetteOptions::default());
+        assert_eq!(b.len(), 1);
+        let a = poly::area(&b);
+        assert!(a > 15.99 && a < 16.2, "{a}");
+        // set down 5 mm up and turned: still the stem, measured from the lowest point
+        let t: Mat4 = [
+            0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 50.0, 0.0, 5.0, 1.0,
+        ];
+        let b = base(&[m], Some(&t), 0.1, &SilhouetteOptions::default());
+        let bb = poly::bbox(&b);
+        assert!(
+            (bb.w() - 4.0).abs() < 0.3 && (bb.min[0] - 48.0).abs() < 0.2,
+            "{bb:?}"
+        );
+    }
+
+    #[test]
+    fn the_base_of_a_ring_keeps_its_hole() {
+        // a ring 20 across with 3 mm walls, standing: its first layer keeps the hole
+        let mut m = block([0.0, 0.0, 0.0], [20.0, 3.0, 30.0]);
+        m.append(&block([0.0, 17.0, 0.0], [20.0, 20.0, 30.0]));
+        m.append(&block([0.0, 3.0, 0.0], [3.0, 17.0, 30.0]));
+        m.append(&block([17.0, 3.0, 0.0], [20.0, 17.0, 30.0]));
+        let b = base(&[m], None, 0.1, &SilhouetteOptions::default());
+        let a = poly::area(&b);
+        assert!(a > 203.9 && a < 205.5, "{a}");
+        assert!(!poly::strictly_inside(&b, [10.0, 10.0], 0.0));
+        assert!(base(&[], None, 0.1, &SilhouetteOptions::default()).is_empty());
     }
 
     #[test]

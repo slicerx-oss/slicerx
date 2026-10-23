@@ -113,13 +113,17 @@ describe('arrange with what prints around each object', () => {
     const bed = { widthMm: 160, depthMm: 160, heightMm: 100 }
     const cfg = { ...BRIM, enable_prime_tower: true, wipe_tower_x: 10, wipe_tower_y: 10, prime_tower_width: 35, prime_tower_brim_width: 3 }
     const items = ['a', 'b', 'c'].map((id) => item(id, 30, 30))
-    const margins = marginsFor(cfg, 2)
-    expect(margins.keepOut).toHaveLength(1)
-    const r = arrange(items, [], bed, { gapMm: 3, rotate: false, margins })
-    const tower = margins.keepOut[0]!
-    for (const it of items) expect(hits(printed(it, r.transforms[it.id]!, 0), tower)).toBe(false)
-    expect(marginsFor(cfg, 1).keepOut).toEqual([])
-    expect(marginsFor({ ...cfg, enable_prime_tower: false }, 2).keepOut).toEqual([])
+    // The engine places the tower itself by default: arrange keeps its room free.
+    for (const margins of [marginsFor(cfg, 2), marginsFor({ ...cfg, prime_tower_auto_position: false }, 2)]) {
+      const tower = [...margins.keepOut, ...(margins.towerRoom ?? [])]
+      expect(tower).toHaveLength(1)
+      const r = arrange(items, [], bed, { gapMm: 3, rotate: false, margins })
+      for (const it of items) expect(hits(printed(it, r.transforms[it.id]!, 0), tower[0]!)).toBe(false)
+    }
+    expect(marginsFor(cfg, 2).keepOut).toEqual([])
+    expect(marginsFor({ ...cfg, prime_tower_auto_position: false }, 2).towerRoom).toEqual([])
+    expect(marginsFor(cfg, 1).towerRoom).toEqual([])
+    expect(marginsFor({ ...cfg, enable_prime_tower: false }, 2).towerRoom).toEqual([])
   })
 
   it('fills the bed with fewer copies when the brim is counted', () => {
