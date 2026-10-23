@@ -226,8 +226,12 @@ pub struct SliceSession {
     conical_params: Option<(f64, f64)>,
     /// `hole_to_polyhole`: per layer, the circular holes found and the polygons that replace them.
     polyholes: std::sync::OnceLock<Option<Vec<Vec<HoleSwap>>>>,
-    /// Painted brim ears on the bed: x, y, z in plate coordinates, and the head radius, mm.
-    brim_ears: Vec<[f64; 4]>,
+    /// Painted brim ears on the bed: the object of this session's own plate that carries each, and x, y, z in plate
+    /// coordinates and the head radius, mm.
+    brim_ears: Vec<(usize, [f64; 4])>,
+    /// The hull of each object of this session's own plate, numbered as [`Self::brim_ears`] numbers them, to tell
+    /// which object a first layer island belongs to; empty when no object carries painted ears.
+    ear_hulls: Vec<Vec<[f64; 2]>>,
     /// Draft shield: the convex hull of the whole part, which the skirt follows on every layer.
     draft_hull: Option<Vec<IntPoint<i32>>>,
     /// `skirt_type` per object: the hull of each group of objects whose skirts would touch; empty otherwise.
@@ -1721,14 +1725,16 @@ impl SliceSession {
         let tower_rows = tower_shape.map_or(1.0, |p| p.rows);
         let tower_origin = tower_shape.map(|p| p.origin);
         let (overrides, layer_cfg) = resolve_ranges(&plan, config, ranges, &mut warnings)?;
-        // Painted ears the model carries, moved to plate coordinates; only those on the bed count.
-        let brim_ears: Vec<[f64; 4]> = plate
+        // Painted ears the model carries, moved to plate coordinates, with the plate object that carries each; only
+        // those on the bed count.
+        let brim_ears: Vec<(usize, [f64; 4])> = plate
             .objects
             .iter()
-            .flat_map(|o| {
-                o.brim_points.iter().filter_map(|b| {
+            .enumerate()
+            .flat_map(|(k, o)| {
+                o.brim_points.iter().filter_map(move |b| {
                     let w = o.apply([b[0], b[1], b[2]]);
-                    (w[2] <= 1e-4).then(|| [w[0], w[1], w[2], f64::from(b[3])])
+                    (w[2] <= 1e-4).then(|| (k, [w[0], w[1], w[2], f64::from(b[3])]))
                 })
             })
             .collect();
@@ -1755,6 +1761,11 @@ impl SliceSession {
             interleave: false,
             plate_tools: None,
             overrides,
+            ear_hulls: if brim_ears.is_empty() {
+                Vec::new()
+            } else {
+                hulls.iter().map(|h| h.hull.clone()).collect()
+            },
             objects: hulls,
             object_heights,
             layer_cfg,
@@ -9044,11 +9055,41 @@ impl SliceSession {
             let spacing_mm = (cfg.line_width
                 - cfg.initial_layer_print_height * (1.0 - std::f64::consts::FRAC_PI_4))
                 .max(cfg.line_width * 0.5);
+            // `brim_ears`: an object that carries painted ears prints them in place of the automatic ones, as
+            // `painted` does; an object with none keeps the automatic ears. Empty for the other kinds, and when no
+            // object carries any.
+            let ear = |e: &[f64; 4]| crate::brim::Ear {
+                at: {
+                    let p = crate::geom::Point::from_mm(e[0], e[1]);
+                    IntPoint::new(p.x, p.y)
+                },
+                head_radius: e[3],
+            };
+            let own_ears: Vec<Vec<crate::brim::Ear>> =
+                if brim_kind == crate::brim::Kind::Ears && !self.brim_ears.is_empty() {
+                    (0..self.ear_hulls.len())
+                        .map(|k| {
+                            self.brim_ears
+                                .iter()
+                                .filter(|(o, _)| *o == k)
+                                .map(|(_, e)| ear(e))
+                                .collect()
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
             // `auto_brim` sizes the brim from each object's own height and first layer footprint (per
             // object, as OrcaSlicer's auto brim does), never from the plate as a whole: four copies
-            // side by side get the brim one of them gets.
+            // side by side get the brim one of them gets. Painted mouse ears go by object too.
             let owners: Vec<usize> = if auto_brim && self.objects.len() > 1 {
                 let hulls: Vec<&[[f64; 2]]> = self.objects.iter().map(|o| o.hull.as_slice()).collect();
+                union
+                    .iter()
+                    .map(|island| crate::brim::owner(island, &hulls))
+                    .collect()
+            } else if own_ears.len() > 1 {
+                let hulls: Vec<&[[f64; 2]]> = self.ear_hulls.iter().map(Vec::as_slice).collect();
                 union
                     .iter()
                     .map(|island| crate::brim::owner(island, &hulls))
@@ -9088,16 +9129,7 @@ impl SliceSession {
             };
             let object_width = cfg.brim_width;
             let painted_ears: Vec<crate::brim::Ear> = if brim_kind == crate::brim::Kind::Painted {
-                self.brim_ears
-                    .iter()
-                    .map(|e| crate::brim::Ear {
-                        at: {
-                            let p = crate::geom::Point::from_mm(e[0], e[1]);
-                            IntPoint::new(p.x, p.y)
-                        },
-                        head_radius: e[3],
-                    })
-                    .collect()
+                self.brim_ears.iter().map(|(_, e)| ear(e)).collect()
             } else {
                 Vec::new()
             };
@@ -9174,16 +9206,12 @@ impl SliceSession {
                     .max_by(|a, b| a.1.total_cmp(&b.1))
                     .map_or(0, |(slot, _)| slot);
                 let width_even = f64::from(count) * spacing_mm;
-                let areas = crate::brim::island_areas(
-                    cfg,
-                    brim_kind,
-                    &one,
-                    &union,
-                    width_even,
-                    spacing_mm,
-                    gap_mm,
-                    &painted_ears,
-                );
+                let (kind, ears) = match own_ears.get(*owner) {
+                    Some(own) if !own.is_empty() => (crate::brim::Kind::Painted, own.as_slice()),
+                    _ => (brim_kind, painted_ears.as_slice()),
+                };
+                let areas =
+                    crate::brim::island_areas(cfg, kind, &one, &union, width_even, spacing_mm, gap_mm, ears);
                 let areas = clear(areas);
                 // As in OrcaSlicer, where each extruder reaches only part of the bed (H2D, H2C), a brim is cut to
                 // the reach of the extruder that prints it (the ring outside get_extruder_printable_polygons is a
