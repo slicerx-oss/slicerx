@@ -2504,6 +2504,17 @@ fn nums(v: &Value) -> Option<Vec<f64>> {
     }
 }
 
+/// The points of a printable area as a config or a project's settings carry it: Orca's `"XxY"` texts or `[x, y]`
+/// pairs, or the texts in one comma separated string.
+pub(crate) fn area_points(v: &Value) -> Option<Vec<[f64; 2]>> {
+    match v {
+        Value::String(s) => points(&Value::Array(
+            s.split(',').map(|p| Value::String(p.to_owned())).collect(),
+        )),
+        _ => points(v),
+    }
+}
+
 /// `[[x, y], ...]` or Orca's `["0x0", "256x0", ...]`.
 fn points(v: &Value) -> Option<Vec<[f64; 2]>> {
     let Value::Array(a) = v else { return None };
