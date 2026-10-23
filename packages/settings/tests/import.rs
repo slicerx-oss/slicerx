@@ -132,6 +132,29 @@ fn legacy_keys_and_values() {
     assert!(r.unknown_keys.is_empty());
 }
 
+/// The printer maker's `ensure_vertical_shell_thickness` values: `enabled` is our `ensure_all`, and `disabled` stays
+/// `disabled`, which the engine reads as shells under and over flat surfaces without the band along a leaning wall.
+#[test]
+fn ensure_vertical_shell_thickness_values() {
+    for (from, to) in [("enabled", "ensure_all"), ("disabled", "disabled")] {
+        let r = import_orca(
+            &json!({"name": "p", "type": "process", "ensure_vertical_shell_thickness": from}),
+            &|_| None,
+        )
+        .unwrap();
+        assert_eq!(
+            r.config.get("ensure_vertical_shell_thickness"),
+            Some(&Value::Str(to.into())),
+            "{from}"
+        );
+        assert!(
+            r.unknown_keys.is_empty() && r.invalid_keys.is_empty(),
+            "{from}: {:?}",
+            r.invalid_keys
+        );
+    }
+}
+
 /// Bambu Studio's per-feature filament names: `wall_filament` is both walls, and its numbers are filaments (1 is
 /// filament 1, 0 the object's own). `OrcaSlicer`'s older and `PrusaSlicer`'s names keep 1 as the object's own.
 #[test]
