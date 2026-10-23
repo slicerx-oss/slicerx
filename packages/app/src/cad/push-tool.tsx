@@ -12,7 +12,7 @@ import { useHost } from '../host'
 import { cameraBus } from '../plate/tools'
 import { get, set, toast, useApp, type SubPick } from '../state/store'
 import { findTriangle } from '@slicerx/cad-history'
-import { editing, nowOf, saveEdit } from './history/ops'
+import { editing, nowOf, saveStep } from './history/ops'
 import { bindNext } from './history/record'
 import { loopsOf } from './cad-ops'
 import { errorText, Message, Note, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
@@ -105,8 +105,8 @@ export function usePushTool(): void {
       try {
         if (edit) {
           // The step takes the new face and distance; the steps after it run again.
-          await saveEdit(host.slicer, { op: 'face.push', at: f.pick.at, normal: f.frame.normal, distanceMm: d })
-          toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')
+          const said = await saveStep(host.slicer, { op: 'face.push', at: f.pick.at, normal: f.frame.normal, distanceMm: d })
+          toast(said.message, said.warn ? 'warn' : 'ok')
           set({ objectTool: null })
           return true
         }

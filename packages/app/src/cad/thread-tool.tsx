@@ -14,7 +14,7 @@ import { cameraBus } from '../plate/tools'
 import { get, set, toast, useApp } from '../state/store'
 import { edgeLines } from './edges'
 import { applyThread } from './holes'
-import { editing, saveEdit } from './history/ops'
+import { editing, saveStep } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
@@ -102,8 +102,8 @@ export function ThreadTool() {
       bindNext(length)
       if (edit) {
         const spec = sized?.spec ?? { ...edit.params.spec, ...(lengthMm !== undefined ? { lengthMm } : {}) }
-        await saveEdit(host.slicer, { op: 'thread.apply', thread: place, spec, label: sized?.label ?? edit.params.label })
-        toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')
+        const said = await saveStep(host.slicer, { op: 'thread.apply', thread: place, spec, label: sized?.label ?? edit.params.label })
+        toast(said.message, said.warn ? 'warn' : 'ok')
         set({ objectTool: null })
         return
       }

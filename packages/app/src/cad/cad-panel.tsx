@@ -15,7 +15,7 @@ import { cameraBus } from '../plate/tools'
 import { bounds } from '../plate/transform'
 import { get, set, toast, useApp, type CadTool } from '../state/store'
 import { fontBase64, listLocalFonts, localFontsAvailable, type FontChoice } from './fonts'
-import { cancelEdit, editing, nowOf, saveEdit } from './history/ops'
+import { cancelEdit, editing, nowOf, saveStep } from './history/ops'
 import { bindNext } from './history/record'
 import { sessionFonts } from './history/record'
 import { applyArray, applyExtrude, arraySpec, extrudeParams, type ExtrudeInput, BED_FRAME, describeFeature, featurePoints, loopsOf, previewArray, readout, type ArrayKind } from './cad-ops'
@@ -233,8 +233,8 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
       }
       bindNext(distance)
       if (edit) {
-        await saveEdit(host.slicer, extrudeParams(input))
-        toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')
+        const said = await saveStep(host.slicer, extrudeParams(input))
+        toast(said.message, said.warn ? 'warn' : 'ok')
         set({ objectTool: null })
         return
       }
