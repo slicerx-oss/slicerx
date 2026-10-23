@@ -973,6 +973,86 @@ pub fn metadata(bytes: &[u8], name: &str) -> Result<ProjectMetadata> {
     })
 }
 
+/// Where plate `plate` of a 3MF goes on a bed: kept where the file puts it when the file is a slicer's project (it has
+/// `Metadata/project_settings.config` that is not empty, or a `PrusaSlicer` config), else centered. A project's plates
+/// after the first sit to the side of it in the file, by its printable area's size (`layout`, the bed's width and depth,
+/// when it names none) and a fifth of it between them, in rows of as many plates as the square root of their count
+/// rounded up, as the app lays them out; the plate's place and the area's front left corner are taken off.
+pub(crate) fn plate_placement(
+    bytes: &[u8],
+    name: &str,
+    plate: u32,
+    layout: [f32; 2],
+) -> Result<crate::plate::ItemsPlacement> {
+    use crate::plate::ItemsPlacement;
+    let zip = Zip::open(bytes).map_err(|e| Error::mesh(name, e))?;
+    let area = match zip
+        .read("Metadata/project_settings.config")
+        .ok()
+        .map(|b| project_settings_of(&b))
+    {
+        Some(Ok(Some(settings))) => settings
+            .get("printable_area")
+            .and_then(crate::config::area_points)
+            .filter(|pts| pts.len() >= 3),
+        Some(Err(_)) => None,
+        _ if zip.read("Metadata/Slic3r_PE.config").is_ok() => None,
+        _ => return Ok(ItemsPlacement::Centered),
+    };
+    let [ax, ay] = area
+        .as_deref()
+        .and_then(crate::plate::corner)
+        .unwrap_or([0.0, 0.0]);
+    #[allow(clippy::cast_possible_truncation, reason = "bed sizes in mm fit f32")]
+    let [w, d] = area
+        .as_deref()
+        .map(|pts| {
+            let span = |of: fn([f64; 2]) -> f64| {
+                let (lo, hi) = pts
+                    .iter()
+                    .map(|&p| of(p))
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+                        (lo.min(v), hi.max(v))
+                    });
+                (hi - lo) as f32
+            };
+            [span(|[x, _]| x), span(|[_, y]| y)]
+        })
+        .filter(|[w, d]| *w > 0.0 && *d > 0.0)
+        .unwrap_or(layout);
+    let ids = zip
+        .read("Metadata/model_settings.config")
+        .map(|xml| plate_ids(&xml))
+        .unwrap_or_default();
+    let index = ids.iter().position(|&p| p == plate).unwrap_or(0);
+    let count = ids.len().max(1);
+    let cols = count.isqrt() + usize::from(count.isqrt().pow(2) < count);
+    #[allow(clippy::cast_precision_loss, reason = "plate counts are small")]
+    let (col, row) = ((index % cols) as f32, (index / cols) as f32);
+    let (ox, oy) = (col * w * 1.2, -row * d * 1.2);
+    Ok(ItemsPlacement::Kept([-ox - ax, -oy - ay]))
+}
+
+/// The plate numbers (`plater_id`) of Bambu and Orca project metadata, in the file's order.
+fn plate_ids(xml: &[u8]) -> Vec<u32> {
+    let mut ids = Vec::new();
+    let mut in_instance = false;
+    for t in tags(xml) {
+        match (t.name, t.closing) {
+            ("model_instance", c) => in_instance = !c,
+            ("metadata", false) if !in_instance && t.attr("key") == Some("plater_id") => {
+                if let Some(id) = t.attr("value").and_then(|v| v.parse::<u32>().ok())
+                    && !ids.contains(&id)
+                {
+                    ids.push(id);
+                }
+            }
+            _ => {}
+        }
+    }
+    ids
+}
+
 /// Plate number per build object from Bambu and Orca project metadata
 /// (`<plate>` with `plater_id` and `model_instance` / `object_id`).
 fn plate_map(xml: &[u8]) -> HashMap<u32, u32> {
@@ -2948,6 +3028,63 @@ mod tests {
         assert!(metadata(b"not a zip at all, sorry", "p.3mf").is_err());
     }
 
+    /// A project keeps its plates where the file lays them out, in rows of as many plates as the square root of their
+    /// count rounded up, an area and a fifth apart, from its printable area's front left corner. An empty settings
+    /// file, or none, is no project; a `PrusaSlicer` project keeps its one plate.
+    #[test]
+    fn plates_are_kept_where_the_project_lays_them_out() {
+        use crate::plate::ItemsPlacement::{self, Centered, Kept};
+        let model = format!(
+            r#"<model unit="millimeter"><resources>{CUBE_OBJECT}</resources><build><item objectid="2"/></build></model>"#
+        );
+        let plates: String = (1..=5)
+            .map(|p| {
+                [
+                    r#"<plate><metadata key="plater_id" value=""#,
+                    &p.to_string(),
+                    r#""/></plate>"#,
+                ]
+                .concat()
+            })
+            .collect();
+        let config = format!("<config>{plates}</config>");
+        let with = |extra: &[(&str, &[u8])]| {
+            let mut all = vec![
+                ("3D/3dmodel.model", model.as_bytes(), true),
+                ("Metadata/model_settings.config", config.as_bytes(), true),
+            ];
+            all.extend(extra.iter().map(|(n, b)| (*n, *b, true)));
+            zip(&all)
+        };
+        let at = |bytes: &[u8], plate| plate_placement(bytes, "p.3mf", plate, [256.0, 256.0]).unwrap();
+        let near = |got: ItemsPlacement, want: [f32; 2]| match got {
+            Kept([x, y]) => assert!(
+                (x - want[0]).abs() < 1e-3 && (y - want[1]).abs() < 1e-3,
+                "{got:?}, want {want:?}"
+            ),
+            Centered => panic!("centered, want {want:?}"),
+        };
+        // five plates in rows of three, on a 250 x 200 mm area from -5, -10
+        let settings = br#"{"printable_area":["-5x-10","245x-10","245x190","-5x190"]}"#;
+        let project = with(&[("Metadata/project_settings.config", &settings[..])]);
+        near(at(&project, 1), [5.0, 10.0]);
+        near(at(&project, 3), [-595.0, 10.0]);
+        near(at(&project, 5), [-295.0, 250.0]);
+        // without an area, the bed's size lays the plates out
+        let bare = with(&[(
+            "Metadata/project_settings.config",
+            &br#"{"layer_height":"0.2"}"#[..],
+        )]);
+        near(at(&bare, 2), [-307.2, 0.0]);
+        assert_eq!(at(&with(&[]), 2), Centered);
+        assert_eq!(
+            at(&with(&[("Metadata/project_settings.config", &b"   "[..])]), 1),
+            Centered
+        );
+        let prusa = with(&[("Metadata/Slic3r_PE.config", &b"; generated by PrusaSlicer"[..])]);
+        near(at(&prusa, 1), [0.0, 0.0]);
+    }
+
     /// An empty `project_settings.config` is as if the file had none, and JSON after a byte order mark is read.
     #[test]
     fn empty_project_settings_are_missing_ones() {
@@ -3193,7 +3330,7 @@ T1
 
     /// The plate objects `sx slice` makes of a plate's build items: one each, the plate centered as a whole.
     fn as_plate(items: Vec<Mesh>) -> Vec<crate::plate::PlateObject> {
-        crate::plate::Plate::items_on(items, [0.0; 4], 0.0).objects
+        crate::plate::Plate::items_on(items, [0.0; 4], 0.0, crate::plate::ItemsPlacement::Centered).objects
     }
 
     #[test]

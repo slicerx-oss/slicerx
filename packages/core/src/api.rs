@@ -78,10 +78,24 @@ pub fn load_3mf_plate_objects(bytes: &[u8], file_name: &str) -> Result<Vec<(u32,
 /// when the file has no such plate. Each printable build item is a mesh of its own, with its parts, cuts, modifiers and
 /// support volumes, named after its object (`Object_<n>`, the item's place in the build, for an object without a
 /// name): one object of the plate, so one label in the G-code and one body for the collision check. Two items of one
-/// object are two meshes. `sx slice <file.3mf>` makes its plate of them ([`Plate::items_on`]), and a request's 3MF
-/// without a transform becomes one object per item, placed by [`crate::plate::items_transform`].
+/// object are two meshes, in the file's build space. `sx slice <file.3mf>` makes its plate of them
+/// ([`Plate::items_on`]), and a request's 3MF without a transform becomes one object per item, placed by
+/// [`crate::plate::items_transforms`], both as [`load_3mf_placement`] says.
 pub fn load_3mf_items(bytes: &[u8], file_name: &str, plate: Option<u32>) -> Result<Option<(u32, Vec<Mesh>)>> {
     crate::threemf::load_plate_items(bytes, file_name, plate)
+}
+
+/// Where the build items of plate `plate` of a 3MF go on the bed, as the app places them: a slicer's project (it carries
+/// its print settings) keeps them where the file puts them, moved from the plate's place in the project to the bed; any
+/// other 3MF has them centered as one group. `layout` is the bed's width and depth, for a project that names no
+/// printable area.
+pub fn load_3mf_placement(
+    bytes: &[u8],
+    file_name: &str,
+    plate: u32,
+    layout: [f32; 2],
+) -> Result<crate::plate::ItemsPlacement> {
+    crate::threemf::plate_placement(bytes, file_name, plate, layout)
 }
 
 /// True when [`load_mesh`] reads the file as a 3MF project (by its name, or a ZIP of another name), whose build items
