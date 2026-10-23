@@ -1,0 +1,117 @@
+{
+ "about": "The app's height ranges for projects whose objects change layer height by height, and the layers the engine plans from them. The app's test (packages/app/test/range-layer-heights.test.ts) checks the ranges it sends and its differ rule; the engine's (packages/core/tests/range_layer_heights.rs) slices each request and checks the layer tops. Tops are the app's own plan before the engine planned them.",
+ "note": "change layer height at different heights",
+ "config": {
+  "layer_height": 0.2,
+  "initial_layer_print_height": 0.2
+ },
+ "cases": [
+  {
+   "name": "range box",
+   "objects": [
+    {
+     "id": "box",
+     "heightMm": 20,
+     "layerRanges": [
+      {
+       "minZ": 5,
+       "maxZ": 10,
+       "settings": {
+        "layer_height": 0.1
+       }
+      }
+     ]
+    }
+   ],
+   "heightRanges": [
+    {
+     "zFromMm": 5,
+     "zToMm": 10,
+     "settings": {
+      "layer_height": 0.1
+     },
+     "objects": ["box"]
+    }
+   ],
+   "differ": false,
+   "tops": [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8, 3.0, 3.2, 3.4, 3.6, 3.8, 4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 6.0, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 9.0, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9, 10.0, 10.2, 10.4, 10.6, 10.8, 11.0, 11.2, 11.4, 11.6, 11.8, 12.0, 12.2, 12.4, 12.6, 12.8, 13.0, 13.2, 13.4, 13.6, 13.8, 14.0, 14.2, 14.4, 14.6, 14.8, 15.0, 15.2, 15.4, 15.6, 15.8, 16.0, 16.2, 16.4, 16.6, 16.8, 17.0, 17.2, 17.4, 17.6, 17.8, 18.0, 18.2, 18.4, 18.6, 18.8, 19.0, 19.2, 19.4, 19.6, 19.8, 20.0]
+  },
+  {
+   "name": "two objects share the range",
+   "objects": [
+    {
+     "id": "tall",
+     "heightMm": 20,
+     "layerRanges": [
+      {
+       "minZ": 5,
+       "maxZ": 10,
+       "settings": {
+        "layer_height": 0.1
+       }
+      }
+     ]
+    },
+    {
+     "id": "short",
+     "heightMm": 12,
+     "layerRanges": [
+      {
+       "minZ": 5,
+       "maxZ": 10,
+       "settings": {
+        "layer_height": 0.1
+       }
+      }
+     ]
+    }
+   ],
+   "heightRanges": [
+    {
+     "zFromMm": 5,
+     "zToMm": 10,
+     "settings": {
+      "layer_height": 0.1
+     },
+     "objects": ["tall"]
+    },
+    {
+     "zFromMm": 5,
+     "zToMm": 10,
+     "settings": {
+      "layer_height": 0.1
+     },
+     "objects": ["short"]
+    }
+   ],
+   "differ": false,
+   "tops": [0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6, 2.8, 3.0, 3.2, 3.4, 3.6, 3.8, 4.0, 4.2, 4.4, 4.6, 4.8, 5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8, 5.9, 6.0, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 7.0, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 8.0, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 8.8, 8.9, 9.0, 9.1, 9.2, 9.3, 9.4, 9.5, 9.6, 9.7, 9.8, 9.9, 10.0, 10.2, 10.4, 10.6, 10.8, 11.0, 11.2, 11.4, 11.6, 11.8, 12.0, 12.2, 12.4, 12.6, 12.8, 13.0, 13.2, 13.4, 13.6, 13.8, 14.0, 14.2, 14.4, 14.6, 14.8, 15.0, 15.2, 15.4, 15.6, 15.8, 16.0, 16.2, 16.4, 16.6, 16.8, 17.0, 17.2, 17.4, 17.6, 17.8, 18.0, 18.2, 18.4, 18.6, 18.8, 19.0, 19.2, 19.4, 19.6, 19.8, 20.0]
+  },
+  {
+   "name": "objects differ",
+   "objects": [
+    {
+     "id": "tall",
+     "heightMm": 20,
+     "layerRanges": [
+      {
+       "minZ": 5,
+       "maxZ": 10,
+       "settings": {
+        "layer_height": 0.1
+       }
+      }
+     ]
+    },
+    {
+     "id": "short",
+     "heightMm": 12,
+     "layerRanges": []
+    }
+   ],
+   "heightRanges": [],
+   "differ": true,
+   "tops": null
+  }
+ ]
+}
