@@ -15,6 +15,7 @@ import { bindFor } from '../values'
 import { featureParams, mainNumber, stepName, withNumber, type FeatureItem, type SketchItem, type Step } from '@slicerx/cad-history'
 import { beginEdit, cancelEdit, deleteStep, renameStep, moveStep, setParams, setSuppressed, toolFor, viewStep } from './ops'
 import { StepRow } from './step-row'
+import { timelineNumber } from './step-number'
 import { stepIcon } from './step-icon'
 import { useMadeBy } from '../../workspaces/design/use-made-by'
 import '../cad.css'
@@ -91,13 +92,11 @@ export function HistorySteps({ objectId, tree, only }: { objectId: string; tree?
   const [open, setOpen] = useState<number | null>(null)
   const made = useMadeBy()
   const madeAt = tree && made?.objectId === objectId ? made.index : -1
-  // the tree numbers steps the way the timeline strip does, across the whole design
+  // the tree numbers steps the way the timeline strip does, across the whole design, and so does every other list
   const items = useApp((s) => (tree ? s.timeline.items : null))
+  const numbered = useApp((s) => s.timeline.items)
   const marker = useApp((s) => s.timeline.marker)
-  const numberOf = (id: string) => {
-    const i = items?.findIndex((it) => it.kind === 'feature' && it.body === objectId && it.id === id) ?? -1
-    return i < 0 ? undefined : i + 1
-  }
+  const numberOf = (id: string) => timelineNumber(numbered, objectId, id)
   const h = entry?.history
   // rolled back steps stay in the tree, dimmed, with their timeline numbers
   const sketches = new Map((items ?? []).filter((i): i is SketchItem => i.kind === 'sketch').map((k) => [k.id, k]))

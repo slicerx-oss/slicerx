@@ -21,6 +21,7 @@ import { brandAccent, editionHasCad } from '../../edition'
 import { opensDesign } from '../../workspaces/design/shelf-tools'
 import { historyPart } from '@slicerx/cad-history/mesh-part'
 import { toolError } from '../op-preview'
+import { stepNumber } from './step-number'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -286,24 +287,25 @@ export async function saveEdit(host: Loader, params: StepParams): Promise<{ stat
  * shows before its Details; one behind a broken step says which step stops it.
  * When the step comes back done but a later step that was fine before the edit (`before`, the history as it was) now
  * breaks, that step and why. The replay stops at the first broken step, so only one can be newly broken; the steps
- * after it that were fine before and now do not run are counted after the reason.
+ * after it that were fine before and now do not run are counted after the reason. `shown` gives the number a person
+ * sees for a step (stepNumber); by default its place in the history.
  */
-export function editedWords(index: number, status: readonly StepStatus[], before: readonly Step[] = []): { message: string; warn: boolean } {
-  const n = index + 1
+export function editedWords(index: number, status: readonly StepStatus[], before: readonly Step[] = [], shown: (i: number) => number = (i) => i + 1): { message: string; warn: boolean } {
+  const n = shown(index)
   const st = status[index]
   if (st?.state === 'broken') return { message: `Step ${n} is still broken: ${reasonAfterColon(st.message)} The change is saved.`, warn: true }
   if (st?.state === 'skipped') {
     const first = status.findIndex((s) => s.state === 'broken')
-    return { message: `Step ${n} does not run while ${first >= 0 ? `step ${first + 1}` : 'a step'} before it is broken. The change is saved.`, warn: true }
+    return { message: `Step ${n} does not run while ${first >= 0 ? `step ${shown(first)}` : 'a step'} before it is broken. The change is saved.`, warn: true }
   }
   // fine before the edit: on, not broken, and not behind a broken step
   const firstBroken = before.findIndex((s) => !s.suppressed && s.broken !== undefined)
   const wasFine = (i: number) => !!before[i] && !before[i]!.suppressed && before[i]!.broken === undefined && (firstBroken < 0 || i < firstBroken)
   const m = status.findIndex((s, i) => i > index && s.state === 'broken' && wasFine(i))
   if (m >= 0) {
-    const stopped = status.flatMap((s, i) => (i > m && s.state === 'skipped' && wasFine(i) ? [i + 1] : []))
+    const stopped = status.flatMap((s, i) => (i > m && s.state === 'skipped' && wasFine(i) ? [shown(i)] : []))
     const rest = stopped.length === 1 ? ` Step ${stopped[0]} after it does not run.` : stopped.length > 1 ? ` ${stopped.length} steps after it do not run.` : ''
-    return { message: `Step ${n} changed; step ${m + 1} is now broken: ${reasonAfterColon(status[m]!.message)}${rest}`, warn: true }
+    return { message: `Step ${n} changed; step ${shown(m)} is now broken: ${reasonAfterColon(status[m]!.message)}${rest}`, warn: true }
   }
   return { message: `Changed step ${n} and ran the steps after it.`, warn: false }
 }
@@ -318,7 +320,7 @@ function reasonAfterColon(raw: string | undefined): string {
 export async function saveStep(host: Loader, params: StepParams): Promise<{ message: string; warn: boolean }> {
   const ed = editing()
   const r = await saveEdit(host, params)
-  return editedWords(ed?.index ?? 0, r.status, ed?.entry.history?.steps ?? [])
+  return editedWords(ed?.index ?? 0, r.status, ed?.entry.history?.steps ?? [], (i) => (ed ? stepNumber(ed.entry.id, i) : i + 1))
 }
 
 export function setSuppressed(host: Loader, objectId: string, index: number, suppressed: boolean): Promise<{ status: StepStatus[] }> {

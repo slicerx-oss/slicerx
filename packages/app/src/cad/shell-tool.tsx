@@ -15,6 +15,7 @@ import { loopsOf } from './cad-ops'
 import { applyShell, shellReason } from './holes'
 import { keyOfTriangle } from '@slicerx/cad-history'
 import { editing, nowOf, saveStep } from './history/ops'
+import { editingNumber } from './history/step-number'
 import { bindNext } from './history/record'
 import { close, errorText, Message, num, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
@@ -114,7 +115,7 @@ export function ShellTool() {
 
   const n = target?.faces.length ?? 0
   return (
-    <Shell title="Shell" aside={edit ? `Editing step ${edit.index + 1}` : n ? `${n} open face${n === 1 ? '' : 's'}` : target ? 'Closed all round' : 'Nothing picked yet'}>
+    <Shell title="Shell" aside={edit ? `Editing step ${editingNumber(edit.index)}` : n ? `${n} open face${n === 1 ? '' : 's'}` : target ? 'Closed all round' : 'Nothing picked yet'}>
       <PointerHint text="Click the flat faces to leave open; click one again to close it." />
       <Num id="shell-wall" label="Wall" unit="mm" value={wall} onChange={setWall} onEnter={() => void apply()} />
       {note ? <Message text={note} /> : null}

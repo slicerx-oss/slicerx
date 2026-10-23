@@ -13,6 +13,7 @@ import { cameraBus } from '../plate/tools'
 import { get, set, toast, useApp, type SubPick } from '../state/store'
 import { findTriangle } from '@slicerx/cad-history'
 import { editing, nowOf, saveStep } from './history/ops'
+import { editingNumber } from './history/step-number'
 import { bindNext } from './history/record'
 import { loopsOf } from './cad-ops'
 import { errorText, Message, Note, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
@@ -236,7 +237,7 @@ export function usePushTool(): void {
         note,
         previewError: previewMessage(prev),
         shownMm,
-        editStep: edit ? edit.index + 1 : null,
+        editStep: edit ? editingNumber(edit.index) : null,
       },
       actions,
     )
