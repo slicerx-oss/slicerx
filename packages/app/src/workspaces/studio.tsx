@@ -40,6 +40,7 @@ import { PlateToolsGroup } from './prepare/plate-tools-group'
 import { ParkedChip } from './prepare/parked-chip'
 import { ViewSelectionMenu } from './prepare/selection-bar'
 import { SliceProgress } from './slice-progress'
+import { StepReadingBar } from './step-reading-bar'
 import { useOverlayOffset, type OverlaySelectors } from '../lib/overlay-offset'
 import { useCompactLayout, usePhoneLayout } from '../lib/phone-layout'
 import { ModeChip } from '../first-run/mode-chip'
@@ -274,6 +275,7 @@ export function Studio() {
           <OpeningPicture />
         </Suspense>
         <SliceProgress />
+        <StepReadingBar />
         {cad ? null : <ViewSelectionMenu />}
         {/* With the toolbar on top, the view switch hangs under it and moves with it (plate-tools-group.tsx). */}
         {cad || !hasPreview || groupTools ? null : <SliceLookSwitch />}
