@@ -284,28 +284,41 @@ export async function saveEdit(host: Loader, params: StepParams): Promise<{ stat
  * One that comes back broken is saved as typed, as any change to the history is, and says it is still broken and why
  * in the tools' plain words (the step list shows the same reason), the why in the first sentence, which the toast
  * shows before its Details; one behind a broken step says which step stops it.
+ * When the step comes back done but a later step that was fine before the edit (`before`, the history as it was) now
+ * breaks, that step and why. The replay stops at the first broken step, so only one can be newly broken; the steps
+ * after it that were fine before and now do not run are counted after the reason.
  */
-export function editedWords(index: number, status: readonly StepStatus[]): { message: string; warn: boolean } {
+export function editedWords(index: number, status: readonly StepStatus[], before: readonly Step[] = []): { message: string; warn: boolean } {
   const n = index + 1
   const st = status[index]
-  if (st?.state === 'broken') {
-    const why = toolError(st.message ?? 'This step failed.')
-    // "The cut ..." reads on after the colon as "the cut ..."; a name such as "M8" keeps its capital
-    const after = /^[A-Z](?![A-Z0-9])/.test(why) ? why.charAt(0).toLowerCase() + why.slice(1) : why
-    return { message: `Step ${n} is still broken: ${after} The change is saved.`, warn: true }
-  }
+  if (st?.state === 'broken') return { message: `Step ${n} is still broken: ${reasonAfterColon(st.message)} The change is saved.`, warn: true }
   if (st?.state === 'skipped') {
     const first = status.findIndex((s) => s.state === 'broken')
     return { message: `Step ${n} does not run while ${first >= 0 ? `step ${first + 1}` : 'a step'} before it is broken. The change is saved.`, warn: true }
   }
+  // fine before the edit: on, not broken, and not behind a broken step
+  const firstBroken = before.findIndex((s) => !s.suppressed && s.broken !== undefined)
+  const wasFine = (i: number) => !!before[i] && !before[i]!.suppressed && before[i]!.broken === undefined && (firstBroken < 0 || i < firstBroken)
+  const m = status.findIndex((s, i) => i > index && s.state === 'broken' && wasFine(i))
+  if (m >= 0) {
+    const stopped = status.flatMap((s, i) => (i > m && s.state === 'skipped' && wasFine(i) ? [i + 1] : []))
+    const rest = stopped.length === 1 ? ` Step ${stopped[0]} after it does not run.` : stopped.length > 1 ? ` ${stopped.length} steps after it do not run.` : ''
+    return { message: `Step ${n} changed; step ${m + 1} is now broken: ${reasonAfterColon(status[m]!.message)}${rest}`, warn: true }
+  }
   return { message: `Changed step ${n} and ran the steps after it.`, warn: false }
 }
 
-/** Saves the open step (saveEdit) and says how it went (editedWords). */
+/** A step's reason in the tools' plain words, to follow a colon: "The cut ..." reads "the cut ..."; a name such as "M8" keeps its capital. */
+function reasonAfterColon(raw: string | undefined): string {
+  const why = toolError(raw ?? 'This step failed.')
+  return /^[A-Z](?![A-Z0-9])/.test(why) ? why.charAt(0).toLowerCase() + why.slice(1) : why
+}
+
+/** Saves the open step (saveEdit) and says how it went (editedWords), against the history as it was before. */
 export async function saveStep(host: Loader, params: StepParams): Promise<{ message: string; warn: boolean }> {
-  const index = editing()?.index ?? 0
+  const ed = editing()
   const r = await saveEdit(host, params)
-  return editedWords(index, r.status)
+  return editedWords(ed?.index ?? 0, r.status, ed?.entry.history?.steps ?? [])
 }
 
 export function setSuppressed(host: Loader, objectId: string, index: number, suppressed: boolean): Promise<{ status: StepStatus[] }> {

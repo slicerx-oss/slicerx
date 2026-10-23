@@ -9,7 +9,7 @@ import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { clearReplayCache, type StepStatus } from '@slicerx/cad-history'
+import { clearReplayCache, type Step, type StepStatus } from '@slicerx/cad-history'
 import { applyExtrude, BED_FRAME } from '../src/cad/cad-ops'
 import { CadPanel } from '../src/cad/cad-panel'
 import { pickEdge } from '../src/cad/edge-api'
@@ -210,6 +210,17 @@ describe('push and pull', () => {
     expect(t).toMatchObject({ tone: 'warn', text: 'Step 1 is still broken: the cut removes the whole body. The change is saved.' })
   })
 
+  it('a push edited so a later shell no longer fits says which step broke and why', async () => {
+    await pushed()
+    // a 6 mm shell on the block, 13 mm tall after the pull
+    await applyShell(slicer, 'a', 0, { op: 'shell', open: [], wallMm: 6 })
+    expect(entry().history!.steps.map((s) => s.broken ?? 'ok')).toEqual(['ok', 'ok'])
+    await open('a', 0)
+    // pushed in 3 mm the block is 7 mm tall, too thin for a 6 mm wall
+    const t = await save('push-dist', '-3', 'Cut')
+    expect(t).toMatchObject({ tone: 'warn', text: 'Step 1 changed; step 2 is now broken: the wall is too thick for this body; try a thinner one.' })
+  })
+
   it('a push edited to another distance says "Changed step N"', async () => {
     await pushed()
     await open('a', 0)
@@ -278,7 +289,28 @@ describe('the words', () => {
     })
     expect(editedWords(0, [{ state: 'broken', message: 'M8 needs a hole at least 6.8 mm across' }]).message).toBe('Step 1 is still broken: M8 needs a hole at least 6.8 mm across. The change is saved.')
     expect(editedWords(0, [{ state: 'broken' }]).message).toBe('Step 1 is still broken: this step failed. The change is saved.')
-    // a later step that broke is the list's to show; the edited one came back done
-    expect(editedWords(1, [done, done, { state: 'broken', message: 'The cut removes the whole body' }])).toEqual({ message: 'Changed step 2 and ran the steps after it.', warn: false })
+  })
+
+  // the history as it was before the edit, by what each step was then
+  const was = (...marks: ('ok' | 'broken' | 'off')[]): Step[] =>
+    marks.map((m, i) => ({ id: `s${i}`, part: 0, transform: T, params: { op: 'shell', open: [], wallMm: 2 }, ...(m === 'broken' ? { broken: 'wallMm: the wall is too thick for this body' } : m === 'off' ? { suppressed: true } : {}) }))
+  const cut: StepStatus = { state: 'broken', message: 'face.push: the cut removes the whole body' }
+  const skipped: StepStatus = { state: 'skipped' }
+
+  it('name a later step the edit broke, and count the fine steps that stop behind it', () => {
+    expect(editedWords(0, [done, cut], was('ok', 'ok'))).toEqual({ message: 'Step 1 changed; step 2 is now broken: the cut removes the whole body.', warn: true })
+    expect(editedWords(0, [done, cut, skipped], was('ok', 'ok', 'ok')).message).toBe('Step 1 changed; step 2 is now broken: the cut removes the whole body. Step 3 after it does not run.')
+    expect(editedWords(1, [done, done, cut, skipped, { state: 'suppressed' }, skipped], was('ok', 'ok', 'ok', 'ok', 'off', 'ok')).message).toBe(
+      'Step 2 changed; step 3 is now broken: the cut removes the whole body. 2 steps after it do not run.',
+    )
+  })
+
+  it('leave out steps that were not fine before the edit', () => {
+    // step 3 was broken already: the list shows it, and the edit says it changed
+    expect(editedWords(1, [done, done, cut], was('ok', 'ok', 'broken'))).toEqual({ message: 'Changed step 2 and ran the steps after it.', warn: false })
+    // step 3 was skipped behind a broken step 2, which the edit fixed
+    expect(editedWords(1, [done, done, cut], was('ok', 'broken', 'ok')).message).toBe('Changed step 2 and ran the steps after it.')
+    // with no history before, nothing is counted
+    expect(editedWords(1, [done, done, cut]).message).toBe('Changed step 2 and ran the steps after it.')
   })
 })
