@@ -183,6 +183,31 @@ function buildItems(model: string): number {
   return [...build.matchAll(/<item\b([^>]*)>/g)].filter((m) => !/\bprintable\s*=\s*"\s*0\s*"/.test(m[1] ?? '')).length
 }
 
+/**
+ * The objects of a project that set a layer height of their own (object metadata in Metadata/model_settings.config, or
+ * Metadata/Slic3r_PE_model.config), named as the file names them; with `plate`, only the objects on that plate.
+ */
+export function objectLayerHeights(path: string, plate?: number): { name: string; layer_height: number }[] {
+  const zip = readZip(readFileSync(path), basename(path))
+  const text = zip.text('Metadata/model_settings.config') ?? zip.text('Metadata/Slic3r_PE_model.config')
+  if (!text) return []
+  const nodes = parseXml(text).children.flatMap((c) => c.children)
+  const meta = (node: (typeof nodes)[number]) => Object.fromEntries(node.children.filter((c) => c.name === 'metadata').map((c) => [c.attrs['key'] ?? '', c.attrs['value'] ?? '']))
+  let on: Set<string> | null = null
+  if (plate !== undefined) {
+    const p = nodes.find((n) => n.name === 'plate' && Number.parseInt(meta(n)['plater_id'] ?? '', 10) === plate)
+    if (p) on = new Set(p.children.filter((c) => c.name === 'model_instance').map((c) => meta(c)['object_id'] ?? ''))
+  }
+  const out: { name: string; layer_height: number }[] = []
+  for (const node of nodes) {
+    if (node.name !== 'object' || (on && !on.has(node.attrs['id'] ?? ''))) continue
+    const m = meta(node)
+    const h = Number(m['layer_height'])
+    if (m['layer_height'] !== undefined && Number.isFinite(h) && h > 0) out.push({ name: m['name'] || `object ${node.attrs['id'] ?? out.length + 1}`, layer_height: h })
+  }
+  return out
+}
+
 export function readProjectFile(path: string): ProjectRead {
   const name = basename(path)
   const zip = readZip(readFileSync(path), name)

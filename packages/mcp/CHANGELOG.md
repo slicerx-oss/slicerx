@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Changed
+
+- `slicerx_slice_file` of a 3MF whose objects set their own layer height (object metadata in `Metadata/model_settings.config`) turns off the smart layer heights the default process profile turns on, so each such object slices at its own layer height, and says so in `warnings`. Smart layers asked for in `overrides` stay on, and `warnings` names the layer heights they replace.
+
 ## [0.2.0] - 2026-10-22
 
 ### Breaking
