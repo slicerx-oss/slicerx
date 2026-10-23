@@ -9,6 +9,10 @@
 //! object sets our name too: ours wins. The engine's defaults always hold our names, so reading the older name only
 //! when ours is missing never saw it.
 //!
+//! A plate's own settings (a project's `project_settings.config`, a request's config) are the exception for Bambu
+//! Studio's three names: Studio prints a project's values for them on nothing, so the plate's are left unread
+//! ([`plate_value`]). An object's, a part's, a modifier's or a height range's still count.
+//!
 //! Only the filament keys are renamed here. The other renames of that file are read by the importers.
 
 use serde_json::{Map, Value};
@@ -109,6 +113,26 @@ fn renamed_value(key: &str, v: &Value) -> Value {
     text.parse::<u64>().map_or(one, Value::from)
 }
 
+/// Bambu Studio's per-feature filament names that a plate's own settings leave unread: a project's
+/// `wall_filament`, `sparse_infill_filament` and `solid_infill_filament` print like no value at all in Studio, whatever
+/// the value ("1", the stock one, included), on painted and unpainted objects alike.
+pub(crate) const PLATE_UNREAD: [&str; 3] =
+    ["wall_filament", "sparse_infill_filament", "solid_infill_filament"];
+
+/// A plate's own settings without the names it leaves unread ([`PLATE_UNREAD`]).
+pub(crate) fn plate_value(v: &Value) -> std::borrow::Cow<'_, Value> {
+    match v.as_object() {
+        Some(m) if PLATE_UNREAD.iter().any(|k| m.contains_key(*k)) => {
+            let mut m = m.clone();
+            for k in PLATE_UNREAD {
+                m.remove(k);
+            }
+            std::borrow::Cow::Owned(Value::Object(m))
+        }
+        _ => std::borrow::Cow::Borrowed(v),
+    }
+}
+
 /// `map` with our names set from the older filament keys it holds, or `None` when it holds none to rename.
 pub(crate) fn with_current_names(map: &Map<String, Value>) -> Option<Map<String, Value>> {
     let mut out: Option<Map<String, Value>> = None;
@@ -196,6 +220,27 @@ mod tests {
         assert_eq!(r["sparse_infill_filament_id"], json!(0));
         assert_eq!(r["outer_wall_filament_id"], json!(2));
         assert_eq!(r["support_filament"], json!(3));
+    }
+
+    #[test]
+    fn a_plates_own_settings_leave_bambu_studios_names_unread() {
+        let plate = json!({"wall_filament": "2", "sparse_infill_filament": "3", "solid_infill_filament": "1",
+            "infill_extruder": "3"});
+        let r = renamed(plate_value(&plate).into_owned());
+        for k in [
+            "wall_filament",
+            "sparse_infill_filament",
+            "solid_infill_filament",
+            "outer_wall_filament_id",
+            "inner_wall_filament_id",
+            "internal_solid_filament_id",
+        ] {
+            assert!(r.get(k).is_none(), "{k}");
+        }
+        // The older names of other slicers still count at the plate level.
+        assert_eq!(r["sparse_infill_filament_id"], json!(3));
+        let none = json!({"layer_height": 0.2});
+        assert!(matches!(plate_value(&none), std::borrow::Cow::Borrowed(_)));
     }
 
     #[test]

@@ -13,7 +13,7 @@ export { planSettings, applyPlan, listMaterials, listPrinters, listGoals, materi
 export { printerForModel, modelsForPrinter, mappedModels, setupForModel } from './printermodels'
 export type { PlanOptions } from './plan'
 export type { SettingText } from './schema'
-export { importProject, parseXml } from './project'
+export { importProject, parseXml, PROJECT_UNREAD_KEYS } from './project'
 export { ProjectVariantError, selectVariants } from './variants'
 export { SLICERX_KEEPS, SLICERX_KEEP_VALUES, changedKeys, keptEngineChoices, projectWalls, sameChoice, type WallsNote } from './engine-choices'
 export type { ProjectImport, ProjectObject, ProjectPart, LayerRange } from './project'

@@ -277,6 +277,12 @@ fn number_attr(node: &XmlNode, name: &str) -> f64 {
         .map_or(0.0, |s| s.trim().parse::<f64>().unwrap_or(f64::NAN))
 }
 
+/// Bambu Studio's per-feature filament names that a project's own settings leave unread: Studio prints a project's
+/// `wall_filament`, `sparse_infill_filament` and `solid_infill_filament` on nothing ("1", the stock value, and every
+/// other alike). An object's, a part's, a modifier's or a height range's own values still count.
+pub const PROJECT_UNREAD_KEYS: [&str; 3] =
+    ["wall_filament", "sparse_infill_filament", "solid_infill_filament"];
+
 #[allow(clippy::too_many_lines)]
 /// Read the settings a project carries. `project_settings` is the parsed JSON of
 /// `Metadata/project_settings.config`; the two XML files are optional text.
@@ -293,6 +299,9 @@ pub fn import_project(
     let mut extras = Map::new();
     let mut settings_only: BTreeMap<String, Json> = BTreeMap::new();
     for (k, v) in obj {
+        if PROJECT_UNREAD_KEYS.contains(&k.as_str()) {
+            continue;
+        }
         if is_project_key(k) {
             extras.insert(k.clone(), v.clone());
         } else {
