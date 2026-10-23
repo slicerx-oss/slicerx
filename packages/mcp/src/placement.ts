@@ -33,6 +33,12 @@ export const RANGE_KEYS: readonly string[] = [
   'retraction_length',
   'retraction_speed',
   'retraction_minimum_travel',
+  'outer_wall_filament_id',
+  'inner_wall_filament_id',
+  'sparse_infill_filament_id',
+  'internal_solid_filament_id',
+  'top_surface_filament_id',
+  'bottom_surface_filament_id',
 ]
 
 const objectArg = z.string().min(1).describe('Object id (obj-1) or name, from slicerx_project_show')

@@ -151,7 +151,7 @@ export interface Plate {
   objects: PlateObject[]
 }
 
-/** Setting overrides for a band of heights. Only wall count, temperature, flow, pressure advance, speeds and retraction may change by height; geometry keys are rejected. */
+/** Setting overrides for a band of heights. Only wall count, temperature, flow, pressure advance, speeds, retraction and the per-feature filaments (`outer_wall_filament_id` and the other `*_filament_id` keys) may change by height; geometry keys are rejected. */
 export interface HeightRange {
   zFromMm: number
   /** Must be greater than zFromMm. */

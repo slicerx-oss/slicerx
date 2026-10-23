@@ -30,6 +30,12 @@ export const RANGE_KEYS: readonly string[] = [
   'retraction_length',
   'retraction_speed',
   'retraction_minimum_travel',
+  'outer_wall_filament_id',
+  'inner_wall_filament_id',
+  'sparse_infill_filament_id',
+  'internal_solid_filament_id',
+  'top_surface_filament_id',
+  'bottom_surface_filament_id',
 ]
 
 /** A file's ranges cut to what the plate can use, and the keys left out. */
