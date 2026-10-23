@@ -5097,20 +5097,30 @@ fn brim_boxes_of(mesh: Arc<Mesh>, config: Value, extra: Value) -> Vec<[f64; 4]> 
         .as_object_mut()
         .unwrap()
         .extend(extra.as_object().unwrap().clone());
+    let g = brim_gcode(mesh, vec![object], config);
+    let first = g.split(sx_core::extras::layer_mark(&g)).nth(1).unwrap_or("");
+    brim_boxes_in(first)
+}
+
+/// The G-code of a plate of `objects`, each a copy of `mesh`, with no skirt and 0.2 mm layers.
+fn brim_gcode(mesh: Arc<Mesh>, objects: Vec<Value>, config: Value) -> String {
     let mut cfg = json!({"skirt_loops": 0, "layer_height": 0.2, "initial_layer_print_height": 0.2});
     cfg.as_object_mut()
         .unwrap()
         .extend(config.as_object().unwrap().clone());
     let req: SliceRequest = serde_json::from_value(json!({
-        "plate": {"objects": [object]},
+        "plate": {"objects": objects},
         "config": cfg,
         "options": {"flavor": "marlin2"},
     }))
     .unwrap();
     let run = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
     assert_valid(&run);
-    let g = text(&run);
-    let first = g.split(sx_core::extras::layer_mark(&g)).nth(1).unwrap_or("");
+    text(&run)
+}
+
+/// The bounding boxes of the brim runs in `first`.
+fn brim_boxes_in(first: &str) -> Vec<[f64; 4]> {
     let (mut out, mut cur): (Vec<[f64; 4]>, Option<[f64; 4]>) = (Vec::new(), None);
     let mut in_brim = false;
     let mut pos = (0.0, 0.0);
@@ -5179,6 +5189,96 @@ fn painted_ears_print_only_where_the_model_carries_them() {
     for b in &boxes {
         assert!(b[2] < 108.0 && b[3] < 108.0, "{b:?}");
         assert!(b[0] > 94.0 && b[1] > 94.0, "{b:?}");
+    }
+}
+
+/// Brim boxes for 20 mm blocks at the given corners, each object with its own extra keys (such as `brimPoints`), over
+/// the whole G-code (by object, each object's first layer comes after the last object's top).
+fn blocks_brim_boxes(blocks: &[([f64; 2], Value)], config: Value) -> Vec<[f64; 4]> {
+    let mesh = Arc::new(Mesh {
+        name: "block".into(),
+        parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 4.0], "block")],
+        ..Mesh::default()
+    });
+    let objects = blocks
+        .iter()
+        .enumerate()
+        .map(|(k, (at, extra))| {
+            let mut o = json!({
+                "id": format!("block-{k}"), "mesh": "b",
+                "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, at[0],at[1],0,1],
+            });
+            o.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            o
+        })
+        .collect();
+    brim_boxes_in(&brim_gcode(mesh, objects, config))
+}
+
+/// Whether a brim run's center lies within 4.5 mm of (x, y).
+fn near(b: &[f64; 4], x: f64, y: f64) -> bool {
+    (f64::midpoint(b[0], b[2]) - x).abs() < 4.5 && (f64::midpoint(b[1], b[3]) - y).abs() < 4.5
+}
+
+#[test]
+fn mouse_ears_print_at_the_points_an_object_carries() {
+    // Ears painted at two opposite corners of the block at 100, 100: those two print, the automatic ones at the other
+    // two corners do not.
+    let boxes = blocks_brim_boxes(
+        &[(
+            [100.0, 100.0],
+            json!({"brimPoints": [[0.0, 0.0, 0.0, 6.0], [20.0, 20.0, 0.0, 6.0]]}),
+        )],
+        json!({"brim_type": "brim_ears", "brim_width": 5}),
+    );
+    assert!(boxes.iter().any(|b| near(b, 100.0, 100.0)), "{boxes:?}");
+    assert!(boxes.iter().any(|b| near(b, 120.0, 120.0)), "{boxes:?}");
+    for b in &boxes {
+        assert!(
+            near(b, 100.0, 100.0) || near(b, 120.0, 120.0),
+            "an ear away from the points: {b:?}"
+        );
+    }
+    // The same points under `painted` give the same ears.
+    let painted = blocks_brim_boxes(
+        &[(
+            [100.0, 100.0],
+            json!({"brimPoints": [[0.0, 0.0, 0.0, 6.0], [20.0, 20.0, 0.0, 6.0]]}),
+        )],
+        json!({"brim_type": "painted", "brim_width": 5}),
+    );
+    assert_eq!(boxes, painted);
+}
+
+#[test]
+fn mouse_ears_stay_automatic_on_an_object_without_points() {
+    let ears = json!({"brimPoints": [[0.0, 0.0, 0.0, 6.0]]});
+    let cfg = json!({"brim_type": "brim_ears", "brim_width": 5});
+    // Either order on the plate, printed together or object by object: the block with a point gets one ear there,
+    // the one without keeps an ear at each of its four corners.
+    for by_object in [false, true] {
+        let mut cfg = cfg.clone();
+        if by_object {
+            cfg["print_sequence"] = json!("by object");
+        }
+        for painted_first in [true, false] {
+            let a = ([60.0, 60.0], ears.clone());
+            let b = ([140.0, 140.0], json!({}));
+            let blocks = if painted_first { [a, b] } else { [b, a] };
+            let boxes = blocks_brim_boxes(&blocks, cfg.clone());
+            let what = format!("by object {by_object}, painted first {painted_first}: {boxes:?}");
+            let on_a: Vec<_> = boxes.iter().filter(|b| b[2] < 100.0).collect();
+            assert!(!on_a.is_empty(), "{what}");
+            assert!(on_a.iter().all(|b| near(b, 60.0, 60.0)), "{what}");
+            for (x, y) in [(140.0, 140.0), (160.0, 140.0), (140.0, 160.0), (160.0, 160.0)] {
+                assert!(
+                    boxes.iter().any(|b| near(b, x, y)),
+                    "no automatic ear at {x} {y}; {what}"
+                );
+            }
+        }
     }
 }
 

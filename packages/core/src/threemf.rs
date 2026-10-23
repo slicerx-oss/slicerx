@@ -61,6 +61,8 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
                     mesh.parts.extend(o.parts);
                     mesh.volumes.extend(o.volumes);
                     mesh.part_settings.extend(o.part_settings);
+                    // Each object's painted ears are in the build space its parts load in, as the plate's are.
+                    mesh.brim_points.extend(o.brim_points);
                     for n in o.notes {
                         if !mesh.notes.contains(&n) {
                             mesh.notes.push(n);
@@ -2524,6 +2526,9 @@ mod tests {
         let items = &load_plate_objects(&bytes, "p.3mf").unwrap()[0].1;
         assert_eq!(items[0].brim_points, vec![[1.0, 2.0, 0.0, 5.0]]);
         assert!(items[1].brim_points.is_empty());
+        // A plate read as one mesh keeps them.
+        let merged = &load_plates(&bytes, "p.3mf").unwrap()[0].1;
+        assert_eq!(merged.brim_points, vec![[1.0, 2.0, 0.0, 5.0]]);
     }
 
     #[test]

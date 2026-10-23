@@ -1553,6 +1553,156 @@ fn a_project_slices_with_its_painted_ears_and_layer_marks() {
     assert!(marked.contains(";TYPE:Brim"), "the painted ears are not printed");
     assert_eq!(marked.matches("M601").count(), 1, "the pause is not written once");
 }
+/// The first layer's brim runs of `gcode` as bounding boxes, and the box of its outer wall.
+fn first_brim(gcode: &str) -> (Vec<[f64; 4]>, [f64; 4]) {
+    let num = |l: &str, k: char| -> Option<f64> {
+        l.split_whitespace()
+            .find_map(|w| w.strip_prefix(k).and_then(|v| v.parse().ok()))
+    };
+    let grow = |b: &mut [f64; 4], p: (f64, f64)| {
+        *b = [b[0].min(p.0), b[1].min(p.1), b[2].max(p.0), b[3].max(p.1)];
+    };
+    let empty = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
+    let (mut runs, mut cur, mut wall) = (Vec::new(), None::<[f64; 4]>, empty);
+    let (mut pos, mut kind, mut layer) = ((0.0, 0.0), String::new(), 0);
+    for l in gcode.lines() {
+        if l.starts_with(";LAYER_CHANGE") || l.starts_with("; CHANGE_LAYER") {
+            layer += 1;
+        }
+        if layer > 1 {
+            break;
+        }
+        if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+            runs.extend(cur.take());
+        } else if (l.starts_with("G1 ") || l.starts_with("G0 ")) && (l.contains(" X") || l.contains(" Y")) {
+            let to = (num(l, 'X').unwrap_or(pos.0), num(l, 'Y').unwrap_or(pos.1));
+            let printing = l.contains(" E") && !l.contains(" E-");
+            if printing && kind == "Brim" {
+                let b = cur.get_or_insert([pos.0, pos.1, pos.0, pos.1]);
+                grow(b, to);
+            } else {
+                runs.extend(cur.take());
+            }
+            if printing && kind == "Outer wall" {
+                grow(&mut wall, pos);
+                grow(&mut wall, to);
+            }
+            pos = to;
+        }
+    }
+    runs.extend(cur);
+    (runs, wall)
+}
+
+/// A project set to mouse ears that paints ears on its object prints those ears and no automatic ones, whether it is
+/// sliced as a file or from a request naming it; with nothing painted, the automatic ears stay at all four corners.
+#[test]
+fn a_mouse_ear_project_prints_the_ears_it_paints() {
+    let dir = temp_dir(format!("sx-cli-ear-points-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = serde_json::json!({
+        "layer_height": "0.2", "initial_layer_print_height": "0.2", "brim_type": "brim_ears", "brim_width": "6",
+        "skirt_loops": "0",
+    });
+    // Two opposite corners of the box's foot, in its own space.
+    let ears = "brim_points_format_version=0\nobject_id=1|0 0 0 6 20 20 0 6\n";
+    let painted = dir.join("painted.3mf");
+    std::fs::write(
+        &painted,
+        box_3mf_with(Some(&settings), &[("Metadata/brim_ear_points.txt", ears)]),
+    )
+    .unwrap();
+    let bare = dir.join("bare.3mf");
+    std::fs::write(&bare, box_3mf_with(Some(&settings), &[])).unwrap();
+    let as_file = |path: &std::path::Path, name: &str| {
+        let out_path = dir.join(format!("{name}.gcode"));
+        let out = sx()
+            .arg("slice")
+            .arg(path)
+            .arg("-o")
+            .arg(&out_path)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        std::fs::read_to_string(out_path).unwrap()
+    };
+    let as_request = |path: &std::path::Path, name: &str| {
+        let out_dir = dir.join(format!("out-{name}"));
+        let req = serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": {"p": path},
+            "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+            "config": {
+                "layer_height": 0.2, "initial_layer_print_height": 0.2, "brim_type": "brim_ears", "brim_width": 6,
+                "skirt_loops": 0
+            },
+            "options": {"emitGcode": true},
+        });
+        let request = dir.join(format!("request-{name}.json"));
+        std::fs::write(&request, req.to_string()).unwrap();
+        let out = sx()
+            .args(["slice", "--request"])
+            .arg(&request)
+            .arg("--out-dir")
+            .arg(&out_dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap()
+    };
+    let near = |b: &[f64; 4], x: f64, y: f64| {
+        (f64::midpoint(b[0], b[2]) - x).abs() < 4.5 && (f64::midpoint(b[1], b[3]) - y).abs() < 4.5
+    };
+    for (how, g) in [
+        ("file", as_file(&painted, "painted")),
+        ("request", as_request(&painted, "painted")),
+    ] {
+        let (runs, w) = first_brim(&g);
+        assert!(
+            w[2] - w[0] > 19.0 && w[3] - w[1] > 19.0,
+            "{how}: no outer wall on the first layer {w:?}"
+        );
+        assert!(
+            runs.iter().any(|b| near(b, w[0], w[1])),
+            "{how}: no ear at the first point {runs:?} {w:?}"
+        );
+        assert!(
+            runs.iter().any(|b| near(b, w[2], w[3])),
+            "{how}: no ear at the second point {runs:?} {w:?}"
+        );
+        assert!(
+            runs.iter().all(|b| near(b, w[0], w[1]) || near(b, w[2], w[3])),
+            "{how}: an ear away from the painted points {runs:?} {w:?}"
+        );
+    }
+    // The same file set to painted ears prints the same ears (the file path used to leave them out).
+    let mut painted_settings = settings.clone();
+    painted_settings["brim_type"] = serde_json::json!("painted");
+    let painted_type = dir.join("painted-type.3mf");
+    std::fs::write(
+        &painted_type,
+        box_3mf_with(Some(&painted_settings), &[("Metadata/brim_ear_points.txt", ears)]),
+    )
+    .unwrap();
+    assert_eq!(
+        first_brim(&as_file(&painted_type, "painted-type")).0,
+        first_brim(&as_file(&painted, "painted")).0
+    );
+    for (how, g) in [
+        ("file", as_file(&bare, "bare")),
+        ("request", as_request(&bare, "bare")),
+    ] {
+        let (runs, w) = first_brim(&g);
+        for (x, y) in [(w[0], w[1]), (w[2], w[1]), (w[0], w[3]), (w[2], w[3])] {
+            assert!(
+                runs.iter().any(|b| near(b, x, y)),
+                "{how}: no automatic ear at {x} {y}: {runs:?}"
+            );
+        }
+    }
+}
+
 /// A project whose `Metadata/model_settings.config` has no `<plate>` entry is one plate, numbered 1, as a plain 3MF is:
 /// `--plate 1` and a `#1` mesh reference slice it, and any other plate is refused as one the file does not have.
 #[test]

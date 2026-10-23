@@ -142,6 +142,7 @@ impl Plate {
         }
         let volumes = file_volumes(&mesh);
         let part_settings = mesh.part_settings.clone();
+        let brim_points = mesh.brim_points.clone();
         let object = PlateObject {
             id: "object-1".to_owned(),
             name: mesh.name.clone(),
@@ -151,7 +152,7 @@ impl Plate {
             part_settings,
             volumes,
             settings: serde_json::Value::Null,
-            brim_points: Vec::new(),
+            brim_points,
         };
         Self {
             bed,
