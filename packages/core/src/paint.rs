@@ -203,7 +203,30 @@ pub(crate) enum Facets {
     /// Corners in mm on the bed.
     Mm(Vec<([[f64; 3]; 3], u8)>),
     /// Corners in the object's own frame, and the object's column-major transform.
-    Placed(Vec<PaintFacet>, [f32; 16]),
+    Placed(Pieces, [f32; 16]),
+}
+
+/// Which painted pieces of a part a [`Pieces::Part`] reads: its color paint or its fuzzy skin paint.
+pub(crate) type PaintOf = fn(&crate::mesh::MeshPart) -> &[PaintFacet];
+
+/// The pieces of a [`Facets::Placed`]: a list of their own, or one part's paint read in place from its loaded mesh
+/// (the mesh, the part's index in it and which paint). A painted part's paint can take tens of megabytes, and the
+/// plate keeps the mesh alive anyway, so a session reads it there instead of keeping a copy.
+#[derive(Debug, Clone)]
+pub(crate) enum Pieces {
+    Own(Vec<PaintFacet>),
+    Part(std::sync::Arc<crate::mesh::Mesh>, usize, PaintOf),
+}
+
+impl std::ops::Deref for Pieces {
+    type Target = [PaintFacet];
+
+    fn deref(&self) -> &[PaintFacet] {
+        match self {
+            Self::Own(v) => v,
+            Self::Part(mesh, part, paint) => mesh.parts.get(*part).map_or(&[], paint),
+        }
+    }
 }
 
 impl Default for Facets {
@@ -221,8 +244,19 @@ impl From<Vec<([[f64; 3]; 3], u8)>> for Facets {
 impl Facets {
     /// `facets` of an object placed by `transform`, kept as they are (the pieces' room beyond their count is given
     /// back).
+    #[cfg(test)]
     pub(crate) fn placed(facets: &[PaintFacet], transform: &[f32; 16]) -> Self {
-        Self::Placed(facets.to_vec(), *transform)
+        Self::Placed(Pieces::Own(facets.to_vec()), *transform)
+    }
+
+    /// The pieces `paint` gives of part `part` of `mesh`, placed by `transform`, read from the mesh in place.
+    pub(crate) fn of_part(
+        mesh: &std::sync::Arc<crate::mesh::Mesh>,
+        part: usize,
+        paint: PaintOf,
+        transform: &[f32; 16],
+    ) -> Self {
+        Self::Placed(Pieces::Part(std::sync::Arc::clone(mesh), part, paint), *transform)
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -261,7 +295,10 @@ impl Facets {
     pub(crate) fn with_state(&self, state: u8) -> Self {
         match self {
             Self::Mm(v) => Self::Mm(v.iter().filter(|f| f.1 == state).copied().collect()),
-            Self::Placed(v, t) => Self::Placed(v.iter().filter(|f| f.state == state).copied().collect(), *t),
+            Self::Placed(v, t) => Self::Placed(
+                Pieces::Own(v.iter().filter(|f| f.state == state).copied().collect()),
+                *t,
+            ),
         }
     }
 }
@@ -1645,6 +1682,27 @@ mod tests {
         assert_eq!(as_mm.iter().collect::<Vec<_>>(), mm);
         assert_eq!(as_mm.with_state(1).iter().collect::<Vec<_>>(), [mm[1]]);
         assert!(Facets::default().is_empty());
+        // Read in place from the second part of a mesh, the pieces are the ones a copy of them gives.
+        let part = |paint: &[PaintFacet]| crate::mesh::MeshPart {
+            paint: paint.to_vec(),
+            fuzzy_paint: paint[1..].to_vec(),
+            ..crate::mesh::MeshPart::default()
+        };
+        let mesh = std::sync::Arc::new(crate::mesh::Mesh {
+            parts: vec![part(&file[..1]), part(&file)],
+            ..crate::mesh::Mesh::default()
+        });
+        let color = Facets::of_part(&mesh, 1, |p| &p.paint, &t);
+        assert_eq!(color.iter().collect::<Vec<_>>(), mm);
+        assert_eq!(color.states().collect::<Vec<_>>(), [2, 1, 2]);
+        assert_eq!(color.with_state(2).iter().collect::<Vec<_>>(), [mm[0], mm[2]]);
+        let fuzzy = Facets::of_part(&mesh, 1, |p| &p.fuzzy_paint, &t);
+        assert_eq!(fuzzy.iter().collect::<Vec<_>>(), mm[1..]);
+        assert_eq!(
+            std::sync::Arc::strong_count(&mesh),
+            3,
+            "the pieces are not copied"
+        );
         assert_eq!(
             std::mem::size_of::<PaintFacet>() * 2,
             std::mem::size_of::<([[f64; 3]; 3], u8)>()
