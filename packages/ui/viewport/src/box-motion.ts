@@ -54,12 +54,22 @@ export class ResizeSettle {
   private heldSince: number | null = null
   private generation = 0
   private disposed = false
+  /** A wait on motion is out (the race in schedule()). */
+  private waiting = false
 
   constructor(
     private readonly resize: () => void,
     private readonly motion: () => Promise<void> | null,
     private readonly timing: ResizeSettleTiming,
   ) {}
+
+  /**
+   * Whether a resize is still to come: the wait for the box to keep still, or a wait on motion. Tests that wait for
+   * the view to settle read this (apps/web/e2e/journeys/lib/cad.ts).
+   */
+  get pending(): boolean {
+    return this.timer !== null || this.waiting
+  }
 
   /** The box changed: resize once it settles. */
   schedule(): void {
@@ -74,6 +84,7 @@ export class ResizeSettle {
       const left = this.timing.hold - (now - this.heldSince)
       const moving = left > 0 ? this.motion() : null
       if (!moving) return this.run()
+      this.waiting = true
       const held = new Promise<'held'>((resolve) => {
         this.holdTimer = setTimeout(() => resolve('held'), left)
       })
@@ -81,6 +92,7 @@ export class ResizeSettle {
         if (this.disposed || generation !== this.generation) return
         if (this.holdTimer !== null) clearTimeout(this.holdTimer)
         this.holdTimer = null
+        this.waiting = false
         // Still moving after the whole hold: size the buffer for the box as it is now.
         if (why === 'held') this.run()
         else this.schedule()
@@ -104,5 +116,6 @@ export class ResizeSettle {
     if (this.holdTimer !== null) clearTimeout(this.holdTimer)
     this.timer = null
     this.holdTimer = null
+    this.waiting = false
   }
 }
