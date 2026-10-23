@@ -1064,26 +1064,30 @@ fn settings_notes(
     None
 }
 
-/// The slice a request makes of `plate`, with its collision check: the paths, what the check's report reads besides
-/// the hits, and the hits.
+/// What [`slice_checked`] gives: the paths, what the collision report reads besides the hits, the hits, and the layer
+/// marks on the sliced layers.
+type Checked = (
+    SliceOutput,
+    Option<sx_core::collide::Meta>,
+    sx_core::collide::Hits,
+    Vec<sx_core::gcode::LayerGcode>,
+);
+
+/// The slice a request makes of `plate`, with its collision check and the layer marks `marks` placed on its layers as
+/// a request's are.
 fn slice_checked(
     plate: &Plate,
     config: &PrintConfig,
-) -> Result<
-    (
-        SliceOutput,
-        Option<sx_core::collide::Meta>,
-        sx_core::collide::Hits,
-    ),
-    sx_core::Error,
-> {
+    marks: &[sx_core::api::LayerGcodeSpec],
+) -> Result<Checked, sx_core::Error> {
     let mut session = SliceSession::new(plate, config)?;
     sx_core::api::set_collision_check(&mut session, plate, config, None);
     let mut out = session.slice_range_with(config, 0..session.layer_count(), &sx_core::NoProgress)?;
     sx_core::api::check_paths(&session, config, &mut out);
     let meta = session.collide_meta().cloned();
     let hits = std::mem::take(&mut out.collisions);
-    Ok((out, meta, hits))
+    let layer_gcode = sx_core::api::layer_gcode(marks, &session)?;
+    Ok((out, meta, hits, layer_gcode))
 }
 
 /// The collision check's refusal of the plate `sx slice <model>` sliced, in the words and by the rule of `--request`
@@ -1115,7 +1119,9 @@ fn plate_refusal(
 
 /// What `sx slice <model>` slices: a 3MF plate's build items, or one mesh of any other format.
 enum Model {
-    Items(Vec<Mesh>),
+    /// The build items of a 3MF plate, and the pause, color change and custom G-code marks the project sets on the
+    /// plate's layers.
+    Items(Vec<Mesh>, Vec<sx_core::api::LayerGcodeSpec>),
     One(Mesh),
 }
 
@@ -1127,9 +1133,21 @@ impl Model {
         if want.is_none() && !sx_core::api::is_3mf(bytes, model) {
             return Ok(Model::One(Mesh::load(bytes, model)?));
         }
-        let (_, items) = sx_core::api::load_3mf_items(bytes, model, want)?
+        let (plate, items) = sx_core::api::load_3mf_items(bytes, model, want)?
             .ok_or_else(|| format!("{model} has no plate {}", want.unwrap_or(1)))?;
-        Ok(Model::Items(items))
+        Ok(Model::Items(
+            items,
+            sx_core::api::load_3mf_layer_gcode(bytes, plate),
+        ))
+    }
+
+    /// The marks the project sets on the plate's layers, which a request slicing the same plate takes too unless it
+    /// brings its own (see [`split_projects`]). None for other files.
+    fn layer_marks(&self) -> &[sx_core::api::LayerGcodeSpec] {
+        match self {
+            Model::Items(_, marks) => marks,
+            Model::One(_) => &[],
+        }
     }
 
     /// The object settings that go in with the plate's ([`layered_config`]): the mesh's own, or those every build item
@@ -1137,7 +1155,7 @@ impl Model {
     fn shared_settings(&self) -> Value {
         match self {
             Model::One(mesh) => mesh.settings.clone(),
-            Model::Items(items) => {
+            Model::Items(items, _) => {
                 let first = items.first().map_or(Value::Null, |m| m.settings.clone());
                 if items.iter().all(|m| m.settings == first) {
                     first
@@ -1154,7 +1172,7 @@ impl Model {
         let differ = self.shared_settings().is_null();
         match self {
             Model::One(mesh) => Plate::single_on(mesh, config.bed_rect(), config.printable_height),
-            Model::Items(items) => {
+            Model::Items(items, _) => {
                 let mut plate = Plate::items_on(items, config.bed_rect(), config.printable_height);
                 for o in plate.objects.iter_mut().filter(|_| differ) {
                     if let Some(own) = o.mesh.settings.as_object().filter(|m| !m.is_empty()) {
@@ -1219,12 +1237,18 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         eprintln!("warning: {}", i.message);
     }
     // The model goes to the middle of the profile's bed, as the desktop slicers do.
+    let marks = model_file.layer_marks().to_vec();
     let plate = model_file.plate(&config, preset.as_ref());
     let t = Instant::now();
     let refused = |e: sx_core::Error| with_printer_note(e.to_string(), stock_checked.then_some(&config.raw));
-    let (out, meta, hits) = slice_checked(&plate, &config).map_err(refused)?;
+    let (out, meta, hits, layer_gcode) = slice_checked(&plate, &config, &marks).map_err(refused)?;
     let mut gcode = Vec::new();
-    let stats = sx_core::emit_gcode(&out, &config, config.gcode_flavor, &mut gcode).map_err(refused)?;
+    let opts = sx_core::EmitOptions {
+        layer_gcode,
+        ..Default::default()
+    };
+    let stats =
+        sx_core::emit_gcode_with(&out, &config, config.gcode_flavor, &opts, &mut gcode).map_err(refused)?;
     let (gcode, timing) = sx_core::firmware::finalize_timed(&gcode, None, Some(&config));
     let time_s = sx_core::firmware::footer_time(&gcode).unwrap_or(stats.time_s);
     if let Some(why) = plate_refusal(
