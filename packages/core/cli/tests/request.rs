@@ -1130,12 +1130,14 @@ fn box_mesh(lo: [i32; 3], hi: [i32; 3], painted: bool) -> String {
     format!("<mesh><vertices>{vertices}</vertices><triangles>{triangles}</triangles></mesh>")
 }
 
-/// Where a case of the painted box sets its per-feature filaments: on the object, or on a modifier part over the right
-/// half of the box (x 0 to 20 mm, through its whole height and past its front and back).
+/// Where a case of the painted box sets its per-feature filaments: on the object, on a modifier part over the right
+/// half of the box (x 0 to 20 mm, through its whole height and past its front and back), or in a height range of the
+/// object (`Metadata/layer_config_ranges.xml`, from and to z in mm).
 #[derive(Clone, Copy)]
 enum Own<'a> {
     Object(&'a [(&'a str, &'a str)]),
     Modifier(&'a [(&'a str, &'a str)]),
+    Range(f64, f64, &'a [(&'a str, &'a str)]),
 }
 
 /// A 30 x 30 x 20 mm box centered on a Bambu Studio 2.8 project's bed, on filament `slot`, with its front (-y) face
@@ -1162,7 +1164,10 @@ fn bambu_box_3mf(painted: bool, settings: &serde_json::Value, slot: u8, own: Own
             ),
         )
     } else {
-        let Own::Object(keys) = own else { unreachable!() };
+        let keys = match own {
+            Own::Object(keys) => keys,
+            _ => &[],
+        };
         (
             format!(
                 r#"{head}<resources><object id="1" type="model">{body}</object></resources><build><item objectid="1" {item}/></build></model>"#
@@ -1174,11 +1179,28 @@ fn bambu_box_3mf(painted: bool, settings: &serde_json::Value, slot: u8, own: Own
         )
     };
     let settings = settings.to_string();
-    zip(&[
+    let mut entries: Vec<(&str, &[u8])> = vec![
         ("3D/3dmodel.model", model.as_bytes()),
         ("Metadata/project_settings.config", settings.as_bytes()),
         ("Metadata/model_settings.config", objects.as_bytes()),
-    ])
+    ];
+    // As Bambu Studio writes a range: the layer height first, then the range's own keys.
+    let ranges = match own {
+        Own::Range(z0, z1, keys) => {
+            let options: String = keys
+                .iter()
+                .map(|(k, v)| [r#"<option opt_key=""#, k, r#"">"#, v, "</option>"].concat())
+                .collect();
+            format!(
+                r#"<?xml version="1.0" encoding="utf-8"?><objects><object id="1"><range min_z="{z0}" max_z="{z1}"><option opt_key="layer_height">0.2</option>{options}</range></object></objects>"#
+            )
+        }
+        _ => String::new(),
+    };
+    if !ranges.is_empty() {
+        entries.push(("Metadata/layer_config_ranges.xml", ranges.as_bytes()));
+    }
+    zip(&entries)
 }
 
 /// The project settings of the painted box: Bambu Studio's 0.20 mm Standard on a P1S with four filaments, and
@@ -1276,11 +1298,106 @@ fn a_modifiers_wall_filament_prints_the_walls_inside_it() {
     }
 }
 
+/// The filaments (1-based) the lines of `feature` print with in the layers whose middle lies in `lo..hi` mm, and in the
+/// other layers. G-code of one filament selects none, so lines before any tool change count as filament 1.
+fn in_heights(gcode: &str, feature: &str, lo: f64, hi: f64) -> [std::collections::BTreeSet<u8>; 2] {
+    let (mut tool, mut here, mut inside) = (0u8, false, false);
+    let mut on: [std::collections::BTreeSet<u8>; 2] = Default::default();
+    for l in gcode.lines() {
+        if let Some(n) = l
+            .strip_prefix('T')
+            .and_then(|t| t.split_whitespace().next())
+            .and_then(|n| n.parse::<u8>().ok())
+        {
+            tool = n;
+        } else if let Some(z) = l
+            .strip_prefix("; Z_HEIGHT:")
+            .and_then(|z| z.trim().parse::<f64>().ok())
+        {
+            // The layers are 0.2 mm; a layer is cut at its middle.
+            inside = (lo..hi).contains(&(z - 0.1));
+        } else if let Some(f) = l.strip_prefix("; FEATURE: ").or_else(|| l.strip_prefix(";TYPE:")) {
+            here = f.trim() == feature;
+        } else if here && l.starts_with("G1 ") && l.contains(" E") && (l.contains(" X") || l.contains(" Y")) {
+            on[usize::from(!inside)].insert(tool + 1);
+        }
+    }
+    on
+}
+
+/// A height range of a project's object (`Metadata/layer_config_ranges.xml`) with a wall filament of its own prints
+/// the object's walls in its heights on that filament, with `sx slice project.3mf` and with a request whose mesh is the
+/// project. The range's own layer height, the same as the project's, is left out without a note, and a key a range
+/// cannot change is named.
+#[test]
+fn a_height_ranges_wall_filament_prints_the_walls_in_its_heights() {
+    let dir = temp_dir(format!("sx-cli-range-walls-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = box_settings(&serde_json::json!({}));
+    let project = bambu_box_3mf(
+        false,
+        &settings,
+        1,
+        Own::Range(
+            8.0,
+            14.0,
+            &[("wall_filament", "3"), ("sparse_infill_density", "40%")],
+        ),
+    );
+    let path = dir.join("range.3mf");
+    std::fs::write(&path, &project).unwrap();
+    let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "{err}");
+    let cli = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        err.contains("sparse_infill_density is not applied by this engine (height range)"),
+        "{err}"
+    );
+    assert!(!err.contains("layer_height is not applied"), "{err}");
+    let out_dir = dir.join("out");
+    let request = dir.join("request.json");
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": {"p": path},
+        "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+        "config": settings,
+        "options": {"emitGcode": true},
+    });
+    std::fs::write(&request, req.to_string()).unwrap();
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&request)
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let via_request = std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap();
+    for (name, gcode) in [("sx slice", &cli), ("request", &via_request)] {
+        for feature in ["Outer wall", "Inner wall"] {
+            assert_eq!(
+                in_heights(gcode, feature, 8.0, 14.0),
+                [[3].into(), [1].into()],
+                "{name}: {feature} in and out of the range"
+            );
+        }
+        assert_eq!(
+            in_heights(gcode, "Sparse infill", 8.0, 14.0),
+            [[1].into(), [1].into()],
+            "{name}: the infill stays on the object's filament"
+        );
+        // One change on each of the 30 layers in it: a layer starts on the filament the layer below ended on.
+        assert_eq!(changes_and_tools(gcode, "Outer wall").0, 30, "{name}");
+    }
+}
+
 /// A case of [`painted_facets_win_over_the_feature_filaments_as_bambu_studio_prints_them`]: its name, whether the box is
 /// painted, the object's filament, the project's keys, the box's own keys and Bambu Studio's tool changes.
 type PaintCase<'a> = (&'a str, bool, u8, serde_json::Value, Own<'a>, usize);
 
 /// The cases of [`painted_facets_win_over_the_feature_filaments_as_bambu_studio_prints_them`].
+#[allow(clippy::too_many_lines, reason = "a table of cases")]
 fn paint_cases() -> Vec<PaintCase<'static>> {
     let all = |v: &str| serde_json::json!({"wall_filament": v, "sparse_infill_filament": v, "solid_infill_filament": v});
     let none = serde_json::json!({});
@@ -1333,6 +1450,22 @@ fn paint_cases() -> Vec<PaintCase<'static>> {
             190,
         ),
         (
+            "f",
+            true,
+            1,
+            none.clone(),
+            Own::Range(8.0, 14.0, &[("wall_filament", "3")]),
+            128,
+        ),
+        (
+            "f1-x3",
+            true,
+            3,
+            none.clone(),
+            Own::Range(8.0, 14.0, &[("wall_filament", "1")]),
+            128,
+        ),
+        (
             "f2",
             true,
             1,
@@ -1378,12 +1511,12 @@ fn paint_cases() -> Vec<PaintCase<'static>> {
 /// Painted facets against the per-feature filaments, on a box with its front face painted in filament 4 (and the same
 /// box unpainted), with the tool changes Bambu Studio 2.8 makes for each (its walls, sparse infill and solid infill in
 /// the painted part print with the paint's filament in every case):
-/// - paint always wins: the painted regions keep their filament whatever the project, the object or a modifier asks
-///   for;
+/// - paint always wins: the painted regions keep their filament whatever the project, the object, a modifier or a
+///   height range asks for;
 /// - the project's own `wall_filament`, `sparse_infill_filament` and `solid_infill_filament` print on nothing, "1" and
 ///   others alike;
 /// - the object's own move the unpainted regions' features, where "1" is filament 1 and "0" the object's own; a
-///   modifier's do the same inside its volume.
+///   modifier's and a height range's do the same inside its volume or its heights.
 #[test]
 fn painted_facets_win_over_the_feature_filaments_as_bambu_studio_prints_them() {
     let dir = temp_dir(format!("sx-cli-paint-features-{}", std::process::id()));

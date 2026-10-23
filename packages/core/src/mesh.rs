@@ -78,6 +78,9 @@ pub struct Mesh {
     /// Painted brim ears a project file gives this object: x, y, z in the space of the parts and the radius of the
     /// ear head, mm each. Empty without any.
     pub brim_points: Vec<[f32; 4]>,
+    /// Settings by height a project file gives this object (`Metadata/layer_config_ranges.xml`), heights above the
+    /// bed, mm: the slice applies them to this object, under the caller's own ranges. Their `objects` is empty.
+    pub height_ranges: Vec<crate::HeightRange>,
 }
 
 /// A part of a model that shapes the print without printing: see [`crate::plate::VolumeRole`].
@@ -324,6 +327,12 @@ impl Mesh {
         if !self.settings.is_null() {
             h.write(b"object settings");
             h.write(self.settings.to_string().as_bytes());
+        }
+        for r in &self.height_ranges {
+            h.write(b"height range");
+            h.write(&r.z_from_mm.to_le_bytes());
+            h.write(&r.z_to_mm.to_le_bytes());
+            h.write(r.settings.to_string().as_bytes());
         }
         h.finish()
     }
