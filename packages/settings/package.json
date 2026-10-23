@@ -15,6 +15,7 @@
     "./printer-models.json": "./printer-models.json",
     "./defaults": "./js/defaults.ts",
     "./print-margins": "./js/print-margins.ts",
+    "./arrange-room": "./js/arrange-room.ts",
     "./easy": "./js/easy.ts",
     "./defaults.json": "./defaults.json"
   },
