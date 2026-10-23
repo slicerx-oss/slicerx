@@ -8,6 +8,7 @@
 // footprint.ts), not the bare outline, and it keeps clear of the printer's excluded areas and the prime
 // tower. Pure and deterministic, so it runs without a GPU and is unit tested.
 import type { Bed } from '@slicerx/contracts'
+import type { FirstLayerShape } from '@slicerx/settings/print-margins'
 import { excludedPolygons } from '../viewport/bed-exclude'
 import { bedCircle, boxInBed } from './bed-shape'
 import { bounds, compose, decompose, fitsBed, multiply, reachFrom, type Box, type Mat4 } from './transform'
@@ -40,14 +41,25 @@ export interface PrintSize {
 
 /** What the printer lays down beyond an object's outline. */
 export interface PrintMargins {
-  /** How far the first layer of the object itself reaches past its outline (brim, raft, support pad), mm. */
-  grow(size: PrintSize): number
+  /**
+   * How far the first layer of the object itself reaches past its outline (brim, raft, support pad), mm. `base` is the
+   * object's first layer, cut at `firstLayerMm`, when the caller has it; an automatic brim is then sized from it as
+   * the engine sizes it, else estimated from the bounds.
+   */
+  grow(size: PrintSize, base?: readonly FirstLayerShape[]): number
   /** How far the outermost thing printed for the object reaches, skirt included, mm. At least `grow`. */
-  reach(size: PrintSize): number
+  reach(size: PrintSize, base?: readonly FirstLayerShape[]): number
   /** True when a skirt or draft shield runs around the whole print, which can cross an excluded area between objects. */
   skirt: boolean
-  /** More places nothing may be printed on (the prime tower), as boxes. */
+  /** Where the engine cuts the first layer an automatic brim is sized from, mm above the bed; unset without one. */
+  firstLayerMm?: number
+  /** More places nothing may be printed on (a prime tower placed by hand), as boxes. */
   keepOut: readonly Rect[]
+  /**
+   * Room arrange keeps free for a prime tower the engine places itself, as boxes. A part that stands there still
+   * prints, since the engine then puts the tower elsewhere, so only arrange and landing a new part keep off it.
+   */
+  towerRoom?: readonly Rect[]
   /** Printing by object: how far apart objects stay so the toolhead clears the finished ones (the extruder clearance radius), mm. */
   apart?: number
 }
@@ -88,6 +100,11 @@ export function setAvoidAreas(areas: readonly Rect[]): void {
 
 export function avoidAreas(): readonly Rect[] {
   return avoid
+}
+
+/** What arrange keeps clear of: the excluded areas, then the prime tower's place or room (the last ones). */
+export function arrangeZones(margins: PrintMargins): Rect[] {
+  return [...avoid, ...margins.keepOut, ...(margins.towerRoom ?? [])].map((r) => ({ ...r }))
 }
 
 /** The box around each polygon of a `bed_exclude_area` value (see `excludedPolygons`: up to four points are one polygon, a longer list one per four points). */
@@ -169,7 +186,8 @@ interface Want {
  * First free spot for a w x h rectangle, scanning rows from the front left along the free edges. The
  * rectangle keeps its brim clear of the other objects' brims, and everything it prints (skirt included)
  * inside the bed and off the excluded areas. With a skirt around the whole print, the hull of all that
- * is printed must not cross an excluded area either.
+ * is printed must not cross an excluded area either; the prime tower may sit inside it, as the skirt goes round the
+ * tower too.
  */
 function findSpot(want: Want, placed: readonly Placed[], zones: readonly Rect[], bed: Bed, gap: number, skirt: boolean, apart = 0): { x: number; y: number } | null {
   const { w, h } = want
@@ -218,9 +236,9 @@ function findSpot(want: Want, placed: readonly Placed[], zones: readonly Rect[],
       return !(x >= p.r.x + p.r.w + sep - 1e-6 || x + w <= p.r.x - sep + 1e-6 || y >= p.r.y + p.r.h + sep - 1e-6 || y + h <= p.r.y - sep + 1e-6)
     })) continue
     if (zones.some((z) => !(x >= z.x + z.w + edge - 1e-6 || x + w <= z.x - edge + 1e-6 || y >= z.y + z.h + edge - 1e-6 || y + h <= z.y - edge + 1e-6))) continue
-    if (skirt && zones.length > 0) {
+    if (skirt && avoid.length > 0) {
       const hull = hullOf([...placed.map((p) => grown(p.r, p.reach)), grown(me, want.reach)].flatMap((r): [number, number][] => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]))
-      if (zones.some((z) => hullHitsRect(hull, z))) continue
+      if (avoid.some((z) => hullHitsRect(hull, z))) continue
     }
     return { x, y }
   }
@@ -241,7 +259,7 @@ export interface ArrangeResult {
  */
 export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeItem[], bed: Bed, opts: ArrangeOptions = ARRANGE_DEFAULTS): ArrangeResult {
   const margins = opts.margins ?? marginSource()
-  const zones: Rect[] = [...avoid, ...margins.keepOut].map((r) => ({ ...r }))
+  const zones = arrangeZones(margins)
   const placed: Placed[] = []
   for (const f of fixed) {
     const b = bounds(f.parts, f.transform)
@@ -365,7 +383,7 @@ export function landOnBed(item: ArrangeItem, others: readonly ArrangeItem[], bed
   const reach = margins.reach(size)
   const grow = margins.grow(size)
   const edge = reach > 0 ? reach + MARGIN_SAFETY_MM : LAND_EDGE_MM
-  const zones = [...avoid, ...margins.keepOut]
+  const zones = arrangeZones(margins)
   const clearOf = (r: Rect, by: number) => m.min[0] >= r.x + r.w + by || m.max[0] <= r.x - by || m.min[1] >= r.y + r.h + by || m.max[1] <= r.y - by
   const clear = others.every((o) => {
     const ob = bounds(o.parts, o.transform)

@@ -11,7 +11,7 @@ pub use place::{
     LeftOver, NestBed, NestFixed, NestItem, NestOptions, NestProblem, NestResult, NestStats, NestZone,
     Nester, Placement, TooLarge, nest,
 };
-pub use silhouette::{Mat4, Silhouette, SilhouetteOptions, silhouette};
+pub use silhouette::{Mat4, Silhouette, SilhouetteOptions, base, silhouette};
 
 use crate::error::{Error, Result};
 use std::cell::RefCell;
@@ -407,6 +407,41 @@ mod tests {
                 assert!(distance(&r, &zr) >= 4.0 - 0.01);
             }
         }
+    }
+
+    #[test]
+    fn the_skirt_may_go_round_the_tower_but_not_an_excluded_area() {
+        // a 3 x 3 grid of squares fills the bed but for its back left corner, where the zone is
+        let items: Vec<NestItem> = (0..8)
+            .map(|i| item(&format!("p{i}"), vec![rect(0.0, 0.0, 30.0, 30.0)]))
+            .collect();
+        let zones = vec![NestZone {
+            polygons: vec![rect(0.0, 76.0, 34.0, 34.0)],
+        }];
+        let run = |tower_zones: u32| {
+            nest(NestProblem {
+                bed: bed(110.0, 110.0),
+                items: items.clone(),
+                fixed: vec![],
+                zones: zones.clone(),
+                options: NestOptions {
+                    skirt: true,
+                    tower_zones,
+                    rotate: false,
+                    ..opts(4.0)
+                },
+            })
+            .unwrap()
+        };
+        let tower = run(1);
+        assert_eq!(tower.placements.len(), 8);
+        check_spacing(&items, &tower, 4.0, 110.0, 110.0);
+        let zr: Region = vec![vec![zones[0].polygons[0].outer.clone()]];
+        for p in &tower.placements {
+            assert!(distance(&placed(&items, p), &zr) >= 4.0 - 0.01);
+        }
+        // an excluded area keeps the skirt's hull off it, so the parts cannot sit on both sides of it
+        assert!(run(0).placements.len() < 8);
     }
 
     #[test]

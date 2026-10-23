@@ -3,8 +3,9 @@
 // True shape arrange and fill the bed. sx-geom gives each object's outline seen from above, holes and
 // inner corners kept, and nests the outlines on no fit polygons at any turn (packages/geom/src/nest):
 // an L tucks into another's corner and a small part goes inside a ring. The outlines grow by what
-// prints around each object (brim, raft, support pad, skirt: footprint.ts) and keep clear of fixed
-// objects, the printer's excluded areas and the prime tower. The engine runs in the geometry worker one
+// prints around each object (brim, raft, support pad, skirt: footprint.ts; an automatic brim sized
+// from the object's first layer, as the engine sizes it) and keep clear of fixed objects, the printer's
+// excluded areas and the prime tower. The engine runs in the geometry worker one
 // pass at a time, so a long run shows its progress; the same plate gives the same layout every time.
 // When the engine cannot run, arrange falls back to the box packer in arrange.ts.
 import type { Bed, MeshPart } from '@slicerx/contracts'
@@ -60,30 +61,36 @@ const EFFORT_BUDGET = { quick: 1.5e6, normal: 6e6, thorough: 24e6 } as const
 export interface Footprint {
   polygons: Outline[]
   hull: [number, number][]
+  /** What it stands on, its first layer: everything up to the cut asked for above its lowest point. */
+  base?: Outline[]
 }
 
 /** Footprints by mesh and by the linear part of the transform; moving an object only shifts its footprint. */
 const outlines = new WeakMap<object, Map<string, Footprint>>()
 
-/** The object's footprint seen from above, in bed coordinates. */
-export async function outlineOf(e: NestEntry): Promise<Footprint> {
+/**
+ * The object's footprint seen from above, in bed coordinates. With `baseMm`, also its first layer: what it stands on up
+ * to that height above its lowest point (the engine cuts the first layer at half its height).
+ */
+export async function outlineOf(e: NestEntry, baseMm?: number): Promise<Footprint> {
   const m = e.transform
   const linear = [m[0]!, m[1]!, m[2]!, 0, m[4]!, m[5]!, m[6]!, 0, m[8]!, m[9]!, m[10]!, 0, 0, 0, 0, 1]
-  const key = linear.map((v) => v.toFixed(6)).join(',')
+  const key = `${linear.map((v) => v.toFixed(6)).join(',')}|${baseMm ?? ''}`
   let per = outlines.get(e.parts)
   if (!per) outlines.set(e.parts, (per = new Map()))
   let local = per.get(key)
   if (!local) {
     const meshes = e.parts.map((p) => ({ positions: Array.from(p.positions), indices: Array.from(p.indices) }))
-    const r = await geom().call<Footprint>('nest.footprint', { meshes, transform: linear })
-    local = { polygons: r.polygons, hull: r.hull }
+    const r = await geom().call<Footprint>('nest.footprint', { meshes, transform: linear, ...(baseMm !== undefined ? { baseMm } : {}) })
+    local = { polygons: r.polygons, hull: r.hull, ...(r.base ? { base: r.base } : {}) }
     if (per.size >= 8) per.delete(per.keys().next().value as string)
     per.set(key, local)
   }
   const dx = m[12] ?? 0
   const dy = m[13] ?? 0
   const move = (r: [number, number][]): [number, number][] => r.map(([x, y]) => [x + dx, y + dy])
-  return { polygons: local.polygons.map((p) => ({ outer: move(p.outer), holes: p.holes.map(move) })), hull: move(local.hull) }
+  const moved = (list: Outline[]): Outline[] => list.map((p) => ({ outer: move(p.outer), holes: p.holes.map(move) }))
+  return { polygons: moved(local.polygons), hull: move(local.hull), ...(local.base ? { base: moved(local.base) } : {}) }
 }
 
 const rectOutline = (r: Rect): Outline => ({ outer: [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]], holes: [] })
@@ -115,20 +122,24 @@ interface Request {
 async function itemOf(e: NestEntry, margins: PrintMargins, copies = 1) {
   const b = bounds(e.parts, e.transform)
   const size = b ? printSizeOf(b) : { w: 0, h: 0, height: 0 }
-  let { polygons, hull } = e.parts.some((p) => p.indices.length >= 3) ? await outlineOf(e) : { polygons: [], hull: [] as [number, number][] }
+  let { polygons, hull, base }: Footprint = e.parts.some((p) => p.indices.length >= 3) ? await outlineOf(e, margins.firstLayerMm) : { polygons: [], hull: [] }
   // No triangles to project (a point cloud, or a part still loading): its bounds stand in.
   if (polygons.length === 0 && b) {
     polygons = [rectOutline({ x: b.min[0], y: b.min[1], w: size.w, h: size.h })]
     hull = []
   }
-  return { id: e.id, polygons, hull, grow: margins.grow(size), reach: margins.reach(size), copies }
+  // The automatic brim grows from the first layer; without one (nothing touches the bed) the bounds estimate it.
+  const first = base && base.length > 0 ? base : undefined
+  return { id: e.id, polygons, hull, grow: margins.grow(size, first), reach: margins.reach(size, first), copies }
 }
 
 async function run(req: Request, hooks: NestRun = {}): Promise<NestReply> {
   const margins = req.opts.margins ?? currentMargins()
   const items = await Promise.all(req.moving.map((e) => itemOf(e, margins, req.copies ?? 1)))
   const fixed = await Promise.all(req.fixed.map((e) => itemOf(e, margins)))
-  const zones = [...avoidAreas(), ...margins.keepOut].map((r) => ({ polygons: [rectOutline(r)] }))
+  // The prime tower's boxes go last: the skirt round the whole print goes round the tower too.
+  const towers = [...margins.keepOut, ...(margins.towerRoom ?? [])]
+  const zones = [...avoidAreas(), ...towers].map((r) => ({ polygons: [rectOutline(r)] }))
   const problem = {
     // A round bed (a delta) keeps every outline inside its circle, not the circle's box.
     bed: { widthMm: req.bed.widthMm, depthMm: req.bed.depthMm, ...(req.bed.round ? { round: true } : {}) },
@@ -143,6 +154,7 @@ async function run(req: Request, hooks: NestRun = {}): Promise<NestReply> {
       rotate: req.opts.rotate,
       rotationStepDeg: req.opts.stepDeg ?? NEST_STEP_DEFAULT,
       skirt: margins.skirt,
+      ...(towers.length > 0 ? { towerZones: towers.length } : {}),
       center: req.center,
       budget: EFFORT_BUDGET[req.opts.effort ?? 'normal'],
     },
