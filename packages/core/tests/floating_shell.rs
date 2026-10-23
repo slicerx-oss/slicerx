@@ -270,9 +270,7 @@ fn a_cone_prints_its_shell_band_as_a_floating_vertical_shell() {
     assert!((0.5..=0.7).contains(&share), "floating share {share:.2}");
     // On the cone every slowed span is shorter than 2 mm: none is left.
     assert_eq!(r.spans, 0);
-    // With narrow detection off: no floating shell, and plain internal solid infill (324.2 mm there). The band is one
-    // line wide, and the line fill of a band that thin is not the maker's yet (379.8 mm here), so only its presence
-    // is checked.
+    // With narrow detection off: no floating shell, and plain internal solid infill (324.2 mm there).
     let (g, _) = slice(
         cone(),
         false,
@@ -281,7 +279,7 @@ fn a_cone_prints_its_shell_band_as_a_floating_vertical_shell() {
     let r = read(&g);
     assert_eq!(r.total(FLOATING), 0.0);
     let solid = r.total(SOLID);
-    assert!(solid > 250.0, "internal solid {solid:.1}");
+    assert!((solid / 324.2 - 1.0).abs() < 0.03, "internal solid {solid:.1}");
 }
 
 #[test]
