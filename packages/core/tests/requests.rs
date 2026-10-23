@@ -3145,7 +3145,30 @@ fn a_painted_top_colors_as_many_layers_as_the_project_says() {
 #[test]
 fn preview_extras_point_at_the_gcode_line_of_every_segment() {
     let run = run(&request(json!({"shards": 3}), json!({}))).unwrap();
-    let g = text(&run);
+    assert_extras_match(&run, 0.0);
+    // A run without the G-code has no extras.
+    let bare = run_bare();
+    assert_eq!(u16::from_le_bytes([bare[6], bare[7]]) & 2, 0);
+}
+
+#[test]
+fn preview_extras_find_moves_the_nozzle_offset_shifted() {
+    // A P1S writes every move 2 mm short of the plate in Y; the preview still draws the plate.
+    let mut config = base_config();
+    config["extruder_offset"] = json!(["0x2"]);
+    config["printer_model"] = json!("Bambu Lab P1S");
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"mesh": "x"}]},
+        "config": config,
+        "options": {"shards": 3},
+    }))
+    .unwrap();
+    assert_extras_match(&run(&req).unwrap(), 2.0);
+}
+
+/// Every preview segment's G-code line is a move that ends where the segment ends, less `dy` in Y.
+fn assert_extras_match(run: &SliceRun, dy: f32) {
+    let g = text(run);
     let lines: Vec<&str> = g.lines().collect();
     let b = &run.preview;
     let u32at = |o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap()) as usize;
@@ -3181,7 +3204,7 @@ fn preview_extras_point_at_the_gcode_line_of_every_segment() {
                 .find_map(|w| w.strip_prefix(axis))
                 .and_then(|v| v.parse::<f32>().ok())
         };
-        let (x, y) = (f32at(seg + 8), f32at(seg + 12));
+        let (x, y) = (f32at(seg + 8), f32at(seg + 12) - dy);
         let hit = coord('X')
             .zip(coord('Y'))
             .is_some_and(|(cx, cy)| (cx - x).abs() < 0.002 && (cy - y).abs() < 0.002);
@@ -3199,9 +3222,6 @@ fn preview_extras_point_at_the_gcode_line_of_every_segment() {
         fans > 0 && temps == segs && seams > 0 && retracts > 0,
         "{fans} {temps} {seams} {retracts}"
     );
-    // A run without the G-code has no extras.
-    let bare = run_bare();
-    assert_eq!(u16::from_le_bytes([bare[6], bare[7]]) & 2, 0);
 }
 
 fn run_bare() -> Vec<u8> {
