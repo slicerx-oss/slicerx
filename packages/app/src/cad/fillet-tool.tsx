@@ -243,8 +243,10 @@ export function FilletTool() {
   }, [prev, kind])
   useEffect(() => () => publishPreview(null), [])
 
+  // Round and Bevel, and Enter in a size field, run on the same rule: edges picked, sizes that read, and no preview error.
+  const canRound = !!picked?.edges.length && sizeOk && prev.status !== 'error'
   const apply = async () => {
-    if (!picked || !picked.edges.length || !sizeOk || busy) return
+    if (!picked || !canRound || busy) return
     setBusy(true)
     setNote(null)
     try {
@@ -283,7 +285,7 @@ export function FilletTool() {
       </Row>
       {previewWords ? <Message text={previewWords} tone="error" testId="op-preview-error" /> : null}
       {note ? <Message text={note} /> : null}
-      <ToolFooter verb={kind === 'fillet' ? 'Round' : 'Bevel'} verbs={['Round', 'Bevel']} onApply={apply} busy={busy} disabled={!n || !sizeOk || prev.status === 'error'} repeat={!edit} />
+      <ToolFooter verb={kind === 'fillet' ? 'Round' : 'Bevel'} verbs={['Round', 'Bevel']} onApply={apply} busy={busy} disabled={!canRound} repeat={!edit} />
     </Shell>
   )
 }

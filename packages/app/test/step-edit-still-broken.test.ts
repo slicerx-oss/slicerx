@@ -145,7 +145,7 @@ describe('fillet and shell', () => {
     expect(t).toMatchObject({ tone: 'warn', text: 'Step 1 is still broken: the wall is too thick for this body; try a thinner one. The change is saved.' })
   })
 
-  it('a fillet whose edge went with an earlier step says to pick it again', async () => {
+  it('a fillet whose edge went with an earlier step is not saved by Enter while Round is off', async () => {
     block()
     // a chamfer, then a fillet on the edge between the chamfer's face and the side
     const pk = await pickEdge({ mesh: toGeom(entry().parts[0]!), transform: T }, { triangle: 2, at: [110, 109.5, 10] })
@@ -164,9 +164,22 @@ describe('fillet and shell', () => {
     await deleteStep(slicer, 'a', 0)
     expect(entry().history!.steps[0]!.broken).toBeDefined()
     await open('a', 0)
-    // Round is off while the preview says the edge is gone; Enter in the radius still saves
-    const t = await save('edge-size', '1.5', null)
-    expect(t).toMatchObject({ tone: 'warn', text: 'Step 1 is still broken: a face or edge this step was made on is no longer on the part after an earlier change. Pick the face or edges again. The change is saved.' })
+    const words = 'A face or edge this step was made on is no longer on the part after an earlier change. Pick the face or edges again.'
+    const input = await waitFor(() => {
+      const el = document.getElementById('edge-size')
+      if (!el) throw new Error('no radius field')
+      return el
+    }, { timeout: 30_000 })
+    fireEvent.change(input, { target: { value: '1.5' } })
+    // the preview says the edge is gone and Round is off; Enter in the radius follows the same rule
+    await screen.findByText(words, undefined, { timeout: 30_000 })
+    const round = screen.getByRole('button', { name: 'Round' }) as HTMLButtonElement
+    expect(round.disabled || round.getAttribute('aria-disabled') === 'true').toBe(true)
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await new Promise((r) => setTimeout(r, 500))
+    expect(get().historyEdit).not.toBeNull()
+    expect(get().toast).toBeNull()
+    expect((entry().history!.steps[0]!.params as { radiusMm: number }).radiusMm).toBe(1)
   })
 
   it('a fillet edited to a radius that fits says "Changed step N"', async () => {
