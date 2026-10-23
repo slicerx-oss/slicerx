@@ -224,12 +224,21 @@ function brimOf(cfg: Record<string, SettingValue>, size: PrintSize, base?: reado
 }
 
 /**
+ * `raft_first_layer_expansion`, mm (2 when unset). Bambu Studio writes -1 for its automatic value, and the engine
+ * reads any value below 0 as 2 mm, so this does too.
+ */
+function firstLayerExpansion(cfg: Record<string, SettingValue>): number {
+  const v = marginNumber(cfg['raft_first_layer_expansion'], 2)
+  return v < 0 ? 2 : v
+}
+
+/**
  * How far the first layer of the object itself reaches past its outline (brim, raft, size compensation), mm. `base`
  * is the object's first layer (see firstLayerCut), when known.
  */
 function growOf(cfg: Record<string, SettingValue>, size: PrintSize, base?: readonly FirstLayerShape[]): number {
   let grow = brimOf(cfg, size, base)
-  if (marginNumber(cfg['raft_layers'], 0) > 0) grow += Math.max(0, marginNumber(cfg['raft_expansion'], 1.5), marginNumber(cfg['raft_first_layer_expansion'], 2))
+  if (marginNumber(cfg['raft_layers'], 0) > 0) grow += Math.max(0, marginNumber(cfg['raft_expansion'], 1.5), firstLayerExpansion(cfg))
   return grow + Math.max(0, marginNumber(cfg['xy_contour_compensation'], 0))
 }
 
@@ -261,7 +270,7 @@ function supportOf(cfg: Record<string, SettingValue>): number {
   // Unset, support lines are as wide as the others (0.42 mm when those are unset too); 0 is the nozzle's width.
   const general = cfg['line_width'] === undefined ? 0.42 : widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
   const line = cfg['support_line_width'] === undefined ? general : widthMm(cfg['support_line_width'], nozzle, nozzle)
-  const pad = Math.max(0, marginNumber(cfg['support_expansion'], 0)) + Math.max(0, marginNumber(cfg['raft_first_layer_expansion'], 2))
+  const pad = Math.max(0, marginNumber(cfg['support_expansion'], 0)) + firstLayerExpansion(cfg)
   const style = marginText(cfg['support_style']) || 'default'
   if (marginText(cfg['support_type']).startsWith('tree') || style.startsWith('tree') || style === 'organic') {
     return pad + Math.max(0, marginNumber(cfg['tree_support_brim_width'], 3)) + 0.5 * Math.max(0, marginNumber(cfg['tree_support_branch_diameter'], 5)) + line
