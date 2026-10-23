@@ -169,10 +169,10 @@ interface Want {
  * First free spot for a w x h rectangle, scanning rows from the front left along the free edges. The
  * rectangle keeps its brim clear of the other objects' brims, and everything it prints (skirt included)
  * inside the bed and off the excluded areas. With a skirt around the whole print, the hull of all that
- * is printed must not cross an excluded area either; the prime tower may sit inside it, as the skirt goes round the
- * tower too.
+ * is printed must not cross an excluded area either. The skirt goes round the prime tower's place or room (`towers`)
+ * too, so the hull takes those in, as far out as the skirt reaches past a part.
  */
-function findSpot(want: Want, placed: readonly Placed[], zones: readonly Rect[], bed: Bed, gap: number, skirt: boolean, apart = 0): { x: number; y: number } | null {
+function findSpot(want: Want, placed: readonly Placed[], zones: readonly Rect[], towers: readonly Rect[], bed: Bed, gap: number, skirt: boolean, apart = 0): { x: number; y: number } | null {
   const { w, h } = want
   const edge = edgeOf(want.reach, gap)
   const xs = new Set<number>([edge])
@@ -220,7 +220,8 @@ function findSpot(want: Want, placed: readonly Placed[], zones: readonly Rect[],
     })) continue
     if (zones.some((z) => !(x >= z.x + z.w + edge - 1e-6 || x + w <= z.x - edge + 1e-6 || y >= z.y + z.h + edge - 1e-6 || y + h <= z.y - edge + 1e-6))) continue
     if (skirt && avoid.length > 0) {
-      const hull = hullOf([...placed.map((p) => grown(p.r, p.reach)), grown(me, want.reach)].flatMap((r): [number, number][] => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]))
+      const out = Math.max(want.reach, ...placed.map((p) => p.reach))
+      const hull = hullOf([...towers.map((t) => grown(t, out)), ...placed.map((p) => grown(p.r, p.reach)), grown(me, want.reach)].flatMap((r): [number, number][] => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]))
       if (avoid.some((z) => hullHitsRect(hull, z))) continue
     }
     return { x, y }
@@ -243,6 +244,7 @@ export interface ArrangeResult {
 export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeItem[], bed: Bed, opts: ArrangeOptions = ARRANGE_DEFAULTS): ArrangeResult {
   const margins = opts.margins ?? marginSource()
   const zones = arrangeZones(margins)
+  const towers = [...margins.keepOut, ...(margins.towerRoom ?? [])]
   const placed: Placed[] = []
   for (const f of fixed) {
     const b = bounds(f.parts, f.transform)
@@ -267,12 +269,12 @@ export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeI
     const straight = wantOf(size)
     const turnedSize: PrintSize = { w: h, h: w, height: size.height }
     const turnedWant = wantOf(turnedSize)
-    let spot = findSpot(straight, placed, zones, bed, opts.gapMm, margins.skirt, margins.apart)
+    let spot = findSpot(straight, placed, zones, towers, bed, opts.gapMm, margins.skirt, margins.apart)
     let m = it.transform
     let want = straight
     let box = b
     if (opts.rotate && Math.abs(w - h) > 0.5) {
-      const turned = findSpot(turnedWant, placed, zones, bed, opts.gapMm, margins.skirt, margins.apart)
+      const turned = findSpot(turnedWant, placed, zones, towers, bed, opts.gapMm, margins.skirt, margins.apart)
       // Prefer the turn when only it fits, or when it lands nearer the front.
       if (turned && (!spot || turned.y < spot.y || (turned.y === spot.y && turned.x < spot.x))) {
         m = turnZ(it.transform, b, 90)
