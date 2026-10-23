@@ -254,9 +254,10 @@ package's run fails, `pr-test.sh` lets it pass only when every failure is a name
 (`flaky-check.sh failed`); a run that failed without naming a test, or with an error outside any test (a file that did
 not load, a hook, an unhandled error), stays a failure. The e2e shards (`ci.yml`, `e2e-shard`) hold to the same rule with
 Playwright's `--retries=1`: `playwright-results.mjs` reads the JSON report, a test that passed only on the retry must be
-on either list, and a test that failed both times fails the job unless it counts as quarantined. The desktop shell's
-tests (in `rust tests (core)`) run through `cargo-retry.sh`: a failing run reruns its failing tests once by exact name,
-as the machine runs do, a test that passes only on the rerun must be on either list (`flaky-check.sh retried`), and
+on either list, and a test that failed both times fails the job unless it counts as quarantined. The sx-core and desktop
+shell tests (in `rust tests (core)`, all but firmware and requests) run through `cargo-retry.sh`: a failing run reruns
+its failing tests once by exact name, as the machine runs do, a test that passes only on the rerun must be on either
+list (`flaky-check.sh retried`), and
 quarantined failures are not rerun or failed on. The other cargo steps on pull requests have no retry; the machine
 runs rerun them. A self-hosted run step whose heavy lock is not free within
 `SX_HEAVY_WAIT` ends with heavy.sh's status 75 before any test starts: `run-exit.sh` leaves `<report>.gave-up`, and the

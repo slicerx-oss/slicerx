@@ -8,4 +8,4 @@ A quarantined failure still shows in the summary as a count. Delete the file whe
 without an owner, a date and an issue (`bash scripts/ci/flaky-check.sh lint` fails otherwise). A `flaky.d` entry past
 its deadline counts as quarantined. An entry added more than 14 days ago is stale: every run warns with its age and
 issue until the test is fixed. Quarantine works for vitest tests in the pull request job, the Playwright shards, the
-desktop shell's cargo tests and the machine runs. See "Flaky tests" in `scripts/ci/README.md`.
+sx-core and desktop shell cargo tests and the machine runs. See "Flaky tests" in `scripts/ci/README.md`.

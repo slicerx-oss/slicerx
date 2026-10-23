@@ -349,7 +349,8 @@ jobs:
           echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh --class engine timeout 1500" >> "$GITHUB_ENV"
       - if: matrix.part == 'firmware' || matrix.part == 'requests'
         run: cargo test -p sx-core --test ${{ matrix.part }}
-      # every other test file of sx-core, read from the directory so a new one is never left out
+      # every other test file of sx-core, read from the directory so a new one is never left out, under the same flaky
+      # rule as the desktop shell's tests below
       - if: matrix.part == 'core'
         run: |
           args=""
@@ -358,7 +359,9 @@ jobs:
             case $n in firmware | requests) ;; *) args="$args --test $n" ;; esac
           done
           eval "$SX_GROUP_CHECK"
-          ${HEAVY:-} cargo test -p sx-core $args
+          ${HEAVY:-} bash scripts/ci/cargo-retry.sh -p sx-core $args
+        env:
+          SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
       # The desktop shell (slicerx-desktop), which the workspace runs leave out: it links WebKitGTK and embeds the
       # frontend. Its clippy and tests, bridge included, ride on the core part, the shortest one on its runner (the
       # self-hosted runner has the system libraries; a hosted runner installs them). A placeholder page is enough to
@@ -377,8 +380,8 @@ jobs:
           ${HEAVY:-} bash scripts/ci/cargo-retry.sh -p slicerx-desktop --features agent-bridge
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
-      # A failing desktop test gets one rerun by exact name (cargo-retry.sh); one that passes only on the rerun fails
-      # here unless scripts/ci/flaky.d or quarantine.d lists it ("Flaky tests" in scripts/ci/README.md).
+      # A failing sx-core or desktop test gets one rerun by exact name (cargo-retry.sh); one that passes only on the rerun
+      # fails here unless scripts/ci/flaky.d or quarantine.d lists it ("Flaky tests" in scripts/ci/README.md).
       - if: always() && matrix.part == 'core'
         run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
         env:
