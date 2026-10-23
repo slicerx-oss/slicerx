@@ -22,7 +22,7 @@ export function touchGroups(count: number, pairs: readonly [number, number][]): 
 
 /** Whether an object is plain geometry, nothing a join would have to carry over between objects. */
 function plain(o: ImportedObject): boolean {
-  return o.volumes.length === 0 && !o.paint && !o.layerRanges?.length && !o.brimPoints?.length && !Object.keys(o.rawPartSettings ?? {}).length && o.printable !== false
+  return o.volumes.length === 0 && !o.paint && !o.layerRanges?.length && !o.brimPoints?.length && !Object.keys(o.rawPartSettings ?? {}).length && !Object.keys(o.rawObjectSettings ?? {}).length && o.printable !== false
 }
 
 /**

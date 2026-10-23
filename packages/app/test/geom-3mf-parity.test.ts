@@ -47,6 +47,7 @@ function compare(a: ImportedProject, b: ImportedProject): Map<string, string> {
       if (oa.transform.some((v, k) => Math.abs(v - ob.transform[k]!) > 1e-3)) note('transform', `${oa.transform.join(' ')} / ${ob.transform.join(' ')}`)
       if (JSON.stringify(oa.source) !== JSON.stringify(ob.source)) note('source', `${JSON.stringify(oa.source)} / ${JSON.stringify(ob.source)}`)
       if (JSON.stringify(oa.rawPartSettings ?? {}) !== JSON.stringify(ob.rawPartSettings ?? {})) note('part settings', `${JSON.stringify(oa.rawPartSettings)} / ${JSON.stringify(ob.rawPartSettings)}`)
+      if (JSON.stringify(oa.rawObjectSettings ?? {}) !== JSON.stringify(ob.rawObjectSettings ?? {})) note('object settings', `${JSON.stringify(oa.rawObjectSettings)} / ${JSON.stringify(ob.rawObjectSettings)}`)
       const paint = (p?: Record<number, Record<string, Record<number, string>>>) => JSON.stringify(Object.entries(p ?? {}).map(([k, v]) => [k, Object.fromEntries(Object.entries(v).sort().map(([l, t]) => [l, Object.keys(t).length]))]))
       if (paint(oa.paint) !== paint(ob.paint)) note('paint', `${paint(oa.paint)} / ${paint(ob.paint)}`)
       const meshes = (o: typeof oa) => [...o.parts.map((p) => ({ ...p, role: 'part' })), ...o.volumes.map((v) => ({ ...v.part, role: v.role, raw: v.rawSettings }))]
