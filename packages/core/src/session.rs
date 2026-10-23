@@ -8471,10 +8471,12 @@ impl SliceSession {
                         work.region_narrow = rest;
                     }
                     if let (false, Some(u), Some(f)) = (floating.is_empty(), &unsupported, lower) {
-                        let no_overlap = perimeters::intersection(&floating, &fill_area);
+                        // A floating shell's beads fill the band out to the infill area's overlap with the wall, as
+                        // the printer maker's slicer prints them: one bead in a 0.40 mm band is 0.45 mm wide.
+                        let band = perimeters::intersection(&floating, &inner);
                         let support = crate::vshell::Support::new(u, f.segments(), cfg.sparse_infill_width());
                         work.floating = crate::vshell::beads(
-                            &no_overlap,
+                            &band,
                             cfg,
                             solid_spacing_mm,
                             layer_height,

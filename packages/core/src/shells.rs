@@ -7,9 +7,9 @@
 //!
 //! The solid area of a layer is the union of the top surfaces of the layers above (within the top
 //! shell) and the bottom surfaces of the layers below (within the bottom shell), the infill area the
-//! usual coverage rule already makes solid, cleaned up: bands thinner than 0.79 solid line spacings are
-//! dropped, and gaps narrower than 1.2 lines are closed, since neither can be filled as sparse or solid
-//! infill.
+//! usual coverage rule already makes solid, cleaned up: thin bands are dropped (thinner than 0.79 solid line
+//! spacings on a Bambu Lab printer, 0.68 on others), and gaps narrower than 1.2 lines are closed, since neither
+//! can be filled as sparse or solid infill.
 
 use crate::config::PrintConfig;
 use crate::geom::mm;
@@ -26,7 +26,7 @@ pub(crate) type Walls = (Vec<perimeters::IslandWalls>, Shapes);
 type WalkKey = ((i64, i64, i64), u64);
 /// Layer, top and bottom shell layers, then the bits of the solid spacing, wall offset and opening, and whether
 /// only the surfaces count.
-type AroundKey = (i64, i64, i64, u64, u64, u64, bool);
+type AroundKey = (i64, i64, i64, u64, u64, u64, bool, bool);
 
 #[derive(Default)]
 pub(crate) struct Cache {
@@ -185,16 +185,21 @@ pub(crate) struct Input<'a> {
     pub(crate) opening: f64,
     /// Only the neighbors' surfaces turn solid, not the band a leaning wall leaves (`partial`).
     pub(crate) surfaces_only: bool,
+    /// A Bambu Lab printer: bands are kept from `BAND_MIN` wide and do not grow, as its maker's slicer
+    /// prints them.
+    pub(crate) maker_band: bool,
 }
 
 /// What the shell rule reads from the layers around one layer. It does not depend on the region, so a
 /// layer with several regions (filaments, modifiers) works it out once.
 pub(crate) struct Around {
+    /// The neighbors' surfaces within the shell layers, grown a little and merged.
+    shell: Shapes,
     /// This layer's infill outline less what the neighbors' infill outlines leave open, before it is cut
     /// to a region: the coverage rule's solid area. None where a neighbor is past the plate's end.
     classic: Option<Shapes>,
-    /// `shell` and `classic` together, less the bands too thin to keep, before the cut to a region: a band's
-    /// width is the neighbors' doing, not the walls'.
+    /// With `maker_band`: `shell` and `classic` together (`shell` alone for `surfaces_only`), less the bands too
+    /// thin to keep, before the cut to a region, so a band's width is the neighbors' doing, not the walls'.
     kept: Shapes,
     /// The outline the layers below and above share, read only for small pieces.
     object: std::sync::OnceLock<Shapes>,
@@ -285,11 +290,13 @@ fn around(i: &Input<'_>) -> Around {
     // A band thinner than 0.79 solid line spacings goes: a line in it would hang mostly over the sparse infill or
     // the wall.
     let kept = match &classic {
+        Some(_) if !i.maker_band => Vec::new(),
         Some(_) if i.surfaces_only => opened(&shell, 0.5 * BAND_MIN * i.spacing),
         Some(c) => opened(&perimeters::union_all(&[&shell, c]), 0.5 * BAND_MIN * i.spacing),
         None => Vec::new(),
     };
     Around {
+        shell,
         classic,
         kept,
         object: std::sync::OnceLock::new(),
@@ -298,8 +305,6 @@ fn around(i: &Input<'_>) -> Around {
 
 /// The narrowest solid band the shell rule keeps, in solid infill line spacings.
 const BAND_MIN: f64 = 0.79;
-/// How far a kept band grows into the sparse area, in 1.05 solid line spacings.
-const BAND_GROW: f64 = 0.15;
 
 /// The infill area that must be solid beyond what the coverage rule already makes solid, and that
 /// rule's own area, cleaned up together. Empty when the region needs nothing.
@@ -317,24 +322,43 @@ pub(crate) fn solid_area(i: &Input<'_>) -> Shapes {
                 i.wall_offset.to_bits(),
                 i.opening.to_bits(),
                 i.surfaces_only,
+                i.maker_band,
             );
             c.around(key, || around(i))
         }
         None => std::sync::Arc::new(around(i)),
     };
-    let total = match &around.classic {
-        Some(_) => perimeters::intersection(&around.kept, i.inner),
-        None => i.inner.clone(),
-    };
-    if total.is_empty() {
-        return total;
-    }
     let s = 1.05 * i.spacing;
-    // Gaps narrower than 1.2 lines close, and each band reaches a little further into the sparse area, so its
-    // lines overlap the sparse infill's ends.
     let close = mm(0.5 * 1.2 * s);
-    let closed = perimeters::offset(&total, close);
-    let regular = perimeters::offset(&closed, -(close - mm(BAND_GROW * s)));
+    let regular = if i.maker_band {
+        let total = match &around.classic {
+            Some(_) => perimeters::intersection(&around.kept, i.inner),
+            None => i.inner.clone(),
+        };
+        if total.is_empty() {
+            return total;
+        }
+        // Gaps narrower than 1.2 lines close, and a band keeps its own width: the floating shell's beads reach the
+        // wall overlap themselves.
+        let closed = perimeters::offset(&total, close);
+        perimeters::offset(&closed, -close)
+    } else {
+        let under_shell = perimeters::intersection(&around.shell, i.inner);
+        let total = match &around.classic {
+            Some(_) if i.surfaces_only => under_shell,
+            Some(d) => perimeters::union_all(&[&under_shell, &perimeters::intersection(d, i.inner)]),
+            None => i.inner.clone(),
+        };
+        if total.is_empty() {
+            return total;
+        }
+        // Pieces thinner than 0.65 lines go, gaps narrower than 1.2 lines close, and each piece grows by 0.2 lines.
+        let open = mm(0.5 * 0.65 * s);
+        let overlap = mm(0.2 * s);
+        let opened = perimeters::offset(&total, -open);
+        let closed = perimeters::offset(&opened, open + close);
+        perimeters::offset(&closed, -(close - overlap))
+    };
     // Small drops on smooth parts of the model are dropped, unless they fill a whole internal piece.
     let object = || {
         around.object.once(|| {
