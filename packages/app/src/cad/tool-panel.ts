@@ -91,11 +91,35 @@ export function selectPlace(longest: number): 'fits' | 'grows' | 'stacks' {
 }
 
 /**
+ * The engine's refusal of a step whose face or edge is no longer on the part ("faceReference: edge 1 has a missing
+ * face reference; repair the reference before editing"), as after deleting or changing a step it was built on, in
+ * words that say what to do. An exact replay that stopped on it ends "The design is unchanged.", and keeps that.
+ * Null for any other message.
+ */
+export function referenceWords(raw: string): string | null {
+  const m = /faceReference:\s*([\s\S]*)$/.exec(raw)
+  if (!m) return null
+  const why = m[1]!
+  const edge = /\bedge (\d+)\b/.exec(why)?.[1]
+  const split = /\bsplit\b/.test(why)
+  const words = edge
+    ? split
+      ? `Picked edge ${edge} was split by an earlier change. Pick the edges again.`
+      : `Picked edge ${edge} is no longer on the part after an earlier change. Pick the edges again.`
+    : split
+      ? 'A face this step was made on was split by an earlier change. Pick the face or edges again.'
+      : 'A face or edge this step was made on is no longer on the part after an earlier change. Pick the face or edges again.'
+  return /The design is unchanged\.?\s*$/.test(why) ? `${words} The design is unchanged.` : words
+}
+
+/**
  * A message for the panel, as a sentence: the engine's own words often start with the tool's name in lower case
  * ("hole: pick the wall of a round hole"), which the panel's header already says. That prefix goes, the first letter
- * is a capital and the sentence ends in a stop.
+ * is a capital and the sentence ends in a stop. A face or edge that is gone says so (referenceWords).
  */
 export function sentence(raw: string): string {
+  const gone = referenceWords(raw)
+  if (gone) return gone
   let s = raw.trim()
   // "Error: hole: ..." and "geom: hole: ...": every lower case one-word prefix, and a thrown Error's own
   for (let prev = ''; prev !== s; ) {

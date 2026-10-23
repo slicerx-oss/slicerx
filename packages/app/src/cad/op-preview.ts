@@ -6,6 +6,7 @@
 // to the tool, instead of the preview vanishing. The view's look is the same for all of them (viewport OpPreviewLook:
 // added material tinted, removed material a ghost). The open tool's state is published here for the app link.
 import { useReducer, useSyncExternalStore } from 'react'
+import { sentence } from './tool-panel'
 
 export type PreviewStatus = 'none' | 'pending' | 'ok' | 'error'
 
@@ -96,6 +97,17 @@ export function sizeWords(message: string, value?: number): string {
   }).replace(/must be above 0(?! ?mm)/, 'must be more than 0 mm')
   const plain = upper(named.trim()).replace(/(\d+\.\d+)(?= ?mm)/g, (n) => String(Math.round(Number(n) * 100) / 100))
   return /[.!?]$/.test(plain) ? plain : `${plain}.`
+}
+
+/**
+ * An apply or preview error for a tool's panel, in plain words (sizeWords). `typed` holds what the person typed by the
+ * engine's field key ({ radiusMm: 100000 }), so a size past the engine's limit reads "is too large" with the most.
+ */
+export function toolError(err: unknown, typed: Readonly<Record<string, number | null | undefined>> = {}): string {
+  const m = sentence(err instanceof Error ? err.message : String(err))
+  const key = /^\s*(\w+Mm):/.exec(m)?.[1]
+  const v = key ? typed[key.charAt(0).toLowerCase() + key.slice(1)] : undefined
+  return sizeWords(m, v ?? undefined)
 }
 
 /** A tool's preview state, for React. */

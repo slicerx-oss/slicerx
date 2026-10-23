@@ -26,7 +26,7 @@ import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Sh
 import { follow, useDraft, useDraftObject, type Now } from './park'
 import { filletKindHint } from './start-hint'
 import { useLengthWords } from './use-units'
-import { previewMessage, publishPreview, reportOf, sizeWords, useOpPreview } from './op-preview'
+import { previewMessage, publishPreview, reportOf, toolError, useOpPreview } from './op-preview'
 
 interface Picked {
   objectId: string
@@ -227,7 +227,7 @@ export function FilletTool() {
     const t = setTimeout(() => {
       edgePreview({ mesh: { mesh: toGeom(part), transform: e.transform }, edges: picked.edges, profile: kind === 'fillet' ? { kind, radiusMm: s1 } : { kind, distanceMm: s1, ...(s2 !== null ? { distance2Mm: s2 } : {}) } }, ac.signal).then(
         (r) => !ac.signal.aborted && step({ type: 'ok', value: r }),
-        (err: unknown) => !ac.signal.aborted && step({ type: 'fail', message: sizeWords(errorText(err)) }),
+        (err: unknown) => !ac.signal.aborted && step({ type: 'fail', message: toolError(err, { radiusMm: s1, distanceMm: s1, distance2Mm: s2 }) }),
       )
     }, 120)
     return () => {
@@ -263,7 +263,7 @@ export function FilletTool() {
       live.current.ring = null
       return true
     } catch (err) {
-      setNote(sizeWords(errorText(err)))
+      setNote(toolError(err, { radiusMm: s1, distanceMm: s1, distance2Mm: s2 }))
     } finally {
       setBusy(false)
     }

@@ -58,6 +58,11 @@ export interface HoleChoice {
   customMm?: number
 }
 
+/** Why a custom diameter can't be made, or null: a hole narrower than the nozzle closes up as it prints. */
+export function customHoleProblem(diameterMm: number, nozzleMm: number): string | null {
+  return diameterMm < nozzleMm ? `The diameter is too small to print with a ${nozzleMm} mm nozzle. The smallest is ${nozzleMm} mm.` : null
+}
+
 /** The hole's new spec for a choice, a short label for its history step, and lines that say how the size was found. */
 export function holeSpecFor(c: HoleChoice, fit: Clearance, hole: { through: boolean; depthMm: number }): { spec: HoleSpec; label: string; words: string[] } {
   const r = ROWS[c.thread]
