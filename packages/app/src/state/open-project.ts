@@ -123,6 +123,8 @@ async function addProjectShown(
   // Every setting key the file brings, so a value the engine refuses can be dropped at the slice.
   const brought = new Set<string>()
   const rangesLeft = new Set<string>()
+  // Each object's own settings from the file, by its plate entry, as the object settings panel sets them.
+  const fileObjectSettings: Record<string, Record<string, SettingValue>> = {}
   const { usableRanges } = await import('../plate/layer-ranges')
   const entries = async (objects: typeof project.plates[number]['objects'], handles: Promise<MeshHandle>[]): Promise<PlateEntry[]> => {
     const out: PlateEntry[] = []
@@ -148,6 +150,9 @@ async function addProjectShown(
         if (Object.keys(v).length) partSettings[part] = v
         for (const k of Object.keys(v)) brought.add(k)
       }
+      const objectRaw = geometryOnly ? undefined : o.rawObjectSettings
+      const objectOwn = objectRaw && Object.keys(objectRaw).length ? (await import('../export/project-settings')).modifierSettings(objectRaw) : {}
+      for (const k of Object.keys(objectOwn)) brought.add(k)
       // A file object placed twice keeps its dimensions on the first placement only.
       const first = !placed.has(o.fileId)
       placed.add(o.fileId)
@@ -158,6 +163,7 @@ async function addProjectShown(
       const ranges = !geometryOnly && o.layerRanges ? usableRanges(o.layerRanges) : null
       for (const k of ranges?.left ?? []) rangesLeft.add(k)
       const entry: PlateEntry = { id: first ? idOf.get(o.fileId)! : uid('obj'), name: o.name, ...(dims.length ? { dimensions: dims } : {}), ...(history ? { history } : {}), handle, parts: o.parts, ...(Object.keys(partSettings).length ? { partSettings } : {}), colors: o.parts.map((p) => colors[p.slot - 1] ?? palette[0]!), transform: o.transform, ...(o.paint ? { paint: o.paint } : {}), ...(o.printable === false ? { printable: false } : {}), ...(o.brimPoints?.length ? { brimPoints: o.brimPoints } : {}), ...(volumes.length ? { volumes } : {}), ...(o.source ? { source: o.source } : {}), ...(ranges?.ranges.length ? { layerRanges: ranges.ranges } : {}) }
+      if (Object.keys(objectOwn).length) fileObjectSettings[entry.id] = objectOwn
       // a part the file gives no filament starts on the auto-picked spool
       out.push(o.noSlot?.length ? withAutoSpools([entry], { own: (_e, part) => !o.noSlot!.includes(part) })[0]! : entry)
     }
@@ -176,7 +182,7 @@ async function addProjectShown(
       // The file's first plate is the one the project opens onto, so it takes the file's name as the others do.
       mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, name: plate.name } : p)) })))
     }
-    mine(() => set((s) => ({ plate: [...s.plate, ...made], selection: made[0]?.id ?? s.selection })))
+    mine(() => set((s) => ({ plate: [...s.plate, ...made], objectSettings: { ...s.objectSettings, ...fileObjectSettings }, selection: made[0]?.id ?? s.selection })))
     markOpenStage('objects')
     hidePreview()
     if (plate.marks?.length) {

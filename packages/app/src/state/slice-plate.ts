@@ -191,6 +191,10 @@ async function dropRefusedProjectSetting(message: string): Promise<boolean> {
     overrides: Object.fromEntries(Object.entries(s.overrides).filter(([k]) => k !== key)),
     plate: s.plate.map((e) => entryWithout(e, key)),
     plates: s.plates.map((p) => ({ ...p, objects: p.objects.map((e) => entryWithout(e, key)) })),
+    objectSettings: Object.fromEntries(Object.entries(s.objectSettings).flatMap(([id, own]) => {
+      const { [key]: _gone, ...rest } = own
+      return Object.keys(rest).length ? [[id, rest]] : []
+    })),
     projectSettings: { ...brought, keys: brought.keys.filter((k) => k !== key) },
   }))
   const { settingDef } = await import('@slicerx/settings')
