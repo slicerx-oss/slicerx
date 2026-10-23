@@ -127,9 +127,10 @@ export class Strikes {
 
   /**
    * Outlines a patch of the bed (bed frame, mm) in the hit color over a faint wash of it, drawn over everything like
-   * the marks; null clears it. The refusal of a slice into an excluded area outlines that area this way.
+   * the marks; null clears it. The refusal of a slice into an excluded area outlines that area this way. The patch lies
+   * on the bed, where the plate draws the area, whatever the height of the mark that names it.
    */
-  setArea(poly: readonly (readonly [number, number])[] | null, z = 0): void {
+  setArea(poly: readonly (readonly [number, number])[] | null): void {
     for (const d of this.areaDisposables) d.dispose()
     this.areaDisposables = []
     this.areaGroup.clear()
@@ -138,7 +139,6 @@ export class Strikes {
     this.root.add(this.areaGroup)
     const shape = new ShapeGeometry(new Shape(poly.map(([x, y]) => new Vector2(x, y))))
     const fill = new Mesh(shape, new MeshBasicMaterial({ color: this.colors.hit, transparent: true, opacity: 0.26, depthTest: false, depthWrite: false, side: DoubleSide, toneMapped: false }))
-    fill.position.z = z
     fill.renderOrder = 9
     this.areaGroup.add(fill)
     this.areaDisposables.push(shape, fill.material)
@@ -149,7 +149,7 @@ export class Strikes {
     const loop = (grow: number): Vector3[] => {
       const pts = poly.map(([x, y]) => {
         const d = Math.hypot(x - cx, y - cy) || 1
-        return new Vector3(x + ((x - cx) / d) * grow, y + ((y - cy) / d) * grow, z)
+        return new Vector3(x + ((x - cx) / d) * grow, y + ((y - cy) / d) * grow, 0)
       })
       return [...pts, pts[0] as Vector3]
     }
