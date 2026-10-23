@@ -113,9 +113,13 @@ describe('per-object settings, volumes and height ranges', () => {
     const walls = await call(h, 'slicerx_project_height_ranges', { ranges: [{ z_from_mm: 2, z_to_mm: 6, settings: { outer_wall_filament_id: 2, inner_wall_filament_id: 2 } }] })
     expect(walls.ok).toBe(true)
     expect(walls.output.project.height_ranges).toEqual([{ zFromMm: 2, zToMm: 6, settings: { outer_wall_filament_id: 2, inner_wall_filament_id: 2 } }])
+    // A layer height by height, as the app sends a project's: the engine plans the layers from it.
     const layer = await call(h, 'slicerx_project_height_ranges', { ranges: [{ z_from_mm: 0, z_to_mm: 5, settings: { layer_height: 0.1 } }] })
-    expect(layer.ok).toBe(false)
-    expect(layer.error?.message).toMatch(/can change only/)
+    expect(layer.ok).toBe(true)
+    expect(layer.output.project.height_ranges).toEqual([{ zFromMm: 0, zToMm: 5, settings: { layer_height: 0.1 } }])
+    const density = await call(h, 'slicerx_project_height_ranges', { ranges: [{ z_from_mm: 0, z_to_mm: 5, settings: { sparse_infill_density: 100 } }] })
+    expect(density.ok).toBe(false)
+    expect(density.error?.message).toMatch(/can change only/)
   })
 
   it.skipIf(noSx())(
@@ -146,6 +150,27 @@ describe('per-object settings, volumes and height ranges', () => {
       const newest = readdirSync(dir).map((d) => join(dir, d)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? ''
       const gcode = readdirSync(newest).find((f) => f.endsWith('.gcode'))
       expect(readFileSync(join(newest, gcode ?? ''), 'utf8')).toMatch(/M104 S245/)
+    },
+    sxTimeout * 2,
+  )
+})
+
+describe('a height range layer height', () => {
+  it.skipIf(noSx())(
+    'goes to the engine, which slices the range in thinner layers',
+    async () => {
+      const h = await project({ engine: 'sx', sxBin })
+      const layers = async (): Promise<number> => {
+        const sliced = await call<{ plates: { layers: number }[] }>(h, 'slicerx_slice')
+        expect(sliced.ok, sliced.error?.message).toBe(true)
+        return sliced.output.plates[0]?.layers ?? 0
+      }
+      const plain = await layers()
+      await call(h, 'slicerx_project_height_ranges', { ranges: [{ z_from_mm: 5, z_to_mm: 10, settings: { layer_height: 0.05 } }] })
+      const thin = await layers()
+      expect(lastRequest(h).options['heightRanges']).toEqual([{ zFromMm: 5, zToMm: 10, settings: { layer_height: 0.05 } }])
+      // 5 mm at 0.05 is 100 layers where the plain plate printed at most 50 (0.1 mm or thicker).
+      expect(thin).toBeGreaterThanOrEqual(plain + 50)
     },
     sxTimeout * 2,
   )
