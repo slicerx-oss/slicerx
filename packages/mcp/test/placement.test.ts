@@ -109,6 +109,10 @@ describe('per-object settings, volumes and height ranges', () => {
 
     const ranges = await call(h, 'slicerx_project_height_ranges', { ranges: [{ z_from_mm: 10, z_to_mm: 15, settings: { nozzle_temperature: 240 }, objects: ['obj-1'] }] })
     expect(ranges.output.project.height_ranges).toEqual([{ zFromMm: 10, zToMm: 15, settings: { nozzle_temperature: [240] }, objects: ['obj-1'] }])
+    // The per-feature filaments change by height too: the walls between 2 and 6 mm print on filament 2.
+    const walls = await call(h, 'slicerx_project_height_ranges', { ranges: [{ z_from_mm: 2, z_to_mm: 6, settings: { outer_wall_filament_id: 2, inner_wall_filament_id: 2 } }] })
+    expect(walls.ok).toBe(true)
+    expect(walls.output.project.height_ranges).toEqual([{ zFromMm: 2, zToMm: 6, settings: { outer_wall_filament_id: 2, inner_wall_filament_id: 2 } }])
     const layer = await call(h, 'slicerx_project_height_ranges', { ranges: [{ z_from_mm: 0, z_to_mm: 5, settings: { layer_height: 0.1 } }] })
     expect(layer.ok).toBe(false)
     expect(layer.error?.message).toMatch(/can change only/)
