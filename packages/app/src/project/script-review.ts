@@ -30,18 +30,28 @@ export function recognizedScript(key: string, value: unknown, model: string | un
 
 provideScriptRecognition(recognizedScript)
 
+/** How long the open waits for the engine's script review before it goes on without one. */
+const REVIEW_WAIT_MS = 15_000
+
 /** Read-back only. The caller supplies the selection made before importing the project's printer names. */
 export async function reviewImportedScripts(slicer: SlicerHost, settings: Record<string, unknown>, selected: ScriptIdentity | null): Promise<ProjectScriptReview[]> {
   const project = importFlat(Object.fromEntries(Object.entries(settings).filter(([key]) => GCODE_TEXT_KEYS.includes(key)))).config
   const entries = Object.entries(project).flatMap(([key, value]) => (Array.isArray(value) ? value : [value]).flatMap((text, slot) =>
     typeof text === 'string' && text.trim() ? [{ key, ...(Array.isArray(value) ? { slot } : {}), text }] : []))
   if (!entries.length) return []
-  if (!slicer.reviewScripts) return entries.map((entry) => ({ ...entry, review: {
+  // No review (an engine without it, an error, a missing or short answer, or none in time) leaves the scripts unreviewed:
+  // they wait for the person at the next slice, and the project's settings still apply.
+  const unreviewed = (): ProjectScriptReview[] => entries.map((entry) => ({ ...entry, review: {
     schemaVersion: 1, decision: 'review', reason: 'script_review_unavailable', identity: selected,
     source: null, stockVersion: null, fingerprint: null, ignored: [],
   } }))
+  if (!slicer.reviewScripts) return unreviewed()
   const declared = selected ? scriptDeclarations(settings, selected) : []
-  const reviews = await slicer.reviewScripts(entries.map(({ key, text }) => ({ selected, declared, key, text })))
-  if (reviews.length !== entries.length) throw new Error('Script review count differs from the imported script count')
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const reviews = await Promise.race([
+    (async () => slicer.reviewScripts!(entries.map(({ key, text }) => ({ selected, declared, key, text }))))().catch(() => null),
+    new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), REVIEW_WAIT_MS) }),
+  ]).finally(() => clearTimeout(timer))
+  if (!Array.isArray(reviews) || reviews.length !== entries.length) return unreviewed()
   return entries.map((entry, index) => ({ ...entry, review: reviews[index]! }))
 }
