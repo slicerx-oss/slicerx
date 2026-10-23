@@ -29,7 +29,7 @@ sx-alloc.workspace = true
 sx-upload-scan = { path = "../scan" }
 sx-edition-config = { path = "../../../../../packages/edition-config/rust" }
 thiserror = "=2.0.21"
-tokio = { version = "=1.53.1", features = ["rt-multi-thread", "net", "macros", "time", "sync", "signal"] }
+tokio = { version = "=1.53.3", features = ["rt-multi-thread", "net", "macros", "time", "sync", "signal"] }
 
 [dev-dependencies]
 tower = { version = "=0.5.3", features = ["util"] }

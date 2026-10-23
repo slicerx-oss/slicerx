@@ -38,7 +38,7 @@ sx-cpace = { path = "../cpace" }
 sx-permit.workspace = true
 # One still from H.264-only cameras through the OS decoder (or Cisco's binary on Linux).
 sx-stills = { path = "../stills" }
-tokio = { version = "=1.53.1", features = ["rt-multi-thread", "net", "macros", "time", "sync", "io-util", "signal"] }
+tokio = { version = "=1.53.3", features = ["rt-multi-thread", "net", "macros", "time", "sync", "io-util", "signal"] }
 tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
 tokio-tungstenite = "=0.30.0"
 x25519-dalek = { version = "=3.0.0", features = ["static_secrets"] }
@@ -54,5 +54,5 @@ openh264 = { version = "=0.9.8" }
 sha2 = "=0.11.0"
 # The relay for remote access tests.
 sx-relay = { path = "../relay" }
-tokio = { version = "=1.53.1", features = ["process", "test-util"] }
+tokio = { version = "=1.53.3", features = ["process", "test-util"] }
 tokio-tungstenite = "=0.30.0"

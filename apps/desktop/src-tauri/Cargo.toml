@@ -37,7 +37,7 @@ futures = { version = "=0.3.34", optional = true }
 base64 = { version = "=0.23.1", optional = true }
 sx-permit = { workspace = true, optional = true }
 sx-link = { path = "../../../packages/connect/link", optional = true }
-tokio = { version = "=1.53.1", features = ["sync", "time"], optional = true }
+tokio = { version = "=1.53.3", features = ["sync", "time"], optional = true }
 tokio-tungstenite = { version = "=0.30.0", optional = true }
 tauri = { version = "=2.12.0", features = [] }
 tauri-plugin-dialog = "=2.8.0"
@@ -84,6 +84,6 @@ gtk = "=0.18.2"
 zbus = "=5.19.0"
 
 [dev-dependencies]
-tokio = { version = "=1.53.1", features = ["macros", "rt-multi-thread", "sync", "net", "io-util"] }
+tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "sync", "net", "io-util"] }
 # The updater end to end against a local feed (tests/updater.rs) runs on Tauri's mock runtime.
 tauri = { version = "=2.12.0", features = ["test"] }
