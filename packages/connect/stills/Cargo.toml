@@ -8,7 +8,7 @@ license = "Apache-2.0"
 publish.workspace = true
 description = "One still picture from an H.264 key frame, through the operating system's decoder"
 
-# The only crate in the workspace allowed `unsafe`: the OS video decoders (VideoToolbox, Media
+# Allowed `unsafe` (as is packages/core/alloc, on one item): the OS video decoders (VideoToolbox, Media
 # Foundation) are C APIs. Every unsafe block carries a SAFETY comment. The public API is safe.
 [lints.rust]
 unsafe_code = "allow"
