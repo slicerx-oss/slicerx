@@ -234,14 +234,39 @@ function growOf(cfg: Record<string, SettingValue>, size: PrintSize, base?: reado
 }
 
 /**
- * How far support reaches past the outline, mm, or 0 with support off. It stays under the object, but its
- * first layer pad widens by `raft_first_layer_expansion` and a tree support has a brim of its own. Objects
- * that need no support print none, so this is a safe upper bound, used only against the bed edge.
+ * How far grid style support's first layer can print past the overhang it holds up, mm, with `pad` the first layer's
+ * growth: its islands are stretched to whole cells of the grid (a cell is `support_base_pattern_spacing` plus the line
+ * spacing, so an island that just reaches into a cell fills all of it) and printed half a line spacing past the cells,
+ * and the pad grows round that. The grid turns by `support_angle`, which widens all of it. `line` is the support line
+ * width.
+ */
+function gridReach(cfg: Record<string, SettingValue>, line: number, pad: number): number {
+  const h = Math.max(0.01, Math.min(marginNumber(cfg['initial_layer_print_height'], 0.2), marginNumber(cfg['layer_height'], 0.2)))
+  const spacing = Math.max(0, line - h * (1 - Math.PI / 4))
+  const cell = spacing + Math.max(0, marginNumber(cfg['support_base_pattern_spacing'], 2.5))
+  const turn = (marginNumber(cfg['support_angle'], 0) * Math.PI) / 180
+  return (cell + 0.5 * spacing + pad) * (Math.abs(Math.cos(turn)) + Math.abs(Math.sin(turn))) + 0.01
+}
+
+/**
+ * How far support's first layer reaches past the part's outline, mm, or 0 with support off, by the rule the engine
+ * keeps its prime tower clear with. The pad is `support_expansion` and `raft_first_layer_expansion`; grid supports (the
+ * default) add the cell the islands are stretched to ([`gridReach`]), snug supports a line, and trees their brim, half a
+ * branch and a line. Objects that need no support print none, so this is an upper bound, used only against the bed edge
+ * and the excluded areas.
  */
 function supportOf(cfg: Record<string, SettingValue>): number {
   if (!marginFlag(cfg['enable_support'])) return 0
-  const pad = Math.max(0, marginNumber(cfg['raft_first_layer_expansion'], 2), marginNumber(cfg['support_expansion'], 0)) + Math.max(0, marginNumber(cfg['support_object_xy_distance'], 0.35))
-  return pad + (marginText(cfg['support_type']).startsWith('tree') ? Math.max(0, marginNumber(cfg['tree_support_brim_width'], 3)) : 0)
+  const nozzle = marginNumber(cfg['nozzle_diameter'], 0.4)
+  // Unset, support lines are as wide as the others (0.42 mm when those are unset too); 0 is the nozzle's width.
+  const general = cfg['line_width'] === undefined ? 0.42 : widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
+  const line = cfg['support_line_width'] === undefined ? general : widthMm(cfg['support_line_width'], nozzle, nozzle)
+  const pad = Math.max(0, marginNumber(cfg['support_expansion'], 0)) + Math.max(0, marginNumber(cfg['raft_first_layer_expansion'], 2))
+  const style = marginText(cfg['support_style']) || 'default'
+  if (marginText(cfg['support_type']).startsWith('tree') || style.startsWith('tree') || style === 'organic') {
+    return pad + Math.max(0, marginNumber(cfg['tree_support_brim_width'], 3)) + 0.5 * Math.max(0, marginNumber(cfg['tree_support_branch_diameter'], 5)) + line
+  }
+  return style === 'default' || style === 'grid' ? gridReach(cfg, line, pad) : pad + line
 }
 
 /** The skirt or draft shield: how far past the part (and its brim) the outermost loop lies, or 0 without one. */
