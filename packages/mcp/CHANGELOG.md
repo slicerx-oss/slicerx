@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_project_height_ranges` takes `layer_height` in a range, as the app sends a project's: the engine prints the layers between the range's heights at that height when every object has the same ranges and nothing else plans the layers (smart layers off, no layer tops).
+
 ### Changed
 
 - `slicerx_slice_file` of a 3MF whose objects set their own layer height (object metadata in `Metadata/model_settings.config`) turns off the smart layer heights the default process profile turns on, so each such object slices at its own layer height, and says so in `warnings`. Smart layers asked for in `overrides` stay on, and the engine's warning names the layer heights they replace.
