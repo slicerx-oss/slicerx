@@ -120,6 +120,14 @@ describe('importProject', () => {
     expect(own.unknownKeys).toEqual([])
   })
 
+  it("leaves a project's own feature filaments unread and keeps an object's", () => {
+    const modelSettings = '<config><object id="1"><metadata key="name" value="box"/><metadata key="wall_filament" value="2"/></object></config>'
+    const p = importProject({ projectSettings: { wall_filament: '1', sparse_infill_filament: '3', solid_infill_filament: '2' }, modelSettings })
+    for (const k of ['outer_wall_filament_id', 'inner_wall_filament_id', 'sparse_infill_filament_id', 'internal_solid_filament_id']) expect(k in p.config).toBe(false)
+    expect(p.extras).toEqual({})
+    expect(p.objects[0]?.overrides).toMatchObject({ outer_wall_filament_id: 2, inner_wall_filament_id: 2 })
+  })
+
   it('rejects a settings file that is not an object', () => {
     expect(() => importProject({ projectSettings: [] })).toThrow(TypeError)
     expect(() => importProject({ projectSettings: 'x' })).toThrow(TypeError)

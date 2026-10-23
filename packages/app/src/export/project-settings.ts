@@ -28,8 +28,13 @@ export interface ProjectSettings {
 // Bambu Studio's per-variant values down to the ones that apply (shared with the MCP server's project reading).
 export { selectVariants } from '@slicerx/settings'
 
+// Bambu Studio prints a project's own values for these on nothing ("1", the stock value, and every other alike); an
+// object's, a part's or a modifier's own still count (`modifierSettings`).
+const PROJECT_UNREAD = new Set(['wall_filament', 'sparse_infill_filament', 'solid_infill_filament'])
+
 export function projectSettingChanges(raw: Record<string, unknown>, current: PrintConfig): ProjectSettings {
-  const imported = importFlat(selectVariants(raw)).config as Record<string, SettingValue>
+  const read = Object.fromEntries(Object.entries(raw).filter(([k]) => !PROJECT_UNREAD.has(k)))
+  const imported = importFlat(selectVariants(read)).config as Record<string, SettingValue>
   const now = current as unknown as Record<string, SettingValue | undefined>
   const values: Record<string, SettingValue> = {}
   const left: string[] = []

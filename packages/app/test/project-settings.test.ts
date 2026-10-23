@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
 import { baseConfig } from '../src/adapters/settings'
-import { projectSettingChanges } from '../src/export/project-settings'
+import { modifierSettings, projectSettingChanges } from '../src/export/project-settings'
 
 describe('project settings', () => {
   it('takes plain values that differ from the current settings', () => {
@@ -33,17 +33,17 @@ describe('project settings', () => {
     expect(plain.values['wipe_tower_wall_type']).toBe('rectangle')
   })
 
-  it("puts a Bambu Studio project's wall_filament on both walls", () => {
-    const r = projectSettingChanges({ wall_filament: '2' }, baseConfig())
-    expect(r.values['outer_wall_filament_id']).toBe(2)
-    expect(r.values['inner_wall_filament_id']).toBe(2)
+  it("leaves a Bambu Studio project's own feature filaments unread", () => {
+    // Studio prints a project's wall_filament, sparse_infill_filament and solid_infill_filament on nothing.
+    for (const v of ['1', '2', '3']) {
+      const r = projectSettingChanges({ wall_filament: v, sparse_infill_filament: v, solid_infill_filament: v }, baseConfig())
+      expect(r.values).toEqual({})
+    }
   })
 
-  it("reads a Bambu Studio project's filament 1 as filament 1, not the object's own", () => {
-    // Studio 2.8 prints the infill of a cube on filament 2 with filament 1 here.
-    expect(projectSettingChanges({ sparse_infill_filament: '1' }, baseConfig()).values['sparse_infill_filament_id']).toBe(1)
-    expect(projectSettingChanges({ sparse_infill_filament: '2' }, baseConfig()).values['sparse_infill_filament_id']).toBe(2)
-    expect(projectSettingChanges({ sparse_infill_filament: '0' }, baseConfig()).values).toEqual({})
+  it("puts an object's wall_filament on both walls and reads its 1 as filament 1", () => {
+    expect(modifierSettings({ wall_filament: '2' })).toMatchObject({ outer_wall_filament_id: 2, inner_wall_filament_id: 2 })
+    expect(modifierSettings({ sparse_infill_filament: '1' })['sparse_infill_filament_id']).toBe(1)
   })
 
   it('leaves out G-code, scripts, credentials and printer settings', () => {

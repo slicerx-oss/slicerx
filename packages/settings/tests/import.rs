@@ -323,3 +323,28 @@ fn easy_on_a_merged_real_setup_and_contract_fixture() {
         .unwrap();
     }
 }
+
+/// Bambu Studio prints a project's own `wall_filament`, `sparse_infill_filament` and `solid_infill_filament` on
+/// nothing, so the import leaves them out; an object's own still count.
+#[test]
+fn a_projects_own_feature_filaments_are_left_unread() {
+    let model = r#"<config><object id="1"><metadata key="name" value="box"/><metadata key="wall_filament" value="2"/></object></config>"#;
+    let p = sx_settings::import_project(
+        &serde_json::json!({"wall_filament": "1", "sparse_infill_filament": "3", "solid_infill_filament": "2"}),
+        Some(model),
+        None,
+    )
+    .expect("imports");
+    for k in [
+        "outer_wall_filament_id",
+        "inner_wall_filament_id",
+        "sparse_infill_filament_id",
+        "internal_solid_filament_id",
+    ] {
+        assert!(p.config.get(k).is_none(), "{k}");
+    }
+    assert!(p.extras.is_empty());
+    let own = &p.objects[0].overrides;
+    assert!(own.get("outer_wall_filament_id").is_some());
+    assert!(own.get("inner_wall_filament_id").is_some());
+}

@@ -995,7 +995,11 @@ fn layered_config(
         if sets_chamber(&value) {
             chamber_from = Some("preset");
         }
-        report.merge(read_config_value(&mut config, &value)?);
+        // A preset for the whole plate: the per-feature filament names a plate's settings leave unread go.
+        report.merge(read_config_value(
+            &mut config,
+            &sx_core::config::plate_value(&value),
+        )?);
         if let Some(g) = value.as_object().and_then(sx_core::api::WallsNote::named) {
             report.walls = Some(sx_core::api::WallsNote {
                 text: format!("{g} walls, set by --config"),

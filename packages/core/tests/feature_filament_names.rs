@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! Bambu Studio's names for the per-feature filaments (`sparse_infill_filament`, `wall_filament`,
-//! `solid_infill_filament`) and the older `OrcaSlicer` and `PrusaSlicer` ones print the features on the filament they
-//! name. The engine's defaults always hold our own names (`sparse_infill_filament_id` and the like), and the older
-//! name was read only when ours was missing, so it never was: a Bambu Studio project with its infill on filament 2
-//! printed in one color.
+//! `solid_infill_filament`) in an object's own settings, and the older `OrcaSlicer` and `PrusaSlicer` ones, print the
+//! features on the filament they name. The engine's defaults always hold our own names (`sparse_infill_filament_id`
+//! and the like), and the older name was read only when ours was missing, so it never was. A project's own values
+//! for Studio's three names print on nothing in Studio, so they are left unread.
 //!
 //! The counts are Bambu Studio 2.8's for the same 20 mm cube on a two filament printer: 92 changes with the sparse
 //! infill on filament 2 (one per layer that has sparse infill), 100 with the walls on 2 (one per layer), 10 with
@@ -117,6 +117,11 @@ fn slice(config: Value) -> SliceRun {
     slice_on(cube(), config, 1, json!({}))
 }
 
+/// The cube on filament 1 with `settings` as its own, over two filaments.
+fn own(settings: Value) -> SliceRun {
+    slice_on(cube(), two_filaments(json!({})), 1, settings)
+}
+
 /// The filament changes of the G-code (`T<n>` lines that change the tool) and the filaments (1-based) each feature
 /// printed its extrusions with.
 fn tools(run: &SliceRun) -> (usize, BTreeMap<String, BTreeSet<u8>>) {
@@ -162,7 +167,7 @@ fn on(features: &BTreeMap<String, BTreeSet<u8>>, feature: &str) -> Vec<u8> {
 #[test]
 fn bambu_studios_sparse_infill_filament_moves_the_infill_as_a_string_or_a_number() {
     for v in [json!("2"), json!(2)] {
-        let (changes, f) = tools(&slice(two_filaments(json!({"sparse_infill_filament": v}))));
+        let (changes, f) = tools(&own(json!({"sparse_infill_filament": v})));
         assert_eq!(changes, 92, "sparse_infill_filament {v}: {f:?}");
         assert_eq!(on(&f, "Sparse infill"), [2], "{v}");
         for other in [
@@ -177,22 +182,30 @@ fn bambu_studios_sparse_infill_filament_moves_the_infill_as_a_string_or_a_number
     }
 }
 
+/// Bambu Studio prints a project's own values for its three names on nothing: "1", "2" and "3" print as no value
+/// does, on an object on filament 1 or 2. Only an object's own settings (or a part's, a modifier's or a height
+/// range's) move the features.
 #[test]
-fn an_objects_own_bambu_name_counts_too() {
-    let run = slice_on(
-        cube(),
-        two_filaments(json!({})),
-        1,
-        json!({"sparse_infill_filament": "2"}),
-    );
-    let (changes, f) = tools(&run);
-    assert_eq!(changes, 92, "{f:?}");
-    assert_eq!(on(&f, "Sparse infill"), [2]);
+fn a_projects_bambu_names_print_like_none() {
+    for slot in [1, 2] {
+        let none = tools(&slice_on(cube(), two_filaments(json!({})), slot, json!({})));
+        assert_eq!(none.0, 0, "{none:?}");
+        for v in ["1", "2", "3"] {
+            let c = two_filaments(
+                json!({"wall_filament": v, "sparse_infill_filament": v, "solid_infill_filament": v}),
+            );
+            assert_eq!(
+                tools(&slice_on(cube(), c, slot, json!({}))),
+                none,
+                "{v} on filament {slot}"
+            );
+        }
+    }
 }
 
 #[test]
 fn bambu_studios_wall_filament_is_both_walls() {
-    let (changes, f) = tools(&slice(two_filaments(json!({"wall_filament": "2"}))));
+    let (changes, f) = tools(&own(json!({"wall_filament": "2"})));
     assert_eq!(changes, 100, "{f:?}");
     assert_eq!(on(&f, "Outer wall"), [2]);
     assert_eq!(on(&f, "Inner wall"), [2]);
@@ -201,7 +214,7 @@ fn bambu_studios_wall_filament_is_both_walls() {
 
 #[test]
 fn bambu_studios_solid_infill_filament_takes_the_surfaces_along() {
-    let (changes, f) = tools(&slice(two_filaments(json!({"solid_infill_filament": "2"}))));
+    let (changes, f) = tools(&own(json!({"solid_infill_filament": "2"})));
     assert_eq!(changes, 10, "{f:?}");
     for feature in ["Internal solid infill", "Top surface", "Bottom surface"] {
         assert_eq!(on(&f, feature), [2], "{feature}");
@@ -214,9 +227,9 @@ fn bambu_studios_solid_infill_filament_takes_the_surfaces_along() {
 fn a_bambu_studio_one_is_filament_one_even_on_an_object_on_two() {
     let run = slice_on(
         cube(),
-        two_filaments(json!({"sparse_infill_filament": "1"})),
+        two_filaments(json!({})),
         2,
-        json!({}),
+        json!({"sparse_infill_filament": "1"}),
     );
     let (changes, f) = tools(&run);
     assert_eq!(changes, 92, "{f:?}");
@@ -225,9 +238,9 @@ fn a_bambu_studio_one_is_filament_one_even_on_an_object_on_two() {
     // 0 is the object's own filament
     let run = slice_on(
         cube(),
-        two_filaments(json!({"sparse_infill_filament": "0"})),
+        two_filaments(json!({})),
         2,
-        json!({}),
+        json!({"sparse_infill_filament": "0"}),
     );
     assert_eq!(tools(&run).0, 0);
 }
@@ -277,6 +290,36 @@ fn an_unset_support_interface_prints_with_the_objects_filament() {
     ));
     assert_eq!(on(&f, "Support"), [1], "{f:?}");
     assert_eq!(on(&f, "Support interface"), [2], "{f:?}");
+}
+
+/// Bambu Studio writes `wall_filament`, `sparse_infill_filament` and `solid_infill_filament` as "1" in every project.
+/// On a painted object that stock value leaves the paint alone: under Studio's names a project's values are unread,
+/// and under ours the painted regions keep their filament, as paint wins over any feature filament.
+#[test]
+fn the_stock_feature_filaments_leave_painted_colors_alone() {
+    let three = |extra: Value| {
+        let mut c = two_filaments(extra);
+        c["filament_colour"] = json!(["#ff0000", "#00ff00", "#0000ff"]);
+        c["nozzle_temperature"] = json!([220, 225, 230]);
+        c
+    };
+    let tile = || Arc::new(common::painted_tile());
+    let plain = tools(&slice_on(tile(), three(json!({})), 1, json!({})));
+    assert!(plain.0 > 0, "the tile's paint changes filament: {plain:?}");
+    assert_eq!(on(&plain.1, "Outer wall"), [1, 2, 3]);
+    let studio = json!({"wall_filament": "1", "sparse_infill_filament": "1", "solid_infill_filament": "1"});
+    assert_eq!(
+        tools(&slice_on(tile(), three(studio), 1, json!({}))),
+        plain,
+        "Studio's names"
+    );
+    let ours = json!({"outer_wall_filament_id": 1, "inner_wall_filament_id": 1, "sparse_infill_filament_id": 1,
+        "internal_solid_filament_id": 1});
+    assert_eq!(
+        tools(&slice_on(tile(), three(ours), 1, json!({}))),
+        plain,
+        "our names"
+    );
 }
 
 #[test]
