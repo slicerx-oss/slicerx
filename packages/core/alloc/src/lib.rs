@@ -19,9 +19,9 @@ const CONF: &CStr = c"dirty_decay_ms:100,muzzy_decay_ms:0";
 #[cfg(not(target_os = "linux"))]
 const CONF: &CStr = c"dirty_decay_ms:0,muzzy_decay_ms:0";
 
-/// jemalloc reads its options from this C string once, when it starts (before `main`), ahead of the `_RJEM_MALLOC_CONF`
-/// environment variable. tikv-jemalloc-sys builds jemalloc with the `_rjem_` prefix, hence the name; jemalloc's own
-/// definition is weak, so this one takes its place.
+/// jemalloc reads its options from this C string once, when it starts (before `main`). It reads the
+/// `_RJEM_MALLOC_CONF` environment variable after it, so an option set there wins. tikv-jemalloc-sys builds jemalloc
+/// with the `_rjem_` prefix, hence the name; jemalloc's own definition is weak, so this one takes its place.
 #[allow(unsafe_code)]
 // SAFETY: the symbol has the type jemalloc declares (`const char *`, nullable) and points at a NUL-terminated string
 // with a static lifetime that nothing writes to.
