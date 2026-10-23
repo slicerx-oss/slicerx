@@ -304,8 +304,10 @@ fn a_plate_printed_by_object_prints_as_before() {
     assert_eq!(format!("{h:016x}"), BY_OBJECT_FNV, "by-object G-code changed");
 }
 
-/// FNV-1a of the by-object plate's G-code, version lines left out.
-const BY_OBJECT_FNV: &str = "79c0d1c5541329cd";
+/// FNV-1a of the by-object plate's G-code, version lines left out. Changed by the floating vertical shell: each cube's
+/// one-bead solid ring under its top shells rests on sparse infill, so it prints as a floating vertical shell, slowed,
+/// and the two floating shell settings join the config block.
+const BY_OBJECT_FNV: &str = "c8bc8b344742826f";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {

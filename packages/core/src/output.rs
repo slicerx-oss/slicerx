@@ -25,6 +25,10 @@ pub enum Feature {
     Custom = 14,
     Skirt = 15,
     InternalBridge = 16,
+    /// A narrow band of internal solid infill that rests partly on the sparse infill below it (a sloped wall's
+    /// shell band): printed at its own speed, slowed where it hangs over the sparse infill. The preview and the
+    /// reports count it as internal solid infill ([`Feature::preview_id`]).
+    FloatingShell = 17,
 }
 
 impl Feature {
@@ -48,11 +52,12 @@ impl Feature {
             Self::Custom => "Custom",
             Self::Skirt => "Skirt",
             Self::InternalBridge => "Internal Bridge",
+            Self::FloatingShell => "Floating vertical shell",
         }
     }
 
     /// Every feature, in SXPV id order.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::OuterWall,
         Self::InnerWall,
         Self::OverhangWall,
@@ -70,7 +75,17 @@ impl Feature {
         Self::Custom,
         Self::Skirt,
         Self::InternalBridge,
+        Self::FloatingShell,
     ];
+
+    /// The feature's id in the SXPV preview and the slice report: its own number, except a floating vertical shell,
+    /// which shows as internal solid infill there (the G-code still names it).
+    pub fn preview_id(self) -> u8 {
+        match self {
+            Self::FloatingShell => Self::InternalSolid as u8,
+            f => f as u8,
+        }
+    }
 
     /// The feature's name in the `FEATURE` map of `packages/contracts/src/preview.ts`, as the slice report names it.
     pub fn key(self) -> &'static str {
@@ -80,7 +95,7 @@ impl Feature {
             Self::OverhangWall => "overhangWall",
             Self::TopSurface => "topSurface",
             Self::BottomSurface => "bottomSurface",
-            Self::InternalSolid => "internalSolid",
+            Self::InternalSolid | Self::FloatingShell => "internalSolid",
             Self::SparseInfill => "sparseInfill",
             Self::Bridge => "bridge",
             Self::Support => "support",
@@ -124,6 +139,10 @@ pub struct StageMicros {
 
 /// One extrusion path inside a layer. Points live in [`LayerPaths::points`].
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent marks a path carries to the G-code writer"
+)]
 pub struct PathInfo {
     /// Range into [`LayerPaths::points`]. Closed loops repeat the first point at the end.
     pub start: u32,
@@ -152,6 +171,9 @@ pub struct PathInfo {
     /// A piece of the prime tower's wall that the nozzle reaches by hopping the opening before it, retracted
     /// (`prime_tower_skip_points` on a Bambu Lab type tower).
     pub tower_hop: bool,
+    /// A piece of a floating vertical shell that hangs over the sparse infill below: printed slowed, between
+    /// `; Slow Down Start` and `; Slow Down End` lines.
+    pub slow_span: bool,
 }
 
 /// a layer's last path, which the next layer's change retraction wipes along (orca's `Wipe` path)

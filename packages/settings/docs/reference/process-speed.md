@@ -1,6 +1,6 @@
 # Process: Speed
 
-22 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+23 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `gap_infill_speed`
 
@@ -296,6 +296,20 @@
 - Nullable: A profile can store `nil` to take the value from another profile; the key is then left out.
 - Tier: Develop only
 - Changing it redoes: paths
+- mimir class: read (not in the catalog: never written)
+
+### `vertical_shell_speed`
+
+**Floating vertical shell speed**
+
+- Type: list of millimeter or percent strings, one per extruder
+- Unit: mm/s
+- Default: ["80%"]
+- Recommended range: 1 to no maximum
+- Nullable: A profile can store `nil` to take the value from another profile; the key is then left out.
+- Used only when: Detect narrow internal solid infill (`detect_narrow_internal_solid_infill`) is on
+- Tier: Expert, speed
+- Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
 ### `wipe_speed`

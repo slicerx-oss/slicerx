@@ -1949,6 +1949,7 @@ mod tests {
         let path = |feature: Feature, owner: u16| crate::output::PathInfo {
             tower_wipe: false,
             tower_hop: false,
+            slow_span: false,
             start: 0,
             end: 2,
             tool: 1,

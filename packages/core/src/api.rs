@@ -455,7 +455,7 @@ impl FeatureUse {
             let bits = self
                 .used
                 .get_mut(usize::from(p.owner))
-                .and_then(|o| o.get_mut(p.feature as usize))
+                .and_then(|o| o.get_mut(usize::from(p.feature.preview_id())))
                 .and_then(|f| f.get_mut(usize::from(t / 64)));
             if let Some(word) = bits {
                 *word |= 1 << (t % 64);

@@ -1,6 +1,6 @@
 # Process: Strength: walls, shells and infill
 
-58 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+59 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `align_infill_direction_to_model`
 
@@ -115,6 +115,18 @@ How densely the bottom surface is filled, in percent. 100 % gives a solid bottom
 - Tier: Expert, strength
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
+
+### `detect_floating_vertical_shell`
+
+**Detect floating vertical shells**
+
+- Type: boolean
+- Default: on
+- Used only when: Detect narrow internal solid infill (`detect_narrow_internal_solid_infill`) is on
+- Tier: Expert, strength
+- Changing it redoes: infill
+- mimir class: read (not in the catalog: never written)
+- Effect: higher: Narrow solid bands over sparse infill slow down where they hang over it, which costs a little time. lower: Those bands print at one speed all the way around
 
 ### `detect_narrow_internal_solid_infill`
 

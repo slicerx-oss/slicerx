@@ -145,7 +145,7 @@ pub fn gcode_accel(cfg: &PrintConfig, feature: Feature, first_layer: bool) -> f6
         bridge
     } else if sparse > 0.0 && feature == Feature::SparseInfill {
         sparse
-    } else if solid > 0.0 && feature == Feature::InternalSolid {
+    } else if solid > 0.0 && matches!(feature, Feature::InternalSolid | Feature::FloatingShell) {
         solid
     } else if outer > 0.0 && feature == Feature::OuterWall {
         outer
@@ -172,6 +172,7 @@ pub fn gcode_jerk(cfg: &PrintConfig, feature: Feature, first_layer: bool) -> f64
             | Feature::InternalBridge
             | Feature::SparseInfill
             | Feature::InternalSolid
+            | Feature::FloatingShell
             | Feature::TopSurface
             | Feature::BottomSurface
             | Feature::Ironing
@@ -512,7 +513,7 @@ pub struct Motion<'a> {
     set: LineSettings,
     first_layer: bool,
     /// Per feature (by its id): the acceleration and jerk of its paths.
-    print: [Option<(i64, f64)>; 17],
+    print: [Option<(i64, f64)>; Feature::ALL.len()],
     /// Per kind of travel (see `travel_kind`): the acceleration and jerk.
     travel: [Option<(i64, f64)>; 3],
 }
@@ -523,7 +524,7 @@ impl<'a> Motion<'a> {
             cfg,
             set: LineSettings::new(cfg, flavor),
             first_layer,
-            print: [None; 17],
+            print: [None; Feature::ALL.len()],
             travel: [None; 3],
         }
     }

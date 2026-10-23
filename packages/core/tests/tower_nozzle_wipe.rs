@@ -200,6 +200,8 @@ fn wipes(b: &Block) -> Vec<Wipe> {
                         break;
                     }
                     Some(m) => travels.push(m.clone()),
+                    // A progress line lands wherever the print's time reaches the next percent.
+                    None if text.starts_with("M73 ") => {}
                     None => between.push(text.clone()),
                 }
                 j += 1;

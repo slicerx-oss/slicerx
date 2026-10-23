@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 751 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 753 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -18,8 +18,8 @@ Print settings: layers, walls, infill, speeds, supports, adhesion.
 - [Quality and geometry](process-quality.md): 89 settings
 - [Retraction](process-retraction.md): 2 settings
 - [Special modes](process-special.md): 24 settings
-- [Speed](process-speed.md): 22 settings
-- [Strength: walls, shells and infill](process-strength.md): 58 settings
+- [Speed](process-speed.md): 23 settings
+- [Strength: walls, shells and infill](process-strength.md): 59 settings
 - [Support](process-support.md): 39 settings
 
 ## Filament
@@ -139,6 +139,7 @@ Alphabetical, each linking to its group file.
 - `default_print_profile`: Default print profile, [printer/profile](printer-profile.md#default_print_profile)
 - `deretract_speed_extruder_change`: Deretract speed extruder change, [printer/retraction](printer-retraction.md#deretract_speed_extruder_change)
 - `deretraction_speed`: Deretraction speed, [printer/retraction](printer-retraction.md#deretraction_speed)
+- `detect_floating_vertical_shell`: Detect floating vertical shells, [process/strength](process-strength.md#detect_floating_vertical_shell)
 - `detect_narrow_internal_solid_infill`: Detect narrow internal solid infill, [process/strength](process-strength.md#detect_narrow_internal_solid_infill)
 - `detect_overhang_wall`: Detect overhang wall, [process/overhangs](process-overhangs.md#detect_overhang_wall)
 - `detect_thin_wall`: Detect thin walls, [process/quality](process-quality.md#detect_thin_wall)
@@ -752,6 +753,7 @@ Alphabetical, each linking to its group file.
 - `use_3mf`: Use 3mf, [printer/profile](printer-profile.md#use_3mf)
 - `use_firmware_retraction`: Use firmware retraction, [printer/retraction](printer-retraction.md#use_firmware_retraction)
 - `use_relative_e_distances`: Relative extruder moves, [printer/machine](printer-machine.md#use_relative_e_distances)
+- `vertical_shell_speed`: Floating vertical shell speed, [process/speed](process-speed.md#vertical_shell_speed)
 - `volumetric_speed_coefficients`: Volumetric speed coefficients, [filament/extrusion](filament-extrusion.md#volumetric_speed_coefficients)
 - `wait_for_temp_on_wipe_tower`: Wait for temp on prime tower, [printer/multimaterial](printer-multimaterial.md#wait_for_temp_on_wipe_tower)
 - `wall_direction`: Wall direction, [process/quality](process-quality.md#wall_direction)

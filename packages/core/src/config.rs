@@ -1961,7 +1961,7 @@ impl PrintConfig {
                 F::InnerWall => r("inner_wall_flow_ratio"),
                 F::OverhangWall => r("overhang_flow_ratio"),
                 F::SparseInfill => r("sparse_infill_flow_ratio"),
-                F::InternalSolid => r("internal_solid_infill_flow_ratio"),
+                F::InternalSolid | F::FloatingShell => r("internal_solid_infill_flow_ratio"),
                 F::GapFill => r("gap_fill_flow_ratio"),
                 F::Support => r("support_flow_ratio"),
                 F::SupportInterface => r("support_interface_flow_ratio"),

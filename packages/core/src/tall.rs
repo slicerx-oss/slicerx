@@ -56,6 +56,7 @@ pub(crate) fn apply(out: &mut LayerPaths, cfg: &PrintConfig) {
                     | Feature::TopSurface
                     | Feature::BottomSurface
                     | Feature::InternalSolid
+                    | Feature::FloatingShell
                     | Feature::SparseInfill
                     | Feature::Bridge
                     | Feature::InternalBridge

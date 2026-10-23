@@ -357,7 +357,6 @@
   "counter_limit_max",
   "counter_limit_min",
   "creality_flush_time",
-  "detect_floating_vertical_shell",
   "diameter_limit",
   "enable_circle_compensation",
   "enable_height_slowdown",
@@ -431,7 +430,6 @@
   "travel_short_distance_acceleration",
   "tree_support_adaptive_layer_height",
   "tree_support_branch_diameter_double_wall",
-  "vertical_shell_speed",
   "z_direction_outwall_speed_continuous"
  ]
 }

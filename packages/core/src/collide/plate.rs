@@ -560,6 +560,7 @@ mod tests {
         PathInfo {
             tower_wipe: false,
             tower_hop: false,
+            slow_span: false,
             start,
             end,
             tool: 1,
