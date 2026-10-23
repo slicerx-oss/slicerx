@@ -106,16 +106,16 @@ export function screenOf(page: Page, p: V3): Promise<[number, number]> {
 /**
  * What still moves the view, though a spot on screen may read the same: a camera move running, a side pane sliding
  * open or shut (its width transition), or the canvas waiting on its resize, which lands 100 ms after the pane stops
- * and only then changes where things are on screen. Empty when nothing does. With software WebGL on a busy machine a
- * frame can take most of a second, and all three only go on with frames, so the same spot can read the same several
- * times while one of them waits.
+ * (later while a slide beside the view still runs, up to 1 s) and only then changes where things are on screen. Empty
+ * when nothing does. With software WebGL on a busy machine a frame can take most of a second, and all three only go
+ * on with frames, so the same spot can read the same several times while one of them waits.
  */
 export const viewMoving = (page: Page): Promise<string[]> =>
   page.evaluate(() => {
-    const vp = (window as unknown as { __vp: { rig: { move: unknown }; resizeTimer: unknown; width: number; height: number; canvas: HTMLCanvasElement } }).__vp
+    const vp = (window as unknown as { __vp: { rig: { move: unknown }; resizeSettle: { pending: boolean }; width: number; height: number; canvas: HTMLCanvasElement } }).__vp
     const why: string[] = []
     if (vp.rig.move !== null) why.push('camera move')
-    if (vp.resizeTimer !== null || vp.width !== Math.max(1, vp.canvas.clientWidth) || vp.height !== Math.max(1, vp.canvas.clientHeight)) why.push('canvas resize')
+    if (vp.resizeSettle.pending || vp.width !== Math.max(1, vp.canvas.clientWidth) || vp.height !== Math.max(1, vp.canvas.clientHeight)) why.push('canvas resize')
     const slide = document.getAnimations().some((a) => a instanceof CSSTransition && a.playState === 'running' && a.transitionProperty === 'width' && a.effect instanceof KeyframeEffect && a.effect.target instanceof Element && a.effect.target.matches('.sx-rail'))
     if (slide) why.push('pane slide')
     return why
