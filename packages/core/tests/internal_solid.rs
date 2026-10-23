@@ -482,3 +482,21 @@ fn every_printer_takes_the_same_band_rule() {
     assert!(band(0.070, &settings(&other)) > 10.0);
     assert!(band(0.070, &settings(&narrow_off(&other))) < 2.0);
 }
+
+#[test]
+fn more_top_layers_print_a_wider_band() {
+    // On a Marlin printer the cone's band, 0.3 mm with 4 top layers and 0.4 mm with 5, prints as one bead a layer that
+    // fills it out to the overlap with the wall, so 5 top layers print more of it; the reference slicers add 5 to 17%.
+    let cone = || revolve(&[(15.0, 0.0), (5.0, 20.0)]);
+    let top = |n: u32| {
+        settings(
+            &json!({"printer_model": "Generic printer", "gcode_flavor": "marlin2",
+            "top_shell_layers": n, "top_shell_thickness": 0}),
+        )
+    };
+    let (four, five) = (slice(cone(), &top(4)).1.mid(), slice(cone(), &top(5)).1.mid());
+    assert!(
+        five > 1.05 * four,
+        "{four:.1} mm with 4 top layers, {five:.1} with 5"
+    );
+}
