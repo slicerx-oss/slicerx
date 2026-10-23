@@ -4205,7 +4205,7 @@ class ViewportImpl implements Viewport {
 
   setSpot(mark: StrikeMark | null, area?: readonly (readonly [number, number])[] | null): void {
     this.spot.set(mark ? [mark] : null)
-    this.spot.setArea(mark ? (area ?? null) : null, mark?.z ?? 0)
+    this.spot.setArea(mark ? (area ?? null) : null)
     this.invalidate()
   }
 
