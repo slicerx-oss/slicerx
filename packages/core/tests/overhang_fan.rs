@@ -369,3 +369,58 @@ fn a_stock_bambu_lab_preset_prints_internal_bridges_at_the_bridge_speed() {
     assert!(!feeds.is_empty(), "no internal bridge");
     assert!(feeds.iter().all(|f| *f <= 3000.0 + 0.5), "{feeds:?}");
 }
+
+/// Per layer from 1: the speeds (mm/s) of the outer wall moves longer than 20 mm on the leaning (+X) side.
+fn leaning_side_speeds(gcode: &str) -> BTreeMap<usize, Vec<f64>> {
+    let mut moves: BTreeMap<usize, Vec<(f64, f64)>> = BTreeMap::new();
+    let (mut layer, mut feature, mut f) = (0usize, String::new(), 0.0f64);
+    let (mut x, mut y) = (0.0f64, 0.0f64);
+    for line in gcode.lines() {
+        let code = line.split(';').next().unwrap_or("").trim();
+        if line.starts_with("; CHANGE_LAYER") {
+            layer += 1;
+        } else if let Some(name) = line.strip_prefix("; FEATURE: ") {
+            name.trim().clone_into(&mut feature);
+        } else if code.starts_with("G1") || code.starts_with("G0") {
+            if let Some(v) = word(code, 'F') {
+                f = v;
+            }
+            let (nx, ny) = (word(code, 'X').unwrap_or(x), word(code, 'Y').unwrap_or(y));
+            let long = (nx - x).hypot(ny - y) > 20.0 && (nx - x).abs() < 0.5;
+            if long && feature == "Outer wall" && word(code, 'E').is_some_and(|e| e > 0.0) {
+                moves.entry(layer).or_default().push((nx, f / 60.0));
+            }
+            (x, y) = (nx, ny);
+        }
+    }
+    moves
+        .into_iter()
+        .map(|(l, m)| {
+            let right = m.iter().map(|p| p.0).fold(f64::MIN, f64::max);
+            let speeds = m.iter().filter(|p| p.0 > right - 1.0).map(|p| p.1).collect();
+            (l, speeds)
+        })
+        .collect()
+}
+
+/// Item: leaning wall speeds. A wall leaning past the layer below slows by how far its bead's outer edge hangs
+/// out, as a share of half of (wall width + 0.4 mm), mapped onto the four overhang speed levels with straight
+/// lines between them. On the stock A1 (outer wall 200 mm/s, levels 0, 50, 30, 10, 0.42 mm wall at 0.2 mm
+/// layers) a wall leaning 40 degrees prints at 44 mm/s, 45 degrees at 36, 50 degrees at 28, 60 degrees at 10.
+#[test]
+fn a_leaning_outer_wall_prints_at_the_speed_its_lean_maps_to() {
+    let cfg = stock("bambu-a1");
+    for (angle, want) in [(40.0, 44.0), (45.0, 36.0), (50.0, 28.0), (60.0, 10.0)] {
+        let sides = leaning_side_speeds(&slice(&wedge(angle), &cfg));
+        // Layers 22 to 60: the leaning part below its top shells.
+        for l in 22..=60 {
+            let s = sides
+                .get(&l)
+                .unwrap_or_else(|| panic!("{angle} degrees, layer {l}: no leaning side"));
+            assert!(
+                !s.is_empty() && s.iter().all(|v| (v - want).abs() < 0.6),
+                "{angle} degrees, layer {l}: {s:?}, want {want}"
+            );
+        }
+    }
+}
