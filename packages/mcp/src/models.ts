@@ -23,14 +23,20 @@ export interface PathPolicy {
   fetch?: typeof fetch
 }
 
+/** A list of types for a message: ".stl, .3mf, .sx3mf or .obj". */
+export function typesText(extensions: readonly string[]): string {
+  return extensions.length < 2 ? extensions.join('') : `${extensions.slice(0, -1).join(', ')} or ${extensions[extensions.length - 1]}`
+}
+
 function inside(dir: string, file: string): boolean {
   const rel = relative(dir, file)
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
 }
 
-export function checkReadable(policy: PathPolicy, path: string): string {
+/** A readable file inside the allowed directories. A missing one is refused naming `extensions`, the types the caller takes. */
+export function checkReadable(policy: PathPolicy, path: string, extensions: readonly string[] = MODEL_EXTENSIONS): string {
   const abs = resolve(policy.allowDirs?.[0] ?? process.cwd(), path)
-  if (!existsSync(abs)) throw new ToolInputError(`File not found: ${abs}. Pass an absolute path to an STL, 3MF or OBJ file.`, 'file_not_found')
+  if (!existsSync(abs)) throw new ToolInputError(`File not found: ${abs}. Pass an absolute path to a ${typesText(extensions)} file.`, 'file_not_found')
   const real = realpathSync(abs)
   const allowed = [...(policy.allowDirs ?? []), policy.outDir].map((d) => (existsSync(d) ? realpathSync(d) : resolve(d)))
   if (policy.allowDirs !== undefined && !allowed.some((d) => inside(d, real))) {
@@ -119,14 +125,14 @@ function sampleModel(policy: PathPolicy, name: string): string {
 
 /**
  * Returns a readable local path for a model given as a path, an http(s) URL, or `sample:<name>`. `extensions` are the
- * types the caller takes, the model types unless given (the open in app tool also hands STEP files to the app).
+ * types the caller takes, the model types unless given (the open in app tool takes every type the app opens).
  */
 export async function resolveModel(policy: PathPolicy, model: string, extensions: readonly string[] = MODEL_EXTENSIONS): Promise<string> {
   if (model.startsWith('sample:')) return sampleModel(policy, model.slice('sample:'.length))
   let url: URL | undefined
   if (/^https?:\/\//i.test(model)) url = new URL(model)
   else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(model)) throw new ToolInputError('Only http and https URLs are supported for models.', 'unsupported_format')
-  const file = url ? await download(policy, url, extensions) : checkReadable(policy, model)
+  const file = url ? await download(policy, url, extensions) : checkReadable(policy, model, extensions)
   checkModelExtension(file, extensions)
   return file
 }
