@@ -116,6 +116,13 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
  * Read the settings a project carries. `projectSettings` is the parsed JSON of
  * Metadata/project_settings.config; the two XML files are optional text.
  */
+/**
+ * Bambu Studio's per-feature filament names that a project's own settings leave unread: Studio prints a project's
+ * `wall_filament`, `sparse_infill_filament` and `solid_infill_filament` on nothing ("1", the stock value, and every
+ * other alike). An object's, a part's, a modifier's or a height range's own values still count.
+ */
+export const PROJECT_UNREAD_KEYS: ReadonlySet<string> = new Set(['wall_filament', 'sparse_infill_filament', 'solid_infill_filament'])
+
 export function importProject(files: { projectSettings: unknown; modelSettings?: string; layerRanges?: string }): ProjectImport {
   const src = files.projectSettings
   if (src === null || typeof src !== 'object' || Array.isArray(src)) throw new TypeError('project_settings.config is not a JSON object')
@@ -123,6 +130,7 @@ export function importProject(files: { projectSettings: unknown; modelSettings?:
   const extras: Record<string, unknown> = {}
   const settingsOnly: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(obj)) {
+    if (PROJECT_UNREAD_KEYS.has(k)) continue
     if (PROJECT_KEYS.has(k)) extras[k] = v
     else settingsOnly[k] = v
   }

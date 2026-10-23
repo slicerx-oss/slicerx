@@ -688,6 +688,14 @@ impl PrintConfig {
     }
 }
 
+/// A plate's own settings (a project's, a request's config, a preset given for the whole plate) without the
+/// per-feature filament names they leave unread: Bambu Studio prints a project's `wall_filament`,
+/// `sparse_infill_filament` and `solid_infill_filament` on nothing. An object's, a part's, a modifier's or a height
+/// range's own values still count. [`PrintConfig::from_value`] reads its value this way.
+pub fn plate_value(v: &Value) -> std::borrow::Cow<'_, Value> {
+    crate::legacy::plate_value(v)
+}
+
 impl PrintConfig {
     /// Reads a config object with Orca keys. Missing keys keep the defaults.
     pub fn from_json(bytes: &[u8]) -> Result<Self> {
@@ -700,6 +708,9 @@ impl PrintConfig {
 
     /// Same as [`Self::from_json`] for an already parsed value.
     pub fn from_value(v: &Value) -> Result<Self> {
+        // A plate's own settings: the per-feature filament names they leave unread go ([`plate_value`]).
+        let v = plate_value(v);
+        let v = v.as_ref();
         let mut c = Self::default();
         // a new layer height gets matching gaps unless the request supplies them.
         if v.get("layer_height").is_some() {

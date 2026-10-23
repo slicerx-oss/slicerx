@@ -603,6 +603,10 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
                 .collect()
         });
     let app = crate::threemf::application(bytes);
+    // The per-feature filament names a project's own settings leave unread (`crate::config::plate_value`).
+    for k in crate::legacy::PLATE_UNREAD {
+        settings.remove(k);
+    }
     bambu_tower_keys(&mut settings);
     // A Bambu Studio project saved before the rib wall switch existed has neither key: the rib wall, that app's
     // default. Other projects without either keep the engine's default.
@@ -1055,7 +1059,7 @@ pub fn request_config_report(
     let given = with_bambu_tower_keys(&req.config);
     if !given.is_null() {
         if listed {
-            report.invalid = config.apply_value_lenient(&given)?;
+            report.invalid = config.apply_value_lenient(&crate::config::plate_value(&given))?;
         } else {
             config = PrintConfig::from_value(&given)?;
         }

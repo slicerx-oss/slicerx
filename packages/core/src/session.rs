@@ -2398,6 +2398,17 @@ impl SliceSession {
         }
     }
 
+    /// The filaments a region on `slot` prints its features with. Paint wins: a region only paint gives this filament
+    /// (no part of the session is on it) prints every feature with it, whatever the plate, object, height range or
+    /// modifier asks for; the per-feature filaments move the features of the parts' own, unpainted regions only.
+    fn feature_tools(&self, cfg: &PrintConfig, slot: u8) -> FeatureTools {
+        if self.parts.iter().any(|p| p.slot == slot) {
+            feature_tools(cfg, slot)
+        } else {
+            feature_tools_from(|_| None, slot)
+        }
+    }
+
     /// True when the `k`th object of the sequence carries settings of its own.
     pub(crate) fn has_object_settings(&self, k: usize) -> bool {
         self.object_settings.get(k).is_some_and(|v| !v.is_null())
@@ -2589,7 +2600,7 @@ impl SliceSession {
                     None => config,
                 },
             };
-            let tool = feature_tools(cfg, *slot).outer;
+            let tool = self.feature_tools(cfg, *slot).outer;
             for island in shapes {
                 if perimeters::offset(&vec![island.clone()], -inset).is_empty() {
                     continue;
@@ -8759,7 +8770,7 @@ impl SliceSession {
             work.region_sparse.clone_from(&cls.sparse);
             Micros::add(&micros.infill, &t);
             // Features on filaments of their own (`*_filament_id`) print as works of those filaments.
-            works.extend(split_by_feature(work, feature_tools(cfg, *slot)));
+            works.extend(split_by_feature(work, self.feature_tools(cfg, *slot)));
         }
         LayerStart {
             out,
@@ -9237,7 +9248,7 @@ impl SliceSession {
             for (slot, loops) in finished {
                 // Orca prints an object's brim just before its first extrusion on the layer: with the
                 // first filament in the layer's order that prints one of the island's features.
-                let f = feature_tools(cfg, slot);
+                let f = self.feature_tools(cfg, slot);
                 let mine = [f.outer, f.inner, f.sparse, f.solid, f.top, f.bottom];
                 let at = works.iter().position(|w| mine.contains(&w.tool)).unwrap_or(0);
                 if let Some(work) = works.get_mut(at) {
@@ -11112,9 +11123,10 @@ mod feature_slot_tests {
     use serde_json::json;
 
     /// The filaments of outer and inner wall, sparse and internal solid infill, top and bottom surface of a part on
-    /// `slot` with these settings, read as a slice reads them: over the engine's defaults.
+    /// `slot` with these settings as the object's own, read as a slice reads them: over the engine's defaults.
     fn slots_on(c: &serde_json::Value, slot: u8) -> [u8; 6] {
-        let cfg = PrintConfig::from_value(c).expect("the settings read");
+        let mut cfg = PrintConfig::from_value(&json!({})).expect("the defaults read");
+        cfg.apply_value(c).expect("the settings read");
         feature_slots(|k| cfg.raw.get(k), slot)
     }
 
@@ -11152,6 +11164,17 @@ mod feature_slot_tests {
         assert_eq!(slots_on(&c, 2), [2, 2, 1, 2, 2, 2]);
         let c = json!({"printer_model": "Bambu Lab X2D", "sparse_infill_filament": "0"});
         assert_eq!(slots_on(&c, 2), [2, 2, 2, 2, 2, 2]);
+    }
+
+    #[test]
+    fn a_plates_own_bambu_studio_names_are_left_unread() {
+        // Bambu Studio prints a project's values for these on nothing, "1" and others alike.
+        for v in ["1", "2", "3"] {
+            let c = json!({"printer_model": "Bambu Lab X2D", "wall_filament": v, "sparse_infill_filament": v,
+                "solid_infill_filament": v});
+            let cfg = PrintConfig::from_value(&c).expect("the settings read");
+            assert_eq!(feature_slots(|k| cfg.raw.get(k), 2), [2; 6], "{v}");
+        }
     }
 
     #[test]
