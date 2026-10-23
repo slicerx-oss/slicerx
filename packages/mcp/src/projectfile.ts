@@ -231,6 +231,8 @@ export function readProjectFile(path: string): ProjectRead {
   // Bambu Studio reads a missing first layer travel acceleration as 500 mm/s2, as the app's project open and
   // `sx slice <project.3mf>` do: a project of its that lacks the key travels the first layer at 500.
   if (source?.startsWith('BambuStudio') && !('initial_layer_travel_acceleration' in kept)) kept['initial_layer_travel_acceleration'] = ['500']
+  // Its presets have no internal bridge speed, and it prints internal bridges at the bridge speed, not our 150 percent.
+  if (source?.startsWith('BambuStudio') && !('internal_bridge_speed' in kept)) kept['internal_bridge_speed'] = ['100%']
   const imported = importProject({ projectSettings: kept, ...(modelSettings ? { modelSettings } : {}) })
 
   // Plates and how many objects sit on each, from model_settings.config; a plain 3MF is one plate.

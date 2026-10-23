@@ -2026,6 +2026,51 @@ fn a_bambu_studio_project_without_first_layer_travel_acceleration_travels_at_500
     }
 }
 
+/// The printer maker's app prints internal bridges at the bridge speed and its presets have no `internal_bridge_speed`:
+/// its project without the key gets 100 percent, one with the key keeps it, and another app's project keeps our
+/// default (150 percent).
+#[test]
+fn a_bambu_studio_project_without_internal_bridge_speed_bridges_at_the_bridge_speed() {
+    let dir = temp_dir(format!("sx-cli-internal-bridge-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let header = |name: &str, app: Option<&str>, extra: serde_json::Value| {
+        let mut s = serde_json::json!({"printer_model": "Bambu Lab A1", "gcode_flavor": "marlin", "bridge_speed": ["50"]});
+        if let (Some(o), Some(e)) = (s.as_object_mut(), extra.as_object()) {
+            o.extend(e.clone());
+        }
+        let path = dir.join(format!("{name}.3mf"));
+        std::fs::write(&path, box_3mf_by(app, Some(s.to_string().as_bytes()), &[])).unwrap();
+        let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .find(|l| l.starts_with("; internal_bridge_speed = "))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let bambu = Some("BambuStudio-02.03.00.70");
+    assert_eq!(
+        header("ib-unset", bambu, serde_json::json!({})),
+        "; internal_bridge_speed = 100%"
+    );
+    assert_eq!(
+        header(
+            "ib-set",
+            bambu,
+            serde_json::json!({"internal_bridge_speed": ["120%"]})
+        ),
+        "; internal_bridge_speed = 120%"
+    );
+    assert_eq!(
+        header("ib-orca", Some("OrcaSlicer-2.3.1"), serde_json::json!({})),
+        "; internal_bridge_speed = 150%"
+    );
+}
+
 /// Bambu Studio's rib keys (`prime_tower_rib_width`, and the switch) shape the tower whether they come in a project
 /// or in a `--config` preset; a key under our own name keeps its value.
 #[test]

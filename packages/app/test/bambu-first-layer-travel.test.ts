@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Bambu Studio reads a missing first layer travel acceleration as 500 mm/s2. A project it wrote (the model's Application
 // metadata starts with BambuStudio) without the key opens with 500, one with the key keeps its value, and a project from
-// another app is left as it is, the same rule the engine's project import has.
+// another app is left as it is, the same rule the engine's project import has. A missing internal bridge speed is read
+// as the bridge speed (100%) the same way.
 import { describe, expect, it } from 'vitest'
 import { baseConfig } from '../src/adapters/settings'
 import { projectSettingChanges } from '../src/export/project-settings'
@@ -35,7 +36,18 @@ describe('first layer travel acceleration of a project without the key', () => {
   it('counts as changed when the project lists what it changed, so a project opened with only those still gets it', async () => {
     const s = await open('BambuStudio-02.01.00.00', { different_settings_to_system: ['layer_height;', '', ''] })
     expect(s['initial_layer_travel_acceleration']).toEqual(['500'])
-    expect(s['different_settings_to_system']).toEqual(['layer_height;initial_layer_travel_acceleration', '', ''])
+    expect(s['different_settings_to_system']).toEqual(['layer_height;initial_layer_travel_acceleration;internal_bridge_speed', '', ''])
+  })
+
+  it('gives internal bridges the bridge speed the same way', async () => {
+    expect((await open('BambuStudio-02.01.00.00', {}))['internal_bridge_speed']).toEqual(['100%'])
+    expect((await open('BambuStudio-02.01.00.00', { internal_bridge_speed: ['120%'] }))['internal_bridge_speed']).toEqual(['120%'])
+    for (const app of ['OrcaSlicer-2.3.0', undefined]) expect('internal_bridge_speed' in (await open(app, {})), String(app)).toBe(false)
+    // and it reaches the plate's settings in the same form as a value the project writes itself
+    const s = await open('BambuStudio-02.01.00.00', {})
+    const own = projectSettingChanges({ internal_bridge_speed: ['100%'] }, baseConfig()).values['internal_bridge_speed']
+    expect(own).toBeDefined()
+    expect(projectSettingChanges(s, baseConfig()).values['internal_bridge_speed']).toEqual(own)
   })
 
   it('is left as it is for an OrcaSlicer project, one with no app named, and one with no settings', async () => {
