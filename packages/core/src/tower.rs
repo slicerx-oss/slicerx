@@ -425,7 +425,12 @@ impl Placement {
 /// (the pad `raft_first_layer_expansion` and `support_expansion` widen, a tree's brim and half a branch), whichever
 /// is wider, and with a skirt of its own (`skirt_type` per object) the skirt's loops round that.
 pub(crate) fn room(cfg: &PrintConfig) -> f64 {
-    let brim = cfg.brim_width.max(0.0);
+    room_with(cfg, cfg.brim_width)
+}
+
+/// [`room`] for a brim that reaches `brim` mm past the first layer (an automatic brim, sized per object).
+pub(crate) fn room_with(cfg: &PrintConfig, brim: f64) -> f64 {
+    let brim = brim.max(0.0);
     let support = if cfg.enable_support {
         let s = &cfg.support;
         let tree = if s.style.is_tree() {
