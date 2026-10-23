@@ -1029,11 +1029,24 @@ impl SliceSession {
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
     ) -> Result<Self> {
+        Self::with_plan(plate, config, tops, ranges, true)
+    }
+
+    /// [`Self::with_options`], where `by_ranges` false keeps `layer_height` when no tops are given. A request that
+    /// turns sleipnir on and gets no plan from it slices that way, as the app does, which plans by ranges only with
+    /// sleipnir off.
+    pub(crate) fn with_plan(
+        plate: &Plate,
+        config: &PrintConfig,
+        tops: Option<&[f64]>,
+        ranges: &[HeightRange],
+        by_ranges: bool,
+    ) -> Result<Self> {
         use crate::layers::RangeTops;
         // Without tops of the caller's (a request's own, or sleipnir's when its config turns `smart_layer` on), a
         // project's layer height ranges (`Mesh::layer_heights`) plan the layers, as the app plans them before it
         // sends its request.
-        let by_range = if tops.is_none() {
+        let by_range = if tops.is_none() && by_ranges {
             crate::layers::plate_range_tops(plate, config.initial_layer_print_height, config.layer_height)
         } else {
             RangeTops::None
