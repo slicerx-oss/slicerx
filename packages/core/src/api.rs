@@ -1143,17 +1143,17 @@ fn build_session_with(
         })
         .collect();
     #[cfg(feature = "sleipnir")]
-    let planned = match (
-        &req.options.layer_tops_mm,
-        crate::sleipnir::requested(&req.config),
-    ) {
+    let smart = crate::sleipnir::requested(&req.config);
+    #[cfg(feature = "sleipnir")]
+    let planned = match (&req.options.layer_tops_mm, smart) {
         (None, Some(mode)) => crate::sleipnir::plan(plate, config, mode),
         _ => None,
     };
     #[cfg(not(feature = "sleipnir"))]
-    let planned: Option<Vec<f64>> = None;
+    let (smart, planned): (Option<()>, Option<Vec<f64>>) = (None, None);
     let tops = req.options.layer_tops_mm.as_deref().or(planned.as_deref());
-    let mut session = SliceSession::with_options(plate, config, tops, &ranges)?;
+    // With sleipnir on, a plan that fails keeps `layer_height`; the ranges' layer heights plan only with it off.
+    let mut session = SliceSession::with_plan(plate, config, tops, &ranges, smart.is_none())?;
     if progress.cancelled() {
         return Err(Error::Cancelled);
     }
@@ -2427,6 +2427,41 @@ mod tests {
                 .layer_z;
             assert_eq!(z_list.len(), 1, "scale {z}, first {first}: {z_list:?}");
         }
+    }
+
+    #[cfg(feature = "sleipnir")]
+    #[test]
+    fn a_failed_smart_layer_plan_keeps_the_layer_height_over_ranges() {
+        // A nozzle over 2 mm is one sleipnir refuses to plan for, so the slice falls back as the app does:
+        // to `layer_height`, not to the 0.1 mm the range asks for between 2 and 4 mm.
+        let mut ranged = (*cube()).clone();
+        ranged.layer_heights = vec![crate::RangeLayerHeight {
+            z_from_mm: 2.0,
+            z_to_mm: 4.0,
+            height_mm: 0.1,
+        }];
+        let mesh = Arc::new(ranged);
+        let layers = |config: &str| {
+            let body =
+                format!(r#"{{"plate":{{"objects":[{{"mesh":1}}]}},"config":{config},"options":{{}}}}"#);
+            let req: SliceRequest = serde_json::from_str(&body).unwrap();
+            run_request(&req, &|_: &str| Ok(mesh.clone()))
+                .unwrap()
+                .report
+                .layer_z
+        };
+        let steps = |z: &[f32]| z.windows(2).map(|w| w[1] - w[0]).collect::<Vec<_>>();
+        // Line widths of their own, since the ones taken from a 2.5 mm nozzle are past what a setting allows.
+        let config = concat!(
+            r#"{"layer_height":0.2,"initial_layer_print_height":0.2,"nozzle_diameter":[2.5],"#,
+            r#""line_width":2,"outer_wall_line_width":2,"inner_wall_line_width":2,"sparse_infill_line_width":2,"internal_solid_infill_line_width":2,"top_surface_line_width":2,"initial_layer_line_width":2,"bridge_line_width":2,"support_line_width":2,"skin_infill_line_width":2,"skeleton_infill_line_width":2"#
+        );
+        // With sleipnir off the range plans 0.1 mm layers.
+        let off = layers(&format!("{config}}}"));
+        assert!(steps(&off).iter().any(|s| (s - 0.1).abs() < 1e-4), "{off:?}");
+        let on = layers(&format!(r#"{config},"smart_layer":"quality"}}"#));
+        assert!((on[0] - 0.2).abs() < 1e-4, "{on:?}");
+        assert!(steps(&on).iter().all(|s| (s - 0.2).abs() < 1e-4), "{on:?}");
     }
 
     #[test]
