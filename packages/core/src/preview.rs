@@ -159,7 +159,7 @@ pub fn preview_buffers(out: &SliceOutput) -> Vec<u8> {
                     z,
                     w_um,
                     h_um,
-                    p.feature as u8,
+                    p.feature.preview_id(),
                     p.tool.max(1) - 1,
                     speed,
                     flow,
@@ -577,6 +577,7 @@ mod tests {
         let path = |start: u32, end: u32, owner: u16| PathInfo {
             tower_wipe: false,
             tower_hop: false,
+            slow_span: false,
             start,
             end,
             tool: 1,

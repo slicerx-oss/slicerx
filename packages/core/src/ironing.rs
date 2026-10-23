@@ -244,6 +244,7 @@ pub(crate) fn add(
         out.paths.push(PathInfo {
             tower_wipe: false,
             tower_hop: false,
+            slow_span: false,
             start,
             end,
             tool,

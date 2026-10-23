@@ -23,7 +23,7 @@ export const SECTIONS: Readonly<Record<SettingIntent, readonly SettingSection[]>
   ],
   strength: [
     { id: 'walls', label: 'Walls', match: /^wall_loops|^alternate_extra_wall/ },
-    { id: 'shells', label: 'Top and bottom shells', match: /_shell_|_surface_density|surface_fill_order|^top_surface_expansion|layer_direction|^interface_shells|^extra_solid_infills|^center_of_surface_pattern|^solid_infill_|^detect_narrow_internal_solid_infill|^ensure_vertical_shell_thickness/ },
+    { id: 'shells', label: 'Top and bottom shells', match: /_shell_|_surface_density|surface_fill_order|^top_surface_expansion|layer_direction|^interface_shells|^extra_solid_infills|^center_of_surface_pattern|^solid_infill_|^detect_narrow_internal_solid_infill|^detect_floating_vertical_shell|^ensure_vertical_shell_thickness/ },
     { id: 'infill', label: 'Infill' },
     { id: 'interlocking', label: 'Interlocking', match: /^interlocking/ },
   ],

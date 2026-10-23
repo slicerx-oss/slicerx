@@ -1127,6 +1127,7 @@ mod tests {
                 paths: vec![PathInfo {
                     tower_wipe: false,
                     tower_hop: false,
+                    slow_span: false,
                     start: 0,
                     end: n,
                     tool: 1,

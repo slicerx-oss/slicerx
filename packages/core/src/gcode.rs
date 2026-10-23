@@ -2075,29 +2075,9 @@ fn emit_layer(
     let thousandths = |w: f32| (f64::from(w) * 1000.0).round() as i64;
     let mut width_written = thousandths(l.below_wipe.width_mm);
     // The role-based extrusion multipliers of this layer.
-    let role_flow: Vec<f64> = (0..=Feature::InternalBridge as usize)
-        .map(|i| {
-            let f = match i {
-                0 => Feature::OuterWall,
-                1 => Feature::InnerWall,
-                2 => Feature::OverhangWall,
-                3 => Feature::TopSurface,
-                4 => Feature::BottomSurface,
-                5 => Feature::InternalSolid,
-                6 => Feature::SparseInfill,
-                7 => Feature::Bridge,
-                8 => Feature::Support,
-                9 => Feature::SupportInterface,
-                10 => Feature::Brim,
-                11 => Feature::Ironing,
-                12 => Feature::GapFill,
-                13 => Feature::PrimeTower,
-                14 => Feature::Custom,
-                15 => Feature::Skirt,
-                _ => Feature::InternalBridge,
-            };
-            c.role_flow_ratio(f, l.index == 0)
-        })
+    let role_flow: Vec<f64> = Feature::ALL
+        .iter()
+        .map(|&f| c.role_flow_ratio(f, l.index == 0))
         .collect();
     // `small_area_infill_flow_compensation`: short solid infill lines extrude less (smallflow.rs).
     let small_area = crate::smallflow::Compensator::of(c);
@@ -2980,6 +2960,11 @@ fn emit_layer(
             b.push(b'\n');
             speed_feed = -1;
         }
+        // A slowed span of a floating vertical shell is marked, its feed rate included: once around the pieces it
+        // was cut into where its width changes.
+        if p.slow_span && !(pi > 0 && slow_joins(l, pi - 1)) {
+            b.extend_from_slice(b"; Slow Down Start\n");
+        }
         // The feed rate the printer holds is the last F written on any move (G0 and G1 share it), as
         // Orca's cooling buffer tracks it when it drops a path's `G1 F` that changes nothing.
         if let Some(v) = last_feed(b.get(feed_mark..).unwrap_or(&[])) {
@@ -3134,6 +3119,9 @@ fn emit_layer(
                 e_sum += e;
                 prev = q;
             }
+        }
+        if p.slow_span && !slow_joins(l, pi) {
+            b.extend_from_slice(b"; Slow Down End\n");
         }
         if let Some(slot) = chunk.e_units.get_mut(usize::from(p.tool.max(1) - 1)) {
             *slot += e_sum;
@@ -4939,6 +4927,18 @@ fn add_comments(chunk: &[u8]) -> Vec<u8> {
     out
 }
 
+/// True when path `i` of the layer is a slowed span of a floating vertical shell that the next path goes on with: a
+/// slowed piece of the same filament starting where it ends.
+fn slow_joins(l: &LayerPaths, i: usize) -> bool {
+    let (Some(a), Some(b)) = (l.paths.get(i), l.paths.get(i + 1)) else {
+        return false;
+    };
+    a.slow_span
+        && b.slow_span
+        && a.tool == b.tool
+        && a.end > a.start
+        && l.points.get(a.end as usize - 1) == l.points.get(b.start as usize)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
