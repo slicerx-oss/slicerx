@@ -130,6 +130,13 @@ pub(crate) fn vet_text(
 /// Tolerance for a point on the edge of the bed or a zone, mm.
 pub(crate) const EDGE_TOL_MM: f64 = 0.05;
 
+/// How far a skirt may run past the bed's edge on a Bambu Lab printer, mm, in plate space. Bambu Studio slices a
+/// skirt whose outermost centerline lies up to 2.0 mm past the edge, on every side and every Bambu Lab bed measured
+/// (P1S, A1, A1 mini), and refuses it beyond; 1.9 stays inside that. Only for Bambu Lab printers, whose travel is
+/// known to reach that far: on other machines a nozzle past the bed could hit the frame or an endstop, so their
+/// skirts keep `EDGE_TOL_MM` like every other feature.
+pub(crate) const BAMBU_SKIRT_EDGE_TOL_MM: f64 = 1.9;
+
 fn number(v: &Value) -> Option<f64> {
     match v {
         Value::Number(n) => n.as_f64(),
@@ -344,8 +351,9 @@ fn is_axis_rect(poly: &[[f64; 2]]) -> bool {
         })
 }
 
-/// Bed shape and zones of one settings index: (index, polygon, bounds, is an axis rectangle, zones).
-type BedCache = (u16, Vec<[f64; 2]>, [f64; 4], bool, Vec<Zone>);
+/// Bed shape and zones of one settings index: (index, polygon, bounds, is an axis rectangle, zones, the edge
+/// tolerance of the skirt).
+type BedCache = (u16, Vec<[f64; 2]>, [f64; 4], bool, Vec<Zone>, f64);
 
 struct Zone {
     poly: Vec<[f64; 2]>,
@@ -390,9 +398,14 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     Zone { poly: p, bbox }
                 })
                 .collect();
-            bed_cache.push((l.cfg, poly, bb, rect, zones));
+            let skirt_tol = if crate::firmware::bambu_printer(c, c.gcode_flavor) {
+                BAMBU_SKIRT_EDGE_TOL_MM
+            } else {
+                EDGE_TOL_MM
+            };
+            bed_cache.push((l.cfg, poly, bb, rect, zones, skirt_tol));
         }
-        let Some((_, poly, bb, rect, zones)) = bed_cache.iter().find(|(k, ..)| *k == l.cfg) else {
+        let Some((_, poly, bb, rect, zones, skirt_tol)) = bed_cache.iter().find(|(k, ..)| *k == l.cfg) else {
             continue;
         };
         let c = out.config_at(base, l.cfg);
@@ -405,6 +418,12 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
         }
         for p in &l.paths {
             let pts = l.path_points(p);
+            // The bed's edge tolerance for this path: wider for a skirt on a Bambu Lab printer.
+            let tol = if p.feature == Feature::Skirt {
+                *skirt_tol
+            } else {
+                EDGE_TOL_MM
+            };
             for (i, pt) in pts.iter().enumerate() {
                 let (x, y) = (f64::from(pt.x) / SCALE, f64::from(pt.y) / SCALE);
                 // The move from the point before: on a bed or zone that is not convex, or a zone the move runs
@@ -413,16 +432,13 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     .checked_sub(1)
                     .and_then(|k| pts.get(k))
                     .map_or([x, y], |q| [f64::from(q.x) / SCALE, f64::from(q.y) / SCALE]);
-                let in_bbox = x >= bb[0] - EDGE_TOL_MM
-                    && x <= bb[2] + EDGE_TOL_MM
-                    && y >= bb[1] - EDGE_TOL_MM
-                    && y <= bb[3] + EDGE_TOL_MM;
-                let off = if !in_bbox || (!*rect && !near_or_inside(poly, x, y, EDGE_TOL_MM)) {
+                let in_bbox = x >= bb[0] - tol && x <= bb[2] + tol && y >= bb[1] - tol && y <= bb[3] + tol;
+                let off = if !in_bbox || (!*rect && !near_or_inside(poly, x, y, tol)) {
                     Some([x, y])
                 } else if *rect {
                     None
                 } else {
-                    segment_reaches(poly, from, [x, y], false, EDGE_TOL_MM)
+                    segment_reaches(poly, from, [x, y], false, tol)
                 };
                 if let Some(q) = off {
                     let owner = object_of(out, p);
@@ -1125,6 +1141,48 @@ mod tests {
                 ..LayerPaths::default()
             }],
             ..SliceOutput::default()
+        }
+    }
+
+    /// `output_with`, its one path printing `feature`.
+    fn output_as(points: &[(f64, f64)], feature: Feature) -> SliceOutput {
+        let mut out = output_with(points, 0.2);
+        out.layers[0].paths[0].feature = feature;
+        out
+    }
+
+    #[test]
+    fn a_bambu_lab_skirt_may_run_past_the_bed_edge_and_nothing_else_may() {
+        let bed = json!(["0x0", "256x0", "256x256", "0x256"]);
+        let bambu = cfg(json!({ "printable_area": bed, "printer_model": "Bambu Lab P1S" }));
+        let other = cfg(json!({ "printable_area": bed, "printer_model": "Voron 2.4 250" }));
+        let codes = |out: &SliceOutput, c: &PrintConfig| -> Vec<&str> {
+            check_toolpaths(out, c).iter().map(|i| i.code).collect()
+        };
+        // A skirt line along each edge, 1.8 mm past it, then 2.1 mm past it.
+        for past in [1.8, 2.1] {
+            for side in [
+                [(10.0, 256.0 + past), (246.0, 256.0 + past)],
+                [(10.0, -past), (246.0, -past)],
+                [(-past, 10.0), (-past, 246.0)],
+                [(256.0 + past, 10.0), (256.0 + past, 246.0)],
+            ] {
+                let skirt = output_as(&side, Feature::Skirt);
+                let want: &[&str] = if past < 1.9 { &[] } else { &["outside_bed"] };
+                assert_eq!(codes(&skirt, &bambu), want, "{side:?}");
+                // Other printers keep the bed's own edge for the skirt too.
+                assert_eq!(codes(&skirt, &other), ["outside_bed"], "{side:?}");
+            }
+        }
+        // Every other feature keeps the 0.05 mm tolerance on a Bambu Lab printer as well.
+        for feature in [
+            Feature::OuterWall,
+            Feature::Brim,
+            Feature::PrimeTower,
+            Feature::Support,
+        ] {
+            let out = output_as(&[(10.0, 256.2), (246.0, 256.2)], feature);
+            assert_eq!(codes(&out, &bambu), ["outside_bed"], "{feature:?}");
         }
     }
 
