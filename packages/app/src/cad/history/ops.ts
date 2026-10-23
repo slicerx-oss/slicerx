@@ -20,6 +20,7 @@ import { exactSolids, noteFallBack } from './exact-flag'
 import { brandAccent, editionHasCad } from '../../edition'
 import { opensDesign } from '../../workspaces/design/shelf-tools'
 import { historyPart } from '@slicerx/cad-history/mesh-part'
+import { toolError } from '../op-preview'
 
 type Loader = { loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle> }
 
@@ -276,6 +277,35 @@ export async function saveEdit(host: Loader, params: StepParams): Promise<{ stat
   // A body that was hidden while its step was open comes back for the replay.
   if (!get().plate.some((e) => e.id === ed.entry.id)) quietly(() => set((s) => ({ plate: [...s.plate, ed.entry] })))
   return applyHistory(host, ed.entry.id, { ...h, steps })
+}
+
+/**
+ * What a saved edit says, for the step's tool to toast. A step that comes back done changed and the steps after it ran.
+ * One that comes back broken is saved as typed, as any change to the history is, and says it is still broken and why
+ * in the tools' plain words (the step list shows the same reason), the why in the first sentence, which the toast
+ * shows before its Details; one behind a broken step says which step stops it.
+ */
+export function editedWords(index: number, status: readonly StepStatus[]): { message: string; warn: boolean } {
+  const n = index + 1
+  const st = status[index]
+  if (st?.state === 'broken') {
+    const why = toolError(st.message ?? 'This step failed.')
+    // "The cut ..." reads on after the colon as "the cut ..."; a name such as "M8" keeps its capital
+    const after = /^[A-Z](?![A-Z0-9])/.test(why) ? why.charAt(0).toLowerCase() + why.slice(1) : why
+    return { message: `Step ${n} is still broken: ${after} The change is saved.`, warn: true }
+  }
+  if (st?.state === 'skipped') {
+    const first = status.findIndex((s) => s.state === 'broken')
+    return { message: `Step ${n} does not run while ${first >= 0 ? `step ${first + 1}` : 'a step'} before it is broken. The change is saved.`, warn: true }
+  }
+  return { message: `Changed step ${n} and ran the steps after it.`, warn: false }
+}
+
+/** Saves the open step (saveEdit) and says how it went (editedWords). */
+export async function saveStep(host: Loader, params: StepParams): Promise<{ message: string; warn: boolean }> {
+  const index = editing()?.index ?? 0
+  const r = await saveEdit(host, params)
+  return editedWords(index, r.status)
 }
 
 export function setSuppressed(host: Loader, objectId: string, index: number, suppressed: boolean): Promise<{ status: StepStatus[] }> {

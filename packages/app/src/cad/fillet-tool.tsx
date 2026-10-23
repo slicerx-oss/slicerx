@@ -20,7 +20,7 @@ import { cameraBus } from '../plate/tools'
 import { get, set, toast, useApp, type PlateEntry, type SubPick } from '../state/store'
 import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, sameEdge, type Kind } from './edges'
 import { followed } from '@slicerx/cad-history'
-import { editing, nowOf, saveEdit } from './history/ops'
+import { editing, nowOf, saveStep } from './history/ops'
 import { bindNext } from './history/record'
 import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, type Now } from './park'
@@ -251,8 +251,8 @@ export function FilletTool() {
       const params = edgeParams(kind, picked.edges, s1, kind === 'chamfer' ? s2 : null)
       bindNext(size)
       if (edit) {
-        await saveEdit(host.slicer, params)
-        toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')
+        const said = await saveStep(host.slicer, params)
+        toast(said.message, said.warn ? 'warn' : 'ok')
         set({ objectTool: null })
         return
       }

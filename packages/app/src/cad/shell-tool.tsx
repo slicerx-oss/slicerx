@@ -14,7 +14,7 @@ import { get, set, toast } from '../state/store'
 import { loopsOf } from './cad-ops'
 import { applyShell, shellReason } from './holes'
 import { keyOfTriangle } from '@slicerx/cad-history'
-import { editing, nowOf, saveEdit } from './history/ops'
+import { editing, nowOf, saveStep } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, Message, num, Num, pickWords, PointerHint, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
@@ -95,8 +95,8 @@ export function ShellTool() {
       const params = { op: 'shell' as const, open: target.faces.map(({ at, normal, key }) => ({ at, normal, ...(key ? { key } : {}) })), wallMm }
       bindNext(wall)
       if (edit) {
-        await saveEdit(host.slicer, params)
-        toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')
+        const said = await saveStep(host.slicer, params)
+        toast(said.message, said.warn ? 'warn' : 'ok')
         set({ objectTool: null })
         return
       }
