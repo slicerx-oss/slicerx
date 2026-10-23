@@ -40,14 +40,15 @@ export function checkReadable(policy: PathPolicy, path: string): string {
   return real
 }
 
-export function checkModelExtension(path: string): void {
+/** Refuses a file whose extension is not in `extensions` (the model types, unless a caller takes others). */
+export function checkModelExtension(path: string, extensions: readonly string[] = MODEL_EXTENSIONS): void {
   const ext = extname(path).toLowerCase()
-  if (!(MODEL_EXTENSIONS as readonly string[]).includes(ext)) {
-    throw new ToolInputError(`Unsupported model type "${ext || 'none'}". Use ${MODEL_EXTENSIONS.join(', ')}.`, 'unsupported_format')
+  if (!extensions.includes(ext)) {
+    throw new ToolInputError(`Unsupported model type "${ext || 'none'}". Use ${extensions.join(', ')}.`, 'unsupported_format')
   }
 }
 
-async function download(policy: PathPolicy, url: URL): Promise<string> {
+async function download(policy: PathPolicy, url: URL, extensions: readonly string[]): Promise<string> {
   if (!policy.allowUrls) throw new ToolInputError('This server was started with --no-urls. Pass a local file path instead.', 'urls_disabled')
   const doFetch = policy.fetch ?? fetch
   const res = await doFetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) })
@@ -69,7 +70,7 @@ async function download(policy: PathPolicy, url: URL): Promise<string> {
   }
   const bytes = Buffer.concat(chunks)
   const name = basename(decodeURIComponent(url.pathname)) || 'model.stl'
-  checkModelExtension(name)
+  checkModelExtension(name, extensions)
   const dir = join(policy.outDir, 'downloads', createHash('sha256').update(bytes).digest('hex').slice(0, 16))
   mkdirSync(dir, { recursive: true })
   const file = join(dir, name.replace(/[^\w.\- ]+/g, '_'))
@@ -116,13 +117,16 @@ function sampleModel(policy: PathPolicy, name: string): string {
   return file
 }
 
-/** Returns a readable local path for a model given as a path, an http(s) URL, or `sample:<name>`. */
-export async function resolveModel(policy: PathPolicy, model: string): Promise<string> {
+/**
+ * Returns a readable local path for a model given as a path, an http(s) URL, or `sample:<name>`. `extensions` are the
+ * types the caller takes, the model types unless given (the open in app tool also hands STEP files to the app).
+ */
+export async function resolveModel(policy: PathPolicy, model: string, extensions: readonly string[] = MODEL_EXTENSIONS): Promise<string> {
   if (model.startsWith('sample:')) return sampleModel(policy, model.slice('sample:'.length))
   let url: URL | undefined
   if (/^https?:\/\//i.test(model)) url = new URL(model)
   else if (/^[a-z][a-z0-9+.-]*:\/\//i.test(model)) throw new ToolInputError('Only http and https URLs are supported for models.', 'unsupported_format')
-  const file = url ? await download(policy, url) : checkReadable(policy, model)
-  checkModelExtension(file)
+  const file = url ? await download(policy, url, extensions) : checkReadable(policy, model)
+  checkModelExtension(file, extensions)
   return file
 }
