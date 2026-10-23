@@ -109,6 +109,18 @@ describe('arrange with what prints around each object', () => {
     expect(hullHitsRect(hullOf(corners), zone[0]!)).toBe(false)
   })
 
+  it('keeps the skirt round a supported part on the bed', () => {
+    // A P1S with normal support and one skirt loop 2 mm out. Sliced, a 30 mm cap on a 10 mm stem printed its support
+    // 4.45 mm past the cap on the first layer, and the skirt round it ended 6.68 mm past the cap (from the G-code).
+    const cfg: Record<string, SettingValue> = { nozzle_diameter: [0.4], line_width: '0.42', support_line_width: '0.42', initial_layer_line_width: '0.5', enable_support: true, support_type: 'normal(auto)', brim_type: 'no_brim', skirt_loops: 1, skirt_distance: 2 }
+    const bed = { widthMm: 256, depthMm: 256, heightMm: 250 }
+    const items = Array.from({ length: 30 }, (_, i) => item(`m${i}`, 30, 30, 13))
+    const r = arrange(items, [], bed, { gapMm: 3, rotate: false, margins: marginsFor(cfg) })
+    const placed = items.filter((it) => r.transforms[it.id])
+    expect(placed.length).toBeGreaterThan(8)
+    for (const it of placed) expect(inside(printed(it, r.transforms[it.id]!, 6.68), bed), JSON.stringify(printed(it, r.transforms[it.id]!, 0))).toBe(true)
+  })
+
   it('keeps off the prime tower when the plate prints in two filaments', () => {
     const bed = { widthMm: 160, depthMm: 160, heightMm: 100 }
     const cfg = { ...BRIM, enable_prime_tower: true, wipe_tower_x: 10, wipe_tower_y: 10, prime_tower_width: 35, prime_tower_brim_width: 3 }
@@ -184,8 +196,10 @@ describe('what the footprint includes', () => {
 
   it('adds the raft expansion, the support pad, and the size compensation', () => {
     expect(grow({ ...none, raft_layers: 3, raft_expansion: 1.5, raft_first_layer_expansion: 3 })).toBe(3)
-    expect(reach({ ...none, enable_support: true, support_type: 'normal(auto)', raft_first_layer_expansion: 2, support_object_xy_distance: 0.35 })).toBeCloseTo(2.35)
-    expect(reach({ ...none, enable_support: true, support_type: 'tree(auto)', raft_first_layer_expansion: 2, support_object_xy_distance: 0.35, tree_support_brim_width: 3 })).toBeCloseTo(5.35)
+    // Normal support fills whole cells of its grid (2.5 mm plus a line spacing) and prints half a spacing past them; a
+    // tree has its brim, half a branch and a line. The first layer grows 2 mm round either.
+    expect(reach({ ...none, enable_support: true, support_type: 'normal(auto)', raft_first_layer_expansion: 2, support_object_xy_distance: 0.35 })).toBeCloseTo(5.076, 3)
+    expect(reach({ ...none, enable_support: true, support_type: 'tree(auto)', raft_first_layer_expansion: 2, support_object_xy_distance: 0.35, tree_support_brim_width: 3 })).toBeCloseTo(7.92)
     // Support does not push neighbors apart, since only the bed edge and the excluded areas block a slice.
     expect(grow({ ...none, enable_support: true })).toBe(0)
     expect(grow({ ...none, xy_contour_compensation: 0.3 })).toBeCloseTo(0.3)
@@ -267,6 +281,8 @@ describe('the plate in the store', () => {
 
   it('flags an object whose brim reaches an excluded area', () => {
     setAvoidAreas(excludeBoxes([[0, 0], [30, 0], [30, 30], [0, 30]]))
+    // The brim and the skirt alone: the profile's tree support counts more room than they do.
+    set({ overrides: { brim_type: 'outer_only', brim_width: 6, skirt_loops: 1, skirt_distance: 3, enable_support: false } })
     expect(objectWarnings(entry('z', 30, 30, 55, 55), get()).map((w) => w.text)).toEqual([])
     expect(objectWarnings(entry('z', 30, 30, 50, 40), get()).map((w) => w.text)).toEqual(['Brim or skirt reaches past the bed edge'])
   })

@@ -8,6 +8,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 - `slicerx_slice_file` of a 3MF whose objects set their own layer height (object metadata in `Metadata/model_settings.config`) turns off the smart layer heights the default process profile turns on, so each such object slices at its own layer height, and says so in `warnings`. Smart layers asked for in `overrides` stay on, and the engine's warning names the layer heights they replace.
 
+### Fixed
+
+- `slicerx_arrange` leaves room for the first layer of support: grid support (the default for normal support) fills whole cells of its grid past the overhang and its first layer grows 2 mm round that, so the room past a supported part on a 0.4 mm nozzle is about 5.1 mm, not 2.35. A skirt round a supported part at the bed edge no longer runs off the bed.
+
 ## [0.2.0] - 2026-10-22
 
 ### Breaking
