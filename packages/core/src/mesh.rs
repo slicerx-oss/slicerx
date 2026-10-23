@@ -81,6 +81,10 @@ pub struct Mesh {
     /// Settings by height a project file gives this object (`Metadata/layer_config_ranges.xml`), heights above the
     /// bed, mm: the slice applies them to this object, under the caller's own ranges. Their `objects` is empty.
     pub height_ranges: Vec<crate::HeightRange>,
+    /// Layer heights by height a project file gives this object (`layer_height` in its
+    /// `Metadata/layer_config_ranges.xml` ranges), heights above the bed, mm, in file order: when every printed object
+    /// of the plate has the same, they plan the plate's layers ([`crate::range_layer_tops`]).
+    pub layer_heights: Vec<crate::RangeLayerHeight>,
 }
 
 /// A part of a model that shapes the print without printing: see [`crate::plate::VolumeRole`].
@@ -333,6 +337,12 @@ impl Mesh {
             h.write(&r.z_from_mm.to_le_bytes());
             h.write(&r.z_to_mm.to_le_bytes());
             h.write(r.settings.to_string().as_bytes());
+        }
+        for r in &self.layer_heights {
+            h.write(b"layer height range");
+            h.write(&r.z_from_mm.to_le_bytes());
+            h.write(&r.z_to_mm.to_le_bytes());
+            h.write(&r.height_mm.to_le_bytes());
         }
         h.finish()
     }

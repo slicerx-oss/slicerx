@@ -245,6 +245,7 @@ use std::ops::Range;
 pub use config::{GcodeFlavor, InfillPattern, PrintConfig};
 pub use error::{Error, Result};
 pub use gcode::{EmitOptions, GcodeStats, emit_gcode, emit_gcode_with};
+pub use layers::{RangeLayerHeight, range_layer_tops};
 pub use mesh::{Mesh, MeshPart, MeshVolume};
 pub use output::{Feature, LayerPaths, PathInfo, SliceOutput, SliceWarning, Stage, StageMicros, WarningCode};
 pub use plate::{Bed, Plate, PlateObject};

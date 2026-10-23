@@ -1029,7 +1029,28 @@ impl SliceSession {
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
     ) -> Result<Self> {
-        par::slice(|| Self::build(plate, config, tops, ranges))
+        use crate::layers::RangeTops;
+        // Without tops of the caller's (a request's own, or sleipnir's when its config turns `smart_layer` on), a
+        // project's layer height ranges (`Mesh::layer_heights`) plan the layers, as the app plans them before it
+        // sends its request.
+        let by_range = if tops.is_none() {
+            crate::layers::plate_range_tops(plate, config.initial_layer_print_height, config.layer_height)
+        } else {
+            RangeTops::None
+        };
+        let tops = match &by_range {
+            RangeTops::Tops(t) => Some(t.as_slice()),
+            _ => tops,
+        };
+        let mut session = par::slice(|| Self::build(plate, config, tops, ranges))?;
+        if by_range == RangeTops::Differ {
+            session.push_warning(SliceWarning {
+                code: WarningCode::UnsupportedSetting,
+                message: crate::layers::LAYER_HEIGHTS_DIFFER.to_owned(),
+                layer: None,
+            });
+        }
+        Ok(session)
     }
 
     /// [`Self::with_options`]: the filament map first (on a printer with two extruders fed by their own
