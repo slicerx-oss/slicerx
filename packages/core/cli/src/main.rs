@@ -57,11 +57,9 @@ use std::time::Instant;
 use sx_core::validate::validate_gcode;
 use sx_core::{Mesh, Plate, PrintConfig, SliceOptions, SliceOutput, SliceSession, preview};
 
-/// jemalloc on every target it builds for: it gives the pages a slice frees back to the system, with the decay set at
-/// build time (`JEMALLOC_SYS_WITH_MALLOC_CONF` in .cargo/config.toml).
-#[cfg(all(not(target_env = "msvc"), not(target_arch = "wasm32")))]
-#[global_allocator]
-static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+// jemalloc on every target it builds for, with its page decay per operating system: it gives the pages a slice frees
+// back to the system.
+use sx_alloc as _;
 
 type Res<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 

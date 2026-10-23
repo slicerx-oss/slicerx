@@ -5537,6 +5537,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sx-alloc"
+version = "0.2.0"
+dependencies = [
+ "tikv-jemallocator",
+]
+
+[[package]]
 name = "sx-boostvoronoi"
 version = "0.12.1"
 dependencies = [
@@ -5566,8 +5573,8 @@ dependencies = [
  "rayon",
  "serde_json",
  "sha2 0.11.0",
+ "sx-alloc",
  "sx-core",
- "tikv-jemallocator",
 ]
 
 [[package]]
@@ -5583,12 +5590,12 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "sx-alloc",
  "sx-core",
  "sx-edition-config",
  "sx-upload-scan",
  "sx3mf",
  "thiserror 2.0.21",
- "tikv-jemallocator",
  "tokio",
  "tower",
  "zip",
