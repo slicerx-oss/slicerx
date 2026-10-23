@@ -7,8 +7,9 @@
 //!
 //! The solid area of a layer is the union of the top surfaces of the layers above (within the top
 //! shell) and the bottom surfaces of the layers below (within the bottom shell), the infill area the
-//! usual coverage rule already makes solid, cleaned up: pieces thinner than a line are dropped, and
-//! gaps narrower than 1.2 lines are closed, since neither can be filled as sparse or solid infill.
+//! usual coverage rule already makes solid, cleaned up: bands thinner than 0.79 solid line spacings are
+//! dropped, and gaps narrower than 1.2 lines are closed, since neither can be filled as sparse or solid
+//! infill.
 
 use crate::config::PrintConfig;
 use crate::geom::mm;
@@ -23,8 +24,9 @@ type Steps = Vec<Option<Shapes>>;
 /// The walls of a layer's whole outline and its infill area.
 pub(crate) type Walls = (Vec<perimeters::IslandWalls>, Shapes);
 type WalkKey = ((i64, i64, i64), u64);
-/// Layer, top and bottom shell layers, then the bits of the solid spacing, wall offset and opening.
-type AroundKey = (i64, i64, i64, u64, u64, u64);
+/// Layer, top and bottom shell layers, then the bits of the solid spacing, wall offset and opening, and whether
+/// only the surfaces count.
+type AroundKey = (i64, i64, i64, u64, u64, u64, bool);
 
 #[derive(Default)]
 pub(crate) struct Cache {
@@ -181,16 +183,19 @@ pub(crate) struct Input<'a> {
     /// Surfaces are opened by this, mm: slivers thinner than twice it are not surfaces (a tenth of
     /// the outer wall width).
     pub(crate) opening: f64,
+    /// Only the neighbors' surfaces turn solid, not the band a leaning wall leaves (`partial`).
+    pub(crate) surfaces_only: bool,
 }
 
 /// What the shell rule reads from the layers around one layer. It does not depend on the region, so a
 /// layer with several regions (filaments, modifiers) works it out once.
 pub(crate) struct Around {
-    /// The neighbors' surfaces within the shell layers, grown a little and merged.
-    shell: Shapes,
     /// This layer's infill outline less what the neighbors' infill outlines leave open, before it is cut
     /// to a region: the coverage rule's solid area. None where a neighbor is past the plate's end.
     classic: Option<Shapes>,
+    /// `shell` and `classic` together, less the bands too thin to keep, before the cut to a region: a band's
+    /// width is the neighbors' doing, not the walls'.
+    kept: Shapes,
     /// The outline the layers below and above share, read only for small pieces.
     object: std::sync::OnceLock<Shapes>,
 }
@@ -277,12 +282,24 @@ fn around(i: &Input<'_>) -> Around {
         (Some(h), Some(m)) => Some(perimeters::difference(m, h)),
         _ => None,
     };
+    // A band thinner than 0.79 solid line spacings goes: a line in it would hang mostly over the sparse infill or
+    // the wall.
+    let kept = match &classic {
+        Some(_) if i.surfaces_only => opened(&shell, 0.5 * BAND_MIN * i.spacing),
+        Some(c) => opened(&perimeters::union_all(&[&shell, c]), 0.5 * BAND_MIN * i.spacing),
+        None => Vec::new(),
+    };
     Around {
-        shell,
         classic,
+        kept,
         object: std::sync::OnceLock::new(),
     }
 }
+
+/// The narrowest solid band the shell rule keeps, in solid infill line spacings.
+const BAND_MIN: f64 = 0.79;
+/// How far a kept band grows into the sparse area, in 1.05 solid line spacings.
+const BAND_GROW: f64 = 0.15;
 
 /// The infill area that must be solid beyond what the coverage rule already makes solid, and that
 /// rule's own area, cleaned up together. Empty when the region needs nothing.
@@ -299,27 +316,25 @@ pub(crate) fn solid_area(i: &Input<'_>) -> Shapes {
                 i.spacing.to_bits(),
                 i.wall_offset.to_bits(),
                 i.opening.to_bits(),
+                i.surfaces_only,
             );
             c.around(key, || around(i))
         }
         None => std::sync::Arc::new(around(i)),
     };
-    let under_shell = perimeters::intersection(&around.shell, i.inner);
-    let classic = match &around.classic {
-        Some(d) => perimeters::intersection(d, i.inner),
+    let total = match &around.classic {
+        Some(_) => perimeters::intersection(&around.kept, i.inner),
         None => i.inner.clone(),
     };
-    let total = perimeters::union_all(&[&under_shell, &classic]);
     if total.is_empty() {
         return total;
     }
     let s = 1.05 * i.spacing;
-    let open = mm(0.5 * 0.65 * s);
+    // Gaps narrower than 1.2 lines close, and each band reaches a little further into the sparse area, so its
+    // lines overlap the sparse infill's ends.
     let close = mm(0.5 * 1.2 * s);
-    let overlap = mm(0.2 * s);
-    let opened = perimeters::offset(&total, -open);
-    let closed = perimeters::offset(&opened, open + close);
-    let regular = perimeters::offset(&closed, -(close - overlap));
+    let closed = perimeters::offset(&total, close);
+    let regular = perimeters::offset(&closed, -(close - mm(BAND_GROW * s)));
     // Small drops on smooth parts of the model are dropped, unless they fill a whole internal piece.
     let object = || {
         around.object.once(|| {
@@ -469,17 +484,25 @@ pub(crate) enum Mode {
     Moderate,
 }
 
-/// The mode the profile asks for; `None` for `ensure_all` and when the setting is absent.
+/// The mode the profile asks for; `None` for `ensure_all`, `enabled`, `partial` and when the setting is absent.
 pub(crate) fn mode_of(cfg: &PrintConfig) -> Option<Mode> {
     match cfg.raw.get("ensure_vertical_shell_thickness") {
         Some(serde_json::Value::String(s)) => match s.as_str() {
             "none" => Some(Mode::None),
-            "ensure_critical_only" => Some(Mode::CriticalOnly),
+            // The printer maker's `disabled` keeps the shells under and over flat surfaces but no band along a
+            // leaning wall; its `enabled` (and `partial`, see `surfaces_only`) is the full rule.
+            "ensure_critical_only" | "disabled" => Some(Mode::CriticalOnly),
             "ensure_moderate" => Some(Mode::Moderate),
             _ => None,
         },
         _ => None,
     }
+}
+
+/// `ensure_vertical_shell_thickness` `partial`: the solid under and over the neighbors' surfaces only, without the
+/// band a leaning wall leaves between them.
+pub(crate) fn surfaces_only(cfg: &PrintConfig) -> bool {
+    matches!(cfg.raw.get("ensure_vertical_shell_thickness"), Some(serde_json::Value::String(s)) if s == "partial")
 }
 
 /// Everything the horizontal shell rule reads about one layer.

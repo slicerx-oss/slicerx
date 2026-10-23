@@ -188,6 +188,7 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
                 spacing: sp_solid,
                 wall_offset: f64::midpoint(w_ext, sp_ext) + f64::from(i.wall_loops.saturating_sub(1)) * sp_in,
                 opening,
+                surfaces_only: crate::shells::surfaces_only(cfg),
             }),
             Some(mode) => crate::shells::horizontal_area(&crate::shells::HInput {
                 cache: i.cache,
@@ -275,12 +276,18 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
     let top = expand(&top, &mut shell, &mut sparse);
     let top = sub(&top, &bottom);
 
-    // Sparse pockets smaller than `minimum_sparse_infill_area` are printed solid.
+    // Sparse pockets smaller than `minimum_sparse_infill_area` are printed solid. A pocket is measured out to the
+    // middle of the innermost wall's spacing, the area that wall and the infill share, not the infill area alone.
     if cfg.sparse_infill_density > 0.0 && !sparse.is_empty() {
         let min_area = crate::motion::raw_f(cfg, "minimum_sparse_infill_area").unwrap_or(15.0);
-        let (small, big): (Shapes, Shapes) = sparse
-            .into_iter()
-            .partition(|s| crate::shells::area_mm2(std::slice::from_ref(s)) <= min_area);
+        let reach = if i.wall_loops > 0 { 0.5 * sp_in } else { 0.0 };
+        let (small, big): (Shapes, Shapes) = sparse.into_iter().partition(|s| {
+            let one = std::slice::from_ref(s);
+            // Growing only adds area, so a piece already bigger than the minimum stays sparse.
+            crate::shells::area_mm2(one) <= min_area
+                && (reach <= 0.0
+                    || crate::shells::area_mm2(&perimeters::offset(&one.to_vec(), mm(reach))) <= min_area)
+        });
         shell = union(&shell, &small);
         sparse = big;
     }

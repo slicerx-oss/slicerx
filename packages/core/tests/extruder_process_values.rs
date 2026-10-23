@@ -292,7 +292,9 @@ fn solid_infill_prints_at_its_extruders_speed() {
 
 #[test]
 fn bridges_accelerate_as_their_extruder_says() {
-    check("Bridge", (50.0, 1000), (50.0, 10000), (50.0, 8000), (50.0, 8000));
+    // Bambu Lab G-code also names the slab's internal bridge over the legs' sparse infill a bridge; its default speed
+    // is 150% of the bridge speed.
+    check("Bridge", (75.0, 1000), (75.0, 10000), (75.0, 8000), (75.0, 8000));
 }
 
 #[test]

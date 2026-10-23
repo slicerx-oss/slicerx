@@ -1755,7 +1755,8 @@ impl PrintConfig {
     }
 
     /// Top and bottom shell layers on a layer `height` mm thick: the layer
-    /// counts, or as many layers as the minimum shell thickness needs.
+    /// counts, or as many layers as the minimum shell thickness needs. A count
+    /// of 0 stays 0: no shell, whatever the thickness.
     pub fn shell_layers(&self, height: f64) -> (u32, u32) {
         let need = |mm: f64, layers: u32| {
             let n = if height > 0.0 {
@@ -1768,7 +1769,11 @@ impl PrintConfig {
                 clippy::cast_sign_loss,
                 reason = "a few layers"
             )]
-            layers.max(n.min(100.0) as u32)
+            if layers == 0 {
+                0
+            } else {
+                layers.max(n.min(100.0) as u32)
+            }
         };
         (
             need(self.top_shell_thickness, self.top_shell_layers),
