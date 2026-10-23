@@ -340,6 +340,24 @@ async function defaultPanes(page: Page): Promise<void> {
   await viewSized(page)
 }
 
+/**
+ * Waits until no pane slides and the canvas buffer is exactly its box at the screen's pixel ratio. The viewport sizes
+ * the buffer 100 ms after its box last changed (longer on a busy runner), and viewSized passes on a shape within 2%,
+ * so a small change of the box can still have its write to come. With the buffer at its box that write has nothing
+ * to do (the viewport skips a size it already has), so any write after this is one the next step made.
+ */
+async function bufferAtBox(page: Page): Promise<void> {
+  await panesSettled(page)
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const c = document.querySelector<HTMLCanvasElement>('canvas.vp-canvas')
+        return !!c && c.clientWidth > 0 && c.width === Math.floor(c.clientWidth * devicePixelRatio) && c.height === Math.floor(c.clientHeight * devicePixelRatio)
+      }),
+    )
+    .toBe(true)
+}
+
 test.describe('resizable panes', () => {
   test('resizing a pane does not reset the old canvas buffer first', async ({ page }) => {
     // Watches every write of the canvas width from here on: the page is already up, so no init script.
@@ -362,10 +380,13 @@ test.describe('resizable panes', () => {
     await defaultPanes(page)
     try {
       await sidebarEdge(page).focus()
+      // A resize still due from the steps before would land in the count below.
+      await bufferAtBox(page)
       await page.evaluate(() => { (window as unknown as { bufferWrites: unknown[] }).bufferWrites = [] })
       await page.keyboard.press('End')
       await expect.poll(() => paneWidth(page)).toBeGreaterThanOrEqual(540)
-      await viewSized(page)
+      // The count is read once the new buffer is in, not on a shape that is only close to the new box.
+      await bufferAtBox(page)
       const writes = await page.evaluate(() => (window as unknown as { bufferWrites: { previous: number; next: number }[] }).bufferWrites)
       expect(writes).toHaveLength(1)
       // Reassigning the current width clears the buffer and can block on software graphics.
