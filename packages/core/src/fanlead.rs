@@ -14,6 +14,10 @@
 //! - It never crosses another part fan command of the layer (it lands right after it), a tool change (right after
 //!   the change), or the start of the layer. Clamped at the start, it goes before the layer's own fan line, and that
 //!   line takes the raised value, so the fan does not dip during the layer change.
+//! - It never steps back into a prime tower pass either: the tower's moves, and the travel from the tower to the
+//!   part, run at the fan they had. The raise lands right after them, before the first part move that follows, even
+//!   when that is less than the lead ahead. Otherwise the whole tower pass, often several times the lead, would run
+//!   with the part's raised fan.
 //!
 //! Drops, fan off, the layer's own fan, the fan after a tool change, custom G-code fans and the ironing raise never
 //! move, and no fan command is added or removed. With no lead on any filament nothing here runs, so the G-code is
@@ -64,6 +68,8 @@ enum Kind {
     Move { time: f64, run: bool },
     /// A part fan command the walk stops at, or a tool change.
     Stop,
+    /// A move of a prime tower pass, or of the travel from it to the part: the walk stops right after it.
+    Tower,
     /// The layer's own fan line (`;@N`): the walk passes it.
     LayerFan,
     /// A raise still to place, with its lead in seconds.
@@ -199,6 +205,10 @@ fn classify(lines: &[&[u8]], flavor: GcodeFlavor) -> Vec<Kind> {
         relative_e: true,
         e: 0.0,
     };
+    // Inside a prime tower pass: from its feature line to the next feature line, so the travel and priming from the
+    // tower to the part count with the tower.
+    let tower_label = crate::output::Feature::PrimeTower.gcode_label().as_bytes();
+    let mut in_tower = false;
     lines
         .iter()
         .map(|&line| {
@@ -212,6 +222,9 @@ fn classify(lines: &[&[u8]], flavor: GcodeFlavor) -> Vec<Kind> {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(0.0);
                 return Kind::Raise(ms / 1000.0);
+            }
+            if let Some(label) = line.strip_prefix(b";TYPE:".as_slice()) {
+                in_tower = label == tower_label;
             }
             let layer_fan = line.ends_with(crate::firmware::FAN_MARK);
             let code = text.split(';').next().unwrap_or("").trim();
@@ -236,6 +249,7 @@ fn classify(lines: &[&[u8]], flavor: GcodeFlavor) -> Vec<Kind> {
                 return if layer_fan { Kind::LayerFan } else { Kind::Stop };
             }
             match move_time(code, &mut s) {
+                Some(_) if in_tower => Kind::Tower,
                 Some((time, run)) => Kind::Move { time, run },
                 None => Kind::Other,
             }
@@ -249,8 +263,14 @@ fn landing(kinds: &[Kind], at: usize, lead: f64) -> (usize, bool) {
     // The extruding run being walked: where it starts and its time so far.
     let mut run: Option<(usize, f64)> = None;
     let mut passed_layer_fan = false;
+    // Whether the walk has passed a move: a raise with none between it and a tower pass stays where it is.
+    let mut moved = false;
     for (i, kind) in kinds.get(..at).unwrap_or_default().iter().enumerate().rev() {
+        if matches!(kind, Kind::Move { .. }) {
+            moved = true;
+        }
         match *kind {
+            Kind::Tower if !moved => return (at, false),
             Kind::Move { time, run: true } => run = Some((i, run.map_or(0.0, |r| r.1) + time)),
             Kind::Move { time, run: false } => {
                 if let Some((start, t)) = run.take() {
@@ -264,7 +284,7 @@ fn landing(kinds: &[Kind], at: usize, lead: f64) -> (usize, bool) {
                     return (i, passed_layer_fan);
                 }
             }
-            Kind::Stop | Kind::Raise(_) => {
+            Kind::Stop | Kind::Raise(_) | Kind::Tower => {
                 if let Some((start, t)) = run.take()
                     && spent + t >= lead
                 {
@@ -557,6 +577,86 @@ mod tests {
         assert_eq!(first_at(&out, 255.0), "G1 X130 Y100");
         assert!(out.contains("T1\nM106 S255\nG1 X130 Y100"), "{out}");
         assert!(!out.contains(";@W"));
+    }
+
+    /// A layer that prints filament 2, changes to filament 1, primes it on the tower (2.4 s of tower lines), travels
+    /// back to the part and prints `part` (each line a 10 mm wall at 100 mm/s, 0.1 s) before the raise's feature.
+    fn tower_layer(part: &[&str], feature: &str, lead_ms: u32) -> String {
+        let mut g: Vec<String> = [
+            "M106 S173 ;@N",
+            ";LAYER_CHANGE",
+            "G1 X100 Y100 F6000",
+            ";TYPE:Sparse infill",
+            "G1 X120 Y100 E1",
+            "T1",
+            ";@W",
+            ";TYPE:Prime tower",
+            "G1 X200 Y200 F18000",
+            "G1 X230 Y200 E1 F3000",
+            "G1 X230 Y230 E1",
+            "G1 X200 Y230 E1",
+            "G1 X200 Y200 E1",
+            "G1 E-.8 F1800",
+            "G1 X120 Y110 F18000",
+            "G1 E.8 F1800",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        g.extend(part.iter().map(|&l| l.to_owned()));
+        g.extend([
+            format!(";TYPE:{feature}"),
+            raise(lead_ms),
+            "G1 X140 Y120 E1".into(),
+            String::new(),
+        ]);
+        g.join("\n")
+    }
+
+    #[test]
+    fn a_raise_with_a_short_part_run_after_the_tower_lands_after_the_tower_and_its_travel() {
+        // 0.3 s of inner wall between the tower and an internal bridge, with a 2 s lead: the raise goes back over the
+        // inner wall and stops there, before the first part line after the travel and priming from the tower. It
+        // never goes before the tower pass, which would run the whole tower at the bridge's fan.
+        let inner = [
+            ";TYPE:Inner wall",
+            "G1 F6000",
+            "G1 X130 Y110 E.5",
+            "G1 X130 Y120 E.5",
+            "G1 X120 Y120 E.5",
+        ];
+        for ms in [500, 2000, 5000] {
+            let out = run(&tower_layer(&inner, "Internal Bridge", ms));
+            assert_eq!(first_at(&out, 255.0), "G1 X130 Y110 E.5", "lead {ms} ms:\n{out}");
+            assert!(
+                out.contains("G1 E.8 F1800\nM106 S255\n;TYPE:Inner wall"),
+                "lead {ms} ms:\n{out}"
+            );
+            assert!(
+                fans(&out)
+                    .iter()
+                    .filter(|(m, _)| m.starts_with("G1 X2") || m.starts_with("G1 X120 Y110"))
+                    .all(|(_, f)| (*f - 173.0).abs() < 1e-9),
+                "the tower and its travel keep the layer's fan:\n{out}"
+            );
+        }
+        // A lead the inner wall covers lands inside it as before.
+        let out = run(&tower_layer(&inner, "Internal Bridge", 100));
+        assert_eq!(first_at(&out, 255.0), "G1 X130 Y110 E.5", "{out}");
+        assert!(out.contains("G1 F6000\nM106 S255\nG1 X130 Y110 E.5"), "{out}");
+    }
+
+    #[test]
+    fn a_raise_right_after_the_tower_gets_no_lead() {
+        // The overhang wall is the first part feature after the tower: the raise stays at its wall.
+        for ms in [500, 2000, 5000] {
+            let g = tower_layer(&[], "Overhang wall", ms);
+            let out = run(&g);
+            assert_eq!(first_at(&out, 255.0), "G1 X140 Y120 E1", "lead {ms} ms:\n{out}");
+            assert_eq!(out, g.replace(&format!(" ;@R{ms}"), "").replace(";@W\n", ""));
+        }
+        // The same without a tool change (a tower pass that only keeps the tower growing): still no lead.
+        let g = tower_layer(&[], "Overhang wall", 2000).replace("T1\n;@W\n", "");
+        assert_eq!(first_at(&run(&g), 255.0), "G1 X140 Y120 E1");
     }
 
     #[test]
