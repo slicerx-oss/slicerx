@@ -12,8 +12,12 @@
 set -uo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 heavy=$here/heavy.sh
+# The tests set every heavy.sh setting they use themselves, so none comes from the caller: a label or session in the
+# holders' records changes the waiting messages the tests match, and a lock, slot count, history or CI class from the
+# caller would change what they test. RUNNER_ENVIRONMENT=self-hosted (a CI runner) would make every waiter a CI one.
+for v in $(compgen -e); do case $v in SX_HEAVY_*) unset "$v" ;; esac; done
+unset SX_CI_HOME RUNNER_ENVIRONMENT
 export SX_HEAVY_POLL=1
-unset SX_HEAVY_WAIT SX_CI_HOME
 
 linpath() { case $1 in [A-Za-z]:*) wslpath -u "$1" ;; *) printf %s "$1" ;; esac; }
 start_of() { sed 's/.*) //' "/proc/$1/stat" | cut -d' ' -f20; }
