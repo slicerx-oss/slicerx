@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A slice whose sx process ends without an exit code: the time limit stopped it, or another signal did.
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -37,10 +37,10 @@ function alive(pid: number): boolean {
   }
 }
 
-/** A fake engine: Node.js running `body` first, which records its pid. It sleeps without spinning the CPU. */
+/** A fake engine: Node.js running `body` first, which records its pid (written whole, then renamed into place, so a reader never sees half of it). It sleeps without spinning the CPU. */
 function fake(body: string): string {
   const file = join(dir, 'fake-sx.cjs')
-  writeFileSync(file, `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nconst sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);\n${body}\n`)
+  writeFileSync(file, `const fs = require('node:fs'); fs.writeFileSync(${JSON.stringify(`${pidFile}.tmp`)}, String(process.pid)); fs.renameSync(${JSON.stringify(`${pidFile}.tmp`)}, ${JSON.stringify(pidFile)});\nconst sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);\n${body}\n`)
   return file
 }
 
@@ -63,6 +63,19 @@ function sliceWith(file: string, timeoutMs: number): Promise<unknown> {
   return createSxSlicer(process.execPath, timeoutMs).slice(job)
 }
 
+/** The fake engine records its pid a moment after it starts, so wait for the file instead of reading it once. */
+async function readPid(waitMs = 5_000): Promise<number> {
+  const deadline = Date.now() + waitMs
+  for (;;) {
+    if (existsSync(pidFile)) {
+      const pid = Number(readFileSync(pidFile, 'utf8'))
+      if (Number.isInteger(pid) && pid > 0) return pid
+    }
+    if (Date.now() >= deadline) throw new Error(`the fake engine did not write its pid to ${pidFile} within ${waitMs} ms`)
+    await new Promise((r) => setTimeout(r, 25))
+  }
+}
+
 async function waitDead(pid: number): Promise<boolean> {
   for (let i = 0; i < 50 && alive(pid); i++) await new Promise((r) => setTimeout(r, 100))
   return !alive(pid)
@@ -76,17 +89,19 @@ describe('an sx run that ends without an exit code', () => {
       message: 'sx stopped after the 1.5 s time limit without finishing',
       details: { limitMs: 1_500 },
     })
-    expect(await waitDead(Number(readFileSync(pidFile, 'utf8')))).toBe(true)
+    expect(await waitDead(await readPid())).toBe(true)
   })
 
   it('names the signal when something else stops it', async () => {
     const sleeper = fake('sleep(60_000)')
     for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
-      const ran = await runSx(process.execPath, [sleeper], 30_000, undefined, (child) => child.on('spawn', () => setTimeout(() => child.kill(signal), 200)))
+      if (existsSync(pidFile)) unlinkSync(pidFile)
+      // Signal it only once it has recorded its pid, so the test can check that exact process died.
+      const ran = await runSx(process.execPath, [sleeper], 30_000, undefined, (child) => child.on('spawn', () => void readPid().then(() => child.kill(signal))))
       expect(ran).toMatchObject({ code: null, signal, timedOut: false })
       const e = sxStopped(ran, 30_000)
       expect(e).toMatchObject({ code: 'slice_failed', message: `sx was stopped (${signal}) before it finished`, details: { signal } })
-      expect(await waitDead(Number(readFileSync(pidFile, 'utf8')))).toBe(true)
+      expect(await waitDead(await readPid())).toBe(true)
     }
   })
 
