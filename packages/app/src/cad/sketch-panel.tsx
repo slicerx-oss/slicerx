@@ -34,7 +34,7 @@ import { cameraBus } from '../plate/tools'
 import { useShownOrigin } from '../state/model-mode'
 import { get, set, toast, useApp } from '../state/store'
 import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revolveParams, wholeMesh, type ExtrudeInput, type RevolveInput } from './cad-ops'
-import { editing, nowOf, saveEdit } from './history/ops'
+import { editing, nowOf, saveStep } from './history/ops'
 import { bindNext, sketchNext } from './history/record'
 import { defaultTarget, finishSketch, provideDraw, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
@@ -1527,10 +1527,7 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   const loops = toLoops(sketch)
   const loopsKey = useMemo(() => toLoops(sketch), [sketch])
   // A sketch step opened from the history saves into its place; the steps after it run again.
-  const saveSketch = async (params: Parameters<typeof saveEdit>[1]) => {
-    await saveEdit(host.slicer, params)
-    return { message: `Changed step ${(init?.index ?? 0) + 1} and ran the steps after it.`, warn: false }
-  }
+  const saveSketch = (params: Parameters<typeof saveStep>[1]) => saveStep(host.slicer, params)
   // a step of a body opened from its history saves into its place; a finished sketch makes a new step on it
   const stepEdit = init !== undefined && !init.from
   // What the drawing is as a profile, and why Extrude or Revolve can't run yet; the footer shows the reason under it.

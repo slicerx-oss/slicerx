@@ -18,7 +18,7 @@ import { edgeLines } from './edges'
 import { holeSpecFor, THREADS, type Head, type Purpose, type Thread } from './hole-sizes'
 import { customHoleProblem } from '@slicerx/cad-history'
 import { applyHole } from './holes'
-import { editing, saveEdit } from './history/ops'
+import { editing, saveStep } from './history/ops'
 import { bindNext } from './history/record'
 import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
@@ -99,8 +99,8 @@ export function HoleTool() {
       const params = { op: 'hole.apply' as const, hole: picked.hole, spec: sized.spec, label: sized.label }
       bindNext(purpose === 'custom' ? custom : undefined)
       if (edit) {
-        await saveEdit(host.slicer, params)
-        toast(`Changed step ${edit.index + 1} and ran the steps after it.`, 'ok')
+        const said = await saveStep(host.slicer, params)
+        toast(said.message, said.warn ? 'warn' : 'ok')
         set({ objectTool: null })
         return
       }
