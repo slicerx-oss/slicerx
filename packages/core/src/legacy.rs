@@ -88,6 +88,11 @@ fn rules() -> &'static Rules {
     })
 }
 
+/// True for one of the per-feature filament settings by our name, which the engine reads from the settings as given.
+pub(crate) fn is_filament_key(key: &str) -> bool {
+    FILAMENT_KEYS.contains(&key)
+}
+
 /// Our names for an older filament key, empty for any other key.
 pub(crate) fn targets(key: &str) -> &'static [String] {
     rules().targets.get(key).map_or(&[], Vec::as_slice)

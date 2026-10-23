@@ -2141,6 +2141,16 @@ pub fn is_used_key(key: &str) -> bool {
     META_KEYS.contains(&key) || named(key) || built_key(key, &named) || renamed()
 }
 
+/// True when an object's or a part's own setting `key` (from a project or a request) changes how it prints: a key the
+/// engine reads ([`READ_KEYS`], [`FUZZY_KEYS`]), a per-feature filament, or an older name the engine reads as those
+/// (`crate::legacy`). False keys are named in a note.
+pub(crate) fn is_object_key(key: &str) -> bool {
+    let read =
+        |k: &str| READ_KEYS.contains(&k) || FUZZY_KEYS.contains(&k) || crate::legacy::is_filament_key(k);
+    let targets = crate::legacy::targets(key);
+    read(key) || (!targets.is_empty() && targets.iter().all(|t| read(t)))
+}
+
 /// A key the code builds from a template (see `build.rs`): `filament_retraction_speed` from `filament_{key}` with
 /// a key it names, `cool_plate_temp_initial_layer` from `{key}_initial_layer`, `machine_max_speed_x` from
 /// `machine_max_speed_{axis}` with a short part.
