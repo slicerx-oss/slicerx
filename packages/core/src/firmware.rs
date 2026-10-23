@@ -173,6 +173,15 @@ pub fn bambu_printer(cfg: &PrintConfig, flavor: GcodeFlavor) -> bool {
             .is_some_and(|m| m.starts_with("Bambu Lab"))
 }
 
+/// An Elegoo Neptune 4, 4 Pro, 4 Plus or 4 Max: its `printer_model`, as the Elegoo profiles name it.
+pub fn elegoo_neptune_4(cfg: &PrintConfig) -> bool {
+    cfg.raw
+        .get("printer_model")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|m| m.strip_prefix("Elegoo Neptune 4"))
+        .is_some_and(|rest| matches!(rest, "" | " Pro" | " Plus" | " Max"))
+}
+
 /// Object labels for one output: `OctoPrint` style comments (`gcode_label_objects`)
 /// and firmware commands (`exclude_object`): `EXCLUDE_OBJECT_*` on Klipper and
 /// `M486` on Marlin flavors. Bambu Lab printers always get theirs (`M624`), as Orca writes them.

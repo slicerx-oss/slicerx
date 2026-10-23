@@ -72,15 +72,17 @@ pub(crate) fn end_offset(c: &PrintConfig, flavor: GcodeFlavor, l: &crate::output
 }
 
 /// Whether the writer moves this printer's G-code by its nozzle offset: the Ultimaker S series (each print core
-/// by its own) and Bambu Lab printers, whose P1 and X1 profiles carry `0x2` and whose output Bambu Studio writes
-/// 2 mm short of the plate. Other printers' offsets are not applied: their reference output is not measured.
+/// by its own), Bambu Lab printers, whose P1 and X1 profiles carry `0x2` and whose output Bambu Studio writes
+/// 2 mm short of the plate, and the Elegoo Neptune 4 family, whose profiles carry `-1x-2` (4), `-2.5x-3.5`
+/// (4 Pro), `-2x-0` (4 Plus) and `-1.5x2` (4 Max) and whose output `OrcaSlicer` writes at the plate position
+/// less that offset. Other printers' offsets are not applied: their reference output is not measured.
 pub(crate) fn applies_offset(c: &PrintConfig, flavor: GcodeFlavor) -> bool {
-    flavor.is_ultimaker() || crate::firmware::bambu_printer(c, flavor)
+    flavor.is_ultimaker() || crate::firmware::bambu_printer(c, flavor) || crate::firmware::elegoo_neptune_4(c)
 }
 
 /// The tool whose nozzle offset the writer subtracts from the points of path `tool` on a layer that starts with
 /// `layer_slot` (0: none): on the Ultimaker S series each print core switch sets its own, on a Bambu Lab printer
-/// the layer's holds, and other printers write no offset.
+/// or an Elegoo Neptune 4 the layer's holds, and other printers write no offset.
 pub(crate) fn path_slot(c: &PrintConfig, flavor: GcodeFlavor, layer_slot: u8, tool: u8) -> u8 {
     if flavor.is_ultimaker() {
         tool.max(1)
@@ -612,6 +614,33 @@ mod tests {
             shifted(Point::from_mm(10.0, 10.0), offset(&c, 0)),
             Point::from_mm(10.0, 10.0)
         );
+    }
+
+    #[test]
+    fn the_offset_applies_on_bambu_lab_and_the_elegoo_neptune_4_family_only() {
+        let model = |m: &str| cfg(&serde_json::json!({ "printer_model": m, "gcode_flavor": "klipper" }));
+        for m in [
+            "Elegoo Neptune 4",
+            "Elegoo Neptune 4 Pro",
+            "Elegoo Neptune 4 Plus",
+            "Elegoo Neptune 4 Max",
+            "Bambu Lab P1S",
+        ] {
+            assert!(applies_offset(&model(m), GcodeFlavor::Klipper), "{m}");
+        }
+        for m in [
+            "Elegoo Centauri Carbon",
+            "Elegoo Neptune 3 Pro",
+            "Elegoo Neptune 4 Pro Custom",
+            "Voron 2.4 250",
+            "",
+        ] {
+            assert!(!applies_offset(&model(m), GcodeFlavor::Klipper), "{m}");
+        }
+        assert!(!applies_offset(
+            &cfg(&serde_json::json!({})),
+            GcodeFlavor::Klipper
+        ));
     }
 
     #[test]
