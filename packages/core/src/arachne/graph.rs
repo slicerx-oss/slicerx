@@ -105,8 +105,17 @@ pub(crate) struct Edge {
     pub(crate) prev: Option<usize>,
     pub(crate) kind: EdgeKind,
     pub(crate) central: Option<bool>,
-    pub(crate) transitions: Option<Vec<TransitionMid>>,
-    pub(crate) transition_ends: Option<Vec<TransitionEnd>>,
+    /// Few edges carry transitions, so their lists are boxed: an edge takes 32 bytes less without them.
+    #[allow(
+        clippy::box_collection,
+        reason = "a list behind a box keeps the edges that have none small"
+    )]
+    pub(crate) transitions: Option<Box<Vec<TransitionMid>>>,
+    #[allow(
+        clippy::box_collection,
+        reason = "a list behind a box keeps the edges that have none small"
+    )]
+    pub(crate) transition_ends: Option<Box<Vec<TransitionEnd>>>,
     pub(crate) junctions: Option<Vec<Junction>>,
     pub(crate) alive: bool,
 }
@@ -126,12 +135,36 @@ pub(crate) struct Graph {
 static SPARE: std::sync::Mutex<Vec<Graph>> = std::sync::Mutex::new(Vec::new());
 
 impl Graph {
-    /// An empty graph on the buffers of one that was recycled. A large island's graph takes tens of
-    /// megabytes in a few large blocks; freed, the system allocator keeps such blocks mapped and reuses
-    /// them poorly, so a slice that built a new graph for every layer of a large island held hundreds of
-    /// megabytes of freed blocks at its peak. Only the capacity of the buffers carries over, never content.
-    pub(crate) fn reused() -> Self {
-        SPARE.lock().ok().and_then(|mut s| s.pop()).unwrap_or_default()
+    /// An empty graph on the buffers of one that was recycled, with room for about `edges` edges and `nodes`
+    /// nodes. A large island's graph takes tens of megabytes in a few large blocks; freed, the system
+    /// allocator keeps such blocks mapped and reuses them poorly, so a slice that built a new graph for every
+    /// layer of a large island held hundreds of megabytes of freed blocks at its peak. Only the capacity of the
+    /// buffers carries over, never content.
+    ///
+    /// The spare that fits best is taken: the smallest with room for `edges`, else the largest, grown to it.
+    /// Taking any spare let every spare grow to the largest island it ever held, so a small island held a
+    /// large island's buffers; and room made for the whole graph at once spares the doubling of a list that
+    /// grows an edge at a time (a graph of 18,000 edges sat in room for 32,768).
+    pub(crate) fn reused(edges: usize, nodes: usize) -> Self {
+        let mut g = SPARE
+            .lock()
+            .ok()
+            .and_then(|mut s| {
+                let fits = s
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, g)| g.edges.capacity() >= edges)
+                    .min_by_key(|(_, g)| g.edges.capacity())
+                    .or_else(|| s.iter().enumerate().max_by_key(|(_, g)| g.edges.capacity()))
+                    .map(|(i, _)| i)?;
+                Some(s.swap_remove(fits))
+            })
+            .unwrap_or_default();
+        g.edges.reserve_exact(edges);
+        g.edge_order.reserve_exact(edges);
+        g.nodes.reserve_exact(nodes);
+        g.node_order.reserve_exact(nodes);
+        g
     }
 
     /// Empties the graph and keeps its buffers for a later [`Graph::reused`].
