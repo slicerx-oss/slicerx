@@ -41,6 +41,12 @@ export const RANGE_KEYS: readonly string[] = [
   'bottom_surface_filament_id',
 ]
 
+/**
+ * What the height range tool takes: the range keys, and layer_height, which the engine plans the plate's layers from
+ * (as the app sends a project's range layer heights) instead of changing it per layer.
+ */
+const RANGE_TOOL_KEYS: readonly string[] = [...RANGE_KEYS, 'layer_height']
+
 const objectArg = z.string().min(1).describe('Object id (obj-1) or name, from slicerx_project_show')
 const settingValue = z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])
 const settingsArg = z.record(z.string(), settingValue)
@@ -211,7 +217,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
 
   const heightRanges = tool({
     name: 'project.height_ranges',
-    description: `Set the project's settings by height (replaces the list; an empty list clears it): each range has z_from_mm and z_to_mm above the bed, the settings, and optionally the objects it is for (every object when left out). A range can change ${RANGE_KEYS.join(', ')}. Objects printed layer by layer share the nozzle, so temperature, pressure advance and retraction then apply to the whole layer.`,
+    description: `Set the project's settings by height (replaces the list; an empty list clears it): each range has z_from_mm and z_to_mm above the bed, the settings, and optionally the objects it is for (every object when left out). A range can change ${RANGE_KEYS.join(', ')}, and layer_height: the layers between its heights print at that height when every object has the same ranges and nothing else plans the layers (smart layers off, no layer tops). Objects printed layer by layer share the nozzle, so temperature, pressure advance and retraction then apply to the whole layer.`,
     input: z.object({
       ranges: z
         .array(z.object({ z_from_mm: z.number().min(0), z_to_mm: z.number().positive(), settings: settingsArg, objects: z.array(objectArg).optional() }))
@@ -222,7 +228,7 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
       for (const r of i.ranges) {
         if (!(r.z_to_mm > r.z_from_mm)) throw new ToolInputError(`A range must end above where it starts (${r.z_from_mm} to ${r.z_to_mm} mm).`)
         if (Object.keys(r.settings).length === 0) throw new ToolInputError('Each range needs at least one setting.')
-        checkSettings(deps, r.settings, RANGE_KEYS)
+        checkSettings(deps, r.settings, RANGE_TOOL_KEYS)
       }
       project.setHeightRanges(i.ranges.map((r) => ({ zFromMm: r.z_from_mm, zToMm: r.z_to_mm, settings: r.settings as Record<string, SettingValue>, ...(r.objects ? { objects: r.objects } : {}) })))
       return done(i.ranges.length ? `${i.ranges.length} height ranges` : 'No height ranges', project)
