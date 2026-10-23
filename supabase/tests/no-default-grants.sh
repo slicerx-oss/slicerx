@@ -28,7 +28,8 @@ alter default privileges for role postgres in schema public revoke all on sequen
 alter default privileges for role postgres in schema public revoke all on functions from anon, authenticated, service_role;
 SQL
 cd "$work"
-$cli start -x studio,imgproxy,logflare,vector,edge-runtime,supavisor,realtime,mailpit >/dev/null
+. "$here/tests/stack-start.sh"
+sx_stack_start "$cli" -x studio,imgproxy,logflare,vector,edge-runtime,supavisor,realtime,mailpit >/dev/null
 status=0
 $cli db reset >/dev/null && $cli test db || status=$?
 $cli stop --no-backup >/dev/null || true
