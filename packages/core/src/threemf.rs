@@ -97,9 +97,35 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
 /// a build without it (the WebAssembly engine) reads it with [`load_plate_objects_legacy`].
 pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
     #[cfg(feature = "import")]
-    return from_geom(bytes, name);
+    return from_geom(bytes, name, Plates::All);
     #[cfg(not(feature = "import"))]
     return load_plate_objects_legacy(bytes, name);
+}
+
+/// The build items of plate `plate` as [`load_plate_objects`] gives them (`None`: the first plate), `None` when the file
+/// has no such plate. Only that plate's meshes are made: placing and decoding the paint of the others' was most of the
+/// work of opening one plate of a large project.
+pub(crate) fn load_plate_items(
+    bytes: &[u8],
+    name: &str,
+    plate: Option<u32>,
+) -> Result<Option<(u32, Vec<Mesh>)>> {
+    #[cfg(feature = "import")]
+    let plates = from_geom(bytes, name, Plates::One(plate))?;
+    #[cfg(not(feature = "import"))]
+    let plates = load_plate_objects_legacy(bytes, name)?;
+    Ok(match plate {
+        Some(n) => plates.into_iter().find(|(p, _)| *p == n),
+        None => plates.into_iter().next(),
+    })
+}
+
+/// Which plates [`from_geom`] makes the meshes of: every one, or one plate (`None`: the first).
+#[cfg(feature = "import")]
+#[derive(Clone, Copy)]
+enum Plates {
+    All,
+    One(Option<u32>),
 }
 
 /// The engine's own 3MF reader, kept until the one in `sx-geom` has replaced it everywhere: the format corpus
@@ -239,7 +265,7 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
 /// printed part, each part placed on the plate with its paint decoded, the volumes that do not print, the part and
 /// object settings, and the notes the legacy reader gives, worded the same.
 #[cfg(feature = "import")]
-fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
+fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<Vec<(u32, Vec<Mesh>)>> {
     use sx_geom::format::{Layout, PartKind};
     let project = sx_geom::format::read_3mf(bytes).map_err(|e| match e {
         sx_geom::Error::Invalid { why, .. } => Error::mesh(name, why),
@@ -287,8 +313,22 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
         .map(|x| parse_layer_ranges(x.as_bytes()))
         .unwrap_or_default();
     let numbers = object_numbers(project.objects.iter().map(|o| o.id));
+    // One plate: the first is the lowest that has a printed part, as the plates made below are ordered.
+    let only = match which {
+        Plates::All => None,
+        Plates::One(want) => {
+            let first = project
+                .objects
+                .iter()
+                .filter(|o| o.printable && o.parts.iter().any(|p| matches!(p.kind, PartKind::Normal)))
+                .map(|o| o.plate.unwrap_or(1))
+                .min()
+                .ok_or_else(|| Error::mesh(name, "the 3MF file has no printable objects"))?;
+            Some(want.unwrap_or(first))
+        }
+    };
     for (item_no, o) in project.objects.into_iter().enumerate() {
-        if !o.printable {
+        if !o.printable || only.is_some_and(|n| o.plate.unwrap_or(1) != n) {
             continue;
         }
         let brim_points = ears_of(&ears, item_no, &o.transform, scale);
@@ -441,7 +481,8 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
             layer_heights,
         });
     }
-    if plates.is_empty() {
+    // a plate asked for that has nothing printed is no plate; a file with nothing printed was refused above
+    if plates.is_empty() && only.is_none() {
         return Err(Error::mesh(name, "the 3MF file has no printable objects"));
     }
     Ok(plates.into_iter().collect())
@@ -2353,6 +2394,38 @@ mod tests {
         // One build item per mesh keeps its volumes too.
         let items = load_plate_objects(&bytes, "two.3mf").unwrap();
         assert_eq!(items[1].1[0].volumes.len(), 1);
+        // One plate asked for: its meshes alone, the same as the whole file gives them; the first when none is named,
+        // and none for a plate the file does not have.
+        for (n, meshes) in &items {
+            let (got_n, got) = load_plate_items(&bytes, "two.3mf", Some(*n)).unwrap().unwrap();
+            assert_eq!((got_n, format!("{got:?}")), (*n, format!("{meshes:?}")));
+        }
+        assert_eq!(
+            load_plate_items(&bytes, "two.3mf", None)
+                .unwrap()
+                .map(|(n, m)| (n, format!("{m:?}"))),
+            Some((1, format!("{:?}", items[0].1)))
+        );
+        assert!(load_plate_items(&bytes, "two.3mf", Some(3)).unwrap().is_none());
+        // A plate 1 with no printed part (its object only cuts): plate 2 is the first, as it is in the whole file.
+        let cutting = settings.replace(
+            r#"<object id="10"><part id="1" subtype="normal_part"/>"#,
+            r#"<object id="10"><part id="1" subtype="negative_part"/>"#,
+        );
+        let bytes = zip(&[
+            ("3D/3dmodel.model", main.as_bytes(), true),
+            ("3D/Objects/object_1.model", sub.as_bytes(), true),
+            ("Metadata/model_settings.config", cutting.as_bytes(), false),
+        ]);
+        let all = load_plate_objects(&bytes, "two.3mf").unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(
+            load_plate_items(&bytes, "two.3mf", None)
+                .unwrap()
+                .map(|(n, m)| (n, format!("{m:?}"))),
+            Some((2, format!("{:?}", all[0].1)))
+        );
+        assert!(load_plate_items(&bytes, "two.3mf", Some(1)).unwrap().is_none());
     }
 
     #[test]

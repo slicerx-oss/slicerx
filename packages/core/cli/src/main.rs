@@ -1221,6 +1221,8 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         skipped,
         preset,
     } = layered_config(args, model, &bytes, &model_file.shared_settings())?;
+    // The meshes, the layer marks and the project settings are read; the file is not needed for the slice.
+    drop(bytes);
     if let Some(code) = settings_notes(args, &report, skipped) {
         return Ok(code);
     }
