@@ -1,0 +1,10196 @@
+{
+ "comment": "Bambu Studio's own values for the settings the engine reads, applied last over OrcaSlicer 2.4.2's resolution of the Bambu Lab presets (filaments/BBL.json and resolved/bambu-lab.json) by packages/settings/scripts/apply-overlay.ts, which gen-resolved.ts also runs. Values are in the profiles' own format. filament: by preset name. machine and process: by printer model, nozzle size and quality tier, with the Bambu Studio preset each comes from. A per-variant list (Standard and High Flow values that differ) is never overlaid.",
+ "source": {
+  "app": "Bambu Studio 02.08.04.61",
+  "profiles": "BBL 02.08.00.09"
+ },
+ "filament": {
+  "Bambu ABS @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS @BBL H2DP": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS @BBL H2S 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS @BBL H2S 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS @BBL P2S": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X1E 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X2D": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS @BBL X2D 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu ABS-GF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ABS-GF @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS-GF @BBL H2DP": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ABS-GF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ABS-GF @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ABS-GF @BBL P2S": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ABS-GF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ABS-GF @BBL X2D": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ABS-GF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL A1 0.4 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL A1 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA @BBL H2D 0.4 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL H2DP 0.4 nozzle": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA @BBL H2S 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA @BBL H2S 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA @BBL P2S 0.2 nozzle": {
+   "eng_plate_temp": [
+    "100"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "hot_plate_temp": [
+    "100"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "100"
+   ],
+   "textured_plate_temp": [
+    "100"
+   ]
+  },
+  "Bambu ASA @BBL P2S 0.4 nozzle": {
+   "eng_plate_temp": [
+    "100"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "hot_plate_temp": [
+    "100"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "100"
+   ],
+   "textured_plate_temp": [
+    "100"
+   ]
+  },
+  "Bambu ASA @BBL P2S 0.6 nozzle": {
+   "eng_plate_temp": [
+    "100"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "hot_plate_temp": [
+    "100"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "100"
+   ],
+   "textured_plate_temp": [
+    "100"
+   ]
+  },
+  "Bambu ASA @BBL P2S 0.8 nozzle": {
+   "eng_plate_temp": [
+    "100"
+   ],
+   "filament_cost": [
+    "26.99"
+   ],
+   "hot_plate_temp": [
+    "100"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "100"
+   ],
+   "textured_plate_temp": [
+    "100"
+   ]
+  },
+  "Bambu ASA @BBL X1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X1 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X1C 0.4 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X1E 0.4 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X2D": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "26.99"
+   ]
+  },
+  "Bambu ASA-Aero @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "46.99"
+   ]
+  },
+  "Bambu ASA-Aero @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "46.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA-Aero @BBL H2DP": {
+   "filament_cost": [
+    "46.99"
+   ]
+  },
+  "Bambu ASA-Aero @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "46.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA-Aero @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "46.99"
+   ]
+  },
+  "Bambu ASA-Aero @BBL P2S": {
+   "filament_cost": [
+    "46.99"
+   ]
+  },
+  "Bambu ASA-Aero @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "46.99"
+   ]
+  },
+  "Bambu ASA-Aero @BBL X2D": {
+   "filament_cost": [
+    "46.99"
+   ]
+  },
+  "Bambu ASA-Aero @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "46.99"
+   ]
+  },
+  "Bambu ASA-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "33.99"
+   ]
+  },
+  "Bambu ASA-CF @BBL A1 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "33.99"
+   ]
+  },
+  "Bambu ASA-CF @BBL H2D 0.4 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "33.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA-CF @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "33.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA-CF @BBL H2DP 0.4 nozzle": {
+   "filament_cost": [
+    "33.99"
+   ]
+  },
+  "Bambu ASA-CF @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "33.99"
+   ]
+  },
+  "Bambu ASA-CF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "33.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu ASA-CF @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "33.99"
+   ],
+   "overhang_fan_speed": [
+    "90"
+   ],
+   "pre_start_fan_time": [
+    "3"
+   ]
+  },
+  "Bambu ASA-CF @BBL P1P 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "33.99"
+   ],
+   "overhang_fan_speed": [
+    "90"
+   ],
+   "pre_start_fan_time": [
+    "3"
+   ]
+  },
+  "Bambu ASA-CF @BBL P2S 0.4 nozzle": {
+   "eng_plate_temp": [
+    "100"
+   ],
+   "filament_cost": [
+    "33.99"
+   ],
+   "hot_plate_temp": [
+    "100"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "100"
+   ],
+   "overhang_fan_speed": [
+    "100"
+   ],
+   "textured_plate_temp": [
+    "100"
+   ]
+  },
+  "Bambu ASA-CF @BBL P2S 0.6 nozzle": {
+   "eng_plate_temp": [
+    "100"
+   ],
+   "filament_cost": [
+    "33.99"
+   ],
+   "hot_plate_temp": [
+    "100"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "100"
+   ],
+   "overhang_fan_speed": [
+    "100"
+   ],
+   "textured_plate_temp": [
+    "100"
+   ]
+  },
+  "Bambu ASA-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "33.99"
+   ],
+   "overhang_fan_speed": [
+    "90"
+   ],
+   "pre_start_fan_time": [
+    "3"
+   ]
+  },
+  "Bambu ASA-CF @BBL X1C 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "33.99"
+   ],
+   "overhang_fan_speed": [
+    "90"
+   ],
+   "pre_start_fan_time": [
+    "3"
+   ]
+  },
+  "Bambu ASA-CF @BBL X2D": {
+   "filament_cost": [
+    "33.99"
+   ]
+  },
+  "Bambu ASA-CF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "33.99"
+   ]
+  },
+  "Bambu PA-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PA-CF @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PA-CF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PA-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PA-CF @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PA6-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "76.99"
+   ]
+  },
+  "Bambu PA6-CF @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "76.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PA6-CF @BBL H2DP": {
+   "filament_cost": [
+    "76.99"
+   ]
+  },
+  "Bambu PA6-CF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "76.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PA6-CF @BBL P2S": {
+   "filament_cost": [
+    "76.99"
+   ]
+  },
+  "Bambu PA6-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "76.99"
+   ]
+  },
+  "Bambu PA6-CF @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "76.99"
+   ]
+  },
+  "Bambu PA6-CF @BBL X2D": {
+   "filament_cost": [
+    "76.99"
+   ]
+  },
+  "Bambu PA6-CF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "76.99"
+   ]
+  },
+  "Bambu PA6-GF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "56.99"
+   ]
+  },
+  "Bambu PA6-GF @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "56.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PA6-GF @BBL H2DP": {
+   "filament_cost": [
+    "56.99"
+   ]
+  },
+  "Bambu PA6-GF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "56.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PA6-GF @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "56.99"
+   ]
+  },
+  "Bambu PA6-GF @BBL P2S": {
+   "filament_cost": [
+    "56.99"
+   ]
+  },
+  "Bambu PA6-GF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "56.99"
+   ]
+  },
+  "Bambu PA6-GF @BBL X2D": {
+   "filament_cost": [
+    "56.99"
+   ]
+  },
+  "Bambu PA6-GF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "56.99"
+   ]
+  },
+  "Bambu PAHT-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "91.99"
+   ]
+  },
+  "Bambu PAHT-CF @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "91.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PAHT-CF @BBL H2DP": {
+   "filament_cost": [
+    "91.99"
+   ]
+  },
+  "Bambu PAHT-CF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "91.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PAHT-CF @BBL P2S": {
+   "filament_cost": [
+    "91.99"
+   ]
+  },
+  "Bambu PAHT-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "91.99"
+   ]
+  },
+  "Bambu PAHT-CF @BBL X2D": {
+   "filament_cost": [
+    "91.99"
+   ]
+  },
+  "Bambu PAHT-CF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "91.99"
+   ]
+  },
+  "Bambu PC @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC @BBL H2D 0.4 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL H2DP 0.4 nozzle": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC @BBL H2S 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC @BBL H2S 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC @BBL P1S": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL P1S 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL P1S 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL P1S 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL P2S 0.4 nozzle": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X1C 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X1E 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X1E 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X2D": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC @BBL X2D 0.8 nozzle": {
+   "filament_cost": [
+    "36.99"
+   ],
+   "filament_density": [
+    "1.185"
+   ]
+  },
+  "Bambu PC FR @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "51.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC FR @BBL H2D 0.4 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "51.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC FR @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "51.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC FR @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "51.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC FR @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL H2DP 0.4 nozzle": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "51.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC FR @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "51.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PC FR @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL P1S": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL P1S 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL P1S 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL P1S 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL P2S 0.4 nozzle": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X1C 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X1E 0.6 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X1E 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X2D": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PC FR @BBL X2D 0.8 nozzle": {
+   "filament_cost": [
+    "51.99"
+   ]
+  },
+  "Bambu PET-CF @BBL A1": {
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "1"
+   ],
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "81.99"
+   ],
+   "overhang_fan_speed": [
+    "75"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "slow_down_layer_time": [
+    "1"
+   ],
+   "slow_down_min_speed": [
+    "35"
+   ]
+  },
+  "Bambu PET-CF @BBL H2D": {
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "1"
+   ],
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "81.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "overhang_fan_speed": [
+    "75"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "slow_down_layer_time": [
+    "1"
+   ]
+  },
+  "Bambu PET-CF @BBL H2DP": {
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "1"
+   ],
+   "filament_cost": [
+    "81.99"
+   ],
+   "overhang_fan_speed": [
+    "75"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "slow_down_layer_time": [
+    "1"
+   ]
+  },
+  "Bambu PET-CF @BBL H2S": {
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "1"
+   ],
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "81.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "overhang_fan_speed": [
+    "75"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "slow_down_layer_time": [
+    "1"
+   ]
+  },
+  "Bambu PET-CF @BBL P2S": {
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "1"
+   ],
+   "filament_cost": [
+    "81.99"
+   ],
+   "overhang_fan_speed": [
+    "75"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "slow_down_layer_time": [
+    "1"
+   ]
+  },
+  "Bambu PET-CF @BBL X1C": {
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "1"
+   ],
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "81.99"
+   ],
+   "overhang_fan_speed": [
+    "75"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "slow_down_layer_time": [
+    "1"
+   ]
+  },
+  "Bambu PET-CF @BBL X1E": {
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "1"
+   ],
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "81.99"
+   ],
+   "overhang_fan_speed": [
+    "75"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "slow_down_layer_time": [
+    "1"
+   ]
+  },
+  "Bambu PET-CF @BBL X2D": {
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "1"
+   ],
+   "filament_cost": [
+    "81.99"
+   ],
+   "overhang_fan_speed": [
+    "75"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "slow_down_layer_time": [
+    "1"
+   ]
+  },
+  "Bambu PET-CF @BBL X2D 0.4 nozzle": {
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "1"
+   ],
+   "filament_cost": [
+    "81.99"
+   ],
+   "overhang_fan_speed": [
+    "75"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "slow_down_layer_time": [
+    "1"
+   ]
+  },
+  "Bambu PETG Basic @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "13.99"
+   ],
+   "overhang_fan_speed": [
+    "50"
+   ]
+  },
+  "Bambu PETG Basic @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "13.99"
+   ]
+  },
+  "Bambu PETG Basic @BBL A1 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "13.99"
+   ]
+  },
+  "Bambu PETG Basic @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "13.99"
+   ]
+  },
+  "Bambu PETG Basic @BBL A1M 0.4 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "13.99"
+   ],
+   "overhang_fan_speed": [
+    "50"
+   ]
+  },
+  "Bambu PETG Basic @BBL A1M 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "13.99"
+   ]
+  },
+  "Bambu PETG Basic @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL H2D 0.4 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "overhang_fan_speed": [
+    "50"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL H2DP 0.4 nozzle": {
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "overhang_fan_speed": [
+    "50"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "overhang_fan_speed": [
+    "50"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL P2S 0.4 nozzle": {
+   "filament_cost": [
+    "13.99"
+   ],
+   "overhang_fan_speed": [
+    "50"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "13.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "13.99"
+   ],
+   "overhang_fan_speed": [
+    "50"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ]
+  },
+  "Bambu PETG Basic @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "13.99"
+   ]
+  },
+  "Bambu PETG Basic @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "13.99"
+   ],
+   "pre_start_fan_time": [
+    "2"
+   ]
+  },
+  "Bambu PETG Basic @BBL X2D": {
+   "filament_cost": [
+    "13.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "13.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Basic @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "13.99"
+   ],
+   "overhang_fan_speed": [
+    "50"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG HF @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG HF @BBL A1 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG HF @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG HF @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG HF @BBL A1M 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG HF @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2D 0.4 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2DP 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2S 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL H2S 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL P2S 0.2 nozzle": {
+   "fan_max_speed": [
+    "60"
+   ],
+   "fan_min_speed": [
+    "30"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL P2S 0.4 nozzle": {
+   "fan_max_speed": [
+    "60"
+   ],
+   "fan_min_speed": [
+    "30"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL P2S 0.6 nozzle": {
+   "fan_max_speed": [
+    "60"
+   ],
+   "fan_min_speed": [
+    "30"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_tower_ironing_area": [
+    "8"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG HF @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG HF @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG HF @BBL X2D": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG HF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "overhang_fan_speed": [
+    "50"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG Translucent @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG Translucent @BBL A1 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG Translucent @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG Translucent @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG Translucent @BBL A1M 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG Translucent @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL H2D 0.4 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL H2DP 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL P2S 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG Translucent @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG Translucent @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PETG Translucent @BBL X2D": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG Translucent @BBL X2D 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL A1 0.4 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PETG-CF @BBL A1 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PETG-CF @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PETG-CF @BBL A1M 0.4 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PETG-CF @BBL H2D 0.4 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "31.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "31.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL H2DP 0.4 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "31.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL P2S 0.4 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PETG-CF @BBL X1C 0.4 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PETG-CF @BBL X2D": {
+   "filament_cost": [
+    "31.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PETG-CF @BBL X2D 0.8 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ],
+   "supertack_plate_temp": [
+    "60"
+   ]
+  },
+  "Bambu PLA Aero @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu PLA Aero @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu PLA Aero @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "41.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PLA Aero @BBL H2DP": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu PLA Aero @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "41.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PLA Aero @BBL P2S": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu PLA Aero @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu PLA Aero @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu PLA Aero @BBL X2D": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu PLA Aero @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu PLA Basic @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Basic @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Basic @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Basic @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2DP": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2S": {
+   "fan_min_speed": [
+    "80"
+   ],
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2S 0.2 nozzle": {
+   "fan_min_speed": [
+    "80"
+   ],
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2S 0.6 nozzle": {
+   "fan_min_speed": [
+    "80"
+   ],
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL H2S 0.8 nozzle": {
+   "fan_min_speed": [
+    "80"
+   ],
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL P2S": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Basic @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Basic @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Basic @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Basic @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Basic @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL H2DP": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL H2DP 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL H2DP 0.8 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL P2S": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL P2S 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL P2S 0.8 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL X2D": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL X2D 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Dynamic @BBL X2D 0.4 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL H2DP": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL P2S": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL X2D": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Galaxy @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL H2DP": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL P2S": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL X1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Glow @BBL X2D": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Glow @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "18.99"
+   ]
+  },
+  "Bambu PLA Lite @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "18.99"
+   ]
+  },
+  "Bambu PLA Lite @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "18.99"
+   ]
+  },
+  "Bambu PLA Lite @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "18.99"
+   ]
+  },
+  "Bambu PLA Lite @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL H2DP 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL H2DP 0.4 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL H2DP 0.6 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL H2DP 0.8 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "18.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "18.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "18.99"
+   ]
+  },
+  "Bambu PLA Lite @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "18.99"
+   ]
+  },
+  "Bambu PLA Lite @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "18.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL P2S 0.4 nozzle": {
+   "filament_cost": [
+    "18.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "18.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "18.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "18.99"
+   ]
+  },
+  "Bambu PLA Lite @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "18.99"
+   ]
+  },
+  "Bambu PLA Lite @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "18.99"
+   ]
+  },
+  "Bambu PLA Lite @BBL X2D": {
+   "filament_cost": [
+    "18.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "18.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Lite @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "18.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Marble @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Marble @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Marble @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Marble @BBL H2DP": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Marble @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Marble @BBL P2S": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Marble @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Marble @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Marble @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Marble @BBL X2D": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Marble @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Matte @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Matte @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Matte @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2DP": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2S 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL H2S 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL P2S": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Matte @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Matte @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Matte @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Matte @BBL X2D": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Matte @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Metal @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Metal @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Metal @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Metal @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL H2DP": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL P2S": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Metal @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Metal @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Metal @BBL X2D": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Metal @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Silk @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL H2D": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL H2D 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL H2DP": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL H2S": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL H2S 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL P2S": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL X2D": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL H2C": {
+   "slow_down_min_speed": [
+    "10"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL H2C 0.4 nozzle": {
+   "slow_down_min_speed": [
+    "10"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL H2C 0.8 nozzle": {
+   "slow_down_min_speed": [
+    "10"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL H2D": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL H2D 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL H2DP": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL H2S": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL H2S 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL P2S": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL X2D": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Silk+ @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL H2DP": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "21.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL P2S": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL X2D": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Sparkle @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Tough @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Tough @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Tough @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Tough @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL H2DP": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL H2DP 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL P2S": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL P2S 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Tough @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Tough @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu PLA Tough @BBL X2D": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL X2D 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough @BBL X2D 0.4 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "20.99"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "20.99"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "20.99"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "20.99"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2DP": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2S 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL H2S 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL P2S": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "20.99"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "20.99"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "20.99"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "20.99"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL X2D": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Tough+ @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "20.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL A1 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL A1M 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL H2D 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL H2D 0.8 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL H2DP": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL H2S 0.2 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "15.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL P1P 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL P2S 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "15.99"
+   ]
+  },
+  "Bambu PLA Translucent @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL X2D 0.6 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Translucent @BBL X2D 0.8 nozzle": {
+   "filament_cost": [
+    "15.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Wood @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Wood @BBL H2D": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL H2D 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL H2DP": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL H2DP 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL H2S": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Wood @BBL P2S": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL P2S 0.8 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Wood @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Wood @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "21.99"
+   ]
+  },
+  "Bambu PLA Wood @BBL X2D": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA Wood @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "21.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL A1 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL A1M 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL H2D 0.4 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "31.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PLA-CF @BBL H2D 0.6 nozzle": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "31.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PLA-CF @BBL H2DP 0.4 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL H2DP 0.6 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "31.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PLA-CF @BBL P2S 0.4 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL X1C 0.8 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "31.99"
+   ]
+  },
+  "Bambu PLA-CF @BBL X2D": {
+   "filament_cost": [
+    "31.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PLA-CF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "31.99"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu PPA-CF @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "195.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PPA-CF @BBL H2DP": {
+   "filament_cost": [
+    "195.99"
+   ]
+  },
+  "Bambu PPA-CF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "195.99"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PPA-CF @BBL P2S": {
+   "filament_cost": [
+    "195.99"
+   ]
+  },
+  "Bambu PPA-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "195.99"
+   ]
+  },
+  "Bambu PPA-CF @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "195.99"
+   ]
+  },
+  "Bambu PPA-CF @BBL X2D": {
+   "filament_cost": [
+    "195.99"
+   ]
+  },
+  "Bambu PPA-CF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "195.99"
+   ]
+  },
+  "Bambu PPS-CF @BBL H2D": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "169.32"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PPS-CF @BBL H2DP": {
+   "filament_cost": [
+    "169.32"
+   ]
+  },
+  "Bambu PPS-CF @BBL H2S": {
+   "filament_change_length": [
+    "4"
+   ],
+   "filament_cost": [
+    "169.32"
+   ],
+   "filament_prime_volume": [
+    "30"
+   ]
+  },
+  "Bambu PPS-CF @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "169.32"
+   ]
+  },
+  "Bambu PVA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL H2D": {
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL H2DP": {
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL H2S": {
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL P2S": {
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL X2D": {
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu PVA @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "73.98"
+   ]
+  },
+  "Bambu Support For PA/PET @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support For PA/PET @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support For PLA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "39.98"
+   ]
+  },
+  "Bambu Support For PLA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "39.98"
+   ]
+  },
+  "Bambu Support For PLA @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "39.98"
+   ]
+  },
+  "Bambu Support For PLA @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "39.98"
+   ]
+  },
+  "Bambu Support For PLA @BBL H2D": {
+   "fan_max_speed": [
+    "15"
+   ],
+   "fan_min_speed": [
+    "10"
+   ],
+   "filament_cost": [
+    "39.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA @BBL H2D 0.2 nozzle": {
+   "filament_cost": [
+    "39.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA @BBL H2DP": {
+   "filament_cost": [
+    "39.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "39.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA @BBL H2S": {
+   "filament_cost": [
+    "39.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA @BBL H2S 0.2 nozzle": {
+   "filament_cost": [
+    "39.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA @BBL P2S": {
+   "filament_cost": [
+    "39.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "39.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "39.98"
+   ]
+  },
+  "Bambu Support For PLA @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "39.98"
+   ]
+  },
+  "Bambu Support For PLA @BBL X2D": {
+   "filament_cost": [
+    "39.98"
+   ]
+  },
+  "Bambu Support For PLA @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "39.98"
+   ]
+  },
+  "Bambu Support For PLA @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "39.98"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "63.98"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "63.98"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "63.98"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "63.98"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL H2D": {
+   "fan_max_speed": [
+    "15"
+   ],
+   "fan_min_speed": [
+    "10"
+   ],
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "0"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL H2D 0.2 nozzle": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "0"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL H2DP": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "0"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL H2DP 0.2 nozzle": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "0"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL H2S": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "0"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL H2S 0.2 nozzle": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "0"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "63.98"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "63.98"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL P2S": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "0"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL P2S 0.2 nozzle": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "0"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "63.98"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "63.98"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL X2D": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL X2D 0.2 nozzle": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support For PLA/PETG @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "63.98"
+   ],
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support G @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support G @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support G @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support W @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support W @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support W @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support W @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support W @BBL H2D": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support W @BBL H2D 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support W @BBL H2DP": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support W @BBL H2DP 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support W @BBL H2S": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support W @BBL H2S 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support W @BBL P2S": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support W @BBL P2S 0.2 nozzle": {
+   "supertack_plate_temp": [
+    "40"
+   ]
+  },
+  "Bambu Support W @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support W @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support W @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu Support for ABS @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "23.98"
+   ]
+  },
+  "Bambu Support for ABS @BBL H2D": {
+   "filament_cost": [
+    "23.98"
+   ]
+  },
+  "Bambu Support for ABS @BBL H2DP": {
+   "filament_cost": [
+    "23.98"
+   ]
+  },
+  "Bambu Support for ABS @BBL H2S": {
+   "filament_cost": [
+    "23.98"
+   ]
+  },
+  "Bambu Support for ABS @BBL P2S": {
+   "filament_cost": [
+    "23.98"
+   ]
+  },
+  "Bambu Support for ABS @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "23.98"
+   ]
+  },
+  "Bambu Support for ABS @BBL X2D": {
+   "filament_cost": [
+    "23.98"
+   ]
+  },
+  "Bambu Support for ABS @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "23.98"
+   ]
+  },
+  "Bambu TPU 85A @BBL H2D": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 85A @BBL H2DP": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 85A @BBL H2S": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 85A @BBL H2S 0.6 nozzle": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 85A @BBL H2S 0.8 nozzle": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 85A @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 85A @BBL P2S": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 85A @BBL P2S 0.8 nozzle": {
+   "eng_plate_temp": [
+    "30"
+   ],
+   "filament_cost": [
+    "41.99"
+   ],
+   "filament_prime_volume": [
+    "60"
+   ]
+  },
+  "Bambu TPU 85A @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 85A @BBL X2D": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 85A @BBL X2D 0.8 nozzle": {
+   "filament_cost": [
+    "41.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL H2D": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL H2DP": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL H2S": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL H2S 0.6 nozzle": {
+   "filament_cost": [
+    "38.99"
+   ],
+   "slow_down_for_layer_cooling": [
+    "1"
+   ],
+   "slow_down_min_speed": [
+    "30"
+   ]
+  },
+  "Bambu TPU 90A @BBL H2S 0.8 nozzle": {
+   "filament_cost": [
+    "38.99"
+   ],
+   "slow_down_for_layer_cooling": [
+    "1"
+   ],
+   "slow_down_layer_time": [
+    "18"
+   ],
+   "slow_down_min_speed": [
+    "12"
+   ]
+  },
+  "Bambu TPU 90A @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL P2S": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL P2S 0.6 nozzle": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL P2S 0.8 nozzle": {
+   "additional_cooling_fan_speed": [
+    "70"
+   ],
+   "eng_plate_temp": [
+    "30"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ],
+   "slow_down_layer_time": [
+    "0"
+   ]
+  },
+  "Bambu TPU 90A @BBL X2D": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 90A @BBL X2D 0.8 nozzle": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu TPU 95A @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu TPU 95A @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu TPU 95A @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL H2D": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL H2DP": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL H2S": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL P1S": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL P2S": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL X2D": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU 95A HF @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "38.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL H2D": {
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL H2DP": {
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL H2S": {
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL P2S": {
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL X2D": {
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Bambu TPU for AMS @BBL X2D 0.4 nozzle": {
+   "filament_cost": [
+    "34.99"
+   ]
+  },
+  "Generic ABS": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ABS @0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ABS @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ABS @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ABS @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ABS @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ASA": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ASA @0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ASA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ASA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ASA @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic ASA @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic BVOH @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic BVOH @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic BVOH @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic EVA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic EVA @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic EVA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic HIPS @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic HIPS @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic HIPS @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic HIPS @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic HIPS @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic HIPS @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PA": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PA-CF": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PA-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PA-CF @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PC": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PC @0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PC @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PC @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PC @BBL P1S": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PC @BBL P1S 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PC @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PC @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PCTG @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PCTG @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PCTG @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PE @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PE @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PE @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PE-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PE-CF @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PE-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG @0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG HF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG HF @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG HF @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG HF @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG HF @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG HF @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG HF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG HF @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PETG-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PHA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PHA @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PHA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA @0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA High Speed @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA High Speed @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA High Speed @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA High Speed @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA High Speed @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA High Speed @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA High Speed @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA High Speed @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA Silk": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA Silk @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA Silk @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA-CF": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PLA-CF @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PP @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PP @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PP @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PP-CF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PP-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PP-GF @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PP-GF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PPA-CF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PPA-CF @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PPA-GF @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PPA-GF @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PPS @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PPS-CF @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PVA": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PVA @0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PVA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PVA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PVA @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic PVA @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic TPU": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic TPU @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic TPU @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic TPU for AMS @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic TPU for AMS @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic TPU for AMS @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Generic TPU for AMS @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture Matte PLA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture Matte PLA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture Matte PLA @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture Matte PLA @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture Matte PLA @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture Matte PLA @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture Matte PLA @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture Matte PLA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture Matte PLA @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture PLA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture PLA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture PLA @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture PLA @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture PLA @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture PLA @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture PLA @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture PLA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "Overture PLA @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ABS @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ABS @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ABS @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ABS @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ABS @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ABS @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ABS @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ABS @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ASA @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ASA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ASA @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ASA @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ASA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ASA @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ASA @BBL X1E": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite ASA @BBL X1E 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PETG @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PETG @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PETG @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PETG @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PETG @BBL P1P": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PETG @BBL P1P 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PETG @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PETG @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PLA @BBL A1": {
+   "cool_plate_temp": [
+    "35"
+   ],
+   "cool_plate_temp_initial_layer": [
+    "35"
+   ],
+   "eng_plate_temp": [
+    "0"
+   ],
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "60"
+   ],
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "25.4"
+   ],
+   "filament_density": [
+    "1.24"
+   ],
+   "hot_plate_temp": [
+    "65"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "65"
+   ],
+   "nozzle_temperature_range_high": [
+    "240"
+   ],
+   "overhang_fan_speed": [
+    "100"
+   ],
+   "slow_down_layer_time": [
+    "8"
+   ],
+   "slow_down_min_speed": [
+    "20"
+   ],
+   "temperature_vitrification": [
+    "45"
+   ],
+   "textured_plate_temp": [
+    "65"
+   ]
+  },
+  "PolyLite PLA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PLA @BBL A1M": {
+   "cool_plate_temp": [
+    "35"
+   ],
+   "cool_plate_temp_initial_layer": [
+    "35"
+   ],
+   "eng_plate_temp": [
+    "0"
+   ],
+   "fan_cooling_layer_time": [
+    "80"
+   ],
+   "fan_max_speed": [
+    "80"
+   ],
+   "fan_min_speed": [
+    "60"
+   ],
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "25.4"
+   ],
+   "filament_density": [
+    "1.24"
+   ],
+   "nozzle_temperature_range_high": [
+    "240"
+   ],
+   "overhang_fan_speed": [
+    "100"
+   ],
+   "slow_down_layer_time": [
+    "8"
+   ],
+   "slow_down_min_speed": [
+    "20"
+   ],
+   "temperature_vitrification": [
+    "45"
+   ],
+   "textured_plate_temp": [
+    "65"
+   ]
+  },
+  "PolyLite PLA @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PLA @BBL X1": {
+   "cool_plate_temp": [
+    "35"
+   ],
+   "cool_plate_temp_initial_layer": [
+    "35"
+   ],
+   "eng_plate_temp": [
+    "0"
+   ],
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "25.4"
+   ],
+   "filament_density": [
+    "1.24"
+   ],
+   "hot_plate_temp": [
+    "55"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "55"
+   ],
+   "nozzle_temperature_range_high": [
+    "240"
+   ],
+   "overhang_fan_speed": [
+    "100"
+   ],
+   "slow_down_layer_time": [
+    "8"
+   ],
+   "slow_down_min_speed": [
+    "20"
+   ],
+   "temperature_vitrification": [
+    "45"
+   ],
+   "textured_plate_temp": [
+    "55"
+   ]
+  },
+  "PolyLite PLA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyLite PLA @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyTerra PLA @BBL A1": {
+   "cool_plate_temp": [
+    "35"
+   ],
+   "cool_plate_temp_initial_layer": [
+    "35"
+   ],
+   "eng_plate_temp": [
+    "0"
+   ],
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "25.4"
+   ],
+   "filament_density": [
+    "1.31"
+   ],
+   "hot_plate_temp": [
+    "65"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "65"
+   ],
+   "nozzle_temperature_range_high": [
+    "240"
+   ],
+   "overhang_fan_speed": [
+    "100"
+   ],
+   "slow_down_min_speed": [
+    "20"
+   ],
+   "temperature_vitrification": [
+    "45"
+   ],
+   "textured_plate_temp": [
+    "65"
+   ]
+  },
+  "PolyTerra PLA @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyTerra PLA @BBL A1M": {
+   "cool_plate_temp": [
+    "35"
+   ],
+   "cool_plate_temp_initial_layer": [
+    "35"
+   ],
+   "eng_plate_temp": [
+    "0"
+   ],
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "25.4"
+   ],
+   "filament_density": [
+    "1.31"
+   ],
+   "nozzle_temperature_range_high": [
+    "240"
+   ],
+   "overhang_fan_speed": [
+    "100"
+   ],
+   "slow_down_min_speed": [
+    "20"
+   ],
+   "temperature_vitrification": [
+    "45"
+   ],
+   "textured_plate_temp": [
+    "65"
+   ]
+  },
+  "PolyTerra PLA @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyTerra PLA @BBL X1": {
+   "cool_plate_temp": [
+    "35"
+   ],
+   "cool_plate_temp_initial_layer": [
+    "35"
+   ],
+   "eng_plate_temp": [
+    "0"
+   ],
+   "filament_cooling_before_tower": [
+    "0"
+   ],
+   "filament_cost": [
+    "25.4"
+   ],
+   "filament_density": [
+    "1.31"
+   ],
+   "hot_plate_temp": [
+    "55"
+   ],
+   "hot_plate_temp_initial_layer": [
+    "55"
+   ],
+   "nozzle_temperature_range_high": [
+    "240"
+   ],
+   "overhang_fan_speed": [
+    "100"
+   ],
+   "slow_down_min_speed": [
+    "20"
+   ],
+   "temperature_vitrification": [
+    "45"
+   ],
+   "textured_plate_temp": [
+    "55"
+   ]
+  },
+  "PolyTerra PLA @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "PolyTerra PLA @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "eSUN PLA+ @BBL A1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "eSUN PLA+ @BBL A1 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "eSUN PLA+ @BBL A1M": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "eSUN PLA+ @BBL A1M 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "eSUN PLA+ @BBL X1": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "eSUN PLA+ @BBL X1C": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  },
+  "eSUN PLA+ @BBL X1C 0.2 nozzle": {
+   "filament_cooling_before_tower": [
+    "0"
+   ]
+  }
+ },
+ "machine": {
+  "bambu-a1": {
+   "0.4": {
+    "preset": "Bambu Lab A1 0.4 nozzle",
+    "values": {
+     "machine_max_acceleration_x": [
+      "12000",
+      "12000"
+     ],
+     "machine_max_acceleration_y": [
+      "12000",
+      "12000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL A1",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab A1 0.2 nozzle",
+    "values": {
+     "machine_max_acceleration_x": [
+      "12000",
+      "12000"
+     ],
+     "machine_max_acceleration_y": [
+      "12000",
+      "12000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL A1 0.2 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab A1 0.6 nozzle",
+    "values": {
+     "machine_max_acceleration_x": [
+      "12000",
+      "12000"
+     ],
+     "machine_max_acceleration_y": [
+      "12000",
+      "12000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL A1",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab A1 0.8 nozzle",
+    "values": {
+     "machine_max_acceleration_x": [
+      "12000",
+      "12000"
+     ],
+     "machine_max_acceleration_y": [
+      "12000",
+      "12000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL A1",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-a1-mini": {
+   "0.4": {
+    "preset": "Bambu Lab A1 mini 0.4 nozzle",
+    "values": {
+     "machine_max_acceleration_x": [
+      "20000",
+      "20000"
+     ],
+     "machine_max_acceleration_y": [
+      "20000",
+      "20000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL A1M",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab A1 mini 0.2 nozzle",
+    "values": {
+     "machine_max_acceleration_x": [
+      "20000",
+      "20000"
+     ],
+     "machine_max_acceleration_y": [
+      "20000",
+      "20000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL A1M 0.2 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab A1 mini 0.6 nozzle",
+    "values": {
+     "machine_max_acceleration_x": [
+      "20000",
+      "20000"
+     ],
+     "machine_max_acceleration_y": [
+      "20000",
+      "20000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL A1M",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab A1 mini 0.8 nozzle",
+    "values": {
+     "machine_max_acceleration_x": [
+      "20000",
+      "20000"
+     ],
+     "machine_max_acceleration_y": [
+      "20000",
+      "20000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL A1M",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-h2d": {
+   "0.4": {
+    "preset": "Bambu Lab H2D 0.4 nozzle",
+    "values": {
+     "machine_load_filament_time": "26",
+     "machine_unload_filament_time": "26"
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2D",
+     "values": {
+      "filament_change_length": [
+       "4"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab H2D 0.2 nozzle",
+    "values": {
+     "machine_load_filament_time": "26",
+     "machine_unload_filament_time": "26"
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2D 0.2 nozzle",
+     "values": {
+      "filament_change_length": [
+       "4"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab H2D 0.6 nozzle",
+    "values": {
+     "machine_load_filament_time": "26",
+     "machine_unload_filament_time": "26"
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2D 0.6 nozzle",
+     "values": {
+      "filament_change_length": [
+       "4"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab H2D 0.8 nozzle",
+    "values": {
+     "machine_load_filament_time": "26",
+     "machine_unload_filament_time": "26"
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2D 0.8 nozzle",
+     "values": {
+      "filament_change_length": [
+       "4"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-h2d-pro": {
+   "0.4": {
+    "preset": "Bambu Lab H2D Pro 0.4 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2DP",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab H2D Pro 0.2 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2DP 0.2 nozzle",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab H2D Pro 0.6 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2DP",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab H2D Pro 0.8 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2DP 0.8 nozzle",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-h2s": {
+   "0.4": {
+    "preset": "Bambu Lab H2S 0.4 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2S",
+     "values": {
+      "fan_min_speed": [
+       "80"
+      ],
+      "filament_change_length": [
+       "4"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab H2S 0.2 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2S 0.2 nozzle",
+     "values": {
+      "fan_min_speed": [
+       "80"
+      ],
+      "filament_change_length": [
+       "4"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab H2S 0.6 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2S 0.6 nozzle",
+     "values": {
+      "fan_min_speed": [
+       "80"
+      ],
+      "filament_change_length": [
+       "4"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab H2S 0.8 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL H2S 0.8 nozzle",
+     "values": {
+      "fan_min_speed": [
+       "80"
+      ],
+      "filament_change_length": [
+       "4"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "pre_start_fan_time": [
+       "2"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-p1s": {
+   "0.4": {
+    "preset": "Bambu Lab P1S 0.4 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL P1S 0.4 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab P1S 0.2 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C 0.2 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab P1S 0.6 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab P1S 0.8 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C 0.8 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-p2s": {
+   "0.4": {
+    "preset": "Bambu Lab P2S 0.4 nozzle",
+    "values": {
+     "machine_max_speed_x": [
+      "1000",
+      "1000"
+     ],
+     "machine_max_speed_y": [
+      "1000",
+      "1000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL P2S",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab P2S 0.2 nozzle",
+    "values": {
+     "machine_max_speed_x": [
+      "1000",
+      "1000"
+     ],
+     "machine_max_speed_y": [
+      "1000",
+      "1000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL P2S 0.2 nozzle",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab P2S 0.6 nozzle",
+    "values": {
+     "machine_max_speed_x": [
+      "1000",
+      "1000"
+     ],
+     "machine_max_speed_y": [
+      "1000",
+      "1000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL P2S 0.6 nozzle",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab P2S 0.8 nozzle",
+    "values": {
+     "machine_max_speed_x": [
+      "1000",
+      "1000"
+     ],
+     "machine_max_speed_y": [
+      "1000",
+      "1000"
+     ]
+    },
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL P2S 0.8 nozzle",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-x1": {
+   "0.4": {
+    "preset": "Bambu Lab X1 0.4 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab X1 0.2 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C 0.2 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab X1 0.6 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab X1 0.8 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-x1-carbon": {
+   "0.4": {
+    "preset": "Bambu Lab X1 Carbon 0.4 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab X1 Carbon 0.2 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C 0.2 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab X1 Carbon 0.6 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab X1 Carbon 0.8 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C 0.8 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-x1e": {
+   "0.4": {
+    "preset": "Bambu Lab X1E 0.4 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab X1E 0.2 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C 0.2 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "preset": "Bambu Lab X1E 0.6 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "preset": "Bambu Lab X1E 0.8 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X1C 0.8 nozzle",
+     "values": {
+      "filament_cooling_before_tower": [
+       "0"
+      ],
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-x2d": {
+   "0.4": {
+    "preset": "Bambu Lab X2D 0.4 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X2D 0.4 nozzle",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "preset": "Bambu Lab X2D 0.2 nozzle",
+    "values": {},
+    "filament": {
+     "preset": "Bambu PLA Basic @BBL X2D 0.2 nozzle",
+     "values": {
+      "filament_cost": [
+       "15.99"
+      ],
+      "filament_prime_volume": [
+       "30"
+      ],
+      "supertack_plate_temp": [
+       "40"
+      ]
+     }
+    }
+   }
+  }
+ },
+ "process": {
+  "bambu-a1": {
+   "0.4": {
+    "draft": {
+     "preset": "0.28mm Extra Draft @BBL A1",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL A1",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL A1",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL A1",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.20mm Strength @BBL A1",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "draft": {
+     "preset": "0.12mm Draft @BBL A1 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.06mm Fine @BBL A1 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL A1 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "draft": {
+     "preset": "0.36mm Draft @BBL A1 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.18mm Fine @BBL A1 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.30mm Standard @BBL A1 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.30mm Strength @BBL A1 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "draft": {
+     "preset": "0.48mm Draft @BBL A1 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.24mm Fine @BBL A1 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.40mm Standard @BBL A1 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  },
+  "bambu-a1-mini": {
+   "0.4": {
+    "draft": {
+     "preset": "0.28mm Extra Draft @BBL A1M",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL A1M",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL A1M",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL A1M",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.20mm Strength @BBL A1M",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "draft": {
+     "preset": "0.12mm Draft @BBL A1M 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.06mm Fine @BBL A1M 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL A1M 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "draft": {
+     "preset": "0.36mm Draft @BBL A1M 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.18mm Fine @BBL A1M 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.30mm Standard @BBL A1M 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.30mm Strength @BBL A1M 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "draft": {
+     "preset": "0.48mm Draft @BBL A1M 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.24mm Fine @BBL A1M 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.40mm Standard @BBL A1M 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  },
+  "bambu-h2d": {
+   "0.4": {
+    "draft": {
+     "preset": "0.24mm Standard @BBL H2D",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL H2D",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm Fine @BBL H2D",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL H2D",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.20mm Balanced Strength @BBL H2D",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL H2D 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL H2D 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "standard": {
+     "preset": "0.30mm Standard @BBL H2D 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.24mm Balanced Strength @BBL H2D 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "standard": {
+     "preset": "0.40mm Standard @BBL H2D 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.32mm Balanced Strength @BBL H2D 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  },
+  "bambu-h2d-pro": {
+   "0.4": {
+    "draft": {
+     "preset": "0.24mm Standard @BBL H2DP",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL H2DP",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm Fine @BBL H2DP",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL H2DP",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.20mm Balanced Strength @BBL H2DP",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL H2DP 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL H2DP 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "standard": {
+     "preset": "0.30mm Standard @BBL H2DP 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.24mm Balanced Strength @BBL H2DP 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "standard": {
+     "preset": "0.40mm Standard @BBL H2DP 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.32mm Balanced Strength @BBL H2DP 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  },
+  "bambu-h2s": {
+   "0.4": {
+    "draft": {
+     "preset": "0.24mm Standard @BBL H2S",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm High Quality @BBL H2S",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL H2S",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL H2S",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid",
+      "ironing_flow": "15%"
+     }
+    }
+   },
+   "0.2": {
+    "fine": {
+     "preset": "0.08mm High Quality @BBL H2S 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL H2S 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid",
+      "ironing_flow": "20%",
+      "ironing_speed": "20"
+     }
+    }
+   },
+   "0.6": {
+    "standard": {
+     "preset": "0.30mm Standard @BBL H2S 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid",
+      "top_shell_layers": "4"
+     }
+    }
+   },
+   "0.8": {
+    "standard": {
+     "preset": "0.40mm Standard @BBL H2S 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid",
+      "top_shell_layers": "4"
+     }
+    }
+   }
+  },
+  "bambu-p1p": {
+   "0.4": {
+    "draft": {
+     "preset": "0.28mm Extra Draft @BBL P1P",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL P1P",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL P1P",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL P1P",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.20mm Strength @BBL P1P",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "draft": {
+     "preset": "0.12mm Draft @BBL P1P 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.06mm Fine @BBL P1P 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL P1P 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "draft": {
+     "preset": "0.36mm Draft @BBL P1P 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.18mm Fine @BBL P1P 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.30mm Standard @BBL P1P 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.30mm Strength @BBL P1P 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "draft": {
+     "preset": "0.48mm Draft @BBL P1P 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.24mm Fine @BBL P1P 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "standard": {
+     "preset": "0.40mm Standard @BBL P1P 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  },
+  "bambu-p1s": {
+   "0.4": {
+    "draft": {
+     "preset": "0.28mm Extra Draft @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.20mm Strength @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "fine": {
+     "preset": "0.06mm High Quality @BBL X1C 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL X1C 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "standard": {
+     "preset": "0.30mm Standard @BBL X1C 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.30mm Strength @BBL X1C 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "standard": {
+     "preset": "0.40mm Standard @BBL X1C 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  },
+  "bambu-p2s": {
+   "0.4": {
+    "draft": {
+     "preset": "0.24mm Standard @BBL P2S",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid",
+      "top_surface_pattern": "monotonicline",
+      "bottom_surface_pattern": "monotonic",
+      "enable_arc_fitting": "1",
+      "prime_tower_flat_ironing": "1",
+      "travel_speed": [
+       "1000"
+      ]
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm High Quality @BBL P2S",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "top_surface_pattern": "monotonicline",
+      "bottom_surface_pattern": "monotonic",
+      "enable_arc_fitting": "1",
+      "prime_tower_flat_ironing": "1",
+      "travel_speed": [
+       "1000"
+      ]
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL P2S",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "top_surface_pattern": "monotonicline",
+      "bottom_surface_pattern": "monotonic",
+      "enable_arc_fitting": "1",
+      "prime_tower_flat_ironing": "1",
+      "travel_speed": [
+       "1000"
+      ]
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL P2S",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid",
+      "top_surface_pattern": "monotonicline",
+      "bottom_surface_pattern": "monotonic",
+      "enable_arc_fitting": "1",
+      "prime_tower_flat_ironing": "1",
+      "travel_speed": [
+       "1000"
+      ]
+     }
+    }
+   },
+   "0.2": {
+    "fine": {
+     "preset": "0.08mm High Quality @BBL P2S 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "top_surface_pattern": "monotonicline",
+      "bottom_surface_pattern": "monotonic",
+      "enable_arc_fitting": "1",
+      "prime_tower_flat_ironing": "1",
+      "travel_speed": [
+       "1000"
+      ]
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL P2S 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid",
+      "top_surface_pattern": "monotonicline",
+      "bottom_surface_pattern": "monotonic",
+      "enable_arc_fitting": "1",
+      "prime_tower_flat_ironing": "1",
+      "travel_speed": [
+       "1000"
+      ]
+     }
+    }
+   },
+   "0.6": {
+    "standard": {
+     "preset": "0.30mm Standard @BBL P2S 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid",
+      "top_surface_pattern": "monotonicline",
+      "bottom_surface_pattern": "monotonic",
+      "enable_arc_fitting": "1",
+      "prime_tower_flat_ironing": "1",
+      "travel_speed": [
+       "1000"
+      ]
+     }
+    }
+   },
+   "0.8": {
+    "standard": {
+     "preset": "0.40mm Standard @BBL P2S 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid",
+      "top_surface_pattern": "monotonicline",
+      "bottom_surface_pattern": "monotonic",
+      "enable_arc_fitting": "1",
+      "prime_tower_flat_ironing": "1",
+      "travel_speed": [
+       "1000"
+      ]
+     }
+    }
+   }
+  },
+  "bambu-x1": {
+   "0.4": {
+    "draft": {
+     "preset": "0.28mm Extra Draft @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.20mm Strength @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "fine": {
+     "preset": "0.06mm High Quality @BBL X1C 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL X1C 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "standard": {
+     "preset": "0.30mm Standard @BBL X1 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.30mm Strength @BBL X1C 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "standard": {
+     "preset": "0.40mm Standard @BBL X1 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  },
+  "bambu-x1-carbon": {
+   "0.4": {
+    "draft": {
+     "preset": "0.28mm Extra Draft @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.20mm Strength @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "fine": {
+     "preset": "0.06mm High Quality @BBL X1C 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL X1C 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "standard": {
+     "preset": "0.30mm Standard @BBL X1C 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.30mm Strength @BBL X1C 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "standard": {
+     "preset": "0.40mm Standard @BBL X1C 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  },
+  "bambu-x1e": {
+   "0.4": {
+    "draft": {
+     "preset": "0.28mm Extra Draft @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm Extra Fine @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.20mm Strength @BBL X1C",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "fine": {
+     "preset": "0.06mm High Quality @BBL X1C 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL X1C 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "standard": {
+     "preset": "0.30mm Standard @BBL X1C 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "strong": {
+     "preset": "0.30mm Strength @BBL X1C 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "standard": {
+     "preset": "0.40mm Standard @BBL X1C 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  },
+  "bambu-x2d": {
+   "0.4": {
+    "draft": {
+     "preset": "0.24mm Standard @BBL X2D",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "4",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    },
+    "extra_fine": {
+     "preset": "0.08mm High Quality @BBL X2D",
+     "values": {
+      "bottom_color_penetration_layers": "7",
+      "top_color_penetration_layers": "9",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "fine": {
+     "preset": "0.12mm High Quality @BBL X2D",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.20mm Standard @BBL X2D",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "5",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.2": {
+    "fine": {
+     "preset": "0.08mm High Quality @BBL X2D 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3"
+     }
+    },
+    "standard": {
+     "preset": "0.10mm Standard @BBL X2D 0.2 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "5",
+      "top_color_penetration_layers": "7",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.6": {
+    "standard": {
+     "preset": "0.30mm Standard @BBL X2D 0.6 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   },
+   "0.8": {
+    "standard": {
+     "preset": "0.40mm Standard @BBL X2D 0.8 nozzle",
+     "values": {
+      "bottom_color_penetration_layers": "3",
+      "top_color_penetration_layers": "3",
+      "fuzzy_skin_point_distance": "0.8",
+      "fuzzy_skin_thickness": "0.3",
+      "sparse_infill_pattern": "grid"
+     }
+    }
+   }
+  }
+ }
+}

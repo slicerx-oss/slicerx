@@ -9,6 +9,7 @@ The stock printer, filament and process profile data that SlicerX ships, kept ap
 | `process-speeds.json` | Speeds, accelerations and jerk of the makers' own process presets, per printer and quality tier |
 | `filaments/` | Filament presets per vendor folder, with the resolved values of OrcaSlicer 2.4.2's filament profiles (Bambu Studio's for Bambu Lab where 2.4.2 has none), and `index.json` |
 | `resolved/` | Per brand, the printer, filament and process settings OrcaSlicer 2.4.2 resolves for each model's stock presets |
+| `overlays/bbl-2.8.json` | Bambu Studio 2.8's values for the settings the engine reads, where OrcaSlicer 2.4.2's resolution of the Bambu Lab presets differs: filament presets by name, and the printer, default filament and process tiers of each model and nozzle. `packages/settings/scripts/gen-resolved.ts` applies it last, and `packages/settings/scripts/apply-overlay.ts` applies it to `filaments/BBL.json` and `resolved/bambu-lab.json`, so regenerating either keeps it |
 | `printer-images/` | One picture per catalog printer model, named by the catalog id (`bambu-h2d.webp`): the makers' `*_cover.png` from OrcaSlicer's profile resources (commit 97700c5a), re-encoded as 240 px webp. The setup's model grid shows them; a model without one gets a drawn placeholder |
 | `cura/ultimaker.json` | The UltiMaker S3, S5, S7, S6 and S8: machine settings, print cores per nozzle size, the quality presets' speeds and the G-code families, resolved from UltiMaker Cura 5.13's definitions, variants, materials and quality profiles by `packages/settings/scripts/gen-ultimaker.py` |
 
@@ -27,4 +28,4 @@ See `docs/licensing.md` for the whole picture.
 - Rust: `sx_profiles::{MACHINE, GCODE, PROCESS_SPEEDS}` are the JSON texts of the three files at the top. The filament and resolved files are megabytes and are read from disk or imported on demand.
 - TypeScript: `import gcode from '@slicerx/profiles/gcode.json'`, and dynamic imports such as `import('@slicerx/profiles/filaments/BBL.json')`. `@slicerx/settings` does this for you.
 
-The files are written by the settings package's scripts (`packages/settings/scripts/gen-resolved.ts` and others) and locked by its tests. Do not edit them by hand.
+The files are written by the settings package's scripts (`packages/settings/scripts/gen-resolved.ts` and others, then `apply-overlay.ts`) and locked by its tests. Do not edit them by hand.
