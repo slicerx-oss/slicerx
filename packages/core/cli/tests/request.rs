@@ -1162,15 +1162,21 @@ fn bambu_box_3mf(painted: bool, settings: &serde_json::Value, slot: u8, own: Own
         ("Metadata/project_settings.config", settings.as_bytes()),
         ("Metadata/model_settings.config", objects.as_bytes()),
     ];
-    // As Bambu Studio writes a range: the layer height first, then the range's own keys.
+    // As Bambu Studio writes a range: the layer height first (the project's, unless the case sets its own), then the
+    // range's own keys.
     let ranges = match own {
         Own::Range(z0, z1, keys) => {
+            let height = if keys.iter().any(|(k, _)| *k == "layer_height") {
+                ""
+            } else {
+                r#"<option opt_key="layer_height">0.2</option>"#
+            };
             let options: String = keys
                 .iter()
                 .map(|(k, v)| [r#"<option opt_key=""#, k, r#"">"#, v, "</option>"].concat())
                 .collect();
             format!(
-                r#"<?xml version="1.0" encoding="utf-8"?><objects><object id="1"><range min_z="{z0}" max_z="{z1}"><option opt_key="layer_height">0.2</option>{options}</range></object></objects>"#
+                r#"<?xml version="1.0" encoding="utf-8"?><objects><object id="1"><range min_z="{z0}" max_z="{z1}">{height}{options}</range></object></objects>"#
             )
         }
         _ => String::new(),
@@ -1305,8 +1311,8 @@ fn in_heights(gcode: &str, feature: &str, lo: f64, hi: f64) -> [std::collections
 
 /// A height range of a project's object (`Metadata/layer_config_ranges.xml`) with a wall filament of its own prints
 /// the object's walls in its heights on that filament, with `sx slice project.3mf` and with a request whose mesh is the
-/// project. The range's own layer height, the same as the project's, is left out without a note, and a key a range
-/// cannot change is named.
+/// project. The range's own layer height, the same as the project's, gets no note, and a key a range cannot change is
+/// named.
 #[test]
 fn a_height_ranges_wall_filament_prints_the_walls_in_its_heights() {
     let dir = temp_dir(format!("sx-cli-range-walls-{}", std::process::id()));
@@ -1367,6 +1373,106 @@ fn a_height_ranges_wall_filament_prints_the_walls_in_its_heights() {
         );
         // One change on each of the 30 layers in it: a layer starts on the filament the layer below ended on.
         assert_eq!(changes_and_tools(gcode, "Outer wall").0, 30, "{name}");
+    }
+}
+
+/// The tops of a G-code's layers (`; Z_HEIGHT:`), mm.
+fn z_heights(gcode: &str) -> Vec<f64> {
+    gcode
+        .lines()
+        .filter_map(|l| l.strip_prefix("; Z_HEIGHT:"))
+        .filter_map(|z| z.trim().parse().ok())
+        .collect()
+}
+
+/// A height range's own layer height plans the layers, as the app plans them: on the 20 mm box at 0.2 mm, a range of
+/// 0.1 mm layers from 5 to 10 mm gives 0.2 mm layers up to 5 mm, 0.1 mm layers from there to 10 mm and 0.2 mm layers
+/// to the top, 125 in all, with `sx slice project.3mf` and with a request whose mesh is the project. They are the
+/// layers of a request that sends the app's layer tops for the same project (`options.layerTopsMm`, what the app
+/// sends for it), and the range's layer height gets no note.
+#[test]
+fn a_height_ranges_layer_height_plans_the_layers_as_the_app_does() {
+    let dir = temp_dir(format!("sx-cli-range-layer-height-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = box_settings(&serde_json::json!({"enable_prime_tower": "0"}));
+    let path = dir.join("range.3mf");
+    std::fs::write(
+        &path,
+        bambu_box_3mf(
+            false,
+            &settings,
+            1,
+            Own::Range(5.0, 10.0, &[("layer_height", "0.1")]),
+        ),
+    )
+    .unwrap();
+    let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
+    let err = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "{err}");
+    assert!(!err.contains("layer_height is not applied"), "{err}");
+    assert!(!err.contains("layer height"), "{err}");
+    let cli = z_heights(&String::from_utf8_lossy(&out.stdout));
+    // The app's tops for this project: every 0.2 mm to 5, every 0.1 mm to 10, every 0.2 mm to 20.
+    let every = |from: u32, to: u32, step: u32| {
+        (from / step + 1..=to / step).map(move |i| f64::from(i * step) / 100.0)
+    };
+    let app: Vec<f64> = every(0, 500, 20)
+        .chain(every(500, 1000, 10))
+        .chain(every(1000, 2000, 20))
+        .collect();
+    assert_eq!(app.len(), 125);
+    let near =
+        |a: &[f64], b: &[f64]| a.len() == b.len() && a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-6);
+    assert!(near(&cli, &app), "sx slice: {cli:?}");
+    let steps: Vec<f64> = cli
+        .windows(2)
+        .map(|w| ((w[1] - w[0]) * 1000.0).round() / 1000.0)
+        .collect();
+    // A layer's height is the range's when its bottom lies in it.
+    for (i, step) in steps.iter().enumerate() {
+        let bottom = cli[i];
+        let want = if (5.0 - 1e-6..10.0 - 1e-6).contains(&bottom) {
+            0.1
+        } else {
+            0.2
+        };
+        assert!((step - want).abs() < 1e-9, "layer from {bottom} mm is {step} mm");
+    }
+    // A request whose mesh is the project, and one that sends the app's tops for the project without its ranges.
+    let plain = dir.join("plain.3mf");
+    std::fs::write(&plain, bambu_box_3mf(false, &settings, 1, Own::Object(&[]))).unwrap();
+    for (name, mesh, options) in [
+        ("project", &path, serde_json::json!({"emitGcode": true})),
+        (
+            "app tops",
+            &plain,
+            serde_json::json!({"emitGcode": true, "layerTopsMm": app}),
+        ),
+    ] {
+        let out_dir = dir.join(name.replace(' ', "-"));
+        let request = dir.join(format!("{}.json", name.replace(' ', "-")));
+        let req = serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": {"p": mesh},
+            "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+            "config": settings,
+            "options": options,
+        });
+        std::fs::write(&request, req.to_string()).unwrap();
+        let out = sx()
+            .args(["slice", "--request"])
+            .arg(&request)
+            .arg("--out-dir")
+            .arg(&out_dir)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let gcode = std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap();
+        assert!(near(&z_heights(&gcode), &app), "{name}: {:?}", z_heights(&gcode));
     }
 }
 
