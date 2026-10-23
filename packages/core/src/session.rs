@@ -8673,7 +8673,33 @@ impl SliceSession {
                         },
                         0.0,
                     ));
-                    let region = surface_region(which);
+                    let mut region = surface_region(which);
+                    let narrow_lines =
+                        !crate::tower::flag_or(cfg, "detect_narrow_internal_solid_infill", true);
+                    if which == 2 && narrow_lines && !region.is_empty() {
+                        // With narrow detection off, a band of internal solid infill too narrow for the lines (where
+                        // the lines' ends, half a spacing in, leave nothing or a strip under 0.3 spacings) prints as
+                        // one line along its middle, as the printer maker's slicer does. The bead is as wide as the
+                        // band, and at least a solid line's spacing (its flow).
+                        let thin = thin_bands(&region, surface_mm);
+                        if !thin.is_empty() {
+                            let width = mm(surface_mm);
+                            let lines = crate::narrow::concentric_lines(&thin, cfg, surface_mm, layer_height);
+                            work.shell_thick.extend(lines.into_iter().map(|mut l| {
+                                l.widths.iter_mut().for_each(|w| *w = (*w).max(width));
+                                l
+                            }));
+                            work.region_narrow.extend(thin.iter().cloned());
+                            // The rest less a margin round the band, so no sliver along it is left for the lines.
+                            let k = mm(0.15 * surface_mm);
+                            let rest = perimeters::difference(&region, &perimeters::offset(&thin, k));
+                            region = perimeters::offset(&perimeters::offset(&rest, -k), k);
+                            if region.is_empty() {
+                                // The scanlines laid over the whole surface are dropped with it.
+                                spans.clear();
+                            }
+                        }
+                    }
                     if region.is_empty() {
                         continue;
                     }
@@ -11793,4 +11819,16 @@ mod shared_paint_tests {
             );
         }
     }
+}
+
+/// The parts of a solid surface too narrow for its lines: where the surface pulled in by half a spacing (the lines'
+/// ends) is gone or a strip under 0.3 spacings wide. Slivers under 0.3 spacings, such as a corner the lines' turns cut
+/// off, are not bands.
+fn thin_bands(region: &Shapes, spacing_mm: f64) -> Shapes {
+    let k = mm(0.15 * spacing_mm);
+    let ends = perimeters::offset(region, -mm(0.5 * spacing_mm));
+    let core = perimeters::offset(&perimeters::offset(&ends, -k), k);
+    let reach = perimeters::offset(&core, mm(0.5 * spacing_mm) + k);
+    let rest = perimeters::difference(region, &reach);
+    perimeters::offset(&perimeters::offset(&rest, -k), k)
 }
