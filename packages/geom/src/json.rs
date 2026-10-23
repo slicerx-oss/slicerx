@@ -485,17 +485,30 @@ fn run(op: &str, req: &Value, files: FileLoader<'_>) -> Result<Value> {
             let mut opts = crate::nest::SilhouetteOptions::default();
             opts.tolerance_mm = field_or(req, "toleranceMm", opts.tolerance_mm)?;
             opts.min_hole_mm2 = field_or(req, "minHoleMm2", opts.min_hole_mm2)?;
+            // baseMm: also the first layer, for the brim
+            let base: Option<f64> = field_or(req, "baseMm", None)?;
             let s = crate::nest::silhouette(&meshes, transform.as_ref(), &opts);
             let b = crate::nest::poly::ring_bbox(&s.hull);
-            Ok(json!({
-                "polygons": s.outline.iter().map(|r| json!({
-                    "outer": r.first(),
-                    "holes": r.iter().skip(1).collect::<Vec<_>>(),
-                })).collect::<Vec<_>>(),
+            let shapes = |r: &crate::nest::poly::Region| {
+                r.iter()
+                    .map(|s| json!({ "outer": s.first(), "holes": s.iter().skip(1).collect::<Vec<_>>() }))
+                    .collect::<Vec<_>>()
+            };
+            let mut out = json!({
+                "polygons": shapes(&s.outline),
                 "hull": s.hull,
                 "areaMm2": crate::nest::poly::area(&s.outline),
                 "bounds": if b.is_empty() { Value::Null } else { json!({ "min": b.min, "max": b.max }) },
-            }))
+            });
+            if let Some(h) = base.filter(|h| h.is_finite())
+                && let Some(o) = out.as_object_mut()
+            {
+                o.insert(
+                    "base".to_owned(),
+                    Value::from(shapes(&crate::nest::base(&meshes, transform.as_ref(), h, &opts))),
+                );
+            }
+            Ok(out)
         }
         #[cfg(feature = "formats")]
         "format.read3mf" => crate::format::json::read(req, files),

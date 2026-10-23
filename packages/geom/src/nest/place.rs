@@ -93,6 +93,8 @@ pub struct NestOptions {
     pub all_turns: bool,
     /// a skirt or draft shield goes round the whole print, so its hull must stay off the zones
     pub skirt: bool,
+    /// the last this many zones are the prime tower, which the skirt goes round too
+    pub tower_zones: u32,
     /// move the finished layout to the middle of the bed when nothing is in the way
     pub center: bool,
     /// how far simplified outlines may grow past the true ones, mm
@@ -113,6 +115,7 @@ impl Default for NestOptions {
             rotation_step_deg: 10.0,
             all_turns: false,
             skirt: false,
+            tower_zones: 0,
             center: true,
             tolerance_mm: 0.1,
             passes: 0,
@@ -475,15 +478,17 @@ impl Nester {
                 pos,
             });
         }
-        me.zones = zones
+        let towers = zones.len().saturating_sub(me.opts.tower_zones as usize);
+        let regions: Vec<(Region, bool)> = zones
             .iter()
-            .map(|z| region_of(&z.polygons))
-            .filter(|r| !r.is_empty())
+            .enumerate()
+            .map(|(k, z)| (region_of(&z.polygons), k >= towers))
+            .filter(|(r, _)| !r.is_empty())
             .collect();
-        me.zone_hulls = me
-            .zones
+        me.zone_hulls = regions
             .iter()
-            .map(|z| {
+            .filter(|(_, tower)| !tower)
+            .map(|(z, _)| {
                 poly::hull(
                     &z.iter()
                         .flat_map(|s| s.first().cloned().unwrap_or_default())
@@ -491,6 +496,7 @@ impl Nester {
                 )
             })
             .collect();
+        me.zones = regions.into_iter().map(|(r, _)| r).collect();
         me.items = items;
         me.plan = me.make_plan();
         Ok(me)
@@ -971,7 +977,7 @@ impl Nester {
                 .then(a.1[1].total_cmp(&c.1[1]))
                 .then(a.1[0].total_cmp(&c.1[0]))
         });
-        if self.opts.skirt && !self.zones.is_empty() {
+        if self.opts.skirt && !self.zone_hulls.is_empty() {
             return cands
                 .into_iter()
                 .find(|(_, p)| self.hull_clear(b, turn, *p, hull_pts));
@@ -1022,7 +1028,7 @@ impl Nester {
         let mut full: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
         let mut pile = Bbox::EMPTY;
         let mut hull_pts: Vec<Pt> = Vec::new();
-        if self.opts.skirt && !self.zones.is_empty() {
+        if self.opts.skirt && !self.zone_hulls.is_empty() {
             for f in &self.fixed {
                 hull_pts.extend(self.reach_points(f.shape, 0, f.pos));
             }
@@ -1086,7 +1092,7 @@ impl Nester {
             pile = pile.merge(&self.shapes[b].bounds[&t].shifted(p));
             placed += 1;
             area += self.shapes[b].area;
-            if self.opts.skirt && !self.zones.is_empty() {
+            if self.opts.skirt && !self.zone_hulls.is_empty() {
                 hull_pts.extend(self.reach_points(b, t, p));
                 hull_pts = poly::hull(&hull_pts);
             }
@@ -1162,7 +1168,7 @@ impl Nester {
                 }
             }
         }
-        if self.opts.skirt && !self.zones.is_empty() {
+        if self.opts.skirt && !self.zone_hulls.is_empty() {
             let mut pts: Vec<Pt> = Vec::new();
             for f in &fixed {
                 pts.extend(self.reach_points(f.shape, 0, f.pos));
