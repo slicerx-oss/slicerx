@@ -169,7 +169,7 @@ export function createPrintAdjust() {
     version: '1.0.0',
     source: 'plugin',
     permission: 'start',
-    description: `Make one change to a running print: part fan, speed factor, nozzle or bed temperature, or pause. Every change shows the user an approval card and runs only if they approve; ${ASSISTANT_NAME} never changes a print on its own. Changes outside the limits check_print listed are refused.`,
+    description: `Make one change to a running print: part fan, speed factor, nozzle or bed temperature, or pause. Every change shows the user an approval card and runs only if approved; ${ASSISTANT_NAME} never changes a print on its own. Changes outside check_print's limits are refused.`,
     input: z.object({
       printerId: z.string(),
       change: adjustment,

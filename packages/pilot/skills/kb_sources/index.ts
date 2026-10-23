@@ -11,7 +11,7 @@ export function createKbSources() {
     source: 'kb',
     permission: 'read',
     description:
-      'Look up the title, publisher and link of knowledge base sources by id (for example "bambu_wiki_ams_function") or by prefixed path (for example "orca:BBL/machine/..."). Use it when the user asks where a fact came from. Ids come from the sources field of kb tool results. Unknown ids are listed as missing.',
+      'Look up the title, publisher and link of knowledge base sources by id (for example "bambu_wiki_ams_function") or by prefixed path (for example "orca:BBL/machine/..."). Use it when the user asks where a fact came from. Unknown ids are listed as missing.',
     input: z.object({ ids: z.array(z.string().min(1)).min(1).max(30).describe('Source ids or prefixed paths, as returned in the sources field of kb results') }),
     args: (i) => i.ids.join(' '),
     async run(i, ctx) {
