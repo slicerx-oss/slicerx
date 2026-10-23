@@ -5306,6 +5306,29 @@
    "invalidates": "paths"
   },
   {
+   "key": "vertical_shell_speed",
+   "section": "process",
+   "type": "floatsOrPercents",
+   "label": "Floating vertical shell speed",
+   "unit": "mm/s",
+   "min": 1,
+   "mode": "expert",
+   "nullable": true,
+   "default": [
+    "80%"
+   ],
+   "group": "speed",
+   "invalidates": "gcode",
+   "enabledWhen": [
+    {
+     "key": "detect_narrow_internal_solid_infill",
+     "op": "eq",
+     "value": true
+    }
+   ],
+   "intent": "speed"
+  },
+  {
    "key": "wipe_speed",
    "section": "process",
    "type": "floatOrPercent",
@@ -5522,6 +5545,28 @@
     "Each assembly"
    ],
    "intent": "strength"
+  },
+  {
+   "key": "detect_floating_vertical_shell",
+   "section": "process",
+   "type": "bool",
+   "label": "Detect floating vertical shells",
+   "mode": "expert",
+   "default": true,
+   "group": "strength",
+   "invalidates": "infill",
+   "enabledWhen": [
+    {
+     "key": "detect_narrow_internal_solid_infill",
+     "op": "eq",
+     "value": true
+    }
+   ],
+   "intent": "strength",
+   "effect": {
+    "increase": "Narrow solid bands over sparse infill slow down where they hang over it, which costs a little time",
+    "decrease": "Those bands print at one speed all the way around"
+   }
   },
   {
    "key": "detect_narrow_internal_solid_infill",

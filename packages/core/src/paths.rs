@@ -64,6 +64,10 @@ pub(crate) struct ToolWork {
     pub(crate) region_shell: Shapes,
     /// The narrow bands `shell_thick` fills: Orca fills each one as a collection of its own.
     pub(crate) region_narrow: Shapes,
+    /// The floating vertical shell (`vshell.rs`): its beads cut into plain and slowed pieces, in print order, and
+    /// the narrow pieces they fill.
+    pub(crate) floating: Vec<crate::vshell::Piece>,
+    pub(crate) region_floating: Shapes,
     pub(crate) region_sparse: Shapes,
     pub(crate) region_top: Shapes,
     /// Solid infill over sparse infill, printed as thick strands.
@@ -330,6 +334,7 @@ impl Builder<'_> {
                 owner: crate::preview::OBJECT_NONE,
                 tower_wipe: false,
                 tower_hop: false,
+                slow_span: false,
             });
         } else {
             self.out.points.truncate(start as usize);
@@ -1118,6 +1123,7 @@ pub(crate) fn push_tower(
             owner: crate::preview::OBJECT_NONE,
             tower_wipe: before && t.nozzle_wipe,
             tower_hop: before && t.hop,
+            slow_span: false,
         });
     }
     seconds
@@ -2369,6 +2375,40 @@ pub(crate) fn plan_layer_paths(
             end: b.out.paths.len(),
             region: None,
             no_sort: false,
+            each: false,
+        });
+        let g = b.out.paths.len();
+        b.width_mm = fw(3);
+        // The floating vertical shell: plain pieces at its own speed, the pieces over the sparse infill below at
+        // the bridge speed of the filament that prints them, marked for their `; Slow Down` lines.
+        if !w.floating.is_empty() {
+            #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
+            let (plain, slow) = (
+                crate::vshell::speed(cfg) as f32,
+                crate::vshell::slow_speed(cfg, w.tool, cfg.bridge_speed) as f32,
+            );
+            for piece in &w.floating {
+                let from = b.out.paths.len();
+                let speed = if piece.slow { slow } else { plain };
+                b.push_thick(
+                    w.tool,
+                    Feature::FloatingShell,
+                    speed,
+                    &piece.points,
+                    &piece.widths,
+                );
+                if piece.slow {
+                    for p in b.out.paths.get_mut(from..).unwrap_or_default() {
+                        p.slow_span = true;
+                    }
+                }
+            }
+        }
+        groups.push(Group {
+            start: g,
+            end: b.out.paths.len(),
+            region: Some(&w.region_floating),
+            no_sort: true,
             each: false,
         });
         let g = b.out.paths.len();

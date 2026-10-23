@@ -39,6 +39,7 @@ fn infill(f: Feature) -> bool {
         f,
         Feature::SparseInfill
             | Feature::InternalSolid
+            | Feature::FloatingShell
             | Feature::TopSurface
             | Feature::BottomSurface
             | Feature::Bridge
@@ -141,6 +142,7 @@ mod tests {
                 .map(|&feature| PathInfo {
                     tower_wipe: false,
                     tower_hop: false,
+                    slow_span: false,
                     start: 0,
                     end: 0,
                     tool: 1,

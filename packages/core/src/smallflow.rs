@@ -106,7 +106,9 @@ impl Compensator {
     pub(crate) fn applies(&self, feature: Feature, first_layer: bool) -> bool {
         match feature {
             Feature::TopSurface => self.top || (first_layer && self.bottom_first),
-            Feature::InternalSolid => self.internal || (first_layer && self.bottom_first),
+            Feature::InternalSolid | Feature::FloatingShell => {
+                self.internal || (first_layer && self.bottom_first)
+            }
             Feature::BottomSurface => first_layer && self.bottom_first,
             _ => false,
         }

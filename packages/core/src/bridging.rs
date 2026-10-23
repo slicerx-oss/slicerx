@@ -44,7 +44,7 @@ pub(crate) struct Facts {
 
 impl Facts {
     /// The sparse infill as segments.
-    fn segments(&self) -> Vec<Line> {
+    pub(crate) fn segments(&self) -> Vec<Line> {
         let as_int = |p: crate::geom::Point| IntPoint::new(p.x, p.y);
         let mut out = self.lines.clone();
         out.extend(

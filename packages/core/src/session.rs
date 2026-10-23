@@ -7874,169 +7874,175 @@ impl SliceSession {
             }
         };
         // Internal bridges over sparse infill (bridging.rs), worked out from the layers around this one.
-        let bridges: Option<crate::bridging::LayerBridges> =
-            if layer >= 1 && cfg.sparse_infill_density > 0.0 && base_shell.top_n > 0 {
-                use std::sync::Arc;
-                let cfg_tag = tags.of(cfg);
-                let facts_cache: std::cell::RefCell<
-                    std::collections::HashMap<i64, Option<Arc<crate::bridging::Facts>>>,
-                > = std::cell::RefCell::new(std::collections::HashMap::new());
-                let base_slice = |m: i64| -> Option<Shapes> {
-                    let l = u32::try_from(m).ok()?;
-                    get(l).map(lower_shapes)
-                };
-                let base_overlap = base_shell.overlap;
-                let base_inner = |m: i64| -> Option<Shapes> {
-                    let l = u32::try_from(m).ok()?;
-                    self.cache.inner(m, cfg_tag, || {
-                        get(l).map(|r| {
-                            perimeters::walls_for(
-                                cfg,
-                                &slice_shapes(r),
-                                cfg.wall_loops,
-                                base_shell.w,
-                                base_overlap,
-                                self.plan.thickness(l),
-                                false,
-                            )
-                        })
-                    })
-                };
-                let fam = Families::new(cfg);
-                let sparse_of = |l: u32, area: &Shapes| -> SparseLines {
-                    let as_int = |p: crate::geom::Point| IntPoint::new(p.x, p.y);
-                    if area.is_empty() {
-                        return (Vec::new(), Vec::new());
-                    }
-                    if cfg.sparse_infill_pattern.on_scanlines() {
-                        let base = if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear {
-                            0
-                        } else {
-                            l + self.raft_layers()
-                        };
-                        let frame = turned_frame(
-                            self.template_angle(cfg, "sparse_infill_rotate_template", l),
-                            Dir::for_layer(base),
-                            self.model_turn(cfg),
-                        );
-                        let turn = frame.map_or(0.0, |f| f.1);
-                        let d = match frame {
-                            Some((d, _)) => d,
-                            None if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear => {
-                                Dir::for_layer(0)
-                            }
-                            None => Dir::for_layer(l + self.raft_layers()),
-                        };
-                        let turned;
-                        let area = if turn == 0.0 {
-                            area
-                        } else {
-                            turned = crate::patterns::rotate_shapes(area, -turn);
-                            &turned
-                        };
-                        let mut ev = Vec::new();
-                        let spans = fam
-                            .sparse(d)
-                            .scan(area.iter().flat_map(|s| s.iter()).map(Vec::as_slice), &mut ev);
-                        let mut lines: Vec<[crate::geom::Point; 2]> = Vec::new();
-                        paths::span_lines(&spans, d, fam.sparse_spacing, &mut lines);
-                        if turn != 0.0 {
-                            for seg in &mut lines {
-                                if let [a, b] = crate::patterns::rotate_points(seg, turn)[..] {
-                                    *seg = [a, b];
-                                }
-                            }
-                        }
-                        (
-                            lines.into_iter().map(|s| [as_int(s[0]), as_int(s[1])]).collect(),
-                            Vec::new(),
-                        )
-                    } else {
-                        let z = self.plan.top(l);
-                        let polylines = self
-                            .planned_sparse(cfg, l, area)
-                            .unwrap_or_else(|| crate::patterns::sparse(&self.sparse_in(cfg, l, area, z)));
-                        (Vec::new(), polylines)
-                    }
-                };
-                // The facts of layer `l`, worked out once for the session.
-                let shared_facts = |l: i64| -> Option<Arc<crate::bridging::Facts>> {
-                    self.cache.facts(l, cfg_tag, || {
-                        let lu = u32::try_from(l).ok()?;
-                        let here = get(lu)?;
-                        // A layer of several regions: its facts are its regions' own classes put together, as OrcaSlicer
-                        // reads each region's fill surfaces for its internal bridges.
-                        if self.several(here) {
-                            let preps = self.shared_preps(lu, cfg, mods, get, micros, tags);
-                            let parts: Vec<&RegionPrep> = preps.iter().flatten().collect();
-                            let all = |f: &dyn Fn(&RegionPrep) -> &Shapes| {
-                                perimeters::union_all(&parts.iter().map(|p| f(p)).collect::<Vec<_>>())
-                            };
-                            let inner = all(&|p| &p.inner);
-                            let top = all(&|p| &p.cls.top);
-                            let own_bottom = all(&|p| &p.cls.bottom);
-                            let shell = all(&|p| &p.cls.shell);
-                            let sparse = all(&|p| &p.cls.sparse);
-                            let external: Vec<crate::bridging::Bridged> =
-                                parts.iter().flat_map(|p| p.cls.bridges.iter().cloned()).collect();
-                            let bridged =
-                                perimeters::union_all(&external.iter().map(|b| &b.area).collect::<Vec<_>>());
-                            let (lines, paths) = sparse_of(lu, &sparse);
-                            return Some(crate::bridging::Facts {
-                                inner,
-                                top,
-                                bottom: perimeters::union_all(&[&own_bottom, &bridged]),
-                                shell,
-                                sparse,
-                                lines,
-                                paths,
-                                external,
-                                own_bottom,
-                            });
-                        }
-                        let region = slice_shapes(here);
-                        let inner = base_inner(l)?;
-                        let cls = crate::classify::classify(&crate::classify::In {
+        let bridges_on = cfg.sparse_infill_density > 0.0 && base_shell.top_n > 0;
+        // A floating vertical shell (vshell.rs) reads the sparse infill of the layer below from the same facts.
+        let floating_on = crate::vshell::wanted(cfg, mods);
+        let (bridges, lower_facts): (
+            Option<crate::bridging::LayerBridges>,
+            Option<std::sync::Arc<crate::bridging::Facts>>,
+        ) = if layer >= 1 && (bridges_on || floating_on) {
+            use std::sync::Arc;
+            let cfg_tag = tags.of(cfg);
+            let facts_cache: std::cell::RefCell<
+                std::collections::HashMap<i64, Option<Arc<crate::bridging::Facts>>>,
+            > = std::cell::RefCell::new(std::collections::HashMap::new());
+            let base_slice = |m: i64| -> Option<Shapes> {
+                let l = u32::try_from(m).ok()?;
+                get(l).map(lower_shapes)
+            };
+            let base_overlap = base_shell.overlap;
+            let base_inner = |m: i64| -> Option<Shapes> {
+                let l = u32::try_from(m).ok()?;
+                self.cache.inner(m, cfg_tag, || {
+                    get(l).map(|r| {
+                        perimeters::walls_for(
                             cfg,
-                            layer: lu,
-                            count: n,
-                            region: &region,
-                            inner: &inner,
-                            slice: &base_slice,
-                            inner_of: &base_inner,
-                            top_layers: base_shell.top_n,
-                            bottom_layers: base_shell.bot_n,
-                            wall_loops: cfg.wall_loops,
-                            cache: Some(&self.cache),
-                            tag: cfg_tag,
-                            whole_lower: None,
-                        });
-                        let (lines, paths) = sparse_of(lu, &cls.sparse);
-                        let bridged: Shapes = cls
-                            .bridges
-                            .iter()
-                            .fold(Shapes::new(), |acc, b| perimeters::union_all(&[&acc, &b.area]));
-                        Some(crate::bridging::Facts {
+                            &slice_shapes(r),
+                            cfg.wall_loops,
+                            base_shell.w,
+                            base_overlap,
+                            self.plan.thickness(l),
+                            false,
+                        )
+                    })
+                })
+            };
+            let fam = Families::new(cfg);
+            let sparse_of = |l: u32, area: &Shapes| -> SparseLines {
+                let as_int = |p: crate::geom::Point| IntPoint::new(p.x, p.y);
+                if area.is_empty() {
+                    return (Vec::new(), Vec::new());
+                }
+                if cfg.sparse_infill_pattern.on_scanlines() {
+                    let base = if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear {
+                        0
+                    } else {
+                        l + self.raft_layers()
+                    };
+                    let frame = turned_frame(
+                        self.template_angle(cfg, "sparse_infill_rotate_template", l),
+                        Dir::for_layer(base),
+                        self.model_turn(cfg),
+                    );
+                    let turn = frame.map_or(0.0, |f| f.1);
+                    let d = match frame {
+                        Some((d, _)) => d,
+                        None if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear => {
+                            Dir::for_layer(0)
+                        }
+                        None => Dir::for_layer(l + self.raft_layers()),
+                    };
+                    let turned;
+                    let area = if turn == 0.0 {
+                        area
+                    } else {
+                        turned = crate::patterns::rotate_shapes(area, -turn);
+                        &turned
+                    };
+                    let mut ev = Vec::new();
+                    let spans = fam
+                        .sparse(d)
+                        .scan(area.iter().flat_map(|s| s.iter()).map(Vec::as_slice), &mut ev);
+                    let mut lines: Vec<[crate::geom::Point; 2]> = Vec::new();
+                    paths::span_lines(&spans, d, fam.sparse_spacing, &mut lines);
+                    if turn != 0.0 {
+                        for seg in &mut lines {
+                            if let [a, b] = crate::patterns::rotate_points(seg, turn)[..] {
+                                *seg = [a, b];
+                            }
+                        }
+                    }
+                    (
+                        lines.into_iter().map(|s| [as_int(s[0]), as_int(s[1])]).collect(),
+                        Vec::new(),
+                    )
+                } else {
+                    let z = self.plan.top(l);
+                    let polylines = self
+                        .planned_sparse(cfg, l, area)
+                        .unwrap_or_else(|| crate::patterns::sparse(&self.sparse_in(cfg, l, area, z)));
+                    (Vec::new(), polylines)
+                }
+            };
+            // The facts of layer `l`, worked out once for the session.
+            let shared_facts = |l: i64| -> Option<Arc<crate::bridging::Facts>> {
+                self.cache.facts(l, cfg_tag, || {
+                    let lu = u32::try_from(l).ok()?;
+                    let here = get(lu)?;
+                    // A layer of several regions: its facts are its regions' own classes put together, as OrcaSlicer
+                    // reads each region's fill surfaces for its internal bridges.
+                    if self.several(here) {
+                        let preps = self.shared_preps(lu, cfg, mods, get, micros, tags);
+                        let parts: Vec<&RegionPrep> = preps.iter().flatten().collect();
+                        let all = |f: &dyn Fn(&RegionPrep) -> &Shapes| {
+                            perimeters::union_all(&parts.iter().map(|p| f(p)).collect::<Vec<_>>())
+                        };
+                        let inner = all(&|p| &p.inner);
+                        let top = all(&|p| &p.cls.top);
+                        let own_bottom = all(&|p| &p.cls.bottom);
+                        let shell = all(&|p| &p.cls.shell);
+                        let sparse = all(&|p| &p.cls.sparse);
+                        let external: Vec<crate::bridging::Bridged> =
+                            parts.iter().flat_map(|p| p.cls.bridges.iter().cloned()).collect();
+                        let bridged =
+                            perimeters::union_all(&external.iter().map(|b| &b.area).collect::<Vec<_>>());
+                        let (lines, paths) = sparse_of(lu, &sparse);
+                        return Some(crate::bridging::Facts {
                             inner,
-                            top: cls.top,
-                            bottom: perimeters::union_all(&[&cls.bottom, &bridged]),
-                            shell: cls.shell,
-                            sparse: cls.sparse,
+                            top,
+                            bottom: perimeters::union_all(&[&own_bottom, &bridged]),
+                            shell,
+                            sparse,
                             lines,
                             paths,
-                            external: cls.bridges,
-                            own_bottom: cls.bottom,
-                        })
-                    })
-                };
-                let facts = |l: i64| -> Option<Arc<crate::bridging::Facts>> {
-                    if let Some(f) = facts_cache.borrow().get(&l) {
-                        return f.clone();
+                            external,
+                            own_bottom,
+                        });
                     }
-                    let f = shared_facts(l);
-                    facts_cache.borrow_mut().insert(l, f.clone());
-                    f
-                };
+                    let region = slice_shapes(here);
+                    let inner = base_inner(l)?;
+                    let cls = crate::classify::classify(&crate::classify::In {
+                        cfg,
+                        layer: lu,
+                        count: n,
+                        region: &region,
+                        inner: &inner,
+                        slice: &base_slice,
+                        inner_of: &base_inner,
+                        top_layers: base_shell.top_n,
+                        bottom_layers: base_shell.bot_n,
+                        wall_loops: cfg.wall_loops,
+                        cache: Some(&self.cache),
+                        tag: cfg_tag,
+                        whole_lower: None,
+                    });
+                    let (lines, paths) = sparse_of(lu, &cls.sparse);
+                    let bridged: Shapes = cls
+                        .bridges
+                        .iter()
+                        .fold(Shapes::new(), |acc, b| perimeters::union_all(&[&acc, &b.area]));
+                    Some(crate::bridging::Facts {
+                        inner,
+                        top: cls.top,
+                        bottom: perimeters::union_all(&[&cls.bottom, &bridged]),
+                        shell: cls.shell,
+                        sparse: cls.sparse,
+                        lines,
+                        paths,
+                        external: cls.bridges,
+                        own_bottom: cls.bottom,
+                    })
+                })
+            };
+            let facts = |l: i64| -> Option<Arc<crate::bridging::Facts>> {
+                if let Some(f) = facts_cache.borrow().get(&l) {
+                    return f.clone();
+                }
+                let f = shared_facts(l);
+                facts_cache.borrow_mut().insert(l, f.clone());
+                f
+            };
+            let layer_bridges = if bridges_on {
                 let print_z = |l: i64| -> f64 { u32::try_from(l).map_or(0.0, |u| self.plan.top(u)) };
                 let nozzle = cfg.nozzle_diameter;
                 let ratio = crate::motion::raw_f(cfg, "bridge_flow").unwrap_or(1.0);
@@ -8125,6 +8131,15 @@ impl SliceSession {
             } else {
                 None
             };
+            let lower = if floating_on {
+                facts(i64::from(layer) - 1)
+            } else {
+                None
+            };
+            (layer_bridges, lower)
+        } else {
+            (None, None)
+        };
         let mut solid_areas: Vec<Shapes> = Vec::new();
         let mut works: Vec<ToolWork> = Vec::with_capacity(here.regions.len());
         let mut events = Vec::new();
@@ -8441,7 +8456,8 @@ impl SliceSession {
             {
                 // Bambu Lab printers decide per connected piece (`narrow::split_pieces`); the others split inside a
                 // piece, as Orca does.
-                let (normal, narrow) = if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+                let bambu = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
+                let (normal, narrow) = if bambu {
                     crate::narrow::split_pieces(&shell_area)
                 } else if matches!(
                     solid_name,
@@ -8454,10 +8470,34 @@ impl SliceSession {
                 if !narrow.is_empty() {
                     // The concentric fill runs over the no-overlap infill area: the region without the
                     // growth that lets lines overlap the walls.
-                    let no_overlap = perimeters::intersection(&narrow, &perimeters::offset(&inner, -overlap));
-                    work.shell_thick =
-                        crate::narrow::concentric_lines(&no_overlap, cfg, solid_spacing_mm, layer_height);
-                    work.region_narrow.clone_from(&narrow);
+                    let fill_area = perimeters::offset(&inner, -overlap);
+                    // On a Bambu Lab printer a narrow piece that rests on the sparse infill of the layer below is
+                    // a floating vertical shell (vshell.rs); the others stay internal solid infill.
+                    let lower = lower_facts.as_deref().filter(|_| bambu);
+                    let unsupported = lower.map(|f| crate::vshell::unsupported(&f.sparse));
+                    let (floating, rest) = match &unsupported {
+                        Some(u) => crate::vshell::split(&narrow, u),
+                        None => (Shapes::new(), narrow),
+                    };
+                    if !rest.is_empty() {
+                        let no_overlap = perimeters::intersection(&rest, &fill_area);
+                        work.shell_thick =
+                            crate::narrow::concentric_lines(&no_overlap, cfg, solid_spacing_mm, layer_height);
+                        work.region_narrow = rest;
+                    }
+                    if let (false, Some(u), Some(f)) = (floating.is_empty(), &unsupported, lower) {
+                        let no_overlap = perimeters::intersection(&floating, &fill_area);
+                        let support = crate::vshell::Support::new(u, f.segments(), cfg.sparse_infill_width());
+                        work.floating = crate::vshell::beads(
+                            &no_overlap,
+                            cfg,
+                            solid_spacing_mm,
+                            layer_height,
+                            &support,
+                            crate::vshell::slows(cfg),
+                        );
+                        work.region_floating = floating;
+                    }
                     shell_area = normal;
                 }
             }
@@ -10082,6 +10122,8 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
         bottom,
         shell,
         shell_thick,
+        floating,
+        region_floating,
         internal_bridge,
         internal_bridge_paths,
         top,
@@ -10119,6 +10161,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
     // Bridges print with the internal solid infill's filament, as in OrcaSlicer.
     if !(shell.is_empty()
         && shell_thick.is_empty()
+        && floating.is_empty()
         && internal_bridge.is_empty()
         && internal_bridge_paths.is_empty()
         && bridge.is_empty()
@@ -10132,6 +10175,8 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
             w.region_narrow.extend(region_narrow);
             w.shell.extend(shell);
             w.shell_thick.extend(shell_thick);
+            w.floating.extend(floating);
+            w.region_floating.extend(region_floating);
             w.internal_bridge.extend(internal_bridge);
             w.internal_bridge_paths.extend(internal_bridge_paths);
             w.bridge.extend(bridge);

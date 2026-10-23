@@ -504,6 +504,20 @@ pub(crate) fn concentric_lines(
     spacing_mm: f64,
     layer_height: f64,
 ) -> Vec<crate::arachne::WallLine> {
+    let clip = loop_clipping(cfg);
+    concentric_beads(narrow, cfg, spacing_mm, layer_height)
+        .into_iter()
+        .flat_map(|w| order_band(w, clip))
+        .collect()
+}
+
+/// The variable-width beads that fill each piece of a narrow region to its middle, one list per piece, unordered.
+pub(crate) fn concentric_beads(
+    narrow: &Shapes,
+    cfg: &crate::config::PrintConfig,
+    spacing_mm: f64,
+    layer_height: f64,
+) -> Vec<Vec<crate::arachne::WallLine>> {
     let Some(b) = perimeters::bounds(narrow) else {
         return Vec::new();
     };
@@ -546,14 +560,14 @@ pub(crate) fn concentric_lines(
             run(&opened).unwrap_or(None)
         };
         if let Some(w) = walls {
-            out.extend(order_band(w.lines, loop_clipping(cfg)));
+            out.push(w.lines);
         }
     }
     out
 }
 
 /// The clipping at the end of a fill loop: `seam_gap`, a length or a percent of the nozzle.
-fn loop_clipping(cfg: &crate::config::PrintConfig) -> f64 {
+pub(crate) fn loop_clipping(cfg: &crate::config::PrintConfig) -> f64 {
     let nozzle = cfg.nozzle_diameter;
     match cfg.raw.get("seam_gap") {
         Some(serde_json::Value::String(t)) if t.trim().ends_with('%') => t
@@ -633,7 +647,7 @@ fn order_band(lines: Vec<crate::arachne::WallLine>, clip: f64) -> Vec<crate::ara
 }
 
 /// Takes `d` mm off the end of a bead; the cut end keeps the width of the point it replaces.
-fn clip_end(points: &mut Vec<IntPoint<i32>>, widths: &mut Vec<i32>, d: f64) {
+pub(crate) fn clip_end(points: &mut Vec<IntPoint<i32>>, widths: &mut Vec<i32>, d: f64) {
     let mut left = d * crate::geom::SCALE;
     while left > 0.0 && points.len() >= 2 {
         let (Some(&b), Some(&a)) = (points.last(), points.get(points.len() - 2)) else {

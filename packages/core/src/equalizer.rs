@@ -42,7 +42,7 @@ const TRIVIAL_DELTA: f64 = 10.0;
 /// Ramps shorter than this (mm) are left out.
 const RAMP_MIN_MM: f64 = 0.05;
 /// Roles: 0 for no extrusion role, then each feature by its index plus one.
-const ROLES: usize = 18;
+const ROLES: usize = crate::output::Feature::ALL.len() + 1;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -127,7 +127,7 @@ impl Params {
 }
 
 fn role_of(label: &str) -> usize {
-    (0..17u8)
+    (0..18u8)
         .filter_map(|i| feature_by_index(i).map(|f| (i, f)))
         .find(|(_, f)| f.gcode_label() == label)
         .map_or(0, |(i, _)| usize::from(i) + 1)
@@ -153,6 +153,7 @@ fn feature_by_index(i: u8) -> Option<Feature> {
         14 => F::Custom,
         15 => F::Skirt,
         16 => F::InternalBridge,
+        17 => F::FloatingShell,
         _ => return None,
     })
 }

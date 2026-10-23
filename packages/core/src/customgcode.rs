@@ -847,7 +847,7 @@ pub(crate) fn role_name(f: Option<crate::output::Feature>) -> &'static str {
         Some(Feature::OverhangWall) => "OverhangPerimeter",
         Some(Feature::TopSurface) => "TopSolidInfill",
         Some(Feature::BottomSurface) => "BottomSurface",
-        Some(Feature::InternalSolid) => "SolidInfill",
+        Some(Feature::InternalSolid | Feature::FloatingShell) => "SolidInfill",
         Some(Feature::SparseInfill) => "InternalInfill",
         Some(Feature::Bridge | Feature::InternalBridge) => "BridgeInfill",
         Some(Feature::GapFill) => "GapFill",
