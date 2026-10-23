@@ -407,23 +407,25 @@ impl Placement {
         Tower::new(cfg, tools, self.rows).map(|t| t.shaped(self.width, self.angle).at(self.origin))
     }
 
-    /// The report entry: corner, size and reason, mm.
-    pub(crate) fn report(&self, cfg: &PrintConfig, tools: u8) -> Option<crate::output::TowerPlacement> {
-        let t = self.tower(cfg, tools)?;
-        Some(crate::output::TowerPlacement {
+    /// The report entry for `t`, the tower as it prints (this placement's, with its rib wall): corner, size,
+    /// reason and the box it prints in, with a first layer `first_h` mm high and `height` mm to its top, mm.
+    pub(crate) fn report(&self, t: &Tower, first_h: f64, height: f64) -> crate::output::TowerPlacement {
+        crate::output::TowerPlacement {
             x: self.origin[0],
             y: self.origin[1],
             width: t.width,
             depth: t.depth,
             angle: t.angle,
             reason: self.reason,
-        })
+            footprint: t.footprint(first_h, height),
+        }
     }
 }
 
 /// How far an object's first layer reaches past its hull with `cfg`, mm: its brim, or its support's first layer
-/// (the pad `raft_first_layer_expansion` and `support_expansion` widen, a tree's brim and half a branch), whichever
-/// is wider, and with a skirt of its own (`skirt_type` per object) the skirt's loops round that.
+/// (the pad `raft_first_layer_expansion` and `support_expansion` widen, a tree's brim and half a branch, and for
+/// grid supports the cell the islands are stretched to), whichever is wider, and with a skirt of its own
+/// (`skirt_type` per object) the skirt's loops round that.
 pub(crate) fn room(cfg: &PrintConfig) -> f64 {
     room_with(cfg, cfg.brim_width)
 }
@@ -433,15 +435,19 @@ pub(crate) fn room_with(cfg: &PrintConfig, brim: f64) -> f64 {
     let brim = brim.max(0.0);
     let support = if cfg.enable_support {
         let s = &cfg.support;
-        let tree = if s.style.is_tree() {
-            s.tree_settings.brim_width.max(0.0) + 0.5 * s.tree_settings.branch_diameter.max(0.0)
+        let line = cfg.support_width().max(0.0);
+        let tree = s.style.is_tree() || s.tree;
+        let reach = if tree {
+            s.tree_settings.brim_width.max(0.0) + 0.5 * s.tree_settings.branch_diameter.max(0.0) + line
+        } else if matches!(
+            s.style,
+            crate::config::SupportStyle::Default | crate::config::SupportStyle::Grid
+        ) {
+            grid_reach(cfg, line)
         } else {
-            0.0
+            line
         };
-        s.expansion.max(0.0)
-            + cfg.raw_number("raft_first_layer_expansion", 2.0).max(0.0)
-            + tree
-            + cfg.feature_widths.support.unwrap_or(cfg.line_width).max(0.0)
+        s.expansion.max(0.0) + cfg.raw_number("raft_first_layer_expansion", 2.0).max(0.0) + reach
     } else {
         0.0
     };
@@ -451,6 +457,19 @@ pub(crate) fn room_with(cfg: &PrintConfig, brim: f64) -> f64 {
         return under;
     }
     under + cfg.skirt_distance.max(0.0) + f64::from(cfg.skirt_loops) * crate::session::skirt_spacing_mm(cfg)
+}
+
+/// How far grid style support can print past the overhang it holds up, mm: its islands are stretched to whole
+/// cells of the grid (a cell is `support_base_pattern_spacing` plus the line spacing, so an island that just
+/// reaches into a cell fills all of it), turned by `support_angle`, and printed half a line spacing past the
+/// cells. On a plate of mushroom-shaped parts the first layer pad reached 4.9 mm past the caps where the old
+/// estimate, the pad and one line, gave 2.45. `line` is the support line width.
+fn grid_reach(cfg: &PrintConfig, line: f64) -> f64 {
+    let h = cfg.initial_layer_print_height.min(cfg.layer_height).max(0.01);
+    let spacing = (line - h * (1.0 - std::f64::consts::FRAC_PI_4)).max(0.0);
+    let cell = spacing + cfg.support.base_spacing.max(0.0);
+    let turn = cfg.support.angle.to_radians();
+    cell * (turn.m_cos().abs() + turn.m_sin().abs()) + 0.5 * spacing + 0.01
 }
 
 /// Boxes `[min x, min y, max x, max y]` the tower must stay out of besides the objects: every
@@ -517,7 +536,8 @@ fn no_go(cfg: &PrintConfig) -> Vec<[f64; 4]> {
 /// the brim); else it takes the nearest clear spot on a 1 mm grid. By default (the setting on)
 /// the engine picks the clear spot nearest the objects (shortest travel), preferring the back of the
 /// bed. Where nothing fits, the tower gets wider (same purge, fewer rows) and is turned a quarter.
-/// Clear means on the bed with a 1 mm margin, the tower's brim included, outside the printer's
+/// Clear means on the bed with a 1 mm margin, all the tower prints included (its first layer's brim or brim
+/// chamfer to the outer edge of the last bead, a rib wall; `Tower::print_margin`), outside the printer's
 /// no-go zones, 1 mm past everything an object's first layer lays down beyond its hull (`rooms`, one per
 /// object: its brim, its support's pad and brim, a skirt of its own around them; `room`). A skirt round the whole plate
 /// goes round the tower too, so its distance and loops also stay inside the bed. `None` when the tower is off or
@@ -608,7 +628,7 @@ pub(crate) fn place(
             }) else {
                 continue;
             };
-            let r = t.reach(t.brim.max(0.0));
+            let r = t.reach(t.print_margin(cfg.initial_layer_print_height, height));
             let clear = |x: f64, y: f64| {
                 let (lx, ly, hx, hy) = (x + r[0], y + r[1], x + r[2], y + r[3]);
                 lx >= bed[0] + edge
@@ -1246,6 +1266,44 @@ impl Tower {
                 }
             })
             .collect()
+    }
+
+    /// How far past its box (with a rib wall, the box round the ribs) the tower's first layer prints, to the outer
+    /// edge of the outermost bead, mm, with a first layer `first_h` mm high and `height` mm to the top (which sizes a
+    /// negative brim). That layer prints the most: the brim (or brim chamfer) only narrows above it. A brim's
+    /// loops run inside its width from the box (`brim`); a type 1 tower's chamfer loops go round its wall, one
+    /// spacing apart, so the last bead reaches half a bead past them (`chamfer`). A rib wall runs on the box.
+    pub(crate) fn print_margin(&self, first_h: f64, height: f64) -> f64 {
+        let width = if self.brim < 0.0 {
+            (height / 100.0).min(1.0) * 8.0
+        } else {
+            self.brim
+        };
+        let spacing = self.wall_w - first_h * (1.0 - std::f64::consts::FRAC_PI_4);
+        let loops = if width > 0.0 && spacing > 0.0 {
+            ((width + spacing / 2.0) / spacing).floor().max(0.0)
+        } else {
+            0.0
+        };
+        let wall = if self.rib.is_some() {
+            self.wall_w / 2.0
+        } else {
+            0.0
+        };
+        if loops == 0.0 {
+            wall
+        } else if self.type1 {
+            loops * spacing + self.wall_w / 2.0
+        } else {
+            (loops * spacing).max(wall)
+        }
+    }
+
+    /// The plate box the tower prints in on every layer, `[min x, min y, max x, max y]` mm ([`Self::print_margin`]
+    /// round its box, turned).
+    pub(crate) fn footprint(&self, first_h: f64, height: f64) -> [f64; 4] {
+        let r = self.reach(self.print_margin(first_h, height));
+        [self.x + r[0], self.y + r[1], self.x + r[2], self.y + r[3]]
     }
 
     /// The tower's footprint on the plate with its rotation and `margin` mm around it:
@@ -2004,7 +2062,8 @@ mod tests {
         let Some(t) = p.tower(&c, 2) else { panic!("tower") };
         assert_eq!(p.reason, TowerReason::MovedOntoBed);
         assert!((p.origin[0] - 15.0).abs() < 1e-9, "x {}", p.origin[0]);
-        let r = t.reach(3.0);
+        // The brim's outermost bead keeps the 1 mm margin to the edge.
+        let r = t.reach(t.print_margin(c.initial_layer_print_height, 50.0));
         assert!(
             (p.origin[1] + r[3] - 255.0).abs() < 1e-9,
             "back edge {} of a {:.1} mm deep tower",

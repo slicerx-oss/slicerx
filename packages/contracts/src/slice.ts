@@ -274,6 +274,8 @@ export interface PrimeTowerPlacement {
   depth: number
   angle: number
   reason: PrimeTowerReason
+  /** `[min x, min y, max x, max y]`, mm: the plate area the tower prints on, on every layer, its first layer's brim and a rib wall's ribs included. Absent from older engines. */
+  footprint?: [number, number, number, number]
 }
 
 /**
