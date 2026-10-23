@@ -48,6 +48,8 @@ pub(crate) struct LayerChunk {
     error: Option<String>,
     /// Where the writer has the nozzle when the layer starts (X, Y and Z, mm, as written), when it knows.
     start: Option<[f64; 3]>,
+    /// Where in `bytes` the layer's first tool change starts, if it has one.
+    change_at: Option<usize>,
 }
 
 fn custom(
@@ -1568,7 +1570,8 @@ pub(crate) fn settle_cooling(out: &mut SliceOutput, config: &PrintConfig) {
                 "layer {} extrudes before any move to its start, so its cooling time counts from the origin",
                 l.index
             );
-            let beyond = crate::cooling::layer_time_from(&chunk.bytes, start) - planned;
+            // A tool change before the layer's first extrusion counts as well, from where it starts.
+            let beyond = crate::cooling::layer_time_from(&chunk.bytes, start, chunk.change_at) - planned;
             let relaid = crate::paths::recool(l, c, &fc, beyond);
             #[allow(clippy::cast_possible_truncation, reason = "layer times are small")]
             let (planned, beyond) = (planned as f32, beyond as f32);
@@ -1628,6 +1631,7 @@ fn emit_layer(
         tool_changes: 0,
         error: None,
         start: None,
+        change_at: None,
     };
     // Custom G-code of this layer, rendered only when the profile or the request has some.
     let wants_templates = [
@@ -2284,6 +2288,7 @@ fn emit_layer(
         {
             if p.tool != tool && tool != u8::MAX {
                 chunk.tool_changes += 1;
+                chunk.change_at.get_or_insert(b.len());
                 wipe_due = true;
             }
             let next = i64::from(p.tool.max(1) - 1);

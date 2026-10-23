@@ -14,14 +14,16 @@ use crate::fm::Fm as _;
 /// [`layer_time_from`] of a layer that moves to its start.
 #[cfg(test)]
 pub(crate) fn layer_time(text: &[u8]) -> f64 {
-    layer_time_from(text, None)
+    layer_time_from(text, None, None)
 }
 
 /// Seconds the cooling buffer gives the layer whose G-code is `text`. `start` (X, Y and Z, mm) is where the
 /// writer has the nozzle when the layer begins, when it knows: a layer that goes on from where the layer below
 /// ended (a spiral vase layer, or a loop that starts on the last one's end) writes no move to its start, and
-/// without it the first extrusion of such a layer would run from the origin.
-pub(crate) fn layer_time_from(text: &[u8], start: Option<[f64; 3]>) -> f64 {
+/// without it the first extrusion of such a layer would run from the origin. The time counts from the first
+/// extrusion, or from byte `begin` of `text` when that comes first (a tool change ahead of the first extrusion: the
+/// change, its purge and the travel after it are part of the layer).
+pub(crate) fn layer_time_from(text: &[u8], start: Option<[f64; 3]>, begin: Option<usize>) -> f64 {
     let mut at = [0.0f64; 4];
     if let Some([x, y, z]) = start {
         at = [x, y, z, 0.0];
@@ -31,7 +33,12 @@ pub(crate) fn layer_time_from(text: &[u8], start: Option<[f64; 3]>) -> f64 {
     let mut relative_e = true;
     let mut started = false;
     let mut t = 0.0;
+    let mut offset = 0usize;
     for line in text.split(|&b| b == b'\n') {
+        if begin.is_some_and(|b| offset >= b) {
+            started = true;
+        }
+        offset += line.len() + 1;
         let line = line.split(|&b| b == b';').next().unwrap_or(&[]);
         let Ok(line) = std::str::from_utf8(line) else {
             continue;
@@ -220,10 +227,26 @@ mod tests {
     }
 
     #[test]
+    fn a_tool_change_ahead_of_the_first_extrusion_counts_from_its_start() {
+        // A layer that opens with a tool change: a purge with no X or Y, a travel, then the first extrusion.
+        let change = "M620 S1A\nT1\nG1 E20 F600\nG0 X10 Y0 F6000\n";
+        let g = format!("{change}G1 X20 Y0 E1 F600\n");
+        // From the first extrusion only: the 10 mm line at 10 mm/s.
+        assert!((layer_time(g.as_bytes()) - 1.0).abs() < 1e-9);
+        // From the change: the 20 mm purge at 10 mm/s and the 10 mm travel at 100 mm/s as well.
+        let t = layer_time_from(g.as_bytes(), None, Some(0));
+        assert!((t - (2.0 + 0.1 + 1.0)).abs() < 1e-9, "{t}");
+        // A change after the first extrusion is counted either way.
+        let mid = format!("G0 X10 Y0 F6000\nG1 X20 Y0 E1 F600\n{change}");
+        let at = mid.find("M620").unwrap();
+        assert!((layer_time_from(mid.as_bytes(), None, Some(at)) - layer_time(mid.as_bytes())).abs() < 1e-9);
+    }
+
+    #[test]
     fn a_layer_that_starts_without_a_move_counts_from_its_start() {
         // A spiral vase layer: the nozzle is at the end of the layer below, and the G-code goes straight on.
         let g = "G1 Z0.6 F600\nG1 F1200\nG1 X20 Y10 Z0.7 E0.5\nG1 X20 Y20 Z0.8 E0.5\n";
-        let t = layer_time_from(g.as_bytes(), Some([10.0, 10.0, 0.6]));
+        let t = layer_time_from(g.as_bytes(), Some([10.0, 10.0, 0.6]), None);
         let want = 2.0 * (10.0_f64 * 10.0 + 0.1 * 0.1).sqrt() / 20.0;
         assert!((t - want).abs() < 1e-9, "{t} {want}");
         // The same as a layer that travels there first.
@@ -231,7 +254,7 @@ mod tests {
         assert!((layer_time(travelled.as_bytes()) - want).abs() < 1e-9);
         // Without the start the first extrusion runs from the origin: 22.4 mm where it is 10.
         assert!(layer_time(g.as_bytes()) > want + 0.5);
-        assert!((layer_time_from(g.as_bytes(), None) - layer_time(g.as_bytes())).abs() < f64::EPSILON);
+        assert!((layer_time_from(g.as_bytes(), None, None) - layer_time(g.as_bytes())).abs() < f64::EPSILON);
     }
 
     #[test]
