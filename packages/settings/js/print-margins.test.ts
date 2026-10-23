@@ -56,3 +56,17 @@ describe('support reach on the first layer', () => {
     expect(reach({ ...P1S, enable_support: false })).toBe(0)
   })
 })
+
+describe('an automatic first layer expansion', () => {
+  // Bambu Studio writes -1 for an automatic raft_first_layer_expansion; the engine reads any value below 0 as 2 mm.
+  const grow = (cfg: Record<string, SettingValue>) => objectPrintMargins(cfg).grow({ w: 40, h: 40, height: 10 })
+  it.each<SettingValue>([-1, '-1', -0.5])('reads %s as 2 mm for support', (v) => {
+    expect(reach({ ...P1S, raft_first_layer_expansion: v })).toBeCloseTo(reach({ ...P1S, raft_first_layer_expansion: 2 }), 9)
+    expect(reach({ ...P1S, support_type: 'tree(auto)', raft_first_layer_expansion: v })).toBeCloseTo(reach({ ...P1S, support_type: 'tree(auto)', raft_first_layer_expansion: 2 }), 9)
+  })
+  it.each<SettingValue>([-1, '-1', -0.5])('reads %s as 2 mm for a raft', (v) => {
+    const raft = { ...P1S, enable_support: false, raft_layers: 3, raft_expansion: 0 }
+    expect(grow({ ...raft, raft_first_layer_expansion: v })).toBeCloseTo(grow({ ...raft, raft_first_layer_expansion: 2 }), 9)
+    expect(grow({ ...raft, raft_first_layer_expansion: 2 })).toBeCloseTo(2, 9)
+  })
+})
