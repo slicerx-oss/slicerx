@@ -61,6 +61,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-outdated` | The note under the slice summary's Export when the plate changed after the slice shown: Export waits for a new slice |
 | `rolled-back` | The notice under Print and Export while the design timeline is rolled back, with Move to the end |
 | `raven-loading` | Huginn and Muninn over the plate while a model loads for more than about 1.2 s |
+| `step-reading`, `step-reading-cancel` | The bar in the middle of the view while a STEP file is read for more than about 1.2 s, with the file's name, and its Cancel, which stops the read |
 
 ## mimir tab
 
@@ -510,6 +511,7 @@ them. `packages/app/test/test-ids.test.ts` keeps this table and its own list the
 | `model-tool-cancel` | Closes a modeling tool; what was applied stays, and nothing more is undone |
 | `mimir-sheet-cancel` | Answers the size sheet as not confirmed; nothing is built and nothing is removed |
 | `mimir-send-cancel` | Not now on the send card: answers it as not approved, so nothing is sent |
+| `step-reading-cancel` | Stops reading a STEP file that is opening; nothing on the plate or on disk is removed |
 | `update-sheet` | The update sheet itself |
 | `update-body` | The sheet body, read for its step |
 | `update-download` | Opens the download page for a package install; nothing is installed |
