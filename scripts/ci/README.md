@@ -132,6 +132,13 @@ the lock over only on evidence from the holder's own side:
   proved dead: its own `heavy.sh` should have stopped it by then. The history logs it as a `stale holder`, and the
   process is left running.
 
+Waiters judge the holders while they wait, and a holder judges every other slot once right after it takes its own,
+by the same rules. A job cancelled past its traps leaves a dead holder behind, and with a free slot beside it no one
+waits for that one, so it would stay until the slots filled up. The judgement runs in the background, on none of the
+caller's streams (the history logs what it clears), so the take is not slowed and nothing waits for it to end. It
+never touches the holder's own slots, and like a waiter's it clears a slot only while it still holds the record that
+was judged.
+
 From WSL, Windows programs run through `/init`, as WSL's binfmt entry would run them: a distro with systemd can lose
 that entry, and then `powershell.exe` and `wsl.exe` fail when called directly.
 

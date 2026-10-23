@@ -55,8 +55,10 @@
 #
 # Each slot is a directory holding its holder's record (mkdir is atomic; macOS has no flock command): <lock> is the
 # first, <lock>.2 the second, and so on. A slot whose holder has died is taken over, so a crashed job never wedges the
-# machine. The record's first line names the pid, the start and the command; the lines after it the holder's side and
-# process identity, its user, and its SX_HEAVY_LABEL and session when there are any.
+# machine: waiters judge the holders while they wait, and a holder judges the other slots once right after its take
+# (in the background, so the take is not slowed), so a dead holder beside a free slot is cleared too. The record's first
+# line names the pid, the start and the command; the lines after it the holder's side and process identity, its user,
+# and its SX_HEAVY_LABEL and session when there are any.
 #
 # Waiters take a ticket in <lock>.queue, named <class>-<seconds>-<sequence>-<side>-<pid>[-all|-e2e|-gpu|-engine], where class
 # 0 is a CI job (SX_HEAVY_PRIORITY=ci, or a self-hosted runner) and 1 anything else, so CI jobs go first and the rest
@@ -490,6 +492,17 @@ judge_slot() {
   fi
   return 1
 }
+# Judges every slot but this holder's own once, right after its take. A job cancelled past its traps leaves a dead
+# holder, and while a slot beside it is free no waiter waits for its slot to judge it. It runs in the background on
+# none of the caller's streams (the history logs what it clears), so the take is not slowed and nothing waits for it.
+reap() {
+  local d
+  trap - EXIT INT TERM
+  for d in "${slot_dirs[@]}" "${gpu_dirs[@]}"; do
+    mine "$d" || [ ! -e "$d" ] || judge_slot "$d"
+  done
+  exit 0
+}
 # Drops the tickets of dead waiters: those left alone for 2 minutes (on the lock's own clock: our ticket's mtime). Warns
 # once about a ticket from a heavy.sh older than 2026-10-08 (<seconds>-<side>-<pid>): it sorts after every ticket of
 # this one, and such a copy only tries the lock while its own ticket is first, so it waits as long as others keep coming.
@@ -799,6 +812,7 @@ while :; do
   fi
   sleep "$poll"
 done
+reap < /dev/null > /dev/null 2>&1 &
 ran=1 t_run=$SECONDS
 if [ -n "$sx_lc_all" ]; then LC_ALL=${sx_lc_all#1}; else unset LC_ALL; fi
 if [ -n "$sx_lc_collate" ]; then LC_COLLATE=${sx_lc_collate#1}; else unset LC_COLLATE; fi

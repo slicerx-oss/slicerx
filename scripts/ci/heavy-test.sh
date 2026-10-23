@@ -534,6 +534,72 @@ promoted=$(ls "$dir.queue" | grep -c '^0-')
 release pr "$pr"; wait "$pP"; rc=$?
 ok eval '[ "$promoted" = 1 ] && [ "$rc" = 0 ] && [ "$(cat "$tmp/order")" = P ] && grep -q "	promote	" "$tmp/history.log"'
 
+# Reap on take: right after its take a holder judges the other slots once, in the background, by the waiters' rules.
+# A job cancelled past its traps leaves a dead holder, and with a free slot beside it no waiter waits to judge it.
+echo 4 > "$dir.slots"
+rm -rf "$dir" "$dir".[234]
+sleep 0 & dead=$!; wait $dead
+# A record of this side with a dead pid: on Linux and WSL from this boot, elsewhere an old one with no side.
+dead_rec() {
+  case $side in
+    wsl | linux) printf 'pid %s since 2026-01-01 00:00:00: dead\nside %s\nstart 1\nboot %s\ndistro %s\n' "$dead" "$side" \
+      "$(cat /proc/sys/kernel/random/boot_id)" "${WSL_DISTRO_NAME:-}" ;;
+    *) printf 'pid %s since 2026-01-01 00:00:00: dead\n' "$dead" ;;
+  esac
+}
+# The history's clear lines for slot $1.
+cleared() { grep -c "	clear	[a-z]*	${1##*/}	" "$tmp/history.log"; }
+# Waits until the history has a clear line for slot $1 (written just after the slot goes), for at most 20 s.
+wait_clear() { for _ in $(seq 100); do [ "$(cleared "$1")" = 0 ] || return 0; sleep 0.2; done; return 1; }
+: > "$tmp/history.log"
+mkdir "$dir.2" && printf 'pid %s since 2026-01-01 00:00:00: live\n%s\n' $$ "$(my_identity right)" > "$dir.2/owner"
+cp "$dir.2/owner" "$tmp/live.rec"
+mkdir "$dir.3"
+mkdir "$dir.4" && dead_rec > "$dir.4/owner"
+SX_HEAVY_LOCK=$lock SX_HEAVY_ORPHAN=60 bash "$heavy" sh -c '[ -d "$1" ] && echo took > "$2"' sh "$dir" "$tmp/reap.took"; rc=$?
+# The slots are judged in order, so once the fourth is cleared the second and third have been judged.
+wait_clear "$dir.4"
+name="a take clears a dead holder in another slot, with a clear line in the history"
+ok eval '[ ! -e "$dir.4" ] && grep -q "	clear	plain	lock.4	.*	dead holder: pid $dead since " "$tmp/history.log"'
+name="and leaves a live holder in another slot alone"
+ok eval 'cmp -s "$dir.2/owner" "$tmp/live.rec" && [ "$(cleared "$dir.2")" = 0 ]'
+name="and a slot with no record younger than SX_HEAVY_ORPHAN"
+ok eval '[ -d "$dir.3" ] && [ ! -e "$dir.3/owner" ] && [ "$(cleared "$dir.3")" = 0 ]'
+name="and the take itself runs its command in its own slot and releases it"
+ok eval '[ "$rc" = 0 ] && [ "$(cat "$tmp/reap.took")" = took ] && [ ! -e "$dir" ] && grep -q "	take	plain	lock	" "$tmp/history.log"'
+rm -rf "$dir".[234]
+
+# A record that changes while it is judged is left to its new holder. Windows is asked about a Git Bash holder through
+# timeout and powershell.exe (from Git Bash and from WSL), so a timeout first on PATH holds the answer for that
+# holder's Windows pid ("gone") until the test has written the new record, and runs every other command as it is.
+# Elsewhere such a record is never judged.
+if [ "$side" = msys ] || [ "$side" = wsl ]; then
+  mkdir "$tmp/stub"
+  cat > "$tmp/stub/timeout" << EOF
+#!/bin/sh
+case " \$* " in *"Get-Process -Id 4194300 "*) ;; *) shift; exec "\$@" ;; esac
+: > "$tmp/stub.asked"
+for _ in \$(seq 300); do [ -e "$tmp/stub.go" ] && break; sleep 0.2; done
+echo gone
+EOF
+  chmod +x "$tmp/stub/timeout"
+  mkdir "$dir.2" && printf 'pid %s since 2026-01-01 00:00:00: windows\nside msys\nstart 1\nwinpid 4194300\nwinstart 1\n' "$dead" > "$dir.2/owner"
+  mkdir "$dir.3" && dead_rec > "$dir.3/owner"
+  PATH=$tmp/stub:$PATH SX_HEAVY_LOCK=$lock bash "$heavy" sh -c 'echo took > "$1"' sh "$tmp/reap.took2" > /dev/null 2>&1 &
+  pR=$!; lpids="$lpids $!"
+  for _ in $(seq 100); do [ -e "$tmp/stub.asked" ] && [ -s "$tmp/reap.took2" ] && ! kill -0 "$pR" 2> /dev/null && break; sleep 0.2; done
+  name="the take runs its command and ends while the judgement of another slot still waits"
+  ok eval '[ -e "$tmp/stub.asked" ] && [ "$(cat "$tmp/reap.took2")" = took ] && ! kill -0 "$pR" 2> /dev/null'
+  printf 'pid %s since 2026-01-01 00:00:00: new holder\n%s\n' $$ "$(my_identity right)" > "$dir.2/owner"
+  : > "$tmp/stub.go"
+  wait_clear "$dir.3"
+  name="a record that changes between the read and the clear is left alone"
+  ok eval '[ ! -e "$dir.3" ] && [ "$(head -n 1 "$dir.2/owner")" = "pid $$ since 2026-01-01 00:00:00: new holder" ] \
+    && [ "$(cleared "$dir.2")" = 0 ] && [ "$(cleared "$dir.3")" = 1 ]'
+  rm -rf "$dir".[23]
+fi
+rm -f "$dir.slots"
+
 if [ "${1:-}" = cross ]; then
   distro=${2:?usage: heavy-test.sh cross <distro> [<stopped distro>]} stopped=${3:-}
   [ "$side" = msys ] || { echo "cross runs from Git Bash" >&2; exit 2; }
