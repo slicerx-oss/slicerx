@@ -1281,7 +1281,14 @@ fn footer(out: &SliceOutput, c: &PrintConfig, flavor: GcodeFlavor) -> Result<Vec
 }
 
 /// The print's closing retraction: Orca wipes along the last path while it retracts, when the filament wipes.
-fn closing_retract(b: &mut Vec<u8>, style: Retraction, rc: &PrintConfig, c: &PrintConfig, last: &LayerPaths) {
+/// `off` is the nozzle offset the last layer's moves were written less.
+fn closing_retract(
+    b: &mut Vec<u8>,
+    style: Retraction,
+    (rc, c): (&PrintConfig, &PrintConfig),
+    last: &LayerPaths,
+    off: Point,
+) {
     let tail = last.wipe_tail();
     if rc.retraction_length > 0.0
         && rc.wipe
@@ -1300,6 +1307,7 @@ fn closing_retract(b: &mut Vec<u8>, style: Retraction, rc: &PrintConfig, c: &Pri
             (at, &tail.points, tail.forward),
             (e_units(rc.retraction_length), feed(rc.retraction_speed)),
             speed,
+            off,
         );
     } else if rc.retraction_length > 0.0 {
         b.extend_from_slice(b"G1 E-");
@@ -1335,7 +1343,9 @@ fn footer_body(out: &SliceOutput, c: &PrintConfig, flavor: GcodeFlavor) -> Resul
         .last()
         .is_some_and(|l| crate::timelapse::ends_print_with_block(c, flavor, l, out.prime_tower.is_some()));
     if !done && let Some(l) = out.layers.last() {
-        closing_retract(&mut b, style, &rc, c, l);
+        // The wipe goes out with the offset the last layer's moves ended on.
+        let off = crate::griffin::end_offset(out.config_at(c, l.cfg), flavor, l);
+        closing_retract(&mut b, style, (&rc, c), l, off);
     }
     let mut ctx = crate::customgcode::context(c, out);
     ctx.set_num("layer_num", f64::from(out.layer_count.saturating_sub(1)));
@@ -1594,10 +1604,10 @@ fn emit_layer(
     let ultimaker = flavor.is_ultimaker();
     // The nozzle offset the moves are written with, on the Ultimaker S series and Bambu Lab printers: every
     // generated move goes out as its plate position less the active tool's `extruder_offset` (a Bambu Lab P1 or
-    // X1 writes Y 2 mm short of the plate). Cleared for every other printer, and set for every layer, as the
-    // writer's thread goes on to other layers. Custom G-code text is written as is.
+    // X1 writes Y 2 mm short of the plate). Zero for every other printer. The layer's writer holds it and passes
+    // it to every move it writes. Custom G-code text is written as is.
     let first_slot = crate::griffin::layer_slot(l);
-    crate::griffin::set_tool(
+    let mut off = crate::griffin::offset(
         c,
         if crate::griffin::applies_offset(c, flavor) {
             first_slot
@@ -1785,6 +1795,7 @@ fn emit_layer(
                     (at, &tail.points, tail.forward),
                     (retract, retract_feed),
                     speed,
+                    off,
                 );
             }
             None => retract_move(b, style, -retract, retract_feed),
@@ -1921,7 +1932,7 @@ fn emit_layer(
         put_int(b, z_feed);
         b.push(b'\n');
         b.extend_from_slice(b"G0");
-        put_xy(b, first_pt);
+        put_xy(b, off, first_pt);
         b.extend_from_slice(b" F");
         put_int(b, travel_feed);
         b.push(b'\n');
@@ -2043,7 +2054,7 @@ fn emit_layer(
     #[allow(clippy::cast_precision_loss, reason = "z in thousandths is small")]
     {
         chunk.start = cursor.map(|p| {
-            let p = crate::griffin::shifted(p);
+            let p = crate::griffin::shifted(p, off);
             [p.x_mm(), p.y_mm(), z_below as f64 / 1000.0]
         });
     }
@@ -2131,6 +2142,7 @@ fn emit_layer(
         if pending_lift.take().is_some() {
             write_eager_lift(
                 b,
+                off,
                 &rc,
                 Lift::of_block(&rc),
                 cursor,
@@ -2213,6 +2225,7 @@ fn emit_layer(
                     (at, last_pts, wipe_forward && last_was_loop),
                     (retract, retract_feed),
                     speed_feed,
+                    off,
                 ) {
                     speed_feed = w.feed;
                     cursor = Some(w.end);
@@ -2226,6 +2239,7 @@ fn emit_layer(
                 let z0 = if pending_lift.take().is_some() { z_below } else { z };
                 write_eager_lift(
                     b,
+                    off,
                     &rc,
                     Lift::of_block(&rc),
                     cursor,
@@ -2308,6 +2322,7 @@ fn emit_layer(
                     (at, last_pts, wipe_forward && last_was_loop),
                     (tc, retract_feed),
                     speed_feed,
+                    off,
                 ) {
                     speed_feed = w.feed;
                     // The wipe moved the nozzle: the lift below starts where it stopped.
@@ -2331,6 +2346,7 @@ fn emit_layer(
                 let z0 = if pending_lift.take().is_some() { z_below } else { z };
                 write_eager_lift(
                     b,
+                    off,
                     &rc,
                     Lift::Spiral,
                     cursor,
@@ -2385,7 +2401,7 @@ fn emit_layer(
                     };
                     let (text, left) = crate::griffin::switch(&w);
                     b.extend_from_slice(text.as_bytes());
-                    crate::griffin::set_tool(c, p.tool.max(1));
+                    off = crate::griffin::offset(c, p.tool.max(1));
                     // Left lifted and retracted at the switching position: the next travel comes down and primes.
                     retracted = left > 0.0;
                     retracted_by = e_units(left);
@@ -2627,7 +2643,7 @@ fn emit_layer(
             if accel_on && let Some(motion) = motions.get_mut(usize::from(p.tool)) {
                 b.extend_from_slice(motion.travel_lines(false, p.feature, &mut motion_now).as_bytes());
             }
-            put_travel(b, from, start, Some(NOZZLE_WIPE_BACK_FEED));
+            put_travel(b, off, from, start, Some(NOZZLE_WIPE_BACK_FEED));
             if retracts {
                 retract_move(b, style, retract, retract_feed);
             }
@@ -2730,6 +2746,7 @@ fn emit_layer(
                 Some(from) => {
                     lift_on_travel = write_lift(
                         b,
+                        off,
                         &rc,
                         kind,
                         [from, toward(&plan)],
@@ -2751,6 +2768,7 @@ fn emit_layer(
                 (at, last_pts, wipe_forward && last_was_loop),
                 (retract, retract_feed),
                 speed_feed,
+                off,
             ) {
                 speed_feed = w.feed;
                 // The wipe moved the nozzle along the last path: the lift and the travel start where it stopped,
@@ -2774,6 +2792,7 @@ fn emit_layer(
                     };
                     lift_on_travel = write_lift(
                         b,
+                        off,
                         &rc,
                         Lift::of_travel(&rc, over),
                         [from, first],
@@ -2823,7 +2842,7 @@ fn emit_layer(
             }
             for stop in route {
                 b.extend_from_slice(b"G0");
-                put_xy(b, stop);
+                put_xy(b, off, stop);
                 if let Some(zl) = lift_on_travel.take() {
                     b.extend_from_slice(b" Z");
                     put_fixed(b, zl, 3);
@@ -2846,7 +2865,7 @@ fn emit_layer(
         }
         if approach.is_some() && cursor != Some(start) {
             b.extend_from_slice(b"G1");
-            put_xy(b, start);
+            put_xy(b, off, start);
             b.push(b'\n');
         }
         if accel_on {
@@ -3025,7 +3044,7 @@ fn emit_layer(
             }
         });
         if let Some(nw) = nozzle_wipe {
-            let (e, end) = write_nozzle_wipe(b, &nw, pts, &line_e);
+            let (e, end) = write_nozzle_wipe(b, off, &nw, pts, &line_e);
             e_sum += e;
             prev = end;
         } else if let Some((zv, fv)) = spans {
@@ -3051,7 +3070,7 @@ fn emit_layer(
                 }
                 let e = e_units(len * e_per_mm * f64::from(fq));
                 b.extend_from_slice(b"G1");
-                put_xy(b, q);
+                put_xy(b, off, q);
                 if spiral || z_i(zq) != cur_z {
                     b.extend_from_slice(b" Z");
                     put_fixed(b, z_i(zq), 3);
@@ -3072,7 +3091,7 @@ fn emit_layer(
                             continue;
                         }
                         b.extend_from_slice(b"G1");
-                        put_xy(b, q);
+                        put_xy(b, off, q);
                         b.extend_from_slice(b" E");
                         put_fixed(b, e, 5);
                         b.push(b'\n');
@@ -3087,7 +3106,7 @@ fn emit_layer(
                     } => {
                         let e = line_e(len);
                         b.extend_from_slice(if ccw { b"G3" } else { b"G2" });
-                        put_xy(b, end);
+                        put_xy(b, off, end);
                         b.extend_from_slice(b" I");
                         put_fixed(b, e_units_mm(center[0]), 3);
                         b.extend_from_slice(b" J");
@@ -3108,7 +3127,7 @@ fn emit_layer(
                     continue;
                 }
                 b.extend_from_slice(b"G1");
-                put_xy(b, q);
+                put_xy(b, off, q);
                 b.extend_from_slice(b" E");
                 put_fixed(b, e, 5);
                 b.push(b'\n');
@@ -3145,7 +3164,7 @@ fn emit_layer(
             && let Some(inward) = inward_wipe_point(pts, prev)
         {
             b.extend_from_slice(b"G1");
-            put_xy(b, inward);
+            put_xy(b, off, inward);
             b.push(b'\n');
             prev = inward;
         }
@@ -3170,7 +3189,7 @@ fn emit_layer(
     if closing {
         if !retracted {
             let last_tool = l.paths.last().map_or(1, |p| p.tool.max(1));
-            closing_retract(b, style, &c.for_filament(last_tool), c, l);
+            closing_retract(b, style, (&c.for_filament(last_tool), c), l, off);
         }
         if let (Some(lb), Some(prev)) = (labels.as_ref(), open_object.take()) {
             for t in [lb.comment_end(prev), lb.fw_end(prev)].into_iter().flatten() {
@@ -3201,6 +3220,7 @@ fn emit_layer(
         if !in_place && lift_ok && style.active(retract) {
             write_eager_lift(
                 b,
+                off,
                 &rc,
                 Lift::of_block(&rc),
                 cursor,
@@ -3217,7 +3237,7 @@ fn emit_layer(
             && let Some(at) = cursor
         {
             b.extend_from_slice(b"G0");
-            put_xy(b, at);
+            put_xy(b, off, at);
             b.extend_from_slice(b" F");
             put_int(b, travel_feed);
             b.push(b'\n');
@@ -3291,6 +3311,8 @@ fn lift_and_restart(rc: &PrintConfig, zmm: f64) -> (i64, bool, i64, i64) {
 struct Wipe<'a> {
     /// Where the nozzle is.
     cursor: Point,
+    /// The nozzle offset the moves are written less (`griffin::shifted`).
+    off: Point,
     /// The last extrusion's points; a closed loop repeats its first point.
     path: &'a [Point],
     /// Wipe on along the path from its second point (a loop) rather than back along it.
@@ -3336,6 +3358,7 @@ fn retract_wiping(
     (at, path, forward): (Point, &[Point], bool),
     (retract, retract_feed): (i64, i64),
     speed_feed: i64,
+    off: Point,
 ) -> Option<Wiped> {
     if !(rc.wipe && rc.wipe_distance > 0.0 && path.len() >= 2) {
         retract_move(b, style, -retract, retract_feed);
@@ -3346,6 +3369,7 @@ fn retract_wiping(
         style,
         &Wipe {
             cursor: at,
+            off,
             path,
             forward,
             retract,
@@ -3370,6 +3394,7 @@ struct Wiped {
 /// last path for `wipe_distance` at the wipe speed while the rest of the retraction, as much as the retraction
 /// speed allows in that time, comes off along it; whatever is left is retracted after.
 fn wipe_retract(b: &mut Vec<u8>, style: Retraction, w: &Wipe<'_>) -> Wiped {
+    let off = w.off;
     // The points the nozzle goes through: from where it is, along the path.
     let mut pts: Vec<Point> = vec![w.cursor];
     if w.forward {
@@ -3441,7 +3466,7 @@ fn wipe_retract(b: &mut Vec<u8>, style: Retraction, w: &Wipe<'_>) -> Wiped {
     for (p, len) in walk {
         let de = during * len / span;
         b.extend_from_slice(b"G1");
-        put_xy(b, p);
+        put_xy(b, off, p);
         if de.abs() > f64::EPSILON {
             b.extend_from_slice(b" E");
             put_fixed(b, -e_units(de), 5);
@@ -3806,9 +3831,9 @@ fn e_units_mm(mm: f64) -> i64 {
     (mm * 1000.0).round() as i64
 }
 
-fn put_xy(b: &mut Vec<u8>, p: Point) {
+fn put_xy(b: &mut Vec<u8>, off: Point, p: Point) {
     // Ultimaker writes the second print core's moves less its nozzle offset (griffin.rs).
-    let p = crate::griffin::shifted(p);
+    let p = crate::griffin::shifted(p, off);
     b.extend_from_slice(b" X");
     put_fixed(b, round_div(i64::from(p.x), 10), 3);
     b.extend_from_slice(b" Y");
@@ -4037,7 +4062,15 @@ fn helical_lift(rc: &PrintConfig) -> bool {
 /// point `ij` (mm) away, climbing from `z_from` to `z_to` (thousandths) at the Z feed rate. As one `G3 ... P1`
 /// arc when [`helical_lift`] says the printer takes it; otherwise short moves round the circle, their count set by
 /// the profile's resolution (8 at 0.01 mm, 4 to 16).
-fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2], z: [i64; 2], z_feed: i64) {
+fn write_spiral_lift(
+    b: &mut Vec<u8>,
+    off: Point,
+    rc: &PrintConfig,
+    from: Point,
+    ij: [f64; 2],
+    z: [i64; 2],
+    z_feed: i64,
+) {
     let [i, j] = ij;
     let [z_from, z_to] = z;
     // Orca's wording with `gcode_comments` (GCodeWriter::_spiral_travel_to_z).
@@ -4088,6 +4121,7 @@ fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2
         b.extend_from_slice(b"G1");
         put_xy(
             b,
+            off,
             Point::from_mm(cx + radius * a.m_cos(), cy + radius * a.m_sin()),
         );
         b.extend_from_slice(b" Z");
@@ -4100,7 +4134,7 @@ fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2
         b.push(b'\n');
     }
     b.extend_from_slice(b"G1");
-    put_xy(b, from);
+    put_xy(b, off, from);
     b.extend_from_slice(b" Z");
     put_fixed(b, z_to, 3);
     b.push(b'\n');
@@ -4112,8 +4146,10 @@ fn write_spiral_lift(b: &mut Vec<u8>, rc: &PrintConfig, from: Point, ij: [f64; 2
 /// The spiral turns to the travel's left, else to its right, else the nozzle lifts straight up: its whole turn
 /// stays on the bed and out of the keep-out zones. Returns the height the travel itself climbs to when the lift
 /// rides on it (a slope too short for its ramp). `feeds` are the travel's and the Z moves'.
+#[allow(clippy::too_many_arguments, reason = "the move's parts, each its own value")]
 fn write_lift(
     b: &mut Vec<u8>,
+    off: Point,
     rc: &PrintConfig,
     kind: Lift,
     way: [Point; 2],
@@ -4142,7 +4178,7 @@ fn write_lift(
                 .into_iter()
                 .find(|&ij| r > 0.0 && spiral_fits(rc, zones, from, ij))
             {
-                Some(ij) => write_spiral_lift(b, rc, from, ij, [z_from, z_to], z_feed),
+                Some(ij) => write_spiral_lift(b, off, rc, from, ij, [z_from, z_to], z_feed),
                 None => write_normal_lift(b, z_to, z_feed),
             }
             None
@@ -4151,7 +4187,7 @@ fn write_lift(
             Some(mid) => {
                 // The ramp is part of the travel and runs at the travel speed.
                 b.extend_from_slice(b"G1");
-                put_xy(b, mid);
+                put_xy(b, off, mid);
                 b.extend_from_slice(b" Z");
                 put_fixed(b, z_to, 3);
                 b.extend_from_slice(b" F");
@@ -4175,8 +4211,10 @@ fn write_lift(
 /// The lift made at once before custom G-code, from the height the nozzle is at to the lifted one (`z`,
 /// thousandths): for a spiral, a turn beside the nozzle on +X, else on -X, when the nozzle's place is known and
 /// the turn fits ([`spiral_fits`]); otherwise straight up.
+#[allow(clippy::too_many_arguments, reason = "the move's parts, each its own value")]
 fn write_eager_lift(
     b: &mut Vec<u8>,
+    off: Point,
     rc: &PrintConfig,
     kind: Lift,
     at: Option<Point>,
@@ -4194,7 +4232,7 @@ fn write_eager_lift(
             .map(|ij| (from, ij))
     });
     match turn {
-        Some((from, ij)) => write_spiral_lift(b, rc, from, ij, z, z_feed),
+        Some((from, ij)) => write_spiral_lift(b, off, rc, from, ij, z, z_feed),
         None => write_normal_lift(b, z_to, z_feed),
     }
 }
@@ -4463,8 +4501,11 @@ fn tower_reheat(c: &PrintConfig, slot: u8, layer: u32, extruder: usize) -> Optio
 }
 
 /// A `G1` travel from `from` to `to` with only the axes that change, and the feed rate when given.
-fn put_travel(b: &mut Vec<u8>, from: Point, to: Point, f: Option<i64>) {
-    let (a, q) = (crate::griffin::shifted(from), crate::griffin::shifted(to));
+fn put_travel(b: &mut Vec<u8>, off: Point, from: Point, to: Point, f: Option<i64>) {
+    let (a, q) = (
+        crate::griffin::shifted(from, off),
+        crate::griffin::shifted(to, off),
+    );
     let (ax, ay) = (round_div(i64::from(a.x), 10), round_div(i64::from(a.y), 10));
     let (qx, qy) = (round_div(i64::from(q.x), 10), round_div(i64::from(q.y), 10));
     b.extend_from_slice(b"G1");
@@ -4490,6 +4531,7 @@ fn put_travel(b: &mut Vec<u8>, from: Point, to: Point, f: Option<i64>) {
 /// written and where the nozzle ends.
 fn write_nozzle_wipe(
     b: &mut Vec<u8>,
+    off: Point,
     w: &NozzleWipe,
     pts: &[Point],
     line_e: &dyn Fn(f64) -> i64,
@@ -4505,7 +4547,7 @@ fn write_nozzle_wipe(
     let mut e_sum = 0i64;
     let first = line_e(lead);
     b.extend_from_slice(b"G1");
-    put_xy(b, mid);
+    put_xy(b, off, mid);
     b.extend_from_slice(b" E");
     put_fixed(b, first.max(0), 5);
     b.push(b'\n');
@@ -4516,11 +4558,11 @@ fn write_nozzle_wipe(
     }
     b.extend_from_slice(w.travel_lines.as_bytes());
     let back = along(-0.5 * lead);
-    put_travel(b, mid, back, Some(NOZZLE_WIPE_BACK_FEED));
+    put_travel(b, off, mid, back, Some(NOZZLE_WIPE_BACK_FEED));
     match w.spiral {
-        None => put_travel(b, back, mid, Some(NOZZLE_WIPE_FORWARD_FEED)),
+        None => put_travel(b, off, back, mid, Some(NOZZLE_WIPE_FORWARD_FEED)),
         Some((loops, step)) => {
-            put_travel(b, back, s, Some(NOZZLE_WIPE_FORWARD_FEED));
+            put_travel(b, off, back, s, Some(NOZZLE_WIPE_FORWARD_FEED));
             // The tower's own axes on the plate.
             let (sin, cos) = w.angle.to_radians().m_sin_cos();
             let at =
@@ -4533,12 +4575,12 @@ fn write_nozzle_wipe(
                 let r = f64::from(k) * step;
                 for (cu, cv) in [(r, v), (r, r), (-r, r), (-r, -r)] {
                     let q = at(cu, cv);
-                    put_travel(b, cur, q, feed.take());
+                    put_travel(b, off, cur, q, feed.take());
                     cur = q;
                 }
                 v = -r;
             }
-            put_travel(b, cur, mid, Some(w.row_feed));
+            put_travel(b, off, cur, mid, Some(w.row_feed));
         }
     }
     if retracts {
@@ -4561,7 +4603,7 @@ fn write_nozzle_wipe(
             continue;
         }
         b.extend_from_slice(b"G1");
-        put_xy(b, q);
+        put_xy(b, off, q);
         b.extend_from_slice(b" E");
         put_fixed(b, de, 5);
         if let Some(f) = feed.take() {
@@ -5022,7 +5064,16 @@ mod tests {
         };
         let lift = |from: Point, to: Point, kind: Lift| {
             let mut b = Vec::new();
-            write_lift(&mut b, &rc, kind, [from, to], [200, 2200], [18_000, 600], None);
+            write_lift(
+                &mut b,
+                Point::new(0, 0),
+                &rc,
+                kind,
+                [from, to],
+                [200, 2200],
+                [18_000, 600],
+                None,
+            );
             String::from_utf8(b).unwrap()
         };
         let edge = lift(Point::from_mm(80.6, 4.2), Point::from_mm(30.0, 4.2), Lift::Spiral);
@@ -5043,7 +5094,16 @@ mod tests {
         // the nozzle lifts straight up.
         let eager = |rc: &PrintConfig, at: Point| {
             let mut b = Vec::new();
-            write_eager_lift(&mut b, rc, Lift::Spiral, Some(at), [200, 2200], 600, None);
+            write_eager_lift(
+                &mut b,
+                Point::new(0, 0),
+                rc,
+                Lift::Spiral,
+                Some(at),
+                [200, 2200],
+                600,
+                None,
+            );
             String::from_utf8(b).unwrap()
         };
         let right = eager(&rc, Point::from_mm(248.0, 105.0));
@@ -5098,6 +5158,7 @@ mod tests {
             let mut b = Vec::new();
             write_lift(
                 &mut b,
+                Point::new(0, 0),
                 &rc,
                 Lift::Spiral,
                 [from, to],
@@ -5138,6 +5199,7 @@ mod tests {
             let mut b = Vec::new();
             let lifted = write_lift(
                 &mut b,
+                Point::new(0, 0),
                 &steep,
                 kind,
                 [Point::from_mm(100.0, 100.0), Point::from_mm(150.0, 100.0)],
@@ -5161,6 +5223,7 @@ mod tests {
             let mut b = Vec::new();
             write_lift(
                 &mut b,
+                Point::new(0, 0),
                 &rc,
                 kind,
                 [Point::from_mm(100.0, 100.0), Point::from_mm(150.0, 100.0)],
@@ -5200,6 +5263,7 @@ mod tests {
             let mut b = Vec::new();
             write_lift(
                 &mut b,
+                Point::new(0, 0),
                 rc,
                 Lift::Spiral,
                 [Point::from_mm(100.0, 100.0), Point::from_mm(150.0, 100.0)],
@@ -5222,6 +5286,7 @@ mod tests {
         let mut b = Vec::new();
         write_lift(
             &mut b,
+            Point::new(0, 0),
             &both,
             Lift::Spiral,
             [Point::from_mm(100.0, 1.0), Point::from_mm(150.0, 1.0)],
@@ -5233,6 +5298,7 @@ mod tests {
         let mut b = Vec::new();
         write_lift(
             &mut b,
+            Point::new(0, 0),
             &both,
             Lift::Spiral,
             [Point::from_mm(100.0, 1.0), Point::from_mm(150.0, 1.0)],
@@ -5554,7 +5620,7 @@ mod tests {
         };
         let pts = [Point::from_mm(from.0, from.1), Point::from_mm(to.0, to.1)];
         let mut b = Vec::new();
-        let (e, end) = write_nozzle_wipe(&mut b, &w, &pts, &|len| e_units(len));
+        let (e, end) = write_nozzle_wipe(&mut b, Point::new(0, 0), &w, &pts, &|len| e_units(len));
         assert_eq!(end, pts[1]);
         assert_eq!(
             e,
