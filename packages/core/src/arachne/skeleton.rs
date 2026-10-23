@@ -280,7 +280,7 @@ impl Skeleton<'_> {
                 let mid_pos = edge_size * (mid_r - start_r) / (end_r - start_r);
                 self.g.edges[e]
                     .transitions
-                    .get_or_insert_with(Vec::new)
+                    .get_or_insert_with(Box::default)
                     .push(TransitionMid {
                         pos: mid_pos,
                         lower_bead_count: lower,
@@ -294,7 +294,7 @@ impl Skeleton<'_> {
     fn alive_transitions(&self, e: usize) -> Vec<usize> {
         self.g.edges[e]
             .transitions
-            .as_ref()
+            .as_deref()
             .map(|t| {
                 t.iter()
                     .enumerate()
@@ -381,7 +381,7 @@ impl Skeleton<'_> {
     }
 
     fn trans(&self, e: usize, i: usize) -> TransitionMid {
-        self.g.edges[e].transitions.as_ref().map_or(
+        self.g.edges[e].transitions.as_deref().map_or(
             TransitionMid {
                 pos: 0,
                 lower_bead_count: 0,
@@ -393,7 +393,11 @@ impl Skeleton<'_> {
     }
 
     fn kill_transition(&mut self, (e, i): TransitionRef) {
-        if let Some(t) = self.g.edges[e].transitions.as_mut().and_then(|t| t.get_mut(i)) {
+        if let Some(t) = self.g.edges[e]
+            .transitions
+            .as_deref_mut()
+            .and_then(|t| t.get_mut(i))
+        {
             t.dead = true;
         }
     }
@@ -656,7 +660,7 @@ impl Skeleton<'_> {
         };
         let ends = self.g.edges[upward_edge]
             .transition_ends
-            .get_or_insert_with(Vec::new);
+            .get_or_insert_with(Box::default);
         let item = TransitionEnd {
             pos,
             lower_bead_count: lower,
@@ -742,14 +746,14 @@ impl Skeleton<'_> {
             {
                 let length = self.g.edge_len(e);
                 let twin_ends = self.g.edges[twin].transition_ends.take().unwrap_or_default();
-                let ends = self.g.edges[e].transition_ends.get_or_insert_with(Vec::new);
-                for end in twin_ends {
+                let ends = self.g.edges[e].transition_ends.get_or_insert_with(Box::default);
+                for end in *twin_ends {
                     ends.push(TransitionEnd {
                         pos: length - end.pos,
                         ..end
                     });
                 }
-                self.g.edges[twin].transition_ends = Some(Vec::new());
+                self.g.edges[twin].transition_ends = Some(Box::default());
             }
         }
         // New edges go on the back of the order, and the walk reaches them too.
@@ -760,7 +764,7 @@ impl Skeleton<'_> {
             if !self.g.edges[e].alive {
                 continue;
             }
-            let Some(mut ends) = self.g.edges[e].transition_ends.clone() else {
+            let Some(mut ends) = self.g.edges[e].transition_ends.as_deref().cloned() else {
                 continue;
             };
             if ends.is_empty() {

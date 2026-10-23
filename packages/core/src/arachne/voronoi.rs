@@ -173,7 +173,7 @@ pub(crate) fn build(rings: &[Vec<P>], prm: &Params) -> Option<Graph> {
         d: &d,
         segs: &segs,
         prm,
-        g: Graph::reused(),
+        g: Graph::reused(edge_room(d.edges().len()), node_room(d.vertices().len())),
         edge_map: vec![NONE; d.edges().len()],
         node_map: vec![NONE; d.vertices().len()],
     };
@@ -204,6 +204,19 @@ pub(crate) fn build(rings: &[Vec<P>], prm: &Params) -> Option<Graph> {
         }
     }
     Some(g)
+}
+
+/// Room for the graph's edges, from the diagram's (edge halves): each becomes an edge or, curved, a few,
+/// and each cell gains up to two ribs. Measured on painted and plain models: 1.15 to 1.70 graph edges a
+/// diagram edge, the skeleton's later edges included.
+fn edge_room(diagram_edges: usize) -> usize {
+    diagram_edges.saturating_mul(7) / 4
+}
+
+/// Room for the graph's nodes, from the diagram's vertices: each becomes one, and the ribs end on the
+/// outline (measured: 2.0 to 2.4 nodes a vertex).
+fn node_room(diagram_vertices: usize) -> usize {
+    diagram_vertices.saturating_mul(5) / 2
 }
 
 /// No graph edge or node yet, in [`Ctx`]'s maps.
