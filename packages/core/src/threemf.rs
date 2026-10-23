@@ -227,6 +227,7 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
             brim_points: ears_of(&ears, item_no, &item.transform, scale),
             height_ranges,
             layer_heights,
+            placement: Some(placement(item.object, &item.transform, scale)),
         });
     }
     if plates.is_empty() {
@@ -292,6 +293,7 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
             continue;
         }
         let brim_points = ears_of(&ears, item_no, &o.transform, scale);
+        let placed_by = placement(o.id, &o.transform, scale);
         let object = to_map(&o.settings);
         let mut parts: Vec<MeshPart> = Vec::new();
         let mut volumes: Vec<MeshVolume> = Vec::new();
@@ -439,6 +441,7 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
             brim_points,
             height_ranges,
             layer_heights,
+            placement: Some(placed_by),
         });
     }
     if plates.is_empty() {
@@ -451,6 +454,15 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
 /// slicers name such an object, and not the file's name, which would label every object of the file the same.
 fn unnamed(item_no: usize) -> String {
     format!("Object_{}", item_no + 1)
+}
+
+/// The build item's place for the mesh it loads as ([`crate::mesh::Placement`]): the object it places and its
+/// transform with the file's unit applied, as the parts are placed.
+fn placement(object: u32, transform: &[f32; 12], scale: f32) -> crate::mesh::Placement {
+    crate::mesh::Placement {
+        object,
+        transform: transform.map(|c| f64::from(c) * f64::from(scale)),
+    }
 }
 
 /// One part placed by the build item's transform and its components, with its paint decoded in place, as
@@ -3103,6 +3115,144 @@ T1
         for unit in ["micron", "millimeter", "centimeter", "inch", "foot", "meter"] {
             let head = format!(r#"<model unit="{unit}">"#);
             assert!(cube_file(&head, &|s| s).is_ok(), "{unit}");
+        }
+    }
+
+    /// The plate objects `sx slice` makes of a plate's build items: one each, the plate centered as a whole.
+    fn as_plate(items: Vec<Mesh>) -> Vec<crate::plate::PlateObject> {
+        crate::plate::Plate::items_on(items, [0.0; 4], 0.0).objects
+    }
+
+    #[test]
+    fn build_items_of_one_object_are_copies_only_when_moved() {
+        type Reader = fn(&[u8], &str) -> Result<Vec<(u32, Vec<Mesh>)>>;
+        // One box placed seven times: moved, turned, mirrored, scaled and lifted.
+        let items = [
+            "1 0 0 0 1 0 0 0 1 50 50 0",
+            "1 0 0 0 1 0 0 0 1 87.3 50 0",
+            "0 1 0 -1 0 0 0 0 1 130 50 0",
+            "-1 0 0 0 1 0 0 0 1 50 100 0",
+            "1.5 0 0 0 1.5 0 0 0 1.5 90 100 0",
+            "1 0 0 0 1 0 0 0 1 130 100 0.5",
+            "1 0 0 0 1 0 0 0 1 50 151.7 0",
+        ];
+        let build = items.iter().fold(String::new(), |mut acc, t| {
+            use std::fmt::Write as _;
+            let _ = write!(acc, r#"<item objectid="1" transform="{t}"/>"#);
+            acc
+        });
+        let model = format!(
+            r#"<model unit="millimeter"><resources>{}</resources><build>{build}</build></model>"#,
+            box_object(1, [0.0, 0.0, 0.0], [20.0, 10.0, 5.0])
+        );
+        let bytes = zip(&[("3D/3dmodel.model", model.as_bytes(), true)]);
+        // A skirt goes around the whole plate, which copies cannot follow.
+        let config = crate::config::PrintConfig {
+            skirt_loops: 0,
+            ..crate::config::PrintConfig::default()
+        };
+        let moved = |dx: f64, dy: f64| [dx, dy];
+        let want = [
+            (0, moved(0.0, 0.0)),
+            (0, moved(37.3, 0.0)),
+            (2, moved(0.0, 0.0)),
+            (3, moved(0.0, 0.0)),
+            (4, moved(0.0, 0.0)),
+            (5, moved(0.0, 0.0)),
+            (0, moved(0.0, 101.7)),
+        ];
+        let readers: [(&str, Reader); 2] = [
+            ("loader", load_plate_objects),
+            ("legacy", load_plate_objects_legacy),
+        ];
+        for (reader, load) in readers {
+            let (_, items) = load(&bytes, "boxes.3mf").unwrap().remove(0);
+            assert_eq!(items.len(), 7, "{reader}");
+            let plate = as_plate(items);
+            let objects: Vec<&crate::plate::PlateObject> = plate.iter().collect();
+            let placed = crate::session::copies_of(&objects, &config).unwrap_or_default();
+            assert_eq!(placed.len(), want.len(), "{reader}: no copies found");
+            for (i, ((of, off), (want_of, want_off))) in placed.iter().zip(&want).enumerate() {
+                assert_eq!(of, want_of, "{reader}: item {i}");
+                assert!(
+                    (off[0] - want_off[0]).abs() < 1e-4 && (off[1] - want_off[1]).abs() < 1e-4,
+                    "{reader}: item {i} moves {off:?}, not {want_off:?}"
+                );
+            }
+            // A copy whose mesh changed after it loaded is sliced on its own.
+            let mut plate = plate;
+            if let Some(m) = plate.get_mut(1).map(|o| std::sync::Arc::make_mut(&mut o.mesh))
+                && let Some(v) = m.parts.get_mut(0).and_then(|p| p.positions.get_mut(0))
+            {
+                v[0] += 0.01;
+            }
+            let objects: Vec<&crate::plate::PlateObject> = plate.iter().collect();
+            let placed = crate::session::copies_of(&objects, &config).unwrap_or_default();
+            let of: Vec<usize> = placed.iter().map(|c| c.0).collect();
+            assert_eq!(of, [0, 1, 2, 3, 4, 5, 0], "{reader}");
+        }
+    }
+
+    #[test]
+    fn build_items_with_other_height_ranges_are_not_copies() {
+        type Reader = fn(&[u8], &str) -> Result<Vec<(u32, Vec<Mesh>)>>;
+        // Two items of one box, the second moved, and a range layer height for the box, which both items take.
+        let ranges = r#"<?xml version="1.0" encoding="utf-8"?>
+<objects>
+ <object id="1">
+  <range min_z="2" max_z="4"><option opt_key="layer_height">0.1</option></range>
+ </object>
+</objects>"#;
+        let model = format!(
+            r#"<model unit="millimeter"><resources>{}</resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 50 50 0"/><item objectid="1" transform="1 0 0 0 1 0 0 0 1 87.3 50 0"/></build></model>"#,
+            box_object(1, [0.0, 0.0, 0.0], [20.0, 10.0, 5.0])
+        );
+        let bytes = zip(&[
+            ("3D/3dmodel.model", model.as_bytes(), true),
+            ("Metadata/layer_config_ranges.xml", ranges.as_bytes(), false),
+        ]);
+        let config = crate::config::PrintConfig {
+            skirt_loops: 0,
+            ..crate::config::PrintConfig::default()
+        };
+        let copies = |items: &[Mesh]| -> Vec<usize> {
+            let plate = as_plate(items.to_vec());
+            let objects: Vec<&crate::plate::PlateObject> = plate.iter().collect();
+            crate::session::copies_of(&objects, &config)
+                .map(|placed| placed.iter().map(|c| c.0).collect())
+                .unwrap_or_default()
+        };
+        let readers: [(&str, Reader); 2] = [
+            ("loader", load_plate_objects),
+            ("legacy", load_plate_objects_legacy),
+        ];
+        for (reader, load) in readers {
+            let (_, items) = load(&bytes, "boxes.3mf").unwrap().remove(0);
+            assert_eq!(items.len(), 2, "{reader}");
+            assert_eq!(items[0].layer_heights.len(), 1, "{reader}");
+            // The same layer heights: copies, which print on the plate's layers like the first.
+            assert_eq!(copies(&items), [0, 0], "{reader}");
+            // Other layer heights on the second item: not a copy.
+            let mut other = items.clone();
+            other[1].layer_heights[0].height_mm = 0.15;
+            assert!(copies(&other).is_empty(), "{reader}: other layer heights");
+            let mut other = items.clone();
+            other[1].layer_heights.clear();
+            assert!(copies(&other).is_empty(), "{reader}: no layer heights on one");
+            // Settings by height on one item only, or other settings on each: not copies.
+            let range = |loops: &str| crate::HeightRange {
+                z_from_mm: 2.0,
+                z_to_mm: 4.0,
+                settings: serde_json::json!({ "wall_loops": loops }),
+                objects: Vec::new(),
+            };
+            let mut other = items.clone();
+            other[1].height_ranges = vec![range("4")];
+            assert!(copies(&other).is_empty(), "{reader}: a range on one");
+            other[0].height_ranges = vec![range("3")];
+            assert!(copies(&other).is_empty(), "{reader}: other range settings");
+            other[0].height_ranges = vec![range("4")];
+            assert_eq!(copies(&other), [0, 0], "{reader}: the same range on both");
         }
     }
 
