@@ -197,6 +197,20 @@ function fontDigest(data: string | undefined): string {
   return d
 }
 
+/**
+ * An engine error as a step's reason. The operation names before it go, however many ("thread: hole: ..."), as the
+ * app's sentence() drops them. A field key ("lengthMm: ...", "wallMm: must be above 0 ...") stays as it is, lower
+ * case, for the app to name or drop (sizeWords); any other reason starts with a capital.
+ */
+function engineReason(err: unknown): string {
+  let why = (err instanceof Error ? err.message : String(err)).trim()
+  for (let prev = ''; prev !== why; ) {
+    prev = why
+    why = why.replace(/^[a-z][a-z0-9_.-]*:\s+/, '')
+  }
+  return /^[a-z]\w*:/.test(why) ? why : why.charAt(0).toUpperCase() + why.slice(1)
+}
+
 class Broken extends Error {}
 
 const meshOnly = ({ smb: _smb, body: _body, unmeshed: _keys, ...rest }: Flat): Flat => rest
@@ -334,8 +348,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         try {
           r = (await call('hole.apply', { mesh: item(part), hole: p.hole, spec: p.spec })) as { mesh: Flat }
         } catch (err) {
-          const why = (err instanceof Error ? err.message : String(err)).replace(/^hole: /, '')
-          throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
+          throw new Broken(engineReason(err))
         }
         out[i] = keep(part, r.mesh)
         break
@@ -346,8 +359,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         try {
           r = (await call('shell', { mesh: item(part), open: p.open, wallMm: p.wallMm })) as { mesh: Flat; report: { openKeys?: number[] } }
         } catch (err) {
-          const why = (err instanceof Error ? err.message : String(err)).replace(/^(shell|open|wallMm): /, '')
-          throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
+          throw new Broken(engineReason(err))
         }
         const keys = r.report.openKeys ?? []
         if (keys.some((k, j) => k && k !== p.open[j]?.key)) found.keys[s.id] = { openKeys: keys }
@@ -360,8 +372,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         try {
           r = (await call('thread.apply', { mesh: item(part), thread: p.thread, spec: p.spec })) as { mesh: Flat }
         } catch (err) {
-          const why = (err instanceof Error ? err.message : String(err)).replace(/^(thread|hole): /, '')
-          throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
+          throw new Broken(engineReason(err))
         }
         out[i] = keep(part, r.mesh)
         break
@@ -380,8 +391,7 @@ async function runStep(engine: EngineCall, s: Step, parts: Flat[], fonts: Record
         try {
           r = (await engine('paint.select', { mesh: meshOf(part), transform: s.transform, paint: texts, state: p.state, target, ...(p.maxDepth !== undefined ? { maxDepth: p.maxDepth } : {}) })) as { changed: Record<string, string> }
         } catch (err) {
-          const why = (err instanceof Error ? err.message : String(err)).replace(/^[a-z]+: /, '')
-          throw new Broken(why.charAt(0).toUpperCase() + why.slice(1))
+          throw new Broken(engineReason(err))
         }
         const layer: Record<number, string> = { ...texts }
         for (const [k, v] of Object.entries(r.changed)) {
