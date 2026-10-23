@@ -95,7 +95,9 @@ fn norm(dx: f64, dy: f64) -> f64 {
 
 /// Orca `estimate_points_properties` with intersections added. `offset_boundary` adds half the width to
 /// every distance and cuts stretches near the edge (`PREV_LAYER_BOUNDARY_OFFSET`); `max_line_length`
-/// above zero splits long segments; `min_distance` limits the cuts to stretches that will slow down.
+/// above zero splits long segments; `min_distance` limits the cuts to stretches that will slow down. With
+/// `edge_cuts` (the wall rule) every cut is kept: a wall's speed follows each point's own distance, so a side
+/// between hanging corners keeps its own speed and the corner's speed ends near the corner.
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -110,6 +112,7 @@ pub(crate) fn estimate_points(
     offset_boundary: bool,
     max_line_length: f32,
     min_distance: f32,
+    edge_cuts: bool,
 ) -> Vec<ExtPoint> {
     let (Some(first), Some(last)) = (input.first(), input.last()) else {
         return Vec::new();
@@ -194,7 +197,7 @@ pub(crate) fn estimate_points(
                     let mut cut = |t: f64| {
                         let (px, py) = (curr.x + t * (next.x - curr.x), curr.y + t * (next.y - curr.y));
                         let raw = lines.distance(px, py);
-                        if (raw.abs() > min_distance || min_distance <= 0.0)
+                        if (edge_cuts || raw.abs() > min_distance || min_distance <= 0.0)
                             && far(curr, px, py)
                             && norm(next.x - px, next.y - py) > min_spacing
                         {
@@ -405,7 +408,7 @@ pub(crate) fn curl_plan(layers: &[CurlLayer]) -> Vec<Curled> {
                     )
                 })
                 .collect();
-            let ann = estimate_points(&pts, &lines, *width, false, BRIDGE_DISTANCE, -1.0);
+            let ann = estimate_points(&pts, &lines, *width, false, BRIDGE_DISTANCE, -1.0, false);
             for i in 0..ann.len() {
                 let (a, b) = (ann[i.saturating_sub(1)], ann[i]);
                 let mid = to_pt(f64::midpoint(a.x, b.x), f64::midpoint(a.y, b.y));
@@ -475,6 +478,11 @@ pub(crate) struct Context {
     pub curled: Option<std::sync::Arc<Curled>>,
     /// `overhang_1_4_speed` to `overhang_4_4_speed` (0 when unset, a negative value is a percent of the wall).
     pub overhang: [f64; 4],
+    /// Per filament slot from 1: the filament's own `filament_overhang_1_4_speed` to `_4_4_speed` when its
+    /// `override_process_overhang_speed` is on, in place of [`Self::overhang`] for that filament's walls.
+    pub filament_overhang: Vec<Option<[f64; 4]>>,
+    /// `nozzle_diameter`, mm: a wall's overhang is measured in half its width plus the nozzle.
+    pub nozzle: f64,
     pub bridge_speed: f64,
     pub outer_speed: f64,
     pub inner_speed: f64,
@@ -559,10 +567,33 @@ impl Context {
             "overhang_4_4_speed",
         ];
         let overhang = keys.map(|k| speed_or_percent(cfg, k));
+        let filament_overhang = (1..=64u8)
+            .map(|slot| {
+                let on = slot_text(cfg, "override_process_overhang_speed", slot)
+                    .is_some_and(|t| matches!(t.trim(), "1" | "true"));
+                on.then(|| {
+                    keys.map(|k| {
+                        let key = format!("filament_{k}");
+                        match slot_text(cfg, &key, slot) {
+                            Some(t) if t.trim().ends_with('%') => -t
+                                .trim()
+                                .trim_end_matches('%')
+                                .trim()
+                                .parse::<f64>()
+                                .unwrap_or(0.0),
+                            Some(t) => t.trim().parse().unwrap_or(0.0),
+                            None => 0.0,
+                        }
+                    })
+                })
+            })
+            .collect();
         Self {
             lower,
             curled,
             overhang,
+            filament_overhang,
+            nozzle: cfg.nozzle_diameter,
             bridge_speed: cfg.bridge_speed,
             outer_speed: cfg.outer_wall_speed,
             inner_speed: cfg.inner_wall_speed,
@@ -589,6 +620,52 @@ impl Context {
     }
 }
 
+/// What a path is, for its overhang speed: an outer or inner wall (the wall rule, [`wall_degree`]) or another
+/// feature that hangs (bridges and overhang walls, the overlap rule).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Kind {
+    Outer,
+    Inner,
+    Other,
+}
+
+/// How far a wall hangs, as the degree 0 to 1 the overhang speeds are set at (0 supported, 1/4 to 4/4 the
+/// `overhang_*_4_speed` levels), in steps of 1/40. `u` is the distance the bead's outer edge sits past the layer
+/// below over half of the bead's width plus the nozzle. The curve is measured: straight lines between these
+/// knots reproduce every measured degree.
+pub(crate) fn wall_degree(u: f64) -> f64 {
+    const KNOTS: [(f64, f64); 7] = [
+        (0.105, 0.0),
+        (0.207, 0.275),
+        (0.239, 0.325),
+        (0.317, 0.475),
+        (0.424, 0.6),
+        (0.724, 0.925),
+        (0.780, 1.0),
+    ];
+    let m = match KNOTS.iter().position(|k| u < k.0) {
+        Some(0) => 0.0,
+        None => 1.0,
+        Some(i) => {
+            let ((u0, m0), (u1, m1)) = (KNOTS[i - 1], KNOTS[i]);
+            m0 + (m1 - m0) * (u - u0) / (u1 - u0)
+        }
+    };
+    (m * 40.0).round() / 40.0
+}
+
+/// The speed at degree `m` on straight lines between `knots` at 0, 1/4, 2/4, 3/4 and 1.
+fn degree_speed(m: f64, knots: [f64; 5]) -> f64 {
+    if m >= 1.0 {
+        return knots[4];
+    }
+    let t = m.max(0.0) * 4.0;
+    let below = t.floor().min(3.0);
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, reason = "0 to 3")]
+    let i = below as usize;
+    knots[i] + (knots[i + 1] - knots[i]) * (t - below)
+}
+
 /// One printed stretch: from the previous point to `to`, at `speed` mm/s, with the overhang fan on when `fan`.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Stretch {
@@ -601,7 +678,10 @@ impl Context {
     /// The speed of each stretch of a path (Orca `estimate_extrusion_quality` and the speed rules of
     /// `GCode::_extrude`), or None when no stretch differs from `speed` by more than 1 mm/s and none needs
     /// the overhang fan.
-    /// `outer` tells an outer wall (reference speed the outer wall's) from the other walls and bridges.
+    /// `kind` tells an outer or inner wall from the other features. A wall follows the wall rule: its degree
+    /// ([`wall_degree`]) on straight lines between its configured speed and the four levels (0 is the wall's own
+    /// speed), with no floor or ceiling from the wall's speed, then the volumetric cap. A wall that another rule
+    /// already slowed below its configured speed keeps that limit. Other features keep the overlap rule.
     #[allow(
         clippy::cast_possible_truncation,
         clippy::too_many_lines,
@@ -613,9 +693,10 @@ impl Context {
         width: f32,
         mm3_per_mm: f64,
         speed: f32,
-        outer: bool,
+        kind: Kind,
         tool: u8,
     ) -> Option<(ExtPoint, Vec<Stretch>)> {
+        let outer = kind == Kind::Outer;
         let max_volumetric = self
             .max_volumetric
             .get(usize::from(tool.max(1) - 1))
@@ -682,11 +763,59 @@ impl Context {
         } else {
             -1.0
         };
+        // The wall rule: the configured wall speed, the levels (the filament's when it overrides them), the cap.
+        let wall = (kind != Kind::Other).then(|| {
+            let base = if outer { self.outer_speed } else { self.inner_speed };
+            let levels = self
+                .filament_overhang
+                .get(usize::from(tool.max(1) - 1))
+                .copied()
+                .flatten()
+                .unwrap_or(self.overhang);
+            let level = |v: f64| {
+                let v = if v < 0.0 { base * -v / 100.0 } else { v };
+                if v < 0.5 { base } else { v }
+            };
+            let knots = [
+                base,
+                level(levels[0]),
+                level(levels[1]),
+                level(levels[2]),
+                level(levels[3]),
+            ];
+            let cap = (max_volumetric > 0.0 && mm3_per_mm > 0.0).then(|| max_volumetric / mm3_per_mm);
+            let plain = cap.map_or(base, |c| base.min(c));
+            // Another rule (a small loop, the first layer) slowed this wall below its own speed: keep it.
+            let limit = (f64::from(speed) < plain - 1.0).then_some(f64::from(speed));
+            let half = f64::from(width).midpoint(self.nozzle);
+            (knots, cap, limit, half)
+        });
+        let min_distance = match wall {
+            Some((.., half)) => (0.105 * half) as f32,
+            None => min_distance,
+        };
         let lines = Lines {
             support: &self.lower,
             signed: true,
         };
-        let ext = estimate_points(pts, &lines, width, true, -1.0, min_distance);
+        let ext = estimate_points(pts, &lines, width, true, -1.0, min_distance, wall.is_some());
+        let wall_speed = |d: f32| -> f32 {
+            let Some((knots, cap, limit, half)) = wall else {
+                return speed;
+            };
+            let m = wall_degree(f64::from(d.max(0.0)) / half);
+            if m <= 0.0 {
+                return speed;
+            }
+            let mut v = degree_speed(m, knots).round();
+            if let Some(c) = cap {
+                v = v.min(c);
+            }
+            if let Some(l) = limit {
+                v = v.min(l);
+            }
+            v as f32
+        };
         let calc = |d: f32| -> f32 {
             let (Some(front), Some(back)) = (sections.first(), sections.last()) else {
                 return speed;
@@ -746,8 +875,12 @@ impl Context {
                     }
                 }
             }
-            let mut s = calc(curr.distance).min(calc(next.distance)).min(speed);
-            if curled.is_some() {
+            let mut s = if wall.is_some() {
+                wall_speed(curr.distance + artificial).min(wall_speed(next.distance + artificial))
+            } else {
+                calc(curr.distance).min(calc(next.distance)).min(speed)
+            };
+            if curled.is_some() && wall.is_none() {
                 s = s.min(calc(artificial));
             }
             point_speeds.push(s);
@@ -850,6 +983,8 @@ mod tests {
             lower: std::sync::Arc::new(Support::new(lower)),
             curled: None,
             overhang: [0.0, 50.0, 30.0, 10.0],
+            filament_overhang: Vec::new(),
+            nozzle: 0.4,
             bridge_speed: 50.0,
             outer_speed: 200.0,
             inner_speed: 300.0,
@@ -864,11 +999,12 @@ mod tests {
         // The layer below ends at x = 10; the wall runs from x = 0 to x = 20 at y = 5.
         let c = ctx(&square(0.0, 0.0, 10.0, 10.0));
         let (_, st) = c
-            .speeds(&[(1.0, 5.0), (20.0, 5.0)], 0.45, 0.09, 200.0, true, 1)
+            .speeds(&[(1.0, 5.0), (20.0, 5.0)], 0.45, 0.09, 200.0, Kind::Outer, 1)
             .unwrap();
-        // Supported at the start, at the bridge speed where it hangs free.
+        // Supported at the start, at overhang_4_4_speed where it hangs free (a piece that hangs clear of the layer
+        // below is cut off as an overhang wall before this, at its own speed).
         assert_eq!(st.first().unwrap().speed, 200.0);
-        assert_eq!(st.last().unwrap().speed, 50.0);
+        assert_eq!(st.last().unwrap().speed, 10.0);
         // The slowdown starts at the edge less half a bead and is cut there.
         let cut = st.iter().find(|s| s.speed < 200.0).unwrap();
         assert!(cut.to.x > 9.0 && cut.to.x < 11.0, "{cut:?}");
@@ -883,7 +1019,7 @@ mod tests {
         let fan_from = |limit: Option<f32>| {
             let mut c = ctx(&square(0.0, 0.0, 10.0, 10.0));
             c.fan_overlap = vec![limit];
-            let (_, st) = c.speeds(&wall, 0.45, 0.09, 200.0, true, 1).unwrap();
+            let (_, st) = c.speeds(&wall, 0.45, 0.09, 200.0, Kind::Outer, 1).unwrap();
             assert_eq!(st.last().unwrap().fan, limit.is_some());
             st.iter().find(|s| s.fan).map(|s| s.to.x)
         };
@@ -914,7 +1050,7 @@ mod tests {
     /// it: the bead hangs `x + 0.21 - 10` mm past the edge.
     fn leaning_wall(c: &Context, x: f64) -> Vec<Stretch> {
         let wall = [(x, 1.0), (x, 9.0)];
-        c.speeds(&wall, 0.42, 0.08, 200.0, true, 1)
+        c.speeds(&wall, 0.42, 0.08, 200.0, Kind::Outer, 1)
             .map(|(_, st)| st)
             .unwrap_or_default()
     }
@@ -929,6 +1065,129 @@ mod tests {
         // 50 degrees: 0.238 mm, 57%. Slower than overhang_2_4_speed, and the fan runs.
         let at50 = leaning_wall(&c, 10.0 + 0.238 - 0.21);
         assert!(at50.iter().all(|s| s.speed <= 50.0 && s.fan), "{at50:?}");
+    }
+
+    #[test]
+    fn the_wall_degree_follows_the_measured_curve_in_fortieths() {
+        for (u, m) in [
+            (0.0, 0.0),
+            (0.105, 0.0),
+            (0.112, 0.025),
+            (0.198, 0.25),
+            (0.259, 0.375),
+            (0.329, 0.5),
+            (0.410, 0.575),
+            (0.561, 0.75),
+            (0.751, 0.95),
+            (0.780, 1.0),
+            (1.5, 1.0),
+        ] {
+            assert!(
+                (wall_degree(u) - m).abs() < 1e-9,
+                "u {u}: {} want {m}",
+                wall_degree(u)
+            );
+        }
+    }
+
+    /// The slowest stretch of a wall `width` wide leaning `d` mm past the layer below (x = 10).
+    fn leaning_speed(c: &Context, d: f64, width: f32, kind: Kind, speed: f32) -> f32 {
+        let x = 10.0 + d - f64::from(width) / 2.0;
+        c.speeds(&[(x, 1.0), (x, 9.0)], width, 0.08, speed, kind, 1)
+            .map_or(speed, |(_, st)| {
+                st.iter().map(|s| s.speed).fold(f32::MAX, f32::min)
+            })
+    }
+
+    #[test]
+    fn a_leaning_outer_wall_slows_on_the_stock_levels() {
+        // Stock levels 0, 50, 30, 10 on a 200 mm/s outer wall: the measured main piece speed per lean (0.2 mm
+        // layers, offset 0.2 tan(lean)).
+        let c = ctx(&square(0.0, 0.0, 10.0, 10.0));
+        for (lean, d, want) in [
+            (20, 0.073, 200.0),
+            (23, 0.085, 185.0),
+            (25, 0.093, 170.0),
+            (28, 0.106, 125.0),
+            (30, 0.115, 110.0),
+            (33, 0.130, 65.0),
+            (35, 0.140, 50.0),
+            (40, 0.168, 44.0),
+            (45, 0.200, 36.0),
+            (50, 0.238, 28.0),
+            (55, 0.286, 18.0),
+            (57, 0.308, 14.0),
+            (60, 0.346, 10.0),
+        ] {
+            let got = leaning_speed(&c, d, 0.42, Kind::Outer, 200.0);
+            assert!((got - want).abs() < 0.5, "{lean} degrees: {got} want {want}");
+        }
+    }
+
+    #[test]
+    fn a_wall_slower_than_a_level_speeds_up_toward_it() {
+        // A 40 mm/s outer wall on the stock levels: no floor at the wall's speed, the line runs up to 50 at 2/4.
+        let mut c = ctx(&square(0.0, 0.0, 10.0, 10.0));
+        c.outer_speed = 40.0;
+        for (d, want) in [(0.093, 42.0), (0.115, 46.0), (0.140, 50.0), (0.238, 28.0)] {
+            let got = leaning_speed(&c, d, 0.42, Kind::Outer, 40.0);
+            assert!((got - want).abs() < 0.5, "d {d}: {got} want {want}");
+        }
+    }
+
+    #[test]
+    fn an_inner_wall_follows_with_its_own_width_speed_and_cap() {
+        // A 0.45 mm inner wall at 300 mm/s capped at 257.9 by 21 mm3/s: the cap until it hangs past about a
+        // tenth, then the line from 300 (not from the capped speed).
+        let mut c = ctx(&square(0.0, 0.0, 10.0, 10.0));
+        c.max_volumetric = vec![257.9 * 0.08];
+        let cap = 257.9f32;
+        let at = |d: f64| {
+            let x = 10.0 + d - 0.225;
+            c.speeds(&[(x, 1.0), (x, 9.0)], 0.45, 0.08, cap, Kind::Inner, 1)
+                .map_or(cap, |(_, st)| st[0].speed)
+        };
+        assert!((at(0.03) - cap).abs() < 0.5);
+        // 67.5, 70 and 75 degrees: the inner bead sits 0.377 mm inside the outer one.
+        for (d, want) in [
+            (0.483 - 0.377, 200.0),
+            (0.549 - 0.377, 44.0),
+            (0.746 - 0.377, 10.0),
+        ] {
+            assert!((at(d) - want).abs() < 0.5, "d {d}: {} want {want}", at(d));
+        }
+    }
+
+    #[test]
+    fn a_filament_that_overrides_the_levels_uses_its_own() {
+        let mut c = ctx(&square(0.0, 0.0, 10.0, 10.0));
+        c.filament_overhang = vec![Some([41.0, 36.0, 26.0, 16.0])];
+        // 50 degrees, degree 0.775: between 26 and 16.
+        assert!((leaning_speed(&c, 0.238, 0.42, Kind::Outer, 200.0) - 25.0).abs() < 0.5);
+        // 25 degrees, degree 0.3: from 41 toward 36.
+        assert!((leaning_speed(&c, 0.093, 0.42, Kind::Outer, 200.0) - 40.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn a_leaning_side_keeps_its_own_speed_between_slower_corners() {
+        // A loop leaning out 0.25 mm on all four sides: its corners hang out farther (on the diagonal) than the
+        // middle of each side. Each side is one move from corner to corner; the middle still prints at the
+        // side's speed (degree 32/40: 26 mm/s), the corners slower (34/40: 22 mm/s).
+        let c = ctx(&square(0.0, 0.0, 10.0, 10.0));
+        let (lo, hi) = (-0.04, 10.04);
+        let wall = [(lo, lo), (hi, lo), (hi, hi), (lo, hi), (lo, lo)];
+        let (_, st) = c.speeds(&wall, 0.42, 0.08, 200.0, Kind::Outer, 1).unwrap();
+        let speeds: Vec<f32> = st.iter().map(|s| s.speed).collect();
+        assert!(speeds.iter().any(|v| (v - 26.0).abs() < 0.5), "{speeds:?}");
+        assert!(speeds.iter().any(|v| (v - 22.0).abs() < 0.5), "{speeds:?}");
+    }
+
+    #[test]
+    fn a_wall_another_rule_slowed_keeps_that_limit() {
+        // A small loop at 30 mm/s: the levels above it do not speed it up.
+        let c = ctx(&square(0.0, 0.0, 10.0, 10.0));
+        assert!(leaning_speed(&c, 0.093, 0.42, Kind::Outer, 30.0) <= 30.0);
+        assert!((leaning_speed(&c, 0.346, 0.42, Kind::Outer, 30.0) - 10.0).abs() < 0.5);
     }
 
     #[test]
@@ -958,7 +1217,7 @@ mod tests {
                 0.45,
                 0.09,
                 200.0,
-                true,
+                Kind::Outer,
                 1
             )
             .is_none()
