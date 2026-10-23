@@ -189,6 +189,7 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
                 wall_offset: f64::midpoint(w_ext, sp_ext) + f64::from(i.wall_loops.saturating_sub(1)) * sp_in,
                 opening,
                 surfaces_only: crate::shells::surfaces_only(cfg),
+                maker_band: crate::firmware::bambu_printer(cfg, cfg.gcode_flavor),
             }),
             Some(mode) => crate::shells::horizontal_area(&crate::shells::HInput {
                 cache: i.cache,

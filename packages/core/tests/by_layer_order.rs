@@ -307,8 +307,9 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// FNV-1a of the by-object plate's G-code, version lines left out. Changed by the floating vertical shell: each cube's
 /// one-bead solid ring under its top shells rests on sparse infill, so it prints as a floating vertical shell, slowed,
 /// and the two floating shell settings join the config block. Changed again when Bambu Lab G-code named the first solid
-/// layer over sparse infill a bridge (`; FEATURE: Bridge`, was `Internal Bridge`).
-const BY_OBJECT_FNV: &str = "ae95c3e2cde06e1f";
+/// layer over sparse infill a bridge (`; FEATURE: Bridge`, was `Internal Bridge`), and again when the ring's beads
+/// reached out to the infill area's overlap with the wall.
+const BY_OBJECT_FNV: &str = "217db5cebc594c28";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {
