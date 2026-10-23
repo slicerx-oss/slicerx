@@ -19,7 +19,8 @@ import { bindNext } from './history/record'
 import { close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
 import { toolError } from './op-preview'
-import { threadLengthProblem, threadSpecFor } from './thread-spec'
+import { threadSpecFor } from './thread-spec'
+import { threadLengthProblem } from '@slicerx/cad-history'
 
 interface Picked {
   objectId: string
