@@ -465,7 +465,7 @@ fn to_mm(p: IntPoint<i32>) -> (f64, f64) {
 }
 
 /// Marks the cells a segment passes through.
-fn stamp(g: &Grid, mask: &mut [bool], a: (f64, f64), b: (f64, f64)) {
+fn stamp(g: &Grid, mask: &mut CellBits, a: (f64, f64), b: (f64, f64)) {
     let len = (b.0 - a.0).m_hypot(b.1 - a.1);
     #[allow(
         clippy::cast_possible_truncation,
@@ -476,10 +476,8 @@ fn stamp(g: &Grid, mask: &mut [bool], a: (f64, f64), b: (f64, f64)) {
     for k in 0..=steps {
         #[allow(clippy::cast_precision_loss, reason = "a step count")]
         let t = k as f64 / steps as f64;
-        if let Some(c) = g.cell(a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
-            && let Some(m) = mask.get_mut(c)
-        {
-            *m = true;
+        if let Some(c) = g.cell(a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t) {
+            mask.set(c);
         }
     }
 }
@@ -557,9 +555,10 @@ fn first_column(g: &Grid, v: f64) -> usize {
 
 /// Distance in mm from every cell to the nearest marked cell (a large number when none is marked).
 #[allow(clippy::indexing_slicing, reason = "rows and columns stay inside the grid")]
-fn distance(g: &Grid, mask: &[bool]) -> Vec<f32> {
-    const INF: f32 = 1.0e12;
-    let mut d: Vec<f32> = mask.iter().map(|&m| if m { 0.0 } else { INF }).collect();
+fn distance(g: &Grid, mask: &CellBits) -> Vec<f32> {
+    let mut d: Vec<f32> = (0..g.len())
+        .map(|c| if mask.get(c) { 0.0 } else { INF })
+        .collect();
     let (nx, ny) = (g.nx, g.ny);
     let mut line = vec![0.0f32; nx.max(ny)];
     let mut out = vec![0.0f32; nx.max(ny)];
@@ -586,32 +585,83 @@ fn distance(g: &Grid, mask: &[bool]) -> Vec<f32> {
     d
 }
 
-/// The most bytes one layer's color split ([`LayerPaint::voronoi`]) holds in grids at once, for a grid of `nx` by `ny`
-/// cells and `colors` filaments with a distance grid (each one painted on the layer's walls, and the part's own).
-/// `shells`: the layer has shell layers above or below it, so its depth limit is worked out from them; `painted`: some
-/// of the surfaces they expose are painted. The split works in steps, and each frees what the next does not read:
-/// - sources: the outline's cells and a mask per color, a byte a cell each;
-/// - distances: a 4 byte grid per color, made one at a time from its mask, which goes after;
-/// - depth limit: a 4 byte grid beside the distances, made with the cells still open and, per shell layer, the cells
-///   inside it and inside its painted surface (a byte a cell each), and each grid row's crossings with that layer's
-///   outline (a list per row, 24 bytes, and room for up to 8 crossings of 8 bytes);
-/// - fields: each in place of its own distances, beside the limit (a layer painted all over gets one grid for the
-///   part's own filament, in place of the mask it never had);
-/// - boundaries: traced from the fields alone, the distances and the limit gone, a few hundred bytes per boundary
-///   point, which fits in the 8 bytes a cell or more the limit and the part's own filament took.
-///
-/// So the depth limit or the fields step is the top: 4 bytes a cell per color and 4 for the limit, and 2 or 3 more
-/// and the row lists while the limit is made.
-fn grid_bytes(nx: usize, ny: usize, colors: usize, shells: bool, painted: bool) -> usize {
+/// What a [`CellBits`] mask of `cells` cells takes, bytes.
+fn mask_bytes(cells: usize) -> usize {
+    cells.div_ceil(64).saturating_mul(8)
+}
+
+/// The most bytes one layer's color split ([`LayerPaint::voronoi`]) holds in grids at once before its band is known, for
+/// a grid of `nx` by `ny` cells and `colors` filaments with sources (each one painted on the layer's walls, and the
+/// part's own), all but one of them painted. `shells`: the layer has shell layers above or below it, so its depth limit
+/// is worked out from them; `painted`: some of the surfaces they expose are painted. `banded`: the split keeps its fields
+/// in a band ([`banded`]) rather than in full grids. The split works in steps, and each frees what the next does not
+/// read:
+/// - sources: a mask a bit a cell per color, the outline's, and the one a painted wall is stamped into;
+/// - depth limit: 2 bytes a cell beside the masks, made with the cells still open and, per shell layer, the cells inside
+///   it and inside its painted surface (a byte a cell each), and each grid row's crossings with that layer's outline (a
+///   list per row, 24 bytes, and room for up to 8 crossings of 8 bytes);
+/// - banded: the rows ([`rows_bytes`]); what the band and the traced boundaries add is known once the rows are made
+///   ([`band_bytes`]);
+/// - full grids: a 4 byte distance grid per color and a 4 byte field per painted color, beside the masks and the limit;
+///   the boundaries are traced from the fields alone, a few hundred bytes per boundary point, which fits in the 4 bytes
+///   a cell or more the distances took.
+fn grid_bytes(nx: usize, ny: usize, colors: usize, shells: bool, painted: bool, banded: bool) -> usize {
     let cells = nx.saturating_mul(ny);
-    let grids = cells.saturating_mul(4 * colors + 4);
-    if !shells {
-        return grids;
-    }
-    let making_limit = cells
-        .saturating_mul(2 + usize::from(painted))
-        .saturating_add(ny.saturating_mul(24 + 8 * 8));
-    grids.saturating_add(making_limit)
+    let sources = mask_bytes(cells).saturating_mul(colors.saturating_add(2));
+    let kept = mask_bytes(cells)
+        .saturating_mul(colors)
+        .saturating_add(cells.saturating_mul(2));
+    let making_limit = if shells {
+        cells
+            .saturating_mul(2 + usize::from(painted))
+            .saturating_add(ny.saturating_mul(24 + 8 * 8))
+    } else {
+        0
+    };
+    let after = if banded {
+        rows_bytes(nx, ny, colors)
+    } else {
+        kept.saturating_add(
+            cells
+                .saturating_mul(4)
+                .saturating_mul(colors.saturating_add(colors.saturating_sub(1))),
+        )
+    };
+    sources.max(kept.saturating_add(making_limit)).max(after)
+}
+
+/// What [`banded`] holds while it makes the rows, without the band: the masks and the limit, a sign byte a cell, per
+/// color a row of distances and the two nearest sources of each column (8 bytes each), per painted color two rows of
+/// fields, and the row being made with its lower envelope and two rows of band flags (18 bytes a column); and per grid
+/// row, the column pass of a column with no source with what made it (20 bytes).
+fn rows_bytes(nx: usize, ny: usize, colors: usize) -> usize {
+    let cells = nx.saturating_mul(ny);
+    let per_column = colors
+        .saturating_mul(20)
+        .saturating_add(colors.saturating_sub(1).saturating_mul(8))
+        .saturating_add(18);
+    mask_bytes(cells)
+        .saturating_mul(colors)
+        .saturating_add(cells.saturating_mul(3))
+        .saturating_add(nx.saturating_mul(per_column))
+        .saturating_add(ny.saturating_mul(20))
+}
+
+/// What tracing a boundary takes per 2 by 2 square of cells it passes through, bytes: its points and their links in
+/// [`contour`]'s maps, the chains and the loop it makes, and the shapes made of them. Measured on painted layers of up
+/// to 2.3 million cells: at most 424 a square, counting the squares of the outer rings too.
+const TRACE_STEP: usize = 512;
+
+/// The most bytes a layer's banded split holds once its band is known: the rows step with the band (`band` bytes,
+/// [`Band::bytes`]), or the band and the sign grid while the boundary through the most squares (`mixed`) is traced,
+/// with the squares of the grid's outer rings it may close through.
+fn band_bytes(nx: usize, ny: usize, colors: usize, band: usize, mixed: usize) -> usize {
+    let cells = nx.saturating_mul(ny);
+    let rings = nx.saturating_add(ny).saturating_mul(2);
+    let tracing = cells
+        .saturating_add(band)
+        .saturating_add(mixed.saturating_add(rings).saturating_mul(TRACE_STEP));
+    rows_bytes(nx, ny, colors).saturating_add(band).max(tracing)
 }
 
 /// What the painted segments by grid cell take in [`LayerPaint::voronoi`] for each step of half a cell along a segment:
@@ -695,6 +745,25 @@ impl GridBudget {
     }
 }
 
+impl Held {
+    /// Holds `bytes` more for the same layer, without waiting: what a layer's band takes is only known once it is made,
+    /// and a layer that waited while it held a share could wait on layers that wait on it. The cap only spaces layers out,
+    /// so a layer may go past it by its own growth, as a layer over it alone still runs.
+    fn grow(&mut self, bytes: usize) {
+        if bytes == 0 {
+            return;
+        }
+        let mut held = self
+            .0
+            .held
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *held = held.saturating_add(bytes);
+        self.0.most.fetch_max(*held, std::sync::atomic::Ordering::Relaxed);
+        self.1 = self.1.saturating_add(bytes);
+    }
+}
+
 impl Drop for Held {
     fn drop(&mut self) {
         let mut held = self
@@ -724,6 +793,9 @@ impl Envelope {
     }
 }
 
+/// Squared distance, in cells, of a cell with no source: what the distance transforms start from.
+const INF: f32 = 1.0e12;
+
 /// One pass of the squared distance transform (lower envelope of parabolas).
 #[allow(
     clippy::indexing_slicing,
@@ -733,7 +805,6 @@ impl Envelope {
     reason = "indexes stay inside the row"
 )]
 fn squared_1d(f: &[f32], out: &mut [f32], scratch: &mut Envelope) {
-    const INF: f32 = 1.0e12;
     let n = f.len();
     let Envelope { v, z } = scratch;
     let mut k = 0usize;
@@ -771,14 +842,16 @@ fn squared_1d(f: &[f32], out: &mut [f32], scratch: &mut Envelope) {
     }
 }
 
-/// The outline of `field >= 0` as closed loops in mm, counterclockwise around regions.
-fn contour(g: &Grid, field: &[f32]) -> Vec<Vec<IntPoint<i32>>> {
+/// The outline of `field >= 0` as closed loops in mm, counterclockwise around regions. The field is read cell by cell
+/// (`None` outside the grid): its exact value only where a boundary passes (the four cells of a 2 by 2 square whose signs
+/// differ), and only its sign anywhere else.
+fn contour(g: &Grid, field: &dyn Fn(usize) -> Option<f32>) -> Vec<Vec<IntPoint<i32>>> {
     // The outermost ring of cells counts as outside, so every region closes inside the grid.
     let at = |ix: usize, iy: usize| {
         if ix == 0 || iy == 0 || ix + 1 >= g.nx || iy + 1 >= g.ny {
             return -1.0;
         }
-        field.get(iy * g.nx + ix).copied().unwrap_or(-1.0)
+        field(iy * g.nx + ix).unwrap_or(-1.0)
     };
     // Points on grid edges, keyed by (ix, iy, horizontal); segments join two of them.
     let mut pts: BTreeMap<EdgeId, (f64, f64)> = BTreeMap::new();
@@ -872,7 +945,7 @@ fn contour(g: &Grid, field: &[f32]) -> Vec<Vec<IntPoint<i32>>> {
             f64::midpoint(a.0, b.0) - dy / len * g.r * 0.3,
             f64::midpoint(a.1, b.1) + dx / len * g.r * 0.3,
         );
-        let inside = sample(g, field, probe) >= 0.0;
+        let inside = g.cell(probe.0, probe.1).and_then(field).unwrap_or(-1.0) >= 0.0;
         let mut ring: Vec<IntPoint<i32>> = mm
             .iter()
             .map(|&(x, y)| {
@@ -886,13 +959,6 @@ fn contour(g: &Grid, field: &[f32]) -> Vec<Vec<IntPoint<i32>>> {
         loops.push(ring);
     }
     loops
-}
-
-/// The nearest cell's value (enough to tell which side of a boundary a point is on).
-fn sample(g: &Grid, field: &[f32], p: (f64, f64)) -> f32 {
-    g.cell(p.0, p.1)
-        .and_then(|c| field.get(c).copied())
-        .unwrap_or(-1.0)
 }
 
 /// A traced loop straightened within `tol`. A loop not much wider than `tol` (around a slit where two parts meet,
@@ -1140,6 +1206,321 @@ fn depth_limit(j: usize) -> f64 {
         return -1.0;
     }
     TAPER * jf - LEAD
+}
+
+/// The most rows a layer's grid may have for its fields to be kept in a band ([`banded`]). Up to this, the column pass of
+/// [`distance`] gives each cell exactly the square of its distance in cells to the nearest source in its column, and
+/// [`banded`] uses that in place of the pass. Why, for a column of `n` cells, each a source (0) or not ([`INF`]):
+/// - every square up to `(n - 1)^2` is under `2^24`, so it is exact in f32, as is a difference of two of them;
+/// - two sources `p < q` meet at `(q^2 - p^2) / 2(q - p) = (q + p) / 2`, a half integer under `n`, so exact;
+/// - a cell that is no source meets a source before it past `(INF - 2^24) / 2n`, over `1.2e8` (beyond the column's end),
+///   and a source meets a cell that is no source before it under `-1.2e8`, which is before the column's start but after
+///   `-INF`, where the envelope starts, so a source drops every cell that is no source above it in the envelope; two cells
+///   that are no source meet within `8.5e6` of 0, which only orders them among themselves;
+/// - so wherever the column has a source, each cell takes the nearest one (the lower one at a tie, at the same distance)
+///   and its value is `d * d + 0`. A column with no source gives the same values in every column of the grid.
+///
+/// Past this the squares round in f32, and the pass can take a farther source than the nearest, so a taller grid keeps
+/// full grids. `the_column_pass_is_the_nearest_source_squared` checks the pass against the nearest source, at this
+/// many cells too.
+const BAND_MAX_ROWS: usize = 4096;
+
+/// The most painted colors a layer may have for its fields to be kept in a band: a sign bit each in a byte, beside the
+/// bit that marks the band.
+const BAND_MAX_COLORS: usize = 7;
+
+/// Whether a layer's grid of `ny` rows with `colors` filaments with sources (all but one painted) keeps its fields in a
+/// band ([`banded`]) rather than in full grids.
+fn takes_band(ny: usize, colors: usize) -> bool {
+    ny <= BAND_MAX_ROWS && colors.saturating_sub(1) <= BAND_MAX_COLORS
+}
+
+/// Layers the tests split both ways, and how many came out different (none should).
+#[cfg(test)]
+static BAND_SAME: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+#[cfg(test)]
+static BAND_DIFFERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A mask of grid cells a bit a cell, column by column, so the next marked cell down a column is a word scan away.
+struct CellBits {
+    nx: usize,
+    ny: usize,
+    words: Vec<u64>,
+}
+
+impl CellBits {
+    fn new(g: &Grid) -> Self {
+        Self {
+            nx: g.nx,
+            ny: g.ny,
+            words: vec![0; mask_bytes(g.len()) / 8],
+        }
+    }
+
+    /// The bit of cell `c` (row by row, as the grids count cells).
+    fn bit(&self, c: usize) -> usize {
+        (c % self.nx) * self.ny + c / self.nx
+    }
+
+    fn set(&mut self, c: usize) {
+        if c < self.nx * self.ny {
+            let i = self.bit(c);
+            if let Some(w) = self.words.get_mut(i / 64) {
+                *w |= 1 << (i % 64);
+            }
+        }
+    }
+
+    fn get(&self, c: usize) -> bool {
+        if c >= self.nx * self.ny {
+            return false;
+        }
+        let i = self.bit(c);
+        self.words.get(i / 64).is_some_and(|w| w >> (i % 64) & 1 == 1)
+    }
+
+    fn any(&self) -> bool {
+        self.words.iter().any(|&w| w != 0)
+    }
+
+    /// The marked cells, column by column.
+    fn cells(&self) -> impl Iterator<Item = usize> + '_ {
+        self.words.iter().enumerate().flat_map(move |(k, &w)| {
+            let mut w = w;
+            std::iter::from_fn(move || {
+                if w == 0 {
+                    return None;
+                }
+                let i = k * 64 + w.trailing_zeros() as usize;
+                w &= w - 1;
+                Some((i % self.ny) * self.nx + i / self.ny)
+            })
+        })
+    }
+
+    /// The first row at or after `from` marked in column `ix`, `ny` when there is none.
+    fn next_set(&self, ix: usize, from: usize) -> usize {
+        let (base, end) = (ix * self.ny, ix * self.ny + self.ny);
+        let mut i = base + from;
+        while i < end {
+            let w = self.words.get(i / 64).copied().unwrap_or(0) >> (i % 64);
+            if w != 0 {
+                let k = i + w.trailing_zeros() as usize;
+                return if k < end { k - base } else { self.ny };
+            }
+            i = (i / 64 + 1) * 64;
+        }
+        self.ny
+    }
+}
+
+/// The depth limit of a cell from its step ([`LayerPaint::depth_steps`]): none for 0.
+fn step_limit(j: u16) -> f32 {
+    if j == 0 {
+        return f32::INFINITY;
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "a depth in mm")]
+    let limit = depth_limit(usize::from(j)) as f32;
+    limit
+}
+
+/// A color's field at a cell, from the distance to its own sources (`mine`), the nearest other color's (`other`,
+/// infinite when no other color has any) and the depth limit there: how much nearer its sources are than both. The cell
+/// is the color's at 0 or more; 1 stands in where there is nothing to be nearer than.
+fn field_value(mine: f32, other: f32, limit: f32) -> f32 {
+    let closer = if other.is_finite() { other - mine } else { 1.0 };
+    let reach = limit - mine;
+    closer.min(if reach.is_finite() { reach } else { 1.0 })
+}
+
+/// A layer's fields kept near their boundaries ([`banded`]): per cell, a bit for each painted color set where its field
+/// is at or above 0, and the top bit where its exact values are kept; those cells in order, and each painted color's
+/// value there; and how many 2 by 2 squares each painted color's boundary passes through.
+struct Band {
+    signs: Vec<u8>,
+    cells: Vec<u32>,
+    values: Vec<Vec<f32>>,
+    mixed: Vec<usize>,
+}
+
+impl Band {
+    /// Painted color `j`'s field at cell `c`: exact in the band, its sign anywhere else.
+    fn value(&self, j: usize, c: usize) -> Option<f32> {
+        let m = *self.signs.get(c)?;
+        Some(if m & 0x80 != 0 {
+            let i = self.cells.binary_search(&u32::try_from(c).ok()?).ok()?;
+            *self.values.get(j)?.get(i)?
+        } else if m >> j & 1 == 1 {
+            1.0
+        } else {
+            -1.0
+        })
+    }
+
+    /// What the band takes beside the sign grid, bytes.
+    fn bytes(&self) -> usize {
+        let values: usize = self.values.iter().map(Vec::capacity).sum();
+        self.cells.capacity().saturating_add(values).saturating_mul(4)
+    }
+}
+
+/// A layer's fields without a full grid per color. Each color's distances are made a row at a time, all colors at once:
+/// the nearest source up and down each column stands for the column pass of [`distance`] (exactly: see
+/// [`BAND_MAX_ROWS`]), then the same row pass. A row's fields are kept as a sign per painted color and cell, and
+/// exactly only in a band of one cell around where any of them changes sign (every cell of a 2 by 2 square whose signs
+/// differ, the only cells whose values [`contour`] reads), and in the grid's two outer rings, where [`contour`] counts
+/// the outermost ring as outside. `cols`: each color's sources; `painted`: the painted ones among them, by index;
+/// `limit`: the depth limit's steps.
+#[allow(
+    clippy::indexing_slicing,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "rows and columns stay inside the grid"
+)]
+fn banded(g: &Grid, cols: &[(u8, CellBits)], painted: &[usize], limit: &[u16]) -> Band {
+    let (nx, ny, n) = (g.nx, g.ny, g.len());
+    // A column with no source: the column pass gives the same values for every such column.
+    let empty_column = {
+        let line = vec![INF; ny];
+        let mut out = vec![0.0f32; ny];
+        squared_1d(&line, &mut out, &mut Envelope::new(ny));
+        out
+    };
+    let r = g.r as f32;
+    let mut above: Vec<Vec<usize>> = vec![vec![usize::MAX; nx]; cols.len()];
+    let mut below: Vec<Vec<usize>> = cols
+        .iter()
+        .map(|(_, m)| (0..nx).map(|ix| m.next_set(ix, 0)).collect())
+        .collect();
+    let mut line = vec![0.0f32; nx];
+    let mut scratch = Envelope::new(nx);
+    let mut rows: Vec<Vec<f32>> = vec![vec![0.0; nx]; cols.len()];
+    let mut prev: Vec<Vec<f32>> = vec![vec![0.0; nx]; painted.len()];
+    let mut cur: Vec<Vec<f32>> = vec![vec![0.0; nx]; painted.len()];
+    let mut band_prev = vec![false; nx];
+    let mut band_cur = vec![false; nx];
+    let mut band = Band {
+        signs: vec![0; n],
+        cells: Vec::new(),
+        values: vec![Vec::new(); painted.len()],
+        mixed: vec![0; painted.len()],
+    };
+    let edge = |i: usize, len: usize| i <= 1 || i + 2 >= len;
+    let keep = |band: &mut Band, row: &[Vec<f32>], flags: &[bool], iy: usize| {
+        for (ix, _) in flags.iter().enumerate().filter(|(_, f)| **f) {
+            let c = iy * nx + ix;
+            band.signs[c] |= 0x80;
+            band.cells.push(c as u32);
+            for (values, field) in band.values.iter_mut().zip(row) {
+                values.push(field[ix]);
+            }
+        }
+    };
+    for (iy, &no_source) in empty_column.iter().enumerate() {
+        for (t, (_, sources)) in cols.iter().enumerate() {
+            for ix in 0..nx {
+                if below[t][ix] == iy {
+                    above[t][ix] = iy;
+                    below[t][ix] = sources.next_set(ix, iy + 1);
+                }
+                let (up, down) = (above[t][ix], below[t][ix]);
+                line[ix] = if up == usize::MAX && down >= ny {
+                    no_source
+                } else {
+                    let k = if up == usize::MAX {
+                        down - iy
+                    } else if down >= ny {
+                        iy - up
+                    } else {
+                        (iy - up).min(down - iy)
+                    };
+                    let k = k as f32;
+                    k * k + 0.0
+                };
+            }
+            squared_1d(&line, &mut rows[t], &mut scratch);
+            for v in &mut rows[t] {
+                *v = if *v >= INF { INF } else { v.sqrt() * r };
+            }
+        }
+        for (j, &t) in painted.iter().enumerate() {
+            for ix in 0..nx {
+                let c = iy * nx + ix;
+                let other = (0..cols.len())
+                    .filter(|&u| u != t)
+                    .map(|u| rows[u][ix])
+                    .fold(f32::INFINITY, f32::min);
+                let v = field_value(rows[t][ix], other, step_limit(limit[c]));
+                cur[j][ix] = v;
+                if v >= 0.0 {
+                    band.signs[c] |= 1 << j;
+                }
+            }
+        }
+        let row_edge = edge(iy, ny);
+        for (ix, b) in band_cur.iter_mut().enumerate() {
+            *b = row_edge || edge(ix, nx);
+        }
+        if iy > 0 {
+            for ix in 0..nx.saturating_sub(1) {
+                let mut any = false;
+                for (j, count) in band.mixed.iter_mut().enumerate() {
+                    let s = [prev[j][ix], prev[j][ix + 1], cur[j][ix + 1], cur[j][ix]].map(|v| v >= 0.0);
+                    if s.iter().any(|&x| x != s[0]) {
+                        *count += 1;
+                        any = true;
+                    }
+                }
+                if any {
+                    band_prev[ix] = true;
+                    band_prev[ix + 1] = true;
+                    band_cur[ix] = true;
+                    band_cur[ix + 1] = true;
+                }
+            }
+            keep(&mut band, &prev, &band_prev, iy - 1);
+        }
+        std::mem::swap(&mut prev, &mut cur);
+        std::mem::swap(&mut band_prev, &mut band_cur);
+    }
+    if ny > 0 {
+        keep(&mut band, &prev, &band_prev, ny - 1);
+    }
+    band
+}
+
+/// A layer's fields in full grids, for a layer past the band's limits ([`takes_band`]): a distance grid per color, then
+/// a field grid per painted color.
+#[allow(clippy::indexing_slicing, reason = "every grid has the grid's cells")]
+fn full_fields(g: &Grid, cols: &[(u8, CellBits)], painted: &[usize], limit: &[u16]) -> Vec<Vec<f32>> {
+    let dist: Vec<Vec<f32>> = cols.iter().map(|(_, m)| distance(g, m)).collect();
+    painted
+        .iter()
+        .map(|&t| {
+            (0..g.len())
+                .map(|c| {
+                    let other = (0..dist.len())
+                        .filter(|&u| u != t)
+                        .map(|u| dist[u][c])
+                        .fold(f32::INFINITY, f32::min);
+                    field_value(dist[t][c], other, step_limit(limit[c]))
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// The region where a field is at or above 0, its boundary straightened within a cell (the traced boundary follows the
+/// grid's cells; straightened, it keeps no ripple for the walls to pinch small pockets off).
+fn traced(g: &Grid, field: &dyn Fn(usize) -> Option<f32>) -> Shapes {
+    #[allow(clippy::cast_possible_truncation, reason = "a grid cell in internal units")]
+    let tol = (g.r * SCALE) as i64;
+    let loops: Vec<Vec<IntPoint<i32>>> = contour(g, field)
+        .into_iter()
+        .map(|l| straightened(l, tol))
+        .filter(|l| l.len() >= 3)
+        .collect();
+    loops_to_shapes(&loops)
 }
 
 impl LayerPaint<'_> {
@@ -1408,6 +1789,45 @@ impl LayerPaint<'_> {
         perimeters::union_min_area(&[&area], SPECK)
     }
 
+    /// The depth limit's step per cell under unpainted top and bottom surfaces: `j` where the nearest shell layer the cell
+    /// is exposed to is `j` layers away (its limit is [`depth_limit`]`(j)`, [`step_limit`]), unless that surface is
+    /// painted there; 0 where there is none. `surfaces` holds, per direction (below, above) and shell layer, where the
+    /// surface exposed there is painted.
+    fn depth_steps(&self, g: &Grid, surfaces: &[Vec<Shapes>; 2]) -> Vec<u16> {
+        let n = g.len();
+        let mut limit = vec![0u16; n];
+        let apply = |limit: &mut Vec<u16>, layers: &[Shapes], painted: &[Shapes]| {
+            // Cells outside the outline count as exposed, so a region stops at the outline.
+            let mut open = vec![true; n];
+            for (i, beyond) in layers.iter().enumerate() {
+                let here = fill(g, beyond);
+                let over_paint = painted.get(i).filter(|p| !p.is_empty()).map(|p| fill(g, p));
+                // The limit grows with the step, so the nearest layer's step is the least.
+                let j = u16::try_from(i + 1).unwrap_or(u16::MAX);
+                for (c, ((o, h), l)) in open.iter_mut().zip(&here).zip(limit.iter_mut()).enumerate() {
+                    if *o && !*h {
+                        *o = false;
+                        if !over_paint
+                            .as_ref()
+                            .is_some_and(|p| p.get(c).copied().unwrap_or(false))
+                            && (*l == 0 || j < *l)
+                        {
+                            *l = j;
+                        }
+                    }
+                }
+            }
+        };
+        let [below, above] = surfaces;
+        if !self.above.is_empty() {
+            apply(&mut limit, self.above, above);
+        }
+        if !self.below.is_empty() {
+            apply(&mut limit, self.below, below);
+        }
+        limit
+    }
+
     /// Regions painted on the walls: each cell of the layer takes the color of the nearest wall
     /// (painted or not), within the depth an unpainted top or bottom surface allows. `surfaces` holds,
     /// per direction (below, above) and shell layer, where the surface exposed there is painted.
@@ -1444,11 +1864,10 @@ impl LayerPaint<'_> {
             .saturating_mul(NEAR_STEP);
         let colors = walls.len() + usize::from(!walls.contains_key(&self.default_slot));
         let shells = !self.above.is_empty() || !self.below.is_empty();
-        let painted = surfaces.iter().flatten().any(|s| !s.is_empty());
-        let _held = GRIDS.hold(
-            grid_bytes(g.nx, g.ny, colors, shells, painted).saturating_add(near_bytes),
-            grid_cap,
-        );
+        let painted_surface = surfaces.iter().flatten().any(|s| !s.is_empty());
+        let band = takes_band(g.ny, colors);
+        let top = grid_bytes(g.nx, g.ny, colors, shells, painted_surface, band).saturating_add(near_bytes);
+        let mut held = GRIDS.hold(top, grid_cap);
         // Sources: the outline, each stretch in the color painted on it (paint off the outline does not count),
         // with short runs absorbed and short painted gaps closed, loop by loop.
         // Painted segments by the grid cells they pass through, for looking up the ones near a point.
@@ -1506,10 +1925,10 @@ impl LayerPaint<'_> {
             best.1
         };
         let (absorb, close) = self.run_limits();
-        let mut sources: BTreeMap<u8, Vec<bool>> = BTreeMap::new();
+        let mut sources: BTreeMap<u8, CellBits> = BTreeMap::new();
         // Painted walls away from the outline (where parts of one object meet inside it) are sources as they
         // are; on the outline, the cleaned runs below stand for them.
-        let mut on_outline = vec![false; g.len()];
+        let mut on_outline = CellBits::new(&g);
         for ring in self.shapes.iter().flatten() {
             let n = ring.len();
             for k in 0..n {
@@ -1521,21 +1940,18 @@ impl LayerPaint<'_> {
         let by_outline = |c: usize| {
             let (cx, cy) = (c % g.nx, c / g.nx);
             (cy.saturating_sub(1)..=(cy + 1).min(g.ny - 1)).any(|yy| {
-                (cx.saturating_sub(1)..=(cx + 1).min(g.nx - 1))
-                    .any(|xx| on_outline.get(yy * g.nx + xx).copied().unwrap_or(false))
+                (cx.saturating_sub(1)..=(cx + 1).min(g.nx - 1)).any(|xx| on_outline.get(yy * g.nx + xx))
             })
         };
         for (state, segs) in walls {
-            let mut mask = vec![false; g.len()];
+            let mut mask = CellBits::new(&g);
             for &(a, e) in segs {
                 stamp(&g, &mut mask, a, e);
             }
-            if mask.iter().enumerate().any(|(c, m)| *m && !by_outline(c)) {
-                let into = sources.entry(*state).or_insert_with(|| vec![false; g.len()]);
-                for (c, m) in mask.iter().enumerate() {
-                    if *m && !by_outline(c) {
-                        into[c] = true;
-                    }
+            if mask.cells().any(|c| !by_outline(c)) {
+                let into = sources.entry(*state).or_insert_with(|| CellBits::new(&g));
+                for c in mask.cells().filter(|&c| !by_outline(c)) {
+                    into.set(c);
                 }
             }
         }
@@ -1577,109 +1993,60 @@ impl LayerPaint<'_> {
             for i in 0..m {
                 let mask = sources
                     .entry(point_colors[i])
-                    .or_insert_with(|| vec![false; g.len()]);
+                    .or_insert_with(|| CellBits::new(&g));
                 stamp(&g, mask, pts[i], pts[(i + 1) % m]);
             }
         }
-        // In filament order already (a map's order), so a list: collecting a map sorts again. Each mask goes once its
-        // distances are made: on a big layer every grid is megabytes, and the layers are cut side by side.
         drop(on_outline);
-        let mut dist: Vec<(u8, Vec<f32>)> = sources
-            .into_iter()
-            .filter(|(_, m)| m.iter().any(|&x| x))
-            .map(|(s, m)| (s, distance(&g, &m)))
+        // In filament order already (a map's order). Each color's field reads the distance to its own sources and to the
+        // nearest of the others'; the part's own filament gets none.
+        let cols: Vec<(u8, CellBits)> = sources.into_iter().filter(|(_, m)| m.any()).collect();
+        let painted: Vec<usize> = (0..cols.len())
+            .filter(|&t| cols[t].0 != self.default_slot)
             .collect();
-        // Depth limit under unpainted top and bottom surfaces: a cell takes the limit of the nearest
-        // surface it is exposed to, unless that surface is painted there. Only the fields read it, so it is made after
-        // the distances and not held while they are made, which takes most of a layer's time.
-        let n = g.len();
-        let mut limit = vec![f32::INFINITY; n];
-        let apply = |limit: &mut Vec<f32>, layers: &[Shapes], painted: &[Shapes]| {
-            // Cells outside the outline count as exposed, so a region stops at the outline.
-            let mut open = vec![true; n];
-            for (i, beyond) in layers.iter().enumerate() {
-                let here = fill(&g, beyond);
-                let over_paint = painted.get(i).filter(|p| !p.is_empty()).map(|p| fill(&g, p));
-                #[allow(clippy::cast_possible_truncation, reason = "a depth in mm")]
-                let dl = depth_limit(i + 1) as f32;
-                for (c, ((o, h), l)) in open.iter_mut().zip(&here).zip(limit.iter_mut()).enumerate() {
-                    if *o && !*h {
-                        *o = false;
-                        if !over_paint
-                            .as_ref()
-                            .is_some_and(|p| p.get(c).copied().unwrap_or(false))
-                        {
-                            *l = l.min(dl);
-                        }
-                    }
-                }
-            }
-        };
-        let [below, above] = surfaces;
-        if !self.above.is_empty() {
-            apply(&mut limit, self.above, above);
+        if painted.is_empty() {
+            return Vec::new();
         }
-        if !self.below.is_empty() {
-            apply(&mut limit, self.below, below);
-        }
-        let last = dist.iter().rposition(|(s, _)| *s != self.default_slot);
-        // Each color's field takes the place of its own distances. A color done still counts for the colors after it,
-        // so its distances first go into those of the part's own filament, which no field is made for, keeping the
-        // nearest of the two: the same values, and no extra grid per color. A layer painted all over with two colors or
-        // more gets an empty grid of the part's own filament for that.
-        let painted = dist.iter().filter(|(s, _)| *s != self.default_slot).count();
-        if painted > 1 && dist.iter().all(|(s, _)| *s != self.default_slot) {
-            dist.push((self.default_slot, vec![f32::INFINITY; n]));
-        }
-        let done = dist.iter().position(|(s, _)| *s == self.default_slot);
-        let mut fields: Vec<(u8, Vec<f32>)> = Vec::new();
-        for k in 0..dist.len() {
-            let state = dist.get(k).map_or(self.default_slot, |d| d.0);
-            if state == self.default_slot {
-                continue;
-            }
-            let value = |c: usize, mine: f32, dist: &[(u8, Vec<f32>)]| {
-                let other = dist
-                    .iter()
-                    .filter(|(s, _)| *s != state)
-                    .map(|(_, d)| d.get(c).copied().unwrap_or(f32::INFINITY))
-                    .fold(f32::INFINITY, f32::min);
-                let closer = if other.is_finite() { other - mine } else { 1.0 };
-                let reach = limit.get(c).copied().unwrap_or(f32::INFINITY) - mine;
-                closer.min(if reach.is_finite() { reach } else { 1.0 })
-            };
-            let mut field = dist
-                .get_mut(k)
-                .map(|d| std::mem::take(&mut d.1))
-                .unwrap_or_default();
-            for (c, v) in field.iter_mut().enumerate() {
-                let mine = *v;
-                *v = value(c, mine, &dist);
-                if Some(k) != last
-                    && let Some(d) = done.and_then(|i| dist.get_mut(i)).and_then(|d| d.1.get_mut(c))
-                {
-                    *d = d.min(mine);
-                }
-            }
-            fields.push((state, field));
-        }
-        // With every field made, the distances and the limit go before the boundaries are traced: tracing a field
-        // takes a few hundred bytes per boundary point, which then fits in what the limit took ([`grid_bytes`]).
-        drop((dist, limit));
-        // The traced boundary follows the grid's cells; straightened within a cell, it keeps no ripple for the
-        // walls to pinch small pockets off.
-        #[allow(clippy::cast_possible_truncation, reason = "a grid cell in internal units")]
-        let tol = (g.r * SCALE) as i64;
+        let states: Vec<u8> = painted.iter().map(|&t| cols[t].0).collect();
+        let limit = self.depth_steps(&g, surfaces);
         let mut out = Vec::new();
-        for (state, field) in fields {
-            let loops: Vec<Vec<IntPoint<i32>>> = contour(&g, &field)
-                .into_iter()
-                .map(|l| straightened(l, tol))
-                .filter(|l| l.len() >= 3)
-                .collect();
-            let shapes = loops_to_shapes(&loops);
-            if !shapes.is_empty() {
-                out.push((state, shapes));
+        if band {
+            let kept = banded(&g, &cols, &painted, &limit);
+            // The same layer in full grids, for the tests to hold the band to.
+            #[cfg(test)]
+            let full = full_fields(&g, &cols, &painted, &limit);
+            drop((cols, limit));
+            let mixed = kept.mixed.iter().copied().max().unwrap_or(0);
+            held.grow(
+                band_bytes(g.nx, g.ny, colors, kept.bytes(), mixed)
+                    .saturating_add(near_bytes)
+                    .saturating_sub(top),
+            );
+            for (j, state) in states.iter().enumerate() {
+                let shapes = traced(&g, &|c| kept.value(j, c));
+                if !shapes.is_empty() {
+                    out.push((*state, shapes));
+                }
+            }
+            #[cfg(test)]
+            {
+                let whole: Vec<(u8, Shapes)> = states
+                    .iter()
+                    .zip(&full)
+                    .map(|(s, f)| (*s, traced(&g, &|c| f.get(c).copied())))
+                    .filter(|(_, s)| !s.is_empty())
+                    .collect();
+                let count = if whole == out { &BAND_SAME } else { &BAND_DIFFERS };
+                count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        } else {
+            let fields = full_fields(&g, &cols, &painted, &limit);
+            drop((cols, limit));
+            for (state, field) in states.iter().zip(&fields) {
+                let shapes = traced(&g, &|c| field.get(c).copied());
+                if !shapes.is_empty() {
+                    out.push((*state, shapes));
+                }
             }
         }
         out
@@ -2389,7 +2756,7 @@ mod tests {
     #[test]
     fn distances_and_outlines_of_a_grid_are_right() {
         let g = Grid::new([0.0, 0.0, 10.0, 10.0]);
-        let mut mask = vec![false; g.len()];
+        let mut mask = CellBits::new(&g);
         stamp(&g, &mut mask, (0.0, 5.0), (10.0, 5.0));
         let d = distance(&g, &mask);
         let at = |x: f64, y: f64| d[g.cell(x, y).unwrap()];
@@ -2402,65 +2769,330 @@ mod tests {
                 (x - 5.0) as f32
             })
             .collect();
-        let loops = contour(&g, &field);
+        let loops = contour(&g, &|c| field.get(c).copied());
         assert_eq!(loops.len(), 1, "{}", loops.len());
         let shapes = loops_to_shapes(&loops);
         assert!(contains(&shapes, 8.0, 5.0) && !contains(&shapes, 2.0, 5.0));
     }
 
-    /// A layer holds for what its split holds at the top: a 4 byte distance grid per color and a 4 byte depth limit,
-    /// and while the limit is made, a byte a cell for the open cells and for each shell layer's inside (and painted
-    /// surface), and a list per grid row of where the outline crosses it.
+    /// A mask reads back the cells marked in it, row by row as the grids count them, and finds the next marked cell down
+    /// a column across its words.
+    #[test]
+    fn a_cell_mask_reads_back_what_was_marked() {
+        let g = Grid::new([0.0, 0.0, 9.0, 3.0]);
+        let mut m = CellBits::new(&g);
+        assert!(!m.any());
+        let marked = [0, 5, g.nx, g.nx * 3 + 7, g.len() - 1];
+        for &c in &marked {
+            m.set(c);
+        }
+        // Past the grid nothing is marked.
+        m.set(g.len());
+        assert!(m.any() && !m.get(g.len()));
+        let mut got: Vec<usize> = m.cells().collect();
+        got.sort_unstable();
+        assert_eq!(got, marked);
+        assert!((0..g.len()).all(|c| m.get(c) == marked.contains(&c)));
+        assert_eq!(
+            (m.next_set(0, 0), m.next_set(0, 1), m.next_set(0, 2)),
+            (0, 1, g.ny)
+        );
+        assert_eq!((m.next_set(7, 0), m.next_set(7, 4)), (3, g.ny));
+        assert_eq!(m.next_set(g.nx - 1, 0), g.ny - 1);
+        assert_eq!(m.next_set(1, 0), g.ny);
+    }
+
+    /// The column pass of the distance transform gives every cell exactly the square of its distance to the nearest
+    /// source in its column, as the banded split assumes ([`BAND_MAX_ROWS`]): every pattern of up to 12 cells, and at
+    /// 2049, 4095 and 4096 cells single sources, two sources, regular spacings, clusters and random patterns.
+    #[test]
+    fn the_column_pass_is_the_nearest_source_squared() {
+        let check = |marks: &[bool]| {
+            let n = marks.len();
+            if !marks.iter().any(|&m| m) {
+                return;
+            }
+            let f: Vec<f32> = marks.iter().map(|&m| if m { 0.0 } else { INF }).collect();
+            let mut out = vec![0.0f32; n];
+            squared_1d(&f, &mut out, &mut Envelope::new(n));
+            // The nearest source above and below each cell.
+            let mut near = vec![usize::MAX; n];
+            let mut last = None;
+            for q in 0..n {
+                if marks[q] {
+                    last = Some(q);
+                }
+                if let Some(p) = last {
+                    near[q] = q - p;
+                }
+            }
+            let mut last = None;
+            for q in (0..n).rev() {
+                if marks[q] {
+                    last = Some(q);
+                }
+                if let Some(p) = last {
+                    near[q] = near[q].min(p - q);
+                }
+            }
+            for q in 0..n {
+                let k = near[q] as f32;
+                assert_eq!(
+                    out[q].to_bits(),
+                    (k * k + 0.0).to_bits(),
+                    "{n} cells, cell {q}: {}",
+                    out[q]
+                );
+            }
+        };
+        for n in 1..=12usize {
+            for bits in 0..1u32 << n {
+                let marks: Vec<bool> = (0..n).map(|i| bits >> i & 1 == 1).collect();
+                check(&marks);
+            }
+        }
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for n in [2049usize, 4095, BAND_MAX_ROWS] {
+            let mut patterns: Vec<Vec<usize>> = Vec::new();
+            for p in [0, 1, n / 2 - 1, n / 2, n - 2, n - 1] {
+                patterns.push(vec![p]);
+            }
+            patterns.push(vec![0, n - 1]);
+            patterns.push(vec![n / 3, n / 3 + 1]);
+            for step in [1, 2, 3, 7, 64, 1000, n - 1] {
+                patterns.push((0..n).step_by(step).collect());
+            }
+            // Close pairs far apart, far down the column, where the squares are largest.
+            patterns.push(vec![5, 6, n - 3, n - 2]);
+            patterns.push(vec![n - 200, n - 199, n - 197]);
+            for share in [2u64, 100, 1000] {
+                for _ in 0..4 {
+                    patterns.push((0..n).filter(|_| next() % share == 0).collect());
+                }
+            }
+            for at in patterns {
+                let mut marks = vec![false; n];
+                for p in at {
+                    marks[p] = true;
+                }
+                check(&marks);
+            }
+        }
+    }
+
+    /// A layer holds for what its split holds at the top. Banded: a bit a cell per color's sources, 2 bytes a cell for
+    /// the depth limit, and while the limit is made a byte a cell for the open cells and each shell layer's inside (and
+    /// painted surface) and a list per grid row; then the rows, and the band once it is known. Past the band's limits:
+    /// a distance grid per color and a field per painted color.
     #[test]
     fn a_layer_holds_its_grids_at_their_top() {
         // A 20 mm square: 205 by 205 cells of 0.1 mm with the margin.
         let g = Grid::new([0.0, 0.0, 20.0, 20.0]);
         assert_eq!((g.nx, g.ny, g.len()), (205, 205, 42_025));
-        let (f32s, bools) = (std::mem::size_of::<f32>(), std::mem::size_of::<bool>());
-        // One painted color and the part's own, no shell layers: two distance grids and the limit.
-        assert_eq!(grid_bytes(g.nx, g.ny, 2, false, false), 42_025 * 3 * f32s);
-        assert_eq!(grid_bytes(g.nx, g.ny, 2, false, false), 504_300);
-        // Shell layers above or below: the open and inside masks, and a row list (24 bytes) with room for 8 crossings.
-        let rows = 205 * (24 + 8 * 8);
+        let mask = mask_bytes(42_025);
+        assert_eq!(mask, 657 * 8);
+        // One painted color and the part's own, no shell layers: the rows are the top.
+        let rows = mask * 2 + 42_025 * 3 + 205 * (2 * 20 + 8 + 18) + 205 * 20;
+        assert_eq!(rows_bytes(g.nx, g.ny, 2), rows);
+        assert_eq!(grid_bytes(g.nx, g.ny, 2, false, false, true), rows);
+        assert_eq!(grid_bytes(g.nx, g.ny, 2, false, false, true), 154_217);
+        // Shell layers with a painted surface: making the limit is the top.
+        let making = mask * 2 + 42_025 * 2 + 42_025 * 3 + 205 * (24 + 8 * 8);
+        assert_eq!(grid_bytes(g.nx, g.ny, 2, true, true, true), making);
+        assert_eq!(grid_bytes(g.nx, g.ny, 2, true, false, true), making - 42_025);
+        // Full grids: two distance grids and one field beside the masks and the limit.
         assert_eq!(
-            grid_bytes(g.nx, g.ny, 2, true, false),
-            504_300 + 42_025 * 2 * bools + rows
+            grid_bytes(g.nx, g.ny, 2, false, false, false),
+            mask * 2 + 42_025 * 2 + 42_025 * 4 * 3
         );
-        assert_eq!(grid_bytes(g.nx, g.ny, 2, true, false), 606_390);
-        // A painted surface there: its mask too.
-        assert_eq!(grid_bytes(g.nx, g.ny, 2, true, true), 648_415);
-        // Every more color is one more distance grid, and nothing else.
+        // Each more color is one more mask, and in full grids a distance grid and a field.
         for colors in 2..=8 {
-            assert_eq!(
-                grid_bytes(g.nx, g.ny, colors + 1, true, true) - grid_bytes(g.nx, g.ny, colors, true, true),
-                42_025 * f32s
-            );
+            let more = |banded| {
+                grid_bytes(g.nx, g.ny, colors + 1, true, true, banded)
+                    - grid_bytes(g.nx, g.ny, colors, true, true, banded)
+            };
+            assert_eq!(more(true), mask);
+            assert_eq!(more(false), mask + 42_025 * 8);
         }
-        // Rows count by the grid's height: 400 by 10 cells, four colors, a painted surface.
-        assert_eq!(
-            grid_bytes(400, 10, 4, true, true),
-            4_000 * (4 * 4 + 4 + 3) + 10 * 88
-        );
-        assert_eq!(
-            grid_bytes(10, 400, 4, true, true),
-            4_000 * (4 * 4 + 4 + 3) + 400 * 88
-        );
-        // The largest grid a layer gets (about 4 million cells) with four colors: under a hundred megabytes, where the
-        // old count of 5 bytes a color and cell and 16 more said 144.
+        // The largest grid a layer gets (about 4 million cells) with four colors: a quarter of what full grids take.
         let big = Grid::new([0.0, 0.0, 400.0, 400.0]);
         assert!(big.len() <= 4_000_000 + 2 * big.nx + 2 * big.ny, "{}", big.len());
-        let held = grid_bytes(big.nx, big.ny, 4, true, true);
-        assert_eq!(held, big.len() * 23 + big.ny * 88);
-        assert!(
-            held < 100_000_000 && big.len() * (5 * 4 + 16) > 140_000_000,
-            "{held}"
-        );
+        let banded = grid_bytes(big.nx, big.ny, 4, true, true, true);
+        let full = grid_bytes(big.nx, big.ny, 4, true, true, false);
+        assert_eq!(banded, mask_bytes(big.len()) * 4 + big.len() * 5 + big.ny * 88);
+        assert!(banded * 4 < full && banded < 25_000_000, "{banded} {full}");
+        // Once the band is known: the rows with it, or the band and the signs while the longest boundary is traced.
+        // The boundary may close through every square of the outer rings (4 by 205 of them here).
+        let tracing = |band: usize, mixed: usize| 42_025 + band + (mixed + 4 * 205) * TRACE_STEP;
+        for (band, mixed) in [(0, 0), (1_000, 0), (1_000, 10_000), (1_000_000, 10)] {
+            assert_eq!(
+                band_bytes(g.nx, g.ny, 2, band, mixed),
+                (rows + band).max(tracing(band, mixed))
+            );
+        }
+        assert!(band_bytes(g.nx, g.ny, 2, 1_000, 10_000) > tracing(0, 10_000));
         // Past any real grid it saturates instead of wrapping.
-        assert_eq!(grid_bytes(usize::MAX, 2, 2, true, true), usize::MAX);
+        assert_eq!(grid_bytes(usize::MAX, 2, 2, true, true, true), usize::MAX);
+        assert_eq!(grid_bytes(usize::MAX, 2, 2, true, true, false), usize::MAX);
+        assert_eq!(band_bytes(usize::MAX, 2, 2, 1, 1), usize::MAX);
         // The painted segments by cell, per step of half a cell: a new cell every other step, its list with room for 4
         // entries of 40 bytes and two map slots of 33.
         if cfg!(target_pointer_width = "64") {
             assert_eq!(NEAR_STEP, 113);
         }
+    }
+
+    /// A layer that grows its hold once its band is known holds the more at once, without waiting, past the cap too,
+    /// and lets all of it go.
+    #[test]
+    fn a_grown_hold_counts_at_once() {
+        static B: GridBudget = GridBudget {
+            held: std::sync::Mutex::new(0),
+            freed: std::sync::Condvar::new(),
+            most: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let cap = GRID_FLOOR + 1;
+        let held = || *B.held.lock().unwrap();
+        let mut first = B.hold(GRID_FLOOR / 2, || cap);
+        let second = B.hold(GRID_FLOOR / 4, || cap);
+        first.grow(0);
+        assert_eq!(held(), GRID_FLOOR / 2 + GRID_FLOOR / 4);
+        first.grow(GRID_FLOOR);
+        assert_eq!(held(), GRID_FLOOR / 2 + GRID_FLOOR / 4 + GRID_FLOOR);
+        assert_eq!(B.most.load(std::sync::atomic::Ordering::Relaxed), held());
+        drop(first);
+        assert_eq!(held(), GRID_FLOOR / 4);
+        drop(second);
+        assert_eq!(held(), 0);
+    }
+
+    /// A wall face's two triangles from `a` to `b`, 10 mm tall, in `state`.
+    fn wall(a: [f64; 2], b: [f64; 2], state: u8) -> [([[f64; 3]; 3], u8); 2] {
+        [
+            ([[a[0], a[1], 0.0], [b[0], b[1], 0.0], [b[0], b[1], 10.0]], state),
+            ([[a[0], a[1], 0.0], [b[0], b[1], 10.0], [a[0], a[1], 10.0]], state),
+        ]
+    }
+
+    /// One layer of `outline` with no shell layers around it, split by the painted `faces`.
+    fn split_walls(outline: &Shapes, faces: &[([[f64; 3]; 3], u8)]) -> Vec<(u8, Shapes)> {
+        let plan = LayerPlan::new(10.0, 0.2, 0.2);
+        let facets = Facets::Mm(faces.to_vec());
+        LayerPaint {
+            default_slot: 1,
+            shapes: outline,
+            layer: 20,
+            z: plan.slice_z[20],
+            plan: &plan,
+            above: &[],
+            below: &[],
+            facets: &[&facets],
+            step: 7_970,
+            small: 1_050,
+            memo: None,
+        }
+        .split()
+    }
+
+    fn area_of(parts: &[(u8, Shapes)], slot: u8) -> f64 {
+        parts
+            .iter()
+            .filter(|(s, _)| *s == slot)
+            .map(|(_, sh)| area_mm2(sh))
+            .sum()
+    }
+
+    /// A strip 420 mm long has more grid rows than the band takes, so it splits in full grids: its painted long side
+    /// takes the half of the strip nearest it, less the ends' corners.
+    #[test]
+    fn a_layer_past_the_bands_rows_splits_in_full_grids() {
+        let outline = square(10.0, 10.0, 14.0, 430.0);
+        let b = perimeters::bounds(&outline).unwrap();
+        let g = Grid::new(b.map(|v| f64::from(v) / SCALE));
+        assert!(g.ny > BAND_MAX_ROWS && !takes_band(g.ny, 2), "{}", g.ny);
+        let parts = split_walls(&outline, &wall([14.0, 10.0], [14.0, 430.0], 2));
+        let (painted, plain) = (area_of(&parts, 2), area_of(&parts, 1));
+        assert!((painted - 836.0).abs() < 5.0, "{painted}");
+        assert!((painted + plain - 1_680.0).abs() < 1.0, "{plain}");
+    }
+
+    /// An octagon with each side in its own color has 8 painted colors, more than the band takes, so it splits in full
+    /// grids: each side takes its eighth.
+    #[test]
+    fn eight_painted_colors_split_in_full_grids() {
+        assert!(!takes_band(100, 9) && takes_band(100, 8));
+        let corner = |k: usize| {
+            let a = std::f64::consts::TAU * (k as f64 + 0.5) / 8.0;
+            [128.0 + 10.0 * a.m_cos(), 128.0 + 10.0 * a.m_sin()]
+        };
+        let p = |c: [f64; 2]| IntPoint::new((c[0] * SCALE) as i32, (c[1] * SCALE) as i32);
+        let outline: Shapes = vec![vec![(0..8).map(|k| p(corner(k))).collect()]];
+        let faces: Vec<([[f64; 3]; 3], u8)> = (0..8)
+            .flat_map(|k| wall(corner(k), corner(k + 1), 2 + k as u8))
+            .collect();
+        let parts = split_walls(&outline, &faces);
+        let whole = area_mm2(&outline);
+        // Each side's eighth, less or more what the corners' short runs move between neighbors.
+        for slot in 2..=9 {
+            let got = area_of(&parts, slot);
+            assert!((got - whole / 8.0).abs() < 3.0, "{slot}: {got} of {whole}");
+        }
+        let all: f64 = (2..=9).map(|slot| area_of(&parts, slot)).sum();
+        // The corners keep a little of the part's own filament.
+        let plain = area_of(&parts, 1);
+        assert!(
+            (all + plain - whole).abs() < 1.0 && plain < 5.0,
+            "{all} and {plain} of {whole}"
+        );
+    }
+
+    /// Every painted layer of the painted files in the repository splits in its band exactly as in full grids: the
+    /// split of each layer in a test build is made both ways and compared.
+    #[test]
+    fn the_band_splits_the_painted_files_as_the_full_grids_do() {
+        use std::sync::atomic::Ordering::Relaxed;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let files = [
+            "../../apps/desktop/src-tauri/src/testdata/painted-cube.3mf",
+            "../../apps/web/e2e/fixtures/eight-colors.3mf",
+            "cli/tests/fixtures/painted.3mf",
+            "../geom/tests/corpus/bambu-painted.3mf",
+            "../geom/tests/corpus/orca-painted.3mf",
+            "../geom/tests/corpus/prusa-painted.3mf",
+        ];
+        let before = BAND_SAME.load(Relaxed);
+        for file in files {
+            let bytes = std::fs::read(root.join(file)).unwrap();
+            let mesh = std::sync::Arc::new(crate::mesh::Mesh::load(&bytes, "painted.3mf").unwrap());
+            let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+            for q in mesh.parts.iter().flat_map(|p| &p.positions) {
+                for i in 0..3 {
+                    lo[i] = lo[i].min(q[i]);
+                    hi[i] = hi[i].max(q[i]);
+                }
+            }
+            let (tx, ty, tz) = (
+                100.0 - f64::from(lo[0] + hi[0]) / 2.0,
+                100.0 - f64::from(lo[1] + hi[1]) / 2.0,
+                -f64::from(lo[2]),
+            );
+            let req: crate::api::SliceRequest = serde_json::from_value(serde_json::json!({
+                "plate": { "objects": [{ "id": "a", "mesh": "x", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tx, ty, tz, 1] }] },
+                "config": { "filament_colour": ["#FFFFFF", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#000000", "#808080"] },
+                "options": {}
+            }))
+            .unwrap();
+            let run = crate::api::run_request(&req, &move |_: &str| Ok(mesh.clone()));
+            assert!(run.is_ok(), "{file}: {:?}", run.err());
+        }
+        let same = BAND_SAME.load(Relaxed) - before;
+        assert_eq!(BAND_DIFFERS.load(Relaxed), 0, "layers whose band split differs");
+        assert!(same >= 300, "only {same} layers compared");
     }
 }
