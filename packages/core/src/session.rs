@@ -8453,9 +8453,6 @@ impl SliceSession {
                     crate::narrow::split_core(&shell_area, solid_spacing_mm)
                 };
                 if !narrow.is_empty() {
-                    // The concentric fill runs over the no-overlap infill area: the region without the
-                    // growth that lets lines overlap the walls.
-                    let fill_area = perimeters::offset(&inner, -overlap);
                     // On a Bambu Lab printer a narrow piece that rests on the sparse infill of the layer below is
                     // a floating vertical shell (vshell.rs); the others stay internal solid infill.
                     let lower = lower_facts.as_deref().filter(|_| bambu);
@@ -8465,9 +8462,11 @@ impl SliceSession {
                         None => (Shapes::new(), narrow),
                     };
                     if !rest.is_empty() {
-                        let no_overlap = perimeters::intersection(&rest, &fill_area);
+                        // The beads fill the band out to the infill area's overlap with the wall, as a floating
+                        // shell's do: the band of a stack of 5 top layers is a bead wider than that of 4.
+                        let band = perimeters::intersection(&rest, &inner);
                         work.shell_thick =
-                            crate::narrow::concentric_lines(&no_overlap, cfg, solid_spacing_mm, layer_height);
+                            crate::narrow::concentric_lines(&band, cfg, solid_spacing_mm, layer_height);
                         work.region_narrow = rest;
                     }
                     if let (false, Some(u), Some(f)) = (floating.is_empty(), &unsupported, lower) {
