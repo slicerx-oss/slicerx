@@ -173,6 +173,12 @@ jobs:
             fs.writeFileSync(f, JSON.stringify(c, null, 2) + "\n")
           '
 
+      # The print watch links ONNX Runtime, which ort-sys downloads in its build script with one try. Put it in place
+      # first, from a cached copy or with retries (scripts/ci/ort-prefetch.sh); a target with no prebuilt is skipped.
+      - uses: ./.github/actions/ort-prefetch
+        with:
+          targets: ${{ matrix.targets }}
+
       # The MCP server (standalone, runs with plain node) and the print watch sidecar. The watch model is
       # a release asset: set the repository variable SX_WATCH_MODEL_URL (and SX_WATCH_MODEL_SHA256) to include it.
       - name: Agent server and print watch
