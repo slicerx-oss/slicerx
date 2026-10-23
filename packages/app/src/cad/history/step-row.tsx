@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from
 import { useApp, type PlateEntry } from '../../state/store'
 import { mainNumber, stepName, type Step } from '@slicerx/cad-history'
 import { toolFor } from './ops'
+import { sentence } from '../tool-panel'
 import { fromMmText, toMmText } from '../units'
 import { currentValues } from '../value-table'
 import { useLengthWords } from '../use-units'
@@ -173,7 +174,7 @@ export function StepRow(props: {
           <Button size="sm" variant="ghost" icon="delete" data-tip="history.delete" aria-label={`Delete ${name}`} disabled={busy} onClick={props.onDelete} />
         </>
       )}
-      {state === 'broken' ? <p className="cad-step-why"><Icon name="alert" size={13} /> {s.broken}</p> : state === 'skipped' ? <p className="cad-step-why sx-muted">Skipped: a step before it is broken.</p> : null}
+      {state === 'broken' ? <p className="cad-step-why"><Icon name="alert" size={13} /> {s.broken ? sentence(s.broken) : null}</p> : state === 'skipped' ? <p className="cad-step-why sx-muted">Skipped: a step before it is broken.</p> : null}
       {state === 'done' && s.note ? <p className="cad-step-why sx-muted" data-testid="step-note"><Icon name="info" size={13} /> {s.note}</p> : null}
       {s.bind !== undefined ? <p className="cad-step-why sx-muted" data-testid="step-bind">Follows {s.bind}</p> : null}
       {props.tree && sketch ? (

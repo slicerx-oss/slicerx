@@ -13,14 +13,15 @@ import { useHost } from '../host'
 import { clearanceFor } from '../plate/clearance'
 import { cameraBus } from '../plate/tools'
 import { get, set, toast, useApp } from '../state/store'
+import { tuneContext } from '../calibration/tuned'
 import { edgeLines } from './edges'
-import { holeSpecFor, THREADS, type Head, type Purpose, type Thread } from './hole-sizes'
+import { customHoleProblem, holeSpecFor, THREADS, type Head, type Purpose, type Thread } from './hole-sizes'
 import { applyHole } from './holes'
 import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
-import { sizeWords } from './op-preview'
+import { toolError } from './op-preview'
 
 interface Picked {
   objectId: string
@@ -59,6 +60,7 @@ export function HoleTool() {
   const fitMm = useApp((s) => clearanceFor(s).mm)
   const fitWords = useApp((s) => clearanceFor(s).words)
   const fitMeasured = useApp((s) => clearanceFor(s).measured)
+  const nozzleMm = useApp((s) => tuneContext(s).nozzleMm)
 
   useEffect(() => {
     cameraBus()?.guides?.({ lines: picked ? rimOf(picked.hole) : [], points: [] })
@@ -83,10 +85,13 @@ export function HoleTool() {
   const customMm = num(custom)
   const choice = purpose === 'custom' ? { purpose, thread, head, customMm } : { purpose, thread, head }
   const ready = picked !== null && (purpose !== 'custom' || (Number.isFinite(customMm) && customMm > 0))
+  // Too small to print: Make hole stays off and says why, and nothing is asked of the engine.
+  const tooSmall = purpose === 'custom' && Number.isFinite(customMm) && customMm > 0 ? customHoleProblem(customMm, nozzleMm) : null
   const sized = picked && ready ? holeSpecFor(choice, { mm: fitMm, measured: fitMeasured, words: fitWords }, picked.hole) : null
 
   const apply = async () => {
     if (!picked || !sized || busy) return
+    if (tooSmall) return void setNote(tooSmall)
     setBusy(true)
     setNote(null)
     try {
@@ -103,7 +108,7 @@ export function HoleTool() {
       setPicked(null)
       return true
     } catch (err) {
-      setNote(sizeWords(errorText(err)))
+      setNote(toolError(err, purpose === 'custom' ? { diameterMm: customMm } : {}))
     } finally {
       setBusy(false)
     }
@@ -138,15 +143,15 @@ export function HoleTool() {
         </Row>
       )}
       {purpose === 'clearance' ? <Choice id="hole-head" label="Head" ariaLabel="Screw head" value={head} onChange={setHead} options={[{ value: 'none', label: 'None' }, { value: 'counterbore', label: 'Counterbore' }, { value: 'countersink', label: 'Countersink' }]} /> : null}
-      {sized ? (
+      {sized && !tooSmall ? (
         <Note testId="hole-size-words">
           {sized.words.map((w) => (
             <span key={w} className="tp-line">{w}</span>
           ))}
         </Note>
       ) : null}
-      {note ? <Message text={note} /> : null}
-      <ToolFooter verb="Make hole" onApply={apply} busy={busy} disabled={!picked || !sized} repeat={!edit} />
+      {note || tooSmall ? <Message text={(note ?? tooSmall)!} /> : null}
+      <ToolFooter verb="Make hole" onApply={apply} busy={busy} disabled={!picked || !sized || tooSmall !== null} repeat={!edit} />
     </Shell>
   )
 }

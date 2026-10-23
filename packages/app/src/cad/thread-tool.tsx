@@ -18,8 +18,8 @@ import { editing, saveEdit } from './history/ops'
 import { bindNext } from './history/record'
 import { close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
-import { sizeWords } from './op-preview'
-import { threadSpecFor } from './thread-spec'
+import { toolError } from './op-preview'
+import { threadLengthProblem, threadSpecFor } from './thread-spec'
 
 interface Picked {
   objectId: string
@@ -91,6 +91,9 @@ export function ThreadTool() {
 
   const apply = async () => {
     if (busy || !target) return
+    // A length the engine would cut short says the most instead, before anything runs.
+    const problem = threadLengthProblem(lengthMm, target)
+    if (problem) return void setNote(problem)
     setBusy(true)
     setNote(null)
     try {
@@ -109,7 +112,7 @@ export function ThreadTool() {
       setPicked(null)
       return true
     } catch (err) {
-      setNote(sizeWords(errorText(err)))
+      setNote(toolError(err, { lengthMm }))
     } finally {
       setBusy(false)
     }
