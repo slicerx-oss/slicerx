@@ -83,7 +83,7 @@ export function createCalibrate() {
     version: '0.9.3',
     permission: 'read',
     description:
-      'Plan calibration tests for a filament (temperature tower, flow, pressure advance, retraction, max volumetric speed, tolerance, shrinkage) with ranges from the knowledge base, time and filament. With geometry on the host it also generates the test models and adds them to the project, one plate per test, with the per-object and per-height settings to use. Printing goes through printer.queue and its approval.',
+      'Plan calibration tests for a filament (temperature tower, flow, pressure advance, retraction, max volumetric speed, tolerance, shrinkage) with ranges from the knowledge base, time and filament. With geometry on the host it also adds the test models to the project, one plate per test, with the per-object and per-height settings to use. Printing goes through printer.queue and its approval.',
     input: z.object({
       material: z.string().describe('Filament id or name'),
       tests: z.array(z.enum(CALIBRATION_TESTS)).min(1),
