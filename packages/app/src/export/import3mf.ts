@@ -603,18 +603,27 @@ async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; ite
 }
 
 /**
- * Bambu Studio reads a missing first layer travel acceleration as 500 mm/s2, not as a share of the travel acceleration
- * (our default), so a project it wrote that lacks the key travels the first layer at 500. The same rule as the engine's
- * project import (`sx slice <project.3mf>`): Bambu Studio is the model's `Application` metadata starting with
- * `BambuStudio`. A project that has the key keeps its value, and projects from other apps are unchanged.
+ * Keys the printer maker's app reads differently from our defaults when a project it wrote lacks them: a missing first
+ * layer travel acceleration is 500 mm/s2, not a share of the travel acceleration, and a missing internal bridge speed is
+ * the bridge speed (its presets have no such key), not our 150 percent of it.
  */
-export function withBambuFirstLayerTravel(settings: Record<string, unknown>, application: string | undefined): Record<string, unknown> {
-  if (!application?.startsWith('BambuStudio') || 'initial_layer_travel_acceleration' in settings) return settings
-  const out: Record<string, unknown> = { ...settings, initial_layer_travel_acceleration: ['500'] }
+const BAMBU_MISSING: Record<string, unknown> = { initial_layer_travel_acceleration: ['500'], internal_bridge_speed: ['100%'] }
+
+/**
+ * The maker's app's reading of the keys its project lacks ([`BAMBU_MISSING`]). The same rule as the engine's project
+ * import (`sx slice <project.3mf>`): the app is the model's `Application` metadata starting with `BambuStudio`. A
+ * project that has a key keeps its value, and projects from other apps are unchanged.
+ */
+export function withBambuMissingKeys(settings: Record<string, unknown>, application: string | undefined): Record<string, unknown> {
+  if (!application?.startsWith('BambuStudio')) return settings
+  const missing = Object.keys(BAMBU_MISSING).filter((k) => !(k in settings))
+  if (missing.length === 0) return settings
+  const out: Record<string, unknown> = { ...settings }
+  for (const k of missing) out[k] = BAMBU_MISSING[k]
   // A project that lists what it changed from its presets (and a nozzle the app has no profile for) applies only those:
-  // this one counts as changed, as Bambu Studio's own reading of a missing key is not the preset's.
+  // these count as changed, as the maker's own reading of a missing key is not the preset's.
   const changed = settings['different_settings_to_system']
-  if (Array.isArray(changed) && typeof changed[0] === 'string') out['different_settings_to_system'] = [`${changed[0].replace(/;\s*$/, '')}${changed[0].trim() ? ';' : ''}initial_layer_travel_acceleration`, ...changed.slice(1)]
+  if (Array.isArray(changed) && typeof changed[0] === 'string') out['different_settings_to_system'] = [`${changed[0].replace(/;\s*$/, '')}${changed[0].trim() ? ';' : ''}${missing.join(';')}`, ...changed.slice(1)]
   return out
 }
 
@@ -839,7 +848,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     if (Array.isArray(settings['filament_colour'])) colors = settings['filament_colour'].filter((c): c is string => typeof c === 'string')
   }
   if (read.settings) {
-    settings = withBambuFirstLayerTravel(read.settings, scanned.application)
+    settings = withBambuMissingKeys(read.settings, scanned.application)
     if (Array.isArray(settings['filament_colour'])) colors = settings['filament_colour'].filter((c): c is string => typeof c === 'string')
   }
   // A 3MF that is no slicer's project (no project settings: a CAD export, a downloaded model) is placed the way Orca

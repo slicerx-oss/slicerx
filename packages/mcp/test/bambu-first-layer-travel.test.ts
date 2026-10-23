@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A client that reads a project through the MCP gets the app's reading of a missing first layer travel acceleration:
 // Bambu Studio's 500 mm/s2 for a project it wrote, the project's own value when it has one, nothing for other apps.
+// Its missing internal bridge speed reads as the bridge speed (100%) the same way.
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -34,6 +35,20 @@ describe('first layer travel acceleration of a project without the key', () => {
   it("is the project's own value when it has one", () => {
     const r = travel('BambuStudio-01.10.02.73', { initial_layer_travel_acceleration: ['6000'] })
     expect(Number(Array.isArray(r.value) ? r.value[0] : r.value)).toBe(6000)
+  })
+
+  it('gives internal bridges the bridge speed the same way, a key SlicerX knows', () => {
+    const speed = (app: string | undefined, settings: Record<string, unknown> = {}) => {
+      const r = readProjectFile(project(app, settings))
+      return { value: r.config['internal_bridge_speed'], unknown: r.summary.unknown_keys }
+    }
+    const first = (v: unknown) => (Array.isArray(v) ? v[0] : v)
+    const bambu = speed('BambuStudio-01.10.02.73')
+    expect(first(bambu.value)).toBe('100%')
+    expect(bambu.unknown).toEqual([])
+    expect(first(speed('BambuStudio-01.10.02.73', { internal_bridge_speed: ['120%'] }).value)).toBe('120%')
+    expect(speed('OrcaSlicer-2.3.0').value).toBeUndefined()
+    expect(speed(undefined).value).toBeUndefined()
   })
 
   it('is not set for an OrcaSlicer project or one with no app named', () => {

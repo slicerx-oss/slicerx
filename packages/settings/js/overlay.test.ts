@@ -48,6 +48,26 @@ describe('Bambu Studio 2.8 overlay', () => {
     expect(fine!.process['sparse_infill_pattern'] ?? defaultConfig()['sparse_infill_pattern']).toBe('gyroid')
   })
 
+  it('gives every process tier of every model and nozzle internal bridges at the bridge speed', () => {
+    const data = read<ResolvedBrand>('resolved/bambu-lab.json')
+    expect(overlay.every_process?.values).toEqual({ internal_bridge_speed: '100%' })
+    let parts = 0
+    for (const [model, entry] of Object.entries(data.models)) {
+      for (const [size, part] of [['default', entry] as const, ...Object.entries(entry.nozzles ?? {})]) {
+        expect((part.process[part.base] as Record<string, unknown>)['internal_bridge_speed'], `${model} ${size}`).toEqual(['100%'])
+        for (const [tier, p] of Object.entries(part.process)) {
+          if (tier === part.base) continue
+          const d = p as { set: Record<string, unknown>; unset: string[] }
+          expect('internal_bridge_speed' in d.set || d.unset.includes('internal_bridge_speed'), `${model} ${size} ${tier}`).toBe(false)
+        }
+        parts++
+      }
+    }
+    expect(parts).toBeGreaterThan(40)
+    // The schema default stays for every other printer.
+    expect(defaultConfig()['internal_bridge_speed']).toEqual(['150%'])
+  })
+
   it('names a preset, model, nozzle and tier the data has for every entry', () => {
     const data = read<ResolvedBrand>('resolved/bambu-lab.json')
     for (const [model, sizes] of Object.entries(overlay.process)) {

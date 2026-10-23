@@ -10192,5 +10192,11 @@
     }
    }
   }
+ },
+ "every_process": {
+  "comment": "The maker's process presets have no internal_bridge_speed, and its app prints internal bridges at bridge_speed: 100% here, where the settings default is 150%.",
+  "values": {
+   "internal_bridge_speed": "100%"
+  }
  }
 }

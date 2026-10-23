@@ -22,6 +22,11 @@ export interface MakerOverlay {
   machine: Record<string, Record<string, Values & { filament?: Values }>>
   /** By printer model, nozzle size and quality tier. */
   process: Record<string, Record<string, Record<string, Values>>>
+  /**
+   * Values for every process tier of every model and nozzle in the brand's data, under the tier's own `process`
+   * values: what the maker's app does where its presets have no key at all.
+   */
+  every_process?: { comment?: string; values: Raw }
 }
 
 interface TierDiff { set: Raw; unset: string[] }
@@ -61,10 +66,10 @@ function writeTyped(block: Raw, values: Raw): void {
   }
 }
 
-function applyPart(part: Part, machine: (Values & { filament?: Values }) | undefined, tiers: Record<string, Values> | undefined): void {
+function applyPart(part: Part, machine: (Values & { filament?: Values }) | undefined, tiers: Record<string, Values> | undefined, every?: Raw): void {
   if (machine) writeTyped(part.machine, machine.values)
   if (machine?.filament) writeTyped(part.filament, machine.filament.values)
-  if (!tiers) return
+  if (!tiers && !every) return
   // Every tier whole, the overlay written over each, then the others stored again as differences from the base.
   const base = part.process[part.base] as Raw
   const whole: Record<string, Raw> = {}
@@ -78,10 +83,10 @@ function applyPart(part: Part, machine: (Values & { filament?: Values }) | undef
     whole[tier] = w
     order[tier] = Object.keys(d.set)
   }
-  for (const [tier, o] of Object.entries(tiers)) {
+  for (const [tier, o] of Object.entries(tiers ?? {})) {
     if (!whole[tier]) throw new Error(`overlay: no ${tier} tier to write ${o.preset} over`)
-    writeTyped(whole[tier]!, o.values)
   }
+  for (const [tier, w] of Object.entries(whole)) writeTyped(w, { ...every, ...tiers?.[tier]?.values })
   const newBase = whole[part.base]!
   part.process[part.base] = newBase
   for (const [tier, w] of Object.entries(whole)) {
@@ -96,15 +101,24 @@ function applyPart(part: Part, machine: (Values & { filament?: Values }) | undef
 
 /** Applies the overlay's printer, default filament and process values to a brand's resolved file, in place. */
 export function applyResolvedOverlay(data: ResolvedBrand, overlay: MakerOverlay, defaultNozzle: (model: string) => number): void {
-  const models = new Set([...Object.keys(overlay.machine), ...Object.keys(overlay.process)])
+  const every = overlay.every_process?.values
+  const models = new Set([...Object.keys(overlay.machine), ...Object.keys(overlay.process), ...(every ? Object.keys(data.models) : [])])
   for (const model of models) {
     const entry = data.models[model]
     if (!entry) throw new Error(`overlay: no resolved data for ${model}`)
-    const sizes = new Set([...Object.keys(overlay.machine[model] ?? {}), ...Object.keys(overlay.process[model] ?? {})])
+    const own = [String(defaultNozzle(model)), ...Object.keys(entry.nozzles ?? {})]
+    const sizes = [...Object.keys(overlay.machine[model] ?? {}), ...Object.keys(overlay.process[model] ?? {}), ...(every ? own : [])]
+    // One part per nozzle, however its size is written.
+    const done = new Set<number>()
     for (const size of sizes) {
+      if (done.has(Number(size))) continue
+      done.add(Number(size))
       const part = Number(size) === defaultNozzle(model) ? entry : entry.nozzles?.[size]
       if (!part) throw new Error(`overlay: ${model} has no ${size} mm nozzle presets`)
-      applyPart(part, overlay.machine[model]?.[size], overlay.process[model]?.[size])
+      const key = (o: Record<string, unknown> | undefined) => Object.keys(o ?? {}).find((k) => Number(k) === Number(size))
+      const m = overlay.machine[model]
+      const p = overlay.process[model]
+      applyPart(part, m?.[key(m) ?? ''], p?.[key(p) ?? ''], every)
     }
   }
 }

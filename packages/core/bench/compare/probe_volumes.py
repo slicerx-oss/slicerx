@@ -242,7 +242,7 @@ def main():
     A, B = side_mm(os.path.join(out, "slice.gcode"), 128.0), side_mm(og, 128.0)
     ok = True
     if a.hole:
-        for feat in ("Outer wall", "Inner wall", "Sparse infill", "Internal solid infill", "Top surface", "Bottom surface", "Internal Bridge"):
+        for feat in ("Outer wall", "Inner wall", "Sparse infill", "Internal solid infill", "Top surface", "Bottom surface", "Internal Bridge", "Bridge"):
             x = A.get((feat, False), 0.0) + A.get((feat, True), 0.0)
             y = B.get((feat, False), 0.0) + B.get((feat, True), 0.0)
             print(f"{feat:<24} sx {x:8.1f}  orca {y:8.1f}")
