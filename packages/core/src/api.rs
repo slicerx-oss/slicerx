@@ -81,11 +81,7 @@ pub fn load_3mf_plate_objects(bytes: &[u8], file_name: &str) -> Result<Vec<(u32,
 /// object are two meshes. `sx slice <file.3mf>` makes its plate of them ([`Plate::items_on`]), and a request's 3MF
 /// without a transform becomes one object per item, placed by [`crate::plate::items_transform`].
 pub fn load_3mf_items(bytes: &[u8], file_name: &str, plate: Option<u32>) -> Result<Option<(u32, Vec<Mesh>)>> {
-    let plates = crate::threemf::load_plate_objects(bytes, file_name)?;
-    Ok(match plate {
-        Some(n) => plates.into_iter().find(|(p, _)| *p == n),
-        None => plates.into_iter().next(),
-    })
+    crate::threemf::load_plate_items(bytes, file_name, plate)
 }
 
 /// True when [`load_mesh`] reads the file as a 3MF project (by its name, or a ZIP of another name), whose build items
