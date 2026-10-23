@@ -280,11 +280,13 @@ function meshWorkerOption(): { meshWorker?: () => Worker } {
  * canvas that failed to get a WebGL context cannot give a 2D one either. Each try
  * gets a canvas of its own. `late3d` is called when the 2D fallback finds that a
  * WebGL2 context can be had after all, so the host starts the 3D view again.
+ * Null when `signal` aborts first (the view unmounted): nothing more is made, retried or shown.
  */
-async function start(stage: HTMLElement, webgpu: boolean, label: string, late3d: () => void): Promise<Drive> {
+async function start(stage: HTMLElement, webgpu: boolean, label: string, late3d: () => void, signal: AbortSignal): Promise<Drive | null> {
   try {
     const [{ createViewport, controlsPreset, withRemap, withGizmo }, gpuRenderer] = await Promise.all([import('@slicerx/viewport'), shellGpu()])
     const vp = await withRetries(() => {
+      if (signal.aborted) throw signal.reason
       const canvas = makeCanvas(stage, label)
       try {
         return createViewport(canvas, { backend: webgpu ? 'auto' : 'webgl2', label, gpuRenderer, reveal: revealOption(), ...meshWorkerOption() })
@@ -292,7 +294,7 @@ async function start(stage: HTMLElement, webgpu: boolean, label: string, late3d:
         canvas.remove()
         throw e
       }
-    })
+    }, undefined, (ms) => abortableSleep(ms, signal))
     // Profiling hook: set localStorage 'slicerx.debug' to reach the handle from a script (the store's __sx is there
     // from the first frame, state/store.ts).
     try {
@@ -300,6 +302,7 @@ async function start(stage: HTMLElement, webgpu: boolean, label: string, late3d:
     } catch { /* storage blocked */ }
     return Object.assign(vp, { backendName: () => (vp.stats().backend === 'webgpu' ? 'WebGPU' : 'WebGL2'), controlsApi: { controlsPreset, withRemap, withGizmo } })
   } catch (e) {
+    if (signal.aborted) return null
     // A broken GPU path must not take Prepare down; the 2D fallback still shows the plate, and the 3D view comes back
     // when a context can be had.
     console.warn('Viewport failed to start, using the 2D fallback', e)
@@ -314,6 +317,22 @@ async function start(stage: HTMLElement, webgpu: boolean, label: string, late3d:
       },
     })
   }
+}
+
+/** Waits `ms`, or less when `signal` aborts. */
+function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((done) => {
+    if (signal.aborted) return done()
+    const t = setTimeout(done, ms)
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(t)
+        done()
+      },
+      { once: true },
+    )
+  })
 }
 
 /** Moves drawn on the top visible layer, or null for the whole layer. */
@@ -367,9 +386,12 @@ export function ViewportHost({ layers }: { layers: boolean }) {
     const stage = stageRef.current
     if (!stage) return
     let disposed = false
+    // Unmounting stops a start still in its retries, so it makes no canvas or 2D fallback afterwards.
+    const starting = new AbortController()
     const offs: (() => void)[] = []
     const mountedAt = performance.now()
-    void start(stage, host.capabilities.webgpu, 'Plate and toolpaths', () => setAttempt((n) => n + 1)).then((vp) => {
+    void start(stage, host.capabilities.webgpu, 'Plate and toolpaths', () => setAttempt((n) => n + 1), starting.signal).then((vp) => {
+      if (!vp) return
       if (disposed) {
         vp.dispose()
         return
@@ -953,6 +975,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
     })
     return () => {
       disposed = true
+      starting.abort()
       for (const off of offs) off()
       vpRef.current?.dispose()
       vpRef.current = null
