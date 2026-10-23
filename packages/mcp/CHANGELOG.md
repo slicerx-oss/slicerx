@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Fixed
+
+- `slicerx_arrange` leaves room for the first layer of support: grid support (the default for normal support) fills whole cells of its grid past the overhang and its first layer grows 2 mm round that, so the room past a supported part on a 0.4 mm nozzle is about 5.1 mm, not 2.35. A skirt round a supported part at the bed edge no longer runs off the bed.
+
 ## [0.2.0] - 2026-10-22
 
 ### Breaking
