@@ -243,19 +243,15 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     ...gcodeReplaced.map((k) => ({ key: k, use: 'profile' as const, message: `Used the printer profile's ${gcodeLabel(k)} instead of the project's.` })),
   ]
   // An object's own layer height in the file beats smart layer heights a profile turns on, as the app opens another
-  // slicer's project with fixed layers. Smart layers the client asks for stay, and say what they replace.
+  // slicer's project with fixed layers. Smart layers the client asks for stay, and the engine's warning names the
+  // layer heights they replace.
   let layerNote: string | undefined
   const smart = explicit['smart_layer']
-  if (isProject && smart !== undefined && smart !== 'off' && smart !== false) {
+  if (isProject && args.overrides?.['smart_layer'] === undefined && smart !== undefined && smart !== 'off' && smart !== false) {
     const own = objectLayerHeights(modelPath, args.plate)
     if (own.length) {
-      const names = own.map((o) => `${o.name} ${o.layer_height} mm`).join(', ')
-      if (args.overrides?.['smart_layer'] !== undefined) {
-        layerNote = `Smart layer heights replace the layer heights objects in ${basename(modelPath)} set for themselves (${names}).`
-      } else {
-        explicit['smart_layer'] = config['smart_layer'] = 'off'
-        layerNote = `Smart layer heights are off for this slice: objects in ${basename(modelPath)} set their own layer height (${names}).`
-      }
+      explicit['smart_layer'] = config['smart_layer'] = 'off'
+      layerNote = `Smart layer heights are off for this slice: objects in ${basename(modelPath)} set their own layer height (${own.map((o) => `${o.name} ${o.layer_height} mm`).join(', ')}).`
     }
   }
   // A .gcode.3mf carries the plate picture: ask the engine to draw one when the settings name no thumbnail sizes.
