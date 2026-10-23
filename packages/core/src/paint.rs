@@ -1545,8 +1545,17 @@ impl LayerPaint<'_> {
                 stamp(&g, mask, pts[i], pts[(i + 1) % m]);
             }
         }
+        // In filament order already (a map's order), so a list: collecting a map sorts again. Each mask goes once its
+        // distances are made: on a big layer every grid is megabytes, and the layers are cut side by side.
+        drop(on_outline);
+        let mut dist: Vec<(u8, Vec<f32>)> = sources
+            .into_iter()
+            .filter(|(_, m)| m.iter().any(|&x| x))
+            .map(|(s, m)| (s, distance(&g, &m)))
+            .collect();
         // Depth limit under unpainted top and bottom surfaces: a cell takes the limit of the nearest
-        // surface it is exposed to, unless that surface is painted there.
+        // surface it is exposed to, unless that surface is painted there. Only the fields read it, so it is made after
+        // the distances and not held while they are made, which takes most of a layer's time.
         let n = g.len();
         let mut limit = vec![f32::INFINITY; n];
         let apply = |limit: &mut Vec<f32>, layers: &[Shapes], painted: &[Shapes]| {
@@ -1577,15 +1586,16 @@ impl LayerPaint<'_> {
         if !self.below.is_empty() {
             apply(&mut limit, self.below, below);
         }
-        // In filament order already (a map's order), so a list: collecting a map sorts again. Each mask goes once its
-        // distances are made: on a big layer every grid is megabytes, and the layers are cut side by side.
-        drop(on_outline);
-        let mut dist: Vec<(u8, Vec<f32>)> = sources
-            .into_iter()
-            .filter(|(_, m)| m.iter().any(|&x| x))
-            .map(|(s, m)| (s, distance(&g, &m)))
-            .collect();
         let last = dist.iter().rposition(|(s, _)| *s != self.default_slot);
+        // Each color's field takes the place of its own distances. A color done still counts for the colors after it,
+        // so its distances first go into those of the part's own filament, which no field is made for, keeping the
+        // nearest of the two: the same values, and no extra grid per color. A layer painted all over with two colors or
+        // more gets an empty grid of the part's own filament for that.
+        let painted = dist.iter().filter(|(s, _)| *s != self.default_slot).count();
+        if painted > 1 && dist.iter().all(|(s, _)| *s != self.default_slot) {
+            dist.push((self.default_slot, vec![f32::INFINITY; n]));
+        }
+        let done = dist.iter().position(|(s, _)| *s == self.default_slot);
         let mut out = Vec::new();
         for k in 0..dist.len() {
             let state = dist.get(k).map_or(self.default_slot, |d| d.0);
@@ -1602,22 +1612,19 @@ impl LayerPaint<'_> {
                 let reach = limit.get(c).copied().unwrap_or(f32::INFINITY) - mine;
                 closer.min(if reach.is_finite() { reach } else { 1.0 })
             };
-            // The last color's distances are not read again: its field takes their place.
-            let field: Vec<f32> = if Some(k) == last {
-                let mut own = dist
-                    .get_mut(k)
-                    .map(|d| std::mem::take(&mut d.1))
-                    .unwrap_or_default();
-                for (c, v) in own.iter_mut().enumerate() {
-                    *v = value(c, *v, &dist);
+            let mut field = dist
+                .get_mut(k)
+                .map(|d| std::mem::take(&mut d.1))
+                .unwrap_or_default();
+            for (c, v) in field.iter_mut().enumerate() {
+                let mine = *v;
+                *v = value(c, mine, &dist);
+                if Some(k) != last
+                    && let Some(d) = done.and_then(|i| dist.get_mut(i)).and_then(|d| d.1.get_mut(c))
+                {
+                    *d = d.min(mine);
                 }
-                own
-            } else {
-                let own = dist.get(k).map_or(&[][..], |d| &d.1[..]);
-                (0..n)
-                    .map(|c| value(c, own.get(c).copied().unwrap_or(f32::INFINITY), &dist))
-                    .collect()
-            };
+            }
             // The traced boundary follows the grid's cells; straightened within a cell, it keeps no ripple for the
             // walls to pinch small pockets off.
             #[allow(clippy::cast_possible_truncation, reason = "a grid cell in internal units")]
@@ -1901,6 +1908,62 @@ mod tests {
         let b = perimeters::bounds(colored).unwrap();
         assert!(f64::from(b[2]) / SCALE <= 138.0 + 1e-3, "{b:?}");
         eprintln!("colored bounds {b:?}");
+    }
+
+    /// A 20 mm square column painted on two faces that meet, then on every face (no outline left in the part's own
+    /// filament): each color takes the wedges nearest its faces.
+    #[test]
+    fn each_color_takes_the_wedges_nearest_its_faces() {
+        // A face's two triangles, each with its filament.
+        type Face = [([[f64; 3]; 3], u8); 2];
+        let plan = LayerPlan::new(10.0, 0.2, 0.2);
+        let outline = square(118.0, 118.0, 138.0, 138.0);
+        let face = |a: [f64; 2], b: [f64; 2], state: u8| {
+            [
+                ([[a[0], a[1], 0.0], [b[0], b[1], 0.0], [b[0], b[1], 10.0]], state),
+                ([[a[0], a[1], 0.0], [b[0], b[1], 10.0], [a[0], a[1], 10.0]], state),
+            ]
+        };
+        let right = face([138.0, 118.0], [138.0, 138.0], 2);
+        let left = face([118.0, 138.0], [118.0, 118.0], 3);
+        let front = face([118.0, 118.0], [138.0, 118.0], 3);
+        let back = face([138.0, 138.0], [118.0, 138.0], 3);
+        let above = vec![outline.clone(); 5];
+        let below = vec![outline.clone(); 3];
+        let split = |faces: &[&Face]| {
+            let facets = Facets::Mm(faces.iter().flat_map(|f| f.iter().copied()).collect());
+            LayerPaint {
+                default_slot: 1,
+                shapes: &outline,
+                layer: 20,
+                z: plan.slice_z[20],
+                plan: &plan,
+                above: &above,
+                below: &below,
+                facets: &[&facets],
+                step: 7_970,
+                small: 1_050,
+                memo: None,
+            }
+            .split()
+        };
+        let area = |parts: &[(u8, Shapes)], slot: u8| -> f64 {
+            parts
+                .iter()
+                .filter(|(s, _)| *s == slot)
+                .map(|(_, sh)| area_mm2(sh))
+                .sum()
+        };
+        let two = split(&[&right, &back]);
+        for (slot, want) in [(2, 100.0), (3, 100.0), (1, 200.0)] {
+            let got = area(&two, slot);
+            assert!((got - want).abs() < 4.0, "{slot}: {got}");
+        }
+        let all = split(&[&right, &left, &front, &back]);
+        for (slot, want) in [(2, 100.0), (3, 300.0), (1, 0.0)] {
+            let got = area(&all, slot);
+            assert!((got - want).abs() < 4.0, "{slot}: {got}");
+        }
     }
 
     /// A painted overhang is a bottom surface in its own color: each layer's strip over it takes the paint, where
