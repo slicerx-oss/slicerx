@@ -229,10 +229,15 @@ fn exact_inner(
         positions.push(vec3::add(*p, delta));
     }
     let inner = TriMesh::new(positions, w.triangles.clone());
-    // A wall that turns a face over has changed the body's shape inside.
+    // A wall that turns a face over, or round in its plane, has changed the body's shape inside. Past the middle on
+    // every axis the whole cavity comes out inside out with each normal kept, so the edges tell.
+    let edge = |m: &TriMesh, t: [u32; 3], i: usize| {
+        vec3::sub(m.positions[t[(i + 1) % 3] as usize], m.positions[t[i] as usize])
+    };
     for &t in &w.triangles {
         let (a, b) = (w.normal(t), inner.normal(t));
-        if vec3::dot(a, b) <= 0.0 || vec3::len(b) <= 1e-12 {
+        let turned = (0..3).any(|i| vec3::dot(edge(w, t, i), edge(&inner, t, i)) <= 0.0);
+        if vec3::dot(a, b) <= 0.0 || vec3::len(b) <= 1e-12 || turned {
             return Err(Inexact::Thick);
         }
     }
@@ -545,6 +550,20 @@ mod tests {
         assert!(e.contains("wallMm"), "{e}");
         let e = shell(&m, &[top(20.0)], 16.0, &o()).unwrap_err().to_string();
         assert!(e.contains("too thick"), "{e}");
+        // Closed, a wall past half of every side leaves no cavity, though each face keeps its normal.
+        let cube = build::box_mesh([0.0; 3], [20.0; 3]);
+        for wall in [10.1, 12.0, 19.0] {
+            let e = shell(&cube, &[], wall, &o()).unwrap_err().to_string();
+            assert!(e.contains("too thick"), "{wall}: {e}");
+        }
+        // Just under half is still a cavity, 0.2 mm across.
+        let (out, r) = shell(&cube, &[], 9.9, &o()).unwrap();
+        assert!(r.exact && r.shells == 2, "{r:?}");
+        assert!(
+            (out.volume() - (8000.0 - 0.2 * 0.2 * 0.2)).abs() < 1e-6,
+            "{}",
+            out.volume()
+        );
         let off = OpenFace {
             at: [5.0, 5.0, 25.0],
             normal: [0.0, 0.0, 1.0],
