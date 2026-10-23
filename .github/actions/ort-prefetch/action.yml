@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (C) 2026 The SlicerX contributors
+name: ONNX Runtime prefetch
+description: >-
+  Puts the ONNX Runtime build that sx-watch links into ort-sys's cache before cargo runs, from a copy cached on hosted
+  runners or from the CDN with retries, each archive checked against the sha256 ort-sys pins (scripts/ci/ort-prefetch.sh).
+  It never fails the job; when it can't, ort-sys downloads on its own as before.
+inputs:
+  targets:
+    description: Target triples, separated by spaces (default rustc's host)
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      run: bash "$GITHUB_WORKSPACE/scripts/ci/ort-prefetch.sh" --key $TARGETS >> "$GITHUB_OUTPUT" || true
+      env:
+        TARGETS: ${{ inputs.targets }}
+    # Self-hosted runners keep ort-sys's cache folder between jobs, so only hosted ones restore the archive.
+    - if: steps.key.outputs.key != '' && runner.environment == 'github-hosted'
+      uses: actions/cache@v4
+      continue-on-error: true
+      with:
+        path: ${{ runner.temp }}/ort-archives
+        key: ${{ steps.key.outputs.key }}
+    - shell: bash
+      run: bash "$GITHUB_WORKSPACE/scripts/ci/ort-prefetch.sh" $TARGETS || true
+      env:
+        TARGETS: ${{ inputs.targets }}
+        SX_ORT_ARCHIVES: ${{ runner.environment == 'github-hosted' && format('{0}/ort-archives', runner.temp) || '' }}

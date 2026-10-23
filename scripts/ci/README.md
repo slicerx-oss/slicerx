@@ -44,6 +44,13 @@ A label event starts its own run (the concurrency comment in `ci.yml`). A run fo
 but `full-ci`, or `full-ci` already on the pull request when it opened) skips every job except `rust`, which starts
 and skips its steps, so its required matrix name `rust (ubuntu-latest)` still reports, as passed.
 
+sx-watch links ONNX Runtime, which ort-sys downloads from its CDN in its build script, with one try. The jobs that
+build sx-watch (`rust`, and the crates part of `rust-tests-part`) first run `.github/actions/ort-prefetch`:
+`ort-prefetch.sh` puts the files where ort-sys looks for them, from a copy hosted runners cache (keyed on the ort-sys
+version, the target and the archive's sha256) or from the CDN with four tries, and checks each archive against the
+sha256 ort-sys pins. It never fails the job; when it can't fetch, ort-sys downloads as before. An ort-sys bump needs
+the new rows from the crate's `build/download/dist.tsv` in the script's table, or the script skips with a warning.
+
 ## Setup
 
     sh scripts/ci/install.sh        # ~/ci: bare repo, hook, bin/, ci.env to fill in

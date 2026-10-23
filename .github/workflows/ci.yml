@@ -249,6 +249,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ${{ matrix.os == 'windows-latest' && 'windows-rust' || '' }}
+      # sx-watch links ONNX Runtime, which ort-sys downloads in its build script with one try. Put it in place first,
+      # from a cached copy or with retries, so a CDN blip can't fail the build (scripts/ci/ort-prefetch.sh).
+      - if: env.DUP != 'true'
+        uses: ./.github/actions/ort-prefetch
       # A Cargo.lock that no longer matches the manifests fails here, before a build quietly rewrites it.
       - if: env.DUP != 'true'
         run: cargo metadata --locked --format-version 1 > /dev/null
@@ -347,6 +351,9 @@ jobs:
           echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
           # engine test suites: a GPU lane run starts beside one of them at most (heavy.sh --class engine)
           echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh --class engine timeout 1500" >> "$GITHUB_ENV"
+      # the crates part builds sx-watch, which links ONNX Runtime (the rust job above has the reason)
+      - if: matrix.part == 'crates'
+        uses: ./.github/actions/ort-prefetch
       - if: matrix.part == 'firmware' || matrix.part == 'requests'
         run: cargo test -p sx-core --test ${{ matrix.part }}
       # every other test file of sx-core, read from the directory so a new one is never left out
