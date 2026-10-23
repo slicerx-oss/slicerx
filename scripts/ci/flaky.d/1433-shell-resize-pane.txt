@@ -1,1 +1,0 @@
-resizing a pane does not reset the old canvas buffer first | subydoo-ci | 2026-10-23 | 2026-10-24 | https://github.com/slicerx-oss/slicerx/issues/1433 | still passes only on retry after #1435: a drag can land two buffer writes (690 to 536 to 534); fix in progress
