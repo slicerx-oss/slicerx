@@ -1370,6 +1370,62 @@ fn a_height_ranges_wall_filament_prints_the_walls_in_its_heights() {
     }
 }
 
+/// Bambu Studio's per-feature filament names on an object, on a modifier or on a request's object print (the tests
+/// above), so no note calls them not applied. A key the engine does not read still gets one.
+#[test]
+fn applied_feature_filament_names_get_no_not_applied_note() {
+    let dir = temp_dir(format!("sx-cli-feature-notes-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = box_settings(&serde_json::json!({}));
+    let own: &[(&str, &str)] = &[
+        ("wall_filament", "2"),
+        ("sparse_infill_filament", "3"),
+        ("outer_wall_filament_id", "2"),
+        ("no_such_key", "1"),
+    ];
+    for (name, own) in [("object", Own::Object(own)), ("modifier", Own::Modifier(own))] {
+        let path = dir.join(format!("{name}.3mf"));
+        std::fs::write(&path, bambu_box_3mf(false, &settings, 1, own)).unwrap();
+        let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{name}: {err}");
+        assert!(!err.contains("filament is not applied"), "{name}: {err}");
+        assert!(!err.contains("filament_id is not applied"), "{name}: {err}");
+        assert!(
+            err.contains("no_such_key is not applied by this engine (project part or object setting)"),
+            "{name}: {err}"
+        );
+    }
+    let mesh = dir.join("box.3mf");
+    std::fs::write(&mesh, bambu_box_3mf(false, &settings, 1, Own::Object(&[]))).unwrap();
+    let request = dir.join("request.json");
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": {"p": mesh},
+        "plate": {"objects": [{"id": "p", "mesh": "p",
+            "settings": {"wall_filament": "2", "inner_wall_filament_id": 3, "no_such_key": 1}}]},
+        "config": settings,
+        "options": {"emitGcode": false},
+    });
+    std::fs::write(&request, req.to_string()).unwrap();
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&request)
+        .arg("--out-dir")
+        .arg(dir.join("out"))
+        .output()
+        .unwrap();
+    let text = [out.stdout.as_slice(), out.stderr.as_slice()].concat();
+    let text = String::from_utf8_lossy(&text);
+    assert!(out.status.success(), "{text}");
+    assert!(!text.contains("filament is not applied"), "{text}");
+    assert!(!text.contains("filament_id is not applied"), "{text}");
+    assert!(
+        text.contains("no_such_key is not applied by this engine (object setting)"),
+        "{text}"
+    );
+}
+
 /// A case of [`painted_facets_win_over_the_feature_filaments_as_bambu_studio_prints_them`]: its name, whether the box is
 /// painted, the object's filament, the project's keys, the box's own keys and Bambu Studio's tool changes.
 type PaintCase<'a> = (&'a str, bool, u8, serde_json::Value, Own<'a>, usize);

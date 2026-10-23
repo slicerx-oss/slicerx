@@ -339,9 +339,7 @@ fn from_geom(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
             }
             let own = to_map(&p.settings);
             for k in object.keys().chain(own.keys()) {
-                if crate::config::READ_KEYS.contains(&k.as_str())
-                    || crate::config::FUZZY_KEYS.contains(&k.as_str())
-                {
+                if crate::config::is_object_key(k) {
                     continue;
                 }
                 let line = format!("{k} is not applied by this engine (project part or object setting)");
@@ -1379,10 +1377,7 @@ impl Resolve<'_> {
             .into_iter()
             .flat_map(|o| o.keys())
             .chain(info.settings.keys())
-            .filter(|k| {
-                !crate::config::READ_KEYS.contains(&k.as_str())
-                    && !crate::config::FUZZY_KEYS.contains(&k.as_str())
-            })
+            .filter(|k| !crate::config::is_object_key(k))
             .collect();
         for k in unread {
             let line = format!("{k} is not applied by this engine (project part or object setting)");

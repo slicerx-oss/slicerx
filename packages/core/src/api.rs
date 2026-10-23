@@ -1181,8 +1181,7 @@ fn build_session_with(
         });
     }
     for k in req.plate.objects.iter().flat_map(|o| o.settings.keys()) {
-        if !crate::config::READ_KEYS.contains(&k.as_str()) && !crate::config::FUZZY_KEYS.contains(&k.as_str())
-        {
+        if !crate::config::is_object_key(k) {
             session.push_warning(SliceWarning {
                 code: WarningCode::UnsupportedSetting,
                 message: format!("{k} is not applied by this engine (object setting)"),
