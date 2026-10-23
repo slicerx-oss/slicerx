@@ -44,13 +44,48 @@ pub(crate) fn shifted(p: Point) -> Point {
 /// Sets the offset the writer subtracts for tool `slot` (1-based); slot 0 or a printer without offsets
 /// clears it.
 pub(crate) fn set_tool(c: &PrintConfig, slot: u8) {
+    let p = offset(c, slot);
+    OFFSET.with(|o| o.set((p.x, p.y)));
+}
+
+/// The nozzle offset of tool `slot` (1-based) in the engine's units: zero for slot 0 or a printer without one.
+pub(crate) fn offset(c: &PrintConfig, slot: u8) -> Point {
     let off = if slot == 0 {
         [0.0, 0.0]
     } else {
         point(c, "extruder_offset", slot).unwrap_or([0.0, 0.0])
     };
-    let p = Point::from_mm(off[0], off[1]);
-    OFFSET.with(|o| o.set((p.x, p.y)));
+    Point::from_mm(off[0], off[1])
+}
+
+/// The tool a layer's moves are written for from its start: the tool it starts on, else its first path's (0 for
+/// a layer without paths).
+pub(crate) fn layer_slot(l: &crate::output::LayerPaths) -> u8 {
+    if l.start_tool == 0 {
+        l.paths.first().map_or(0, |p| p.tool.max(1))
+    } else {
+        l.start_tool
+    }
+}
+
+/// Whether the writer moves this printer's G-code by its nozzle offset: the Ultimaker S series (each print core
+/// by its own) and Bambu Lab printers, whose P1 and X1 profiles carry `0x2` and whose output Bambu Studio writes
+/// 2 mm short of the plate. Other printers' offsets are not applied: their reference output is not measured.
+pub(crate) fn applies_offset(c: &PrintConfig, flavor: GcodeFlavor) -> bool {
+    flavor.is_ultimaker() || crate::firmware::bambu_printer(c, flavor)
+}
+
+/// The tool whose nozzle offset the writer subtracts from the points of path `tool` on a layer that starts with
+/// `layer_slot` (0: none): on the Ultimaker S series each print core switch sets its own, on a Bambu Lab printer
+/// the layer's holds, and other printers write no offset.
+pub(crate) fn path_slot(c: &PrintConfig, flavor: GcodeFlavor, layer_slot: u8, tool: u8) -> u8 {
+    if flavor.is_ultimaker() {
+        tool.max(1)
+    } else if applies_offset(c, flavor) {
+        layer_slot
+    } else {
+        0
+    }
 }
 
 /// One point of a per-extruder list of points (`"22x0"` or `[22, 0]`).
@@ -553,6 +588,23 @@ mod tests {
 
     fn cfg(v: &serde_json::Value) -> PrintConfig {
         PrintConfig::from_value(v).expect("config")
+    }
+
+    #[test]
+    fn a_nozzle_offset_reads_in_either_case_and_as_a_pair() {
+        let c = cfg(&serde_json::json!({ "extruder_offset": ["0x2", "0X0", "-2.5x-3.5"] }));
+        assert_eq!(point(&c, "extruder_offset", 1), Some([0.0, 2.0]));
+        assert_eq!(point(&c, "extruder_offset", 2), Some([0.0, 0.0]));
+        assert_eq!(point(&c, "extruder_offset", 3), Some([-2.5, -3.5]));
+        // A slot past the list takes the first entry, as a single nozzle printer's filament slots do.
+        assert_eq!(point(&c, "extruder_offset", 4), Some([0.0, 2.0]));
+        let pairs = cfg(&serde_json::json!({ "extruder_offset": [[0, 2]] }));
+        assert_eq!(point(&pairs, "extruder_offset", 1), Some([0.0, 2.0]));
+        // The writer subtracts the active slot's offset, and slot 0 clears it.
+        set_tool(&c, 1);
+        assert_eq!(shifted(Point::from_mm(10.0, 10.0)), Point::from_mm(10.0, 8.0));
+        set_tool(&c, 0);
+        assert_eq!(shifted(Point::from_mm(10.0, 10.0)), Point::from_mm(10.0, 10.0));
     }
 
     #[test]

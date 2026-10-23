@@ -125,10 +125,12 @@ fn moves(layer: &str, z: f64) -> Vec<Move> {
     out
 }
 
-fn near(p: Point, end: (f64, f64)) -> bool {
+/// Whether the toolpath point `p` is the G-code move end `end`, which the writer moved by the nozzle offset `off`
+/// (`griffin::shifted`).
+fn near(p: Point, off: Point, end: (f64, f64)) -> bool {
     let (x, y) = (
-        f64::from(p.x) / crate::geom::SCALE,
-        f64::from(p.y) / crate::geom::SCALE,
+        f64::from(p.x - off.x) / crate::geom::SCALE,
+        f64::from(p.y - off.y) / crate::geom::SCALE,
     );
     (x - end.0).abs() < 0.0025 && (y - end.1).abs() < 0.0025
 }
@@ -179,9 +181,14 @@ fn layer_extras(l: &LayerPaths, out: &SliceOutput, base: &PrintConfig, text: &st
     let mut res = LayerExtras::default();
     let mut at = 0usize; // next move to place
     let mut matched_paths = 0usize;
+    let layer_slot = crate::griffin::layer_slot(l);
     for (index, path) in l.paths.iter().enumerate() {
         let pts = l.path_points(path);
         let slot = path.tool.max(1);
+        let off = crate::griffin::offset(
+            c,
+            crate::griffin::path_slot(c, c.gcode_flavor, layer_slot, path.tool),
+        );
         let list = if l.index == 0 && !c.nozzle_temperature_initial_layer.is_empty() {
             &c.nozzle_temperature_initial_layer
         } else {
@@ -206,7 +213,7 @@ fn layer_extras(l: &LayerPaths, out: &SliceOutput, base: &PrintConfig, text: &st
             let hit = (scan..scan + reach).find_map(|s| {
                 let m = found.get(s)?;
                 (j + 1..pts.len())
-                    .find(|&k| pts.get(k).is_some_and(|p| near(*p, m.end)))
+                    .find(|&k| pts.get(k).is_some_and(|p| near(*p, off, m.end)))
                     .map(|k| (s, k))
             });
             let Some((s, k)) = hit else { break };

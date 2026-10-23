@@ -1592,14 +1592,19 @@ fn emit_layer(
     let tools = usize::from(out.tool_count.max(1));
     let c = out.config_at(base, l.cfg);
     let ultimaker = flavor.is_ultimaker();
-    // The nozzle offset the moves are written with (Ultimaker only); cleared for every other printer, as
-    // the writer's thread goes on to other layers.
-    let first_slot = if l.start_tool == 0 {
-        l.paths.first().map_or(0, |p| p.tool.max(1))
-    } else {
-        l.start_tool
-    };
-    crate::griffin::set_tool(c, if ultimaker { first_slot } else { 0 });
+    // The nozzle offset the moves are written with, on the Ultimaker S series and Bambu Lab printers: every
+    // generated move goes out as its plate position less the active tool's `extruder_offset` (a Bambu Lab P1 or
+    // X1 writes Y 2 mm short of the plate). Cleared for every other printer, and set for every layer, as the
+    // writer's thread goes on to other layers. Custom G-code text is written as is.
+    let first_slot = crate::griffin::layer_slot(l);
+    crate::griffin::set_tool(
+        c,
+        if crate::griffin::applies_offset(c, flavor) {
+            first_slot
+        } else {
+            0
+        },
+    );
     // The layer that starts a resumed print follows the start sequence, which already set its values.
     let prev = if resume_first {
         c
