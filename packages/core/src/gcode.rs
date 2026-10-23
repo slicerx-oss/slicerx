@@ -1602,10 +1602,10 @@ fn emit_layer(
     let tools = usize::from(out.tool_count.max(1));
     let c = out.config_at(base, l.cfg);
     let ultimaker = flavor.is_ultimaker();
-    // The nozzle offset the moves are written with, on the Ultimaker S series and Bambu Lab printers: every
-    // generated move goes out as its plate position less the active tool's `extruder_offset` (a Bambu Lab P1 or
-    // X1 writes Y 2 mm short of the plate). Zero for every other printer. The layer's writer holds it and passes
-    // it to every move it writes. Custom G-code text is written as is.
+    // The nozzle offset the moves are written with, on the Ultimaker S series, Bambu Lab printers and the Elegoo
+    // Neptune 4 family: every generated move goes out as its plate position less the active tool's
+    // `extruder_offset` (a Bambu Lab P1 or X1 writes Y 2 mm short of the plate). Zero for every other printer. The
+    // layer's writer holds it and passes it to every move it writes. Custom G-code text is written as is.
     let first_slot = crate::griffin::layer_slot(l);
     let mut off = crate::griffin::offset(
         c,
