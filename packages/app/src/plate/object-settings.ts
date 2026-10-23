@@ -3,7 +3,7 @@
 // Per-object setting overrides, by the object's source id so instances share them (as in Bambu
 // Studio and OrcaSlicer). Objects on a plate may carry different settings; layer height may differ
 // only when the plate prints by object, and layerHeightConflict says when it does not.
-import type { SettingValue } from '@slicerx/contracts'
+import type { SettingValue, SliceWarning } from '@slicerx/contracts'
 import { get, markStale, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
 import { plateSequence } from './plate-sequence'
 
@@ -73,4 +73,26 @@ export function layerHeightConflict(s: Pick<AppState, 'plate' | 'objectSettings'
   if (heights.size < 2) return null
   const list = [...heights].map(([h, names]) => `${h} mm for ${names.slice(0, 2).join(', ')}${names.length > 2 ? ' and more' : ''}`).join('; ')
   return `Objects on this plate have different layer heights (${list}). Layer height can differ between objects only when the plate prints by object. Set the print sequence to By object, give the objects the same layer height, or move them to separate plates.`
+}
+
+/** A layer height a setting holds: a number, or the text of one. */
+function heightOf(v: SettingValue | undefined): number | null {
+  const h = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN
+  return Number.isFinite(h) ? h : null
+}
+
+/**
+ * The warning for smart layer heights over layer heights objects set for themselves, or null when none does. The app's
+ * layer plan is one for the whole plate, as the engine's own is, so an object's own layer height is not used. A part
+ * never prints at a layer height of its own inside its object, so only objects are named. The wording matches the
+ * engine's, which warns when it plans the layers itself.
+ */
+export function smartLayerWarning(s: Pick<AppState, 'plate' | 'objectSettings'>): SliceWarning | null {
+  const own: string[] = []
+  for (const p of s.plate.filter((e) => e.printable !== false)) {
+    const h = heightOf(objectOverrides(s, p)['layer_height'])
+    if (h !== null) own.push(`${p.name} ${h} mm`)
+  }
+  const named = [...new Set(own)]
+  return named.length ? { code: 'unsupported_setting', message: `Smart layer heights replace the layer heights objects set for themselves (${named.join(', ')}).` } : null
 }

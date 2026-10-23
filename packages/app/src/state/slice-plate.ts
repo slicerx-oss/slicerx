@@ -16,7 +16,7 @@ import { areaOrigin, objectToMachine, towerToPlate } from '../plate/bed-origin'
 import { sliceHandle, sliceShards } from '../plate/painted'
 import { nameOptions, plateConfig } from '../plate/plates'
 import { bedTypeConfig } from '../plate/bed-type'
-import { objectOverrides, partOverridesOf, plateLayerHeightConflict } from '../plate/object-settings'
+import { objectOverrides, partOverridesOf, plateLayerHeightConflict, smartLayerWarning } from '../plate/object-settings'
 import { markOpenStage } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, openRightOnSlice, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
@@ -103,6 +103,8 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     const heightRanges = [...(s.calibration[s.activePlate]?.ranges ?? []), ...heightRangesOf(toPrint)]
     // A resume plan restarts the failed job's layers, so its layer tops win over a fresh plan.
     const layerTopsMm = s.resume?.layerTopsMm?.length ? s.resume.layerTopsMm : (planned ?? rangeTops)
+    // The engine warns about layer heights objects set for themselves only when it plans the layers; these tops are the app's.
+    const replaces = planned && layerTopsMm === planned ? smartLayerWarning(s) : null
     // Marks from the layer slider (pause, color change, custom G-code) go by height: the engine places them on its own
     // layers, so a plate whose layer plan only the engine knows (sleipnir color bands) slices once.
     const marks = get().layerMarks[s.activePlate] ?? []
@@ -136,7 +138,8 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     noteSliceTiming(s.activePlate, { triangles: plateTriangles(toPrint), ms: sliced.wallMs })
     sliceStage(timed, 'result', { ...(sliced.engineWallMs !== undefined ? { engineMs: sliced.engineWallMs } : {}), engineCpuMs: Object.values(sliced.stageMicros ?? {}).reduce((n: number, us) => n + (us ?? 0), 0) / 1000 })
     // The tower comes back in machine coordinates; the plate counts from its corner.
-    const result = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
+    const placed = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
+    const result = replaces && !placed.warnings.some((w) => w.message === replaces.message) ? { ...placed, warnings: [...placed.warnings, replaces] } : placed
     const raw = await host.slicer.getPreview(result.id)
     if (abort.signal.aborted) throw new DOMException('Slice canceled', 'AbortError')
     sliceStage(timed, 'preview', { previewBytes: raw.byteLength })
