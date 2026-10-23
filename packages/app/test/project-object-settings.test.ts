@@ -15,7 +15,8 @@ import { callEngine, type GeomExports } from '../src/geom/engine-call'
 import { writeProject } from '../src/export/threemf'
 import { zip } from '../src/export/zip'
 import { boxMesh } from '../src/plate/mesh-ops'
-import { objectOverrides, partOverridesOf } from '../src/plate/object-settings'
+import { resolveConfig } from '../src/adapters/config'
+import { objectOverrides, partOverridesOf, plateLayerHeightConflict } from '../src/plate/object-settings'
 import { compose } from '../src/plate/transform'
 import { markClean, startDirtyTracking } from '../src/project/unsaved'
 import { openModelBytes, slicePlate } from '../src/state/actions'
@@ -37,7 +38,7 @@ function box(id: number, lo: number[], hi: number[]): string {
 const md = (k: string, v: string) => `<metadata key="${k}" value="${v}"/>`
 
 /** Two objects, each a build item made of components: "tuned" with settings of its own, "plain" with none and a part that has its own. */
-function project(tuned: Record<string, string>): ArrayBuffer {
+function project(tuned: Record<string, string>, settings?: Record<string, string>): ArrayBuffer {
   const sub = `<model unit="millimeter"><resources>${box(1, [-10, -10, 0], [10, 10, 12])}${box(2, [-10, -10, 0], [10, 10, 12])}${box(3, [15, -5, 0], [25, 5, 12])}</resources></model>`
   const comp = (id: number) => `<component p:path="/3D/Objects/object_1.model" objectid="${id}" transform="1 0 0 0 1 0 0 0 1 0 0 0"/>`
   const main = `<model unit="millimeter" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"><resources><object id="10" type="model"><components>${comp(1)}</components></object><object id="20" type="model"><components>${comp(2)}${comp(3)}</components></object></resources><build><item objectid="10" transform="1 0 0 0 1 0 0 0 1 80 128 0"/><item objectid="20" transform="1 0 0 0 1 0 0 0 1 150 128 0"/></build></model>`
@@ -45,7 +46,7 @@ function project(tuned: Record<string, string>): ArrayBuffer {
     `<config><object id="10">${md('name', 'tuned')}${md('extruder', '1')}${Object.entries(tuned).map(([k, v]) => md(k, v)).join('')}<part id="1" subtype="normal_part">${md('name', 'tuned body')}</part></object>` +
     `<object id="20">${md('name', 'plain')}${md('extruder', '1')}<part id="2" subtype="normal_part">${md('name', 'plain body')}</part><part id="3" subtype="normal_part">${md('name', 'plain tab')}${md('wall_loops', '3')}${md('sparse_infill_density', '60%')}</part></object>` +
     `<plate>${md('plater_id', '1')}<model_instance>${md('object_id', '10')}</model_instance><model_instance>${md('object_id', '20')}</model_instance></plate></config>`
-  return buf(zip([{ name: '3D/3dmodel.model', data: main }, { name: '3D/Objects/object_1.model', data: sub }, { name: 'Metadata/model_settings.config', data: cfg }]))
+  return buf(zip([{ name: '3D/3dmodel.model', data: main }, { name: '3D/Objects/object_1.model', data: sub }, { name: 'Metadata/model_settings.config', data: cfg }, ...(settings ? [{ name: 'Metadata/project_settings.config', data: JSON.stringify(settings) }] : [])]))
 }
 
 const TUNED = { wall_loops: '5', sparse_infill_density: '40%', sparse_infill_pattern: 'gyroid', layer_height: '0.3' }
@@ -89,6 +90,16 @@ describe("a project object's own settings", () => {
     expect(byName['tuned']!.settings).toEqual(TUNED_VALUES)
     expect(byName['plain']!.settings).toBeUndefined()
     expect(byName['plain']!.partSettings).toEqual({ 'plain tab': { wall_loops: 3, sparse_infill_density: 60 } })
+  })
+
+  it('keep a layer height of their own on a plate the project prints by object, and say so when it prints by layer', async () => {
+    await openModelBytes(host, 'two.3mf', project(TUNED, { print_sequence: 'by object', layer_height: '0.2' }), undefined, { fresh: true })
+    const s = get()
+    const meta = s.plates.find((p) => p.id === s.activePlate)
+    expect(objectOverrides(s, s.plate.find((e) => e.name === 'tuned')!)['layer_height']).toBe(0.3)
+    // The project's print sequence is one of its settings, so the plate prints by object and the heights may differ.
+    expect(plateLayerHeightConflict(s, meta, resolveConfig(s.easy, s.overrides))).toBeNull()
+    expect(plateLayerHeightConflict(s, meta, resolveConfig(s.easy, { ...s.overrides, print_sequence: 'by layer' }))).toMatch(/^Objects on this plate have different layer heights \(0\.3 mm for tuned; 0\.2 mm for plain\)/)
   })
 
   it('never bring custom G-code, scripts or printer keys', async () => {
