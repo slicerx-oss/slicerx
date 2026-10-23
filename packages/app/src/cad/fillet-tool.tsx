@@ -21,6 +21,7 @@ import { get, set, toast, useApp, type PlateEntry, type SubPick } from '../state
 import { addEdge, applyEdges, edgeDistance, edgeLines, edgeParams, sameEdge, type Kind } from './edges'
 import { followed } from '@slicerx/cad-history'
 import { editing, nowOf, saveStep } from './history/ops'
+import { editingNumber } from './history/step-number'
 import { bindNext } from './history/record'
 import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject, type Now } from './park'
@@ -274,7 +275,7 @@ export function FilletTool() {
   const n = picked?.edges.length ?? 0
   const previewWords = previewMessage(prev)
   return (
-    <Shell title="Fillet and chamfer" aside={edit ? `Editing step ${edit.index + 1}` : n ? `${n} ${n === 1 ? 'edge' : 'edges'}` : 'No edge yet'}>
+    <Shell title="Fillet and chamfer" aside={edit ? `Editing step ${editingNumber(edit.index)}` : n ? `${n} ${n === 1 ? 'edge' : 'edges'}` : 'No edge yet'}>
       <PointerHint text={n ? 'Shift and click to add or remove an edge.' : 'Click an edge between two flat faces. Shift and click adds more.'} />
       <Choice id="edge-kind" label="Edge shape" bare value={kind} onChange={setKind} options={[{ value: 'fillet', label: 'Fillet' }, { value: 'chamfer', label: 'Chamfer' }]} />
       <Num id="edge-size" label={kind === 'fillet' ? 'Radius' : 'Distance'} unit="mm" value={size} onChange={setSize} onEnter={() => void apply()} />

@@ -19,6 +19,7 @@ import { holeSpecFor, THREADS, type Head, type Purpose, type Thread } from './ho
 import { customHoleProblem } from '@slicerx/cad-history'
 import { applyHole } from './holes'
 import { editing, saveStep } from './history/ops'
+import { editingNumber } from './history/step-number'
 import { bindNext } from './history/record'
 import { Choice, close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
@@ -117,7 +118,7 @@ export function HoleTool() {
 
   const h = picked?.hole
   return (
-    <Shell title="Hole" column="grown" aside={edit ? `Editing step ${edit.index + 1}` : h ? `${mm(h.diameterMm)}, ${h.through ? 'through' : `${mm(h.depthMm)} deep`}` : 'No hole yet'}>
+    <Shell title="Hole" column="grown" aside={edit ? `Editing step ${editingNumber(edit.index)}` : h ? `${mm(h.diameterMm)}, ${h.through ? 'through' : `${mm(h.depthMm)} deep`}` : 'No hole yet'}>
       <PointerHint text={h ? 'Click another hole to change that one instead.' : 'Click the wall of a round hole.'} />
       <Choice
         id="hole-purpose"

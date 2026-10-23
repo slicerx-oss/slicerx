@@ -35,6 +35,7 @@ import { useShownOrigin } from '../state/model-mode'
 import { get, set, toast, useApp } from '../state/store'
 import { applyExtrude, applyRevolve, BED_FRAME, extrudeParams, frameToBed, revolveParams, wholeMesh, type ExtrudeInput, type RevolveInput } from './cad-ops'
 import { editing, nowOf, saveStep } from './history/ops'
+import { stepNumber } from './history/step-number'
 import { bindNext, sketchNext } from './history/record'
 import { defaultTarget, finishSketch, provideDraw, provideFinish, provideInUse, sketchById, takeSketchOpen, updateSketch, type SketchOpen } from './sketches'
 import { chamferSketch, filletSketch } from './edge-api'
@@ -244,7 +245,7 @@ function sketchEdit(bed: { widthMm: number; depthMm: number }): { plane: Plane; 
     frame,
     outline: [],
     ...(operation !== 'new' ? { target: { objectId: ed.entry.id, partIndex: ed.step.part } } : {}),
-    label: `Editing step ${ed.index + 1}`,
+    label: `Editing step ${stepNumber(ed.entry.id, ed.index)}`,
     min: onBed ? [0, 0] : [c[0] - r, c[1] - r],
     max: onBed ? [bed.widthMm, bed.depthMm] : [c[0] + r, c[1] + r],
   }

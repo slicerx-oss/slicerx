@@ -16,6 +16,7 @@ import { bounds } from '../plate/transform'
 import { get, set, toast, useApp, type CadTool } from '../state/store'
 import { fontBase64, listLocalFonts, localFontsAvailable, type FontChoice } from './fonts'
 import { cancelEdit, editing, nowOf, saveStep } from './history/ops'
+import { editingNumber } from './history/step-number'
 import { bindNext } from './history/record'
 import { sessionFonts } from './history/record'
 import { applyArray, applyExtrude, arraySpec, extrudeParams, type ExtrudeInput, BED_FRAME, describeFeature, featurePoints, loopsOf, previewArray, readout, type ArrayKind } from './cad-ops'
@@ -254,7 +255,7 @@ function ShapeTool({ textOnly, svgFirst }: { textOnly: boolean; svgFirst?: boole
   const first = type === 'slot' ? 'Length' : 'Width'
   const second = type === 'slot' ? 'Width' : 'Height'
   return (
-    <Shell title={textOnly ? 'Text on a face' : 'Shape on a face'} aside={edit ? `Editing step ${edit.index + 1}` : face ? face.label : 'No face yet'}>
+    <Shell title={textOnly ? 'Text on a face' : 'Shape on a face'} aside={edit ? `Editing step ${editingNumber(edit.index)}` : face ? face.label : 'No face yet'}>
       {!face ? <PointerHint text={`Click a flat face, or the bed, where the ${textOnly ? 'text' : 'shape'} goes.`} /> : null}
       {!textOnly ? (
         <Row label="Shape" htmlFor="cad-shape" wide>

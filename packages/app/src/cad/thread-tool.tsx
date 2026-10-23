@@ -15,6 +15,7 @@ import { get, set, toast, useApp } from '../state/store'
 import { edgeLines } from './edges'
 import { applyThread } from './holes'
 import { editing, saveStep } from './history/ops'
+import { editingNumber } from './history/step-number'
 import { bindNext } from './history/record'
 import { close, errorText, Message, Note, num, Num, PointerHint, Row, Shell, useProbe, ToolFooter } from './panel-kit'
 import { follow, useDraft, useDraftObject } from './park'
@@ -121,7 +122,7 @@ export function ThreadTool() {
 
   const t = target
   return (
-    <Shell title="Thread" aside={edit ? `Editing step ${edit.index + 1}` : t ? `${t.internal ? 'Hole' : 'Rod'} ${mm(t.diameterMm)}, ${mm(t.lengthMm)} long` : 'Nothing picked yet'}>
+    <Shell title="Thread" aside={edit ? `Editing step ${editingNumber(edit.index)}` : t ? `${t.internal ? 'Hole' : 'Rod'} ${mm(t.diameterMm)}, ${mm(t.lengthMm)} long` : 'Nothing picked yet'}>
       <PointerHint text={t ? 'Click another hole or rod to thread that one instead.' : 'Click the wall of a round hole, or the side of a rod or boss.'} />
       {sizes.length ? (
         <Row label={<>Size <span className="tp-aside">pitch {sizes.find((s) => s.name === size)?.pitchMm ?? ''} mm</span></>} htmlFor="thread-size">
