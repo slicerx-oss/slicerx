@@ -78,6 +78,20 @@ pub struct Mesh {
     /// Painted brim ears a project file gives this object: x, y, z in the space of the parts and the radius of the
     /// ear head, mm each. Empty without any.
     pub brim_points: Vec<[f32; 4]>,
+    /// The build item that placed the parts, for a mesh a project file loads one item at a time: its parts are
+    /// already where the item puts them. `None` for any other mesh, a plate's items merged into one included.
+    pub placement: Option<Placement>,
+}
+
+/// Where a project file's build item puts its object ([`Mesh::placement`]). Two items of one object with the same
+/// turn and scale load as the same parts moved by the difference of their moves, which is how a plate of them is
+/// found to be copies of one object.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Placement {
+    /// The id of the object the item places, in the file's main model: the same for every item of one object.
+    pub object: u32,
+    /// The item's transform in millimeters, in the file's order: the turn and scale as three rows, then the move.
+    pub transform: [f64; 12],
 }
 
 /// A part of a model that shapes the print without printing: see [`crate::plate::VolumeRole`].
