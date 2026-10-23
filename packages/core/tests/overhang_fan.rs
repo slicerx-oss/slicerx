@@ -339,3 +339,33 @@ fn a_tool_change_at_the_layer_start_counts_in_the_layer_fan() {
     }
     assert!(checked > 0, "no layer opened with a tool change");
 }
+
+/// Item: internal bridges on a stock Bambu Lab preset. Its process presets set `internal_bridge_speed` to 100 percent
+/// (the maker's app has no such key and prints internal bridges at `bridge_speed`), so a box's first solid layer over
+/// sparse infill prints at `bridge_speed`, 50 mm/s on the A1, whichever label the printer's G-code gives it.
+#[test]
+fn a_stock_bambu_lab_preset_prints_internal_bridges_at_the_bridge_speed() {
+    let mut cfg = stock("bambu-a1");
+    cfg.insert("pre_start_fan_time".into(), json!([0]));
+    let g = slice(&stl(&loft(&rect(20.0, 20.0, 0.0), &rect(20.0, 20.0, 8.0))), &cfg);
+    let (mut feature, mut f, mut feeds) = (String::new(), 0.0f64, Vec::new());
+    for line in g.lines() {
+        if let Some(name) = line.strip_prefix("; FEATURE: ") {
+            name.trim().clone_into(&mut feature);
+        }
+        let code = line.split(';').next().unwrap_or("").trim();
+        if code.starts_with("G1") {
+            if let Some(v) = word(code, 'F') {
+                f = v;
+            }
+            if feature.ends_with("Bridge")
+                && word(code, 'X').is_some()
+                && word(code, 'E').is_some_and(|e| e > 0.0)
+            {
+                feeds.push(f);
+            }
+        }
+    }
+    assert!(!feeds.is_empty(), "no internal bridge");
+    assert!(feeds.iter().all(|f| *f <= 3000.0 + 0.5), "{feeds:?}");
+}

@@ -648,6 +648,13 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
             serde_json::json!(["500"]),
         );
     }
+    // Its presets have no internal bridge speed, and it prints internal bridges at the bridge speed: a project of its
+    // without the key gets 100 percent of the bridge speed, not our default 150.
+    if app.as_deref().is_some_and(|a| a.starts_with("BambuStudio"))
+        && !settings.contains_key("internal_bridge_speed")
+    {
+        settings.insert("internal_bridge_speed".to_owned(), serde_json::json!(["100%"]));
+    }
     let walls = project_walls(&settings, changed.as_ref(), app.as_deref());
     let mut kept = Vec::new();
     if let Some(changed) = changed {
