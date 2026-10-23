@@ -9147,6 +9147,7 @@ impl SliceSession {
             };
             // The brim area of each island, grouped by the filament that prints it (the one the island
             // is mostly made of).
+            let bed = crate::brim::Bed::of(cfg);
             let mut by_slot: std::collections::BTreeMap<u8, Vec<Shapes>> = std::collections::BTreeMap::new();
             let mut finished: Vec<(u8, Vec<Vec<IntPoint<i32>>>)> = Vec::new();
             for (island, owner) in union.iter().zip(&owners) {
@@ -9189,6 +9190,11 @@ impl SliceSession {
                 // no-brim area there).
                 let areas = match reach_of(slot) {
                     Some(r) => areas.iter().map(|a| perimeters::intersection(a, &r)).collect(),
+                    None => areas,
+                };
+                // A brim near the bed's edge or an excluded area is cut to the bed rather than run off it.
+                let areas = match &bed {
+                    Some(bed) => bed.cut(areas).0,
                     None => areas,
                 };
                 if combine {

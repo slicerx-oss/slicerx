@@ -573,6 +573,81 @@ pub(crate) fn island_areas(
     areas
 }
 
+/// The part of the bed a brim may cover: the printable area less every excluded area (`bed_exclude_area`).
+/// A brim area is cut to it, so the outermost loop lies half a line spacing inside the bed's edge (the loops
+/// start half a spacing in from their area) and the bead stays on the bed.
+pub(crate) struct Bed {
+    area: Shapes,
+    zones: Shapes,
+}
+
+impl Bed {
+    /// None when the settings name no printable area.
+    pub(crate) fn of(cfg: &PrintConfig) -> Option<Self> {
+        let shape = |pts: &[[f64; 2]]| -> Shapes {
+            let mut ring: Ring = pts.iter().map(|p| IntPoint::new(mm(p[0]), mm(p[1]))).collect();
+            if area2(&ring) < 0 {
+                ring.reverse();
+            }
+            vec![vec![ring]]
+        };
+        if cfg.printable_area.len() < 3 {
+            return None;
+        }
+        let zones: Vec<Shapes> = crate::preflight::exclude_zones(cfg)
+            .iter()
+            .map(|z| shape(z))
+            .collect();
+        let zones: Vec<&Shapes> = zones.iter().collect();
+        Some(Self {
+            area: shape(&cfg.printable_area),
+            zones: perimeters::union_all(&zones),
+        })
+    }
+
+    /// `areas` cut to the bed, and whether anything was cut. Areas already on the bed come back as they
+    /// are, so a brim that fits prints exactly as before.
+    pub(crate) fn cut(&self, areas: Vec<Shapes>) -> (Vec<Shapes>, bool) {
+        // Less than a hundredth of a square millimeter off the bed is the clipper's rounding, not a brim.
+        let tiny = 0.01 * SCALE * SCALE;
+        let spills = |a: &Shapes| {
+            net_area(&perimeters::difference(a, &self.area)) > tiny
+                || (!self.zones.is_empty() && net_area(&perimeters::intersection(a, &self.zones)) > tiny)
+        };
+        if !areas.iter().any(spills) {
+            return (areas, false);
+        }
+        let cut = areas
+            .iter()
+            .map(|a| {
+                if !spills(a) {
+                    return a.clone();
+                }
+                let on = perimeters::intersection(a, &self.area);
+                if self.zones.is_empty() {
+                    on
+                } else {
+                    perimeters::difference(&on, &self.zones)
+                }
+            })
+            .collect();
+        (cut, true)
+    }
+}
+
+/// The area of `shapes` in internal units squared: outer rings less their holes.
+#[allow(clippy::cast_precision_loss, reason = "an area compared with a threshold")]
+fn net_area(shapes: &Shapes) -> f64 {
+    shapes
+        .iter()
+        .flat_map(|s| s.iter().enumerate())
+        .map(|(i, r)| {
+            let a = area2(r).unsigned_abs() as f64 / 2.0;
+            if i == 0 { a } else { -a }
+        })
+        .sum()
+}
+
 /// The brim loops of the areas of one filament: their union without the part (`no_brim_area`), keeping
 /// the pieces that touch the part or each other (Orca: a brim area must contact an island or another
 /// brim), as `tryExPolygonOffset` loops, outermost first.
@@ -707,6 +782,68 @@ mod tests {
         }
         c.raw.insert("brim_type".into(), serde_json::json!("auto_brim"));
         c
+    }
+
+    /// A square from (x0, y0) to (x1, y1), mm.
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shapes {
+        let p = |x: f64, y: f64| IntPoint::new(mm(x), mm(y));
+        vec![vec![vec![p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1)]]]
+    }
+
+    /// The L-shaped bed the preflight tests use: 200 mm square less its 100 mm back right quarter.
+    fn l_bed(zone: Option<serde_json::Value>) -> Bed {
+        let mut c = PrintConfig {
+            printable_area: vec![
+                [0.0, 0.0],
+                [200.0, 0.0],
+                [200.0, 100.0],
+                [100.0, 100.0],
+                [100.0, 200.0],
+                [0.0, 200.0],
+            ],
+            ..PrintConfig::default()
+        };
+        if let Some(z) = zone {
+            c.raw.insert("bed_exclude_area".into(), z);
+        }
+        Bed::of(&c).unwrap()
+    }
+
+    fn mm2(shapes: &Shapes) -> f64 {
+        net_area(shapes) / (SCALE * SCALE)
+    }
+
+    #[test]
+    fn a_brim_area_on_an_l_shaped_bed_loses_the_missing_corner_only() {
+        let bed = l_bed(None);
+        // 40 mm square over the inner corner of the L: the quarter at the back right is off the bed.
+        let (cut, changed) = bed.cut(vec![rect(80.0, 80.0, 120.0, 120.0)]);
+        assert!(changed);
+        let a = mm2(cut.first().unwrap());
+        assert!((a - 1200.0).abs() < 0.5, "{a}");
+        // Nothing of it is left in the missing corner.
+        let left = perimeters::intersection(cut.first().unwrap(), &rect(100.0, 100.0, 200.0, 200.0));
+        assert!(mm2(&left) < 0.01);
+    }
+
+    #[test]
+    fn brim_areas_on_the_bed_come_back_unchanged() {
+        let bed = l_bed(Some(serde_json::json!(["0x0", "18x0", "18x28", "0x28"])));
+        let areas = vec![rect(30.0, 30.0, 90.0, 90.0), rect(20.0, 150.0, 60.0, 190.0)];
+        let (cut, changed) = bed.cut(areas.clone());
+        assert!(!changed);
+        assert_eq!(cut, areas);
+    }
+
+    #[test]
+    fn a_brim_area_is_cut_out_of_an_excluded_area() {
+        let bed = l_bed(Some(serde_json::json!(["0x0", "18x0", "18x28", "0x28"])));
+        // Overlaps the excluded corner by 8 by 8 mm, and the area beside it stays as it was.
+        let (cut, changed) = bed.cut(vec![rect(10.0, 20.0, 50.0, 60.0), rect(60.0, 60.0, 70.0, 70.0)]);
+        assert!(changed);
+        let a = mm2(cut.first().unwrap());
+        assert!((a - (1600.0 - 64.0)).abs() < 0.5, "{a}");
+        assert_eq!(cut.get(1), Some(&rect(60.0, 60.0, 70.0, 70.0)));
     }
 
     #[test]
