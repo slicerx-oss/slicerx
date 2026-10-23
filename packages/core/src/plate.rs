@@ -132,23 +132,29 @@ impl Plate {
     }
 
     /// The build items of one 3MF plate ([`crate::api::load_3mf_items`]) as objects of their own, so each is one
-    /// label, one footprint and one body for the collision check: where the file puts them, the plate as a whole
-    /// centered on the printable area `(min_x, min_y, max_x, max_y)` of a profile and set down on z = 0 (on the
-    /// default bed without an area), as [`Plate::single_on`] places one mesh. The parts, cuts, modifiers and support
-    /// volumes of an item stay in its object. Ids are `object-1` on in build order; each object takes its item's
-    /// name and painted brim ears, and the plate's settings (its `settings` are `Null`).
-    pub fn items_on(items: Vec<Mesh>, area: [f64; 4], height_mm: f64) -> Self {
-        let (bed, center) = match on_area(area, height_mm) {
-            Some((bed, center)) => (bed, Some(center)),
-            None => (Bed::default(), None),
+    /// label, one footprint and one body for the collision check, on the printable area `(min_x, min_y, max_x,
+    /// max_y)` of a profile (the default bed without an area) as `placement` puts them: a slicer project's where the
+    /// file puts them, from the area's front left corner; any other 3MF's where the file puts them, the plate as a
+    /// whole centered on the area and set down on z = 0, as [`Plate::single_on`] places one mesh. The parts, cuts,
+    /// modifiers and support volumes of an item stay in its object. Ids are `object-1` on in build order; each object
+    /// takes its item's name and painted brim ears, and the plate's settings (its `settings` are `Null`).
+    pub fn items_on(items: Vec<Mesh>, area: [f64; 4], height_mm: f64, placement: ItemsPlacement) -> Self {
+        let (bed, center, origin) = match on_area(area, height_mm) {
+            Some((bed, center)) => (bed, Some(center), Some(area_corner(area))),
+            None => (Bed::default(), None, None),
         };
-        let transform = items_transform(&items, bed, center);
+        let placement = match (placement, origin) {
+            (ItemsPlacement::Kept([x, y]), Some([ox, oy])) => ItemsPlacement::Kept([x + ox, y + oy]),
+            (other, _) => other,
+        };
+        let transforms = items_transforms(&items, bed, center, placement);
         Self {
             bed,
             objects: items
                 .into_iter()
+                .zip(transforms)
                 .enumerate()
-                .map(|(k, mesh)| item_object(mesh, k, transform))
+                .map(|(k, (mesh, transform))| item_object(mesh, k, transform))
                 .collect(),
         }
     }
@@ -171,6 +177,12 @@ fn on_area(area: [f64; 4], height_mm: f64) -> Option<(Bed, [f32; 2])> {
         f64::midpoint(area[1], area[3]) as f32,
     ];
     Some((bed, center))
+}
+
+/// The front left corner `(min_x, min_y)` of a printable area `(min_x, min_y, max_x, max_y)`.
+#[allow(clippy::cast_possible_truncation, reason = "bed coordinates in mm fit f32")]
+fn area_corner(area: [f64; 4]) -> [f32; 2] {
+    [area[0] as f32, area[1] as f32]
 }
 
 /// Object `k` (0-based) of a plate: one mesh with the volumes and part settings its file marks.
@@ -229,6 +241,71 @@ pub fn items_transform(items: &[Mesh], bed: Bed, center: Option<[f32; 2]>) -> [f
             (lo, hi)
         });
     placed(bounds, bed, center)
+}
+
+/// Where the build items of a 3MF plate go on the bed ([`crate::api::load_3mf_placement`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ItemsPlacement {
+    /// As one group, centered on the bed and set down on z = 0: a 3MF that is no slicer's project (a CAD export, a
+    /// downloaded model), as the app places one.
+    Centered,
+    /// Where the project puts them, moved by `[x, y]` mm from the file's build space to the bed's (the plate's place
+    /// in the project's layout and its printable area's front left corner taken off, the bed's added). An item is set
+    /// down on z = 0 only when the file's rounding leaves it a hair under the bed, as the app keeps a slicer project's
+    /// positions.
+    Kept([f32; 2]),
+}
+
+/// How far under the bed a project's build item may sit and still be one resting on it: slicers write transforms to
+/// a few decimals, so an item turned on its side can land a few thousandths of a mm low. One set lower stays there.
+const SETTLE_MM: f32 = 0.05;
+
+/// The transform of each build item of a 3MF plate, in order: [`items_transform`] for every item when `placement`
+/// centers them, else each item kept where the file puts it, moved by the placement.
+pub fn items_transforms(
+    items: &[Mesh],
+    bed: Bed,
+    center: Option<[f32; 2]>,
+    placement: ItemsPlacement,
+) -> Vec<[f32; 16]> {
+    match placement {
+        ItemsPlacement::Centered => vec![items_transform(items, bed, center); items.len()],
+        ItemsPlacement::Kept([x, y]) => items
+            .iter()
+            .map(|m| {
+                let mut t = IDENTITY;
+                t[12] = x;
+                t[13] = y;
+                if let Some((lo, _)) = m.bounds()
+                    && lo[2] < 0.0
+                    && lo[2] > -SETTLE_MM
+                {
+                    t[14] = -lo[2];
+                }
+                t
+            })
+            .collect(),
+    }
+}
+
+/// The front left corner of the printable area a config sets (`printable_area`, Orca's `"XxY"` points or `[x, y]`
+/// pairs): where the plate's 0, 0 sits on the machine. `[0, 0]` without an area.
+pub fn area_origin(config: &serde_json::Value) -> [f32; 2] {
+    config
+        .get("printable_area")
+        .and_then(crate::config::area_points)
+        .and_then(|pts| corner(&pts))
+        .unwrap_or([0.0, 0.0])
+}
+
+/// The front left corner of an area's points, `None` for fewer than three.
+#[allow(clippy::cast_possible_truncation, reason = "bed coordinates in mm fit f32")]
+pub(crate) fn corner(pts: &[[f64; 2]]) -> Option<[f32; 2]> {
+    (pts.len() >= 3).then(|| {
+        let x = pts.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min);
+        let y = pts.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
+        [x as f32, y as f32]
+    })
 }
 
 /// A translation that puts the middle of `bounds` on the bed's center (or `center`) and their bottom on z = 0.

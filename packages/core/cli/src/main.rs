@@ -310,10 +310,12 @@ fn split_ref(full: &str) -> (&str, Option<u32>) {
     }
 }
 
-/// A 3MF plate given without a transform becomes one object per build item ([`sx_core::api::load_3mf_items`]), each
-/// where the file puts it with the plate centered on the bed, so print by object, its clearance checks and the object
-/// labels see the objects and not one merged mesh. Returns their meshes under the new keys (a plate of one item keeps
-/// its key, with the item's mesh).
+/// A 3MF plate given without a transform becomes one object per build item ([`sx_core::api::load_3mf_items`]), so
+/// print by object, its clearance checks and the object labels see the objects and not one merged mesh. A slicer
+/// project's items stay where the file puts them (on the machine of the request's `printable_area`), any other 3MF's
+/// where the file puts them with the plate centered on the bed ([`sx_core::api::load_3mf_placement`]), as the app and
+/// `sx slice <file.3mf>` place them. Returns their meshes under the new keys (a plate of one item keeps its key, with
+/// the item's mesh).
 fn split_projects(
     req: &mut sx_core::api::SliceRequest,
     base: &Path,
@@ -358,19 +360,29 @@ fn split_projects(
                 req.options.layer_gcode = Some(marks);
             }
         }
+        let placement = match api::load_3mf_placement(&bytes, rel, plate_no, [bed.width_mm, bed.depth_mm])? {
+            sx_core::plate::ItemsPlacement::Kept([x, y]) => {
+                let [ox, oy] = sx_core::plate::area_origin(&req.config);
+                sx_core::plate::ItemsPlacement::Kept([x + ox, y + oy])
+            }
+            centered @ sx_core::plate::ItemsPlacement::Centered => centered,
+        };
+        let at = sx_core::plate::items_transforms(&items, bed, None, placement);
         if items.len() < 2 {
-            // One object keeps its key and is centered as the plate; the ears the file paints on it go with it, and
-            // its mesh is named after its object, not the file.
+            // One object keeps its key, centered as the plate or where the project puts it; the ears the file paints
+            // on it go with it, and its mesh is named after its object, not the file.
             let mut o = o;
             if let Some(one) = items.into_iter().next() {
                 o.brim_points.clone_from(&one.brim_points);
+                if placement != sx_core::plate::ItemsPlacement::Centered {
+                    o.transform = at.first().map(|t| t.to_vec());
+                }
                 cache.insert(key, std::sync::Arc::new(one));
             }
             out.push(o);
             continue;
         }
-        let at = sx_core::plate::items_transform(&items, bed, None);
-        for (k, mesh) in items.into_iter().enumerate() {
+        for ((k, mesh), at) in items.into_iter().enumerate().zip(at) {
             let id = format!("{key}@{}", k + 1);
             let mut one = o.clone();
             one.id = format!("{}-{}", if o.id.is_empty() { "object" } else { &o.id }, k + 1);
@@ -1119,9 +1131,9 @@ fn plate_refusal(
 
 /// What `sx slice <model>` slices: a 3MF plate's build items, or one mesh of any other format.
 enum Model {
-    /// The build items of a 3MF plate, and the pause, color change and custom G-code marks the project sets on the
-    /// plate's layers.
-    Items(Vec<Mesh>, Vec<sx_core::api::LayerGcodeSpec>),
+    /// The build items of a 3MF plate, the pause, color change and custom G-code marks the project sets on the
+    /// plate's layers, and the plate's number.
+    Items(Vec<Mesh>, Vec<sx_core::api::LayerGcodeSpec>, u32),
     One(Box<Mesh>),
 }
 
@@ -1138,6 +1150,7 @@ impl Model {
         Ok(Model::Items(
             items,
             sx_core::api::load_3mf_layer_gcode(bytes, plate),
+            plate,
         ))
     }
 
@@ -1145,7 +1158,7 @@ impl Model {
     /// brings its own (see [`split_projects`]). None for other files.
     fn layer_marks(&self) -> &[sx_core::api::LayerGcodeSpec] {
         match self {
-            Model::Items(_, marks) => marks,
+            Model::Items(_, marks, _) => marks,
             Model::One(_) => &[],
         }
     }
@@ -1155,7 +1168,7 @@ impl Model {
     fn shared_settings(&self) -> Value {
         match self {
             Model::One(mesh) => mesh.settings.clone(),
-            Model::Items(items, _) => {
+            Model::Items(items, ..) => {
                 let first = items.first().map_or(Value::Null, |m| m.settings.clone());
                 if items.iter().all(|m| m.settings == first) {
                     first
@@ -1166,14 +1179,24 @@ impl Model {
         }
     }
 
-    /// The plate, centered on the profile's bed: one object per build item, each printing with its own object settings
+    /// The plate on the profile's bed: one mesh centered on it, or one object per build item of `model` (its `bytes`)
+    /// placed as the app places them ([`sx_core::api::load_3mf_placement`]), each printing with its own object settings
     /// and `preset` (`--config`) over them when the items' settings differ.
-    fn plate(self, config: &PrintConfig, preset: Option<&Value>) -> Plate {
+    fn plate(self, model: &str, bytes: &[u8], config: &PrintConfig, preset: Option<&Value>) -> Res<Plate> {
         let differ = self.shared_settings().is_null();
-        match self {
+        Ok(match self {
             Model::One(mesh) => Plate::single_on(*mesh, config.bed_rect(), config.printable_height),
-            Model::Items(items, _) => {
-                let mut plate = Plate::items_on(items, config.bed_rect(), config.printable_height);
+            Model::Items(items, _, plate_no) => {
+                let area = config.bed_rect();
+                #[allow(clippy::cast_possible_truncation, reason = "bed sizes in mm fit f32")]
+                let layout = if area[2] > area[0] && area[3] > area[1] {
+                    [(area[2] - area[0]) as f32, (area[3] - area[1]) as f32]
+                } else {
+                    let bed = sx_core::api::Bed::default();
+                    [bed.width_mm, bed.depth_mm]
+                };
+                let placement = sx_core::api::load_3mf_placement(bytes, model, plate_no, layout)?;
+                let mut plate = Plate::items_on(items, area, config.printable_height, placement);
                 for o in plate.objects.iter_mut().filter(|_| differ) {
                     if let Some(own) = o.mesh.settings.as_object().filter(|m| !m.is_empty()) {
                         let mut m = own.clone();
@@ -1185,7 +1208,7 @@ impl Model {
                 }
                 plate
             }
-        }
+        })
     }
 }
 
@@ -1221,8 +1244,6 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         skipped,
         preset,
     } = layered_config(args, model, &bytes, &model_file.shared_settings())?;
-    // The meshes, the layer marks and the project settings are read; the file is not needed for the slice.
-    drop(bytes);
     if let Some(code) = settings_notes(args, &report, skipped) {
         return Ok(code);
     }
@@ -1238,9 +1259,13 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     for i in &issues {
         eprintln!("warning: {}", i.message);
     }
-    // The model goes to the middle of the profile's bed, as the desktop slicers do.
+    // A slicer project stays where the file puts it; any other model goes to the middle of the profile's bed, as the
+    // desktop slicers do.
     let marks = model_file.layer_marks().to_vec();
-    let plate = model_file.plate(&config, preset.as_ref());
+    let plate = model_file.plate(model, &bytes, &config, preset.as_ref())?;
+    // The meshes, the layer marks, the project settings and the plate's placement are read; the file is not needed for
+    // the slice.
+    drop(bytes);
     let t = Instant::now();
     let refused = |e: sx_core::Error| with_printer_note(e.to_string(), stock_checked.then_some(&config.raw));
     let (out, meta, hits, layer_gcode) = slice_checked(&plate, &config, &marks).map_err(refused)?;
