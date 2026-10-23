@@ -194,7 +194,7 @@ type Seg = ((f64, f64), (f64, f64));
 type FlatKey = (u8, bool, usize);
 /// Painted pieces of a part, with the filament each carries, read in mm on the bed ([`Facets::iter`]).
 ///
-/// A painted file holds hundreds of thousands of pieces per part (the Pochita keychain: 566,000 over two objects).
+/// A painted file holds hundreds of thousands of pieces per part (a densely painted keychain: 566,000 over two objects).
 /// Kept as the file gives them, f32 corners in the object's own frame with the object's transform, a piece takes
 /// 40 bytes instead of the 80 of its corners in mm, and every read works out the same mm values the corners had
 /// when they were kept in mm ([`crate::plate::PlateObject::apply_with`]).
