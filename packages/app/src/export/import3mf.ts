@@ -42,6 +42,8 @@ export interface ImportedObject {
   volumes: ImportedVolume[]
   /** Setting entries a normal part carries in the file, by part name (Orca's strings). Untrusted: take them through project-settings.ts. */
   rawPartSettings?: Record<string, Record<string, string>>
+  /** The object's own setting entries in the file, which all of its parts print with (the file's strings). Untrusted: take them through project-settings.ts. */
+  rawObjectSettings?: Record<string, string>
   /** Parts the file gives no filament of their own, by name: they read as filament 1 until a spool is picked for them. */
   noSlot?: string[]
   /** 4x4 column-major, mm, on the plate. */
@@ -183,6 +185,9 @@ export function parseDimensions(bytes: Uint8Array | undefined, objectIds: Readon
 }
 
 const ROLE: Record<string, VolumeRole> = { negative_part: 'negative', support_blocker: 'support_blocker', support_enforcer: 'support_enforcer', modifier_part: 'modifier' }
+
+/** Object metadata keys that are not settings. */
+const OBJECT_META = new Set(['', 'name', 'extruder', 'module'])
 
 /** Part metadata keys that are not settings. */
 const PART_META = new Set(['name', 'matrix', 'extruder', 'volume_type', 'mesh_stat', 'source_file', 'source_object_id', 'source_volume_id', 'source_offset_x', 'source_offset_y', 'source_offset_z', 'source_in_inches', 'source_in_meters'])
@@ -520,6 +525,7 @@ interface Assembled {
   paint: Record<number, PaintOfPart>
   volumes: ImportedVolume[]
   rawPartSettings: Record<string, Record<string, string>>
+  rawObjectSettings: Record<string, string>
   /** Normal parts with no filament in the file. */
   noSlot: string[]
   transform: Mat | null
@@ -585,6 +591,7 @@ async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; ite
       paint,
       volumes,
       rawPartSettings,
+      rawObjectSettings: raw(o.settings),
       noSlot,
       transform: geomMatrix(o.transform, g.unitScale),
       printable: o.printable,
@@ -617,7 +624,7 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
     extruder?: number
     raw?: Record<string, string>
   }
-  const meta = new Map<string, { name?: string; extruder?: number; parts: Map<string, PartInfo> }>()
+  const meta = new Map<string, { name?: string; extruder?: number; raw: Record<string, string>; parts: Map<string, PartInfo> }>()
   const plateCfg: PlateCfg[] = []
   if (settingsText) {
     const cfg = xml(dec.decode(settingsText)).documentElement
@@ -633,7 +640,8 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
         parts.set(p.getAttribute('id') ?? '', { ...(pm['name'] ? { name: pm['name'] } : {}), ...(p.getAttribute('subtype') ? { subtype: p.getAttribute('subtype')! } : {}), ...(Number.isInteger(ext) && ext > 0 ? { extruder: ext } : {}), ...(Object.keys(raw).length ? { raw } : {}) })
       }
       const objExt = Number(m['extruder'])
-      meta.set(id, { ...(m['name'] ? { name: m['name'] } : {}), ...(Number.isInteger(objExt) && objExt > 0 ? { extruder: objExt } : {}), parts })
+      const raw = Object.fromEntries(Object.entries(m).filter(([k]) => !OBJECT_META.has(k)))
+      meta.set(id, { ...(m['name'] ? { name: m['name'] } : {}), ...(Number.isInteger(objExt) && objExt > 0 ? { extruder: objExt } : {}), raw, parts })
     }
     for (const p of kids(cfg, 'plate')) {
       const m = md(p)
@@ -715,7 +723,7 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
         parts.push(baked)
       }
     }
-    items.push({ objectId: item.objectId, itemIndex, name: info?.name ?? pz?.name ?? obj.name ?? parts[0]?.name ?? 'Part', parts, paint: paintByPart, volumes, rawPartSettings, noSlot, transform: item.transform, printable: item.printable, placed: sources.some((s) => s.matrix) })
+    items.push({ objectId: item.objectId, itemIndex, name: info?.name ?? pz?.name ?? obj.name ?? parts[0]?.name ?? 'Part', parts, paint: paintByPart, volumes, rawPartSettings, rawObjectSettings: info?.raw ?? pz?.settings ?? {}, noSlot, transform: item.transform, printable: item.printable, placed: sources.some((s) => s.matrix) })
   }
   return { plateCfg, items }
 }
@@ -752,7 +760,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
     if (a.placed) centerObject(parts, volumes, t, itemEars)
     const own = marks.objects.get(a.objectId)
     const source = own ? sourceOf({ ...marks.root, ...own }) : rootSource
-    ;(plates[pIndex] ?? plates[0]!).objects.push({ name: a.name, parts, volumes, transform: t, ...(Object.keys(a.rawPartSettings).length ? { rawPartSettings: a.rawPartSettings } : {}), ...(a.noSlot.length ? { noSlot: a.noSlot } : {}), ...(Object.keys(a.paint).length ? { paint: a.paint } : {}), ...(a.printable ? {} : { printable: false }), ...(itemEars ? { brimPoints: itemEars } : {}), ...(source ? { source } : {}), fileId: a.objectId })
+    ;(plates[pIndex] ?? plates[0]!).objects.push({ name: a.name, parts, volumes, transform: t, ...(Object.keys(a.rawPartSettings).length ? { rawPartSettings: a.rawPartSettings } : {}), ...(Object.keys(a.rawObjectSettings).length ? { rawObjectSettings: a.rawObjectSettings } : {}), ...(a.noSlot.length ? { noSlot: a.noSlot } : {}), ...(Object.keys(a.paint).length ? { paint: a.paint } : {}), ...(a.printable ? {} : { printable: false }), ...(itemEars ? { brimPoints: itemEars } : {}), ...(source ? { source } : {}), fileId: a.objectId })
   }
   // Marks from Orca and Bambu Studio's layer slider: color change 0, pause 1, custom 4 (other types are not carried over).
   const marksText = files.get('Metadata/custom_gcode_per_layer.xml')
