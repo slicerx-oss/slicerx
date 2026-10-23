@@ -2340,3 +2340,115 @@ async fn anycubic_lan_mode_passes_the_contract() {
     let e = connector.connect(&cfg, &secrets(&[])).await.err().unwrap();
     assert_eq!(e.login_need(), Some(LoginNeed::LanModeOff), "{e}");
 }
+
+/// The HMS entry Authorization Control firmware raises when it turns a command away.
+const VERIFY_HMS: &str = "0500_0500_0001_0007";
+
+/// A session to the Bambu fake as an A1, after `/bambu` made it `printer`.
+async fn bambu_a1(
+    printer: serde_json::Value,
+) -> (Mocks, Arc<MemoryGate>, Box<dyn sx_connect::PrinterSession>) {
+    let gate = Arc::new(MemoryGate::new());
+    let mocks = Mocks::start("bambu", &[]).await;
+    mocks.set_state("bambu", "idle").await;
+    let mut body = serde_json::json!({ "model": "N2S" });
+    if let (Some(b), Some(p)) = (body.as_object_mut(), printer.as_object()) {
+        b.extend(p.clone());
+    }
+    mocks.control("/bambu", body).await;
+    let mut cfg = config("bay-1", "bambu-lan", mocks.port("bambu"));
+    cfg.serial = Some(mocks.str("serial"));
+    cfg.credential_ref = Some("bambu-code".to_owned());
+    cfg.ftp_port = Some(mocks.port("bambu-ftp"));
+    let sec = secrets(&[("bambu-code", mocks.str("accessCode"))]);
+    let s = BambuConnector::new(gate.clone())
+        .connect(&cfg, &sec)
+        .await
+        .unwrap();
+    (mocks, gate, s)
+}
+
+/// Uploads `cube.gcode.3mf` and starts it, returning what the start came to.
+async fn bambu_upload_and_start(
+    s: &dyn sx_connect::PrinterSession,
+    gate: &MemoryGate,
+) -> Result<(), sx_connect::Error> {
+    use sx_connect::{Action, params};
+    let file = job_file("cube.gcode.3mf", JobKind::Gcode3mf);
+    let t = gate.mint(
+        Action::Upload,
+        "bay-1",
+        &params::upload("bay-1", &file.name, &file.sha256),
+    );
+    let rf = s.upload(file, &t).await.unwrap();
+    let opts = StartOptions::default();
+    let t = gate.mint(Action::Start, "bay-1", &params::start("bay-1", &rf, &opts));
+    s.start(&rf, opts, &t).await
+}
+
+/// Waits until the printer lists the HMS entry `code` (stale or not), or, with `listed` false, no
+/// longer lists it.
+async fn wait_issue(s: &dyn sx_connect::PrinterSession, code: &str, listed: bool) {
+    for _ in 0..100 {
+        if s.issues().await.unwrap().iter().any(|i| i.code == code) == listed {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("{code} listed should be {listed}: {:?}", s.issues().await);
+}
+
+// A print command turned away by Authorization Control puts the verification HMS entry in the
+// report, whether the printer answered with the unsigned-command refusal (`verify`) or said nothing
+// (`silent`), and the printer keeps it until it is cleared on its screen. On an idle printer the
+// entry is history, not a problem now.
+#[tokio::test]
+async fn bambu_turned_away_commands_raise_the_verification_hms() {
+    use sx_connect::{Action, params};
+    let (mocks, gate, s) = bambu_a1(serde_json::json!({ "authorizationControl": "verify" })).await;
+    assert!(s.issues().await.unwrap().is_empty());
+    expect_code(
+        bambu_upload_and_start(s.as_ref(), &gate).await,
+        ErrorCode::NeedsDeveloperMode,
+    );
+    wait_issue(s.as_ref(), VERIFY_HMS, true).await;
+    let issues = s.issues().await.unwrap();
+    assert!(issues.iter().all(|i| i.stale), "{issues:?}");
+    mocks.control("/bambu", serde_json::json!({ "hms": null })).await;
+    wait_issue(s.as_ref(), VERIFY_HMS, false).await;
+
+    // `silent`: a pause goes unanswered, stands as sent, and raises the entry all the same.
+    let (mocks, gate, s) = bambu_a1(serde_json::json!({ "authorizationControl": "silent" })).await;
+    mocks.set_state("bambu", "printing").await;
+    wait_state(s.as_ref(), PrinterState::Printing).await;
+    let t = gate.mint(Action::Pause, "bay-1", &params::printer("bay-1"));
+    s.pause(&t).await.unwrap();
+    mocks.wait_log("ignored pause").await;
+    wait_issue(s.as_ref(), VERIFY_HMS, true).await;
+}
+
+// The case an A1 was reported in: the report says Developer Mode is on, and the printer still
+// answers a start with the unsigned-command refusal and raises the verification HMS entry. Pinned as
+// the driver reads it today: the session is not monitor-only and offers starts, the start fails as
+// `needs_developer_mode` with the printer's reason, and the status does not say Developer Mode is
+// needed, since the report says it is on.
+#[tokio::test]
+async fn bambu_refused_with_developer_mode_on_reads_as_today() {
+    let (mocks, gate, s) =
+        bambu_a1(serde_json::json!({ "authorizationControl": "despiteDeveloperMode" })).await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.live.as_ref().and_then(|l| l.monitor_only), None);
+    assert_eq!(s.hardware().await.unwrap().unwrap().developer_mode, Some(true));
+    assert!(s.capabilities().contains(&sx_connect::Capability::Start));
+    let r = bambu_upload_and_start(s.as_ref(), &gate).await;
+    let words = format!("{:?}", r.as_ref().err());
+    assert!(words.contains("mqtt message verify failed"), "{words}");
+    assert!(words.contains("sure: true"), "{words}");
+    expect_code(r, ErrorCode::NeedsDeveloperMode);
+    mocks.wait_log("unsigned project_file").await;
+    wait_issue(s.as_ref(), VERIFY_HMS, true).await;
+    let st = s.status().await.unwrap();
+    assert_eq!(st.state, PrinterState::Idle);
+    assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), None);
+    assert_eq!(st.live.as_ref().and_then(|l| l.monitor_only), None);
+}
