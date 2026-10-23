@@ -245,3 +245,97 @@ fn an_auxiliary_fan_line_does_not_repeat_the_part_fan() {
         );
     }
 }
+
+/// Per layer from 1: the time on the cooling model (each move's length over its feed rate, travels and the tool
+/// change block included, a purge with no X or Y move by its filament length), whether a tool change comes before
+/// the layer's first part extrusion, and the part fan in force at that extrusion.
+fn layer_fans(gcode: &str) -> Vec<(usize, f64, bool, f64)> {
+    let mut out: Vec<(usize, f64, bool, f64)> = Vec::new();
+    let (mut layer, mut feed, mut fan) = (0usize, 0.0f64, 0.0f64);
+    let (mut x, mut y, mut z) = (0.0f64, 0.0f64, 0.0f64);
+    let (mut t, mut change_first, mut first_fan) = (0.0f64, false, None::<f64>);
+    for line in gcode.lines() {
+        if line.starts_with("; CHANGE_LAYER") {
+            if layer > 0 {
+                out.push((layer, t, change_first, first_fan.unwrap_or(-1.0)));
+            }
+            (layer, t, change_first, first_fan) = (layer + 1, 0.0, false, None);
+            continue;
+        }
+        if let Some(name) = line.strip_prefix("; FEATURE: ")
+            && layer > 0
+            && first_fan.is_none()
+            && !matches!(name.trim(), "Custom" | "Prime tower")
+        {
+            first_fan = Some(fan);
+        }
+        let code = line.split(';').next().unwrap_or("").trim();
+        if code.starts_with("M620 S") && !code.starts_with("M620 S255") && first_fan.is_none() {
+            change_first = true;
+        }
+        if code.starts_with("M106") && (!code.contains(" P") || code.contains(" P1 ")) {
+            fan = word(code, 'S').unwrap_or(0.0);
+        }
+        if ["G0", "G1", "G2", "G3"]
+            .iter()
+            .any(|g| code.split_whitespace().next() == Some(g))
+        {
+            if let Some(f) = word(code, 'F') {
+                feed = f / 60.0;
+            }
+            let (nx, ny, nz) = (
+                word(code, 'X').unwrap_or(x),
+                word(code, 'Y').unwrap_or(y),
+                word(code, 'Z').unwrap_or(z),
+            );
+            let mut d = (nx - x).hypot(ny - y).hypot(nz - z);
+            if d == 0.0 {
+                d = word(code, 'E').unwrap_or(0.0).abs();
+            }
+            if layer > 0 && feed > 0.0 {
+                t += d / feed;
+            }
+            (x, y, z) = (nx, ny, nz);
+        }
+    }
+    out
+}
+
+/// Item: a tool change at a layer's start. A layer that prints only filament 1 after a layer that ended on filament
+/// 2 opens with the change back. Its fan reads the layer's time with that change block in it, as it does for a
+/// change inside the layer: on the stock A1, floor(80 - 20 * (t - 6) / 74) percent between 6 and 80 s.
+#[test]
+fn a_tool_change_at_the_layer_start_counts_in_the_layer_fan() {
+    let mut cfg = stock("bambu-a1");
+    for (k, v) in [
+        ("pre_start_fan_time", json!([0, 0])),
+        ("sparse_infill_filament_id", json!(2)),
+        ("enable_prime_tower", json!(true)),
+        ("nozzle_temperature", json!([220, 220])),
+        ("filament_diameter", json!([1.75, 1.75])),
+        ("filament_type", json!(["PLA", "PLA"])),
+        ("filament_colour", json!(["#FFFFFF", "#000000"])),
+    ] {
+        cfg.insert(k.into(), v);
+    }
+    let mut checked = 0;
+    // Two heights, so the top shells start once after a layer that ended on each filament.
+    for h in [6.0f32, 6.2] {
+        let part = stl(&loft(&rect(20.0, 20.0, 0.0), &rect(20.0, 20.0, h)));
+        let layers = layer_fans(&slice(&part, &cfg));
+        let last = layers.len();
+        for &(l, t, change_first, fan) in &layers {
+            if !change_first || l == last || !(6.5..79.0).contains(&t) {
+                continue;
+            }
+            let want = (80.0 - 20.0 * (t - 6.0) / 74.0).floor();
+            let got = (fan / 2.55).round();
+            assert!(
+                (got - want).abs() <= 1.0,
+                "{h} mm, layer {l}: {t:.2} s wants {want}%, fan {fan} ({got}%)"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no layer opened with a tool change");
+}
