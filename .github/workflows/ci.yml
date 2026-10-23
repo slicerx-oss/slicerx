@@ -730,6 +730,7 @@ jobs:
           SX_BREP_REQUIRE_MIXED: '1'
           SX_BREP_PROFILE_PATH: ${{ runner.temp }}/mixed-exact-profile.json
       - uses: actions/upload-artifact@v4
+        continue-on-error: true
         if: always() && matrix.project == 'desktop' && startsWith(matrix.shard, '1/')
         with:
           name: mixed-exact-profile
@@ -811,13 +812,17 @@ jobs:
             else echo "::error title=Failed test::$t"; bad=1; fi
           done < "$RUNNER_TEMP/failed.txt"
           exit $bad
+      # the reports and traces are for reading only: an upload that fails (GitHub has timed out creating the
+      # artifact) loses them, never the result, which the e2e job decides
       - if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: e2e-blob-${{ matrix.project }}-${{ strategy.job-index }}
           path: apps/web/blob-report/
           retention-days: 3
       - if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: e2e-failures-${{ matrix.project }}-${{ strategy.job-index }}
@@ -880,6 +885,7 @@ jobs:
           done < "$RUNNER_TEMP/failed.txt"
           exit $bad
       - if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: e2e-failures-smoke
@@ -986,12 +992,14 @@ jobs:
           done < "$RUNNER_TEMP/failed.txt"
           exit $bad
       - if: ${{ !cancelled() }}
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: e2e-blob-desktop-gpu
           path: apps/web/blob-report/
           retention-days: 3
       - if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: e2e-failures-desktop-gpu
@@ -1041,6 +1049,7 @@ jobs:
         continue-on-error: true
         run: pnpm --filter @slicerx/web exec playwright merge-reports -c playwright.merge.config.ts --reporter html ./blob-reports
       - if: needs.e2e-shard.result != 'skipped' || needs.e2e-gpu.result != 'skipped'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: e2e-report
