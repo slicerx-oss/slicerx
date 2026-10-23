@@ -15,7 +15,6 @@
 
 use crate::config::{GcodeFlavor, PrintConfig};
 use crate::geom::Point;
-use std::cell::Cell;
 use std::fmt::Write as _;
 
 /// Header values only the whole file knows; finalize writes them in.
@@ -24,28 +23,17 @@ pub(crate) const MARK: &str = "_SX_GRIFFIN_";
 /// mark, when the print uses that extruder, and drops it when it does not.
 pub(crate) const USED: &str = ";@U";
 
-thread_local! {
-    /// The nozzle offset of the tool whose moves the current layer chunk is writing, in the engine's units.
-    static OFFSET: Cell<(i32, i32)> = const { Cell::new((0, 0)) };
-}
-
-/// `p` as the G-code writes it: less the active tool's nozzle offset.
-pub(crate) fn shifted(p: Point) -> Point {
-    let (dx, dy) = OFFSET.with(Cell::get);
-    if dx == 0 && dy == 0 {
+/// `p` as the G-code writes it: less `off`, the nozzle offset of the tool whose moves are being written. Each layer's
+/// writer holds its own offset and passes it in, so layers and slices written side by side on the same threads never
+/// read each other's.
+pub(crate) fn shifted(p: Point, off: Point) -> Point {
+    if off.x == 0 && off.y == 0 {
         return p;
     }
     Point {
-        x: p.x - dx,
-        y: p.y - dy,
+        x: p.x - off.x,
+        y: p.y - off.y,
     }
-}
-
-/// Sets the offset the writer subtracts for tool `slot` (1-based); slot 0 or a printer without offsets
-/// clears it.
-pub(crate) fn set_tool(c: &PrintConfig, slot: u8) {
-    let p = offset(c, slot);
-    OFFSET.with(|o| o.set((p.x, p.y)));
 }
 
 /// The nozzle offset of tool `slot` (1-based) in the engine's units: zero for slot 0 or a printer without one.
@@ -66,6 +54,21 @@ pub(crate) fn layer_slot(l: &crate::output::LayerPaths) -> u8 {
     } else {
         l.start_tool
     }
+}
+
+/// The nozzle offset layer `l`'s moves end on, with `c` its settings: on the Ultimaker S series the print core of its
+/// last path (each switch sets its own), on a Bambu Lab printer the layer's own, and zero on other printers. The
+/// writer starts the end of the print with it.
+pub(crate) fn end_offset(c: &PrintConfig, flavor: GcodeFlavor, l: &crate::output::LayerPaths) -> Point {
+    let start = layer_slot(l);
+    let slot = if !applies_offset(c, flavor) {
+        0
+    } else if flavor.is_ultimaker() {
+        l.paths.last().map_or(start, |p| p.tool.max(1))
+    } else {
+        start
+    };
+    offset(c, slot)
 }
 
 /// Whether the writer moves this printer's G-code by its nozzle offset: the Ultimaker S series (each print core
@@ -601,10 +604,14 @@ mod tests {
         let pairs = cfg(&serde_json::json!({ "extruder_offset": [[0, 2]] }));
         assert_eq!(point(&pairs, "extruder_offset", 1), Some([0.0, 2.0]));
         // The writer subtracts the active slot's offset, and slot 0 clears it.
-        set_tool(&c, 1);
-        assert_eq!(shifted(Point::from_mm(10.0, 10.0)), Point::from_mm(10.0, 8.0));
-        set_tool(&c, 0);
-        assert_eq!(shifted(Point::from_mm(10.0, 10.0)), Point::from_mm(10.0, 10.0));
+        assert_eq!(
+            shifted(Point::from_mm(10.0, 10.0), offset(&c, 1)),
+            Point::from_mm(10.0, 8.0)
+        );
+        assert_eq!(
+            shifted(Point::from_mm(10.0, 10.0), offset(&c, 0)),
+            Point::from_mm(10.0, 10.0)
+        );
     }
 
     #[test]
