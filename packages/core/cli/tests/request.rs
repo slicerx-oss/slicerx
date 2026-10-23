@@ -3836,3 +3836,217 @@ fn a_dual_head_copy_on_the_left_half_and_a_normal_plate_still_slice() {
     let gcode = std::fs::read_to_string(dir.join("slice.gcode")).unwrap();
     assert!(!gcode.contains("M605"));
 }
+
+/// A Bambu Studio style project of 20 x 20 x 8 mm boxes, one object per build item, centered on each item's `(x, y)`:
+/// `plates` are the items of each plate, as the file writes them (a later plate's to the side of the first, where the
+/// project lays it out). `settings` is its `Metadata/project_settings.config`; without it the file is no slicer's
+/// project.
+fn project_boxes_3mf(settings: Option<&str>, plates: &[&[(f32, f32)]]) -> Vec<u8> {
+    use std::fmt::Write as _;
+    let (mut res, mut build, mut config) = (String::new(), String::new(), String::new());
+    let mut id = 0;
+    let mut plate_xml = String::new();
+    for (p, items) in plates.iter().enumerate() {
+        let _ = write!(
+            plate_xml,
+            r#"<plate><metadata key="plater_id" value="{}"/>"#,
+            p + 1
+        );
+        for (x, y) in *items {
+            id += 1;
+            let _ = write!(res, r#"<object id="{id}" type="model"><mesh><vertices>"#);
+            for z in [0, 8] {
+                for (a, b) in [(-10, -10), (10, -10), (-10, 10), (10, 10)] {
+                    let _ = write!(res, r#"<vertex x="{a}" y="{b}" z="{z}"/>"#);
+                }
+            }
+            res.push_str("</vertices><triangles>");
+            for [a, b, c] in [
+                [0, 2, 1],
+                [1, 2, 3],
+                [4, 5, 6],
+                [5, 7, 6],
+                [0, 1, 4],
+                [1, 5, 4],
+                [2, 6, 3],
+                [3, 6, 7],
+                [0, 4, 2],
+                [2, 4, 6],
+                [1, 3, 5],
+                [3, 7, 5],
+            ] {
+                let _ = write!(res, r#"<triangle v1="{a}" v2="{b}" v3="{c}"/>"#);
+            }
+            res.push_str("</triangles></mesh></object>");
+            let _ = write!(
+                build,
+                r#"<item objectid="{id}" transform="1 0 0 0 1 0 0 0 1 {x} {y} 0"/>"#
+            );
+            let _ = write!(
+                config,
+                r#"<object id="{id}"><metadata key="name" value="box{id}"/><metadata key="extruder" value="1"/></object>"#
+            );
+            let _ = write!(
+                plate_xml,
+                r#"<model_instance><metadata key="object_id" value="{id}"/></model_instance>"#
+            );
+        }
+        plate_xml.push_str("</plate>");
+    }
+    let model = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-02.08.02.61</metadata><resources>{res}</resources><build>{build}</build></model>"#
+    );
+    let objects = format!(r#"<?xml version="1.0" encoding="UTF-8"?><config>{config}{plate_xml}</config>"#);
+    let mut entries: Vec<(&str, &[u8])> = vec![
+        ("3D/3dmodel.model", model.as_bytes()),
+        ("Metadata/model_settings.config", objects.as_bytes()),
+    ];
+    if let Some(s) = settings {
+        entries.push(("Metadata/project_settings.config", s.as_bytes()));
+    }
+    zip(&entries)
+}
+
+/// The `CENTER=` of each object a Klipper file defines, in order.
+fn klipper_centers(gcode: &str) -> Vec<[f64; 2]> {
+    gcode
+        .lines()
+        .filter(|l| l.starts_with("EXCLUDE_OBJECT_DEFINE "))
+        .filter_map(|l| l.split(' ').find_map(|w| w.strip_prefix("CENTER=")))
+        .map(|c| {
+            let (x, y) = c.split_once(',').unwrap();
+            [x.parse().unwrap(), y.parse().unwrap()]
+        })
+        .collect()
+}
+
+/// A slicer project's build items stay where the file puts them, within 0.01 mm, from `sx slice <file.3mf>` and from a
+/// request alike: on its first plate, on a later plate (which the project lays out to the side of the first), and on a
+/// machine whose printable area starts away from 0, 0. A 3MF that is no slicer's project is still centered on the bed
+/// as one group.
+#[test]
+#[allow(clippy::too_many_lines, reason = "a table of cases")]
+fn a_project_3mf_keeps_its_positions() {
+    let dir = temp_dir(format!("sx-cli-keep-positions-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = r#"{"printable_area":["0x0","256x0","256x256","0x256"]}"#;
+    // plate 1: two boxes at the front left; plate 2: one at the back right, written a bed and a fifth to the right
+    let plates: [&[(f32, f32)]; 2] = [&[(40.0, 50.0), (80.0, 50.0)], &[(507.2, 190.0)]];
+    let write = |name: &str, bytes: Vec<u8>| {
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p
+    };
+    let project = write("project.3mf", project_boxes_3mf(Some(settings), &plates));
+    let plain = write("plain.3mf", project_boxes_3mf(None, &plates));
+    // Two boxes 40 mm apart, a hair left of the middle: centering them as one group moves them `shift` mm to the
+    // right. The shifts are the two measured on real plates, 0.4166 mm and 0.090 mm.
+    let off = |shift: f32| {
+        let x = 108.0 - shift;
+        let items: [&[(f32, f32)]; 1] = [&[(x, 128.0), (x + 40.0, 128.0)]];
+        (
+            write(
+                &format!("off-{shift}.3mf"),
+                project_boxes_3mf(Some(settings), &items),
+            ),
+            write(&format!("off-plain-{shift}.3mf"), project_boxes_3mf(None, &items)),
+        )
+    };
+    let (off_base, off_base_plain) = off(0.4166);
+    let (off_fine, off_fine_plain) = off(0.090);
+    let request = |model: &Path, plate: u32, config: &serde_json::Value| {
+        let req = serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": {"p": format!("{}#{plate}", model.display())},
+            "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+            "config": config,
+        });
+        let out_dir = dir.join(format!("out-{}", rand_tag()));
+        let path = dir.join(format!("{}.request.json", rand_tag()));
+        std::fs::write(&path, req.to_string()).unwrap();
+        let out = sx()
+            .args(["slice", "--request"])
+            .arg(&path)
+            .arg("--out-dir")
+            .arg(&out_dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        klipper_centers(&std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap())
+    };
+    let near = |got: &[[f64; 2]], want: &[[f64; 2]], what: &str| {
+        assert_eq!(got.len(), want.len(), "{what}: {got:?}");
+        for (g, w) in got.iter().zip(want) {
+            assert!(
+                (g[0] - w[0]).abs() < 0.01 && (g[1] - w[1]).abs() < 0.01,
+                "{what}: {got:?}, want {want:?}"
+            );
+        }
+    };
+    let mut shifted = klipper();
+    shifted["printable_area"] = serde_json::json!(["10x5", "266x5", "266x261", "10x261"]);
+    let cases = [
+        (
+            &off_base,
+            1,
+            &klipper(),
+            vec![[107.5834, 128.0], [147.5834, 128.0]],
+            "project 0.4166 mm off the middle",
+        ),
+        (
+            &off_fine,
+            1,
+            &klipper(),
+            vec![[107.91, 128.0], [147.91, 128.0]],
+            "project 0.090 mm off the middle",
+        ),
+        (
+            &off_base_plain,
+            1,
+            &klipper(),
+            vec![[108.0, 128.0], [148.0, 128.0]],
+            "plain file 0.4166 mm off the middle",
+        ),
+        (
+            &off_fine_plain,
+            1,
+            &klipper(),
+            vec![[108.0, 128.0], [148.0, 128.0]],
+            "plain file 0.090 mm off the middle",
+        ),
+        (
+            &project,
+            1,
+            &klipper(),
+            vec![[40.0, 50.0], [80.0, 50.0]],
+            "project plate 1",
+        ),
+        (&project, 2, &klipper(), vec![[200.0, 190.0]], "project plate 2"),
+        (
+            &project,
+            1,
+            &shifted,
+            vec![[50.0, 55.0], [90.0, 55.0]],
+            "project on a shifted area",
+        ),
+        // no project settings: the plate's items as one group in the middle of the 256 mm bed
+        (
+            &plain,
+            1,
+            &klipper(),
+            vec![[108.0, 128.0], [148.0, 128.0]],
+            "plain plate 1",
+        ),
+        (&plain, 2, &klipper(), vec![[128.0, 128.0]], "plain plate 2"),
+    ];
+    for (model, plate, config, want, what) in cases {
+        let cli = klipper_centers(&plain_slice(
+            &dir,
+            model,
+            config,
+            &["--plate", &plate.to_string()],
+        ));
+        near(&cli, &want, &format!("sx slice, {what}"));
+        near(&request(model, plate, config), &want, &format!("request, {what}"));
+    }
+}
