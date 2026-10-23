@@ -12,8 +12,7 @@ import { OPTION_TIPS, settingTipAttrs } from '../../lib/tips'
 import { useMore } from '../../shell/more'
 import { beginLiveEdit } from '../../state/live-edit'
 import { get, markStale, set, shownSlice, useApp, type Goal } from '../../state/store'
-import { layerHeightConflict } from '../../plate/object-settings'
-import { plateSequence } from '../../plate/plate-sequence'
+import { plateLayerHeightConflict } from '../../plate/object-settings'
 import { scopeValue, setScopedMany, type SettingsScope } from '../../plate/scope'
 import { easyGroups } from '../../plate/easy-groups'
 import { useScope } from './scope-bar'
@@ -108,7 +107,9 @@ export function EasySettingsPanel() {
   const mixedIn = (ks: readonly string[]) => ks.some((k) => view.mixed.has(k))
   const pick = (patch: Partial<EasySettings>, ks: readonly string[]) => (scoped ? updateScoped(scope, easy, patch, ks) : update(patch))
   const activeMeta = useApp((s) => s.plates.find((p) => p.id === s.activePlate))
-  const conflict = useApp((s) => (scoped ? layerHeightConflict(s, plateSequence(activeMeta, plateCfg), Number(plateCfg.layer_height) || 0.2) : null))
+  // The plate's sequence and layer height as the slice resolves them: an opened project's print sequence is an override.
+  const resolved = useMemo(() => resolveConfig(easy, overrides), [easy, profile, overrides])
+  const conflict = useApp((s) => (scoped ? plateLayerHeightConflict(s, activeMeta, resolved) : null))
   const inferred = useMemo(() => (profile ? inferEasy(cfg, easy) : null), [cfg, easy, profile])
   const strengthAt = scoped ? inferEasy(cfg, easy).strength : !inferred || touched.includes('strength') ? easy.strength : inferred.strength
   const speedIndex = Math.max(0, SPEEDS.findIndex((s) => s.value === easy.speed))

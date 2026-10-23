@@ -4,7 +4,8 @@
 // Studio and OrcaSlicer). Objects on a plate may carry different settings; layer height may differ
 // only when the plate prints by object, and layerHeightConflict says when it does not.
 import type { SettingValue } from '@slicerx/contracts'
-import { get, markStale, set, type AppState, type PlateEntry } from '../state/store'
+import { get, markStale, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
+import { plateSequence } from './plate-sequence'
 
 export const sourceId = (p: Pick<PlateEntry, 'id' | 'instanceOf'>) => p.instanceOf ?? p.id
 
@@ -46,6 +47,15 @@ export function setPartSetting(objectId: string, part: string, key: string, valu
   const { partSettings: _old, ...rest } = entry
   set({ plate: s.plate.map((p) => (p.id === objectId ? ({ ...rest, ...(Object.keys(all).length ? { partSettings: all } : {}) } as PlateEntry) : p)) })
   markStale()
+}
+
+/**
+ * layerHeightConflict for plate `meta` with its print sequence and layer height from `config`, the plate's settings as
+ * the slice resolves them (the person's changes and an opened project's settings included).
+ */
+export function plateLayerHeightConflict(s: Pick<AppState, 'plate' | 'objectSettings'>, meta: PlateMeta | undefined, config: Readonly<Record<string, unknown>>): string | null {
+  const layer = config['layer_height']
+  return layerHeightConflict(s, plateSequence(meta, config), typeof layer === 'number' ? layer : 0.2)
 }
 
 /**
