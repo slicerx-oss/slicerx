@@ -42,11 +42,11 @@ sha2 = "=0.11.0"
 socket2 = { version = "=0.6.5", features = ["all"] }
 serde_json = "=1.0.151"
 thiserror = "=2.0.21"
-tokio = { version = "=1.53.1", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
+tokio = { version = "=1.53.3", features = ["rt", "macros", "net", "time", "io-util", "sync"] }
 tokio-rustls = { version = "=0.26.6", default-features = false, features = ["ring", "tls12"] }
 tokio-tungstenite = "=0.30.0"
 # Rewrites the identity inside a sliced .gcode.3mf before it is uploaded.
 zip = { version = "=9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [dev-dependencies]
-tokio = { version = "=1.53.1", features = ["rt-multi-thread", "process"] }
+tokio = { version = "=1.53.3", features = ["rt-multi-thread", "process"] }
