@@ -200,3 +200,48 @@ fn walls_leaning_past_half_a_bead_get_the_overhang_fan() {
         }
     }
 }
+
+/// The part fan values the file sets from its first layer change to its last, in order (`M106` with no fan index
+/// or `P1`, and `M107`); auxiliary and chamber fan lines are left out.
+fn part_fan_lines(gcode: &str) -> Vec<f64> {
+    let lines: Vec<&str> = gcode.lines().collect();
+    let changes: Vec<usize> = (0..lines.len())
+        .filter(|&i| lines[i].starts_with("; CHANGE_LAYER"))
+        .collect();
+    let (Some(&first), Some(&last)) = (changes.first(), changes.last()) else {
+        return Vec::new();
+    };
+    lines[first..last]
+        .iter()
+        .filter_map(|l| {
+            let code = l.split(';').next().unwrap_or("").trim();
+            if code.starts_with("M107") && !code.contains(" P") {
+                return Some(0.0);
+            }
+            (code.starts_with("M106") && (!code.contains(" P") || code.contains(" P1 ")))
+                .then(|| word(code, 'S').unwrap_or(0.0))
+        })
+        .collect()
+}
+
+/// Item: a printer with an auxiliary fan (P1S). Its `M106 P2` line after the layer fan does not make the next
+/// layer's repeat of the same part fan value look new, so no part fan line repeats the value already in force.
+#[test]
+fn an_auxiliary_fan_line_does_not_repeat_the_part_fan() {
+    let cfg = stock("bambu-p1s");
+    let cube = stl(&loft(&rect(20.0, 20.0, 0.0), &rect(20.0, 20.0, 3.0)));
+    let g = slice(&cube, &cfg);
+    assert!(
+        g.lines().any(|l| l.starts_with("M106 P2 ")),
+        "no auxiliary fan line"
+    );
+    let fans = part_fan_lines(&g);
+    assert!(!fans.is_empty(), "no part fan line");
+    for w in fans.windows(2) {
+        assert!(
+            (w[0] - w[1]).abs() > f64::EPSILON,
+            "a part fan line repeats {}: {fans:?}",
+            w[1]
+        );
+    }
+}
