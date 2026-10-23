@@ -20,6 +20,7 @@ import { FILAMENT_TYPES, MAX_FILAMENTS } from './filaments'
 import { validateConfig } from './settings'
 import { projectSettingsInput } from './project-settings-input'
 import type { NodeSlicerHost } from './slicerhost'
+import type { EngineCall } from '@slicerx/cad-history'
 
 export interface ProjectRef {
   current: McpProject | undefined
@@ -31,6 +32,8 @@ export interface LocalToolDeps {
   slicer: NodeSlicerHost
   policy: PathPolicy
   project: ProjectRef
+  /** The geometry engine (sx-geom) a project's arrange nests true outlines with. */
+  geom?: EngineCall | undefined
 }
 
 const printerId = z.string().min(1).describe('Printer id from slicerx_printer_list, such as "bay-2"')
@@ -124,6 +127,7 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
         deps.store,
         deps.profiles,
         deps.slicer,
+        deps.geom,
       )
       return { summary: `Project "${i.name}" open`, output: deps.project.current.describe() }
     },

@@ -9,7 +9,7 @@
 // tower. Pure and deterministic, so it runs without a GPU and is unit tested.
 import type { Bed } from '@slicerx/contracts'
 import type { FirstLayerShape } from '@slicerx/settings/print-margins'
-import { excludedPolygons } from '../viewport/bed-exclude'
+import { MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
 import { bedCircle, boxInBed } from './bed-shape'
 import { bounds, compose, decompose, fitsBed, multiply, reachFrom, type Box, type Mat4 } from './transform'
 
@@ -77,19 +77,11 @@ export function currentMargins(): PrintMargins {
   return marginSource()
 }
 
-/** Room kept between two printed things beyond what is computed, mm: the engine rounds a brim up to whole lines. */
-export const MARGIN_SAFETY_MM = 1
+export { excludeBoxes, MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
 
 export const printSizeOf = (b: Box): PrintSize => ({ w: b.max[0] - b.min[0], h: b.max[1] - b.min[1], height: b.max[2] - b.min[2] })
 
 export const ARRANGE_DEFAULTS: ArrangeOptions = { gapMm: 6, rotate: false }
-
-export interface Rect {
-  x: number
-  y: number
-  w: number
-  h: number
-}
 
 let avoid: Rect[] = []
 
@@ -105,15 +97,6 @@ export function avoidAreas(): readonly Rect[] {
 /** What arrange keeps clear of: the excluded areas, then the prime tower's place or room (the last ones). */
 export function arrangeZones(margins: PrintMargins): Rect[] {
   return [...avoid, ...margins.keepOut, ...(margins.towerRoom ?? [])].map((r) => ({ ...r }))
-}
-
-/** The box around each polygon of a `bed_exclude_area` value (see `excludedPolygons`: up to four points are one polygon, a longer list one per four points). */
-export function excludeBoxes(points: unknown): Rect[] {
-  return excludedPolygons(points).map((pts) => {
-    const xs = pts.map((p) => p[0])
-    const ys = pts.map((p) => p[1])
-    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
-  })
 }
 
 /** Turns an object by `deg` about Z around its bounds' center. */

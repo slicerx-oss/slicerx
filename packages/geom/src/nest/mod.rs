@@ -445,6 +445,45 @@ mod tests {
     }
 
     #[test]
+    fn the_skirt_round_the_tower_keeps_off_an_excluded_area() {
+        // the tower at the back left, an excluded front left corner: a part at the front right would
+        // pull the skirt's hull, which goes round the tower, across the corner
+        let items: Vec<NestItem> = (0..3)
+            .map(|i| item(&format!("p{i}"), vec![rect(0.0, 0.0, 30.0, 30.0)]))
+            .collect();
+        let corner = rect(0.0, 0.0, 30.0, 30.0);
+        let tower = rect(0.0, 76.0, 34.0, 34.0);
+        let out = nest(NestProblem {
+            bed: bed(110.0, 110.0),
+            items: items.clone(),
+            fixed: vec![],
+            zones: vec![
+                NestZone {
+                    polygons: vec![corner.clone()],
+                },
+                NestZone {
+                    polygons: vec![tower.clone()],
+                },
+            ],
+            options: NestOptions {
+                skirt: true,
+                tower_zones: 1,
+                rotate: false,
+                ..opts(4.0)
+            },
+        })
+        .unwrap();
+        assert_eq!(out.placements.len(), 3, "{:?}", out.left_over);
+        let mut pts = tower.outer.clone();
+        for p in &out.placements {
+            pts.extend(placed(&items, p).iter().flatten().flatten().copied());
+        }
+        let h: Region = vec![vec![poly::hull(&pts)]];
+        let c: Region = vec![vec![corner.outer.clone()]];
+        assert!(poly::intersection(&h, &c).is_empty());
+    }
+
+    #[test]
     fn the_same_problem_gives_the_same_layout() {
         let mk = || {
             let mut items = vec![];

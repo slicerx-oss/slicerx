@@ -4,7 +4,8 @@
 // memory by the server. mimir's skills (orient, arrange, cut, slice,
 // estimate) read and change it through the PilotProject interface.
 import type { HeightRange, MeshPart, PilotMachine, Plate, PlateObject, PrintConfig, SettingValue, VolumeRole } from '@slicerx/contracts'
-import { rotationMatrix, type PilotProject, type ProjectObject, type ProjectPlate, type ProjectVolume as PilotVolume, type VolumeShape, type VolumeSpec } from '@slicerx/pilot'
+import { rotationMatrix, type PilotProject, type PlatesLeftOff, type ProjectObject, type ProjectPlate, type ProjectVolume as PilotVolume, type VolumeShape, type VolumeSpec } from '@slicerx/pilot'
+import type { EngineCall } from '@slicerx/cad-history'
 import type { DataStore } from './data'
 import type { ProfileCatalog } from './profiles'
 import { isGcodeKey, SHIPPED_GCODE_SOURCES } from './config'
@@ -15,6 +16,7 @@ import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAME
 import { objectPrintMargins } from '@slicerx/settings/print-margins'
 import { bedArea, boxRows, describeBed, EDGE_MM, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
+import { fillCount, nestPlate, plateTools, type FootprintCache, type NestObject } from './plate-nest'
 
 /** A volume of an object, in the object's own (as modeled) coordinates: a cut, a support region or a settings modifier. */
 export interface ProjectVolume {
@@ -100,12 +102,17 @@ export class McpProject implements PilotProject {
   private ranges: ProjectHeightRange[] = []
   private nextId = 1
   private nextVolume = 1
+  /** Where the last arrange put each plate's copies, while the plate holds the same copies as then. */
+  private readonly nested = new Map<number, { key: string; at: Map<string, [number, number]> }>()
+  private readonly feet: FootprintCache = new Map()
 
+  /** `geom` is the geometry engine (sx-geom) arrange nests true outlines with; without it arrange lays rows. */
   constructor(
     settings: ProjectSettings,
     private readonly store: DataStore,
     private readonly profiles: ProfileCatalog,
     private readonly host: NodeSlicerHost,
+    private readonly geom?: EngineCall | undefined,
   ) {
     this.name = settings.name
     this.settings = settings
@@ -283,7 +290,99 @@ export class McpProject implements PilotProject {
     return { edge, gap }
   }
 
-  arrangeCapacity(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): number {
+  /**
+   * How many copies of an object fit on a plate. With the geometry engine, as many as its nest fills the bed with, on
+   * the object's true outline, clear of the excluded areas and the prime tower's room; else as many as fit in the rows.
+   */
+  async arrangeCapacity(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): Promise<number> {
+    const rows = this.rowCapacity(objectId, bed, spacing, plateIndex)
+    const e = this.entries.get(objectId)
+    if (!this.geom || !e?.meshId) return rows
+    const cfg = this.config(plateIndex)
+    try {
+      return await fillCount(this.geom, { bed: this.bed(plateIndex), config: cfg, tools: this.toolsOf(cfg, [e]), gapMm: spacing, fixed: [] }, this.nestObject(e as Entry & { meshId: string }, cfg, 1), 500, this.feet)
+    } catch {
+      return rows
+    }
+  }
+
+  /**
+   * Lays the plates out on true outlines with the geometry engine, as the app's arrange does: each object's outline
+   * grown by its brim (sized from its first layer), raft and skirt, clear of the printer's excluded areas, the prime
+   * tower's room and the copies a client placed. The layout holds until the plate's copies, rotation, scale or bed
+   * change; then the plate goes back to the rows. Without the engine, or when it fails, the plates keep the rows.
+   */
+  async arrangePlates(plateIndexes: readonly number[], spacing: number): Promise<PlatesLeftOff | undefined> {
+    if (!this.geom) return undefined
+    let leftOff = 0
+    for (const index of plateIndexes) {
+      this.nested.delete(index)
+      const plate = this.layout.find((p) => p.index === index)
+      if (!plate) continue
+      const cfg = this.config(index)
+      const moving: NestObject[] = []
+      const fixed: NestObject[] = []
+      const entries: Entry[] = []
+      for (const item of plate.items) {
+        const e = this.entries.get(item.objectId)
+        if (!e?.meshId) continue
+        entries.push(e)
+        const o = this.nestObject(e as Entry & { meshId: string }, cfg, item.copies)
+        if (!e.position) {
+          moving.push(o)
+          continue
+        }
+        const [w, d] = o.size
+        for (let c = 0; c < item.copies; c++) fixed.push({ ...o, id: `${item.objectId}-${c + 1}`, copies: 1, at: [e.position[0] - w / 2 + c * (w + GAP_MM) - o.min[0], e.position[1] - d / 2 - o.min[1]] })
+      }
+      const wanted = moving.reduce((n, o) => n + o.copies, 0)
+      if (wanted === 0) continue
+      let placed
+      try {
+        placed = await nestPlate(this.geom, { bed: this.bed(index), config: cfg, tools: this.toolsOf(cfg, entries), gapMm: spacing, moving, fixed, center: fixed.length === 0 }, this.feet)
+      } catch {
+        continue
+      }
+      // Copies by number: each object's placements in the order of their copy.
+      const at = new Map<string, [number, number]>()
+      for (const o of moving) {
+        const mine = placed.placements.filter((p) => p.id === o.id).sort((a, b) => a.copy - b.copy)
+        mine.forEach((p, k) => at.set(`${o.id}-${k + 1}`, p.offset))
+      }
+      if (at.size < wanted) leftOff += wanted - at.size
+      else this.nested.set(index, { key: this.nestKey(index), at })
+    }
+    return leftOff > 0 ? { leftOff } : undefined
+  }
+
+  /** An object as the nest takes it: its mesh as placed, without the move, and its settings over the plate's. */
+  private nestObject(e: Entry & { meshId: string }, cfg: Record<string, SettingValue>, copies: number): NestObject {
+    const placed = this.placedBounds(e)
+    const meshId = e.meshId
+    return { id: e.obj.id, meshId, parts: () => this.host.parts(meshId), linear: this.orientation(e), size: placed.size, min: placed.min, config: { ...cfg, ...e.settings }, copies }
+  }
+
+  /** How many filaments the printed objects use, with their modifiers (see plateTools). */
+  private toolsOf(cfg: Record<string, SettingValue>, entries: readonly Entry[]): number {
+    const configs = entries.filter((e) => e.printable !== false).flatMap((e) => {
+      const own = { ...cfg, ...e.settings }
+      return [own, ...(e.volumes ?? []).filter((v) => v.role === 'modifier' && v.settings).map((v) => ({ ...own, ...v.settings }))]
+    })
+    return plateTools(configs.length ? configs : [cfg])
+  }
+
+  /** What an arranged layout holds for: the plate's copies, their rotation, scale and place, and the bed. */
+  private nestKey(plateIndex: number): string {
+    const plate = this.layout.find((p) => p.index === plateIndex)
+    const cfg = this.config(plateIndex)
+    const items = (plate?.items ?? []).map((i) => {
+      const e = this.entries.get(i.objectId)
+      return [i.objectId, i.copies, e?.meshId, e?.rotate, e?.scale, e?.position]
+    })
+    return JSON.stringify([cfg['printable_area'], cfg['bed_exclude_area'], items])
+  }
+
+  private rowCapacity(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): number {
     const e = this.entries.get(objectId)
     if (!e?.meshId) return 0
     const [w, d] = this.placedBounds(e as Entry & { meshId: string }).size
@@ -359,13 +458,19 @@ export class McpProject implements PilotProject {
       const entry = this.entries.get(item.objectId)
       return entry ? [entry] : []
     })
+    // The last arrange's layout while the plate holds the same copies, else the rows.
+    const nest = this.nested.get(plateIndex)
+    const nested = nest && nest.key === this.nestKey(plateIndex) && rowed.every((i) => nest.at.has(objects[i]?.id ?? '')) ? nest.at : undefined
     const { edge, gap } = this.rowMargins(plateIndex, entries)
-    const spots = bed.circle ? roundRows(feet, bed.circle, edge, gap) : boxRows(feet, bed, edge, gap)
+    const spots = nested ? [] : bed.circle ? roundRows(feet, bed.circle, edge, gap) : boxRows(feet, bed, edge, gap)
     rowed.forEach((i, k) => {
       const o = objects[i]
       const p = placements[i]
-      const at = spots[k]
-      if (!o || !p || !at) return
+      if (!o || !p) return
+      // The nest gives the whole move in X and Y; the rows give the front left corner.
+      const to = nested?.get(o.id)
+      const at: [number, number] | undefined = to ? [to[0] - (o.transform[12] ?? 0), to[1] - (o.transform[13] ?? 0)] : spots[k]
+      if (!at) return
       o.transform[12] = (o.transform[12] ?? 0) + at[0]
       o.transform[13] = (o.transform[13] ?? 0) + at[1]
       p.centerMm = [p.centerMm[0] + at[0], p.centerMm[1] + at[1]]

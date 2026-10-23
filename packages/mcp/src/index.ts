@@ -202,8 +202,8 @@ export async function createContext(opts: SlicerxMcpOptions = {}): Promise<Serve
   }
   const parts = typeof opts.partsTable === 'string' ? loadPartsTable(JSON.parse(readFileSync(resolve(opts.partsTable), 'utf8'))) : opts.partsTable
   const registry = [...pilotTools(createCombinedPlanner(kb), parts), ...(await servicePluginTools(printers?.host))]
-  const local = localTools({ store, profiles, slicer: nodeSlicer, policy, project })
   const geomCall = opts.geomEngine ?? (geomBin ? geomEngine(geomBin) : undefined)
+  const local = localTools({ store, profiles, slicer: nodeSlicer, policy, project, geom: geomCall })
   const designs = geomCall ? new Designs({ engine: geomCall, policy }) : undefined
   const appLink = opts.app !== false ? printers?.appLink : undefined
   if (opts.app === 'required' && !appLink) throw new Error('--app needs printers through sx-link (--printers link)')

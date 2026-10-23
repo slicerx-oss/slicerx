@@ -10,7 +10,8 @@
 // When the engine cannot run, arrange falls back to the box packer in arrange.ts.
 import type { Bed, MeshPart } from '@slicerx/contracts'
 import { geom } from '../geom/client'
-import { avoidAreas, currentMargins, MARGIN_SAFETY_MM, printSizeOf, type ArrangeOptions, type ArrangeResult, type PrintMargins, type Rect } from './arrange'
+import { nestItem, nestProblem, type NestFootprint, type NestOutline, type NestReply } from '@slicerx/settings/arrange-room'
+import { avoidAreas, currentMargins, printSizeOf, type ArrangeOptions, type ArrangeResult, type PrintMargins } from './arrange'
 import { bounds, multiply, type Mat4 } from './transform'
 
 export interface NestEntry {
@@ -19,24 +20,7 @@ export interface NestEntry {
   transform: Mat4
 }
 
-export interface Outline {
-  outer: [number, number][]
-  holes: [number, number][][]
-}
-
-interface Placement {
-  id: string
-  copy: number
-  angleDeg: number
-  offset: [number, number]
-}
-
-interface NestReply {
-  placements: Placement[]
-  leftOver: { id: string; copies: number }[]
-  tooLarge: { id: string; withoutMargin: boolean }[]
-  stats: { placed: number; wanted: number; passes: number; utilization: number }
-}
+export type Outline = NestOutline
 
 interface Progress {
   session: number
@@ -46,24 +30,10 @@ interface Progress {
   result: NestReply
 }
 
-/** Turn step for arrange and fill the bed, degrees, when turning is allowed. */
-export const NEST_STEP_DEFAULT = 10
-
-/**
- * The work each effort may spend after the first layout, in sx-geom's units (vertices through its
- * polygon operations; packages/geom/src/nest/place.rs DEFAULT_BUDGET is normal). Counted work, not
- * time, so the same plate gives the same layout on any machine. Normal is about a second on a typical
- * plate in the browser and a few on a crowded one.
- */
-const EFFORT_BUDGET = { quick: 1.5e6, normal: 6e6, thorough: 24e6 } as const
+export { NEST_STEP_DEFAULT } from '@slicerx/settings/arrange-room'
 
 /** What an object covers seen from above: its outline, simplified so it still covers it, and its exact hull. */
-export interface Footprint {
-  polygons: Outline[]
-  hull: [number, number][]
-  /** What it stands on, its first layer: everything up to the cut asked for above its lowest point. */
-  base?: Outline[]
-}
+export type Footprint = NestFootprint
 
 /** Footprints by mesh and by the linear part of the transform; moving an object only shifts its footprint. */
 const outlines = new WeakMap<object, Map<string, Footprint>>()
@@ -93,8 +63,6 @@ export async function outlineOf(e: NestEntry, baseMm?: number): Promise<Footprin
   return { polygons: moved(local.polygons), hull: move(local.hull), ...(local.base ? { base: moved(local.base) } : {}) }
 }
 
-const rectOutline = (r: Rect): Outline => ({ outer: [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]], holes: [] })
-
 /** A turn about Z by `deg` (exact at quarter turns) followed by a shift, applied after `m`. */
 export function turnedAndMoved(m: Mat4, deg: number, offset: readonly [number, number]): Mat4 {
   const d = ((deg % 360) + 360) % 360
@@ -122,43 +90,16 @@ interface Request {
 async function itemOf(e: NestEntry, margins: PrintMargins, copies = 1) {
   const b = bounds(e.parts, e.transform)
   const size = b ? printSizeOf(b) : { w: 0, h: 0, height: 0 }
-  let { polygons, hull, base }: Footprint = e.parts.some((p) => p.indices.length >= 3) ? await outlineOf(e, margins.firstLayerMm) : { polygons: [], hull: [] }
-  // No triangles to project (a point cloud, or a part still loading): its bounds stand in.
-  if (polygons.length === 0 && b) {
-    polygons = [rectOutline({ x: b.min[0], y: b.min[1], w: size.w, h: size.h })]
-    hull = []
-  }
-  // The automatic brim grows from the first layer; without one (nothing touches the bed) the bounds estimate it.
-  const first = base && base.length > 0 ? base : undefined
-  return { id: e.id, polygons, hull, grow: margins.grow(size, first), reach: margins.reach(size, first), copies }
+  const foot: Footprint = e.parts.some((p) => p.indices.length >= 3) ? await outlineOf(e, margins.firstLayerMm) : { polygons: [], hull: [] }
+  return nestItem(e.id, foot, size, b ? { x: b.min[0], y: b.min[1], w: size.w, h: size.h } : undefined, margins, copies)
 }
 
 async function run(req: Request, hooks: NestRun = {}): Promise<NestReply> {
   const margins = req.opts.margins ?? currentMargins()
   const items = await Promise.all(req.moving.map((e) => itemOf(e, margins, req.copies ?? 1)))
   const fixed = await Promise.all(req.fixed.map((e) => itemOf(e, margins)))
-  // The prime tower's boxes go last: the skirt round the whole print goes round the tower too.
   const towers = [...margins.keepOut, ...(margins.towerRoom ?? [])]
-  const zones = [...avoidAreas(), ...towers].map((r) => ({ polygons: [rectOutline(r)] }))
-  const problem = {
-    // A round bed (a delta) keeps every outline inside its circle, not the circle's box.
-    bed: { widthMm: req.bed.widthMm, depthMm: req.bed.depthMm, ...(req.bed.round ? { round: true } : {}) },
-    items,
-    fixed: fixed.map(({ copies: _c, ...f }) => f),
-    zones,
-    options: {
-      gapMm: req.opts.gapMm,
-      // Printing by object: the extruder clearance between objects, the bed edge keeping the gap. Sent only when set.
-      ...(margins.apart ? { apartMm: margins.apart } : {}),
-      safetyMm: MARGIN_SAFETY_MM,
-      rotate: req.opts.rotate,
-      rotationStepDeg: req.opts.stepDeg ?? NEST_STEP_DEFAULT,
-      skirt: margins.skirt,
-      ...(towers.length > 0 ? { towerZones: towers.length } : {}),
-      center: req.center,
-      budget: EFFORT_BUDGET[req.opts.effort ?? 'normal'],
-    },
-  }
+  const problem = nestProblem({ bed: req.bed, items, fixed, avoid: avoidAreas(), towers, margins, gapMm: req.opts.gapMm, rotate: req.opts.rotate, stepDeg: req.opts.stepDeg, effort: req.opts.effort, center: req.center })
   const started = Date.now()
   let p = await geom().call<Progress>('nest.start', problem)
   try {

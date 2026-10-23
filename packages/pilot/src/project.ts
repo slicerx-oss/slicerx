@@ -63,7 +63,9 @@ export interface PilotProject {
   /** Replace the plate layout (class slice: stays inside the project). May say what found no room on the bed. */
   setPlates(plates: ProjectPlate[]): void | PlatesLeftOff
   /** Capacity of the host's actual layout, including the resolved first-layer margins. */
-  arrangeCapacity?(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): number
+  arrangeCapacity?(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): number | Promise<number>
+  /** Lays the plates `setPlates` gave out on true outlines (a host with a geometry engine), `spacing` mm apart. May say what found no room. */
+  arrangePlates?(plateIndexes: readonly number[], spacing: number): Promise<PlatesLeftOff | undefined>
   /** Project level overrides by Orca key. */
   overrides(): Record<string, SettingValue>
   setOverrides(changes: Record<string, SettingValue>): void

@@ -281,6 +281,8 @@ pub struct Nester {
     fixed: Vec<Put>,
     zones: Vec<Region>,
     zone_hulls: Vec<Ring>,
+    /// the prime tower's corners pushed out by the skirt: the skirt goes round the tower too
+    towers: Vec<Pt>,
     /// where each item's outline center sat in the input
     centers: Vec<Pt>,
     nfp: BTreeMap<(usize, usize, i64), Rc<Region>>,
@@ -413,6 +415,7 @@ impl Nester {
             fixed: Vec::new(),
             zones: Vec::new(),
             zone_hulls: Vec::new(),
+            towers: Vec::new(),
             centers: vec![[0.0, 0.0]; items.len()],
             nfp: BTreeMap::new(),
             zone_nfp: BTreeMap::new(),
@@ -496,6 +499,15 @@ impl Nester {
                 )
             })
             .collect();
+        // a part's skirt reach stands in for the skirt's distance past the tower
+        let reach = me.shapes.iter().map(|s| s.reach).fold(0.0, f64::max);
+        me.towers = octagons(
+            regions
+                .iter()
+                .filter(|(_, tower)| *tower)
+                .flat_map(|(z, _)| z.iter().flat_map(|s| s.first().cloned().unwrap_or_default())),
+            reach,
+        );
         me.zones = regions.into_iter().map(|(r, _)| r).collect();
         me.items = items;
         me.plan = me.make_plan();
@@ -997,27 +1009,13 @@ impl Nester {
     fn reach_points(&self, b: usize, turn: i64, pos: Pt) -> Vec<Pt> {
         let sh = &self.shapes[b];
         let sc = poly::turn(turn as f64 / MDEG as f64);
-        // an octagon round each hull point holds the circle of the reach
-        let r = sh.reach / 0.923_879_532_511_286_7;
-        let h = std::f64::consts::FRAC_1_SQRT_2;
-        let dirs = [
-            [1.0, 0.0],
-            [h, h],
-            [0.0, 1.0],
-            [-h, h],
-            [-1.0, 0.0],
-            [-h, -h],
-            [0.0, -1.0],
-            [h, -h],
-        ];
-        let mut out = Vec::with_capacity(sh.hull.len() * 8);
-        for p in &sh.hull {
-            let q = poly::rotate_pt(*p, sc);
-            for d in &dirs {
-                out.push([q[0] + pos[0] + r * d[0], q[1] + pos[1] + r * d[1]]);
-            }
-        }
-        out
+        octagons(
+            sh.hull.iter().map(|p| {
+                let q = poly::rotate_pt(*p, sc);
+                [q[0] + pos[0], q[1] + pos[1]]
+            }),
+            sh.reach,
+        )
     }
 
     fn run_pass(&mut self, order: Order, score: Score, turns: Turns, pass: u32) -> Layout {
@@ -1029,6 +1027,7 @@ impl Nester {
         let mut pile = Bbox::EMPTY;
         let mut hull_pts: Vec<Pt> = Vec::new();
         if self.opts.skirt && !self.zone_hulls.is_empty() {
+            hull_pts.extend_from_slice(&self.towers);
             for f in &self.fixed {
                 hull_pts.extend(self.reach_points(f.shape, 0, f.pos));
             }
@@ -1169,7 +1168,7 @@ impl Nester {
             }
         }
         if self.opts.skirt && !self.zone_hulls.is_empty() {
-            let mut pts: Vec<Pt> = Vec::new();
+            let mut pts: Vec<Pt> = self.towers.clone();
             for f in &fixed {
                 pts.extend(self.reach_points(f.shape, 0, f.pos));
             }
@@ -1271,6 +1270,24 @@ fn clip_half(ring: &[Pt], u: Pt, lim: f64) -> Ring {
 
 fn poly2_rect(b: Bbox) -> Ring {
     vec![b.min, [b.max[0], b.min[1]], b.max, [b.min[0], b.max[1]]]
+}
+
+/// points `r` out from each of `pts` in eight directions: an octagon round each holds the circle
+fn octagons(pts: impl Iterator<Item = Pt>, r: f64) -> Vec<Pt> {
+    let r = r / 0.923_879_532_511_286_7;
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    let dirs = [
+        [1.0, 0.0],
+        [h, h],
+        [0.0, 1.0],
+        [-h, h],
+        [-1.0, 0.0],
+        [-h, -h],
+        [0.0, -1.0],
+        [h, -h],
+    ];
+    pts.flat_map(|q| dirs.map(|d| [q[0] + r * d[0], q[1] + r * d[1]]))
+        .collect()
 }
 
 /// separating axis test for two convex counterclockwise rings
