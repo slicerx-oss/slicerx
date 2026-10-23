@@ -2386,8 +2386,9 @@ pub const FILAMENT_OVERRIDES: [&str; 16] = [
     "retraction_distances_when_cut",
 ];
 
-/// Keys a height range may change: they only touch how a layer is written or
-/// how its walls are laid out, not the geometry other layers depend on.
+/// Keys a height range may change: they only touch how a layer is written,
+/// how its walls are laid out or which filament prints a feature, not the
+/// geometry other layers depend on.
 pub const RANGE_KEYS: &[&str] = &[
     "wall_loops",
     "nozzle_temperature",
@@ -2403,6 +2404,12 @@ pub const RANGE_KEYS: &[&str] = &[
     "retraction_length",
     "retraction_speed",
     "retraction_minimum_travel",
+    "outer_wall_filament_id",
+    "inner_wall_filament_id",
+    "sparse_infill_filament_id",
+    "internal_solid_filament_id",
+    "top_surface_filament_id",
+    "bottom_surface_filament_id",
 ];
 
 fn bad(key: &'static str) -> Error {

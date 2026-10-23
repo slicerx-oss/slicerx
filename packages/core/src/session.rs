@@ -347,7 +347,7 @@ pub(crate) struct WholePlate {
 }
 
 /// Settings that apply to the layers whose cutting plane lies in `z_from_mm..z_to_mm`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct HeightRange {
     pub z_from_mm: f64,
     pub z_to_mm: f64,
@@ -1040,6 +1040,25 @@ impl SliceSession {
         tops: Option<&[f64]>,
         ranges: &[HeightRange],
     ) -> Result<Self> {
+        // The settings by height a project file gives an object (`Mesh::height_ranges`) are that object's, ahead
+        // of the caller's own ranges, so the caller's win where they overlap.
+        let with_file: Vec<HeightRange>;
+        let ranges = if plate.objects.iter().any(|o| !o.mesh.height_ranges.is_empty()) {
+            with_file = plate
+                .objects
+                .iter()
+                .flat_map(|o| {
+                    o.mesh.height_ranges.iter().map(|r| HeightRange {
+                        objects: vec![o.id.clone()],
+                        ..r.clone()
+                    })
+                })
+                .chain(ranges.iter().cloned())
+                .collect();
+            &with_file
+        } else {
+            ranges
+        };
         // Older names of the per-feature filament keys in the plate's own settings read as ours (`crate::legacy`).
         let renamed_plate = crate::legacy::plate_with_current_names(plate);
         let plate = renamed_plate.as_ref().unwrap_or(plate);
@@ -10804,13 +10823,16 @@ fn resolve_ranges(
             return Err(bad(format!("range {i}: settings must be an object")));
         };
         for k in map.keys() {
+            // The per-feature filaments are read from the settings as given, not through `READ_KEYS`; their older
+            // names were read as ours already (`crate::legacy`).
+            if RANGE_KEYS.contains(&k.as_str()) || !crate::legacy::targets(k).is_empty() {
+                continue;
+            }
             if READ_KEYS.contains(&k.as_str()) {
-                if !RANGE_KEYS.contains(&k.as_str()) {
-                    return Err(bad(format!(
-                        "range {i}: {k} cannot change by height (allowed: {})",
-                        RANGE_KEYS.join(", ")
-                    )));
-                }
+                return Err(bad(format!(
+                    "range {i}: {k} cannot change by height (allowed: {})",
+                    RANGE_KEYS.join(", ")
+                )));
             } else if !unsupported.contains(k) {
                 unsupported.push(k.clone());
             }
@@ -10831,7 +10853,7 @@ fn resolve_ranges(
         for r in ranges.iter().filter(|r| r.z_from_mm <= z && z < r.z_to_mm) {
             if let serde_json::Value::Object(m) = &r.settings {
                 for (k, v) in m {
-                    if READ_KEYS.contains(&k.as_str()) {
+                    if RANGE_KEYS.contains(&k.as_str()) {
                         merged.insert(k.clone(), v.clone());
                     }
                 }

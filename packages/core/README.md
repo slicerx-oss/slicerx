@@ -31,7 +31,7 @@ pub fn project_metadata(bytes: &[u8], file_name: &str) -> Result<ProjectMetadata
 
 Stopping a run: `Progress::cancelled()` is checked per layer and between stages, and the run returns `Error::Cancelled`. `Cancellable { progress, flag }` wraps any `Progress` with an `AtomicBool` to set from another thread.
 
-Request options beyond the flavor and shards: `layerTopsMm` (sleipnir, explicit layer tops), `resumeFromLayer` (G-code only from that layer, after a start that heats and homes X and Y but not Z, with no purge line), `heightRanges` (wall count, temperature, flow, pressure advance, speeds and retraction by height) and per-object `settings` on `plate.objects`. `sx schema request` lists them.
+Request options beyond the flavor and shards: `layerTopsMm` (sleipnir, explicit layer tops), `resumeFromLayer` (G-code only from that layer, after a start that heats and homes X and Y but not Z, with no purge line), `heightRanges` (wall count, temperature, flow, pressure advance, speeds, retraction and the per-feature filaments by height; a 3MF project's own height ranges, `Metadata/layer_config_ranges.xml`, apply to their objects under these) and per-object `settings` on `plate.objects`. `sx schema request` lists them.
 
 Example, slicing an STL with default settings:
 
