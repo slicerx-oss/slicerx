@@ -586,9 +586,44 @@ fn distance(g: &Grid, mask: &[bool]) -> Vec<f32> {
     d
 }
 
+/// The most bytes one layer's color split ([`LayerPaint::voronoi`]) holds in grids at once, for a grid of `nx` by `ny`
+/// cells and `colors` filaments with a distance grid (each one painted on the layer's walls, and the part's own).
+/// `shells`: the layer has shell layers above or below it, so its depth limit is worked out from them; `painted`: some
+/// of the surfaces they expose are painted. The split works in steps, and each frees what the next does not read:
+/// - sources: the outline's cells and a mask per color, a byte a cell each;
+/// - distances: a 4 byte grid per color, made one at a time from its mask, which goes after;
+/// - depth limit: a 4 byte grid beside the distances, made with the cells still open and, per shell layer, the cells
+///   inside it and inside its painted surface (a byte a cell each), and each grid row's crossings with that layer's
+///   outline (a list per row, 24 bytes, and room for up to 8 crossings of 8 bytes);
+/// - fields: each in place of its own distances, beside the limit (a layer painted all over gets one grid for the
+///   part's own filament, in place of the mask it never had);
+/// - boundaries: traced from the fields alone, the distances and the limit gone, a few hundred bytes per boundary
+///   point, which fits in the 8 bytes a cell or more the limit and the part's own filament took.
+///
+/// So the depth limit or the fields step is the top: 4 bytes a cell per color and 4 for the limit, and 2 or 3 more
+/// and the row lists while the limit is made.
+fn grid_bytes(nx: usize, ny: usize, colors: usize, shells: bool, painted: bool) -> usize {
+    let cells = nx.saturating_mul(ny);
+    let grids = cells.saturating_mul(4 * colors + 4);
+    if !shells {
+        return grids;
+    }
+    let making_limit = cells
+        .saturating_mul(2 + usize::from(painted))
+        .saturating_add(ny.saturating_mul(24 + 8 * 8));
+    grids.saturating_add(making_limit)
+}
+
+/// What the painted segments by grid cell take in [`LayerPaint::voronoi`] for each step of half a cell along a segment:
+/// a new cell every other step, with its list of segments (room for 4 to start with) and two map slots (the map at its
+/// lowest load, about half full), so half of that a step. Many short segments in one cell share its list and slot, and
+/// for them this is more than they take.
+const NEAR_STEP: usize =
+    2 * std::mem::size_of::<(u8, Seg)>() + std::mem::size_of::<(usize, Vec<(u8, Seg)>)>() + 1;
+
 /// The grid bytes the painted layers being cut side by side may hold before the guard steps in
-/// ([`LayerPaint::voronoi`]): each layer holds a mask and a distance grid per color, a depth limit and a field, about 5
-/// bytes per cell and color and 16 more. Below this nothing is ever checked or waited for.
+/// ([`LayerPaint::voronoi`]): each layer holds a distance grid per color and a depth limit, 4 bytes a cell each, and a
+/// little more while the limit is made ([`grid_bytes`]). Below this nothing is ever checked or waited for.
 const GRID_FLOOR: usize = 384 << 20;
 
 /// The share of the machine's available memory the grids may take once they pass [`GRID_FLOOR`]. A big painted plate
@@ -1391,8 +1426,7 @@ impl LayerPaint<'_> {
         ]);
         // The grids below are megabytes each on a big layer, and the layers are cut side by side: past the budget, a
         // layer waits for others to finish theirs (the bytes are the same, only when it runs changes).
-        // The painted segments by cell (`near` below) count too: an entry per cell a segment passes through, at most a
-        // step per half cell, and a map slot each at most.
+        // The painted segments by cell (`near` below) count too ([`NEAR_STEP`] for each step of half a cell).
         let near_bytes: usize = walls
             .values()
             .flatten()
@@ -1406,11 +1440,12 @@ impl LayerPaint<'_> {
                 steps + 1
             })
             .sum::<usize>()
-            .saturating_mul(
-                std::mem::size_of::<(u8, Seg)>() + std::mem::size_of::<(usize, Vec<(u8, Seg)>)>() + 1,
-            );
+            .saturating_mul(NEAR_STEP);
+        let colors = walls.len() + usize::from(!walls.contains_key(&self.default_slot));
+        let shells = !self.above.is_empty() || !self.below.is_empty();
+        let painted = surfaces.iter().flatten().any(|s| !s.is_empty());
         let _held = GRIDS.hold(
-            (g.len() * (5 * (walls.len() + 1) + 16)).saturating_add(near_bytes),
+            grid_bytes(g.nx, g.ny, colors, shells, painted).saturating_add(near_bytes),
             grid_cap,
         );
         // Sources: the outline, each stretch in the color painted on it (paint off the outline does not count),
@@ -1596,7 +1631,7 @@ impl LayerPaint<'_> {
             dist.push((self.default_slot, vec![f32::INFINITY; n]));
         }
         let done = dist.iter().position(|(s, _)| *s == self.default_slot);
-        let mut out = Vec::new();
+        let mut fields: Vec<(u8, Vec<f32>)> = Vec::new();
         for k in 0..dist.len() {
             let state = dist.get(k).map_or(self.default_slot, |d| d.0);
             if state == self.default_slot {
@@ -1625,10 +1660,17 @@ impl LayerPaint<'_> {
                     *d = d.min(mine);
                 }
             }
-            // The traced boundary follows the grid's cells; straightened within a cell, it keeps no ripple for the
-            // walls to pinch small pockets off.
-            #[allow(clippy::cast_possible_truncation, reason = "a grid cell in internal units")]
-            let tol = (g.r * SCALE) as i64;
+            fields.push((state, field));
+        }
+        // With every field made, the distances and the limit go before the boundaries are traced: tracing a field
+        // takes a few hundred bytes per boundary point, which then fits in what the limit took ([`grid_bytes`]).
+        drop((dist, limit));
+        // The traced boundary follows the grid's cells; straightened within a cell, it keeps no ripple for the
+        // walls to pinch small pockets off.
+        #[allow(clippy::cast_possible_truncation, reason = "a grid cell in internal units")]
+        let tol = (g.r * SCALE) as i64;
+        let mut out = Vec::new();
+        for (state, field) in fields {
             let loops: Vec<Vec<IntPoint<i32>>> = contour(&g, &field)
                 .into_iter()
                 .map(|l| straightened(l, tol))
@@ -2363,5 +2405,61 @@ mod tests {
         assert_eq!(loops.len(), 1, "{}", loops.len());
         let shapes = loops_to_shapes(&loops);
         assert!(contains(&shapes, 8.0, 5.0) && !contains(&shapes, 2.0, 5.0));
+    }
+
+    /// A layer holds for what its split holds at the top: a 4 byte distance grid per color and a 4 byte depth limit,
+    /// and while the limit is made, a byte a cell for the open cells and for each shell layer's inside (and painted
+    /// surface), and a list per grid row of where the outline crosses it.
+    #[test]
+    fn a_layer_holds_its_grids_at_their_top() {
+        // A 20 mm square: 205 by 205 cells of 0.1 mm with the margin.
+        let g = Grid::new([0.0, 0.0, 20.0, 20.0]);
+        assert_eq!((g.nx, g.ny, g.len()), (205, 205, 42_025));
+        let (f32s, bools) = (std::mem::size_of::<f32>(), std::mem::size_of::<bool>());
+        // One painted color and the part's own, no shell layers: two distance grids and the limit.
+        assert_eq!(grid_bytes(g.nx, g.ny, 2, false, false), 42_025 * 3 * f32s);
+        assert_eq!(grid_bytes(g.nx, g.ny, 2, false, false), 504_300);
+        // Shell layers above or below: the open and inside masks, and a row list (24 bytes) with room for 8 crossings.
+        let rows = 205 * (24 + 8 * 8);
+        assert_eq!(
+            grid_bytes(g.nx, g.ny, 2, true, false),
+            504_300 + 42_025 * 2 * bools + rows
+        );
+        assert_eq!(grid_bytes(g.nx, g.ny, 2, true, false), 606_390);
+        // A painted surface there: its mask too.
+        assert_eq!(grid_bytes(g.nx, g.ny, 2, true, true), 648_415);
+        // Every more color is one more distance grid, and nothing else.
+        for colors in 2..=8 {
+            assert_eq!(
+                grid_bytes(g.nx, g.ny, colors + 1, true, true) - grid_bytes(g.nx, g.ny, colors, true, true),
+                42_025 * f32s
+            );
+        }
+        // Rows count by the grid's height: 400 by 10 cells, four colors, a painted surface.
+        assert_eq!(
+            grid_bytes(400, 10, 4, true, true),
+            4_000 * (4 * 4 + 4 + 3) + 10 * 88
+        );
+        assert_eq!(
+            grid_bytes(10, 400, 4, true, true),
+            4_000 * (4 * 4 + 4 + 3) + 400 * 88
+        );
+        // The largest grid a layer gets (about 4 million cells) with four colors: under a hundred megabytes, where the
+        // old count of 5 bytes a color and cell and 16 more said 144.
+        let big = Grid::new([0.0, 0.0, 400.0, 400.0]);
+        assert!(big.len() <= 4_000_000 + 2 * big.nx + 2 * big.ny, "{}", big.len());
+        let held = grid_bytes(big.nx, big.ny, 4, true, true);
+        assert_eq!(held, big.len() * 23 + big.ny * 88);
+        assert!(
+            held < 100_000_000 && big.len() * (5 * 4 + 16) > 140_000_000,
+            "{held}"
+        );
+        // Past any real grid it saturates instead of wrapping.
+        assert_eq!(grid_bytes(usize::MAX, 2, 2, true, true), usize::MAX);
+        // The painted segments by cell, per step of half a cell: a new cell every other step, its list with room for 4
+        // entries of 40 bytes and two map slots of 33.
+        if cfg!(target_pointer_width = "64") {
+            assert_eq!(NEAR_STEP, 113);
+        }
     }
 }
