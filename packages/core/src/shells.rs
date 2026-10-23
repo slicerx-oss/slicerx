@@ -7,9 +7,10 @@
 //!
 //! The solid area of a layer is the union of the top surfaces of the layers above (within the top
 //! shell) and the bottom surfaces of the layers below (within the bottom shell), the infill area the
-//! usual coverage rule already makes solid, cleaned up: thin bands are dropped (thinner than 0.79 solid line
-//! spacings on a Bambu Lab printer, 0.68 on others), and gaps narrower than 1.2 lines are closed, since neither
-//! can be filled as sparse or solid infill.
+//! usual coverage rule already makes solid, cleaned up: thin bands are dropped (thinner than 0.68 solid line
+//! spacings, or 0.79 with narrow detection off, when no concentric bead would print them), and gaps narrower than
+//! 1.2 lines are closed, since neither can be filled as sparse or solid infill. With narrow detection off, the
+//! solid area also grows 0.2 lines into the sparse area.
 
 use crate::config::PrintConfig;
 use crate::geom::mm;
@@ -185,21 +186,20 @@ pub(crate) struct Input<'a> {
     pub(crate) opening: f64,
     /// Only the neighbors' surfaces turn solid, not the band a leaning wall leaves (`partial`).
     pub(crate) surfaces_only: bool,
-    /// A Bambu Lab printer: bands are kept from `BAND_MIN` wide and do not grow, as its maker's slicer
-    /// prints them.
-    pub(crate) maker_band: bool,
+    /// `detect_narrow_internal_solid_infill`: a narrow band prints as concentric beads, so bands are kept from
+    /// `BAND_MIN_NARROW` wide, not `BAND_MIN`.
+    pub(crate) narrow: bool,
 }
 
 /// What the shell rule reads from the layers around one layer. It does not depend on the region, so a
 /// layer with several regions (filaments, modifiers) works it out once.
 pub(crate) struct Around {
-    /// The neighbors' surfaces within the shell layers, grown a little and merged.
-    shell: Shapes,
     /// This layer's infill outline less what the neighbors' infill outlines leave open, before it is cut
     /// to a region: the coverage rule's solid area. None where a neighbor is past the plate's end.
     classic: Option<Shapes>,
-    /// With `maker_band`: `shell` and `classic` together (`shell` alone for `surfaces_only`), less the bands too
-    /// thin to keep, before the cut to a region, so a band's width is the neighbors' doing, not the walls'.
+    /// The neighbors' surfaces within the shell layers and `classic` together (the surfaces alone for
+    /// `surfaces_only`), less the bands too thin to keep, before the cut to a region, so a band's width is the
+    /// neighbors' doing, not the walls'.
     kept: Shapes,
     /// The outline the layers below and above share, read only for small pieces.
     object: std::sync::OnceLock<Shapes>,
@@ -287,24 +287,23 @@ fn around(i: &Input<'_>) -> Around {
         (Some(h), Some(m)) => Some(perimeters::difference(m, h)),
         _ => None,
     };
-    // A band thinner than 0.79 solid line spacings goes: a line in it would hang mostly over the sparse infill or
-    // the wall.
+    // A band too thin for a concentric bead (or, with narrow detection off, for a line) goes.
+    let band_min = if i.narrow { BAND_MIN_NARROW } else { BAND_MIN };
     let kept = match &classic {
-        Some(_) if !i.maker_band => Vec::new(),
-        Some(_) if i.surfaces_only => opened(&shell, 0.5 * BAND_MIN * i.spacing),
-        Some(c) => opened(&perimeters::union_all(&[&shell, c]), 0.5 * BAND_MIN * i.spacing),
+        Some(_) if i.surfaces_only => opened(&shell, 0.5 * band_min * i.spacing),
+        Some(c) => opened(&perimeters::union_all(&[&shell, c]), 0.5 * band_min * i.spacing),
         None => Vec::new(),
     };
     Around {
-        shell,
         classic,
         kept,
         object: std::sync::OnceLock::new(),
     }
 }
 
-/// The narrowest solid band the shell rule keeps, in solid infill line spacings.
+/// The narrowest solid band the shell rule keeps, in solid infill line spacings: with narrow detection off, and on.
 const BAND_MIN: f64 = 0.79;
+const BAND_MIN_NARROW: f64 = 0.6825;
 
 /// The infill area that must be solid beyond what the coverage rule already makes solid, and that
 /// rule's own area, cleaned up together. Empty when the region needs nothing.
@@ -322,7 +321,7 @@ pub(crate) fn solid_area(i: &Input<'_>) -> Shapes {
                 i.wall_offset.to_bits(),
                 i.opening.to_bits(),
                 i.surfaces_only,
-                i.maker_band,
+                i.narrow,
             );
             c.around(key, || around(i))
         }
@@ -330,35 +329,18 @@ pub(crate) fn solid_area(i: &Input<'_>) -> Shapes {
     };
     let s = 1.05 * i.spacing;
     let close = mm(0.5 * 1.2 * s);
-    let regular = if i.maker_band {
-        let total = match &around.classic {
-            Some(_) => perimeters::intersection(&around.kept, i.inner),
-            None => i.inner.clone(),
-        };
-        if total.is_empty() {
-            return total;
-        }
-        // Gaps narrower than 1.2 lines close, and a band keeps its own width: the floating shell's beads reach the
-        // wall overlap themselves.
-        let closed = perimeters::offset(&total, close);
-        perimeters::offset(&closed, -close)
-    } else {
-        let under_shell = perimeters::intersection(&around.shell, i.inner);
-        let total = match &around.classic {
-            Some(_) if i.surfaces_only => under_shell,
-            Some(d) => perimeters::union_all(&[&under_shell, &perimeters::intersection(d, i.inner)]),
-            None => i.inner.clone(),
-        };
-        if total.is_empty() {
-            return total;
-        }
-        // Pieces thinner than 0.65 lines go, gaps narrower than 1.2 lines close, and each piece grows by 0.2 lines.
-        let open = mm(0.5 * 0.65 * s);
-        let overlap = mm(0.2 * s);
-        let opened = perimeters::offset(&total, -open);
-        let closed = perimeters::offset(&opened, open + close);
-        perimeters::offset(&closed, -(close - overlap))
+    let total = match &around.classic {
+        Some(_) => perimeters::intersection(&around.kept, i.inner),
+        None => i.inner.clone(),
     };
+    if total.is_empty() {
+        return total;
+    }
+    // Gaps narrower than 1.2 lines close. A band keeps its own width where its beads are concentric; with narrow
+    // detection off it grows 0.2 lines into the sparse area, which its lines need to fill it.
+    let grow = if i.narrow { 0 } else { mm(0.2 * s) };
+    let closed = perimeters::offset(&total, close);
+    let regular = perimeters::offset(&closed, -(close - grow));
     // Small drops on smooth parts of the model are dropped, unless they fill a whole internal piece.
     let object = || {
         around.object.once(|| {

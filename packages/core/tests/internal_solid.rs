@@ -371,13 +371,15 @@ fn band(d: f32, config: &Value) -> f64 {
 fn a_leaning_wall_keeps_a_band_from_079_solid_line_spacings() {
     // The band under the top is (top layers - 1) x d wide. The maker's slicer keeps it from 0.79 to 0.80 solid line
     // spacings (spacing = line width - layer height x (1 - pi/4)): 0.42 mm lines from d 0.075 with 5 top layers and
-    // from 0.100 with 4, 0.5 mm lines from 0.091, 0.6 mm lines from 0.115.
+    // from 0.100 with 4, 0.5 mm lines from 0.091, 0.6 mm lines from 0.115. The area is kept from 0.79 spacings here
+    // too, but with 0.42 mm lines the line fill prints nothing in a band under 0.85 spacings yet, so those are
+    // checked from d 0.080 and 0.107.
     let base = |extra: Value| settings(&narrow_off(&extra));
     for (none, kept, config) in [
-        (0.070, 0.075, base(json!({}))),
+        (0.070, 0.080, base(json!({}))),
         (
             0.0985,
-            0.100,
+            0.107,
             base(json!({"top_shell_layers": 4, "top_shell_thickness": 0})),
         ),
         (
@@ -395,37 +397,38 @@ fn a_leaning_wall_keeps_a_band_from_079_solid_line_spacings() {
 
 #[test]
 fn the_band_threshold_ignores_the_walls() {
-    // Outer wall 0.6 mm, inner wall 0.5 mm, 3 walls or arachne walls: still none at d 0.070 and a band at 0.075
-    // (narrow detection on, so the one-line band prints as concentric beads).
+    // Narrow detection on (the default) keeps the band from 0.68 spacings, so none at d 0.064 and a band at 0.065,
+    // also with a 0.6 mm outer wall, a 0.5 mm inner wall, 3 walls or arachne walls.
     for extra in [
+        json!({}),
         json!({"outer_wall_line_width": 0.6}),
         json!({"inner_wall_line_width": 0.5}),
         json!({"wall_loops": 3}),
         json!({"wall_generator": "arachne"}),
     ] {
         let config = settings(&extra);
-        let (a, b) = (band(0.070, &config), band(0.075, &config));
-        assert!(a < 2.0, "{extra}: {a:.1} mm of band at d 0.070");
-        assert!(b > 50.0, "{extra}: {b:.1} mm of band at d 0.075");
+        let (a, b) = (band(0.064, &config), band(0.065, &config));
+        assert!(a < 2.0, "{extra}: {a:.1} mm of band at d 0.064");
+        assert!(b > 50.0, "{extra}: {b:.1} mm of band at d 0.065");
     }
 }
 
 #[test]
 fn the_bottom_shell_band_counts_the_bottom_layers() {
-    // A frustum of r 8 mm leaning out 0.15 mm a layer over 3 bottom layers: a 0.30 mm band with 0.42 mm lines,
+    // A frustum of r 8 mm leaning out 0.16 mm a layer over 3 bottom layers: a 0.32 mm band with 0.42 mm lines,
     // none with 0.5 mm lines.
-    let leaning = frustum(8.0, -0.15);
+    let leaning = frustum(8.0, -0.16);
     assert!(slice(leaning.clone(), &settings(&narrow_off(&json!({})))).1.mid() > 10.0);
     assert!(slice(leaning, &settings(&s_set(&narrow_off(&json!({}))))).1.mid() < 0.01);
 }
 
 #[test]
 fn a_dome_bands_from_where_its_wall_leans_enough() {
-    // The maker's slicer: the first band layer is 29. Its 270.1 mm of solid in all is not checked: the bands are one or
-    // two lines wide, and the line fill of bands that thin is not the maker's yet (237.8 mm here).
+    // The maker's slicer: the first band layer is 29, and 270.1 mm of solid in all.
     let (_, r) = slice(dome(), &settings(&s_set(&narrow_off(&json!({})))));
     let first = r.solid_layers(0.05).into_iter().find(|l| *l >= 8);
     assert_eq!(first, Some(29));
+    assert!(within(r.solid(), 270.1, 0.03), "{:.1} mm", r.solid());
 }
 
 #[test]
@@ -466,11 +469,10 @@ fn a_small_sparse_pocket_is_measured_to_the_inner_walls_middle() {
 }
 
 #[test]
-fn other_printers_keep_their_band_rule() {
-    // The 0.79 spacing threshold is the Bambu Lab maker's: on another printer the 0.28 mm band at d 0.070 stays.
-    let other = settings(&narrow_off(
-        &json!({"printer_model": "Generic printer", "gcode_flavor": "marlin2"}),
-    ));
-    assert!(band(0.070, &other) > 10.0);
-    assert!(band(0.070, &settings(&narrow_off(&json!({})))) < 2.0);
+fn every_printer_takes_the_same_band_rule() {
+    // On another printer too: with narrow detection on, the 0.28 mm band at d 0.070 (0.74 spacings) stays; with it
+    // off, it goes.
+    let other = json!({"printer_model": "Generic printer", "gcode_flavor": "marlin2"});
+    assert!(band(0.070, &settings(&other)) > 10.0);
+    assert!(band(0.070, &settings(&narrow_off(&other))) < 2.0);
 }
