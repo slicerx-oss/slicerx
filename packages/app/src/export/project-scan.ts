@@ -17,6 +17,8 @@ export interface ScannedProject {
   marks: VaultMark
   /** A model part declares a DTD: the whole file is refused. */
   markError?: string
+  /** The app that wrote the file: the main model's `Application` metadata, when it names one. */
+  application?: string
   /** The objects as the geometry engine read them (geom-project.ts), when it read the file; `models` is then empty. */
   geom?: import('./geom-project').GeomProject
   /** performance.timeOrigin + performance.now() when the archive was inflated and when the parts were scanned. */
@@ -25,6 +27,12 @@ export interface ScannedProject {
 }
 
 const isModel = (name: string): boolean => /\.model$/i.test(name)
+
+/** The `Application` metadata of a model part (or of its skeleton), trimmed; undefined when it names none. */
+export function applicationOf(model: string): string | undefined {
+  const m = model.match(/<metadata\s+name\s*=\s*["']Application["']\s*>([^<]*)<\/metadata>/)
+  return m?.[1]?.trim() || undefined
+}
 
 const now = (): number => performance.timeOrigin + performance.now()
 
@@ -35,6 +43,7 @@ export async function scanProject(bytes: Uint8Array): Promise<ScannedProject> {
   const models = new Map<string, ScannedModel | { error: string }>()
   const marks: VaultMark = {}
   let markError: string | undefined
+  let application: string | undefined
   const dec = new TextDecoder()
   for (const [name, b] of all) {
     if (!isModel(name)) {
@@ -52,7 +61,9 @@ export async function scanProject(bytes: Uint8Array): Promise<ScannedProject> {
     try {
       // The skeleton is the part without its vertex and triangle runs, all a mark can be in; a part that did not scan
       // is read whole.
-      const m = readVaultMarks(dec.decode(skeleton ?? b)).root
+      const text = dec.decode(skeleton ?? b)
+      if (!application && /^3d\/3dmodel\.model$/i.test(name)) application = applicationOf(text.slice(0, 4096))
+      const m = readVaultMarks(text).root
       if (m.listing && !marks.listing) marks.listing = m.listing
       if (m.creator && !marks.creator) marks.creator = m.creator
     } catch (e) {
@@ -60,7 +71,7 @@ export async function scanProject(bytes: Uint8Array): Promise<ScannedProject> {
       markError = e.message
     }
   }
-  return { files, models, marks, ...(markError ? { markError } : {}), unzippedAt, scannedAt: now() }
+  return { files, models, marks, ...(application ? { application } : {}), ...(markError ? { markError } : {}), unzippedAt, scannedAt: now() }
 }
 
 /** The buffers of a scanned project, to transfer it from the worker without copies. */

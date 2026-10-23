@@ -200,6 +200,12 @@ export function readProjectFile(path: string): ProjectRead {
     if (error instanceof ProjectVariantError) throw new ToolInputError(error.message, 'invalid_settings')
     throw error
   }
+  const modelPath = zip.names().find((n) => n.toLowerCase() === '3d/3dmodel.model')
+  // A project's main model only places its objects, so it is small; a plain 3MF's can be large and has no settings.
+  const source = hasSettings && modelPath ? sourceApp(zip.text(modelPath)?.slice(0, 4096)) : undefined
+  // Bambu Studio reads a missing first layer travel acceleration as 500 mm/s2, as the app's project open and
+  // `sx slice <project.3mf>` do: a project of its that lacks the key travels the first layer at 500.
+  if (source?.startsWith('BambuStudio') && !('initial_layer_travel_acceleration' in kept)) kept['initial_layer_travel_acceleration'] = ['500']
   const imported = importProject({ projectSettings: kept, ...(modelSettings ? { modelSettings } : {}) })
 
   // Plates and how many objects sit on each, from model_settings.config; a plain 3MF is one plate.
@@ -260,9 +266,6 @@ export function readProjectFile(path: string): ProjectRead {
     .sort()
     .map((k) => ({ from: k, to: LEGACY_KEYS[k] as string }))
   const fromOf = new Map(renamed.map((r) => [r.to, r.from]))
-  const modelPath = zip.names().find((n) => n.toLowerCase() === '3d/3dmodel.model')
-  // A project's main model only places its objects, so it is small; a plain 3MF's can be large and has no settings.
-  const source = hasSettings && modelPath ? sourceApp(zip.text(modelPath)?.slice(0, 4096)) : undefined
   const importReport: ImportReport = {
     ...(source ? { source } : {}),
     ...(read.skipped ? { skipped: read.skipped } : {}),
