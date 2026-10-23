@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Changed
+
+- `slicerx_arrange` (arrange 1.8.0) lays a project's plate out with the nest the app's Arrange uses, when the server has sx-geom (found as before, or the `geomEngine` option): each copy's true outline seen from above, grown by its brim (an automatic brim sized from the copy's first layer, as the slice sizes it), raft and skirt. It keeps clear of the printer's excluded areas (`bed_exclude_area`), the prime tower's room and copies a client placed with `slicerx_project_move`, and the skirt round the whole print, which goes round the tower too, stays off the excluded areas. The tower's room is kept while the plate prints in two or more filaments (in a project, support or a raft in another filament): the tower, its brim and 1 mm, at its spot with `prime_tower_auto_position` off, and at the configured spot pulled onto the bed while the engine places it. How many copies fit a plate is counted on the same outlines. The layout holds until the plate's objects, copies, rotation, scale or bed change; the plate then goes back to the rows, so arrange again after such a change. Without sx-geom, or when it fails, the plate keeps the rows as before. Inputs and outputs are unchanged.
+
 ## [0.2.0] - 2026-10-22
 
 ### Breaking
