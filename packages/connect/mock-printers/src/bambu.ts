@@ -74,7 +74,8 @@ export interface BambuExtra {
    * Developer Mode as the report's `fun` flags give it (bit 0x20000000 set while it is off, as ha-bambulab reads
    * it). Off, the printer keeps sending status and takes the light (Bambu Lab's January 16, 2025 notes keep LED
    * control open), and answers every other command with the unsigned-command refusal (UNSIGNED_REPLY); an upload is
-   * refused. The driver refuses print commands before sending anything when the flag says off. Absent: no `fun` flags.
+   * refused. A refused `print` command also puts VERIFY_HMS in the report's `hms` list. The driver refuses print
+   * commands before sending anything when the flag says off. Absent: no `fun` flags.
    */
   developerMode?: boolean
   /**
@@ -83,9 +84,18 @@ export interface BambuExtra {
    * unsigned-command refusal (UNSIGNED_REPLY, as OpenBambuAPI's cloud-x509-auth.md records it) and the FTPS upload
    * works. `silent`: as a Discord report from an A1 mini read (camera and light work, the send fails), print commands
    * get no answer and the FTPS connection closes when a file is sent. Which of the two real firmware does without
-   * Developer Mode has not been captured on SlicerX hardware.
+   * Developer Mode has not been captured on SlicerX hardware. In both, a turned away `print` command also puts
+   * VERIFY_HMS in the report's `hms` list. `despiteDeveloperMode`: as an A1 was reported (HMS 0500_0500_0001_0007 with
+   * Developer Mode on), the `fun` flags say Developer Mode is on, and print commands are still answered with the
+   * unsigned-command refusal and raise VERIFY_HMS, as `verify` does; the upload works. Whether real firmware does this,
+   * or the report came from an entry left over from an earlier send, has not been captured.
    */
-  authorizationControl?: 'verify' | 'silent'
+  authorizationControl?: 'verify' | 'silent' | 'despiteDeveloperMode'
+  /**
+   * The report's `hms` list. The printer keeps an entry until it is cleared on its screen (`POST /bambu {hms: null}`
+   * here), so one raised by a refused command stays after the next commands go through. Absent: no `hms` list.
+   */
+  hms?: { attr: number; code: number }[]
   /** The card has no room: STOR is answered `452` and nothing is stored. */
   storageFull?: boolean
   /** The step a job is on (`stg_cur`, Bambu Studio's stage codes: 1 bed leveling, 2 bed heating, 6 paused on a runout); absent when unset. */
@@ -102,6 +112,12 @@ export interface BambuExtra {
  * cloud-x509-auth.md): `err_code` 0x05024007.
  */
 export const UNSIGNED_REPLY = { result: 'failed', reason: 'mqtt message verify failed', err_code: 0x0502_4007 } as const
+
+/**
+ * The HMS entry Authorization Control firmware is reported to raise when it turns a command away, "Command
+ * verification failed": 0500_0500_0001_0007, `attr` 83887360 and `code` 65543 in the report's `hms` list.
+ */
+export const VERIFY_HMS = { attr: 0x0500_0500, code: 0x0001_0007 } as const
 
 /** `fun` values seen on printers: Developer Mode on, and off (signed commands wanted). */
 const FUN = { on: '3EC18FFF9CFF', off: '3EC1AFFF9CFF' } as const
@@ -238,7 +254,8 @@ export function reportFor(m: MockMachine, x: BambuExtra = { skipped: [], printEr
       },
       ...(x.external && x.model !== 'O1D' ? { vt_tray: { id: '254', tray_type: x.external.type, tray_color: `${x.external.color.replace('#', '').toUpperCase()}FF`, remain: -1 } } : {}),
       ...(x.model === 'O1D' ? h2dHardware(m, x) : {}),
-      ...(x.developerMode === undefined ? {} : { fun: x.developerMode ? FUN.on : FUN.off }),
+      ...(x.hms ? { hms: x.hms } : {}),
+      ...(x.authorizationControl === 'despiteDeveloperMode' ? { fun: FUN.on } : x.developerMode === undefined ? {} : { fun: x.developerMode ? FUN.on : FUN.off }),
     },
   }
 }
@@ -317,6 +334,11 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
   // The real printer pushes a report about once a second; a state changed through the control
   // server reaches the driver the same way.
   setInterval(() => broadcast(), 200).unref()
+  // A turned away command raises the verification HMS entry, kept until cleared, and the next report carries it.
+  const raiseVerifyHms = () => {
+    if (!extra.hms?.some((h) => h.attr === VERIFY_HMS.attr && h.code === VERIFY_HMS.code)) extra.hms = [...(extra.hms ?? []), { ...VERIFY_HMS }]
+    broadcast()
+  }
   const handleRequest = (msg: Record<string, Record<string, unknown>>) => {
     try {
       if (msg.pushing?.command === 'pushall') {
@@ -336,19 +358,21 @@ export async function startBambu(m: MockMachine, log: string[]): Promise<{ handl
         log.push(`refused ${String(body.command)}`)
         const answer = Buffer.from(JSON.stringify({ [group]: { command: body.command, sequence_id: body.sequence_id, ...UNSIGNED_REPLY } }))
         for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, answer))
+        if (group === 'print') raiseVerifyHms()
         return
       }
-      // Authorization Control without Developer Mode: the light still works, every print command is refused as
-      // unsigned (`verify`) or dropped unanswered (`silent`).
+      // Authorization Control: the light still works, every print command is refused as unsigned (`verify`, and
+      // `despiteDeveloperMode` with the `fun` flags saying Developer Mode is on) or dropped unanswered (`silent`), and
+      // raises the verification HMS entry.
       if (extra.authorizationControl && msg.print) {
         if (extra.authorizationControl === 'silent') {
           log.push(`ignored ${String(msg.print.command)}`)
-          return
+          return raiseVerifyHms()
         }
         log.push(`unsigned ${String(msg.print.command)}`)
         const answer = Buffer.from(JSON.stringify({ print: { command: msg.print.command, sequence_id: msg.print.sequence_id, ...UNSIGNED_REPLY } }))
         for (const s of subscribers) s.write(publish(`device/${MOCK_SERIAL}/report`, answer))
-        return
+        return raiseVerifyHms()
       }
       if (msg.system?.command === 'ledctrl') {
         // Answered in a `system` object, refused as the print commands are.

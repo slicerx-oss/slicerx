@@ -715,6 +715,68 @@ test('Bambu: Authorization Control without Developer Mode takes the FTPS login a
   }
 })
 
+// A turned away print command raises the verification HMS entry (0500_0500_0001_0007) in the report's `hms` list,
+// which is absent until then, and the entry stays until `hms: null` clears it: with Developer Mode off, and in each
+// Authorization Control mode. `despiteDeveloperMode` reports Developer Mode on in `fun` and still answers with the
+// unsigned-command refusal. A light command is never turned away and raises nothing.
+test('Bambu: a turned away print command raises the verification HMS entry until it is cleared', async () => {
+  const { MOCK_ACCESS_CODE, MOCK_SERIAL, UNSIGNED_REPLY } = await import('./bambu.ts')
+  const { encode, publish, PacketReader, parsePublish } = await import('./mqtt.ts')
+  const { connect: tlsConnect } = await import('node:tls')
+  const verify = { attr: 83887360, code: 65543 }
+  for (const [mode, fun, answer] of [
+    [{ developerMode: false }, '3EC1AFFF9CFF', 'failed'],
+    [{ authorizationControl: 'verify' }, undefined, 'failed'],
+    [{ authorizationControl: 'silent' }, undefined, undefined],
+    [{ authorizationControl: 'despiteDeveloperMode' }, '3EC18FFF9CFF', 'failed'],
+  ] as const) {
+    const mocks = await startMocks({ only: ['bambu'], state: 'idle' })
+    assert.equal((await post(mocks, '/bambu', mode)).status, 200)
+    const sock = tlsConnect({ host: '127.0.0.1', port: mocks.ports.bambu, rejectUnauthorized: false })
+    try {
+      await new Promise((r, j) => { sock.once('secureConnect', r); sock.once('error', j) })
+      const str = (s: string) => Buffer.concat([Buffer.from([0, Buffer.byteLength(s)]), Buffer.from(s)])
+      const reader = new PacketReader()
+      let report: Record<string, any> = {}
+      const answers: Record<string, any>[] = []
+      sock.on('data', (c: Buffer) => {
+        for (const p of reader.push(c)) {
+          if (p.type !== 3) continue
+          const m = JSON.parse(parsePublish(p).payload.toString('utf8'))
+          if (m.print?.command === 'push_status') report = m.print
+          else if (m.print ?? m.system) answers.push(m.print ?? m.system)
+        }
+      })
+      sock.write(encode(1, 0, Buffer.concat([str('MQTT'), Buffer.from([4, 0xc2, 0, 60]), str('verify-hms'), str('bblp'), str(MOCK_ACCESS_CODE)])))
+      sock.write(encode(8, 2, Buffer.concat([Buffer.from([0, 1]), str(`device/${MOCK_SERIAL}/report`), Buffer.from([0])])))
+      const req = (o: unknown) => sock.write(publish(`device/${MOCK_SERIAL}/request`, Buffer.from(JSON.stringify(o))))
+      const wait = () => new Promise((r) => setTimeout(r, 500))
+      await wait()
+      const label = JSON.stringify(mode)
+      assert.equal(report.fun, fun, label)
+      req({ system: { command: 'ledctrl', sequence_id: '1', led_node: 'chamber_light', led_mode: 'off' } })
+      await wait()
+      assert.equal(report.hms, undefined, label)
+      req({ print: { command: 'pause', sequence_id: '2', param: '' } })
+      await wait()
+      assert.deepEqual(report.hms, [verify], label)
+      const reply = answers.find((a) => a.sequence_id === '2')
+      assert.equal(reply?.result, answer, label)
+      if (answer) assert.equal(reply?.err_code, UNSIGNED_REPLY.err_code, label)
+      // A second refusal keeps the one entry; clearing it empties the list.
+      req({ print: { command: 'pause', sequence_id: '3', param: '' } })
+      await wait()
+      assert.deepEqual(report.hms, [verify], label)
+      assert.equal((await post(mocks, '/bambu', { hms: null })).status, 200)
+      await wait()
+      assert.deepEqual(report.hms, [], label)
+    } finally {
+      sock.destroy()
+      await mocks.stop()
+    }
+  }
+})
+
 // A full card: the FTPS login works and STOR is answered with the storage reply, so the driver can say so.
 test('Bambu: a full card answers the upload 452 and stores nothing', async () => {
   const { MOCK_ACCESS_CODE } = await import('./bambu.ts')
