@@ -11006,7 +11006,10 @@ fn resolve_ranges(
 /// (itself for the first) and how far it moves, mm; None when there are no copies or the plate's settings span
 /// objects in a way copies cannot follow (supports, skirt, draft shield, raft, spiral vase, object list order,
 /// a prime tower kept for every layer).
-fn copies_of(objects: &[&crate::plate::PlateObject], config: &PrintConfig) -> Option<Vec<(usize, [f64; 2])>> {
+pub(crate) fn copies_of(
+    objects: &[&crate::plate::PlateObject],
+    config: &PrintConfig,
+) -> Option<Vec<(usize, [f64; 2])>> {
     let text = |k: &str| match config.raw.get(k) {
         Some(serde_json::Value::String(t)) => t.as_str(),
         _ => "",
@@ -11033,44 +11036,89 @@ fn copies_of(objects: &[&crate::plate::PlateObject], config: &PrintConfig) -> Op
                     && p.fuzzy_paint.is_empty()
             })
     };
-    let same = |a: &crate::plate::PlateObject, b: &crate::plate::PlateObject| {
-        let (ta, tb) = (&a.transform, &b.transform);
-        // The turn and scale (the first three columns) and the height and last row agree; only x and y move.
-        ta.get(..12) == tb.get(..12)
-            && ta.get(14..) == tb.get(14..)
-            && a.slot_overrides == b.slot_overrides
-            && (std::sync::Arc::ptr_eq(&a.mesh, &b.mesh)
-                || (a.mesh.parts.len() == b.mesh.parts.len()
-                    && a.mesh.parts.iter().zip(&b.mesh.parts).all(|(p, q)| {
-                        p.name == q.name
-                            && p.slot == q.slot
-                            && p.positions == q.positions
-                            && p.triangles == q.triangles
-                    })))
-    };
     let mut placed: Vec<(usize, [f64; 2])> = Vec::with_capacity(objects.len());
     for (i, o) in objects.iter().enumerate() {
         let of = if plain(o) {
-            (0..i).find(|&k| {
-                placed.get(k).is_some_and(|c| c.0 == k)
-                    && objects.get(k).is_some_and(|p| plain(p) && same(p, o))
+            (0..i).find_map(|k| {
+                let p = objects.get(k)?;
+                let first = placed.get(k).is_some_and(|c| c.0 == k) && plain(p);
+                first.then(|| moved(p, o)).flatten().map(|off| (k, off))
             })
         } else {
             None
         };
-        let off = |k: usize| {
-            let (a, b) = (
-                objects.get(k).map_or(&o.transform, |p| &p.transform),
-                &o.transform,
-            );
-            [
-                f64::from(b[12]) - f64::from(a[12]),
-                f64::from(b[13]) - f64::from(a[13]),
-            ]
-        };
-        placed.push(of.map_or((i, [0.0, 0.0]), |k| (k, off(k))));
+        placed.push(of.unwrap_or((i, [0.0, 0.0])));
     }
     placed.iter().enumerate().any(|(i, c)| c.0 != i).then_some(placed)
+}
+
+/// How far `b` stands from `a` across the bed, mm, when it is `a` moved there and nothing else: the same mesh,
+/// filaments and height ranges under the same turn and scale, or, for two build items of a project file (whose parts load already
+/// placed, [`crate::mesh::Placement`]), the same object of the file under the same item turn and scale, with parts
+/// of the same triangles whose vertices lie at the items' difference. None for anything else.
+fn moved(a: &crate::plate::PlateObject, b: &crate::plate::PlateObject) -> Option<[f64; 2]> {
+    // The parts are placed in single precision, so each vertex is the item's difference away within its rounding;
+    // a micron is well past that and well under anything a slice resolves.
+    const ROUNDING_MM: f64 = 1e-3;
+    type Points = [[f32; 3]];
+    let (ta, tb) = (&a.transform, &b.transform);
+    // The turn and scale (the first three columns) and the height and last row agree; only x and y move.
+    if ta.get(..12) != tb.get(..12) || ta.get(14..) != tb.get(14..) || a.slot_overrides != b.slot_overrides {
+        return None;
+    }
+    // A copy prints the first one's layers, so the settings and layer heights a project file gives each by height
+    // (`Mesh::height_ranges`, `Mesh::layer_heights`) must be the same.
+    if a.mesh.height_ranges != b.mesh.height_ranges || a.mesh.layer_heights != b.mesh.layer_heights {
+        return None;
+    }
+    let own = [
+        f64::from(tb[12]) - f64::from(ta[12]),
+        f64::from(tb[13]) - f64::from(ta[13]),
+    ];
+    let (ma, mb) = (&a.mesh, &b.mesh);
+    let parts_match = |same: &dyn Fn(&Points, &Points) -> bool| {
+        ma.parts.len() == mb.parts.len()
+            && ma.parts.iter().zip(&mb.parts).all(|(p, q)| {
+                p.name == q.name
+                    && p.slot == q.slot
+                    && p.triangles == q.triangles
+                    && same(&p.positions, &q.positions)
+            })
+    };
+    if std::sync::Arc::ptr_eq(ma, mb) || parts_match(&|u, v| u == v) {
+        return Some(own);
+    }
+    // Build items of one object: only an exact copy of its turn and scale, and nothing of their own on the meshes.
+    let (pa, pb) = (ma.placement.as_ref()?, mb.placement.as_ref()?);
+    let bare =
+        |m: &crate::mesh::Mesh| m.volumes.is_empty() && m.part_settings.is_empty() && m.settings.is_null();
+    if pa.object != pb.object || pa.transform.get(..9) != pb.transform.get(..9) || !bare(ma) || !bare(mb) {
+        return None;
+    }
+    let step: [f64; 3] = std::array::from_fn(|c| {
+        pb.transform.get(9 + c).copied().unwrap_or(0.0) - pa.transform.get(9 + c).copied().unwrap_or(0.0)
+    });
+    // The items' difference is in the mesh's space; the plate object's turn takes it onto the bed, where it may
+    // only move across.
+    let m = ta.map(f64::from);
+    let across = |r: usize| {
+        (0..3)
+            .map(|c| m.get(c * 4 + r).copied().unwrap_or(0.0) * step.get(c).copied().unwrap_or(0.0))
+            .sum::<f64>()
+    };
+    if across(2).abs() > 1e-9 {
+        return None;
+    }
+    let close = |u: &Points, v: &Points| {
+        u.len() == v.len()
+            && u.iter().zip(v).all(|(p, q)| {
+                p.iter()
+                    .zip(q)
+                    .zip(&step)
+                    .all(|((&p, &q), &d)| (f64::from(q) - f64::from(p) - d).abs() <= ROUNDING_MM)
+            })
+    };
+    parts_match(&close).then(|| [own[0] + across(0), own[1] + across(1)])
 }
 
 /// Merges bit-identical vertices and applies the object transform.
