@@ -8,10 +8,11 @@
 // lookups here turn a point on a face (and its normal) into that index.
 // Given a `design` instead of a model, a modeling tool adds a step to that
 // design's editable history (design.ts) rather than writing a loose STL.
-import { bakeMesh, keyOfTriangle, stepName, type FaceFrame, type HoleSpec, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
+import { bakeMesh, customHoleProblem, keyOfTriangle, stepName, type FaceFrame, type HoleSpec, type SketchConstraint, type StepParams } from '@slicerx/cad-history'
 import { defineTool, flatFaces, partTriangles, soupTriangles, type FaceSummary, type PilotTool, type Tri } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { DesignHost, DesignCommit } from '@slicerx/cad-history'
+import { nozzleOr } from './design-check'
 import { modelArg, vec3, type GeomCall } from './args'
 import { designArg, designSummary, faceAt, landedNote, item, partAt, partsAt, type Design } from './design-tools'
 import { ToolInputError } from './errors'
@@ -223,7 +224,7 @@ export interface CadFiles {
   stl(stlPath: string): Float32Array
 }
 
-export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined }): PilotTool<never>[] {
+export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefined; /** The printer's nozzle, mm, for the smallest hole; 0.4 without one. */ nozzleMm?: (() => number | undefined) | undefined }): PilotTool<never>[] {
   const call = deps.files.call
   const path = (model: string): Promise<string> => deps.files.path(model)
   const triangles = (stlPath: string): Tri[] => soupTriangles(deps.files.stl(stlPath))
@@ -923,6 +924,9 @@ export function cadTools(deps: { files: CadFiles; designs?: DesignHost | undefin
     }),
     async run(i) {
       oneOf(i)
+      // narrower than the nozzle closes up as it prints: refused as the hole tool refuses it, before the engine runs
+      const small = i.diameter_mm === undefined ? null : customHoleProblem(i.diameter_mm, nozzleOr(deps.nozzleMm?.()))
+      if (small) throw new ToolInputError(small)
       if (i.face && (i.center || i.axis)) throw new ToolInputError('pick: give "face" (a point on the wall) or "center" and "axis", not both')
       if (!i.face && !(i.center && i.axis)) throw new ToolInputError('pick: give "face" (a point on the hole\'s wall) or "center" and "axis" (a point on its axis line and the axis)')
       if (i.diameter_mm === undefined && i.depth_mm === undefined && !i.counterbore && !i.countersink) throw new ToolInputError('give what the hole becomes: diameter_mm, depth_mm, counterbore or countersink')
