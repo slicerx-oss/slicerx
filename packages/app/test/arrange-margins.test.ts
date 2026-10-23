@@ -109,6 +109,26 @@ describe('arrange with what prints around each object', () => {
     expect(hullHitsRect(hullOf(corners), zone[0]!)).toBe(false)
   })
 
+  it('keeps the skirt round the prime tower and the objects off an excluded area', () => {
+    // The tower stands at the back left and the front left corner is excluded: the skirt goes round the tower too, so
+    // an object just right of the corner would pull the skirt's hull across it.
+    const bed = { widthMm: 200, depthMm: 200, heightMm: 100 }
+    const zone = excludeBoxes([[0, 0], [40, 0], [40, 40], [0, 40]])
+    setAvoidAreas(zone)
+    const cfg = { ...BRIM, brim_type: 'no_brim', enable_prime_tower: true, prime_tower_auto_position: false, wipe_tower_x: 10, wipe_tower_y: 150, prime_tower_width: 35, prime_tower_brim_width: 3 }
+    const margins = marginsFor(cfg, 2)
+    const tower = margins.keepOut[0]!
+    expect(tower.y).toBeGreaterThan(100)
+    const items = ['a', 'b', 'c'].map((id) => item(id, 30, 30))
+    const r = arrange(items, [], bed, { gapMm: 3, rotate: false, margins })
+    expect(r.leftOver).toEqual([])
+    const reach = margins.reach({ w: 30, h: 30, height: 20 })
+    const boxes = [...items.map((it) => printed(it, r.transforms[it.id]!, reach)), { x: tower.x - reach, y: tower.y - reach, w: tower.w + 2 * reach, h: tower.h + 2 * reach }]
+    for (const b of boxes) expect(inside(b, bed)).toBe(true)
+    const corners = boxes.flatMap((b): [number, number][] => [[b.x, b.y], [b.x + b.w, b.y], [b.x + b.w, b.y + b.h], [b.x, b.y + b.h]])
+    expect(hullHitsRect(hullOf(corners), zone[0]!)).toBe(false)
+  })
+
   it('keeps off the prime tower when the plate prints in two filaments', () => {
     const bed = { widthMm: 160, depthMm: 160, heightMm: 100 }
     const cfg = { ...BRIM, enable_prime_tower: true, wipe_tower_x: 10, wipe_tower_y: 10, prime_tower_width: 35, prime_tower_brim_width: 3 }
