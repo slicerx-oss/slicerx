@@ -10,7 +10,7 @@
 //! usual coverage rule already makes solid, cleaned up: thin bands are dropped (thinner than 0.68 solid line
 //! spacings, or 0.79 with narrow detection off, when no concentric bead would print them), and gaps narrower than
 //! 1.2 lines are closed, since neither can be filled as sparse or solid infill. With narrow detection off, the
-//! solid area also grows 0.2 lines into the sparse area.
+//! solid area also grows 0.15 lines into the sparse area.
 
 use crate::config::PrintConfig;
 use crate::geom::mm;
@@ -337,8 +337,8 @@ pub(crate) fn solid_area(i: &Input<'_>) -> Shapes {
         return total;
     }
     // Gaps narrower than 1.2 lines close. A band keeps its own width where its beads are concentric; with narrow
-    // detection off it grows 0.2 lines into the sparse area, which its lines need to fill it.
-    let grow = if i.narrow { 0 } else { mm(0.2 * s) };
+    // detection off it grows 0.15 lines into the sparse area.
+    let grow = if i.narrow { 0 } else { mm(0.15 * s) };
     let closed = perimeters::offset(&total, close);
     let regular = perimeters::offset(&closed, -(close - grow));
     // Small drops on smooth parts of the model are dropped, unless they fill a whole internal piece.
