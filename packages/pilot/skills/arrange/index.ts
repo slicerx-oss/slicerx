@@ -52,10 +52,10 @@ function bedArea(v: BuildVolume): number {
 export function createArrange(shared: ToolShared) {
   return defineSkill({
     name: 'arrange',
-    version: '1.7.0',
+    version: '1.8.0',
     permission: 'slice',
     description:
-      'Pack copies of an object onto plates. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. Changes only the project.',
+      "Pack copies of an object onto plates. The layout keeps room for each copy's brim (sized from its first layer, as the slice sizes an automatic brim), raft and skirt, and stays clear of the printer's excluded areas and the prime tower's room. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. Changes only the project.",
     input: z.object({
       objectId: z.string().optional().describe('Object id or name; defaults to the first object'),
       count: z.number().int().min(1).max(500).optional().describe('Total copies'),
@@ -111,9 +111,9 @@ export function createArrange(shared: ToolShared) {
 
       const plates: ProjectPlate[] = []
       let left = count
-      const caps = targets.map((t, k) => ctx.project?.arrangeCapacity
-        ? { perPlate: ctx.project.arrangeCapacity(obj.id, t.vol, spacing, k + 1), rotated: false }
-        : fitGrid(t.vol, ox, oy, spacing))
+      const caps = await Promise.all(targets.map(async (t, k) => ctx.project?.arrangeCapacity
+        ? { perPlate: await ctx.project.arrangeCapacity(obj.id, t.vol, spacing, k + 1), rotated: false }
+        : fitGrid(t.vol, ox, oy, spacing)))
       const even = Math.ceil(count / targets.length)
       for (let k = 0; k < targets.length && left > 0; k++) {
         const t = targets[k]
@@ -127,7 +127,9 @@ export function createArrange(shared: ToolShared) {
         plates.push(plate)
       }
       if (left > 0) return { ok: false, summary: `Only ${count - left} of ${count} fit on ${targets.length} plates. Add plates or printers.`, output: { placed: count - left, count } }
-      const set = ctx.project?.setPlates(plates)
+      const laid = ctx.project?.setPlates(plates)
+      const nested = await ctx.project?.arrangePlates?.(plates.map((p) => p.index), spacing)
+      const set = laid || nested ? { leftOff: (laid ? laid.leftOff : 0) + (nested?.leftOff ?? 0), notAdded: (laid ? laid.notAdded ?? 0 : 0) + (nested?.notAdded ?? 0) } : undefined
       // Old slices describe plates that no longer exist.
       shared.slices.clear()
       const missed = leftOffWords(set)
