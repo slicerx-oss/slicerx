@@ -309,6 +309,9 @@ fn parse(g: &str) -> Parsed {
     p
 }
 
+/// The feature label of a prime tower pass.
+const TOWER: &str = "Prime tower";
+
 /// What the lead did, counted over the whole file.
 #[derive(Debug, Default)]
 struct Leads {
@@ -320,6 +323,8 @@ struct Leads {
     after_fan: usize,
     /// The ones that stop right after a tool change.
     after_change: usize,
+    /// The ones that stop right after a prime tower pass and the travel from it to the part.
+    after_tower: usize,
     /// The ones that span the whole lead.
     full: usize,
     /// The feature of the move each raise was written for.
@@ -383,16 +388,24 @@ fn check(base: &str, with: &str, lead: f64) -> Leads {
             !b.changes.iter().any(|&c| c > start && c <= i),
             "a raise never moves across a tool change (move {start} to {i})"
         );
+        assert!(
+            !w.moves[start..i].iter().any(|m| m.feature == TOWER),
+            "a raise never moves into a prime tower pass (move {start} to {i}, {})",
+            w.moves[i].text
+        );
         let time: f64 = w.moves[start..i].iter().map(|m| m.time).sum();
         out.windows += 1;
         out.longest = out.longest.max(time);
         out.targets.push(w.moves[i].feature.clone());
         let fans_before = w.fans.iter().filter(|&&(at, _)| at == start).count();
         let changed_before = b.changes.contains(&start);
+        let tower_before = start > 0 && w.moves[start - 1].feature == TOWER;
         if layer_start(start) {
             out.at_layer_start += 1;
         } else if changed_before {
             out.after_change += 1;
+        } else if tower_before {
+            out.after_tower += 1;
         } else if fans_before >= 2 {
             out.after_fan += 1;
         } else {
@@ -557,6 +570,78 @@ fn a_raise_after_a_tool_change_stops_at_the_change() {
     // every other layer's stops at its change (or at a drop after it). None gets its whole 5 s.
     assert!(l.after_change > 10, "{l:?}");
     assert_eq!(l.full, 0, "{l:?}");
+}
+
+/// The two filament flare of case 7 with its prime tower on, filament 2 printing `features`.
+fn two_filaments_with_tower(features: &[&str]) -> Map<String, Value> {
+    let mut c = a1();
+    for f in features {
+        c.insert((*f).into(), json!(2));
+    }
+    c.insert("overhang_fan_threshold".into(), json!(["0%", "0%"]));
+    c.insert("enable_prime_tower".into(), json!(true));
+    c.insert("nozzle_temperature".into(), json!([220, 220]));
+    c.insert("filament_diameter".into(), json!([1.75, 1.75]));
+    c.insert("filament_type".into(), json!(["PLA", "PLA"]));
+    c.insert("filament_colour".into(), json!(["#FFFFFF", "#000000"]));
+    c
+}
+
+/// The raises of a file without a lead whose walk back reaches a prime tower pass before the lead, split by what
+/// lies between: nothing but the travel from the tower, or part moves shorter than the lead.
+fn raises_after_a_tower(base: &str, lead: f64) -> (usize, usize) {
+    let p = parse(base);
+    let (mut right_after, mut part_between) = (0, 0);
+    let mut last = 0.0;
+    for &(at, v) in &p.fans {
+        let raise = v > last;
+        last = v;
+        if !raise || p.layer_starts.binary_search(&at).is_ok() || at >= p.moves.len() {
+            continue;
+        }
+        let (mut i, mut time, mut part) = (at, 0.0, false);
+        while i > 0 && time < lead {
+            i -= 1;
+            let m = &p.moves[i];
+            if m.feature == TOWER {
+                if part {
+                    part_between += 1;
+                } else {
+                    right_after += 1;
+                }
+                break;
+            }
+            if p.fans.iter().any(|&(f, _)| f == i + 1 && f != at)
+                || p.changes.contains(&(i + 1))
+                || p.layer_starts.binary_search(&(i + 1)).is_ok()
+            {
+                break;
+            }
+            time += m.time;
+            part |= m.run;
+        }
+    }
+    (right_after, part_between)
+}
+
+#[test]
+fn a_raise_never_reaches_back_over_a_prime_tower_pass() {
+    // The flare in two filaments with a prime tower. Inner walls in filament 2: a layer that starts in filament 2
+    // changes to 1, passes the tower and travels straight to the overhanging outer wall, so that raise gets no lead.
+    // Sparse infill in filament 2: after the tower come the inner walls, shorter than the lead, then the outer wall,
+    // so the raise lands right after the tower's travel. Neither raise may run the tower at the part's fan.
+    let mut seen = (0, 0);
+    for features in [["inner_wall_filament_id"], ["sparse_infill_filament_id"]] {
+        let c = two_filaments_with_tower(&features);
+        let base = slice(&flare(), &with_lead(&c, 0.0));
+        assert!(base.contains(&format!(";TYPE:{TOWER}")) || base.contains(&format!("; FEATURE: {TOWER}")));
+        let (right_after, part_between) = raises_after_a_tower(&base, 3.0);
+        seen = (seen.0 + right_after, seen.1 + part_between);
+        let g = slice(&flare(), &with_lead(&c, 3.0));
+        let l = check(&base, &g, 3.0);
+        assert_eq!(l.after_tower, part_between, "{features:?}: {l:?}");
+    }
+    assert!(seen.0 > 10 && seen.1 > 10, "both kinds of layer occur: {seen:?}");
 }
 
 #[test]
