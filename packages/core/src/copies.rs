@@ -67,7 +67,21 @@ pub(crate) fn slice(
             _ => false,
         })
     });
-    if meet && let Some(whole) = session.whole_plate() {
+    // A brim near the bed's edge or an excluded area is cut to the bed where its object stands (`brim::Bed`), so
+    // a copy moved from there, or moved there, cannot reuse the original's: the whole plate is sliced instead.
+    let near_edge = near_bed_edge(config);
+    let edge = session.instances().iter().zip(&placed).any(|(c, at)| {
+        c.shift != [0, 0]
+            && (extents
+                .get(c.sub)
+                .copied()
+                .flatten()
+                .is_some_and(|e| near_edge(&e))
+                || at.is_some_and(|e| near_edge(&e)))
+    });
+    if (meet || edge)
+        && let Some(whole) = session.whole_plate()
+    {
         let mut out = whole.slice_range_with(config, layers, progress)?;
         for w in session.warnings() {
             if !out.warnings.contains(w) {
@@ -165,6 +179,32 @@ pub(crate) fn slice(
     out.first_layer_info = info;
     out.objects = session.footprints().to_vec();
     Ok(out)
+}
+
+/// Whether a first layer's extent (internal units) comes within a line width of the bed's edge or of an excluded
+/// area (`bed_exclude_area`), or past them: where a brim may have been cut to the bed.
+fn near_bed_edge(cfg: &PrintConfig) -> impl Fn(&[i32; 4]) -> bool {
+    let to_mm = |v: i32| f64::from(v) / crate::geom::SCALE;
+    let margin = cfg.line_width.max(0.0);
+    let bed = cfg.bed_rect();
+    let zones: Vec<[f64; 4]> = crate::preflight::exclude_zones(cfg)
+        .iter()
+        .map(|z| {
+            z.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
+                [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
+            })
+        })
+        .collect();
+    move |e: &[i32; 4]| {
+        let [x0, y0, x1, y1] = e.map(to_mm);
+        x0 < bed[0] + margin
+            || y0 < bed[1] + margin
+            || x1 > bed[2] - margin
+            || y1 > bed[3] - margin
+            || zones
+                .iter()
+                .any(|z| x0 < z[2] + margin && z[0] - margin < x1 && y0 < z[3] + margin && z[1] - margin < y1)
+    }
 }
 
 /// Bounds of a layer's points, internal units.
