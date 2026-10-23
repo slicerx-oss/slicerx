@@ -12,6 +12,7 @@ import { LoadingWisp, lightStudio } from './wisp'
 import { gpuProfile } from './gpu'
 import { DegradeGuard, MotionTuner } from './frame-budget'
 import { FrameFence } from './gpudone'
+import { boxMotion, ResizeSettle, type BoxAnimation } from './box-motion'
 import type { ToolChangerSpec } from './toolchanger'
 import type { PurgePlan } from './purge'
 import type { HeadModel } from './heads'
@@ -238,6 +239,9 @@ export function dimHex(hex: string): string {
   return `#${q((n >> 16) & 255)}${q((n >> 8) & 255)}${q(n & 255)}`
 }
 
+/** The longest a canvas resize waits on a pane slide beside the view, ms. A slide takes 160 to 200 ms. */
+const RESIZE_HOLD_MS = 1000
+
 class ViewportImpl implements Viewport {
   readonly canvas: HTMLCanvasElement
   private readonly renderer: WebGLRenderer
@@ -366,7 +370,16 @@ class ViewportImpl implements Viewport {
   // pointer turns solid at once, every model is solid while one is dragged or the slice is out of date.
   private toolpathLook = { on: false, stale: false }
   private solidId: string | null = null
-  private resizeTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * CSS follows the pane while it moves; the buffer is sized once the box settles. A busy machine can draw no frame of
+   * a slide for longer than the 100 ms wait, so a slide still running beside the view is waited out, for at most
+   * RESIZE_HOLD_MS, rather than sizing the buffer for a box the slide is about to leave.
+   */
+  private readonly resizeSettle = new ResizeSettle(
+    () => this.resize(),
+    () => (typeof document !== 'undefined' && typeof document.getAnimations === 'function' ? boxMotion(this.canvas, document.getAnimations() as unknown as BoxAnimation[]) : null),
+    { wait: 100, hold: RESIZE_HOLD_MS, now: () => performance.now() },
+  )
   private bufferRatio = 0
   private width = 1
   private height = 1
@@ -987,12 +1000,7 @@ class ViewportImpl implements Viewport {
 
   private scheduleResize(): void {
     if (this.disposed) return
-    if (this.resizeTimer !== null) clearTimeout(this.resizeTimer)
-    // CSS follows the pane while it moves; allocate the buffer once the motion settles.
-    this.resizeTimer = setTimeout(() => {
-      this.resizeTimer = null
-      this.resize()
-    }, 100)
+    this.resizeSettle.schedule()
   }
 
   private resize(): void {
@@ -4361,7 +4369,7 @@ class ViewportImpl implements Viewport {
     this.raf = 0
     for (const c of this.cleanups) c()
     this.ro?.disconnect()
-    if (this.resizeTimer !== null) clearTimeout(this.resizeTimer)
+    this.resizeSettle.dispose()
     this.io?.disconnect()
     this.controls.dispose()
     for (const o of this.objects.values()) disposeObject(o)

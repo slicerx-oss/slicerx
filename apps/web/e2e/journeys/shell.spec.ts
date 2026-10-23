@@ -358,39 +358,86 @@ async function bufferAtBox(page: Page): Promise<void> {
     .toBe(true)
 }
 
+/** Records every write of the view canvas's width from here on: the page is already up, so no init script. */
+async function watchBufferWrites(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const state = window as unknown as { bufferWrites?: { previous: number; next: number }[] }
+    if (state.bufferWrites) return
+    state.bufferWrites = []
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'width')!
+    const read = descriptor.get!
+    const write = descriptor.set!
+    Object.defineProperty(HTMLCanvasElement.prototype, 'width', {
+      ...descriptor,
+      set(this: HTMLCanvasElement, value: number) {
+        const previous = read.call(this) as number
+        write.call(this, value)
+        if (this.matches('canvas.vp-canvas')) state.bufferWrites!.push({ previous, next: value })
+      },
+    })
+  })
+}
+
+/** The canvas width writes since the list was last cleared. */
+const bufferWrites = (page: Page) => page.evaluate(() => (window as unknown as { bufferWrites: { previous: number; next: number }[] }).bufferWrites)
+const clearBufferWrites = (page: Page) => page.evaluate(() => { (window as unknown as { bufferWrites: unknown[] }).bufferWrites = [] })
+
 test.describe('resizable panes', () => {
   test('resizing a pane does not reset the old canvas buffer first', async ({ page }) => {
-    // Watches every write of the canvas width from here on: the page is already up, so no init script.
-    await page.evaluate(() => {
-      const state = window as unknown as { bufferWrites?: { previous: number; next: number }[] }
-      if (state.bufferWrites) return
-      state.bufferWrites = []
-      const descriptor = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'width')!
-      const read = descriptor.get!
-      const write = descriptor.set!
-      Object.defineProperty(HTMLCanvasElement.prototype, 'width', {
-        ...descriptor,
-        set(this: HTMLCanvasElement, value: number) {
-          const previous = read.call(this) as number
-          write.call(this, value)
-          if (this.matches('canvas.vp-canvas')) state.bufferWrites!.push({ previous, next: value })
-        },
-      })
-    })
+    await watchBufferWrites(page)
     await defaultPanes(page)
     try {
       await sidebarEdge(page).focus()
       // A resize still due from the steps before would land in the count below.
       await bufferAtBox(page)
-      await page.evaluate(() => { (window as unknown as { bufferWrites: unknown[] }).bufferWrites = [] })
+      await clearBufferWrites(page)
       await page.keyboard.press('End')
       await expect.poll(() => paneWidth(page)).toBeGreaterThanOrEqual(540)
       // The count is read once the new buffer is in, not on a shape that is only close to the new box.
       await bufferAtBox(page)
-      const writes = await page.evaluate(() => (window as unknown as { bufferWrites: { previous: number; next: number }[] }).bufferWrites)
+      const writes = await bufferWrites(page)
       expect(writes).toHaveLength(1)
       // Reassigning the current width clears the buffer and can block on software graphics.
       expect(writes.filter((w) => w.previous === w.next)).toEqual([])
+    } finally {
+      await layoutReset(page)
+    }
+  })
+
+  test('a pane slide that stalls partway still sizes the canvas buffer once', async ({ page }) => {
+    // On a busy runner a slide can draw no frame for longer than the viewport's resize wait (100 ms), which once
+    // sized the buffer for a box the slide was about to leave and then again for the box it stopped at (690, then
+    // 536, then 534 px). Holding the slide still for 300 ms near its end gives that gap on any machine.
+    await watchBufferWrites(page)
+    await defaultPanes(page)
+    try {
+      await sidebarEdge(page).focus()
+      await bufferAtBox(page)
+      await clearBufferWrites(page)
+      await page.evaluate(() => {
+        const state = window as unknown as { slideHeld?: boolean }
+        state.slideHeld = false
+        const pane = document.querySelector('aside.pane')!
+        const hold = () => {
+          const slide = pane.getAnimations().find((a) => a instanceof CSSTransition && a.transitionProperty === 'width')
+          if (!slide) return requestAnimationFrame(hold)
+          // Near the end, where the box is a few px short of where it stops.
+          slide.pause()
+          slide.currentTime = Number(slide.effect!.getComputedTiming().duration) * 0.7
+          setTimeout(() => {
+            slide.play()
+            state.slideHeld = true
+          }, 300)
+        }
+        requestAnimationFrame(hold)
+      })
+      await page.keyboard.press('End')
+      await expect.poll(() => page.evaluate(() => (window as unknown as { slideHeld: boolean }).slideHeld)).toBe(true)
+      await expect.poll(() => paneWidth(page)).toBeGreaterThanOrEqual(540)
+      await bufferAtBox(page)
+      const writes = await bufferWrites(page)
+      const final = await page.locator('canvas.vp-canvas').evaluate((c: HTMLCanvasElement) => c.width)
+      expect(writes).toEqual([{ previous: writes[0]?.previous, next: final }])
     } finally {
       await layoutReset(page)
     }

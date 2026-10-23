@@ -4,6 +4,10 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+### Fixed
+
+- A pane sliding beside the view sizes the canvas buffer once, where it stops. On a busy machine the slide could draw no frame for longer than the resize wait, and the buffer was sized for a box a few px short of the end, then again for the final one.
+
 ## [0.2.0] - 2026-10-22
 
 ### Added
