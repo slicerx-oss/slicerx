@@ -117,9 +117,10 @@ pub(crate) fn slice(
         at = placed.get(k).map_or([0.0, 0.0], center);
         order.push(k);
     }
-    let mut merged: Vec<LayerPaths> = Vec::new();
+    let copies: Vec<&crate::session::Instance> =
+        order.iter().filter_map(|&k| session.instances().get(k)).collect();
     let mut info = crate::output::FirstLayerInfo::default();
-    for c in order.iter().filter_map(|&k| session.instances().get(k)) {
+    for c in &copies {
         #[allow(clippy::cast_possible_truncation, reason = "outlines are single precision")]
         let (dx, dy) = (
             (f64::from(c.shift[0]) / crate::geom::SCALE) as f32,
@@ -140,19 +141,44 @@ pub(crate) fn slice(
                 ]
             }));
         }
-        let Some(out) = outs.get(c.sub).and_then(Option::as_ref) else {
-            continue;
-        };
-        for (i, l) in out.layers.iter().enumerate() {
+    }
+    // Each plate layer holds the copies' paths in print order and is timed and cooled as one layer. The layers
+    // are made side by side: on a full plate this was a good part of the slice on one thread.
+    let configs = outs
+        .iter()
+        .flatten()
+        .next()
+        .map_or(&[][..], |o| o.configs.as_slice());
+    let count = outs.iter().flatten().map(|o| o.layers.len()).max().unwrap_or(0);
+    let merged: Vec<LayerPaths> = crate::par::map_range(0..u32::try_from(count).unwrap_or(u32::MAX), |i| {
+        let mut layer: Option<LayerPaths> = None;
+        for c in &copies {
+            let Some(l) = outs
+                .get(c.sub)
+                .and_then(Option::as_ref)
+                .and_then(|o| o.layers.get(i as usize))
+            else {
+                continue;
+            };
             let mut l = l.clone();
             move_layer(&mut l, c.shift);
             crate::owners::to_plate(&mut l, c.object);
-            match merged.get_mut(i) {
+            match layer.as_mut() {
                 Some(dst) => append_layer(dst, l),
-                None => merged.push(l),
+                None => layer = Some(l),
             }
         }
-    }
+        let mut l = layer?;
+        let own = usize::from(l.cfg)
+            .checked_sub(1)
+            .and_then(|i| configs.get(i))
+            .unwrap_or(config);
+        crate::paths::cool(&mut l, own);
+        Some(l)
+    })
+    .into_iter()
+    .flatten()
+    .collect();
     let Some(mut out) = outs.iter_mut().find_map(Option::take) else {
         return session.slice_object_range(config, 0..0, progress);
     };
@@ -163,13 +189,6 @@ pub(crate) fn slice(
                 out.warnings.push(w);
             }
         }
-    }
-    for l in &mut merged {
-        let own = usize::from(l.cfg)
-            .checked_sub(1)
-            .and_then(|i| out.configs.get(i))
-            .unwrap_or(config);
-        crate::paths::cool(l, own);
     }
     out.layers = merged;
     out.layer_count = session.layer_count();

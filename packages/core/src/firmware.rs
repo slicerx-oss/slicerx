@@ -13,10 +13,8 @@ use std::fmt::Write as _;
 // ------------------------------------------------------------ object labels
 
 /// Convex hull of points, counterclockwise, no repeated last point.
-pub(crate) fn convex_hull(mut pts: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
-    crate::sorting::sort_by(&mut pts, |a, b| {
-        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-    });
+pub(crate) fn convex_hull(pts: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
+    let mut pts = sort_points(pts);
     pts.dedup();
     if pts.len() < 3 {
         return pts;
@@ -50,6 +48,39 @@ pub(crate) fn convex_hull(mut pts: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
     hull.shrink_to_fit();
     hull
 }
+
+/// Sorts points by x, then y, keeping equal points (0 and -0 alike) in the order they came: the shared stable sort's
+/// order under `partial_cmp`.
+fn sort_points(mut pts: Vec<[f64; 2]>) -> Vec<[f64; 2]> {
+    #[cfg(feature = "parallel")]
+    if pts.len() > PARALLEL_SORT && pts.iter().flatten().all(|v| !v.is_nan()) {
+        // An object of millions of vertices spent most of a second in the shared sort on one thread. Keys in the
+        // same order, made unique by the point's place, sort in parallel to the same result.
+        let key = |v: f64| {
+            let b = (v + 0.0).to_bits();
+            if b >> 63 == 1 { !b } else { b | 1 << 63 }
+        };
+        let mut keyed: Vec<(u64, u64, usize)> = pts
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (key(p[0]), key(p[1]), i))
+            .collect();
+        crate::par::sort(&mut keyed);
+        let sorted: Vec<[f64; 2]> = keyed
+            .iter()
+            .filter_map(|&(_, _, i)| pts.get(i).copied())
+            .collect();
+        return sorted;
+    }
+    crate::sorting::sort_by(&mut pts, |a, b| {
+        a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    pts
+}
+
+/// Points past which [`sort_points`] sorts in parallel.
+#[cfg(feature = "parallel")]
+const PARALLEL_SORT: usize = 50_000;
 
 /// A footprint per plate object: the hull of every part's transformed vertices. The objects' hulls are worked
 /// out side by side: on a part of millions of vertices each takes a good part of a second on one thread.
@@ -1871,6 +1902,33 @@ mod tests {
         let h = convex_hull(pts);
         assert_eq!(h, vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]);
         assert_eq!(h.capacity(), h.len());
+    }
+
+    #[test]
+    fn a_large_point_set_sorts_as_the_shared_sort_does() {
+        // repeated points, 0 and -0 on both axes and both signs, more than the parallel sort takes
+        let mut seed = 7u64;
+        let mut next = || {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            seed >> 33
+        };
+        let pts: Vec<[f64; 2]> = (0..120_000)
+            .map(|_| {
+                let v = |r: u64| match r % 7 {
+                    0 => 0.0,
+                    1 => -0.0,
+                    _ => (f64::from(u32::try_from(r % 2001).unwrap_or(0)) - 1000.0) / 8.0,
+                };
+                [v(next()), v(next())]
+            })
+            .collect();
+        let mut want = pts.clone();
+        crate::sorting::sort_by(&mut want, |a, b| {
+            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        let got = sort_points(pts);
+        let bits = |v: &[[f64; 2]]| v.iter().map(|p| p.map(f64::to_bits)).collect::<Vec<_>>();
+        assert_eq!(bits(&got), bits(&want));
     }
 
     fn square(name: &str, x: f64, y: f64) -> ObjectFootprint {
