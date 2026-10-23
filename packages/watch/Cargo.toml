@@ -37,6 +37,6 @@ serde_json = "=1.0.151"
 sx-llm = { path = "../pilot/llm", optional = true }
 # The code exchange with sx-link (CPace).
 sx-cpace = { path = "../connect/cpace" }
-tokio = { version = "=1.53.1", features = ["rt", "net", "macros", "time", "sync"] }
+tokio = { version = "=1.53.3", features = ["rt", "net", "macros", "time", "sync"] }
 tokio-tungstenite = "=0.30.0"
 zune-jpeg = "=0.5.15"
