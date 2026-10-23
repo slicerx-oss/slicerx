@@ -30,12 +30,16 @@ describe('Strikes', () => {
   it('outlines an area in the hit color over a faint wash, keeps it when marks change, and clears it', () => {
     const s = new Strikes()
     s.setColors('#ff0000', '#ffaa00')
-    s.setArea([[15, 5], [25, 5], [25, 15], [15, 15]], 0.4)
+    s.setArea([[15, 5], [25, 5], [25, 15], [15, 15]])
     const area = s.root.getObjectByName('strike area')!
     expect(area.children.map((c) => c.type)).toEqual(['Mesh', 'Line', 'Line', 'Line'])
     const line = area.children[2] as Line
     // Four corners and the closing point, over the toolpaths like the marks.
-    expect(line.geometry.getAttribute('position').count).toBe(5)
+    const pos = line.geometry.getAttribute('position')
+    expect(pos.count).toBe(5)
+    // On the bed, where the plate draws the area, though the mark naming it sits up at its layer.
+    for (let i = 0; i < pos.count; i++) expect(pos.getZ(i)).toBe(0)
+    expect(area.children[0]!.position.z).toBe(0)
     expect((line.material as LineBasicMaterial).depthTest).toBe(false)
     expect((line.material as LineBasicMaterial).color.getHexString()).toBe('ff0000')
     s.set([{ x: 20, y: 10, z: 0.4, selected: true }])
