@@ -7,6 +7,7 @@ members = [
   "packages/core",
   "packages/core/wasm",
   "packages/core/cli",
+  "packages/core/alloc",
   "packages/core/ffi",
   "packages/settings",
   "packages/profiles",
@@ -36,6 +37,7 @@ default-members = [
   "packages/edition-config/rust",
   "packages/core",
   "packages/core/cli",
+  "packages/core/alloc",
   "packages/core/ffi",
   "packages/settings",
   "packages/profiles",
@@ -60,6 +62,7 @@ publish = false
 
 [workspace.dependencies]
 sx-core = { path = "packages/core" }
+sx-alloc = { path = "packages/core/alloc" }
 sx-settings = { path = "packages/settings" }
 sx-profiles = { path = "packages/profiles" }
 sx3mf = { path = "packages/sx3mf" }
@@ -70,9 +73,10 @@ sx-permit = { path = "packages/pilot/permit" }
 # Workspace lints. Crates opt in with `[lints] workspace = true`.
 # sx-wasm and the desktop app are FFI or macro-heavy and set their own.
 [workspace.lints.rust]
-# One exception: packages/connect/stills sets its own lints and allows `unsafe`, because the
+# Two exceptions set their own lints. packages/connect/stills allows `unsafe`, because the
 # operating system video decoders (VideoToolbox, Media Foundation) are C APIs. Its public API is
-# safe and every unsafe block there carries a SAFETY comment.
+# safe and every unsafe block there carries a SAFETY comment. packages/core/alloc allows it on one
+# item, the exported options string jemalloc reads at startup.
 unsafe_code = "forbid"
 
 [workspace.lints.clippy]
