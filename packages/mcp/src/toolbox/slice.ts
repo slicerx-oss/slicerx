@@ -12,7 +12,7 @@ import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, type ExtraLayers
 import { gcode3mf, PLATE_THUMBNAILS } from '../gcode3mf'
 import { resolveModel, ToolInputError } from '../models'
 import { readPresetFiles } from '../presets'
-import { importReportLines, readProjectFile, sliceWalls, type WallsNote } from '../projectfile'
+import { importReportLines, objectLayerHeights, readProjectFile, sliceWalls, type WallsNote } from '../projectfile'
 import { toSchemaValue } from '../settings'
 import { reviewProjectScripts } from '../project-script-review'
 import { replacementConfig } from '../script-replacement'
@@ -242,6 +242,22 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     ...gcodeKept.filter((k) => !args.script_replacements?.some((c) => c.key === k.key && c.slot === k.slot)).map((k) => ({ key: k.key, ...(k.slot !== undefined ? { slot: k.slot } : {}), use: 'project' as const, message: `The project's ${k.label} ${k.message}.` })),
     ...gcodeReplaced.map((k) => ({ key: k, use: 'profile' as const, message: `Used the printer profile's ${gcodeLabel(k)} instead of the project's.` })),
   ]
+  // An object's own layer height in the file beats smart layer heights a profile turns on, as the app opens another
+  // slicer's project with fixed layers. Smart layers the client asks for stay, and say what they replace.
+  let layerNote: string | undefined
+  const smart = explicit['smart_layer']
+  if (isProject && smart !== undefined && smart !== 'off' && smart !== false) {
+    const own = objectLayerHeights(modelPath, args.plate)
+    if (own.length) {
+      const names = own.map((o) => `${o.name} ${o.layer_height} mm`).join(', ')
+      if (args.overrides?.['smart_layer'] !== undefined) {
+        layerNote = `Smart layer heights replace the layer heights objects in ${basename(modelPath)} set for themselves (${names}).`
+      } else {
+        explicit['smart_layer'] = config['smart_layer'] = 'off'
+        layerNote = `Smart layer heights are off for this slice: objects in ${basename(modelPath)} set their own layer height (${names}).`
+      }
+    }
+  }
   // A .gcode.3mf carries the plate picture: ask the engine to draw one when the settings name no thumbnail sizes.
   if (asked3mf && explicit['thumbnails'] === undefined) explicit['thumbnails'] = config['thumbnails'] = PLATE_THUMBNAILS
   await progress(0.2, 'Slicing')
@@ -277,6 +293,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   const walls: WallsNote = sliceWalls(config['wall_generator'], args.overrides, importReport?.walls)
   const notices = noPrinter ? [{ code: 'no_printer' as const, message: noPrinterMessage(config) }] : []
   for (const n of notices) result.warnings.push(n.message)
+  if (layerNote) result.warnings.push(layerNote)
   const lines = [
     `${result.model.name}${result.plate ? `, plate ${result.plate}` : ''}: ${result.layer_count} layers, ${result.time_text}, ${result.filament_g} g (${(result.filament_mm / 1000).toFixed(2)} m) [engine ${result.engine}]`,
     ...(result.filaments.length > 1 ? [`Filaments: ${result.filaments.map((f) => `slot ${f.slot} ${f.filament_g} g`).join(', ')}`] : []),
