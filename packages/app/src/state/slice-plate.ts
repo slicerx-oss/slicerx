@@ -16,8 +16,7 @@ import { areaOrigin, objectToMachine, towerToPlate } from '../plate/bed-origin'
 import { sliceHandle, sliceShards } from '../plate/painted'
 import { nameOptions, plateConfig } from '../plate/plates'
 import { bedTypeConfig } from '../plate/bed-type'
-import { plateSequence } from '../plate/plate-sequence'
-import { layerHeightConflict, objectOverrides, partOverridesOf } from '../plate/object-settings'
+import { objectOverrides, partOverridesOf, plateLayerHeightConflict } from '../plate/object-settings'
 import { markOpenStage } from '../lib/open-mark'
 import { sliceStage, sliceStarted } from '../lib/slice-timing'
 import { colorModeAfterSlice, fullPlate, get, openRightOnSlice, set, shownSlice, toast, type AppState, type PlateEntry, type PlateMeta } from './store'
@@ -73,9 +72,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
   }
   sliceStage(timed, 'ready')
   const base = resolveConfig(s.easy, s.overrides)
-  const seqNow = plateSequence(s.plates.find((p) => p.id === s.activePlate), base)
-  const plateLayer = base['layer_height']
-  const conflict = layerHeightConflict(s, seqNow, typeof plateLayer === 'number' ? plateLayer : 0.2)
+  const conflict = plateLayerHeightConflict(s, s.plates.find((p) => p.id === s.activePlate), base)
   if (conflict) {
     set({ slice: { status: 'error', message: conflict }, preview: null })
     return
