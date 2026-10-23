@@ -1599,6 +1599,10 @@ fn bbl_tag(line: &[u8]) -> Option<Vec<u8>> {
     if line.first() != Some(&b';') {
         return None;
     }
+    // The printer maker's slicer names the first solid layer over sparse infill a bridge.
+    if line == b";TYPE:Internal Bridge" {
+        return Some(b"; FEATURE: Bridge".to_vec());
+    }
     let (from, to) = TAGS.iter().find(|(from, _)| line.starts_with(from))?;
     let mut v = to.to_vec();
     v.extend_from_slice(line.get(from.len()..)?);
