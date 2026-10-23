@@ -1398,6 +1398,83 @@ fn a_projects_rib_wall_switch_picks_its_prime_tower_wall() {
     );
 }
 
+/// The `M204 S` values of the first layer's travels in a project that `app` wrote with `settings`, and the header's
+/// `initial_layer_travel_acceleration` line (Bambu Lab printers' headers list the settings).
+fn first_layer_travel_accels(
+    dir: &Path,
+    name: &str,
+    app: Option<&str>,
+    settings: &serde_json::Value,
+) -> (Vec<String>, String) {
+    let path = dir.join(format!("{name}.3mf"));
+    let text = settings.to_string();
+    std::fs::write(&path, box_3mf_by(app, Some(text.as_bytes()), &[])).unwrap();
+    let out = sx().arg("slice").arg(&path).args(["-o", "-"]).output().unwrap();
+    assert!(
+        out.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let gcode = String::from_utf8_lossy(&out.stdout).into_owned();
+    let header = gcode
+        .lines()
+        .find(|l| l.starts_with("; initial_layer_travel_acceleration = "))
+        .unwrap_or_default()
+        .to_owned();
+    let (mut layer, mut accel, mut seen) = (0, String::new(), Vec::new());
+    for l in gcode.lines() {
+        // Bambu Lab printers mark a layer `; CHANGE_LAYER`, others `;LAYER_CHANGE`.
+        if l == "; CHANGE_LAYER" || l == ";LAYER_CHANGE" {
+            layer += 1;
+        } else if let Some(a) = l.strip_prefix("M204 S") {
+            a.clone_into(&mut accel);
+        } else if layer == 1 && l.starts_with("G0 X") && !seen.contains(&accel) {
+            seen.push(accel.clone());
+        }
+    }
+    (seen, header)
+}
+
+/// A Bambu Studio project without `initial_layer_travel_acceleration` travels the first layer at 500 mm/s2, as Bambu
+/// Studio reads the missing key; with the key, its value; a project from another app keeps the travel acceleration.
+#[test]
+fn a_bambu_studio_project_without_first_layer_travel_acceleration_travels_at_500() {
+    let dir = temp_dir(format!("sx-cli-first-travel-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let settings = |extra: serde_json::Value| {
+        let mut s = serde_json::json!({
+            "printer_model": "Bambu Lab A1",
+            "gcode_flavor": "marlin",
+            "default_acceleration": ["6000"],
+            "initial_layer_acceleration": ["1500"],
+            "outer_wall_acceleration": ["5000"],
+            "travel_acceleration": ["10000"],
+        });
+        if let (Some(o), Some(e)) = (s.as_object_mut(), extra.as_object()) {
+            o.extend(e.clone());
+        }
+        s
+    };
+    let bambu = Some("BambuStudio-02.03.00.70");
+    let (unset, header) =
+        first_layer_travel_accels(&dir, "bambu-unset", bambu, &settings(serde_json::json!({})));
+    assert_eq!(unset, ["500"], "{header}");
+    assert_eq!(header, "; initial_layer_travel_acceleration = 500");
+    let (set, _) = first_layer_travel_accels(
+        &dir,
+        "bambu-set",
+        bambu,
+        &settings(serde_json::json!({"initial_layer_travel_acceleration": ["6000"]})),
+    );
+    assert_eq!(set, ["6000"]);
+    // Another app's project, on another printer or none named: the travel acceleration, as before.
+    let generic = settings(serde_json::json!({"printer_model": "Generic Marlin"}));
+    for (name, app) in [("orca", Some("OrcaSlicer-2.3.1")), ("none", None)] {
+        let (travel, _) = first_layer_travel_accels(&dir, name, app, &generic);
+        assert_eq!(travel, ["10000"], "{name}");
+    }
+}
+
 /// Bambu Studio's rib keys (`prime_tower_rib_width`, and the switch) shape the tower whether they come in a project
 /// or in a `--config` preset; a key under our own name keeps its value.
 #[test]
