@@ -273,30 +273,56 @@ fn assert_report_holds_the_tower(run: &api::SliceRun, offset: [f64; 2], what: &s
 fn an_auto_placed_tower_keeps_clear_of_the_grid_supports_first_layer() {
     // A part with a 30 mm cap on a 10 mm stem, support in filament 2. Grid support stretches the cap's islands to
     // whole cells of its grid, so the first layer pad reached about 4.3 mm past the cap where the tower's spot
-    // allowed for 2.45: the tower stood 3.45 mm from the cap and its brim crossed the pad.
-    let parts = vec![
-        block([10.0, 10.0, 0.0], [20.0, 20.0, 10.0], 1),
-        block([0.0, 0.0, 10.0], [30.0, 30.0, 13.0], 1),
-    ];
-    let config = serde_json::json!({
-        "enable_prime_tower": true,
-        "prime_tower_auto_position": true,
-        "enable_support": true,
-        "support_filament": 2,
-        "filament_type": ["PLA", "PLA"],
-        "filament_colour": ["#f8f8f2", "#2255ff"],
-        "printable_area": [[0, 0], [256, 0], [256, 256], [0, 256]],
-        "bed_exclude_area": [[0, 0], [100, 0], [100, 100], [0, 100]],
-    });
-    let run = slice_parts(parts, [150.0, 150.0], [256.0, 256.0], &config);
-    let crossings: Vec<_> = run
-        .report
-        .collisions
-        .iter()
-        .filter(|c| c.kind == Kind::PathConflict)
-        .collect();
-    assert!(crossings.is_empty(), "{crossings:?}");
-    assert_report_holds_the_tower(&run, [0.0, 0.0], "capped part");
+    // allowed for 2.45: the tower stood 3.45 mm from the cap and its brim crossed the pad. With the grid turned
+    // (`support_angle`) the cells' corners reach further still: 6.75 mm at 30 degrees.
+    for angle in [0, 30, 45] {
+        let parts = vec![
+            block([10.0, 10.0, 0.0], [20.0, 20.0, 10.0], 1),
+            block([0.0, 0.0, 10.0], [30.0, 30.0, 13.0], 1),
+        ];
+        let config = serde_json::json!({
+            "enable_prime_tower": true,
+            "prime_tower_auto_position": true,
+            "enable_support": true,
+            "support_filament": 2,
+            "support_angle": angle,
+            "filament_type": ["PLA", "PLA"],
+            "filament_colour": ["#f8f8f2", "#2255ff"],
+            "printable_area": [[0, 0], [256, 0], [256, 256], [0, 256]],
+            "bed_exclude_area": [[0, 0], [100, 0], [100, 100], [0, 100]],
+        });
+        // Off the 1 mm grid the tower is placed on, so rounding leaves it no spare room.
+        let run = slice_parts(parts, [150.0, 150.6], [256.0, 256.0], &config);
+        let crossings: Vec<_> = run
+            .report
+            .collisions
+            .iter()
+            .filter(|c| c.kind == Kind::PathConflict)
+            .collect();
+        assert!(crossings.is_empty(), "support at {angle} degrees: {crossings:?}");
+        assert_report_holds_the_tower(
+            &run,
+            [0.0, 0.0],
+            &format!("capped part, support at {angle} degrees"),
+        );
+        // The 1 mm clearance: the tower's first layer stays 1 mm from the support's first layer, bead edges.
+        let gcode = String::from_utf8_lossy(&run.gcode);
+        let f = run.report.prime_tower.as_ref().unwrap().footprint;
+        for (feature, a, b) in first_layer(&gcode) {
+            if feature == "Support" {
+                let near = [
+                    f[0] - 1.0 - 0.225,
+                    f[1] - 1.0 - 0.225,
+                    f[2] + 1.0 + 0.225,
+                    f[3] + 1.0 + 0.225,
+                ];
+                assert!(
+                    !hits_box(a, b, near),
+                    "support at {angle} degrees: {a:?} to {b:?} within 1 mm of the tower at {f:?}"
+                );
+            }
+        }
+    }
 }
 
 /// A shipped printer's machine settings (`model` in the profiles) with the maker's 0.20 mm Standard process for
