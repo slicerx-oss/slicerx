@@ -4,22 +4,10 @@
 // side, at most a quarter of the pitch so the flanks keep their shape, and words that say the size, where it goes,
 // the clearance and the layer height the flanks need. The sizes are the ISO ones; how they fit once printed is
 // not yet checked by a test print, and the words say so.
-import type { ThreadPlace, ThreadSpec, ThreadTarget } from '../geom/cad'
+import type { ThreadSpec, ThreadTarget } from '../geom/cad'
 import type { Clearance } from '../plate/clearance'
 
 const mm = (v: number) => `${Number(v.toFixed(2))} mm`
-
-/**
- * What is wrong with a typed thread length, or null when it can run (no length is the whole length). The engine
- * would quietly cut a longer one to the hole's depth or the rod's length, so the most is said here instead.
- */
-export function threadLengthProblem(lengthMm: number | undefined, target: Pick<ThreadPlace, 'lengthMm' | 'internal'>): string | null {
-  if (lengthMm === undefined) return null
-  if (!Number.isFinite(lengthMm)) return 'Type a number for the length, or leave it empty for the whole length.'
-  if (lengthMm <= 0) return 'The length must be more than 0 mm.'
-  if (lengthMm > target.lengthMm + 1e-6) return `The length is more than the ${target.internal ? 'hole is deep' : 'rod is long'}. The most is ${mm(target.lengthMm)}.`
-  return null
-}
 
 export function threadSpecFor(target: ThreadTarget, choice: { size: string; lengthMm?: number }, fit: Clearance): { spec: ThreadSpec; label: string; words: string[] } {
   const size = target.sizes.find((s) => s.name === choice.size) ?? target.sizes.find((s) => s.name === target.suggested) ?? target.sizes[0]!
