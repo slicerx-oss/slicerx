@@ -46,12 +46,18 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   page.on('pageerror', (e) => errors.push(String(e)))
   page.on('console', (m) => void (m.type() === 'error' && errors.push(m.text())))
   await slicedOnTheH2C(page)
-  // The printer is a hotend rack and the plate has two colors: the timeline carries changes.
+  // The printer is a hotend rack and the plate has two colors: the timeline carries changes. And what draws the view.
   const info = await page.evaluate(() => {
-    const w = window as unknown as { __pv: Hook; __vp: { toolpaths: { changePoints(): unknown[] } } }
+    const w = window as unknown as { __pv: Hook; __vp: { toolpaths: { changePoints(): unknown[] }; renderer: { getContext(): WebGLRenderingContext } } }
     const tl = w.__pv.timeline!
-    return { changes: tl.changes.length, points: w.__vp.toolpaths.changePoints().length, first: tl.changes[0] ?? null, total: tl.total }
+    const gl = w.__vp.renderer.getContext()
+    const ext = gl.getExtension('WEBGL_debug_renderer_info')
+    const gpu = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))
+    return { changes: tl.changes.length, points: w.__vp.toolpaths.changePoints().length, first: tl.changes[0] ?? null, total: tl.total, gpu }
   })
+  // A browser on the GPU lane whose graphics process fell back to software (SwiftShader) draws a frame every 400 ms or
+  // so, against 18 ms on the GPU: a frame rate can't be judged there (#1374).
+  test.skip(process.env['SX_E2E_GPU'] === '1' && /swiftshader|llvmpipe|software/i.test(info.gpu), `the GPU lane's browser fell back to software WebGL (${info.gpu}); a frame rate can't be judged there`)
   expect(info.points).toBeGreaterThan(0)
   expect(info.changes).toBe(info.points)
   // The head drives to the chute and back, on top of the firmware's own seconds for the change.
@@ -92,6 +98,14 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   })()
   const result = await page.evaluate(async ({ from, until, warmUp }) => {
     const w = window as unknown as { __pv: Hook; __vp: { stats(): { frames: number }; renderer: { info: RendererInfo } } }
+    // Whether the page was visible and focused as the plain window opened and closed, and how often it went hidden:
+    // Chrome slows the frames of a page it takes for hidden.
+    const shown = () => ({ visibility: document.visibilityState, focus: document.hasFocus() })
+    let shownFrom = shown()
+    let shownTo = shownFrom
+    let hidden = 0
+    const onVisibility = () => void (document.visibilityState === 'hidden' && hidden++)
+    document.addEventListener('visibilitychange', onVisibility)
     const plain: number[] = []
     const inChange: number[] = []
     const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0
@@ -122,13 +136,19 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
           if (lastDrawn >= 0) {
             const dt = now - lastDrawn
             if (document.querySelector('[data-testid="pv-change"]')) {
-              if (changeFrom < 0) changeFrom = lastDrawn
+              if (changeFrom < 0) {
+                changeFrom = lastDrawn
+                shownTo = shown()
+              }
               changeTo = now
               inChange.push(dt)
               after = held()
               mostPrograms = Math.max(mostPrograms, after.programs)
             } else if (drawn > warmUp && now - t0 >= 1000 && w.__pv.clock() >= from && inChange.length === 0) {
-              if (plainFrom < 0) plainFrom = lastDrawn
+              if (plainFrom < 0) {
+                plainFrom = lastDrawn
+                shownFrom = shown()
+              }
               plain.push(dt)
             }
           }
@@ -142,7 +162,10 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
     })
     const reached = w.__pv.clock() >= until
     if (w.__pv.playing()) w.__pv.toggle()
-    return { plainFrom, changeFrom, changeTo, drawn, plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), reached, renderer: { before, after, mostPrograms } }
+    document.removeEventListener('visibilitychange', onVisibility)
+    if (changeFrom < 0) shownTo = shown()
+    const view = { from: shownFrom, to: shownTo, hidden }
+    return { plainFrom, changeFrom, changeTo, drawn, plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), reached, view, renderer: { before, after, mostPrograms } }
   }, { from: plainStart, until: info.first!.start + info.first!.duration + 2, warmUp: WARM_UP })
   sampling = false
   await sampler
@@ -153,7 +176,7 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   const plainSpans = spans.filter((s) => s.from >= result.plainFrom && s.to <= result.changeFrom)
   const changeSpans = spans.filter((s) => s.to > result.changeFrom && s.from < result.changeTo)
   const cpu = { plain: plainSpans.length, inChange: changeSpans.length, busiestPlain: Math.max(0, ...plainSpans.map((s) => s.cpu)), busiestInChange: Math.max(0, ...changeSpans.map((s) => s.cpu)) }
-  test.info().annotations.push({ type: 'frames', description: JSON.stringify(result) })
+  test.info().annotations.push({ type: 'frames', description: JSON.stringify({ ...result, gpu: info.gpu }) })
   test.info().annotations.push({ type: 'cpu', description: JSON.stringify(cpu) })
   expect(errors).toEqual([])
   expect(result.reached).toBe(true)
