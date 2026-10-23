@@ -384,7 +384,7 @@ pub struct ObjectFootprint {
 }
 
 /// The prime tower as placed: front left corner, size and rotation (degrees, about the corner), mm,
-/// and why it stands there. The slice report's `primeTower`.
+/// why it stands there, and the box everything it prints lies in. The slice report's `primeTower`.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TowerPlacement {
@@ -394,6 +394,10 @@ pub struct TowerPlacement {
     pub depth: f64,
     pub angle: f64,
     pub reason: crate::tower::TowerReason,
+    /// `[min x, min y, max x, max y]`, mm: the plate area the tower prints on, on every layer, to the outer edge
+    /// of its beads: the first layer's brim (or brim chamfer), a rib wall's ribs, the rotation. What the engine
+    /// keeps clear of the objects' first layers when it places the tower.
+    pub footprint: [f64; 4],
 }
 
 /// Tool changes and purge filament the plate's variable layer heights add against fixed layers of

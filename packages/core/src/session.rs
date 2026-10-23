@@ -4342,10 +4342,10 @@ impl SliceSession {
             plate_bounds,
             objects: self.objects.clone(),
             first_layer_info,
-            prime_tower: self
-                .tower_top
-                .and(self.tower_shape)
-                .and_then(|p| p.report(config, self.tool_count)),
+            prime_tower: self.tower_top.and(self.tower_shape).and_then(|p| {
+                let t = self.tower(config)?.at(p.origin);
+                Some(p.report(&t, self.plan.thickness(0), self.plan.top(self.tower_top?)))
+            }),
             vary_layer_cost: self.vary_cost,
             filament_map: self.nozzle_map.clone(),
             collisions: crate::collide::Hits::default(),
