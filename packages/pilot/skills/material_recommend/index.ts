@@ -141,7 +141,7 @@ export function createMaterialRecommend() {
     version: '1.0.0',
     permission: 'read',
     description:
-      'Recommend materials for a use case, best first, with reasons and cautions from the knowledge base. Needs can combine: heat (give the use temperature in C), uv (sun or outdoors), flexible, chemical, food_contact, strength, cheap. Prefers spools the user owns (Spoolman) and flags what the user\'s printers would need for each material (enclosure, hardened nozzle, hotend temperature). Use it when the user asks what to print something in, before printer_match. Read only.',
+      'Recommend materials for a use case, best first, with reasons and cautions from the knowledge base. Needs can combine (uv means sun or outdoors). Prefers spools the user owns (Spoolman) and flags what the user\'s printers need for each material (enclosure, hardened nozzle, hotend temperature). Use it when the user asks what to print something in, before printer_match.',
     input: z.object({
       needs: z.array(z.enum(NEEDS)).min(1).describe('What the part must do: heat, uv, flexible, chemical, food_contact, strength, cheap'),
       useTemperatureC: z.number().min(0).max(300).optional().describe('Highest temperature the part will see, in C. A closed car in summer is about 80'),

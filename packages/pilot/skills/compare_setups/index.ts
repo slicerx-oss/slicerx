@@ -53,7 +53,7 @@ export function createCompareSetups() {
     version: '1.0.0',
     permission: 'slice',
     description:
-      'Slice the same plate two ways and compare side by side: print time, filament grams, cost, a strength proxy and risk notes, with a one line verdict. Each setup is a set of Orca keys on top of the current settings (an empty set means the current settings). Does not change the project. Use it for "is a 0.6 nozzle worth it", "3 walls at 0.28 or 2 walls at 0.2", or to check a settings plan before applying it.',
+      'Slice the same plate two ways and compare side by side: print time, filament grams, cost, a strength proxy and risk notes, with a one line verdict. Each setup is a set of Orca keys on top of the current settings (empty means the current settings). Does not change the project. Use it for "is a 0.6 nozzle worth it" or to check a settings plan before applying it.',
     input: z.object({
       plate: z.number().int().min(1).optional().describe('Plate number; default the first plate'),
       a: changeSet.describe('Setup A'),

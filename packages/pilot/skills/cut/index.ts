@@ -68,7 +68,7 @@ export function createCut() {
     version: '1.2.0',
     permission: 'slice',
     description:
-      'Make a model fit a printer: compare scaling it down with splitting it (mode "compare" only reports), or split it (mode "split"). With geometry on the host the mesh is cut into watertight parts with dovetail, pin or dowel connectors, fewest cuts for the build volume (or one horizontal cut at planeZ when given), and the parts replace the object; the approval is asked when policy says so.',
+      'Make a model fit a printer: compare scaling it down with splitting it (mode "compare" only reports), or split it (mode "split"). With geometry on the host the mesh is cut into watertight parts with connectors, using the fewest cuts that fit the build volume, and the parts replace the object; approval is asked when policy says so.',
     input: z.object({
       objectId: z.string().optional(),
       printerModel: z.string().describe('Printer model whose build volume must fit, such as "A1 mini"'),
