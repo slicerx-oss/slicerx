@@ -3145,7 +3145,7 @@ fn a_painted_top_colors_as_many_layers_as_the_project_says() {
 #[test]
 fn preview_extras_point_at_the_gcode_line_of_every_segment() {
     let run = run(&request(json!({"shards": 3}), json!({}))).unwrap();
-    assert_extras_match(&run, 0.0);
+    assert_extras_match(&run, 0.0, 0.0);
     // A run without the G-code has no extras.
     let bare = run_bare();
     assert_eq!(u16::from_le_bytes([bare[6], bare[7]]) & 2, 0);
@@ -3163,11 +3163,24 @@ fn preview_extras_find_moves_the_nozzle_offset_shifted() {
         "options": {"shards": 3},
     }))
     .unwrap();
-    assert_extras_match(&run(&req).unwrap(), 2.0);
+    assert_extras_match(&run(&req).unwrap(), 0.0, 2.0);
+    // An Elegoo Neptune 4 Pro writes them 2.5 mm further in X and 3.5 mm further in Y.
+    let mut config = base_config();
+    config["extruder_offset"] = json!(["-2.5x-3.5"]);
+    config["printer_model"] = json!("Elegoo Neptune 4 Pro");
+    config["gcode_flavor"] = json!("klipper");
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"mesh": "x"}]},
+        "config": config,
+        "options": {"shards": 3},
+    }))
+    .unwrap();
+    assert_extras_match(&run(&req).unwrap(), -2.5, -3.5);
 }
 
-/// Every preview segment's G-code line is a move that ends where the segment ends, less `dy` in Y.
-fn assert_extras_match(run: &SliceRun, dy: f32) {
+/// Every preview segment's G-code line is a move that ends where the segment ends, less the nozzle offset
+/// (`dx`, `dy`).
+fn assert_extras_match(run: &SliceRun, dx: f32, dy: f32) {
     let g = text(run);
     let lines: Vec<&str> = g.lines().collect();
     let b = &run.preview;
@@ -3204,7 +3217,7 @@ fn assert_extras_match(run: &SliceRun, dy: f32) {
                 .find_map(|w| w.strip_prefix(axis))
                 .and_then(|v| v.parse::<f32>().ok())
         };
-        let (x, y) = (f32at(seg + 8), f32at(seg + 12) - dy);
+        let (x, y) = (f32at(seg + 8) - dx, f32at(seg + 12) - dy);
         let hit = coord('X')
             .zip(coord('Y'))
             .is_some_and(|(cx, cy)| (cx - x).abs() < 0.002 && (cy - y).abs() < 0.002);

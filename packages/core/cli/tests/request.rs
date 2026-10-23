@@ -2623,20 +2623,20 @@ fn word(line: &str, w: char) -> Option<f64> {
         .find_map(|t| t.strip_prefix(w).and_then(|v| v.parse().ok()))
 }
 
-#[test]
-fn a_p1s_writes_every_move_at_the_plate_position_less_its_nozzle_offset() {
-    let (ok, shifted, err) = p1s_slice(Some(serde_json::json!([[0, 2]])), 128.0, &[]);
-    assert!(ok, "{err}");
-    let (ok, plain, err) = p1s_slice(Some(serde_json::json!([[0, 0]])), 128.0, &[]);
-    assert!(ok, "{err}");
-    let (a, b) = (moves_and_text(&shifted), moves_and_text(&plain));
+/// Checks that `shifted` is `plain` with every generated move `dx`, `dy` further along X and Y: each line that
+/// differs is a G0 to G3 move of the toolpaths whose X and Y differ by exactly that, with Z, E, F and the arc's
+/// I and J the same, every such move with an X or a Y differs, and the start and end G-code are the same lines.
+/// `end_marker` starts the end G-code.
+fn assert_moves_shifted(shifted: &str, plain: &str, dx: f64, dy: f64, end_marker: &str) {
+    let (a, b) = (moves_and_text(shifted), moves_and_text(plain));
     assert_eq!(a.len(), b.len());
-    let first_layer = b.iter().position(|l| l.starts_with("; CHANGE_LAYER")).unwrap();
-    // The end G-code is the profile's text, from its first line on.
-    let end = b
+    // Bambu Lab printers mark a layer change "; CHANGE_LAYER", others ";LAYER_CHANGE".
+    let first_layer = b
         .iter()
-        .rposition(|l| l.starts_with(";===== date: 20230428"))
+        .position(|l| l.starts_with("; CHANGE_LAYER") || l.starts_with(";LAYER_CHANGE"))
         .unwrap();
+    let end = b.iter().rposition(|l| l.starts_with(end_marker)).unwrap();
+    let is_move = |l: &str| ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|g| l.starts_with(g));
     let mut moved = 0;
     for (i, (s, p)) in a.iter().zip(&b).enumerate() {
         if s == p {
@@ -2646,29 +2646,41 @@ fn a_p1s_writes_every_move_at_the_plate_position_less_its_nozzle_offset() {
             i > first_layer && i < end,
             "line {i} changed outside the toolpaths: {p:?} -> {s:?}"
         );
-        assert!(
-            ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|g| p.starts_with(g)),
-            "{p:?} -> {s:?}"
-        );
-        // Y is 2 mm less; X, Z, E, F and the arc's I and J are the same.
-        assert!(
-            (word(s, 'Y').unwrap() - (word(p, 'Y').unwrap() - 2.0)).abs() < 1e-9,
-            "{p:?} -> {s:?}"
-        );
-        for w in ['X', 'Z', 'E', 'F', 'I', 'J'] {
+        assert!(is_move(p), "{p:?} -> {s:?}");
+        for (w, d) in [('X', dx), ('Y', dy)] {
+            match (word(s, w), word(p, w)) {
+                (Some(sv), Some(pv)) => assert!((sv - (pv + d)).abs() < 1e-9, "{w}: {p:?} -> {s:?}"),
+                (sv, pv) => assert_eq!(sv, pv, "{w}: {p:?} -> {s:?}"),
+            }
+        }
+        for w in ['Z', 'E', 'F', 'I', 'J'] {
             assert_eq!(word(s, w), word(p, w), "{w}: {p:?} -> {s:?}");
         }
         moved += 1;
     }
     let plain_moves = b[first_layer..end]
         .iter()
-        .filter(|l| ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|g| l.starts_with(g)) && word(l, 'Y').is_some())
+        .filter(|l| {
+            is_move(l) && ((dx != 0.0 && word(l, 'X').is_some()) || (dy != 0.0 && word(l, 'Y').is_some()))
+        })
         .count();
-    assert_eq!(moved, plain_moves, "every move with a Y moves");
+    assert_eq!(moved, plain_moves, "every move with a shifted axis moves");
     assert!(moved > 500, "{moved}");
-    // The start and end G-code are the profile's own moves, written as they are.
+    // The start and end G-code are the profile's own text, written as it is.
     assert_eq!(a[..first_layer], b[..first_layer]);
     assert_eq!(a[end..], b[end..]);
+}
+
+#[test]
+fn a_p1s_writes_every_move_at_the_plate_position_less_its_nozzle_offset() {
+    let (ok, shifted, err) = p1s_slice(Some(serde_json::json!([[0, 2]])), 128.0, &[]);
+    assert!(ok, "{err}");
+    let (ok, plain, err) = p1s_slice(Some(serde_json::json!([[0, 0]])), 128.0, &[]);
+    assert!(ok, "{err}");
+    // Y is 2 mm less; X is the same. The end G-code is the profile's text, from its first line on.
+    assert_moves_shifted(&shifted, &plain, 0.0, -2.0, ";===== date: 20230428");
+    let b = moves_and_text(&plain);
+    let first_layer = b.iter().position(|l| l.starts_with("; CHANGE_LAYER")).unwrap();
     assert!(
         b[..first_layer]
             .iter()
@@ -2698,10 +2710,24 @@ fn a_printer_without_a_nozzle_offset_writes_the_same_bytes() {
 }
 
 #[test]
-fn a_printer_other_than_bambu_lab_keeps_its_moves_on_the_plate() {
-    // The Elegoo Neptune 4 Pro's profile carries a nozzle offset; its moves stay where they were.
+fn an_elegoo_neptune_4_pro_writes_every_move_at_the_plate_position_less_its_nozzle_offset() {
+    // Its profile's offset is -2.5x-3.5: every move goes out 2.5 mm further in X and 3.5 mm further in Y.
     let neptune = [
         ("printer_model", serde_json::json!("Elegoo Neptune 4 Pro")),
+        ("gcode_flavor", serde_json::json!("klipper")),
+    ];
+    let (ok, offset, err) = p1s_slice(Some(serde_json::json!(["-2.5x-3.5"])), 128.0, &neptune);
+    assert!(ok, "{err}");
+    let (ok, zero, err) = p1s_slice(Some(serde_json::json!(["0x0"])), 128.0, &neptune);
+    assert!(ok, "{err}");
+    assert_moves_shifted(&offset, &zero, 2.5, 3.5, ";===== date: 20230428");
+}
+
+#[test]
+fn a_printer_other_than_bambu_lab_or_the_neptune_4_keeps_its_moves_on_the_plate() {
+    // A Neptune 3 Pro given an offset (its profile has none): its moves stay where they were.
+    let neptune = [
+        ("printer_model", serde_json::json!("Elegoo Neptune 3 Pro")),
         ("gcode_flavor", serde_json::json!("klipper")),
     ];
     let (ok, offset, err) = p1s_slice(Some(serde_json::json!(["-2.5x-3.5"])), 128.0, &neptune);
