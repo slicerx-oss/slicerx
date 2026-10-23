@@ -627,8 +627,9 @@ const NEAR_STEP: usize =
 const GRID_FLOOR: usize = 384 << 20;
 
 /// The share of the machine's available memory the grids may take once they pass [`GRID_FLOOR`]. A big painted plate
-/// cut on many threads holds every thread's grids at once (Charizard: about 11 layers, 460 MB); on a machine with that
-/// much to spare it runs at full speed, and on a short one the layers wait for each other instead.
+/// cut on many threads holds every thread's grids at once (a 4-color painted figure of 300 layers on 24 threads: about
+/// 22 layers, 1.1 GB); on a machine with that much to spare it runs at full speed, and on a short one the layers wait
+/// for each other instead.
 const GRID_SHARE: f64 = 0.25;
 
 /// The grid bytes the layers may hold at once: the larger of [`GRID_FLOOR`] and [`GRID_SHARE`] of the available memory,
