@@ -1122,7 +1122,7 @@ enum Model {
     /// The build items of a 3MF plate, and the pause, color change and custom G-code marks the project sets on the
     /// plate's layers.
     Items(Vec<Mesh>, Vec<sx_core::api::LayerGcodeSpec>),
-    One(Mesh),
+    One(Box<Mesh>),
 }
 
 impl Model {
@@ -1131,7 +1131,7 @@ impl Model {
     fn load(args: &[String], model: &str, bytes: &[u8]) -> Res<Self> {
         let want = flag(args, "--plate").map(str::parse::<u32>).transpose()?;
         if want.is_none() && !sx_core::api::is_3mf(bytes, model) {
-            return Ok(Model::One(Mesh::load(bytes, model)?));
+            return Ok(Model::One(Box::new(Mesh::load(bytes, model)?)));
         }
         let (plate, items) = sx_core::api::load_3mf_items(bytes, model, want)?
             .ok_or_else(|| format!("{model} has no plate {}", want.unwrap_or(1)))?;
@@ -1171,7 +1171,7 @@ impl Model {
     fn plate(self, config: &PrintConfig, preset: Option<&Value>) -> Plate {
         let differ = self.shared_settings().is_null();
         match self {
-            Model::One(mesh) => Plate::single_on(mesh, config.bed_rect(), config.printable_height),
+            Model::One(mesh) => Plate::single_on(*mesh, config.bed_rect(), config.printable_height),
             Model::Items(items, _) => {
                 let mut plate = Plate::items_on(items, config.bed_rect(), config.printable_height);
                 for o in plate.objects.iter_mut().filter(|_| differ) {

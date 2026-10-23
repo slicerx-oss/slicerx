@@ -553,7 +553,7 @@ pub fn threemf(m: &Mesh, at: [f32; 2]) -> Vec<u8> {
 }
 
 /// A stored (uncompressed) ZIP of the given entries.
-fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
+pub fn stored_zip(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let (mut out, mut central) = (Vec::new(), Vec::new());
     for (name, data) in entries {
         let offset = out.len() as u32;

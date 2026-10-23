@@ -85,6 +85,20 @@ pub struct Mesh {
     /// `Metadata/layer_config_ranges.xml` ranges), heights above the bed, mm, in file order: when every printed object
     /// of the plate has the same, they plan the plate's layers ([`crate::range_layer_tops`]).
     pub layer_heights: Vec<crate::RangeLayerHeight>,
+    /// The build item that placed the parts, for a mesh a project file loads one item at a time: its parts are
+    /// already where the item puts them. `None` for any other mesh, a plate's items merged into one included.
+    pub placement: Option<Placement>,
+}
+
+/// Where a project file's build item puts its object ([`Mesh::placement`]). Two items of one object with the same
+/// turn and scale load as the same parts moved by the difference of their moves, which is how a plate of them is
+/// found to be copies of one object.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Placement {
+    /// The id of the object the item places, in the file's main model: the same for every item of one object.
+    pub object: u32,
+    /// The item's transform in millimeters, in the file's order: the turn and scale as three rows, then the move.
+    pub transform: [f64; 12],
 }
 
 /// A part of a model that shapes the print without printing: see [`crate::plate::VolumeRole`].

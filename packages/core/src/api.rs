@@ -34,7 +34,7 @@ use std::sync::Arc;
 pub use crate::config::{GcodeFlavor, InfillPattern, PrintConfig};
 pub use crate::error::{Error, Result};
 pub use crate::gcode::{EmitOptions, GcodeStats, emit_gcode, emit_gcode_with};
-pub use crate::mesh::{Mesh, MeshPart};
+pub use crate::mesh::{Mesh, MeshPart, Placement};
 pub use crate::output::{
     Feature, LayerPaths, PathInfo, SliceOutput, SliceWarning, Stage, StageMicros, WarningCode,
 };
