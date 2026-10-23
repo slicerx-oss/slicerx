@@ -2404,3 +2404,121 @@ async fn bambu_refused_with_developer_mode_on_reads_as_today() {
     assert_eq!(st.live.as_ref().and_then(|l| l.needs_developer_mode), None);
     assert_eq!(st.live.as_ref().and_then(|l| l.monitor_only), None);
 }
+
+/// The fake's access code and serial (`MOCK_ACCESS_CODE` and `MOCK_SERIAL` in the fake's
+/// bambu.ts), which the connection log must never hold.
+const BAMBU_MOCK_SECRETS: [&str; 2] = ["12345678", "01S00C000000000"];
+
+// Run by `bambu_connection_log_writes_replies_hms_and_fun` in a process of its own, with
+// `SX_CONNECT_LOG` set before anything writes to the log; without it, it does nothing. A start is
+// refused with Developer Mode on (raising the HMS entry), then the entry is cleared and Developer
+// Mode goes off.
+#[tokio::test]
+async fn bambu_connection_log_session() {
+    if std::env::var_os("SX_CONNECT_LOG").is_none() {
+        return;
+    }
+    let (mocks, gate, s) =
+        bambu_a1(serde_json::json!({ "authorizationControl": "despiteDeveloperMode" })).await;
+    expect_code(
+        bambu_upload_and_start(s.as_ref(), &gate).await,
+        ErrorCode::NeedsDeveloperMode,
+    );
+    wait_issue(s.as_ref(), VERIFY_HMS, true).await;
+    mocks
+        .control(
+            "/bambu",
+            serde_json::json!({ "hms": null, "authorizationControl": null, "developerMode": false }),
+        )
+        .await;
+    wait_issue(s.as_ref(), VERIFY_HMS, false).await;
+    for _ in 0..100 {
+        if s.status().await.unwrap().live.and_then(|l| l.monitor_only) == Some(true) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("the report never said Developer Mode is off");
+}
+
+// The connection log (`SX_CONNECT_LOG`) writes each command sent (name and sequence id, the file
+// name for a start, and the `fun` flags it went out under), each reply with its result, reason and
+// err_code and whether this session sent it, the `fun` flags at sign-in and when they change, and
+// each `hms` entry added or removed. It never holds the access code or the serial.
+#[tokio::test]
+async fn bambu_connection_log_writes_replies_hms_and_fun() {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("sx-connect-log-{}-{nanos}.log", std::process::id()));
+    let run = tokio::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "bambu_connection_log_session",
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("SX_CONNECT_LOG", &path)
+        .kill_on_drop(true)
+        .output();
+    let out = tokio::time::timeout(Duration::from_secs(120), run)
+        .await
+        .unwrap()
+        .unwrap();
+    let log = std::fs::read_to_string(&path).unwrap_or_default();
+    let _ = std::fs::remove_file(&path);
+    assert!(
+        out.status.success(),
+        "{}\n{}\n{log}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // Each line is `<ms> <printer id> <text>`.
+    let lines: Vec<&str> = log
+        .lines()
+        .filter_map(|l| {
+            let mut parts = l.splitn(3, ' ');
+            let _ms = parts.next();
+            (parts.next() == Some("bay-1")).then(|| parts.next()).flatten()
+        })
+        .collect();
+    let all = lines.join("\n");
+    let position = |want: &str| lines.iter().position(|l| l.contains(want));
+    for want in [
+        "mqtt signed in",
+        "send get_version seq 0",
+        "reply get_version seq 0 result none reason none err_code none ours yes",
+        "fun 3EC18FFF9CFF (developer mode on)",
+        "hms listed none",
+        "print_error 0000_0000",
+        " file cube.gcode.3mf, fun 3EC18FFF9CFF (developer mode on)",
+        "result failed reason \"mqtt message verify failed\" err_code 84033543 (0x05024007) ours yes",
+        "hms added 0500_0500_0001_0007",
+        "hms removed 0500_0500_0001_0007",
+        "fun 3EC1AFFF9CFF (developer mode off)",
+    ] {
+        assert!(position(want).is_some(), "no line has {want:?}:\n{all}");
+    }
+    let send = lines
+        .iter()
+        .find(|l| l.starts_with("send project_file seq "))
+        .unwrap();
+    let seq = send
+        .trim_start_matches("send project_file seq ")
+        .split(' ')
+        .next()
+        .unwrap();
+    assert!(
+        position(&format!("reply project_file seq {seq} result failed")).is_some(),
+        "{all}"
+    );
+    assert!(
+        position("send project_file") < position("reply project_file"),
+        "{all}"
+    );
+    assert!(position("reply project_file") < position("hms added"), "{all}");
+    for secret in BAMBU_MOCK_SECRETS {
+        assert!(!all.contains(secret), "{secret} in the log:\n{all}");
+    }
+}

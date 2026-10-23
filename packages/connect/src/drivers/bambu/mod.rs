@@ -822,7 +822,164 @@ struct Shared {
     /// when a start goes through. A send that only failed or went unanswered does not set it: that
     /// is a guess, said as one in the error, and the status keeps to what the printer said.
     refused_send: AtomicBool,
+    /// The commands this session sent, as command and sequence id, newest last, so the connection
+    /// log can say whether a reply answers one of ours.
+    sent: Mutex<std::collections::VecDeque<(String, String)>>,
+    /// What the connection log last wrote about the report's `fun` flags, `hms` list and
+    /// `print_error`. `None` after a sign-in, so the first report after it is written in full.
+    logged: Mutex<Option<Logged>>,
 }
+
+/// The report fields the connection log follows, as it last wrote them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Logged {
+    fun: Option<String>,
+    hms: Vec<String>,
+    print_error: u64,
+}
+
+impl Logged {
+    fn from_report(p: &Value) -> Self {
+        Logged {
+            fun: p.get("fun").and_then(Value::as_str).map(str::to_owned),
+            hms: hms_codes(p),
+            print_error: p.get("print_error").and_then(Value::as_u64).unwrap_or(0),
+        }
+    }
+}
+
+/// The connection log's lines for a report whose followed fields went from `was` (`None`: the first
+/// report since signing in) to `now`: the `fun` flags with the Developer Mode reading, each `hms`
+/// entry added or removed, and `print_error`. Nothing when nothing changed.
+fn report_trace_lines(was: Option<&Logged>, now: &Logged, p: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    if was.is_none_or(|w| w.fun != now.fun) {
+        out.push(fun_words(p));
+    }
+    match was {
+        None => out.push(format!(
+            "hms listed {}",
+            if now.hms.is_empty() {
+                "none".to_owned()
+            } else {
+                now.hms.join(" ")
+            }
+        )),
+        Some(w) => {
+            for c in now.hms.iter().filter(|c| !w.hms.contains(c)) {
+                out.push(format!("hms added {c}"));
+            }
+            for c in w.hms.iter().filter(|c| !now.hms.contains(c)) {
+                out.push(format!("hms removed {c}"));
+            }
+        }
+    }
+    let code = |e: u64| wiki_code(e >> 16, e & 0xffff);
+    match was {
+        None => out.push(format!("print_error {}", code(now.print_error))),
+        Some(w) if w.print_error != now.print_error => out.push(format!(
+            "print_error {} (was {})",
+            code(now.print_error),
+            code(w.print_error)
+        )),
+        Some(_) => {}
+    }
+    out
+}
+
+/// The report's `fun` flags and the Developer Mode reading [`developer_mode`] takes from them, as
+/// the connection log writes them.
+fn fun_words(p: &Value) -> String {
+    let mode = match developer_mode(p) {
+        Some(true) => "on",
+        Some(false) => "off",
+        None => "unknown",
+    };
+    let fun = p.get("fun").and_then(Value::as_str).unwrap_or("none");
+    format!("fun {fun} (developer mode {mode})")
+}
+
+/// The `hms` entries of a report as wiki codes (`0500_0500_0001_0007`), in the report's order.
+fn hms_codes(p: &Value) -> Vec<String> {
+    p.get("hms")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|h| {
+            let attr = h.get("attr")?.as_u64()?;
+            let code = h.get("code")?.as_u64()?;
+            Some(format!(
+                "{}_{}",
+                wiki_code(attr >> 16, attr),
+                wiki_code(code >> 16, code)
+            ))
+        })
+        .collect()
+}
+
+/// The connection log's line for a command reply `r` (a `print`, `system` or `info` object): its
+/// command, sequence id, result, reason and `err_code` (also in hex), and whether it answers a
+/// command this session sent (`ours`). Nothing else of the reply is written.
+fn reply_line(r: &serde_json::Map<String, Value>, ours: bool) -> String {
+    let text = |k: &str| match r.get(k) {
+        None => "none".to_owned(),
+        Some(Value::String(s)) => s.clone(),
+        Some(v) => v.to_string(),
+    };
+    let reason = r
+        .get("reason")
+        .and_then(Value::as_str)
+        .map_or_else(|| "none".to_owned(), |s| format!("{s:?}"));
+    let err = match r.get("err_code") {
+        None => "none".to_owned(),
+        Some(v) => v
+            .as_u64()
+            .map_or_else(|| v.to_string(), |c| format!("{c} (0x{c:08X})")),
+    };
+    format!(
+        "reply {} seq {} result {} reason {reason} err_code {err} ours {}",
+        text("command"),
+        text("sequence_id"),
+        text("result"),
+        if ours { "yes" } else { "no" }
+    )
+}
+
+/// A command as the connection log writes it before it goes out.
+struct SendLine {
+    command: String,
+    seq: String,
+    text: String,
+}
+
+/// The connection log's line for a command `body` about to be sent, with the `fun` flags of the
+/// merged report `p`: its command, sequence id and, for a start, the file name. Nothing else of the
+/// body is written (no address, URL or other parameter). `None` when the body names no command.
+fn send_line(body: &Value, p: &Value) -> Option<SendLine> {
+    let b = body.as_object()?.values().next()?;
+    let field = |k: &str| match b.get(k) {
+        Some(Value::String(s)) => s.clone(),
+        Some(v) => v.to_string(),
+        None => "none".to_owned(),
+    };
+    let (command, seq) = (
+        b.get("command").and_then(Value::as_str)?.to_owned(),
+        field("sequence_id"),
+    );
+    let file = match command.as_str() {
+        "project_file" => b.get("url"),
+        "gcode_file" => b.get("param"),
+        _ => None,
+    }
+    .and_then(Value::as_str)
+    .and_then(|p| p.rsplit('/').next())
+    .map_or_else(String::new, |f| format!(" file {f}"));
+    let text = format!("send {command} seq {seq}{file}, {}", fun_words(p));
+    Some(SendLine { command, seq, text })
+}
+
+/// How many sent commands the session remembers for the connection log.
+const SENT_MAX: usize = 64;
 
 /// Command answers kept for a start to find its own.
 const REPLIES_MAX: usize = 32;
@@ -963,6 +1120,50 @@ impl Shared {
             firmware: Mutex::new(None),
             nozzle: Mutex::new(None),
             refused_send: AtomicBool::new(false),
+            sent: Mutex::new(std::collections::VecDeque::new()),
+            logged: Mutex::new(None),
+        }
+    }
+
+    /// Remembers a command this session sent, for the connection log.
+    fn note_sent(&self, command: &str, seq: &str) {
+        let mut s = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
+        s.push_back((command.to_owned(), seq.to_owned()));
+        while s.len() > SENT_MAX {
+            s.pop_front();
+        }
+    }
+
+    /// Writes a command the session sends on signing in (sequence id 0) to the connection log.
+    fn trace_sign_in_send(&self, command: &str) {
+        self.note_sent(command, "0");
+        crate::trace(&self.cfg.id, format_args!("send {command} seq 0"));
+    }
+
+    /// Writes a command reply to the connection log.
+    fn trace_reply(&self, r: &serde_json::Map<String, Value>) {
+        let field = |k: &str| r.get(k).and_then(Value::as_str).unwrap_or("");
+        let ours = self
+            .sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .any(|(c, s)| c == field("command") && s == field("sequence_id"));
+        crate::trace(&self.cfg.id, reply_line(r, ours));
+    }
+
+    /// Writes what changed in the followed report fields to the connection log.
+    fn trace_report(&self) {
+        let lines = {
+            let st = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let now = Logged::from_report(&st);
+            let mut logged = self.logged.lock().unwrap_or_else(PoisonError::into_inner);
+            let lines = report_trace_lines(logged.as_ref(), &now, &st);
+            *logged = Some(now);
+            lines
+        };
+        for l in lines {
+            crate::trace(&self.cfg.id, l);
         }
     }
 
@@ -974,6 +1175,9 @@ impl Shared {
             .get("info")
             .filter(|i| i.get("command").and_then(Value::as_str) == Some("get_version"))
         {
+            if let Some(o) = info.as_object() {
+                self.trace_reply(o);
+            }
             if let Some(m) = model_from_version(info) {
                 *self.model.lock().unwrap_or_else(PoisonError::into_inner) = Some(m);
             }
@@ -998,6 +1202,7 @@ impl Shared {
             .and_then(Value::as_object)
             .filter(|o| o.contains_key("sequence_id") && o.contains_key("command"))
         {
+            self.trace_reply(system);
             let mut r = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
             r.push_back(Value::Object(system.clone()));
             while r.len() > REPLIES_MAX {
@@ -1025,6 +1230,7 @@ impl Shared {
         }
         if print.get("command").and_then(Value::as_str) != Some("push_status") {
             if print.contains_key("sequence_id") {
+                self.trace_reply(print);
                 let mut r = self.replies.lock().unwrap_or_else(PoisonError::into_inner);
                 r.push_back(Value::Object(print.clone()));
                 while r.len() > REPLIES_MAX {
@@ -1049,6 +1255,7 @@ impl Shared {
                 merge_report(obj, print);
             }
         }
+        self.trace_report();
         let _ = self.have_state.send(true);
         self.publish_changes();
     }
@@ -1921,9 +2128,11 @@ impl BambuSession {
                     match event {
                         Ok(Event::Incoming(Packet::ConnAck(_))) => {
                             crate::trace(&id, "mqtt signed in");
+                            *shared.logged.lock().unwrap_or_else(PoisonError::into_inner) = None;
                             shared.connected.store(true, Ordering::Relaxed);
                             let _ = client.subscribe(report.clone(), QoS::AtMostOnce).await;
                             if reports.on_connect() {
+                                shared.trace_sign_in_send("pushall");
                                 let _ = client
                                     .publish(request.clone(), QoS::AtLeastOnce, false, all.clone())
                                     .await;
@@ -1932,6 +2141,7 @@ impl BambuSession {
                             }
                             // The model and firmware: the report itself does not name the model.
                             let version = json!({ "info": { "sequence_id": "0", "command": "get_version" } });
+                            shared.trace_sign_in_send("get_version");
                             let _ = client
                                 .publish(request.clone(), QoS::AtLeastOnce, false, version.to_string())
                                 .await;
@@ -2008,11 +2218,22 @@ impl BambuSession {
     }
 
     async fn command(&self, body: Value) -> Result<()> {
+        self.trace_send(&body);
         let topic = format!("device/{}/request", self.serial);
         self.client
             .publish(topic, QoS::AtLeastOnce, false, body.to_string())
             .await
             .map_err(|e| Error::unreachable(self.id(), e))
+    }
+
+    /// Writes a command about to go out to the connection log and remembers it for the replies.
+    fn trace_send(&self, body: &Value) {
+        let state = self.shared.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(line) = send_line(body, &state) {
+            drop(state);
+            crate::trace(self.id(), line.text);
+            self.shared.note_sent(&line.command, &line.seq);
+        }
     }
 
     fn ftps(&self) -> FtpsTarget<'_> {
@@ -4562,5 +4783,89 @@ mod tests {
         assert_eq!(p["vibration_cali"], true);
         assert_eq!(p["layer_inspect"], false);
         assert_eq!(p["timelapse"], true);
+    }
+
+    // The connection log writes a reply's command, sequence id, result, reason and err_code (in
+    // decimal and hex) and whether this session sent the command, and nothing else of it.
+    #[test]
+    fn the_connection_log_writes_a_reply_short() {
+        let r = json!({ "command": "project_file", "sequence_id": "3", "result": "failed",
+            "reason": "mqtt message verify failed", "err_code": 0x0502_4007_u64,
+            "param": "Metadata/plate_1.gcode", "url": "file:///sdcard/cube.gcode.3mf" });
+        let line = reply_line(r.as_object().unwrap(), true);
+        assert_eq!(
+            line,
+            "reply project_file seq 3 result failed reason \"mqtt message verify failed\" err_code 84033543 (0x05024007) ours yes"
+        );
+        let r = json!({ "command": "ledctrl", "sequence_id": 7 });
+        assert_eq!(
+            reply_line(r.as_object().unwrap(), false),
+            "reply ledctrl seq 7 result none reason none err_code none ours no"
+        );
+    }
+
+    // A command going out is written as its name, sequence id and, for a start, the file name, with
+    // the `fun` flags it went out under. The URL's scheme and folder, and every other parameter, stay
+    // out.
+    #[test]
+    fn the_connection_log_writes_a_send_without_its_body() {
+        let f = RemoteFile {
+            printer_id: "p".into(),
+            path: "cube.gcode.3mf".into(),
+            name: "cube.gcode.3mf".into(),
+            sha256: None,
+        };
+        let body = project_file_command("5", &f, &StartOptions::default(), Some("A1"));
+        let on = json!({ "fun": "3EC18FFF9CFF" });
+        let l = send_line(&body, &on).unwrap();
+        assert_eq!(
+            l.text,
+            "send project_file seq 5 file cube.gcode.3mf, fun 3EC18FFF9CFF (developer mode on)"
+        );
+        assert_eq!((l.command.as_str(), l.seq.as_str()), ("project_file", "5"));
+        let line =
+            json!({ "print": { "sequence_id": "6", "command": "gcode_line", "param": "M104 S200\n" } });
+        let l = send_line(&line, &json!({})).unwrap();
+        assert_eq!(l.text, "send gcode_line seq 6, fun none (developer mode unknown)");
+        let off = json!({ "fun": "3EC1AFFF9CFF" });
+        let start = json!({ "print": { "sequence_id": "8", "command": "gcode_file", "param": "/sdcard/cube.gcode" } });
+        assert_eq!(
+            send_line(&start, &off).unwrap().text,
+            "send gcode_file seq 8 file cube.gcode, fun 3EC1AFFF9CFF (developer mode off)"
+        );
+    }
+
+    // The first report after signing in writes `fun`, the whole `hms` list and `print_error`; later
+    // reports write only what changed, each `hms` entry added or removed on a line of its own.
+    #[test]
+    fn the_connection_log_follows_fun_hms_and_print_error() {
+        let first = json!({ "fun": "3EC18FFF9CFF", "print_error": 0, "hms": [] });
+        let now = Logged::from_report(&first);
+        assert_eq!(
+            report_trace_lines(None, &now, &first),
+            [
+                "fun 3EC18FFF9CFF (developer mode on)",
+                "hms listed none",
+                "print_error 0000_0000"
+            ]
+        );
+        assert!(report_trace_lines(Some(&now), &now, &first).is_empty());
+        let refused = json!({ "fun": "3EC18FFF9CFF", "print_error": 0,
+            "hms": [{ "attr": 83_887_360_u64, "code": 65_543_u64 }] });
+        let then = Logged::from_report(&refused);
+        assert_eq!(
+            report_trace_lines(Some(&now), &then, &refused),
+            ["hms added 0500_0500_0001_0007"]
+        );
+        let cleared = json!({ "fun": "3EC1AFFF9CFF", "print_error": 0x0300_400C_u64, "hms": [] });
+        let last = Logged::from_report(&cleared);
+        assert_eq!(
+            report_trace_lines(Some(&then), &last, &cleared),
+            [
+                "fun 3EC1AFFF9CFF (developer mode off)",
+                "hms removed 0500_0500_0001_0007",
+                "print_error 0300_400C (was 0000_0000)"
+            ]
+        );
     }
 }
