@@ -414,6 +414,30 @@ describe('settings by height', () => {
   })
 })
 
+describe('feature filaments by height in a Bambu Studio file', () => {
+  it("read under the engine's names, as the engine reads the same file", async () => {
+    const ranges = `<?xml version="1.0" encoding="utf-8"?>
+<objects>
+ <object id="1">
+  <range min_z="8" max_z="14">
+   <option opt_key="layer_height">0.08</option>
+   <option opt_key="wall_filament">3</option>
+   <option opt_key="sparse_infill_filament">2</option>
+   <option opt_key="solid_infill_filament">2</option>
+  </range>
+ </object>
+</objects>`
+    const { host, requests } = capture()
+    await openModelBytes(host, 'walls.3mf', project(P1S, ranges))
+    const e = get().plate[0]!
+    const filaments = { outer_wall_filament_id: 3, inner_wall_filament_id: 3, sparse_infill_filament_id: 2, internal_solid_filament_id: 2 }
+    expect(e.layerRanges).toEqual([{ minZ: 8, maxZ: 14, settings: { layer_height: 0.08, ...filaments } }])
+    expect(get().toast?.text ?? '').not.toContain('Not imported from its height ranges')
+    await slicePlate(host, { auto: true })
+    expect(requests[0]!.options!.heightRanges).toEqual([{ zFromMm: 8, zToMm: 14, settings: filaments, objects: [e.id] }])
+  })
+})
+
 describe('layer heights by height that differ between objects', () => {
   it('are named as not imported yet', async () => {
     const mesh = MODEL.slice(MODEL.indexOf('<mesh>'), MODEL.indexOf('</mesh>') + '</mesh>'.length)
