@@ -209,11 +209,6 @@
    "to": "ensure_all"
   },
   {
-   "key": "ensure_vertical_shell_thickness",
-   "from": "disabled",
-   "to": "ensure_moderate"
-  },
-  {
    "key": "timelapse_no_toolhead",
    "from": "1",
    "to": "0"
