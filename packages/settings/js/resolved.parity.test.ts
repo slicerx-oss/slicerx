@@ -11,6 +11,7 @@ import { importFlat } from './import'
 import { printerConfig } from './profiles'
 import { resolvedProfile } from './resolved'
 import { sameValue } from './diff'
+import { BBL_OVERLAY, type MakerOverlay } from './overlay'
 
 const DIR = process.env['ORCA_RESOLVED_DIR']
 const PRINTERS = ['bambu-p1s', 'bambu-a1', 'bambu-x1-carbon', 'prusa-mk4s', 'creality-k1']
@@ -29,6 +30,14 @@ const REASONS: Record<string, string> = {
   filament_start_gcode: 'filament G-code ships with the filament presets, not the resolved profile',
   filament_end_gcode: 'same',
 }
+
+/** Keys the Bambu Studio 2.8 overlay sets on purpose (packages/profiles/overlays/bbl-2.8.json): Orca 2.4.2 differs there. */
+const OVERLAY = JSON.parse(readFileSync(new URL(`../../profiles/${BBL_OVERLAY}`, import.meta.url), 'utf8')) as MakerOverlay
+const OVERLAID = new Set([
+  ...Object.values(OVERLAY.filament).flatMap((v) => Object.keys(v)),
+  ...Object.values(OVERLAY.machine).flatMap((s) => Object.values(s).flatMap((m) => [...Object.keys(m.values), ...Object.keys(m.filament?.values ?? {})])),
+  ...Object.values(OVERLAY.process).flatMap((s) => Object.values(s).flatMap((t) => Object.values(t).flatMap((p) => Object.keys(p.values)))),
+])
 
 const GCODE = ['machine_start_gcode', 'machine_end_gcode', 'layer_change_gcode', 'before_layer_change_gcode', 'change_filament_gcode', 'machine_pause_gcode', 'time_lapse_gcode', 'template_custom_gcode', 'wrapping_detection_gcode', 'toolchange_gcode']
 
@@ -49,7 +58,7 @@ describe.skipIf(!DIR || !existsSync(DIR ?? ''))('resolved profiles against OrcaS
         const r = await resolvedProfile(id, tier, nozzle)
         expect(r, `${id} has resolved data`).toBeDefined()
         const ours = { ...defaultConfig(), ...r!.machine, ...r!.filament, ...r!.process, ...Object.fromEntries(Object.entries(printerConfig(id) ?? {}).filter(([k]) => GCODE.includes(k))) } as Record<string, unknown>
-        const differ = Object.keys(orca).filter((k) => !(k in REASONS) && !sameValue(orca[k] as never, ours[k] as never) && JSON.stringify(orca[k]) !== JSON.stringify(ours[k]))
+        const differ = Object.keys(orca).filter((k) => !(k in REASONS) && !(id.startsWith('bambu-') && OVERLAID.has(k)) && !sameValue(orca[k] as never, ours[k] as never) && JSON.stringify(orca[k]) !== JSON.stringify(ours[k]))
         if (process.env['ORCA_RESOLVED_REPORT']) for (const k of differ) appendFileSync(process.env['ORCA_RESOLVED_REPORT'], `${id}\t${tier}\t${k}\torca ${JSON.stringify(orca[k])?.slice(0, 120)}\tours ${JSON.stringify(ours[k])?.slice(0, 120)}\n`)
         expect(differ.map((k) => `${k}: orca ${JSON.stringify(orca[k])?.slice(0, 80)} ours ${JSON.stringify(ours[k])?.slice(0, 80)}`)).toEqual([])
       })

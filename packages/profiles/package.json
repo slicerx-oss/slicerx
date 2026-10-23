@@ -11,9 +11,10 @@
     "./process-speeds.json": "./process-speeds.json",
     "./filaments/*": "./filaments/*",
     "./resolved/*": "./resolved/*",
+    "./overlays/*": "./overlays/*",
     "./cura/*": "./cura/*",
     "./printer-images/*": "./printer-images/*"
   },
-  "files": ["gcode.json", "machine.json", "process-speeds.json", "filaments", "resolved", "cura", "printer-images", "LICENSE", "README.md"],
+  "files": ["gcode.json", "machine.json", "process-speeds.json", "filaments", "resolved", "overlays", "cura", "printer-images", "LICENSE", "README.md"],
   "license": "AGPL-3.0-or-later AND LGPL-3.0-or-later"
 }
