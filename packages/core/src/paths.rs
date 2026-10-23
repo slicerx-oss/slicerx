@@ -2539,10 +2539,11 @@ fn vary_speeds(
     let mut any = false;
     for &(from, to, q) in vary {
         for (i, p) in out.paths.iter().enumerate().take(to).skip(from) {
-            let outer = match p.feature {
-                Feature::OuterWall => true,
-                Feature::InnerWall | Feature::OverhangWall | Feature::Bridge | Feature::InternalBridge => {
-                    false
+            let kind = match p.feature {
+                Feature::OuterWall => crate::quality::Kind::Outer,
+                Feature::InnerWall => crate::quality::Kind::Inner,
+                Feature::OverhangWall | Feature::Bridge | Feature::InternalBridge => {
+                    crate::quality::Kind::Other
                 }
                 _ => continue,
             };
@@ -2553,7 +2554,7 @@ fn vary_speeds(
             let mm: Vec<(f64, f64)> = pts.iter().map(|q| (q.x_mm(), q.y_mm())).collect();
             let mm3 =
                 crate::gcode::bead_area(f64::from(p.width_mm), f64::from(out.height)) * f64::from(p.flow);
-            let Some((first, stretches)) = q.speeds(&mm, p.width_mm, mm3, p.speed_mm_s, outer, p.tool) else {
+            let Some((first, stretches)) = q.speeds(&mm, p.width_mm, mm3, p.speed_mm_s, kind, p.tool) else {
                 continue;
             };
             // Each new point: its position and where it sits between the path's own points (a, b, t).

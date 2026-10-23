@@ -287,10 +287,10 @@ fn frustum_run(top: f32, config: Value) -> SliceRun {
 #[test]
 fn overhanging_walls_are_labeled_and_slowed_by_degree() {
     let speeds = json!({"overhang_1_4_speed": 40, "overhang_2_4_speed": 30, "overhang_3_4_speed": 20, "overhang_4_4_speed": 10});
-    // A flare of 0.15, 0.25 and 0.33 mm a layer hangs 36, 60 and 79 percent of the 0.42 mm line. The speed
-    // is interpolated between the overlap levels as Orca does (90, 75, 50, 25 and 13 percent resting on the
-    // layer below): 36, 26 and 17 mm/s.
-    for (top, speed) in [(25.0, 36), (35.0, 26), (43.0, 17)] {
+    // A flare of 0.15, 0.25 and 0.33 mm a layer puts the bead's outer edge that far past the layer below: 0.37,
+    // 0.61 and 0.80 of half of (0.42 mm wall + 0.4 mm nozzle), degrees 21/40, 32/40 and 1. On straight lines
+    // between the levels: 29, 18 and 10 mm/s.
+    for (top, speed) in [(25.0, 29), (35.0, 18), (43.0, 10)] {
         let feeds: Vec<String> = (speed - 1..=speed + 1)
             .map(|v| format!("G1 F{}\n", v * 60))
             .collect();
