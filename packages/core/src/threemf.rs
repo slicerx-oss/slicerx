@@ -43,7 +43,7 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
         .map(|(plate, objects)| {
             (plate, {
                 let mut mesh = Mesh {
-                    name: name.to_owned(),
+                    name: crate::mesh::file_label(name).to_owned(),
                     ..Mesh::default()
                 };
                 // One mesh holds one object's settings: they stay when every object has the same, and are
