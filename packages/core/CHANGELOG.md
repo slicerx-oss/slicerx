@@ -20,6 +20,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 ### Fixed
 
 - Bambu Lab H2D and X2D: the start and filament change G-code write -1 as the hotend id (`B` of `M620.11`, `H` of `M620 S..A`, `T..` and `M620.6`, and `M620 D`), as the maker's slicer does, instead of 0.
+- Object labels no longer carry the folders a model was opened from. `load_mesh`, `load_3mf_plates` and `Mesh::from_stl` name a model by its file's name alone (of a name given with folders, by either separator, only the last part stays), and a 3MF object without a name is called `Object_<n>` (the build item's place, from 1), not after the file. `sx slice` and `sx slice --request` of a model given by its full path wrote that path into every label comment, `M486` and `EXCLUDE_OBJECT` name.
 
 ## [0.2.0] - 2026-10-22
 

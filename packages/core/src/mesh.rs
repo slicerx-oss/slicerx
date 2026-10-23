@@ -186,7 +186,7 @@ impl Mesh {
             return Err(Error::mesh(file_name, "the file has no triangles"));
         }
         Ok(Self {
-            name: file_name.to_owned(),
+            name: file_label(file_name).to_owned(),
             parts,
             ..Self::default()
         })
@@ -448,8 +448,9 @@ impl Mesh {
             ));
         }
         let (positions, triangles) = weld_soup(soup);
+        let shown = file_label(name);
         let part = MeshPart {
-            name: name.to_owned(),
+            name: shown.to_owned(),
             slot: 1,
             color: None,
             positions,
@@ -461,7 +462,7 @@ impl Mesh {
             paint_texts: Vec::new(),
         };
         Ok(Self {
-            name: name.to_owned(),
+            name: shown.to_owned(),
             parts: vec![part],
             ..Self::default()
         })
@@ -824,6 +825,13 @@ impl<'a> Reader<'a> {
             self.take(4)?.try_into().map_err(|_| self.err())?,
         ))
     }
+}
+
+/// The name a model loaded from `file_name` goes by: the file's own name, without the folders it was kept in (either
+/// separator, whatever the host), so object labels in shared G-code and the names a slice reports never carry a path.
+pub(crate) fn file_label(file_name: &str) -> &str {
+    let trimmed = file_name.trim_end_matches(['/', '\\']);
+    trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed)
 }
 
 fn triangles_from_indices(indices: &[u32], vertex_count: usize, name: &str) -> Result<Vec<[u32; 3]>> {
