@@ -110,7 +110,7 @@ fn bridge_accels(cfg: &PrintConfig, default: f64, outer: f64) -> (f64, f64) {
 
 /// Whether `value` is the settings schema's default for `key`, however it is written (`"50%"`, `["50%"]`). A value
 /// that reads as nothing (null, empty) counts as the default, as the key's absence does.
-fn is_schema_default(key: &str, value: &serde_json::Value) -> bool {
+pub(crate) fn is_schema_default(key: &str, value: &serde_json::Value) -> bool {
     static DEFAULTS: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
     let defaults = DEFAULTS.once(|| serde_json::from_str(crate::config::SCHEMA_DEFAULTS).unwrap_or_default());
     let Some(default) = defaults.get(key).and_then(|e| e.get(1)) else {

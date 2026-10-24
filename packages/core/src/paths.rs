@@ -2559,7 +2559,13 @@ fn vary_speeds(
             let mm: Vec<(f64, f64)> = pts.iter().map(|q| (q.x_mm(), q.y_mm())).collect();
             let mm3 =
                 crate::gcode::bead_area(f64::from(p.width_mm), f64::from(out.height)) * f64::from(p.flow);
-            let Some((first, stretches)) = q.speeds(&mm, p.width_mm, mm3, p.speed_mm_s, kind, p.tool) else {
+            // An overhang wall piece is measured with the bridge strand's width, whatever width its bead prints at.
+            let measure = if kind == crate::quality::Kind::Clear {
+                q.clear_width
+            } else {
+                p.width_mm
+            };
+            let Some((first, stretches)) = q.speeds(&mm, measure, mm3, p.speed_mm_s, kind, p.tool) else {
                 continue;
             };
             // Each new point: its position and where it sits between the path's own points (a, b, t).
