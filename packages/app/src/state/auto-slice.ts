@@ -4,7 +4,7 @@
 // to Auto (by size, the default) a plate whose slice is expected to be big waits for Slice instead (auto-slice-mode.ts). A slice
 // still running for an older edit is canceled the moment the newer edit lands, and a finished slice is marked stale at once, so
 // the numbers and the preview never pass for the current plate. A drag that edits on every move (a scrub, a slider) slices
-// once, on release.
+// once, on release. An opened project and the example plate at launch wait for Slice instead.
 import type { Host } from '@slicerx/contracts'
 import { cancelSlice, slicePlate } from './actions'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
@@ -42,8 +42,9 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     const s = appStore.getState()
     if (s.plate.length === 0 && s.sliceHeld) appStore.setState({ sliceHeld: false })
     // A step open for editing rolls the part back; the slice waits for the edit to end.
-    // An open that starts a project ends on Slice plate (AppState.revealHold): it slices on a click or a later edit.
-    if (!s.autoSlice || s.plate.length === 0 || s.revealHold || (s.plateLoading && !s.sliceDuringOpen) || s.historyEdit) return
+    // An open that starts a project ends on Slice plate (AppState.revealHold), as does the example plate at launch
+    // (AppState.exampleSeeding): each slices on a click or a later edit.
+    if (!s.autoSlice || s.plate.length === 0 || s.revealHold || s.exampleSeeding || (s.plateLoading && !s.sliceDuringOpen) || s.historyEdit) return
     // A plate switched back to with its slice still current (workspaces/preview/plate-slices.ts) needs none.
     if (s.slice.status === 'done' && !s.slice.stale) return
     // Auto by size: a big slice waits for Slice, and the footer says so.
@@ -79,7 +80,8 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     }
     // The end of an open that started a project slices nothing, whatever the plate's size: a wait set during it goes,
     // and Slice is the action until the person presses it or edits the plate (the edit slices as the setting says).
-    if (prev.revealHold && !s.revealHold) {
+    // The example plate a session starts with ends the same way.
+    if ((prev.revealHold && !s.revealHold) || (prev.exampleSeeding && !s.exampleSeeding)) {
       clear()
       if (s.plate.length > 0 && !s.sliceHeld) appStore.setState({ sliceHeld: true })
       return
