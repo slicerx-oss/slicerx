@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+
+- aegis walls (the default) with inner walls printed first follow `precise_outer_wall`: with it on (the stock setting) the first inner wall sits (outer width + inner width) / 2 from the outer wall, with it off (outer width + inner width) / 2 - (1 - pi/4) h. Before, both came out (1 - pi/4) h / 2 off (0.0215 mm at 0.2 mm layers), and gap fill and infill with them. The outer wall does not move, so part sizes, holes and pegs keep their size.
+
 ## [0.2.2] - 2026-10-25
 
 ## [0.2.1] - 2026-10-24
