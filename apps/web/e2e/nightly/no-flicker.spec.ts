@@ -109,6 +109,8 @@ async function start(page: Page, workspace: 'prepare' | 'preview'): Promise<void
     if (workspace === 'prepare') await plateReady(page)
     else await appReady(page)
     const at = loads
+    // The example plate waits for Slice plate at launch, so setup slices it the way a person would.
+    await page.getByRole('button', { name: 'Slice plate', exact: true }).first().click()
     await sliced(page, () => loads !== at || networkDropped(page) !== undefined)
     await settle(page)
     const what = networkDropped(page)
