@@ -29,7 +29,7 @@ import { compose } from '../src/plate/transform'
 import { get, set, type CadTool } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
-useGeomEngine('step-edit-still-broken-replies', { compressed: true })
+const engine = useGeomEngine('step-edit-still-broken-replies', { compressed: true })
 
 // jsdom has no layout; the tool panel scrolls itself into view when it opens.
 Element.prototype.scrollIntoView = () => {}
@@ -241,6 +241,34 @@ async function sketched() {
 }
 
 describe('sketch', () => {
+  it('the sketch tool solves before it checks, even when its timers run late', async () => {
+    await sketched()
+    await act(() => beginEdit(slicer, 'a', 0))
+    // The tool's solve (60 ms) and check (100 ms) timers are held here and run late, the 100 ms one first: what Node
+    // does on a busy thread when an older 100 ms timer is already due.
+    const held = new Map<number, () => void>()
+    const real = globalThis.setTimeout
+    globalThis.setTimeout = ((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if ((ms === 60 || ms === 100) && /checkSketch|solveSketch/.test(String(fn))) {
+        held.set(ms, fn)
+        return 0
+      }
+      return real(fn, ms, ...rest)
+    }) as typeof setTimeout
+    try {
+      render(createElement(HostContext.Provider, { value: HOST }, createElement(CadPanel, { tool: get().objectTool as CadTool })))
+      await waitFor(() => expect([...held.keys()].sort()).toEqual([100, 60]), { timeout: 30_000 })
+    } finally {
+      globalThis.setTimeout = real
+    }
+    held.get(100)!()
+    held.get(60)!()
+    await waitFor(() => expect(engine.ops()).toContain('sketch.check'), { timeout: 30_000 })
+    const ops = engine.ops()
+    expect(ops.indexOf('sketch.solve')).toBeGreaterThanOrEqual(0)
+    expect(ops.indexOf('sketch.solve')).toBeLessThan(ops.indexOf('sketch.check'))
+  })
+
   it('a sketch cut edited deeper than the body says it is still broken and why', async () => {
     await sketched()
     await open('a', 0)
