@@ -16,6 +16,7 @@
     "./defaults": "./js/defaults.ts",
     "./print-margins": "./js/print-margins.ts",
     "./arrange-room": "./js/arrange-room.ts",
+    "./by-object": "./js/by-object.ts",
     "./easy": "./js/easy.ts",
     "./defaults.json": "./defaults.json"
   },
