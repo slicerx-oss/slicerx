@@ -19,16 +19,7 @@ pub(crate) struct Grid {
     pub z: Vec<f32>,
 }
 
-#[allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    clippy::cast_possible_wrap,
-    clippy::cast_precision_loss,
-    reason = "cell indices of a bed a few hundred mm across"
-)]
-fn cell(v: f64) -> i32 {
-    (v / CELL).floor() as i32
-}
+use super::rules::cell;
 
 impl Grid {
     fn new(x0: i32, y0: i32, w: usize, h: usize) -> Self {
@@ -154,8 +145,7 @@ impl Grid {
             }
             rows.push(top);
         }
-        #[allow(clippy::cast_possible_truncation, reason = "a beam reach of a few tens of mm")]
-        let k = (reach / CELL).ceil().max(0.0) as i32;
+        let k = super::rules::beam_cells(reach);
         let n = rows.len() + usize::try_from(2 * k).unwrap_or(0);
         let mut out = vec![0.0f32; n];
         if !rows.is_empty() {

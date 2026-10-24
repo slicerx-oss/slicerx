@@ -1,0 +1,1061 @@
+{
+  "cellMm": 1.0,
+  "comment": "Written by packages/core/src/collide/rules.rs (SX_BLESS=1 cargo test -p sx-core collide::rules); read by packages/settings/js/by-object.golden.test.ts. The engine's by-object rules on a set of cases: the gantry beam on the 1 mm lattice, deltas, the clearance radius, and how far an object's own first layer prints past it.",
+  "delta": [
+    {
+      "delta": true,
+      "printerId": null,
+      "printerModel": null,
+      "printerStructure": "delta"
+    },
+    {
+      "delta": false,
+      "printerId": null,
+      "printerModel": null,
+      "printerStructure": "corexy"
+    },
+    {
+      "delta": true,
+      "printerId": "flsun-v400",
+      "printerModel": null,
+      "printerStructure": null
+    },
+    {
+      "delta": true,
+      "printerId": null,
+      "printerModel": "FLSun V400",
+      "printerStructure": null
+    },
+    {
+      "delta": false,
+      "printerId": "bambu-a1",
+      "printerModel": "Bambu Lab A1",
+      "printerStructure": "i3"
+    },
+    {
+      "delta": false,
+      "printerId": null,
+      "printerModel": null,
+      "printerStructure": null
+    }
+  ],
+  "gantry": [
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        153.3,
+        173.3
+      ],
+      "meets": true,
+      "name": "edge, rod 33, last row 0.3 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        153.8,
+        173.8
+      ],
+      "meets": true,
+      "name": "edge, rod 33, last row 0.8 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        154.3,
+        174.3
+      ],
+      "meets": false,
+      "name": "edge, rod 33, next row 0.3 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        154.8,
+        174.8
+      ],
+      "meets": false,
+      "name": "edge, rod 33, next row 0.8 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        153.0,
+        173.0
+      ],
+      "meets": true,
+      "name": "edge, rod 33, reach exactly",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        152.7,
+        172.7
+      ],
+      "meets": true,
+      "name": "edge, rod 33, reach less 0.3",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        177.3,
+        197.3
+      ],
+      "meets": true,
+      "name": "edge, rod 56.5, last row 0.3 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        177.8,
+        197.8
+      ],
+      "meets": false,
+      "name": "edge, rod 56.5, last row 0.8 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        178.3,
+        198.3
+      ],
+      "meets": false,
+      "name": "edge, rod 56.5, next row 0.3 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        178.8,
+        198.8
+      ],
+      "meets": false,
+      "name": "edge, rod 56.5, next row 0.8 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        176.5,
+        196.5
+      ],
+      "meets": true,
+      "name": "edge, rod 56.5, reach exactly",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        176.2,
+        196.2
+      ],
+      "meets": true,
+      "name": "edge, rod 56.5, reach less 0.3",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        153.3,
+        173.3
+      ],
+      "meets": true,
+      "name": "in 0.3, rod 33, last row 0.3 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        153.8,
+        173.8
+      ],
+      "meets": true,
+      "name": "in 0.3, rod 33, last row 0.8 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        154.3,
+        174.3
+      ],
+      "meets": false,
+      "name": "in 0.3, rod 33, next row 0.3 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        154.8,
+        174.8
+      ],
+      "meets": false,
+      "name": "in 0.3, rod 33, next row 0.8 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        153.3,
+        173.3
+      ],
+      "meets": true,
+      "name": "in 0.3, rod 33, reach exactly",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        153.0,
+        173.0
+      ],
+      "meets": true,
+      "name": "in 0.3, rod 33, reach less 0.3",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        177.3,
+        197.3
+      ],
+      "meets": true,
+      "name": "in 0.3, rod 56.5, last row 0.3 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        177.8,
+        197.8
+      ],
+      "meets": false,
+      "name": "in 0.3, rod 56.5, last row 0.8 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        178.3,
+        198.3
+      ],
+      "meets": false,
+      "name": "in 0.3, rod 56.5, next row 0.3 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        178.8,
+        198.8
+      ],
+      "meets": false,
+      "name": "in 0.3, rod 56.5, next row 0.8 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        176.8,
+        196.8
+      ],
+      "meets": true,
+      "name": "in 0.3, rod 56.5, reach exactly",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.3
+      ],
+      "later": [
+        176.5,
+        196.5
+      ],
+      "meets": true,
+      "name": "in 0.3, rod 56.5, reach less 0.3",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        153.3,
+        173.3
+      ],
+      "meets": true,
+      "name": "in 0.8, rod 33, last row 0.3 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        153.8,
+        173.8
+      ],
+      "meets": true,
+      "name": "in 0.8, rod 33, last row 0.8 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        154.3,
+        174.3
+      ],
+      "meets": false,
+      "name": "in 0.8, rod 33, next row 0.3 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        154.8,
+        174.8
+      ],
+      "meets": false,
+      "name": "in 0.8, rod 33, next row 0.8 in",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        153.8,
+        173.8
+      ],
+      "meets": true,
+      "name": "in 0.8, rod 33, reach exactly",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        153.5,
+        173.5
+      ],
+      "meets": true,
+      "name": "in 0.8, rod 33, reach less 0.3",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        177.3,
+        197.3
+      ],
+      "meets": true,
+      "name": "in 0.8, rod 56.5, last row 0.3 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        177.8,
+        197.8
+      ],
+      "meets": false,
+      "name": "in 0.8, rod 56.5, last row 0.8 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        178.3,
+        198.3
+      ],
+      "meets": false,
+      "name": "in 0.8, rod 56.5, next row 0.3 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        178.8,
+        198.8
+      ],
+      "meets": false,
+      "name": "in 0.8, rod 56.5, next row 0.8 in",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        177.3,
+        197.3
+      ],
+      "meets": true,
+      "name": "in 0.8, rod 56.5, reach exactly",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.8
+      ],
+      "later": [
+        177.0,
+        197.0
+      ],
+      "meets": true,
+      "name": "in 0.8, rod 56.5, reach less 0.3",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        47.3,
+        67.3
+      ],
+      "meets": true,
+      "name": "below, first row 0.3 in, rod 33",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        47.8,
+        67.8
+      ],
+      "meets": true,
+      "name": "below, first row 0.8 in, rod 33",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        47.0,
+        67.0
+      ],
+      "meets": false,
+      "name": "below, first row edge, rod 33",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        46.8,
+        66.8
+      ],
+      "meets": false,
+      "name": "below, row before 0.8 in, rod 33",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        23.299999999999997,
+        43.3
+      ],
+      "meets": false,
+      "name": "below, first row 0.3 in, rod 56.5",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        23.799999999999997,
+        43.8
+      ],
+      "meets": true,
+      "name": "below, first row 0.8 in, rod 56.5",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        23.0,
+        43.0
+      ],
+      "meets": false,
+      "name": "below, first row edge, rod 56.5",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 57,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        22.799999999999997,
+        42.8
+      ],
+      "meets": false,
+      "name": "below, row before 0.8 in, rod 56.5",
+      "toRod": 56.5
+    },
+    {
+      "beamCells": 33,
+      "earlier": [
+        100.0,
+        120.0
+      ],
+      "later": [
+        110.0,
+        130.0
+      ],
+      "meets": true,
+      "name": "overlapping",
+      "toRod": 33.0
+    },
+    {
+      "beamCells": 0,
+      "earlier": [
+        100.0,
+        120.5
+      ],
+      "later": [
+        121.0,
+        140.0
+      ],
+      "meets": false,
+      "name": "no reach, next row",
+      "toRod": 0.0
+    },
+    {
+      "beamCells": 0,
+      "earlier": [
+        100.0,
+        120.5
+      ],
+      "later": [
+        120.9,
+        140.0
+      ],
+      "meets": true,
+      "name": "no reach, same row",
+      "toRod": 0.0
+    }
+  ],
+  "radius": [
+    {
+      "distanceMm": 80.0,
+      "estimated": true,
+      "gapMm": 80.0,
+      "radiusMm": 73.0,
+      "reachMm": 0.0,
+      "result": null
+    },
+    {
+      "distanceMm": 80.0,
+      "estimated": false,
+      "gapMm": 80.0,
+      "radiusMm": 73.0,
+      "reachMm": 0.0,
+      "result": null
+    },
+    {
+      "distanceMm": 73.0,
+      "estimated": true,
+      "gapMm": 73.0,
+      "radiusMm": 73.0,
+      "reachMm": 0.0,
+      "result": null
+    },
+    {
+      "distanceMm": 73.0,
+      "estimated": false,
+      "gapMm": 73.0,
+      "radiusMm": 73.0,
+      "reachMm": 0.0,
+      "result": null
+    },
+    {
+      "distanceMm": 72.7,
+      "estimated": true,
+      "gapMm": 72.7,
+      "radiusMm": 73.0,
+      "reachMm": 0.0,
+      "result": "block"
+    },
+    {
+      "distanceMm": 72.7,
+      "estimated": false,
+      "gapMm": 72.7,
+      "radiusMm": 73.0,
+      "reachMm": 0.0,
+      "result": "soft"
+    },
+    {
+      "distanceMm": 73.0,
+      "estimated": true,
+      "gapMm": 78.0,
+      "radiusMm": 73.0,
+      "reachMm": 5.0,
+      "result": null
+    },
+    {
+      "distanceMm": 73.0,
+      "estimated": false,
+      "gapMm": 78.0,
+      "radiusMm": 73.0,
+      "reachMm": 5.0,
+      "result": null
+    },
+    {
+      "distanceMm": 72.9,
+      "estimated": true,
+      "gapMm": 77.9,
+      "radiusMm": 73.0,
+      "reachMm": 5.0,
+      "result": "block"
+    },
+    {
+      "distanceMm": 72.9,
+      "estimated": false,
+      "gapMm": 77.9,
+      "radiusMm": 73.0,
+      "reachMm": 5.0,
+      "result": "soft"
+    },
+    {
+      "distanceMm": 40.0,
+      "estimated": true,
+      "gapMm": 40.0,
+      "radiusMm": 68.0,
+      "reachMm": 0.0,
+      "result": "block"
+    },
+    {
+      "distanceMm": 40.0,
+      "estimated": false,
+      "gapMm": 40.0,
+      "radiusMm": 68.0,
+      "reachMm": 0.0,
+      "result": "soft"
+    },
+    {
+      "distanceMm": 67.8,
+      "estimated": true,
+      "gapMm": 75.0,
+      "radiusMm": 68.0,
+      "reachMm": 7.2,
+      "result": "block"
+    },
+    {
+      "distanceMm": 67.8,
+      "estimated": false,
+      "gapMm": 75.0,
+      "radiusMm": 68.0,
+      "reachMm": 7.2,
+      "result": "soft"
+    }
+  ],
+  "reach": [
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_loops": 0
+      },
+      "name": "nothing round it",
+      "reachMm": 0.0
+    },
+    {
+      "brimMm": 5.0,
+      "config": {
+        "brim_type": "outer_only",
+        "brim_width": 5,
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_loops": 0
+      },
+      "name": "a 5 mm brim",
+      "reachMm": 5.0
+    },
+    {
+      "brimMm": 6.2,
+      "config": {
+        "brim_type": "auto_brim",
+        "brim_width": 0,
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_loops": 0
+      },
+      "name": "an automatic brim of 6.2 mm",
+      "reachMm": 6.2
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 3,
+        "skirt_height": 1,
+        "skirt_loops": 2
+      },
+      "name": "a combined skirt",
+      "reachMm": 0.0
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 3,
+        "skirt_height": 1,
+        "skirt_loops": 2,
+        "skirt_type": "perobject"
+      },
+      "name": "its own skirt",
+      "reachMm": 3.754159
+    },
+    {
+      "brimMm": 5.0,
+      "config": {
+        "brim_type": "outer_only",
+        "brim_width": 5,
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 2,
+        "skirt_loops": 3,
+        "skirt_type": "perobject"
+      },
+      "name": "its own skirt round a brim",
+      "reachMm": 8.131239
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 3,
+        "skirt_height": 0,
+        "skirt_loops": 2,
+        "skirt_type": "perobject"
+      },
+      "name": "its own skirt, no height",
+      "reachMm": 0.0
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "enable_support": true,
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_loops": 0,
+        "support_style": "default",
+        "support_type": "normal(auto)"
+      },
+      "name": "normal support",
+      "reachMm": 5.045619
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "enable_support": true,
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_loops": 0,
+        "support_angle": 30,
+        "support_style": "grid",
+        "support_type": "normal(auto)"
+      },
+      "name": "normal support at 30 degrees",
+      "reachMm": 6.888784
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "enable_support": true,
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_loops": 0,
+        "support_expansion": 1,
+        "support_style": "snug",
+        "support_type": "normal(auto)"
+      },
+      "name": "snug support",
+      "reachMm": 3.4
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "enable_support": true,
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_loops": 0,
+        "support_type": "tree(auto)"
+      },
+      "name": "tree support",
+      "reachMm": 7.9
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 1,
+        "skirt_loops": 1,
+        "skirt_type": "perobject"
+      },
+      "name": "its own skirt, line width unset",
+      "reachMm": 2.40708
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "enable_support": true,
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_loops": 0,
+        "support_style": "snug"
+      },
+      "name": "snug support, line width unset",
+      "reachMm": 2.4
+    },
+    {
+      "brimMm": 15.0,
+      "config": {
+        "brim_type": "outer_only",
+        "brim_width": 15,
+        "enable_support": true,
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_loops": 0,
+        "support_type": "tree(auto)"
+      },
+      "name": "tree support past a wide brim",
+      "reachMm": 15.0
+    }
+  ]
+}

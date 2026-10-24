@@ -42,8 +42,8 @@ function laidOut(plate: readonly PlateEntry[], transforms: Record<string, Mat4>,
  * Arranges `moving` around `fixed` on `plate` (every entry, in its order) for printing by object with `cfg`. The plain
  * arrange first, in the gantry's order; when that still leaves a tall object under the gantry and two or more are
  * tall, the tall ones go down one at a time, each clear of the lanes before it, and the rest around them. The lanes
- * layout counts only when it leaves fewer problems and no more objects off the bed. Arrange holds itself to the
- * check's rules with the rod reaching a little further (arrangeRules), so heimdall's slice agrees.
+ * layout counts only when it leaves fewer problems and no more objects off the bed. The lanes reach a little further
+ * than the rod (arrangeRules), and the layouts are judged by the check, which holds the gantry to heimdall's own cells.
  */
 export async function arrangeByObject(
   plate: readonly PlateEntry[],
@@ -55,7 +55,8 @@ export async function arrangeByObject(
   place: Place,
   stop?: () => boolean,
 ): Promise<ByObjectArrange> {
-  cfg = arrangeRules(cfg)
+  // The lanes reach a little further than the engine's rule (arrangeRules); the problems and the order are the engine's.
+  const rules = arrangeRules(cfg)
   const first = await place(moving, fixed, opts)
   const plain = laidOut(plate, first.transforms, cfg)
   const keep = (): ByObjectArrange => ({ ...first, order: plain.map((p) => p.id) })
@@ -85,7 +86,7 @@ export async function arrangeByObject(
     const reach = margins.reach(size)
     const apart = byObjectApart(margins.apart, [t, ...fixed, ...down].map(reachOf))
     const away = zoneKeep(margins.grow(size), reach, opts.gapMm, apart, !first.boxes) - reach
-    const lanes = hulls.map((h) => gantryLane(h, cfg, 0, bed.widthMm, away))
+    const lanes = hulls.map((h) => gantryLane(h, rules, 0, bed.widthMm, away))
     // Left where it packs: the first one moved to the middle of the bed would leave no room for a lane either side.
     const r = await place([t], [...fixed, ...down], { ...opts, margins, center: false, zones: [...(opts.zones ?? []), ...lanes] })
     const m = r.transforms[t.id]

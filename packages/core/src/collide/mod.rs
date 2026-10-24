@@ -16,6 +16,7 @@
 pub(crate) mod grid;
 pub(crate) mod plate;
 pub mod report;
+pub(crate) mod rules;
 pub(crate) mod shapes;
 pub(crate) mod walk;
 
@@ -454,12 +455,12 @@ impl Model {
             serde_json::Value::Array(a) => a.first().and_then(serde_json::Value::as_str),
             _ => None,
         });
-        // A delta (`printer_structure`, or a FLSun, whose profiles leave it out) has no gantry beam over the bed.
-        let delta = matches!(config.raw.get("printer_structure"), Some(serde_json::Value::String(t)) if t == "delta")
-            || [printer_id, model]
-                .into_iter()
-                .flatten()
-                .any(|id| id.to_ascii_lowercase().starts_with("flsun"));
+        // A delta has no gantry beam over the bed.
+        let structure = config
+            .raw
+            .get("printer_structure")
+            .and_then(serde_json::Value::as_str);
+        let delta = rules::is_delta(structure, printer_id, model);
         let mut machine = shapes::machine(printer_id, model);
         // The nozzle tip is the real contact: a travel or a print move meets the part only where the nozzle does.
         for c in machine.heads.iter_mut().flatten().filter(|c| c.z0 >= TIP_Z) {

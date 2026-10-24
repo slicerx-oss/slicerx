@@ -203,7 +203,13 @@ impl Walker<'_> {
             let n = Near {
                 j,
                 head: top > z + f64::from(EPS) && overlaps(o.bounds, grown),
-                beam: top > z + m.rod && o.bounds[1] < area[3] + m.to_rod && o.bounds[3] > area[1] - m.to_rod,
+                // The bounds are whole cells: the mesh's rows run from bounds[1] to bounds[3] - 1.
+                beam: top > z + m.rod
+                    && super::rules::under_beam(
+                        [o.bounds[1], o.bounds[3] - 1.0],
+                        [area[1], area[3]],
+                        m.to_rod,
+                    ),
                 lid: top > z + m.lid,
                 close: top > z + m.nozzle_height && overlaps(o.bounds, round),
             };
@@ -321,14 +327,9 @@ impl Walker<'_> {
             }
             if n.close && pr.leg.is_none() && top > z + m.nozzle_height {
                 let d = hull_distance(&o.hull, [x, y]);
-                if d < m.radius {
+                // A head that is not measured cannot clear it by its own shape: the radius blocks, as in Bambu Studio.
+                if let Some((severity, part)) = super::rules::radius_hit(d, m.radius, m.estimated) {
                     let short = m.radius - d;
-                    // A head that is not measured cannot clear it by its own shape: the radius blocks, as in Bambu Studio.
-                    let (severity, part) = if m.estimated {
-                        (Severity::Hit, Part::Clearance)
-                    } else {
-                        (Severity::Close, Part::Toolhead)
-                    };
                     #[allow(clippy::cast_possible_truncation, reason = "mm")]
                     self.record(pr, Kind::Hotend, severity, part, n.j, short as f32, |o| {
                         let q = nearest_on_hull(&o.hull, [x, y]);

@@ -8,13 +8,79 @@
 // zones and the MCP server's read-back say the same.
 import type { SettingValue } from '@slicerx/contracts'
 import { clearanceRadius, type Rect } from './arrange-room'
-import { marginNumber as num } from './print-margins'
+import { marginNumber as num, marginText, printedGrowth, supportReach, widthMm } from './print-margins'
 import headShapes from '../head-shapes.json'
 
 export type Pt = [number, number]
 
-/** What arrange keeps past the rod's reach, mm: the engine's collision check counts the bed in 1 mm cells. */
-export const LANE_SAFETY_MM = 2
+/** The engine's lattice cell, mm: its height grids and the gantry beam count the bed in these. */
+export const CELL_MM = 1
+
+/**
+ * What arrange keeps past the rod's reach, mm. The engine rounds an object's rows out to whole cells before it looks
+ * under the beam (underBeam), so one cell past the reach clears it, and anything less can meet it. Arrange keeps a
+ * second cell: it sets objects right on a lane's edge, where an outline a hair short of the cell meets the beam.
+ */
+export const LANE_SAFETY_MM = 2 * CELL_MM
+
+/** A y span, mm: from, to. */
+export type Span = readonly [number, number]
+
+const cellOf = (v: number): number => Math.floor(v / CELL_MM)
+
+/** How many whole cells the gantry beam reaches either way of the nozzle in y: the rod's reach rounded up to the cell. */
+export function beamCells(toRod: number): number {
+  return Math.max(0, Math.ceil(toRod / CELL_MM))
+}
+
+/**
+ * Whether moves spanning `area` in y can bring the beam over an object whose mesh spans `object`: the object's rows in
+ * whole cells against the moves' span grown by the rod's reach. The engine skips the beam for the layer when not.
+ */
+export function underBeam(object: Span, area: Span, toRod: number): boolean {
+  const [lo, hi] = [cellOf(object[0]) * CELL_MM, (cellOf(object[1]) + 1) * CELL_MM]
+  return lo < area[1] + toRod && hi > area[0] - toRod
+}
+
+/**
+ * Whether the gantry beam, with the nozzle anywhere in `later` (the y span of an object printed after, mm), passes over
+ * a finished object spanning `earlier` in y: the rows of cells the object stands on, grown by beamCells either way,
+ * where underBeam lets the engine look.
+ */
+export function gantryMeets(earlier: Span, later: Span, toRod: number): boolean {
+  const k = beamCells(toRod)
+  return underBeam(earlier, later, toRod) && cellOf(later[1]) >= cellOf(earlier[0]) - k && cellOf(later[0]) <= cellOf(earlier[1]) + k
+}
+
+/** Whether the printer is a delta, which has no gantry beam: printer_structure says so, or a FLSun profile or model. */
+export function isDelta(cfg: Record<string, SettingValue>, printerId?: string): boolean {
+  const m = cfg['printer_model']
+  const model = Array.isArray(m) ? m[0] : m
+  return cfg['printer_structure'] === 'delta' || [printerId, model].some((id) => typeof id === 'string' && id.toLowerCase().startsWith('flsun'))
+}
+
+/**
+ * How a move `d` mm from a finished object counts against the clearance `radius`: null at or past it; inside it, it
+ * blocks when the head is estimated, and is a close call the head's own shape decides otherwise.
+ */
+export function radiusHit(d: number, radius: number, estimated: boolean): 'block' | 'soft' | null {
+  return d < radius ? (estimated ? 'block' : 'soft') : null
+}
+
+/**
+ * How far an object's own first layer prints past its footprint, mm, as the engine counts it: its brim (`brimMm`, past
+ * the footprint), its support's pad and brim, and a skirt of its own round those.
+ */
+export function byObjectReach(cfg: Record<string, SettingValue>, brimMm: number): number {
+  const nozzle = num(cfg['nozzle_diameter'], 0.4)
+  const under = Math.max(Math.max(0, brimMm), supportReach(cfg, widthMm(cfg['support_line_width'], nozzle, nozzle)))
+  const loops = Math.max(0, Math.floor(num(cfg['skirt_loops'], 0)))
+  if (marginText(cfg['skirt_type']) !== 'perobject' || loops === 0 || num(cfg['skirt_height'], 1) === 0) return under
+  const line = widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
+  const first = num(cfg['initial_layer_print_height'], 0.2)
+  const spacing = Math.max(line - first * (1 - Math.PI / 4), line * 0.5)
+  return under + Math.max(0, num(cfg['skirt_distance'], 2)) + loops * spacing
+}
 
 /** The outer nozzle diameter assumed for the head, mm. */
 const OUTER_NOZZLE_MM = 4
@@ -25,13 +91,17 @@ export interface ByObjectShape {
   name: string
   hull: Pt[]
   top: number
+  /** How far its own first layer prints past the footprint (byObjectReach), mm; unset, what every part prints with the config. */
+  reachMm?: number
 }
 
 export interface ByObjectPair {
   a: { id: string; name: string }
   b: { id: string; name: string }
-  /** Distance between their footprints, mm. */
+  /** Distance from the first one's footprint to the outermost thing the second prints round itself (reachMm), mm. */
   gapMm: number
+  /** How far the second one's brim, skirt or support pad prints past its footprint, mm. */
+  reachMm: number
   /** Whether heimdall refuses the slice for it ('block') or slices it as a close call ('soft'): pairSeverity. */
   severity: 'block' | 'soft'
 }
@@ -46,6 +116,8 @@ export type HeadColumn = readonly [number, number, number, number, number, numbe
 export interface ByObjectHead {
   estimated: boolean
   columns: readonly HeadColumn[]
+  /** A delta: no gantry beam over the bed (isDelta). */
+  delta?: boolean
 }
 
 /** head-shapes.json: the heads Preview draws, by printer profile id and by printer model. */
@@ -157,8 +229,9 @@ export function byObjectHead(cfg: Record<string, SettingValue>, printerId?: stri
   const model = cfg['printer_model']
   const byModel = typeof model === 'string' ? file.models[model] : undefined
   const printer = (printerId ? file.printers[printerId] : undefined) ?? (byModel ? file.printers[byModel] : undefined)
-  if (!printer) return { estimated: false, columns: file.heads['generic'] ?? [] }
-  return { estimated: printer.heads.some((k) => file.estimated.includes(k)), columns: printer.heads.flatMap((k) => file.heads[k] ?? []) }
+  const delta = isDelta(cfg, printerId)
+  if (!printer) return { estimated: false, columns: file.heads['generic'] ?? [], delta }
+  return { estimated: printer.heads.some((k) => file.estimated.includes(k)), columns: printer.heads.flatMap((k) => file.heads[k] ?? []), delta }
 }
 
 /** The ground a head box covers while the nozzle goes anywhere over `hull`. */
@@ -182,23 +255,45 @@ export function pairSeverity(earlier: ByObjectShape, later: ByObjectShape, head:
   return head.estimated || headMeets(earlier, later, head) ? 'block' : 'soft'
 }
 
-/** The gantry rule's numbers, mm: the rod's height over the bed, how far it reaches in y from the nozzle, the lid. */
-function gantryOf(cfg: Record<string, SettingValue>) {
-  return { rod: num(cfg['extruder_clearance_height_to_rod'], 40), toRod: num(cfg['extruder_clearance_dist_to_rod'], 40), lid: num(cfg['extruder_clearance_height_to_lid'], 120) }
+/**
+ * The gantry rule's numbers, mm: the rod's height over the bed (none on a delta), how far it reaches in y from the
+ * nozzle, the lid.
+ */
+function gantryOf(cfg: Record<string, SettingValue>, head?: ByObjectHead) {
+  const delta = head ? head.delta === true : isDelta(cfg)
+  return { rod: delta ? Infinity : num(cfg['extruder_clearance_height_to_rod'], 40), toRod: num(cfg['extruder_clearance_dist_to_rod'], 40), lid: num(cfg['extruder_clearance_height_to_lid'], 120) }
 }
 
 /** The y span of a footprint, mm. */
 const ySpan = (h: readonly Pt[]): [number, number] => [Math.min(...h.map((p) => p[1])), Math.max(...h.map((p) => p[1]))]
 
-/** True when the gantry, printing either footprint, passes over the other: their y spans come closer than the rod's reach. */
-function sameLane(a: readonly Pt[], b: readonly Pt[], toRod: number): boolean {
-  const [[al, ah], [bl, bh]] = [ySpan(a), ySpan(b)]
-  return Math.min(ah, bh) - Math.max(al, bl) + toRod > 0
+/**
+ * How far `o`'s own first layer prints past its footprint, mm: its reachMm, else what prints round every part with
+ * `cfg` (its brim as printed, a raft, a skirt of its own; printedGrowth). Support counts only in the slice, which knows
+ * whether the part prints any.
+ */
+function reachOf(o: ByObjectShape, cfg: Record<string, SettingValue>): number {
+  if (o.reachMm !== undefined) return o.reachMm
+  const xs = o.hull.map((p) => p[0])
+  const [y0, y1] = ySpan(o.hull)
+  return byObjectReach({ ...cfg, enable_support: false }, printedGrowth(cfg, { w: Math.max(...xs) - Math.min(...xs), h: y1 - y0, height: o.top }))
+}
+
+/** The y span of everything `o` prints, mm: its footprint and what prints round it. */
+function printSpan(o: ByObjectShape, cfg: Record<string, SettingValue>): Span {
+  const [lo, hi] = ySpan(o.hull)
+  const reach = reachOf(o, cfg)
+  return [lo - reach, hi + reach]
+}
+
+/** True when the gantry, printing `later` after `earlier`, passes over it (gantryMeets). */
+function inLane(earlier: ByObjectShape, later: ByObjectShape, cfg: Record<string, SettingValue>, toRod: number): boolean {
+  return gantryMeets(ySpan(earlier.hull), printSpan(later, cfg), toRod)
 }
 
 /** True when an object `topMm` tall is taller than the gantry rod clears: nothing in its lane may print after it. */
-export function overRod(topMm: number, cfg: Record<string, SettingValue>): boolean {
-  return topMm > gantryOf(cfg).rod
+export function overRod(topMm: number, cfg: Record<string, SettingValue>, head?: ByObjectHead): boolean {
+  return topMm > gantryOf(cfg, head).rod
 }
 
 /**
@@ -207,16 +302,16 @@ export function overRod(topMm: number, cfg: Record<string, SettingValue>): boole
  * ones that cannot (two tall objects side by side) print before the rest, which still clears every one it can. An
  * object taller than the lid goes last. The clearance between objects does not depend on the order.
  */
-export function byObjectOrder(shapes: readonly ByObjectShape[], cfg: Record<string, SettingValue>): string[] {
-  const { rod, toRod, lid } = gantryOf(cfg)
+export function byObjectOrder(shapes: readonly ByObjectShape[], cfg: Record<string, SettingValue>, head?: ByObjectHead): string[] {
+  const { rod, toRod, lid } = gantryOf(cfg, head)
   const low = shapes.filter((o) => o.top <= rod)
   const rest = shapes.filter((o) => o.top > rod)
   const back: ByObjectShape[] = []
   while (rest.length > 0) {
     // The last place still open takes an object that has nothing after it in its lane.
-    const free = rest.filter((o) => !back.some((later) => sameLane(o.hull, later.hull, toRod)))
+    const free = rest.filter((o) => !back.some((later) => inLane(o, later, cfg, toRod)))
     if (free.length === 0) break
-    const meets = (o: ByObjectShape) => rest.filter((x) => x !== o && sameLane(o.hull, x.hull, toRod)).length
+    const meets = (o: ByObjectShape) => rest.filter((x) => x !== o && (inLane(o, x, cfg, toRod) || inLane(x, o, cfg, toRod))).length
     const pick = free.reduce((best, o) => {
       const key = (x: ByObjectShape) => [x.top > lid ? 0 : 1, meets(x), -x.top]
       const [k, b] = [key(o), key(best)]
@@ -252,7 +347,7 @@ export function gantryLane(hull: readonly Pt[], cfg: Record<string, SettingValue
 
 /** The plate `shapes` printed one after the other in this order with `cfg`, on the printer whose head is `head`. */
 export function byObjectPlan(shapes: readonly ByObjectShape[], cfg: Record<string, SettingValue>, head: ByObjectHead = byObjectHead(cfg)): ByObjectPlan {
-  const { rod, lid, toRod } = gantryOf(cfg)
+  const { rod, lid, toRod } = gantryOf(cfg, head)
   // Objects under the nozzle height never meet the hotend, only the nozzle.
   const short = shapes.every((o) => o.top < num(cfg['nozzle_height'], 2.5))
   const need = short ? 2 * (0.5 * OUTER_NOZZLE_MM - 0.1) : clearanceRadius(cfg)
@@ -260,14 +355,17 @@ export function byObjectPlan(shapes: readonly ByObjectShape[], cfg: Record<strin
   for (let i = 0; i < shapes.length; i++) {
     for (let j = i + 1; j < shapes.length; j++) {
       const [a, b] = [shapes[i]!, shapes[j]!]
-      const gap = hullDistance(a.hull, b.hull)
-      if (gap < need) pairs.push({ a: { id: a.id, name: a.name }, b: { id: b.id, name: b.name }, gapMm: gap, severity: pairSeverity(a, b, head) })
+      // The later one's brim, skirt and support pad are moves too, held to the radius like its walls.
+      const reach = reachOf(b, cfg)
+      const gap = Math.max(0, hullDistance(a.hull, b.hull) - reach)
+      const hit = radiusHit(gap, need, head.estimated)
+      if (hit) pairs.push({ a: { id: a.id, name: a.name }, b: { id: b.id, name: b.name }, gapMm: gap, reachMm: reach, severity: hit === 'block' ? 'block' : pairSeverity(a, b, head) })
     }
   }
   // The gantry passes over an earlier object while a later one prints in its lane.
   const tall: ByObjectTall[] = []
   shapes.slice(0, -1).forEach((o, i) => {
-    const under = shapes.slice(i + 1).some((later) => sameLane(o.hull, later.hull, toRod))
+    const under = shapes.slice(i + 1).some((later) => inLane(o, later, cfg, toRod))
     const limit = under ? rod : lid
     if (o.top > limit) tall.push({ id: o.id, name: o.name, topMm: o.top, what: under ? 'gantry' : 'lid', limitMm: limit })
   })
@@ -283,7 +381,7 @@ export function byObjectPlan(shapes: readonly ByObjectShape[], cfg: Record<strin
 /** The plan as the app's ui.get and the MCP server's project read-back give it: mm to 0.1, outlines in bed mm. */
 export interface ByObjectReadback {
   needMm: number
-  pairs: { a: { id: string; name: string }; b: { id: string; name: string }; gapMm: number; severity: 'block' | 'soft' }[]
+  pairs: { a: { id: string; name: string }; b: { id: string; name: string }; gapMm: number; reachMm: number; severity: 'block' | 'soft' }[]
   tall: ByObjectTall[]
   gantry: { rodMm: number; reachMm: number }
   /** Per object in print order: its footprint and its clearance zone; zones that overlap are objects too close. */
@@ -295,7 +393,7 @@ export function byObjectReadback(plan: ByObjectPlan): ByObjectReadback {
   const ring = (pts: readonly Pt[]): Pt[] => pts.map(([x, y]) => [r(x), r(y)])
   return {
     needMm: r(plan.needMm),
-    pairs: plan.pairs.map((p) => ({ a: p.a, b: p.b, gapMm: r(p.gapMm), severity: p.severity })),
+    pairs: plan.pairs.map((p) => ({ a: p.a, b: p.b, gapMm: r(p.gapMm), reachMm: r(p.reachMm), severity: p.severity })),
     tall: plan.tall.map((t) => ({ ...t, topMm: r(t.topMm), limitMm: r(t.limitMm) })),
     gantry: { rodMm: r(plan.gantry.rodMm), reachMm: r(plan.gantry.reachMm) },
     outlines: plan.zones.map((z) => ({ id: z.id, name: z.name, footprint: ring(z.hull), zone: ring(z.zone) })),

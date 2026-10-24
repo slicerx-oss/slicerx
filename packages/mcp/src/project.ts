@@ -14,7 +14,7 @@ import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import { positionsFromParts, type NodeSlicerHost } from './slicerhost'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
 import { marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
-import { arrangeRules, byObjectPlan, byObjectReadback, overRod, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
+import { byObjectPlan, byObjectReadback, overRod, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
 import { bedArea, boxRows, describeBed, EDGE_MM, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
 import { fillCount, nestInLanes, nestPlate, plateTools, type FootprintCache, type NestObject } from './plate-nest'
@@ -283,11 +283,11 @@ export class McpProject implements PilotProject {
     return byObjectReadback(byObjectPlan(shapes, cfg))
   }
 
-  /** A plate's by-object clearance plan, its printed copies where they sit; null by layer. `strict`: arrange's rules. */
-  byObject(plateIndex: number, strict = false): ByObjectReadback | null {
+  /** A plate's by-object clearance plan, its printed copies where they sit; null by layer. */
+  byObject(plateIndex: number): ByObjectReadback | null {
     const { objects, placements } = this.layoutPlate(plateIndex)
     const cfg = this.config(plateIndex) as Record<string, SettingValue>
-    return this.clearanceOf(objects.filter((_o, k) => placements[k]?.printable !== false), strict ? arrangeRules(cfg) : cfg)
+    return this.clearanceOf(objects.filter((_o, k) => placements[k]?.printable !== false), cfg)
   }
 
   /** The plate's bed: the box of its printable area and, for a delta, the circle. */
@@ -379,14 +379,14 @@ export class McpProject implements PilotProject {
       // By object, copies taller than the gantry rod need lanes of their own when the nest left one under the gantry.
       const tall = [...moving, ...fixed].filter((o) => overRod(o.size[2], cfg)).reduce((n, o) => n + o.copies, 0)
       const problems = (b: ByObjectReadback | null) => (b ? b.pairs.length + b.tall.length : 0)
-      const before = this.byObject(index, true)
+      const before = this.byObject(index)
       if (tall < 2 || !before || before.tall.length === 0) continue
       try {
         const laned = await nestInLanes(this.geom, request, this.feet)
         const lanes = laned ? layout(laned) : undefined
         if (!lanes || lanes.size < wanted) continue
         this.nested.set(index, { key: this.nestKey(index), at: lanes })
-        if (problems(this.byObject(index, true)) >= problems(before)) this.nested.set(index, { key: this.nestKey(index), at })
+        if (problems(this.byObject(index)) >= problems(before)) this.nested.set(index, { key: this.nestKey(index), at })
       } catch {
         // The plain layout stays.
       }
