@@ -7444,8 +7444,8 @@
    "firmware": "vendor_klipper",
    "extruder": "direct_drive",
    "build": {
-    "x": 225,
-    "y": 225,
+    "x": 230,
+    "y": 230,
     "z": 265,
     "src": [
      "elegoo_n4_pro_page",

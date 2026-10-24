@@ -7,7 +7,7 @@ status: current
 firmware: vendor_klipper
 connections: [moonraker]
 kinematics: bedslinger
-build_volume_mm: {x: 225, y: 225, z: 265, confidence: medium, note: "Orca profile uses a 230 x 230 printable area; Elegoo lists 225.", src: [elegoo_n4_pro_page, "orca:Elegoo/machine/EN4SERIES/Elegoo Neptune 4 Pro 0.4 nozzle.json"]}
+build_volume_mm: {x: 230, y: 230, z: 265, confidence: medium, note: "The printable area of Elegoo's own slicer profile; the product page lists 225 x 225.", src: [elegoo_n4_pro_page, "orca:Elegoo/machine/EN4SERIES/Elegoo Neptune 4 Pro 0.4 nozzle.json"]}
 extruder: {type: direct_drive, note: "Dual gear direct extruder.", src: [elegoo_n4_pro_page]}
 hotend:
   max_temp_c: 300
