@@ -155,9 +155,14 @@ export async function closeDialogs(page: Page): Promise<void> {
 /** The mimir tab, empty: the plate cleared, a new conversation, and the camera looking down on the grid. */
 export async function emptyMimirTab(page: Page): Promise<void> {
   await closeDialogs(page)
-  // the "hardware acceleration" notice can lie over the chat's controls; it is its own fix
+  // the "hardware acceleration" notice can lie over the chat's controls; it is its own fix. Clearing the store's toast
+  // leaves the card to run out its own reading time (about 7.5 s for that notice, once a worker), so the notice is
+  // closed by its close mark instead.
   await setState(page, { toast: null })
-  await expect(page.getByTestId('toast')).toHaveCount(0)
+  await expect(async () => {
+    for (const mark of await page.getByTestId('toast-close').all()) await mark.click({ timeout: 1_000 })
+    await expect(page.getByTestId('toast')).toHaveCount(0, { timeout: 1_000 })
+  }).toPass({ timeout: 15_000 })
   // from another tab, so the tab turns the camera to the top view as it opens; the whole turn again if a refit of the
   // old plate landed after it
   await expect(async () => {
