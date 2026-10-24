@@ -6,7 +6,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { expect, test, type Page, type TestInfo } from '@playwright/test'
 import { expectFileDialog, interceptFileDialogs } from '../file-dialog'
-import { alike, cellsIn, diff, pops, recordFrames, spread, swaps, type Box, type Frame } from '../frames'
+import { alike, cellsIn, diff, middleOf, pops, recordFrames, sharpest, swaps, type Box, type Frame } from '../frames'
 import { appReady, loadAgain, NETWORK_CHANGED, networkDropped, plateReady, watchNetworkChange } from '../fixtures'
 
 type Sx = { getState(): { slice: { status: string; stale?: boolean }; plate: { transform: number[] }[] }; setState(p: unknown): void }
@@ -15,6 +15,16 @@ type Sx = { getState(): { slice: { status: string; stale?: boolean }; plate: { t
 const PANEL_LIMIT = 6
 /** The 3D view: how alike (correlation) a frame must be to the picture before the step or the one after. */
 const VIEW_LIKE = 0.8
+/**
+ * The 3D view: the least sharpest edge (frames.ts `sharpest`) the middle of it shows while the plate or the toolpaths
+ * are drawn. The view's backdrop, the CSS before its first frame and the scene's behind the plate, is one smooth gradient
+ * and reads 2 or less; the bed alone reads 19 or more. A frame under this shows no bed and no model: the canvas went
+ * blank or was cleared. The spread of levels cannot say so: it read 8 to 16 over a bare view, the same as over a small plate.
+ */
+const VIEW_EDGE = 6
+
+/** Hides what is laid over the view (its toolbars, legends and playback bar, and the toasts), so the picture measured is the canvas's. */
+const hideViewControls = (page: Page) => page.addStyleTag({ content: '.vp > :not(.vp-stage), .sx-toasts { visibility: hidden !important }' })
 
 /**
  * Waits until the slice is done and current. In setup, `reload` says the page has to load again (it reloaded, or a
@@ -50,19 +60,24 @@ async function boxOf(page: Page, selector: string): Promise<Box> {
  */
 async function check(page: Page, info: TestInfo, frames: Frame[], view: Box, panels: Record<string, Box>, arrived = false): Promise<void> {
   const size = page.viewportSize()!
+  const v = cellsIn(view, size)
+  // A view drawn with the plate and grid has edges; a smooth backdrop alone has none, so a frame without them is a blank
+  // view, whether the picture changed or not (a view blank from the start is one frame that never changes).
+  const edge = cellsIn(middleOf(view, 0.8, 0.7), size)
+  const blank = frames.flatMap((f, i) => (sharpest(f, edge) < VIEW_EDGE ? [i] : []))
   // The screencast sends a frame only when the picture changes: fewer than two means nothing on screen moved.
-  if (frames.length < 2) return console.log(`${frames.length} frames: the picture did not change`)
+  if (frames.length < 2) {
+    console.log(`${frames.length} frames: the picture did not change`)
+    expect(blank, `the view was blank (sharpest edge ${sharpest(frames[0]!, edge).toFixed(1)}, under ${VIEW_EDGE})`).toEqual([])
+    return
+  }
   const report: string[] = [`${frames.length} frames over ${(frames.at(-1)!.t - frames[0]!.t).toFixed(2)} s`]
   const bad: string[] = []
-  const v = cellsIn(view, size)
   const last = frames.at(-1)!
   const done = (f: Frame) => alike(f, last, v) >= VIEW_LIKE && Object.values(panels).every((b) => diff(f, last, cellsIn(b, size)) <= PANEL_LIMIT)
   const from = arrived ? (frames.find(done) ?? last).t - frames[0]!.t : 0
-  // A view drawn with the plate and grid has detail; one flat color is a cleared canvas.
-  const drawn = spread(frames[0]!, v)
-  const blank = frames.flatMap((f, i) => (spread(f, v) < drawn * 0.3 ? [i] : []))
   const swapped = swaps(frames, v, VIEW_LIKE, from)
-  report.push(`view: ${blank.length} blank, ${swapped.length} swapped${swapped.length ? ` (least alike ${Math.min(...swapped.map((s) => s.like)).toFixed(2)} at ${swapped[0]!.t.toFixed(2)} s)` : ''}`)
+  report.push(`view: ${blank.length} blank (least sharpest edge ${Math.min(...frames.map((f) => sharpest(f, edge))).toFixed(1)}), ${swapped.length} swapped${swapped.length ? ` (least alike ${Math.min(...swapped.map((s) => s.like)).toFixed(2)} at ${swapped[0]!.t.toFixed(2)} s)` : ''}`)
   if (blank.length) bad.push(`the view went blank in ${blank.length} frames`)
   if (swapped.length) bad.push(`the view swapped pictures in ${swapped.length} frames`)
   for (const [name, box] of Object.entries(panels)) {
@@ -75,7 +90,7 @@ async function check(page: Page, info: TestInfo, frames: Frame[], view: Box, pan
   const dir = info.outputPath('frames')
   mkdirSync(dir, { recursive: true })
   frames.forEach((f, i) => writeFileSync(`${dir}/${String(i).padStart(3, '0')}.jpg`, Buffer.from(f.jpeg, 'base64')))
-  const rows = frames.map((f) => `${(f.t - frames[0]!.t).toFixed(2)} like ${alike(f, frames[0]!, v).toFixed(2)}/${alike(f, frames.at(-1)!, v).toFixed(2)} spread ${spread(f, v).toFixed(1)} ${Object.entries(panels).map(([n, b]) => `${n} ${diff(f, frames[0]!, cellsIn(b, size)).toFixed(1)}/${diff(f, frames.at(-1)!, cellsIn(b, size)).toFixed(1)}`).join(' ')}`)
+  const rows = frames.map((f) => `${(f.t - frames[0]!.t).toFixed(2)} like ${alike(f, frames[0]!, v).toFixed(2)}/${alike(f, frames.at(-1)!, v).toFixed(2)} edge ${sharpest(f, edge).toFixed(1)} ${Object.entries(panels).map(([n, b]) => `${n} ${diff(f, frames[0]!, cellsIn(b, size)).toFixed(1)}/${diff(f, frames.at(-1)!, cellsIn(b, size)).toFixed(1)}`).join(' ')}`)
   writeFileSync(`${dir}/report.txt`, [...report, ...rows].join('\n'))
   console.log(report.join('\n'))
   expect(bad, report.join('\n')).toEqual([])
@@ -139,6 +154,7 @@ test.describe('no flicker', { tag: ['@gpu', '@gpu-timing', '@nightly'] }, () => 
     await start(page, 'prepare')
     const view = await boxOf(page, '.vp')
     const panels = { sidebar: await boxOf(page, '.studio .pane[aria-label="Printer and settings"]') }
+    await hideViewControls(page)
     const stop = await recordFrames(page)
     await page.evaluate(() => {
       const st = (window as unknown as { __sx: Sx }).__sx
@@ -157,6 +173,7 @@ test.describe('no flicker', { tag: ['@gpu', '@gpu-timing', '@nightly'] }, () => 
     await start(page, 'prepare')
     const view = await boxOf(page, '.vp')
     const panels = { sidebar: await boxOf(page, '.studio .pane[aria-label="Printer and settings"]') }
+    await hideViewControls(page)
     const stop = await recordFrames(page)
     const chooser = await expectFileDialog(page, () => page.getByTestId('objects-add-model').click())
     await chooser.setFiles({ name: 'cube.stl', mimeType: 'model/stl', buffer: cube() })
@@ -172,6 +189,7 @@ test.describe('no flicker', { tag: ['@gpu', '@gpu-timing', '@nightly'] }, () => 
     const view = await boxOf(page, '.vp')
     // The right pane holds the objects and, under them, the slice summary.
     const panels = { summary: await boxOf(page, '.studio .pane:has([data-testid="slice-summary"])') }
+    await hideViewControls(page)
     const stop = await recordFrames(page)
     await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ overrides: { sparse_infill_density: '25%' } }))
     await sliced(page)
