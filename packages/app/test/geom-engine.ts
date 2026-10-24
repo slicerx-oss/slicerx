@@ -7,10 +7,10 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gunzipSync, gzipSync } from 'node:zlib'
-import { afterAll, beforeAll, beforeEach, expect } from 'vitest'
-import { setGeomProvider } from '../src/geom/client'
+import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest'
+import { setGeomProvider, type GeomProvider } from '../src/geom/client'
 
-interface Recorded { op: string; request: unknown; reply?: unknown; error?: string }
+export interface Recorded { op: string; request: unknown; reply?: unknown; error?: string }
 
 interface GeomExports {
   memory: WebAssembly.Memory
@@ -92,49 +92,81 @@ const SETUP = '(setup)'
 const testKey = (): string => expect.getState().currentTestName ?? SETUP
 
 /** Recorded replies, by test. Each test replays its own from the start, whatever ran before it. */
-type Replies = Record<string, Recorded[]>
+export type Replies = Record<string, Recorded[]>
 
-function replayGeom(file: string) {
-  const replies = existsSync(file) ? (JSON.parse((file.endsWith('.gz') ? gunzipSync(readFileSync(file)) : readFileSync(file)).toString('utf8')) as Replies) : {}
+/**
+ * A replayed call that the recording does not hold: the request differs, the op differs or the reply is missing. The
+ * fixture is out of date. Thrown to the caller like any engine error, and also kept, so the test fails after it even
+ * when the code under test catches engine errors and falls back (arrange falls back to its box packer).
+ */
+export class ReplayMismatch extends Error {
+  override name = 'ReplayMismatch'
+}
+
+/** The replaying provider over the replies in `file` (or `recorded`); `stale` lists every call that did not match. */
+export function replayGeom(file: string, recorded?: Replies) {
+  const replies = recorded ?? (existsSync(file) ? (JSON.parse((file.endsWith('.gz') ? gunzipSync(readFileSync(file)) : readFileSync(file)).toString('utf8')) as Replies) : {})
   if (Array.isArray(replies)) throw new Error(`${file} is in the old one list form: record it again with SX_GEOM_RECORD=1`)
+  const stale: string[] = []
   let key = SETUP
   let next = 0
   // Recorded ids paired with the ones this run made, for the running test.
   let ids = new Map<string, string>()
+  const mismatch = (why: string): never => {
+    const message = `${file} is out of date for "${key}": ${why}. Build the engine (packages/geom/wasm/scripts/build.sh) and record it again with SX_GEOM_RECORD=1.`
+    stale.push(message)
+    throw new ReplayMismatch(message)
+  }
   return {
+    stale,
     /** Starts the running test's replies at its first one. */
-    start(): void {
-      key = testKey()
+    start(k: string = testKey()): void {
+      key = k
       next = 0
       ids = new Map()
     },
     async call<T>(op: string, request: unknown): Promise<T> {
       const r = replies[key]?.[next++]
-      if (!r) throw new Error(`no recorded reply for ${op} in "${key}": build the engine and record with SX_GEOM_RECORD=1`)
-      expect(r.op).toBe(op)
+      if (!r) return mismatch(`no recorded reply for call ${next} (${op})`)
+      if (r.op !== op) return mismatch(`call ${next} is ${op}, recorded as ${r.op}`)
       // A step's key salt comes from its id, which has the time in it; the face keys it makes come back in the
       // recorded replies, so the rest of every later request still matches.
       const live = saltless(JSON.parse(JSON.stringify(request)))
       pairIds(saltless(withIds(r.request, ids)), live, ids)
-      expect(saltless(withIds(r.request, ids))).toEqual(live)
+      try {
+        expect(saltless(withIds(r.request, ids))).toEqual(live)
+      } catch (e) {
+        return mismatch(`the ${op} request of call ${next} differs from the recorded one: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`)
+      }
       if (r.error !== undefined) throw new Error(r.error)
       return withIds(r.reply, ids) as T
     },
   }
 }
 
-/** Installs live wasm or recorded replies; compressed stores large mesh fixtures as gzip. Tests may run in any order. */
-export function useGeomEngine(name: string, options: { compressed?: boolean } = {}): void {
+/**
+ * Installs live wasm or recorded replies; compressed stores large mesh fixtures as gzip. Tests may run in any order.
+ * `ops()` lists the ops the running test has called so far, live or replayed, for a test that waits on a call.
+ */
+export function useGeomEngine(name: string, options: { compressed?: boolean } = {}): { ops(): readonly string[] } {
   const fixture = join(__dirname, 'fixtures', `${name}.json${options.compressed ? '.gz' : ''}`)
   const record = liveEngine && process.env['SX_GEOM_RECORD'] === '1'
   const recorded: Replies = {}
   let replay: ReturnType<typeof replayGeom> | null = null
-  let provider: Parameters<typeof setGeomProvider>[0] = null
+  let engine: GeomProvider | null = null
+  const ops: string[] = []
+  // Every call goes through here first, so `ops()` sees it whichever engine answers.
+  const provider: GeomProvider = {
+    call<T>(op: string, request: unknown, signal?: AbortSignal): Promise<T> {
+      ops.push(op)
+      return engine!.call<T>(op, request, signal)
+    },
+  }
   beforeAll(async () => {
     if (liveEngine) {
-      provider = await wasmGeom((r) => (recorded[testKey()] ??= []).push(r))
+      engine = await wasmGeom((r) => (recorded[testKey()] ??= []).push(r))
     } else {
-      provider = replay = replayGeom(fixture)
+      engine = replay = replayGeom(fixture)
     }
     setGeomProvider(provider)
   })
@@ -142,7 +174,13 @@ export function useGeomEngine(name: string, options: { compressed?: boolean } = 
   // must not leave the tests that run after it with none.
   beforeEach(() => {
     setGeomProvider(provider)
+    ops.length = 0
     replay?.start()
+  })
+  // A replayed call that did not match fails the test, even when the code under test caught the error and fell back.
+  afterEach(() => {
+    if (!replay?.stale.length) return
+    throw new ReplayMismatch(replay.stale.splice(0).join('\n'))
   })
   afterAll(() => {
     setGeomProvider(null)
@@ -151,4 +189,5 @@ export function useGeomEngine(name: string, options: { compressed?: boolean } = 
       writeFileSync(fixture, options.compressed ? gzipSync(json) : json)
     }
   })
+  return { ops: () => ops }
 }
