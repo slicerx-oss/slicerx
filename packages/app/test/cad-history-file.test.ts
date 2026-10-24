@@ -3,7 +3,7 @@
 // CAD history through a whole project file: written with the project, read back and attached by
 // object id. SX_HISTORY_SAMPLE=<path> also writes the sample project for driving the app.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { History, StepParams } from '@slicerx/cad-history'
 import { runReplay } from '../src/cad/history/ops'
 import { withStep } from '../src/cad/history/record'
@@ -34,6 +34,15 @@ function bracket(): History {
 }
 
 describe('history in a project', () => {
+  // Step ids carry the time, and the project's history file carries the ids into the 3MF bytes that format.read3mf
+  // gets, so a fixed clock keeps that request the same as the recorded one.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-01T00:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
   it('a whole project keeps the history; a project without it opens as before', async () => {
     const h = bracket()
     const r = await runReplay({ history: h })

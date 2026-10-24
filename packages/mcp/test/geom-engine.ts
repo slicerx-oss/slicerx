@@ -8,9 +8,9 @@ import { createHash } from 'node:crypto'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import { dirname, join } from 'node:path'
 import type { EngineCall } from '@slicerx/cad-history'
-import { afterAll, beforeAll, beforeEach, expect } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, expect } from 'vitest'
 
-interface Recorded {
+export interface Recorded {
   op: string
   /** A hash of the request without its key salt; requests carry whole meshes, so the file keeps only this. */
   request: string
@@ -124,38 +124,74 @@ const saltless = (r: unknown): unknown => {
   return rest
 }
 
-const digest = (r: unknown): string => createHash('sha256').update(JSON.stringify(saltless(JSON.parse(JSON.stringify(r))))).digest('hex').slice(0, 16)
+export const digest = (r: unknown): string => createHash('sha256').update(JSON.stringify(saltless(JSON.parse(JSON.stringify(r))))).digest('hex').slice(0, 16)
 
 const SETUP = '(setup)'
 const testKey = (): string => expect.getState().currentTestName ?? SETUP
 
 /**
+ * A replayed call that the recording does not hold: the request differs, the op differs or the reply is missing. The
+ * fixture is out of date. Thrown to the caller like any engine error, and also kept, so the test fails after it even
+ * when the code under test catches engine errors and falls back (arrange keeps its rows when the nest fails).
+ */
+export class ReplayMismatch extends Error {
+  override name = 'ReplayMismatch'
+}
+
+/**
+ * The replaying engine over `replies`, recorded in `fixture`: `start(key)` begins a test's replies at its first one, and
+ * `stale` lists every call that did not match, with what to do about it.
+ */
+export function replayEngine(fixture: string, replies: Record<string, Recorded[]>): { engine: EngineCall; start(key: string): void; stale: string[] } {
+  const stale: string[] = []
+  let key = SETUP
+  let next = 0
+  const mismatch = (why: string): never => {
+    const message = `${fixture} is out of date for "${key}": ${why}. Build the engine (packages/geom/wasm/scripts/build.sh) and record it again with SX_GEOM_RECORD=1.`
+    stale.push(message)
+    throw new ReplayMismatch(message)
+  }
+  const engine: EngineCall = async (op, request) => {
+    const r = replies[key]?.[next++]
+    if (!r) return mismatch(`no recorded reply for call ${next} (${op})`)
+    if (r.op !== op) return mismatch(`call ${next} is ${op}, recorded as ${r.op}`)
+    const now = digest(request)
+    if (now !== r.request) return mismatch(`the ${op} request of call ${next} differs from the recorded one (digest ${now}, recorded ${r.request})`)
+    if (r.error !== undefined) throw new Error(r.error)
+    return r.reply
+  }
+  return {
+    engine,
+    start(k) {
+      key = k
+      next = 0
+    },
+    stale,
+  }
+}
+
+/**
  * The engine for this file's tests, live when built, else the recorded replies. Read `engine` inside a test or
- * a hook: it is set in beforeAll.
+ * a hook: it is set in beforeAll. A replayed call that does not match the recording fails the test.
  */
 export function useGeomEngine(name: string): { engine: EngineCall } {
   const fixture = join(__dirname, 'fixtures', `${name}.json.gz`)
   const record = liveEngine && process.env['SX_GEOM_RECORD'] === '1'
   const recorded: Record<string, Recorded[]> = {}
   const replies: Record<string, Recorded[]> = !liveEngine && existsSync(fixture) ? (JSON.parse(gunzipSync(readFileSync(fixture)).toString('utf8')) as Record<string, Recorded[]>) : {}
-  let key = SETUP
-  let next = 0
+  const replay = liveEngine ? undefined : replayEngine(fixture, replies)
   const out: { engine: EngineCall } = { engine: () => Promise.reject(new Error('the engine is set in beforeAll')) }
   beforeAll(async () => {
     if (liveEngine) out.engine = await wasmEngine((r) => (recorded[testKey()] ??= []).push(r))
-    else
-      out.engine = async (op, request) => {
-        const r = replies[key]?.[next++]
-        if (!r) throw new Error(`no recorded reply for ${op} in "${key}": build the engine (packages/geom/wasm/scripts/build.sh) and record with SX_GEOM_RECORD=1`)
-        expect(r.op).toBe(op)
-        expect(digest(request), `${op}: the request differs from the recorded one`).toBe(r.request)
-        if (r.error !== undefined) throw new Error(r.error)
-        return r.reply
-      }
+    else out.engine = replay!.engine
   })
   beforeEach(() => {
-    key = testKey()
-    next = 0
+    replay?.start(testKey())
+  })
+  // A replayed call that did not match fails the test, even when the code under test caught the error and fell back.
+  afterEach(() => {
+    if (!replay?.stale.length) return
+    throw new ReplayMismatch(replay.stale.splice(0).join('\n'))
   })
   afterAll(() => {
     if (!record) return
