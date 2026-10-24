@@ -8060,19 +8060,15 @@ impl SliceSession {
             };
             let layer_bridges = if bridges_on {
                 let print_z = |l: i64| -> f64 { u32::try_from(l).map_or(0.0, |u| self.plan.top(u)) };
-                let nozzle = cfg.nozzle_diameter;
                 let ratio = crate::motion::raw_f(cfg, "bridge_flow").unwrap_or(1.0);
                 let thick = crate::tower::flag_or(cfg, "thick_internal_bridges", true);
-                let line = bridge_line_width(cfg);
-                let nominal = if thick {
-                    line.unwrap_or(nozzle)
-                } else {
-                    line.unwrap_or_else(|| cfg.solid_infill_width())
-                };
+                let nominal = bridge_nominal(cfg, thick);
                 let bead = crate::overhang::bridge_bead(nominal, self.plan.thickness(layer), ratio, thick);
                 let (thick, width) = (bead.round, bead.width);
                 // `internal_bridge_density`: the strands sit 1 over the density closer than the flow's spacing.
-                let spacing = bead.spacing / bridge_density(cfg, "internal_bridge_density");
+                let density = bridge_density(cfg, "internal_bridge_density");
+                let spacing = bead.spacing / density;
+                let stretch = stretch_of(cfg, &bead, density);
                 let filter = match cfg.raw.get("dont_filter_internal_bridges") {
                     Some(serde_json::Value::String(s)) => s.as_str(),
                     _ => "disabled",
@@ -8137,6 +8133,7 @@ impl SliceSession {
                     thick,
                     width,
                     flow: bead.flow,
+                    stretch,
                     reference: (
                         mm(f64::midpoint(self.bounds[0], self.bounds[2])),
                         mm(f64::midpoint(self.bounds[1], self.bounds[3])),
@@ -8374,11 +8371,24 @@ impl SliceSession {
                     let gone = perimeters::union_all(&[&cut, &ens]);
                     cls.sparse = perimeters::difference(&cls.sparse, &gone);
                 }
+                let mut widths: Vec<f32> = Vec::new();
                 for x in &b.areas {
                     let part = perimeters::intersection(&x.area, &inner);
-                    bridge_paths.extend(crate::bridging::fill(&part, x.angle, b.spacing, b.reference));
+                    if let Some(st) = b.stretch {
+                        for piece in crate::bridging::fill_even(&part, x.angle, b.spacing, st.edge) {
+                            #[allow(clippy::cast_possible_truncation, reason = "a width")]
+                            widths.extend(std::iter::repeat_n(
+                                st.width(piece.spacing) as f32,
+                                piece.paths.len(),
+                            ));
+                            bridge_paths.extend(piece.paths);
+                        }
+                    } else {
+                        bridge_paths.extend(crate::bridging::fill(&part, x.angle, b.spacing, b.reference));
+                    }
                 }
                 work.internal_bridge_paths = std::mem::take(&mut bridge_paths);
+                work.internal_bridge_path_widths = widths;
                 #[allow(clippy::cast_possible_truncation, reason = "a flow ratio and a width")]
                 {
                     // A flat strand carries its flow against a flat bead of its (narrowed) width; a round one is
@@ -8546,16 +8556,13 @@ impl SliceSession {
             if !cls.bridges.is_empty() {
                 // The bridge line width (the nozzle when round, the solid infill's when unset) at the bridge flow:
                 // round threads, or flat beads whose width and spacing narrow below a flow of 1.
-                let line = bridge_line_width(cfg);
-                let nominal = if cfg.thick_bridges {
-                    line.unwrap_or(cfg.nozzle_diameter)
-                } else {
-                    line.unwrap_or_else(|| cfg.solid_infill_width())
-                };
+                let nominal = bridge_nominal(cfg, cfg.thick_bridges);
                 let bead =
                     crate::overhang::bridge_bead(nominal, layer_height, cfg.bridge_flow, cfg.thick_bridges);
                 // `bridge_density` (external bridges): the strands sit 1 over the density closer.
-                let pitch = bead.spacing / bridge_density(cfg, "bridge_density");
+                let density = bridge_density(cfg, "bridge_density");
+                let pitch = bead.spacing / density;
+                let stretch = stretch_of(cfg, &bead, density);
                 let reference = (
                     mm(f64::midpoint(self.bounds[0], self.bounds[2])),
                     mm(f64::midpoint(self.bounds[1], self.bounds[3])),
@@ -8576,8 +8583,19 @@ impl SliceSession {
                             continue;
                         }
                     }
-                    work.bridge_paths
-                        .extend(crate::bridging::fill(&b.area, b.angle, pitch, reference));
+                    if let Some(st) = stretch {
+                        for piece in crate::bridging::fill_even(&b.area, b.angle, pitch, st.edge) {
+                            #[allow(clippy::cast_possible_truncation, reason = "a width")]
+                            work.bridge_path_widths.extend(std::iter::repeat_n(
+                                st.width(piece.spacing) as f32,
+                                piece.paths.len(),
+                            ));
+                            work.bridge_paths.extend(piece.paths);
+                        }
+                    } else {
+                        work.bridge_paths
+                            .extend(crate::bridging::fill(&b.area, b.angle, pitch, reference));
+                    }
                 }
                 #[allow(clippy::cast_possible_truncation, reason = "a flow ratio")]
                 {
@@ -9990,6 +10008,56 @@ pub(crate) fn bridge_line_width(cfg: &PrintConfig) -> Option<f64> {
     }
 }
 
+/// The width a bridge strand is worked out from: the bridge line width (the nozzle when unset and the strands
+/// are round, else the internal solid infill's). Bambu Lab printers have no bridge line width of their own:
+/// left at its default, round strands start from the nozzle and flat ones from the internal solid infill's width.
+fn bridge_nominal(cfg: &PrintConfig, round: bool) -> f64 {
+    let line = bridge_line_width(cfg);
+    if round {
+        return line.unwrap_or(cfg.nozzle_diameter);
+    }
+    let default_line = match cfg.raw.get("bridge_line_width") {
+        None => true,
+        Some(serde_json::Value::String(v)) => v.trim() == "100%",
+        Some(_) => false,
+    };
+    if even_bridges(cfg) && default_line {
+        return cfg.solid_infill_width();
+    }
+    line.unwrap_or_else(|| cfg.solid_infill_width())
+}
+
+/// Bambu Lab printers spread the strands of each bridge piece evenly across it (`bridging::fill_even`); the
+/// others keep the strands on the grid through the object's center.
+fn even_bridges(cfg: &PrintConfig) -> bool {
+    crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
+}
+
+/// How a bridge piece spreads its strands on a printer that does ([`even_bridges`]), for strands of `bead` at
+/// `density`. The piece is cut from the infill area, which starts half the inner wall's width past the inner
+/// wall's centerline, less `infill_wall_overlap` of the line width. Its edge moves to where the bridge region
+/// starts: half the inner wall's spacing past that centerline, less `infill_wall_overlap` of the mean of the
+/// inner wall's and the internal solid infill's spacings.
+fn stretch_of(
+    cfg: &PrintConfig,
+    bead: &crate::overhang::BridgeBead,
+    density: f64,
+) -> Option<crate::bridging::Stretch> {
+    if !even_bridges(cfg) {
+        return None;
+    }
+    let share = cfg.infill_wall_overlap / 100.0;
+    let (inner, solid) = (cfg.inner_wall_width(), cfg.solid_infill_width());
+    let infill = inner / 2.0 - share * cfg.line_width;
+    let region =
+        cfg.spacing_for(inner) / 2.0 - share * f64::midpoint(cfg.spacing_for(inner), cfg.spacing_for(solid));
+    Some(crate::bridging::Stretch {
+        edge: infill - region,
+        density,
+        gap: bead.width - bead.spacing,
+    })
+}
+
 /// `bridge_density` and `internal_bridge_density` as a share of 1, kept within Orca's 10 to 125 percent.
 fn bridge_density(cfg: &PrintConfig, key: &str) -> f64 {
     (cfg.raw_number(key, 100.0) / 100.0).clamp(0.1, 1.25)
@@ -10394,9 +10462,11 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
         region_floating,
         internal_bridge,
         internal_bridge_paths,
+        internal_bridge_path_widths,
         top,
         bridge,
         bridge_paths,
+        bridge_path_widths,
         gap_bottom,
         gap_shell,
         gap_top,
@@ -10446,6 +10516,32 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
             w.floating.extend(floating);
             w.region_floating.extend(region_floating);
             w.internal_bridge.extend(internal_bridge);
+            // Each path keeps its own width; a work that sets none sends its default width for each path.
+            let widths = |have: &[f32], paths: usize, of: f32| -> Vec<f32> {
+                if have.len() == paths {
+                    have.to_vec()
+                } else {
+                    vec![of; paths]
+                }
+            };
+            if !internal_bridge_path_widths.is_empty() || !w.internal_bridge_path_widths.is_empty() {
+                let mut all = widths(
+                    &w.internal_bridge_path_widths,
+                    w.internal_bridge_paths.len(),
+                    w.internal_bridge_width,
+                );
+                all.extend(widths(
+                    &internal_bridge_path_widths,
+                    internal_bridge_paths.len(),
+                    w.internal_bridge_width,
+                ));
+                w.internal_bridge_path_widths = all;
+            }
+            if !bridge_path_widths.is_empty() || !w.bridge_path_widths.is_empty() {
+                let mut all = widths(&w.bridge_path_widths, w.bridge_paths.len(), w.bridge_width);
+                all.extend(widths(&bridge_path_widths, bridge_paths.len(), w.bridge_width));
+                w.bridge_path_widths = all;
+            }
             w.internal_bridge_paths.extend(internal_bridge_paths);
             w.bridge.extend(bridge);
             w.bridge_paths.extend(bridge_paths);
