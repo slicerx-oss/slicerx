@@ -30,6 +30,10 @@ pub struct NestItem {
     /// how far everything printed for it reaches (skirt included), mm
     #[serde(default)]
     pub reach: f64,
+    /// printing by object: room this part keeps on its side beyond half of `apart_mm`, mm. Two parts keep `apart_mm`
+    /// plus the sum of theirs, so each pair is spaced by the two parts involved instead of the farthest on the plate
+    #[serde(default)]
+    pub apart_extra: f64,
     /// how many copies to place; fill the bed asks for more than fit
     #[serde(default = "one")]
     pub copies: u32,
@@ -52,6 +56,9 @@ pub struct NestFixed {
     pub grow: f64,
     #[serde(default)]
     pub reach: f64,
+    /// as [`NestItem::apart_extra`]
+    #[serde(default)]
+    pub apart_extra: f64,
     #[serde(default)]
     pub hull: Vec<Pt>,
 }
@@ -391,10 +398,10 @@ impl Nester {
         };
         if !(items
             .iter()
-            .all(|i| finite(&i.polygons, &i.hull, &[i.grow, i.reach]))
+            .all(|i| finite(&i.polygons, &i.hull, &[i.grow, i.reach, i.apart_extra]))
             && fixed
                 .iter()
-                .all(|f| finite(&f.polygons, &f.hull, &[f.grow, f.reach]))
+                .all(|f| finite(&f.polygons, &f.hull, &[f.grow, f.reach, f.apart_extra]))
             && zones.iter().all(|z| finite(&z.polygons, &[], &[])))
         {
             return Err(Error::invalid(
@@ -434,8 +441,8 @@ impl Nester {
         };
         me.close = items
             .iter()
-            .map(|i| me.half_of(i.grow))
-            .chain(fixed.iter().map(|f| me.half_of(f.grow)))
+            .map(|i| me.half_of(i.grow, i.apart_extra))
+            .chain(fixed.iter().map(|f| me.half_of(f.grow, f.apart_extra)))
             .fold(f64::INFINITY, f64::min);
         let mut by_key: BTreeMap<u64, usize> = BTreeMap::new();
         for (ii, it) in items.iter().enumerate() {
@@ -443,7 +450,7 @@ impl Nester {
             if region.is_empty() || it.copies == 0 {
                 continue;
             }
-            let half = me.half_of(it.grow);
+            let half = me.half_of(it.grow, it.apart_extra);
             let edge = me.edge_of(it.reach);
             let (s, center) = me.add_shape(
                 &region,
@@ -472,7 +479,7 @@ impl Nester {
             if region.is_empty() {
                 continue;
             }
-            let half = me.half_of(f.grow);
+            let half = me.half_of(f.grow, f.apart_extra);
             let edge = me.edge_of(f.reach);
             let (s, pos) = me.add_shape(&region, &f.hull, half, edge, f.reach.max(0.0), &[0], &mut by_key);
             me.fixed.push(Put {
@@ -514,16 +521,20 @@ impl Nester {
         Ok(me)
     }
 
-    /// how far a part's outline grows: two parts keep the sum of theirs between them
-    fn half_of(&self, grow: f64) -> f64 {
+    /// how far a part's outline grows: two parts keep the sum of theirs between them. printing by object, that is
+    /// half the clearance plus the part's own `extra`
+    fn half_of(&self, grow: f64, extra: f64) -> f64 {
         let g = grow.max(0.0);
-        (self.opts.gap_mm / 2.0)
-            .max(self.opts.apart_mm / 2.0)
-            .max(if g > 0.0 {
-                g + self.opts.safety_mm / 2.0
-            } else {
-                0.0
-            })
+        let apart = if self.opts.apart_mm > 0.0 {
+            self.opts.apart_mm / 2.0 + extra.max(0.0)
+        } else {
+            0.0
+        };
+        (self.opts.gap_mm / 2.0).max(apart).max(if g > 0.0 {
+            g + self.opts.safety_mm / 2.0
+        } else {
+            0.0
+        })
     }
 
     fn edge_of(&self, reach: f64) -> f64 {

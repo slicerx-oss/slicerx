@@ -127,6 +127,7 @@ mod tests {
             polygons: polys,
             grow: 0.0,
             reach: 0.0,
+            apart_extra: 0.0,
             copies: 1,
             hull: vec![],
         }
@@ -275,6 +276,44 @@ mod tests {
     }
 
     #[test]
+    fn printing_by_object_each_pair_keeps_the_clearance_and_the_room_of_its_two_parts() {
+        // three parts, one of them with 8 mm of room of its own (a support pad): the plain pair keeps the clearance
+        // alone, a pair with the padded part keeps the clearance and its 8 mm
+        let mut items: Vec<NestItem> = (0..3)
+            .map(|i| item(&format!("b{i}"), vec![rect(0.0, 0.0, 20.0, 20.0)]))
+            .collect();
+        items[2].apart_extra = 8.0;
+        let out = nest(NestProblem {
+            bed: bed(256.0, 256.0),
+            items: items.clone(),
+            fixed: vec![],
+            zones: vec![],
+            options: NestOptions {
+                apart_mm: 50.0,
+                center: false,
+                rotate: false,
+                ..opts(6.0)
+            },
+        })
+        .unwrap();
+        assert_eq!(out.placements.len(), 3);
+        let region = |id: &str| {
+            let p = out.placements.iter().find(|p| p.id == id).unwrap();
+            placed(&items, p)
+        };
+        let (a, b, c) = (region("b0"), region("b1"), region("b2"));
+        let plain = distance(&a, &b);
+        assert!(plain >= 50.0 - 0.01, "plain pair {plain} mm apart, want 50");
+        assert!(
+            plain < 58.0 - 0.01,
+            "plain pair {plain} mm apart: kept the padded part's room too"
+        );
+        for d in [distance(&a, &c), distance(&b, &c)] {
+            assert!(d >= 58.0 - 0.01, "padded pair {d} mm apart, want 58");
+        }
+    }
+
+    #[test]
     fn a_plate_too_full_for_the_clearance_finishes_with_the_rest_left_over() {
         let items: Vec<NestItem> = (0..9)
             .map(|i| item(&format!("b{i}"), vec![rect(0.0, 0.0, 40.0, 40.0)]))
@@ -378,6 +417,7 @@ mod tests {
             polygons: vec![rect(80.0, 80.0, 40.0, 40.0)],
             grow: 0.0,
             reach: 0.0,
+            apart_extra: 0.0,
             hull: vec![],
         }];
         let zones = vec![

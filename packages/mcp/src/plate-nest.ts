@@ -7,9 +7,9 @@
 // counts in bed coordinates; the nest counts from the printable area's front left corner.
 import type { EngineCall } from '@slicerx/cad-history'
 import type { MeshPart, SettingValue } from '@slicerx/contracts'
-import { byObjectApart, keepOutBoxes, layoutCenterShift, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
-import { arrangeRules, CELL_MM, gantryLane, overRod } from '@slicerx/settings/by-object'
-import { marginFlag as flag, marginNumber, objectPrintMargins } from '@slicerx/settings/print-margins'
+import { betterNest, byObjectApart, byObjectSpacingModes, keepOutBoxes, layoutCenterShift, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
+import { arrangeReach, arrangeRules, CELL_MM, gantryLane, objectGetsSupport, overRod } from '@slicerx/settings/by-object'
+import { marginFlag as flag, marginNumber, marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
 import type { BedArea } from './bed'
 
 /** An object for the nest, as placed: its rotation and scale, without the move. */
@@ -25,6 +25,8 @@ export interface NestObject {
   min: readonly [number, number, number]
   /** The plate's settings with the object's own over them. */
   config: Record<string, SettingValue>
+  /** A support enforcer is on it: a volume, or painted support. */
+  enforcers?: boolean
   copies: number
   /** A copy that stays: the move in X and Y its transform has, bed coordinates. */
   at?: readonly [number, number]
@@ -75,7 +77,12 @@ async function itemOf(engine: EngineCall, o: NestObject, origin: readonly [numbe
   const dx = (o.at?.[0] ?? 0) - origin[0]
   const dy = (o.at?.[1] ?? 0) - origin[1]
   if (o.at) foot = shift(foot, dx, dy)
-  return nestItem(o.id, foot, size, { x: o.min[0] + dx, y: o.min[1] + dy, w: size.w, h: size.h }, margins, o.copies)
+  const item = nestItem(o.id, foot, size, { x: o.min[0] + dx, y: o.min[1] + dy, w: size.w, h: size.h }, margins, o.copies)
+  if (marginText(o.config['print_sequence']) !== 'by object') return item
+  // Printing by object, each pair keeps the clearance and the reach of its own two objects as the check counts them
+  // (the app's by-object arrange does the same): a support pad only when the object gets support.
+  const supported = objectGetsSupport(o.config, o.enforcers ?? false, o.parts(), o.linear)
+  return { ...item, apartReach: arrangeReach({ id: o.id, name: o.id, hull: foot.hull, top: o.size[2], supported }, o.config) }
 }
 
 /**
@@ -107,8 +114,15 @@ export async function nestPlate(engine: EngineCall, p: NestPlate, cache: Footpri
   const items = await Promise.all(p.moving.map((o) => itemOf(engine, o, origin, cache)))
   const fixed = await Promise.all(p.fixed.map((o) => itemOf(engine, o, origin, cache)))
   const towers = [...margins.keepOut, ...margins.towerRoom]
-  const problem = nestProblem({ bed: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm, ...(p.bed.circle ? { round: true } : {}) }, items, fixed, avoid: [...avoidOf(p.config, origin), ...(p.zones ?? []).map((r) => ({ ...r, x: r.x - origin[0], y: r.y - origin[1] }))], towers, margins, gapMm: p.gapMm, rotate: false, center: p.center })
-  const r = (await engine('nest.arrange', problem)) as NestReply
+  // Printing by object with reaches that differ, both spacings are nested and the better layout kept, as the app does.
+  const modes = margins.apart ? byObjectSpacingModes([...items, ...fixed].map((i) => i.apartReach ?? i.reach)) : [undefined]
+  let r: NestReply | undefined
+  for (const spacing of modes) {
+    const problem = nestProblem({ bed: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm, ...(p.bed.circle ? { round: true } : {}) }, items, fixed, avoid: [...avoidOf(p.config, origin), ...(p.zones ?? []).map((q) => ({ ...q, x: q.x - origin[0], y: q.y - origin[1] }))], towers, margins, gapMm: p.gapMm, rotate: false, center: p.center, spacing })
+    const next = (await engine('nest.arrange', problem)) as NestReply
+    r = r ? betterNest(r, next) : next
+  }
+  if (!r) throw new Error('no nest')
   return { ...r, placements: r.placements.map((q) => ({ ...q, offset: [q.offset[0] + origin[0], q.offset[1] + origin[1]] })) }
 }
 

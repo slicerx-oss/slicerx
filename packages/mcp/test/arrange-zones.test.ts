@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SettingValue } from '@slicerx/contracts'
 import { autoBrimRoom } from '@slicerx/settings/print-margins'
+import { hullDistance } from '@slicerx/settings/by-object'
 import { useGeomEngine } from './geom-engine'
 import { boxStl, connect, data, noSx, noSxGeom, sxBin, type Harness } from './helpers'
 
@@ -130,6 +131,25 @@ describe('slicerx_arrange on true outlines', () => {
     const corner: Box = { x0: 226, y0: 224, x1: 256, y1: 256 }
     for (const b of placed) expect(overlaps(b, corner), JSON.stringify(b)).toBe(false)
   })
+
+  // Support on: copies of a box have nothing to hold up, so they keep the clearance alone; copies of a mushroom keep
+  // its tree support pad (7.9 mm) too, as the check counts them.
+  for (const [model, padded] of [['box', false], ['mushroom', true]] as const) {
+    it(`spaces copies of a ${model} by the clearance${padded ? ' and its support pad' : ' alone'}, with support on`, async () => {
+      const h = await connect({ geomEngine: g.engine })
+      await project(h, padded ? MUSHROOM : boxStl(20, 20, 10), { print_sequence: 'by object', skirt_loops: 0, brim_type: 'no_brim', enable_support: true, support_type: 'tree(auto)', support_threshold_angle: 25 })
+      await call(h, 'slicerx_arrange', { count: 3 })
+      type Outline = { id: string; footprint: [number, number][] }
+      const shown = (await call<{ plates: { byObject: { needMm: number; pairs: unknown[]; outlines: Outline[] } }[] }>(h, 'slicerx_project_show')).output.plates[0]!.byObject
+      expect(shown.pairs).toEqual([])
+      expect(shown.outlines).toHaveLength(3)
+      const d: number[] = []
+      for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) d.push(hullDistance(shown.outlines[i]!.footprint, shown.outlines[j]!.footprint))
+      for (const v of d) expect(v).toBeGreaterThanOrEqual(shown.needMm - 0.1 + (padded ? 7.9 : 0))
+      if (!padded) expect(Math.min(...d)).toBeLessThan(shown.needMm + 7.9)
+    })
+  }
+
 
   it('keeps the clearance the by-object check holds an A1 to between copies', async () => {
     const h = await connect({ geomEngine: g.engine })
@@ -254,6 +274,27 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
       const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
       expect(sliced.output.total.grams).toBeGreaterThan(0)
     }, 280_000)
+  }
+
+  // Copies spaced by their own reach as the check counts it (a box by the clearance alone, a mushroom by its support pad
+  // too), on a printer whose head is estimated (A1, refused inside the radius) and one whose head is measured (P1S).
+  for (const [printer, changes] of [
+    ['Bambu Lab A1', { printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73 }],
+    ['Bambu Lab P1S', {}],
+  ] as const) {
+    for (const model of ['box', 'mushroom'] as const) {
+      it(`slices by-object copies of a ${model} it spaced with support on, on the ${printer}`, async () => {
+        const h = await connect({ engine: 'sx', sxBin })
+        writeFileSync(join(h.dir, 'part.stl'), model === 'box' ? boxStl(20, 20, 10) : MUSHROOM)
+        await call(h, 'slicerx_project_open', { printer, filament: 'Bambu PLA Basic' })
+        await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+        await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', skirt_loops: 0, brim_type: 'no_brim', enable_support: true, support_type: 'tree(auto)', support_threshold_angle: 25, ...changes } })
+        await call(h, 'slicerx_arrange', { count: 3 })
+        expect(await boxes(h)).toHaveLength(3)
+        const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+        expect(sliced.output.total.grams).toBeGreaterThan(0)
+      }, 240_000)
+    }
   }
 
   it('slices a by-object plate it spaced with no sequence_clearance refusal', async () => {

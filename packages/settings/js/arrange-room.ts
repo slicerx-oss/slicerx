@@ -203,6 +203,11 @@ export interface NestItem {
   grow: number
   reach: number
   copies: number
+  /**
+   * Printing by object: how far the by-object check counts what the object prints round itself (by-object.ts
+   * arrangeReach: its own brim, its support pad only when it gets support, a skirt of its own). Unset, `reach`.
+   */
+  apartReach?: number
 }
 
 /** Turn step for arrange and fill the bed, degrees, when turning is allowed. */
@@ -241,6 +246,40 @@ export function nestItem(id: string, foot: NestFootprint, size: PrintSize, bound
  */
 export function byObjectApart(apart: number | undefined, reaches: readonly number[]): number | undefined {
   return apart ? apart + Math.max(0, ...reaches) : apart
+}
+
+/**
+ * How a plate printed by object spaces its pairs: `farthest`, every pair keeps `apart` and the farthest reach on the
+ * plate; `own`, each object keeps its own reach on its side, so a pair keeps `apart` and both its reaches.
+ */
+export type ByObjectSpacingMode = 'farthest' | 'own'
+
+/**
+ * How a plate printed by object spaces each pair, from `apart` (the clearance radius and the safety) and each object's
+ * reach as the check counts it (`reaches`). The check holds a pair to the radius plus the reach of the one printed
+ * later, and the order comes after the layout, so a pair keeps the radius plus the larger of its two reaches. The nest
+ * grows each outline by its own share, so a pair keeps the sum of two shares, and either mode keeps that much: with
+ * `farthest` every share is half of `apart` plus half the farthest reach, with `own` half of `apart` plus the object's
+ * own reach. `own` packs plain objects closer, `farthest` keeps two objects that both reach far no further apart than
+ * the farther one needs, so an arrange tries both when they differ (byObjectSpacingModes). `apartMm` goes to the nest,
+ * `extra` is each object's own share past half of it.
+ */
+export function byObjectSpacing(apart: number, reaches: readonly number[], mode: ByObjectSpacingMode = 'farthest'): { apartMm: number; extra: number[] } {
+  const r = reaches.map((v) => Math.max(0, v))
+  const far = Math.max(0, ...r)
+  return mode === 'own' ? { apartMm: apart, extra: r } : { apartMm: apart + far, extra: r.map(() => 0) }
+}
+
+/** The spacing modes worth a nest for these reaches: both when some objects reach further than others, else one. */
+export function byObjectSpacingModes(reaches: readonly number[]): ByObjectSpacingMode[] {
+  const r = reaches.map((v) => Math.max(0, v))
+  return r.some((v) => v !== r[0]) ? ['own', 'farthest'] : ['farthest']
+}
+
+/** The better of two nests of the same plate: more copies placed, then the fuller layout (the nest's own score). */
+export function betterNest<T extends NestReply>(a: T, b: T): T {
+  if (a.stats.placed !== b.stats.placed) return a.stats.placed > b.stats.placed ? a : b
+  return b.stats.utilization > a.stats.utilization + 1e-9 ? b : a
 }
 
 /**
@@ -303,21 +342,27 @@ export interface NestRequest {
   effort?: keyof typeof NEST_BUDGET | undefined
   /** Move the finished layout to the middle of the bed. */
   center: boolean
+  /** Printing by object, how pairs are spaced (byObjectSpacing); unset, every pair by the farthest reach. */
+  spacing?: ByObjectSpacingMode | undefined
 }
 
 /** The problem sx-geom's nest takes, in its own key order, so the same plate always sends the same request. */
 export function nestProblem(r: NestRequest) {
+  const all = [...r.items, ...r.fixed]
+  const spacing = r.margins.apart ? byObjectSpacing(r.margins.apart, all.map((i) => i.apartReach ?? i.reach), r.spacing) : undefined
+  const extra = (k: number) => (spacing && (spacing.extra[k] ?? 0) > 0 ? { apartExtra: spacing.extra[k] } : {})
   return {
     // A round bed (a delta) keeps every outline inside its circle, not the circle's box.
     bed: { widthMm: r.bed.widthMm, depthMm: r.bed.depthMm, ...(r.bed.round ? { round: true } : {}) },
-    items: r.items,
-    fixed: r.fixed.map(({ copies: _c, ...f }) => f),
+    items: r.items.map(({ apartReach: _a, ...i }, k) => ({ ...i, ...extra(k) })),
+    fixed: r.fixed.map(({ copies: _c, apartReach: _a, ...f }, k) => ({ ...f, ...extra(r.items.length + k) })),
     // The prime tower's boxes go last: the skirt round the whole print goes round the tower too.
     zones: [...r.avoid, ...r.towers].map((z) => ({ polygons: [rectOutline(z)] })),
     options: {
       gapMm: r.gapMm,
-      // Printing by object: the extruder clearance between objects, the bed edge keeping the gap. Sent only when set.
-      ...(r.margins.apart ? { apartMm: byObjectApart(r.margins.apart, [...r.items, ...r.fixed].map((i) => i.reach)) } : {}),
+      // Printing by object: the extruder clearance between objects (byObjectSpacing), the bed edge keeping the gap.
+      // Sent only when set.
+      ...(spacing ? { apartMm: spacing.apartMm } : {}),
       safetyMm: MARGIN_SAFETY_MM,
       rotate: r.rotate,
       rotationStepDeg: r.stepDeg ?? NEST_STEP_DEFAULT,
