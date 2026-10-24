@@ -41,15 +41,17 @@ const slicer = { loadParts: async (name: string, _parts: MeshPart[]) => handle(n
 const HOST = { kind: 'web', slicer, capabilities: { secureStorage: false } } as never
 const TOP = { origin: [100, 100, 10] as V3, normal: [0, 0, 1] as V3, u: [1, 0, 0] as V3, v: [0, 1, 0] as V3 }
 
+// Each test starts with no picks: a face or edge left picked by an earlier test would be the first pick of the next
+// tool that opens (takePicks), a call the test does not make on its own.
 beforeEach(() => {
   clearReplayCache()
-  set({ plate: [], selection: null, selectedIds: [], historyEdit: null, objectTool: null, toast: null })
+  set({ plate: [], selection: null, selectedIds: [], subPicks: [], historyEdit: null, objectTool: null, toast: null })
 })
 
 afterEach(() => {
   cancelEdit()
   cleanup()
-  set({ plate: [], historyEdit: null, objectTool: null, toast: null })
+  set({ plate: [], subPicks: [], historyEdit: null, objectTool: null, toast: null })
 })
 
 /** A 30 x 20 x 10 block, with no history yet. */
