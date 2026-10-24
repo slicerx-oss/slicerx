@@ -3,7 +3,7 @@
 // The environment bake reads its cube back before the stage's first frame and releases the target at once, so a stage
 // torn down early (a reload, a remount) has nothing of it left to release.
 import { describe, expect, it, vi } from 'vitest'
-import type { Mesh, WebGLRenderTarget, WebGLRenderer } from 'three'
+import type { Line, LineBasicMaterial, Mesh, ShaderMaterial, WebGLRenderTarget, WebGLRenderer } from 'three'
 
 /** Stands in for three's WebGLRenderer bookkeeping: a target the renderer has forgotten throws on dispose, as in deallocateRenderTarget. */
 class FakeRenderer {
@@ -63,7 +63,8 @@ vi.mock('three', async (orig) => {
   }
 })
 
-const { Stage, LIFT_MM, FLOOR_ORDER } = await import('../src/stage')
+const { Stage, LIFT_MM, FLOOR_ORDER, keepOutInk } = await import('../src/stage')
+const { SCENE } = await import('../src/palette')
 
 function make(failRead = false) {
   current = new FakeRenderer()
@@ -191,6 +192,37 @@ describe('excluded bed areas', () => {
     expect(moved!.geometry.boundingBox!.min.x).toBe(-150)
     stage.setExcludedAreas([])
     expect(find(stage)).toHaveLength(0)
+    stage.dispose()
+  })
+
+  it('draws every keep-out area alike, hatch and solid outline in the keep-out ink, and follows a light studio', () => {
+    const { stage } = make()
+    // The P1P's excluded corner and the A1's nozzle wrap check corner.
+    stage.setExcludedAreas([[[0, 0], [18, 0], [18, 28], [0, 28]], [[226, 224], [256, 224], [256, 256], [226, 256]]])
+    const looks = () => {
+      const out: { kind: string; ink: string; opacity?: number }[] = []
+      stage.scene.traverse((o) => {
+        if (o.name === 'excluded-area') out.push({ kind: 'fill', ink: `#${((o as Mesh).material as ShaderMaterial).uniforms['col']!.value.getHexString()}` })
+        if (o.name === 'excluded-edge') {
+          const m = (o as Line).material as LineBasicMaterial
+          out.push({ kind: 'edge', ink: `#${m.color.getHexString()}`, opacity: m.opacity })
+        }
+      })
+      return out
+    }
+    const dark = keepOutInk(SCENE)
+    expect(dark).toBe(SCENE.floorGrid)
+    expect(looks()).toEqual([
+      { kind: 'fill', ink: dark },
+      { kind: 'edge', ink: dark, opacity: 1 },
+      { kind: 'fill', ink: dark },
+      { kind: 'edge', ink: dark, opacity: 1 },
+    ])
+    // subban-light's studio: the grid color is too pale on its bed, the edge color reads
+    const light = { ...SCENE, bgTop: '#fbfbfc', bgBottom: '#dbdbe0', floorGrid: '#88868f', edgeDark: '#26222c' }
+    stage.setSceneColors(light)
+    expect(keepOutInk(light)).toBe('#26222c')
+    expect(looks().map((l) => l.ink)).toEqual(['#26222c', '#26222c', '#26222c', '#26222c'])
     stage.dispose()
   })
 })

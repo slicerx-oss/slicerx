@@ -50,7 +50,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import type { Bed } from '@slicerx/contracts'
 import { cubeFacesSH } from './env-sh'
-import { SCENE, type SceneColors } from './palette'
+import { SCENE, contrastRatio, mixHex, type SceneColors } from './palette'
 import { REVEAL_GRID_SETTLE_MS, REVEAL_GRID_SPAN_MS, REVEAL_SETTLED } from './reveal'
 import type { BedOutline, PlateStyle } from './types'
 
@@ -167,6 +167,23 @@ export const PLATE_SURFACES: Record<Exclude<PlateStyle, 'grid'>, { color: string
   'smooth-pei': { color: '#8a7552', roughness: 0.32, grain: 0.12, metalness: 0.25 },
   cool: { color: '#2c2f36', roughness: 0.5, grain: 0.25, metalness: 0 },
   engineering: { color: '#383b42', roughness: 0.72, grain: 0.75, metalness: 0.05 },
+}
+
+/** How strongly the bare bed lays its grid color over the backdrop for its faint fill, at most (PLATE_OUTLINE_FS). */
+export const BED_FILL = 0.07
+/** A keep-out area's wash, and its hatch stripes at their full strength: a quiet tint, with stripes that read. */
+export const KEEP_OUT_WASH = 0.08
+export const KEEP_OUT_STRIPE = 0.8
+
+/**
+ * The color the printer's keep-out areas draw in: the floor grid color or the edge color, whichever reads better on
+ * the bare bed (its fill over the top and bottom of the backdrop). The grid color reads on a dark studio and the edge
+ * color on a light one, so the hatch and its outline keep 3:1 on both.
+ */
+export function keepOutInk(c: Pick<SceneColors, 'floorGrid' | 'edgeDark' | 'bgTop' | 'bgBottom'>): string {
+  const beds = [c.bgTop, c.bgBottom].map((b) => mixHex(b, c.floorGrid, BED_FILL))
+  const reads = (ink: string) => Math.min(...beds.map((b) => contrastRatio(ink, b)))
+  return reads(c.edgeDark) > reads(c.floorGrid) ? c.edgeDark : c.floorGrid
 }
 
 /** Fine random grain for a plate surface, tiled across it: the speckle of a textured sheet, faint on a smooth one. */
@@ -390,8 +407,9 @@ export class Stage {
   }
 
   /**
-   * Parts of the bed nothing may print on (the printer's `bed_exclude_area`), as polygons in bed coordinates (mm,
-   * origin front left). Drawn once as hatched patches with an outline; nothing about them changes per frame.
+   * Parts of the bed nothing may print on (the printer's keep-out areas: `bed_exclude_area` and the nozzle wrap check
+   * corner), as polygons in bed coordinates (mm, origin front left). Drawn once as hatched patches with a solid outline
+   * in the keep-out ink; nothing about them changes per frame.
    */
   setExcludedAreas(areas: readonly (readonly [number, number])[][]): void {
     this.excluded = areas
@@ -399,18 +417,18 @@ export class Stage {
     this.excludeDisposables = []
     this.excludeGroup.clear()
     const { widthMm: W, depthMm: D } = this.bed
-    const color = new Color(this.colors.floorGrid)
+    const color = new Color(keepOutInk(this.colors))
     for (const poly of areas) {
       if (poly.length < 3) continue
       const geo = new ShapeGeometry(new Shape(poly.map(([x, y]) => new Vector2(x - W / 2, D / 2 - y)))).rotateX(Math.PI / 2)
       const mat = new ShaderMaterial({
-        uniforms: { col: { value: color } },
+        uniforms: { col: { value: color }, wash: { value: KEEP_OUT_WASH }, peak: { value: KEEP_OUT_STRIPE } },
         transparent: true,
         depthWrite: false,
         side: DoubleSide,
         vertexShader: 'varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
         // Diagonal hatching 2.5 mm apart over a faint wash, antialiased with the screen derivative.
-        fragmentShader: 'uniform vec3 col; varying vec2 vP; void main(){ float s = (vP.x + vP.y) / 2.5; float w = fwidth(s); float f = abs(fract(s) - 0.5); float stripe = 1.0 - smoothstep(0.16 - w, 0.16 + w, f); float a = 0.08 + stripe * 0.26; gl_FragColor = vec4(col * a, a); }',
+        fragmentShader: 'uniform vec3 col; uniform float wash; uniform float peak; varying vec2 vP; void main(){ float s = (vP.x + vP.y) / 2.5; float w = fwidth(s); float f = abs(fract(s) - 0.5); float stripe = 1.0 - smoothstep(0.16 - w, 0.16 + w, f); float a = mix(wash, peak, stripe); gl_FragColor = vec4(col * a, a); }',
         blending: CustomBlending,
         blendSrc: OneFactor,
         blendDst: OneMinusSrcAlphaFactor,
@@ -424,9 +442,10 @@ export class Stage {
       fill.name = 'excluded-area'
       const loop: Vector3[] = poly.map(([x, y]) => new Vector3(x - W / 2, FLOOR_Y, D / 2 - y))
       const lg = new BufferGeometry().setFromPoints([...loop, loop[0] as Vector3])
-      const lm = new LineBasicMaterial({ color, transparent: true, opacity: 0.65, depthWrite: false, toneMapped: false })
+      const lm = new LineBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false, toneMapped: false })
       const line = new Line(lg, lm)
       line.renderOrder = FLOOR_ORDER.line
+      line.name = 'excluded-edge'
       this.excludeGroup.add(fill, line)
       this.excludeDisposables.push(geo, mat, lg, lm)
     }
