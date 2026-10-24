@@ -7,6 +7,8 @@ import { get, markStale, selectedIds, set, toast, type PlateEntry } from '../sta
 import { bake, mergeParts, primitive, splitPieces, splitToObjects, type PrimitiveShape } from './mesh-ops'
 import { arrange, ARRANGE_DEFAULTS, fillCount, type ArrangeOptions, type ArrangeResult } from './arrange'
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
+import { arrangeByObject, type Place } from './by-object-arrange'
+import { byObjectConfig } from './sequence-check'
 import { quietly } from './history'
 import { selectedEntry } from './select'
 import { bounds, centerOnBed, compose, dropToBed, identity, layOnFace, mirror, modelOrigin, scaleToSize, setScale, withTrs, type Box, type Mat4, type Trs, type Vec3 } from './transform'
@@ -73,12 +75,15 @@ export function layOnPickedFace(pick: { objectId: string; normal: Vec3; centerBe
   return ok
 }
 
-/** Final transforms from a gizmo drag or an arrange: one undo step for all of them. */
-export function commitTransforms(transforms: Record<string, number[]>): void {
+/**
+ * Final transforms from a gizmo drag or an arrange: one undo step for all of them. With `order` (ids), the objects also
+ * print in that order; the ones it leaves out keep their places after it.
+ */
+export function commitTransforms(transforms: Record<string, number[]>, order?: readonly string[]): void {
   const { plate } = get()
   let changed = false
   let refused = false
-  const next = plate.map((p) => {
+  const moved = plate.map((p) => {
     const t = transforms[p.id]
     if (!t || t.every((v, i) => v === p.transform[i])) return p
     // A locked object stays where it is, even when a drag or an arrange moved it in the viewport.
@@ -89,6 +94,10 @@ export function commitTransforms(transforms: Record<string, number[]>): void {
     changed = true
     return { ...p, transform: t }
   })
+  const rank = new Map((order ?? []).map((id, i) => [id, i]))
+  const at = (p: PlateEntry) => rank.get(p.id) ?? rank.size + moved.indexOf(p)
+  const next = order ? [...moved].sort((x, y) => at(x) - at(y)) : moved
+  if (next.some((p, i) => p.id !== moved[i]!.id)) changed = true
   if (refused) toast('A locked object was not moved.', 'info')
   if (!changed) {
     // Put the viewport back where the store says the objects are.
@@ -146,11 +155,18 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   const hooks = runHooks()
   // Busy from the first moment, before the first layout is tried (total 0 until the nester knows).
   set({ arranging: { done: 0, total: 0 } })
-  let r: ArrangeResult
+  const place: Place = async (mv, fx, o) => {
+    try {
+      return await nestArrange(mv, fx, bed, o, hooks)
+    } catch {
+      return { ...arrange(mv, fx, bed, o), boxes: true }
+    }
+  }
+  // By object, tall objects print last, each in a gantry lane of its own when there are more of them.
+  const cfg = byObjectConfig(get())
+  let r: ArrangeResult & { order?: string[] }
   try {
-    r = await nestArrange(moving, fixed, bed, opts, hooks)
-  } catch {
-    r = arrange(moving, fixed, bed, opts)
+    r = cfg ? await arrangeByObject(plate, moving, fixed, bed, opts, cfg, place, hooks.stop) : await place(moving, fixed, opts)
   } finally {
     endRun(hooks.token)
   }
@@ -159,7 +175,7 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   const now = new Map(get().plate.map((p) => [p.id, p.transform]))
   const was = new Map(moving.map((p) => [p.id, p.transform]))
   const transforms = Object.fromEntries(Object.entries(r.transforms).filter(([id]) => now.get(id) === was.get(id)))
-  commitTransforms(transforms)
+  commitTransforms(transforms, r.order)
   const tooLarge = tooLargeNotice(r, plate)
   const rest = r.leftOver.length - r.tooLarge.length
   if (tooLarge) toast(tooLarge, 'warn')

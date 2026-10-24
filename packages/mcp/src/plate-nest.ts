@@ -7,7 +7,8 @@
 // counts in bed coordinates; the nest counts from the printable area's front left corner.
 import type { EngineCall } from '@slicerx/cad-history'
 import type { MeshPart, SettingValue } from '@slicerx/contracts'
-import { excludeBoxes, nestItem, nestProblem, plateMargins, type NestFootprint, type NestItem, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
+import { excludeBoxes, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
+import { arrangeRules, gantryLane, overRod } from '@slicerx/settings/by-object'
 import { marginFlag as flag, marginNumber, objectPrintMargins } from '@slicerx/settings/print-margins'
 import type { BedArea } from './bed'
 
@@ -39,6 +40,10 @@ export interface NestPlate {
   fixed: readonly NestObject[]
   /** Move the layout to the middle of the bed when nothing stays (arrange); fill the bed leaves it where it packs. */
   center: boolean
+  /** More of the bed to keep clear of for this nest only, bed coordinates: a tall copy's gantry lane (nestInLanes). */
+  zones?: readonly Rect[]
+  /** False leaves out the rule that keeps a whole-print skirt off the zones, which a lane between copies breaks. */
+  skirt?: false
 }
 
 /** Footprints by mesh, rotation and scale and first layer cut; a move only shifts one. */
@@ -97,13 +102,51 @@ function avoidOf(cfg: Record<string, SettingValue>, origin: readonly [number, nu
 /** Nests a plate's moving objects around the ones that stay. Offsets come back in bed coordinates. */
 export async function nestPlate(engine: EngineCall, p: NestPlate, cache: FootprintCache): Promise<NestReply> {
   const origin = [p.bed.x0, p.bed.y0] as const
-  const margins = plateMargins(p.config, p.tools, { origin, size: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm } })
+  const plate = plateMargins(p.config, p.tools, { origin, size: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm } })
+  const margins = p.skirt === false ? { ...plate, skirt: false } : plate
   const items = await Promise.all(p.moving.map((o) => itemOf(engine, o, origin, cache)))
   const fixed = await Promise.all(p.fixed.map((o) => itemOf(engine, o, origin, cache)))
   const towers = [...margins.keepOut, ...margins.towerRoom]
-  const problem = nestProblem({ bed: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm, ...(p.bed.circle ? { round: true } : {}) }, items, fixed, avoid: avoidOf(p.config, origin), towers, margins, gapMm: p.gapMm, rotate: false, center: p.center })
+  const problem = nestProblem({ bed: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm, ...(p.bed.circle ? { round: true } : {}) }, items, fixed, avoid: [...avoidOf(p.config, origin), ...(p.zones ?? []).map((r) => ({ ...r, x: r.x - origin[0], y: r.y - origin[1] }))], towers, margins, gapMm: p.gapMm, rotate: false, center: p.center })
   const r = (await engine('nest.arrange', problem)) as NestReply
   return { ...r, placements: r.placements.map((q) => ({ ...q, offset: [q.offset[0] + origin[0], q.offset[1] + origin[1]] })) }
+}
+
+/**
+ * Printing by object, the copies taller than the gantry rod one at a time, each clear of the lanes of the ones before
+ * it (@slicerx/settings/by-object gantryLane), so the gantry over a later copy never meets an earlier one; then the
+ * rest around them, with the rod reaching as far as arrange holds it to (arrangeRules). Copies that stay count with
+ * their lanes. Offsets in bed coordinates; null when a tall copy does not fit outside the lanes.
+ */
+export async function nestInLanes(engine: EngineCall, p: NestPlate, cache: FootprintCache): Promise<NestReply | null> {
+  const tall = (o: NestObject) => overRod(o.size[2], p.config)
+  const origin = [p.bed.x0, p.bed.y0] as const
+  const apart = plateMargins(p.config, p.tools, { origin, size: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm } }).apart
+  const fixed = [...p.fixed]
+  // The footprints, bed coordinates, whose lanes the next tall copy keeps out of.
+  const hullAt = async (o: NestObject, at: readonly [number, number]): Promise<[number, number][]> => {
+    const foot = await footprintOf(engine, o, objectPrintMargins(o.config).firstLayerMm, cache)
+    return foot.hull.map(([x, y]) => [x + at[0], y + at[1]])
+  }
+  const hulls = await Promise.all(fixed.filter((o) => tall(o) && o.at).map((o) => hullAt(o, o.at!)))
+  const placements: NestPlacement[] = []
+  for (const o of p.moving.filter(tall)) {
+    const item = await itemOf(engine, o, origin, cache)
+    const away = zoneKeep(item.grow, item.reach, p.gapMm, apart)
+    for (let c = 1; c <= o.copies; c++) {
+      const lanes = hulls.map((h) => gantryLane(h, arrangeRules(p.config), p.bed.x0, p.bed.widthMm, away))
+      // The skirt rule would keep the parts off both sides of a lane, so the lanes pass leaves it out.
+      const r = await nestPlate(engine, { ...p, moving: [{ ...o, copies: 1 }], fixed, center: false, zones: [...(p.zones ?? []), ...lanes], skirt: false }, cache)
+      const q = r.placements.find((x) => x.id === o.id)
+      if (!q) return null
+      placements.push({ ...q, copy: c })
+      fixed.push({ ...o, id: `${o.id}~${c}`, copies: 1, at: q.offset })
+      hulls.push(await hullAt(o, q.offset))
+    }
+  }
+  const low = p.moving.filter((o) => !tall(o))
+  const rest: NestReply = low.length > 0 ? await nestPlate(engine, { ...p, moving: low, fixed, center: false }, cache) : { placements: [], leftOver: [], tooLarge: [], stats: { placed: 0, wanted: 0, passes: 0, utilization: 0 } }
+  return { ...rest, placements: [...placements, ...rest.placements] }
 }
 
 /** The area an outline covers, holes taken out, mm2. */
