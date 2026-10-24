@@ -3,7 +3,7 @@
 // First: Zod must be jitless before any module makes a schema (packages/app/src/zod-jitless.ts).
 import '@slicerx/app/zod-jitless'
 import type { AppFeature, EditionHost } from '@slicerx/contracts'
-import { editionLogo, registerCrashHost, registerShellArch, setCurrentEdition, setPrefsMirror, SlicerXApp } from '@slicerx/app'
+import { editionLogo, registerCrashHost, registerShellArch, setCurrentEdition, setPrefsMirror, SlicerXApp, startGeomFor } from '@slicerx/app'
 import { editionFromBuild } from '@slicerx/edition-config'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -138,7 +138,7 @@ if (__SX_FEATURE_PILOT__) {
 const el = document.getElementById('root')
 if (!el) throw new Error('index.html is missing #root')
 const config = editionFromBuild()
-const [host, list] = await Promise.all([createDesktopHost(), features()])
+const [host, list] = await Promise.all([createDesktopHost(startGeomFor), features()])
 if (__SX_FEATURE_CONNECT__) host.bambuConnect = (await import('./host/bambu-connect')).createTauriBambuConnect()
 if (__SX_FEATURE_CONNECT__) host.firewall = (await import('./host/firewall')).createTauriFirewall()
 if (__SX_FEATURE_STORE__) {

@@ -11,11 +11,12 @@ import { createTauriLlm } from './llm'
 import { createTauriSlicer } from './slicer'
 import { createTauriThemes } from './themes'
 
-export async function createDesktopHost(): Promise<Host> {
+/** `startEngine`: see createTauriFiles. */
+export async function createDesktopHost(startEngine?: (fileName: string) => void): Promise<Host> {
   const host = await createWebHost({
     kind: 'desktop',
     slicer: createTauriSlicer(),
-    files: createTauriFiles(),
+    files: createTauriFiles(startEngine),
     themes: createTauriThemes(),
     nativeSlicing: true,
     threads: navigator.hardwareConcurrency || 8,
