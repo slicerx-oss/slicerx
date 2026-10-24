@@ -4,7 +4,7 @@
 // the Easy mapping from @slicerx/settings.
 import type { EasyGoal, PrintConfig, SettingDef, SettingIssue, SettingValue } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
-import { applyEasy, coerce, easyControlFor, goalEasy, sameValue, validate } from '@slicerx/settings'
+import { applyEasy, coerce, easyControlFor, goalEasy, listPrinterProfiles, printerConfig, sameValue, validate } from '@slicerx/settings'
 import { normalizeId, type DataStore, type KnowledgeEntry } from './data'
 
 export { sameValue }
@@ -316,6 +316,18 @@ export function filamentLayer(store: DataStore, entry: KnowledgeEntry): Layer {
   return layer
 }
 
+/** SlicerX's own profile of a printer from the knowledge base, by its name ("Bambu Lab A1" is bambu-a1), if it has one. */
+export function printerProfileFor(name: string): string | undefined {
+  return listPrinterProfiles().find((m) => `${m.vendor} ${m.model}` === name || m.model === name)?.id
+}
+
+/**
+ * Settings that say which machine a project prints on and what its head and frame clear, from SlicerX's profile of
+ * the printer: the by-object check, arrange and heimdall read them (a Bambu Lab printer_model holds the plate to
+ * extruder_clearance_max_radius, the A1's 73 mm).
+ */
+const MACHINE_KEYS = (k: string) => k === 'printer_model' || k === 'printer_structure' || k === 'nozzle_height' || k.startsWith('extruder_clearance_')
+
 /** Process and machine values from a printer entry's profile_baseline plus its build volume. */
 export function printerLayer(store: DataStore, entry: KnowledgeEntry): Layer {
   const layer: Layer = new Map()
@@ -339,6 +351,12 @@ export function printerLayer(store: DataStore, entry: KnowledgeEntry): Layer {
   const flavor = firmware === 'klipper' ? 'klipper' : firmware === 'bambu' ? 'marlin' : firmware === 'reprapfirmware' ? 'reprapfirmware' : firmware === 'prusa' || firmware === 'marlin' ? 'marlin2' : undefined
   const flavorDef = store.setting('gcode_flavor')
   if (flavor && flavorDef?.enumValues?.includes(flavor)) layer.set('gcode_flavor', { value: flavor, why: { reason: `${entry.name} runs ${String(firmware)} firmware.`, sources: [`knowledge:${entry.path}`] } })
+  const machine = printerProfileFor(entry.name)
+  const own = machine ? (printerConfig(machine) as unknown as Record<string, unknown> | undefined) : undefined
+  for (const [key, value] of Object.entries(own ?? {})) {
+    const def = MACHINE_KEYS(key) ? store.setting(key) : undefined
+    if (def) layer.set(key, { value: toSchemaValue(def, value), why: { reason: `${entry.name} is ${productName()}'s ${machine} printer profile.`, sources: [`knowledge:${entry.path}`, `machine:${machine}`] } })
+  }
   return layer
 }
 
