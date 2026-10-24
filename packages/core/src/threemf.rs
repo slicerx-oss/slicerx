@@ -97,7 +97,7 @@ pub(crate) fn load_plates(bytes: &[u8], name: &str) -> Result<Vec<(u32, Mesh)>> 
 /// a build without it (the WebAssembly engine) reads it with [`load_plate_objects_legacy`].
 pub(crate) fn load_plate_objects(bytes: &[u8], name: &str) -> Result<Vec<(u32, Vec<Mesh>)>> {
     #[cfg(feature = "import")]
-    return from_geom(bytes, name, Plates::All);
+    return from_geom(bytes, name, Plates::All).map(|(plates, _)| plates);
     #[cfg(not(feature = "import"))]
     return load_plate_objects_legacy(bytes, name);
 }
@@ -110,14 +110,28 @@ pub(crate) fn load_plate_items(
     name: &str,
     plate: Option<u32>,
 ) -> Result<Option<(u32, Vec<Mesh>)>> {
+    Ok(load_plate_items_counted(bytes, name, plate)?.0)
+}
+
+/// [`load_plate_items`], and how many plates of the file have something printed, read in the same pass.
+pub(crate) fn load_plate_items_counted(
+    bytes: &[u8],
+    name: &str,
+    plate: Option<u32>,
+) -> Result<(Option<crate::api::PlateItems>, usize)> {
     #[cfg(feature = "import")]
-    let plates = from_geom(bytes, name, Plates::One(plate))?;
+    let (plates, count) = from_geom(bytes, name, Plates::One(plate))?;
     #[cfg(not(feature = "import"))]
-    let plates = load_plate_objects_legacy(bytes, name)?;
-    Ok(match plate {
+    let (plates, count) = {
+        let plates = load_plate_objects_legacy(bytes, name)?;
+        let count = plates.len();
+        (plates, count)
+    };
+    let items = match plate {
         Some(n) => plates.into_iter().find(|(p, _)| *p == n),
         None => plates.into_iter().next(),
-    })
+    };
+    Ok((items, count))
 }
 
 /// Which plates [`from_geom`] makes the meshes of: every one, or one plate (`None`: the first).
@@ -267,7 +281,8 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
 /// printed part, each part placed on the plate with its paint decoded, the volumes that do not print, the part and
 /// object settings, and the notes the legacy reader gives, worded the same.
 #[cfg(feature = "import")]
-fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<Vec<(u32, Vec<Mesh>)>> {
+/// Also returns how many plates have a printed part, whichever plates were made.
+fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<(Vec<crate::api::PlateItems>, usize)> {
     use sx_geom::format::{Layout, PartKind};
     let project = sx_geom::format::read_3mf(bytes).map_err(|e| match e {
         sx_geom::Error::Invalid { why, .. } => Error::mesh(name, why),
@@ -316,16 +331,19 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<Vec<(u32, Vec<Me
         .map(|x| parse_layer_ranges(x.as_bytes()))
         .unwrap_or_default();
     let numbers = object_numbers(project.objects.iter().map(|o| o.id));
-    // One plate: the first is the lowest that has a printed part, as the plates made below are ordered.
+    // The plates with a printed part. One plate: the first is the lowest of them, as the plates made below are ordered.
+    let printed: std::collections::BTreeSet<u32> = project
+        .objects
+        .iter()
+        .filter(|o| o.printable && o.parts.iter().any(|p| matches!(p.kind, PartKind::Normal)))
+        .map(|o| o.plate.unwrap_or(1))
+        .collect();
     let only = match which {
         Plates::All => None,
         Plates::One(want) => {
-            let first = project
-                .objects
-                .iter()
-                .filter(|o| o.printable && o.parts.iter().any(|p| matches!(p.kind, PartKind::Normal)))
-                .map(|o| o.plate.unwrap_or(1))
-                .min()
+            let first = printed
+                .first()
+                .copied()
                 .ok_or_else(|| Error::mesh(name, "the 3MF file has no printable objects"))?;
             Some(want.unwrap_or(first))
         }
@@ -491,7 +509,7 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<Vec<(u32, Vec<Me
     if plates.is_empty() && only.is_none() {
         return Err(Error::mesh(name, "the 3MF file has no printable objects"));
     }
-    Ok(plates.into_iter().collect())
+    Ok((plates.into_iter().collect(), printed.len()))
 }
 
 /// The name of build item `item_no` (0-based, in build order) whose object has none: `Object_1` on, as the desktop
@@ -2657,6 +2675,8 @@ mod tests {
             Some((1, format!("{:?}", items[0].1)))
         );
         assert!(load_plate_items(&bytes, "two.3mf", Some(3)).unwrap().is_none());
+        // The count is of every plate with a printed part, whichever one was made.
+        assert_eq!(load_plate_items_counted(&bytes, "two.3mf", Some(2)).unwrap().1, 2);
         // A plate 1 with no printed part (its object only cuts): plate 2 is the first, as it is in the whole file.
         let cutting = settings.replace(
             r#"<object id="10"><part id="1" subtype="normal_part"/>"#,
@@ -2676,6 +2696,7 @@ mod tests {
             Some((2, format!("{:?}", all[0].1)))
         );
         assert!(load_plate_items(&bytes, "two.3mf", Some(1)).unwrap().is_none());
+        assert_eq!(load_plate_items_counted(&bytes, "two.3mf", None).unwrap().1, 1);
     }
 
     #[test]

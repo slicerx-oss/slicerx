@@ -24,7 +24,8 @@
 //! change (`packages/settings/engine-choices.json`); `--config` goes over them,
 //! and `--no-project-settings` leaves them out. What the settings set that the
 //! engine does not use is listed on stderr, and `--strict` refuses the slice
-//! over it (exit code 3). A 3MF slices as the build items of its first plate (`--plate N` picks another), each an
+//! over it (exit code 3). A 3MF slices as the build items of its first plate (`--plate N` picks another, and stderr
+//! says how many plates a project has when it has more than one and `--plate` was not given), each an
 //! object of its own with its own label, as a request and the app slice it; the same collision and clearance check
 //! as `--request` refuses the slice where it finds a collision (exit code 3), unless `--allow-collisions` asks for it
 //! anyway.
@@ -33,7 +34,8 @@
 //! a file or stdin and prints a result JSON (`sx schema result`) with
 //! `schemaVersion` on stdout. Object `mesh` values are keys of an optional
 //! top-level `meshes` map (reference to file path) or file paths themselves,
-//! relative to the request file; `file.3mf#2` picks plate 2 of a project.
+//! relative to the request file; `file.3mf#2` picks plate 2 of a project. A project named without `#N` that has
+//! more than one plate is listed in the result's `projectPlates` (and on stderr).
 //! With `--out-dir`, the G-code and SXPV are
 //! written there as `slice.gcode` and `slice.sxpv`. A by-object plate where the head, gantry or tool changer would meet
 //! a printed part, and any plate where two objects' paths cross or a path enters an exclusion area (the result's
@@ -310,20 +312,25 @@ fn split_ref(full: &str) -> (&str, Option<u32>) {
     }
 }
 
+/// Meshes loaded while splitting a request's projects, by key.
+type SplitMeshes = std::collections::HashMap<String, std::sync::Arc<Mesh>>;
+
 /// A 3MF plate given without a transform becomes one object per build item ([`sx_core::api::load_3mf_items`]), so
 /// print by object, its clearance checks and the object labels see the objects and not one merged mesh. A slicer
 /// project's items stay where the file puts them (on the machine of the request's `printable_area`), any other 3MF's
 /// where the file puts them with the plate centered on the bed ([`sx_core::api::load_3mf_placement`]), as the app and
 /// `sx slice <file.3mf>` place them. Returns their meshes under the new keys (a plate of one item keeps its key, with
-/// the item's mesh).
+/// the item's mesh), and a note for each project named without `#N` that has more plates than the one sliced (the
+/// result's `projectPlates`), each also on stderr.
 fn split_projects(
     req: &mut sx_core::api::SliceRequest,
     base: &Path,
     paths: &std::collections::HashMap<String, String>,
     painted: &std::collections::HashMap<String, Value>,
-) -> sx_core::Result<std::collections::HashMap<String, std::sync::Arc<Mesh>>> {
+) -> sx_core::Result<(SplitMeshes, Vec<Value>)> {
     use sx_core::api;
     let mut cache = std::collections::HashMap::new();
+    let mut plate_notes: Vec<Value> = Vec::new();
     let bed = req.plate.bed.map_or_else(api::Bed::default, |b| api::Bed {
         width_mm: b.width_mm,
         depth_mm: b.depth_mm,
@@ -348,11 +355,17 @@ fn split_projects(
             name: path.display().to_string(),
             reason: e.to_string(),
         })?;
-        let Some((plate_no, items)) = api::load_3mf_items(&bytes, rel, plate)? else {
+        let (found, plates) = api::load_3mf_items_counted(&bytes, rel, plate)?;
+        let Some((plate_no, items)) = found else {
             // loading it names the plate the file does not have
             out.push(o);
             continue;
         };
+        if plate.is_none() && plates > 1 && !plate_notes.iter().any(|n| n["file"] == rel) {
+            let text = format!("{rel} has {plates} plates; slicing plate {plate_no} ({rel}#N picks another)");
+            eprintln!("sx: plates: {text}");
+            plate_notes.push(json!({"file": rel, "plates": plates, "sliced": plate_no, "text": text}));
+        }
         // The marks the project sets on this plate's layers go in unless the request brings its own.
         if req.options.layer_gcode.is_none() {
             let marks = api::load_3mf_layer_gcode(&bytes, plate_no);
@@ -395,7 +408,7 @@ fn split_projects(
         }
     }
     req.plate.objects = out;
-    Ok(cache)
+    Ok((cache, plate_notes))
 }
 
 /// The meshes of a request as the engine asks for them. A mesh is let go once the last object or volume naming it
@@ -602,6 +615,7 @@ fn request_script_changes(
     Ok((replacements, reviews))
 }
 
+#[allow(clippy::too_many_lines, reason = "one request, from its file to the result")]
 fn cmd_request(args: &[String]) -> ExitCode {
     use sx_core::api;
     let fail = |code: u8, msg: String| {
@@ -629,7 +643,7 @@ fn cmd_request(args: &[String]) -> ExitCode {
     };
     report_options(&mut req, args);
     let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
-    let cache = match split_projects(&mut req, &base, &paths, &painted) {
+    let (cache, plate_notes) = match split_projects(&mut req, &base, &paths, &painted) {
         Ok(split) => split,
         Err(e) => return fail(EXIT_INPUT, e.to_string()),
     };
@@ -675,6 +689,9 @@ fn cmd_request(args: &[String]) -> ExitCode {
     }
     if !script_replacements.is_empty() {
         out["script_replacements"] = serde_json::json!(script_replacements);
+    }
+    if !plate_notes.is_empty() {
+        out["projectPlates"] = Value::Array(plate_notes);
     }
     if let Some(dir) = flag(args, "--out-dir") {
         let dir = Path::new(dir);
@@ -1145,8 +1162,13 @@ impl Model {
         if want.is_none() && !sx_core::api::is_3mf(bytes, model) {
             return Ok(Model::One(Box::new(Mesh::load(bytes, model)?)));
         }
-        let (plate, items) = sx_core::api::load_3mf_items(bytes, model, want)?
-            .ok_or_else(|| format!("{model} has no plate {}", want.unwrap_or(1)))?;
+        let (found, plates) = sx_core::api::load_3mf_items_counted(bytes, model, want)?;
+        let (plate, items) = found.ok_or_else(|| format!("{model} has no plate {}", want.unwrap_or(1)))?;
+        if want.is_none() && plates > 1 {
+            eprintln!(
+                "sx: plates: this project has {plates} plates; slicing plate {plate} (--plate N picks another)"
+            );
+        }
         Ok(Model::Items(
             items,
             sx_core::api::load_3mf_layer_gcode(bytes, plate),

@@ -162,13 +162,14 @@ A project's own printer G-code (`project_settings: true`) is compared with the p
 | `filament_g`, `filament_mm` | Filament for the whole plate |
 | `filaments` | Use per filament slot: `{ slot, filament_g, filament_mm }`, slot 1 first. Use it for spool tracking. |
 | `layer_count`, `tool_changes` | Layers, and filament changes on multi-material plates |
-| `plate` | The plate that was sliced, for a project |
+| `plate` | The plate that was sliced, for a project. Without `plate` in the call, the first plate. |
+| `plate_count` | How many plates of the project have something to print, when it has more than one and the call named no `plate` |
 | `gcode_path`, `gcode_sha256` | The G-code file and its SHA-256 |
 | `gcode_3mf_path` | The `.gcode.3mf`, when you asked for one. It carries the plate picture the engine draws (512 by 512 and 128 by 128 pixels unless the settings name other `thumbnails` sizes). |
 | `preview_path` | The SXPV toolpath preview, when you asked for one |
 | `applied` | The settings layers that were applied, in order |
 | `warnings` | Things the user should know, such as a model larger than the bed |
-| `notices` | Warnings with a code an app can act on; each one is also in `warnings`. `no_printer`: the slice named no printer (no printer profile, printer preset file or project), so the engine used its generic machine and the time and limits are not for the user's printer. Ask the user to pick a printer, or label the numbers. |
+| `notices` | Warnings with a code an app can act on; each one is also in `warnings`. `no_printer`: the slice named no printer (no printer profile, printer preset file or project), so the engine used its generic machine and the time and limits are not for the user's printer. Ask the user to pick a printer, or label the numbers. `other_plates`: the project has more than one plate and the call named none, so only the first was sliced; call again with `plate` for another. |
 
 ### Progress
 
