@@ -48,6 +48,18 @@ describe('app ui tools', () => {
     expect(call).toHaveBeenLastCalledWith('ui.select', { selection: [], open: 'settings', section: 'controls' })
   })
 
+  it('read a by-object plate back with its clearance plan and say how many problems it has', async () => {
+    const byObject = { needMm: 68, pairs: [{ a: { id: 'obj_1', name: 'Box' }, b: { id: 'obj_2', name: 'Clip' }, gapMm: 47, severity: 'block' as const }], tall: [], gantry: { rodMm: 34, reachMm: 20 }, outlines: [] }
+    const [get] = appUiTools({ call: async () => ({ ...UI, tab: 'slice', byObject }) } as unknown as AppLinkCaller, 'SlicerX')
+    const read = await get!.run({} as never, {} as never)
+    expect((read.output as AppUi).byObject).toEqual(byObject)
+    expect(read.summary).toBe('Slice tab; 2 selected (Clip, Box); plate 2 of 2 (Brackets); printer Bay 2; open: settings (look); by object, 1 clearance problem (slicerx_arrange spaces the objects).')
+    const [calm] = appUiTools({ call: async () => ({ ...UI, tab: 'slice', byObject: { ...byObject, pairs: [{ ...byObject.pairs[0]!, severity: 'soft' as const }] } }) } as unknown as AppLinkCaller, 'SlicerX')
+    expect((await calm!.run({} as never, {} as never)).summary).toMatch(/; by object, 1 close call sx slices \(slicerx_arrange spaces the objects\)\.$/)
+    const [clear] = appUiTools({ call: async () => ({ ...UI, tab: 'slice', byObject: { ...byObject, pairs: [] } }) } as unknown as AppLinkCaller, 'SlicerX')
+    expect((await clear!.run({} as never, {} as never)).summary).toMatch(/; by object, clear\.$/)
+  })
+
   it('say when nothing is selected, no printer is chosen and another workspace is up', async () => {
     const other: AppUi = { ...UI, workspace: 'library', selection: { primary: null, objects: [] }, printer: null, panels: { ...UI.panels, open: [], settingsSection: null } }
     const [get] = appUiTools({ call: async () => other } as unknown as AppLinkCaller, 'SlicerX')

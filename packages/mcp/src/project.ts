@@ -13,7 +13,8 @@ import { ToolInputError } from './models'
 import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import { positionsFromParts, type NodeSlicerHost } from './slicerhost'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
-import { objectPrintMargins } from '@slicerx/settings/print-margins'
+import { marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
+import { byObjectPlan, byObjectReadback, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
 import { bedArea, boxRows, describeBed, EDGE_MM, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
 import { fillCount, nestPlate, plateTools, type FootprintCache, type NestObject } from './plate-nest'
@@ -270,6 +271,22 @@ export class McpProject implements PilotProject {
   config(plateIndex: number): PrintConfig {
     const plate = this.layout.find((p) => p.index === plateIndex)
     return { ...this.baseConfig(), ...this.filamentConfig(), ...this.projectOverrides, ...(plate?.overrides ?? {}) } as PrintConfig
+  }
+
+  /**
+   * Printing by object, the clearance plan of these placed objects as the app reads it (@slicerx/settings/by-object):
+   * the pairs closer than the clearance, the tall ones the gantry or lid would hit, and each one's zone. Null by layer.
+   */
+  clearanceOf(objects: readonly PlateObject[], cfg: Record<string, SettingValue>): ByObjectReadback | null {
+    if (marginText(cfg['print_sequence']) !== 'by object' || objects.length < 2) return null
+    const shapes = objects.map((o) => placedShape(o.id, o.name ?? o.id, this.host.parts(o.mesh).map((p) => p.positions), o.transform ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]))
+    return byObjectReadback(byObjectPlan(shapes, cfg))
+  }
+
+  /** A plate's by-object clearance plan, its printed copies where they sit; null by layer. */
+  byObject(plateIndex: number): ByObjectReadback | null {
+    const { objects, placements } = this.layoutPlate(plateIndex)
+    return this.clearanceOf(objects.filter((_o, k) => placements[k]?.printable !== false), this.config(plateIndex) as Record<string, SettingValue>)
   }
 
   /** The plate's bed: the box of its printable area and, for a delta, the circle. */
@@ -848,10 +865,19 @@ export class McpProject implements PilotProject {
         }
       }),
       bed: describeBed(this.bed(this.layout[0]?.index ?? 1)),
-      plates: this.plates().map((p) => ({ ...p, placements: this.safePlacements(p.index) })),
+      plates: this.plates().map((p) => ({ ...p, placements: this.safePlacements(p.index), ...this.safeByObject(p.index) })),
       filaments: this.filaments(),
       overrides: this.projectOverrides,
       height_ranges: this.heightRanges(),
+    }
+  }
+
+  private safeByObject(index: number): { byObject?: ByObjectReadback } {
+    try {
+      const plan = this.byObject(index)
+      return plan ? { byObject: plan } : {}
+    } catch {
+      return {}
     }
   }
 
