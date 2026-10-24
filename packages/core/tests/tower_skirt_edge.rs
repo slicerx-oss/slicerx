@@ -101,6 +101,7 @@ fn layout() -> Vec<[f64; 2]> {
 /// The first layer's extruding moves, as the feature and the end point.
 fn first_layer(gcode: &str) -> Vec<(String, [f64; 2])> {
     let (mut feature, mut layer, mut out) = (String::new(), 0, Vec::new());
+    let mut in_change = false;
     let mut at = [0.0, 0.0];
     for line in gcode.lines() {
         if line.starts_with(";LAYER_CHANGE") || line.starts_with("; CHANGE_LAYER") {
@@ -115,7 +116,14 @@ fn first_layer(gcode: &str) -> Vec<(String, [f64; 2])> {
         {
             name.trim().clone_into(&mut feature);
         }
-        if layer == 0 || !line.starts_with("G1 ") {
+        // The change G-code of the printer sits inside a tower feature when the layer's first filament has printed the
+        // tower's wall before the change; its moves are the printer's, not the tower's.
+        if line.starts_with("; CP TOOLCHANGE START") {
+            in_change = true;
+        } else if line.starts_with("; CP TOOLCHANGE WIPE") {
+            in_change = false;
+        }
+        if layer == 0 || in_change || !line.starts_with("G1 ") {
             continue;
         }
         let word = |axis: char| {

@@ -397,8 +397,15 @@ fn the_wall_opens_where_each_wipe_starts_and_hops_it() {
     let (gcode, _) = slice_boxes(3, &[]);
     let lines: Vec<&str> = gcode.lines().collect();
     let mut hops = 0;
-    for b in blocks(&gcode) {
-        let starts: Vec<[f64; 2]> = wipes(&b).iter().map(|w| w.lead.from).collect();
+    let all = blocks(&gcode);
+    for b in &all {
+        // The wall may stand in the block of any change of the layer, so the openings are checked against the
+        // wipe starts of every block of the layer.
+        let starts: Vec<[f64; 2]> = all
+            .iter()
+            .filter(|o| o.layer == b.layer)
+            .flat_map(|o| wipes(o).into_iter().map(|w| w.lead.from))
+            .collect();
         for (k, (_, mv)) in b.lines.iter().enumerate() {
             // A hop: a retraction, one travel at 10 mm/s, the unretraction (acceleration lines may come between).
             let Some(m) = mv else { continue };
