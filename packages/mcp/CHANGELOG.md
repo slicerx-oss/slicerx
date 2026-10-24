@@ -4,6 +4,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-24
+
 ### Added
 
 - `slicerx_project_height_ranges` takes `layer_height` in a range, as the app sends a project's: the engine prints the layers between the range's heights at that height when every object has the same ranges and nothing else plans the layers (smart layers off, no layer tops).
