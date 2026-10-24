@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { arrangeRules, byObjectHead, byObjectOrder, byObjectPlan, convexHull, gantryLane, grownHull, headMeets, hullDistance, LANE_SAFETY_MM, overRod, pairSeverity, type ByObjectShape, type Pt } from './by-object'
+import { arrangeRules, byObjectHead, byObjectOrder, byObjectPlan, CELL_MM, convexHull, gantryLane, gantryMeets, grownHull, headMeets, hullDistance, LANE_SAFETY_MM, overRod, pairSeverity, type ByObjectShape, type Pt } from './by-object'
 
 /** A `w` by `d` box footprint with its front left corner at `x`, `y`. */
 const rect = (x: number, y: number, w: number, d: number): Pt[] => [[x, y], [x + w, y], [x + w, y + d], [x, y + d]]
@@ -37,7 +37,7 @@ describe('the by-object plan', () => {
   it('names the pairs closer than the radius in print order with their gap', () => {
     const plan = byObjectPlan([shape('a', 0, 100, 10), shape('b', 67, 100, 10), shape('c', 160, 100, 10)], P1S)
     expect(plan.needMm).toBe(68)
-    expect(plan.pairs).toEqual([{ a: { id: 'a', name: 'A' }, b: { id: 'b', name: 'B' }, gapMm: 47, severity: 'soft' }])
+    expect(plan.pairs).toEqual([{ a: { id: 'a', name: 'A' }, b: { id: 'b', name: 'B' }, gapMm: 47, reachMm: 0, severity: 'soft' }])
     expect(plan.tall).toEqual([])
   })
 
@@ -129,6 +129,22 @@ describe('the print order arrange gives a by-object plate', () => {
     expect(byObjectOrder(side, P1S)).toEqual(['t', 'u'])
   })
 
+  it('clears the beam one cell past the reach, whatever the reach, and not less, so arrange\'s two clear it', () => {
+    for (const toRod of [0, 0.4, 25, 33, 40, 56.5]) {
+      for (let i = 0; i < 100; i++) {
+        const hi = 120 + i * 0.01 * 1.37
+        // after it, and before it
+        for (const past of [CELL_MM, LANE_SAFETY_MM]) {
+          expect(gantryMeets([100, hi], [hi + toRod + past, hi + toRod + 30], toRod), `${toRod} ${hi}`).toBe(false)
+          expect(gantryMeets([100, hi], [100 - toRod - past - 30, 100 - toRod - past], toRod), `${toRod} ${hi}`).toBe(false)
+        }
+      }
+    }
+    // 0.3 mm short of it meets the beam, with a reach of a whole number of cells and not
+    expect(gantryMeets([100, 120], [120 + 33 + CELL_MM - 0.3, 170], 33)).toBe(true)
+    expect(gantryMeets([100, 120], [120 + 56.5 + CELL_MM - 0.3, 200], 56.5)).toBe(true)
+  })
+
   it('takes the lane as the footprint\'s y span grown by the rod\'s reach across the bed', () => {
     expect(gantryLane(rect(30, 100, 20, 20), P1S, 0, 256)).toEqual({ x: 0, y: 60, w: 256, h: 100 })
     // arrange holds itself to 2 mm more, since heimdall counts the bed in 1 mm cells
@@ -140,9 +156,10 @@ describe('the print order arrange gives a by-object plate', () => {
     const line = gantryLane(rect(30, 100, 20, 20), P1S, 0, 256, 60)
     expect(line.y + line.h / 2).toBeCloseTo(110, 9)
     expect(line.h).toBeCloseTo(0.1, 9)
-    // an object just outside it prints after the tall one with no gantry problem
-    const plan = byObjectPlan([shape('t', 30, 100, 45), shape('a', 200, 160, 10)], P1S)
+    // an object a cell past it prints after the tall one with no gantry problem; on the lane's edge, the beam still
+    // meets the tall one's last row (rows 60 to 160 for one standing on 100 to 120 with a 40 mm reach)
+    const plan = byObjectPlan([shape('t', 30, 100, 45), shape('a', 200, 161, 10)], P1S)
     expect(plan.tall).toEqual([])
-    expect(byObjectPlan([shape('t', 30, 100, 45), shape('a', 200, 159, 10)], P1S).tall.map((t) => t.what)).toEqual(['gantry'])
+    expect(byObjectPlan([shape('t', 30, 100, 45), shape('a', 200, 160, 10)], P1S).tall.map((t) => t.what)).toEqual(['gantry'])
   })
 })

@@ -144,7 +144,8 @@ function firstLayerBrimWidth(cfg: Record<string, SettingValue>, shapes: readonly
 }
 
 /** A line width setting in mm: a number, a percent of the nozzle, or 0 for automatic (`fallback`). */
-function widthMm(v: SettingValue | undefined, nozzle: number, fallback: number): number {
+/** A line width setting in mm: a number, a percentage of the nozzle, or 0 or unset for `fallback`. */
+export function widthMm(v: SettingValue | undefined, nozzle: number, fallback: number): number {
   const x = Array.isArray(v) ? v[0] : v
   if (typeof x === 'string' && x.trim().endsWith('%')) {
     const pct = Number.parseFloat(x)
@@ -208,8 +209,11 @@ export function firstLayerCut(cfg: Record<string, SettingValue>): number | undef
   return Math.max(0.02, marginNumber(cfg['initial_layer_print_height'], 0.2)) / 2
 }
 
-/** How far the brim reaches past the outline, mm, its gap included. */
-function brimOf(cfg: Record<string, SettingValue>, size: PrintSize, base?: readonly FirstLayerShape[]): number {
+/**
+ * How far the brim reaches past the outline, mm, its gap included. `printed`: the brim the first layer prints, so an
+ * automatic brim counts at its own width, not at brim_width, which the engine also keeps its prime tower off by.
+ */
+function brimOf(cfg: Record<string, SettingValue>, size: PrintSize, base?: readonly FirstLayerShape[], printed = false): number {
   const kind = marginText(cfg['brim_type']) || 'auto_brim'
   const width = Math.max(0, marginNumber(cfg['brim_width'], 0))
   const gap = Math.max(0, marginNumber(cfg['brim_object_gap'], 0))
@@ -218,8 +222,9 @@ function brimOf(cfg: Record<string, SettingValue>, size: PrintSize, base?: reado
   if (kind !== 'auto_brim') return width > 0 ? width + gap : 0
   // With the first layer known, the automatic brim is the one the engine prints; brim_width still counts, since the
   // engine keeps the prime tower that far off as well. Without it, an estimate from the bounds.
-  if (base && base.length > 0) return Math.max(autoBrimRoom(cfg, base, size.height), width)
-  const estimate = Math.max(autoBrimWidth(cfg, size), width)
+  const floor = printed ? 0 : width
+  if (base && base.length > 0) return Math.max(autoBrimRoom(cfg, base, size.height), floor)
+  const estimate = Math.max(autoBrimWidth(cfg, size), floor)
   return estimate > 0 ? estimate + gap : 0
 }
 
@@ -236,8 +241,8 @@ function firstLayerExpansion(cfg: Record<string, SettingValue>): number {
  * How far the first layer of the object itself reaches past its outline (brim, raft, size compensation), mm. `base`
  * is the object's first layer (see firstLayerCut), when known.
  */
-function growOf(cfg: Record<string, SettingValue>, size: PrintSize, base?: readonly FirstLayerShape[]): number {
-  let grow = brimOf(cfg, size, base)
+function growOf(cfg: Record<string, SettingValue>, size: PrintSize, base?: readonly FirstLayerShape[], printed = false): number {
+  let grow = brimOf(cfg, size, base, printed)
   if (marginNumber(cfg['raft_layers'], 0) > 0) grow += Math.max(0, marginNumber(cfg['raft_expansion'], 1.5), firstLayerExpansion(cfg))
   return grow + Math.max(0, marginNumber(cfg['xy_contour_compensation'], 0))
 }
@@ -270,6 +275,12 @@ function supportOf(cfg: Record<string, SettingValue>): number {
   // Unset, support lines are as wide as the others (0.42 mm when those are unset too); 0 is the nozzle's width.
   const general = cfg['line_width'] === undefined ? 0.42 : widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
   const line = cfg['support_line_width'] === undefined ? general : widthMm(cfg['support_line_width'], nozzle, nozzle)
+  return supportReach(cfg, line)
+}
+
+/** supportOf with support lines `line` mm wide: how far support's first layer reaches past the part, 0 with support off. */
+export function supportReach(cfg: Record<string, SettingValue>, line: number): number {
+  if (!marginFlag(cfg['enable_support'])) return 0
   const pad = Math.max(0, marginNumber(cfg['support_expansion'], 0)) + firstLayerExpansion(cfg)
   const style = marginText(cfg['support_style']) || 'default'
   if (marginText(cfg['support_type']).startsWith('tree') || style.startsWith('tree') || style === 'organic') {
@@ -288,6 +299,14 @@ function skirtOf(cfg: Record<string, SettingValue>, grow: number): number {
   const brim = marginText(cfg['brim_type']) === 'no_brim' ? 0 : Math.max(0, marginNumber(cfg['brim_width'], 0))
   // The engine puts the skirt at the brim width plus the skirt distance from the outline, or from the brim with a draft shield.
   return Math.max(grow, brim) + Math.max(0, marginNumber(cfg['skirt_distance'], 2)) + Math.max(1, loops) * spacing
+}
+
+/**
+ * How far the first layer of every part prints past its outline, mm: the brim at the width it prints, a raft and the
+ * size compensation, as growOf counts them. Support is left out: a part with nothing to hold up prints none.
+ */
+export function printedGrowth(cfg: Record<string, SettingValue>, size: PrintSize, base?: readonly FirstLayerShape[]): number {
+  return growOf(cfg, size, base, true)
 }
 
 /**
