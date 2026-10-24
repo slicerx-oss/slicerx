@@ -283,6 +283,11 @@ export interface AppState {
    */
   revealHold: boolean
   /**
+   * The example plate a session starts with is loading, and its printer profile with it: like an opened project, it
+   * then waits for Slice (state/auto-slice.ts) rather than slicing by itself at launch. Not saved.
+   */
+  exampleSeeding: boolean
+  /**
    * An open in progress whose model is already on the plate as it will stay unless the open changes it (a binary STL
    * shown from its own triangles): the slice may start before the open ends. A change the open makes to the plate
    * stales that slice as any edit does.
@@ -381,7 +386,7 @@ export interface AppState {
   multiBodyImport: MultiBodyPref
   /** The question for a file of several bodies, while it is open. Not saved. */
   multiBodyPrompt: { name: string; bodies: number } | null
-  /** Auto slice held a big plate's slice: it waits for Slice, with a note. Not saved. */
+  /** Auto slice held the plate's slice (a big plate, an opened project, the example at launch): it waits for Slice, with a note. Not saved. */
   sliceHeld: boolean
   cadTools: boolean
   /** What a kWh costs the person and the currency symbol in front of it, for the electricity estimate. */
@@ -712,6 +717,7 @@ export const appStore = createStore<AppState>()(() => ({
   plate: [],
   plateLoading: false,
   revealHold: false,
+  exampleSeeding: false,
   sliceDuringOpen: false,
   arranging: null,
   selection: null,

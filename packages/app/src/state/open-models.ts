@@ -58,7 +58,8 @@ export async function loadDemoModel(host: Host, slug: string, opts: { replace?: 
   }
   // Picked by hand, it is an opened design; the start of session example passes `keep`.
   if (!opts.keep) opened++
-  set({ plateLoading: true })
+  const seeding = Boolean(opts.keep)
+  set({ plateLoading: true, ...(seeding ? { exampleSeeding: true } : {}) })
   try {
     const { parts, colors } = await demo.build()
     const model: DecodedModel = { name: demo.name, bboxMm: [0, 0, 0], triangles: parts.reduce((n, p) => n + p.indices.length / 3, 0), parts, colors, offset: [0, 0, 0] }
@@ -72,6 +73,11 @@ export async function loadDemoModel(host: Host, slug: string, opts: { replace?: 
   } finally {
     set({ plateLoading: false, sliceDuringOpen: false })
   }
+  if (!seeding) return
+  // The example's printer profile follows its plate a moment later; the example waits for Slice once that is in, so
+  // the profile arriving is not taken for an edit that slices it.
+  await (await import('./profile-sync')).profileReady().catch(() => undefined)
+  set({ exampleSeeding: false })
 }
 
 /** The example plate. */
