@@ -377,7 +377,12 @@
    "nozzleCount": 2,
    "flavor": "marlin",
    "directDrive": true,
-   "limits": {},
+   "limits": {
+    "maxSpeed": 1000,
+    "maxAccel": 20000,
+    "hotendMaxTemp": 300,
+    "bedMaxTemp": 120
+   },
    "sources": [
     "https://github.com/OrcaSlicer/OrcaSlicer/blob/v2.4.2/resources/profiles/BBL/machine/Bambu%20Lab%20X2D.json"
    ]
@@ -1951,7 +1956,10 @@
    "defaultNozzle": 0.4,
    "nozzleCount": 1,
    "flavor": "klipper",
-   "limits": {},
+   "limits": {
+    "maxSpeed": 1000,
+    "maxAccel": 20000
+   },
    "sources": [
     "https://www.flsun3d.com/products/v400"
    ]
