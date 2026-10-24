@@ -484,6 +484,12 @@ class ViewportImpl implements Viewport {
     const stageEnd = performance.now()
     this.startup.stageMs = stageEnd - stageStart
     markSpan('stage', stageStart, stageEnd)
+    // The environment bake (the PMREM prefilter and the spherical-harmonic bake, about 50 ms on a fast GPU) runs in
+    // tasks of its own after this one, so the view's setup and the bake are no longer one long main-thread task. No
+    // frame is drawn before it is done (tick), and the canvas stays hidden until its first frame, so what shows is the
+    // same as before: the first picture already has the environment.
+    canvas.style.visibility = 'hidden'
+    this.bakeSoon()
     // The reveal plays on a window's first plate, once, and again when the app asks (playReveal). Reduced motion and
     // software graphics draw the plate at once.
     this.revealAllowed = opts.reveal !== false && (opts.reveal === 'always' || !gpu.software)
@@ -550,8 +556,6 @@ class ViewportImpl implements Viewport {
     this.stage.objectsRoot.add(this.guides.group)
     this.stage.objectsRoot.add(this.edgeMarks.group)
     this.stage.objectsRoot.add(this.multiFrame, this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.finished, this.originPlanes.group, this.dims.group)
-    // Toolpaths keep their flat ambient light when the bake failed.
-    if (this.stage.envSH) this.toolpaths.setEnvironment(this.stage.envSH)
     this.stage.previewRoot.visible = false
     if (opts.controls) this.setControls(opts.controls)
     if (opts.theme) this.setTheme(opts.theme)
@@ -591,6 +595,31 @@ class ViewportImpl implements Viewport {
     this.startup.constructPrograms = this.compileClock.programs
     this.startup.constructCompileMs = this.compileClock.ms
     markSpan('construct', constructStart, this.constructedAt)
+  }
+
+  /** A look was applied before the environment was baked (applyLook). */
+  private lookBeforeEnv = false
+  /** The pending task of the environment bake, or 0. */
+  private envTimer: ReturnType<typeof setTimeout> | 0 = 0
+
+  /** Runs the next step of the environment bake in a task of its own; the last step hands the bake to the scene. */
+  private bakeSoon(): void {
+    this.envTimer = setTimeout(() => {
+      this.envTimer = 0
+      if (this.disposed) return
+      const t0 = performance.now()
+      const done = this.stage.bakeNext()
+      const t1 = performance.now()
+      this.startup.envMs = (this.startup.envMs ?? 0) + (t1 - t0)
+      markSpan('env', t0, t1)
+      if (!done) return this.bakeSoon()
+      // Toolpaths keep their flat ambient light when the bake failed.
+      if (this.stage.envSH) this.toolpaths.setEnvironment(this.stage.envSH)
+      // A look set before the bake took the scene's environment while it was still empty: give it the baked one.
+      if (this.lookBeforeEnv) setMaterialLook(this.lookSet, this.theme.scene.bgTop, this.stage.scene.environment)
+      this.lookBeforeEnv = false
+      this.invalidate()
+    }, 0)
   }
 
   /** The bead warm-up: not asked for yet, waiting to start, about to start, or started (once per view). */
@@ -714,7 +743,8 @@ class ViewportImpl implements Viewport {
 
   private readonly tick = (now: number): void => {
     this.raf = 0
-    if (!this.canRun()) {
+    // Before the environment is baked nothing draws; the bake's last step asks for the frame (bakeSoon).
+    if (!this.canRun() || !this.stage.envReady) {
       this.lastRenderT = 0
       return
     }
@@ -1000,6 +1030,8 @@ class ViewportImpl implements Viewport {
       s.firstFramePrograms = this.compileClock.programs - compile0[1]!
       markSpan('wait', this.constructedAt, t0)
       markSpan('first-frame', t0, t1)
+      // shown with its first picture, in the same frame
+      this.canvas.style.visibility = ''
     }
     this.firstFrame.frame()
     if (this.afterFrame) {
@@ -3161,6 +3193,7 @@ class ViewportImpl implements Viewport {
     this.stage.setPlateLook(L.plate)
     this.toolpaths.setEnvironmentScale(L.lighting.environment)
     setMaterialLook(this.lookSet, scene.bgTop, this.stage.scene.environment)
+    if (!this.stage.envReady) this.lookBeforeEnv = true
     this.pipeline.setSilhouetteColor(cadLook(scene.bgTop).edge)
     this.shadowDirty = true
   }
@@ -4400,6 +4433,8 @@ class ViewportImpl implements Viewport {
     this.disposed = true
     if (this.veil !== null && this.veil !== 'due') this.veil.remove()
     this.veil = null
+    if (this.envTimer) clearTimeout(this.envTimer)
+    this.envTimer = 0
     this.compileClock.stop()
     for (const p of this.parked.values()) {
       clearTimeout(p.timer)
