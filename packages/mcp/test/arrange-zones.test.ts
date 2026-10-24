@@ -91,6 +91,19 @@ async function byObjectA1(h: Harness): Promise<void> {
 }
 
 describe('slicerx_arrange on true outlines', () => {
+  it('keeps copies off the corner an A1 runs its nozzle wrap check in, from its own profile', async () => {
+    const h = await connect({ geomEngine: g.engine })
+    writeFileSync(join(h.dir, 'part.stl'), boxStl(20, 20, 10))
+    await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+    await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', skirt_loops: 0, brim_type: 'no_brim' } })
+    await call(h, 'slicerx_arrange', { count: 8 })
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(8)
+    const corner: Box = { x0: 226, y0: 224, x1: 256, y1: 256 }
+    for (const b of placed) expect(overlaps(b, corner), JSON.stringify(b)).toBe(false)
+  })
+
   it('keeps the clearance the by-object check holds an A1 to between copies', async () => {
     const h = await connect({ geomEngine: g.engine })
     await byObjectA1(h)
@@ -159,6 +172,19 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
     const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
     expect(sliced.output.total.grams).toBeGreaterThan(0)
   }, 240_000)
+
+  for (const sequence of ['by layer', 'by object'] as const) {
+    it(`slices an A1 plate it arranged ${sequence} clear of the nozzle wrap check corner`, async () => {
+      const h = await connect({ engine: 'sx', sxBin })
+      writeFileSync(join(h.dir, 'part.stl'), boxStl(20, 20, 10))
+      await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
+      await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+      await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: sequence, skirt_loops: 0, brim_type: 'no_brim' } })
+      await call(h, 'slicerx_arrange', { count: sequence === 'by object' ? 8 : 36 })
+      const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+      expect(sliced.output.total.grams).toBeGreaterThan(0)
+    }, 280_000)
+  }
 
   it('slices a by-object plate it spaced with no sequence_clearance refusal', async () => {
     const h = await connect({ engine: 'sx', sxBin })
