@@ -44,6 +44,6 @@ export const ELEGOO: PrinterModel[] = [
   },
   NEPTUNE('elegoo-neptune-4', 'Neptune 4', 230, 230, 265),
   NEPTUNE('elegoo-neptune-4-pro', 'Neptune 4 Pro', 230, 230, 265),
-  NEPTUNE('elegoo-neptune-4-plus', 'Neptune 4 Plus', 320, 320, 385),
-  NEPTUNE('elegoo-neptune-4-max', 'Neptune 4 Max', 420, 420, 480),
+  NEPTUNE('elegoo-neptune-4-plus', 'Neptune 4 Plus', 325, 325, 385),
+  NEPTUNE('elegoo-neptune-4-max', 'Neptune 4 Max', 426, 426, 480),
 ]
