@@ -126,6 +126,7 @@ export const summaryShape = {
     text: z.string(),
   }).optional(),
   plate: z.number().optional(),
+  plate_count: z.number().optional().describe('How many plates of the project have something to print, when it has more than one and no plate was asked for'),
   gcode_path: z.string().optional(),
   gcode_sha256: z.string().optional(),
   gcode_3mf_path: z.string().optional(),
@@ -149,8 +150,8 @@ export const summaryShape = {
     .optional(),
   /** Which wall generator the slice ran and why. */
   walls: z.object({ generator: z.string(), source: z.enum(['kept', 'project', 'request', 'profile']), text: z.string() }).optional(),
-  /** Warnings with a code an app can act on, each also in `warnings`: `no_printer` when no printer was named. */
-  notices: z.array(z.object({ code: z.enum(['no_printer']), message: z.string() })).optional(),
+  /** Warnings with a code an app can act on, each also in `warnings`: `no_printer` when no printer was named, `other_plates` when a project of more than one plate was sliced without a plate. */
+  notices: z.array(z.object({ code: z.enum(['no_printer', 'other_plates']), message: z.string() })).optional(),
   note: z.string().optional(),
 }
 
@@ -287,7 +288,8 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     result.chamber_cooling.source = args.overrides?.[CHAMBER_KEY] !== undefined ? 'override' : own !== undefined && String(own) === String(config[CHAMBER_KEY]) ? 'project' : 'preset'
   }
   const walls: WallsNote = sliceWalls(config['wall_generator'], args.overrides, importReport?.walls)
-  const notices = noPrinter ? [{ code: 'no_printer' as const, message: noPrinterMessage(config) }] : []
+  const notices: { code: 'no_printer' | 'other_plates'; message: string }[] = noPrinter ? [{ code: 'no_printer', message: noPrinterMessage(config) }] : []
+  if (result.plate_count && args.plate === undefined) notices.push({ code: 'other_plates', message: `${basename(modelPath)} has ${result.plate_count} plates; sliced plate ${result.plate}. Pass plate to slice another.` })
   for (const n of notices) result.warnings.push(n.message)
   if (layerNote) result.warnings.push(layerNote)
   const lines = [

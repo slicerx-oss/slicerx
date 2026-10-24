@@ -98,6 +98,19 @@ pub fn load_3mf_placement(
     crate::threemf::plate_placement(bytes, file_name, plate, layout)
 }
 
+/// A plate's number and its build items, as [`load_3mf_items`] gives them.
+pub type PlateItems = (u32, Vec<Mesh>);
+
+/// [`load_3mf_items`], and how many plates of the project have something to print (read in the same pass), so a
+/// caller that slices the first plate by default can say the project has more.
+pub fn load_3mf_items_counted(
+    bytes: &[u8],
+    file_name: &str,
+    plate: Option<u32>,
+) -> Result<(Option<PlateItems>, usize)> {
+    crate::threemf::load_plate_items_counted(bytes, file_name, plate)
+}
+
 /// True when [`load_mesh`] reads the file as a 3MF project (by its name, or a ZIP of another name), whose build items
 /// [`load_3mf_items`] gives.
 pub fn is_3mf(bytes: &[u8], file_name: &str) -> bool {
@@ -2088,6 +2101,13 @@ pub const RESULT_SCHEMA: &str = r#"{
           "source": { "type": ["string", "null"] }, "stockVersion": { "type": ["string", "null"] }, "fingerprint": { "type": ["string", "null"] },
           "ignored": { "type": "array", "items": { "type": "string" } }
         }
+      }
+    },
+    "projectPlates": {
+      "type": "array", "description": "sx CLI only: each project the request names without #N that has more than one plate; the plate sliced is its first",
+      "items": {
+        "type": "object", "required": ["file", "plates", "sliced", "text"],
+        "properties": { "file": { "type": "string" }, "plates": { "type": "integer", "minimum": 2 }, "sliced": { "type": "integer", "minimum": 1 }, "text": { "type": "string" } }
       }
     },
     "layerCount": { "type": "integer", "minimum": 0 },
