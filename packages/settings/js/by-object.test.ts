@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { byObjectPlan, convexHull, grownHull, hullDistance, type ByObjectShape, type Pt } from './by-object'
+import { byObjectHead, byObjectPlan, convexHull, grownHull, headMeets, hullDistance, pairSeverity, type ByObjectShape, type Pt } from './by-object'
 
 /** A `w` by `d` box footprint with its front left corner at `x`, `y`. */
 const rect = (x: number, y: number, w: number, d: number): Pt[] => [[x, y], [x + w, y], [x + w, y + d], [x, y + d]]
@@ -37,7 +37,7 @@ describe('the by-object plan', () => {
   it('names the pairs closer than the radius in print order with their gap', () => {
     const plan = byObjectPlan([shape('a', 0, 100, 10), shape('b', 67, 100, 10), shape('c', 160, 100, 10)], P1S)
     expect(plan.needMm).toBe(68)
-    expect(plan.pairs).toEqual([{ a: { id: 'a', name: 'A' }, b: { id: 'b', name: 'B' }, gapMm: 47 }])
+    expect(plan.pairs).toEqual([{ a: { id: 'a', name: 'A' }, b: { id: 'b', name: 'B' }, gapMm: 47, severity: 'soft' }])
     expect(plan.tall).toEqual([])
   })
 
@@ -68,3 +68,39 @@ describe('the by-object plan', () => {
     expect(byObjectPlan([shape('tall', 0, 10, 260), shape('b', 120, 200, 10)], P1S).tall[0]).toMatchObject({ what: 'lid', limitMm: 250 })
   })
 })
+
+describe('the head heimdall moves', () => {
+  it('is the printer profile\'s, else the printer model\'s, else the generic head, estimated only where it is not measured', () => {
+    expect(byObjectHead({ printer_model: 'Bambu Lab A1' }).estimated).toBe(true)
+    expect(byObjectHead({}, 'bambu-a1-mini').estimated).toBe(true)
+    const p1s = byObjectHead({ printer_model: 'Bambu Lab P1S' })
+    expect(p1s.estimated).toBe(false)
+    expect(p1s.columns.length).toBeGreaterThan(1)
+    // the profile id wins over the model
+    expect(byObjectHead({ printer_model: 'Bambu Lab P1S' }, 'bambu-a1').estimated).toBe(true)
+    const generic = byObjectHead({ printer_model: 'Some Printer' })
+    expect(generic.estimated).toBe(false)
+    expect(generic.columns).toEqual(byObjectHead({}).columns)
+  })
+})
+
+describe('a pair inside the clearance radius', () => {
+  const A1 = { ...P1S, printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73 }
+  it('is a close call on a measured head that clears the earlier object, and blocks on an estimated head', () => {
+    const shapes = [shape('a', 0, 100, 10), shape('b', 67, 100, 10)]
+    expect(byObjectPlan(shapes, P1S).pairs.map((p) => p.severity)).toEqual(['soft'])
+    expect(byObjectPlan(shapes, A1).pairs.map((p) => p.severity)).toEqual(['block'])
+  })
+
+  it('blocks when the measured head\'s body would come down on the earlier object', () => {
+    const head = byObjectHead(P1S)
+    // 15 mm apart, the earlier one 30 mm tall: the P1S head is 26 mm wide either side of the nozzle from 8 mm up
+    const [a, b] = [shape('a', 0, 100, 30), shape('b', 35, 100, 10)]
+    expect(headMeets(a, b, head)).toBe(true)
+    expect(pairSeverity(a, b, head)).toBe('block')
+    expect(byObjectPlan([a, b], P1S).pairs.map((p) => p.severity)).toEqual(['block'])
+    // the same gap under the head's lowest wide box clears it
+    expect(pairSeverity(shape('a', 0, 100, 7), b, head)).toBe('soft')
+  })
+})
+

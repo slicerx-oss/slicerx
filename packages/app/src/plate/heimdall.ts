@@ -26,7 +26,7 @@ export function fixesOf(s: Pick<AppState, 'slice'>): CollisionFix[] {
  * profile's radius goes to the Print sheet as a warning. A slice from before the objects moved is checked against the
  * plate as it sits now.
  */
-export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides'>): string | null {
+export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides' | 'profile'>): string | null {
   const hits = collisionsOf(s).filter((c) => c.severity === 'hit')
   if (hits.length) {
     return `heimdall found ${hits.length === 1 ? 'a collision' : `${hits.length} collisions`} on this plate. See ${hits.length === 1 ? 'it' : 'them'} in Slice, apply a fix or change the plate, and slice again.`

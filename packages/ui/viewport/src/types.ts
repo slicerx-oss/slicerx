@@ -9,6 +9,7 @@ import type { PurgePlan } from './purge'
 import type { HeadModel } from './heads'
 import type { StrikeMark } from './strikes'
 import type { GantryHit, GantrySpec } from './gantry'
+import type { ClearanceSpec } from './clearance'
 import type { Guides } from './guides'
 import type { DimensionMark, SketchCursor, SketchScene } from './cadtools'
 import type { Bed, PreviewBuffers } from '@slicerx/contracts'
@@ -793,6 +794,8 @@ export interface Viewport {
   setSpot?(mark: StrikeMark | null, area?: readonly (readonly [number, number])[] | null): void
   /** heimdall's gantry: the beam over the moving head (null for none), and the strikes it runs through a part on. */
   setGantry?(spec: GantrySpec | null, hits: readonly GantryHit[] | null): void
+  /** Print by object's clearance zones and gantry lanes on the bed; null clears them. */
+  setClearance?(spec: ClearanceSpec | null): void
   /** Value ranges for legends of the speed, flow, width, height, fan and temperature schemes. */
   previewRanges(): PreviewRanges
   /** One row per feature type present: color, time, length and visibility. */

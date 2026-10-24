@@ -62,6 +62,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { BrimEars } from './brim'
 import { GapLines, type GapLine } from './gaps'
+import { CLEARANCE_RED_LIGHT, ClearanceZones, type ClearanceSpec } from './clearance'
 import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, NO_INSETS, PoseWatch, reducedMotion, type Insets } from './camera'
 import { BASELINE_LOOK, lookProblems, type ViewportLook } from './look'
@@ -386,6 +387,8 @@ class ViewportImpl implements Viewport {
   private insets: Insets = NO_INSETS
   private readonly brim = new BrimEars()
   private readonly gaps = new GapLines()
+  /** Print by object's clearance zones and gantry lanes on the bed. */
+  private readonly clearance = new ClearanceZones()
   private readonly guides = new GuideLines()
   private ghost: Toolpaths | null = null
   private probeFaces = false
@@ -542,6 +545,7 @@ class ViewportImpl implements Viewport {
     this.stage.objectsRoot.add(this.spot.root)
     this.stage.objectsRoot.add(this.brim.group)
     this.stage.objectsRoot.add(this.gaps.group)
+    this.stage.objectsRoot.add(this.clearance.group)
     this.stage.objectsRoot.add(this.guides.group)
     this.stage.objectsRoot.add(this.edgeMarks.group)
     this.stage.objectsRoot.add(this.multiFrame, this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.finished, this.originPlanes.group, this.dims.group)
@@ -932,6 +936,7 @@ class ViewportImpl implements Viewport {
     this.stage.updateZoneLabels(this.camera, this.pipeline.size.height / this.pipeline.size.pixelRatio)
     this.painter.sync()
     this.gaps.follow((id) => this.objects.get(id)?.group.matrix)
+    this.clearance.follow((id) => this.objects.get(id)?.group.matrix)
     this.updateGizmo()
     // Only while their tool is on: the rings follow the selection, the cut gizmo its plane.
     if (this.tool === 'rotate' || this.rotRings.visible) this.updateRings()
@@ -1499,6 +1504,11 @@ class ViewportImpl implements Viewport {
 
   setGapLines(lines: readonly GapLine[]): void {
     this.gaps.set(lines)
+    this.invalidate()
+  }
+
+  setClearance(spec: ClearanceSpec | null): void {
+    this.clearance.set(spec)
     this.invalidate()
   }
 
@@ -3057,6 +3067,8 @@ class ViewportImpl implements Viewport {
     this.mats.dispose()
     this.toolpaths.setTheme(t)
     this.strikes.setColors(t.scene.overhangRed, t.scene.overhangAmber)
+    // On the light bed the overhang red reads at 2:1; the zones take a deeper red that keeps 3:1 (ui spec 5).
+    this.clearance.setColors(lightStudio(t.scene.bgTop) ? CLEARANCE_RED_LIGHT : t.scene.overhangRed, lightStudio(t.scene.bgTop) ? '#4a4e63' : '#c9cfe2', t.scene.selection)
     this.spot.setColors(t.scene.overhangRed, t.scene.overhangAmber)
     this.toolpaths.setGantryColor(t.scene.overhangRed)
     if (this.lookSet) this.applyLook(this.lookSet)
@@ -4341,6 +4353,7 @@ class ViewportImpl implements Viewport {
     this.parked.clear()
     this.meshPool?.dispose()
     this.strikes.dispose()
+    this.clearance.dispose()
     this.spot.dispose()
     this.painter.dispose()
     this.gizmo.dispose()
