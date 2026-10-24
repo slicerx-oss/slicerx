@@ -253,6 +253,39 @@ export function zoneKeep(grow: number, reach: number, gapMm: number, apart = 0, 
   return nest ? Math.max(edge, gapMm / 2, apart / 2, grow > 0 ? grow + MARGIN_SAFETY_MM / 2 : 0) : edge
 }
 
+/** An object of a finished layout: its box on the bed, how far what prints round it reaches, and how far it keeps from a zone. */
+export interface LaidOut {
+  box: Rect
+  reach: number
+  keep?: number
+}
+
+/**
+ * The shift, mm, that moves a finished layout as a whole toward the middle of the bed, the way the nest centers one
+ * when nothing stays: in whole `cellMm` steps (the engine's lattice, so its by-object rules see the same rows and
+ * columns), no further than keeps every object and its reach on the bed, and none when that would bring an object,
+ * grown by its keep, onto one of `zones`, or on a round bed.
+ */
+export function layoutCenterShift(items: readonly LaidOut[], bed: { widthMm: number; depthMm: number; round?: boolean | undefined }, zones: readonly Rect[] = [], cellMm = 1): [number, number] {
+  if (items.length === 0 || bed.round) return [0, 0]
+  const along = (size: number, from: (r: Rect) => number, len: (r: Rect) => number): number => {
+    const lo = Math.max(...items.map((i) => i.reach - from(i.box)))
+    const hi = Math.min(...items.map((i) => size - i.reach - from(i.box) - len(i.box)))
+    const mid = (Math.min(...items.map((i) => from(i.box))) + Math.max(...items.map((i) => from(i.box) + len(i.box)))) / 2
+    const [min, max] = [Math.min(lo, 0), Math.max(hi, 0)]
+    const want = Math.min(max, Math.max(min, size / 2 - mid))
+    const whole = Math.round(want / cellMm) * cellMm
+    return (whole >= min && whole <= max ? whole : Math.trunc(want / cellMm) * cellMm) || 0
+  }
+  const shift: [number, number] = [along(bed.widthMm, (r) => r.x, (r) => r.w), along(bed.depthMm, (r) => r.y, (r) => r.h)]
+  const meets = items.some((i) => {
+    const k = i.keep ?? 0
+    const b = { x: i.box.x + shift[0] - k, y: i.box.y + shift[1] - k, w: i.box.w + 2 * k, h: i.box.h + 2 * k }
+    return zones.some((z) => b.x < z.x + z.w && z.x < b.x + b.w && b.y < z.y + z.h && z.y < b.y + b.h)
+  })
+  return meets ? [0, 0] : shift
+}
+
 /** The request for `nest.start` or `nest.arrange`. */
 export interface NestRequest {
   bed: { widthMm: number; depthMm: number; round?: boolean }

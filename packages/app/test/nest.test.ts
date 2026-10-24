@@ -235,6 +235,23 @@ describe('arrange on a plate printed by object, on true outlines', () => {
     setArrangeOptions({ gapMm: 2, rotate: false, stepDeg: 10 })
   })
 
+  it('moves the lanes layout to the middle of the bed as a whole, and the lanes still clear', async () => {
+    const plate = [plateEntry('a', tall(20, 100, 45), at(20, 20)), plateEntry('b', tall(20, 100, 45), at(60, 20))]
+    const bed = { widthMm: 256, depthMm: 256, heightMm: 250 }
+    set({ bed, plate, plates: [], selection: null, selectedIds: [], overrides: RULES })
+    expect(await arrangePlate('all')).toBe(0)
+    expect(sequenceProblem(get())).toBeNull()
+    const all = get().plate.map((p) => bounds(p.parts, p.transform)!)
+    const lo = [Math.min(...all.map((b) => b.min[0])), Math.min(...all.map((b) => b.min[1]))]
+    const hi = [Math.max(...all.map((b) => b.max[0])), Math.max(...all.map((b) => b.max[1]))]
+    // within a cell of the middle, since it moves in whole cells
+    expect(Math.abs((lo[0]! + hi[0]!) / 2 - 128)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs((lo[1]! + hi[1]!) / 2 - 128)).toBeLessThanOrEqual(0.5)
+    // still a lane apart in y: the rod's 20 mm reach and arrange's 2 mm more
+    const [a, b] = get().plate.map(ySpan)
+    expect(Math.max(a![0], b![0]) - Math.min(a![1], b![1])).toBeGreaterThanOrEqual(22 - 1e-3)
+  })
+
   it('gives two parts taller than the rod lanes of their own when the nest alone sets them side by side', async () => {
     const plate = [plateEntry('a', tall(20, 100, 45), at(20, 20)), plateEntry('b', tall(20, 100, 45), at(60, 20))]
     const bed = { widthMm: 256, depthMm: 256, heightMm: 250 }
