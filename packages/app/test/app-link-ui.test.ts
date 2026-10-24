@@ -62,6 +62,19 @@ afterEach(() => {
   setMimirOn(true)
 })
 
+describe('ui.get on a plate printed by object', () => {
+  it('reads back the clearance plan the warning and the zones show, and null by layer', async () => {
+    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }, { id: 'plate-2', name: 'Brackets', objects: [], settings: { sequence: 'by-object' } }] as never })
+    const ui = (await runCall('ui.get', {})) as { byObject: { needMm: number; pairs: { a: { id: string }; b: { id: string }; gapMm: number }[]; outlines: { id: string; zone: [number, number][] }[] } | null }
+    // the four boxes stand in one place
+    expect(ui.byObject!.pairs.map((p) => [p.a.id, p.b.id, p.gapMm])).toEqual([['obj_1', 'obj_2', 0], ['obj_1', 'obj_3', 0], ['obj_1', 'obj_4', 0], ['obj_2', 'obj_3', 0], ['obj_2', 'obj_4', 0], ['obj_3', 'obj_4', 0]])
+    expect(ui.byObject!.outlines.map((o) => o.id)).toEqual(['obj_1', 'obj_2', 'obj_3', 'obj_4'])
+    expect(ui.byObject!.outlines[0]!.zone.length).toBeGreaterThan(8)
+    set({ plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }, { id: 'plate-2', name: 'Brackets', objects: [], settings: { sequence: 'by-layer' } }] as never })
+    expect(((await runCall('ui.get', {})) as { byObject: unknown }).byObject).toBeNull()
+  })
+})
+
 describe('ui over the app link', () => {
   it('reads the window and switches its workspace and tab as a read, and sets the selection and panels as an edit', async () => {
     expect(APP_LINK_METHODS['ui.get']).toBe('read')
@@ -88,6 +101,8 @@ describe('ui over the app link', () => {
       plate: { number: 2, id: 'plate-2', name: 'Brackets', count: 2 },
       printer: null,
       panels: { open: ['settings'], settingsSection: 'look', settable: ['settings', 'command', 'about', 'shortcuts', 'expert', 'printerChooser', 'printerSettings'] },
+      // printing by layer there is no clearance plan
+      byObject: null,
     })
     setMimirOn(false)
     expect(await runCall('ui.get', {})).toMatchObject({ tabs: ['slice', 'design'] })

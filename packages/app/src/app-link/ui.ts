@@ -15,6 +15,8 @@ import { settingsSections } from '../shell/settings-sections'
 import { cadShown, hostSlices, mimirOn, modelMode } from '../state/model-mode'
 import { offeredFeatureSettings, offeredWorkspaces } from '../state/offered'
 import { get, selectedIds, set, setModelMode, setRail, setWorkspace, type AppState, type ModelMode, type PlateEntry } from '../state/store'
+import { byObjectReadback } from '@slicerx/settings/by-object'
+import { activeClearance } from '../plate/sequence-check'
 import { LinkError } from './methods-error'
 import { namesOf } from './mimir-run'
 import { PREVIEW_BUSY_TOOLS } from './preview-guard'
@@ -73,6 +75,8 @@ export async function readUi() {
     plate: { number: at + 1, id: plate?.id ?? s.activePlate, name: plate?.name ?? '', count: s.plates.length },
     printer: await printerState(s),
     panels: { open, settingsSection: settingsSection(s), settable: [...SETTABLE] },
+    // Printing by object: the shown plate's clearance plan, the warning's pairs and the zones on the bed; null by layer.
+    byObject: ((plan) => (plan ? byObjectReadback(plan) : null))(activeClearance(s)),
   }
 }
 
