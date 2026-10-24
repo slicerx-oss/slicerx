@@ -15,7 +15,7 @@ import { insteadText, reasonText, reportText, SLICERX_KEEPS, sourceText, type Re
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SlicerXApp } from '../src/app'
 import { bugReportsOff, bugReportsUrl } from '../src/bugs/where'
 import { builtinCommands } from '../src/commands/builtin'
@@ -78,20 +78,34 @@ afterEach(() => {
   set({ setup: null, aboutOpen: false, agreementOpen: false, settingsOpen: false })
 })
 
-async function renderApp(): Promise<Element> {
+async function renderApp(ready?: string): Promise<Element> {
   const el = document.createElement('div')
   document.body.append(el)
   const root = createRoot(el)
   roots.push(root)
   flushSync(() => root.render(createElement(SlicerXApp, { host: stubHost(), edition: acme })))
-  // Lazy screens (About, first run, settings) load on the next ticks.
-  for (let i = 0; i < 40; i++) await new Promise((r) => setTimeout(r, 10))
+  // Lazy screens (About, first run, settings) load on the next ticks. A cold worker on a busy machine takes tens of seconds to
+  // transform them, so each tick first waits for the imports that are still running, and the loading screens must be gone
+  // before the last round: a screen nested in another one only starts to load once the one around it has.
+  await settle()
+  await vi.waitFor(() => expect(document.querySelector('.ws-loading, .fr-loading')).toBeNull(), { timeout: 45_000, interval: 10 })
+  if (ready) await vi.waitFor(() => expect(document.body.textContent).toContain(ready), { timeout: 45_000, interval: 10 })
+  await settle()
   return document.body
+}
+
+async function settle(): Promise<void> {
+  for (let i = 0; i < 40; i++) {
+    await vi.dynamicImportSettled()
+    await new Promise((r) => setTimeout(r, 10))
+  }
 }
 
 describe('a white-label edition', () => {
   it('names itself on the main screens and shows only the Made possible by SlicerX credit', async () => {
     const screens: Record<string, string> = {}
+    // What the checks below look for on a screen: each is waited for, not guessed at with a count of ticks.
+    const shows: Record<string, string> = { 'first run, look': 'Acme Slicer', about: 'About Acme Slicer' }
     for (const [name, state] of [
       ['first run, look', { setup: { step: 'look' as const } }],
       ['first run, printer', { setup: { step: 'printer' as const } }],
@@ -101,7 +115,7 @@ describe('a white-label edition', () => {
       ['agreement', { setup: null, agreementOpen: true }],
     ] as const) {
       set(state)
-      screens[name] = seen(await renderApp())
+      screens[name] = seen(await renderApp(shows[name]))
       for (const r of roots.splice(0)) r.unmount()
       document.body.innerHTML = ''
       set({ setup: null, aboutOpen: false, agreementOpen: false, settingsOpen: false })
@@ -113,7 +127,7 @@ describe('a white-label edition', () => {
     expect(screens['first run, look']).toContain('Acme Slicer')
     expect(screens['about']).toContain('About Acme Slicer')
     expect(screens['about']).toContain(POWERED_BY.text)
-  })
+  }, 90_000)
 
   it('names itself in commands, menus, help and tips', () => {
     setCurrentEdition(acme)

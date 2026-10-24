@@ -6,7 +6,7 @@
 // the send card's Print handler writes the ledger.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalToken, PrinterHost, PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import { guardedPrinters, sendPreflight } from '../src/plate/guard'
 import { createSendLedger } from '../src/plate/send-ledger'
@@ -19,6 +19,10 @@ const OTHER = 'cd'.repeat(32)
 const later = () => new Date(Date.now() + 5 * 60_000).toISOString()
 const token = (requestId: string): ApprovalToken => ({ requestId, token: 'tok', expiresAt: later() })
 const file = (sha256 = SHA) => ({ name: 'clip.gcode.3mf', kind: 'gcode.3mf' as const, data: new ArrayBuffer(0), sha256 })
+
+// The guard loads the preflight on demand. A cold worker on a busy machine takes tens of seconds to transform it, so load it
+// before the wait for the card starts.
+beforeAll(async () => void (await Promise.all([import('../src/plate/preflight'), import('../src/plate/transform'), import('../src/state/slice-plate')])))
 
 function fake(status: () => PrinterStatus = () => idle) {
   const calls: string[] = []
@@ -38,10 +42,8 @@ function fake(status: () => PrinterStatus = () => idle) {
 
 /** Waits for the guard's own card, then answers it. Generous, as in guard.test.ts: the preflight module loads lazily. */
 async function answer(approve: boolean): Promise<void> {
-  const until = Date.now() + 15_000
-  while (!get().approval && Date.now() < until) await new Promise((r) => setTimeout(r, 5))
-  const a = get().approval
-  if (!a) throw new Error('no card')
+  await vi.waitFor(() => expect(get().approval).not.toBeNull(), { timeout: 45_000, interval: 5 })
+  const a = get().approval!
   expect(a.confirm).toBe('The bed is clear and the right build plate is on it')
   await (approve ? a.approve() : a.deny())
 }
