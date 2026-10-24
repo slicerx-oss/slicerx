@@ -178,6 +178,44 @@ function workerProvider(): GeomProvider {
   }
 }
 
+const newWorker = (): Worker => new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
+
+/** A worker started ahead of its call, its core engine loading or loaded, and the timer that ends it unused. */
+let spare: { worker: Worker; unused: ReturnType<typeof setTimeout> } | null = null
+
+function takeSpare(): Worker | null {
+  if (!spare) return null
+  clearTimeout(spare.unused)
+  const { worker } = spare
+  spare = null
+  return worker
+}
+
+/**
+ * Starts a geometry worker for the next call in a worker of its own (soloCall, the project reader's), and has it load
+ * the core engine now. A project handed over at launch reads in it without first waiting for a worker and the engine's
+ * compile (about 200 ms on a Mac), which then happen while the app is still starting. Ends unused after IDLE_MS.
+ */
+export function startSpareGeomWorker(): void {
+  if (spare || !usesWorker() || typeof Worker === 'undefined') return
+  const worker = newWorker()
+  worker.onmessage = (e: MessageEvent<{ loadError?: LoadError }>) => {
+    if (e.data.loadError) noteLoadError(e.data.loadError)
+  }
+  worker.postMessage({ id: 0, op: 'engine.core', request: null })
+  spare = { worker, unused: setTimeout(() => takeSpare()?.terminate(), IDLE_MS) }
+}
+
+/**
+ * Starts the geometry engine for a file the app is about to open (one handed over at launch), in the worker that file's
+ * open will use: a project's reader runs in a worker of its own, a mesh file's import in the app's shared one.
+ */
+export function startGeomFor(fileName: string): void {
+  if (!usesWorker() || typeof Worker === 'undefined') return
+  if (/\.(3mf|sx3mf)$/i.test(fileName)) startSpareGeomWorker()
+  else if (/\.(stl|obj|amf)$/i.test(fileName)) void geom().call('engine.core', null).catch(() => undefined)
+}
+
 /**
  * One call in a geometry worker of its own, which ends with its answer, its failure or `end`. For a long call (the
  * sleipnir layer plan takes seconds on a big plate) that the shared worker would make every other call wait behind:
@@ -186,7 +224,7 @@ function workerProvider(): GeomProvider {
  * this call) to the worker rather than copying them.
  */
 export function soloCall<T>(op: string, request: unknown, transfer: Transferable[] = []): { answer: Promise<T>; end: () => void } {
-  let worker: Worker | null = new Worker(new URL('./geom-worker.ts', import.meta.url), { type: 'module' })
+  let worker: Worker | null = takeSpare() ?? newWorker()
   const w = worker
   let fail: (e: Error) => void = () => undefined
   const stop = () => {
@@ -202,6 +240,8 @@ export function soloCall<T>(op: string, request: unknown, transfer: Transferable
     }
     w.onmessage = (e: MessageEvent<{ id: number; result?: unknown; error?: string } | { loadError: LoadError }>) => {
       if ('loadError' in e.data) return noteLoadError(e.data.loadError)
+      // a spare's own start-up answer (startSpareGeomWorker) is not this call's
+      if (e.data.id !== 1) return
       if (e.data.error !== undefined) return fail(new Error(e.data.error))
       stop()
       calls.answered[op] = (calls.answered[op] ?? 0) + 1

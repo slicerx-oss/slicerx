@@ -95,6 +95,11 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; request: unkno
       self.postMessage({ id, result, memoryBytes: memoryBytes() })
       return
     }
+    // started ahead of its first call (client.ts, startSpareGeomWorker): the core engine loads now
+    if (op === 'engine.core') {
+      self.postMessage({ id, result: await engine.core(), memoryBytes: memoryBytes() })
+      return
+    }
     if (op === 'engine.full') {
       self.postMessage({ id, result: await engine.full(), memoryBytes: memoryBytes() })
       return
