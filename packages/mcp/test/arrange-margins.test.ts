@@ -6,7 +6,8 @@ import { expect, it } from 'vitest'
 import { boxStl, connect, data, noSx, sxBin } from './helpers'
 
 it.skipIf(noSx()).each([
-  { name: 'skirt', changes: { skirt_loops: 1, skirt_distance: 6, brim_type: 'no_brim' }, refused: 45, accepted: 40 },
+  // 39, not 40: the A1 keeps its nozzle wrap check corner clear.
+  { name: 'skirt', changes: { skirt_loops: 1, skirt_distance: 6, brim_type: 'no_brim' }, refused: 45, accepted: 39 },
   { name: 'wide skirt', changes: { skirt_loops: 2, skirt_distance: 20, brim_type: 'no_brim' }, refused: 40, accepted: 24 },
   { name: 'shifted smaller bed skirt', changes: { skirt_loops: 1, skirt_distance: 6, brim_type: 'no_brim', printable_area: ['20x10', '220x10', '220x210', '20x210'] }, refused: 40, accepted: 20 },
   { name: 'brim', changes: { skirt_loops: 0, brim_type: 'outer_only', brim_width: 12 }, refused: 40, accepted: 12 },
