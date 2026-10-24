@@ -814,98 +814,212 @@ pub(crate) fn fill(
     if area.is_empty() {
         return Vec::new();
     }
-    // The lines are vertical in a frame turned by `angle + pi / 2`.
-    let phi = angle + std::f64::consts::FRAC_PI_2;
-    let (c, s) = (phi.m_cos(), phi.m_sin());
-    let rot = |p: IntPoint<i32>| -> (i64, i64) {
-        let (x, y) = (f64::from(p.x), f64::from(p.y));
-        #[allow(clippy::cast_possible_truncation, reason = "a rotated plate coordinate")]
-        ((x * c + y * s).round() as i64, (-x * s + y * c).round() as i64)
-    };
-    let back = |x: i64, y: i64| -> crate::geom::Point {
-        let (fx, fy) = (x as f64, y as f64);
-        #[allow(clippy::cast_possible_truncation, reason = "a plate coordinate")]
-        crate::geom::Point::new((fx * c - fy * s).round() as i32, (fx * s + fy * c).round() as i32)
-    };
+    let frame = Frame::new(angle);
     let spacing = i64::from(mm(spacing_mm)).max(1);
-    let (ref_x, _) = rot(IntPoint::new(reference.0, reference.1));
+    let (ref_x, _) = frame.rot(IntPoint::new(reference.0, reference.1));
     // Lines sit half a spacing (and a hair) off the grid through the reference, as for full infill.
     let origin = ref_x + i64::midpoint(spacing, 100);
-    let sp_in = spacing_mm;
-    let outer = perimeters::offset(area, -mm(0.05 * sp_in));
-    let inner = perimeters::offset(area, -mm(0.5 * sp_in));
+    let outer = perimeters::offset(area, -mm(0.05 * spacing_mm));
+    let inner = perimeters::offset(area, -mm(0.5 * spacing_mm));
     if inner.is_empty() || outer.is_empty() {
         return Vec::new();
     }
-    let scan = |shapes: &Shapes| -> crate::infill::Spans {
-        let rings: Vec<Vec<(i64, i64)>> = shapes
-            .iter()
-            .flat_map(|sh| sh.iter())
-            .map(|r| r.iter().map(|&p| rot(p)).collect())
-            .collect();
-        let mut events: Vec<(i32, i64)> = Vec::new();
-        for ring in &rings {
-            let n = ring.len();
-            for i in 0..n {
-                let (Some(&a), Some(&b)) = (ring.get(i), ring.get((i + 1) % n)) else {
-                    continue;
-                };
-                if a.0 == b.0 {
-                    continue;
-                }
-                let (lo, hi) = if a.0 < b.0 { (a, b) } else { (b, a) };
-                let ceil_div = |v: i64| {
-                    let q = (v - origin).div_euclid(spacing);
-                    if q * spacing == v - origin { q } else { q + 1 }
-                };
-                for k in ceil_div(lo.0)..ceil_div(hi.0) {
-                    let x = origin + k * spacing;
-                    let t = lo.1 + (x - lo.0) * (hi.1 - lo.1) / (hi.0 - lo.0);
-                    #[allow(clippy::cast_possible_truncation, reason = "a scanline index on a bed")]
-                    events.push((k as i32, t));
-                }
-            }
-        }
-        events.sort_unstable();
-        let mut out: crate::infill::Spans = Vec::new();
-        let mut i = 0;
-        while let (Some(&(ka, ta)), Some(&(kb, tb))) = (events.get(i), events.get(i + 1)) {
-            if ka != kb {
-                i += 1;
+    frame.lay(&inner, &outer, origin, spacing, 0)
+}
+
+/// One bridge piece laid out by [`fill_even`]: its strands and the spacing between them, mm.
+#[derive(Debug, Clone)]
+pub(crate) struct Even {
+    pub(crate) paths: Vec<Vec<crate::geom::Point>>,
+    pub(crate) spacing: f64,
+}
+
+/// How much closer than half a spacing to the piece's edge the strands may end (internal units, 5 um): enough
+/// that the first and the last strand of a piece, which sit exactly half a spacing in, are kept where the
+/// piece's edge wanders by a few tenths of a micrometer.
+const HAIR: i64 = 50;
+
+/// Strands over each piece of `area` along `angle` (radians), spread evenly across the piece: the piece's
+/// extent across the strands is cut into as many equal cells as hold `nominal_mm` (rounded down, at least one),
+/// and a strand runs down the middle of each cell, so the spacing is never below the nominal and the first and
+/// the last strand sit half a spacing inside the piece. `edge_mm` moves the piece's edge out (or in, when
+/// negative) first. A strand that would have no length (the corner cell of a piece turned against the
+/// strands) is left out.
+pub(crate) fn fill_even(area: &Shapes, angle: f64, nominal_mm: f64, edge_mm: f64) -> Vec<Even> {
+    let mut out = Vec::new();
+    if area.is_empty() || nominal_mm <= 0.0 {
+        return out;
+    }
+    let frame = Frame::new(angle);
+    for piece in area {
+        let one: Shapes = vec![piece.clone()];
+        let moved = if mm(edge_mm) == 0 {
+            one
+        } else {
+            perimeters::offset(&one, mm(edge_mm))
+        };
+        for p in moved {
+            let Some(ring) = p.first() else {
+                continue;
+            };
+            let (lo, hi) = ring
+                .iter()
+                .map(|&q| frame.rot(q).0)
+                .fold((i64::MAX, i64::MIN), |(a, b), x| (a.min(x), b.max(x)));
+            if hi <= lo {
                 continue;
             }
-            match out.last_mut() {
-                Some(l) if l.k == ka && ta <= l.t1 => l.t1 = l.t1.max(tb),
-                _ if tb > ta => out.push(crate::infill::Iv {
-                    k: ka,
-                    t0: ta,
-                    t1: tb,
-                }),
-                _ => {}
+            #[allow(
+                clippy::cast_precision_loss,
+                reason = "a width across one piece, in internal units"
+            )]
+            let across = (hi - lo) as f64;
+            let nominal = f64::from(mm(nominal_mm)).max(1.0);
+            let cells = (across / nominal + 1e-9).floor().max(1.0);
+            // A piece narrower than one nominal cell keeps the nominal spacing (and so no strand fits).
+            let pitch = (across / cells).max(nominal);
+            #[allow(clippy::cast_possible_truncation, reason = "a spacing in internal units")]
+            let spacing = (pitch.round() as i64).max(1);
+            #[allow(clippy::cast_possible_truncation, reason = "half a cell in internal units")]
+            let origin = lo + (pitch / 2.0).round() as i64;
+            let spacing_mm = pitch / crate::geom::SCALE;
+            let shape: Shapes = vec![p];
+            #[allow(clippy::cast_possible_truncation, reason = "half a spacing in internal units")]
+            let half = (pitch / 2.0).round() as i64 - HAIR;
+            let inner = perimeters::offset(&shape, -i32::try_from(half.max(0)).unwrap_or(i32::MAX));
+            let outer = perimeters::offset(&shape, -mm(0.05 * spacing_mm));
+            if inner.is_empty() || outer.is_empty() {
+                continue;
             }
-            i += 2;
+            let paths = frame.lay(&inner, &outer, origin, spacing, 4 * HAIR);
+            if !paths.is_empty() {
+                out.push(Even {
+                    paths,
+                    spacing: spacing_mm,
+                });
+            }
         }
-        out
-    };
-    let spans_in = scan(&inner);
-    let spans_out = scan(&outer);
-    if spans_in.is_empty() {
-        return Vec::new();
     }
-    let edge = {
-        let mut e = crate::edge::Edge::new(&inner);
-        let to = |k: i32, t: i64| back(origin + i64::from(k) * spacing, t);
-        e.mark_ends(spans_in.iter().flat_map(|iv| [to(iv.k, iv.t0), to(iv.k, iv.t1)]));
-        e
-    };
-    let links = crate::monotonic::Links {
-        edge: Some(&edge),
-        max: f64::MAX,
-        chord_fallback: false,
-    };
-    crate::monotonic::polylines_outer(&spans_in, &spans_out, spacing, links, &|off, t| {
-        back(origin + off, t)
-    })
+    out
+}
+
+/// The frame the strands of a bridge are vertical in: the plate turned by the strand angle plus a right angle.
+struct Frame {
+    c: f64,
+    s: f64,
+}
+
+impl Frame {
+    fn new(angle: f64) -> Self {
+        let phi = angle + std::f64::consts::FRAC_PI_2;
+        Self {
+            c: phi.m_cos(),
+            s: phi.m_sin(),
+        }
+    }
+
+    fn rot(&self, p: IntPoint<i32>) -> (i64, i64) {
+        let (x, y) = (f64::from(p.x), f64::from(p.y));
+        #[allow(clippy::cast_possible_truncation, reason = "a rotated plate coordinate")]
+        (
+            (x * self.c + y * self.s).round() as i64,
+            (-x * self.s + y * self.c).round() as i64,
+        )
+    }
+
+    fn back(&self, x: i64, y: i64) -> crate::geom::Point {
+        #[allow(clippy::cast_precision_loss, reason = "a plate coordinate in internal units")]
+        let (fx, fy) = (x as f64, y as f64);
+        #[allow(clippy::cast_possible_truncation, reason = "a plate coordinate")]
+        crate::geom::Point::new(
+            (fx * self.c - fy * self.s).round() as i32,
+            (fx * self.s + fy * self.c).round() as i32,
+        )
+    }
+
+    /// Strands at `origin` plus whole `spacing` steps (frame x, internal units) across `inner`, joined inside
+    /// `outer`; spans shorter than `min_len` are dropped.
+    fn lay(
+        &self,
+        inner: &Shapes,
+        outer: &Shapes,
+        origin: i64,
+        spacing: i64,
+        min_len: i64,
+    ) -> Vec<Vec<crate::geom::Point>> {
+        let scan = |shapes: &Shapes| -> crate::infill::Spans {
+            let rings: Vec<Vec<(i64, i64)>> = shapes
+                .iter()
+                .flat_map(|sh| sh.iter())
+                .map(|r| r.iter().map(|&p| self.rot(p)).collect())
+                .collect();
+            let mut events: Vec<(i32, i64)> = Vec::new();
+            for ring in &rings {
+                let n = ring.len();
+                for i in 0..n {
+                    let (Some(&a), Some(&b)) = (ring.get(i), ring.get((i + 1) % n)) else {
+                        continue;
+                    };
+                    if a.0 == b.0 {
+                        continue;
+                    }
+                    let (lo, hi) = if a.0 < b.0 { (a, b) } else { (b, a) };
+                    let ceil_div = |v: i64| {
+                        let q = (v - origin).div_euclid(spacing);
+                        if q * spacing == v - origin { q } else { q + 1 }
+                    };
+                    for k in ceil_div(lo.0)..ceil_div(hi.0) {
+                        let x = origin + k * spacing;
+                        let t = lo.1 + (x - lo.0) * (hi.1 - lo.1) / (hi.0 - lo.0);
+                        #[allow(clippy::cast_possible_truncation, reason = "a scanline index on a bed")]
+                        events.push((k as i32, t));
+                    }
+                }
+            }
+            events.sort_unstable();
+            let mut out: crate::infill::Spans = Vec::new();
+            let mut i = 0;
+            while let (Some(&(ka, ta)), Some(&(kb, tb))) = (events.get(i), events.get(i + 1)) {
+                if ka != kb {
+                    i += 1;
+                    continue;
+                }
+                match out.last_mut() {
+                    Some(l) if l.k == ka && ta <= l.t1 => l.t1 = l.t1.max(tb),
+                    _ if tb > ta => out.push(crate::infill::Iv {
+                        k: ka,
+                        t0: ta,
+                        t1: tb,
+                    }),
+                    _ => {}
+                }
+                i += 2;
+            }
+            out
+        };
+        let mut spans_in = scan(inner);
+        if min_len > 0 {
+            spans_in.retain(|iv| iv.t1 - iv.t0 >= min_len);
+        }
+        let spans_out = scan(outer);
+        if spans_in.is_empty() {
+            return Vec::new();
+        }
+        let edge = {
+            let mut e = crate::edge::Edge::new(inner);
+            let to = |k: i32, t: i64| self.back(origin + i64::from(k) * spacing, t);
+            e.mark_ends(spans_in.iter().flat_map(|iv| [to(iv.k, iv.t0), to(iv.k, iv.t1)]));
+            e
+        };
+        let links = crate::monotonic::Links {
+            edge: Some(&edge),
+            max: f64::MAX,
+            chord_fallback: false,
+        };
+        crate::monotonic::polylines_outer(&spans_in, &spans_out, spacing, links, &|off, t| {
+            self.back(origin + off, t)
+        })
+    }
 }
 
 type P = (i64, i64);
@@ -929,8 +1043,29 @@ pub(crate) struct LayerBridges {
     pub(crate) thick: bool,
     pub(crate) width: f64,
     pub(crate) flow: f64,
+    /// Set when each bridge piece spreads its strands evenly across itself ([`fill_even`]).
+    pub(crate) stretch: Option<Stretch>,
     /// The layer's own facts, worked out for its whole outline with the layer's settings.
     pub(crate) own: Option<Arc<Facts>>,
+}
+
+/// How a bridge piece spreads its strands evenly across itself ([`fill_even`]) and how wide they print.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Stretch {
+    /// How far the piece's edge moves out (in, when negative) before the strands are spread, mm.
+    pub(crate) edge: f64,
+    /// The strand density (`bridge_density` or `internal_bridge_density`, as a share of 1).
+    pub(crate) density: f64,
+    /// The bead width less the spacing the bead keeps at a density of 1, mm: a strand of a stretched piece
+    /// widens with its spacing.
+    pub(crate) gap: f64,
+}
+
+impl Stretch {
+    /// The bead width of strands `spacing` mm apart, mm.
+    pub(crate) fn width(&self, spacing: f64) -> f64 {
+        spacing * self.density + self.gap
+    }
 }
 
 /// One bridge with its grown parts and the zone pieces it reaches.

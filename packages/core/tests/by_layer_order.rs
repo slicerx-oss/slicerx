@@ -309,8 +309,9 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// and the two floating shell settings join the config block. Changed again when Bambu Lab G-code named the first solid
 /// layer over sparse infill a bridge (`; FEATURE: Bridge`, was `Internal Bridge`), and again when the ring's beads
 /// reached out to the infill area's overlap with the wall. The tower's wall now prints with the layer's first filament,
-/// ahead of the first change, so only the tower's lines moved with it (the objects' extrusion is unchanged).
-const BY_OBJECT_FNV: &str = "1e59c691ec297144";
+/// ahead of the first change, so only the tower's lines moved with it (the objects' extrusion is unchanged). Changed
+/// again when the strands of the bridge over the sparse infill spread evenly across it, wider where they stretch.
+const BY_OBJECT_FNV: &str = "c903a40d01455d9b";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {
