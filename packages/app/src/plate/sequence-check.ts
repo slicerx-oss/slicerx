@@ -161,7 +161,7 @@ export function clearanceProblems(entries: readonly PlateEntry[], cfg: Record<st
 /** The plan's problems, one sentence each, worded as the engine words them. A close call is not one: heimdall slices it. */
 function sentences(plan: ByObjectPlan): string[] {
   return [
-    ...plan.pairs.filter((p) => p.severity === 'block').map((p) => `${p.a.name} and ${p.b.name} are ${p.gapMm.toFixed(1)} mm apart; printing by object needs ${Math.round(plan.needMm)} mm between objects so the toolhead clears them`),
+    ...plan.pairs.filter((p) => p.severity === 'block').map((p) => `${p.a.name} and ${p.b.name} are ${p.gapMm.toFixed(1)} mm apart${p.reachMm > 0 ? `, counting the brim, skirt or support round ${p.b.name}` : ''}; printing by object needs ${Math.round(plan.needMm)} mm between objects so the toolhead clears them`),
     ...plan.tall.map((t) => `${t.name} is ${t.topMm.toFixed(1)} mm tall and prints before another object; the ${t.what} clears ${t.limitMm.toFixed(0)} mm, so print it last or lower it`),
   ]
 }
