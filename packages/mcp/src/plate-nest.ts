@@ -7,8 +7,8 @@
 // counts in bed coordinates; the nest counts from the printable area's front left corner.
 import type { EngineCall } from '@slicerx/cad-history'
 import type { MeshPart, SettingValue } from '@slicerx/contracts'
-import { byObjectApart, keepOutBoxes, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
-import { arrangeRules, gantryLane, overRod } from '@slicerx/settings/by-object'
+import { byObjectApart, keepOutBoxes, layoutCenterShift, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
+import { arrangeRules, CELL_MM, gantryLane, overRod } from '@slicerx/settings/by-object'
 import { marginFlag as flag, marginNumber, objectPrintMargins } from '@slicerx/settings/print-margins'
 import type { BedArea } from './bed'
 
@@ -148,7 +148,22 @@ export async function nestInLanes(engine: EngineCall, p: NestPlate, cache: Footp
   }
   const low = p.moving.filter((o) => !tall(o))
   const rest: NestReply = low.length > 0 ? await nestPlate(engine, { ...p, moving: low, fixed, center: false }, cache) : { placements: [], leftOver: [], tooLarge: [], stats: { placed: 0, wanted: 0, passes: 0, utilization: 0 } }
-  return { ...rest, placements: [...placements, ...rest.placements] }
+  const all = [...placements, ...rest.placements]
+  // Each tall copy went down where it packs, so the lanes had room; the layout as a whole now goes to the middle of the
+  // bed when nothing stays, as a plain arrange's does, in whole cells, so the by-object check finds the same.
+  if (!p.center || p.fixed.length > 0 || p.bed.circle) return { ...rest, placements: all }
+  const byId = new Map(p.moving.map((o) => [o.id, o]))
+  const placed = all.flatMap((q) => {
+    const o = byId.get(q.id)
+    if (!o) return []
+    const size = { w: o.size[0], h: o.size[1], height: o.size[2] }
+    const margins = objectPrintMargins(o.config)
+    return [{ box: { x: o.min[0] + q.offset[0] - origin[0], y: o.min[1] + q.offset[1] - origin[1], w: size.w, h: size.h }, reach: margins.reach(size), keep: margins.grow(size) }]
+  })
+  const plate = plateMargins(p.config, p.tools, { origin, size: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm } })
+  const zones = [...avoidOf(p.config, origin), ...plate.keepOut, ...plate.towerRoom, ...(p.zones ?? []).map((r) => ({ ...r, x: r.x - origin[0], y: r.y - origin[1] }))]
+  const [dx, dy] = layoutCenterShift(placed, { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm }, zones, CELL_MM)
+  return { ...rest, placements: all.map((q) => ({ ...q, offset: [q.offset[0] + dx, q.offset[1] + dy] })) }
 }
 
 /** The area an outline covers, holes taken out, mm2. */

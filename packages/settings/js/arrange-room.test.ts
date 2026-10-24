@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { byObjectApart, clearanceRadius, keepOutBoxes, keepOutPolygons, MARGIN_SAFETY_MM, plateMargins, zoneKeep } from './arrange-room'
+import { byObjectApart, clearanceRadius, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, plateMargins, zoneKeep } from './arrange-room'
 import { printerConfig } from './index'
 
 const plate = { origin: [0, 0] as const, size: { widthMm: 256, depthMm: 256 } }
@@ -51,5 +51,33 @@ describe('the spacing arrange keeps by object', () => {
     expect(byObjectApart(74, [])).toBe(74)
     // by layer there is none
     expect(byObjectApart(undefined, [5])).toBeUndefined()
+  })
+})
+
+describe('moving a finished layout to the middle of the bed', () => {
+  const bed = { widthMm: 256, depthMm: 256 }
+
+  it('moves it as a whole, in whole mm cells, so the gantry rule sees the same rows', () => {
+    // the layout spans x 10 to 80 and y 20.4 to 170: its middle is 45, 95.2
+    const items = [{ box: { x: 10, y: 20.4, w: 20, h: 100 }, reach: 0 }, { box: { x: 60, y: 150, w: 20, h: 20 }, reach: 0 }]
+    expect(layoutCenterShift(items, bed)).toEqual([83, 33])
+  })
+
+  it('keeps every object and what prints round it on the bed', () => {
+    // 250 mm wide with a 3 mm brim: it can go 3 mm right and no further
+    expect(layoutCenterShift([{ box: { x: 0, y: 100, w: 250, h: 20 }, reach: 3 }], bed)).toEqual([3, 18])
+    // already in the middle
+    expect(layoutCenterShift([{ box: { x: 118, y: 118, w: 20, h: 20 }, reach: 0 }], bed)).toEqual([0, 0])
+    // the room is 2.6 mm: the whole cells stop at 2
+    expect(layoutCenterShift([{ box: { x: 0, y: 0, w: 251.4, h: 251.4 }, reach: 2 }], bed)).toEqual([2, 2])
+  })
+
+  it('stays put when an excluded area or a tower room would be in the way, and on a round bed', () => {
+    const items = [{ box: { x: 10, y: 10, w: 20, h: 20 }, reach: 0, keep: 2 }]
+    expect(layoutCenterShift(items, bed, [{ x: 120, y: 120, w: 10, h: 10 }])).toEqual([0, 0])
+    // a zone it does not come near leaves the shift as it is
+    expect(layoutCenterShift(items, bed, [{ x: 0, y: 200, w: 30, h: 30 }])).toEqual([108, 108])
+    expect(layoutCenterShift(items, { ...bed, round: true })).toEqual([0, 0])
+    expect(layoutCenterShift([], bed)).toEqual([0, 0])
   })
 })

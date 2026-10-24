@@ -168,6 +168,20 @@ describe('slicerx_arrange on true outlines', () => {
     expect(Math.max(p.y0, q.y0) - Math.min(p.y1, q.y1)).toBeGreaterThanOrEqual(2 * b.gantry.reachMm)
   })
 
+  it('moves the lanes layout to the middle of the bed as a whole, and the by-object check still passes', async () => {
+    const h = await connect({ geomEngine: g.engine })
+    await z27A1(h)
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(2)
+    const b = (await call<ByObjectShown>(h, 'slicerx_project_show')).output.plates[0]!.byObject!
+    expect(b.tall).toEqual([])
+    expect(b.pairs).toEqual([])
+    // within a cell of the middle of the A1's 256 mm bed, since it moves in whole cells
+    const mid = (lo: number, hi: number) => (lo + hi) / 2
+    expect(Math.abs(mid(Math.min(...placed.map((p) => p.x0)), Math.max(...placed.map((p) => p.x1))) - 128)).toBeLessThanOrEqual(0.5)
+    expect(Math.abs(mid(Math.min(...placed.map((p) => p.y0)), Math.max(...placed.map((p) => p.y1))) - 128)).toBeLessThanOrEqual(0.5)
+  })
+
   it('keeps every copy out of an excluded corner', async () => {
     const h = await connect({ geomEngine: g.engine })
     await project(h, boxStl(30, 30, 10), { bed_exclude_area: CORNER, skirt_loops: 0 })
@@ -262,6 +276,20 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
     const h = await connect({ engine: 'sx', sxBin })
     await lanesOn(h, printer)
     expect(await boxes(h)).toHaveLength(2)
+    const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+    expect(sliced.output.total.grams).toBeGreaterThan(0)
+  }, 240_000)
+
+  it('slices the tall copies it laid out in the middle of a P1S, with no sequence_clearance refusal', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    writeFileSync(join(h.dir, 'bracket.stl'), boxStl(20, 90, 45))
+    await call(h, 'slicerx_project_open', { printer: 'Bambu Lab P1S', filament: 'Bambu PLA Basic' })
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'bracket.stl') })
+    await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', printer_model: 'Bambu Lab P1S', extruder_clearance_max_radius: 68, extruder_clearance_height_to_rod: 34, extruder_clearance_dist_to_rod: 33, skirt_loops: 0, brim_type: 'no_brim' } })
+    await call(h, 'slicerx_arrange', { count: 2 })
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(2)
+    expect(Math.abs((Math.min(...placed.map((p) => p.y0)) + Math.max(...placed.map((p) => p.y1))) / 2 - 128)).toBeLessThanOrEqual(0.5)
     const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
     expect(sliced.output.total.grams).toBeGreaterThan(0)
   }, 240_000)

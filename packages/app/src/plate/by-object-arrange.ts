@@ -6,10 +6,10 @@
 // gets a lane of its own, so the gantry over a later one never meets an earlier one. The print order is the plate's
 // own order, which the 3MF keeps and the engine prints in.
 import type { Bed, SettingValue } from '@slicerx/contracts'
-import { byObjectApart, zoneKeep } from '@slicerx/settings/arrange-room'
-import { arrangeRules, byObjectOrder, byObjectPlan, gantryLane, overRod } from '@slicerx/settings/by-object'
+import { byObjectApart, layoutCenterShift, zoneKeep } from '@slicerx/settings/arrange-room'
+import { arrangeRules, byObjectOrder, byObjectPlan, CELL_MM, gantryLane, overRod } from '@slicerx/settings/by-object'
 import type { PlateEntry } from '../state/store'
-import { currentMargins, printSizeOf, type ArrangeOptions, type ArrangeResult } from './arrange'
+import { arrangeZones, currentMargins, printSizeOf, type ArrangeOptions, type ArrangeResult } from './arrange'
 import { plateShapes } from './sequence-check'
 import { bounds, type Mat4 } from './transform'
 
@@ -100,6 +100,28 @@ export async function arrangeByObject(
   const rest: ArrangeResult = low.length > 0 ? await place(low, [...fixed, ...down], opts) : { transforms: {}, leftOver: [], tooLarge: [] }
   Object.assign(transforms, rest.transforms)
   const laned = laidOut(plate, transforms, cfg)
-  if (problems(laned, cfg) >= before || rest.leftOver.length > first.leftOver.length) return keep()
+  const found = problems(laned, cfg)
+  if (found >= before || rest.leftOver.length > first.leftOver.length) return keep()
+  // Each tall part went down where it packs, so the lanes had room; the layout as a whole now goes to the middle of the
+  // bed, as a plain arrange's does, in whole cells, so the check finds the same.
+  if (opts.center ?? fixed.length === 0) {
+    const placed = moving.flatMap((e) => {
+      const b = transforms[e.id] ? bounds(e.parts, transforms[e.id]!) : undefined
+      if (!b) return []
+      const size = printSizeOf(b)
+      return [{ box: { x: b.min[0], y: b.min[1], w: size.w, h: size.h }, reach: margins.reach(size), keep: margins.grow(size) }]
+    })
+    const [dx, dy] = layoutCenterShift(placed, bed, [...arrangeZones(margins), ...(opts.zones ?? [])], CELL_MM)
+    if (dx !== 0 || dy !== 0) {
+      const moved: Record<string, Mat4> = Object.fromEntries(Object.entries(transforms).map(([id, m]) => {
+        const t = [...m] as Mat4
+        t[12] = (t[12] ?? 0) + dx
+        t[13] = (t[13] ?? 0) + dy
+        return [id, t]
+      }))
+      const centered = laidOut(plate, moved, cfg)
+      if (problems(centered, cfg) <= found) return { transforms: moved, leftOver: rest.leftOver, tooLarge: rest.tooLarge, order: centered.map((p) => p.id) }
+    }
+  }
   return { transforms, leftOver: rest.leftOver, tooLarge: rest.tooLarge, order: laned.map((p) => p.id) }
 }
