@@ -68,17 +68,37 @@ describe('the example plate at launch', () => {
   }
 
   it('the printer profile arriving after the plate does not start a slice either', async () => {
-    const s = await launch('auto')
-    stops.push(s.stop)
-    // what the profile follow does once the example's plate is in: a new resolved configuration
-    const off = s.appStore.subscribe((st, prev) => {
-      if (st.plate.length > 0 && prev.plate.length === 0) setTimeout(() => s.set({ overrides: { ...s.get().overrides } }), 0)
-    })
-    await s.seedExamplePlate(s.h)
-    await settle()
-    off()
-    expect(s.requests).toHaveLength(0)
-    expect(s.get().sliceHeld).toBe(true)
+    // The profile layer the example's plate asks for lands inside the build `profileReady` waits on: the new resolved
+    // configuration is written, then `profileReady` resolves. The test holds `profileReady` open and does both in that
+    // order, so the outcome never depends on how fast the profile module loads against a timer.
+    let ready!: () => void
+    const layer = new Promise<void>((r) => (ready = r))
+    let asked = 0
+    vi.doMock('../src/state/profile-sync', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('../src/state/profile-sync')>()),
+      profileReady: () => {
+        asked++
+        return layer
+      },
+    }))
+    try {
+      const s = await launch('auto')
+      stops.push(s.stop)
+      const seeding = s.seedExamplePlate(s.h)
+      await vi.waitFor(() => expect(asked).toBe(1))
+      expect(s.get().plate.map((p) => p.name)).toEqual(['Layered X'])
+      expect(s.get().exampleSeeding).toBe(true)
+      // the profile follow's write: a new resolved configuration, then the build is done
+      s.set({ overrides: { ...s.get().overrides } })
+      ready()
+      await seeding
+      expect(s.get().exampleSeeding).toBe(false)
+      await settle()
+      expect(s.requests).toHaveLength(0)
+      expect(s.get().sliceHeld).toBe(true)
+    } finally {
+      vi.doUnmock('../src/state/profile-sync')
+    }
   })
 
   it('slices on the first edit, as the setting says', async () => {
