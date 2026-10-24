@@ -65,7 +65,7 @@ export function createResumeFromLayer() {
     version: '1.0.0',
     permission: 'read',
     description:
-      'Plan a restart after a failed print with the part still on the bed. Give the measured height of the part on the bed, or the layer the printer stopped at (or the printer id, to read it from the printer). Returns the layer and nozzle height to resume from and the time and grams of what is left. Plan only: it sends nothing to a printer, and producing the resume G-code needs the core start-layer option, which is not there yet.',
+      'Plan a restart after a failed print with the part still on the bed. Give the part height, the stopped layer or the printer id. Returns the layer and nozzle height to resume from and the time and grams of what is left. Plan only: it sends nothing to a printer, and the resume G-code needs the core start-layer option, which is not there yet.',
     input: z.object({
       objectId: z.string().optional().describe('Object that failed; defaults to the first object in the project'),
       measuredHeightMm: z.number().positive().optional().describe('Height of the part on the bed, measured with calipers, mm'),

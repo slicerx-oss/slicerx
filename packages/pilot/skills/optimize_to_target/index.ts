@@ -102,7 +102,7 @@ export function createOptimizeToTarget() {
     version: '1.0.0',
     permission: 'slice',
     description:
-      'Hit a print target by slicing many real candidates: under a time limit, under a filament or cost limit, or strongest (or fastest, lightest, cheapest) within a limit. Searches layer height (25 to 75 percent of the nozzle), wall loops, infill density and pattern, and optionally the six axis orientations, inside knowledge bounds and the floors of any kb.intent goals. Keys the user will not trade go in keep or fixed. Returns the best 3 to 5 candidates with time, grams, cost, a strength proxy and the changed keys. Changes the project only when apply is true. Use it for "make this under 2 hours but as strong as possible" or "cheapest way to print this under 40 g".',
+      'Hit a print target by slicing many real candidates: under a time limit, under a filament or cost limit, or strongest (or fastest, lightest, cheapest) within a limit. Searches layer height (25 to 75 percent of the nozzle), wall loops, infill density and pattern, and optionally the six axis orientations, within knowledge bounds and any kb.intent goal floors. Returns the best 3 to 5 candidates with time, grams, cost, a strength proxy and the changed keys.',
     input: z.object({
       plate: z.number().int().min(1).optional().describe('Plate number; default the first plate'),
       maxTimeS: z.number().positive().optional().describe('Print time limit in seconds (2 hours is 7200)'),
