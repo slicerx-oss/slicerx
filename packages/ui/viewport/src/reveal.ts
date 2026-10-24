@@ -137,6 +137,11 @@ export function revealPlayed(): boolean {
   return played.done
 }
 
+/** The reveal will not play in this window: a project opened behind a hold arrives with its plate already drawn. */
+export function markRevealPlayed(): void {
+  played.done = true
+}
+
 /** For tests: forget that the reveal played. */
 export function resetRevealPlayed(): void {
   played.done = false

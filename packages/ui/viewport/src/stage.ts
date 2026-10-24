@@ -437,8 +437,15 @@ export class Stage {
   setGround(on: boolean): void {
     this.ground = on
     if (this.outline?.uniforms.ground) this.outline.uniforms.ground.value = on ? 1 : 0
-    this.zoneGroup.visible = !on
-    this.excludeGroup.visible = !on
+    this.showFloorMarks()
+  }
+
+  /** The plate's outline is traced (not hidden for the reveal, or the reveal's trace is done). */
+  private traced = true
+
+  /** Nozzle zones and no-print areas lie on the plate: they show on a traced plate, and not on Design's ground. */
+  private showFloorMarks(): void {
+    this.zoneGroup.visible = this.excludeGroup.visible = this.traced && !this.ground
   }
 
   get isGround(): boolean {
@@ -448,6 +455,8 @@ export class Stage {
   /** Where the first plate reveal is: outline traced 0 to 1 (below 0 hides it), ms since the grid started, wash 0 to 1. */
   setReveal(trace: number, gridMs: number, tint: number): void {
     this.revealU.value.set(trace, gridMs, tint)
+    this.traced = trace >= 1
+    this.showFloorMarks()
   }
 
   setBedAlert(on: boolean): void {

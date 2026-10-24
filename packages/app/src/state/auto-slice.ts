@@ -42,7 +42,8 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     const s = appStore.getState()
     if (s.plate.length === 0 && s.sliceHeld) appStore.setState({ sliceHeld: false })
     // A step open for editing rolls the part back; the slice waits for the edit to end.
-    if (!s.autoSlice || s.plate.length === 0 || (s.plateLoading && !s.sliceDuringOpen) || s.historyEdit) return
+    // An open that starts a project ends on Slice plate (AppState.revealHold): it slices on a click or a later edit.
+    if (!s.autoSlice || s.plate.length === 0 || s.revealHold || (s.plateLoading && !s.sliceDuringOpen) || s.historyEdit) return
     // A plate switched back to with its slice still current (workspaces/preview/plate-slices.ts) needs none.
     if (s.slice.status === 'done' && !s.slice.stale) return
     // Auto by size: a big slice waits for Slice, and the footer says so.
@@ -75,6 +76,13 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     if (!s.autoSlice) {
       if (s.sliceHeld) appStore.setState({ sliceHeld: false })
       return clear()
+    }
+    // The end of an open that started a project slices nothing, whatever the plate's size: a wait set during it goes,
+    // and Slice is the action until the person presses it or edits the plate (the edit slices as the setting says).
+    if (prev.revealHold && !s.revealHold) {
+      clear()
+      if (s.plate.length > 0 && !s.sliceHeld) appStore.setState({ sliceHeld: true })
+      return
     }
     // Turning it on, or from Auto to Always, slices what is there now.
     const turnedOn = !prev.autoSlice || (prev.autoSliceBySize && !s.autoSliceBySize)

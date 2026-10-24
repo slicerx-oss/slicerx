@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // React-free entry: "@slicerx/ui/theme". Safe for Node tools and servers.
-export { SCENE_VARS, subban, nocturne, createTheme, themeToVars, themeToCss, applyTheme, clearTheme, onThemeChange, resolveColor, THEME_EVENT } from './theme'
+export { SCENE_VARS, subban, nocturne, createTheme, themeToVars, themeToCss, applyTheme, clearTheme, onThemeChange, pageBackground, resolveColor, THEME_EVENT } from './theme'
 export type { Theme, ThemeInput, ThemeColors, ThemeGradient, ThemeFonts, ThemeRadius, ThemeSpacing, ThemeScene, ColorScheme } from './theme'
 export { themeFromEdition, editionSceneOverrides, editionVisualOverrides, SUBBAN_SCENE, EDITION_SCENE_KEYS } from './edition-theme'
 export type { EditionThemeConfig, EditionThemeScheme, EditionScene, EditionThemeOptions } from './edition-theme'

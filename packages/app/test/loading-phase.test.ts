@@ -19,6 +19,12 @@ describe('the loading phases', () => {
     expect(loadingPhase({ loading: false, long: true, stages: st('drawn') })).toBe('off')
   })
 
+  it('keeps the ravens through a held open: its model is drawn behind the hold, so no wisp runs along it', () => {
+    expect(loadingPhase({ loading: true, long: false, stages: st('read', 'objects', 'drawn'), held: true })).toBe('quiet')
+    expect(loadingPhase({ loading: true, long: true, stages: st('read', 'objects', 'drawn'), held: true })).toBe('ravens')
+    expect(loadingPhase({ loading: false, long: true, stages: st('drawn'), held: false })).toBe('off')
+  })
+
   it('names the step', () => {
     expect(loadingWords(st())).toBe('Reading the file')
     expect(loadingWords(st('read', 'parse'))).toBe('Loading the model')

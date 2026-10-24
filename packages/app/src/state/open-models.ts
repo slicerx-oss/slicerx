@@ -92,9 +92,16 @@ export function seedExamplePlate(host: Host): Promise<void> {
 /** A new project for an opened design: asks about unsaved work first (Save, Discard, Cancel). False when canceled. */
 async function startFresh(): Promise<boolean> {
   opened++
-  if (!(await confirmDiscard('open another design'))) return false
-  // loading first, so the 3D view holds the old scene through the clear until the new model draws
-  set({ plateLoading: true })
+  // Onto an empty plate (a file the system hands over at launch) the hold starts now, before the studio first draws,
+  // so the default printer and an empty plate never show ahead of the project.
+  const empty = get().plate.length === 0 && get().plates.every((p) => p.objects.length === 0)
+  if (empty) set({ revealHold: true })
+  if (!(await confirmDiscard('open another design'))) {
+    if (empty) set({ revealHold: false })
+    return false
+  }
+  // loading and held first, so the 3D view keeps the old scene through the clear until the new project is all there
+  set({ plateLoading: true, revealHold: true })
   clearProject()
   return true
 }
@@ -174,7 +181,7 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
     toast(e instanceof Error ? e.message : `Could not open ${name}`, 'error')
   } finally {
     if (!scope?.superseded) {
-      set({ plateLoading: false, sliceDuringOpen: false })
+      set({ plateLoading: false, sliceDuringOpen: false, revealHold: false })
       markOpenEnded()
     }
   }
@@ -198,7 +205,8 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
   // A new project, or a project onto an empty plate, ends clean, unless the person edited it while it opened.
   const scope = opts.fresh || (project && wasEmpty) ? beginOpen() : undefined
   markOpenStarted(refs.length === 1 ? (refs[0]?.name ?? '') : `${refs.length} files`)
-  set({ plateLoading: true })
+  // An open that starts a project shows it once, when it is all there (AppState.revealHold).
+  set({ plateLoading: true, ...(scope ? { revealHold: true } : {}) })
   try {
     let told = false
     for (const ref of refs) {
@@ -227,7 +235,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
     toast(e instanceof Error ? e.message : 'Could not open the file')
   } finally {
     if (!scope?.superseded) {
-      set({ plateLoading: false, sliceDuringOpen: false })
+      set({ plateLoading: false, sliceDuringOpen: false, revealHold: false })
       markOpenEnded()
     }
   }

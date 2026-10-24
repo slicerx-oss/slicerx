@@ -24,11 +24,13 @@ a { color: var(--purple); }
 .display { font-family: var(--f-display); font-weight: var(--fw-semibold); letter-spacing: -.02em; }
 .mt6 { margin-top: 6px; }
 
-/* A load that takes a moment reads as one: a sheen strong enough to see in both themes, and the word after 400 ms, so a
-   quick load never flashes it. With motion reduced the sheen holds still as a tint. */
-.ws-loading { height: 100%; display: grid; place-items: center; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--purple) 16%, transparent), transparent); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
-.ws-loading > span { font: var(--fw-medium) var(--fs-body)/1 var(--f-body); color: var(--muted); opacity: 0; animation: ws-loading-in 160ms var(--ease) 400ms forwards; }
-:root[data-motion="reduced"] .ws-loading { background: color-mix(in srgb, var(--purple) 6%, transparent); }
+/* A load that takes a moment reads as one: a sheen strong enough to see in both themes, and the word, both after 400 ms,
+   so a quick load (the studio at a cold start) shows the plain page and never flashes them. With motion reduced the
+   sheen holds still as a tint. */
+.ws-loading { position: relative; height: 100%; display: grid; place-items: center; }
+.ws-loading::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--purple) 16%, transparent), transparent); background-size: 200% 100%; opacity: 0; animation: shimmer 1.4s linear infinite, ws-loading-in 160ms var(--ease) 400ms forwards; }
+.ws-loading > span { position: relative; font: var(--fw-medium) var(--fs-body)/1 var(--f-body); color: var(--muted); opacity: 0; animation: ws-loading-in 160ms var(--ease) 400ms forwards; }
+:root[data-motion="reduced"] .ws-loading::before { background: color-mix(in srgb, var(--purple) 6%, transparent); }
 @keyframes ws-loading-in { to { opacity: 1; } }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 
@@ -150,11 +152,10 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* viewport and HUD */
 .vp { position: relative; min-width: 0; min-height: 0; overflow: hidden; isolation: isolate; background: radial-gradient(120% 90% at 50% 38%, var(--ink-3) 0%, var(--ink-1) 55%, var(--ink-0) 100%); }
 .vp-stage { position: absolute; inset: 0; }
-.opening-picture { position: absolute; inset: 0; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; pointer-events: none; animation: opening-in 160ms ease-out; }
-.opening-picture img { width: min(46%, 420px); max-height: 46%; min-height: 0; object-fit: contain; opacity: 0.92; filter: drop-shadow(0 8px 24px rgb(0 0 0 / 0.35)); }
-.opening-picture figcaption { font-size: 12px; color: var(--muted); }
+/* An open that starts a project fills these with its printer, filaments, settings and plates: they wait for it, keeping
+   their place, and show with its plate, once (AppState.revealHold). The status line names the step meanwhile. */
+.studio[data-opening] .pane-body, .studio[data-opening] .sx-rail-foot, .studio[data-opening] .plate-picker-wrap, .studio[data-opening] .slice-float { visibility: hidden; }
 @keyframes opening-in { from { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .opening-picture { animation: none; } }
 /* A STEP file being read: its name and Cancel, in the middle of the view, clear of the bars along its edges
    (workspaces/step-reading-bar.tsx). */
 .step-reading { position: absolute; z-index: 3; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 8px 8px 8px 16px; border-radius: var(--r-md); font-size: var(--fs-md); animation: opening-in 160ms ease-out; }
