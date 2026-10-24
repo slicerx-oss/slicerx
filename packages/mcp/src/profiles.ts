@@ -6,7 +6,7 @@ import type { EasyGoal, SettingSection, SettingValue } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
 import { applyEasy, EASY_MAP, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, printerConfig, printerProfile, processConfig, resolvedNozzles, resolvedProfile, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore } from './data'
-import { defaultConfig, filamentLayer, layerConfig, printerLayer, sameValue } from './settings'
+import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileFor, sameValue } from './settings'
 
 export type ProfileSource = 'slicerx' | 'knowledge' | 'intent' | 'stock'
 
@@ -111,7 +111,7 @@ export class ProfileCatalog {
     const p = this.find(query)
     if (p?.section !== 'printer') return undefined
     if (p.id.startsWith('machine:')) return p.id.slice('machine:'.length)
-    return listPrinterProfiles().find((m) => `${m.vendor} ${m.model}` === p.name || m.model === p.name)?.id
+    return printerProfileFor(p.name)
   }
 
   list(): ProfileSummary[] {
