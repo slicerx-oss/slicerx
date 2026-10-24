@@ -22,6 +22,8 @@ export function changedControls(a: EasySettings, b: EasySettings): string[] {
 }
 
 let key = ''
+/** The inputs of the layer last built or being built, so a build for inputs already in hand does not run again. */
+let built: string | null = null
 let building: Promise<void> = Promise.resolve()
 
 /** The maker's tier the layer builds from: the goal, or while the settings are edited, the goal they started from. */
@@ -45,8 +47,22 @@ function dropLayer(): void {
   if (profile || !generic) withoutDirtying(() => set({ profile: null, ...(generic ? {} : { bed: { ...GENERIC_BED } }), overrides: { ...get().overrides } }))
 }
 
+/**
+ * Everything the layer is made from: the printer and its nozzle, the tier, the filaments, and the Easy controls that
+ * were moved (the layer leaves the rest to the preset).
+ */
+function keyOf(s: AppState): string {
+  const nz = s.printerModel?.id ? `${s.nozzleReported[s.printerModel.id] ?? ''}/${s.printerNozzles[s.printerModel.id] ?? ''}/${JSON.stringify(s.printerExtruders[s.printerModel.id] ?? [])}` : ''
+  return `${s.printerModel ? `${s.printerModel.id ?? ''}|${s.printerModel.vendor}|${s.printerModel.model}` : ''}|${nz}|${tierOf(s)}|${JSON.stringify(slotsOf(s))}|${[...s.easyTouched].sort().join(',')}`
+}
+
 async function rebuild(): Promise<void> {
   const s = get()
+  // Builds queue behind each other and each reads the store when it starts, so one queued earlier may already have
+  // built what a later one was queued for.
+  const k = keyOf(s)
+  if (k === built) return
+  built = k
   const model = s.printerModel
   if (!model) {
     dropLayer()
@@ -78,7 +94,9 @@ async function rebuild(): Promise<void> {
 }
 
 function schedule(): void {
-  building = building.then(rebuild).catch(() => undefined)
+  building = building.then(rebuild).catch(() => {
+    built = null
+  })
 }
 
 /** Sets the nozzle size for a printer. A printer that reports its own size overrides it until it stops reporting. */
@@ -88,9 +106,7 @@ export function setPrinterNozzle(printerId: string, mm: number): void {
 
 /** Resolves when the layer matches the current printer, tier and filaments. Slicing awaits it. */
 export async function profileReady(): Promise<void> {
-  const s = get()
-  const nz = s.printerModel?.id ? `${s.nozzleReported[s.printerModel.id] ?? ''}/${s.printerNozzles[s.printerModel.id] ?? ''}/${JSON.stringify(s.printerExtruders[s.printerModel.id] ?? [])}` : ''
-  const next = `${s.printerModel ? `${s.printerModel.id ?? ''}|${s.printerModel.vendor}|${s.printerModel.model}` : ''}|${nz}|${tierOf(s)}|${JSON.stringify(slotsOf(s))}`
+  const next = keyOf(get())
   if (next !== key) {
     key = next
     schedule()
@@ -101,6 +117,7 @@ export async function profileReady(): Promise<void> {
 /** For tests: forgets the inputs the layer was last built for, so the next `profileReady` builds it again. */
 export function resetProfileReady(): void {
   key = ''
+  built = null
 }
 
 let started = false
@@ -121,18 +138,14 @@ export function startProfileSync(): void {
       else if (s.goal !== 'custom' && s.goal !== prev.goal) touched = []
       else if (s.easy !== prev.easy) touched = [...new Set([...touched, ...changedControls(prev.easy, s.easy)])]
       if (touched.length !== s.easyTouched.length || touched.some((t, i) => t !== s.easyTouched[i])) {
+        // The write comes back here as a change to the moved controls, which follows it.
         set({ easyTouched: touched })
-        // The Easy part of the resolved configuration changed with it.
-        schedule()
         return
       }
     }
-    // The layer applies only the moved controls, so it follows every change to that list.
-    if (s.easyTouched !== prev.easyTouched) {
-      schedule()
-      return
-    }
-    if (s.printerModel !== prev.printerModel || s.printerNozzles !== prev.printerNozzles || s.printerExtruders !== prev.printerExtruders || s.nozzleReported !== prev.nozzleReported || s.goal !== prev.goal || s.goalBase !== prev.goalBase || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.plate !== prev.plate || s.plates !== prev.plates) void profileReady()
+    // The layer applies only the moved controls, so it follows every change to that list (a copy of the same list
+    // changes nothing).
+    if (s.easyTouched !== prev.easyTouched || s.printerModel !== prev.printerModel || s.printerNozzles !== prev.printerNozzles || s.printerExtruders !== prev.printerExtruders || s.nozzleReported !== prev.nozzleReported || s.goal !== prev.goal || s.goalBase !== prev.goalBase || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.plate !== prev.plate || s.plates !== prev.plates) void profileReady()
   })
   void profileReady()
 }
