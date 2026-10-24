@@ -90,6 +90,21 @@ async function byObjectA1(h: Harness): Promise<void> {
   await call(h, 'slicerx_arrange', { count: 3 })
 }
 
+/**
+ * The z27 shape on the same A1: copies of a 45 mm bracket (a 20 mm box 45 mm tall here) printed by object, the gantry
+ * rod at 34 mm. Every copy is taller than the rod, so the gantry over a later copy meets an earlier one unless each has
+ * a lane of its own: no other copy within the rod's reach in y.
+ */
+async function z27A1(h: Harness, count = 2): Promise<void> {
+  writeFileSync(join(h.dir, 'bracket.stl'), boxStl(20, 90, 45))
+  await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
+  await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'bracket.stl') })
+  await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73, extruder_clearance_height_to_rod: 34, skirt_loops: 0, brim_type: 'no_brim' } })
+  await call(h, 'slicerx_arrange', { count })
+}
+
+type ByObjectShown = { plates: { byObject?: { pairs: unknown[]; tall: unknown[]; gantry: { rodMm: number; reachMm: number } } }[] }
+
 describe('slicerx_arrange on true outlines', () => {
   it('keeps the clearance the by-object check holds an A1 to between copies', async () => {
     const h = await connect({ geomEngine: g.engine })
@@ -97,6 +112,22 @@ describe('slicerx_arrange on true outlines', () => {
     const placed = await boxes(h)
     expect(placed).toHaveLength(3)
     for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) expect(gapOf(placed[i]!, placed[j]!)).toBeGreaterThanOrEqual(73)
+  })
+
+  it('gives each copy taller than the gantry rod a lane of its own, so the by-object check passes', async () => {
+    const h = await connect({ geomEngine: g.engine })
+    await z27A1(h)
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(2)
+    const b = (await call<ByObjectShown>(h, 'slicerx_project_show')).output.plates[0]!.byObject!
+    expect(b.gantry.rodMm).toBe(34)
+    expect(b.tall).toEqual([])
+    expect(b.pairs).toEqual([])
+    // the lanes: each pair of copies further apart in y than the rod reaches (twice the read-back's reach)
+    for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) {
+      const [p, q] = [placed[i]!, placed[j]!]
+      expect(Math.max(p.y0, q.y0) - Math.min(p.y1, q.y1)).toBeGreaterThanOrEqual(2 * b.gantry.reachMm)
+    }
   })
 
   it('keeps every copy out of an excluded corner', async () => {
@@ -164,6 +195,14 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
     const h = await connect({ engine: 'sx', sxBin })
     await byObjectA1(h)
     expect(await boxes(h)).toHaveLength(3)
+    const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+    expect(sliced.output.total.grams).toBeGreaterThan(0)
+  }, 240_000)
+
+  it('slices a by-object plate of copies taller than the gantry rod with no sequence_clearance refusal', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    await z27A1(h)
+    expect(await boxes(h)).toHaveLength(2)
     const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
     expect(sliced.output.total.grams).toBeGreaterThan(0)
   }, 240_000)
