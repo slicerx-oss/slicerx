@@ -8151,7 +8151,7 @@ impl SliceSession {
             0 => base_cfg,
             k => mods.get(usize::from(k) - 1).unwrap_or(base_cfg),
         };
-        let mut overhangs: Vec<(i32, &PrintConfig, crate::overhang::Overhang)> = Vec::new();
+        let mut overhangs: Vec<(i32, &PrintConfig, u8, crate::overhang::Overhang)> = Vec::new();
         // The layer below for the point by point overhang speed, once per region's settings.
         let lower = below.map(crate::overhang::Support::new).map(std::sync::Arc::new);
         let curled = layer.checked_sub(1).and_then(|k| {
@@ -8232,15 +8232,15 @@ impl SliceSession {
                     .filter(|_| crate::tower::flag_or(cfg, "detect_overhang_wall", true))
                     .map(|b| {
                         // Every region of the layer hangs over the same layer below: work it out once per
-                        // wall width and settings.
-                        if let Some((_, _, o)) = overhangs
+                        // wall width, settings and filament.
+                        if let Some((.., o)) = overhangs
                             .iter()
-                            .find(|(ow, oc, _)| *ow == w && std::ptr::eq(*oc, cfg))
+                            .find(|(ow, oc, os, _)| *ow == w && std::ptr::eq(*oc, cfg) && *os == *slot)
                         {
                             return o.clone();
                         }
-                        let o = crate::overhang::Overhang::new(b, w, layer_height, cfg);
-                        overhangs.push((w, cfg, o.clone()));
+                        let o = crate::overhang::Overhang::new(b, w, layer_height, cfg, *slot);
+                        overhangs.push((w, cfg, *slot, o.clone()));
                         o
                     }),
                 quality: lower

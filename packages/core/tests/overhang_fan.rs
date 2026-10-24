@@ -424,3 +424,96 @@ fn a_leaning_outer_wall_prints_at_the_speed_its_lean_maps_to() {
         }
     }
 }
+
+/// Per layer from 1: the speeds (mm/s) of the overhang wall moves longer than 20 mm on the leaning (+X) side.
+fn clear_piece_speeds(gcode: &str) -> BTreeMap<usize, Vec<f64>> {
+    let mut out: BTreeMap<usize, Vec<f64>> = BTreeMap::new();
+    let (mut layer, mut feature, mut f) = (0usize, String::new(), 0.0f64);
+    let (mut x, mut y) = (0.0f64, 0.0f64);
+    for line in gcode.lines() {
+        let code = line.split(';').next().unwrap_or("").trim();
+        if line.starts_with("; CHANGE_LAYER") {
+            layer += 1;
+        } else if let Some(name) = line.strip_prefix("; FEATURE: ") {
+            name.trim().clone_into(&mut feature);
+        } else if code.starts_with("G1") || code.starts_with("G0") {
+            if let Some(v) = word(code, 'F') {
+                f = v;
+            }
+            let (nx, ny) = (word(code, 'X').unwrap_or(x), word(code, 'Y').unwrap_or(y));
+            let long = (nx - x).hypot(ny - y) > 20.0 && (nx - x).abs() < 0.5;
+            if long && feature == "Overhang wall" && word(code, 'E').is_some_and(|e| e > 0.0) {
+                out.entry(layer).or_default().push(f / 60.0);
+            }
+            (x, y) = (nx, ny);
+        }
+    }
+    out
+}
+
+/// Item: fully clear wall pieces. A wall piece whose bead hangs fully clear of the layer below prints as an
+/// overhang wall at `overhang_totally_speed` (the filament's `filament_overhang_totally_speed` when its
+/// `override_process_overhang_speed` is on). With the overhang speeds switched off, or no clear speed set (unset
+/// or 0), it prints at `bridge_speed`, which the settings check keeps at 1 mm/s or more, so never at 0.
+#[test]
+fn a_wall_piece_hanging_fully_clear_prints_at_the_totally_clear_speed() {
+    let stock_cfg = stock("bambu-a1");
+    let model = wedge(75.0);
+    let check = |label: &str, edits: &[(&str, Value)], want: f64| {
+        let mut cfg = stock_cfg.clone();
+        for (k, v) in edits {
+            cfg.insert((*k).to_owned(), v.clone());
+        }
+        let pieces = clear_piece_speeds(&slice(&model, &cfg));
+        // Layers 22 to 60: the leaning part below its top shells, where the outer wall hangs clear.
+        for l in 22..=60 {
+            let s = pieces
+                .get(&l)
+                .unwrap_or_else(|| panic!("{label}, layer {l}: no clear piece"));
+            assert!(
+                s.iter().all(|v| (v - want).abs() < 0.6),
+                "{label}, layer {l}: {s:?}, want {want}"
+            );
+        }
+    };
+    check("totally 17", &[("overhang_totally_speed", json!(["17"]))], 17.0);
+    // Faster than the bridge speed: not held to it.
+    check("totally 70", &[("overhang_totally_speed", json!(["70"]))], 70.0);
+    check("unset", &[], 50.0);
+    check("totally 0", &[("overhang_totally_speed", json!(["0"]))], 50.0);
+    check(
+        "switch off",
+        &[
+            ("overhang_totally_speed", json!(["17"])),
+            ("enable_overhang_speed", json!(["0"])),
+        ],
+        50.0,
+    );
+    check(
+        "filament override",
+        &[
+            ("overhang_totally_speed", json!(["17"])),
+            ("override_process_overhang_speed", json!(["1"])),
+            ("filament_overhang_totally_speed", json!(["13"])),
+        ],
+        13.0,
+    );
+    check(
+        "filament override at 0",
+        &[
+            ("overhang_totally_speed", json!(["17"])),
+            ("override_process_overhang_speed", json!(["1"])),
+            ("filament_overhang_totally_speed", json!(["0"])),
+        ],
+        50.0,
+    );
+    check(
+        "filament override off",
+        &[
+            ("overhang_totally_speed", json!(["17"])),
+            ("override_process_overhang_speed", json!(["0"])),
+            ("filament_overhang_totally_speed", json!(["13"])),
+        ],
+        17.0,
+    );
+}

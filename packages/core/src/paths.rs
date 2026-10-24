@@ -2542,9 +2542,8 @@ fn vary_speeds(
             let kind = match p.feature {
                 Feature::OuterWall => crate::quality::Kind::Outer,
                 Feature::InnerWall => crate::quality::Kind::Inner,
-                Feature::OverhangWall | Feature::Bridge | Feature::InternalBridge => {
-                    crate::quality::Kind::Other
-                }
+                Feature::OverhangWall => crate::quality::Kind::Clear,
+                Feature::Bridge | Feature::InternalBridge => crate::quality::Kind::Other,
                 _ => continue,
             };
             let pts = out.path_points(p);
