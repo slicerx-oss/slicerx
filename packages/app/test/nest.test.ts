@@ -11,6 +11,7 @@ import { arrangePlate, fillBed, setArrangeOptions } from '../src/plate/edit'
 import { installPrintMargins, marginsFor } from '../src/plate/footprint'
 import { nestArrange, nestFill, outlineOf, type NestEntry } from '../src/plate/nest'
 import { bounds, compose, type Mat4 } from '../src/plate/transform'
+import { sequenceProblem } from '../src/plate/sequence-check'
 import { get, set, type PlateEntry } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
@@ -149,6 +150,22 @@ describe('true shape nesting', () => {
     expect(gapOf(a!, b!)).toBeGreaterThanOrEqual(40 - 1e-3)
   })
 
+  it('printing by object keeps the clearance past a brim, whose moves heimdall holds to the radius too', async () => {
+    const margins = marginsFor({ print_sequence: 'by object', extruder_clearance_radius: 40, brim_type: 'outer_only', brim_width: 5, brim_object_gap: 0 })
+    expect(margins.reach({ w: 20, h: 20, height: 5 })).toBe(5)
+    const bed = { widthMm: 256, depthMm: 256, heightMm: 50 }
+    const items = ['a', 'b'].map((id, i) => nestEntry(id, boxes([[0, 0, 20, 20]]), at(i * 25, 0)))
+    const r = await nestArrange(items, [], bed, { gapMm: 6, rotate: true, margins })
+    expect(r.leftOver).toEqual([])
+    const [a, b] = items.map((e) => placedBoxes(e.parts[0] as MeshPart, r.transforms[e.id]!)[0]!)
+    // the radius from one part to the other's brim
+    expect(gapOf(a!, b!)).toBeGreaterThanOrEqual(45 - 1e-3)
+    // the box packer the same
+    const boxed = arrange(items.map((e) => ({ id: e.id, parts: e.parts, transform: e.transform })) as never, [], bed, { gapMm: 6, rotate: false, margins })
+    const [c, d] = items.map((e) => placedBoxes(e.parts[0] as MeshPart, boxed.transforms[e.id]!)[0]!)
+    expect(gapOf(c!, d!)).toBeGreaterThanOrEqual(45 - 1e-3)
+  })
+
   it('fill the bed nests more Ls than boxes would hold', async () => {
     const bed = { widthMm: 150, depthMm: 150, heightMm: 50 }
     const src = nestEntry('l', ell(40, 10), at(20, 20))
@@ -194,6 +211,48 @@ describe('arrange and fill the bed in the app', () => {
     const plate = get().plate
     expect(plate).toHaveLength(n + 1)
     expect(plate.slice(1).every((p) => p.instanceOf === 's')).toBe(true)
+  })
+})
+
+describe('arrange on a plate printed by object, on true outlines', () => {
+  /** A `w` by `d` box `h` tall, its corner at the origin, as one closed mesh. */
+  function tall(w: number, d: number, h: number): MeshPart {
+    const positions = [0, 0, 0, w, 0, 0, w, d, 0, 0, d, 0, 0, 0, h, w, 0, h, w, d, h, 0, d, h]
+    const quads = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+    return { name: 'p', slot: 1, positions: new Float32Array(positions), indices: new Uint32Array(quads.flatMap(([a, b, c, d2]) => [a!, b!, c!, a!, c!, d2!])) }
+  }
+
+  // The rod 34 mm up reaching 20 mm either way in y, and a 60 mm clearance radius: two 20 x 100 mm parts 45 mm tall
+  // cannot stand in one column on a 256 mm bed (100 + 61 + 100 mm), so the nest puts them side by side, in one lane.
+  const RULES = { print_sequence: 'by object', extruder_clearance_radius: 60, extruder_clearance_height_to_rod: 34, extruder_clearance_dist_to_rod: 20, extruder_clearance_height_to_lid: 250, brim_type: 'no_brim', skirt_loops: 0, enable_support: false }
+  const ySpan = (p: PlateEntry) => {
+    const b = bounds(p.parts, p.transform)!
+    return [b.min[1], b.max[1]] as const
+  }
+
+  beforeEach(() => {
+    installPrintMargins(get)
+    setArrangeOptions({ gapMm: 2, rotate: false, stepDeg: 10 })
+  })
+
+  it('gives two parts taller than the rod lanes of their own when the nest alone sets them side by side', async () => {
+    const plate = [plateEntry('a', tall(20, 100, 45), at(20, 20)), plateEntry('b', tall(20, 100, 45), at(60, 20))]
+    const bed = { widthMm: 256, depthMm: 256, heightMm: 250 }
+    // The plain nest with the plate's margins sets them side by side: their y spans overlap, so whichever prints
+    // second, the gantry crosses the first, and no order clears it.
+    const plain = await nestArrange(plate.map((p) => nestEntry(p.id, p.parts[0]!, p.transform)), [], bed, { gapMm: 2, rotate: false, margins: marginsFor(RULES) })
+    const [pa, pb] = plate.map((p) => ySpan({ ...p, transform: plain.transforms[p.id]! }))
+    expect(Math.min(pa![1], pb![1]) - Math.max(pa![0], pb![0])).toBeGreaterThan(0)
+    // Arrange's lanes pass puts them a lane apart, the rod's 20 mm reach and arrange's 2 mm more, and the shared
+    // by-object plan finds nothing.
+    set({ bed, plate, plates: [], selection: null, selectedIds: [], overrides: RULES })
+    expect(sequenceProblem(get())).not.toBeNull()
+    expect(await arrangePlate('all')).toBe(0)
+    expect(sequenceProblem(get())).toBeNull()
+    const [a, b] = get().plate.map(ySpan)
+    expect(Math.max(a![0], b![0]) - Math.min(a![1], b![1])).toBeGreaterThanOrEqual(22 - 1e-3)
+    const [x, y] = get().plate
+    for (const p of placedBoxes(x!.parts[0]!, x!.transform)) for (const q of placedBoxes(y!.parts[0]!, y!.transform)) expect(gapOf(p, q)).toBeGreaterThanOrEqual(60 - 1e-3)
   })
 })
 

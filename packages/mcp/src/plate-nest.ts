@@ -7,7 +7,7 @@
 // counts in bed coordinates; the nest counts from the printable area's front left corner.
 import type { EngineCall } from '@slicerx/cad-history'
 import type { MeshPart, SettingValue } from '@slicerx/contracts'
-import { keepOutBoxes, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
+import { byObjectApart, keepOutBoxes, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
 import { arrangeRules, gantryLane, overRod } from '@slicerx/settings/by-object'
 import { marginFlag as flag, marginNumber, objectPrintMargins } from '@slicerx/settings/print-margins'
 import type { BedArea } from './bed'
@@ -129,10 +129,12 @@ export async function nestInLanes(engine: EngineCall, p: NestPlate, cache: Footp
     return foot.hull.map(([x, y]) => [x + at[0], y + at[1]])
   }
   const hulls = await Promise.all(fixed.filter((o) => tall(o) && o.at).map((o) => hullAt(o, o.at!)))
+  const fixedReach = (await Promise.all(fixed.map((o) => itemOf(engine, o, origin, cache)))).map((i) => i.reach)
   const placements: NestPlacement[] = []
   for (const o of p.moving.filter(tall)) {
     const item = await itemOf(engine, o, origin, cache)
-    const away = zoneKeep(item.grow, item.reach, p.gapMm, apart)
+    // Its brim and skirt print under the gantry too, so its lane is wider by their reach.
+    const away = zoneKeep(item.grow, item.reach, p.gapMm, byObjectApart(apart, [item.reach, ...fixedReach])) - item.reach
     for (let c = 1; c <= o.copies; c++) {
       const lanes = hulls.map((h) => gantryLane(h, arrangeRules(p.config), p.bed.x0, p.bed.widthMm, away))
       // The skirt rule would keep the parts off both sides of a lane, so the lanes pass leaves it out.

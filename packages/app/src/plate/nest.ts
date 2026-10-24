@@ -115,7 +115,7 @@ async function run(req: Request, hooks: NestRun = {}): Promise<NestReply> {
 
 /** Arranges `moving` around `fixed` on true outlines. Rejects when the geometry engine cannot run. */
 export async function nestArrange(moving: readonly NestEntry[], fixed: readonly NestEntry[], bed: Bed, opts: ArrangeOptions, hooks?: NestRun): Promise<ArrangeResult> {
-  const r = await run({ moving, fixed, bed, opts, center: fixed.length === 0 }, hooks)
+  const r = await run({ moving, fixed, bed, opts, center: opts.center ?? fixed.length === 0 }, hooks)
   const transforms: Record<string, Mat4> = {}
   const byId = new Map(moving.map((e) => [e.id, e]))
   for (const p of r.placements) {

@@ -95,11 +95,11 @@ async function byObjectA1(h: Harness): Promise<void> {
  * rod at 34 mm. Every copy is taller than the rod, so the gantry over a later copy meets an earlier one unless each has
  * a lane of its own: no other copy within the rod's reach in y.
  */
-async function z27A1(h: Harness, count = 2): Promise<void> {
+async function z27A1(h: Harness, count = 2, changes: Record<string, SettingValue> = {}): Promise<void> {
   writeFileSync(join(h.dir, 'bracket.stl'), boxStl(20, 90, 45))
   await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
   await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'bracket.stl') })
-  await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73, extruder_clearance_height_to_rod: 34, skirt_loops: 0, brim_type: 'no_brim' } })
+  await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73, extruder_clearance_height_to_rod: 34, skirt_loops: 0, brim_type: 'no_brim', ...changes } })
   await call(h, 'slicerx_arrange', { count })
 }
 
@@ -261,6 +261,17 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
   it.each(Object.keys(KEEP_OUT))('slices gantry lane copies on the %s clear of its keep-out corner', async (printer) => {
     const h = await connect({ engine: 'sx', sxBin })
     await lanesOn(h, printer)
+    expect(await boxes(h)).toHaveLength(2)
+    const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+    expect(sliced.output.total.grams).toBeGreaterThan(0)
+  }, 240_000)
+
+  it.each([
+    ['a 5 mm brim', { brim_type: 'outer_only', brim_width: 5 }],
+    ['a skirt round each copy', { skirt_loops: 2, skirt_distance: 3, skirt_type: 'perobject' }],
+  ] as const)('slices the tall copies it spaced with %s, with no sequence_clearance refusal', async (_what, changes) => {
+    const h = await connect({ engine: 'sx', sxBin })
+    await z27A1(h, 2, changes)
     expect(await boxes(h)).toHaveLength(2)
     const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
     expect(sliced.output.total.grams).toBeGreaterThan(0)
