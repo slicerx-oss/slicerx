@@ -150,7 +150,74 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .app-bar-track i { display: block; height: 100%; background: var(--cyan); transform-origin: left; transition: transform .12s linear; }
 
 /* viewport and HUD */
-.vp { position: relative; min-width: 0; min-height: 0; overflow: hidden; isolation: isolate; background: radial-gradient(120% 90% at 50% 38%, var(--ink-3) 0%, var(--ink-1) 55%, var(--ink-0) 100%); }
+.vp { position: relative; min-width: 0; min-height: 0; overflow: hidden; isolation: isolate; }
+/* Until the 3D view's first frame, .vp shows the picture the view draws behind the plate (the grade pass in
+   @slicerx/viewport post.ts with the look's backdrop, look.ts), so the first frame replaces it with no visible step:
+   the top to bottom blend, the center glow (a circle centered 42% down that fades out 0.85 of the height from its
+   center; the 300% wide layer keeps the top edge its closest side) and the vignette, multiplied over both. The colors
+   are the look's after the grade pass's transfer (2.2 gamma in, sRGB out). test/vp-backdrop.test.ts derives all of it
+   from the viewport. */
+.vp {
+  --vp-top: #252a37;
+  --vp-bottom: #141821;
+  --vp-glow: #303545;
+  --vp-glow-k: 0.55;
+  --vp-vignette: 0.22;
+}
+/* The stage carries it too: on a phone the canvas fills only the stage's rows of .vp, and the backdrop has to span the
+   canvas, not the whole .vp. Elsewhere the stage covers .vp exactly. */
+.vp, .vp-stage {
+  background-image:
+    radial-gradient(50% 50% at 50% 50%,
+      #fff 0%,
+      color-mix(in srgb, #000 calc(var(--vp-vignette) * 0.781%), #fff) 17.678%,
+      color-mix(in srgb, #000 calc(var(--vp-vignette) * 3.125%), #fff) 35.355%,
+      color-mix(in srgb, #000 calc(var(--vp-vignette) * 7.031%), #fff) 53.033%,
+      color-mix(in srgb, #000 calc(var(--vp-vignette) * 12.5%), #fff) 70.711%,
+      color-mix(in srgb, #000 calc(var(--vp-vignette) * 19.531%), #fff) 88.388%,
+      color-mix(in srgb, #000 calc(var(--vp-vignette) * 28.125%), #fff) 106.066%,
+      color-mix(in srgb, #000 calc(var(--vp-vignette) * 38.281%), #fff) 123.744%,
+      color-mix(in srgb, #000 calc(var(--vp-vignette) * 50%), #fff) 141.421%),
+    radial-gradient(circle closest-side at 50% 42%,
+      color-mix(in srgb, var(--vp-glow) calc(var(--vp-glow-k) * 100%), transparent) 0%,
+      color-mix(in srgb, var(--vp-glow) calc(var(--vp-glow-k) * 95.703%), transparent) 25.298%,
+      color-mix(in srgb, var(--vp-glow) calc(var(--vp-glow-k) * 84.375%), transparent) 50.595%,
+      color-mix(in srgb, var(--vp-glow) calc(var(--vp-glow-k) * 68.359%), transparent) 75.893%,
+      color-mix(in srgb, var(--vp-glow) calc(var(--vp-glow-k) * 50%), transparent) 101.19%,
+      color-mix(in srgb, var(--vp-glow) calc(var(--vp-glow-k) * 31.641%), transparent) 126.488%,
+      color-mix(in srgb, var(--vp-glow) calc(var(--vp-glow-k) * 15.625%), transparent) 151.786%,
+      color-mix(in srgb, var(--vp-glow) calc(var(--vp-glow-k) * 4.297%), transparent) 177.083%,
+      transparent 202.381%),
+    linear-gradient(to top,
+      var(--vp-bottom) 0%,
+      color-mix(in srgb, var(--vp-top) 4.297%, var(--vp-bottom)) 12.5%,
+      color-mix(in srgb, var(--vp-top) 15.625%, var(--vp-bottom)) 25%,
+      color-mix(in srgb, var(--vp-top) 31.641%, var(--vp-bottom)) 37.5%,
+      color-mix(in srgb, var(--vp-top) 50%, var(--vp-bottom)) 50%,
+      color-mix(in srgb, var(--vp-top) 68.359%, var(--vp-bottom)) 62.5%,
+      color-mix(in srgb, var(--vp-top) 84.375%, var(--vp-bottom)) 75%,
+      color-mix(in srgb, var(--vp-top) 95.703%, var(--vp-bottom)) 87.5%,
+      var(--vp-top) 100%);
+  background-size: 100% 100%, 300% 100%, 100% 100%;
+  background-position: 50% 50%;
+  background-repeat: no-repeat;
+  background-blend-mode: multiply, normal, normal;
+}
+:root[data-scheme="light"] .vp {
+  --vp-top: #e4e7eb;
+  --vp-bottom: #c4c9d0;
+  --vp-glow: #edeff1;
+  --vp-glow-k: 0.5;
+  --vp-vignette: 0.12;
+}
+/* A theme other than Subban keeps its own studio colors (viewport-look.ts); the same transfer, worked in CSS. */
+@supports (color: rgb(from #000 calc(pow(r / 255, 0.5) * 255) g b)) {
+  :root[data-sx-theme]:not([data-sx-theme="subban"], [data-sx-theme="subban-dark"], [data-sx-theme="subban-light"]) .vp {
+    --vp-top: rgb(from var(--scene-top, #2f3241) calc(max(0, 1.055 * pow(r / 255, 2.2 / 2.4) - 0.055) * 255) calc(max(0, 1.055 * pow(g / 255, 2.2 / 2.4) - 0.055) * 255) calc(max(0, 1.055 * pow(b / 255, 2.2 / 2.4) - 0.055) * 255));
+    --vp-bottom: rgb(from var(--scene-bottom, #20222b) calc(max(0, 1.055 * pow(r / 255, 2.2 / 2.4) - 0.055) * 255) calc(max(0, 1.055 * pow(g / 255, 2.2 / 2.4) - 0.055) * 255) calc(max(0, 1.055 * pow(b / 255, 2.2 / 2.4) - 0.055) * 255));
+    --vp-glow: rgb(from var(--scene-glow, #3c3f50) calc(max(0, 1.055 * pow(r / 255, 2.2 / 2.4) - 0.055) * 255) calc(max(0, 1.055 * pow(g / 255, 2.2 / 2.4) - 0.055) * 255) calc(max(0, 1.055 * pow(b / 255, 2.2 / 2.4) - 0.055) * 255));
+  }
+}
 .vp-stage { position: absolute; inset: 0; }
 /* An open that starts a project fills these with its printer, filaments, settings and plates: they wait for it, keeping
    their place, and show with its plate, once (AppState.revealHold). The status line names the step meanwhile. */
