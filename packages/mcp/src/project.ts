@@ -418,7 +418,7 @@ export class McpProject implements PilotProject {
       const e = this.entries.get(i.objectId)
       return [i.objectId, i.copies, e?.meshId, e?.rotate, e?.scale, e?.position]
     })
-    return JSON.stringify([cfg['printable_area'], cfg['bed_exclude_area'], items])
+    return JSON.stringify([cfg['printable_area'], cfg['bed_exclude_area'], cfg['head_wrap_detect_zone'], items])
   }
 
   private rowCapacity(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): number {

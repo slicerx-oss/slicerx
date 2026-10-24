@@ -5,7 +5,7 @@
 // refused has no toolpaths to show, so its Show me turns the camera to the spot it names and picks the object.
 import { resolveConfig } from '../adapters/config'
 import { get, set, showSliced, type AppState } from '../state/store'
-import { excludedPolygons } from '../viewport/bed-exclude'
+import { keepOutPolygons } from '../viewport/bed-exclude'
 import { areaOrigin, polygonsToPlate } from './bed-origin'
 import { collisionsOf } from './heimdall'
 import type { PreflightSpot } from './preflight'
@@ -68,7 +68,7 @@ export function refusalMark(spot: RefusalSpot, cfg: Record<string, unknown>): { 
   const origin = areaOrigin(cfg['printable_area'])
   let area: [number, number][] | null = null
   if (spot.excluded) {
-    const polys = excludedPolygons(cfg['bed_exclude_area'])
+    const polys = keepOutPolygons(cfg)
     const centerDist = (p: [number, number][]) => Math.hypot(p.reduce((a, q) => a + q[0], 0) / p.length - spot.x, p.reduce((a, q) => a + q[1], 0) / p.length - spot.y)
     const hit = polys.find((p) => inside(p, spot.x, spot.y)) ?? [...polys].sort((a, b) => centerDist(a) - centerDist(b))[0]
     if (hit) area = polygonsToPlate([hit], origin)[0] ?? null

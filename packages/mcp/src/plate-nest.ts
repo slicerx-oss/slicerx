@@ -7,7 +7,7 @@
 // counts in bed coordinates; the nest counts from the printable area's front left corner.
 import type { EngineCall } from '@slicerx/cad-history'
 import type { MeshPart, SettingValue } from '@slicerx/contracts'
-import { excludeBoxes, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
+import { keepOutBoxes, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
 import { arrangeRules, gantryLane, overRod } from '@slicerx/settings/by-object'
 import { marginFlag as flag, marginNumber, objectPrintMargins } from '@slicerx/settings/print-margins'
 import type { BedArea } from './bed'
@@ -96,7 +96,7 @@ export function plateTools(configs: readonly Record<string, SettingValue>[]): nu
 
 /** The printer's excluded areas, in plate coordinates. */
 function avoidOf(cfg: Record<string, SettingValue>, origin: readonly [number, number]): Rect[] {
-  return excludeBoxes(cfg['bed_exclude_area']).map((r) => ({ ...r, x: r.x - origin[0], y: r.y - origin[1] }))
+  return keepOutBoxes(cfg).map((r) => ({ ...r, x: r.x - origin[0], y: r.y - origin[1] }))
 }
 
 /** Nests a plate's moving objects around the ones that stay. Offsets come back in bed coordinates. */
