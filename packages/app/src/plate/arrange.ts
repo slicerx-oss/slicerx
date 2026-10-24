@@ -9,7 +9,7 @@
 // tower. Pure and deterministic, so it runs without a GPU and is unit tested.
 import type { Bed } from '@slicerx/contracts'
 import type { FirstLayerShape } from '@slicerx/settings/print-margins'
-import { byObjectApart, MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
+import { MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
 import { bedCircle, boxInBed } from './bed-shape'
 import { bounds, compose, decompose, fitsBed, multiply, reachFrom, type Box, type Mat4 } from './transform'
 
@@ -34,6 +34,11 @@ export interface ArrangeOptions {
   zones?: readonly Rect[]
   /** Move the layout to the middle of the bed on true outlines. Left out, it moves when nothing stays. */
   center?: boolean
+  /**
+   * Printing by object: each object's reach as the by-object check counts it (by-object.ts arrangeReach), so a pair
+   * keeps the clearance and the reach of its own two objects. Undefined for an object, its margins' reach.
+   */
+  apartReach?: (e: { id: string }) => number | undefined
 }
 
 /** The size of an object's bounds, mm. */
@@ -66,7 +71,7 @@ export interface PrintMargins {
   towerRoom?: readonly Rect[]
   /**
    * Printing by object: how far apart objects stay so the toolhead clears the finished ones (the extruder clearance
-   * radius), mm. Arrange adds the farthest reach of what the objects print round themselves (byObjectApart).
+   * radius), mm. Arrange adds the reach of what the objects print round themselves, per pair (byObjectSpacing).
    */
   apart?: number
 }
@@ -121,6 +126,8 @@ interface Placed {
   r: Rect
   grow: number
   reach: number
+  /** Printing by object, its reach as the check counts it (ArrangeOptions.apartReach). */
+  ar: number
 }
 
 /** Convex hull of points, counterclockwise (Andrew's monotone chain). */
@@ -170,6 +177,7 @@ interface Want {
   h: number
   grow: number
   reach: number
+  ar: number
 }
 
 /**
@@ -182,10 +190,12 @@ interface Want {
 function findSpot(want: Want, placed: readonly Placed[], zones: readonly Rect[], towers: readonly Rect[], bed: Bed, gap: number, skirt: boolean, apart = 0): { x: number; y: number } | null {
   const { w, h } = want
   const edge = edgeOf(want.reach, gap)
+  // Printing by object, a pair keeps the clearance and the larger of its two reaches, as the check holds it.
+  const sepTo = (p: Placed) => (apart > 0 ? Math.max(sepOf(want.grow, p.grow, gap), apart + Math.max(want.ar, p.ar)) : sepOf(want.grow, p.grow, gap))
   const xs = new Set<number>([edge])
   const ys = new Set<number>([edge])
   for (const p of placed) {
-    const sep = Math.max(sepOf(want.grow, p.grow, gap), apart)
+    const sep = sepTo(p)
     xs.add(p.r.x + p.r.w + sep)
     ys.add(p.r.y + p.r.h + sep)
   }
@@ -204,7 +214,7 @@ function findSpot(want: Want, placed: readonly Placed[], zones: readonly Rect[],
     const cxs = new Set<number>([...sortedX, circle.cx - w / 2])
     const cys = new Set<number>([...sortedY, circle.cy - h / 2])
     for (const p of placed) {
-      const sep = Math.max(sepOf(want.grow, p.grow, gap), apart)
+      const sep = sepTo(p)
       cxs.add(p.r.x - sep - w)
       cys.add(p.r.y - sep - h)
     }
@@ -222,7 +232,7 @@ function findSpot(want: Want, placed: readonly Placed[], zones: readonly Rect[],
   for (const [x, y] of order) {
     const me: Rect = { x, y, w, h }
     if (placed.some((p) => {
-      const sep = Math.max(sepOf(want.grow, p.grow, gap), apart)
+      const sep = sepTo(p)
       return !(x >= p.r.x + p.r.w + sep - 1e-6 || x + w <= p.r.x - sep + 1e-6 || y >= p.r.y + p.r.h + sep - 1e-6 || y + h <= p.r.y - sep + 1e-6)
     })) continue
     if (zones.some((z) => !(x >= z.x + z.w + edge - 1e-6 || x + w <= z.x - edge + 1e-6 || y >= z.y + z.h + edge - 1e-6 || y + h <= z.y - edge + 1e-6))) continue
@@ -253,11 +263,13 @@ export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeI
   const zones = [...arrangeZones(margins), ...(opts.zones ?? [])]
   const towers = [...margins.keepOut, ...(margins.towerRoom ?? [])]
   const placed: Placed[] = []
+  const arOf = (it: ArrangeItem, reach: number) => opts.apartReach?.(it) ?? reach
   for (const f of fixed) {
     const b = bounds(f.parts, f.transform)
     if (b) {
       const size = printSizeOf(b)
-      placed.push({ r: { x: b.min[0], y: b.min[1], w: size.w, h: size.h }, grow: margins.grow(size), reach: margins.reach(size) })
+      const reach = margins.reach(size)
+      placed.push({ r: { x: b.min[0], y: b.min[1], w: size.w, h: size.h }, grow: margins.grow(size), reach, ar: arOf(f, reach) })
     }
   }
   const items = moving
@@ -268,16 +280,15 @@ export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeI
   const leftOver: string[] = []
   const tooLarge: ArrangeResult['tooLarge'] = []
   const circle = bedCircle(bed)
-  const reachOf = (it: ArrangeItem) => {
-    const b = bounds(it.parts, it.transform)
-    return b ? margins.reach(printSizeOf(b)) : 0
-  }
-  const apart = byObjectApart(margins.apart, [...fixed, ...moving].map(reachOf))
+  const apart = margins.apart ?? 0
   const fitsAlone = (w: number, h: number, edge: number) => (circle ? Math.hypot(w, h) / 2 + edge <= circle.r + 1e-6 : w + 2 * edge <= bed.widthMm + 1e-6 && h + 2 * edge <= bed.depthMm + 1e-6)
   for (const { it, b } of items) {
     const size = printSizeOf(b)
     const { w, h } = size
-    const wantOf = (sz: PrintSize): Want => ({ w: sz.w, h: sz.h, grow: margins.grow(sz), reach: margins.reach(sz) })
+    const wantOf = (sz: PrintSize): Want => {
+      const reach = margins.reach(sz)
+      return { w: sz.w, h: sz.h, grow: margins.grow(sz), reach, ar: arOf(it, reach) }
+    }
     const straight = wantOf(size)
     const turnedSize: PrintSize = { w: h, h: w, height: size.height }
     const turnedWant = wantOf(turnedSize)
@@ -304,7 +315,7 @@ export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeI
     const t = decompose(m)
     const next = compose({ ...t, position: [t.position[0] + spot.x - box.min[0], t.position[1] + spot.y - box.min[1], t.position[2]] })
     transforms[it.id] = next
-    placed.push({ r: { x: spot.x, y: spot.y, w: want.w, h: want.h }, grow: want.grow, reach: want.reach })
+    placed.push({ r: { x: spot.x, y: spot.y, w: want.w, h: want.h }, grow: want.grow, reach: want.reach, ar: want.ar })
   }
   return { transforms, leftOver, tooLarge }
 }

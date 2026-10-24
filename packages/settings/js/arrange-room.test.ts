@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { byObjectApart, clearanceRadius, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, plateMargins, zoneKeep } from './arrange-room'
+import { betterNest, byObjectApart, byObjectSpacing, byObjectSpacingModes, clearanceRadius, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, nestProblem, plateMargins, zoneKeep, type NestItem } from './arrange-room'
 import { printerConfig } from './index'
 
 const plate = { origin: [0, 0] as const, size: { widthMm: 256, depthMm: 256 } }
@@ -79,5 +79,43 @@ describe('moving a finished layout to the middle of the bed', () => {
     expect(layoutCenterShift(items, bed, [{ x: 0, y: 200, w: 30, h: 30 }])).toEqual([108, 108])
     expect(layoutCenterShift(items, { ...bed, round: true })).toEqual([0, 0])
     expect(layoutCenterShift([], bed)).toEqual([0, 0])
+  })
+})
+
+describe('each by-object pair spaced by its own two parts', () => {
+  it('spaces pairs by the farthest reach or by each part\u2019s own, both keeping what the check needs', () => {
+    expect(byObjectSpacing(41, [0, 0, 0, 7.9], 'own')).toEqual({ apartMm: 41, extra: [0, 0, 0, 7.9] })
+    expect(byObjectSpacing(41, [0, 0, 0, 7.9])).toEqual({ apartMm: 48.9, extra: [0, 0, 0, 0] })
+    expect(byObjectSpacing(41, [0, 0])).toEqual({ apartMm: 41, extra: [0, 0] })
+    // Either way every pair keeps the clearance and the larger of its two reaches, as the check holds it.
+    for (const r of [[0, 3, 9], [2, 2, 8, 0], [5, 5, 5], [0, 7.9], [1, 6.2, 6.2, 0, 0]]) {
+      for (const mode of ['own', 'farthest'] as const) {
+        const s = byObjectSpacing(41, r, mode)
+        for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) expect(s.apartMm + s.extra[i]! + s.extra[j]!).toBeGreaterThanOrEqual(41 + Math.max(r[i]!, r[j]!))
+      }
+    }
+    // Both are tried only when the reaches differ.
+    expect(byObjectSpacingModes([0, 0, 7.9])).toEqual(['own', 'farthest'])
+    expect(byObjectSpacingModes([0, 0])).toEqual(['farthest'])
+    expect(byObjectSpacingModes([7.9, 7.9])).toEqual(['farthest'])
+    const reply = (placed: number, utilization: number) => ({ placements: [], leftOver: [], tooLarge: [], stats: { placed, wanted: 9, passes: 1, utilization } })
+    expect(betterNest(reply(8, 0.5), reply(9, 0.1)).stats.placed).toBe(9)
+    expect(betterNest(reply(9, 0.2), reply(9, 0.3)).stats.utilization).toBe(0.3)
+  })
+
+  it('sends the nest the share of each part, from the reach the check counts over the plate-wide one', () => {
+    const item = (id: string, apartReach: number): NestItem => ({ id, polygons: [], hull: [], grow: 0, reach: 7.9, copies: 1, apartReach })
+    const margins = { grow: () => 0, reach: () => 7.9, skirt: false, apart: 41 }
+    const p = nestProblem({ bed: { widthMm: 256, depthMm: 256 }, items: [item('a', 0), item('b', 0), item('l', 7.9)], fixed: [item('f', 0)], avoid: [], towers: [], margins, gapMm: 6, rotate: false, center: true, spacing: 'own' })
+    expect(p.options.apartMm).toBe(41)
+    expect(p.items.map((i) => ('apartExtra' in i ? i.apartExtra : 0))).toEqual([0, 0, 7.9])
+    expect(p.items.some((i) => 'apartReach' in i)).toBe(false)
+    expect('apartExtra' in p.fixed[0]!).toBe(false)
+    // Spaced by the farthest, every pair keeps the farthest reach the check counts: the cubes reach nothing.
+    const far = nestProblem({ bed: { widthMm: 256, depthMm: 256 }, items: [item('a', 0), item('b', 0)], fixed: [], avoid: [], towers: [], margins, gapMm: 6, rotate: false, center: true })
+    expect(far.options.apartMm).toBe(41)
+    // Without the check's reach, every pair keeps the plate-wide reach, as before.
+    const plain = nestProblem({ bed: { widthMm: 256, depthMm: 256 }, items: [{ id: 'a', polygons: [], hull: [], grow: 0, reach: 7.9, copies: 1 }], fixed: [], avoid: [], towers: [], margins, gapMm: 6, rotate: false, center: true })
+    expect(plain.options.apartMm).toBeCloseTo(48.9, 6)
   })
 })

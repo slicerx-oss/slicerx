@@ -437,6 +437,7 @@ fn arrange_and_slice(kit: &[(String, Shape, u8)], cfg: &Value, budget: f64) -> V
                 polygons,
                 grow,
                 reach: grow,
+                apart_extra: 0.0,
                 copies: 1,
                 hull: s.hull,
             },

@@ -7,7 +7,7 @@
 // own order, which the 3MF keeps and the engine prints in.
 import type { Bed, SettingValue } from '@slicerx/contracts'
 import { byObjectApart, layoutCenterShift, zoneKeep } from '@slicerx/settings/arrange-room'
-import { arrangeRules, byObjectOrder, byObjectPlan, CELL_MM, gantryLane, overRod } from '@slicerx/settings/by-object'
+import { arrangeReach, arrangeRules, byObjectOrder, byObjectPlan, CELL_MM, gantryLane, overRod } from '@slicerx/settings/by-object'
 import type { PlateEntry } from '../state/store'
 import { arrangeZones, currentMargins, printSizeOf, type ArrangeOptions, type ArrangeResult } from './arrange'
 import { plateShapes, type ObjectSettings } from './sequence-check'
@@ -58,6 +58,10 @@ export async function arrangeByObject(
 ): Promise<ByObjectArrange> {
   // The lanes reach a little further than the engine's rule (arrangeRules); the problems and the order are the engine's.
   const rules = arrangeRules(cfg)
+  // Each pair keeps the clearance and the reach of its own two objects, as the check counts them: a part's support pad
+  // only when it gets support, its own brim and skirt.
+  const reach = new Map(plateShapes(printed(plate), cfg, own).map((s) => [s.id, arrangeReach(s, cfg)]))
+  opts = { ...opts, apartReach: (e) => reach.get(e.id) }
   const first = await place(moving, fixed, opts)
   const plain = laidOut(plate, first.transforms, cfg, own)
   const keep = (): ByObjectArrange => ({ ...first, order: plain.map((p) => p.id) })

@@ -405,7 +405,8 @@ export class McpProject implements PilotProject {
   private nestObject(e: Entry & { meshId: string }, cfg: Record<string, SettingValue>, copies: number): NestObject {
     const placed = this.placedBounds(e)
     const meshId = e.meshId
-    return { id: e.obj.id, meshId, parts: () => this.host.parts(meshId), linear: this.orientation(e), size: placed.size, min: placed.min, config: { ...cfg, ...e.settings }, copies }
+    const enforcers = (e.volumes ?? []).some((v) => v.role === 'support_enforcer') || this.host.parts(meshId).some((p) => Object.keys(p.paint?.support ?? {}).length > 0)
+    return { id: e.obj.id, meshId, parts: () => this.host.parts(meshId), linear: this.orientation(e), size: placed.size, min: placed.min, config: { ...cfg, ...e.settings }, enforcers, copies }
   }
 
   /** How many filaments the printed objects use, with their modifiers (see plateTools). */

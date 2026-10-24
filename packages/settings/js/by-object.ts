@@ -443,6 +443,14 @@ export function shapeReach(o: ByObjectShape, cfg: Record<string, SettingValue>):
 
 const reachOf = shapeReach
 
+/**
+ * The reach arrange keeps for an object it may turn about Z (shapeReach): the larger of the reach at its footprint and
+ * at the footprint turned a quarter, since an automatic brim is sized from the object's extent.
+ */
+export function arrangeReach(o: ByObjectShape, cfg: Record<string, SettingValue>): number {
+  return Math.max(shapeReach(o, cfg), shapeReach({ ...o, hull: o.hull.map(([x, y]): Pt => [y, x]) }, cfg))
+}
+
 /** The y span of everything `o` prints, mm: its footprint and what prints round it. */
 function printSpan(o: ByObjectShape, cfg: Record<string, SettingValue>): Span {
   const [lo, hi] = ySpan(o.hull)

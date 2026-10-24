@@ -499,6 +499,7 @@ pub fn problem(p: &Plate, gap: f64, step: f64, passes: u32) -> NestProblem {
             polygons,
             grow: 0.0,
             reach: 0.0,
+            apart_extra: 0.0,
             copies: *n,
             hull: s.hull,
         });
