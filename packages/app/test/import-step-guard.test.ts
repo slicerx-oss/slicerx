@@ -5,7 +5,7 @@
 // end the worker, and the next STEP file gets a fresh worker that reads it. addFileRefs is the one open that picked
 // files, drops and files the system hands over (a double click, an MCP client's open in app) all go through, so the
 // last test opens a STEP file that way and checks the person gets a plain message, not a wait that never ends.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FileRef, Host } from '@slicerx/contracts'
 
 const RESULT = { base64: '', notes: [], triangles: 12, toleranceMm: 0.01, unit: 'millimeter' }
@@ -38,6 +38,10 @@ async function load() {
   const reading = await import('../src/state/step-reading')
   return { ...step, ...reading }
 }
+
+// The open loads its modules on demand, and each test resets them. A cold worker on a busy machine takes tens of seconds to
+// transform them the first time, so do that once before the first test; the wait in open() allows for the reloads.
+beforeAll(async () => void (await Promise.all([import('../src/state/actions'), import('../src/state/open-models'), import('../src/state/import-step')])))
 
 beforeEach(() => {
   vi.resetModules()
@@ -134,7 +138,7 @@ describe('opening a STEP file that never finishes reading', () => {
     set({ plate: [], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', selection: null, selectedIds: [], toast: null, unsavedPrompt: null })
     // How a file the system hands over opens (app.tsx: onOpenRequest with 'open' starts a new project).
     const opening = addFileRefs(host, [ref], { fresh: true })
-    await vi.waitFor(() => expect(StubWorker.made).toHaveLength(1))
+    await vi.waitFor(() => expect(StubWorker.made).toHaveLength(1), { timeout: 45_000 })
     return { opening, get }
   }
 

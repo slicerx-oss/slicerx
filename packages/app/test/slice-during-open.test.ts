@@ -3,7 +3,7 @@
 // A binary STL shown from its own triangles slices while its open still runs. When the engine's import then changes
 // the mesh, that early slice never stands as the plate's slice: it is canceled or stale, and the slice of the mesh
 // the import made replaces it. When the import changes nothing, the early slice is the plate's slice, sliced once.
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest } from '@slicerx/contracts'
 import type { AutoImport } from '../src/geom/cad'
 import { scanStl } from '../src/export/stl-scan'
@@ -82,9 +82,11 @@ function host() {
   return { h, requests, land: () => pending.shift()?.() }
 }
 
+// The slice reads the profile first, through modules loaded on demand. A cold worker on a busy machine takes tens of seconds
+// to transform them, so load them before the first wait and wait on the condition, not on a count of ticks.
+beforeAll(async () => void (await Promise.all([import('../src/state/slice-plate'), import('../src/state/profile-sync'), import('../src/adapters/profile')])))
 const until = async (ok: () => boolean): Promise<void> => {
-  for (let i = 0; i < 400 && !ok(); i++) await new Promise((r) => setTimeout(r, 5))
-  expect(ok()).toBe(true)
+  await vi.waitFor(() => expect(ok()).toBe(true), { timeout: 45_000, interval: 5 })
 }
 
 /** Every slice that stood as the plate's slice (done and not stale), by result id. */

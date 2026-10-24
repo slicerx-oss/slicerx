@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The .gcode.3mf a Bambu Lab printer starts with `project_file`, part by part against what Orca 2.4.2 writes for
 // an A1 and an A1 mini plate (bbs_3mf.cpp), and the Print sheet's send of it.
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Host, JobFile, MeshHandle } from '@slicerx/contracts'
 import { sha256Hex } from '../src/calibration/gcode'
 import { md5Hex } from '../src/export/md5'
@@ -73,6 +73,10 @@ const A1 = {
 }
 
 const plates: PlateMeta[] = [{ id: 'p1', name: 'Plate 1', objects: [obj('a', 'cube_a', 60), obj('b', 'cube_b', 100)], settings: { sequence: 'by-layer', bedType: 'textured-pei' } }]
+
+// The Print sheet and its checks come from modules loaded on demand. A cold worker on a busy machine takes tens of seconds to
+// transform them, so load them before the waits below start, and let those waits allow for the rest.
+beforeAll(async () => void (await Promise.all([import('../src/state/send-actions'), import('../src/send/bed-state'), import('../src/plate/preflight'), import('../src/plate/transform'), import('../src/export/actions'), import('../src/features/fleet/device'), import('../src/features/fleet/guard')])))
 
 describe('the .gcode.3mf for a Bambu Lab A1', () => {
   const files = unzipStored(writeProject({ plates, bed: { widthMm: 256, depthMm: 256 }, settings: A1, gcode: { 0: gcode() } }))
@@ -209,7 +213,7 @@ describe('the Print sheet on a Bambu Lab printer', () => {
     const host = { kind: 'web', printers, approvals, slicer: { exportGcode: async () => ({ blob, bytes: blob.size, sha256: 'x' }) } } as unknown as Host
     set({ slice: { status: 'done', stale: false, result: { id: 'r1', layerCount: 100, warnings: [], stats: { timeS: 1487, filamentG: [7.29], filamentMm: [2403], cost: 0, toolChanges: 0 } } } as never, plate: [], approval: null, printSheet: null })
     const done = sendToPrinter(host, bambu)
-    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 5000 })
+    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 45_000 })
     const ask = get().printSheet!
     expect(ask.ending).toBe('.gcode.3mf')
     expect(ask.name.endsWith('.gcode.3mf')).toBe(true)
@@ -291,9 +295,9 @@ describe('a refused project start', () => {
   async function refused(h: ReturnType<typeof hub>) {
     set({ slice: { status: 'done', stale: false, result: { id: 'r1', layerCount: 100, warnings: [], stats: { timeS: 1487, filamentG: [7.29], filamentMm: [2403], cost: 0, toolChanges: 0 } } } as never, plate: [], approval: null, printSheet: null })
     const done = sendToPrinter(h.host, bambu)
-    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 5000 })
+    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 45_000 })
     get().printSheet!.resolve({ options: { bedLeveling: true }, start: true, name: 'cube.gcode.3mf', slotMap: { 1: 'A2' } })
-    await vi.waitFor(() => expect(get().printSheet?.refusal).toBeTruthy(), { timeout: 5000 })
+    await vi.waitFor(() => expect(get().printSheet?.refusal).toBeTruthy(), { timeout: 45_000 })
     return { done }
   }
 

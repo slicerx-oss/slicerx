@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Auto slice starts soon after an edit, and slices a drag once, on release.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SXPV_HEADER_BYTES, SXPV_MAGIC, SXPV_SEGMENT_BYTES, SXPV_VERSION, type Host, type SliceRequest } from '@slicerx/contracts'
 import { AUTO_SLICE_DELAY_MS, startAutoSlice } from '../src/state/auto-slice'
 import { beginLiveEdit, endLiveEdit } from '../src/state/live-edit'
@@ -54,6 +54,10 @@ function host() {
   return { h, requests, land: () => pending.shift()?.() }
 }
 
+// The slice reads the profile first, through modules loaded on demand. Load them before the clock that matters starts: a
+// cold worker on a busy machine takes tens of seconds to transform them, so the waits below allow for that.
+beforeAll(async () => void (await Promise.all([import('../src/state/slice-plate'), import('../src/state/profile-sync'), import('../src/adapters/profile')])))
+
 beforeEach(() => {
   vi.useFakeTimers()
   set({ plate: [entry(10)], autoSlice: true, liveEdit: false, historyEdit: null, plateLoading: false, slice: { status: 'idle' }, resume: null, calibration: {}, layerMarks: {} })
@@ -72,7 +76,7 @@ describe('auto slice timing', () => {
     expect(requests).toHaveLength(0)
     await vi.advanceTimersByTimeAsync(20)
     // The slice reads the profile first, through a module loaded on demand.
-    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    await vi.waitFor(() => expect(requests).toHaveLength(1), { timeout: 45_000 })
     expect(AUTO_SLICE_DELAY_MS).toBeLessThanOrEqual(200)
     stop()
   })
@@ -88,7 +92,7 @@ describe('auto slice timing', () => {
     expect(requests).toHaveLength(0)
     endLiveEdit()
     await vi.advanceTimersByTimeAsync(AUTO_SLICE_DELAY_MS + 10)
-    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    await vi.waitFor(() => expect(requests).toHaveLength(1), { timeout: 45_000 })
     await vi.advanceTimersByTimeAsync(1000)
     expect(requests).toHaveLength(1)
     stop()

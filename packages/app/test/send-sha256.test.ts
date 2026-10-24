@@ -3,7 +3,7 @@
 // A start approval is bound to the hash of the file that went up. These tests play the hub: they refuse a start
 // whose params, hashed the way the host sees them, differ from what the card was approved for, or whose sha256 is
 // not the hash of the exact bytes uploaded.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { hashParams, type ApprovalRequest, type Host, type JobFile, type RemoteFile } from '@slicerx/contracts'
 import { sha256Hex } from '../src/calibration/gcode'
 import { sendToPrinter, startQueued } from '../src/state/actions'
@@ -39,6 +39,10 @@ function hub() {
   return { requests, uploaded, started, host: { kind: 'web', printers, approvals } as unknown as Host, printers }
 }
 
+// The Print sheet and its checks come from modules loaded on demand. A cold worker on a busy machine takes tens of seconds to
+// transform them, so load them before the waits below start, and let those waits allow for the rest.
+beforeAll(async () => void (await Promise.all([import('../src/state/send-actions'), import('../src/send/bed-state'), import('../src/plate/preflight'), import('../src/plate/transform'), import('../src/export/actions'), import('../src/features/fleet/device'), import('../src/features/fleet/guard')])))
+
 beforeEach(() => set({ approval: null, printSheet: null, slice: { status: 'idle' } }))
 
 describe('queued start', () => {
@@ -46,7 +50,7 @@ describe('queued start', () => {
 
   async function run(h: ReturnType<typeof hub>, i: ReturnType<typeof item>) {
     const done = startQueued(h.host, i as never)
-    await vi.waitFor(() => expect(get().approval).not.toBeNull(), { timeout: 10_000 })
+    await vi.waitFor(() => expect(get().approval).not.toBeNull(), { timeout: 45_000 })
     await get().approval!.approve()
     await done
   }
@@ -84,7 +88,7 @@ describe('send from the print sheet', () => {
     const host = { ...h.host, printers: { ...h.printers, planToolheads: async () => ({ ready: false, headDataAvailable: false, assignments: [], toolheads: [] }), prepareToolheads }, slicer: { exportGcode: async () => ({ blob, bytes: blob.size }) } } as unknown as Host
     set({ slice, plate: [] })
     const done = sendToPrinter(host, { id: 'u1', name: 'U1', vendor: 'Snapmaker', model: 'U1', plugin: 'snapmaker', nozzleCount: 4 } as never)
-    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 10_000 })
+    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 45_000 })
     expect(get().printSheet!.toolheads).toBeUndefined()
     get().printSheet!.resolve(cancel ? null : { options: {}, start: true, name: 'plate_1.gcode' })
     await done
@@ -99,7 +103,7 @@ describe('send from the print sheet', () => {
     const host = { ...h.host, slicer: { exportGcode: async () => ({ blob, bytes: blob.size, sha256: reported }) } } as unknown as Host
     set({ slice, plate: [] })
     const done = sendToPrinter(host, printer)
-    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 10_000 })
+    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 45_000 })
     get().printSheet!.resolve({ options: {}, start: true, name: 'plate_1.gcode' })
     await done
     return await sha256Hex(await blob.arrayBuffer())
@@ -127,7 +131,7 @@ describe('send from the print sheet', () => {
     const host = { ...h.host, printers: { ...h.printers, planToolheads: async () => plan, prepareToolheads }, slicer: { exportGcode: async () => ({ blob, bytes: blob.size }) } } as unknown as Host
     set({ slice, plate: [] })
     const done = sendToPrinter(host, { id: 'u1', name: 'U1', vendor: 'Snapmaker', model: 'U1', plugin: 'snapmaker', nozzleCount: 4 } as never)
-    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 10_000 })
+    await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 45_000 })
     expect(h.uploaded).toHaveLength(0)
     expect(h.started).toHaveLength(0)
     get().printSheet!.resolve({ options: {}, start: true, name: 'plate_1.gcode', toolheadMap: { 0: 1 } })

@@ -109,13 +109,14 @@ describe('Show me on a strike that holds Print back', () => {
   })
 
   it("goes to the strike's layer and moment from the footer's block line", async () => {
+    // The jump loads on first use. A cold worker on a busy machine takes tens of seconds to transform it, so load it first.
+    await import('../src/plate/heimdall-jump')
     set({ plate: [box('tall', 'Tall'), box('low', 'Low')] as never, slice: { status: 'done', result: result([close, hit]), stale: false }, strikePick: null })
     const el = footer()
     const show = el.querySelector<HTMLButtonElement>('[data-testid="slice-block-show"]')
     expect(show?.closest('.app-err')?.textContent).toContain('heimdall found a collision')
     flushSync(() => show!.click())
-    // the jump loads heimdall-jump on first use, which can take over a second on a cold module graph
-    await vi.waitFor(() => expect(get().strikePick).toBe(1), { timeout: 5000 })
+    await vi.waitFor(() => expect(get().strikePick).toBe(1), { timeout: 45_000 })
     expect(get().layerHi).toBe(hit.layer + 1)
     expect(get().sliceLook).toBe('toolpaths')
   })

@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { PrinterHost, PrinterInfo, PrinterStatus } from '@slicerx/contracts'
 import { guardedPrinters } from '../src/plate/guard'
 import { get, set } from '../src/state/store'
 
 const info: PrinterInfo = { id: 'bay-2', name: 'Bay 2', vendor: 'Bambu Lab', model: 'P1S', plugin: 'bambu-lan', nozzleCount: 1 }
 const idle: PrinterStatus = { printerId: 'bay-2', state: 'idle', nozzles: [], slots: [], cameraAvailable: false, updatedAt: '' }
+
+// The guard loads the preflight on demand. A cold worker on a busy machine takes tens of seconds to transform it, so load it
+// before the wait for the card starts.
+beforeAll(async () => void (await Promise.all([import('../src/plate/preflight'), import('../src/plate/transform'), import('../src/state/slice-plate')])))
 
 function fake() {
   const calls: string[] = []
@@ -25,10 +29,8 @@ function fake() {
  * module loading the first time), so the wait is generous: a slow machine must not fail a guard that is behaving.
  */
 async function answer(approve: boolean): Promise<void> {
-  const until = Date.now() + 15_000
-  while (!get().approval && Date.now() < until) await new Promise((r) => setTimeout(r, 5))
-  const a = get().approval
-  if (!a) throw new Error('no card')
+  await vi.waitFor(() => expect(get().approval).not.toBeNull(), { timeout: 45_000, interval: 5 })
+  const a = get().approval!
   expect(a.confirm).toBeTruthy()
   await (approve ? a.approve() : a.deny())
 }

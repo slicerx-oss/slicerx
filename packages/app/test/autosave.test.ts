@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTOSAVE_ID, MAX_RECENT, SNAPSHOT_VERSION, findRecovery, nothingToLose, listRecent, memorySnapshots, projectSaved, recordRecent, resetAutosaveSession, setSnapshotStore, startAutosave, autosaveNow, snapshotStore } from '../src/project/autosave'
 import { markClean, startDirtyTracking } from '../src/project/unsaved'
 import { get, set } from '../src/state/store'
 
 const entry = (id: string) => ({ id, name: id, handle: { id, hash: id, name: id, triangles: 1, bboxMm: [1, 1, 1], openEdges: 0, parts: [] }, parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }) as never
+
+// The write imports the project exporter on demand. A cold worker on a busy machine takes tens of seconds to transform it, so
+// load it before the waits below start.
+beforeAll(async () => void (await import('../src/export/actions')))
 
 beforeEach(() => {
   setSnapshotStore(memorySnapshots())
@@ -76,7 +80,7 @@ describe('autosave and recent projects', () => {
     await vi.advanceTimersByTimeAsync(300)
     // The write itself (module import, compression) runs on real time.
     vi.useRealTimers()
-    await vi.waitFor(() => expect(writes).toEqual([2]), { timeout: 10000 })
+    await vi.waitFor(() => expect(writes).toEqual([2]), { timeout: 45_000 })
     stop()
     expect(get().plate).toHaveLength(2)
   })
@@ -92,7 +96,7 @@ describe('autosave and recent projects', () => {
     await new Promise((r) => setTimeout(r, 3000))
     expect(writes).toEqual([])
     set({ slice: { status: 'idle' } })
-    await vi.waitFor(() => expect(writes).toEqual([1]), { timeout: 10000 })
+    await vi.waitFor(() => expect(writes).toEqual([1]), { timeout: 45_000 })
     stop()
   })
 
@@ -108,7 +112,7 @@ describe('autosave and recent projects', () => {
     // Real time from here (the pending look is dropped with the fake timers): only the slice's end can start the write.
     vi.useRealTimers()
     set({ slice: { status: 'done', result: {} as never, stale: false } })
-    await vi.waitFor(() => expect(writes).toEqual([1]), { timeout: 10000 })
+    await vi.waitFor(() => expect(writes).toEqual([1]), { timeout: 45_000 })
     stop()
     set({ slice: { status: 'idle' } })
   })
@@ -123,7 +127,7 @@ describe('autosave and recent projects', () => {
     // First held at 4 s, so the write goes at 14 s with the slice still running.
     await vi.advanceTimersByTimeAsync(14_100)
     vi.useRealTimers()
-    await vi.waitFor(() => expect(writes).toEqual([1]), { timeout: 10000 })
+    await vi.waitFor(() => expect(writes).toEqual([1]), { timeout: 45_000 })
     expect(get().slice.status).toBe('running')
     stop()
     set({ slice: { status: 'idle' } })

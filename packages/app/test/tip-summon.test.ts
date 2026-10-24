@@ -4,9 +4,13 @@
 // startup, so the first ? finds it without a hover having asked for it first.
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppTooltips, tipsLoaded } from '../src/lib/tip-host'
 import { get, set } from '../src/state/store'
+
+// The tip text loads on demand after startup. A cold worker on a busy machine takes tens of seconds to transform it, so load the
+// modules before the wait starts; the host still has to pick them up itself, which is what the test waits for.
+beforeAll(async () => void (await Promise.all([import('../src/lib/tips'), import('../src/lib/setting-tip'), import('../src/lib/demos')])))
 
 let host: HTMLDivElement
 let root: Root
@@ -40,7 +44,7 @@ describe('summoning a tip with tooltips off', () => {
   it('loads the tip text after startup, so the first ? shows the tip', async () => {
     expect(tipsLoaded()).toBe(false)
     act(() => root.render(createElement(AppTooltips)))
-    await vi.waitFor(() => expect(tipsLoaded()).toBe(true), { timeout: 20_000 })
+    await vi.waitFor(() => expect(tipsLoaded()).toBe(true), { timeout: 45_000 })
     act(() => void move.dispatchEvent(new MouseEvent('pointerover', { bubbles: true })))
     const press = new KeyboardEvent('keydown', { key: '?', shiftKey: true, cancelable: true })
     act(() => void window.dispatchEvent(press))
