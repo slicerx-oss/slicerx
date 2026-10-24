@@ -125,9 +125,9 @@ describe('slicerx_arrange on true outlines', () => {
 })
 
 describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => {
-  // With support in filament 2 the plate has a prime tower. The skirt is off here: the first layer of normal support
-  // reaches about 4.7 mm past the overhang in the engine, where the margins count 2.35 mm, so a skirt round it can
-  // end past the bed edge.
+  // With support in filament 2 the plate has a prime tower. The skirt is off here, since these cases check the tower
+  // and the excluded corner. The margins count the first layer of normal support as the engine prints it, one grid
+  // cell and the pad past the overhang (about 5.05 mm on these settings), so a skirt round it would stay on the bed.
   it('slices with no collision: excluded corner, prime tower at its spot, brims', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     // The tower at its spot: with auto position the engine picks one next to the parts itself.
