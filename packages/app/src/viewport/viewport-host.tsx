@@ -287,6 +287,9 @@ function meshWorkerOption(): { meshWorker?: () => Worker } {
 async function start(stage: HTMLElement, webgpu: boolean, label: string, late3d: () => void, signal: AbortSignal): Promise<Drive | null> {
   try {
     const [{ createViewport, controlsPreset, withRemap, withGizmo }, gpuRenderer] = await Promise.all([import('@slicerx/viewport'), shellGpu()])
+    // The view's setup starts in a task of its own. With the module and the shell's answer already there, it ran in the
+    // same main-thread task as the studio's first render, one long stall before anything could paint.
+    await nextTask()
     const vp = await withRetries(() => {
       if (signal.aborted) throw signal.reason
       const canvas = makeCanvas(stage, label)
@@ -319,6 +322,11 @@ async function start(stage: HTMLElement, webgpu: boolean, label: string, late3d:
       },
     })
   }
+}
+
+/** Resolves in a later task, so the work after it does not run in the current one. */
+function nextTask(): Promise<void> {
+  return new Promise((done) => setTimeout(done, 0))
 }
 
 /** Waits `ms`, or less when `signal` aborts. */
