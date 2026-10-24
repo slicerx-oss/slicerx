@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The printer data the profiles are built from agrees with itself: a knowledge printer the catalog has a model of is
-// mapped to it, and its bed is that model's.
+// mapped to it, and its bed is that model's. The Prusa XL keeps the clearances of Prusa's own profile.
 import { describe, expect, it } from 'vitest'
 import { K } from './knowledge'
-import { listPrinterProfiles, printerProfile } from './profiles'
+import { listPrinterProfiles, printerConfig, printerProfile } from './profiles'
 import { mappedModels, printerForModel } from './printermodels'
 
 /** A bed's footprint, mm: x and y, or the diameter twice for a round one. */
@@ -39,5 +39,14 @@ describe('the bed of a knowledge printer', () => {
       expect(footprint(build as never), `${k} and ${m}`).toEqual(footprint(printerProfile(m!)!.buildVolume))
     }
     expect(footprint(K.printers['elegoo_neptune_4_pro']!.build as never)).toEqual([230, 230])
+  })
+})
+
+describe('the Prusa XL', () => {
+  it('keeps the one clearance height of Prusa\'s own profile, 21 mm, for the rod and the lid', () => {
+    for (const id of ['prusa-xl', 'prusa-xl-5-toolhead']) {
+      const c = printerConfig(id) as unknown as Record<string, unknown>
+      expect([c['extruder_clearance_height_to_rod'], c['extruder_clearance_height_to_lid'], c['extruder_clearance_radius']], id).toEqual([21, 21, 67])
+    }
   })
 })
