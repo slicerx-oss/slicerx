@@ -12,7 +12,6 @@ import { prefsWriter } from './host/prefs'
 import { createTauriCrash } from './host/crash'
 import { shellArch } from './host/platform'
 import { blockReloadKeys } from './reload-keys'
-import { runProbe } from './probe'
 import { followAppTheme } from './window-theme'
 
 declare const __SX_FEATURE_STORE__: boolean
@@ -213,4 +212,7 @@ void (async () => {
   }
 })()
 
-void runProbe(host)
+// SX_PROBE=1 runs only: the probe and the settings data it imports stay out of the startup chunk.
+void import('@tauri-apps/api/core')
+  .then(({ invoke }) => invoke<boolean>('probe_enabled'))
+  .then((on) => (on ? import('./probe').then(({ runProbe }) => runProbe(host)) : undefined))
