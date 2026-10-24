@@ -102,6 +102,10 @@ pub struct NestOptions {
     pub skirt: bool,
     /// the last this many zones are the prime tower, which the skirt goes round too
     pub tower_zones: u32,
+    /// the first this many zones are the printer's keep-out areas (an excluded corner, the corner a nozzle wrap check
+    /// runs in): nothing is printed there for a head to meet, so a part keeps its edge spacing from them, at least the
+    /// default gap, and not half its part to part spacing
+    pub keep_out_zones: u32,
     /// move the finished layout to the middle of the bed when nothing is in the way
     pub center: bool,
     /// how far simplified outlines may grow past the true ones, mm
@@ -123,6 +127,7 @@ impl Default for NestOptions {
             all_turns: false,
             skirt: false,
             tower_zones: 0,
+            keep_out_zones: 0,
             center: true,
             tolerance_mm: 0.1,
             passes: 0,
@@ -199,6 +204,8 @@ pub struct NestResult {
 struct ShapeData {
     /// outline centered on its own bounds, turn 0
     raw: Region,
+    /// convex pieces of the outline as it is, for the keep-out zones (empty when the problem has none)
+    bare: Vec<Ring>,
     /// convex pieces of the outline grown by half the part to part spacing
     pieces: Vec<Ring>,
     hull: Ring,
@@ -287,6 +294,8 @@ pub struct Nester {
     items: Vec<NestItem>,
     fixed: Vec<Put>,
     zones: Vec<Region>,
+    /// which of `zones` are the printer's keep-out areas
+    keep_out: Vec<bool>,
     zone_hulls: Vec<Ring>,
     /// the prime tower's corners pushed out by the skirt: the skirt goes round the tower too
     towers: Vec<Pt>,
@@ -421,6 +430,7 @@ impl Nester {
             items: Vec::new(),
             fixed: Vec::new(),
             zones: Vec::new(),
+            keep_out: Vec::new(),
             zone_hulls: Vec::new(),
             towers: Vec::new(),
             centers: vec![[0.0, 0.0]; items.len()],
@@ -489,16 +499,22 @@ impl Nester {
             });
         }
         let towers = zones.len().saturating_sub(me.opts.tower_zones as usize);
+        let keep_out = (me.opts.keep_out_zones as usize).min(towers);
         let regions: Vec<(Region, bool)> = zones
             .iter()
             .enumerate()
             .map(|(k, z)| (region_of(&z.polygons), k >= towers))
-            .filter(|(r, _)| !r.is_empty())
+            .collect();
+        let regions: Vec<(Region, bool, bool)> = regions
+            .into_iter()
+            .enumerate()
+            .filter(|(_, (r, _))| !r.is_empty())
+            .map(|(k, (r, tower))| (r, tower, k < keep_out))
             .collect();
         me.zone_hulls = regions
             .iter()
-            .filter(|(_, tower)| !tower)
-            .map(|(z, _)| {
+            .filter(|(_, tower, _)| !tower)
+            .map(|(z, _, _)| {
                 poly::hull(
                     &z.iter()
                         .flat_map(|s| s.first().cloned().unwrap_or_default())
@@ -511,11 +527,12 @@ impl Nester {
         me.towers = octagons(
             regions
                 .iter()
-                .filter(|(_, tower)| *tower)
-                .flat_map(|(z, _)| z.iter().flat_map(|s| s.first().cloned().unwrap_or_default())),
+                .filter(|(_, tower, _)| *tower)
+                .flat_map(|(z, _, _)| z.iter().flat_map(|s| s.first().cloned().unwrap_or_default())),
             reach,
         );
-        me.zones = regions.into_iter().map(|(r, _)| r).collect();
+        me.keep_out = regions.iter().map(|(_, _, k)| *k).collect();
+        me.zones = regions.into_iter().map(|(r, _, _)| r).collect();
         me.items = items;
         me.plan = me.make_plan();
         Ok(me)
@@ -602,8 +619,14 @@ impl Nester {
         }
         self.work += poly::vertex_count(&grown) as f64;
         let area = poly::area(region);
+        let bare = if self.opts.keep_out_zones > 0 {
+            poly::convex_pieces(&raw)
+        } else {
+            Vec::new()
+        };
         let mut shape = ShapeData {
             raw,
+            bare,
             pieces,
             hull,
             area,
@@ -867,7 +890,13 @@ impl Nester {
             return Rc::clone(r);
         }
         let sh = &self.shapes[b];
-        let extra = (sh.edge - sh.half).max(0.0);
+        // a keep-out zone keeps the outline its edge spacing, at least the default gap; any other zone keeps the
+        // larger of the half and the edge spacing, the outline's pieces grown by half
+        let (extra, pieces) = if self.keep_out.get(z).copied().unwrap_or(false) {
+            (sh.edge.max(NestOptions::default().gap_mm), &sh.bare)
+        } else {
+            ((sh.edge - sh.half).max(0.0), &sh.pieces)
+        };
         let zone = &self.zones[z];
         let grown = if extra > 0.0 {
             poly::offset(zone, extra, 0.05)
@@ -876,7 +905,7 @@ impl Nester {
         };
         let zp = poly::convex_pieces(&grown);
         let sc = poly::turn(turn as f64 / MDEG as f64);
-        let pb: Vec<Ring> = sh.pieces.iter().map(|p| poly::rotate_ring(p, sc)).collect();
+        let pb: Vec<Ring> = pieces.iter().map(|p| poly::rotate_ring(p, sc)).collect();
         self.work += (zp.len() * pb.len() * 8) as f64;
         let r = Rc::new(poly::no_fit(&zp, &pb));
         self.zone_nfp.insert((z, b, turn), Rc::clone(&r));
