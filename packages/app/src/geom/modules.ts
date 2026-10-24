@@ -49,6 +49,10 @@ export function engineModules(loadCore: () => Promise<EngineModule>, loadFull: (
   const fullModule = () => (full ??= loadFull().then((m) => (fullReady = m), failed('full')))
   const coreModule = () => (core ??= loadCore().catch(failed('core')))
   return {
+    /** Loads the core now (a worker started ahead of its first call). True when it is there. */
+    async core(): Promise<boolean> {
+      return (await coreModule()) !== null
+    },
     /** Loads the full engine now (Design asks for it on the way in). True when it is there. */
     async full(): Promise<boolean> {
       return (await fullModule()) !== null

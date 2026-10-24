@@ -7,13 +7,21 @@ import { createWebFiles } from '@slicerx/web/host/files'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
-export function createTauriFiles(): FileHost {
+/** `startEngine` starts the geometry engine for a file handed over at launch, as soon as the shell names it. */
+export function createTauriFiles(startEngine: (fileName: string) => void = () => undefined): FileHost {
   const web = createWebFiles()
   const recent: FileRef[] = []
   // Files the system handed over at launch are asked for at once, while the app is still starting: they are in hand
   // when the app first listens, so their open starts before the studio first draws and no default plate shows first.
+  // Their geometry engine starts with the answer, not with the open.
   let launch: FileRef[] | null = null
-  const asked = invoke<FileRef[] | null>('opened_take').then((refs) => void (launch = refs ?? []), () => void (launch = []))
+  const asked = invoke<FileRef[] | null>('opened_take').then(
+    (refs) => {
+      launch = refs ?? []
+      for (const ref of launch) startEngine(ref.name)
+    },
+    () => void (launch = []),
+  )
   return {
     async open({ accept, multiple }) {
       const refs = await invoke<FileRef[]>('open_files', { accept, multiple: multiple ?? false })

@@ -37,4 +37,20 @@ describe('files handed over at launch', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(got).toEqual(['early.3mf'])
   })
+
+  it('start the geometry engine for each file as soon as the shell names it', async () => {
+    shell.waiting.push([{ id: '3', name: 'big.3mf' }, { id: '4', name: 'part.stl' }])
+    const started: string[] = []
+    createTauriFiles((name) => started.push(name))
+    await new Promise((r) => setTimeout(r, 0))
+    // before any listener, so the engine loads while the studio is still starting
+    expect(started).toEqual(['big.3mf', 'part.stl'])
+  })
+
+  it('start nothing when no file was handed over', async () => {
+    const started: string[] = []
+    createTauriFiles((name) => started.push(name))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(started).toEqual([])
+  })
 })
