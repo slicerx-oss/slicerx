@@ -26,6 +26,10 @@ beforeAll(() => {
   }
 })
 
+// The Print sheet and its checks come from modules loaded on demand. A cold worker on a busy machine takes tens of seconds to
+// transform them, so load them before the waits below start, and let those waits allow for the rest.
+beforeAll(async () => void (await Promise.all([import('../src/state/send-actions'), import('../src/send/bed-state'), import('../src/plate/preflight'), import('../src/plate/transform'), import('../src/export/actions'), import('../src/features/fleet/device'), import('../src/features/fleet/guard')])))
+
 const roots: (() => void)[] = []
 afterEach(() => {
   for (const u of roots.splice(0)) u()
@@ -128,7 +132,7 @@ function hub(status: Record<string, unknown>, bambuConnect?: BambuConnectHost) {
 async function printThroughSheet(host: Host) {
   set({ slice: { status: 'done', stale: false, result: { id: 'r1', layerCount: 100, warnings: [], stats: { timeS: 1487, filamentG: [7.29], filamentMm: [2403], cost: 0, toolChanges: 0 } } } as never, plate: [], approval: null, printSheet: null, toast: null })
   const done = sendToPrinter(host, bambu as never)
-  await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 5000 })
+  await vi.waitFor(() => expect(get().printSheet?.check).toBeTruthy(), { timeout: 45_000 })
   return { done, ask: get().printSheet! }
 }
 

@@ -6,7 +6,7 @@
 // approves with the bed clear.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { hashParams, type ApprovalRequest, type Host, type MeshHandle, type PrintRun, type PrinterInfo, type PrinterStatus } from '@slicerx/contracts'
 import { refusal } from '../src/agent-bridge/dom'
 import { HostContext } from '../src/host'
@@ -68,8 +68,12 @@ async function card(opts: { status?: PrinterStatus | (() => Promise<PrinterStatu
 
 const printButton = () => screen.getByTestId('danger-mimir-send-print') as HTMLButtonElement
 const bedBox = () => screen.getByTestId('mimir-send-bed') as HTMLInputElement
-/** The card has read the printer once the status stops saying it is checking. */
-const checked = () => waitFor(() => expect(screen.getByTestId('mimir-send-status').textContent).not.toMatch(/^Checking/))
+/**
+ * The card has read the printer once the status stops saying it is checking. The check loads the preflight on demand, so the
+ * wait allows for a cold worker on a busy machine, and the modules load before the first one starts.
+ */
+const checked = () => waitFor(() => expect(screen.getByTestId('mimir-send-status').textContent).not.toMatch(/^Checking/), { timeout: 45_000 })
+beforeAll(async () => void (await Promise.all([import('../src/plate/preflight'), import('../src/plate/transform'), import('../src/state/slice-plate')])))
 
 beforeEach(() => set({ approval: null, plate: [], slice: { status: 'idle' } }))
 afterEach(() => {

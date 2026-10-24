@@ -229,6 +229,8 @@ describe('Print sheet summary', () => {
   })
 
   it('offers Show me on a block with a place in the slice, which closes the sheet and goes there', async () => {
+    // Show me loads the spot and the jump on demand: a cold worker on a busy machine takes tens of seconds to transform them.
+    await Promise.all([import('../src/plate/preflight-show'), import('../src/plate/heimdall-jump')])
     const tall = 'The print is 300.0 mm tall; the P1S reaches 256 mm.'
     let answer: unknown = 'pending'
     const el = open(ask({ check: { errors: [tall], warnings: [], sha256: 'abcdef0123456789', spots: { [tall]: { kind: 'layer', layer: 1 } } }, resolve: (r) => (answer = r) }))
@@ -238,7 +240,7 @@ describe('Print sheet summary', () => {
     flushSync(() => show!.click())
     // The sheet closes as a cancel, then Slice shows the toolpaths up to the first layer past the printer's height.
     expect(answer).toBeNull()
-    await vi.waitFor(() => expect(get().layerHi).toBe(2))
+    await vi.waitFor(() => expect(get().layerHi).toBe(2), { timeout: 45_000 })
     expect(get().printSheet).toBeNull()
     expect(get().sliceLook).toBe('toolpaths')
   })

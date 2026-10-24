@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Host, SliceRequest, SliceResult } from '@slicerx/contracts'
 import { exportGcode, sendToPrinter, slicePlate } from '../src/state/actions'
 import { get, set } from '../src/state/store'
@@ -13,6 +13,10 @@ const plates = [
 ] as never
 
 const result = (fileName?: string) => ({ id: 'r1', engine: 'sx', layerCount: 10, layerZ: new Float32Array(), layerTimeS: new Float32Array(), stats: { timeS: 600, filamentMm: [100], filamentG: [3], cost: 0, toolChanges: 0 }, stageMicros: {}, wallMs: 1, warnings: [], ...(fileName ? { fileName } : {}) }) as SliceResult
+
+// The Print sheet opens after the send flow and its checks load on demand. A cold worker on a busy machine takes tens of
+// seconds to transform them, so load them before the wait that matters starts.
+beforeAll(async () => void (await Promise.all([import('../src/state/send-actions'), import('../src/send/bed-state'), import('../src/plate/preflight'), import('../src/plate/transform')])))
 
 beforeEach(() => set({ plate: [entry], plates, activePlate: 'p2', slice: { status: 'idle' }, printSheet: null, calibration: {}, layerMarks: {}, resume: null }))
 
@@ -58,7 +62,7 @@ describe('file names from the engine', () => {
         slicer: { exportGcode: async () => ({ fileName: 'x.gcode', bytes: 1, sha256: '', blob: new Blob(['G28']) }) },
       } as unknown as Host
       const done = sendToPrinter(host, printer)
-      await vi.waitFor(() => expect(get().printSheet).not.toBeNull())
+      await vi.waitFor(() => expect(get().printSheet).not.toBeNull(), { timeout: 45_000 })
       expect(get().printSheet!.name).toBe(want)
       get().printSheet!.resolve(null)
       await done
