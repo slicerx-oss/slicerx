@@ -10,7 +10,7 @@ import { byObjectApart, layoutCenterShift, zoneKeep } from '@slicerx/settings/ar
 import { arrangeRules, byObjectOrder, byObjectPlan, CELL_MM, gantryLane, overRod } from '@slicerx/settings/by-object'
 import type { PlateEntry } from '../state/store'
 import { arrangeZones, currentMargins, printSizeOf, type ArrangeOptions, type ArrangeResult } from './arrange'
-import { plateShapes } from './sequence-check'
+import { plateShapes, type ObjectSettings } from './sequence-check'
 import { bounds, type Mat4 } from './transform'
 
 /** Places `moving` around `fixed`: the nest, or the box packer when the engine cannot run (`boxes`). */
@@ -24,15 +24,15 @@ export interface ByObjectArrange extends ArrangeResult {
 const printed = (list: readonly PlateEntry[]) => list.filter((p) => p.printable !== false)
 
 /** How many pairs and tall objects the check would name on these entries, printed in this order. */
-function problems(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>): number {
-  const plan = byObjectPlan(plateShapes(printed(entries)), cfg)
+function problems(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>, own: ObjectSettings): number {
+  const plan = byObjectPlan(plateShapes(printed(entries), cfg, own), cfg)
   return plan.pairs.length + plan.tall.length
 }
 
 /** `plate` with `transforms` applied, in the order the gantry rule takes; objects left out of the print go after. */
-function laidOut(plate: readonly PlateEntry[], transforms: Record<string, Mat4>, cfg: Record<string, SettingValue>): PlateEntry[] {
+function laidOut(plate: readonly PlateEntry[], transforms: Record<string, Mat4>, cfg: Record<string, SettingValue>, own: ObjectSettings): PlateEntry[] {
   const moved = plate.map((p) => (transforms[p.id] ? { ...p, transform: transforms[p.id]! } : p))
-  const order = byObjectOrder(plateShapes(printed(moved)), cfg)
+  const order = byObjectOrder(plateShapes(printed(moved), cfg, own), cfg)
   const rank = new Map(order.map((id, i) => [id, i]))
   const at = (p: PlateEntry) => rank.get(p.id) ?? order.length + moved.indexOf(p)
   return [...moved].sort((x, y) => at(x) - at(y))
@@ -54,13 +54,14 @@ export async function arrangeByObject(
   cfg: Record<string, SettingValue>,
   place: Place,
   stop?: () => boolean,
+  own: ObjectSettings = {},
 ): Promise<ByObjectArrange> {
   // The lanes reach a little further than the engine's rule (arrangeRules); the problems and the order are the engine's.
   const rules = arrangeRules(cfg)
   const first = await place(moving, fixed, opts)
-  const plain = laidOut(plate, first.transforms, cfg)
+  const plain = laidOut(plate, first.transforms, cfg, own)
   const keep = (): ByObjectArrange => ({ ...first, order: plain.map((p) => p.id) })
-  const before = problems(plain, cfg)
+  const before = problems(plain, cfg, own)
   const shape = (e: PlateEntry) => plateShapes([e])[0]!
   const tall = printed(moving).filter((e) => overRod(shape(e).top, cfg))
   const fixedTall = printed(fixed).filter((e) => overRod(shape(e).top, cfg))
@@ -99,8 +100,8 @@ export async function arrangeByObject(
   const low = moving.filter((e) => !tall.includes(e))
   const rest: ArrangeResult = low.length > 0 ? await place(low, [...fixed, ...down], opts) : { transforms: {}, leftOver: [], tooLarge: [] }
   Object.assign(transforms, rest.transforms)
-  const laned = laidOut(plate, transforms, cfg)
-  const found = problems(laned, cfg)
+  const laned = laidOut(plate, transforms, cfg, own)
+  const found = problems(laned, cfg, own)
   if (found >= before || rest.leftOver.length > first.leftOver.length) return keep()
   // Each tall part went down where it packs, so the lanes had room; the layout as a whole now goes to the middle of the
   // bed, as a plain arrange's does, in whole cells, so the check finds the same.
@@ -119,8 +120,8 @@ export async function arrangeByObject(
         t[13] = (t[13] ?? 0) + dy
         return [id, t]
       }))
-      const centered = laidOut(plate, moved, cfg)
-      if (problems(centered, cfg) <= found) return { transforms: moved, leftOver: rest.leftOver, tooLarge: rest.tooLarge, order: centered.map((p) => p.id) }
+      const centered = laidOut(plate, moved, cfg, own)
+      if (problems(centered, cfg, own) <= found) return { transforms: moved, leftOver: rest.leftOver, tooLarge: rest.tooLarge, order: centered.map((p) => p.id) }
     }
   }
   return { transforms, leftOver: rest.leftOver, tooLarge: rest.tooLarge, order: laned.map((p) => p.id) }

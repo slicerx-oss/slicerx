@@ -57,6 +57,31 @@ describe('the by-object read-back', () => {
     }
   })
 
+  it('counts the support round an object only when it gets support, as the app does', async () => {
+    const h = await connect({})
+    try {
+      writeFileSync(join(h.dir, 'a.stl'), boxStl(20, 20, 10))
+      writeFileSync(join(h.dir, 'ledge.stl'), ledgeStl())
+      writeFileSync(join(h.dir, 'b.stl'), boxStl(20, 20, 10))
+      await call(h, 'slicerx_project_open', { printer: 'Bambu Lab P1S', filament: 'Bambu PLA Basic' })
+      for (const m of ['a.stl', 'ledge.stl', 'b.stl']) await call(h, 'slicerx_project_add_model', { model: join(h.dir, m) })
+      await call(h, 'slicerx_project_set_overrides', { changes: { skirt_loops: 0, brim_type: 'no_brim', print_sequence: 'by object', enable_support: true, support_type: 'tree(auto)', support_threshold_angle: 25 } })
+      await call(h, 'slicerx_project_move', { object: 'obj-1', x: 110, y: 60 })
+      await call(h, 'slicerx_project_move', { object: 'obj-2', x: 160, y: 60 })
+      await call(h, 'slicerx_project_move', { object: 'obj-3', x: 110, y: 110 })
+      const reach = async () => Object.fromEntries((await call<Shown>(h, 'slicerx_project_show')).output.plates[0]!.byObject!.pairs.map((p) => [`${p.a.id} ${p.b.id}`, p.reachMm]))
+      const ids = (await call<Shown>(h, 'slicerx_project_show')).output.plates[0]!.placements.map((p) => p.id)
+      // The ledge's flat underside gets tree support, whose pad reaches 7.9 mm; the boxes have nothing to hold up.
+      const on = await reach()
+      expect(on[`${ids[0]} ${ids[1]}`]).toBeCloseTo(7.9, 1)
+      expect(on[`${ids[0]} ${ids[2]}`]).toBe(0)
+      await call(h, 'slicerx_project_set_overrides', { changes: { enable_support: false } })
+      expect((await reach())[`${ids[0]} ${ids[1]}`]).toBe(0)
+    } finally {
+      await h.client.close()
+    }
+  })
+
   it('marks a pair a measured head clears as a close call and the same pair on an A1 as blocking', async () => {
     const h = await connect({})
     try {
@@ -69,6 +94,22 @@ describe('the by-object read-back', () => {
     }
   })
 })
+
+/** A 20 mm box 10 mm tall with a 30 by 20 mm slab 3 mm thick on it, 5 mm out each side: a flat underside to hold up. */
+function ledgeStl(): Buffer {
+  const post = boxStl(20, 20, 10)
+  const slab = boxStl(30, 20, 3)
+  for (let t = 0; t < 12; t++) {
+    for (let k = 0; k < 3; k++) {
+      const o = 84 + t * 50 + 12 + k * 12
+      slab.writeFloatLE(slab.readFloatLE(o) - 5, o)
+      slab.writeFloatLE(slab.readFloatLE(o + 8) + 10, o + 8)
+    }
+  }
+  const out = Buffer.concat([post.subarray(0, 84 + 12 * 50), slab.subarray(84)])
+  out.writeUInt32LE(24, 80)
+  return out
+}
 
 /** The two boxes 30 mm apart, by object, on `printer` with `changes`: inside any Bambu Lab radius, clear of the head. */
 async function twoApart(h: Harness, printer: string, changes: Record<string, unknown>): Promise<void> {
