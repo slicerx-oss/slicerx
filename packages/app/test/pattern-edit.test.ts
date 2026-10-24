@@ -17,7 +17,7 @@ import { boxMesh } from '../src/plate/mesh-ops'
 import { get, set } from '../src/state/store'
 import { useGeomEngine } from './geom-engine'
 
-useGeomEngine('pattern-edit-replies')
+const engine = useGeomEngine('pattern-edit-replies')
 
 // jsdom has no layout; the tool panel scrolls itself into view when it opens.
 Element.prototype.scrollIntoView = () => {}
@@ -57,6 +57,9 @@ describe('a points pattern', () => {
     expect(get().objectTool).toBe('shape')
     render(createElement(HostContext.Provider, { value: HOST }, createElement(CadPanel, { tool: 'shape' })))
     await screen.findByText('Points, 3 copies (edit the points from the sketch)')
+    // The panel asks for the outline it draws on the face (shape.profile) a moment after it opens. Wait until it has, so
+    // the engine is asked the same things in the same order on every run and the recorded replies match.
+    await waitFor(() => expect(engine.ops()).toContain('shape.profile'), { timeout: 30_000 })
     // Change the depth only; the points stay.
     fireEvent.change(document.getElementById('cad-dist')!, { target: { value: '6' } })
     fireEvent.click(screen.getByRole('button', { name: 'Cut' }))
