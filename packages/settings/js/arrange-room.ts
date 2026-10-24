@@ -58,6 +58,23 @@ function groups<T>(pts: readonly T[]): T[][] {
   return out
 }
 
+/**
+ * The printer profile keys that name areas of the bed nothing may print in, as the slice reads them
+ * (packages/core/src/collide/plate.rs `zones`): the excluded areas, and the corner a printer runs its nozzle wrap
+ * check in (the Bambu Lab A1 family). Arrange, the plate and the MCP server's arrange keep off all of them.
+ */
+export const KEEP_OUT_KEYS = ['bed_exclude_area', 'head_wrap_detect_zone'] as const
+
+/** Every keep-out area of `cfg` (KEEP_OUT_KEYS) as polygons, machine coordinates. */
+export function keepOutPolygons(cfg: Readonly<Record<string, unknown>>): Pt[][] {
+  return KEEP_OUT_KEYS.flatMap((k) => excludedPolygons(cfg[k]))
+}
+
+/** The box around each keep-out area of `cfg` (keepOutPolygons), machine coordinates. */
+export function keepOutBoxes(cfg: Readonly<Record<string, unknown>>): Rect[] {
+  return KEEP_OUT_KEYS.flatMap((k) => excludeBoxes(cfg[k]))
+}
+
 /** The box around each polygon of a `bed_exclude_area` value (see `excludedPolygons`), in machine coordinates. */
 export function excludeBoxes(points: unknown): Rect[] {
   return excludedPolygons(points).map((pts) => {

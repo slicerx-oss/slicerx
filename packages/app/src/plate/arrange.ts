@@ -79,7 +79,7 @@ export function currentMargins(): PrintMargins {
   return marginSource()
 }
 
-export { excludeBoxes, MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
+export { excludeBoxes, keepOutBoxes, MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
 
 export const printSizeOf = (b: Box): PrintSize => ({ w: b.max[0] - b.min[0], h: b.max[1] - b.min[1], height: b.max[2] - b.min[2] })
 
@@ -87,7 +87,7 @@ export const ARRANGE_DEFAULTS: ArrangeOptions = { gapMm: 6, rotate: false }
 
 let avoid: Rect[] = []
 
-/** Parts of the bed nothing may be placed on (the printer's `bed_exclude_area`, as boxes). Arrange keeps clear of them. */
+/** Parts of the bed nothing may be placed on (the printer's keep-out areas, keepOutBoxes, as boxes). Arrange keeps clear of them. */
 export function setAvoidAreas(areas: readonly Rect[]): void {
   avoid = areas.map((r) => ({ ...r }))
 }

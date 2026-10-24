@@ -5,6 +5,7 @@
 import type { EasyGoal, PrintConfig, SettingDef, SettingIssue, SettingValue } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
 import { applyEasy, coerce, easyControlFor, goalEasy, listPrinterProfiles, modelsForPrinter, printerConfig, printerProfile, sameValue, validate } from '@slicerx/settings'
+import { KEEP_OUT_KEYS } from '@slicerx/settings/arrange-room'
 import { normalizeId, type DataStore, type KnowledgeEntry } from './data'
 
 export { sameValue }
@@ -363,7 +364,8 @@ const sameBed = (a: Bed | undefined, b: Bed): boolean => a !== undefined && a[0]
  * the printer: the by-object check, arrange and heimdall read them (a Bambu Lab printer_model holds the plate to
  * extruder_clearance_max_radius, the A1's 73 mm).
  */
-const MACHINE_KEYS = (k: string) => k === 'printer_model' || k === 'printer_structure' || k === 'nozzle_height' || k.startsWith('extruder_clearance_')
+// The keep-out areas come along (KEEP_OUT_KEYS), so the nest keeps off them and the slice holds the print to them.
+const MACHINE_KEYS = (k: string) => k === 'printer_model' || k === 'printer_structure' || k === 'nozzle_height' || k.startsWith('extruder_clearance_') || (KEEP_OUT_KEYS as readonly string[]).includes(k)
 
 /** Process and machine values from a printer entry's profile_baseline plus its build volume. */
 export function printerLayer(store: DataStore, entry: KnowledgeEntry): Layer {

@@ -43,7 +43,7 @@ import { addEar, headDiameter, moveEar, onEarSelection, onHeadDiameter, removeEa
 import { paintBusChanged, setPaintBus } from '../plate/tools'
 import { markerView, wantsGcodeMarkers } from '../workspaces/preview/markers'
 import { resolveConfig } from '../adapters/config'
-import { excludedPolygons } from './bed-exclude'
+import { keepOutPolygons } from './bed-exclude'
 import { areaOrigin, polygonsToPlate } from '../plate/bed-origin'
 import { toolChangerFor } from '../lib/toolchanger'
 import { buildTimeline, fitOf, type Timeline } from '../lib/preview-timeline'
@@ -558,10 +558,10 @@ export function ViewportHost({ layers }: { layers: boolean }) {
           const cfg = resolveConfig(s.easy, s.overrides)
           const origin = areaOrigin(cfg['printable_area'])
           vp.setPreviewOrigin?.(origin[0], origin[1])
-          const key = JSON.stringify([cfg['bed_exclude_area'] ?? null, origin])
+          const key = JSON.stringify([cfg['bed_exclude_area'] ?? null, cfg['head_wrap_detect_zone'] ?? null, origin])
           if (vp.setExcludedAreas && key !== excludedKey) {
             excludedKey = key
-            vp.setExcludedAreas(polygonsToPlate(excludedPolygons(cfg['bed_exclude_area']), origin))
+            vp.setExcludedAreas(polygonsToPlate(keepOutPolygons(cfg), origin))
           }
         }
         if (first || s.colorMode !== prev.colorMode) vp.setColorMode(s.colorMode)

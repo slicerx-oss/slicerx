@@ -103,9 +103,34 @@ async function z27A1(h: Harness, count = 2): Promise<void> {
   await call(h, 'slicerx_arrange', { count })
 }
 
+/** The keep-out corner each printer's own profile gives: the A1's nozzle wrap check corner, the P1S's excluded corner. */
+const KEEP_OUT: Record<string, Box> = { 'Bambu Lab A1': { x0: 226, y0: 224, x1: 256, y1: 256 }, 'Bambu Lab P1S': { x0: 0, y0: 0, x1: 18, y1: 28 } }
+
+/** The z27 brackets on another printer, which keeps its own keep-out corner: tall copies that each need a gantry lane. */
+async function lanesOn(h: Harness, printer: string): Promise<void> {
+  writeFileSync(join(h.dir, 'bracket.stl'), boxStl(20, 90, 45))
+  await call(h, 'slicerx_project_open', { printer, filament: 'Bambu PLA Basic' })
+  await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'bracket.stl') })
+  await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', printer_model: printer, extruder_clearance_max_radius: 73, extruder_clearance_height_to_rod: 34, skirt_loops: 0, brim_type: 'no_brim' } })
+  await call(h, 'slicerx_arrange', { count: 2 })
+}
+
 type ByObjectShown = { plates: { byObject?: { pairs: unknown[]; tall: unknown[]; gantry: { rodMm: number; reachMm: number } } }[] }
 
 describe('slicerx_arrange on true outlines', () => {
+  it('keeps copies off the corner an A1 runs its nozzle wrap check in, from its own profile', async () => {
+    const h = await connect({ geomEngine: g.engine })
+    writeFileSync(join(h.dir, 'part.stl'), boxStl(20, 20, 10))
+    await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+    await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', skirt_loops: 0, brim_type: 'no_brim' } })
+    await call(h, 'slicerx_arrange', { count: 8 })
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(8)
+    const corner: Box = { x0: 226, y0: 224, x1: 256, y1: 256 }
+    for (const b of placed) expect(overlaps(b, corner), JSON.stringify(b)).toBe(false)
+  })
+
   it('keeps the clearance the by-object check holds an A1 to between copies', async () => {
     const h = await connect({ geomEngine: g.engine })
     await byObjectA1(h)
@@ -128,6 +153,19 @@ describe('slicerx_arrange on true outlines', () => {
       const [p, q] = [placed[i]!, placed[j]!]
       expect(Math.max(p.y0, q.y0) - Math.min(p.y1, q.y1)).toBeGreaterThanOrEqual(2 * b.gantry.reachMm)
     }
+  })
+
+  it.each(Object.keys(KEEP_OUT))('keeps tall copies in gantry lanes of their own and off the keep-out corner of the %s', async (printer) => {
+    const h = await connect({ geomEngine: g.engine })
+    await lanesOn(h, printer)
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(2)
+    for (const b of placed) expect(overlaps(b, KEEP_OUT[printer]!), JSON.stringify(b)).toBe(false)
+    const b = (await call<ByObjectShown>(h, 'slicerx_project_show')).output.plates[0]!.byObject!
+    expect(b.tall).toEqual([])
+    expect(b.pairs).toEqual([])
+    const [p, q] = [placed[0]!, placed[1]!]
+    expect(Math.max(p.y0, q.y0) - Math.min(p.y1, q.y1)).toBeGreaterThanOrEqual(2 * b.gantry.reachMm)
   })
 
   it('keeps every copy out of an excluded corner', async () => {
@@ -191,6 +229,19 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
     expect(sliced.output.total.grams).toBeGreaterThan(0)
   }, 240_000)
 
+  for (const sequence of ['by layer', 'by object'] as const) {
+    it(`slices an A1 plate it arranged ${sequence} clear of the nozzle wrap check corner`, async () => {
+      const h = await connect({ engine: 'sx', sxBin })
+      writeFileSync(join(h.dir, 'part.stl'), boxStl(20, 20, 10))
+      await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
+      await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+      await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: sequence, skirt_loops: 0, brim_type: 'no_brim' } })
+      await call(h, 'slicerx_arrange', { count: sequence === 'by object' ? 8 : 36 })
+      const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+      expect(sliced.output.total.grams).toBeGreaterThan(0)
+    }, 280_000)
+  }
+
   it('slices a by-object plate it spaced with no sequence_clearance refusal', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     await byObjectA1(h)
@@ -202,6 +253,14 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
   it('slices a by-object plate of copies taller than the gantry rod with no sequence_clearance refusal', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     await z27A1(h)
+    expect(await boxes(h)).toHaveLength(2)
+    const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+    expect(sliced.output.total.grams).toBeGreaterThan(0)
+  }, 240_000)
+
+  it.each(Object.keys(KEEP_OUT))('slices gantry lane copies on the %s clear of its keep-out corner', async (printer) => {
+    const h = await connect({ engine: 'sx', sxBin })
+    await lanesOn(h, printer)
     expect(await boxes(h)).toHaveLength(2)
     const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
     expect(sliced.output.total.grams).toBeGreaterThan(0)
