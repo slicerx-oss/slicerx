@@ -30,6 +30,8 @@ export interface ArrangeOptions {
   effort?: 'quick' | 'normal' | 'thorough'
   /** What prints around each object. Left out, the margins of the plate in the store (none until installed). */
   margins?: PrintMargins
+  /** More of the bed to keep clear of for this arrange only, boxes: a tall object's gantry lane (by-object-arrange.ts). */
+  zones?: readonly Rect[]
 }
 
 /** The size of an object's bounds, mm. */
@@ -243,7 +245,7 @@ export interface ArrangeResult {
  */
 export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeItem[], bed: Bed, opts: ArrangeOptions = ARRANGE_DEFAULTS): ArrangeResult {
   const margins = opts.margins ?? marginSource()
-  const zones = arrangeZones(margins)
+  const zones = [...arrangeZones(margins), ...(opts.zones ?? [])]
   const towers = [...margins.keepOut, ...(margins.towerRoom ?? [])]
   const placed: Placed[] = []
   for (const f of fixed) {

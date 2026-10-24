@@ -14,10 +14,10 @@ import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import { positionsFromParts, type NodeSlicerHost } from './slicerhost'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
 import { marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
-import { byObjectPlan, byObjectReadback, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
+import { arrangeRules, byObjectPlan, byObjectReadback, overRod, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
 import { bedArea, boxRows, describeBed, EDGE_MM, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
-import { fillCount, nestPlate, plateTools, type FootprintCache, type NestObject } from './plate-nest'
+import { fillCount, nestInLanes, nestPlate, plateTools, type FootprintCache, type NestObject } from './plate-nest'
 
 /** A volume of an object, in the object's own (as modeled) coordinates: a cut, a support region or a settings modifier. */
 export interface ProjectVolume {
@@ -283,10 +283,11 @@ export class McpProject implements PilotProject {
     return byObjectReadback(byObjectPlan(shapes, cfg))
   }
 
-  /** A plate's by-object clearance plan, its printed copies where they sit; null by layer. */
-  byObject(plateIndex: number): ByObjectReadback | null {
+  /** A plate's by-object clearance plan, its printed copies where they sit; null by layer. `strict`: arrange's rules. */
+  byObject(plateIndex: number, strict = false): ByObjectReadback | null {
     const { objects, placements } = this.layoutPlate(plateIndex)
-    return this.clearanceOf(objects.filter((_o, k) => placements[k]?.printable !== false), this.config(plateIndex) as Record<string, SettingValue>)
+    const cfg = this.config(plateIndex) as Record<string, SettingValue>
+    return this.clearanceOf(objects.filter((_o, k) => placements[k]?.printable !== false), strict ? arrangeRules(cfg) : cfg)
   }
 
   /** The plate's bed: the box of its printable area and, for a delta, the circle. */
@@ -354,20 +355,41 @@ export class McpProject implements PilotProject {
       }
       const wanted = moving.reduce((n, o) => n + o.copies, 0)
       if (wanted === 0) continue
-      let placed
+      const request = { bed: this.bed(index), config: cfg, tools: this.toolsOf(cfg, entries), gapMm: spacing, moving, fixed, center: fixed.length === 0 }
+      // Copies by number: each object's placements in the order of their copy.
+      const layout = (r: { placements: { id: string; copy: number; offset: [number, number] }[] }) => {
+        const at = new Map<string, [number, number]>()
+        for (const o of moving) {
+          const mine = r.placements.filter((p) => p.id === o.id).sort((a, b) => a.copy - b.copy)
+          mine.forEach((p, k) => at.set(`${o.id}-${k + 1}`, p.offset))
+        }
+        return at
+      }
+      let at: Map<string, [number, number]>
       try {
-        placed = await nestPlate(this.geom, { bed: this.bed(index), config: cfg, tools: this.toolsOf(cfg, entries), gapMm: spacing, moving, fixed, center: fixed.length === 0 }, this.feet)
+        at = layout(await nestPlate(this.geom, request, this.feet))
       } catch {
         continue
       }
-      // Copies by number: each object's placements in the order of their copy.
-      const at = new Map<string, [number, number]>()
-      for (const o of moving) {
-        const mine = placed.placements.filter((p) => p.id === o.id).sort((a, b) => a.copy - b.copy)
-        mine.forEach((p, k) => at.set(`${o.id}-${k + 1}`, p.offset))
+      if (at.size < wanted) {
+        leftOff += wanted - at.size
+        continue
       }
-      if (at.size < wanted) leftOff += wanted - at.size
-      else this.nested.set(index, { key: this.nestKey(index), at })
+      this.nested.set(index, { key: this.nestKey(index), at })
+      // By object, copies taller than the gantry rod need lanes of their own when the nest left one under the gantry.
+      const tall = [...moving, ...fixed].filter((o) => overRod(o.size[2], cfg)).reduce((n, o) => n + o.copies, 0)
+      const problems = (b: ByObjectReadback | null) => (b ? b.pairs.length + b.tall.length : 0)
+      const before = this.byObject(index, true)
+      if (tall < 2 || !before || before.tall.length === 0) continue
+      try {
+        const laned = await nestInLanes(this.geom, request, this.feet)
+        const lanes = laned ? layout(laned) : undefined
+        if (!lanes || lanes.size < wanted) continue
+        this.nested.set(index, { key: this.nestKey(index), at: lanes })
+        if (problems(this.byObject(index, true)) >= problems(before)) this.nested.set(index, { key: this.nestKey(index), at })
+      } catch {
+        // The plain layout stays.
+      }
     }
     return leftOff > 0 ? { leftOff } : undefined
   }

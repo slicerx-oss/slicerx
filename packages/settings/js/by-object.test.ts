@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { byObjectHead, byObjectPlan, convexHull, grownHull, headMeets, hullDistance, pairSeverity, type ByObjectShape, type Pt } from './by-object'
+import { arrangeRules, byObjectHead, byObjectOrder, byObjectPlan, convexHull, gantryLane, grownHull, headMeets, hullDistance, LANE_SAFETY_MM, overRod, pairSeverity, type ByObjectShape, type Pt } from './by-object'
 
 /** A `w` by `d` box footprint with its front left corner at `x`, `y`. */
 const rect = (x: number, y: number, w: number, d: number): Pt[] => [[x, y], [x + w, y], [x + w, y + d], [x, y + d]]
@@ -104,3 +104,45 @@ describe('a pair inside the clearance radius', () => {
   })
 })
 
+describe('the print order arrange gives a by-object plate', () => {
+  it('prints a part taller than the rod last, the rest in the order they had', () => {
+    // the z27 plate: a 45 mm bracket listed first, the rod 34 mm up
+    const plate = [shape('bracket', 0, 100, 45), shape('a', 100, 100, 10), shape('b', 200, 100, 10)]
+    expect(byObjectPlan(plate, P1S).tall.map((t) => t.id)).toEqual(['bracket'])
+    const order = byObjectOrder(plate, P1S)
+    expect(order).toEqual(['a', 'b', 'bracket'])
+    const byId = new Map(plate.map((o) => [o.id, o]))
+    expect(byObjectPlan(order.map((id) => byId.get(id)!), P1S).tall).toEqual([])
+    expect(overRod(45, P1S)).toBe(true)
+    expect(overRod(34, P1S)).toBe(false)
+  })
+
+  it('puts tall parts in separate lanes in any order, and side by side keeps the one it can clear', () => {
+    // 100 mm apart in y: more than the rod's 40 mm reach, so neither lane holds the other
+    const apart = [shape('t', 0, 0, 45), shape('u', 100, 120, 45), shape('a', 200, 0, 10)]
+    const order = byObjectOrder(apart, P1S)
+    expect(order[0]).toBe('a')
+    const byId = new Map(apart.map((o) => [o.id, o]))
+    expect(byObjectPlan(order.map((id) => byId.get(id)!), P1S).tall).toEqual([])
+    // side by side only the last one clears, and the taller goes last
+    const side = [shape('u', 0, 100, 50), shape('t', 100, 100, 45)]
+    expect(byObjectOrder(side, P1S)).toEqual(['t', 'u'])
+  })
+
+  it('takes the lane as the footprint\'s y span grown by the rod\'s reach across the bed', () => {
+    expect(gantryLane(rect(30, 100, 20, 20), P1S, 0, 256)).toEqual({ x: 0, y: 60, w: 256, h: 100 })
+    // arrange holds itself to 2 mm more, since heimdall counts the bed in 1 mm cells
+    expect(LANE_SAFETY_MM).toBe(2)
+    expect(gantryLane(rect(30, 100, 20, 20), arrangeRules(P1S), 0, 256)).toEqual({ x: 0, y: 58, w: 256, h: 104 })
+    // an arrange that keeps 37 mm from any zone (half the radius apart) gets a lane 37 mm narrower each side
+    expect(gantryLane(rect(30, 100, 20, 20), P1S, 0, 256, 37)).toEqual({ x: 0, y: 97, w: 256, h: 26 })
+    // past half the span it is a line across the middle
+    const line = gantryLane(rect(30, 100, 20, 20), P1S, 0, 256, 60)
+    expect(line.y + line.h / 2).toBeCloseTo(110, 9)
+    expect(line.h).toBeCloseTo(0.1, 9)
+    // an object just outside it prints after the tall one with no gantry problem
+    const plan = byObjectPlan([shape('t', 30, 100, 45), shape('a', 200, 160, 10)], P1S)
+    expect(plan.tall).toEqual([])
+    expect(byObjectPlan([shape('t', 30, 100, 45), shape('a', 200, 159, 10)], P1S).tall.map((t) => t.what)).toEqual(['gantry'])
+  })
+})

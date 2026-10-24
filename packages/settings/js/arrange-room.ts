@@ -215,6 +215,16 @@ export function nestItem(id: string, foot: NestFootprint, size: PrintSize, bound
   return { id, polygons, hull, grow: margins.grow(size, first), reach: margins.reach(size, first), copies }
 }
 
+/**
+ * How far an arrange keeps an object's outline from a zone, mm, for an object whose brim and the like reach `grow` and
+ * everything printed `reach`: the nest keeps the larger of its edge spacing and its half spacing (packages/geom/src/
+ * nest/place.rs edge_of and half_of), the box packer (`nest` false) the edge spacing.
+ */
+export function zoneKeep(grow: number, reach: number, gapMm: number, apart = 0, nest = true): number {
+  const edge = Math.max(gapMm, reach > 0 ? reach + MARGIN_SAFETY_MM : 0)
+  return nest ? Math.max(edge, gapMm / 2, apart / 2, grow > 0 ? grow + MARGIN_SAFETY_MM / 2 : 0) : edge
+}
+
 /** The request for `nest.start` or `nest.arrange`. */
 export interface NestRequest {
   bed: { widthMm: number; depthMm: number; round?: boolean }

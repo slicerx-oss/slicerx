@@ -99,7 +99,7 @@ async function run(req: Request, hooks: NestRun = {}): Promise<NestReply> {
   const items = await Promise.all(req.moving.map((e) => itemOf(e, margins, req.copies ?? 1)))
   const fixed = await Promise.all(req.fixed.map((e) => itemOf(e, margins)))
   const towers = [...margins.keepOut, ...(margins.towerRoom ?? [])]
-  const problem = nestProblem({ bed: req.bed, items, fixed, avoid: avoidAreas(), towers, margins, gapMm: req.opts.gapMm, rotate: req.opts.rotate, stepDeg: req.opts.stepDeg, effort: req.opts.effort, center: req.center })
+  const problem = nestProblem({ bed: req.bed, items, fixed, avoid: [...avoidAreas(), ...(req.opts.zones ?? [])], towers, margins, gapMm: req.opts.gapMm, rotate: req.opts.rotate, stepDeg: req.opts.stepDeg, effort: req.opts.effort, center: req.center })
   const started = Date.now()
   let p = await geom().call<Progress>('nest.start', problem)
   try {

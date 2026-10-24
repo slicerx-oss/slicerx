@@ -11,7 +11,7 @@ import { plateSequence } from './plate-sequence'
 import type { AppState, PlateEntry } from '../state/store'
 import { hullOf } from './arrange'
 import { clearanceRadius } from '@slicerx/settings/arrange-room'
-import { byObjectHead, byObjectPlan, hullDistance, type ByObjectPlan } from '@slicerx/settings/by-object'
+import { byObjectHead, byObjectPlan, hullDistance, type ByObjectPlan, type ByObjectShape } from '@slicerx/settings/by-object'
 import type { Mat4 } from './transform'
 
 type Pt = [number, number]
@@ -139,9 +139,14 @@ export interface ClearancePlan extends ByObjectPlan {
   transforms: Record<string, readonly number[]>
 }
 
+/** The entries as the by-object rules see them: each footprint on the bed and its top. */
+export function plateShapes(entries: readonly PlateEntry[]): ByObjectShape[] {
+  return entries.map((e) => ({ id: e.id, name: e.name, ...shapeOf(e) }))
+}
+
 /** `printerId` is the printer profile the slice names, whose head heimdall moves; without one, the config's printer model. */
 export function clearancePlan(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>, printerId?: string): ClearancePlan {
-  const plan = byObjectPlan(entries.map((e) => ({ id: e.id, name: e.name, ...shapeOf(e) })), cfg, byObjectHead(cfg, printerId))
+  const plan = byObjectPlan(plateShapes(entries), cfg, byObjectHead(cfg, printerId))
   return { ...plan, transforms: Object.fromEntries(entries.map((e) => [e.id, e.transform])) }
 }
 
@@ -168,13 +173,18 @@ let planned: { plate: unknown; plates: unknown; activePlate: unknown; easy: unkn
 /** The active plate's by-object plan when it prints by object with more than one printable object, else null. */
 export function activeClearance(s: Inputs): ClearancePlan | null {
   if (planned && planned.plate === s.plate && planned.plates === s.plates && planned.activePlate === s.activePlate && planned.easy === s.easy && planned.overrides === s.overrides && planned.profile === s.profile) return planned.plan
-  const meta = s.plates.find((p) => p.id === s.activePlate)
   const printable = s.plate.filter((p) => p.printable !== false)
-  const base = resolveConfig(s.easy, s.overrides)
-  let plan: ClearancePlan | null = null
-  if (plateSequence(meta, base) === 'by-object' && printable.length > 1) plan = clearancePlan(printable, { ...base, ...plateConfig(meta) } as unknown as Record<string, SettingValue>, s.profile?.printerId)
+  const cfg = printable.length > 1 ? byObjectConfig(s) : null
+  const plan = cfg ? clearancePlan(printable, cfg, s.profile?.printerId) : null
   planned = { plate: s.plate, plates: s.plates, activePlate: s.activePlate, easy: s.easy, overrides: s.overrides, profile: s.profile, plan }
   return plan
+}
+
+/** The settings the active plate slices with when it prints by object, else null. */
+export function byObjectConfig(s: Pick<AppState, 'plates' | 'activePlate' | 'easy' | 'overrides'>): Record<string, SettingValue> | null {
+  const meta = s.plates.find((p) => p.id === s.activePlate)
+  const base = resolveConfig(s.easy, s.overrides)
+  return plateSequence(meta, base) === 'by-object' ? ({ ...base, ...plateConfig(meta) } as unknown as Record<string, SettingValue>) : null
 }
 
 /** The active plate's plan only when something on it fails, for the warning and the read-back. */

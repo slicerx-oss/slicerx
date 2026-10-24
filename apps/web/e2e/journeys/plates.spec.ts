@@ -475,11 +475,11 @@ test.describe('plates in the Slice tab', () => {
  */
 /**
  * A P1S project printed by object: Bracket and Housing 15 mm apart, so the head would come down on Bracket, and Clip
- * clear of both.
+ * clear of both. Bracket is 45 mm tall, over the 34 mm the gantry rod clears, and listed first.
  */
 function byObjectProject(): Buffer {
   const parts = [
-    { name: 'Bracket', size: [40, 40, 20], at: [60, 100] },
+    { name: 'Bracket', size: [40, 40, 45], at: [60, 100] },
     { name: 'Housing', size: [60, 50, 15], at: [115, 95] },
     { name: 'Clip', size: [20, 20, 10], at: [205, 222] },
   ]
@@ -496,7 +496,7 @@ function byObjectProject(): Buffer {
 }
 
 test.describe('a plate printed by object', () => {
-  test('names the objects too close, selects them from the warning, and Arrange clears the warning and the red zones', async ({ page }) => {
+  test('names the objects too close, selects them from the warning, and Arrange clears the warning and the red zones, the tall one printed last', async ({ page }) => {
     interceptFileDialogs(page)
     await page.addInitScript(() => {
       localStorage.setItem('slicerx.debug', '1')
@@ -523,6 +523,8 @@ test.describe('a plate printed by object', () => {
     await page.getByTestId('slice-clearance-arrange').click()
     await expect(warning).toBeHidden({ timeout: 60_000 })
     await expect.poll(() => page.evaluate(() => (window as unknown as Zones).__vp.clearance.conflicts.size)).toBe(0)
+    // Arrange printed Bracket last, so the gantry never passes over it
+    expect(await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.map((e) => e.name).at(-1))).toBe('Bracket')
   })
 })
 

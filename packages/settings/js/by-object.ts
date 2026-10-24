@@ -7,11 +7,14 @@
 // or its body would meet the earlier object, and is a close call otherwise. Pure and shared, so the app's warning and
 // zones and the MCP server's read-back say the same.
 import type { SettingValue } from '@slicerx/contracts'
-import { clearanceRadius } from './arrange-room'
+import { clearanceRadius, type Rect } from './arrange-room'
 import { marginNumber as num } from './print-margins'
 import headShapes from '../head-shapes.json'
 
 export type Pt = [number, number]
+
+/** What arrange keeps past the rod's reach, mm: the engine's collision check counts the bed in 1 mm cells. */
+export const LANE_SAFETY_MM = 2
 
 /** The outer nozzle diameter assumed for the head, mm. */
 const OUTER_NOZZLE_MM = 4
@@ -179,11 +182,77 @@ export function pairSeverity(earlier: ByObjectShape, later: ByObjectShape, head:
   return head.estimated || headMeets(earlier, later, head) ? 'block' : 'soft'
 }
 
+/** The gantry rule's numbers, mm: the rod's height over the bed, how far it reaches in y from the nozzle, the lid. */
+function gantryOf(cfg: Record<string, SettingValue>) {
+  return { rod: num(cfg['extruder_clearance_height_to_rod'], 40), toRod: num(cfg['extruder_clearance_dist_to_rod'], 40), lid: num(cfg['extruder_clearance_height_to_lid'], 120) }
+}
+
+/** The y span of a footprint, mm. */
+const ySpan = (h: readonly Pt[]): [number, number] => [Math.min(...h.map((p) => p[1])), Math.max(...h.map((p) => p[1]))]
+
+/** True when the gantry, printing either footprint, passes over the other: their y spans come closer than the rod's reach. */
+function sameLane(a: readonly Pt[], b: readonly Pt[], toRod: number): boolean {
+  const [[al, ah], [bl, bh]] = [ySpan(a), ySpan(b)]
+  return Math.min(ah, bh) - Math.max(al, bl) + toRod > 0
+}
+
+/** True when an object `topMm` tall is taller than the gantry rod clears: nothing in its lane may print after it. */
+export function overRod(topMm: number, cfg: Record<string, SettingValue>): boolean {
+  return topMm > gantryOf(cfg).rod
+}
+
+/**
+ * A print order for `shapes` the gantry rule accepts where any order can, as ids: the objects the gantry clears
+ * first, in the order they had, then the tall ones. Of those, each goes after the others in its lane where it can; the
+ * ones that cannot (two tall objects side by side) print before the rest, which still clears every one it can. An
+ * object taller than the lid goes last. The clearance between objects does not depend on the order.
+ */
+export function byObjectOrder(shapes: readonly ByObjectShape[], cfg: Record<string, SettingValue>): string[] {
+  const { rod, toRod, lid } = gantryOf(cfg)
+  const low = shapes.filter((o) => o.top <= rod)
+  const rest = shapes.filter((o) => o.top > rod)
+  const back: ByObjectShape[] = []
+  while (rest.length > 0) {
+    // The last place still open takes an object that has nothing after it in its lane.
+    const free = rest.filter((o) => !back.some((later) => sameLane(o.hull, later.hull, toRod)))
+    if (free.length === 0) break
+    const meets = (o: ByObjectShape) => rest.filter((x) => x !== o && sameLane(o.hull, x.hull, toRod)).length
+    const pick = free.reduce((best, o) => {
+      const key = (x: ByObjectShape) => [x.top > lid ? 0 : 1, meets(x), -x.top]
+      const [k, b] = [key(o), key(best)]
+      for (let i = 0; i < k.length; i++) if (k[i] !== b[i]) return k[i]! < b[i]! ? o : best
+      return best
+    })
+    back.unshift(pick)
+    rest.splice(rest.indexOf(pick), 1)
+  }
+  return [...low, ...rest, ...back].map((o) => o.id)
+}
+
+/**
+ * The rules arrange holds a by-object plate to: the check's, with the rod reaching LANE_SAFETY_MM further, since
+ * heimdall counts the bed in 1 mm cells and a footprint can reach a cell further either way.
+ */
+export function arrangeRules(cfg: Record<string, SettingValue>): Record<string, SettingValue> {
+  return { ...cfg, extruder_clearance_dist_to_rod: gantryOf(cfg).toRod + LANE_SAFETY_MM }
+}
+
+/**
+ * The zone that keeps the next tall object out of a tall object's lane, across the bed (`x0` to `x0 + widthMm`): the
+ * footprint's y span grown by the rod's reach, less `keep`, how far the arrange keeps an outline from a zone anyway
+ * (arrange-room zoneKeep). An object whose outline keeps `keep` from it can print after the tall one.
+ */
+export function gantryLane(hull: readonly Pt[], cfg: Record<string, SettingValue>, x0: number, widthMm: number, keep = 0): Rect {
+  const { toRod } = gantryOf(cfg)
+  const [lo, hi] = ySpan(hull)
+  // Past half the span the zone is a line across the middle, which the keep holds off alone.
+  const cut = Math.min(keep - toRod, (hi - lo) / 2 - 0.05)
+  return { x: x0, y: lo + cut, w: widthMm, h: hi - lo - 2 * cut }
+}
+
 /** The plate `shapes` printed one after the other in this order with `cfg`, on the printer whose head is `head`. */
 export function byObjectPlan(shapes: readonly ByObjectShape[], cfg: Record<string, SettingValue>, head: ByObjectHead = byObjectHead(cfg)): ByObjectPlan {
-  const rod = num(cfg['extruder_clearance_height_to_rod'], 40)
-  const lid = num(cfg['extruder_clearance_height_to_lid'], 120)
-  const toRod = num(cfg['extruder_clearance_dist_to_rod'], 40)
+  const { rod, lid, toRod } = gantryOf(cfg)
   // Objects under the nozzle height never meet the hotend, only the nozzle.
   const short = shapes.every((o) => o.top < num(cfg['nozzle_height'], 2.5))
   const need = short ? 2 * (0.5 * OUTER_NOZZLE_MM - 0.1) : clearanceRadius(cfg)
@@ -195,15 +264,10 @@ export function byObjectPlan(shapes: readonly ByObjectShape[], cfg: Record<strin
       if (gap < need) pairs.push({ a: { id: a.id, name: a.name }, b: { id: b.id, name: b.name }, gapMm: gap, severity: pairSeverity(a, b, head) })
     }
   }
-  // The gantry passes over an earlier object while a later one prints in a band of y around it.
-  const band = (h: readonly Pt[]): [number, number] => [Math.min(...h.map((p) => p[1])) - 0.5 * toRod, Math.max(...h.map((p) => p[1])) + 0.5 * toRod]
+  // The gantry passes over an earlier object while a later one prints in its lane.
   const tall: ByObjectTall[] = []
   shapes.slice(0, -1).forEach((o, i) => {
-    const [lo, hi] = band(o.hull)
-    const under = shapes.slice(i + 1).some((later) => {
-      const [l, u] = band(later.hull)
-      return Math.min(hi, u) - Math.max(lo, l) > 0
-    })
+    const under = shapes.slice(i + 1).some((later) => sameLane(o.hull, later.hull, toRod))
     const limit = under ? rod : lid
     if (o.top > limit) tall.push({ id: o.id, name: o.name, topMm: o.top, what: under ? 'gantry' : 'lid', limitMm: limit })
   })

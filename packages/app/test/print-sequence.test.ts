@@ -216,6 +216,40 @@ describe('arrange on a by-object plate', () => {
     const [a, b, c] = get().plate.map(footprint)
     for (const [p, q] of [[a, b], [a, c], [b, c]] as const) expect(hullDistance(p!, q!)).toBeGreaterThanOrEqual(73)
   })
+
+  // The z27 plate: a 45 mm bracket on a printer whose gantry rod clears 34 mm, listed first.
+  const z27 = { ...A1, extruder_clearance_height_to_rod: 34, brim_type: 'no_brim', skirt_loops: 0 }
+  const span = (e: unknown) => {
+    const ys = footprint(e).map((p) => p[1])
+    return [Math.min(...ys), Math.max(...ys)] as const
+  }
+
+  it('prints a part taller than the gantry rod last, so the gantry never passes over it', async () => {
+    installPrintMargins(get)
+    const plate = [entry('t', 'Bracket', 0, 0, 45), entry('a', 'Cube A', 0, 0, 10), entry('b', 'Cube B', 0, 0, 10)]
+    set({ bed: { widthMm: 256, depthMm: 256, heightMm: 256 }, plate, plates: plates('by-object'), activePlate: 'p1', overrides: z27, selection: null, selectedIds: [] })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    expect(sequenceProblem(get())).toBeNull()
+    expect(get().plate.map((p) => p.id)).toEqual(['a', 'b', 't'])
+    // By layer the order is the plate's own.
+    set({ plate, plates: plates('by-layer') })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    expect(get().plate.map((p) => p.id)).toEqual(['t', 'a', 'b'])
+  })
+
+  it('gives two tall parts lanes of their own, so the gantry over the later one clears the first', async () => {
+    installPrintMargins(get)
+    const plate = [entry('t', 'Bracket', 0, 0, 45), entry('u', 'Post', 0, 0, 40), entry('a', 'Cube A', 0, 0, 10)]
+    set({ bed: { widthMm: 256, depthMm: 256, heightMm: 256 }, plate, plates: plates('by-object'), activePlate: 'p1', overrides: z27, selection: null, selectedIds: [] })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    expect(sequenceProblem(get())).toBeNull()
+    const ids = get().plate.map((p) => p.id)
+    expect(ids[0]).toBe('a')
+    const [t, u] = [get().plate.find((p) => p.id === 't'), get().plate.find((p) => p.id === 'u')]
+    const [st, su] = [span(t), span(u)]
+    // their footprints keep the rod's reach apart in y
+    expect(Math.max(st[0], su[0]) - Math.min(st[1], su[1])).toBeGreaterThanOrEqual(56.5)
+  })
 })
 
 describe('one print sequence for the plate', () => {
