@@ -10,7 +10,7 @@
 // When the engine cannot run, arrange falls back to the box packer in arrange.ts.
 import type { Bed, MeshPart } from '@slicerx/contracts'
 import { geom } from '../geom/client'
-import { betterNest, byObjectSpacingModes, nestItem, nestProblem, type ByObjectSpacingMode, type NestFootprint, type NestOutline, type NestReply } from '@slicerx/settings/arrange-room'
+import { betterNest, byObjectSpacingModes, nestItem, nestProblem, placesMore, withoutKeepOut, type ByObjectSpacingMode, type NestFootprint, type NestOutline, type NestReply } from '@slicerx/settings/arrange-room'
 import { avoidAreas, currentMargins, printSizeOf, type ArrangeOptions, type ArrangeResult, type PrintMargins } from './arrange'
 import { bounds, multiply, type Mat4 } from './transform'
 
@@ -106,13 +106,18 @@ async function run(req: Request, hooks: NestRun = {}): Promise<NestReply> {
   const items = await Promise.all(req.moving.map((e) => apartItemOf(e, req.opts, margins, req.copies ?? 1)))
   const fixed = await Promise.all(req.fixed.map((e) => apartItemOf(e, req.opts, margins)))
   const towers = [...margins.keepOut, ...(margins.towerRoom ?? [])]
+  // the printer's keep-out areas first, then the zones of this arrange (gantry lanes)
+  const keepOut = avoidAreas()
   // Printing by object with reaches that differ, both spacings are nested and the better layout kept (byObjectSpacing).
   const modes: (ByObjectSpacingMode | undefined)[] = margins.apart ? byObjectSpacingModes([...items, ...fixed].map((i) => i.apartReach ?? i.reach)) : [undefined]
   let best: NestReply | undefined
   for (const spacing of modes) {
     if (best && hooks.stop?.()) break
-    const problem = nestProblem({ bed: req.bed, items, fixed, avoid: [...avoidAreas(), ...(req.opts.zones ?? [])], towers, margins, gapMm: req.opts.gapMm, rotate: req.opts.rotate, stepDeg: req.opts.stepDeg, effort: req.opts.effort, center: req.center, spacing })
-    const r = await nestOnce(problem, hooks)
+    const problem = nestProblem({ bed: req.bed, items, fixed, avoid: [...keepOut, ...(req.opts.zones ?? [])], keepOut: keepOut.length, towers, margins, gapMm: req.opts.gapMm, rotate: req.opts.rotate, stepDeg: req.opts.stepDeg, effort: req.opts.effort, center: req.center, spacing })
+    let r = await nestOnce(problem, hooks)
+    // copies over with the keep-out areas at their edge spacing (a skirt round the whole print can do it): the old
+    // spacing too, and the layout that places more
+    if ('keepOutZones' in problem.options && r.leftOver.length > 0 && !hooks.stop?.()) r = placesMore(r, await nestOnce(withoutKeepOut(problem), hooks))
     best = best ? betterNest(best, r) : r
   }
   return best!

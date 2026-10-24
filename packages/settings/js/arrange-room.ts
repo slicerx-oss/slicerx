@@ -285,7 +285,8 @@ export function betterNest<T extends NestReply>(a: T, b: T): T {
 /**
  * How far an arrange keeps an object's outline from a zone, mm, for an object whose brim and the like reach `grow` and
  * everything printed `reach`: the nest keeps the larger of its edge spacing and its half spacing (packages/geom/src/
- * nest/place.rs edge_of and half_of), the box packer (`nest` false) the edge spacing.
+ * nest/place.rs edge_of and half_of), the box packer (`nest` false) the edge spacing. That holds for a gantry lane and
+ * the prime tower's room; the printer's keep-out areas keep only the edge spacing, at least the 6 mm gap (`keepOut`).
  */
 export function zoneKeep(grow: number, reach: number, gapMm: number, apart = 0, nest = true): number {
   const edge = Math.max(gapMm, reach > 0 ? reach + MARGIN_SAFETY_MM : 0)
@@ -333,6 +334,11 @@ export interface NestRequest {
   fixed: readonly NestItem[]
   /** The printer's excluded areas, in plate coordinates. */
   avoid: readonly Rect[]
+  /**
+   * How many of `avoid`'s first areas are the printer's own keep-out areas (`KEEP_OUT_KEYS`). Nothing prints in them,
+   * so printing by object a part keeps its edge spacing from them, not half the extruder clearance.
+   */
+  keepOut?: number | undefined
   /** The prime tower's place or room, in plate coordinates: the skirt goes round these. */
   towers: readonly Rect[]
   margins: NestMargins
@@ -368,10 +374,27 @@ export function nestProblem(r: NestRequest) {
       rotationStepDeg: r.stepDeg ?? NEST_STEP_DEFAULT,
       skirt: r.margins.skirt,
       ...(r.towers.length > 0 ? { towerZones: r.towers.length } : {}),
+      // Printing by object only, where the half spacing is the extruder clearance; by layer the request stays as it was.
+      ...(r.margins.apart && r.keepOut ? { keepOutZones: r.keepOut } : {}),
       center: r.center,
       budget: NEST_BUDGET[r.effort ?? 'normal'],
     },
   }
+}
+
+/**
+ * `problem` with the printer's keep-out areas spaced as any other zone again. Taking them at their edge spacing almost
+ * always places at least as many copies; a skirt round the whole print can still leave one over, so a host that has
+ * copies over nests this way too and keeps whichever places more (`placesMore`).
+ */
+export function withoutKeepOut(problem: ReturnType<typeof nestProblem>): ReturnType<typeof nestProblem> {
+  const { keepOutZones: _k, ...options } = problem.options as typeof problem.options & { keepOutZones?: number }
+  return { ...problem, options }
+}
+
+/** Of two replies to the same plate, the one that places more copies; `first` when they place as many. */
+export function placesMore<R extends { placements: readonly unknown[] }>(first: R, second: R): R {
+  return second.placements.length > first.placements.length ? second : first
 }
 
 /** One copy the nest placed: a point p of the object's footprint goes to the turn of p by `angleDeg`, plus `offset`. */

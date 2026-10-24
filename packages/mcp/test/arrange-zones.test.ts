@@ -355,3 +355,99 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
     expect(sliced.output.total.grams).toBeGreaterThan(0)
   }, 240_000)
 })
+
+/**
+ * Half the by-object spacing each printer's profile gives, mm: (its clearance radius + 1 mm) / 2, 73 mm on the A1 and
+ * 68 mm on the P1S. A gantry lane or any zone other than the printer's own keep-out areas keeps this much.
+ */
+const HALF: Record<string, number> = { 'Bambu Lab A1': 37, 'Bambu Lab P1S': 34.5 }
+
+/** By-object set-ups, and how many 20 mm boxes then fill each printer's plate. */
+const SETUPS: [string, Record<string, SettingValue>, Record<string, number>][] = [
+  ['no brim or skirt', { brim_type: 'no_brim', skirt_loops: 0 }, { 'Bambu Lab A1': 8, 'Bambu Lab P1S': 9 }],
+  ['a 5 mm brim', { brim_type: 'outer_only', brim_width: 5, skirt_loops: 0 }, { 'Bambu Lab A1': 8, 'Bambu Lab P1S': 8 }],
+  ['a 2 loop skirt', { brim_type: 'no_brim', skirt_loops: 2, skirt_distance: 3 }, { 'Bambu Lab A1': 8, 'Bambu Lab P1S': 8 }],
+]
+const FULL = Object.keys(KEEP_OUT).flatMap((printer) => SETUPS.map(([name, changes, count]) => [printer, name, changes, count[printer]!] as const))
+
+/** A full by-object plate of 20 mm boxes on `printer`. */
+async function fullByObject(h: Harness, printer: string, changes: Record<string, SettingValue>, count: number): Promise<void> {
+  writeFileSync(join(h.dir, 'part.stl'), boxStl(20, 20, 10))
+  await call(h, 'slicerx_project_open', { printer, filament: 'Bambu PLA Basic' })
+  await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+  await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', ...changes } })
+  await call(h, 'slicerx_arrange', { count })
+}
+
+/** Two tall 230 x 58 mm brackets by object on an A1, each needing a gantry lane of its own. */
+async function wideLanesA1(h: Harness): Promise<void> {
+  writeFileSync(join(h.dir, 'bracket.stl'), boxStl(230, 58, 45))
+  await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
+  await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'bracket.stl') })
+  await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73, extruder_clearance_height_to_rod: 34, skirt_loops: 0, brim_type: 'no_brim' } })
+  await call(h, 'slicerx_arrange', { count: 2 })
+}
+
+describe('slicerx_arrange next to the printer keep-out corner, printing by object', () => {
+  // Nothing prints in the corner, so a copy keeps its edge spacing from it (at least the 6 mm gap), not half the
+  // extruder clearance that keeps two printed copies apart.
+  it.each(FULL)('a full %s plate with %s uses the room by the corner and stays out of it', async (printer, _name, changes, count) => {
+    const h = await connect({ geomEngine: g.engine })
+    await fullByObject(h, printer, changes, count)
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(count)
+    const corner = KEEP_OUT[printer]!
+    for (const b of placed) expect(overlaps(b, corner), JSON.stringify(b)).toBe(false)
+    const near = Math.min(...placed.map((b) => gapOf(b, corner)))
+    expect(near).toBeGreaterThanOrEqual(6 - 1e-3)
+    expect(near).toBeLessThan(HALF[printer]!)
+  })
+
+  it('fits two tall 230 x 58 mm brackets on an A1, each in its own gantry lane', async () => {
+    const h = await connect({ geomEngine: g.engine })
+    await wideLanesA1(h)
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(2)
+    for (const b of placed) expect(overlaps(b, KEEP_OUT['Bambu Lab A1']!), JSON.stringify(b)).toBe(false)
+    const b = (await call<ByObjectShown>(h, 'slicerx_project_show')).output.plates[0]!.byObject!
+    expect(b.tall).toEqual([])
+    expect(b.pairs).toEqual([])
+    const [p, q] = [placed[0]!, placed[1]!]
+    expect(Math.max(p.y0, q.y0) - Math.min(p.y1, q.y1)).toBeGreaterThanOrEqual(2 * b.gantry.reachMm)
+  })
+
+  it('never places fewer copies than spacing the corner like any other zone', async () => {
+    // a skirt round the whole print: with the corner at its edge spacing the nest leaves one of nine over here, so the
+    // corner is tried at the half spacing too and the layout that places more kept
+    const h = await connect({ geomEngine: g.engine })
+    await fullByObject(h, 'Bambu Lab P1S', { brim_type: 'no_brim', skirt_loops: 2, skirt_distance: 3 }, 9)
+    expect(await boxes(h)).toHaveLength(9)
+  })
+})
+
+describe.skipIf(noSx() || noSxGeom())('a plate arranged next to the printer keep-out corner, sliced with sx', () => {
+  it.each(FULL)('slices a full %s plate with %s by object, never refused for the corner', async (printer, name, changes, count) => {
+    const h = await connect({ engine: 'sx', sxBin })
+    await fullByObject(h, printer, changes, count)
+    expect(await boxes(h)).toHaveLength(count)
+    let refused = ''
+    try {
+      await call(h, 'slicerx_slice')
+    } catch (e) {
+      refused = String(e)
+    }
+    expect(refused).not.toMatch(/corner|excluded/i)
+    // By object, arrange keeps the A1's 74 mm between outlines without counting a brim or skirt, so sx can still refuse
+    // those two plates for the head's clearance between copies, as it does before this change. Every other one slices.
+    if (printer === 'Bambu Lab P1S' || name === 'no brim or skirt') expect(refused).toBe('')
+    else if (refused) expect(refused).toMatch(/toolhead comes within/)
+  }, 240_000)
+
+  it('slices the two tall 230 x 58 mm brackets on an A1', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    await wideLanesA1(h)
+    expect(await boxes(h)).toHaveLength(2)
+    const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+    expect(sliced.output.total.grams).toBeGreaterThan(0)
+  }, 240_000)
+})
