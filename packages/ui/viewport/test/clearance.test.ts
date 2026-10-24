@@ -56,3 +56,23 @@ describe('a close call', () => {
   })
 })
 
+describe('the zones of selected objects', () => {
+  it('ring a selected zone in the selection color, red edge or not, and only while it is selected', () => {
+    const zones = new ClearanceZones()
+    const z = (id: string, x: number) => ({ id, transform: new Matrix4().toArray(), zone: rect(x - 34, 66, 88, 88), hull: rect(x, 100, 20, 20), topMm: 10 })
+    // a and b overlap (red); c stands clear
+    const spec = { zones: [z('a', 0), z('b', 67), z('c', 200)], gantry: { ...GANTRY, widthMm: 256 }, selected: ['a', 'b'] }
+    zones.setColors('#ff4b5c', '#c9cfe2', '#bd93f9')
+    zones.set(spec)
+    const identity = new Matrix4()
+    zones.follow(() => identity)
+    const rings = () => zones.group.children.flatMap((g) => g.children.filter((m) => m.name === 'clearance-pick')).map((m) => m.visible)
+    expect([...zones.conflicts].sort()).toEqual(['a', 'b'])
+    expect(rings()).toEqual([true, true, false])
+    zones.set({ ...spec, selected: ['c'] })
+    zones.follow(() => identity)
+    expect(rings()).toEqual([false, false, true])
+    zones.dispose()
+  })
+})
+
