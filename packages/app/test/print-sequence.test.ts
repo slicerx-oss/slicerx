@@ -8,7 +8,10 @@ import type { Collision, Host, SliceResult } from '@slicerx/contracts'
 import { arrangePlate } from '../src/plate/edit'
 import { installPrintMargins } from '../src/plate/footprint'
 import { hullOf } from '../src/plate/arrange'
-import { clearanceProblems, footprint, hullDistance, sequenceProblem } from '../src/plate/sequence-check'
+import { clearanceProblems, clearanceTrouble, footprint, hullDistance, sequenceProblem } from '../src/plate/sequence-check'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { ClearanceWarning, selectClearance } from '../src/workspaces/prepare/seq-warning'
 import { exportGcode3mf } from '../src/export/actions'
 import { exportGcode, jobFileName, jobName, sendToPrinter, slicePlate } from '../src/state/actions'
 import { get, set } from '../src/state/store'
@@ -31,9 +34,11 @@ function entry(id: string, name: string, x: number, y: number, h: number) {
 
 // The Bambu Lab A1: 40 mm around the nozzle, the gantry rod 25 mm up and 56.5 mm behind it, the lid at 256 mm.
 const A1 = { extruder_clearance_radius: 40, extruder_clearance_height_to_rod: 25, extruder_clearance_dist_to_rod: 56.5, extruder_clearance_height_to_lid: 256, nozzle_height: 4.76 }
+/** The printer profile the slice names: its head is the one heimdall moves, estimated on the A1, measured on the P1S. */
+const profileOf = (printerId: string) => ({ printerId }) as never
 
 describe('the by-object clearance check', () => {
-  const check = (a: [number, number, number], b: [number, number, number], cfg: Record<string, number> = A1) => clearanceProblems([entry('a', 'Cube A', ...a), entry('b', 'Cube B', ...b)], cfg).join('; ')
+  const check = (a: [number, number, number], b: [number, number, number], cfg: Record<string, number> = A1) => clearanceProblems([entry('a', 'Cube A', ...a), entry('b', 'Cube B', ...b)], cfg, 'bambu-a1').join('; ')
 
   it('holds a Bambu Lab printer to the radius heimdall uses, the profile\'s max radius', () => {
     const bambu = { ...A1, printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73 } as unknown as Record<string, number>
@@ -77,6 +82,7 @@ describe('a plate placed too close or too tall by object', () => {
       plates: plates('by-object'),
       activePlate: 'p1',
       overrides: { ...A1 },
+      profile: profileOf('bambu-a1'),
       // A slice from before Cube B was moved next to Cube A.
       slice: { status: 'done', result, stale: true },
       printSheet: null,
@@ -130,6 +136,52 @@ describe('a plate placed too close or too tall by object', () => {
     set({ toast: null })
     expect(await exportGcode3mf(host)).toBe(false)
     expect(get().toast).toMatchObject({ tone: 'error', text: expect.stringMatching(/^heimdall found a collision/) })
+  })
+})
+
+describe('the short by-object warning', () => {
+  beforeEach(() => set({ plate: [entry('a', 'Cube A', 100, 118, 10), entry('b', 'Cube B', 150, 118, 10), entry('c', 'Cube C', 100, 20, 10)], plates: plates('by-object'), activePlate: 'p1', overrides: { ...A1 }, profile: profileOf('bambu-a1'), slice: { status: 'idle' } as never, selection: null, selectedIds: [] }))
+
+  it('names the closest pair with its gap and the radius, and counts the rest', () => {
+    const plan = clearanceTrouble(get())!
+    expect(plan.pairs.map((p) => [p.a.id, p.b.id, Math.round(p.gapMm)])).toEqual([['a', 'b', 30]])
+    const html = renderToStaticMarkup(createElement(ClearanceWarning, { plan }))
+    expect(html).toContain('data-testid="slice-clearance-warning"')
+    expect(html).toContain('Too close to print by object')
+    expect(html).toContain('Cube A and Cube B')
+    expect(html).toContain('30 of 40 mm')
+    expect(html).toContain('data-testid="slice-clearance-arrange"')
+  })
+
+  it('gives a pair a measured head clears a calm note of one line with Arrange, and keeps the red for the A1', () => {
+    set({ profile: profileOf('bambu-p1s') })
+    const plan = clearanceTrouble(get())!
+    expect(plan.pairs.map((p) => [p.a.id, p.b.id, p.severity])).toEqual([['a', 'b', 'soft']])
+    const html = renderToStaticMarkup(createElement(ClearanceWarning, { plan }))
+    expect(html).toContain('data-tone="soft"')
+    expect(html).toContain('Cube A and Cube B are close (30 of 40 mm). Check them before you print.')
+    expect(html).not.toContain('Too close to print by object')
+    expect(html).toContain('data-testid="slice-clearance-arrange"')
+    // heimdall slices a close call, so there is no problem to hold the slice to
+    expect(sequenceProblem(get())).toBeNull()
+    expect(selectClearance(plan)).toEqual(['a', 'b'])
+    set({ profile: profileOf('bambu-a1') })
+    const red = renderToStaticMarkup(createElement(ClearanceWarning, { plan: clearanceTrouble(get())! }))
+    expect(red).toContain('Too close to print by object')
+    expect(red).not.toContain('data-tone="soft"')
+  })
+
+  it('selects the pair it names, the first one primary', () => {
+    expect(selectClearance(clearanceTrouble(get())!)).toEqual(['a', 'b'])
+    expect(get().selection).toBe('a')
+    expect(get().selectedIds).toEqual(['a', 'b'])
+  })
+
+  it('has nothing to say once the objects are apart or the plate prints by layer', () => {
+    set({ plate: [entry('a', 'Cube A', 100, 118, 10), entry('b', 'Cube B', 160, 118, 10)] })
+    expect(clearanceTrouble(get())).toBeNull()
+    set({ plate: [entry('a', 'Cube A', 100, 118, 10), entry('b', 'Cube B', 150, 118, 10)], plates: plates('by-layer') })
+    expect(clearanceTrouble(get())).toBeNull()
   })
 })
 

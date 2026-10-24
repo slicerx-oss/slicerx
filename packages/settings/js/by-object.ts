@@ -3,11 +3,13 @@
 // Print by object, the plate as it sits: which objects come closer than the clearance radius, which tall ones the
 // gantry or the lid would hit, and each object's clearance zone (its footprint grown by half the radius, so two zones
 // overlap exactly when the objects are too close). It is the by-object clearance check the reference slicers run
-// before a slice, as heimdall reads it. Pure and shared, so the app's warning and zones and the MCP server's read-back
-// say the same.
+// before a slice, as heimdall reads it: a pair inside the radius blocks the slice when the printer's head is estimated
+// or its body would meet the earlier object, and is a close call otherwise. Pure and shared, so the app's warning and
+// zones and the MCP server's read-back say the same.
 import type { SettingValue } from '@slicerx/contracts'
 import { clearanceRadius } from './arrange-room'
 import { marginNumber as num } from './print-margins'
+import headShapes from '../head-shapes.json'
 
 export type Pt = [number, number]
 
@@ -27,7 +29,31 @@ export interface ByObjectPair {
   b: { id: string; name: string }
   /** Distance between their footprints, mm. */
   gapMm: number
+  /** Whether heimdall refuses the slice for it ('block') or slices it as a close call ('soft'): pairSeverity. */
+  severity: 'block' | 'soft'
 }
+
+/** A box of the head around its nozzle tip, mm: x from, x to, y from, y to, then its underside and top over the tip. */
+export type HeadColumn = readonly [number, number, number, number, number, number]
+
+/**
+ * The head heimdall moves over the plate: the boxes of every head the printer has, and whether they are estimated
+ * from photos (then only the nozzle is known, and the clearance radius blocks instead of warning).
+ */
+export interface ByObjectHead {
+  estimated: boolean
+  columns: readonly HeadColumn[]
+}
+
+/** head-shapes.json: the heads Preview draws, by printer profile id and by printer model. */
+export interface HeadShapes {
+  estimated: readonly string[]
+  heads: Readonly<Record<string, readonly HeadColumn[]>>
+  printers: Readonly<Record<string, { heads: readonly string[] }>>
+  models: Readonly<Record<string, string>>
+}
+
+const HEADS = headShapes as unknown as HeadShapes
 
 export interface ByObjectTall {
   id: string
@@ -41,7 +67,7 @@ export interface ByObjectTall {
 export interface ByObjectPlan {
   /** How far apart objects stay, mm: the clearance radius, or the nozzle's own width when every object is shorter than the nozzle. */
   needMm: number
-  /** Pairs closer than needMm, in print order (first object, then second). */
+  /** Pairs closer than needMm, in print order (first object, then second), each blocking or a close call. */
   pairs: ByObjectPair[]
   tall: ByObjectTall[]
   /** The gantry: the rod's height over the bed, and how far it reaches either side of the nozzle in y, mm. */
@@ -120,8 +146,41 @@ export function hullDistance(a: readonly Pt[], b: readonly Pt[]): number {
   return best
 }
 
-/** The plate `shapes` printed one after the other in this order with `cfg`. */
-export function byObjectPlan(shapes: readonly ByObjectShape[], cfg: Record<string, SettingValue>): ByObjectPlan {
+/**
+ * The head of the printer profile `printerId`, else of `cfg`'s printer model, else the generic head Preview draws,
+ * as heimdall picks it for a slice.
+ */
+export function byObjectHead(cfg: Record<string, SettingValue>, printerId?: string, file: HeadShapes = HEADS): ByObjectHead {
+  const model = cfg['printer_model']
+  const byModel = typeof model === 'string' ? file.models[model] : undefined
+  const printer = (printerId ? file.printers[printerId] : undefined) ?? (byModel ? file.printers[byModel] : undefined)
+  if (!printer) return { estimated: false, columns: file.heads['generic'] ?? [] }
+  return { estimated: printer.heads.some((k) => file.estimated.includes(k)), columns: printer.heads.flatMap((k) => file.heads[k] ?? []) }
+}
+
+/** The ground a head box covers while the nozzle goes anywhere over `hull`. */
+function swept(hull: readonly Pt[], c: HeadColumn): Pt[] {
+  return convexHull(hull.flatMap(([x, y]): Pt[] => [[x + c[0], y + c[2]], [x + c[1], y + c[2]], [x + c[1], y + c[3]], [x + c[0], y + c[3]]]))
+}
+
+/**
+ * Whether the head, printing `later` after `earlier`, meets `earlier` with a box: one whose underside is below the
+ * earlier object's top while the nozzle prints the later one's first layer, over ground the earlier one stands on.
+ */
+export function headMeets(earlier: ByObjectShape, later: ByObjectShape, head: ByObjectHead): boolean {
+  return head.columns.some((c) => c[4] < earlier.top && hullDistance(earlier.hull, swept(later.hull, c)) === 0)
+}
+
+/**
+ * A pair inside the clearance radius: heimdall refuses it when the head is estimated (the radius stands in for the
+ * head it does not know) or when the head's body meets the earlier object; otherwise it slices it as a close call.
+ */
+export function pairSeverity(earlier: ByObjectShape, later: ByObjectShape, head: ByObjectHead): 'block' | 'soft' {
+  return head.estimated || headMeets(earlier, later, head) ? 'block' : 'soft'
+}
+
+/** The plate `shapes` printed one after the other in this order with `cfg`, on the printer whose head is `head`. */
+export function byObjectPlan(shapes: readonly ByObjectShape[], cfg: Record<string, SettingValue>, head: ByObjectHead = byObjectHead(cfg)): ByObjectPlan {
   const rod = num(cfg['extruder_clearance_height_to_rod'], 40)
   const lid = num(cfg['extruder_clearance_height_to_lid'], 120)
   const toRod = num(cfg['extruder_clearance_dist_to_rod'], 40)
@@ -133,7 +192,7 @@ export function byObjectPlan(shapes: readonly ByObjectShape[], cfg: Record<strin
     for (let j = i + 1; j < shapes.length; j++) {
       const [a, b] = [shapes[i]!, shapes[j]!]
       const gap = hullDistance(a.hull, b.hull)
-      if (gap < need) pairs.push({ a: { id: a.id, name: a.name }, b: { id: b.id, name: b.name }, gapMm: gap })
+      if (gap < need) pairs.push({ a: { id: a.id, name: a.name }, b: { id: b.id, name: b.name }, gapMm: gap, severity: pairSeverity(a, b, head) })
     }
   }
   // The gantry passes over an earlier object while a later one prints in a band of y around it.
@@ -160,7 +219,7 @@ export function byObjectPlan(shapes: readonly ByObjectShape[], cfg: Record<strin
 /** The plan as the app's ui.get and the MCP server's project read-back give it: mm to 0.1, outlines in bed mm. */
 export interface ByObjectReadback {
   needMm: number
-  pairs: { a: { id: string; name: string }; b: { id: string; name: string }; gapMm: number }[]
+  pairs: { a: { id: string; name: string }; b: { id: string; name: string }; gapMm: number; severity: 'block' | 'soft' }[]
   tall: ByObjectTall[]
   gantry: { rodMm: number; reachMm: number }
   /** Per object in print order: its footprint and its clearance zone; zones that overlap are objects too close. */
@@ -172,7 +231,7 @@ export function byObjectReadback(plan: ByObjectPlan): ByObjectReadback {
   const ring = (pts: readonly Pt[]): Pt[] => pts.map(([x, y]) => [r(x), r(y)])
   return {
     needMm: r(plan.needMm),
-    pairs: plan.pairs.map((p) => ({ a: p.a, b: p.b, gapMm: r(p.gapMm) })),
+    pairs: plan.pairs.map((p) => ({ a: p.a, b: p.b, gapMm: r(p.gapMm), severity: p.severity })),
     tall: plan.tall.map((t) => ({ ...t, topMm: r(t.topMm), limitMm: r(t.limitMm) })),
     gantry: { rodMm: r(plan.gantry.rodMm), reachMm: r(plan.gantry.reachMm) },
     outlines: plan.zones.map((z) => ({ id: z.id, name: z.name, footprint: ring(z.hull), zone: ring(z.zone) })),

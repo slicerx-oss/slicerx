@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // heimdall's collision check (packages/core/src/collide.rs) tests the same heads, racks and docks Preview draws. This
 // builds data/head-shapes.json from them: every head as boxes around its active nozzle, and every tool change as the
-// stops changeSequence makes. The engine reads the file at build time, so the drawing stays the one source.
+// stops changeSequence makes. The engine reads the file at build time, and @slicerx/settings keeps a copy for the
+// by-object rules, so the drawing stays the one source.
 // SX_WRITE_HEAD_SHAPES=1 rewrites it; otherwise the test fails when the file is stale.
 import { describe, expect, it } from 'vitest'
 import { Box3, type Mesh, type Object3D } from 'three'
@@ -25,6 +26,8 @@ type Column = [number, number, number, number, number, number]
 const ESTIMATED = new Map([['bambu-a1', 4.76]])
 
 const OUT = fileURLToPath(new URL('../data/head-shapes.json', import.meta.url))
+/** The same file for @slicerx/settings, whose by-object rules ask which head a printer has and whether it is estimated. */
+const SETTINGS_OUT = fileURLToPath(new URL('../../../settings/head-shapes.json', import.meta.url))
 const profiles = (path: string) => JSON.parse(readFileSync(fileURLToPath(new URL(`../../../profiles/${path}`, import.meta.url)), 'utf8')) as { models: Record<string, { machine: Settings }> }
 
 const up = (v: number) => Math.ceil(v * 10 - 1e-6) / 10
@@ -164,8 +167,9 @@ function build() {
 describe('head-shapes.json', () => {
   it('matches the heads, racks and docks Preview draws', () => {
     const text = JSON.stringify(build()) + '\n'
-    if (process.env['SX_WRITE_HEAD_SHAPES'] === '1') writeFileSync(OUT, text)
+    if (process.env['SX_WRITE_HEAD_SHAPES'] === '1') for (const out of [OUT, SETTINGS_OUT]) writeFileSync(out, text)
     expect(readFileSync(OUT, 'utf8')).toBe(text)
+    expect(readFileSync(SETTINGS_OUT, 'utf8')).toBe(text)
   })
 
   it('gives every head a nozzle column at the tip and a body above it', () => {
