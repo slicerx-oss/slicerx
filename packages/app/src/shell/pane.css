@@ -19,7 +19,8 @@
    takes the screen. A shut sheet waits below the screen, inert. An open sheet takes its content's height and keeps it
    (SidePane locks it): growing upward when a section opened, it moved every control above the one pressed. */
 @media (max-width: 900px) {
-  .studio:has(> .pane.sheet) > .vp { height: calc(100dvh - var(--h-bar) - 34px); }
+  /* Above the phone's tab bar where it has one (phone-shell.css), else above the status line. */
+  .studio:has(> .pane.sheet) > .vp { height: calc(100dvh - var(--h-bar) - var(--phone-tabbar-h, 34px)); }
   .studio[data-model-mode="design"]:has(> .pane.sheet) > .vp { height: calc(100dvh - var(--h-bar) - 84px); }
   .pane.sheet.sx-rail[data-side], .pane.sheet.sx-rail[data-side=right]:not([data-collapsed]) {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: calc(var(--z-rail-peek) + 2); width: auto; max-height: 70dvh;
