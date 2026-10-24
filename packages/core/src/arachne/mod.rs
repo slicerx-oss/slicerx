@@ -474,11 +474,29 @@ pub(crate) fn island_walls(
         cfg.spacing_for(cfg.inner_wall_width()),
     );
     let w = crate::geom::mm(cfg.line_width);
-    // Precise outer wall (Orca default, only with inner walls printed first): the outline goes in by
-    // the whole difference between width and spacing, and the outer bead moves back out by half of it,
-    // so the outer wall stays on the surface and the walls inside get that room.
-    let precise = crate::tower::flag_or(cfg, "precise_outer_wall", true)
+    // Precise outer wall (Orca default, only with inner walls printed first).
+    let precise_order = crate::tower::flag_or(cfg, "precise_outer_wall", true)
         && cfg.wall_sequence == crate::config::WallSequence::InnerOuter;
+    // aegis walls set the outer to first inner spacing themselves (the mean of the two beads' spacings by
+    // default); a precise outer wall makes it the mean of the two widths, with no overlap. The outer wall stays
+    // half its width in from the surface and the inner walls keep their own spacing.
+    let athena =
+        crate::config::athena_spacing(cfg, cfg.outer_wall_width(), cfg.inner_wall_width(), layer_height).map(
+            |(ext, inner)| {
+                if precise_order {
+                    (
+                        f64::midpoint(cfg.outer_wall_width(), cfg.inner_wall_width()),
+                        inner,
+                    )
+                } else {
+                    (ext, inner)
+                }
+            },
+        );
+    // Arachne walls: the outline goes in by the whole difference between width and spacing, and the outer
+    // bead moves back out by half of it, so the outer wall stays on the surface and the walls inside get that
+    // room.
+    let precise = precise_order && athena.is_none();
     let half_gap = (cfg.outer_wall_width() - spacing_0) / 2.0;
     let prm = Params {
         bead_width_0: spacing_0,
@@ -506,12 +524,7 @@ pub(crate) fn island_walls(
         wall_maximum_resolution: percent(cfg, "wall_maximum_resolution", 0.5),
         wall_maximum_deviation: percent(cfg, "wall_maximum_deviation", 0.025),
         is_top_or_bottom_layer: top_or_bottom,
-        athena: crate::config::athena_spacing(
-            cfg,
-            cfg.outer_wall_width(),
-            cfg.inner_wall_width(),
-            layer_height,
-        ),
+        athena,
         // Where one-wall top surfaces apply (`one_wall_top`), these rings are built again with one wall.
         keep_diagram: loops > 1 && crate::tower::flag(cfg, "only_one_wall_top"),
     };
@@ -1406,11 +1419,253 @@ mod tests {
         }
     }
 
-    /// A 1.2 mm bar with two walls at the default 0.42 mm widths: Orca's precise outer wall keeps the
+    /// A ring of `n` points `r` mm round (`cx`, `cy`), counterclockwise, or clockwise for a hole.
+    fn ring(cx: f64, cy: f64, r: f64, n: usize, hole: bool) -> Vec<IntPoint<i32>> {
+        let mut pts: Vec<IntPoint<i32>> = (0..n)
+            .map(|i| {
+                let a = std::f64::consts::TAU * i as f64 / n as f64;
+                IntPoint::new(
+                    ((cx + r * a.m_cos()) * 10_000.0).round() as i32,
+                    ((cy + r * a.m_sin()) * 10_000.0).round() as i32,
+                )
+            })
+            .collect();
+        if hole {
+            pts.reverse();
+        }
+        pts
+    }
+
+    /// A square `2 half` mm across centered on (`cx`, `cy`), counterclockwise, or clockwise for a hole.
+    fn square(cx: f64, cy: f64, half: f64, hole: bool) -> Vec<IntPoint<i32>> {
+        let p = |x: f64, y: f64| IntPoint::new((x * 10_000.0).round() as i32, (y * 10_000.0).round() as i32);
+        let mut pts = vec![
+            p(cx - half, cy - half),
+            p(cx + half, cy - half),
+            p(cx + half, cy + half),
+            p(cx - half, cy + half),
+        ];
+        if hole {
+            pts.reverse();
+        }
+        pts
+    }
+
+    /// Bead centers of the walls of `region`, mm from its surface: for each ring of the outline (outside
+    /// first, then the holes) the median distance of each wall's points, wall 0 (the outer wall) first.
+    fn bead_centers(cfg: &crate::config::PrintConfig, region: &Shapes, loops: u32, h: f64) -> Vec<Vec<f64>> {
+        let rings: Vec<&Vec<IntPoint<i32>>> = region.iter().flat_map(|s| s.iter()).collect();
+        let to_segment = |p: &IntPoint<i32>, a: &IntPoint<i32>, b: &IntPoint<i32>| {
+            let (px, py) = (f64::from(p.x), f64::from(p.y));
+            let (ax, ay, bx, by) = (f64::from(a.x), f64::from(a.y), f64::from(b.x), f64::from(b.y));
+            let (dx, dy) = (bx - ax, by - ay);
+            let t = (((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)).clamp(0.0, 1.0);
+            (px - ax - t * dx).m_hypot(py - ay - t * dy) / 10_000.0
+        };
+        let nearest = |p: &IntPoint<i32>| -> (usize, f64) {
+            let mut best = (0, f64::MAX);
+            for (i, r) in rings.iter().enumerate() {
+                for (j, a) in r.iter().enumerate() {
+                    let d = to_segment(p, a, &r[(j + 1) % r.len()]);
+                    if d < best.1 {
+                        best = (i, d);
+                    }
+                }
+            }
+            best
+        };
+        let (islands, _) = island_walls(region, cfg, loops, 0, h, false, None);
+        // (distance, length) samples per ring and wall, so a median weighs the walls by length. Along a round
+        // ring the samples are the points (each with half the segments beside it), since a segment's middle sits
+        // inside the curve; along a straight ring they are the segments' middles, so the corners count little.
+        let mut per: Vec<Vec<Vec<(f64, f64)>>> = vec![vec![Vec::new(); loops as usize]; rings.len()];
+        let len = |a: &IntPoint<i32>, b: &IntPoint<i32>| f64::from(b.x - a.x).m_hypot(f64::from(b.y - a.y));
+        for line in islands.iter().flat_map(|i| i.wide.iter()).filter(|l| !l.is_odd) {
+            for pair in line.points.windows(2) {
+                let (a, b) = (&pair[0], &pair[1]);
+                let mid = IntPoint::new(i32::midpoint(a.x, b.x), i32::midpoint(a.y, b.y));
+                let (ring, d) = nearest(&mid);
+                let samples = if rings[ring].len() > 8 {
+                    [(nearest(a).1, len(a, b) / 2.0), (nearest(b).1, len(a, b) / 2.0)]
+                } else {
+                    [(d, len(a, b)), (d, 0.0)]
+                };
+                if let Some(v) = per.get_mut(ring).and_then(|r| r.get_mut(line.inset)) {
+                    v.extend(samples);
+                }
+            }
+        }
+        per.into_iter()
+            .map(|r| {
+                r.into_iter()
+                    .map(|mut v| {
+                        v.sort_by(|a, b| a.0.total_cmp(&b.0));
+                        let half = v.iter().map(|x| x.1).sum::<f64>() / 2.0;
+                        let mut run = 0.0;
+                        v.iter()
+                            .find(|x| {
+                                run += x.1;
+                                run >= half
+                            })
+                            .map_or(f64::NAN, |x| x.0)
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// A stock-like config: aegis walls, inner walls first, precise outer wall on.
+    fn wall_cfg(
+        nozzle: f64,
+        h: f64,
+        outer: f64,
+        inner: f64,
+        extra: &serde_json::Value,
+    ) -> crate::config::PrintConfig {
+        let mut v = serde_json::json!({
+            "nozzle_diameter": [nozzle],
+            "layer_height": h,
+            "line_width": inner,
+            "outer_wall_line_width": outer,
+            "inner_wall_line_width": inner,
+            "wall_generator": "aegis",
+            "wall_sequence": "inner wall/outer wall",
+            "precise_outer_wall": true,
+        });
+        if let (Some(dst), Some(src)) = (v.as_object_mut(), extra.as_object()) {
+            dst.extend(src.clone());
+        }
+        crate::config::PrintConfig::from_value(&v).unwrap()
+    }
+
+    /// Where the walls belong, mm from the surface: the outer wall half its width in; the first inner wall the
+    /// mean of the two widths further with a precise outer wall and inner walls first, else the mean of the two
+    /// spacings (width less (1 - pi/4) h); each further inner wall one inner spacing on.
+    fn wall_rule(precise: bool, inner_first: bool, wo: f64, wi: f64, h: f64, walls: usize) -> Vec<f64> {
+        let k = 1.0 - std::f64::consts::FRAC_PI_4;
+        let first = if precise && inner_first {
+            f64::midpoint(wo, wi)
+        } else {
+            f64::midpoint(wo, wi) - h * k
+        };
+        (0..walls)
+            .map(|n| match n {
+                0 => wo / 2.0,
+                _ => wo / 2.0 + first + (n - 1) as f64 * (wi - h * k),
+            })
+            .collect()
+    }
+
+    /// The first inner wall's center sits the mean of the two widths from the outer wall's with a precise outer
+    /// wall and inner walls first, and the mean of the two spacings otherwise; each further inner wall one inner
+    /// spacing on; the outer wall half its width in from the surface. Layer heights 0.12 to 0.3 mm, outer and
+    /// inner widths equal and unequal, 0.4 and 0.6 nozzles.
+    #[test]
+    fn first_inner_wall_follows_the_precise_outer_wall() {
+        let block: Shapes = vec![vec![square(0.0, 0.0, 10.0, false)]];
+        let mut wrong = Vec::new();
+        for h in [0.12, 0.2, 0.3] {
+            for (nozzle, wo, wi) in [
+                (0.4, 0.42, 0.45),
+                (0.4, 0.6, 0.45),
+                (0.4, 0.42, 0.6),
+                (0.6, 0.62, 0.62),
+            ] {
+                for precise in [true, false] {
+                    for order in ["inner wall/outer wall", "outer wall/inner wall"] {
+                        let extra =
+                            serde_json::json!({"wall_sequence": order, "precise_outer_wall": precise});
+                        let cfg = wall_cfg(nozzle, h, wo, wi, &extra);
+                        let d = &bead_centers(&cfg, &block, 3, h)[0];
+                        let want = wall_rule(precise, order.starts_with("inner"), wo, wi, h, 3);
+                        for (rank, (got, want)) in d.iter().zip(want).enumerate() {
+                            if (got - want).abs() >= 0.0002 {
+                                wrong.push(format!(
+                                    "precise {precise}, {order}, h {h}, {wo}/{wi} on {nozzle}: wall {rank} at {got:.4}, want {want:.4}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// The outer wall's outer edge stays on the model's surface on an outside face, a round and a square
+    /// 10 mm hole and a round and a square 10 mm peg, so part sizes, holes and pegs keep their size, and every
+    /// inner wall follows the same rule on each of them, with the precise outer wall on and off. A round ring is
+    /// a 256-sided polygon, whose offsets come out about a micron long per wall.
+    #[test]
+    fn outer_wall_stays_on_the_surface_of_holes_and_pegs() {
+        let shapes: [(&str, Shapes); 4] = [
+            (
+                "block, round hole",
+                vec![vec![
+                    square(0.0, 0.0, 12.0, false),
+                    ring(0.0, 0.0, 5.0, 256, true),
+                ]],
+            ),
+            (
+                "block, square hole",
+                vec![vec![square(0.0, 0.0, 12.0, false), square(0.0, 0.0, 5.0, true)]],
+            ),
+            ("round peg", vec![vec![ring(0.0, 0.0, 5.0, 256, false)]]),
+            ("square peg", vec![vec![square(0.0, 0.0, 5.0, false)]]),
+        ];
+        let mut wrong = Vec::new();
+        for (nozzle, h, wo, wi) in [
+            (0.4, 0.12, 0.42, 0.45),
+            (0.4, 0.2, 0.42, 0.45),
+            (0.6, 0.3, 0.62, 0.62),
+            (0.4, 0.28, 0.38, 0.55),
+            (0.4, 0.2, 0.5, 0.4),
+        ] {
+            for precise in [true, false] {
+                let cfg = wall_cfg(
+                    nozzle,
+                    h,
+                    wo,
+                    wi,
+                    &serde_json::json!({"precise_outer_wall": precise}),
+                );
+                let want = wall_rule(precise, true, wo, wi, h, 3);
+                for (name, shape) in &shapes {
+                    let rings: Vec<usize> = shape.iter().flat_map(|s| s.iter()).map(Vec::len).collect();
+                    for (surface, d) in bead_centers(&cfg, shape, 3, h).iter().enumerate() {
+                        let (edge_tol, rank_tol) = if rings[surface] > 8 {
+                            (0.0008, 0.002)
+                        } else {
+                            (0.0002, 0.0002)
+                        };
+                        let edge = d[0] - wo / 2.0;
+                        if edge.abs() >= edge_tol {
+                            wrong.push(format!(
+                                "precise {precise}, {name}, surface {surface}, {wo}/{wi} at {h}: outer edge {edge:+.4}"
+                            ));
+                        }
+                        for (rank, (got, want)) in d.iter().zip(&want).enumerate().skip(1) {
+                            // Offsets of a polygon's rounded corners add up a little with each wall.
+                            if (got - want).abs() >= rank_tol * rank as f64 {
+                                wrong.push(format!(
+                                    "precise {precise}, {name}, surface {surface}, {wo}/{wi} at {h}: wall {rank} at {got:.4}, want {want:.4}"
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// A 1.2 mm bar with two Arachne walls at the default 0.42 mm widths: Orca's precise outer wall keeps the
     /// outer beads on the surface and leaves the middle bead the rest of the bar, 0.36 mm of spacing.
     #[test]
     fn precise_outer_wall_gives_the_middle_bead_the_room_left() {
-        let cfg = crate::config::PrintConfig::builtin();
+        let mut cfg = crate::config::PrintConfig::builtin();
+        cfg.apply_value(&serde_json::json!({"wall_generator": "arachne"}))
+            .unwrap();
         let bar = rect(20.0, 1.2);
         let (islands, _) = island_walls(&bar, &cfg, 2, 0, 0.2, false, None);
         let wide: Vec<&WallLine> = islands.iter().flat_map(|i| i.wide.iter()).collect();
