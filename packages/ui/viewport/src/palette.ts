@@ -275,6 +275,16 @@ export function srgbToLinear(c: number): number {
   return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)
 }
 
+/** WCAG contrast ratio of two #rrggbb colors, 1 to 21. */
+export function contrastRatio(a: string, b: string): number {
+  const lum = (hex: string) => {
+    const [r, g, b] = hexToRgb(hex).map(srgbToLinear) as [number, number, number]
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  const [x, y] = [lum(a), lum(b)]
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
+}
+
 /** Keeps pure black and white inside a range real filament reaches, so shading still reads. */
 export function displayHex(hex: string): string {
   const [r, g, b] = hexToRgb(hex)
