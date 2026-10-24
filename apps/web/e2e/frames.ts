@@ -112,6 +112,30 @@ export function spread(f: Frame, cells: number[]): number {
   return Math.sqrt(v / Math.max(1, cells.length))
 }
 
+/**
+ * The sharpest edge in some cells: the largest difference between a cell and the mean of its four neighbors, over the
+ * cells whose four neighbors are all in the set. A smooth backdrop (a gradient, a glow, a vignette) stays under 2 levels
+ * however much its levels vary overall, where `spread` reads the same backdrop as detail; a bed line or a model's edge
+ * is tens of levels, whatever its size.
+ */
+export function sharpest(f: Frame, cells: number[]): number {
+  const inSet = new Set(cells)
+  let top = 0
+  for (const c of cells) {
+    // A cell on the grid's left or right edge has no neighbor on that side (c - 1 would wrap to the row above).
+    if (c % GRID_W === 0 || c % GRID_W === GRID_W - 1) continue
+    const nb = [c - 1, c + 1, c - GRID_W, c + GRID_W]
+    if (!nb.every((b) => inSet.has(b))) continue
+    top = Math.max(top, Math.abs(f.gray[c]! - (f.gray[nb[0]!]! + f.gray[nb[1]!]! + f.gray[nb[2]!]! + f.gray[nb[3]!]!) / 4))
+  }
+  return top
+}
+
+/** The middle of a box: `w` and `h` are the fractions of its width and height that are kept, around its center. */
+export function middleOf(box: Box, w: number, h: number): Box {
+  return { x: box.x + (box.width * (1 - w)) / 2, y: box.y + (box.height * (1 - h)) / 2, width: box.width * w, height: box.height * h }
+}
+
 /** How alike two frames are over some cells, by the pattern of light and dark (Pearson correlation, 1 the same picture). A picture drawn darker keeps its pattern; a cleared or swapped one does not. */
 export function alike(a: Frame, b: Frame, cells: number[]): number {
   const n = Math.max(1, cells.length)
