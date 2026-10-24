@@ -493,6 +493,9 @@ pub(crate) struct Context {
     /// run (`overhang_fan_threshold` 10 to 95 percent as Orca reads it: 0.9, 0.75, 0.5, 0.25, 0.05), or None
     /// when the overhang fan is off or set to 0 percent (every outer wall, which the writer handles).
     pub fan_overlap: Vec<Option<f32>>,
+    /// The width, mm, an overhang wall piece is measured with: the bridge strand's (`overhang::bead`). Its bead may
+    /// print wider (`overhang::wall_bead`); the speeds and the points they add stay those of the strand.
+    pub clear_width: f32,
 }
 
 /// Orca's overhang fan levels (`GCode::_extrude`, `check_overhang_fan`): the overlap at or under which a
@@ -635,6 +638,8 @@ impl Context {
                     )
                 })
                 .collect(),
+            #[allow(clippy::cast_possible_truncation, reason = "a line width")]
+            clear_width: crate::overhang::bead(cfg, f64::from(height)).0 as f32,
         }
     }
 }
@@ -1015,6 +1020,7 @@ mod tests {
             max_volumetric: Vec::new(),
             height: 0.2,
             fan_overlap: Vec::new(),
+            clear_width: 0.4,
         }
     }
 
