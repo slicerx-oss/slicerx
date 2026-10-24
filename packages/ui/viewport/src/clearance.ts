@@ -3,7 +3,7 @@
 // Print by object: each object's clearance zone on the bed (its footprint grown by half the clearance radius, so two
 // zones that overlap are two objects closer than the radius) as a soft fill with a hairline edge, red where zones
 // overlap, and the gantry's lane over the objects taller than its rod as a dashed band, red where a later object's lane
-// meets it. The app measures them on the plate as it sits (@slicerx/settings/by-object); while an object moves its zone
+// meets it. A selected object's zone has a ring in the selection color outside its edge. The app measures them on the plate as it sits (@slicerx/settings/by-object); while an object moves its zone
 // rides with it and the overlap is checked again every frame, so the red follows a drag before the drop.
 import { BufferGeometry, Color, DoubleSide, Float32BufferAttribute, Group, LineBasicMaterial, LineLoop, Matrix4, Mesh, MeshBasicMaterial, PlaneGeometry, Vector3 } from 'three'
 
@@ -38,9 +38,12 @@ export const CLEARANCE_RED_LIGHT = '#c0182c'
 const Z = 0.12
 /** Width of a conflict's edge on the bed, mm. */
 const HOT_EDGE = 0.8
+/** Width of the ring round a selected object's zone, mm, and the gap between it and the zone's edge. */
+const PICK_EDGE = 3
+const PICK_GAP = 0.5
 
-/** A closed band of width `w` along a convex ring, as triangles at height `z`. */
-function ribbon(ring: readonly Pt[], w: number, z: number): BufferGeometry {
+/** A closed band of width `w` along a convex ring, as triangles at height `z`, its middle `shift` mm outside the ring. */
+function ribbon(ring: readonly Pt[], w: number, z: number, shift = 0): BufferGeometry {
   const n = ring.length
   const pos: number[] = []
   // Each corner moves along the bisector of its two edge normals, so the band keeps its width.
@@ -57,8 +60,8 @@ function ribbon(ring: readonly Pt[], w: number, z: number): BufferGeometry {
     const j = (i + 1) % n
     const [p, q] = [ring[i]!, ring[j]!]
     const [o, u] = [off[i]!, off[j]!]
-    const h = w / 2
-    const [pi, po, qi, qo] = [[p[0] - o[0] * h, p[1] - o[1] * h], [p[0] + o[0] * h, p[1] + o[1] * h], [q[0] - u[0] * h, q[1] - u[1] * h], [q[0] + u[0] * h, q[1] + u[1] * h]] as const
+    const [lo, hi] = [shift - w / 2, shift + w / 2]
+    const [pi, po, qi, qo] = [[p[0] + o[0] * lo, p[1] + o[1] * lo], [p[0] + o[0] * hi, p[1] + o[1] * hi], [q[0] + u[0] * lo, q[1] + u[1] * lo], [q[0] + u[0] * hi, q[1] + u[1] * hi]] as const
     pos.push(pi[0], pi[1], z, po[0], po[1], z, qo[0], qo[1], z, pi[0], pi[1], z, qo[0], qo[1], z, qi[0], qi[1], z)
   }
   const g = new BufferGeometry()
@@ -154,6 +157,8 @@ interface Drawn {
   inv: Matrix4
   area: Mesh
   hot: Mesh
+  /** The ring in the selection color, shown while the object is selected. */
+  pick: Mesh
   /** The hairline edge: a band seen nearly edge on thins out, a line never does. */
   hair: LineLoop
   zoneNow: Pt[]
@@ -168,6 +173,7 @@ export class ClearanceZones {
     zone: new MeshBasicMaterial({ ...this.face, opacity: 0.1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
     hotZone: new MeshBasicMaterial({ ...this.face, opacity: 0.16, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
     hot: new MeshBasicMaterial({ ...this.face, opacity: 1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
+    pick: new MeshBasicMaterial({ ...this.face, opacity: 1, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }),
     lane: new MeshBasicMaterial({ ...this.face, opacity: 0.07 }),
     hotLane: new MeshBasicMaterial({ ...this.face, opacity: 0.1 }),
     laneEdge: new MeshBasicMaterial({ ...this.face, opacity: 0.75 }),
@@ -200,12 +206,13 @@ export class ClearanceZones {
     this.hairs.line.color.copy(n)
     this.hairs.hot.color.copy(r)
     this.hairs.picked.color.set(selection)
+    this.mats.pick.color.set(selection)
   }
 
   set(spec: ClearanceSpec | null): void {
     for (const d of this.drawn) {
       this.group.remove(d.group)
-      for (const m of [d.area, d.hot, d.hair]) m.geometry.dispose()
+      for (const m of [d.area, d.hot, d.pick, d.hair]) m.geometry.dispose()
     }
     this.drawn = []
     this.spec = spec
@@ -214,14 +221,17 @@ export class ClearanceZones {
       group.matrixAutoUpdate = false
       const area = new Mesh(fill(z.zone, Z - 0.04), this.mats.zone)
       const hot = new Mesh(ribbon(z.zone, HOT_EDGE, Z + 0.02), this.mats.hot)
+      const pick = new Mesh(ribbon(z.zone, PICK_EDGE, Z + 0.02, HOT_EDGE / 2 + PICK_GAP + PICK_EDGE / 2), this.mats.pick)
+      pick.name = 'clearance-pick'
+      pick.visible = false
       const hairGeo = new BufferGeometry()
       hairGeo.setAttribute('position', new Float32BufferAttribute(z.zone.flatMap((p) => [p[0], p[1], Z + 0.03]), 3))
       const hair = new LineLoop(hairGeo, this.hairs.line)
-      for (const m of [area, hot, hair]) m.renderOrder = 3
-      group.add(area, hot, hair)
+      for (const m of [area, hot, pick, hair]) m.renderOrder = 3
+      group.add(area, hot, pick, hair)
       this.group.add(group)
       const at = new Matrix4().fromArray(z.transform as number[])
-      this.drawn.push({ z, group, inv: at.clone().invert(), area, hot, hair, zoneNow: [...z.zone], hullNow: [...z.hull] })
+      this.drawn.push({ z, group, inv: at.clone().invert(), area, hot, pick, hair, zoneNow: [...z.zone], hullNow: [...z.hull] })
     }
     this.group.visible = this.drawn.length > 0
     if (!this.group.visible) this.clearLanes(new Set())
@@ -254,6 +264,9 @@ export class ClearanceZones {
     for (const d of this.drawn) {
       const isHot = hot.has(d.z.id)
       d.hot.visible = isHot
+      // Selected, its zone gets the ring in the selection color, red edge or not, so a pair picked from the warning
+      // reads on a phone's small view as well as its outline does on a desktop.
+      d.pick.visible = picked.has(d.z.id)
       d.area.material = isHot ? this.mats.hotZone : this.mats.zone
       d.hair.material = isHot ? this.hairs.hot : picked.has(d.z.id) ? this.hairs.picked : this.hairs.line
     }
