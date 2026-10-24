@@ -233,6 +233,17 @@ export function nestItem(id: string, foot: NestFootprint, size: PrintSize, bound
 }
 
 /**
+ * The spacing a plate printed by object keeps between footprints, mm: `apart` (the clearance radius and the safety)
+ * and the farthest of the objects' `reaches`, what each prints round itself (brim, raft, support pad, its own skirt).
+ * heimdall holds every move of the object printing to the radius from the finished object's footprint
+ * (core/src/collide/walk.rs, the close check), its brim and skirt moves too, so the reach comes on top of the radius.
+ * Undefined by layer.
+ */
+export function byObjectApart(apart: number | undefined, reaches: readonly number[]): number | undefined {
+  return apart ? apart + Math.max(0, ...reaches) : apart
+}
+
+/**
  * How far an arrange keeps an object's outline from a zone, mm, for an object whose brim and the like reach `grow` and
  * everything printed `reach`: the nest keeps the larger of its edge spacing and its half spacing (packages/geom/src/
  * nest/place.rs edge_of and half_of), the box packer (`nest` false) the edge spacing.
@@ -273,7 +284,7 @@ export function nestProblem(r: NestRequest) {
     options: {
       gapMm: r.gapMm,
       // Printing by object: the extruder clearance between objects, the bed edge keeping the gap. Sent only when set.
-      ...(r.margins.apart ? { apartMm: r.margins.apart } : {}),
+      ...(r.margins.apart ? { apartMm: byObjectApart(r.margins.apart, [...r.items, ...r.fixed].map((i) => i.reach)) } : {}),
       safetyMm: MARGIN_SAFETY_MM,
       rotate: r.rotate,
       rotationStepDeg: r.stepDeg ?? NEST_STEP_DEFAULT,

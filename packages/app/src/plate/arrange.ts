@@ -9,7 +9,7 @@
 // tower. Pure and deterministic, so it runs without a GPU and is unit tested.
 import type { Bed } from '@slicerx/contracts'
 import type { FirstLayerShape } from '@slicerx/settings/print-margins'
-import { MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
+import { byObjectApart, MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
 import { bedCircle, boxInBed } from './bed-shape'
 import { bounds, compose, decompose, fitsBed, multiply, reachFrom, type Box, type Mat4 } from './transform'
 
@@ -32,6 +32,8 @@ export interface ArrangeOptions {
   margins?: PrintMargins
   /** More of the bed to keep clear of for this arrange only, boxes: a tall object's gantry lane (by-object-arrange.ts). */
   zones?: readonly Rect[]
+  /** Move the layout to the middle of the bed on true outlines. Left out, it moves when nothing stays. */
+  center?: boolean
 }
 
 /** The size of an object's bounds, mm. */
@@ -62,7 +64,10 @@ export interface PrintMargins {
    * prints, since the engine then puts the tower elsewhere, so only arrange and landing a new part keep off it.
    */
   towerRoom?: readonly Rect[]
-  /** Printing by object: how far apart objects stay so the toolhead clears the finished ones (the extruder clearance radius), mm. */
+  /**
+   * Printing by object: how far apart objects stay so the toolhead clears the finished ones (the extruder clearance
+   * radius), mm. Arrange adds the farthest reach of what the objects print round themselves (byObjectApart).
+   */
   apart?: number
 }
 
@@ -263,6 +268,11 @@ export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeI
   const leftOver: string[] = []
   const tooLarge: ArrangeResult['tooLarge'] = []
   const circle = bedCircle(bed)
+  const reachOf = (it: ArrangeItem) => {
+    const b = bounds(it.parts, it.transform)
+    return b ? margins.reach(printSizeOf(b)) : 0
+  }
+  const apart = byObjectApart(margins.apart, [...fixed, ...moving].map(reachOf))
   const fitsAlone = (w: number, h: number, edge: number) => (circle ? Math.hypot(w, h) / 2 + edge <= circle.r + 1e-6 : w + 2 * edge <= bed.widthMm + 1e-6 && h + 2 * edge <= bed.depthMm + 1e-6)
   for (const { it, b } of items) {
     const size = printSizeOf(b)
@@ -271,12 +281,12 @@ export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeI
     const straight = wantOf(size)
     const turnedSize: PrintSize = { w: h, h: w, height: size.height }
     const turnedWant = wantOf(turnedSize)
-    let spot = findSpot(straight, placed, zones, towers, bed, opts.gapMm, margins.skirt, margins.apart)
+    let spot = findSpot(straight, placed, zones, towers, bed, opts.gapMm, margins.skirt, apart)
     let m = it.transform
     let want = straight
     let box = b
     if (opts.rotate && Math.abs(w - h) > 0.5) {
-      const turned = findSpot(turnedWant, placed, zones, towers, bed, opts.gapMm, margins.skirt, margins.apart)
+      const turned = findSpot(turnedWant, placed, zones, towers, bed, opts.gapMm, margins.skirt, apart)
       // Prefer the turn when only it fits, or when it lands nearer the front.
       if (turned && (!spot || turned.y < spot.y || (turned.y === spot.y && turned.x < spot.x))) {
         m = turnZ(it.transform, b, 90)
