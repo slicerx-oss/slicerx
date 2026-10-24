@@ -14,6 +14,14 @@ use crate::perimeters::IslandWalls;
 use crate::perimeters::Shapes;
 use i_overlay::i_float::int::point::IntPoint;
 
+/// The flow of a round strand `d` mm across against the layer's bead of that width at height `h`.
+fn round_flow(d: f64, h: f64) -> f32 {
+    #[allow(clippy::cast_possible_truncation, reason = "a flow ratio")]
+    {
+        (std::f64::consts::PI * d * d / 4.0 / crate::gcode::bead_area(d, h)) as f32
+    }
+}
+
 /// Everything one filament slot prints on one layer.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ToolWork {
@@ -74,11 +82,17 @@ pub(crate) struct ToolWork {
     pub(crate) internal_bridge: Vec<[Point; 2]>,
     /// Internal bridge strands joined along the walls.
     pub(crate) internal_bridge_paths: Vec<Vec<Point>>,
+    /// The bead width (mm) of each of `internal_bridge_paths`, one per path, when the bridge pieces set their own
+    /// (a piece that spreads its strands evenly widens them with their spacing); empty when every path prints at
+    /// `internal_bridge_width`.
+    pub(crate) internal_bridge_path_widths: Vec<f32>,
     pub(crate) top: Vec<[Point; 2]>,
     /// Bridge strands over air, printed with round strands of `bridge_width`.
     pub(crate) bridge: Vec<[Point; 2]>,
     /// Bridge strands joined along the walls.
     pub(crate) bridge_paths: Vec<Vec<Point>>,
+    /// The bead width (mm) of each of `bridge_paths`, as `internal_bridge_path_widths` is for the internal ones.
+    pub(crate) bridge_path_widths: Vec<f32>,
     /// Wave overhang rings (`wave_overhangs`), their extrusion in mm3 per mm and speed in mm/s.
     pub(crate) wave_paths: Vec<Vec<Point>>,
     pub(crate) wave_flow: f32,
@@ -2296,9 +2310,23 @@ pub(crate) fn plan_layer_paths(
             };
             #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
             let speed = cfg.bridge_speed as f32;
-            for p in &w.bridge_paths {
+            let (base_width, base_flow) = (b.width_mm, b.flow);
+            let per_path = w.bridge_path_widths.len() == w.bridge_paths.len();
+            for (i, p) in w.bridge_paths.iter().enumerate() {
+                // A piece that spread its strands evenly prints them at its own width: round, or flat at the
+                // same flow against a flat bead of that width.
+                if let Some(&pw) = w.bridge_path_widths.get(i).filter(|_| per_path) {
+                    b.width_mm = pw;
+                    b.flow = if w.bridge_flat_flow > 0.0 {
+                        w.bridge_flat_flow
+                    } else {
+                        round_flow(f64::from(pw), h)
+                    };
+                }
                 b.push(w.tool, Feature::Bridge, speed, p.iter().copied());
             }
+            b.width_mm = base_width;
+            b.flow = base_flow;
             b.push_lines(w.tool, Feature::Bridge, speed, &w.bridge);
             b.width_mm = line_width;
             b.flow = line_flow;
@@ -2360,9 +2388,24 @@ pub(crate) fn plan_layer_paths(
             }
             #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
             let speed = cfg.internal_bridge_speed as f32;
-            for p in &w.internal_bridge_paths {
+            let (base_width, base_flow) = (b.width_mm, b.flow);
+            let per_path = w.internal_bridge_path_widths.len() == w.internal_bridge_paths.len();
+            #[allow(clippy::cast_possible_truncation, reason = "a flow ratio")]
+            let extra = cfg.raw_number("internal_bridge_flow", 1.0).max(0.0) as f32;
+            for (i, p) in w.internal_bridge_paths.iter().enumerate() {
+                if let Some(&pw) = w.internal_bridge_path_widths.get(i).filter(|_| per_path) {
+                    b.width_mm = pw;
+                    b.flow = extra
+                        * if w.internal_bridge_ratio > 0.0 {
+                            w.internal_bridge_ratio
+                        } else {
+                            round_flow(f64::from(pw), f64::from(b.out.height))
+                        };
+                }
                 b.push(w.tool, Feature::InternalBridge, speed, p.iter().copied());
             }
+            b.width_mm = base_width;
+            b.flow = base_flow;
             b.push_lines(w.tool, Feature::InternalBridge, speed, &w.internal_bridge);
             b.width_mm = line_width;
             b.flow = line_flow;

@@ -597,19 +597,29 @@ fn a_fully_clear_wall_piece_prints_at_the_inner_wall_width() {
             );
         }
     };
-    // Only the bead changes: against the old strand (a 0.4 mm bridge line set by hand), every move keeps its
-    // place and feed, and only the overhang walls' E differs.
+    // Only the bead changes: against the old strand (a 0.4 mm bridge line set by hand), every wall move keeps its
+    // place, and only the overhang walls' E differs. Feeds are left out: the hand-set width also changes the bridges,
+    // and with them a layer's time, which the cooling slowdown reads.
     let xmark = std::fs::read(format!("{}/packages/core/bench/models/x-mark.stl", root())).unwrap();
     for (name, part) in [("wedge", &model), ("x-mark", &xmark)] {
+        // The walls' moves only: a bridge line width set by hand also sets the bridge strands' width, and with it how
+        // many strands a bridge holds and the travels around them.
         let moves = |g: &str| -> Vec<String> {
+            let mut wall = false;
             g.lines()
-                .filter(|l| ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|c| l.starts_with(c)))
+                .filter(|l| {
+                    if let Some(f) = l.strip_prefix("; FEATURE: ") {
+                        wall = f.trim().ends_with("wall");
+                    }
+                    wall && ["G1 ", "G2 ", "G3 "].iter().any(|c| l.starts_with(c))
+                })
                 .map(|l| {
                     l.split_whitespace()
-                        .filter(|w| !w.starts_with('E'))
+                        .filter(|w| !w.starts_with('E') && !w.starts_with('F'))
                         .collect::<Vec<_>>()
                         .join(" ")
                 })
+                .filter(|l| l != "G1")
                 .collect()
         };
         let (new, old) = (
@@ -632,21 +642,21 @@ fn a_fully_clear_wall_piece_prints_at_the_inner_wall_width() {
         );
     }
 
-    // Bridge strands keep the bridge line width (100 percent of the nozzle) and their own flow, whatever the inner
-    // wall: a flat bead of it over air (`thick_bridges` off on this preset) or a round thread of it over sparse
-    // infill (`thick_internal_bridges` on).
+    // Bridge strands keep their own bead, whatever the inner wall: at least the nozzle wide (wider where a bridge
+    // spreads its strands), a flat bead of their width over air (`thick_bridges` off on this preset) or a round
+    // thread of it over sparse infill (`thick_internal_bridges` on).
     let bridge = |label: &str, edits: &[(&str, Value)]| {
         let got = beads(&slice(&table(), &with(edits)), "Bridge");
         assert!(got.len() > 10, "{label}: {} bridge moves", got.len());
-        let (flat, round) = (
-            per_mm(0.4, 0.2),
-            std::f64::consts::PI * 0.4 * 0.4 / 4.0 * ratio / filament,
-        );
         for (width, e) in &got {
-            assert!((width - 0.4).abs() < 5e-4, "{label} bridge: width {width}");
+            let (flat, round) = (
+                per_mm(*width, 0.2),
+                std::f64::consts::PI * width * width / 4.0 * ratio / filament,
+            );
+            assert!(*width > 0.4 - 5e-4, "{label} bridge: width {width}");
             assert!(
                 (e / flat - 1.0).abs() < 0.005 || (e / round - 1.0).abs() < 0.005,
-                "{label} bridge: {e:.5} filament per mm, want {flat:.5} or {round:.5}"
+                "{label} bridge: {e:.5} filament per mm at width {width}, want {flat:.5} or {round:.5}"
             );
         }
     };
