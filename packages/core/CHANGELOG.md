@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- `load_3mf_items_counted`: `load_3mf_items`, and how many plates of the project have something to print, read in the same pass.
+
 ### Changed
 
 - aegis walls (the default) with inner walls printed first follow `precise_outer_wall`: with it on (the stock setting) the first inner wall sits (outer width + inner width) / 2 from the outer wall, with it off (outer width + inner width) / 2 - (1 - pi/4) h. Before, both came out (1 - pi/4) h / 2 off (0.0215 mm at 0.2 mm layers), and gap fill and infill with them. The outer wall does not move, so part sizes, holes and pegs keep their size.

@@ -453,6 +453,37 @@ describe.skipIf(noSx())('with the real sx CLI', { timeout: sxTimeout }, () => {
     expect(data<Err>(await h.call('slicerx_slice_file', { model: path, plate: 2 })).error.code).toBe('no_such_plate')
   })
 
+  it('says how many plates a project has when it slices the first because no plate was named', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const path = join(h.dir, 'three-plates.3mf')
+    const at = (x: number) => `transform="1 0 0 0 1 0 0 0 1 ${x} 100 0"`
+    const plate = (n: number, object?: number) => `<plate><metadata key="plater_id" value="${n}"/>${object ? `<model_instance><metadata key="object_id" value="${object}"/></model_instance>` : ''}</plate>`
+    // Three tetrahedra, one on each of plates 1 to 3, and an empty plate 4.
+    const tetra = /<object id="1".*?<\/object>/.exec(MODEL)![0]
+    const ids = [1, 2, 3]
+    const model = MODEL.replace(tetra, ids.map((i) => tetra.replace('id="1"', `id="${i}"`)).join('')).replace('<build><item objectid="1"/></build>', `<build>${ids.map((i) => `<item objectid="${i}" ${at(i * 300 - 200)}/>`).join('')}</build>`)
+    writeFileSync(
+      path,
+      writeZip([
+        { name: '3D/3dmodel.model', data: model },
+        { name: 'Metadata/model_settings.config', data: `<?xml version="1.0" encoding="UTF-8"?><config>${ids.map((i) => `<object id="${i}"><metadata key="name" value="tetra ${i}"/></object>`).join('')}${ids.map((i) => plate(i, i)).join('')}${plate(4)}</config>` },
+      ]),
+    )
+    type Est = { plate?: number; plate_count?: number; warnings: string[]; notices?: { code: string; message: string }[] }
+    const first = data<Est>(await h.call('slicerx_estimate_file', { model: path, profiles: ['machine:bambu-a1'] }))
+    expect(first).toMatchObject({ plate: 1, plate_count: 3 })
+    expect(first.notices).toEqual([{ code: 'other_plates', message: 'three-plates.3mf has 3 plates; sliced plate 1. Pass plate to slice another.' }])
+    expect(first.warnings).toContain(first.notices?.[0]?.message)
+    const named = data<Est>(await h.call('slicerx_estimate_file', { model: path, profiles: ['machine:bambu-a1'], plate: 2 }))
+    expect(named.plate).toBe(2)
+    expect(named.plate_count).toBeUndefined()
+    expect(named.notices).toBeUndefined()
+    // A project of one plate says nothing.
+    const one = data<Est>(await h.call('slicerx_estimate_file', { model: projectFile(h.dir), profiles: ['machine:bambu-a1'] }))
+    expect(one.plate_count).toBeUndefined()
+    expect(one.notices).toBeUndefined()
+  })
+
   it('writes a filament and color per slot into the .gcode.3mf', async () => {
     const h = await connect({ engine: 'sx', sxBin, allowDirs: [resolve(__dirname, '../../core/bench/models')] })
     const r = await h.call('slicerx_slice_file', {

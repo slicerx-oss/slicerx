@@ -288,6 +288,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         files?: { gcode?: string; preview?: string } & Record<string, unknown>
         featureFilaments?: { object?: string; name?: string; features?: Record<string, number[]> }[]
         chamberCooling?: { mode?: number; source?: string; filaments?: string[]; text?: string }
+        projectPlates?: { plates?: number; sliced?: number }[]
       }
       const sum = (v: number[] | undefined): number => (v ?? []).reduce((a, b) => a + b, 0)
       if (job.scriptReplacements && (!Array.isArray(out.script_replacements) || out.script_replacements.length !== job.scriptReplacements.length || job.scriptReplacements.some((choice, i) => {
@@ -295,6 +296,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         return !record || record.decision !== 'applied' || record.reason !== 'stock_replacement_applied' || record.key !== choice.key || record.slot !== (choice.slot ?? null) || record.original !== choice.original || record.replacement !== choice.replacement
       }))) throw new ToolInputError('The engine did not acknowledge every requested script replacement', 'engine_unavailable')
       const timeS = out.stats?.timeS ?? 0
+      const plates = out.projectPlates?.[0]
       const files = out.files ?? {}
       const gcodePath = typeof files.gcode === 'string' ? files.gcode : join(job.outDir, 'slice.gcode')
       const previewPath = typeof files.preview === 'string' ? files.preview : join(job.outDir, 'slice.sxpv')
@@ -319,6 +321,8 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
           },
         } : {}),
         ...(job.modelPlate && !job.plate ? { plate: job.modelPlate } : {}),
+        // A project given without a plate: the engine sliced its first, and says when it has more.
+        ...(!job.modelPlate && !job.plate && typeof plates?.sliced === 'number' && typeof plates.plates === 'number' ? { plate: plates.sliced, plate_count: plates.plates } : {}),
         ...(job.emitGcode && out.gcodeSha256 ? { gcode_sha256: out.gcodeSha256 } : {}),
         warnings: (out.warnings ?? []).map((w) => String(w.message ?? '')),
         ...(job.emitGcode ? { gcode_path: gcodePath } : {}),

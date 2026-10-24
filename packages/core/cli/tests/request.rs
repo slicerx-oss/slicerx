@@ -2725,6 +2725,105 @@ fn a_project_without_plate_entries_slices_as_plate_1() {
     assert_eq!(v["layerCount"], 50);
 }
 
+/// A project of three 20 mm boxes, 4, 6 and 8 mm tall, one on each of plates 1 to 3, and an empty plate 4.
+fn three_plate_3mf() -> Vec<u8> {
+    let object = |id: u32, h: u32| {
+        format!(
+            r#"<object id="{id}" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="{h}"/><vertex x="20" y="0" z="{h}"/><vertex x="20" y="20" z="{h}"/><vertex x="0" y="20" z="{h}"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object>"#
+        )
+    };
+    let model = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>{}{}{}</resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/><item objectid="2" transform="1 0 0 0 1 0 0 0 1 400 100 0"/><item objectid="3" transform="1 0 0 0 1 0 0 0 1 700 100 0"/></build></model>"#,
+        object(1, 4),
+        object(2, 6),
+        object(3, 8)
+    );
+    let plate = |n: u32, object: Option<u32>| {
+        let instance = object.map_or_else(String::new, |o| {
+            format!(r#"<model_instance><metadata key="object_id" value="{o}"/></model_instance>"#)
+        });
+        format!(r#"<plate><metadata key="plater_id" value="{n}"/>{instance}</plate>"#)
+    };
+    let objects = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><config><object id="1"><metadata key="name" value="low"/></object><object id="2"><metadata key="name" value="mid"/></object><object id="3"><metadata key="name" value="high"/></object>{}{}{}{}</config>"#,
+        plate(1, Some(1)),
+        plate(2, Some(2)),
+        plate(3, Some(3)),
+        plate(4, None)
+    );
+    zip(&[
+        ("3D/3dmodel.model", model.as_bytes()),
+        ("Metadata/model_settings.config", objects.as_bytes()),
+    ])
+}
+
+/// `sx slice project.3mf` on a project of more than one plate slices plate 1 and says on stderr, in one line, how many
+/// plates have something to print and how to pick another; `--plate N` and a project of one plate say nothing. A
+/// request naming the project without `#N` lists it in `projectPlates`, and a `#N` reference does not.
+#[test]
+fn a_multi_plate_project_names_its_plate_count() {
+    let dir = temp_dir(format!("sx-cli-plate-count-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let three = dir.join("three.3mf");
+    std::fs::write(&three, three_plate_3mf()).unwrap();
+    let one = dir.join("one.3mf");
+    std::fs::write(&one, bambu_two_boxes_3mf(&serde_json::json!({}))).unwrap();
+    let slice = |path: &Path, extra: &[&str]| {
+        let out = sx()
+            .arg("slice")
+            .arg(path)
+            .args(extra)
+            .arg("-o")
+            .arg(dir.join("out.gcode"))
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        (
+            layers(&out.stderr),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    let hint = "sx: plates: this project has 3 plates; slicing plate 1 (--plate N picks another)\n";
+    let (n, err) = slice(&three, &[]);
+    assert_eq!(n, 20);
+    assert_eq!(err.matches("sx: plates:").count(), 1, "{err}");
+    assert!(err.contains(hint), "{err}");
+    let (n, err) = slice(&three, &["--plate", "2"]);
+    assert_eq!(n, 30);
+    assert!(!err.contains("sx: plates:"), "{err}");
+    let (_, err) = slice(&one, &[]);
+    assert!(!err.contains("sx: plates:"), "{err}");
+
+    let request = |mesh: String| {
+        let req = serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": {"p": mesh},
+            "plate": {"objects": [{"id": "p", "mesh": "p"}]},
+            "config": {"layer_height": 0.2, "initial_layer_print_height": 0.2},
+        });
+        let path = dir.join("request.json");
+        std::fs::write(&path, req.to_string()).unwrap();
+        let out = sx().args(["slice", "--request"]).arg(&path).output().unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        (v, String::from_utf8_lossy(&out.stderr).into_owned())
+    };
+    let (v, err) = request("three.3mf".into());
+    assert_eq!(v["layerCount"], 20);
+    let text = "three.3mf has 3 plates; slicing plate 1 (three.3mf#N picks another)";
+    assert_eq!(
+        v["projectPlates"],
+        serde_json::json!([{"file": "three.3mf", "plates": 3, "sliced": 1, "text": text}])
+    );
+    assert!(err.contains(&format!("sx: plates: {text}\n")), "{err}");
+    let (v, err) = request("three.3mf#3".into());
+    assert_eq!(v["layerCount"], 40);
+    assert!(v.get("projectPlates").is_none(), "{v}");
+    assert!(!err.contains("sx: plates:"), "{err}");
+    let (v, _) = request("one.3mf".into());
+    assert!(v.get("projectPlates").is_none(), "{v}");
+}
+
 #[test]
 fn a_project_slices_with_its_own_settings() {
     let dir = temp_dir(format!("sx-cli-project-{}", std::process::id()));

@@ -77,6 +77,8 @@ export interface SliceSummary {
   chamber_cooling?: { mode: number; source: 'override' | 'project' | 'preset' | 'derived' | 'config'; filaments?: string[]; text: string }
   /** The plate that was sliced, for a 3MF or .sx3mf project. */
   plate?: number
+  /** How many plates of the project have something to print, when it has more than one and no plate was asked for. */
+  plate_count?: number
   gcode_path?: string
   gcode_sha256?: string
   /** A Bambu Lab style .gcode.3mf holding the plate's G-code, when one was asked for. */
