@@ -5,8 +5,8 @@
 // loop pauses while the canvas is offscreen or the page is hidden.
 import { OriginPlanes } from './originplanes'
 import { FirstFrameGate } from './firstframe'
-import { PlateReveal, REVEAL_HIDDEN, revealPlayed } from './reveal'
-import { crossfadeFrom } from './crossfade'
+import { markRevealPlayed, PlateReveal, REVEAL_HIDDEN, revealPlayed } from './reveal'
+import { crossfadeFrom, fadeOut, stillOver } from './crossfade'
 import { SceneHold, type Held } from './scene-hold'
 import { LoadingWisp, lightStudio } from './wisp'
 import { gpuProfile } from './gpu'
@@ -32,6 +32,7 @@ import {
   PerspectiveCamera,
   Plane,
   Raycaster,
+  Scene,
   SRGBColorSpace,
   Vector2,
   Vector3,
@@ -771,7 +772,7 @@ class ViewportImpl implements Viewport {
     // Through kick, never a bare requestAnimationFrame: a listener that invalidated during this tick has already
     // queued the next one, and a second request would start a second loop that renders every frame again.
     // A reveal still waiting on the plate's first frame needs the tick after it to start.
-    const revealNext = revealing || (this.reveal !== null && !this.reveal.started)
+    const revealNext = revealing || (this.reveal !== null && !this.reveal.started && this.veil === null && !this.hold.waiting)
     if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealNext) this.kick()
   }
 
@@ -789,10 +790,19 @@ class ViewportImpl implements Viewport {
     return true
   }
 
-  /** Advances the reveal; true while it wants frames. It starts once the plate has drawn with the model. */
+  /** Ends a reveal still to play or playing on the settled plate, and keeps it from playing again in this window. */
+  private skipReveal(): void {
+    markRevealPlayed()
+    if (!this.reveal) return
+    this.reveal.finish(this.setRevealPlate)
+    this.reveal = null
+    this.canvas.dataset['reveal'] = 'done'
+  }
+
+  /** Advances the reveal; true while it wants frames. It starts once the plate has drawn, and never while a hold waits. */
   private stepReveal(now: number): boolean {
     const r = this.reveal
-    if (!r || this.frames === 0) return false
+    if (!r || this.frames === 0 || this.veil !== null || this.hold.waiting) return false
     // On Model's ground the outline traces the bed's footprint and fades once the grid is down (stage.ts).
     if (r.step(now, this.camera, this.stage.bed.widthMm / 2, this.stage.bed.depthMm / 2, this.theme.scene.selection, this.setRevealPlate)) {
       if (this.canvas.dataset['reveal'] !== 'playing') this.canvas.dataset['reveal'] = 'playing'
@@ -913,12 +923,14 @@ class ViewportImpl implements Viewport {
     this.renderer.info.reset()
     const bed = this.stage.bed
     this.rig.fitClip(Math.max(bed.widthMm, bed.depthMm, bed.heightMm * 0.6))
-    if (this.shadowDirty) {
+    // the veil's frame draws no scene, so the shadow it owes waits for the first frame that does
+    const veilFrame = this.veil === 'due'
+    if (this.shadowDirty && !veilFrame) {
       this.renderer.shadowMap.needsUpdate = true
       this.shadowDirty = false
     }
     const outline: Object3D[] = []
-    if (this.mode === 'prepare') {
+    if (this.mode === 'prepare' && !veilFrame) {
       for (const id of this.selection) {
         const o = this.objects.get(id)
         if (o) outline.push(o.group)
@@ -944,9 +956,14 @@ class ViewportImpl implements Viewport {
     this.stage.bakePendingContact()
     this.stage.placeViewLights(this.camera)
     // the handles draw over the finished picture, so their contrast colors reach the screen untouched by the grade
-    this.pipeline.render(this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++, overlay: this.handleGroups })
+    this.pipeline.render(veilFrame ? this.veilScene : this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++, overlay: veilFrame ? [] : this.handleGroups })
     // the new decor holds its programs now, so what it replaced can go without them being compiled again
     this.stage.releaseRetired()
+    // the bare backdrop is in the drawing buffer now: it stays over the view as a still, and the scene draws beneath
+    if (veilFrame) {
+      this.veil = stillOver(this.canvas)
+      this.dirty = true
+    }
     const swap = this.hold.takeSwap()
     if (swap) {
       // the old scene is in the drawing buffer now: copy it over the view, then swap the new one in beneath
@@ -1234,6 +1251,42 @@ class ViewportImpl implements Viewport {
     }
     const h = this.hold.release()
     if (h) this.applyHeld(h)
+    this.unveil()
+  }
+
+  /**
+   * Holds the view while a project opens, until the open lets go. A view with a model on screen keeps it, and the
+   * plates given meanwhile wait. A view with none draws only its backdrop (so neither a default bed nor a half-placed
+   * plate shows) and takes the plates behind it, framing and building them as they come. Off shows the last plate on
+   * the next frame, under the crossfade, bed and models together: the plate reveal (an outline traced over an empty
+   * view) does not play for it.
+   */
+  holdOpen(on: boolean): void {
+    if (on) {
+      if (this.objects.size === 0 && !this.hold.waiting) this.veil ??= 'due'
+      else this.hold.hold(true)
+      this.invalidate()
+      return
+    }
+    this.skipReveal()
+    if (this.hold.swapOnRelease()) this.invalidate()
+    else this.unveil()
+  }
+
+  /**
+   * While an open holds a view that had no model on it (holdOpen): 'due' until a frame of the bare backdrop is drawn,
+   * then that frame as a still over the view, which goes on drawing beneath it (its shaders compile, its plate frames)
+   * until the still fades out.
+   */
+  private veil: 'due' | HTMLCanvasElement | null = null
+  private readonly veilScene = new Scene()
+
+  private unveil(): void {
+    const v = this.veil
+    if (v === null) return
+    this.veil = null
+    if (v !== 'due') fadeOut(v, reducedMotion())
+    this.invalidate()
   }
 
   private readonly hold = new SceneHold<ViewportPlate, PreviewBuffers>()
@@ -4333,6 +4386,8 @@ class ViewportImpl implements Viewport {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    if (this.veil !== null && this.veil !== 'due') this.veil.remove()
+    this.veil = null
     this.compileClock.stop()
     for (const p of this.parked.values()) {
       clearTimeout(p.timer)

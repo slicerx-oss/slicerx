@@ -526,10 +526,13 @@ function useGlobalKeys(order: readonly string[]): void {
   }, [key])
 }
 
-/** Files dropped on the window or opened by file association go onto the plate. */
+/**
+ * Files dropped on the window or opened by file association go onto the plate. It listens before the first paint, so
+ * a file handed over at launch starts its open (and the studio's hold, AppState.revealHold) before the studio draws.
+ */
 function useFileDrops(): void {
   const host = useHost()
-  useEffect(() => {
+  useLayoutEffect(() => {
     let depth = 0
     const enter = (e: DragEvent) => {
       if (!e.dataTransfer?.types.includes('Files')) return

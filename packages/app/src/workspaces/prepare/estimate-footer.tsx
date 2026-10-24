@@ -19,6 +19,7 @@ import { sequenceProblem } from '../../plate/sequence-check'
 import { rolledBackNote } from '../../plate/timeline'
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate } from '../../state/actions'
 import { get, showSliced, shownSlice, toast, useApp } from '../../state/store'
+import { isBigSlice, sliceTimingsOf } from '../../state/slice-estimate'
 import { sliceFraction } from '../slice-progress'
 import { RolledBack } from './rolled-back'
 import { Loading } from '../../shell/loading'
@@ -38,8 +39,9 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   const slice = useApp((s) => s.slice)
   const plate = useApp((s) => s.plate)
   const auto = useApp((s) => s.autoSlice)
-  // Auto by size held a big plate's slice: Slice is the action, with a quiet line saying why.
+  // Auto by size held a big plate's slice, or a project just opened: Slice is the action, with a quiet line saying why.
   const held = useApp((s) => s.autoSlice && s.sliceHeld)
+  const heldLine = useApp((s) => (isBigSlice(s.plate, sliceTimingsOf(s.activePlate)) ? HELD_LINE : 'Slice to see time, filament and cost.'))
   // While a new slice runs the last one stays, stale, so the estimate never empties and comes back.
   const done = shownSlice(slice)
   // A strike in the slice holds Print and Export back. Before a slice, objects closer or taller than the printer
@@ -171,7 +173,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
     const stageLine = progress ? `Slicing: ${progress.stage}` : 'Slicing'
     return (
       <div className="slice-lite" data-section="estimate" data-testid="slice-estimate">
-        <p className="est-line" {...(held && !running ? { 'data-testid': 'slice-estimate-held' } : {})}>{running ? stageLine : plate.length ? (held ? HELD_LINE : auto ? 'Time, filament and cost appear after the first slice.' : 'Slice to see time, filament and cost.') : 'Add a model to the plate.'}</p>
+        <p className="est-line" {...(held && !running ? { 'data-testid': 'slice-estimate-held' } : {})}>{running ? stageLine : plate.length ? (held ? heldLine : auto ? 'Time, filament and cost appear after the first slice.' : 'Slice to see time, filament and cost.') : 'Add a model to the plate.'}</p>
         {running ? track : primary}
         {problems}
       </div>
@@ -209,7 +211,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
       </div>
       {held && done.stale && !running ? (
         <p className="est-line est-held" data-testid="slice-estimate-held">
-          {HELD_LINE}
+          {heldLine}
         </p>
       ) : null}
       {running && auto ? (

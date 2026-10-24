@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The wait over the plate while a model opens, in two phases. Before its first frame the ravens keep company (once the
 // wait has run past about 1.2 s). Once the model is drawn they leave, and an accent wisp runs the plate edge until the
-// import, repair and loading finish; the status line names the step.
+// import, repair and loading finish; the status line names the step. An open that starts a project holds the view until
+// it ends (AppState.revealHold), so nothing is drawn to run along and the ravens stay for all of it.
 import type { OpenStage } from '../lib/open-timing'
 
 export type LoadingPhase = 'off' | 'quiet' | 'ravens' | 'wisp'
@@ -14,12 +15,14 @@ export interface LoadingInput {
   long: boolean
   /** The stages the open has passed. */
   stages: ReadonlySet<OpenStage>
+  /** The view holds the open until it ends (AppState.revealHold). */
+  held?: boolean
 }
 
 /** Which wait shows: nothing, nothing yet (a short wait), the ravens before the first frame, the wisp after it. */
-export function loadingPhase({ loading, long, stages }: LoadingInput): LoadingPhase {
+export function loadingPhase({ loading, long, stages, held = false }: LoadingInput): LoadingPhase {
   if (!loading) return 'off'
-  if (stages.has('drawn')) return 'wisp'
+  if (stages.has('drawn') && !held) return 'wisp'
   return long ? 'ravens' : 'quiet'
 }
 

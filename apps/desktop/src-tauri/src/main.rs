@@ -129,6 +129,13 @@ fn main() {
             // A bridge build opens its own main window, with a web data store of its own on macOS.
             #[cfg(feature = "agent-bridge")]
             agent_bridge::open_main_window(app)?;
+            // The window opens in the page's background from the last run (prefs.rs), never a fixed color.
+            if let (Some((r, g, b)), Some(w)) = (
+                prefs::saved_background(&app.config().identifier),
+                tauri::Manager::get_webview_window(app, "main"),
+            ) {
+                let _ = w.set_background_color(Some(tauri::window::Color(r, g, b, 255)));
+            }
             crash::set_dir(app.handle());
             #[cfg(all(windows, not(debug_assertions)))]
             if let Some(w) = tauri::Manager::get_webview_window(app, "main") {
@@ -160,6 +167,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             prefs::prefs_save,
+            prefs::window_background_save,
             slicing::load_mesh,
             slicing::review_scripts,
             slicing::slice,

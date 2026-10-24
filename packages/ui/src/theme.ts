@@ -293,6 +293,17 @@ export function clearTheme(el?: HTMLElement): void {
   delete target.dataset['sxTheme']
 }
 
+/**
+ * The page's background as the applied theme paints it (the body's), as #rrggbb; null when it is not one solid color.
+ * The desktop shell and the browser app keep it, so the next start paints in it before the theme is applied.
+ */
+export function pageBackground(el: Element | null = typeof document !== 'undefined' ? document.body : null): string | null {
+  if (!el) return null
+  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/.exec(getComputedStyle(el).backgroundColor)
+  if (!m || (m[4] !== undefined && Number(m[4]) < 1)) return null
+  return `#${[m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('')}`
+}
+
 /** Calls back with each theme applied under the element (the document by default). Returns an unsubscribe. */
 export function onThemeChange(cb: (theme: Theme) => void, el?: EventTarget): () => void {
   const target = el ?? (typeof document !== 'undefined' ? document : undefined)

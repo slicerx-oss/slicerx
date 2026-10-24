@@ -470,11 +470,14 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         const rebuilt = first || key !== keyBefore || s.bed !== prev.bed || s.extruderAreas !== prev.extruderAreas
         towerBefore = shown
         keyBefore = key
-        // A new project opening over the old one: the view keeps the old scene until the new model's first frame and
-        // crossfades to it, so it never shows an empty plate in between. An open that ends empty lets go.
+        // An open that starts a project holds the view until it ends: the old scene (or the bare backdrop) stays, and its
+        // plate swaps in once, framed, with its printer's bed and its filaments, under a crossfade (AppState.revealHold).
+        // Another open over the old scene keeps it until the new model's first frame and crossfades to it, so it never
+        // shows an empty plate in between. An open that ends empty lets go.
         const view = vp as unknown as Viewport
-        if (!first && s.plateLoading && s.plate.length === 0 && prev.plate.length > 0) view.holdScene?.(true)
-        else if (!first && !s.plateLoading && prev.plateLoading) view.holdScene?.(false)
+        if (first ? s.revealHold : s.revealHold !== prev.revealHold) view.holdOpen?.(s.revealHold)
+        else if (!first && !s.revealHold && s.plateLoading && s.plate.length === 0 && prev.plate.length > 0) view.holdScene?.(true)
+        else if (!first && !s.revealHold && !s.plateLoading && prev.plateLoading) view.holdScene?.(false)
         // The toolpath shader warm-up holds every frame while it compiles, so it waits for a file being opened.
         if (first || s.plateLoading !== prev.plateLoading) view.holdWarmup?.(s.plateLoading || warmupWaitsForOpen)
         // Fit notes and markers belong to the objects on the plate: a new project or a removed object takes its own along.
@@ -593,10 +596,12 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       offs.push(onThemeChange(syncScene))
       offs.push(appStore.subscribe((s, p) => s.appearance.colorVision !== p.appearance.colorVision && syncScene()))
       offs.push(appStore.subscribe((s) => apply(s, false)))
-      // The loading wisp runs the plate edge once a loading model is drawn, until the open is done.
+      // The loading wisp runs the plate edge once a loading model is drawn, until the open is done; a held open shows
+      // no plate to run along.
       let wispOn = false
       const syncWisp = () => {
-        const on = appStore.getState().plateLoading && openStagesPassed().has('drawn')
+        const st = appStore.getState()
+        const on = st.plateLoading && !st.revealHold && openStagesPassed().has('drawn')
         if (on === wispOn) return
         wispOn = on
         ;(vp as unknown as Viewport).setLoadingWisp?.(on)

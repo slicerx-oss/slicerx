@@ -3,7 +3,7 @@
 // The first plate reveal: its timeline, the outline path the crackles follow, and once per window.
 import { beforeEach, describe, expect, it } from 'vitest'
 import { PerspectiveCamera } from 'three'
-import { BLOOM_PEAK, legShare, outlinePoint, PlateReveal, REVEAL_DELAY_MS, REVEAL_DWELL_MS, REVEAL_END_MS, REVEAL_GRID_AFTER_MS, REVEAL_TRACE_MS, revealPlate, revealPlayed, resetRevealPlayed, traceShare, type RevealPlate } from '../src/reveal'
+import { BLOOM_PEAK, legShare, markRevealPlayed, outlinePoint, PlateReveal, REVEAL_DELAY_MS, REVEAL_DWELL_MS, REVEAL_END_MS, REVEAL_GRID_AFTER_MS, REVEAL_TRACE_MS, revealPlate, revealPlayed, resetRevealPlayed, traceShare, type RevealPlate } from '../src/reveal'
 
 const at = (ms: number): RevealPlate => revealPlate(ms, { trace: 0, gridMs: 0, tint: 0 })
 
@@ -156,4 +156,13 @@ describe('the trace moves like a mass on a track', () => {
     expect(legShare(0.5)).toBeCloseTo(0.5)
     expect(BLOOM_PEAK).toBeLessThan(0.9)
   })
+
+describe('a project opened behind a hold', () => {
+  beforeEach(() => resetRevealPlayed())
+  it('keeps the window from playing the reveal: its plate arrives already drawn', () => {
+    expect(revealPlayed()).toBe(false)
+    markRevealPlayed()
+    expect(revealPlayed()).toBe(true)
+  })
+})
 })

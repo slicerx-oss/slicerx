@@ -78,7 +78,6 @@ const DESIGN_TOOL: PaneSection[] = [{ id: 'transform', icon: 'move', label: 'Tra
 // The picture a project shows while it opens; its code loads with the view, not with the app.
 // Push and pull's arrow and Distance box in the view; the tool itself runs there too, so it works with the pane shut.
 const PushInView = lazy(() => import('../cad/push-in-view').then((m) => ({ default: m.PushInView })))
-const OpeningPicture = lazy(() => import('../project/opening-preview').then((m) => ({ default: m.OpeningPicture })))
 const DesignLeft = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignLeft })))
 const DesignRight = lazy(() => import('./design/design-panes').then((m) => ({ default: m.DesignRight })))
 const Ribbon = lazy(() => import('./design/design-panes').then((m) => ({ default: m.Ribbon })))
@@ -126,6 +125,8 @@ export function Studio() {
   const nornOn = useApp((s) => s.norn.pick !== null || s.norn.before !== null)
   const gcodeOn = useGcodeView((s) => s.panel)
   const plate = useApp((s) => s.plate)
+  // An open that starts a project: its panels wait for it and show with its plate, once (AppState.revealHold).
+  const opening = useApp((s) => s.revealHold)
   const layout = useLayout()
   const manyPlates = useApp((s) => s.plates.length > 1)
   // The look and feel places the settings sidebar, its width, and the primary Slice action.
@@ -230,7 +231,7 @@ export function Studio() {
   const selected = plate[0]
 
   return (
-    <div className="studio" data-mode="prepare" data-layers={layers || undefined} data-slice={sliceState} data-slices={slicesDone} data-model-mode={cad ? modelMode : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
+    <div className="studio" data-mode="prepare" data-opening={opening || undefined} data-layers={layers || undefined} data-slice={sliceState} data-slices={slicesDone} data-model-mode={cad ? modelMode : undefined} data-sidebar={side} style={{ '--w-settings': `${layout.sidebar.width}px` } as CSSProperties}>
       {/* on a phone Model's tools are a bar along the bottom of the view instead; the ribbon on a desktop */}
       {design && !phone ? (
         // While the ribbon's code loads, an empty one of the same height holds its place, so the view does not jump
@@ -271,9 +272,6 @@ export function Studio() {
             <PushInView key={editKey} />
           </Suspense>
         ) : null}
-        <Suspense fallback={null}>
-          <OpeningPicture />
-        </Suspense>
         <SliceProgress />
         <StepReadingBar />
         {cad ? null : <ViewSelectionMenu />}
