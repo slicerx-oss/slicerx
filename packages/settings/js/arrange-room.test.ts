@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { clearanceRadius, keepOutBoxes, keepOutPolygons, MARGIN_SAFETY_MM, plateMargins, zoneKeep } from './arrange-room'
+import { byObjectApart, clearanceRadius, keepOutBoxes, keepOutPolygons, MARGIN_SAFETY_MM, plateMargins, zoneKeep } from './arrange-room'
 import { printerConfig } from './index'
 
 const plate = { origin: [0, 0] as const, size: { widthMm: 256, depthMm: 256 } }
@@ -41,5 +41,15 @@ describe('the keep-out areas of a printer', () => {
     expect(keepOutBoxes(both)).toEqual([{ x: 0, y: 0, w: 18, h: 28 }, { x: 226, y: 224, w: 30, h: 32 }])
     expect(keepOutPolygons(both)).toHaveLength(2)
     expect(keepOutPolygons({})).toEqual([])
+  })
+})
+
+describe('the spacing arrange keeps by object', () => {
+  it('is the clearance and the farthest reach of what the objects print round themselves', () => {
+    // a 5 mm brim on one part and none on the other: heimdall holds the brim's moves to the radius too
+    expect(byObjectApart(74, [5, 0])).toBe(79)
+    expect(byObjectApart(74, [])).toBe(74)
+    // by layer there is none
+    expect(byObjectApart(undefined, [5])).toBeUndefined()
   })
 })

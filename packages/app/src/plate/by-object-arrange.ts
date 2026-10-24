@@ -6,7 +6,7 @@
 // gets a lane of its own, so the gantry over a later one never meets an earlier one. The print order is the plate's
 // own order, which the 3MF keeps and the engine prints in.
 import type { Bed, SettingValue } from '@slicerx/contracts'
-import { zoneKeep } from '@slicerx/settings/arrange-room'
+import { byObjectApart, zoneKeep } from '@slicerx/settings/arrange-room'
 import { arrangeRules, byObjectOrder, byObjectPlan, gantryLane, overRod } from '@slicerx/settings/by-object'
 import type { PlateEntry } from '../state/store'
 import { currentMargins, printSizeOf, type ArrangeOptions, type ArrangeResult } from './arrange'
@@ -68,6 +68,10 @@ export async function arrangeByObject(
   const margins = { ...(opts.margins ?? currentMargins()), skirt: false }
   // The footprints whose lanes the next tall object keeps out of.
   const hulls = fixedTall.map((e) => shape(e).hull)
+  const reachOf = (e: PlateEntry) => {
+    const b = bounds(e.parts, e.transform)
+    return b ? margins.reach(printSizeOf(b)) : 0
+  }
   const depth = (e: PlateEntry) => {
     const b = bounds(e.parts, e.transform)
     return b ? b.max[1] - b.min[1] : 0
@@ -77,9 +81,13 @@ export async function arrangeByObject(
   for (const t of [...tall].sort((a, b) => depth(b) - depth(a))) {
     const b = bounds(t.parts, t.transform)
     const size = b ? printSizeOf(b) : { w: 0, h: 0, height: 0 }
-    const away = zoneKeep(margins.grow(size), margins.reach(size), opts.gapMm, margins.apart, !first.boxes)
+    // Its brim and skirt print under the gantry too, so its lane is wider by their reach.
+    const reach = margins.reach(size)
+    const apart = byObjectApart(margins.apart, [t, ...fixed, ...down].map(reachOf))
+    const away = zoneKeep(margins.grow(size), reach, opts.gapMm, apart, !first.boxes) - reach
     const lanes = hulls.map((h) => gantryLane(h, cfg, 0, bed.widthMm, away))
-    const r = await place([t], [...fixed, ...down], { ...opts, margins, zones: [...(opts.zones ?? []), ...lanes] })
+    // Left where it packs: the first one moved to the middle of the bed would leave no room for a lane either side.
+    const r = await place([t], [...fixed, ...down], { ...opts, margins, center: false, zones: [...(opts.zones ?? []), ...lanes] })
     const m = r.transforms[t.id]
     if (!m || stop?.()) return keep()
     const at = { ...t, transform: m }
