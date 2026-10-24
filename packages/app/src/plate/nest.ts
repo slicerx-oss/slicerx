@@ -10,7 +10,7 @@
 // When the engine cannot run, arrange falls back to the box packer in arrange.ts.
 import type { Bed, MeshPart } from '@slicerx/contracts'
 import { geom } from '../geom/client'
-import { nestItem, nestProblem, type NestFootprint, type NestOutline, type NestReply } from '@slicerx/settings/arrange-room'
+import { betterNest, byObjectSpacingModes, nestItem, nestProblem, type ByObjectSpacingMode, type NestFootprint, type NestOutline, type NestReply } from '@slicerx/settings/arrange-room'
 import { avoidAreas, currentMargins, printSizeOf, type ArrangeOptions, type ArrangeResult, type PrintMargins } from './arrange'
 import { bounds, multiply, type Mat4 } from './transform'
 
@@ -94,12 +94,32 @@ async function itemOf(e: NestEntry, margins: PrintMargins, copies = 1) {
   return nestItem(e.id, foot, size, b ? { x: b.min[0], y: b.min[1], w: size.w, h: size.h } : undefined, margins, copies)
 }
 
+/** itemOf with the object's reach as the by-object check counts it, when the arrange has one (ArrangeOptions.apartReach). */
+async function apartItemOf(e: NestEntry, opts: ArrangeOptions, margins: PrintMargins, copies = 1) {
+  const item = await itemOf(e, margins, copies)
+  const ar = opts.apartReach?.(e)
+  return ar === undefined ? item : { ...item, apartReach: ar }
+}
+
 async function run(req: Request, hooks: NestRun = {}): Promise<NestReply> {
   const margins = req.opts.margins ?? currentMargins()
-  const items = await Promise.all(req.moving.map((e) => itemOf(e, margins, req.copies ?? 1)))
-  const fixed = await Promise.all(req.fixed.map((e) => itemOf(e, margins)))
+  const items = await Promise.all(req.moving.map((e) => apartItemOf(e, req.opts, margins, req.copies ?? 1)))
+  const fixed = await Promise.all(req.fixed.map((e) => apartItemOf(e, req.opts, margins)))
   const towers = [...margins.keepOut, ...(margins.towerRoom ?? [])]
-  const problem = nestProblem({ bed: req.bed, items, fixed, avoid: [...avoidAreas(), ...(req.opts.zones ?? [])], towers, margins, gapMm: req.opts.gapMm, rotate: req.opts.rotate, stepDeg: req.opts.stepDeg, effort: req.opts.effort, center: req.center })
+  // Printing by object with reaches that differ, both spacings are nested and the better layout kept (byObjectSpacing).
+  const modes: (ByObjectSpacingMode | undefined)[] = margins.apart ? byObjectSpacingModes([...items, ...fixed].map((i) => i.apartReach ?? i.reach)) : [undefined]
+  let best: NestReply | undefined
+  for (const spacing of modes) {
+    if (best && hooks.stop?.()) break
+    const problem = nestProblem({ bed: req.bed, items, fixed, avoid: [...avoidAreas(), ...(req.opts.zones ?? [])], towers, margins, gapMm: req.opts.gapMm, rotate: req.opts.rotate, stepDeg: req.opts.stepDeg, effort: req.opts.effort, center: req.center, spacing })
+    const r = await nestOnce(problem, hooks)
+    best = best ? betterNest(best, r) : r
+  }
+  return best!
+}
+
+/** One nest session for `problem`, stepped until it finishes or `hooks.stop` says so. */
+async function nestOnce(problem: ReturnType<typeof nestProblem>, hooks: NestRun): Promise<NestReply> {
   const started = Date.now()
   let p = await geom().call<Progress>('nest.start', problem)
   try {

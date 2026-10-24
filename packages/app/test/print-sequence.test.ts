@@ -271,6 +271,59 @@ describe('arrange on a by-object plate', () => {
     for (const [p, q] of [[a, b], [a, c], [b, c]] as const) expect(hullDistance(p!, q!)).toBeGreaterThanOrEqual(73)
   })
 
+  /** Where an entry's parts sit on the bed: the hull of their corners, moved by its transform. */
+  const outline = (e: unknown) => {
+    const { parts, transform: t } = e as { parts: { positions: Float32Array }[]; transform: number[] }
+    const pts: [number, number][] = []
+    for (const p of parts) for (let i = 0; i + 2 < p.positions.length; i += 3) pts.push([t[0]! * p.positions[i]! + t[4]! * p.positions[i + 1]! + t[12]!, t[1]! * p.positions[i]! + t[5]! * p.positions[i + 1]! + t[13]!])
+    return hullOf(pts)
+  }
+  /** A 20 mm box under a 30 mm slab, 5 mm out each side at 10 mm: a flat underside support holds up. */
+  const ledge = (id: string, name: string) => {
+    const e = entry(id, name, 0, 0, 10) as unknown as { parts: ReturnType<typeof box>[] }
+    const top = box(30, 20, 3)
+    for (let i = 0; i < top.positions.length; i += 3) {
+      top.positions[i] = top.positions[i]! - 5
+      top.positions[i + 2] = top.positions[i + 2]! + 10
+    }
+    e.parts = [...e.parts, top]
+    return e as never
+  }
+  const supportOn = { ...A1, brim_type: 'no_brim', skirt_loops: 0, enable_support: true, support_type: 'tree(auto)', support_threshold_angle: 25 }
+  const gaps = () => {
+    const shapes = get().plate.map((e) => ({ id: e.id, hull: outline(e) }))
+    const out: Record<string, number> = {}
+    for (let i = 0; i < shapes.length; i++) for (let j = i + 1; j < shapes.length; j++) out[`${shapes[i]!.id}${shapes[j]!.id}`] = hullDistance(shapes[i]!.hull, shapes[j]!.hull)
+    return out
+  }
+
+  it('spaces parts with nothing to hold up by the clearance alone, with support on', async () => {
+    installPrintMargins(get)
+    const plate = [entry('a', 'Cube A', 0, 0, 10), entry('b', 'Cube B', 0, 0, 10), entry('c', 'Cube C', 0, 0, 10)]
+    set({ bed: { widthMm: 256, depthMm: 256, heightMm: 256 }, plate, plates: plates('by-object'), activePlate: 'p1', overrides: supportOn, objectSettings: {}, selection: null, selectedIds: [] })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    expect(sequenceProblem(get())).toBeNull()
+    const g = Object.values(gaps())
+    for (const d of g) expect(d).toBeGreaterThanOrEqual(40)
+    // No cube gets support, so no pair keeps the 7.9 mm a tree support pad would reach.
+    expect(Math.min(...g)).toBeLessThan(47.9)
+  })
+
+  it('keeps a supported part its pad from each neighbor, and drops it once the part prints no support', async () => {
+    installPrintMargins(get)
+    const plate = [entry('a', 'Cube A', 0, 0, 10), entry('b', 'Cube B', 0, 0, 10), entry('c', 'Cube C', 0, 0, 10), ledge('l', 'Ledge')]
+    set({ bed: { widthMm: 256, depthMm: 256, heightMm: 256 }, plate, plates: plates('by-object'), activePlate: 'p1', overrides: supportOn, objectSettings: {}, selection: null, selectedIds: [] })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    expect(sequenceProblem(get())).toBeNull()
+    const g = gaps()
+    for (const [pair, d] of Object.entries(g)) expect(d, pair).toBeGreaterThanOrEqual(pair.includes('l') ? 47.9 - 0.01 : 40)
+    // Support off for the ledge alone: no pair keeps a pad.
+    set({ objectSettings: { l: { enable_support: false } } })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    expect(sequenceProblem(get())).toBeNull()
+    expect(Math.min(...Object.entries(gaps()).filter(([pair]) => pair.includes('l')).map(([, d]) => d))).toBeLessThan(47.9)
+  })
+
   // The z27 plate: a 45 mm bracket on a printer whose gantry rod clears 34 mm, listed first.
   const z27 = { ...A1, extruder_clearance_height_to_rod: 34, brim_type: 'no_brim', skirt_loops: 0 }
   const span = (e: unknown) => {
