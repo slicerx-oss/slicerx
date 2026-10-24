@@ -19,12 +19,12 @@ export function appBrimTools(link: AppLinkCaller | undefined, appName: string): 
   }
   return [defineTool({
     name: 'app.brim_ears', version: '1.0.0', source: 'command', permission: 'read',
-    description: `Read brim ears on the shown plate in ${appName}, optionally for one object: zero-based indices, local and bed coordinates in mm, world diameter, connectivity to the first layer, effective brim type, linked copies, generation defaults and a revision for edits. Reads stored ears even when painted brim is disabled. Requires the app link; never reads a server-owned project.`,
+    description: `Read brim ears on the shown plate in ${appName}, optionally for one object: zero-based indices, local and bed coordinates in mm, world diameter, connectivity to the first layer, effective brim type, linked copies, generation defaults and a revision for edits. enabled is true when the effective brim type prints the stored ears (painted, or brim_ears, which uses them where an object has any and sharp corners otherwise); stored ears are read either way. Requires the app link; never reads a server-owned project.`,
     input: brimReadInput,
     run: (i) => call('brim.get', i),
   }), defineTool({
     name: 'project.brim_ears', version: '1.0.0', source: 'command', permission: 'slice',
-    description: `Edit brim ears for an explicit object on ${appName}'s shown plate. Read app_brim_ears first and pass its revision. Actions: add at x_mm/y_mm in bed coordinates; move one index; resize or remove indices; clear all; generate corners using max_angle and detection_mm. Diameter is 5 to 20 mm, rounded to 0.1 mm. Changes reach linked copies on other plates and form one toolbar Undo step. Returns actual state; reread app_brim_ears to verify. Does not change brim type: set brim_type to painted through project_set_overrides with --app or the app settings to print these ears. Refuses busy edits, locked linked objects, stale revisions and invalid indices.`,
+    description: `Edit brim ears for an explicit object on ${appName}'s shown plate. Read app_brim_ears first and pass its revision. Actions: add at x_mm/y_mm in bed coordinates; move one index; resize or remove indices; clear all; generate corners using max_angle and detection_mm. Diameter is 5 to 20 mm, rounded to 0.1 mm. Changes reach linked copies on other plates and form one toolbar Undo step. Returns actual state; reread app_brim_ears to verify. Does not change brim type: set brim_type to painted or brim_ears through project_set_overrides with --app or the app settings to print these ears. Refuses busy edits, locked linked objects, stale revisions and invalid indices.`,
     input: brimEditInput,
     run: (i) => call('brim.edit', i),
   })] as PilotTool<never>[]
