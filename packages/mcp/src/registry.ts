@@ -11,6 +11,7 @@ import { builtinTools, createAppFunctionTools, createCombinedPlanner, createKnow
 import kbIndex from '@slicerx/pilot/kb.json' with { type: 'json' }
 import type { ProjectRef } from './tools'
 import type { McpProject } from './project'
+import { ToolInputError } from './models'
 import type { NodeSlicerHost } from './slicerhost'
 
 /** Tools that need the app itself (its command palette, a web search key, the report card). */
@@ -86,6 +87,31 @@ function withHeightRanges(slicer: NodeSlicerHost, project: McpProject): NodeSlic
   }
 }
 
+/**
+ * The slicer the tools use for a project, naming the pairs in a by-object refusal: sx names objects, and copies share
+ * a name, so the plate's own plan gives their ids, with slicerx_arrange as the fix.
+ */
+function withClearancePairs(slicer: NodeSlicerHost, project: McpProject): NodeSlicerHost {
+  return {
+    ...slicer,
+    slice: async (req, opts) => {
+      try {
+        return await slicer.slice(req, opts)
+      } catch (e) {
+        if (!(e instanceof ToolInputError) || e.code !== 'sequence_clearance') throw e
+        let plan = null
+        try {
+          plan = project.clearanceOf(req.plate.objects, req.config as Record<string, SettingValue>)
+        } catch {
+          throw e
+        }
+        if (!plan) throw e
+        throw new ToolInputError(e.message, e.code, { ...e.details, needMm: plan.needMm, pairs: plan.pairs, tall: plan.tall, fix: 'slicerx_arrange' })
+      }
+    },
+  }
+}
+
 /** Builds the ToolContext each call runs with. */
 export function toolContext(deps: ContextDeps, token: ApprovalToken | undefined, signal: AbortSignal, progress?: (line: string, fraction?: number) => void): ToolContext {
   const project = deps.project.current
@@ -95,7 +121,7 @@ export function toolContext(deps: ContextDeps, token: ApprovalToken | undefined,
     ...(machine ? { machine } : {}),
   }
   return {
-    host: { printers: deps.printers ?? NO_PRINTERS, slicer: project ? withHeightRanges(deps.slicer, project) : deps.slicer, profiles: deps.profiles, ...(deps.setup ? { setup: deps.setup } : {}), ...(deps.geom ? { geom: deps.geom } : {}) },
+    host: { printers: deps.printers ?? NO_PRINTERS, slicer: project ? withClearancePairs(withHeightRanges(deps.slicer, project), project) : deps.slicer, profiles: deps.profiles, ...(deps.setup ? { setup: deps.setup } : {}), ...(deps.geom ? { geom: deps.geom } : {}) },
     sessionId: 'mcp',
     callId: `call-${Math.random().toString(36).slice(2, 10)}`,
     signal,

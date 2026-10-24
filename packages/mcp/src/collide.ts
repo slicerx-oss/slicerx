@@ -71,5 +71,7 @@ export function collisionError(why: string, objectNames: readonly string[] = [])
     collisions: parsed.items,
     fixes: parsed.fixes,
     allow_collisions: true,
+    // In a project, slicerx_arrange spaces a by-object plate by the clearance.
+    ...(plate ? {} : { fix: 'slicerx_arrange' }),
   })
 }
