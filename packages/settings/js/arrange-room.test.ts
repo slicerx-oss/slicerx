@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { betterNest, byObjectApart, byObjectSpacing, byObjectSpacingModes, clearanceRadius, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, nestProblem, plateMargins, zoneKeep, type NestItem } from './arrange-room'
+import { betterNest, byObjectApart, byObjectSpacing, byObjectSpacingModes, clearanceRadius, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, nestProblem, plateMargins, zoneKeep, type NestItem, type NestMargins } from './arrange-room'
 import { printerConfig } from './index'
 
 const plate = { origin: [0, 0] as const, size: { widthMm: 256, depthMm: 256 } }
@@ -117,5 +117,23 @@ describe('each by-object pair spaced by its own two parts', () => {
     // Without the check's reach, every pair keeps the plate-wide reach, as before.
     const plain = nestProblem({ bed: { widthMm: 256, depthMm: 256 }, items: [{ id: 'a', polygons: [], hull: [], grow: 0, reach: 7.9, copies: 1 }], fixed: [], avoid: [], towers: [], margins, gapMm: 6, rotate: false, center: true })
     expect(plain.options.apartMm).toBeCloseTo(48.9, 6)
+  })
+})
+
+describe("the nest request for the printer's keep-out areas", () => {
+  const margins: NestMargins = { grow: () => 0, reach: () => 0, skirt: false }
+  // the A1's wrap check corner, then a gantry lane
+  const base = { bed: { widthMm: 256, depthMm: 256 }, items: [], fixed: [], avoid: [{ x: 226, y: 224, w: 30, h: 32 }, { x: 0, y: 100, w: 256, h: 40 }], towers: [], gapMm: 6, rotate: false, center: true }
+
+  it('names them printing by object, so they keep the edge spacing there', () => {
+    const r = nestProblem({ ...base, keepOut: 1, margins: { ...margins, apart: 74 } })
+    expect(r.options).toMatchObject({ apartMm: 74, keepOutZones: 1 })
+    expect(r.zones).toHaveLength(2)
+  })
+
+  it('leaves a by-layer request as it was', () => {
+    const r = nestProblem({ ...base, keepOut: 1, margins })
+    expect(r.options).not.toHaveProperty('keepOutZones')
+    expect(JSON.stringify(r)).toBe(JSON.stringify(nestProblem({ ...base, margins })))
   })
 })

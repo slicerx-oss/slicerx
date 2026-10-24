@@ -290,3 +290,23 @@ describe('true shape nesting on a round bed', () => {
     }
   })
 })
+
+describe('true shape nesting next to an excluded area', () => {
+  it('printing by object an excluded area keeps the gap, not half the extruder clearance', async () => {
+    // the A1's 73 mm clearance radius: parts 74 mm apart, an ordinary zone half that. The excluded strip at the right
+    // has nothing printed in it, so a part keeps the 6 mm gap from it: 6 + 40 + 74 + 40 leaves 10 mm to x 170
+    setAvoidAreas([{ x: 170, y: 0, w: 30, h: 60 }])
+    const margins = marginsFor({ print_sequence: 'by object', extruder_clearance_radius: 73 })
+    expect(margins.apart).toBeGreaterThanOrEqual(73)
+    const bed = { widthMm: 200, depthMm: 60, heightMm: 50 }
+    const items = ['a', 'b'].map((id, i) => nestEntry(id, boxes([[0, 0, 40, 40]]), at(i * 45, 0)))
+    const r = await nestArrange(items, [], bed, { gapMm: 6, rotate: false, margins })
+    expect(r.leftOver).toEqual([])
+    const [a, b] = items.map((e) => placedBoxes(e.parts[0] as MeshPart, r.transforms[e.id]!)[0]!)
+    expect(gapOf(a!, b!)).toBeGreaterThanOrEqual(margins.apart! - 1e-3)
+    const area = { x0: 170, y0: 0, x1: 200, y1: 60 }
+    const near = Math.min(gapOf(a!, area), gapOf(b!, area))
+    expect(near).toBeGreaterThanOrEqual(6 - 1e-3)
+    expect(near).toBeLessThan(37)
+  })
+})

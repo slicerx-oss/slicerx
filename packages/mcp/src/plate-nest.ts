@@ -7,7 +7,7 @@
 // counts in bed coordinates; the nest counts from the printable area's front left corner.
 import type { EngineCall } from '@slicerx/cad-history'
 import type { MeshPart, SettingValue } from '@slicerx/contracts'
-import { betterNest, byObjectApart, byObjectSpacingModes, keepOutBoxes, layoutCenterShift, nestItem, nestProblem, plateMargins, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
+import { betterNest, byObjectApart, byObjectSpacingModes, keepOutBoxes, layoutCenterShift, nestItem, nestProblem, placesMore, plateMargins, withoutKeepOut, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
 import { arrangeReach, arrangeRules, CELL_MM, gantryLane, objectGetsSupport, overRod } from '@slicerx/settings/by-object'
 import { marginFlag as flag, marginNumber, marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
 import type { BedArea } from './bed'
@@ -114,12 +114,15 @@ export async function nestPlate(engine: EngineCall, p: NestPlate, cache: Footpri
   const items = await Promise.all(p.moving.map((o) => itemOf(engine, o, origin, cache)))
   const fixed = await Promise.all(p.fixed.map((o) => itemOf(engine, o, origin, cache)))
   const towers = [...margins.keepOut, ...margins.towerRoom]
+  // the printer's keep-out areas first, then the zones of this arrange (gantry lanes)
+  const keepOut = avoidOf(p.config, origin)
   // Printing by object with reaches that differ, both spacings are nested and the better layout kept, as the app does.
   const modes = margins.apart ? byObjectSpacingModes([...items, ...fixed].map((i) => i.apartReach ?? i.reach)) : [undefined]
   let r: NestReply | undefined
   for (const spacing of modes) {
-    const problem = nestProblem({ bed: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm, ...(p.bed.circle ? { round: true } : {}) }, items, fixed, avoid: [...avoidOf(p.config, origin), ...(p.zones ?? []).map((q) => ({ ...q, x: q.x - origin[0], y: q.y - origin[1] }))], towers, margins, gapMm: p.gapMm, rotate: false, center: p.center, spacing })
-    const next = (await engine('nest.arrange', problem)) as NestReply
+    const problem = nestProblem({ bed: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm, ...(p.bed.circle ? { round: true } : {}) }, items, fixed, avoid: [...keepOut, ...(p.zones ?? []).map((q) => ({ ...q, x: q.x - origin[0], y: q.y - origin[1] }))], keepOut: keepOut.length, towers, margins, gapMm: p.gapMm, rotate: false, center: p.center, spacing })
+    let next = (await engine('nest.arrange', problem)) as NestReply
+    if ('keepOutZones' in problem.options && next.leftOver.length > 0) next = placesMore(next, (await engine('nest.arrange', withoutKeepOut(problem))) as NestReply)
     r = r ? betterNest(r, next) : next
   }
   if (!r) throw new Error('no nest')
