@@ -4,7 +4,8 @@
 // (packages/core/src/collide/rules.rs), so the app's check and the engine cannot drift apart.
 import { describe, expect, it } from 'vitest'
 import golden from '../fixtures/by-object-golden.json'
-import { beamCells, byObjectHead, byObjectPlan, byObjectReach, gantryMeets, isDelta, radiusHit, type ByObjectShape, type Pt } from './by-object'
+import type { SettingValue } from '@slicerx/contracts'
+import { beamCells, byObjectHead, byObjectPlan, byObjectReach, gantryMeets, getsSupport, hasOverhang, isDelta, objectGetsSupport, overhangLimitDeg, placedShape, radiusHit, shapeReach, type ByObjectShape, type Pt } from './by-object'
 
 type Span = [number, number]
 const box = (id: string, x: number, y: Span, top: number, reachMm = 0): ByObjectShape => {
@@ -43,5 +44,26 @@ describe('the by-object rules give the engine\'s answers', () => {
 
   it('how far an object\'s own first layer prints past it', () => {
     for (const c of golden.reach) expect(Math.round(byObjectReach(c.config, c.brimMm) * 1e6) / 1e6, c.name).toBe(c.reachMm)
+  })
+
+  it('whether an object gets support, so the support pad counts in its reach', () => {
+    const round = (v: number) => Math.round(v * 1e6) / 1e6
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    expect(golden.support.length).toBeGreaterThan(10)
+    for (const c of golden.support) {
+      const plate = c.config as Record<string, SettingValue>
+      const own = { ...plate, ...(c.object as Record<string, SettingValue>) }
+      const parts = [{ positions: c.mesh.positions, indices: c.mesh.indices }]
+      const m = c.transform ?? identity
+      expect(round(overhangLimitDeg(own)), c.name).toBe(c.limitDeg)
+      const overhang = hasOverhang(parts, m, own)
+      expect(overhang, c.name).toBe(c.overhang)
+      expect(getsSupport(own, c.enforcers, overhang), c.name).toBe(c.getsSupport)
+      const supported = objectGetsSupport(own, c.enforcers, parts, m)
+      expect(supported, c.name).toBe(c.getsSupport)
+      // The plan's reach of the shape the app and the MCP server build: the plate's config, the object's own settings.
+      const shape = { ...placedShape('o', c.name, [c.mesh.positions], m), supported, settings: c.object as Record<string, SettingValue> }
+      expect(round(shapeReach(shape, plate)), c.name).toBe(c.reachMm)
+    }
   })
 })

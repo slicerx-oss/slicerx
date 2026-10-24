@@ -8,7 +8,7 @@
 // zones and the MCP server's read-back say the same.
 import type { SettingValue } from '@slicerx/contracts'
 import { clearanceRadius, type Rect } from './arrange-room'
-import { marginNumber as num, marginText, printedGrowth, supportReach, widthMm } from './print-margins'
+import { marginFlag, marginNumber as num, marginText, printedGrowth, supportReach, widthMm } from './print-margins'
 import headShapes from '../head-shapes.json'
 
 export type Pt = [number, number]
@@ -82,6 +82,162 @@ export function byObjectReach(cfg: Record<string, SettingValue>, brimMm: number)
   return under + Math.max(0, num(cfg['skirt_distance'], 2)) + loops * spacing
 }
 
+/** A part's triangles as the engine slices them: corners (x, y, z, mm, in the part's own space) and corner indices, three a triangle, wound with their normals out. */
+export interface ByObjectMesh {
+  positions: ArrayLike<number>
+  indices: ArrayLike<number>
+}
+
+/**
+ * Whether sx runs the support pass for an object with these settings: support on, and with manual support only when an
+ * enforcer (a volume or painted triangles) asks for some.
+ */
+export function supportRuns(cfg: Record<string, SettingValue>, enforcers: boolean): boolean {
+  return marginFlag(cfg['enable_support']) && (!marginText(cfg['support_type']).includes('manual') || enforcers)
+}
+
+/** Degrees added to the steepest underside the support planners hold up, so the app's answer is never looser than the slice. */
+export const OVERHANG_MARGIN_DEG = 5
+
+/**
+ * The steepest underside, degrees from the bed, that any of sx's support planners can find an overhang under with `cfg`,
+ * plus OVERHANG_MARGIN_DEG: the threshold angle plus a degree; at 0, the steeper of what normal support's
+ * `support_threshold_overlap` of the outer wall allows at the tallest layer and 30 degrees for trees.
+ */
+export function overhangLimitDeg(cfg: Record<string, SettingValue>): number {
+  const threshold = num(cfg['support_threshold_angle'], 30)
+  let found: number
+  if (threshold > 0) {
+    found = Math.min(threshold + 1, 89)
+  } else {
+    const h = Math.max(num(cfg['layer_height'], 0.2), num(cfg['initial_layer_print_height'], 0.2), 0.01)
+    const nozzle = num(cfg['nozzle_diameter'], 0.4)
+    const general = widthMm(cfg['line_width'], nozzle, 0.42)
+    const outer = cfg['outer_wall_line_width'] === undefined ? nozzle * 1.125 : widthMm(cfg['outer_wall_line_width'], nozzle, general)
+    const step = outer * (1 - num(cfg['support_threshold_overlap'], 50) / 100)
+    found = Math.max(step > 1e-9 ? (Math.atan(h / step) * 180) / Math.PI : 90, 30)
+  }
+  return Math.min(found + OVERHANG_MARGIN_DEG, 90)
+}
+
+/**
+ * Whether an object, its parts placed by `m` (column-major 4x4, bed mm), has an underside any support planner of sx
+ * could hold up with `cfg`: the engine's rule (packages/core/src/collide/rules.rs `has_overhang`), never no where the
+ * slice finds an overhang. Yes for a face looking down flatter than overhangLimitDeg off the bed, any face looking
+ * down within the first `enforce_support_layers` layers, a keel of two such faces flatter than the limit, or a corner
+ * off the bed with nothing lower round it (a part hanging from a point).
+ */
+export function hasOverhang(parts: readonly ByObjectMesh[], m: readonly number[], cfg: Record<string, SettingValue>): boolean {
+  const EPS = 1e-3
+  const placed = parts.map((p) => {
+    const n = Math.floor(p.positions.length / 3)
+    const out = new Float64Array(n * 3)
+    for (let i = 0; i < n; i++) {
+      const x = p.positions[3 * i]!
+      const y = p.positions[3 * i + 1]!
+      const z = p.positions[3 * i + 2]!
+      out[3 * i] = m[0]! * x + m[4]! * y + m[8]! * z + m[12]!
+      out[3 * i + 1] = m[1]! * x + m[5]! * y + m[9]! * z + m[13]!
+      out[3 * i + 2] = m[2]! * x + m[6]! * y + m[10]! * z + m[14]!
+    }
+    return out
+  })
+  let base = Infinity
+  for (const P of placed) for (let i = 2; i < P.length; i += 3) base = Math.min(base, P[i]!)
+  if (!Number.isFinite(base)) return false
+  const limit = (overhangLimitDeg(cfg) * Math.PI) / 180
+  const flat = Math.cos(limit)
+  const enforce = Math.max(0, Math.floor(num(cfg['enforce_support_layers'], 0)))
+  const enforceTop = enforce > 0 ? base + num(cfg['initial_layer_print_height'], 0.2) + enforce * num(cfg['layer_height'], 0.2) : -Infinity
+  const q = (v: number) => Math.round(v * 1000)
+  const key = (P: Float64Array, i: number) => `${q(P[i]!)},${q(P[i + 1]!)},${q(P[i + 2]!)}`
+  // Lowest corners of downward faces (true once something lower is found round them), and each edge of a downward
+  // face with the far corners of the faces on it.
+  const lows = new Map<string, boolean>()
+  const lowZ = new Set<number>()
+  const edges = new Map<string, number[][]>()
+  for (let k = 0; k < placed.length; k++) {
+    const P = placed[k]!
+    const I = parts[k]!.indices
+    for (let t = 0; t + 2 < I.length; t += 3) {
+      const a = I[t]! * 3
+      const b = I[t + 1]! * 3
+      const c = I[t + 2]! * 3
+      if (a + 2 >= P.length || b + 2 >= P.length || c + 2 >= P.length) continue
+      const ux = P[b]! - P[a]!, uy = P[b + 1]! - P[a + 1]!, uz = P[b + 2]! - P[a + 2]!
+      const vx = P[c]! - P[a]!, vy = P[c + 1]! - P[a + 1]!, vz = P[c + 2]! - P[a + 2]!
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx
+      const len = Math.sqrt(nx * nx + ny * ny + nz * nz)
+      if (len < 1e-12 || nz / len > -1e-9) continue
+      const za = P[a + 2]!, zb = P[b + 2]!, zc = P[c + 2]!
+      if (Math.max(za, zb, zc) <= base + EPS) continue
+      if (-nz / len > flat || Math.min(za, zb, zc) < enforceTop) return true
+      const low = zb < za ? (zc < zb ? c : b) : zc < za ? c : a
+      if (P[low + 2]! > base + EPS) {
+        const kl = key(P, low)
+        if (!lows.has(kl)) {
+          lows.set(kl, false)
+          lowZ.add(q(P[low + 2]!))
+        }
+      }
+      for (const [p, r, far] of [[a, b, c], [b, c, a], [c, a, b]] as const) {
+        const kp = key(P, p)
+        const kr = key(P, r)
+        const ek = kp <= kr ? `${kp}|${kr}` : `${kr}|${kp}`
+        const list = edges.get(ek)
+        const corner = [P[far]!, P[far + 1]!, P[far + 2]!]
+        if (list) list.push(corner)
+        else edges.set(ek, [corner])
+      }
+    }
+  }
+  // A keel: an edge both its downward faces rise away from, so it is the lowest line across them.
+  for (const [ek, far] of edges) {
+    if (far.length !== 2) continue
+    const [p, r] = ek.split('|').map((s) => s.split(',').map((v) => Number(v) / 1000)) as [number[], number[]]
+    const d = [r[0]! - p[0]!, r[1]! - p[1]!, r[2]! - p[2]!]
+    const dd = d[0]! * d[0]! + d[1]! * d[1]! + d[2]! * d[2]!
+    if (dd < 1e-12 || Math.max(p[2]!, r[2]!) <= base + EPS) continue
+    const rises = (c: number[]) => {
+      const w = [c[0]! - p[0]!, c[1]! - p[1]!, c[2]! - p[2]!]
+      return w[2]! - (d[2]! * (w[0]! * d[0]! + w[1]! * d[1]! + w[2]! * d[2]!)) / dd > 1e-6
+    }
+    if (rises(far[0]!) && rises(far[1]!) && Math.atan2(Math.abs(d[2]!), Math.hypot(d[0]!, d[1]!)) < limit) return true
+  }
+  if (lows.size === 0) return false
+  for (let k = 0; k < placed.length; k++) {
+    const P = placed[k]!
+    const I = parts[k]!.indices
+    for (let t = 0; t + 2 < I.length; t += 3) {
+      const a = I[t]! * 3
+      const b = I[t + 1]! * 3
+      const c = I[t + 2]! * 3
+      if (a + 2 >= P.length || b + 2 >= P.length || c + 2 >= P.length) continue
+      const lowest = Math.min(P[a + 2]!, P[b + 2]!, P[c + 2]!)
+      for (const v of [a, b, c]) {
+        if (P[v + 2]! > lowest + 1e-6 && lowZ.has(q(P[v + 2]!))) {
+          const kv = key(P, v)
+          if (lows.has(kv)) lows.set(kv, true)
+        }
+      }
+    }
+  }
+  for (const lower of lows.values()) if (!lower) return true
+  return false
+}
+
+/** Whether sx can print support under an object: the pass runs for it (supportRuns) and an enforcer or, with automatic support, an overhang asks for some. */
+export function getsSupport(cfg: Record<string, SettingValue>, enforcers: boolean, overhang: boolean): boolean {
+  return supportRuns(cfg, enforcers) && (enforcers || (!marginText(cfg['support_type']).includes('manual') && overhang))
+}
+
+/** getsSupport for an object's parts placed by `m`, reading the mesh only when support runs and no enforcer settles it. */
+export function objectGetsSupport(cfg: Record<string, SettingValue>, enforcers: boolean, parts: readonly ByObjectMesh[], m: readonly number[]): boolean {
+  if (!supportRuns(cfg, enforcers)) return false
+  if (enforcers) return true
+  return !marginText(cfg['support_type']).includes('manual') && hasOverhang(parts, m, cfg)
+}
+
 /** The outer nozzle diameter assumed for the head, mm. */
 const OUTER_NOZZLE_MM = 4
 
@@ -91,8 +247,12 @@ export interface ByObjectShape {
   name: string
   hull: Pt[]
   top: number
-  /** How far its own first layer prints past the footprint (byObjectReach), mm; unset, what every part prints with the config. */
+  /** How far its own first layer prints past the footprint (byObjectReach), mm; unset, what it prints with its settings. */
   reachMm?: number
+  /** Whether it gets support (objectGetsSupport), so its support's pad counts in its reach; unset, whenever its settings turn support on. */
+  supported?: boolean
+  /** Its own settings over the plate's. */
+  settings?: Record<string, SettingValue>
 }
 
 export interface ByObjectPair {
@@ -268,16 +428,20 @@ function gantryOf(cfg: Record<string, SettingValue>, head?: ByObjectHead) {
 const ySpan = (h: readonly Pt[]): [number, number] => [Math.min(...h.map((p) => p[1])), Math.max(...h.map((p) => p[1]))]
 
 /**
- * How far `o`'s own first layer prints past its footprint, mm: its reachMm, else what prints round every part with
- * `cfg` (its brim as printed, a raft, a skirt of its own; printedGrowth). Support counts only in the slice, which knows
- * whether the part prints any.
+ * How far `o`'s own first layer prints past its footprint, mm: its reachMm, else what prints round it with `cfg` and
+ * its own settings (its brim as printed, a raft, a skirt of its own; printedGrowth), and its support's pad when it gets
+ * support (`supported`, as the engine's part_reach counts it).
  */
-function reachOf(o: ByObjectShape, cfg: Record<string, SettingValue>): number {
+export function shapeReach(o: ByObjectShape, cfg: Record<string, SettingValue>): number {
   if (o.reachMm !== undefined) return o.reachMm
+  const own = o.settings ? { ...cfg, ...o.settings } : cfg
   const xs = o.hull.map((p) => p[0])
   const [y0, y1] = ySpan(o.hull)
-  return byObjectReach({ ...cfg, enable_support: false }, printedGrowth(cfg, { w: Math.max(...xs) - Math.min(...xs), h: y1 - y0, height: o.top }))
+  const grown = printedGrowth(own, { w: Math.max(...xs) - Math.min(...xs), h: y1 - y0, height: o.top })
+  return byObjectReach(o.supported === false ? { ...own, enable_support: false } : own, grown)
 }
+
+const reachOf = shapeReach
 
 /** The y span of everything `o` prints, mm: its footprint and what prints round it. */
 function printSpan(o: ByObjectShape, cfg: Record<string, SettingValue>): Span {

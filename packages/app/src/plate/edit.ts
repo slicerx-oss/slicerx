@@ -168,7 +168,7 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   const cfg = byObjectConfig(get())
   let r: ArrangeResult & { order?: string[] }
   try {
-    r = cfg ? await arrangeByObject(plate, moving, fixed, bed, opts, cfg, place, hooks.stop) : await place(moving, fixed, opts)
+    r = cfg ? await arrangeByObject(plate, moving, fixed, bed, opts, cfg, place, hooks.stop, get().objectSettings) : await place(moving, fixed, opts)
   } finally {
     endRun(hooks.token)
   }
