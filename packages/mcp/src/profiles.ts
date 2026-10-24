@@ -6,7 +6,7 @@ import type { EasyGoal, SettingSection, SettingValue } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
 import { applyEasy, EASY_MAP, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, printerConfig, printerProfile, processConfig, resolvedNozzles, resolvedProfile, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore } from './data'
-import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileFor, sameValue } from './settings'
+import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileByName, sameValue } from './settings'
 
 export type ProfileSource = 'slicerx' | 'knowledge' | 'intent' | 'stock'
 
@@ -106,12 +106,16 @@ export class ProfileCatalog {
     return Object.fromEntries(SUPPORT_KEYS.flatMap((k) => (from[k] === undefined ? [] : [[k, from[k] as SettingValue]])))
   }
 
-  /** The printer model a printer profile stands for: `machine:<id>` itself, a knowledge printer by its name. */
+  /**
+   * The printer model a printer profile stands for, whose process and supports a slice of it starts from: `machine:<id>`
+   * itself, a knowledge printer by its name. A knowledge printer linked to a profile of another name (printerProfileFor)
+   * takes only its model and clearances from it, in its printer layer.
+   */
   printerModel(query: string): string | undefined {
     const p = this.find(query)
     if (p?.section !== 'printer') return undefined
     if (p.id.startsWith('machine:')) return p.id.slice('machine:'.length)
-    return printerProfileFor(p.name)
+    return printerProfileByName(p.name)
   }
 
   list(): ProfileSummary[] {

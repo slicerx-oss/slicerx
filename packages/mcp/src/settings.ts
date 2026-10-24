@@ -4,7 +4,7 @@
 // the Easy mapping from @slicerx/settings.
 import type { EasyGoal, PrintConfig, SettingDef, SettingIssue, SettingValue } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
-import { applyEasy, coerce, easyControlFor, goalEasy, listPrinterProfiles, printerConfig, sameValue, validate } from '@slicerx/settings'
+import { applyEasy, coerce, easyControlFor, goalEasy, listPrinterProfiles, modelsForPrinter, printerConfig, printerProfile, sameValue, validate } from '@slicerx/settings'
 import { normalizeId, type DataStore, type KnowledgeEntry } from './data'
 
 export { sameValue }
@@ -316,10 +316,47 @@ export function filamentLayer(store: DataStore, entry: KnowledgeEntry): Layer {
   return layer
 }
 
-/** SlicerX's own profile of a printer from the knowledge base, by its name ("Bambu Lab A1" is bambu-a1), if it has one. */
-export function printerProfileFor(name: string): string | undefined {
+/** SlicerX's own profile of a printer from the knowledge base by its name ("Bambu Lab A1" is bambu-a1), if it has one. */
+export function printerProfileByName(name: string): string | undefined {
   return listPrinterProfiles().find((m) => `${m.vendor} ${m.model}` === name || m.model === name)?.id
 }
+
+/**
+ * SlicerX's own profile of the machine a knowledge printer is, for its model and clearances (printerLayer). First the
+ * profile of that name (printerProfileByName). Else the model printer-models.json links to the entry ("Original
+ * Prusa MK4S" is prusa-mk4s) whose bed is the entry's, x and y (the Voron files model the 300 mm kits); of several, the
+ * single toolhead one (the XL, not the XL with 5 toolheads). None when that leaves no profile or more than one.
+ */
+export function printerProfileFor(entry: KnowledgeEntry): string | undefined {
+  const named = printerProfileByName(entry.name)
+  if (named) return named
+  const bed = knowledgeBed(entry)
+  const same = modelsForPrinter(entry.id).flatMap((id) => {
+    const p = printerProfile(id)
+    return p && bed && sameBed(profileBed(p.buildVolume), bed) ? [p] : []
+  })
+  const one = same.length > 1 ? same.filter((p) => p.nozzleCount === 1) : same
+  return one.length === 1 ? one[0]!.id : undefined
+}
+
+/** A bed as x and y in mm; a round one is its diameter both ways. */
+type Bed = [number, number]
+
+function profileBed(v: { shape: string; x?: number; y?: number; diameter?: number }): Bed | undefined {
+  if (v.shape === 'circular') return v.diameter !== undefined ? [v.diameter, v.diameter] : undefined
+  return v.x !== undefined && v.y !== undefined ? [v.x, v.y] : undefined
+}
+
+function knowledgeBed(entry: KnowledgeEntry): Bed | undefined {
+  const vol = isRecord(entry.data['build_volume_mm']) ? entry.data['build_volume_mm'] : undefined
+  const d = num(vol?.['diameter_mm'])
+  if (d !== undefined) return [d, d]
+  const x = num(vol?.['x'])
+  const y = num(vol?.['y'])
+  return x !== undefined && y !== undefined ? [x, y] : undefined
+}
+
+const sameBed = (a: Bed | undefined, b: Bed): boolean => a !== undefined && a[0] === b[0] && a[1] === b[1]
 
 /**
  * Settings that say which machine a project prints on and what its head and frame clear, from SlicerX's profile of
@@ -351,7 +388,7 @@ export function printerLayer(store: DataStore, entry: KnowledgeEntry): Layer {
   const flavor = firmware === 'klipper' ? 'klipper' : firmware === 'bambu' ? 'marlin' : firmware === 'reprapfirmware' ? 'reprapfirmware' : firmware === 'prusa' || firmware === 'marlin' ? 'marlin2' : undefined
   const flavorDef = store.setting('gcode_flavor')
   if (flavor && flavorDef?.enumValues?.includes(flavor)) layer.set('gcode_flavor', { value: flavor, why: { reason: `${entry.name} runs ${String(firmware)} firmware.`, sources: [`knowledge:${entry.path}`] } })
-  const machine = printerProfileFor(entry.name)
+  const machine = printerProfileFor(entry)
   const own = machine ? (printerConfig(machine) as unknown as Record<string, unknown> | undefined) : undefined
   for (const [key, value] of Object.entries(own ?? {})) {
     const def = MACHINE_KEYS(key) ? store.setting(key) : undefined
