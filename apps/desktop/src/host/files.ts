@@ -10,6 +10,10 @@ import { listen } from '@tauri-apps/api/event'
 export function createTauriFiles(): FileHost {
   const web = createWebFiles()
   const recent: FileRef[] = []
+  // Files the system handed over at launch are asked for at once, while the app is still starting: they are in hand
+  // when the app first listens, so their open starts before the studio first draws and no default plate shows first.
+  let launch: FileRef[] | null = null
+  const asked = invoke<FileRef[] | null>('opened_take').then((refs) => void (launch = refs ?? []), () => void (launch = []))
   return {
     async open({ accept, multiple }) {
       const refs = await invoke<FileRef[]>('open_files', { accept, multiple: multiple ?? false })
@@ -32,6 +36,14 @@ export function createTauriFiles(): FileHost {
     onOpenRequest(cb) {
       // Files the system hands over (a double-clicked project, an "Open in SlicerX" link) wait in the shell until asked for.
       const takeOpened = () => void invoke<FileRef[]>('opened_take').then((refs) => refs.length && cb(refs, 'open'), () => undefined)
+      // the launch files go to the first listener only: at once when they are here, else when they come
+      const fromLaunch = () => {
+        const refs = launch ?? []
+        launch = []
+        if (refs.length) cb(refs, 'open')
+      }
+      if (launch !== null) fromLaunch()
+      else void asked.then(fromLaunch)
       const unlisten = listen('sx-open-files', takeOpened)
       takeOpened()
       const off = web.onOpenRequest(cb)

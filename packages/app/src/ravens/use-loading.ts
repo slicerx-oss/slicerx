@@ -9,7 +9,8 @@ import { loadingPhase, loadingWords, type LoadingPhase } from './loading-phase'
 
 export function useLoading(): { phase: LoadingPhase; words: string } {
   const loading = useApp((s) => s.plateLoading)
+  const held = useApp((s) => s.revealHold)
   const long = useWaited(loading)
   const stages = useSyncExternalStore(onOpenStage, openStagesPassed, openStagesPassed)
-  return { phase: loadingPhase({ loading, long, stages }), words: loadingWords(stages) }
+  return { phase: loadingPhase({ loading, long, stages, held }), words: loadingWords(stages) }
 }

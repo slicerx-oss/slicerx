@@ -10,7 +10,7 @@ interface Projector {
   stage: { bedRoot: { matrixWorld: unknown } }
   canvas: HTMLCanvasElement
 }
-type Slicing = { getState(): { slice: { status: string; stale?: boolean } } }
+type Slicing = { getState(): { slice: { status: string; stale?: boolean }; sliceHeld: boolean } }
 
 /** Where a bed point (mm) is on screen, in page pixels. */
 export const screenOf = (page: Page, x: number, y: number, z = 0) =>
@@ -53,11 +53,15 @@ export async function canvasCenter(page: Page): Promise<{ x: number; y: number }
  * Where a bed point is on screen once the view has settled for a press. A plate change slices on its own; when that
  * slice lands, the toolpath look's legend, layer strip and playback bar come up over the view and the camera frames
  * the plate again in the space they leave, so a press aimed before then lands somewhere else and turns the view. This
- * waits for the slice to be current, then for the same spot twice, further apart than the view's second look at its
- * overlays (600 ms), then for the canvas to be what is on that spot.
+ * waits for the slice to be current (or for a plate held for Slice, as an opened project is, where none is coming),
+ * then for the same spot twice, further apart than the view's second look at its overlays (600 ms), then for the
+ * canvas to be what is on that spot.
  */
 export async function aim(page: Page, x: number, y: number, z: number): Promise<{ x: number; y: number }> {
-  const sliced = () => page.evaluate(() => { const s = (window as unknown as { __sx: Slicing }).__sx.getState().slice; return s.status === 'done' && !s.stale })
+  const sliced = () => page.evaluate(() => {
+    const st = (window as unknown as { __sx: Slicing }).__sx.getState()
+    return (st.slice.status === 'done' && !st.slice.stale) || (st.sliceHeld && st.slice.status !== 'running')
+  })
   await expect.poll(sliced, { timeout: 60_000 }).toBe(true)
   return pressable(page, await steady(page, x, y, z))
 }

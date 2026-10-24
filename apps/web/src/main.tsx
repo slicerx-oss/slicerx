@@ -8,6 +8,19 @@ import { editionFromBuild } from '@slicerx/edition-config'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createWebHost } from './host'
+import { onThemeChange, pageBackground } from '@slicerx/ui/theme'
+
+// The page's background, kept for the next load's first paint (index.html), so a light theme never opens on a dark
+// frame.
+onThemeChange(() => {
+  const bg = pageBackground()
+  if (!bg) return
+  try {
+    if (localStorage.getItem('slicerx.pageBackground') !== bg) localStorage.setItem('slicerx.pageBackground', bg)
+  } catch {
+    // storage blocked: the next load paints the default first, as before
+  }
+})
 
 declare const __SX_FEATURE_STORE__: boolean
 declare const __SX_FEATURE_PILOT__: boolean

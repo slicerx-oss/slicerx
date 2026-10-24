@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The scene hold while a file opens: the old scene stays on screen, an empty plate and a cleared preview wait, and the
-// first plate with objects swaps in on the next frame under a crossfade. Whatever the view is given until that frame
-// replaces what waits, so the frame swaps in the latest plate and preview, never an earlier one. Kept apart from the
-// view so it can be tested.
+// first plate with objects swaps in on the next frame under a crossfade. A hold until release (a project opening) lets
+// nothing through until it is let go: the finished plate then swaps in on the next frame, once. Whatever the view is
+// given until that frame replaces what waits, so the frame swaps in the latest plate and preview, never an earlier one.
+// Kept apart from the view so it can be tested.
 
 /** What waits to go on screen: the plate and its options, and the preview (null clears it). */
 export interface Held<P, B> {
@@ -18,16 +19,31 @@ export class SceneHold<P extends { objects: readonly unknown[] }, B> {
   private holding = false
   /** A plate with objects came: the next frame swaps in what waits then. */
   private due = false
+  /** The swap waits for swapOnRelease, not for the first plate with objects. */
+  private untilRelease = false
 
   /** A hold or a swap waits. */
   get waiting(): boolean {
     return this.pending !== null
   }
 
-  /** Starts holding. What already waits for a swap keeps waiting, and the swap waits for a plate with objects again. */
-  hold(): void {
+  /**
+   * Starts holding. What already waits for a swap keeps waiting, and the swap waits for a plate with objects again, or,
+   * `untilRelease`, for swapOnRelease.
+   */
+  hold(untilRelease = false): void {
     this.pending ??= {}
     this.holding = true
+    if (untilRelease) this.untilRelease = true
+  }
+
+  /** Ends a hold until release: what waits swaps in on the next frame. False when nothing waits. */
+  swapOnRelease(): boolean {
+    this.untilRelease = false
+    if (!this.pending) return false
+    this.holding = false
+    this.due = true
+    return true
   }
 
   /** Stops holding: what waited, to go on screen at once, or null. */
@@ -36,6 +52,7 @@ export class SceneHold<P extends { objects: readonly unknown[] }, B> {
     this.pending = null
     this.holding = false
     this.due = false
+    this.untilRelease = false
     return h
   }
 
@@ -46,7 +63,7 @@ export class SceneHold<P extends { objects: readonly unknown[] }, B> {
   plate(plate: P, opts: { keepCamera?: boolean }): 'held' | 'swap' | 'now' {
     if (!this.pending) return 'now'
     this.pending.plate = [plate, opts]
-    if (this.holding && plate.objects.length > 0) {
+    if (this.holding && !this.untilRelease && plate.objects.length > 0) {
       this.holding = false
       this.due = true
     }

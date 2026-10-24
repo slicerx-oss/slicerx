@@ -44,11 +44,22 @@ describe('slice footer', () => {
   }
 
   it('with a big plate held by Auto slice, Slice is the action and a quiet line says why', () => {
-    const box = { id: 'b', name: 'Box', parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
+    // 700k triangles: a big slice by the size estimate
+    const box = { id: 'b', name: 'Box', parts: [{ indices: new Uint32Array(700_000 * 3), positions: new Float32Array(9) }], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
     set({ plate: [box] as never, autoSlice: true, sliceHeld: true, slice: { status: 'idle' } })
     const el = footer(true)
     expect(el.querySelector('[data-testid="slice-estimate-held"]')?.textContent).toBe('A big plate: it slices when you press Slice.')
     expect(el.querySelector('[data-testid="slice-estimate-slice"]')).not.toBeNull()
+    expect(el.querySelector('[data-testid="danger-slice-print"]')).toBeNull()
+    el.remove()
+  })
+
+  it('with a small project just opened (held for Slice), Slice is the action and the line asks for it', () => {
+    const box = { id: 'b', name: 'Box', parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
+    set({ plate: [box] as never, autoSlice: true, sliceHeld: true, slice: { status: 'idle' } })
+    const el = footer(true)
+    expect(el.querySelector('[data-testid="slice-estimate-held"]')?.textContent).toBe('Slice to see time, filament and cost.')
+    expect(el.querySelector('[data-testid="slice-estimate-slice"]')?.textContent).toContain('Slice plate')
     expect(el.querySelector('[data-testid="danger-slice-print"]')).toBeNull()
     el.remove()
   })

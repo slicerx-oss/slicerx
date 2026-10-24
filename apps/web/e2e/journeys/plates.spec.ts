@@ -862,7 +862,7 @@ test.describe('the fit check', () => {
       }
       return { x: (min[0]! + max[0]!) / 2, y: (min[1]! + max[1]!) / 2, z: max[2]! }
     })
-    // Aimed once the open's own slice is in: before then the press can land on the bed beside the clip.
+    // Aimed once the view is still (aim): a slice landing moves it, and the press can land on the bed beside the clip.
     const at = await aim(page, foot.x, foot.y, foot.z)
     await page.mouse.move(at.x, at.y)
     await page.mouse.down()

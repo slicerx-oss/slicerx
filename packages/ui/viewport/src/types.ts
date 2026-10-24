@@ -731,6 +731,12 @@ export interface Viewport {
    */
   holdScene(on: boolean): void
   /**
+   * Holds the view while a project opens, until it is let go: what is on screen stays (only the backdrop when no model
+   * is drawn yet), plates given meanwhile wait, and the plate reveal waits. Off swaps the last plate in on the next
+   * frame, framed, under the crossfade, and the reveal plays from there.
+   */
+  holdOpen(on: boolean): void
+  /**
    * Holds the toolpath shader warm-up back while a file opens. The warm-up's compile holds every frame until it is done,
    * so it waits for the open and for the frame that draws its plate. Off lets a waiting warm-up start.
    */

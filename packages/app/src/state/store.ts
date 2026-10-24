@@ -278,6 +278,11 @@ export interface AppState {
   plate: PlateEntry[]
   plateLoading: boolean
   /**
+   * An open that starts a project (a fresh open, or a project onto an empty plate) is in progress: the 3D view and the
+   * panels it changes wait for it and show its plate, printer, filaments and settings once, when it ends. Not saved.
+   */
+  revealHold: boolean
+  /**
    * An open in progress whose model is already on the plate as it will stay unless the open changes it (a binary STL
    * shown from its own triangles): the slice may start before the open ends. A change the open makes to the plate
    * stales that slice as any edit does.
@@ -706,6 +711,7 @@ export const appStore = createStore<AppState>()(() => ({
   bed: { ...GENERIC_BED },
   plate: [],
   plateLoading: false,
+  revealHold: false,
   sliceDuringOpen: false,
   arranging: null,
   selection: null,
