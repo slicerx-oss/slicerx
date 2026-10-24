@@ -41,17 +41,19 @@ afterEach(() => {
 it('stops a viewport start that is still trying when the view unmounts', async () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   set({ setup: null })
+  // The first import of the workspace and the viewport is the slow part: a cold worker on a busy machine takes tens of
+  // seconds to transform them. Load them before the clock that matters starts, so the wait below is only the render.
+  await Promise.all([import('../src/workspaces/studio'), import('@slicerx/viewport')])
   const el = document.createElement('div')
   document.body.append(el)
   const root = createRoot(el)
   flushSync(() => root.render(createElement(SlicerXApp, { host: stubHost() })))
   // The view loads lazily; its start begins once its stage is in the page. Unmount right then, with the start still
-  // loading the viewport or trying for a context (jsdom has no WebGL2, so every try fails).
-  for (let i = 0; i < 1000 && !document.querySelector('.vp-stage'); i++) await new Promise((r) => setTimeout(r, 10))
-  expect(document.querySelector('.vp-stage')).not.toBeNull()
+  // trying for a context (jsdom has no WebGL2, so every try fails). Wait for the stage itself, not a count of ticks.
+  await vi.waitFor(() => expect(document.querySelector('.vp-stage')).not.toBeNull(), { timeout: 45_000, interval: 10 })
   root.unmount()
-  // A start left running opens its 2D fallback once the viewport has loaded and the last retry (context-retry.ts,
-  // 1500 ms) has failed: about 3 s in a cold test worker. Wait well past that.
+  // A start left running opens its 2D fallback once the last retry (context-retry.ts, 1500 ms) has failed, about 3 s
+  // after the stage appears. Wait well past that.
   await new Promise((r) => setTimeout(r, 5000))
   expect(warn.mock.calls.filter(([m]) => String(m).startsWith('Viewport failed to start'))).toEqual([])
-}, 15_000)
+}, 90_000)
