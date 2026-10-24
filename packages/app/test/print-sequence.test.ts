@@ -153,6 +153,17 @@ describe('arrange on a by-object plate', () => {
     await arrangePlate('all', { gapMm: 6, rotate: false })
     expect(hullDistance(footprint(get().plate[0]), footprint(get().plate[1]))).toBeLessThan(10)
   })
+
+  it('keeps the radius the check holds a Bambu Lab printer to, the max radius of the profile', async () => {
+    installPrintMargins(get)
+    const plate = [entry('a', 'Cube A', 0, 0, 10), entry('b', 'Cube B', 0, 0, 10), entry('c', 'Cube C', 0, 0, 10)]
+    const bambu = { ...A1, printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73, brim_type: 'no_brim', skirt_loops: 0 }
+    set({ bed: { widthMm: 256, depthMm: 256, heightMm: 256 }, plate, plates: plates('by-object'), activePlate: 'p1', overrides: bambu, selection: null, selectedIds: [] })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    expect(sequenceProblem(get())).toBeNull()
+    const [a, b, c] = get().plate.map(footprint)
+    for (const [p, q] of [[a, b], [a, c], [b, c]] as const) expect(hullDistance(p!, q!)).toBeGreaterThanOrEqual(73)
+  })
 })
 
 describe('one print sequence for the plate', () => {

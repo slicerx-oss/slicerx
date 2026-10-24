@@ -77,7 +77,28 @@ const TOWER = { enable_prime_tower: true }
  */
 const ROOM: Box = { x0: 15 - 3 - 1, y0: 192 - 3 - 1, x1: 15 + 60 + 3 + 1, y1: 256 }
 
+/**
+ * Three 20 mm boxes printed by object on an A1, whose head is not measured, with the printer model and max radius a
+ * Bambu Studio project carries: sx then refuses objects inside the 73 mm max radius, the larger of the profile's two,
+ * so arrange has to keep that much between them, not the 40 mm extruder_clearance_radius.
+ */
+async function byObjectA1(h: Harness): Promise<void> {
+  writeFileSync(join(h.dir, 'part.stl'), boxStl(20, 20, 10))
+  await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
+  await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+  await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', printer_model: 'Bambu Lab A1', extruder_clearance_max_radius: 73, skirt_loops: 0, brim_type: 'no_brim' } })
+  await call(h, 'slicerx_arrange', { count: 3 })
+}
+
 describe('slicerx_arrange on true outlines', () => {
+  it('keeps the clearance the by-object check holds an A1 to between copies', async () => {
+    const h = await connect({ geomEngine: g.engine })
+    await byObjectA1(h)
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(3)
+    for (let i = 0; i < placed.length; i++) for (let j = i + 1; j < placed.length; j++) expect(gapOf(placed[i]!, placed[j]!)).toBeGreaterThanOrEqual(73)
+  })
+
   it('keeps every copy out of an excluded corner', async () => {
     const h = await connect({ geomEngine: g.engine })
     await project(h, boxStl(30, 30, 10), { bed_exclude_area: CORNER, skirt_loops: 0 })
@@ -135,6 +156,14 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
     await twoFilaments(h)
     await call(h, 'slicerx_arrange', { count: 16 })
     expect(await boxes(h)).toHaveLength(16)
+    const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+    expect(sliced.output.total.grams).toBeGreaterThan(0)
+  }, 240_000)
+
+  it('slices a by-object plate it spaced with no sequence_clearance refusal', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    await byObjectA1(h)
+    expect(await boxes(h)).toHaveLength(3)
     const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
     expect(sliced.output.total.grams).toBeGreaterThan(0)
   }, 240_000)

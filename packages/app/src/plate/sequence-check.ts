@@ -10,6 +10,7 @@ import { plateConfig } from './plates'
 import { plateSequence } from './plate-sequence'
 import type { AppState, PlateEntry } from '../state/store'
 import { hullOf } from './arrange'
+import { clearanceRadius } from '@slicerx/settings/arrange-room'
 import type { Mat4 } from './transform'
 
 type Pt = [number, number]
@@ -179,18 +180,6 @@ function crosses(a: Pt[], b: Pt[]): boolean {
 }
 
 /**
- * The clearance radius heimdall holds a by-object plate to, the engine's own choice (collide `clearance_radius`): Bambu
- * Studio's `extruder_clearance_max_radius` on a Bambu Lab printer, `extruder_clearance_radius` on the others.
- */
-export function clearanceRadius(cfg: Record<string, SettingValue>): number {
-  const model = cfg['printer_model']
-  const bambu = cfg['gcode_flavor'] === 'bambu' || (typeof model === 'string' && model.startsWith('Bambu Lab'))
-  const radius = num(cfg['extruder_clearance_radius'], 40)
-  // Orca's Bambu Lab profiles carry the max radius in extruder_clearance_radius (73 mm for the A1).
-  return bambu ? Math.max(num(cfg['extruder_clearance_max_radius'], 68), radius) : radius
-}
-
-/**
  * The problems of printing `entries` one after the other in this order with `cfg`, one sentence each, worded as the
  * engine words them. Empty when the plate prints safely by object.
  */
@@ -223,6 +212,9 @@ export function clearanceProblems(entries: readonly PlateEntry[], cfg: Record<st
   })
   return out
 }
+
+/** The radius the check holds a by-object plate to; arrange keeps the same one (@slicerx/settings/arrange-room). */
+export { clearanceRadius }
 
 type Inputs = Pick<AppState, 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides'>
 
