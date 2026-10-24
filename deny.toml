@@ -57,6 +57,11 @@ ignore = [
   "RUSTSEC-2026-0370",
   "RUSTSEC-2026-0371",
   "RUSTSEC-2026-0372",
+  # crypto-bigint 0.5.5 (2026-10-23, operations meant to be constant time can branch on secrets) comes in only
+  # through sx-link's WebRTC DTLS: str0m 0.24, dimpl and str0m-rust-crypto use p256, p384 and ecdsa 0.13, which
+  # sit on elliptic-curve 0.13 and crypto-bigint 0.5. The fix is in crypto-bigint 0.7.6 only, and the latest str0m
+  # (0.24.1), dimpl (0.8.0) and str0m-rust-crypto (0.6.0) still need the 0.13 curves. Remove when they move.
+  "RUSTSEC-2026-0387",
 ]
 
 [sources]
