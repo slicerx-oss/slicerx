@@ -41,6 +41,10 @@ describe('printer profiles', () => {
     expect((delta['printable_area'] as number[][]).length).toBe(72)
     expect(printerConfig('nope')).toBeUndefined()
   })
+  it('slices no taller than the build volume the send check holds the printer to', () => {
+    // The maker's printable height may sit under the box figure, never over it, or a print that slices is refused at send.
+    for (const p of listPrinterProfiles()) expect(Number(printerConfig(p.id)?.printable_height), p.id).toBeLessThanOrEqual(p.buildVolume.z + 0.1)
+  })
 })
 
 describe('filament profiles', () => {

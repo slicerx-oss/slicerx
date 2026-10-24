@@ -77,6 +77,12 @@ describe('preflight', () => {
     expect(fitted(0.5, 0.5)).toEqual([])
   })
 
+  it('lets an Ender-3 V3 KE print as tall as its profile slices', () => {
+    const ke: PrinterInfo = { ...printer, vendor: 'Creality', model: 'Ender-3 V3 KE', plugin: 'creality' }
+    const r = preflight(input({ printer: ke, config: { gcode_flavor: 'klipper' }, plateBed: { widthMm: 220, depthMm: 220, heightMm: 245 }, plateBounds: { min: [50, 50, 0], max: [120, 120, 243] } }))
+    expect(r.errors).toEqual([])
+  })
+
   it('says an error state once', () => {
     const r = preflight(input({ status: { ...idle, state: 'error', message: 'Nozzle clog' } }))
     expect(r.errors).toEqual(['Bay 2 reports an error: Nozzle clog. Clear it on the printer first.'])

@@ -51,7 +51,7 @@ export const CREALITY: PrinterModel[] = [
   }),
   creality({ id: 'creality-ender-3-v3-plus', name: 'Ender-3 V3 Plus', kinematics: 'corexz', enclosed: false, buildVolume: rect(300, 300, 330), nozzles: STD }),
   creality({ id: 'creality-ender-3-v3-se', name: 'Ender-3 V3 SE', kinematics: 'bed-slinger', enclosed: false, buildVolume: rect(220, 220, 250), nozzles: STD }),
-  creality({ id: 'creality-ender-3-v3-ke', name: 'Ender-3 V3 KE', kinematics: 'bed-slinger', enclosed: false, buildVolume: rect(220, 220, 240), nozzles: STD }),
+  creality({ id: 'creality-ender-3-v3-ke', name: 'Ender-3 V3 KE', kinematics: 'bed-slinger', enclosed: false, buildVolume: rect(220, 220, 245), nozzles: STD }),
   creality({ id: 'creality-hi', name: 'Creality Hi', kinematics: 'corexy', enclosed: true, buildVolume: rect(260, 260, 300), nozzles: STD, filamentSystem: 'cfs' }),
   creality({
     id: 'creality-ender-3-octoprint',
