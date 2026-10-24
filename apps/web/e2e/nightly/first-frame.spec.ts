@@ -6,7 +6,14 @@
 import { expect } from '@playwright/test'
 import { test } from '../browser-launch'
 import { expectFileDialog, interceptFileDialogs } from '../file-dialog'
-import { cellsIn, GL_SLOW, recordFrames, spread } from '../frames'
+import { cellsIn, GL_SLOW, middleOf, recordFrames, sharpest } from '../frames'
+
+/**
+ * The sharpest edge (frames.ts `sharpest`) the middle of the view shows with the plate drawn. A bare backdrop reads
+ * 2 or less in both themes, on the CSS before the first frame and on the scene's behind the plate. The plate reads 19
+ * or more from its first frame (the bed alone), and 50 or more once the model is on it.
+ */
+const PLATE_EDGE = 6
 
 test('the plate is drawn right after setup is skipped on a fresh install', { tag: ['@gpu', '@gpu-timing', '@nightly'] }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Runs at desktop width')
@@ -14,6 +21,8 @@ test('the plate is drawn right after setup is skipped on a fresh install', { tag
   await page.goto('./')
   // Setup opens on its first step, the theme; Skip, use defaults closes it from there.
   await expect(page.getByRole('heading', { name: 'Pick a theme' })).toBeVisible({ timeout: 120_000 })
+  // Only what the canvas draws is measured below: the view's controls (toolbars, legends, the playback bar) are hidden.
+  await page.addStyleTag({ content: '.vp > :not(.vp-stage) { visibility: hidden !important }' })
   const stop = await recordFrames(page)
   await page.getByRole('button', { name: 'Skip, use defaults' }).click()
   // The app marks the first plate as loaded (the objects list is in the right pane, shut at first).
@@ -28,19 +37,23 @@ test('the plate is drawn right after setup is skipped on a fresh install', { tag
   const view = await page.locator('.vp').boundingBox()
   const frames = await stop()
   expect(view, 'the 3D view is on screen').not.toBeNull()
-  const cells = cellsIn(view!, page.viewportSize()!)
-  // The plate drawn: the bed grid and the model, far from one flat color. It must show within a few seconds of the view
-  // coming up (on the Mac it stayed empty until Fit), and once shown it must not go empty again.
+  // The plate drawn: the bed grid and the model, which are edges. The backdrop is not: before the first frame it is the
+  // CSS gradient, and behind the plate the scene's, the same picture within a level, and its levels vary about as much
+  // as a small plate's do (the spread of levels read 7 to 12 over a bare view, against 15 to 30 with the plate), so the
+  // spread cannot tell an empty view from a drawn one. The sharpest edge can. It is read over the middle of the view,
+  // with the controls laid over it hidden (they are edges too, and come and go with the slice), so it is the picture
+  // the canvas draws that is measured. The plate must show within a few seconds of the view coming up (on the Mac it
+  // stayed empty until Fit), and once shown it must not go empty again.
+  const cells = cellsIn(middleOf(view!, 0.8, 0.7), page.viewportSize()!)
   // The screencast sends a frame only when the picture changes, so the picture at the moment the view came up is the
   // last frame before it.
   const before = [...frames].reverse().find((f) => f.t < up)
   const pool = [...(before ? [before] : []), ...frames.filter((f) => f.t >= up)]
-  const shown = pool.find((f) => spread(f, cells) > 8)
-  expect(shown, `the plate never showed in the ${watchS} s after the view came up (last spread ${spread(frames.at(-1)!, cells).toFixed(1)})`).toBeTruthy()
+  const shown = pool.find((f) => sharpest(f, cells) > PLATE_EDGE)
+  expect(shown, `the plate never showed in the ${watchS} s after the view came up (last sharpest edge ${sharpest(frames.at(-1)!, cells).toFixed(1)})`).toBeTruthy()
   expect(Math.max(0, shown!.t - up), 'seconds from the view coming up to the plate showing').toBeLessThan(5 * GL_SLOW)
-  const drawn = spread(shown!, cells)
-  const empty = frames.filter((f) => f.t > shown!.t && spread(f, cells) < drawn * 0.35)
-  expect(empty.map((f) => `${(f.t - up).toFixed(2)} s after the view came up: spread ${spread(f, cells).toFixed(1)}`), `the view went empty after it showed the plate (drawn ${drawn.toFixed(1)})`).toEqual([])
+  const empty = frames.filter((f) => f.t > shown!.t && sharpest(f, cells) < PLATE_EDGE)
+  expect(empty.map((f) => `${(f.t - up).toFixed(2)} s after the view came up: sharpest edge ${sharpest(f, cells).toFixed(1)}`), 'the view went empty after it showed the plate').toEqual([])
 })
 
 /** A 20 mm cube as ASCII STL. The bug needs a model that slices behind setup, not a heavy one. */
