@@ -9,6 +9,21 @@ import { autoSliceFields, autoSliceMode } from '../src/state/auto-slice-mode'
 import { normalizePrefs } from '../src/state/prefs'
 import { get, set } from '../src/state/store'
 
+// A slow start to the slice: the profile is ready only after `ms` of real time, as on a loaded machine where the first
+// slice of a run waits for the profile data to load.
+const start = vi.hoisted(() => ({ ms: 0, wait: globalThis.setTimeout }))
+vi.mock('../src/state/profile-sync', async (actual) => {
+  const real = await actual<typeof import('../src/state/profile-sync')>()
+  return { ...real, profileReady: async () => {
+    if (start.ms) await new Promise((r) => start.wait(r, start.ms))
+    return real.profileReady()
+  } }
+})
+
+// vi.waitFor gives up after 1 s of real time by default, which the first slice of a run can take on a loaded machine.
+// It waits as long as the waits in test/setup.ts, well inside the 60 s test limit.
+const SLICE_WAIT = { timeout: 20_000 }
+
 const handle = { id: 'a', hash: 'a', name: 'a', triangles: 1, bboxMm: [10, 10, 10], openEdges: 0, parts: [{ name: 'a', slot: 1, triangles: 1 }] }
 /** An object of `tris` triangles: 700k is a big slice (about 1.75 s by the per-triangle factor), 1k a quick one. */
 const entry = (x: number, tris: number) => ({ id: 'a', name: 'a', handle, parts: [{ indices: new Uint32Array(tris * 3), positions: new Float32Array(9) }], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 0, 1] }) as never
@@ -34,7 +49,10 @@ beforeEach(() => {
   vi.useFakeTimers()
   set({ plate: [entry(10, 1000)], ...autoSliceFields('auto'), sliceHeld: false, liveEdit: false, historyEdit: null, plateLoading: false, slice: { status: 'idle' }, resume: null, calibration: {}, layerMarks: {} })
 })
-afterEach(() => void vi.useRealTimers())
+afterEach(() => {
+  start.ms = 0
+  vi.useRealTimers()
+})
 
 /** An edit, and the pause after it. */
 async function edit(plate: unknown): Promise<void> {
@@ -47,8 +65,17 @@ describe('auto slice by size', () => {
     const { h, requests } = host()
     const stop = startAutoSlice(h, AUTO_SLICE_DELAY_MS, 10)
     await edit([entry(20, 1000)])
-    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    await vi.waitFor(() => expect(requests).toHaveLength(1), SLICE_WAIT)
     expect(get().sliceHeld).toBe(false)
+    stop()
+  })
+
+  it('Auto slices a quick plate when the slice is slow to start', async () => {
+    const { h, requests } = host()
+    start.ms = 1500
+    const stop = startAutoSlice(h, AUTO_SLICE_DELAY_MS, 10)
+    await edit([entry(20, 1000)])
+    await vi.waitFor(() => expect(requests).toHaveLength(1), SLICE_WAIT)
     stop()
   })
 
@@ -60,7 +87,7 @@ describe('auto slice by size', () => {
     expect(requests).toHaveLength(0)
     expect(get().sliceHeld).toBe(true)
     await edit([entry(30, 1000)])
-    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    await vi.waitFor(() => expect(requests).toHaveLength(1), SLICE_WAIT)
     expect(get().sliceHeld).toBe(false)
     stop()
   })
@@ -71,7 +98,7 @@ describe('auto slice by size', () => {
     const stop = startAutoSlice(h, AUTO_SLICE_DELAY_MS, 10)
     await edit([entry(20, 700_000)])
     await vi.advanceTimersByTimeAsync(50)
-    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    await vi.waitFor(() => expect(requests).toHaveLength(1), SLICE_WAIT)
     expect(get().sliceHeld).toBe(false)
     stop()
   })
@@ -83,7 +110,7 @@ describe('auto slice by size', () => {
     expect(get().sliceHeld).toBe(true)
     set(autoSliceFields('always'))
     await vi.advanceTimersByTimeAsync(AUTO_SLICE_DELAY_MS + 50)
-    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    await vi.waitFor(() => expect(requests).toHaveLength(1), SLICE_WAIT)
     stop()
   })
 
