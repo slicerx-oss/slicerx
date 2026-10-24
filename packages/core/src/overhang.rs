@@ -487,6 +487,23 @@ pub(crate) fn bead(cfg: &PrintConfig, h: f64) -> (f64, f64) {
     (b.width, b.flow)
 }
 
+/// The bead of an overhang wall piece (a wall piece hanging fully clear of the layer below). On a Bambu Lab printer
+/// whose `bridge_line_width` is not set away from the schema default (the maker's app has no such key), the piece
+/// prints at the inner wall's width, whichever loop it belongs to, as a flat bead at `bridge_flow`: a plain wall
+/// bead at the default flow of 1. A bridge line width set by hand, `thick_bridges`, and other printers keep the
+/// bridge strand of [`bead`]. Only the width changes, not the path.
+pub(crate) fn wall_bead(cfg: &PrintConfig, h: f64) -> (f64, f64) {
+    let unset = cfg
+        .raw
+        .get("bridge_line_width")
+        .is_none_or(|v| crate::motion::is_schema_default("bridge_line_width", v));
+    if unset && !cfg.thick_bridges && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+        let b = bridge_bead(cfg.inner_wall_width(), h, cfg.bridge_flow, false);
+        return (b.width, b.flow);
+    }
+    bead(cfg, h)
+}
+
 fn speed_of(v: f64) -> Option<f32> {
     #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
     (v > 0.0).then_some(v as f32)
@@ -541,7 +558,7 @@ impl Overhang {
             tiers,
             reverse,
             bead: {
-                let (w, flow) = bead(cfg, h);
+                let (w, flow) = wall_bead(cfg, h);
                 #[allow(clippy::cast_possible_truncation, reason = "a width and a flow ratio")]
                 (w as f32, flow as f32)
             },
@@ -663,6 +680,31 @@ mod tests {
             "{b:?}"
         );
         assert!((b.spacing - 0.357_080).abs() < 1e-5);
+    }
+
+    #[test]
+    fn an_overhang_wall_takes_the_inner_wall_width_on_bambu_lab_printers_only() {
+        let mut cfg = PrintConfig::default();
+        cfg.feature_widths.inner_wall = Some(0.6);
+        cfg.raw
+            .insert("bridge_line_width".into(), serde_json::json!("100%"));
+        // Another printer: the bridge strand of the bridge line width.
+        assert_eq!(wall_bead(&cfg, 0.2), bead(&cfg, 0.2));
+        assert!((wall_bead(&cfg, 0.2).0 - cfg.nozzle_diameter).abs() < 1e-9);
+        cfg.raw
+            .insert("printer_model".into(), serde_json::json!("Bambu Lab A1"));
+        let (w, flow) = wall_bead(&cfg, 0.2);
+        assert!((w - 0.6).abs() < 1e-9 && (flow - 1.0).abs() < 1e-9, "{w} {flow}");
+        // The key left out reads as the default.
+        cfg.raw.remove("bridge_line_width");
+        assert!((wall_bead(&cfg, 0.2).0 - 0.6).abs() < 1e-9);
+        // Set by hand, or thick bridges: the bridge strand.
+        cfg.raw
+            .insert("bridge_line_width".into(), serde_json::json!(0.35));
+        assert_eq!(wall_bead(&cfg, 0.2), bead(&cfg, 0.2));
+        cfg.raw.remove("bridge_line_width");
+        cfg.thick_bridges = true;
+        assert_eq!(wall_bead(&cfg, 0.2), bead(&cfg, 0.2));
     }
 
     fn square(x0: i32, y0: i32, x1: i32, y1: i32) -> Shapes {

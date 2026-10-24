@@ -517,3 +517,163 @@ fn a_wall_piece_hanging_fully_clear_prints_at_the_totally_clear_speed() {
         17.0,
     );
 }
+
+/// Two 6 mm pillars 20 mm apart under a 2 mm deck: the deck's first layer bridges the gap.
+fn table() -> Vec<u8> {
+    let block = |x0: f32, x1: f32, z0: f32, z1: f32| {
+        let r = |z: f32| vec![[x0, 0.0, z], [x1, 0.0, z], [x1, 30.0, z], [x0, 30.0, z]];
+        loft(&r(z0), &r(z1))
+    };
+    let mut tris = block(0.0, 5.0, 0.0, 6.0);
+    tris.extend(block(25.0, 30.0, 0.0, 6.0));
+    tris.extend(block(0.0, 30.0, 6.0, 8.0));
+    stl(&tris)
+}
+
+/// Per extruding move longer than 2 mm of `feature`: the width its `; LINE_WIDTH:` comment states and its
+/// filament per mm of path. Bambu Lab G-code extrudes in relative mode.
+fn beads(gcode: &str, feature: &str) -> Vec<(f64, f64)> {
+    let mut out = Vec::new();
+    let (mut current, mut width) = (String::new(), 0.0f64);
+    let (mut x, mut y) = (0.0f64, 0.0f64);
+    for line in gcode.lines() {
+        let code = line.split(';').next().unwrap_or("").trim();
+        if let Some(name) = line.strip_prefix("; FEATURE: ") {
+            name.trim().clone_into(&mut current);
+        } else if let Some(w) = line.strip_prefix("; LINE_WIDTH: ") {
+            width = w.trim().parse().unwrap_or(0.0);
+        } else if code.starts_with("G1") || code.starts_with("G0") {
+            let (nx, ny) = (word(code, 'X').unwrap_or(x), word(code, 'Y').unwrap_or(y));
+            let len = (nx - x).hypot(ny - y);
+            if current == feature
+                && len > 2.0
+                && let Some(e) = word(code, 'E').filter(|e| *e > 0.0)
+            {
+                out.push((width, e / len));
+            }
+            (x, y) = (nx, ny);
+        }
+    }
+    out
+}
+
+fn first_number(v: &Value) -> f64 {
+    match v {
+        Value::Array(a) => first_number(&a[0]),
+        Value::String(s) => s.trim().parse().unwrap(),
+        other => other.as_f64().unwrap(),
+    }
+}
+
+/// Item: overhang wall width. On a Bambu Lab printer whose `bridge_line_width` is left at the schema default (as
+/// the maker's app, which has no such key, leaves it), a wall piece hanging fully clear prints at
+/// `inner_wall_line_width`, whichever loop it belongs to: not the nozzle, not the outer wall's width. The bead is
+/// a plain flat one of that width at the layer height, so filament per mm is
+/// (h (w - h) + pi h^2 / 4) x `filament_flow_ratio` / filament area. A `bridge_line_width` set by hand keeps the
+/// bridge strand. Bridge strands keep their own width and flow either way.
+#[test]
+fn a_fully_clear_wall_piece_prints_at_the_inner_wall_width() {
+    let stock_cfg = stock("bambu-a1");
+    let model = wedge(75.0);
+    let ratio = first_number(&stock_cfg["filament_flow_ratio"]);
+    let filament = std::f64::consts::PI * 1.75 * 1.75 / 4.0;
+    let per_mm = |w: f64, h: f64| (h * (w - h) + std::f64::consts::PI * h * h / 4.0) * ratio / filament;
+    let with = |edits: &[(&str, Value)]| {
+        let mut cfg = stock_cfg.clone();
+        for (k, v) in edits {
+            cfg.insert((*k).to_owned(), v.clone());
+        }
+        cfg
+    };
+    let check = |label: &str, edits: &[(&str, Value)], w: f64, h: f64| {
+        let got = beads(&slice(&model, &with(edits)), "Overhang wall");
+        assert!(got.len() > 20, "{label}: {} overhang wall moves", got.len());
+        let want = per_mm(w, h);
+        for (width, e) in &got {
+            assert!((width - w).abs() < 5e-4, "{label}: width {width}, want {w}");
+            assert!(
+                (e / want - 1.0).abs() < 0.005,
+                "{label}: {e:.5} filament per mm at width {width}, want {want:.5}"
+            );
+        }
+    };
+    // Only the bead changes: against the old strand (a 0.4 mm bridge line set by hand), every move keeps its
+    // place and feed, and only the overhang walls' E differs.
+    let xmark = std::fs::read(format!("{}/packages/core/bench/models/x-mark.stl", root())).unwrap();
+    for (name, part) in [("wedge", &model), ("x-mark", &xmark)] {
+        let moves = |g: &str| -> Vec<String> {
+            g.lines()
+                .filter(|l| ["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|c| l.starts_with(c)))
+                .map(|l| {
+                    l.split_whitespace()
+                        .filter(|w| !w.starts_with('E'))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .collect()
+        };
+        let (new, old) = (
+            slice(part, &stock_cfg),
+            slice(part, &with(&[("bridge_line_width", json!("0.4"))])),
+        );
+        let (a, b) = (moves(&new), moves(&old));
+        assert_eq!(a.len(), b.len(), "{name}: move count");
+        if let Some((i, (x, y))) = a.iter().zip(&b).enumerate().find(|(_, (x, y))| x != y) {
+            panic!("{name}: move {i} is {x}, was {y}");
+        }
+        assert!(
+            beads(&new, "Overhang wall")
+                .iter()
+                .all(|(w, _)| (w - 0.45).abs() < 5e-4)
+                && beads(&old, "Overhang wall")
+                    .iter()
+                    .all(|(w, _)| (w - 0.4).abs() < 5e-4),
+            "{name}: overhang wall widths"
+        );
+    }
+
+    // Bridge strands keep the bridge line width (100 percent of the nozzle) and their own flow, whatever the inner
+    // wall: a flat bead of it over air (`thick_bridges` off on this preset) or a round thread of it over sparse
+    // infill (`thick_internal_bridges` on).
+    let bridge = |label: &str, edits: &[(&str, Value)]| {
+        let got = beads(&slice(&table(), &with(edits)), "Bridge");
+        assert!(got.len() > 10, "{label}: {} bridge moves", got.len());
+        let (flat, round) = (
+            per_mm(0.4, 0.2),
+            std::f64::consts::PI * 0.4 * 0.4 / 4.0 * ratio / filament,
+        );
+        for (width, e) in &got {
+            assert!((width - 0.4).abs() < 5e-4, "{label} bridge: width {width}");
+            assert!(
+                (e / flat - 1.0).abs() < 0.005 || (e / round - 1.0).abs() < 0.005,
+                "{label} bridge: {e:.5} filament per mm, want {flat:.5} or {round:.5}"
+            );
+        }
+    };
+    bridge("stock", &[]);
+    bridge("inner 0.6", &[("inner_wall_line_width", json!("0.6"))]);
+
+    // Stock A1: outer 0.42, inner 0.45, 0.4 mm nozzle, 0.2 mm layers.
+    check("stock", &[], 0.45, 0.2);
+    // An inner wall wider than both the outer wall and the nozzle.
+    check("inner 0.6", &[("inner_wall_line_width", json!("0.6"))], 0.6, 0.2);
+    // A wider outer wall leaves the width at the inner wall's.
+    check("outer 0.6", &[("outer_wall_line_width", json!("0.6"))], 0.45, 0.2);
+    // An inner wall between the two, on thinner layers.
+    check(
+        "inner 0.5, 0.12 mm layers",
+        &[
+            ("inner_wall_line_width", json!("0.5")),
+            ("layer_height", json!("0.12")),
+        ],
+        0.5,
+        0.12,
+    );
+    // A bridge line width set by hand keeps the bridge strand: flat at `bridge_flow` 1.
+    check(
+        "bridge line 0.35",
+        &[("bridge_line_width", json!("0.35"))],
+        0.35,
+        0.2,
+    );
+}
