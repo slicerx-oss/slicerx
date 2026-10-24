@@ -11,7 +11,7 @@ import { plateSequence } from './plate-sequence'
 import type { AppState, PlateEntry } from '../state/store'
 import { hullOf } from './arrange'
 import { clearanceRadius } from '@slicerx/settings/arrange-room'
-import { byObjectHead, byObjectPlan, hullDistance, type ByObjectPlan, type ByObjectShape } from '@slicerx/settings/by-object'
+import { byObjectHead, byObjectPlan, hullDistance, objectGetsSupport, type ByObjectPlan, type ByObjectShape } from '@slicerx/settings/by-object'
 import type { Mat4 } from './transform'
 
 type Pt = [number, number]
@@ -139,14 +139,54 @@ export interface ClearancePlan extends ByObjectPlan {
   transforms: Record<string, readonly number[]>
 }
 
-/** The entries as the by-object rules see them: each footprint on the bed and its top. */
-export function plateShapes(entries: readonly PlateEntry[]): ByObjectShape[] {
-  return entries.map((e) => ({ id: e.id, name: e.name, ...shapeOf(e) }))
+/** Per-object setting overrides by object id (AppState.objectSettings); an instance reads its source's. */
+export type ObjectSettings = Readonly<Record<string, Record<string, SettingValue>>>
+
+/** The settings the support rule reads, as a cache key. */
+const SUPPORT_KEYS = ['enable_support', 'support_type', 'support_threshold_angle', 'support_threshold_overlap', 'enforce_support_layers', 'layer_height', 'initial_layer_print_height', 'line_width', 'outer_wall_line_width', 'nozzle_diameter'] as const
+
+/** Answers of the support rule by the parts they read, the rotation they stand at and the settings: a move keeps them. */
+const supports = new WeakMap<object, Map<string, boolean>>()
+
+/** True when a support enforcer is on the object: a volume, or painted support (blockers count too: the paint text names neither without decoding it). */
+function hasEnforcers(e: PlateEntry): boolean {
+  if (e.volumes?.some((v) => v.role === 'support_enforcer')) return true
+  const painted = (x?: Record<number, string>) => x !== undefined && Object.keys(x).length > 0
+  return e.parts.some((p) => painted(p.paint?.support)) || Object.values(e.paint ?? {}).some((l) => painted(l?.support))
+}
+
+/** Whether the entry gets support with `own`, its object's settings: sx's rule (objectGetsSupport). */
+function supportedOf(e: PlateEntry, own: Record<string, SettingValue>): boolean {
+  const enforcers = hasEnforcers(e)
+  const m = e.transform
+  const key = JSON.stringify([enforcers, [0, 1, 2, 4, 5, 6, 8, 9, 10].map((i) => Math.round((m[i] ?? 0) * 1e9)), SUPPORT_KEYS.map((k) => own[k] ?? null)])
+  let kept = supports.get(e.parts)
+  if (!kept) supports.set(e.parts, (kept = new Map()))
+  let yes = kept.get(key)
+  if (yes === undefined) {
+    yes = objectGetsSupport(own, enforcers, e.parts, m)
+    kept.set(key, yes)
+  }
+  return yes
+}
+
+/**
+ * The entries as the by-object rules see them: each footprint on the bed and its top. With the plate's `cfg`, each also
+ * carries its own settings and whether it gets support, so its support's pad counts in its reach only then.
+ */
+export function plateShapes(entries: readonly PlateEntry[], cfg?: Record<string, SettingValue>, objectSettings: ObjectSettings = {}): ByObjectShape[] {
+  return entries.map((e) => {
+    const shape: ByObjectShape = { id: e.id, name: e.name, ...shapeOf(e) }
+    if (!cfg) return shape
+    const settings = objectSettings[e.instanceOf ?? e.id]
+    const own = settings ? { ...cfg, ...settings } : cfg
+    return { ...shape, supported: supportedOf(e, own), ...(settings ? { settings } : {}) }
+  })
 }
 
 /** `printerId` is the printer profile the slice names, whose head heimdall moves; without one, the config's printer model. */
-export function clearancePlan(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>, printerId?: string): ClearancePlan {
-  const plan = byObjectPlan(plateShapes(entries), cfg, byObjectHead(cfg, printerId))
+export function clearancePlan(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>, printerId?: string, objectSettings: ObjectSettings = {}): ClearancePlan {
+  const plan = byObjectPlan(plateShapes(entries, cfg, objectSettings), cfg, byObjectHead(cfg, printerId))
   return { ...plan, transforms: Object.fromEntries(entries.map((e) => [e.id, e.transform])) }
 }
 
@@ -154,8 +194,8 @@ export function clearancePlan(entries: readonly PlateEntry[], cfg: Record<string
  * The problems of printing `entries` one after the other in this order with `cfg`, one sentence each, worded as the
  * engine words them. Empty when the plate prints safely by object.
  */
-export function clearanceProblems(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>, printerId?: string): string[] {
-  return sentences(clearancePlan(entries, cfg, printerId))
+export function clearanceProblems(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>, printerId?: string, objectSettings: ObjectSettings = {}): string[] {
+  return sentences(clearancePlan(entries, cfg, printerId, objectSettings))
 }
 
 /** The plan's problems, one sentence each, worded as the engine words them. A close call is not one: heimdall slices it. */
@@ -166,17 +206,17 @@ function sentences(plan: ByObjectPlan): string[] {
   ]
 }
 
-type Inputs = Pick<AppState, 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides' | 'profile'>
+type Inputs = Pick<AppState, 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides' | 'profile'> & Partial<Pick<AppState, 'objectSettings'>>
 
-let planned: { plate: unknown; plates: unknown; activePlate: unknown; easy: unknown; overrides: unknown; profile: unknown; plan: ClearancePlan | null } | null = null
+let planned: { plate: unknown; plates: unknown; activePlate: unknown; easy: unknown; overrides: unknown; profile: unknown; objectSettings: unknown; plan: ClearancePlan | null } | null = null
 
 /** The active plate's by-object plan when it prints by object with more than one printable object, else null. */
 export function activeClearance(s: Inputs): ClearancePlan | null {
-  if (planned && planned.plate === s.plate && planned.plates === s.plates && planned.activePlate === s.activePlate && planned.easy === s.easy && planned.overrides === s.overrides && planned.profile === s.profile) return planned.plan
+  if (planned && planned.plate === s.plate && planned.plates === s.plates && planned.activePlate === s.activePlate && planned.easy === s.easy && planned.overrides === s.overrides && planned.profile === s.profile && planned.objectSettings === s.objectSettings) return planned.plan
   const printable = s.plate.filter((p) => p.printable !== false)
   const cfg = printable.length > 1 ? byObjectConfig(s) : null
-  const plan = cfg ? clearancePlan(printable, cfg, s.profile?.printerId) : null
-  planned = { plate: s.plate, plates: s.plates, activePlate: s.activePlate, easy: s.easy, overrides: s.overrides, profile: s.profile, plan }
+  const plan = cfg ? clearancePlan(printable, cfg, s.profile?.printerId, s.objectSettings) : null
+  planned = { plate: s.plate, plates: s.plates, activePlate: s.activePlate, easy: s.easy, overrides: s.overrides, profile: s.profile, objectSettings: s.objectSettings, plan }
   return plan
 }
 

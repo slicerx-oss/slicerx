@@ -14,7 +14,7 @@ import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import { positionsFromParts, type NodeSlicerHost } from './slicerhost'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
 import { marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
-import { byObjectPlan, byObjectReadback, overRod, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
+import { byObjectPlan, byObjectReadback, objectGetsSupport, overRod, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
 import { bedArea, boxRows, describeBed, EDGE_MM, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
 import { fillCount, nestInLanes, nestPlate, plateTools, type FootprintCache, type NestObject } from './plate-nest'
@@ -279,7 +279,14 @@ export class McpProject implements PilotProject {
    */
   clearanceOf(objects: readonly PlateObject[], cfg: Record<string, SettingValue>): ByObjectReadback | null {
     if (marginText(cfg['print_sequence']) !== 'by object' || objects.length < 2) return null
-    const shapes = objects.map((o) => placedShape(o.id, o.name ?? o.id, this.host.parts(o.mesh).map((p) => p.positions), o.transform ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]))
+    const shapes = objects.map((o) => {
+      const parts = this.host.parts(o.mesh)
+      const m = o.transform ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+      // Its support's pad counts only when it gets support, as the app counts it (painted blockers count as enforcers).
+      const own = o.settings ? { ...cfg, ...o.settings } : cfg
+      const enforcers = (o.volumes ?? []).some((v) => v.role === 'support_enforcer') || parts.some((p) => Object.keys(p.paint?.support ?? {}).length > 0)
+      return { ...placedShape(o.id, o.name ?? o.id, parts.map((p) => p.positions), m), supported: objectGetsSupport(own, enforcers, parts, m), ...(o.settings ? { settings: o.settings } : {}) }
+    })
     return byObjectReadback(byObjectPlan(shapes, cfg))
   }
 

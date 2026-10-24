@@ -2513,9 +2513,11 @@ impl SliceSession {
             support_slot(config, "support_filament"),
             support_slot(config, "support_interface_filament"),
         );
-        if !config.enable_support
-            || (base == 0 && iface == 0)
-            || (config.support.manual && !self.has_enforcers())
+        if !crate::collide::rules::support_runs(
+            config.enable_support,
+            config.support.manual,
+            self.has_enforcers(),
+        ) || (base == 0 && iface == 0)
         {
             return Ok(());
         }
@@ -2815,9 +2817,11 @@ impl SliceSession {
                 Some(own) => own.clone(),
                 None => used.slots().collect(),
             };
-            if cfg.enable_support
-                && (!cfg.support.manual || self.has_enforcers())
-                && let Some((sl, ..)) = self.support_at(cfg, l)
+            if crate::collide::rules::support_runs(
+                cfg.enable_support,
+                cfg.support.manual,
+                self.has_enforcers(),
+            ) && let Some((sl, ..)) = self.support_at(cfg, l)
                 && let Some(&active) = tools.first()
             {
                 tools.extend(support_order(cfg, sl, active));
@@ -3506,8 +3510,7 @@ impl SliceSession {
         let setting = config.independent_support_layer_height();
         let s = &config.support;
         if !setting
-            || !config.enable_support
-            || (s.manual && !self.has_enforcers())
+            || !crate::collide::rules::support_runs(config.enable_support, s.manual, self.has_enforcers())
             || s.style.is_classic_tree()
             || Self::is_organic(config)
             || self.vase.is_some()
@@ -3536,8 +3539,7 @@ impl SliceSession {
         let organic = Self::is_organic(config);
         // Slim, strong and hybrid trees are planned on the object's layers (src/treeclassic.rs).
         let classic = s.style.is_classic_tree();
-        if !(config.enable_support
-            && (!s.manual || self.has_enforcers())
+        if !(crate::collide::rules::support_runs(config.enable_support, s.manual, self.has_enforcers())
             && !organic
             && !(classic && (self.raft.is_some() || !own))
             && (own || (self.raft.is_some() && !tree))
@@ -9461,8 +9463,7 @@ impl SliceSession {
                 skirt_extra.push(IntPoint::new(p.x, p.y));
             }
         }
-        if cfg.enable_support
-            && (!cfg.support.manual || self.has_enforcers())
+        if crate::collide::rules::support_runs(cfg.enable_support, cfg.support.manual, self.has_enforcers())
             && let (Some((sl, flow, index, z)), Some(active)) =
                 (self.support_at(cfg, layer), works.first().map(|w| w.tool))
         {
