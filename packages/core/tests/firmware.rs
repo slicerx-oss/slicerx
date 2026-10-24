@@ -2188,8 +2188,13 @@ fn a_bambu_tower_change_is_framed_as_orcas_tower_writes_it() {
     let block = &g[first..first + g[first..].find("; CP TOOLCHANGE END\n").unwrap()];
     assert!(block.starts_with("; CP TOOLCHANGE START\n; toolchange #1\n; material : PLA -> PETG\n;--------------------\nM220 S100\n; WIPE_TOWER_START\n"), "{block}");
     let at = |s: &str| block.find(s).unwrap_or_else(|| panic!("no {s:?} in {block}"));
-    // the object's label closes after the lift, just ahead of the old filament's end
-    assert!(block.contains("\nM625\n; end one\n"), "{block}");
+    // the object's label is closed before the old filament's end: after the lift, or ahead of the tower's wall,
+    // which the layer's first filament prints before its first change
+    let before = &g[..first];
+    assert!(
+        before.rfind("\nM625\n") > before.rfind("\nM624 "),
+        "the object's label is closed before the change"
+    );
     assert!(at("\n; end one\n") < at("\n; the change\n"));
     assert!(at("\n; the change\n") < at("\nM1020 S1\n"));
     assert!(at("\nM1020 S1\n") < at("\n; start two\n"));
