@@ -149,7 +149,9 @@ describe('the short by-object warning', () => {
     expect(html).toContain('data-testid="slice-clearance-warning"')
     expect(html).toContain('Too close to print by object')
     expect(html).toContain('Cube A and Cube B')
-    expect(html).toContain('30 of 40 mm')
+    // the number and its unit stay on one line
+    expect(html).toContain('30 of 40\u00a0mm')
+    expect(html).toMatch(/class="seq-card-fig">30 of 40\u00a0mm</)
     expect(html).toContain('data-testid="slice-clearance-arrange"')
   })
 
@@ -159,7 +161,7 @@ describe('the short by-object warning', () => {
     expect(plan.pairs.map((p) => [p.a.id, p.b.id, p.severity])).toEqual([['a', 'b', 'soft']])
     const html = renderToStaticMarkup(createElement(ClearanceWarning, { plan }))
     expect(html).toContain('data-tone="soft"')
-    expect(html).toContain('Cube A and Cube B are close (30 of 40 mm). Check them before you print.')
+    expect(html).toContain('Cube A and Cube B are close (30 of 40\u00a0mm). Check them before you print.')
     expect(html).not.toContain('Too close to print by object')
     expect(html).toContain('data-testid="slice-clearance-arrange"')
     // heimdall slices a close call, so there is no problem to hold the slice to

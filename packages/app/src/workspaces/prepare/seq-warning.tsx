@@ -11,6 +11,8 @@ import type { ClearancePlan } from '../../plate/sequence-check'
 import { set, toast, useApp } from '../../state/store'
 
 const mm = (v: number) => (v < 10 ? v.toFixed(1) : Math.round(v).toString())
+/** A value and its unit, kept on one line. */
+const MM = '\u00a0mm'
 
 type Pair = ClearancePlan['pairs'][number]
 
@@ -55,7 +57,7 @@ export function ClearanceWarning({ plan }: { plan: ClearancePlan }) {
         <div className="seq-card-head">
           <span className="seq-dot" aria-hidden="true" />
           <button type="button" className="seq-card-line seq-card-note" data-testid="slice-clearance-select" aria-pressed={picked} {...tipAttrs({ title: 'Select both', body: 'Select on the plate to move them.' })} onClick={() => selectClearance(plan)}>
-            <span className="seq-card-name">{`${near.a.name} and ${near.b.name} are close (${mm(near.gapMm)} of ${Math.round(plan.needMm)} mm). Check them before you print.`}</span>
+            <span className="seq-card-name">{`${near.a.name} and ${near.b.name} are close (${mm(near.gapMm)} of ${Math.round(plan.needMm)}${MM}). Check them before you print.`}</span>
             {calls.length > 1 ? <span className="seq-card-more">+{calls.length - 1}</span> : null}
           </button>
           {arrangeButton}
@@ -73,7 +75,7 @@ export function ClearanceWarning({ plan }: { plan: ClearancePlan }) {
       </div>
       <button type="button" className="seq-card-line" data-testid="slice-clearance-select" aria-pressed={picked} {...tipAttrs({ title: pair ? 'Select both' : 'Select it', body: 'Select on the plate to move it.' })} onClick={() => selectClearance(plan)}>
         <span className="seq-card-name">{pair ? `${pair.a.name} and ${pair.b.name}` : tall!.name}</span>
-        <span className="seq-card-fig">{pair ? `${mm(pair.gapMm)} of ${Math.round(plan.needMm)} mm` : `${mm(tall!.topMm)} of ${Math.round(tall!.limitMm)} mm`}</span>
+        <span className="seq-card-fig">{pair ? `${mm(pair.gapMm)} of ${Math.round(plan.needMm)}${MM}` : `${mm(tall!.topMm)} of ${Math.round(tall!.limitMm)}${MM}`}</span>
         {more > 0 ? <span className="seq-card-more">+{more}</span> : null}
       </button>
     </div>
