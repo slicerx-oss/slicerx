@@ -11,6 +11,8 @@ it('routes every brim action with its revision and keeps the independent reader 
   const [read, edit] = appBrimTools({ call } as AppLinkCaller, 'SlicerX')
   expect(read!.permission).toBe('read')
   expect(edit!.permission).toBe('slice')
+  expect(read!.description).toMatch(/enabled is true .*brim_ears/)
+  expect(edit!.description).toMatch(/brim_type to painted or brim_ears/)
   expect(await read!.run({} as never, {} as never)).toEqual(state)
   expect(call).toHaveBeenLastCalledWith('brim.get', {})
   for (const args of [

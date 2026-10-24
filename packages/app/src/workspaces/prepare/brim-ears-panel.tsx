@@ -6,6 +6,8 @@
 import { Block, Button, Field, Range } from '@slicerx/ui'
 import { useMemo, useState } from 'react'
 import { AUTO_DEFAULTS, autoGenerateEars, clearEars, detectionRange, HEAD_MAX, HEAD_MIN, headDiameter, removeSelectedEars, resizeSelectedEars, selectAllEars, setHeadDiameter, useHeadDiameter, useSelectedEars, worldEars } from '../../plate/brim-ears'
+import { resolveConfig } from '../../adapters/config'
+import { objectOverrides } from '../../plate/object-settings'
 import { toast, useApp } from '../../state/store'
 
 export function BrimEarsPanel() {
@@ -15,6 +17,8 @@ export function BrimEarsPanel() {
   const [maxAngle, setMaxAngle] = useState<number>(AUTO_DEFAULTS.maxAngle)
   const [detection, setDetection] = useState<number>(AUTO_DEFAULTS.detection)
   const count = selected?.brimPoints?.length ?? 0
+  // Mouse ears fall back to the sharp corners on an object without ears of its own.
+  const corners = useApp((s) => !!selected && String(objectOverrides(s, selected)['brim_type'] ?? resolveConfig(s.easy, s.overrides)['brim_type'] ?? '') === 'brim_ears')
   const stray = selected ? worldEars(selected).filter((e) => e.error).length : 0
   // The slider's top end depends on the outline, so it is worked out once per object and placement.
   const detectionTop = useMemo(() => (selected ? detectionRange(selected.id) : 100), [selected?.id, selected?.transform]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -52,7 +56,7 @@ export function BrimEarsPanel() {
         Auto-generate
       </Button>
       <p className="sx-small" data-testid="brim-ear-count">
-        {count === 0 ? 'No ears yet.' : `${count} ${count === 1 ? 'ear' : 'ears'}${chosen.length ? `, ${chosen.length} selected` : ''}.`}
+        {count === 0 ? (corners ? 'No ears yet. Its sharp corners get ears until you add one.' : 'No ears yet.') : `${count} ${count === 1 ? 'ear' : 'ears'}${chosen.length ? `, ${chosen.length} selected` : ''}.`}
         {stray ? ` ${stray} ${stray === 1 ? 'does' : 'do'} not touch the first layer and would print alone.` : ''}
       </p>
       <div className="sx-row">

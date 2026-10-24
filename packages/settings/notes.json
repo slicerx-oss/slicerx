@@ -6,7 +6,7 @@
   "brim_ears_outer_only": "Puts brim ears only on the outside of the part, not around holes. Turn it off when corners inside a hole also lift.",
   "brim_flow_ratio": "Scales how much plastic the brim lines get, on top of the filament's flow ratio. Raise it a little if the brim prints thin and tears off the bed.",
   "brim_object_gap": "Leaves a small gap between the brim and the part, in mm, so the brim snaps off cleanly. 0.1 to 0.2 mm is typical; too large and the brim stops holding the part down.",
-  "brim_type": "Adds flat rings around the first layer to hold the part to the bed. Auto adds one only where the part needs it; mouse ears put small discs under sharp corners only.",
+  "brim_type": "Adds flat rings around the first layer to hold the part to the bed. Auto adds one only where the part needs it; mouse ears put small discs at the ears placed on a part, or under its sharp corners when it has none.",
   "brim_use_efc_outline": "Lines the brim up with the first layer after elephant foot compensation shrinks it. Turn it on only when that compensation is large and the brim pulls away from the part.",
   "brim_width": "How far the brim reaches out from the part, in mm. A wider brim holds better against warping and takes longer to print and peel off; 3 to 8 mm covers most parts.",
   "draft_shield": "Builds the skirt up as a thin wall as tall as the print, which shields ABS and ASA from drafts on an open printer. Not needed in an enclosure.",

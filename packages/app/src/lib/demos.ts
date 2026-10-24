@@ -53,7 +53,7 @@ const OWN = {
   'supports-painted': demo(() => import('../demos/supports-painted').then((m) => m.loop), 'Only where you paint support.'),
   'enable-support': demo(() => import('../demos/enable-support').then((m) => m.loop), 'Builds removable support under overhangs that would otherwise print in mid-air.'),
   brim: demo(() => import('../demos/brim').then((m) => m.loop), 'Adds flat rings around the first layer to hold the part to the bed.'),
-  'brim-type': demo(() => import('../demos/brim-type').then((m) => m.loop), 'An all-around brim, or mouse ears: small discs under sharp corners only.'),
+  'brim-type': demo(() => import('../demos/brim-type').then((m) => m.loop), 'An all-around brim, or mouse ears: small discs at the ears you place, or under sharp corners.'),
   'history-suppress': demo(() => import('../demos/history-suppress').then((m) => m.loop), 'Leave this step out and run the rest without it; click again to bring it back.'),
   'history-view': demo(() => import('../demos/history-view').then((m) => m.loop), 'See the part as it was right after this step; click again to return to the latest.'),
   'history-earlier': demo(() => import('../demos/history-earlier').then((m) => m.loop), 'Run this step before the one above it; the steps run again and say if one no longer works.'),
