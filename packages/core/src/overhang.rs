@@ -494,23 +494,23 @@ fn speed_of(v: f64) -> Option<f32> {
 
 impl Overhang {
     /// `below` is the material of the layer below, `w` the line width in
-    /// internal units, `h` the layer height in mm.
+    /// internal units, `h` the layer height in mm, `slot` the filament the walls print with.
     #[allow(
         clippy::cast_possible_truncation,
         reason = "offsets are a fraction of a line width"
     )]
-    pub(crate) fn new(below: &Shapes, w: i32, h: f64, cfg: &PrintConfig) -> Self {
+    pub(crate) fn new(below: &Shapes, w: i32, h: f64, cfg: &PrintConfig, slot: u8) -> Self {
         let wf = f64::from(w);
         // Orca grows the lower layer by half the nozzle (`generate_lower_polygons_series` and
-        // `lower_slices_polygons`), whatever the line width. Overhang walls print at the bridge speed (Orca
-        // `GCode::_extrude` for `erOverhangPerimeter`); the slowdown on the way out over the edge is worked out
-        // point by point (`quality.rs`).
+        // `lower_slices_polygons`), whatever the line width. Overhang walls, whose bead hangs fully clear, print
+        // at the clear speed (`overhang_totally_speed`, `quality::clear_speed`); the slowdown on the way out over
+        // the edge is worked out point by point (`quality.rs`).
         let tiers = vec![Tier {
             support: Support::new(&perimeters::offset(
                 below,
                 crate::geom::mm(cfg.nozzle_diameter / 2.0),
             )),
-            speed: speed_of(cfg.bridge_speed),
+            speed: speed_of(crate::quality::clear_speed(cfg, slot)),
             label: true,
         }];
         let reverse = crate::tower::flag(cfg, "overhang_reverse").then(|| {

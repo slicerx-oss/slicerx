@@ -530,6 +530,25 @@ pub(crate) fn overhang_speed_on(cfg: &crate::config::PrintConfig) -> bool {
     crate::tower::flag_or(cfg, "enable_overhang_speed", true)
 }
 
+/// The speed of a wall piece that hangs fully clear of the layer below (an overhang wall), mm/s, for filament
+/// `slot`: `overhang_totally_speed`, or the filament's `filament_overhang_totally_speed` when its
+/// `override_process_overhang_speed` is on. With the overhang speeds off, or no clear speed set (unset, 0 or not a
+/// plain speed), `bridge_speed`, which the settings check keeps at 1 mm/s or more.
+pub(crate) fn clear_speed(cfg: &crate::config::PrintConfig, slot: u8) -> f64 {
+    if !overhang_speed_on(cfg) {
+        return cfg.bridge_speed;
+    }
+    let own = if slot_text(cfg, "override_process_overhang_speed", slot)
+        .is_some_and(|t| matches!(t.trim(), "1" | "true"))
+    {
+        slot_text(cfg, "filament_overhang_totally_speed", slot).and_then(|t| t.trim().parse::<f64>().ok())
+    } else {
+        let e = crate::nozzles::extruder_of_slot(cfg, slot);
+        Some(speed_or_percent(&cfg.for_extruder(e), "overhang_totally_speed"))
+    };
+    own.filter(|v| *v > 0.0).unwrap_or(cfg.bridge_speed)
+}
+
 /// A speed setting that may be a percent of the wall speed: mm/s, or minus the percent. A list (one value per
 /// extruder, as Bambu Lab profiles write it) gives its first value, which [`PrintConfig::for_extruder`] makes the
 /// extruder's own.
@@ -620,12 +639,14 @@ impl Context {
     }
 }
 
-/// What a path is, for its overhang speed: an outer or inner wall (the wall rule, [`wall_degree`]) or another
-/// feature that hangs (bridges and overhang walls, the overlap rule).
+/// What a path is, for its overhang speed: an outer or inner wall (the wall rule, [`wall_degree`]), an overhang
+/// wall (the overlap rule, down to its own speed where it hangs clear) or another feature that hangs (bridges, the
+/// overlap rule down to the bridge speed).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Kind {
     Outer,
     Inner,
+    Clear,
     Other,
 }
 
@@ -721,6 +742,9 @@ impl Context {
         };
         let last = if curled.is_some() {
             level(self.overhang[3])
+        } else if kind == Kind::Clear {
+            // An overhang wall already carries its clear speed (`clear_speed`); the bridge speed is not its floor.
+            f64::from(speed) * 100.0 / ref_speed.max(1e-9)
         } else {
             abs(self.bridge_speed) * 100.0 / ref_speed.max(1e-9)
         };
@@ -764,7 +788,7 @@ impl Context {
             -1.0
         };
         // The wall rule: the configured wall speed, the levels (the filament's when it overrides them), the cap.
-        let wall = (kind != Kind::Other).then(|| {
+        let wall = matches!(kind, Kind::Outer | Kind::Inner).then(|| {
             let base = if outer { self.outer_speed } else { self.inner_speed };
             let levels = self
                 .filament_overhang
