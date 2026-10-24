@@ -31,9 +31,82 @@ describe('a project on a printer from the knowledge base', () => {
     expect(await resolved('bambu_x1c')).toMatchObject({ printer_model: 'Bambu Lab X1 Carbon', extruder_clearance_max_radius: 68 })
   })
 
-  it('leaves a printer SlicerX has no profile of by that name as the knowledge base has it', async () => {
-    // "Original Prusa MK4S" names no profile ("Prusa Research MK4S"), so nothing is taken from one.
-    expect(await resolved('prusa_mk4s')).toMatchObject({ printer_model: '', extruder_clearance_radius: 40 })
+  it('carries them for a printer the knowledge base names its own way', async () => {
+    // "Original Prusa MK4S" is SlicerX's "Prusa Research MK4S" (printer-models.json links them); the values are its profile's.
+    const { printerConfig } = await import('@slicerx/settings')
+    const own = printerConfig('prusa-mk4s') as unknown as Record<string, unknown>
+    const mk4s = { printer_model: 'Prusa Research MK4S', extruder_clearance_radius: 45, extruder_clearance_height_to_rod: 14, extruder_clearance_height_to_lid: 220 }
+    expect(own).toMatchObject(mk4s)
+    expect(await resolved('prusa_mk4s')).toMatchObject(mk4s)
+  })
+
+  it('takes the same profile as before for a printer the knowledge base names as SlicerX does', async () => {
+    const { printerConfig } = await import('@slicerx/settings')
+    for (const [printer, machine] of [['bambu_a1', 'bambu-a1'], ['bambu_a1_mini', 'bambu-a1-mini'], ['bambu_p1s', 'bambu-p1s'], ['bambu_x1c', 'bambu-x1-carbon'], ['creality_k1_max', 'creality-k1-max']]) {
+      const own = printerConfig(machine!) as unknown as Record<string, unknown>
+      expect(await resolved(printer!), printer).toMatchObject(Object.fromEntries(KEYS.filter((k) => own[k] !== undefined).map((k) => [k, own[k]])))
+    }
+    expect(await resolved('creality_k1_max')).toMatchObject({ printer_model: 'Creality K1 Max', extruder_clearance_radius: 65 })
+  })
+
+  it('leaves a printer SlicerX has no profile of as the knowledge base has it', async () => {
+    // SlicerX has no A2L profile.
+    expect(await resolved('bambu_a2l')).toMatchObject({ printer_model: '', extruder_clearance_radius: 40 })
+  })
+
+  it('slices the printers linked by another name from the generic process and supports, with their own clearances', async () => {
+    const { DataStore, resolveDataPaths } = await import('../src/data')
+    const { ProfileCatalog } = await import('../src/profiles')
+    const { resolveSliceConfig } = await import('../src/config')
+    const { printerConfig } = await import('@slicerx/settings')
+    const store = new DataStore(resolveDataPaths())
+    const catalog = new ProfileCatalog(store)
+    for (const [printer, machine] of [['prusa_mk4s', 'prusa-mk4s'], ['prusa_xl', 'prusa-xl'], ['prusa_core_one', 'prusa-core-one'], ['voron_2_4', 'voron-2.4-300'], ['voron_trident', 'voron-trident-300']] as const) {
+      // The process and supports a slice starts from stay the ones a printer with no profile of its name gets.
+      expect(catalog.printerModel(`printer:${printer}`), printer).toBeUndefined()
+      const names = [`printer:${printer}`]
+      await catalog.prepare(names)
+      const { config } = resolveSliceConfig(store, catalog, names, undefined)
+      expect(config, printer).toMatchObject({ enable_support: true, support_on_build_plate_only: true, support_threshold_angle: 25, support_type: 'tree(auto)', internal_solid_infill_speed: [100], overhang_4_4_speed: ['0'] })
+      // The model and clearances still come from the machine's own profile.
+      const own = printerConfig(machine) as unknown as Record<string, unknown>
+      expect(config, printer).toMatchObject({ printer_model: own['printer_model'], extruder_clearance_radius: own['extruder_clearance_radius'], extruder_clearance_height_to_rod: own['extruder_clearance_height_to_rod'], extruder_clearance_height_to_lid: own['extruder_clearance_height_to_lid'] })
+    }
+  })
+
+  it('links every knowledge printer to the one profile of the same machine', async () => {
+    const { DataStore, resolveDataPaths } = await import('../src/data')
+    const { printerProfileFor } = await import('../src/settings')
+    const store = new DataStore(resolveDataPaths())
+    const printers = store.knowledge().filter((e) => e.kind === 'printer').sort((a, b) => a.id.localeCompare(b.id))
+    expect(Object.fromEntries(printers.map((e) => [e.id, printerProfileFor(e) ?? null]))).toEqual({
+      bambu_a1: 'bambu-a1',
+      bambu_a1_mini: 'bambu-a1-mini',
+      bambu_a2l: null,
+      bambu_h2c: 'bambu-h2c',
+      bambu_h2d: 'bambu-h2d',
+      bambu_h2s: 'bambu-h2s',
+      bambu_p1p: 'bambu-p1p',
+      bambu_p1s: 'bambu-p1s',
+      bambu_p2s: 'bambu-p2s',
+      bambu_x1c: 'bambu-x1-carbon',
+      bambu_x1e: 'bambu-x1e',
+      bambu_x2d: 'bambu-x2d',
+      creality_k1_max: 'creality-k1-max',
+      creality_k2_plus: 'creality-k2-plus',
+      elegoo_centauri_carbon: 'elegoo-centauri-carbon',
+      elegoo_neptune_4_pro: 'elegoo-neptune-4-pro',
+      flsun_v400: 'flsun-v400',
+      // Linked by printer-models.json: the names differ ("Prusa CORE One", "Original Prusa XL", "Voron 2.4").
+      prusa_core_one: 'prusa-core-one',
+      prusa_mk4s: 'prusa-mk4s',
+      // The single toolhead XL: the 5 toolhead one shares the knowledge entry and the bed.
+      prusa_xl: 'prusa-xl',
+      sovol_sv08: 'sovol-sv08',
+      // The knowledge files model the 300 mm kits, the only ones of the three with their bed.
+      voron_2_4: 'voron-2.4-300',
+      voron_trident: 'voron-trident-300',
+    })
   })
 })
 
