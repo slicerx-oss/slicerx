@@ -130,14 +130,27 @@ export function towerRoomOf(cfg: Record<string, SettingValue>, tools: number, pl
 }
 
 /**
+ * The clearance radius a plate printed by object is held to, the engine's own choice (collide `clearance_radius`):
+ * Bambu Studio's `extruder_clearance_max_radius` on a Bambu Lab printer, `extruder_clearance_radius` on the others.
+ * The by-object check and arrange both take it from here, so arrange spaces a plate the way the check reads it.
+ */
+export function clearanceRadius(cfg: Record<string, SettingValue>): number {
+  const model = cfg['printer_model']
+  const bambu = cfg['gcode_flavor'] === 'bambu' || (typeof model === 'string' && model.startsWith('Bambu Lab'))
+  const radius = num(cfg['extruder_clearance_radius'], 40)
+  // Orca's Bambu Lab profiles carry the max radius in extruder_clearance_radius (73 mm for the A1).
+  return bambu ? Math.max(num(cfg['extruder_clearance_max_radius'], 68), radius) : radius
+}
+
+/**
  * The margins of a plate: what prints round each object (print-margins.ts), the spacing of a plate printed by object,
  * and the prime tower's place or room for a plate printed in `tools` filaments.
  */
 export function plateMargins(cfg: Record<string, SettingValue>, tools: number, plate: PlateArea, tower?: TowerState) {
-  // Printing by object, arrange keeps the extruder clearance between objects.
+  // Printing by object, arrange keeps the clearance the by-object check holds the plate to between objects.
   const byObject = text(cfg['print_sequence']) === 'by object'
   return {
-    ...(byObject ? { apart: Math.max(0, num(cfg['extruder_clearance_radius'], 40)) + MARGIN_SAFETY_MM } : {}),
+    ...(byObject ? { apart: Math.max(0, clearanceRadius(cfg)) + MARGIN_SAFETY_MM } : {}),
     ...objectPrintMargins(cfg),
     ...towerRoomOf(cfg, tools, plate, tower),
   }
