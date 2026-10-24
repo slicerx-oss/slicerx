@@ -177,6 +177,30 @@ describe('the short by-object warning', () => {
     expect(get().selectedIds).toEqual(['a', 'b'])
   })
 
+  it('reads as pressed while its pair is the selection, in either order, and a click on it selects them', async () => {
+    const { flushSync } = await import('react-dom')
+    const { createRoot } = await import('react-dom/client')
+    const plan = clearanceTrouble(get())!
+    const el = document.createElement('div')
+    document.body.append(el)
+    const root = createRoot(el)
+    flushSync(() => root.render(createElement(ClearanceWarning, { plan })))
+    const row = () => el.querySelector('[data-testid="slice-clearance-select"]')!.getAttribute('aria-pressed')
+    expect(row()).toBe('false')
+    flushSync(() => (el.querySelector('[data-testid="slice-clearance-select"]') as HTMLButtonElement).click())
+    expect(get().selectedIds).toEqual(['a', 'b'])
+    expect(row()).toBe('true')
+    flushSync(() => set({ selection: 'b', selectedIds: ['b', 'a'] }))
+    expect(row()).toBe('true')
+    // one of the two, or a third object with them, is another selection
+    flushSync(() => set({ selection: 'a', selectedIds: ['a'] }))
+    expect(row()).toBe('false')
+    flushSync(() => set({ selection: 'a', selectedIds: ['a', 'b', 'c'] }))
+    expect(row()).toBe('false')
+    flushSync(() => root.unmount())
+    el.remove()
+  })
+
   it('has nothing to say once the objects are apart or the plate prints by layer', () => {
     set({ plate: [entry('a', 'Cube A', 100, 118, 10), entry('b', 'Cube B', 160, 118, 10)] })
     expect(clearanceTrouble(get())).toBeNull()
