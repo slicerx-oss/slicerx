@@ -6,6 +6,7 @@ import type { LayoutSpec } from '@slicerx/contracts'
 import { Button } from '@slicerx/ui'
 import { useEffect, useState, type ReactNode } from 'react'
 import { resolveConfig } from '../../adapters/config'
+import { brimUsesEars } from '../../plate/brim-ears'
 import { arrangePlate, dropSelectedToBed, getArrangeOptions, setArrangeOptions } from '../../plate/edit'
 import { history } from '../../plate/history'
 import { setTool, useTool } from '../../plate/tools'
@@ -69,14 +70,14 @@ export function PlateToolbar({ layout, grip }: { layout: LayoutSpec; grip?: Reac
   const hasSel = useApp((s) => s.selection !== null)
   const count = useApp((s) => s.plate.length)
   const { undo, redo } = useHistoryCounts()
-  // The brim ears tool is offered while the brim type is painted, as in the reference slicers.
-  const painted = useApp((s) => String(resolveConfig(s.easy, s.overrides)['brim_type'] ?? '') === 'painted')
+  // The brim ears tool is offered while the brim type prints placed ears: painted, or mouse ears.
+  const ears = useApp((s) => brimUsesEars(resolveConfig(s.easy, s.overrides)['brim_type']))
   useEffect(() => {
-    if (!painted && tool === 'brim') setTool('move')
-  }, [painted, tool])
+    if (!ears && tool === 'brim') setTool('move')
+  }, [ears, tool])
   return (
     <div className="plate-tools sx-overlay" role="toolbar" aria-label="Plate tools" data-placement={layout.toolbar} aria-orientation={layout.toolbar === 'left-of-viewport' ? 'vertical' : 'horizontal'}>
-      {(painted ? [...PLATE_TOOLS, BRIM_TOOL] : PLATE_TOOLS).map((t) => (
+      {(ears ? [...PLATE_TOOLS, BRIM_TOOL] : PLATE_TOOLS).map((t) => (
         <Button key={t.tool} variant="ghost" size="sm" icon={t.icon} aria-label={t.label} tip={t.tip} pressed={tool === t.tool} onClick={() => (tool === t.tool && t.tool !== 'move' ? setTool('move') : setTool(t.tool, true))} />
       ))}
       <span className="plate-tools-sep" aria-hidden="true" />

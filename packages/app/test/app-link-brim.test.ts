@@ -81,6 +81,15 @@ it('keeps no-op edits out of history and reports disabled painted brim without c
   expect(read().objects[0]).toMatchObject({ enabled: false, brimType: 'no_brim' })
 })
 
+it('reports mouse ears as enabled, since they print an object\'s ears where it has some', () => {
+  for (const [brim_type, enabled] of [['brim_ears', true], ['painted', true], ['auto_brim', false], ['outer_only', false]] as const) {
+    set({ overrides: { brim_type } })
+    expect(read().objects[0]).toMatchObject({ enabled, brimType: brim_type })
+  }
+  set({ overrides: {}, objectSettings: { body: { brim_type: 'brim_ears' } } })
+  expect(read().objects[0]).toMatchObject({ enabled: true, brimType: 'brim_ears' })
+})
+
 it('updates a linked family across plates in one Undo step and respects a locked remote copy', async () => {
   const copy = { ...entry('copy', 100), instanceOf: 'body' }
   set({ plates: [...get().plates, { id: 'other', name: 'Other', objects: [copy], settings: {} }] })

@@ -1296,6 +1296,9 @@ test('clients edit brim ears through MCP and the native CLI, read them back, und
       await page.locator('.sx-palette-input').fill('brim type')
       await page.locator('.sx-palette-item', { hasText: 'now' }).first().click()
       wasType = await brimType.inputValue()
+      // Mouse ears print an object's ears where it has some, so the read reports them enabled too.
+      await brimType.selectOption('brim_ears')
+      expect((await read()).objects[0]!).toMatchObject({ enabled: true, brimType: 'brim_ears' })
       await brimType.selectOption('painted')
       expect((await read()).objects[0]!.enabled).toBe(true)
       const count = await sliceCount(page)

@@ -100,7 +100,7 @@ export interface PlateEntry {
   slotOverrides?: Record<string, number>
   /** Orca key overrides for single parts, by part name. They print in the part's own area. */
   partSettings?: Record<string, Record<string, SettingValue>>
-  /** Painted brim ears: [x, y, z, headRadius] in the mesh's own space, mm. Used when the brim type is painted. */
+  /** Painted brim ears: [x, y, z, headRadius] in the mesh's own space, mm. Used when the brim type is painted or mouse ears. */
   brimPoints?: [number, number, number, number][]
   /** Settings by height from the project it came from (Metadata/layer_config_ranges.xml), heights from its bottom. */
   layerRanges?: import('../plate/layer-ranges').LayerRange[]

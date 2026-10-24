@@ -357,8 +357,7 @@ export function worldEars(e: PlateEntry): WorldEar[] {
   return ears.map((ear, i) => ({ ...ear, error: !live.has(i) }))
 }
 
-/** True when the plate's resolved brim type is painted. */
-export function brimIsPainted(): boolean {
-  const cfg = resolveConfig(get().easy, get().overrides) as Record<string, unknown>
-  return String(cfg['brim_type'] ?? '') === 'painted'
+/** True when a brim type prints an object's placed ears: painted, and mouse ears (which fall back to sharp corners on objects without any). */
+export function brimUsesEars(brimType: unknown): boolean {
+  return brimType === 'painted' || brimType === 'brim_ears'
 }

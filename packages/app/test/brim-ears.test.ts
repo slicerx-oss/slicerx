@@ -101,6 +101,21 @@ describe('brim ears in a project file', () => {
     expect(objs[2]!.brimPoints).toEqual([[0, 0, -0.0001, 8]])
   })
 
+  it('placed for mouse ears, save in format 0 with four numbers per ear and reopen with the brim type', async () => {
+    set({ plate: [entry('m')], selection: 'm' })
+    expect(autoGenerateEars('m', { maxAngle: 125, detection: 1 })).toBe(4)
+    expect(addEar('m', 58, 60)).toBe(true)
+    const placed = get().plate[0]!.brimPoints!
+    const input = { plates: [{ id: 'p1', name: 'Plate 1', objects: [get().plate[0]!], settings: { sequence: 'by-layer' as const } }], bed, settings: { brim_type: 'brim_ears' }, objectSettings: { m: { brim_type: 'brim_ears' } } }
+    const lines = String(projectFiles(input).find((f) => f.name === 'Metadata/brim_ear_points.txt')!.data).trim().split('\n')
+    expect(lines[0]).toBe('brim_points_format_version=0')
+    expect(lines.slice(1).map((l) => l.split('|')[1]!.trim().split(/\s+/).length)).toEqual([placed.length * 4])
+    const o = (await readProject(writeProject(input), bed)).plates[0]!.objects[0]!
+    expect(o.rawObjectSettings?.['brim_type']).toBe('brim_ears')
+    expect(o.brimPoints).toHaveLength(placed.length)
+    o.brimPoints!.forEach((q, i) => q.forEach((v, k) => expect(v).toBeCloseTo(placed[i]![k]!, 3)))
+  })
+
   it('drops bad numbers and absurd radii from a file', () => {
     const bytes = new TextEncoder().encode('brim_points_format_version=0\nobject_id=1|1 2 3 4 x 2 3 4 1 1 1 999 5 5 -0.1 7\nobject_id=2|junk\n')
     expect([...parseBrimEars(bytes)]).toEqual([[1, [[1, 2, 3, 4], [5, 5, -0.1, 7]]]])

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { brimEditInput, brimReadInput } from '@slicerx/mcp/toolset'
-import { addEar, autoGenerateEars, AUTO_DEFAULTS, clearEars, detectionRange, headDiameter, positionEar, removeEars, resizeEars, worldEars } from '../plate/brim-ears'
+import { addEar, autoGenerateEars, AUTO_DEFAULTS, brimUsesEars, clearEars, detectionRange, headDiameter, positionEar, removeEars, resizeEars, worldEars } from '../plate/brim-ears'
 import { history } from '../plate/history'
 import { objectOverrides } from '../plate/object-settings'
 import { activeMeta, allPlates } from '../plate/plates'
@@ -33,7 +33,7 @@ function read(objects: PlateEntry[]) {
         const world = worldEars(e)
         const brimType = String(objectOverrides(s, e)['brim_type'] ?? config['brim_type'] ?? '')
         return {
-          id: e.id, name: e.name, brimType, enabled: brimType === 'painted',
+          id: e.id, name: e.name, brimType, enabled: brimUsesEars(brimType),
           detectionMaxMm: detectionRange(e.id),
           linked: entries.filter(({ entry: p }) => p.id === root || p.instanceOf === root).map(({ plate, entry }) => ({ plate, id: entry.id })),
           ears: (e.brimPoints ?? []).map((q, index) => ({ index, localMm: q.slice(0, 3), bedMm: [world[index]!.x, world[index]!.y, world[index]!.z], diameterMm: q[3] * 2, connected: !world[index]!.error })),
