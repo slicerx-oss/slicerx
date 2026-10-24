@@ -450,6 +450,52 @@ mod tests {
     }
 
     #[test]
+    fn a_keep_out_zone_keeps_the_edge_spacing_and_the_parts_keep_theirs() {
+        // printing by object the parts keep 74 mm apart, and an ordinary zone gets half of that, 37 mm; the printer's
+        // keep-out zone at the right, nothing printed in it, keeps only the edge spacing, at least the 6 mm gap
+        let zone = NestZone {
+            polygons: vec![rect(170.0, 0.0, 30.0, 60.0)],
+        };
+        let zr: Region = vec![vec![zone.polygons[0].outer.clone()]];
+        let run = |w: f64, count: usize, gap: f64, keep_out_zones: u32| {
+            let items: Vec<NestItem> = (0..count)
+                .map(|i| item(&format!("p{i}"), vec![rect(0.0, 0.0, w, 40.0)]))
+                .collect();
+            let out = nest(NestProblem {
+                bed: bed(200.0, 60.0),
+                items: items.clone(),
+                fixed: vec![],
+                zones: vec![zone.clone()],
+                options: NestOptions {
+                    apart_mm: 74.0,
+                    keep_out_zones,
+                    rotate: false,
+                    center: false,
+                    ..opts(gap)
+                },
+            })
+            .unwrap();
+            (items, out)
+        };
+        // two 40 mm parts: 6 + 40 + 74 + 40 = 160 mm, so the second ends 10 mm from the zone
+        let (items, out) = run(40.0, 2, 6.0, 1);
+        assert_eq!(out.placements.len(), 2, "{:?}", out.left_over);
+        let parts: Vec<Region> = out.placements.iter().map(|p| placed(&items, p)).collect();
+        assert!(distance(&parts[0], &parts[1]) >= 74.0 - 0.01);
+        for r in &parts {
+            assert!(distance(r, &zr) >= 6.0 - 0.01);
+        }
+        // as an ordinary zone (a gantry lane) the second part needs 37 mm from it and does not fit
+        assert_eq!(run(40.0, 2, 6.0, 0).0.len(), 2);
+        assert_eq!(run(40.0, 2, 6.0, 0).1.placements.len(), 1);
+        // a smaller gap: the zone still keeps 6 mm. 2 + 163 = 165 leaves 5 mm, 2 + 161 = 163 leaves 7 mm
+        assert_eq!(run(163.0, 1, 2.0, 1).1.placements.len(), 0);
+        let (items, out) = run(161.0, 1, 2.0, 1);
+        assert_eq!(out.placements.len(), 1);
+        assert!(distance(&placed(&items, &out.placements[0]), &zr) >= 6.0 - 0.01);
+    }
+
+    #[test]
     fn the_skirt_may_go_round_the_tower_but_not_an_excluded_area() {
         // a 3 x 3 grid of squares fills the bed but for its back left corner, where the zone is
         let items: Vec<NestItem> = (0..8)
