@@ -394,6 +394,11 @@ const dimValueText = (c: SketchConstraint, v: number, u: UnitPrefs): string => (
 
 const samePick = (a: DimPick, b: DimPick): boolean => JSON.stringify(a) === JSON.stringify(b)
 
+/** Waits for the solve that is due (and any that replaced it while waiting) to end. */
+async function afterSolve(solving: { current: { done: Promise<void> } | null }): Promise<void> {
+  for (let d = solving.current; d; d = solving.current === d ? null : solving.current) await d.done
+}
+
 function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () => void; init?: SketchInit }) {
   // Extrude or Revolve from a finished sketch's menu: only that feature's settings; Edit sketch changes the shape
   const featureOnly = init?.from !== undefined && init.from.mode !== 'edit'
@@ -665,15 +670,21 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
     return () => ac.abort()
   }, [plane])
 
-  // sketch.check runs a moment after each change.
+  // The solve that is due or running, so the check runs after it: two timers that fire late can fire in either order.
+  const solving = useRef<{ done: Promise<void>; end: () => void } | null>(null)
+
+  // sketch.check runs a moment after each change, once the solve for it has run.
   useEffect(() => {
     if (!sketch.length) return void setCheck(null)
     const ac = new AbortController()
     const t = setTimeout(() => {
-      checkSketch(toLoops(sketch), ac.signal).then(
-        (c) => !ac.signal.aborted && setCheck(c),
-        (e: unknown) => !ac.signal.aborted && setNote(errorText(e)),
-      )
+      void afterSolve(solving).then(() => {
+        if (ac.signal.aborted) return
+        checkSketch(toLoops(sketch), ac.signal).then(
+          (c) => !ac.signal.aborted && setCheck(c),
+          (e: unknown) => !ac.signal.aborted && setNote(errorText(e)),
+        )
+      })
     }, 100)
     return () => {
       clearTimeout(t)
@@ -686,6 +697,9 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
   useEffect(() => {
     if (!sketch.length) return void setSolved(null)
     const ac = new AbortController()
+    let end = (): void => undefined
+    const due = { done: new Promise<void>((r) => (end = r)), end: () => end() }
+    solving.current = due
     const t = setTimeout(() => {
       const { solver, map } = toSolver(sketch, constraints)
       solveSketch(solver, undefined, ac.signal).then(
@@ -701,11 +715,12 @@ function SketchEditor({ plane, onRestart, init }: { plane: Plane; onRestart: () 
           }
         },
         (e: unknown) => !ac.signal.aborted && setNote(errorText(e)),
-      )
+      ).finally(due.end)
     }, 60)
     return () => {
       clearTimeout(t)
       ac.abort()
+      due.end()
     }
   }, [sketch, constraints])
   const states = useMemo(() => (solved ? curveStates(sketch, constraints, solved.solved, solved.map) : null), [solved, sketch, constraints])
