@@ -5,7 +5,7 @@
 // the settings on first use, and slicing waits for the build that is under way.
 import type { EasyGoal, EasySettings } from '@slicerx/contracts'
 import { setProfileLayer } from '../adapters/config'
-import { excludeBoxes, setAvoidAreas } from '../plate/arrange'
+import { keepOutBoxes, setAvoidAreas } from '../plate/arrange'
 import { installPrintMargins } from '../plate/footprint'
 import { loadSettings } from '../adapters/load'
 import { resolveSlots } from '../filament/slots'
@@ -65,7 +65,8 @@ async function rebuild(): Promise<void> {
   setProfileLayer(layer.values, get().easyTouched)
   // The no-print areas are machine coordinates; arranging works on the plate.
   const [ox, oy] = areaOrigin(layer.values['printable_area'])
-  setAvoidAreas(excludeBoxes(layer.values['bed_exclude_area']).map((r) => ({ ...r, x: r.x - ox, y: r.y - oy })))
+  // The excluded areas and the nozzle wrap check corner (keepOutBoxes): the slice holds a print to both.
+  setAvoidAreas(keepOutBoxes(layer.values).map((r) => ({ ...r, x: r.x - ox, y: r.y - oy })))
   const bed = get().bed
   const same = bed.widthMm === layer.bed.widthMm && bed.depthMm === layer.bed.depthMm && bed.heightMm === layer.bed.heightMm && !bed.round === !layer.bed.round
   // A new overrides object makes every panel that reads the resolved configuration read it again. Following the
