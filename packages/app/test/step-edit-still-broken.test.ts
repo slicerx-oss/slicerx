@@ -290,17 +290,25 @@ async function shaped() {
   await applyExtrude(slicer, { name: 'Rectangle', target: { objectId: 'a', partIndex: 0 }, frame: TOP, shape: { type: 'rectangle', widthMm: 40, heightMm: 30 }, placement: { center: [0, 0] }, spec: { distanceMm: 5, operation: 'cut' } })
 }
 
+/**
+ * The shaped block open in the shape panel, its preview outline drawn: the panel asks for it 120 ms after it opens, so
+ * a slow run would ask for it before the save and a fast one would not. Waiting for it makes it always come first.
+ */
+async function openShaped() {
+  await shaped()
+  await open('a', 0)
+  await waitFor(() => expect(engine.ops()).toContain('shape.profile'), { timeout: 30_000 })
+}
+
 describe('the shape panel', () => {
   it('a shape cut edited deeper than the body says it is still broken and why', async () => {
-    await shaped()
-    await open('a', 0)
+    await openShaped()
     const t = await save('cad-dist', '12', 'Cut')
     expect(t).toMatchObject({ tone: 'warn', text: 'Step 1 is still broken: the cut removes the whole body. The change is saved.' })
   })
 
   it('a shape cut edited to another depth says "Changed step N"', async () => {
-    await shaped()
-    await open('a', 0)
+    await openShaped()
     const t = await save('cad-dist', '3', 'Cut')
     expect(t).toMatchObject({ tone: 'ok', text: 'Changed step 1 and ran the steps after it.' })
   })
