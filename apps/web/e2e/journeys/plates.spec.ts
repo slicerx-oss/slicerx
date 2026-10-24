@@ -13,6 +13,9 @@ import { aim, onCanvas, screenOf as screen } from '../canvas-press'
 import { closeSheet, expect, openSheet, openTransform, sliceCount, sliced, viewSized } from '../fixtures'
 import { journey as test } from '../journey'
 import { DECK_BOX_27, SMALL_3, addPlateFromPicker, pickPlate, plateProject, plateSheet, shownPlateSettings, shutPlateSheet } from '../plate-project'
+import { expectFileDialog, interceptFileDialogs } from '../file-dialog'
+import { zip } from '../project-zip'
+import { plateReady } from '../fixtures'
 import { current, dropPath, examplePlate, next, openFile, openModel, openPlates, oneRowClearOfLane, pickerBoxes, picker, prev, setState, settleOpen, shown, useFileDialogs, useFlags, useStarters } from './lib/model'
 
 // The V400 is one of the person's printers from the start, as the round bed steps need it; the others do not use it.
@@ -470,6 +473,59 @@ test.describe('plates in the Slice tab', () => {
  * just past the rim on the diagonal sits well inside the box, so only the circle flags it. Everything is read from the
  * app's state and the viewport's own outline settings, never from pixels.
  */
+/**
+ * A P1S project printed by object: Bracket and Housing 15 mm apart, so the head would come down on Bracket, and Clip
+ * clear of both.
+ */
+function byObjectProject(): Buffer {
+  const parts = [
+    { name: 'Bracket', size: [40, 40, 20], at: [60, 100] },
+    { name: 'Housing', size: [60, 50, 15], at: [115, 95] },
+    { name: 'Clip', size: [20, 20, 10], at: [205, 222] },
+  ]
+  const box = (id: number, [sx, sy, sz]: number[]) => {
+    const v = [[0, 0, 0], [sx, 0, 0], [sx, sy, 0], [0, sy, 0], [0, 0, sz], [sx, 0, sz], [sx, sy, sz], [0, sy, sz]]
+    const f = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [3, 7, 6], [3, 6, 2], [0, 4, 7], [0, 7, 3], [1, 2, 6], [1, 6, 5]]
+    return `<object id="${id}" type="model"><mesh><vertices>${v.map(([x, y, z]) => `<vertex x="${x}" y="${y}" z="${z}"/>`).join('')}</vertices><triangles>${f.map(([a, b, c]) => `<triangle v1="${a}" v2="${b}" v3="${c}"/>`).join('')}</triangles></mesh></object>`
+  }
+  const model = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>${parts.map((o, i) => box(i + 1, o.size)).join('')}</resources><build>${parts.map((o, i) => `<item objectid="${i + 1}" transform="1 0 0 0 1 0 0 0 1 ${o.at[0]} ${o.at[1]} 0" printable="1"/>`).join('')}</build></model>`
+  const objects = parts.map((o, i) => `<object id="${i + 1}"><metadata key="name" value="${o.name}"/><metadata key="extruder" value="1"/></object>`).join('')
+  const plate = `<plate><metadata key="plater_id" value="1"/><metadata key="plater_name" value="Enclosure parts"/><metadata key="locked" value="false"/>${parts.map((_, i) => `<model_instance><metadata key="object_id" value="${i + 1}"/><metadata key="instance_id" value="0"/></model_instance>`).join('')}</plate>`
+  const settings = { printer_settings_id: 'Bambu Lab P1S 0.4 nozzle', printer_model: 'Bambu Lab P1S', nozzle_diameter: ['0.4'], printable_area: ['0x0', '256x0', '256x256', '0x256'], layer_height: '0.2', print_sequence: 'by object', filament_colour: ['#00AE42'] }
+  return zip({ '3D/3dmodel.model': model, 'Metadata/model_settings.config': `<?xml version="1.0" encoding="UTF-8"?><config>${objects}${plate}</config>`, 'Metadata/project_settings.config': JSON.stringify(settings) })
+}
+
+test.describe('a plate printed by object', () => {
+  test('names the objects too close, selects them from the warning, and Arrange clears the warning and the red zones', async ({ page }) => {
+    interceptFileDialogs(page)
+    await page.addInitScript(() => {
+      localStorage.setItem('slicerx.debug', '1')
+      if (sessionStorage.getItem('sx-e2e')) return
+      sessionStorage.setItem('sx-e2e', '1')
+      localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, autoSlice: false }))
+    })
+    await page.goto('./')
+    await plateReady(page)
+    const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+    await chooser.setFiles({ name: 'Enclosure parts.3mf', mimeType: 'model/3mf', buffer: byObjectProject() })
+    type Sx = { getState(): { plate: { id: string; name: string }[]; selectedIds: string[] } }
+    type Zones = { __vp: { clearance: { conflicts: Set<string> } } }
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.length), { timeout: 60_000 }).toBe(3)
+    const warning = page.getByTestId('slice-clearance-warning')
+    await expect(warning).toContainText('Too close to print by object')
+    const row = page.getByTestId('slice-clearance-select')
+    await expect(row).toContainText('Bracket and Housing')
+    // the zones of the two draw red; Clip's does not
+    await expect.poll(() => page.evaluate(() => [...(window as unknown as Zones).__vp.clearance.conflicts].length)).toBe(2)
+    await row.click()
+    const ids = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.filter((e) => e.name !== 'Clip').map((e) => e.id))
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().selectedIds)).toEqual(ids)
+    await page.getByTestId('slice-clearance-arrange').click()
+    await expect(warning).toBeHidden({ timeout: 60_000 })
+    await expect.poll(() => page.evaluate(() => (window as unknown as Zones).__vp.clearance.conflicts.size)).toBe(0)
+  })
+})
+
 test.describe('a round bed', () => {
   type Vp = { stage: { outline: { uniforms: { rnd: { value: number }; alert: { value: number } } } | null } }
 

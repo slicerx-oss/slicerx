@@ -209,6 +209,9 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-estimate-error` | The engine's message when a slice fails |
 | `slice-error-show` | Show me on a slice the safety check refused, when its message names a spot: turns the view there and picks the object |
 | `slice-block-show` | Show me on the footer's heimdall block: opens the toolpaths at the first strike |
+| `slice-clearance-warning` | The footer's by-object warning: objects closer than the clearance, or a tall one printing first, before a current slice |
+| `slice-clearance-select` | The warning's row: selects the closest pair (or the tall object) on the plate |
+| `slice-clearance-arrange` | Arrange on the warning: lays the plate out with the clearance between objects |
 | `slice-estimate-held` | The footer's quiet line when Auto slice holds a big plate's slice for Slice |
 | `danger-slice-print` | Print, the footer's main action (opens the Print sheet; the bridge refuses it) |
 | `check-show` | Show me on a Print sheet check that blocks the print and has a place in the slice: closes the sheet and opens the toolpaths there |

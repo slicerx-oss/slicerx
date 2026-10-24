@@ -31,3 +31,19 @@
 /* the timeline rolled back: the line, then the way to the end */
 .rolled-back { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .rolled-back p { margin: 0; }
+
+/* The by-object clearance warning: a title line with Arrange, and the closest pair as one row that selects it. */
+.seq-card { --clearance-red: var(--red-text); margin: 8px 0 0; display: grid; gap: 4px; }
+.seq-card-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.seq-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--clearance-red); }
+.seq-card-title { flex: 1; min-width: 0; color: var(--clearance-red); font: var(--fw-semibold) var(--fs-md) var(--f-body); }
+.seq-card-line { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 28px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: none; color: var(--fg); cursor: pointer; font: var(--fw-medium) var(--fs-sm) var(--f-body); text-align: left; }
+.seq-card-line:hover { background: var(--ink-3); }
+.seq-card-line:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.seq-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seq-card-fig { flex: none; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.seq-card-more { flex: none; color: var(--muted); font-size: var(--fs-xs); }
+/* A close call heimdall slices: the info tone, and the one line wraps rather than hides the gap. */
+.seq-card[data-tone="soft"] { --clearance-red: var(--cyan-text); }
+.seq-card-note { flex: 1; min-height: 28px; padding: 4px 8px; }
+.seq-card-note .seq-card-name { white-space: normal; }

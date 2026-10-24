@@ -15,7 +15,8 @@ import { printTarget, usePrinter } from '../../lib/use-printer'
 import { useWaited } from '../../lib/waited'
 import { printBlock } from '../../plate/heimdall'
 import { firstHit, refusalSpot, showRefusal, showSpot } from '../../plate/preflight-show'
-import { sequenceProblem } from '../../plate/sequence-check'
+import { clearanceTrouble, sequenceProblem } from '../../plate/sequence-check'
+import { ClearanceWarning } from './seq-warning'
 import { rolledBackNote } from '../../plate/timeline'
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate } from '../../state/actions'
 import { get, showSliced, shownSlice, toast, useApp } from '../../state/store'
@@ -46,6 +47,8 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   // profile allows by object are a heads-up: heimdall checks every move when the plate slices.
   const unsafe = useApp(printBlock)
   const heads = useApp(sequenceProblem)
+  // The same plate's by-object plan: the short warning with the pair it names and Arrange.
+  const trouble = useApp(clearanceTrouble)
   // Show me on a block: the first strike in the sliced plate, or the spot a refused slice names.
   const hit = useApp(firstHit)
   const refused = slice.status === 'error' ? refusalSpot(slice.message) : null
@@ -139,7 +142,7 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   const problems = (
     <>
       <RolledBack />
-      {unsafe !== null ? (
+      {unsafe !== null && !(trouble !== null && unsafe === heads) ? (
         <p className="app-err" role="alert">
           {unsafe}
           {hit !== null ? ' ' : null}
@@ -149,8 +152,8 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
             </button>
           ) : null}
         </p>
-      ) : heads !== null && !done ? (
-        <p className="app-note">{heads}</p>
+      ) : trouble !== null && (!done || done.stale) ? (
+        <ClearanceWarning plan={trouble} />
       ) : null}
       {slice.status === 'error' ? (
         <p className="app-err est-error" role="alert" data-testid="slice-estimate-error">

@@ -50,6 +50,7 @@ import { buildTimeline, fitOf, type Timeline } from '../lib/preview-timeline'
 import { headFor } from '@slicerx/viewport'
 import { strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
+import { activeClearance } from '../plate/sequence-check'
 import { markOpenStage, markViewDrawn, onOpenStage, openStagesPassed } from '../lib/open-mark'
 import { drawnFrom } from './drawn'
 import { viewportStatsFrom } from './stats'
@@ -83,6 +84,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'se
   setMovable?: Viewport['setMovable']
   setCutPlane?: Viewport['setCutPlane']
   setGapLines?: Viewport['setGapLines']
+  setClearance?: Viewport['setClearance']
   setGuides?: Viewport['setGuides']
   /** Model's Shift and drag box select. */
   setBoxSelect?: Viewport['setBoxSelect']
@@ -918,6 +920,21 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       if (vp.setGapLines) {
         vp.setGapLines(fitLines())
         offs.push(subscribeFits(() => vp.setGapLines?.(fitLines())))
+      }
+      // Print by object: each object's clearance zone and the gantry lanes, on the plate in Slice.
+      if (vp.setClearance) {
+        const pushClearance = (s: AppState) => {
+          // A current slice has heimdall's verdict on every move; the zones stand down with the warning.
+          const current = s.slice.status === 'done' && !s.slice.stale
+          const plan = s.workspace === 'prepare' && !showsDesign(s) && !current ? activeClearance(s) : null
+          vp.setClearance?.(plan ? { zones: plan.zones.map((z) => ({ id: z.id, transform: plan.transforms[z.id] ?? [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], zone: z.zone, hull: z.hull, topMm: z.topMm })), gantry: { ...plan.gantry, widthMm: s.bed.widthMm }, selected: selectedIds(s), soft: plan.pairs.filter((p) => p.severity === 'soft').map((p) => [p.a.id, p.b.id] as const) } : null)
+        }
+        pushClearance(appStore.getState())
+        offs.push(
+          appStore.subscribe((s, prev) => {
+            if (s.plate !== prev.plate || s.plates !== prev.plates || s.activePlate !== prev.activePlate || s.easy !== prev.easy || s.overrides !== prev.overrides || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.bed !== prev.bed || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode || s.slice !== prev.slice) pushClearance(s)
+          }),
+        )
       }
       // norn: a click on a toolpath in Preview opens the settings that made it; a click on nothing closes them.
       // The preview numbers objects as the slice request listed them: the printable entries in plate order.

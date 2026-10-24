@@ -11,7 +11,7 @@ import { plateSequence } from './plate-sequence'
 import type { AppState, PlateEntry } from '../state/store'
 import { hullOf } from './arrange'
 import { clearanceRadius } from '@slicerx/settings/arrange-room'
-import { byObjectPlan, hullDistance, type ByObjectPlan } from '@slicerx/settings/by-object'
+import { byObjectHead, byObjectPlan, hullDistance, type ByObjectPlan } from '@slicerx/settings/by-object'
 import type { Mat4 } from './transform'
 
 type Pt = [number, number]
@@ -139,8 +139,9 @@ export interface ClearancePlan extends ByObjectPlan {
   transforms: Record<string, readonly number[]>
 }
 
-export function clearancePlan(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>): ClearancePlan {
-  const plan = byObjectPlan(entries.map((e) => ({ id: e.id, name: e.name, ...shapeOf(e) })), cfg)
+/** `printerId` is the printer profile the slice names, whose head heimdall moves; without one, the config's printer model. */
+export function clearancePlan(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>, printerId?: string): ClearancePlan {
+  const plan = byObjectPlan(entries.map((e) => ({ id: e.id, name: e.name, ...shapeOf(e) })), cfg, byObjectHead(cfg, printerId))
   return { ...plan, transforms: Object.fromEntries(entries.map((e) => [e.id, e.transform])) }
 }
 
@@ -148,31 +149,31 @@ export function clearancePlan(entries: readonly PlateEntry[], cfg: Record<string
  * The problems of printing `entries` one after the other in this order with `cfg`, one sentence each, worded as the
  * engine words them. Empty when the plate prints safely by object.
  */
-export function clearanceProblems(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>): string[] {
-  return sentences(clearancePlan(entries, cfg))
+export function clearanceProblems(entries: readonly PlateEntry[], cfg: Record<string, SettingValue>, printerId?: string): string[] {
+  return sentences(clearancePlan(entries, cfg, printerId))
 }
 
-/** The plan's problems, one sentence each, worded as the engine words them. */
+/** The plan's problems, one sentence each, worded as the engine words them. A close call is not one: heimdall slices it. */
 function sentences(plan: ByObjectPlan): string[] {
   return [
-    ...plan.pairs.map((p) => `${p.a.name} and ${p.b.name} are ${p.gapMm.toFixed(1)} mm apart; printing by object needs ${Math.round(plan.needMm)} mm between objects so the toolhead clears them`),
+    ...plan.pairs.filter((p) => p.severity === 'block').map((p) => `${p.a.name} and ${p.b.name} are ${p.gapMm.toFixed(1)} mm apart; printing by object needs ${Math.round(plan.needMm)} mm between objects so the toolhead clears them`),
     ...plan.tall.map((t) => `${t.name} is ${t.topMm.toFixed(1)} mm tall and prints before another object; the ${t.what} clears ${t.limitMm.toFixed(0)} mm, so print it last or lower it`),
   ]
 }
 
-type Inputs = Pick<AppState, 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides'>
+type Inputs = Pick<AppState, 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides' | 'profile'>
 
-let planned: { plate: unknown; plates: unknown; activePlate: unknown; easy: unknown; overrides: unknown; plan: ClearancePlan | null } | null = null
+let planned: { plate: unknown; plates: unknown; activePlate: unknown; easy: unknown; overrides: unknown; profile: unknown; plan: ClearancePlan | null } | null = null
 
 /** The active plate's by-object plan when it prints by object with more than one printable object, else null. */
 export function activeClearance(s: Inputs): ClearancePlan | null {
-  if (planned && planned.plate === s.plate && planned.plates === s.plates && planned.activePlate === s.activePlate && planned.easy === s.easy && planned.overrides === s.overrides) return planned.plan
+  if (planned && planned.plate === s.plate && planned.plates === s.plates && planned.activePlate === s.activePlate && planned.easy === s.easy && planned.overrides === s.overrides && planned.profile === s.profile) return planned.plan
   const meta = s.plates.find((p) => p.id === s.activePlate)
   const printable = s.plate.filter((p) => p.printable !== false)
   const base = resolveConfig(s.easy, s.overrides)
   let plan: ClearancePlan | null = null
-  if (plateSequence(meta, base) === 'by-object' && printable.length > 1) plan = clearancePlan(printable, { ...base, ...plateConfig(meta) } as unknown as Record<string, SettingValue>)
-  planned = { plate: s.plate, plates: s.plates, activePlate: s.activePlate, easy: s.easy, overrides: s.overrides, plan }
+  if (plateSequence(meta, base) === 'by-object' && printable.length > 1) plan = clearancePlan(printable, { ...base, ...plateConfig(meta) } as unknown as Record<string, SettingValue>, s.profile?.printerId)
+  planned = { plate: s.plate, plates: s.plates, activePlate: s.activePlate, easy: s.easy, overrides: s.overrides, profile: s.profile, plan }
   return plan
 }
 
@@ -188,6 +189,7 @@ export function clearanceTrouble(s: Inputs): ClearancePlan | null {
  */
 export function sequenceProblem(s: Inputs): string | null {
   const plan = clearanceTrouble(s)
-  if (!plan) return null
-  return `Printing by object may collide: ${sentences(plan).join('; ')}. Slice to see where heimdall finds a strike, or move the objects apart, print the tall one last, or print by layer.`
+  const said = plan ? sentences(plan) : []
+  if (said.length === 0) return null
+  return `Printing by object may collide: ${said.join('; ')}. Slice to see where heimdall finds a strike, or move the objects apart, print the tall one last, or print by layer.`
 }
