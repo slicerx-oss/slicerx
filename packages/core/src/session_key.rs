@@ -10,9 +10,9 @@ use serde_json::Value;
 /// `gcode` or `preview` in `packages/settings/schema.json`) of a type the session cache test sweeps (numbers, flags,
 /// choices, G-code text), each checked to give the same bytes on a kept session as on a fresh one
 /// (`tests/session_cache.rs`). Not here: the support settings a session is built with (`SupportConfig`, which a
-/// session refuses to change), the filament of each surface, the prime tower's purge and the narrow internal solid
-/// rule, which the session's plans read though the schema files them under G-code, and settings of other types
-/// (names, lists of points, free text), which key a new session.
+/// session refuses to change), the filament of each surface, the prime tower's purge and blocks (each filament's prime
+/// volume and adhesion category) and the narrow internal solid rule, which the session's plans read though the schema
+/// files them under G-code, and settings of other types (names, lists of points, free text), which key a new session.
 pub const SESSION_FREE_KEYS: &[&str] = &[
     "accel_to_decel_enable",
     "accel_to_decel_factor",
@@ -97,7 +97,6 @@ pub const SESSION_FREE_KEYS: &[&str] = &[
     "fan_speedup_time",
     "farthest_point_timelapse",
     "filament_adaptive_volumetric_speed",
-    "filament_adhesiveness_category",
     "filament_change_length",
     "filament_change_length_nc",
     "filament_cooling_before_tower",
@@ -136,8 +135,6 @@ pub const SESSION_FREE_KEYS: &[&str] = &[
     "filament_pre_cooling_temperature",
     "filament_pre_cooling_temperature_nc",
     "filament_preheat_temperature_delta",
-    "filament_prime_volume",
-    "filament_prime_volume_nc",
     "filament_printable",
     "filament_ramming_travel_time",
     "filament_ramming_travel_time_nc",

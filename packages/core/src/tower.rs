@@ -29,6 +29,8 @@ pub(crate) struct TowerPath {
     /// A piece of the wall that the nozzle reaches by hopping the opening before it (`prime_tower_skip_points`):
     /// retracted, at 10 mm/s.
     pub(crate) hop: bool,
+    /// What an old filament rams out before a change, which runs past the filament's volumetric limit.
+    pub(crate) ram: bool,
 }
 
 /// The tower's geometry for a plate.
@@ -78,6 +80,9 @@ struct Rib {
     offset: (f64, f64),
 }
 
+/// The speed a type 1 tower's contact wipe ([`Tower::purge_lead`]) speeds up to, mm/s.
+const CONTACT_WIPE_SPEED: f64 = 20.0;
+
 /// Orca's purge rows extrude about a tenth more than the volume asked for (measured on two
 /// filaments at the default `prime_volume`).
 const PURGE_EXTRA: f64 = 1.1;
@@ -89,9 +94,12 @@ pub(crate) fn purge_volume(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> f6
     // change G-code, and a type 2 tower takes the whole flush only with `purge_in_prime_tower` on a
     // single extruder multi material printer.
     if !flush_on_tower(cfg) {
-        // Orca's type 1 rows extrude the prime volume itself; type 2 runs about a tenth over.
-        let extra = if type1(cfg) { 1.0 } else { PURGE_EXTRA };
-        return cfg.raw_number("prime_volume", 45.0) * extra;
+        // A type 1 tower wipes the new filament's own prime volume; type 2 wipes `prime_volume` and runs about a
+        // tenth over.
+        if type1(cfg) {
+            return prime_volume_of(cfg, to);
+        }
+        return cfg.raw_number("prime_volume", 45.0) * PURGE_EXTRA;
     }
     let mult = cfg.raw_number("flush_multiplier", 1.0).max(0.0);
     let asked = match flush_entry(
@@ -104,6 +112,41 @@ pub(crate) fn purge_volume(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> f6
         _ => cfg.raw_number("prime_volume", 45.0),
     };
     asked * PURGE_EXTRA
+}
+
+/// The prime volume a filament gets when the settings list none for it, mm3.
+pub(crate) const DEFAULT_PRIME: f64 = 45.0;
+
+/// What each change wipes with `prime_volume_mode` Saving, mm3.
+const SAVING_PRIME: f64 = 15.0;
+
+/// `prime_volume_mode` Saving: every change wipes [`SAVING_PRIME`].
+fn saving_mode(cfg: &PrintConfig) -> bool {
+    cfg.raw.get("prime_volume_mode").and_then(|v| v.as_str()) == Some("Saving")
+}
+
+/// What a type 1 tower wipes after a change into filament `slot` (1-based), mm3: the filament's own
+/// `filament_prime_volume`, at least 1, or [`DEFAULT_PRIME`] when the list has no value for it (the key is absent or
+/// the list is shorter than the filaments). A listed value always wins. `prime_volume` is not read here.
+pub(crate) fn prime_volume_of(cfg: &PrintConfig, slot: u8) -> f64 {
+    if saving_mode(cfg) {
+        return SAVING_PRIME;
+    }
+    listed(cfg, "filament_prime_volume", slot).map_or(DEFAULT_PRIME, |v| v.max(1.0))
+}
+
+/// The number a per-filament setting lists for filament `slot` (1-based): its entry in the list, or the one value
+/// of a setting that is not a list. None when the list stops short of the filament or the setting is absent.
+pub(crate) fn listed(cfg: &PrintConfig, key: &str, slot: u8) -> Option<f64> {
+    let num = |v: &serde_json::Value| match v {
+        serde_json::Value::Number(n) => n.as_f64(),
+        serde_json::Value::String(s) => s.trim().parse().ok(),
+        _ => None,
+    };
+    match cfg.raw.get(key)? {
+        serde_json::Value::Array(a) => a.get(usize::from(slot.max(1) - 1)).and_then(num),
+        v => num(v),
+    }
 }
 
 /// What one tool change puts on the tower, mm3: the new filament's purge rows (`wipe`) and, printed with
@@ -120,8 +163,8 @@ pub(crate) struct ChangePurge {
 /// The tower's share of a change from slot `from` to slot `to` (1-based):
 ///
 /// - Two extruders with a filament map (H2D, H2C; Bambu Studio's `Print::_make_wipe_tower` and
-///   `WipeTower::plan_toolchange`): the new filament primes `filament_prime_volume`, or
-///   `filament_prime_volume_nc` after a hotend swap on the rack, and when the nozzle changes the old one
+///   `WipeTower::plan_toolchange`): the new filament primes `filament_prime_volume` ([`prime_volume_of`]), or
+///   `filament_prime_volume_nc` (60 when unlisted) after a hotend swap on the rack, and when the nozzle changes the old one
 ///   first rams out `filament_change_length` (`filament_change_length_nc` for a hotend swap) mm of filament.
 ///   The flush itself goes to the chute, and only when the nozzle held another filament.
 /// - A Prusa tool changer (the XL; `PrusaSlicer`'s `WipeTower::extract_wipe_volumes`): each head that
@@ -129,7 +172,7 @@ pub(crate) struct ChangePurge {
 ///   `filament_multitool_ramming_volume` when `filament_multitool_ramming` is on.
 /// - Any other tool changer (the Snapmaker U1; Orca's `WipeTower2`): `prime_volume`, plus the multitool
 ///   ramming when the filament asks for it.
-/// - One nozzle: [`purge_volume`].
+/// - One nozzle: [`purge_volume`] (on a type 1 tower the new filament's [`prime_volume_of`]).
 pub(crate) fn change_purge(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> ChangePurge {
     // The ramming length is the outgoing filament's.
     let area = cfg.filament_area(from);
@@ -144,21 +187,14 @@ pub(crate) fn change_purge(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> Ch
             slot_of("filament_nozzle_map", to, et - 1.0),
         );
         let nozzle_change = (ef - et).abs() < 0.5 && (nf - nt).abs() > 0.5;
-        let prime = cfg.raw_number("prime_volume", 45.0);
-        let saving = cfg.raw.get("prime_volume_mode").and_then(|v| v.as_str()) == Some("Saving");
-        let wipe = if saving {
-            15.0
+        let wipe = if saving_mode(cfg) {
+            SAVING_PRIME
+        } else if nozzle_change {
+            listed(cfg, "filament_prime_volume_nc", to)
+                .unwrap_or(60.0)
+                .max(1.0)
         } else {
-            per_slot_raw(
-                cfg,
-                if nozzle_change {
-                    "filament_prime_volume_nc"
-                } else {
-                    "filament_prime_volume"
-                },
-                to,
-                prime,
-            )
+            prime_volume_of(cfg, to)
         };
         let ram = if (nf - nt).abs() > 0.5 {
             per_slot_raw(
@@ -715,6 +751,11 @@ impl Tower {
         self.width
     }
 
+    /// True for a type 1 (Bambu Lab) tower.
+    pub(crate) fn is_type1(&self) -> bool {
+        self.type1
+    }
+
     /// Rotation about the front left corner, degrees.
     pub(crate) fn angle(&self) -> f64 {
         self.angle
@@ -924,6 +965,7 @@ impl Tower {
             flow: 1.0,
             nozzle_wipe: false,
             hop: false,
+            ram: false,
         }
     }
 
@@ -1089,6 +1131,18 @@ impl Tower {
     /// it an inverse U with lines across the box about `wipe_tower_bridging` apart (10 mm on a type
     /// 1 tower). `used_rows` is how many purge rows the layer printed. Empty when no room is left.
     pub(crate) fn fill(&self, cfg: &PrintConfig, used_rows: f64, first: bool) -> Vec<TowerPath> {
+        self.fill_range(cfg, used_rows, None, first)
+    }
+
+    /// [`Self::fill`] of the depth from row `used_rows` up to row `to` (a block of the tower that ends before the
+    /// tower does), or to the tower's back with `to` None.
+    pub(crate) fn fill_range(
+        &self,
+        cfg: &PrintConfig,
+        used_rows: f64,
+        to: Option<f64>,
+        first: bool,
+    ) -> Vec<TowerPath> {
         let w = self.wall_w;
         let (x0, x1) = (1.5 * w, self.width - 1.5 * w);
         let y0 = if used_rows > 0.0 {
@@ -1096,7 +1150,7 @@ impl Tower {
         } else {
             1.5 * w
         };
-        let y1 = self.depth - 1.5 * w;
+        let y1 = to.map_or(self.depth - 1.5 * w, |r| r * self.spacing + 0.5 * w);
         if y1 - y0 <= 1e-4 || x1 - x0 <= 4.0 * w {
             return Vec::new();
         }
@@ -1115,6 +1169,7 @@ impl Tower {
             flow: 1.0,
             nozzle_wipe: false,
             hop: false,
+            ram: false,
         };
         let mut out = vec![path(vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)])];
         let dy = y1 - y0 - w;
@@ -1230,6 +1285,7 @@ impl Tower {
                 flow: 1.0,
                 nozzle_wipe: false,
                 hop: false,
+                ram: false,
             });
         }
         out
@@ -1265,6 +1321,7 @@ impl Tower {
                     flow: 1.0,
                     nozzle_wipe: false,
                     hop: false,
+                    ram: false,
                 }
             })
             .collect()
@@ -1338,12 +1395,17 @@ impl Tower {
     /// first layer the lower of it and the first layer's speed), and from the fifth row on it holds 0.875 of it
     /// plus 50 mm/min.
     pub(crate) fn purge(&self, volume: f64, layer_h: f64, first: bool, start: f64) -> (Vec<TowerPath>, f64) {
-        self.purge_lead(volume, layer_h, first, start, None)
+        self.purge_lead(volume, layer_h, first, start, None, false)
     }
 
     /// [`Self::purge`] that first finishes the row a tool changer's ramming left off (`lead`: where the
     /// ramming ended across the tower and whether it was heading right), as Orca's and `PrusaSlicer`'s wipe
     /// takes the rest of the ramming's row (`first_wipe_line`) before its own rows.
+    ///
+    /// On a type 1 tower the first layer's wipe, and a `contact` wipe (the first change into a filament whose
+    /// adhesion category comes back onto the tower), fill the same depth with rows one bead apart instead of
+    /// `prime_tower_infill_gap` apart: as many as fit in it, at least one. A contact wipe has no nozzle wipe and
+    /// speeds up to 20 mm/s, whatever the layer. The rows the wipe takes are its normal ones either way.
     pub(crate) fn purge_lead(
         &self,
         volume: f64,
@@ -1351,6 +1413,7 @@ impl Tower {
         first: bool,
         start: f64,
         lead: Option<(f64, bool)>,
+        contact: bool,
     ) -> (Vec<TowerPath>, f64) {
         // A type 1 tower's rows run across its cleaning box, a bead in from each side, whole rows until the
         // length is purged (`WipeTower::toolchange_wipe_new`); a type 2 tower's stop short and the last row
@@ -1384,17 +1447,26 @@ impl Tower {
         let n = (volume.max(0.0) / (row_len * area))
             .ceil()
             .max(if lead_row { 0.0 } else { 1.0 });
+        let dense = self.type1 && (first || contact) && !lead_row && self.spacing > self.wall_w + 1e-9;
+        let (printed, step) = if dense {
+            (
+                (n * self.spacing / self.wall_w + 1e-9).floor().max(1.0),
+                self.wall_w,
+            )
+        } else {
+            (n, self.spacing)
+        };
         // The count is small (a purge is tens of rows).
         #[allow(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
             reason = "row count is small"
         )]
-        for _ in 0..(n as usize) {
+        for _ in 0..(printed as usize) {
             let (a, b) = if left { (x0, x1) } else { (x1, x0) };
             pts.push((a, y));
             pts.push((b, y));
-            y += self.spacing;
+            y += step;
             left = !left;
         }
         // The last row is trimmed so the total matches the volume asked for.
@@ -1410,7 +1482,13 @@ impl Tower {
             }
         }
         let target = if self.type1 {
-            if first { self.first_speed } else { self.max_speed }
+            if contact {
+                CONTACT_WIPE_SPEED
+            } else if first {
+                self.first_speed
+            } else {
+                self.max_speed
+            }
         } else if first {
             self.first_speed
         } else {
@@ -1445,9 +1523,10 @@ impl Tower {
                 width_mm: to_f32(self.wipe_w),
                 speed_mm_s: to_f32(speed),
                 flow: 1.0,
-                // A row a tool changer's ramming leads into is not the wipe's own start.
-                nozzle_wipe: k == 0 && self.skip_points && !lead_row,
+                // A row a tool changer's ramming leads into is not the wipe's own start, and a contact wipe has none.
+                nozzle_wipe: k == 0 && self.skip_points && !lead_row && !contact,
                 hop: false,
+                ram: false,
             });
         }
         (paths, n)
@@ -1517,6 +1596,7 @@ impl Tower {
             flow: 1.0,
             nozzle_wipe: false,
             hop: false,
+            ram: true,
         };
         (vec![path], rows, end.filter(|_| !p.nozzle_change))
     }
@@ -1614,6 +1694,7 @@ pub(crate) fn prime_section(
         flow: 1.0,
         nozzle_wipe: false,
         hop: false,
+        ram: false,
     }
 }
 
@@ -1679,10 +1760,12 @@ fn plan_rows_with(
     };
     let row_len = width.max(5.0) - 4.0 * wall_w;
     let mut cur = 0u8;
-    let mut most = 1.0f64;
+    // The most rows each block takes on any layer; the blocks stand side by side along the depth.
+    let mut most: Vec<(i64, f64)> = Vec::new();
     for (l, order) in orders.iter().enumerate().take(top + 1) {
         let h = thickness(l);
         let mut rows = 0.0;
+        let mut by_block: Vec<(i64, f64)> = Vec::new();
         let mut first_change = true;
         for &t in order {
             if cur != 0 && t != cur {
@@ -1692,16 +1775,204 @@ fn plan_rows_with(
                     v = t0.saved_wipe(cfg, v, h, l == 0, rows, t);
                 }
                 first_change = false;
-                rows += (v / (row_len * bead(wipe_w, h))).ceil().max(1.0);
+                let mut r = (v / (row_len * bead(wipe_w, h))).ceil().max(1.0);
                 if p.ram > 0.0 {
-                    rows += ram_rows(cfg, p, width, h);
+                    r += ram_rows(cfg, p, width, h);
                 }
+                rows += r;
+                add_to(&mut by_block, block_of(cfg, t), r);
             }
             cur = t;
         }
-        most = most.max(rows);
+        for (b, r) in by_block {
+            raise_to(&mut most, b, r);
+        }
     }
-    most
+    most.iter().map(|b| b.1).sum::<f64>().max(1.0)
+}
+
+/// Adds `v` to the entry of `key` in `list`.
+fn add_to(list: &mut Vec<(i64, f64)>, key: i64, v: f64) {
+    match list.iter_mut().find(|e| e.0 == key) {
+        Some(e) => e.1 += v,
+        None => list.push((key, v)),
+    }
+}
+
+/// Raises the entry of `key` in `list` to at least `v`.
+fn raise_to(list: &mut Vec<(i64, f64)>, key: i64, v: f64) {
+    match list.iter_mut().find(|e| e.0 == key) {
+        Some(e) => e.1 = e.1.max(v),
+        None => list.push((key, v)),
+    }
+}
+
+/// The block of a type 1 tower that a change into filament `slot` (1-based) wipes in: the filament's
+/// `filament_adhesiveness_category`. Filaments of one category share a block; any other tower has one block.
+pub(crate) fn block_of(cfg: &PrintConfig, slot: u8) -> i64 {
+    if !type1(cfg) {
+        return 0;
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "a category number")]
+    let c = per_slot_raw(cfg, "filament_adhesiveness_category", slot, 0.0).round() as i64;
+    c
+}
+
+/// What a type 1 tower's layers print where, planned once for the print from the layers' filaments in print order
+/// (`orders`, up to the tower's top layer `top`).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TowerPlan {
+    /// The filament that prints the wall ([`wall_filament`]).
+    pub(crate) wall: u8,
+    /// The blocks along the depth, front first: an adhesion category and the rows it takes, the most any layer's
+    /// changes into it take. The last block runs to the tower's back.
+    pub(crate) blocks: Vec<(i64, f64)>,
+    /// By layer, the categories that come onto the tower or leave it there (contact layers).
+    pub(crate) contact: Vec<Vec<i64>>,
+}
+
+impl TowerPlan {
+    /// The plan for `tower` as placed.
+    pub(crate) fn new(
+        cfg: &PrintConfig,
+        tools: u8,
+        orders: &[Vec<u8>],
+        thickness: &dyn Fn(usize) -> f64,
+        top: usize,
+        tower: &Tower,
+    ) -> Self {
+        let mut blocks: Vec<(i64, f64)> = Vec::new();
+        let row_len = (tower.width - 2.0 * tower.wall_w).max(1.0);
+        // Each layer's categories on the tower: those of the filaments it changes from or to, or with no change
+        // the one the nozzle holds.
+        let mut presence: Vec<Vec<i64>> = Vec::new();
+        let mut cur = 0u8;
+        for (l, order) in orders.iter().enumerate().take(top + 1) {
+            let h = thickness(l);
+            let mut by_block: Vec<(i64, f64)> = Vec::new();
+            let mut on: Vec<u8> = Vec::new();
+            for &t in order {
+                if cur != 0 && t != cur {
+                    let p = change_purge(cfg, tools, cur, t);
+                    let mut r = (p.wipe / (row_len * bead(tower.wipe_w, h))).ceil().max(1.0);
+                    if p.ram > 0.0 {
+                        r += ram_rows(cfg, p, tower.width, h);
+                    }
+                    add_to(&mut by_block, block_of(cfg, t), r);
+                    on.push(cur);
+                    on.push(t);
+                }
+                cur = t;
+            }
+            if on.is_empty() && cur != 0 {
+                on.push(cur);
+            }
+            let mut cats: Vec<i64> = on.iter().map(|&s| block_of(cfg, s)).collect();
+            cats.sort_unstable();
+            cats.dedup();
+            presence.push(cats);
+            for (b, r) in by_block {
+                raise_to(&mut blocks, b, r);
+            }
+        }
+        blocks.sort_by_key(|b| b.0);
+        let contact = presence
+            .iter()
+            .enumerate()
+            .map(|(l, here)| {
+                let below = l.checked_sub(1).and_then(|b| presence.get(b));
+                below.map_or_else(Vec::new, |below| {
+                    let mut c: Vec<i64> = here
+                        .iter()
+                        .filter(|k| !below.contains(k))
+                        .chain(below.iter().filter(|k| !here.contains(k)))
+                        .copied()
+                        .collect();
+                    c.sort_unstable();
+                    c
+                })
+            })
+            .collect();
+        Self {
+            wall: wall_filament(cfg, orders, top),
+            blocks,
+            contact,
+        }
+    }
+
+    /// Where the block of category `cat` starts along the depth, in rows, and where it ends (None: at the
+    /// tower's back). None when the plan has no block for it.
+    pub(crate) fn block(&self, cat: i64) -> Option<(f64, Option<f64>)> {
+        let k = self.blocks.iter().position(|b| b.0 == cat)?;
+        let from: f64 = self.blocks.iter().take(k).map(|b| b.1).sum();
+        let to = (k + 1 < self.blocks.len()).then(|| from + self.blocks.get(k).map_or(0.0, |b| b.1));
+        Some((from, to))
+    }
+
+    /// True when a change into a filament of category `cat` on layer `layer` is a contact change.
+    pub(crate) fn contact(&self, layer: usize, cat: i64) -> bool {
+        self.blocks.len() > 1 && self.contact.get(layer).is_some_and(|c| c.contains(&cat))
+    }
+}
+
+/// The filament that prints a type 1 tower's wall for the whole print: `wipe_tower_filament` when set; otherwise,
+/// counting for each filament the tower layers it is on (a layer with changes counts the filament it starts with
+/// and each one it changes to, once each; a layer without changes the one it holds), the most counted filament of
+/// the most counted adhesion category (ties to the lower category, then the lower filament).
+pub(crate) fn wall_filament(cfg: &PrintConfig, orders: &[Vec<u8>], top: usize) -> u8 {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "a filament slot"
+    )]
+    let set = cfg.raw_number("wipe_tower_filament", 0.0).clamp(0.0, 255.0) as u8;
+    if set > 0 {
+        return set;
+    }
+    let mut by_filament: Vec<(i64, f64)> = Vec::new();
+    let mut by_cat: Vec<(i64, f64)> = Vec::new();
+    let mut cur = 0u8;
+    for order in orders.iter().take(top + 1) {
+        let mut on: Vec<u8> = Vec::new();
+        for &t in order {
+            if cur != 0 && t != cur {
+                on.push(cur);
+                on.push(t);
+            }
+            cur = t;
+        }
+        if on.is_empty() && cur != 0 {
+            on.push(cur);
+        }
+        on.sort_unstable();
+        on.dedup();
+        let mut cats: Vec<i64> = on.iter().map(|&s| block_of(cfg, s)).collect();
+        cats.sort_unstable();
+        cats.dedup();
+        for &s in &on {
+            add_to(&mut by_filament, i64::from(s), 1.0);
+        }
+        for c in cats {
+            add_to(&mut by_cat, c, 1.0);
+        }
+    }
+    let best = |list: &[(i64, f64)], keep: &dyn Fn(i64) -> bool| {
+        list.iter()
+            .filter(|e| keep(e.0))
+            .fold(None::<(i64, f64)>, |m, &e| match m {
+                Some(b) if b.1 > e.1 || (b.1.total_cmp(&e.1).is_eq() && b.0 < e.0) => Some(b),
+                _ => Some(e),
+            })
+            .map(|e| e.0)
+    };
+    let Some(cat) = best(&by_cat, &|_| true) else {
+        return 0;
+    };
+    best(&by_filament, &|s| {
+        block_of(cfg, u8::try_from(s).unwrap_or(0)) == cat
+    })
+    .and_then(|s| u8::try_from(s).ok())
+    .unwrap_or(0)
 }
 
 /// Orca's rib tower size, width and depth in mm (`WipeTower::plan_tower_new` with `wipe_tower_wall_type` rib,
@@ -1725,30 +1996,34 @@ pub(crate) fn rib_size(
     let width = cfg.raw_number("prime_tower_width", 35.0).max(5.0);
     // The depth the layer that purges most takes at tower width `w` (Orca `plan_toolchange`, the blocks of
     // `generate_wipe_tower_blocks`).
+    // Each adhesion category's block is as deep as the most its changes take on any layer.
     let deepest = |w: f64| -> f64 {
         let line = w - 2.0 * pw;
         if line <= 1e-9 {
             return 0.0;
         }
         let mut cur = 0u8;
-        let mut most = 0.0f64;
+        let mut most: Vec<(i64, f64)> = Vec::new();
         for (l, order) in orders.iter().enumerate().take(top + 1) {
             let h = thickness(l);
-            let mut d = 0.0;
+            let mut by_block: Vec<(i64, f64)> = Vec::new();
             for &t in order {
                 if cur != 0 && t != cur {
                     let p = change_purge(cfg, tools, cur, t);
                     let length = p.wipe / bead(pw, h);
-                    d += (length / line).ceil() * pw;
+                    let mut d = (length / line).ceil() * pw;
                     if p.ram > 0.0 {
                         d += ram_rows(cfg, p, w, h) * pw;
                     }
+                    add_to(&mut by_block, block_of(cfg, t), d);
                 }
                 cur = t;
             }
-            most = most.max(d);
+            for (b, d) in by_block {
+                raise_to(&mut most, b, d);
+            }
         }
-        most
+        most.iter().map(|b| b.1).sum()
     };
     let side = (((deepest(width) + pw) * width * gap).sqrt() / pw).ceil() * pw;
     let block = deepest(side);
@@ -2502,6 +2777,142 @@ mod tests {
         assert!((purge_volume(&tools, 2, 1, 2) - 45.0 * PURGE_EXTRA).abs() < 1e-9);
         let semm = cfg(&[matrix]);
         assert!((purge_volume(&semm, 2, 1, 2) - 280.0 * PURGE_EXTRA).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_type_1_tower_wipes_each_filaments_own_prime_volume() {
+        let bambu = |extra: &[(&str, serde_json::Value)]| {
+            let mut pairs = vec![("printer_model", serde_json::json!("Bambu Lab A1"))];
+            pairs.extend(extra.iter().cloned());
+            cfg(&pairs)
+        };
+        // A listed value wins, `prime_volume` is not read, and a filament the list stops short of gets 45.
+        let c = bambu(&[
+            ("filament_prime_volume", serde_json::json!(["30", "20"])),
+            ("prime_volume", serde_json::json!(15)),
+        ]);
+        assert!((purge_volume(&c, 3, 2, 1) - 30.0).abs() < 1e-9);
+        assert!((purge_volume(&c, 3, 1, 2) - 20.0).abs() < 1e-9);
+        assert!((purge_volume(&c, 3, 1, 3) - DEFAULT_PRIME).abs() < 1e-9);
+        // No list at all: 45 for every filament, whatever `prime_volume` says.
+        let none = bambu(&[("prime_volume", serde_json::json!(15))]);
+        assert!((purge_volume(&none, 2, 1, 2) - 45.0).abs() < 1e-9);
+        // At least 1, and Saving wipes 15 on one nozzle too.
+        let tiny = bambu(&[("filament_prime_volume", serde_json::json!([0.2, 0.2]))]);
+        assert!((purge_volume(&tiny, 2, 1, 2) - 1.0).abs() < 1e-9);
+        let saving = bambu(&[
+            ("filament_prime_volume", serde_json::json!([45, 45])),
+            ("prime_volume_mode", serde_json::json!("Saving")),
+        ]);
+        assert!((purge_volume(&saving, 2, 1, 2) - 15.0).abs() < 1e-9);
+        // A type 2 tower keeps `prime_volume`.
+        let other = cfg(&[
+            ("single_extruder_multi_material", serde_json::json!(0)),
+            ("filament_prime_volume", serde_json::json!([20, 20])),
+            ("prime_volume", serde_json::json!(15)),
+        ]);
+        assert!((purge_volume(&other, 2, 1, 2) - 15.0 * PURGE_EXTRA).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_wall_filament_is_the_most_counted_of_the_most_counted_category() {
+        let c = |cats: serde_json::Value| {
+            cfg(&[
+                ("printer_model", serde_json::json!("Bambu Lab P1S")),
+                ("filament_adhesiveness_category", cats),
+            ])
+        };
+        // Filaments 1 and 2 on four layers, filament 3 on two.
+        let orders = vec![
+            vec![1, 2, 3],
+            vec![3, 1, 2],
+            vec![2, 1, 3],
+            vec![3, 1, 2],
+            vec![2, 1],
+            vec![1, 2],
+        ];
+        assert_eq!(
+            wall_filament(&c(serde_json::json!([100, 100, 100])), &orders, 5),
+            1
+        );
+        // Filament 3 alone in its category loses to the category of the other two, and 2 wins a tie over 3 below.
+        assert_eq!(
+            wall_filament(&c(serde_json::json!([200, 100, 100])), &orders, 5),
+            2
+        );
+        // `wipe_tower_filament` when set.
+        let mut set = c(serde_json::json!([100, 100, 100]));
+        set.raw
+            .insert("wipe_tower_filament".to_owned(), serde_json::json!(3));
+        assert_eq!(wall_filament(&set, &orders, 5), 3);
+    }
+
+    #[test]
+    fn a_category_coming_onto_the_tower_makes_a_contact_layer() {
+        let c = cfg(&[
+            ("printer_model", serde_json::json!("Bambu Lab P1S")),
+            ("enable_prime_tower", serde_json::json!(true)),
+            ("filament_adhesiveness_category", serde_json::json!([100, 300])),
+        ]);
+        let t = Tower::new(&c, 2, 30.0).unwrap();
+        // Filament 2 is on the tower on layers 2 and 3 and again from 6; on 7 filament 1 is not.
+        let orders = vec![
+            vec![1],
+            vec![1],
+            vec![1, 2],
+            vec![2, 1],
+            vec![1],
+            vec![1],
+            vec![1, 2],
+            vec![2],
+        ];
+        let plan = TowerPlan::new(&c, 2, &orders, &|_| 0.2, 7, &t);
+        let at = |cat: i64| (0..8).filter(|&l| plan.contact(l, cat)).collect::<Vec<usize>>();
+        // Where the category comes on (2 and 6) and where it leaves (4); the change into it on 2 and 6 is a
+        // contact change, the one on 3 is not.
+        assert_eq!(at(300), vec![2, 4, 6]);
+        assert_eq!(at(100), vec![7]);
+        // Two blocks, filament 1's first; one category has no contact layers.
+        assert_eq!(
+            plan.blocks.iter().map(|b| b.0).collect::<Vec<_>>(),
+            vec![100, 300]
+        );
+        let one = cfg(&[
+            ("printer_model", serde_json::json!("Bambu Lab P1S")),
+            ("filament_adhesiveness_category", serde_json::json!([100, 100])),
+        ]);
+        let plan = TowerPlan::new(&one, 2, &orders, &|_| 0.2, 7, &t);
+        assert!((0..8).all(|l| !plan.contact(l, 100)));
+    }
+
+    #[test]
+    fn the_first_layer_and_a_contact_wipe_fill_the_rows_depth_one_bead_apart() {
+        let c = tower_cfg(&[("printer_model", serde_json::json!("Bambu Lab A1"))]);
+        let t = Tower::new(&c, 2, 40.0).unwrap();
+        let row_y = |paths: &[TowerPath]| -> Vec<f64> {
+            let mut ys: Vec<f64> = paths
+                .iter()
+                .flat_map(|p| p.points.windows(2))
+                .filter(|w| (w[0].y_mm() - w[1].y_mm()).abs() < 1e-6)
+                .map(|w| w[0].y_mm())
+                .collect();
+            ys.dedup_by(|a, b| (*a - *b).abs() < 1e-6);
+            ys
+        };
+        let (later, n) = t.purge(45.0, 0.2, false, 0.0);
+        let (first, n1) = t.purge(45.0, 0.2, true, 0.0);
+        let (contact, n2) = t.purge_lead(45.0, 0.2, false, 0.0, None, true);
+        assert!(
+            (n - n1).abs() < 1e-9 && (n - n2).abs() < 1e-9,
+            "the same rows taken"
+        );
+        let (yl, yf, yc) = (row_y(&later), row_y(&first), row_y(&contact));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let dense = (n * 1.5).floor() as usize;
+        assert_eq!((yf.len(), yc.len()), (dense, dense));
+        assert!(((yf[1] - yf[0]).abs() - 0.5).abs() < 1e-6 && ((yl[1] - yl[0]).abs() - 0.75).abs() < 1e-6);
+        assert!(later[0].nozzle_wipe && first[0].nozzle_wipe && !contact[0].nozzle_wipe);
+        assert!(contact.iter().all(|p| p.speed_mm_s <= 20.0 + 1e-4));
     }
 
     #[test]

@@ -1053,9 +1053,9 @@ pub(crate) fn seam_index(
 const PRIME_TOWER_SPEED: f32 = 60.0;
 
 /// Adds prime tower pieces printed with `tool` to the end of a layer's paths, as the layer's paths are planned with
-/// them: each at its own width, flow and speed. The pieces `before` a filament's turn (wall, purges, fill) are capped
-/// at the filament's volumetric speed and keep their nozzle wipes and wall hops; the ramming after it runs past the
-/// cap. Returns the seconds they print for.
+/// them: each at its own width, flow and speed, capped at the filament's volumetric speed except the ramming, which
+/// runs past it. The pieces `before` a filament's turn (wall, purges, fill) keep their nozzle wipes; wall pieces keep
+/// their hops either side of it. Returns the seconds they print for.
 pub(crate) fn push_tower(
     out: &mut LayerPaths,
     cfg: &PrintConfig,
@@ -1063,15 +1063,12 @@ pub(crate) fn push_tower(
     pieces: &[crate::tower::TowerPath],
     before: bool,
 ) -> f64 {
-    let cap = if before {
-        crate::tower::per_slot_raw(cfg, "filament_max_volumetric_speed", tool, 0.0)
-    } else {
-        0.0
-    };
+    let limit = crate::tower::per_slot_raw(cfg, "filament_max_volumetric_speed", tool, 0.0);
     let per_point =
         !out.zs.is_empty() && out.zs.len() == out.points.len() && out.flows.len() == out.points.len();
     let mut seconds = 0.0;
     for t in pieces.iter().filter(|t| t.points.len() >= 2) {
+        let cap = if t.ram { 0.0 } else { limit };
         let (width, flow) = (t.width_mm, if t.flow > 0.0 { t.flow } else { 1.0 });
         let mut speed = if t.speed_mm_s > 0.0 {
             t.speed_mm_s
@@ -1122,7 +1119,7 @@ pub(crate) fn push_tower(
             overhang_fan: false,
             owner: crate::preview::OBJECT_NONE,
             tower_wipe: before && t.nozzle_wipe,
-            tower_hop: before && t.hop,
+            tower_hop: t.hop,
             slow_span: false,
         });
     }
@@ -2479,11 +2476,13 @@ pub(crate) fn plan_layer_paths(
         }
         if !w.tower_after.is_empty() {
             let (line_width, line_flow) = (b.width_mm, b.flow);
-            // Ramming runs at its own flow, past the filament's volumetric limit (`WipeTowerWriter::ram`).
-            let caps = std::mem::take(&mut b.vol_caps);
             for t in &w.tower_after {
+                // Ramming runs at its own flow, past the filament's volumetric limit (`WipeTowerWriter::ram`); the
+                // wall and fill a filament prints before its change keep the limit.
+                let caps = t.ram.then(|| std::mem::take(&mut b.vol_caps));
                 b.width_mm = t.width_mm;
                 b.flow = if t.flow > 0.0 { t.flow } else { 1.0 };
+                let before = b.out.paths.len();
                 b.push(
                     w.tool,
                     Feature::PrimeTower,
@@ -2494,8 +2493,15 @@ pub(crate) fn plan_layer_paths(
                     },
                     t.points.iter().copied(),
                 );
+                if b.out.paths.len() > before
+                    && let Some(p) = b.out.paths.last_mut()
+                {
+                    p.tower_hop = t.hop;
+                }
+                if let Some(c) = caps {
+                    b.vol_caps = c;
+                }
             }
-            b.vol_caps = caps;
             b.width_mm = line_width;
             b.flow = line_flow;
         }
