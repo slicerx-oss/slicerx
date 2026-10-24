@@ -142,6 +142,24 @@ pub fn emit_gcode_with(
             &found,
         )));
     }
+    // A dual-head printer the start G-code puts in duplication or mirror mode prints a copy of every move with its
+    // second head, and the copy has to stay on the bed as well.
+    if let Some(mode) = crate::customgcode::render(
+        config,
+        &crate::customgcode::context(config, out),
+        "machine_start_gcode",
+    )
+    .ok()
+    .flatten()
+    .and_then(|start| crate::preflight::copy_mode(&start, config))
+    {
+        let found = crate::preflight::check_copy(out, config, mode);
+        if crate::preflight::blocks(&found) {
+            return Err(crate::error::Error::Blocked(crate::preflight::blocking_text(
+                &found,
+            )));
+        }
+    }
     let mut stats = GcodeStats::default();
     let tools = usize::from(out.tool_count.max(1));
     let mut e_total = vec![0i64; tools];

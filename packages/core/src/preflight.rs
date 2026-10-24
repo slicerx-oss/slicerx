@@ -604,6 +604,151 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
     issues
 }
 
+/// What the second head of a dual-head printer does while the first prints: copy every move a fixed distance to the
+/// right (duplication), or mirror every move about the middle of the X travel (mirror). Either way it prints a second
+/// part from the same moves, and that part has to land on the bed too.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CopyMode {
+    /// The copy prints this many mm to the right of the move.
+    Shift(f64),
+    /// The copy mirrors the move about this X, mm.
+    Mirror(f64),
+}
+
+impl CopyMode {
+    /// Where the copy of a move to `p` prints.
+    fn copy(self, p: [f64; 2]) -> [f64; 2] {
+        match self {
+            Self::Shift(d) => [p[0] + d, p[1]],
+            Self::Mirror(mid) => [2.0 * mid - p[0], p[1]],
+        }
+    }
+}
+
+/// The copy mode the rendered start G-code `start` leaves the printer in, from its last `M605` with `S2`
+/// (duplication) or `S3` (mirror) outside a comment; another `M605` mode (one head, auto-park, backup) clears it.
+/// A duplication with an `X` word shifts the copy that far; without one the firmware shifts it half the bed's X
+/// travel. The travel and the middle come from the printer's `printable_area`.
+pub fn copy_mode(start: &str, cfg: &PrintConfig) -> Option<CopyMode> {
+    let bb = bounds(&cfg.printable_area);
+    let (lo, hi) = (bb[0], bb[2]);
+    let mut mode = None;
+    for line in start.lines() {
+        let code = line.split(';').next().unwrap_or("");
+        let mut words = code.split_whitespace();
+        if !words.next().is_some_and(|w| w.eq_ignore_ascii_case("M605")) {
+            continue;
+        }
+        let mut s = None;
+        let mut x = None;
+        for w in words {
+            let (letter, value) = w.split_at(w.chars().next().map_or(0, char::len_utf8));
+            match letter {
+                "S" | "s" => s = value.parse::<f64>().ok(),
+                "X" | "x" => x = value.parse::<f64>().ok(),
+                _ => {}
+            }
+        }
+        mode = match s {
+            Some(v) if (v - 2.0).abs() < 1e-9 => {
+                Some(CopyMode::Shift(x.filter(|d| *d > 0.0).unwrap_or((hi - lo) / 2.0)))
+            }
+            Some(v) if (v - 3.0).abs() < 1e-9 => Some(CopyMode::Mirror(f64::midpoint(lo, hi))),
+            _ => None,
+        };
+    }
+    mode
+}
+
+/// The moves of `out` whose copy (see [`CopyMode`]) would not print where the printer can: the copy of the move off
+/// the bed's X travel or inside one of its `bed_exclude_area` zones, or, in mirror mode, a move past the middle,
+/// where the two heads would cross. Errors block.
+pub fn check_copy(out: &SliceOutput, base: &PrintConfig, mode: CopyMode) -> Vec<Issue> {
+    let bb = bounds(&base.printable_area);
+    let zones: Vec<Zone> = exclude_zones(base)
+        .into_iter()
+        .map(|p| {
+            let bbox = bounds(&p);
+            Zone { poly: p, bbox }
+        })
+        .collect();
+    let mut past = Count::default();
+    let mut first: Option<(usize, [f64; 2], &'static str)> = None;
+    for l in &out.layers {
+        for p in &l.paths {
+            let pts = l.path_points(p);
+            for (i, pt) in pts.iter().enumerate() {
+                let at = [f64::from(pt.x) / SCALE, f64::from(pt.y) / SCALE];
+                let from = i
+                    .checked_sub(1)
+                    .and_then(|k| pts.get(k))
+                    .map_or(at, |q| [f64::from(q.x) / SCALE, f64::from(q.y) / SCALE]);
+                let (c, cf) = (mode.copy(at), mode.copy(from));
+                let why = if matches!(mode, CopyMode::Mirror(mid) if at[0] > mid + EDGE_TOL_MM) {
+                    Some("where the two heads would cross")
+                } else if c[0] < bb[0] - EDGE_TOL_MM || c[0] > bb[2] + EDGE_TOL_MM {
+                    Some("past the bed")
+                } else if zones.iter().any(|z| {
+                    let reach = [cf[0].min(c[0]), cf[1].min(c[1]), cf[0].max(c[0]), cf[1].max(c[1])];
+                    reach[2] > z.bbox[0] + EDGE_TOL_MM
+                        && reach[0] < z.bbox[2] - EDGE_TOL_MM
+                        && reach[3] > z.bbox[1] + EDGE_TOL_MM
+                        && reach[1] < z.bbox[3] - EDGE_TOL_MM
+                        && segment_reaches(&z.poly, cf, c, true, EDGE_TOL_MM).is_some()
+                }) {
+                    Some("in an excluded bed area")
+                } else {
+                    None
+                };
+                if let Some(why) = why {
+                    if past.n == 0 {
+                        first = Some((
+                            object_of(out, p)
+                                .or_else(|| nearest_object(out, at))
+                                .unwrap_or(usize::MAX),
+                            c,
+                            why,
+                        ));
+                    }
+                    past.hit(l.index, at[0], at[1], 0.0);
+                }
+            }
+        }
+    }
+    let Some((owner, c, why)) = first else {
+        return Vec::new();
+    };
+    let part = if owner == usize::MAX {
+        "the parts".to_owned()
+    } else {
+        object_name(out, owner)
+    };
+    let what = match mode {
+        CopyMode::Shift(d) => format!(
+            "prints a copy {} mm to the right (M605 S2, duplication mode)",
+            crate::firmware::fmt_g(d)
+        ),
+        CopyMode::Mirror(mid) => format!(
+            "mirrors every move about X{} (M605 S3, mirror mode)",
+            crate::firmware::fmt_g(mid)
+        ),
+    };
+    let mut i = Issue::new(
+        "copy_off_bed",
+        Severity::Error,
+        format!(
+            "the start G-code {what}: the copy of the move to X{:.1} Y{:.1} from layer {} ({part}) prints at X{:.1}, {why}, {}; move {part} toward the left of the bed or print without the copy",
+            past.x,
+            past.y,
+            past.layer + 1,
+            c[0],
+            counted(out, past.n, "point", "points"),
+        ),
+    );
+    i.layer = Some(past.layer);
+    vec![i]
+}
+
 /// A count with the layers it covers: "1 point in layer 3", "5 points in layers 1 to 27". A sliced plate is
 /// checked one shard of layers at a time and refused at the first shard that fails, so a count covers the layers
 /// checked, never the whole plate.
@@ -1113,6 +1258,74 @@ mod tests {
     use crate::geom::Point;
     use crate::output::{Feature, LayerPaths, PathInfo};
     use serde_json::json;
+
+    /// A bed 324 mm wide with a strip at x 312 to 324 that nothing may print on.
+    fn j1_bed() -> PrintConfig {
+        PrintConfig::from_value(&json!({
+            "printable_area": ["0x0", "324x0", "324x200", "0x200"],
+            "bed_exclude_area": ["312x0", "324x0", "324x200", "312x200"]
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_start_gcode_sets_the_copy_mode_with_its_last_m605() {
+        let bed = j1_bed();
+        assert_eq!(
+            copy_mode("G28\nM605 S2 X162 R0 ;IDEX Duplication\n", &bed),
+            Some(CopyMode::Shift(162.0))
+        );
+        // without an X word the copy shifts half the travel
+        assert_eq!(copy_mode("M605 S2\n", &bed), Some(CopyMode::Shift(162.0)));
+        assert_eq!(copy_mode("m605 s3\n", &bed), Some(CopyMode::Mirror(162.0)));
+        // a later mode clears it, and a comment is no command
+        assert_eq!(copy_mode("M605 S2 X150\nM605 S1\n", &bed), None);
+        assert_eq!(copy_mode("; M605 S2 X162\nG28\n", &bed), None);
+        assert_eq!(copy_mode("M605 S4 ; backup\n", &bed), None);
+        assert_eq!(copy_mode("G28\n", &bed), None);
+    }
+
+    #[test]
+    fn a_copy_off_the_bed_or_in_an_excluded_area_blocks_and_one_on_the_bed_does_not() {
+        let bed = j1_bed();
+        let shift = CopyMode::Shift(162.0);
+        // copies at x 302 to 311.9, clear of the strip
+        let on = output_with(&[(140.0, 90.0), (149.9, 90.0), (149.9, 100.0)], 0.2);
+        assert!(check_copy(&on, &bed, shift).is_empty());
+        // a copy at 362: past the bed
+        let off = output_with(&[(200.0, 90.0), (210.0, 90.0)], 0.2);
+        let found = check_copy(&off, &bed, shift);
+        assert!(blocks(&found), "{found:?}");
+        assert_eq!(found[0].code, "copy_off_bed");
+        assert!(
+            found[0].message.contains("M605 S2")
+                && found[0].message.contains("prints at X362.0, past the bed"),
+            "{}",
+            found[0].message
+        );
+        // a copy at 317: on the bed, but in the strip
+        let strip = output_with(&[(150.0, 90.0), (155.0, 90.0)], 0.2);
+        let found = check_copy(&strip, &bed, shift);
+        assert!(
+            blocks(&found) && found[0].message.contains("in an excluded bed area"),
+            "{found:?}"
+        );
+        // mirror about 162: moves left of the middle copy to its right; past the middle the heads would cross, and
+        // near the left edge the copy lands in the strip
+        let mirror = CopyMode::Mirror(162.0);
+        assert!(check_copy(&on, &bed, mirror).is_empty());
+        assert!(
+            check_copy(&off, &bed, mirror)[0]
+                .message
+                .contains("where the two heads would cross")
+        );
+        let edge = output_with(&[(4.0, 90.0), (8.0, 90.0)], 0.2);
+        assert!(
+            check_copy(&edge, &bed, mirror)[0]
+                .message
+                .contains("in an excluded bed area")
+        );
+    }
 
     fn output_with(points: &[(f64, f64)], z: f32) -> SliceOutput {
         let pts: Vec<Point> = points.iter().map(|&(x, y)| Point::from_mm(x, y)).collect();

@@ -3714,3 +3714,125 @@ fn smart_layers_name_the_object_layer_heights_they_replace() {
     );
     assert!(warnings(serde_json::json!({"layer_height": 0.2})).is_empty());
 }
+
+/// A Snapmaker J1 request as `SlicerX` ships the printer (packages/profiles/machine.json and its start G-code), one
+/// 10 mm cube with its left edge at `x`, on a plate named `plate`. The J1's start G-code picks the dual-head mode from
+/// the plate's name: `IDEXDupl` prints a copy 162 mm to the right (`M605 S2 X162`), `IDEXMirr` a mirrored one.
+fn j1_cube(x: f64, plate: Option<&str>) -> (std::process::Output, TempDir) {
+    let dir = temp_dir(format!(
+        "sx-cli-idex-{}-{x}-{}",
+        std::process::id(),
+        plate.unwrap_or("normal")
+    ));
+    std::fs::create_dir_all(&*dir).unwrap();
+    // a closed 10 mm cube, binary STL
+    let v = [
+        [0.0f32, 0.0, 0.0],
+        [10.0, 0.0, 0.0],
+        [10.0, 10.0, 0.0],
+        [0.0, 10.0, 0.0],
+        [0.0, 0.0, 10.0],
+        [10.0, 0.0, 10.0],
+        [10.0, 10.0, 10.0],
+        [0.0, 10.0, 10.0],
+    ];
+    let t = [
+        [0, 2, 1],
+        [0, 3, 2],
+        [4, 5, 6],
+        [4, 6, 7],
+        [0, 1, 5],
+        [0, 5, 4],
+        [1, 2, 6],
+        [1, 6, 5],
+        [2, 3, 7],
+        [2, 7, 6],
+        [3, 0, 4],
+        [3, 4, 7],
+    ];
+    let mut stl = vec![0u8; 80];
+    stl.extend_from_slice(&12u32.to_le_bytes());
+    for tri in t {
+        stl.extend_from_slice(&[0u8; 12]);
+        for i in tri {
+            for c in v[i] {
+                stl.extend_from_slice(&c.to_le_bytes());
+            }
+        }
+        stl.extend_from_slice(&[0u8; 2]);
+    }
+    let mesh = dir.join("cube10.stl");
+    std::fs::write(&mesh, stl).unwrap();
+    let profiles: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../profiles/machine.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut config = profiles["models"]["snapmaker-j1"]["machine"].clone();
+    config["machine_start_gcode"] = serde_json::Value::String(shipped_start("snapmaker-j1"));
+    config["printer_model"] = serde_json::json!("Snapmaker J1");
+    config["layer_height"] = serde_json::json!(0.2);
+    if let Some(p) = plate {
+        config["plate_name"] = serde_json::json!(p);
+    }
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": { "cube": mesh.to_string_lossy() },
+        "plate": { "objects": [{ "id": "o1", "name": "Cube", "mesh": "cube", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 95, 0, 1] }] },
+        "config": config,
+        "options": { "shards": 2 }
+    });
+    let mut child = sx()
+        .args(["slice", "--request", "-", "--out-dir"])
+        .arg(&*dir)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(req.to_string().as_bytes())
+        .unwrap();
+    (child.wait_with_output().unwrap(), dir)
+}
+
+#[test]
+fn a_dual_head_copy_that_would_print_past_the_bed_is_refused() {
+    // Duplication: the copy prints 162 mm to the right, so a cube at x 200..210 has its copy at 362..372, past the
+    // J1's 324 mm of travel.
+    let (out, _dir) = j1_cube(200.0, Some("IDEXDupl"));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains("blocked by the safety preflight") && err.contains("M605 S2"),
+        "{err}"
+    );
+    // Mirror: the copy mirrors about the middle of the travel, x 162.
+    let (out, _dir) = j1_cube(200.0, Some("IDEXMirr"));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(err.contains("M605 S3"), "{err}");
+}
+
+#[test]
+fn a_dual_head_copy_on_the_left_half_and_a_normal_plate_still_slice() {
+    // The same duplication with the cube at x 100..110: the copy, skirt and all, stays left of the strip at 312.
+    let (out, dir) = j1_cube(100.0, Some("IDEXDupl"));
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let gcode = std::fs::read_to_string(dir.join("slice.gcode")).unwrap();
+    assert!(
+        gcode.lines().any(|l| l.trim_start().starts_with("M605 S2 X162")),
+        "the start sets duplication mode"
+    );
+    // Without a mode in the plate's name the J1 prints one part with either head, anywhere on the bed.
+    let (out, dir) = j1_cube(200.0, None);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let gcode = std::fs::read_to_string(dir.join("slice.gcode")).unwrap();
+    assert!(!gcode.contains("M605"));
+}
