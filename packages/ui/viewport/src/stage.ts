@@ -54,6 +54,9 @@ import { SCENE, contrastRatio, mixHex, type SceneColors } from './palette'
 import { REVEAL_GRID_SETTLE_MS, REVEAL_GRID_SPAN_MS, REVEAL_SETTLED } from './reveal'
 import type { BedOutline, PlateStyle } from './types'
 
+/** Steps of the environment bake (Stage.bakeNext): the PMREM prefilter, then the spherical-harmonic irradiance. */
+const ENV_STEPS = 2
+
 /** Objects sit this far above the plate top so their bottoms never fight it for depth. */
 export const LIFT_MM = 0.02
 /**
@@ -271,15 +274,6 @@ export class Stage {
     renderer.shadowMap.type = PCFShadowMap
     renderer.shadowMap.autoUpdate = false
 
-    const pm = new PMREMGenerator(renderer)
-    const room = new RoomEnvironment()
-    // Prefiltering runs before the first frame; on a software renderer the 256 px cube took about 140 ms of it.
-    this.envTex = pm.fromScene(room, 0.04, 0.1, 100, { size: weak ? 128 : 256 }).texture
-    pm.dispose()
-    this.scene.environment = this.envTex
-    this.envSH = this.bakeSH(room)
-    room.dispose()
-
     // Intensities are the concept's legacy-light values times pi (three.js now uses physical units).
     // Every light is white, so shading changes a filament's brightness and never its hue.
     const key = new DirectionalLight(new Color(0xffffff), 1.6 * Math.PI)
@@ -308,14 +302,52 @@ export class Stage {
     this.setBed(this.bed, this.label)
   }
 
-  /** Bed coordinates (Z up, front left origin) to three.js world (Y up, bed center at origin). */
-  /** Spherical-harmonic irradiance of the room environment, for materials that skip the prefiltered map; null if the bake failed. */
-  readonly envSH: Vector3[] | null
+  /** Spherical-harmonic irradiance of the room environment, for materials that skip the prefiltered map; null before the bake or if it failed. */
+  envSH: Vector3[] | null = null
+
+  /** The room the environment is baked from, while the bake has steps left; null once it is done. */
+  private room: RoomEnvironment | null = null
+  private envStep = 0
+
+  /** True once the environment is baked (bakeNext): the stage's frames need it, so none is drawn before. */
+  get envReady(): boolean {
+    return this.envStep >= ENV_STEPS
+  }
+
+  /**
+   * Runs the next step of the environment bake and says whether the bake is done. The steps are the PMREM prefilter
+   * of the room (scene.environment) and the spherical-harmonic bake (envSH), in that order. Each takes tens of
+   * milliseconds on a fast GPU (about 140 for the prefilter on a software renderer), so the viewport runs them in
+   * tasks of their own after the constructor instead of in one long task with the view's setup. Every step does the
+   * same GPU work, in the same order, as the bake in one go did, so the baked data and the frames are unchanged.
+   */
+  bakeNext(): boolean {
+    if (this.disposed || this.envReady) return true
+    const room = (this.room ??= new RoomEnvironment())
+    if (this.envStep === 0) {
+      const pm = new PMREMGenerator(this.renderer)
+      // the prefilter: on a software renderer the 256 px cube took about 140 ms of it
+      this.envTex = pm.fromScene(room, 0.04, 0.1, 100, { size: this.weak ? 128 : 256 }).texture
+      pm.dispose()
+      this.scene.environment = this.envTex
+    } else {
+      this.envSH = this.bakeSH(room)
+      room.dispose()
+      this.room = null
+    }
+    this.envStep++
+    return this.envReady
+  }
+
+  /** The whole environment bake at once, for a caller that has no frames to keep short. */
+  bakeEnvironment(): void {
+    while (!this.bakeNext());
+  }
 
   private disposed = false
 
   /**
-   * Runs once per stage, before the first frame. The six faces are read back at once, right after the cube is drawn:
+   * Runs once per stage, before the first frame (the bake's second step). The six faces are read back at once, right after the cube is drawn:
    * a read waits for everything the GPU has queued before it, and spread over later frames (one async read per face)
    * each read waited behind a full frame of the plate, seconds of a held page on software WebGL once the toolpaths draw.
    * Here only the environment prefilter and this 32 px cube are queued.
@@ -340,6 +372,7 @@ export class Stage {
     }
   }
 
+  /** Bed coordinates (Z up, front left origin) to three.js world (Y up, bed center at origin). */
   bedMatrix(): Matrix4 {
     const { widthMm: W, depthMm: D } = this.bed
     return new Matrix4().set(1, 0, 0, -W / 2, 0, 0, 1, LIFT_MM, 0, -1, 0, D / 2, 0, 0, 0, 1)
@@ -804,6 +837,8 @@ export class Stage {
     this.zoneDisposables = []
     this.excludeDisposables = []
     this.envTex?.dispose()
+    this.room?.dispose()
+    this.room = null
     this.key.shadow.map?.dispose()
   }
 }

@@ -476,8 +476,13 @@ export interface ViewportEvents {
 export interface ViewportStartup {
   /** Creating the WebGL renderer (the context). */
   rendererMs: number
-  /** The scene's stage (its environment map is prefiltered on the GPU here) and the render passes. */
+  /** The scene's stage, and the render passes. */
   stageMs: number
+  /**
+   * The environment bake (PMREM prefilter and spherical-harmonic irradiance), summed over its steps, which run in
+   * tasks of their own after the constructor and before the first frame; null until the first step has run.
+   */
+  envMs: number | null
   pipelineMs: number
   /** The whole constructor, the renderer, stage and passes included, with the programs it linked and their compile time. */
   constructMs: number

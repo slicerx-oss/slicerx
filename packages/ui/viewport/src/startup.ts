@@ -44,7 +44,7 @@ export class CompileClock {
 
 /** A fresh record, before anything is measured. */
 export function emptyStartup(): ViewportStartup {
-  return { rendererMs: 0, stageMs: 0, pipelineMs: 0, constructMs: 0, constructPrograms: 0, constructCompileMs: 0, waitMs: null, firstFrameMs: null, firstFramePrograms: null, firstFrameCompileMs: null, warmMs: null, warmPrograms: null, warmCompileMs: null }
+  return { rendererMs: 0, stageMs: 0, envMs: null, pipelineMs: 0, constructMs: 0, constructPrograms: 0, constructCompileMs: 0, waitMs: null, firstFrameMs: null, firstFramePrograms: null, firstFrameCompileMs: null, warmMs: null, warmPrograms: null, warmCompileMs: null }
 }
 
 /** Marks a span on the page's performance timeline (sx:view:<name>), where the profiler and the bridge can read it. */
