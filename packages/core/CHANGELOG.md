@@ -4,6 +4,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-24
+
 ### Added
 
 - `load_3mf_items`: the build items of one 3MF plate, each a mesh of its own, and `is_3mf`. `Plate::items_on` makes a plate of them (one object per item, placed as the file places it) and `plate::items_transform` is the one translation they share. `set_collision_check` and `check_paths` are the collision check every slice of a plate runs, for hosts that slice a `Plate` themselves.
