@@ -1057,8 +1057,8 @@
    "enclosed": false,
    "buildVolume": {
     "shape": "rectangular",
-    "x": 320,
-    "y": 320,
+    "x": 325,
+    "y": 325,
     "z": 385
    },
    "nozzles": [
@@ -1083,8 +1083,8 @@
    "enclosed": false,
    "buildVolume": {
     "shape": "rectangular",
-    "x": 420,
-    "y": 420,
+    "x": 426,
+    "y": 426,
     "z": 480
    },
    "nozzles": [
