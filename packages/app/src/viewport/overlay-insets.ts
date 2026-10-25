@@ -48,3 +48,9 @@ export function overlayInsets(stage: Rect, overlays: readonly Rect[]): PxInsets 
   }
   return out
 }
+
+/**
+ * The overlays the camera frames the plate around. A surface marked `data-no-frame` floats over the view and leaves the
+ * framing alone: the legend's list, which opens over the top left corner and must not move the camera.
+ */
+export const FRAMED_OVERLAYS = '.sx-overlay:not([data-no-frame])'
