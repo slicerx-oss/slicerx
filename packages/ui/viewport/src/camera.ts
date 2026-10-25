@@ -254,6 +254,10 @@ export class CameraRig {
       this.camera.position.copy(pose.pos)
       this.controls.target.copy(pose.target)
       this.controls.update()
+      // The controls turn the camera with lookAt, which leaves its world matrix at the new position but the old angle
+      // until a frame is drawn. Picks and screen positions read that matrix, and a busy page can go seconds without a
+      // frame, so a click right after a jump would aim at a view that is never on screen.
+      this.camera.updateMatrixWorld()
       return
     }
     this.move = { t0: now, dur: durationMs, fromPos: this.camera.position.clone(), fromTarget: this.controls.target.clone(), toPos: pose.pos, toTarget: pose.target }
