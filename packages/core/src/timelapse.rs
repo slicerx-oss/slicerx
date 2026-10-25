@@ -63,12 +63,7 @@ pub(crate) fn timelapse_spot(
     if !crate::firmware::bambu_printer(cfg, flavor) {
         return has_text(cfg, "time_lapse_gcode").then_some(Spot::LayerChange);
     }
-    let i3 = cfg.raw.get("printer_structure").and_then(|v| v.as_str()) == Some("i3");
-    let two_nozzles =
-        matches!(cfg.raw.get("nozzle_diameter"), Some(serde_json::Value::Array(a)) if a.len() > 1);
-    // A smooth timelapse (type 1) shoots at the prime tower, which Orca's tower writer handles.
-    let tower_shot = tower && (cfg.raw_number("timelapse_type", 0.0) - 1.0).abs() < 0.5;
-    let traditional = !tower_shot && ((i3 && !crate::firmware::truthy(cfg, "spiral_mode")) || two_nozzles);
+    let (i3, traditional) = shoots(cfg, tower);
     if !traditional {
         return Some(Spot::Start);
     }
@@ -81,6 +76,29 @@ pub(crate) fn timelapse_spot(
             .map_or(Spot::End, Spot::Before),
         None => Spot::End,
     })
+}
+
+/// Whether the printer is a bed slinger, and whether a Bambu Lab printer's block goes inside the layer (before its
+/// prime tower, or on a bed slinger its infill) rather than before its first path.
+fn shoots(cfg: &PrintConfig, tower: bool) -> (bool, bool) {
+    let i3 = cfg.raw.get("printer_structure").and_then(|v| v.as_str()) == Some("i3");
+    let two_nozzles =
+        matches!(cfg.raw.get("nozzle_diameter"), Some(serde_json::Value::Array(a)) if a.len() > 1);
+    // A smooth timelapse (type 1) shoots at the prime tower, which Orca's tower writer handles.
+    let tower_shot = tower && (cfg.raw_number("timelapse_type", 0.0) - 1.0).abs() < 0.5;
+    let traditional = !tower_shot && ((i3 && !crate::firmware::truthy(cfg, "spiral_mode")) || two_nozzles);
+    (i3, traditional)
+}
+
+/// Whether a layer whose last path is a `last` may end with its timelapse block ([`timelapse_spot`] gives
+/// [`Spot::End`]), so something the block writes may follow that path. A layer that ends with a prime tower path, or
+/// on a bed slinger with infill, has its block before that path.
+pub(crate) fn may_end_with_block(cfg: &PrintConfig, flavor: GcodeFlavor, last: Feature, tower: bool) -> bool {
+    if !crate::firmware::bambu_printer(cfg, flavor) {
+        return false;
+    }
+    let (i3, traditional) = shoots(cfg, tower);
+    traditional && last != Feature::PrimeTower && !(i3 && infill(last))
 }
 
 /// True when the print's last layer `l` ends with its timelapse block, so the print's closing retraction and wipe go
