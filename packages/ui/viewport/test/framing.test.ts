@@ -128,3 +128,25 @@ describe('framed: Model frames a part from the current angle with room around it
     expect(Math.max(...ys)).toBeLessThan(h)
   })
 })
+
+describe('a jump to a pose', () => {
+  it('puts the camera matrices at the new pose before a frame is drawn', () => {
+    const camera = new PerspectiveCamera(30, 1.6, 1, 5000)
+    camera.position.set(400, 300, 500)
+    const target = new Vector3()
+    // The orbit controls turn the camera with lookAt on update, as the real ones do.
+    const controls = { target, update: () => camera.lookAt(target) }
+    controls.update()
+    camera.updateMatrixWorld()
+    const rig = new CameraRig(camera, controls as never)
+    rig.go({ pos: new Vector3(-200, 500, 50), target: new Vector3(20, 0, -10) }, false, 0)
+    // Where a point lands on screen with the matrices as they are, and as the next frame will draw it.
+    const drawn = camera.clone()
+    drawn.updateMatrixWorld()
+    const p = new Vector3(30, 20, -40)
+    const now = p.clone().project(camera)
+    const next = p.clone().project(drawn)
+    expect(now.x).toBeCloseTo(next.x, 6)
+    expect(now.y).toBeCloseTo(next.y, 6)
+  })
+})
