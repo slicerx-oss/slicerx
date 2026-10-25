@@ -83,8 +83,11 @@ describe('ResizeSettle', () => {
   beforeEach(() => vi.useFakeTimers())
   afterEach(() => vi.useRealTimers())
 
+  /** How long a frame takes in these tests, ms. */
+  const FRAME = 16
+
   /** A settle with the viewport's waits, its motion read from `moving`, counting resizes. */
-  function settle(moving: () => Promise<void> | null) {
+  function settle(moving: () => Promise<void> | null, frame: (run: () => void) => void = (run) => void setTimeout(run, FRAME)) {
     const count = { resizes: 0, reads: 0 }
     const s = new ResizeSettle(
       () => count.resizes++,
@@ -92,7 +95,7 @@ describe('ResizeSettle', () => {
         count.reads++
         return moving()
       },
-      { wait: 100, hold: 1000, now: () => Date.now() },
+      { wait: 100, hold: 1000, now: () => Date.now(), frame },
     )
     return { s, count }
   }
@@ -125,13 +128,16 @@ describe('ResizeSettle', () => {
     expect(count.resizes).toBe(1)
   })
 
-  it('resizes once within the hold when a slide stays paused and never finishes', async () => {
+  it('resizes once, a frame after the hold, when a slide stays paused and never finishes', async () => {
     const never = new Promise<void>(() => {})
     const { s, count } = settle(() => never)
     s.schedule()
     await vi.advanceTimersByTimeAsync(100 + 999)
     expect(count.resizes).toBe(0)
     await vi.advanceTimersByTimeAsync(1)
+    expect(count.resizes).toBe(0)
+    expect(s.pending).toBe(true)
+    await vi.advanceTimersByTimeAsync(FRAME)
     expect(count.resizes).toBe(1)
     await vi.advanceTimersByTimeAsync(10_000)
     expect(count.resizes).toBe(1)
@@ -190,16 +196,46 @@ describe('ResizeSettle', () => {
     // A view that always has a box transition running beside it (a looping slide): each read finds a new one.
     const { s, count } = settle(() => new Promise<void>(() => {}))
     s.schedule()
-    await vi.advanceTimersByTimeAsync(1100)
+    await vi.advanceTimersByTimeAsync(1100 + FRAME)
     expect(count.resizes).toBe(1)
     expect(s.pending).toBe(false)
     // The next change of the box starts a new hold, bounded the same way.
     s.schedule()
-    await vi.advanceTimersByTimeAsync(1100)
+    await vi.advanceTimersByTimeAsync(1100 + FRAME)
     expect(count.resizes).toBe(2)
     expect(s.pending).toBe(false)
     await vi.advanceTimersByTimeAsync(10_000)
     expect(count.resizes).toBe(2)
+  })
+
+  it('sizes a slide starved of frames past the hold once, for where the frame that ends it stops', async () => {
+    // A busy page draws no frame for 3 s: the slide's clock stands still with its box partway, while timers run. The
+    // next frame ends the slide (its finished promise first), lays out the end box, then runs the frame callbacks; the
+    // box change it made schedules a resize as the resize observer does.
+    let box = 'partway'
+    const sized: string[] = []
+    let end!: () => void
+    let slide: Promise<void> | null = new Promise<void>((r) => (end = r))
+    const frames: (() => void)[] = []
+    const s = new ResizeSettle(
+      () => {
+        if (sized.at(-1) !== box) sized.push(box)
+      },
+      () => slide,
+      { wait: 100, hold: 1000, now: () => Date.now(), frame: (run) => void frames.push(run) },
+    )
+    s.schedule()
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(sized).toEqual([])
+    slide = null
+    end()
+    await Promise.resolve()
+    box = 'end'
+    for (const run of frames.splice(0)) run()
+    s.schedule()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(sized).toEqual(['end'])
+    expect(s.pending).toBe(false)
   })
 
   it('never resizes after dispose, from the wait or from a slide still pending', async () => {

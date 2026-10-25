@@ -381,7 +381,7 @@ class ViewportImpl implements Viewport {
   private readonly resizeSettle = new ResizeSettle(
     () => this.resize(),
     () => (typeof document !== 'undefined' && typeof document.getAnimations === 'function' ? boxMotion(this.canvas, document.getAnimations() as unknown as BoxAnimation[]) : null),
-    { wait: 100, hold: RESIZE_HOLD_MS, now: () => performance.now() },
+    { wait: 100, hold: RESIZE_HOLD_MS, now: () => performance.now(), frame: (run) => void requestAnimationFrame(run) },
   )
   private bufferRatio = 0
   private width = 1
