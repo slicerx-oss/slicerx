@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A readiness mark on the page, so a script (the browser tests, a screenshot job) waits for the app instead of for
-// a fixed time. `data-sx-ready` on the root element is "engine" once the app is up with its slicer pool loaded (the
-// host exists before the first render), "plate" once the first plate has finished loading, and "viewport" once the
-// 3D view is up as well. It never goes back. `data-sx-busy` is "arrange" while an arrange runs, so a script waits for
-// the result before it acts on the plate again; it is removed when the work is done.
+// a fixed time. `data-sx-ready` on the root element is "engine" once the app is up with its host made (the host exists
+// before the first render; in a build with web slicing its slicer is the WebAssembly pool, with its first worker loaded
+// by then, while the desktop app, the end-to-end build and the studio start no pool), "plate" once the first plate has
+// finished loading, and "viewport" once the 3D view is up as well. It never goes back. `data-sx-busy` is "arrange"
+// while an arrange runs, so a script waits for the result before it acts on the plate again; it is removed when the
+// work is done.
 import { appStore } from '../state/store'
 
 export type ReadyLevel = 'engine' | 'plate' | 'viewport'
