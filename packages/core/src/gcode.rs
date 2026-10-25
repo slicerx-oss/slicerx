@@ -2095,7 +2095,34 @@ fn emit_layer(
     // the width last written, in thousandths as written: the layer below's last, which orca's writer still holds
     #[allow(clippy::cast_possible_truncation, reason = "width in thousandths is small")]
     let thousandths = |w: f32| (f64::from(w) * 1000.0).round() as i64;
-    let mut width_written = thousandths(l.below_wipe.width_mm);
+    // At a `bridge_flow` above 1 an overhang wall's comments state a taller bead of the same area
+    // (`overhang::raised_wall_label`): its width and height in thousandths, as written. Other paths state their own
+    // width and the layer height.
+    let raise = crate::overhang::raised_wall_flow(c);
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a layer height in thousandths is small"
+    )]
+    let layer_h = (h * 1000.0).round() as i64;
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a width and a height in thousandths are small"
+    )]
+    let label = |feature: Feature, w: f32| -> (i64, i64) {
+        match raise {
+            Some(f) if feature == Feature::OverhangWall => {
+                let (lw, lh) = crate::overhang::raised_wall_label(f64::from(w), h, f);
+                ((lw * 1000.0).round() as i64, (lh * 1000.0).round() as i64)
+            }
+            _ => (thousandths(w), layer_h),
+        }
+    };
+    let mut width_written = if l.below_wipe.overhang_wall {
+        label(Feature::OverhangWall, l.below_wipe.width_mm).0
+    } else {
+        thousandths(l.below_wipe.width_mm)
+    };
+    let mut height_written = layer_h;
     // The role-based extrusion multipliers of this layer.
     let role_flow: Vec<f64> = Feature::ALL
         .iter()
@@ -2878,6 +2905,7 @@ fn emit_layer(
                 b.extend_from_slice(lines.as_bytes());
             }
         }
+        let (width_label, height_label) = label(p.feature, p.width_mm);
         if feature != Some(p.feature) {
             if let Some(rc) = role_ctx.as_mut() {
                 match crate::customgcode::role_change(
@@ -2899,10 +2927,16 @@ fn emit_layer(
             b.extend_from_slice(p.feature.gcode_label().as_bytes());
             b.push(b'\n');
             // orca's _extrude writes the width only when it changes, and always after the tower
-            if thousandths(p.width_mm) != width_written || feature == Some(Feature::PrimeTower) {
-                width_written = thousandths(p.width_mm);
+            if width_label != width_written || feature == Some(Feature::PrimeTower) {
+                width_written = width_label;
                 b.extend_from_slice(b";WIDTH:");
                 put_fixed(b, width_written, 3);
+                b.push(b'\n');
+            }
+            if height_label != height_written {
+                height_written = height_label;
+                b.extend_from_slice(b";HEIGHT:");
+                put_fixed(b, height_written, 3);
                 b.push(b'\n');
             }
             feature = Some(p.feature);
@@ -2965,10 +2999,16 @@ fn emit_layer(
             }
         }
         // Variable-width walls change width inside a feature.
-        if thousandths(p.width_mm) != width_written {
-            width_written = thousandths(p.width_mm);
+        if width_label != width_written {
+            width_written = width_label;
             b.extend_from_slice(b";WIDTH:");
             put_fixed(b, width_written, 3);
+            b.push(b'\n');
+        }
+        if height_label != height_written {
+            height_written = height_label;
+            b.extend_from_slice(b";HEIGHT:");
+            put_fixed(b, height_written, 3);
             b.push(b'\n');
         }
         // Brick layers: a bead printed half a layer higher than the layer it belongs to.

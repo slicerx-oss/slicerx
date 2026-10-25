@@ -826,3 +826,53 @@ fn arachne_overhang_walls_take_the_width_of_their_loop() {
         );
     }
 }
+
+/// Item: overhang wall labels at `bridge_flow` above 1. A fully clear piece's bead area is `bridge_flow` x a flat
+/// bead of the wall width at the layer height (h). Above 1 the bead is drawn taller, h x `bridge_flow`, and as wide
+/// as a flat bead of that area at that height; its `; LINE_WIDTH:` and `; LAYER_HEIGHT:` comments say so, and the
+/// next feature's height is back at the layer's. Below 1 the height stays and the width narrows. The filament per mm
+/// is `bridge_flow` x the flat bead's either way.
+#[test]
+fn overhang_wall_comments_state_the_raised_bead_above_a_bridge_flow_of_one() {
+    let stock_cfg = stock("bambu-a1");
+    let model = wedge(75.0);
+    let ratio = first_number(&stock_cfg["filament_flow_ratio"]);
+    let filament = std::f64::consts::PI * 1.75 * 1.75 / 4.0;
+    let area = |w: f64, h: f64| h * (w - h) + std::f64::consts::PI * h * h / 4.0;
+    let check = |f: f64, w: f64, h: f64| {
+        let mut cfg = stock_cfg.clone();
+        cfg.insert("bridge_flow".into(), json!(f.to_string()));
+        let (moves, after) = clear_moves(&slice(&model, &cfg));
+        assert!(moves.len() > 20, "bridge flow {f}: {} moves", moves.len());
+        let want = f * area(0.45, 0.2) * ratio / filament;
+        for m in &moves {
+            assert!(
+                (m.width - w).abs() < 5e-4 && (m.height - h).abs() < 5e-4,
+                "bridge flow {f}, layer {}: width {} height {}, want {w} {h}",
+                m.layer,
+                m.width,
+                m.height
+            );
+            assert!(
+                (m.per_mm / want - 1.0).abs() < 0.005,
+                "bridge flow {f}, layer {}: {:.5} filament per mm, want {want:.5}",
+                m.layer,
+                m.per_mm
+            );
+        }
+        assert!(!after.is_empty(), "bridge flow {f}: nothing after the pieces");
+        assert!(
+            after.iter().all(|a| (a - 0.2).abs() < 5e-4),
+            "bridge flow {f}: heights after the pieces {after:?}"
+        );
+    };
+    // 1.2: 0.24 mm tall, 0.458584 mm wide.
+    let (f, h) = (1.2, 0.2);
+    let raised = f * h;
+    let wide = f * area(0.45, h) / raised + raised * (1.0 - std::f64::consts::FRAC_PI_4);
+    assert!((wide - 0.458_584).abs() < 1e-6, "{wide}");
+    check(1.2, wide, raised);
+    // 0.8: the layer height, 0.368584 mm wide.
+    check(0.8, 0.368_584, 0.2);
+    check(1.0, 0.45, 0.2);
+}

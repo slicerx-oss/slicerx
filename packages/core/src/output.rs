@@ -189,6 +189,8 @@ pub struct WipeTail {
     pub z_mm: f32,
     /// A closed outer wall, which a wipe on loops leaves by a short move into the part.
     pub outer_loop: bool,
+    /// An overhang wall piece, whose written width may be its drawn bead's rather than [`Self::width_mm`].
+    pub overhang_wall: bool,
 }
 
 /// The ordered toolpath of one layer. Travels are implicit: from the end of
@@ -352,6 +354,7 @@ impl LayerPaths {
                 },
                 z_mm: self.z,
                 outer_loop: p.feature == Feature::OuterWall && crate::gcode::is_loop(pts),
+                overhang_wall: p.feature == Feature::OverhangWall,
             }
         })
     }

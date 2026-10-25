@@ -497,11 +497,7 @@ pub(crate) fn bead(cfg: &PrintConfig, h: f64) -> (f64, f64) {
 /// flow of 1 that is a plain wall bead. A bridge line width set by hand, `thick_bridges`, and other printers keep the
 /// bridge strand of [`bead`] on every loop. Only the width changes, not the path.
 pub(crate) fn wall_bead(cfg: &PrintConfig, h: f64, outer: bool) -> (f64, f64) {
-    let unset = cfg
-        .raw
-        .get("bridge_line_width")
-        .is_none_or(|v| crate::motion::is_schema_default("bridge_line_width", v));
-    if unset && !cfg.thick_bridges && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+    if wall_width_bead(cfg) {
         let w = if outer && cfg.arachne_generator() {
             cfg.outer_wall_width()
         } else {
@@ -511,6 +507,33 @@ pub(crate) fn wall_bead(cfg: &PrintConfig, h: f64, outer: bool) -> (f64, f64) {
         return (b.width, b.flow);
     }
     bead(cfg, h)
+}
+
+/// Whether overhang wall pieces print the flat bead built on the wall width of [`wall_bead`]: a Bambu Lab printer,
+/// `bridge_line_width` not set away from the schema default, `thick_bridges` off.
+fn wall_width_bead(cfg: &PrintConfig) -> bool {
+    let unset = cfg
+        .raw
+        .get("bridge_line_width")
+        .is_none_or(|v| crate::motion::is_schema_default("bridge_line_width", v));
+    unset && !cfg.thick_bridges && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
+}
+
+/// The `bridge_flow` that draws the bead of an overhang wall piece taller in the G-code comments: above 1, on the
+/// flat bead of [`wall_bead`]; None otherwise, when the comments state the bead's own width and the layer height.
+pub(crate) fn raised_wall_flow(cfg: &PrintConfig) -> Option<f64> {
+    (cfg.bridge_flow > 1.0 && wall_width_bead(cfg)).then_some(cfg.bridge_flow)
+}
+
+/// The width and height, mm, the comments state for an overhang wall bead `w` wide at layer height `h` and a
+/// `bridge_flow` `f` above 1: a bead `f` times taller, as wide as a flat bead of the same area at that height. The
+/// area, and so the extrusion, is the same `f` times a flat bead of `w` at `h`.
+pub(crate) fn raised_wall_label(w: f64, h: f64, f: f64) -> (f64, f64) {
+    let tall = h * f;
+    (
+        f * crate::gcode::bead_area(w, h) / tall + tall * (1.0 - std::f64::consts::FRAC_PI_4),
+        tall,
+    )
 }
 
 #[allow(clippy::cast_possible_truncation, reason = "a width and a flow ratio")]
@@ -744,6 +767,36 @@ mod tests {
             .insert("bridge_line_width".into(), serde_json::json!(0.35));
         assert_eq!(wall_bead(&cfg, 0.2, true), bead(&cfg, 0.2));
         assert!((width(&cfg, true) - 0.35).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_raised_overhang_wall_label_keeps_the_bead_area() {
+        let (w, h) = raised_wall_label(0.45, 0.2, 1.2);
+        assert!(
+            (w - 0.458_584).abs() < 1e-6 && (h - 0.24).abs() < 1e-12,
+            "{w} {h}"
+        );
+        let area = crate::gcode::bead_area(w, h);
+        assert!((area - 1.2 * crate::gcode::bead_area(0.45, 0.2)).abs() < 1e-12);
+        let mut cfg = PrintConfig {
+            bridge_flow: 1.2,
+            ..PrintConfig::default()
+        };
+        // Other printers keep the bridge strand's own label.
+        assert_eq!(raised_wall_flow(&cfg), None);
+        cfg.raw
+            .insert("printer_model".into(), serde_json::json!("Bambu Lab A1"));
+        cfg.raw.remove("bridge_line_width");
+        assert_eq!(raised_wall_flow(&cfg), Some(1.2));
+        cfg.bridge_flow = 1.0;
+        assert_eq!(raised_wall_flow(&cfg), None);
+        cfg.bridge_flow = 1.2;
+        cfg.thick_bridges = true;
+        assert_eq!(raised_wall_flow(&cfg), None);
+        cfg.thick_bridges = false;
+        cfg.raw
+            .insert("bridge_line_width".into(), serde_json::json!(0.35));
+        assert_eq!(raised_wall_flow(&cfg), None);
     }
 
     fn square(x0: i32, y0: i32, x1: i32, y1: i32) -> Shapes {
