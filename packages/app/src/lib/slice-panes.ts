@@ -8,7 +8,7 @@ import { get, type AppState } from '../state/store'
 export interface SlicePanes {
   /** Slice's right pane: open, shut, or null when Slice is not on screen. */
   rightPane: 'open' | 'shut' | null
-  /** The person shut the right pane by hand for this project: a finished slice leaves it shut. */
+  /** The person shut the right pane by hand for this project. A slice never opens it; it opens from its edge tab or key. */
   rightPaneHeldShut: boolean
   /** The playback bar under the view: open with its sliders, shut to its transport row, or null with no slice shown. */
   drawer: 'open' | 'shut' | null
