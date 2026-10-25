@@ -2167,8 +2167,22 @@ fn emit_layer(
     blocks.retain(|(_, t)| !t.is_empty());
     // The printer's keep-out zones, which travels go round (zoneroute.rs) and lifts keep out of.
     let zone_router = crate::zoneroute::Router::of(c);
+    let accel_on = crate::motion::accel_enabled(c);
+    // Acceleration and jerk last written in this layer (0: not yet), and the lines that set them.
+    let mut motion_now = crate::motion::Written::default();
+    // One per filament slot: each path accelerates as its extruder's settings say ([`PrintConfig::for_slot`]).
+    let top_tool = l.paths.iter().map(|p| p.tool).max().unwrap_or(0);
+    let slot_cfgs: Vec<std::borrow::Cow<'_, PrintConfig>> = (0..=top_tool).map(|t| c.for_slot(t)).collect();
+    let mut motions: Vec<crate::motion::Motion<'_>> = slot_cfgs
+        .iter()
+        .map(|s| crate::motion::Motion::new(s, flavor, l.index == 0))
+        .collect();
     for (_, text) in blocks.iter().filter(|(s, _)| *s == crate::timelapse::Spot::Start) {
         if pending_lift.take().is_some() {
+            if accel_on && crate::timelapse::moves_head(text) {
+                let at = l.paths.first().map_or(0, |p| p.tool);
+                b.extend_from_slice(lift_travel_lines(&mut motions, at, &mut motion_now).as_bytes());
+            }
             write_eager_lift(
                 b,
                 off,
@@ -2206,19 +2220,9 @@ fn emit_layer(
     let travel_layout = (comb || reduce_infill)
         .then(|| crate::travel::Layout::for_travels(l, c, comb))
         .flatten();
-    let accel_on = crate::motion::accel_enabled(c);
     // Extrusion rate smoothing turns arc fitting off (as Orca's tooltip says): it works on straight moves.
     let smoothing = crate::equalizer::Params::of(c, out.tool_count);
     let arcs = crate::firmware::truthy(c, "enable_arc_fitting") && !spiral && smoothing.is_none();
-    // Acceleration and jerk last written in this layer (0: not yet), and the lines that set them.
-    let mut motion_now = crate::motion::Written::default();
-    // One per filament slot: each path accelerates as its extruder's settings say ([`PrintConfig::for_slot`]).
-    let top_tool = l.paths.iter().map(|p| p.tool).max().unwrap_or(0);
-    let slot_cfgs: Vec<std::borrow::Cow<'_, PrintConfig>> = (0..=top_tool).map(|t| c.for_slot(t)).collect();
-    let mut motions: Vec<crate::motion::Motion<'_>> = slot_cfgs
-        .iter()
-        .map(|s| crate::motion::Motion::new(s, flavor, l.index == 0))
-        .collect();
     // The nozzle's height in thousandths while it extrudes (a scarf rise starts below the layer).
     let mut cur_z: i64 = z;
     // orca's bambu tower writer frames each tower block: `WIPE_TOWER_START` to `END`, and a change in
@@ -2265,6 +2269,10 @@ fn emit_layer(
             // Orca retracts and lifts at once before the block (`GCode::retract` with `apply_instantly`); the
             // travel after it keeps the height and comes down at the path.
             if lift_ok && retracted && !pending_drop {
+                if accel_on && crate::timelapse::moves_head(text) {
+                    let at = if tool == u8::MAX { p.tool } else { tool };
+                    b.extend_from_slice(lift_travel_lines(&mut motions, at, &mut motion_now).as_bytes());
+                }
                 let z0 = if pending_lift.take().is_some() { z_below } else { z };
                 write_eager_lift(
                     b,
@@ -2364,6 +2372,8 @@ fn emit_layer(
                 retracted_by = tc;
             }
             let change_from = b.len();
+            // Whether the travel acceleration went out before the change's lift.
+            let mut change_lifted = false;
             if oozing && let Some(t) = standby_temp(c, tool, l.index) {
                 tool_temp(b, flavor, tool, t, false, "cooldown");
             }
@@ -2373,6 +2383,11 @@ fn emit_layer(
                 && style.active(retract)
                 && lift_allowed(&rc, l.index == 0, last_fill)
             {
+                // The lift and the change template's moves are travels of the layer (on a Bambu Lab printer).
+                if accel_on && crate::firmware::bambu_printer(c, flavor) {
+                    b.extend_from_slice(lift_travel_lines(&mut motions, tool, &mut motion_now).as_bytes());
+                    change_lifted = true;
+                }
                 let z0 = if pending_lift.take().is_some() { z_below } else { z };
                 write_eager_lift(
                     b,
@@ -2567,6 +2582,12 @@ fn emit_layer(
                         }
                     }
                     push_lines(b, &text);
+                    // A change template that sets an acceleration of its own leaves it in effect: the next travel
+                    // writes its own again.
+                    if change_lifted && crate::motion::sets_accel(&text) {
+                        motion_now.accel = 0;
+                        motion_now.travel = 0;
+                    }
                     // orca's cooling buffer sets the fans again after the change (`_FORCE_RESUME_FAN_SPEED`):
                     // the auxiliary fan, then the part fan of the new filament
                     if let Some(v) = aux_fan(c, l.local, p.tool.max(1)) {
@@ -3269,6 +3290,10 @@ fn emit_layer(
             }
         }
         if !in_place && lift_ok && style.active(retract) {
+            if accel_on && crate::timelapse::moves_head(text) {
+                let at = l.paths.last().map_or(0, |p| p.tool);
+                b.extend_from_slice(lift_travel_lines(&mut motions, at, &mut motion_now).as_bytes());
+            }
             write_eager_lift(
                 b,
                 off,
@@ -4257,6 +4282,24 @@ fn write_lift(
             None
         }
     }
+}
+
+/// The layer's travel acceleration (and jerk) lines before a lift made at once ahead of custom G-code that moves the
+/// head: the lift and the template's travels run at it, and nothing restores the print acceleration after the
+/// template. Nothing when it is already in effect. `tool` picks the filament slot's settings (the print's own when
+/// the layer has no path on that slot).
+fn lift_travel_lines(
+    motions: &mut [crate::motion::Motion<'_>],
+    tool: u8,
+    state: &mut crate::motion::Written,
+) -> String {
+    let i = usize::from(tool);
+    let motion = if i < motions.len() {
+        motions.get_mut(i)
+    } else {
+        motions.first_mut()
+    };
+    motion.map_or_else(String::new, |m| m.travel_lines(false, Feature::Custom, state))
 }
 
 /// The lift made at once before custom G-code, from the height the nozzle is at to the lifted one (`z`,
