@@ -5,7 +5,8 @@
 // and tab, which changes only what the window shows (read class). ui.select sets the selection and opens and closes
 // panels, which the person's next click or key acts on (edit class). Neither changes the project: showing a plate is
 // plates.show's, and the printer is read here and picked by the person. Printer ids stay in the app (a serial on some
-// printers), as do access codes and addresses.
+// printers), as do access codes and addresses. ui.get also reads the shown slice's collisions, each with the plate
+// objects it names by id, so a client can select them with ui.select as a click on the collision's row does.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { OPEN_PANELS } from '../agent-bridge/ui-state'
 import { currentEdition } from '../edition'
@@ -17,6 +18,7 @@ import { offeredFeatureSettings, offeredWorkspaces } from '../state/offered'
 import { get, selectedIds, set, setModelMode, setRail, setWorkspace, type AppState, type ModelMode, type PlateEntry } from '../state/store'
 import { byObjectReadback } from '@slicerx/settings/by-object'
 import { activeClearance } from '../plate/sequence-check'
+import { collisionParts, collisionsOf } from '../plate/heimdall'
 import { LinkError } from './methods-error'
 import { namesOf } from './mimir-run'
 import { PREVIEW_BUSY_TOOLS } from './preview-guard'
@@ -57,6 +59,31 @@ async function printerState(s: AppState) {
   return { name, vendor: model?.vendor ?? null, model: model?.model ?? null, nozzleMm: s.profile?.nozzle ?? null, fromProject: false }
 }
 
+/**
+ * The collisions of the slice on screen, null before a slice: each with its kind, severity and the piece of the machine,
+ * the plate objects it names (printing first, by id and name), the zone or the prime tower it meets when that is no
+ * plate object, and its layers counted from 1. `stale` when the plate changed since the slice.
+ */
+export function collisionsReadback(s: Pick<AppState, 'slice' | 'plate'>) {
+  if (s.slice.status !== 'done') return null
+  const named = (id: string) => ({ id, name: s.plate.find((e) => e.id === id)?.name ?? null })
+  return {
+    stale: s.slice.stale === true,
+    items: collisionsOf(s).map((c) => {
+      const objects = collisionParts(s, c)
+      return {
+        kind: c.kind,
+        severity: c.severity,
+        part: c.part,
+        objects: objects.map(named),
+        ...(objects.includes(c.hitId) ? {} : { zone: c.hitId }),
+        firstLayer: c.layer + 1,
+        lastLayer: c.lastLayer + 1,
+      }
+    }),
+  }
+}
+
 export async function readUi() {
   const s = get()
   const at = s.plates.findIndex((p) => p.id === s.activePlate)
@@ -77,6 +104,7 @@ export async function readUi() {
     panels: { open, settingsSection: settingsSection(s), settable: [...SETTABLE] },
     // Printing by object: the shown plate's clearance plan, the warning's pairs and the zones on the bed; null by layer.
     byObject: ((plan) => (plan ? byObjectReadback(plan) : null))(activeClearance(s)),
+    collisions: collisionsReadback(s),
   }
 }
 
