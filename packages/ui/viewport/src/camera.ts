@@ -108,6 +108,13 @@ export function applyInsets(camera: PerspectiveCamera, w: number, h: number, ins
   return { fw: f.w / w, fh: f.h / h }
 }
 
+/** The free area of a w by h view in its normalized coordinates (-1 to 1, y up), as `applyInsets` shifts the picture. */
+export function freeNdc(w: number, h: number, insets: Insets): { x0: number; x1: number; y0: number; y1: number } {
+  const f = freeArea(w, h, insets)
+  if (w <= 0 || h <= 0) return { x0: -1, x1: 1, y0: -1, y1: 1 }
+  return { x0: -1 + (2 * f.insets.left) / w, x1: 1 - (2 * f.insets.right) / w, y0: -1 + (2 * f.insets.bottom) / h, y1: 1 - (2 * f.insets.top) / h }
+}
+
 /** Presets that frame the bed itself around its center, rather than what is on it. */
 const BED_PRESETS: ReadonlySet<ViewPreset> = new Set<ViewPreset>(['bed', 'plate', 'top', 'bottom', 'front', 'back', 'left', 'right'])
 
@@ -116,6 +123,8 @@ export class CameraRig {
   preset: ViewPreset | null = 'iso'
   /** Share of the view width and height the overlays leave free; presets frame the model inside it. */
   free = { fw: 1, fh: 1 }
+  /** The free area in the view's normalized coordinates (-1 to 1, y up), off center when overlays cover one side more. */
+  freeNdc = { x0: -1, x1: 1, y0: -1, y1: 1 }
   /** An overlay is on the view, so a framed model fills more of the free area. */
   get covered(): boolean {
     return this.free.fw < 1 || this.free.fh < 1
@@ -186,6 +195,28 @@ export class CameraRig {
     const { fw, fh } = this.free
     const f = fitDistance(this.camera, box, dir, 0.6 * fh, 0.72 * fw)
     return { pos: f.target.clone().addScaledVector(dir, f.distance), target: f.target }
+  }
+
+  /**
+   * Whether all of `box` (world) is in front of the camera and on screen inside the free area, `margin` of the free
+   * area's half size kept clear at each edge. A part under an overlay or past the edge is not in view.
+   */
+  inView(box: Box3, margin = 0.04): boolean {
+    if (box.isEmpty()) return false
+    const cam = this.camera
+    cam.updateMatrixWorld(true)
+    const { x0, x1, y0, y1 } = this.freeNdc
+    const mx = ((x1 - x0) / 2) * margin
+    const my = ((y1 - y0) / 2) * margin
+    const v = new Vector3()
+    for (let i = 0; i < 8; i++) {
+      v.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z)
+      // Behind the camera, a projected point lands back on the screen mirrored, so it is checked in the camera's frame.
+      if (v.clone().applyMatrix4(cam.matrixWorldInverse).z >= -cam.near) return false
+      v.project(cam)
+      if (v.x < x0 + mx || v.x > x1 - mx || v.y < y0 + my || v.y > y1 - my) return false
+    }
+    return true
   }
 
   /** The pose that moves the view sideways to look at `target`, keeping the angle and the distance (so the zoom level stays). */

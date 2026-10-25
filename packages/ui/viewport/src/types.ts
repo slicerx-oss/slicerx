@@ -10,6 +10,7 @@ import type { HeadModel } from './heads'
 import type { StrikeMark } from './strikes'
 import type { GantryHit, GantrySpec } from './gantry'
 import type { ClearanceSpec } from './clearance'
+import type { PickRing } from './pick-rings'
 import type { Guides } from './guides'
 import type { DimensionMark, SketchCursor, SketchScene } from './cadtools'
 import type { Bed, PreviewBuffers } from '@slicerx/contracts'
@@ -686,6 +687,8 @@ export interface Viewport {
   zoomToSelection(opts?: { animate?: boolean }): void
   /** Frames the selection (every object with none) from the current angle, with room around it. */
   frameSelection(opts?: { animate?: boolean }): void
+  /** Frames the selection as frameSelection does, only when some of it is off screen or under an overlay. Answers whether the camera moved. */
+  showSelection?(opts?: { animate?: boolean }): boolean
   zoomToBed(opts?: { animate?: boolean }): void
   /** Moves the camera toward its target by `factor` (below 1 moves away), keeping the angle, within the zoom limits. */
   zoomBy(factor: number, opts?: { animate?: boolean }): void
@@ -807,6 +810,8 @@ export interface Viewport {
   setGantry?(spec: GantrySpec | null, hits: readonly GantryHit[] | null): void
   /** Print by object's clearance zones and gantry lanes on the bed; null clears them. */
   setClearance?(spec: ClearanceSpec | null): void
+  /** Rings in the selection color round the footprints of the parts a warning or a collision picked; null clears them. */
+  setPickRings?(rings: readonly PickRing[] | null): void
   /** Value ranges for legends of the speed, flow, width, height, fan and temperature schemes. */
   previewRanges(): PreviewRanges
   /** One row per feature type present: color, time, length and visibility. */

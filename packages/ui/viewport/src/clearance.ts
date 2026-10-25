@@ -39,11 +39,11 @@ const Z = 0.12
 /** Width of a conflict's edge on the bed, mm. */
 const HOT_EDGE = 0.8
 /** Width of the ring round a selected object's zone, mm, and the gap between it and the zone's edge. */
-const PICK_EDGE = 3
-const PICK_GAP = 0.5
+export const PICK_EDGE = 3
+export const PICK_GAP = 0.5
 
 /** A closed band of width `w` along a convex ring, as triangles at height `z`, its middle `shift` mm outside the ring. */
-function ribbon(ring: readonly Pt[], w: number, z: number, shift = 0): BufferGeometry {
+export function ribbon(ring: readonly Pt[], w: number, z: number, shift = 0): BufferGeometry {
   const n = ring.length
   const pos: number[] = []
   // Each corner moves along the bisector of its two edge normals, so the band keeps its width.

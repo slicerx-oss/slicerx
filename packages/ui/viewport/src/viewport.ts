@@ -64,8 +64,9 @@ import type { PreviewBuffers } from '@slicerx/contracts'
 import { BrimEars } from './brim'
 import { GapLines, type GapLine } from './gaps'
 import { CLEARANCE_RED_LIGHT, ClearanceZones, type ClearanceSpec } from './clearance'
+import { PickRings, type PickRing } from './pick-rings'
 import { GuideLines, type Guides } from './guides'
-import { applyInsets, CameraRig, NO_INSETS, PoseWatch, reducedMotion, type Insets } from './camera'
+import { applyInsets, CameraRig, freeNdc, NO_INSETS, PoseWatch, reducedMotion, type Insets } from './camera'
 import { BASELINE_LOOK, lookProblems, type ViewportLook } from './look'
 import { cadLook, edgeLook, MaterialCache, setEdgeResolution, setMaterialLook, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
 import { buildObject, disposeObject, wideEdges, type AsyncPartBuild, type ObjectEntry, type PartEntry } from './model'
@@ -390,6 +391,8 @@ class ViewportImpl implements Viewport {
   private readonly gaps = new GapLines()
   /** Print by object's clearance zones and gantry lanes on the bed. */
   private readonly clearance = new ClearanceZones()
+  /** The rings round the parts a warning or a collision picked. */
+  private readonly pickRings = new PickRings()
   private readonly guides = new GuideLines()
   private ghost: Toolpaths | null = null
   private probeFaces = false
@@ -553,6 +556,7 @@ class ViewportImpl implements Viewport {
     this.stage.objectsRoot.add(this.brim.group)
     this.stage.objectsRoot.add(this.gaps.group)
     this.stage.objectsRoot.add(this.clearance.group)
+    this.stage.bedRoot.add(this.pickRings.group)
     this.stage.objectsRoot.add(this.guides.group)
     this.stage.objectsRoot.add(this.edgeMarks.group)
     this.stage.objectsRoot.add(this.multiFrame, this.moveArrows.group, this.rotRings.group, this.cutGizmo.group, this.cutRings.group, this.pushView.group, this.edgeView.group, this.sketchLayer.group, this.finished, this.originPlanes.group, this.dims.group)
@@ -979,6 +983,7 @@ class ViewportImpl implements Viewport {
     this.painter.sync()
     this.gaps.follow((id) => this.objects.get(id)?.group.matrix)
     this.clearance.follow((id) => this.objects.get(id)?.group.matrix)
+    this.pickRings.follow((id) => this.objects.get(id)?.group.matrix)
     this.updateGizmo()
     // Only while their tool is on: the rings follow the selection, the cut gizmo its plane.
     if (this.tool === 'rotate' || this.rotRings.visible) this.updateRings()
@@ -1103,6 +1108,7 @@ class ViewportImpl implements Viewport {
 
   private applyInset(): void {
     this.rig.free = applyInsets(this.camera, this.width, this.height, this.insets)
+    this.rig.freeNdc = freeNdc(this.width, this.height, this.insets)
   }
 
   // ---------- modes ----------
@@ -1589,6 +1595,11 @@ class ViewportImpl implements Viewport {
 
   setGapLines(lines: readonly GapLine[]): void {
     this.gaps.set(lines)
+    this.invalidate()
+  }
+
+  setPickRings(rings: readonly PickRing[] | null): void {
+    this.pickRings.set(rings)
     this.invalidate()
   }
 
@@ -3041,14 +3052,32 @@ class ViewportImpl implements Viewport {
 
   /** Frames the selection (every object with none) from the current angle, with room around it. */
   frameSelection(opts: { animate?: boolean } = {}): void {
-    const box = new Box3()
-    this.stage.scene.updateMatrixWorld(true)
-    const sel = this.selection.map((id) => this.objects.get(id)).filter((o): o is ObjectEntry => !!o)
-    for (const o of sel.length ? sel : [...this.objects.values()]) box.expandByObject(o.group)
+    const box = this.selectionBox()
     if (box.isEmpty()) return
     this.rig.preset = null
     this.rig.go(this.rig.framed(box), opts.animate ?? true, performance.now())
     this.invalidate()
+  }
+
+  /**
+   * Frames the selection as frameSelection does, but only when some of it is off screen or under an overlay; a
+   * selection already in view leaves the camera where it is. Answers whether the camera moved.
+   */
+  showSelection(opts: { animate?: boolean } = {}): boolean {
+    if (this.selection.length === 0) return false
+    const box = this.selectionBox()
+    if (box.isEmpty() || this.rig.inView(box)) return false
+    this.frameSelection(opts)
+    return true
+  }
+
+  /** The world box of the selected objects, of every object with none selected. */
+  private selectionBox(): Box3 {
+    const box = new Box3()
+    this.stage.scene.updateMatrixWorld(true)
+    const sel = this.selection.map((id) => this.objects.get(id)).filter((o): o is ObjectEntry => !!o)
+    for (const o of sel.length ? sel : [...this.objects.values()]) box.expandByObject(o.group)
+    return box
   }
 
   /**
@@ -3154,6 +3183,7 @@ class ViewportImpl implements Viewport {
     this.strikes.setColors(t.scene.overhangRed, t.scene.overhangAmber)
     // On the light bed the overhang red reads at 2:1; the zones take a deeper red that keeps 3:1 (ui spec 5).
     this.clearance.setColors(lightStudio(t.scene.bgTop) ? CLEARANCE_RED_LIGHT : t.scene.overhangRed, lightStudio(t.scene.bgTop) ? '#4a4e63' : '#c9cfe2', t.scene.selection)
+    this.pickRings.setColor(t.scene.selection)
     this.spot.setColors(t.scene.overhangRed, t.scene.overhangAmber)
     this.toolpaths.setGantryColor(t.scene.overhangRed)
     if (this.lookSet) this.applyLook(this.lookSet)
@@ -4444,6 +4474,7 @@ class ViewportImpl implements Viewport {
     this.meshPool?.dispose()
     this.strikes.dispose()
     this.clearance.dispose()
+    this.pickRings.dispose()
     this.spot.dispose()
     this.painter.dispose()
     this.gizmo.dispose()
