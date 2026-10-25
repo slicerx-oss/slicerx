@@ -34,9 +34,9 @@ describe('pick rings', () => {
     expect(r.ids).toEqual(['a', 'b'])
     r.follow(() => at(0))
     const a = corners(r.group.children[0] as Mesh)
-    // 0.5 mm clear of the footprint, 3 mm wide
-    expect(a.x0).toBeCloseTo(10 - 3.5, 5)
-    expect(a.x1).toBeCloseTo(30 + 3.5, 5)
+    // 0.5 mm clear of the footprint, 5 mm wide
+    expect(a.x0).toBeCloseTo(10 - 5.5, 5)
+    expect(a.x1).toBeCloseTo(30 + 5.5, 5)
     expect(a.z).toBeCloseTo(PICK_Z, 5)
     expect(PICK_Z).toBeGreaterThan(0.4)
     r.set(null)
@@ -49,10 +49,19 @@ describe('pick rings', () => {
     r.set([{ id: 'a', transform: at(0).toArray(), hull: rect(10, 10, 20, 20) }])
     r.follow((id) => (id === 'a' ? at(40, 5) : undefined))
     const m = r.group.children[0] as Mesh
-    expect(corners(m).x0).toBeCloseTo(50 - 3.5, 5)
-    expect(corners(m).y0).toBeCloseTo(15 - 3.5, 5)
+    expect(corners(m).x0).toBeCloseTo(50 - 5.5, 5)
+    expect(corners(m).y0).toBeCloseTo(15 - 5.5, 5)
     r.follow(() => undefined)
     expect(m.visible).toBe(false)
+  })
+
+  it('takes the selection color, a darker tone of it on a light studio', () => {
+    const r = new PickRings()
+    r.setColor('#bd93f9')
+    expect(r.color).toBe('#bd93f9')
+    r.setColor('#bd93f9', true)
+    const dark = (h: string) => [1, 3, 5].reduce((a, i) => a + parseInt(h.slice(i, i + 2), 16), 0)
+    expect(dark(r.color)).toBeLessThan(dark('#bd93f9'))
   })
 
   it('skips a footprint with no area', () => {

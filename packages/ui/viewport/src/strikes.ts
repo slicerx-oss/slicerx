@@ -14,6 +14,8 @@ export interface StrikeMark {
   close?: boolean
   /** The strike the list has selected: drawn larger. */
   selected?: boolean
+  /** Its parts are the selection, ringed on the bed: drawn smaller, so the parts lead and the mark does not cover them. */
+  yield?: boolean
   /** Before the layer it starts on, picked or pointed at in the list: a faint mark that shows where to look. */
   ghost?: boolean
 }
@@ -24,6 +26,8 @@ const OUTLINE = '#15161c'
 /** Screen share of a strike's width, and of the selected one's. */
 const SIZE = 0.05
 const SELECTED = 0.075
+/** Screen share of a strike whose parts are selected. */
+const YIELDED = 0.035
 
 /** The strike on a 128 px canvas in `color`; null where there is no canvas (tests in Node). */
 function strikeTexture(color: string): Texture | null {
@@ -118,7 +122,7 @@ export class Strikes {
       const s = new Sprite(this.material(m.close ? this.colors.close : this.colors.hit, m.ghost))
       s.name = `${m.selected ? 'strike selected' : 'strike'}${m.ghost ? ' ghost' : ''}`
       s.position.set(m.x, m.y, m.z)
-      const k = m.selected ? SELECTED : SIZE
+      const k = m.yield ? YIELDED : m.selected ? SELECTED : SIZE
       s.scale.set(k, k, 1)
       s.renderOrder = m.selected ? 12 : 11
       this.root.add(s)
