@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Changed
+
+- A slice the sx engine refuses over custom G-code a person could approve for a printer it knows (a G-code override, for example) says so in this server's terms: no tool call can approve it, and leaving out the G-code settings slices with the printer profile's own. `error.details` is `{ reason: "gcode_review", printer }`.
+
 ## [0.2.3] - 2026-10-25
 
 ### Added

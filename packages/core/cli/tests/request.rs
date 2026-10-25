@@ -584,6 +584,72 @@ fn a_refusal_names_a_printer_sx_does_not_know() {
     assert!(err.trim_end().ends_with(&format!("sx: {want}")), "{err}");
 }
 
+/// A known printer whose start is its stock text with one line changed: the refusal keeps its reason and says, in one
+/// more line, that the text matches no stock version, needs a person's review and how a yes is given. A request
+/// with that yes slices; a line no one can approve gets no such hint.
+#[cfg(feature = "stock-gcode")]
+#[test]
+fn a_changed_stock_start_says_it_needs_a_persons_review() {
+    let stock = shipped_start("bambu-p1s");
+    let edited = stock.replacen("\nG28 X ; re-home XY\n", "\nG28 ; re-home XY\n", 1);
+    assert_ne!(edited, stock, "the P1S start has the line this test edits");
+    let note = "This project's G-code for Bambu Lab P1S 0.4 nozzle matches no known stock version, so a person has to review it. After their yes, slice a request with \"trustedGcode\": true; if only comments or spacing changed, --script-printer <model-id> --script-firmware <flavor> recognizes it.";
+    let want = format!(
+        "blocked by the safety preflight: custom G-code: line 194: M500 writes settings to the printer's memory (eeprom_write)\n{note}"
+    );
+
+    // A request.
+    let out = slice_named("Bambu Lab P1S 0.4 nozzle", &edited);
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&out.stderr).trim_end(),
+        format!("sx slice: {want}")
+    );
+
+    // The same from a project file.
+    let dir = temp_dir(format!("sx-cli-changed-stock-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let project = dir.join("project.3mf");
+    let settings = serde_json::json!({
+        "printer_settings_id": "Bambu Lab P1S 0.4 nozzle",
+        "machine_start_gcode": edited,
+    });
+    std::fs::write(&project, box_3mf(Some(&settings))).unwrap();
+    let out = sx()
+        .arg("slice")
+        .arg(&project)
+        .args(["-o", "-"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.trim_end().ends_with(&format!("sx: {want}")), "{err}");
+
+    // The yes the note names lets it run.
+    let out = slice_with(
+        &[
+            (
+                "printer_settings_id",
+                serde_json::Value::String("Bambu Lab P1S 0.4 nozzle".to_owned()),
+            ),
+            ("machine_start_gcode", serde_json::Value::String(edited.clone())),
+        ],
+        &serde_json::json!({ "trustedGcode": true }),
+    );
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+
+    // A line no one can approve: no hint, as a yes would not let it run.
+    let reset = edited.replacen("\nG28 ; re-home XY\n", "\nM502\n", 1);
+    let out = slice_named("Bambu Lab P1S 0.4 nozzle", &reset);
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("M502 resets the printer to factory settings"),
+        "{err}"
+    );
+    assert!(!err.contains("matches no known stock version"), "{err}");
+}
+
 #[test]
 fn stock_text_is_trusted_only_for_its_own_printer_and_only_as_written() {
     let p1s = shipped_start("bambu-p1s");
