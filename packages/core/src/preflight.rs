@@ -134,7 +134,8 @@ pub(crate) const EDGE_TOL_MM: f64 = 0.05;
 /// skirt whose outermost centerline lies up to 2.0 mm past the edge, on every side and every Bambu Lab bed measured
 /// (P1S, A1, A1 mini), and refuses it beyond; 1.9 stays inside that. Only for Bambu Lab printers, whose travel is
 /// known to reach that far: on other machines a nozzle past the bed could hit the frame or an endstop, so their
-/// skirts keep `EDGE_TOL_MM` like every other feature.
+/// skirts keep `EDGE_TOL_MM` like every other feature. The skirt is cut to the bed before this check
+/// (`session::skirt_around`), so this margin only guards.
 pub(crate) const BAMBU_SKIRT_EDGE_TOL_MM: f64 = 1.9;
 
 fn number(v: &Value) -> Option<f64> {
@@ -213,9 +214,9 @@ pub fn wrap_check_zone(cfg: &PrintConfig) -> Option<Vec<[f64; 2]>> {
 }
 
 /// Every zone the printer keeps clear: the excluded areas (`bed_exclude_area`) and the nozzle wrap check corner
-/// (`head_wrap_detect_zone`). The brim is cut to the bed less these, and the tower stays out of them. A path that
-/// enters one is refused: an object's by the collision check, which walks the same zones, and the skirt by the
-/// safety preflight (which refuses every path in an excluded area).
+/// (`head_wrap_detect_zone`). The brim and the skirt are cut to the bed less these, and the tower stays out of them. A
+/// path that enters one is refused: an object's by the collision check, which walks the same zones, and any other by
+/// the safety preflight (which refuses every path in an excluded area).
 pub fn keep_out_zones(cfg: &PrintConfig) -> Vec<Vec<[f64; 2]>> {
     let mut zones = exclude_zones(cfg);
     zones.extend(wrap_check_zone(cfg));
@@ -935,8 +936,19 @@ fn object_of(out: &SliceOutput, p: &crate::output::PathInfo) -> Option<usize> {
     Some(usize::from(p.owner)).filter(|&i| i < out.objects.len())
 }
 
+/// The object whose outline lies nearest the point `q` (mm) as the messages name it: in quotes, or "the plate" when
+/// there are no objects.
+pub(crate) fn nearest_name(objects: &[crate::output::ObjectFootprint], q: [f64; 2]) -> String {
+    nearest_of(objects, q).map_or_else(|| "the plate".to_owned(), |i| name_of(objects, i))
+}
+
 /// The object whose outline lies nearest the point `q`, mm.
 fn nearest_object(out: &SliceOutput, q: [f64; 2]) -> Option<usize> {
+    nearest_of(&out.objects, q)
+}
+
+/// [`nearest_object`] among `objects`.
+fn nearest_of(objects: &[crate::output::ObjectFootprint], q: [f64; 2]) -> Option<usize> {
     let gap = |hull: &[[f64; 2]]| -> f64 {
         match hull {
             [] => f64::INFINITY,
@@ -956,7 +968,7 @@ fn nearest_object(out: &SliceOutput, q: [f64; 2]) -> Option<usize> {
                 .fold(f64::INFINITY, f64::min),
         }
     };
-    out.objects
+    objects
         .iter()
         .enumerate()
         .map(|(i, o)| (i, gap(&o.hull)))
@@ -966,7 +978,12 @@ fn nearest_object(out: &SliceOutput, q: [f64; 2]) -> Option<usize> {
 
 /// An object as the messages name it: its name in quotes, or its id when it has none.
 fn object_name(out: &SliceOutput, i: usize) -> String {
-    out.objects.get(i).map_or_else(
+    name_of(&out.objects, i)
+}
+
+/// [`object_name`] among `objects`.
+fn name_of(objects: &[crate::output::ObjectFootprint], i: usize) -> String {
+    objects.get(i).map_or_else(
         || format!("object {}", i + 1),
         |o| {
             let n = if o.name.is_empty() { &o.id } else { &o.name };

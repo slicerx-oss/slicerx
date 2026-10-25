@@ -3545,7 +3545,7 @@ fn skirt_points(gcode: &str) -> Vec<(f64, f64)> {
     let mut feature = "";
     let mut pts = Vec::new();
     for l in gcode.lines() {
-        if let Some(f) = l.strip_prefix("; FEATURE: ") {
+        if let Some(f) = l.strip_prefix("; FEATURE: ").or_else(|| l.strip_prefix(";TYPE:")) {
             feature = f;
         } else if feature == "Skirt"
             && l.starts_with("G1 ")
@@ -3575,46 +3575,37 @@ fn edge_skirt(model: Option<&str>) -> Vec<(&'static str, serde_json::Value)> {
 }
 
 #[test]
-fn a_bambu_lab_skirt_near_the_back_edge_slices_whole() {
+fn a_bambu_lab_skirt_near_the_back_edge_is_cut_to_the_bed() {
     let config = edge_skirt(None);
-    // At Y 238 the outer skirt loop runs about 0.7 mm past the back edge of the P1S bed.
+    // At Y 238 the outer skirt loop would run about 0.7 mm past the back edge of the P1S bed. It is cut there.
     let (ok, gcode, err) = p1s_slice(Some(serde_json::json!([[0, 2]])), 238.0, &config);
     assert!(ok, "{err}");
-    // Whole: the same loops as 10 mm further in, moved by those 10 mm.
     let (ok, inside, err) = p1s_slice(Some(serde_json::json!([[0, 2]])), 228.0, &config);
     assert!(ok, "{err}");
     let (edge, ref_pts) = (skirt_points(&gcode), skirt_points(&inside));
     assert!(ref_pts.len() > 20, "{}", ref_pts.len());
-    assert_eq!(edge.len(), ref_pts.len());
-    for (a, b) in edge.iter().zip(&ref_pts) {
-        assert!(
-            (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1 - 10.0).abs() < 2e-3,
-            "{a:?} {b:?}"
-        );
-    }
-    // Plate Y is the G-code's plus the 2 mm nozzle offset: past the 256 mm bed, inside 256 + 1.9.
+    // Plate Y is the G-code's plus the 2 mm nozzle offset: the skirt runs up to the bed's back edge, its centerline
+    // half a line spacing inside it.
     let back = edge.iter().map(|p| p.1 + 2.0).fold(f64::MIN, f64::max);
-    assert!(back > 256.5 && back < 257.9, "{back}");
+    assert!(back > 255.5 && back <= 255.85, "{back}");
+    // The front is where it is 10 mm further in, moved by those 10 mm.
+    let front = |pts: &[(f64, f64)]| pts.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+    assert!((front(&edge) - front(&ref_pts) - 10.0).abs() < 2e-3);
 }
 
 #[test]
-fn a_skirt_further_past_the_edge_or_on_another_printer_is_refused() {
-    let config = edge_skirt(None);
-    // About 2.1 mm past the back edge.
-    let (ok, _, err) = p1s_slice(Some(serde_json::json!([[0, 2]])), 239.45, &config);
-    assert!(!ok);
-    assert!(
-        err.contains("toolpaths lie outside the printable area") && err.contains("skirt"),
-        "{err}"
-    );
-    // The same plate as the one that slices on the P1S, on a printer that is not a Bambu Lab one.
+fn a_skirt_further_past_the_edge_or_on_another_printer_is_cut_too() {
+    // About 2.1 mm past the back edge on the P1S, which was refused, and the plate at Y 238 on a printer that is not
+    // a Bambu Lab one, which was refused too.
     let other = edge_skirt(Some("Voron 2.4 250"));
-    let (ok, _, err) = p1s_slice(Some(serde_json::json!([[0, 0]])), 238.0, &other);
-    assert!(!ok);
-    assert!(
-        err.contains("toolpaths lie outside the printable area") && err.contains("skirt"),
-        "{err}"
-    );
+    for (offset, y, config) in [(2.0, 239.45, edge_skirt(None)), (0.0, 238.0, other)] {
+        let (ok, gcode, err) = p1s_slice(Some(serde_json::json!([[0, offset]])), y, &config);
+        assert!(ok, "{y}: {err}");
+        let pts = skirt_points(&gcode);
+        assert!(!pts.is_empty(), "{y}: a skirt");
+        let back = pts.iter().map(|p| p.1 + offset).fold(f64::MIN, f64::max);
+        assert!(back > 255.5 && back <= 255.85, "{y}: {back}");
+    }
 }
 
 /// A plain 3MF of boxes (width, depth, height, mm) placed by build items: `objects` are the boxes, `items` an object's
