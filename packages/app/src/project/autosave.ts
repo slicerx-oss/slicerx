@@ -4,13 +4,14 @@
 // this device's storage. It stays there until the project is saved or the plates are emptied, so work is
 // offered back after a crash or a closed tab. Saved and opened projects are kept as recent projects. While a
 // locked project is open the autosave is sealed with that file's key (project/locked-session.ts), and no copy
-// of it is kept in the clear.
+// of it is kept in the clear. Opening another job over unsaved work keeps that work as a recent project first,
+// instead of asking to save or discard it.
 import type { Host } from '@slicerx/contracts'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { allPlates } from '../plate/plates'
 import { lockedSession, setLockedSession } from './locked-session'
-import { confirmDiscard, isDirty } from './unsaved'
-import { appStore, get, set, type AppState } from '../state/store'
+import { confirmDiscard, isDirty, markClean } from './unsaved'
+import { appStore, get, set, toast, type AppState } from '../state/store'
 
 export const AUTOSAVE_DELAY_MS = 4000
 /** The longest slices back to back hold back a due autosave. */
@@ -250,14 +251,82 @@ export async function discardRecovery(): Promise<void> {
   await snapshotStore().remove(AUTOSAVE_ID).catch(() => undefined)
 }
 
-/** Opens a stored project onto the plates. */
+/** Opens a stored project onto the plates. Unsaved work on them is kept first, as for any open (keepBeforeOpen). */
 export async function openSnapshot(host: Host, snap: Snapshot): Promise<void> {
   const buf = snap.data.buffer.slice(snap.data.byteOffset, snap.data.byteOffset + snap.data.byteLength) as ArrayBuffer
   // A locked autosave opens with the account first; refused (signed out, offline), it stays for later.
   const opened = snap.locked ? await (await import('../export/locked')).unlockBytes(host, snap.name, buf) : { name: snap.name, data: buf }
   if (!opened) return
-  if (!(await confirmDiscard('open another project'))) return
   const { openModelBytes } = await import('../state/actions')
   await openModelBytes(host, opened.name, opened.data, undefined, { fresh: true })
   set({ projectsDialog: null })
+}
+
+/** The note shown once an open that kept the work it replaced is done. */
+export const KEPT_NOTE = 'Your previous plate is saved.'
+
+/** Work an open kept, waiting for that open to finish so its note comes last. */
+let kept: { host: Host; snap: Snapshot; since: number } | null = null
+
+/**
+ * Writes the project as it is, unsaved changes and all, to the recent projects (sealed, for a locked project). Returns
+ * what it wrote, or null when it is too big to keep; throws when storage refuses it.
+ */
+export async function keepProject(): Promise<Snapshot | null> {
+  const n = objectCount()
+  const { sx3mfBytes } = await import('../export/actions')
+  const plain = await sx3mfBytes(allPlates(get()), {}, { offPage: true })
+  if (plain.byteLength > MAX_SNAPSHOT_BYTES) return null
+  const file = get().projectFile?.name
+  const name = file && /\.sx3mf$/i.test(file) ? file : projectName()
+  const key = lockedSession()
+  const snap: Snapshot = key
+    ? { id: '', name: name.replace(/\.sx3mf$/i, '.sxlock'), savedAt: Date.now(), objects: n, data: await (await import('@slicerx/embed/sxlock')).resealSxlock(plain, key), locked: true, v: SNAPSHOT_VERSION }
+    : { id: '', name, savedAt: Date.now(), objects: n, data: plain, v: SNAPSHOT_VERSION }
+  snap.id = `recent:${snap.name.toLowerCase()}`
+  const store = snapshotStore()
+  await store.put(snap)
+  // It is a recent project now, so the autosave of the same work is not offered back as well.
+  await store.remove(AUTOSAVE_ID).catch(() => undefined)
+  for (const old of (await listRecent()).slice(MAX_RECENT)) await store.remove(old.id).catch(() => undefined)
+  return snap
+}
+
+/**
+ * Before an open replaces the project: unsaved work is kept as a recent project, with no question, and the open says
+ * so when it is done (sayKept). Only when keeping it fails (storage full or blocked, a project too big) does it ask to
+ * save or discard, so work is never lost without a word. Resolves false when the person canceled that question.
+ */
+export async function keepBeforeOpen(host: Host, what: string): Promise<boolean> {
+  if (!isDirty()) return true
+  try {
+    const snap = await keepProject()
+    if (snap) {
+      kept = { host, snap, since: get().toast?.id ?? 0 }
+      markClean()
+      return true
+    }
+  } catch {
+    // Asked below.
+  }
+  return confirmDiscard(what)
+}
+
+const sentence = (t: string): string => (/[.!?]$/.test(t) ? t : `${t}.`)
+
+/**
+ * The note for work an open kept, once the open is done: one sentence with Reopen. A note the open showed itself stays
+ * in front of it; one with an action of its own keeps that action and points to the recent projects instead.
+ */
+export function sayKept(): void {
+  const k = kept
+  if (!k) return
+  kept = null
+  const t = get().toast
+  const theirs = t && t.id > k.since && !/^Added /.test(t.text) ? t : null
+  if (theirs?.action) {
+    toast(`${sentence(theirs.text)} ${KEPT_NOTE.replace(/\.$/, '')} in Recent projects.`, theirs.tone, theirs.action)
+    return
+  }
+  toast(theirs ? `${sentence(theirs.text)} ${KEPT_NOTE}` : KEPT_NOTE, theirs?.tone ?? 'info', { label: 'Reopen', run: () => void openSnapshot(k.host, k.snap) })
 }

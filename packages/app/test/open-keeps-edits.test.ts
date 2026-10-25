@@ -2,13 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // An open marks the project clean when it finishes, but only for its own changes: an edit made while it runs (a model
 // dropped as the opened objects appear, before its settings are applied) keeps the project unsaved, and the next open
-// asks first.
+// keeps that work as a recent project first.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Host, MeshHandle } from '@slicerx/contracts'
 import { writeProject } from '../src/export/threemf'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
-import { answerUnsaved, beginOpen, isDirty, markClean, startDirtyTracking, withoutDirtying } from '../src/project/unsaved'
+import { listRecent, memorySnapshots, setSnapshotStore } from '../src/project/autosave'
+import { beginOpen, isDirty, markClean, startDirtyTracking, withoutDirtying } from '../src/project/unsaved'
 import { openModelBytes } from '../src/state/actions'
 import { appStore, get, set, type PlateEntry } from '../src/state/store'
 
@@ -21,6 +22,7 @@ const design = (name: string, settings: Record<string, unknown> = {}) =>
 const names = () => get().plate.map((p) => p.name)
 
 beforeEach(() => {
+  setSnapshotStore(memorySnapshots())
   set({ plate: [entry('a')], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', selection: null, selectedIds: [], unsavedPrompt: null, overrides: {} })
   startDirtyTracking()
   markClean()
@@ -36,17 +38,16 @@ function dropCubeWhenShown(name: string): void {
 }
 
 describe('an open and the edits made while it runs', () => {
-  it('a cube dropped while a project opens keeps the project unsaved, and the next open asks', async () => {
+  it('a cube dropped while a project opens keeps the project unsaved, and the next open keeps it', async () => {
     dropCubeWhenShown('tower')
     // A project with print settings: they are applied after its objects appear.
     await openModelBytes(host, 'tower.3mf', design('tower', { layer_height: '0.16', wall_loops: '3' }), undefined, { fresh: true })
     expect(names()).toEqual(['tower', 'cube'])
     expect(isDirty()).toBe(true)
-    const next = openModelBytes(host, 'clip.3mf', design('clip'), undefined, { fresh: true })
-    await vi.waitFor(() => expect(get().unsavedPrompt).toEqual({ what: 'open another design' }))
-    answerUnsaved(false)
-    await next
-    expect(names()).toEqual(['tower', 'cube'])
+    await openModelBytes(host, 'clip.3mf', design('clip'), undefined, { fresh: true })
+    expect(get().unsavedPrompt).toBeNull()
+    expect(names()).toEqual(['clip'])
+    expect((await listRecent()).map((r) => r.objects)).toEqual([2])
   })
 
   it('an open on its own still ends clean', async () => {

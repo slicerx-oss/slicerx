@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Knows whether the project has changes that were never saved, and asks before anything throws them
-// away: starting over, opening another project, closing the tab or quitting the desktop app.
+// away: starting over, closing the tab or quitting the desktop app. Opening another project keeps them as a
+// recent project instead (autosave.ts, keepBeforeOpen), and asks only when that fails.
 import { allPlates } from '../plate/plates'
 import { appStore, get, set, type AppState } from '../state/store'
 
