@@ -655,9 +655,10 @@ test.describe('the dimension sheet', () => {
     await expect(page.getByTestId('mimir-sheet-hint')).toContainText('Edited step 1')
     if (shotsOn()) await page.screenshot({ path: `${shotsDir(info)}/mimir-sheet-drive-dark.png` })
 
-    // a toast keeps to the left of the panel, off its rows and Done
+    // a toast keeps to the left of the panel, off its rows and Done; raised with its close mark, as the app raises the
+    // 3D view notice, so the next test's emptyMimirTab closes it instead of waiting out its reading time
     const text = 'Hardware acceleration looks off in this browser, so the 3D view will be slow. Turn it on in the browser settings and reload.'
-    await page.evaluate((t) => (window as unknown as { __sx: Sx }).__sx.setState({ toast: { id: Date.now(), text: t, tone: 'info' } }), text)
+    await page.evaluate((t) => (window as unknown as { __sx: Sx }).__sx.setState({ toast: { id: Date.now(), text: t, tone: 'info', dismissible: true } }), text)
     const toast = page.getByTestId('toast').filter({ hasText: 'Turn it on in the browser settings' }).last()
     await expect(toast).toBeVisible()
     await expect.poll(async () => (await toast.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)).then(() => el.getBoundingClientRect().right)))).toBeLessThanOrEqual((await panel.boundingBox())!.x)
