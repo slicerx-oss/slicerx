@@ -888,16 +888,37 @@ test.describe('the fit check', () => {
     // An edit: a second object added by a drop.
     await drop(page, 'calibration-cube-20mm.sx3mf')
     await expect(page.locator('.obj-name', { hasText: '20 mm calibration cube' })).toBeVisible({ timeout: 60_000 })
+    // The drop has finished, so the open below starts from a settled plate.
+    await expect.poll(async () => (await store(page)).plateLoading, { timeout: 60_000 }).toBe(false)
     await openFile(page, join(starters(), 'temperature-tower.sx3mf'))
     await expect(page.locator('.obj-name')).toHaveText(['Temperature tower'], { timeout: 60_000 })
     await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
-    const note = page.getByText('Your previous plate is saved.')
-    await expect(note).toBeVisible()
-    await page.getByRole('button', { name: 'Reopen' }).click()
-    await expect(page.locator('.obj-name')).toHaveText(['Cable clip', '20 mm calibration cube'], { timeout: 60_000 })
-    await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
+    // The edited plate is a recent project now, with both objects.
+    const kept = () =>
+      page.evaluate(
+        () =>
+          new Promise<number[]>((resolve) => {
+            const req = indexedDB.open('slicerx-projects')
+            req.onsuccess = () => {
+              const all = req.result.transaction('snapshots').objectStore('snapshots').getAll()
+              all.onsuccess = () => resolve((all.result as { id: string; objects: number }[]).filter((r) => r.id.startsWith('recent:')).map((r) => r.objects))
+              all.onerror = () => resolve([])
+            }
+            req.onerror = () => resolve([])
+          }),
+      )
+    await expect.poll(kept, { timeout: 30_000 }).toContain(2)
+    // The open's own note is replaced by the kept one once the open is done: wait for that note's own button.
+    const reopen = page.getByTestId('toast').filter({ hasText: 'Your previous plate is saved.' }).getByTestId('toast-action')
+    await expect(reopen).toHaveText('Reopen', { timeout: 30_000 })
+    // The old plate's fit marks go with it.
     await page.waitForTimeout(2500)
     expect(await lines(page)).toEqual([])
+    await reopen.click()
+    await expect(page.locator('.obj-name')).toHaveText(['Cable clip', '20 mm calibration cube'], { timeout: 60_000 })
+    await expect.poll(async () => (await store(page)).plateLoading, { timeout: 60_000 }).toBe(false)
+    // The plate was clean when Reopen ran, so it asks nothing either.
+    await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
   })
 
   test('moving an object does not rebuild the scene, with a prime tower on the plate', { tag: '@gpu' }, async ({ page }) => {
