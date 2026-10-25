@@ -1962,8 +1962,8 @@ fn run_prepared_timed(
             },
         );
         // The start G-code's own extrusions (a purge line, an A1's calibration lines) print before the first layer
-        // and are drawn with it. A resume starts at a later layer, so it draws none.
-        let start = if want_preview && resume_at == 0 {
+        // and are drawn with it, where the nozzle lays them. A resume starts at a later layer, so it draws none.
+        let mut start = if want_preview && resume_at == 0 {
             crate::startlines::read(
                 &String::from_utf8_lossy(&text),
                 config.filament_diameter,
@@ -1972,6 +1972,7 @@ fn run_prepared_timed(
         } else {
             Vec::new()
         };
+        crate::startlines::to_plate(&mut start, &config);
         run.preview = crate::preview::with_start(std::mem::take(&mut run.preview), &start);
         if let Some((segs, travels)) = lines {
             let segs = if start.is_empty() {
