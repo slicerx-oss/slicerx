@@ -201,12 +201,12 @@ pub(crate) fn slice(
 }
 
 /// Whether a first layer's extent (internal units) comes within a line width of the bed's edge or of an excluded
-/// area (`bed_exclude_area`), or past them: where a brim may have been cut to the bed.
+/// area or the nozzle wrap check corner, or past them: where a brim may have been cut to the bed.
 fn near_bed_edge(cfg: &PrintConfig) -> impl Fn(&[i32; 4]) -> bool {
     let to_mm = |v: i32| f64::from(v) / crate::geom::SCALE;
     let margin = cfg.line_width.max(0.0);
     let bed = cfg.bed_rect();
-    let zones: Vec<[f64; 4]> = crate::preflight::exclude_zones(cfg)
+    let zones: Vec<[f64; 4]> = crate::preflight::keep_out_zones(cfg)
         .iter()
         .map(|z| {
             z.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {

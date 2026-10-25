@@ -202,6 +202,26 @@ pub fn exclude_zones(cfg: &PrintConfig) -> Vec<Vec<[f64; 2]>> {
     zones.into_iter().filter(|z| z.len() >= 3).collect()
 }
 
+/// The corner the nozzle wrap check runs in (`head_wrap_detect_zone`, the A1 family), when the settings name one:
+/// "80x95" from a preset, or [80, 95] once a host has read it into the schema's shape.
+pub fn wrap_check_zone(cfg: &PrintConfig) -> Option<Vec<[f64; 2]>> {
+    let Some(Value::Array(pts)) = cfg.raw.get("head_wrap_detect_zone") else {
+        return None;
+    };
+    let poly: Vec<[f64; 2]> = pts.iter().filter_map(point).collect();
+    (poly.len() >= 3).then_some(poly)
+}
+
+/// Every zone the printer keeps clear: the excluded areas (`bed_exclude_area`) and the nozzle wrap check corner
+/// (`head_wrap_detect_zone`). The brim is cut to the bed less these, and the tower stays out of them. A path that
+/// enters one is refused: an object's by the collision check, which walks the same zones, and the skirt by the
+/// safety preflight (which refuses every path in an excluded area).
+pub fn keep_out_zones(cfg: &PrintConfig) -> Vec<Vec<[f64; 2]>> {
+    let mut zones = exclude_zones(cfg);
+    zones.extend(wrap_check_zone(cfg));
+    zones
+}
+
 /// Point inside or on the border (within `tol`) of a polygon.
 fn near_or_inside(poly: &[[f64; 2]], x: f64, y: f64, tol: f64) -> bool {
     let n = poly.len();
@@ -358,6 +378,22 @@ type BedCache = (u16, Vec<[f64; 2]>, [f64; 4], bool, Vec<Zone>, f64);
 struct Zone {
     poly: Vec<[f64; 2]>,
     bbox: [f64; 4],
+    /// The nozzle wrap check corner, not an excluded area: the refusal names it.
+    wrap: bool,
+}
+
+/// The keep-out zones of `cfg` with their bounds: the excluded areas, then the wrap check corner.
+fn zone_list(cfg: &PrintConfig) -> Vec<Zone> {
+    let wrap = wrap_check_zone(cfg);
+    exclude_zones(cfg)
+        .into_iter()
+        .map(|p| (p, false))
+        .chain(wrap.map(|p| (p, true)))
+        .map(|(poly, wrap)| {
+            let bbox = bounds(&poly);
+            Zone { poly, bbox, wrap }
+        })
+        .collect()
 }
 
 /// Checks the toolpaths of `out` against the bed polygon, exclusion zones and
@@ -383,6 +419,7 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
     // feature), and of the first layer over the height.
     let mut unreachable_owner: Option<usize> = None;
     let mut zone_first: (Feature, Option<usize>) = (Feature::OuterWall, None);
+    let mut zone_wrap = false;
     let mut tall_owner: Option<usize> = None;
     let mut bed_cache: Vec<BedCache> = Vec::new();
     for l in &out.layers {
@@ -391,13 +428,7 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
             let poly = c.printable_area.clone();
             let bb = bounds(&poly);
             let rect = is_axis_rect(&poly);
-            let zones = exclude_zones(c)
-                .into_iter()
-                .map(|p| {
-                    let bbox = bounds(&p);
-                    Zone { poly: p, bbox }
-                })
-                .collect();
+            let zones = zone_list(c);
             let skirt_tol = if crate::firmware::bambu_printer(c, c.gcode_flavor) {
                 BAMBU_SKIRT_EDGE_TOL_MM
             } else {
@@ -466,6 +497,12 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     }
                 }
                 for z in zones {
+                    // In the wrap check corner the collision check refuses the paths of an object, and the
+                    // `--allow-collisions` the user asks for lifts that: here only the skirt, which belongs to no
+                    // object and that check leaves out.
+                    if z.wrap && p.feature != Feature::Skirt {
+                        continue;
+                    }
                     // Only moves that run clearly inside a zone: touching or running along its edge is allowed.
                     let reach = [from[0].min(x), from[1].min(y), from[0].max(x), from[1].max(y)];
                     if reach[2] > z.bbox[0] + EDGE_TOL_MM
@@ -476,6 +513,7 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                     {
                         if in_zone.n == 0 {
                             zone_first = (p.feature, object_of(out, p));
+                            zone_wrap = z.wrap;
                         }
                         in_zone.hit(l.index, q[0], q[1], 0.0);
                     }
@@ -528,7 +566,7 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                 outside.layer + 1,
                 outside.x,
                 outside.y,
-                counted(out, outside.n, "point", "points"),
+                counted(&outside, "point", "points"),
             ),
         );
         i.layer = Some(outside.layer);
@@ -555,7 +593,7 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                 unreachable.x,
                 unreachable.y,
                 whose(out, &feature, unreachable_owner, nearest),
-                counted(out, unreachable.n, "point", "points"),
+                counted(&unreachable, "point", "points"),
             ),
         );
         i.layer = Some(unreachable.layer);
@@ -574,13 +612,19 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                 || "move the objects out of it or arrange the plate".to_owned(),
                 |o| format!("move {} out of it or arrange the plate", object_name(out, o)),
             );
+            // The wrap check corner keeps the excluded area's words, which hosts read, and says which it is.
+            let area = if zone_wrap {
+                "an excluded bed area (the nozzle wrap check corner)"
+            } else {
+                "an excluded bed area"
+            };
             format!(
-                "toolpaths enter an excluded bed area from layer {} (X{:.1} Y{:.1}, {}), {}; {fix}",
+                "toolpaths enter {area} from layer {} (X{:.1} Y{:.1}, {}), {}; {fix}",
                 in_zone.layer + 1,
                 in_zone.x,
                 in_zone.y,
                 whose(out, &feature, owner, nearest),
-                counted(out, in_zone.n, "move", "moves"),
+                counted(&in_zone, "move", "moves"),
             )
         });
         i.layer = Some(in_zone.layer);
@@ -595,7 +639,7 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
                 too_tall.layer + 1,
                 too_tall.z,
                 tall_owner.map_or_else(String::new, |o| format!(", {}", object_name(out, o))),
-                counted(out, too_tall.n, "layer", "layers"),
+                counted(&too_tall, "layer", "layers"),
             ),
         );
         i.layer = Some(too_tall.layer);
@@ -665,13 +709,7 @@ pub fn copy_mode(start: &str, cfg: &PrintConfig) -> Option<CopyMode> {
 /// where the two heads would cross. Errors block.
 pub fn check_copy(out: &SliceOutput, base: &PrintConfig, mode: CopyMode) -> Vec<Issue> {
     let bb = bounds(&base.printable_area);
-    let zones: Vec<Zone> = exclude_zones(base)
-        .into_iter()
-        .map(|p| {
-            let bbox = bounds(&p);
-            Zone { poly: p, bbox }
-        })
-        .collect();
+    let zones: Vec<Zone> = zone_list(base);
     let mut past = Count::default();
     let mut first: Option<(usize, [f64; 2], &'static str)> = None;
     for l in &out.layers {
@@ -742,18 +780,18 @@ pub fn check_copy(out: &SliceOutput, base: &PrintConfig, mode: CopyMode) -> Vec<
             past.y,
             past.layer + 1,
             c[0],
-            counted(out, past.n, "point", "points"),
+            counted(&past, "point", "points"),
         ),
     );
     i.layer = Some(past.layer);
     vec![i]
 }
 
-/// A count with the layers it covers: "1 point in layer 3", "5 points in layers 1 to 27". A sliced plate is
+/// A count with the layers its hits are on: "1 point in layer 3", "5 points in layers 1 to 27". A sliced plate is
 /// checked one shard of layers at a time and refused at the first shard that fails, so a count covers the layers
 /// checked, never the whole plate.
-fn counted(out: &SliceOutput, n: u64, one: &str, many: &str) -> String {
-    let (lo, hi) = checked_layers(out);
+fn counted(c: &Count, one: &str, many: &str) -> String {
+    let (n, lo, hi) = (c.n, c.layer + 1, c.last + 1);
     let what = if n == 1 {
         format!("1 {one}")
     } else {
@@ -774,13 +812,6 @@ fn whose(out: &SliceOutput, feature: &str, owner: Option<usize>, nearest: Option
         (None, Some(o)) => format!("{feature} nearest {}", object_name(out, o)),
         (None, None) => feature.to_owned(),
     }
-}
-
-/// The first and last layer of `out` (1-based), the layers a check of it covers.
-fn checked_layers(out: &SliceOutput) -> (u32, u32) {
-    let first = out.layers.first().map_or(0, |l| l.index);
-    let last = out.layers.last().map_or(first, |l| l.index);
-    (first + 1, last + 1)
 }
 
 /// The plate object a path prints, when it belongs to one (not the skirt, a shared brim or the prime tower).
@@ -845,7 +876,10 @@ fn join_and(items: &[String]) -> String {
 #[derive(Default)]
 struct Count {
     n: u64,
+    /// The first hit's layer (0-based), with its point.
     layer: u32,
+    /// The last layer (0-based) a hit is on.
+    last: u32,
     x: f64,
     y: f64,
     z: f64,
@@ -855,10 +889,12 @@ impl Count {
     fn hit(&mut self, layer: u32, x: f64, y: f64, z: f64) {
         if self.n == 0 {
             self.layer = layer;
+            self.last = layer;
             self.x = x;
             self.y = y;
             self.z = z;
         }
+        self.last = self.last.max(layer);
         self.n += 1;
     }
 }

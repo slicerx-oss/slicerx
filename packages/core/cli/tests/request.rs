@@ -345,6 +345,8 @@ fn keep_out_paths_are_refused_in_their_own_words() {
     req["meshes"]["t"] = serde_json::Value::String(fixture("table.stl"));
     // an A1 style nozzle wrap check corner over the cube
     req["config"]["head_wrap_detect_zone"] = serde_json::json!(["80x95", "115x95", "115x125", "80x125"]);
+    // the object's own paths: a skirt there is refused by the safety preflight (tests/keep_out_zones.rs)
+    req["config"]["skirt_loops"] = serde_json::json!(0);
     let dir = temp_dir(format!("sx-cli-keep-out-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("request.json");
