@@ -5,7 +5,7 @@
 // exports G-code and slices with the project's machine G-code. Switching to one of the person's printers takes that
 // printer's G-code wholesale and keeps the settings that suit it, so no project G-code reaches another machine.
 import type { PrinterInfo, SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, SLICERX_KEEPS, changedKeys, importFlat, listPrinterProfiles, machineEntry, printerProfile, reviewProjectGcode, settingDef } from '@slicerx/settings'
+import { GCODE_TEXT_KEYS, SLICERX_KEEPS, changedKeys, importFlat, listPrinterProfiles, machineEntry, printerProfile, projectDefaults, reviewProjectGcode, settingDef } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
 import { appName } from '../edition'
 import { projectSettingChanges } from '../export/project-settings'
@@ -124,7 +124,8 @@ export async function switchToProjectPrinter(source: string, settings: Record<st
  */
 export function applyProjectSettings(source: string, settings: Record<string, unknown>, match: ProjectPrinterMatch | null): { keys: string[]; note: string } {
   const s = get()
-  const { values } = projectSettingChanges(settings, resolveConfig(s.easy, s.overrides))
+  // SlicerX's defaults for the keys the project does not set at all (precise outer wall); a value it sets is its own.
+  const { values } = projectSettingChanges({ ...projectDefaults(settings), ...settings }, resolveConfig(s.easy, s.overrides))
   if (match?.kind !== 'match') {
     const fileNozzle = match?.nozzle ?? Number(first(settings['nozzle_diameter']))
     const sameNozzle = !Number.isFinite(fileNozzle) || !s.profile || sameMm(fileNozzle, s.profile.nozzle)
