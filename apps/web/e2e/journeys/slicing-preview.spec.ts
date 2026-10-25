@@ -630,27 +630,25 @@ test.describe('the right pane', () => {
 
   // Not kept between sessions (slice-panes.test.ts:49), and the glow for a slice with warnings (right-attention.test.ts:19)
   // are unit tested.
-  test('starts shut, and a finished slice opens it with the summary', async ({ page }) => {
+  test('starts shut, a finished slice leaves it shut, and its tab opens it with the summary', async ({ page }) => {
     await sliceBox(page, { mode: 'simple' })
     await shutPane(page)
     await expect(edge(page)).toHaveAttribute('aria-expanded', 'false')
     await expect(page.getByTestId('slice-summary')).toHaveCount(0)
     await slice(page)
+    await expect(edge(page)).toHaveAttribute('aria-expanded', 'false')
+    await expect(page.getByTestId('slice-summary')).toHaveCount(0)
+    // The time, filament and cost stay on screen in the left pane's foot.
+    await expect(page.getByTestId('slice-estimate-time')).toBeVisible()
+    await press(page)
     await expect(edge(page)).toHaveAttribute('aria-expanded', 'true')
     await expect(page.getByTestId('slice-summary')).toBeVisible()
     await expect(edge(page)).not.toHaveAttribute('data-attention', /./)
   })
 
-  test("shut by hand, it stays shut through the project's slices until opened again", async ({ page }) => {
+  test('opened by hand, it stays open through the slices until shut, by the tab or its key', async ({ page }) => {
     await sliceBox(page, { mode: 'simple' })
     await shutPane(page)
-    await slice(page)
-    await expect(edge(page)).toHaveAttribute('aria-expanded', 'true')
-    await press(page)
-    await expect(edge(page)).toHaveAttribute('aria-expanded', 'false')
-    await slice(page)
-    await expect(edge(page)).toHaveAttribute('aria-expanded', 'false')
-    // Opened by hand again, the next slice leaves it open; shut by the key, it stays shut again.
     await press(page)
     await expect(edge(page)).toHaveAttribute('aria-expanded', 'true')
     await slice(page)
@@ -1289,7 +1287,7 @@ test.describe('layer pins', () => {
 
   test('the bar is 174 px, with one control row while it is under 1000 px wide', async ({ page }) => {
     const dock = await pinned(page)
-    // the right pane opens with the slice, so the bar is under 1000 px: one control row
+    // the right pane is open (the journeys' default), so the bar is under 1000 px: one control row
     await expect(dock).toHaveAttribute('data-narrow', 'true')
     await expect(dock.locator('.dock-h2')).toHaveCount(0)
     await expect(dock.getByRole('button', { name: /^Playback speed/ })).toBeVisible()

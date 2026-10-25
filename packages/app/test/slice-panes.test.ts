@@ -1,49 +1,54 @@
 // @vitest-environment jsdom
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Slice's defaults: the right pane opens on every finished slice until the person shuts it for that project, it starts
-// shut in a new session, the gantry is off and the toolhead on by default, and a client reads all of that back and turns
-// the two switches through the app link the way it would over the wire.
+// Slice's defaults: the right pane starts shut in a new session and on every job open and opens only from its edge tab
+// or key, the gantry is off and the toolhead on by default, and a client reads all of that back and turns the two
+// switches through the app link the way it would over the wire.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runCall } from '../src/app-link/methods'
 import { slicePanes } from '../src/lib/slice-panes'
 import { loadPrefs } from '../src/state/prefs'
-import { get, openRightOnSlice, railOpen, sessionRails, set, setRail } from '../src/state/store'
+import * as store from '../src/state/store'
+import { get, jobOpened, railOpen, sessionRails, set, setRail } from '../src/state/store'
 import { clampOffset } from '../src/workspaces/prepare/plate-tools-group'
 
 const open = () => railOpen(get().rails, 'preview', 'right', true)
 
-describe('the right pane on a finished slice', () => {
+describe('the right pane', () => {
   beforeEach(() => {
     sessionStorage.removeItem('sx-e2e')
     sessionStorage.removeItem('sx-right-pane')
     set({ rails: {}, rightShut: null, jobSeq: 1 })
   })
 
-  it('starts shut and opens when a slice finishes', () => {
+  it('starts shut, and nothing but the person opens it: a finished slice has no way to', () => {
     expect(open()).toBe(false)
-    openRightOnSlice()
-    expect(open()).toBe(true)
+    expect('openRightOnSlice' in store).toBe(false)
   })
 
-  it('stays shut through this project\'s slices once the person shuts it, until they open it again', () => {
-    openRightOnSlice()
-    setRail('preview', 'right', false)
-    expect(get().rightShut).toBe(1)
-    openRightOnSlice()
-    expect(open()).toBe(false)
+  it('opened by hand, it stays open until shut by hand', () => {
     setRail('preview', 'right', true)
+    expect(open()).toBe(true)
+    setRail('preview', 'right', false)
+    expect(open()).toBe(false)
+    expect(get().rightShut).toBe(1)
+  })
+
+  it('starts shut again on the next job, whether it was open or shut', () => {
+    setRail('preview', 'right', true)
+    jobOpened()
+    expect(get().jobSeq).toBe(2)
+    expect(open()).toBe(false)
     expect(get().rightShut).toBeNull()
     setRail('preview', 'right', false)
-    openRightOnSlice()
+    jobOpened()
     expect(open()).toBe(false)
   })
 
-  it('opens again for the next project', () => {
-    setRail('preview', 'right', false)
-    set({ jobSeq: 2 })
-    openRightOnSlice()
-    expect(open()).toBe(true)
+  it('keeps the other panes as they are when a job opens', () => {
+    set({ rails: { prepare: { left: false }, preview: { right: true } } })
+    jobOpened()
+    expect(get().rails).toEqual({ prepare: { left: false } })
   })
 
   it('is not kept between sessions: the saved rails leave it out, so a new session starts it shut', () => {

@@ -358,8 +358,8 @@ export interface AppState {
   /** What the right pane last showed when it was open (lib/right-attention.ts): its tab glows for anything newer. Not saved. */
   rightSeen: string | null
   /**
-   * The project (its `jobSeq`) whose right pane the person shut by hand in this session: a finished slice of that
-   * project leaves the pane shut until they open it again. Null opens it on every finished slice. Not saved.
+   * The project (its `jobSeq`) whose right pane the person shut by hand in this session, null when they did not. A
+   * slice never opens the pane either way; app clients read this back. Not saved.
    */
   rightShut: number | null
   /** The stored look and feel, or null before one is chosen (the edition default applies). */
@@ -1067,8 +1067,8 @@ export function closeSettings(): void {
 }
 
 /**
- * The rails as they are kept between launches: without Slice's right pane, which starts shut in every session and
- * opens when a slice finishes (`openRightOnSlice`).
+ * The rails as they are kept between launches: without Slice's right pane, which starts shut in every session and on
+ * every job open (`jobOpened`), and opens only from its edge tab or its key.
  */
 export function sessionRails(rails: AppState['rails']): AppState['rails'] {
   const p = rails['preview']
@@ -1081,8 +1081,8 @@ export function sessionRails(rails: AppState['rails']): AppState['rails'] {
 export function railOpen(rails: AppState['rails'], ws: Workspace, side: Side, wide: boolean): boolean {
   const chosen = rails[ws]?.[side]
   if (chosen !== undefined) return chosen
-  // Slice's right pane (the objects and the slice summary) starts shut. A finished slice opens it (openRightOnSlice),
-  // and its edge tab glows when something in it wants a look while it is shut (lib/right-attention.ts).
+  // Slice's right pane (the objects and the slice summary) starts shut and opens only from its edge tab or its key; the
+  // tab glows when something in it wants a look while it is shut (lib/right-attention.ts).
   if (ws === 'preview') return rightPaneOpenByDefault()
   return wide
 }
@@ -1101,24 +1101,19 @@ function rightPaneOpenByDefault(): boolean {
   }
 }
 
-/**
- * Opens or shuts a pane as the person asks. Shutting Slice's right pane by hand keeps it shut through this project's
- * slices for the session; opening it again lets the next slice open it.
- */
+/** Opens or shuts a pane as the person asks. Slice's right pane keeps the choice until the next job opens. */
 export function setRail(ws: Workspace, side: Side, open: boolean): void {
   const s = get()
   const rails = s.rails
   set({ rails: { ...rails, [ws]: { ...rails[ws], [side]: open } }, ...(ws === 'preview' ? { rightShut: open ? null : s.jobSeq } : {}) })
 }
 
-/** A slice finished: Slice's right pane opens with its summary, unless the person shut it by hand for this project. */
-export function openRightOnSlice(): void {
-  const s = get()
-  if (s.rightShut === s.jobSeq) return
-  // The look puts the pane on the side the settings leave free; Slice reads only that side of its rails.
-  const p = s.rails['preview']
-  if (p?.left === true && p.right === true) return
-  set({ rails: { ...s.rails, preview: { left: true, right: true } } })
+/**
+ * A job opened: Slice's right pane goes back to its default, shut, so the view is clear. One the person opened stays
+ * open through the job's slices until they shut it or open another job; a slice never opens it.
+ */
+export function jobOpened(): void {
+  set((s) => ({ jobSeq: s.jobSeq + 1, rails: sessionRails(s.rails), rightShut: null }))
 }
 
 /** Any settings or plate change marks a finished slice stale instead of discarding it. */
