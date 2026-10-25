@@ -7,8 +7,9 @@ import { arrangeRules, byObjectHead, byObjectOrder, byObjectPlan, CELL_MM, conve
 const rect = (x: number, y: number, w: number, d: number): Pt[] => [[x, y], [x + w, y], [x + w, y + d], [x, y + d]]
 const shape = (id: string, x: number, y: number, top: number, w = 20, d = 20): ByObjectShape => ({ id, name: id.toUpperCase(), hull: rect(x, y, w, d), top })
 
-// A Bambu Lab P1S: the 68 mm max radius, the rod 34 mm up and 40 mm deep, the lid at 250 mm.
-const P1S = { printer_model: 'Bambu Lab P1S', extruder_clearance_radius: 68, extruder_clearance_max_radius: 68, extruder_clearance_height_to_rod: 34, extruder_clearance_dist_to_rod: 40, extruder_clearance_height_to_lid: 250, nozzle_height: 4 }
+// A Bambu Lab P1S: the 68 mm max radius, the rod 34 mm up and 40 mm deep, the lid at 250 mm. The skirt is off, as sx
+// would otherwise print its default one round each object, so these cases hold the objects to the clearance alone.
+const P1S = { printer_model: 'Bambu Lab P1S', extruder_clearance_radius: 68, extruder_clearance_max_radius: 68, extruder_clearance_height_to_rod: 34, extruder_clearance_dist_to_rod: 40, extruder_clearance_height_to_lid: 250, nozzle_height: 4, skirt_loops: 0 }
 
 describe('hulls', () => {
   it('takes the convex hull counterclockwise and drops inside points', () => {

@@ -5,7 +5,10 @@
 // settings (a stem under a wider cap, or a shelf, as named).
 import { describe, expect, it } from 'vitest'
 import type { SettingValue } from '@slicerx/contracts'
-import { objectPrintMargins } from './print-margins'
+import { towerRoomOf } from './arrange-room'
+import { byObjectReach } from './by-object'
+import { settingDefault } from './defaults'
+import { objectPrintMargins, skirtSettings } from './print-margins'
 
 /** A P1S with its 0.4 mm nozzle and widths, and nothing but support round the part. */
 const P1S: Record<string, SettingValue> = {
@@ -68,5 +71,32 @@ describe('an automatic first layer expansion', () => {
     const raft = { ...P1S, enable_support: false, raft_layers: 3, raft_expansion: 0 }
     expect(grow({ ...raft, raft_first_layer_expansion: v })).toBeCloseTo(grow({ ...raft, raft_first_layer_expansion: 2 }), 9)
     expect(grow({ ...raft, raft_first_layer_expansion: 2 })).toBeCloseTo(2, 9)
+  })
+})
+
+describe('a config that leaves the skirt out', () => {
+  // sx gives a key the config leaves out its schema default (its PrintConfig::default reads the same defaults.json), so
+  // the margins count the skirt it prints then, not none.
+  const keys = ['skirt_loops', 'skirt_distance', 'skirt_height', 'min_skirt_length', 'draft_shield']
+  const spelled = Object.fromEntries(keys.map((k) => [k, settingDefault(k)!]))
+  const bare: Record<string, SettingValue> = { nozzle_diameter: [0.4], line_width: '0.42', brim_type: 'no_brim' }
+  const size = { w: 20, h: 20, height: 10 }
+
+  it('reads each skirt key at its schema default', () => {
+    expect(skirtSettings(bare)).toEqual(skirtSettings(spelled))
+    expect(skirtSettings(bare).loops).toBeGreaterThan(0)
+    expect(skirtSettings({ ...bare, skirt_loops: 0 }).loops).toBe(0)
+  })
+
+  it('keeps a copy, a by-object copy and the prime tower as far in as with the defaults written out', () => {
+    const margins = objectPrintMargins(bare)
+    expect(margins.skirt).toBe(true)
+    expect(margins.reach(size)).toBeCloseTo(objectPrintMargins({ ...bare, ...spelled }).reach(size), 9)
+    expect(margins.reach(size)).toBeGreaterThan(objectPrintMargins({ ...bare, skirt_loops: 0 }).reach(size))
+    expect(byObjectReach(bare, 0)).toBeCloseTo(byObjectReach({ ...bare, ...spelled }, 0), 9)
+    expect(byObjectReach(bare, 0)).toBeGreaterThan(0)
+    const tower = (cfg: Record<string, SettingValue>) => towerRoomOf({ ...cfg, enable_prime_tower: true }, 2, { origin: [0, 0], size: { widthMm: 256, depthMm: 256 } }).towerRoom
+    expect(tower(bare)).toEqual(tower({ ...bare, ...spelled }))
+    expect(tower(bare)).not.toEqual(tower({ ...bare, skirt_loops: 0 }))
   })
 })

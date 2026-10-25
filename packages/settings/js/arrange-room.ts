@@ -5,7 +5,7 @@
 // its first layer and its print reach past it (print-margins.ts). Pure, so either host runs it next to its own engine
 // call: the app's geometry worker, the server's sx-geom.
 import type { SettingValue } from '@slicerx/contracts'
-import { marginFlag as flag, marginNumber as num, marginText as text, objectPrintMargins, type FirstLayerShape, type PrintSize } from './print-margins'
+import { marginFlag as flag, marginNumber as num, marginText as text, objectPrintMargins, skirtSettings, type FirstLayerShape, type PrintSize } from './print-margins'
 
 type Pt = [number, number]
 
@@ -132,10 +132,10 @@ export function towerRoomOf(cfg: Record<string, SettingValue>, tools: number, pl
   const brim = Math.max(0, num(cfg['prime_tower_brim_width'], 3))
   const bed = plate.size
   if (bed) {
-    const loops = Math.max(0, Math.floor(num(cfg['skirt_loops'], 0)))
-    const skirted = loops > 0 && (num(cfg['skirt_height'], 1) > 0 || text(cfg['draft_shield']) === 'enabled')
+    const skirt = skirtSettings(cfg)
+    const skirted = skirt.loops > 0 && (skirt.height > 0 || skirt.shield)
     const spacing = Math.max(num(cfg['line_width'], 0), num(cfg['nozzle_diameter'], 0.4) * 1.2)
-    const edge = 1 + (skirted ? Math.max(0, num(cfg['skirt_distance'], 2)) + loops * spacing : 0)
+    const edge = 1 + (skirted ? skirt.distance + skirt.loops * spacing : 0)
     const r = towerReach(width, depth, angle, brim)
     const inside = (v: number, lo: number, hi: number) => (hi < lo ? v : Math.min(hi, Math.max(lo, v)))
     x = inside(x, edge - r[0], bed.widthMm - edge - r[2])

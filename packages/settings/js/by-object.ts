@@ -8,7 +8,7 @@
 // zones and the MCP server's read-back say the same.
 import type { SettingValue } from '@slicerx/contracts'
 import { clearanceRadius, type Rect } from './arrange-room'
-import { marginFlag, marginNumber as num, marginText, printedGrowth, supportReach, widthMm } from './print-margins'
+import { marginFlag, marginNumber as num, marginText, printedGrowth, skirtSettings, supportReach, widthMm } from './print-margins'
 import headShapes from '../head-shapes.json'
 
 export type Pt = [number, number]
@@ -76,10 +76,9 @@ export function radiusHit(d: number, radius: number, estimated: boolean): 'block
 export function byObjectReach(cfg: Record<string, SettingValue>, brimMm: number, hull?: readonly Pt[]): number {
   const nozzle = num(cfg['nozzle_diameter'], 0.4)
   const under = Math.max(Math.max(0, brimMm), supportReach(cfg, widthMm(cfg['support_line_width'], nozzle, nozzle)))
-  const asked = Math.max(0, Math.floor(num(cfg['skirt_loops'], 0)))
-  if (asked === 0 || num(cfg['skirt_height'], 1) === 0) return under
+  const { loops: asked, height, distance } = skirtSettings(cfg)
+  if (asked === 0 || height === 0) return under
   const spacing = skirtSpacing(cfg)
-  const distance = Math.max(0, num(cfg['skirt_distance'], 2))
   const loops = hull ? skirtLoops(cfg, perimeterOf(hull), Math.max(0, brimMm) + distance) : asked
   return under + distance + loops * spacing
 }
@@ -103,8 +102,8 @@ function perimeterOf(hull: readonly Pt[]): number {
  * distance) plus k and a half spacings out from a convex outline `perimeterMm` round, its corners rounded. One extruder.
  */
 export function skirtLoops(cfg: Record<string, SettingValue>, perimeterMm: number, gapMm: number): number {
-  const asked = Math.max(1, Math.floor(num(cfg['skirt_loops'], 0)))
-  const min = num(cfg['min_skirt_length'], 0)
+  const { loops, minLength: min } = skirtSettings(cfg)
+  const asked = Math.max(1, loops)
   if (!(min > 0)) return asked
   const spacing = skirtSpacing(cfg)
   const d = Math.max(0.1, num(cfg['filament_diameter'], 1.75))
