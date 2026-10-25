@@ -67,7 +67,7 @@ const PREVIEW_RIGHT: PaneSection[] = [
 // With the toolpaths, the color legend runs down the left under the top row: the toast keeps to its right.
 // mimir's sizes panel runs down the right while a sheet is up: the toast keeps to its left, off Build and Cancel.
 // The toast card takes the pointer (hovering it stops its timer), so it keeps above the bottom panel's tab too.
-const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .pp-sheet, .dock, .bpanel-body, .bpanel .sx-edge-tab', top: '.plate-tools, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel' }
+const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .pp-sheet, .dock, .bpanel-body, .bpanel .sx-edge-tab', top: '.plate-tools, .hud-top .hud-row, .hud-top > .slice-look, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel' }
 const PHONE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, cover: '.pane.sheet.sheet-open' }
 
 const PLATES_SECTION: PaneSection = { id: 'plates', icon: 'plates', label: 'Plates' }
@@ -276,7 +276,8 @@ export function Studio() {
         <StepReadingBar />
         {cad ? null : <ViewSelectionMenu />}
         {cad || phone ? null : <ParkedChip />}
-        <div className="hud hud-top">
+        {/* look-top: a phone with a slice, where the view switch joins the top row (app.css) */}
+        <div className={phone && !cad && hasPreview ? 'hud hud-top look-top' : 'hud hud-top'}>
           <div className="hud-col">
             <div className="hud-row">
               {mimir ? (
@@ -286,8 +287,6 @@ export function Studio() {
               ) : null}
               {/* on a phone in Model the look button joins the view buttons on the right, so the pill row fits */}
               {design && phone ? null : <RenderMenu />}
-              {/* on a phone the view switch shares the top row with the look button; the legend chip goes under them */}
-              {phone && !cad && hasPreview ? <SliceLookSwitch /> : null}
               {design ? (
                 <Suspense fallback={null}>
                   <SelectPill />
@@ -308,6 +307,9 @@ export function Studio() {
               </div>
             ) : null}
           </div>
+          {/* On a phone the view switch shares the top row with the look button, as its own item next to that row; the
+              legend chip goes under them. */}
+          {phone && !cad && hasPreview ? <SliceLookSwitch /> : null}
           <div className="hud-col end">
             {design && phone ? <RenderMenu /> : null}
             {design && !phone ? <SketchLookButton /> : null}
