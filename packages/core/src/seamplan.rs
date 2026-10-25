@@ -989,6 +989,7 @@ fn layer_candidates(
         })
         .copied()
         .collect();
+    let faces = crate::seam::SeamIndex::new(&faces);
     for (ring, width) in &layer.rings {
         if ring.len() < 3 {
             continue;
@@ -1029,9 +1030,9 @@ fn layer_candidates(
                 return Kind::Neutral;
             }
             let at = [f64::from(x), f64::from(y), z];
-            if crate::seam::near(at, &faces, false, f64::from(width)) {
+            if faces.near(at, false, f64::from(width)) {
                 Kind::Blocked
-            } else if crate::seam::near(at, &faces, true, f64::from(width)) {
+            } else if faces.near(at, true, f64::from(width)) {
                 Kind::Enforced
             } else {
                 Kind::Neutral
@@ -1079,9 +1080,7 @@ fn layer_candidates(
                 let next = ccw[(i + 1) % n];
                 let len = dist2(*p, next).sqrt();
                 let at = [f64::from(p[0]), f64::from(p[1]), z];
-                if len > crate::seam::OVERSAMPLE_MM as f32
-                    && crate::seam::near(at, &faces, true, f64::from(len))
-                {
+                if len > crate::seam::OVERSAMPLE_MM as f32 && faces.near(at, true, f64::from(len)) {
                     let mut step = crate::seam::OVERSAMPLE_MM as f32;
                     while step < len {
                         let (x, y) = (
