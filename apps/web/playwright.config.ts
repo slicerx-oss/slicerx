@@ -45,9 +45,10 @@ export default defineConfig({
   timeout: 120_000,
   retries: 0,
   preserveOutput: 'failures-only',
-  // Each page starts a pool of one slicer worker per core and draws with software WebGL. Five pages booting at once
-  // (the default here) starve each other: a cold start goes from 3 s alone to 14 s, past the 15 s wait, and the first
-  // tests of a run fail. Three at a time stays clear (three full runs in a row) and is no slower overall.
+  // Each page draws with software WebGL, whose renderer works on a thread per core. It starts no slicer workers: this
+  // build slices through the native test host. Five pages booting at once (the default here) starve each other: a cold
+  // start goes from 3 s alone to 14 s, past the 15 s wait, and the first tests of a run fail. Three at a time stays
+  // clear (three full runs in a row) and is no slower overall.
   workers: 3,
   expect: { timeout: 15_000 },
   use: {
