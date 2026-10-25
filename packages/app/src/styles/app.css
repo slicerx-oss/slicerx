@@ -1131,11 +1131,14 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .strikes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .strikes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 4px; border-radius: var(--r-md); border: 1px solid transparent; }
 .strikes li.sel { border-color: color-mix(in srgb, var(--red) 55%, transparent); background: color-mix(in srgb, var(--red) 8%, transparent); }
-/* The strike's row is one button: a click selects the parts it names. Pressed, it takes a selected control's fill and line, at the same size. */
+/* The strike's row is one button: a click selects the parts it names. */
 .strike-pick { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; min-width: 0; padding: 4px; border: 1px solid transparent; border-radius: var(--r-sm); background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .strike-pick:hover { background: var(--ink-3); }
 .strike-pick:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.strike-pick[aria-pressed="true"] { background: var(--control-selected); border-color: var(--control-selected-line); color: var(--control-selected-fg); --muted: var(--control-selected-muted); }
+/* One selected state: while its parts are the selection the whole row, Jump included, takes the selected control's fill and line in place of the picked strike's red line. Same size either way. */
+.strikes li:has(> .strike-pick[aria-pressed="true"]) { background: var(--control-selected); border-color: var(--control-selected-line); color: var(--control-selected-fg); --muted: var(--control-selected-muted); }
+.strike-pick[aria-pressed="true"] { color: inherit; }
+.strike-pick[aria-pressed="true"]:hover { background: none; }
 .strike-pick:disabled { cursor: default; }
 .strike-pick:disabled:hover { background: none; }
 @media (pointer: coarse) { .strike-pick { min-height: 44px; } }

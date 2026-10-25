@@ -510,6 +510,11 @@ test('heimdall strikes a plate too close to print by object, and printing by lay
     await expect(first).toContainText(/hits/)
     await expect(first.locator('.sx-ic')).toBeVisible()
     await expect(page.locator('.layer-mark.strike-mark').first()).toBeVisible()
+    // A click on the strike's row selects the two boxes it names.
+    await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ selection: null, selectedIds: [] }))
+    await first.getByTestId('collision-select').click()
+    await expect(first.getByTestId('collision-select')).toHaveAttribute('aria-pressed', 'true')
+    expect((await state(page)).selectedIds).toHaveLength(2)
     await first.getByRole('button', { name: /^Jump to:/ }).click()
     const { collisions } = await sx()
     await expect.poll(async () => (await sx()).pick).toBe(0)
@@ -776,17 +781,27 @@ async function refuse(page: Page): Promise<void> {
   await expect(page.getByTestId('slice-estimate-error')).toBeVisible({ timeout: 120_000 })
 }
 
-test('Show me on a strike opens the toolpaths at its layer and centers the view on it', async ({ page }) => {
+test('Show me on a strike opens the toolpaths at its layer and the collision list, with its part selected', async ({ page }) => {
   await sliceBox(page, { mode: 'simple' })
   await patch(page, { sliceLook: 'solid' })
   await strike(page)
+  // The person shut the summary pane: the strike alone does not open it.
+  await page.evaluate(() => {
+    const sx = (window as unknown as { __sx: { getState(): Snap & { rails: Record<string, unknown>; jobSeq: number }; setState(p: unknown): void } }).__sx
+    const s = sx.getState()
+    sx.setState({ rails: { ...s.rails, preview: { left: false, right: false } }, rightShut: s.jobSeq })
+  })
+  const list = page.locator('[data-section="collisions"]')
+  await expect(list).toBeHidden()
   const show = page.getByTestId('slice-block-show')
   await expect(show).toHaveText('Show me')
   await show.click()
   await expect.poll(async () => { const s = await state(page); return `${s.sliceLook} ${s.layerHi} ${s.strikePick}` }).toBe('toolpaths 4 0')
-  // Playback runs to the strike's moment and stays on its layer.
-  await expect.poll(async () => near(await target(page), [120, 110, 8])).toBe(true)
-  expect((await state(page)).layerHi).toBe(4)
+  await expect(list).toBeVisible()
+  const s = await state(page)
+  expect(s.selectedIds).toEqual([s.plate[0]!.id])
+  // Its row reads as pressed while the part is the selection.
+  await expect(list.getByTestId('collision-select').first()).toHaveAttribute('aria-pressed', 'true')
 })
 
 // The frame by frame readout: every layer the bar shows from the click on is the strike's first layer, never the layer
