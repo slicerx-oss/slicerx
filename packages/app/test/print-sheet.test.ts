@@ -273,6 +273,9 @@ describe('Print sheet options', () => {
 
 // A Bambu Lab A1 mini on Authorization Control firmware without Developer Mode: status comes through, the send does
 // not, and the sheet comes back with the two ways past it.
+/** The unsigned-command refusal as the Bambu Lab driver words it for a reply with the printer's text. */
+const REFUSAL = 'The printer answered "mqtt message verify failed". Bambu Lab printers send this when they turn away a command from another app. You can try LAN Only Mode with Developer Mode on, or print through Bambu Connect.'
+
 describe('Print sheet after a Developer Mode refusal', () => {
   const refused = (resolve: PrintSheetAsk['resolve'] = () => {}) =>
     ask({
@@ -311,13 +314,16 @@ describe('Print sheet after a Developer Mode refusal', () => {
       ask({
         printer: { id: 'a1m', name: 'Mini', vendor: 'Bambu Lab', model: 'Bambu Lab A1 mini', plugin: 'bambu-lan', filamentSystem: 'ams' } as PrintSheetAsk['printer'],
         bambuConnect: 'open',
-        refusal: { reason: 'It answered "mqtt message verify failed".', plainSha256: 'ffff', last: { options: {}, start: true, name: 'benchy.gcode.3mf' }, developerMode: true, sure: true },
+        refusal: { reason: REFUSAL, plainSha256: 'ffff', last: { options: {}, start: true, name: 'benchy.gcode.3mf' }, developerMode: true, sure: true },
         resolve: () => {},
       }),
     )
     const text = sure.querySelector('[data-testid="developer-mode-needed"]')?.textContent ?? ''
-    expect(text).toContain('Mini sends its status but turned the print away. Bambu Lab printers do that while Developer Mode is off.')
+    expect(text).toContain('Mini sends its status but turned the print away. You can send this plate with Bambu Connect, or make sure LAN Only Mode and Developer Mode are on and press Start again.')
     expect(text).not.toContain('may be')
+    expect(text).not.toContain('Developer Mode is off')
+    // The driver's reason carries its own lead-in, so the line's Details show it as it came, with no second one.
+    expect(sure.querySelector('.cl-more[data-tip-title="Mini didn\'t take the print"]')?.getAttribute('data-tip-body')).toBe(REFUSAL)
   })
 
   it('sends the same plate through Bambu Connect on one click', () => {

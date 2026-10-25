@@ -53,7 +53,7 @@ export function developerModeAnswer(e: unknown, printerName: string, model: stri
   const sure = developerModeSure(e instanceof Error ? e.message : String((e as { message?: unknown }).message ?? ''))
   return {
     tellTheUser: sure
-      ? `${printerName} sends its status but turned the print away: Bambu Lab printers do that while Developer Mode is off. Turn on LAN Only Mode and Developer Mode on the printer, or send the plate with Bambu Connect.`
+      ? `${printerName} sends its status but turned the print away. You can send the plate with Bambu Connect, or make sure the printer has LAN Only Mode and Developer Mode on.`
       : `${printerName} sends its status but did not take the print. That may be Developer Mode being off: check the printer's screen first, then turn on LAN Only Mode and Developer Mode on the printer, or send the plate with Bambu Connect.`,
     sure,
     remedies: developerModeRemedies(model),

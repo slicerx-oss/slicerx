@@ -257,7 +257,7 @@ export function PrintSheet() {
           label={`Checks against ${ask.printer.name}`}
           lines={[
             ...(ask.refusal?.developerMode
-              ? [{ tone: 'bad' as const, text: `${ask.printer.name} didn't take the print`, tip: `It said: ${ask.refusal.reason}` }]
+              ? [{ tone: 'bad' as const, text: `${ask.printer.name} didn't take the print`, tip: ask.refusal.reason }]
               : ask.refusal?.storageFull
               ? [{ tone: 'bad' as const, text: `${ask.printer.name} has no room for the file`, tip: `It said: ${ask.refusal.reason}` }]
               : ask.refusal
@@ -444,7 +444,7 @@ function DeveloperModeHelp({ printer, sure, connect, disabled, onConnect }: { pr
     <section className="ps-devmode" data-testid="developer-mode-needed" aria-label="Developer Mode needed">
       <p className="ps-devmode-why">
         {sure
-          ? `${printer.name} sends its status but turned the print away. Bambu Lab printers do that while Developer Mode is off. Send this plate with Bambu Connect, or turn on Developer Mode and press Start again.`
+          ? `${printer.name} sends its status but turned the print away. You can send this plate with Bambu Connect, or make sure LAN Only Mode and Developer Mode are on and press Start again.`
           : `${printer.name} sends its status but didn't take the print. That may be Developer Mode being off. Check the printer's screen first. If nothing started, send this plate with Bambu Connect, or turn on Developer Mode and press Start again.`}
       </p>
       {connect ? (

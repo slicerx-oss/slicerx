@@ -66,7 +66,7 @@ Guest Wi-Fi networks and VLANs that isolate clients block all of these.
 | "is unreachable" | Wrong IP, printer asleep or off, different subnet or VLAN, or a firewall blocks 8883. |
 | "there is no SD card in the printer" | Insert a micro SD card. A card the printer calls faulty or read only gets its own message; check it or format it on the printer. |
 | Upload fails or times out | Port 990 or the passive data ports are blocked, or the SD card is full. |
-| A command is refused | Developer Mode is off on firmware that requires it (print through Bambu Connect, or turn on Developer Mode), or the printer is in a state that does not allow it (for example pausing while idle). |
+| A command is refused | Bambu Lab printers turn away commands from other apps on firmware with Authorization Control. Bambu Lab documents Developer Mode being off as the reason, but an A1 has been reported doing it with Developer Mode on, so SlicerX doesn't name a cause. Try LAN Only Mode with Developer Mode on, or print through Bambu Connect. A printer also refuses a command its state does not allow (for example pausing while idle). |
 | "Bambu Connect isn't installed" | Install it from https://wiki.bambulab.com/en/software/bambu-connect, then press Print again. |
 | No camera on an X1, P2S or H2 printer | These stream over RTSPS on port 322 only while LAN Only Liveview is on. Turn it on on the printer's screen. |
 | Filament slots look wrong | Slots read from the AMS as A1 to A4 for the first unit, B1 to B4 for the next. Third party spools without a tag report no remaining percent. A tagged spool's `tray_uuid` is its `spoolUid`, so the app knows when a slot gets another spool (the drying note's "It's dry" lasts until then, or 7 days). |
