@@ -937,3 +937,91 @@ test.describe('the fit check', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Arrange with more objects than the bed holds
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** An A1 project of `n` cubes of `size` mm in a start grid of `cols` columns, `pitch` mm apart from `x0`, `y0`. */
+function cubesProject(n: number, size: number, cols: number, pitch: number, x0: number, y0: number, sequence: 'by object' | 'by layer'): Buffer {
+  const at = (i: number) => [x0 + (i % cols) * pitch, y0 + Math.floor(i / cols) * pitch]
+  const v = [[0, 0, 0], [size, 0, 0], [size, size, 0], [0, size, 0], [0, 0, size], [size, 0, size], [size, size, size], [0, size, size]]
+  const f = [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [3, 7, 6], [3, 6, 2], [0, 4, 7], [0, 7, 3], [1, 2, 6], [1, 6, 5]]
+  const mesh = `<mesh><vertices>${v.map(([x, y, z]) => `<vertex x="${x}" y="${y}" z="${z}"/>`).join('')}</vertices><triangles>${f.map(([a, b, c]) => `<triangle v1="${a}" v2="${b}" v3="${c}"/>`).join('')}</triangles></mesh>`
+  const ids = Array.from({ length: n }, (_, i) => i + 1)
+  const model = `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>${ids.map((id) => `<object id="${id}" type="model">${mesh}</object>`).join('')}</resources><build>${ids.map((id) => `<item objectid="${id}" transform="1 0 0 0 1 0 0 0 1 ${at(id - 1).join(' ')} 0" printable="1"/>`).join('')}</build></model>`
+  const objects = ids.map((id) => `<object id="${id}"><metadata key="name" value="Cube ${id}"/><metadata key="extruder" value="1"/></object>`).join('')
+  const plate = `<plate><metadata key="plater_id" value="1"/><metadata key="plater_name" value="Cubes"/><metadata key="locked" value="false"/>${ids.map((id) => `<model_instance><metadata key="object_id" value="${id}"/><metadata key="instance_id" value="0"/></model_instance>`).join('')}</plate>`
+  const settings = { printer_settings_id: 'Bambu Lab A1 0.4 nozzle', printer_model: 'Bambu Lab A1', nozzle_diameter: ['0.4'], printable_area: ['0x0', '256x0', '256x256', '0x256'], layer_height: '0.2', print_sequence: sequence, filament_colour: ['#00AE42'] }
+  return zip({ '3D/3dmodel.model': model, 'Metadata/model_settings.config': `<?xml version="1.0" encoding="UTF-8"?><config>${objects}${plate}</config>`, 'Metadata/project_settings.config': JSON.stringify(settings) })
+}
+
+/**
+ * Arrange all on an A1 with more cubes than the bed holds, by object (10 cubes of 20 mm, the 73 mm clearance) and by
+ * layer (42 cubes of 30 mm): the cubes with no room move to Plate 2 and the toast says so, each plate slices with no
+ * collision, and one undo puts the start grid back on one plate. Before, those cubes stayed in the start grid on top
+ * of placed ones.
+ */
+test.describe('arrange with more objects than the bed holds', () => {
+  type Unplaced = {
+    getState(): {
+      plate: { id: string; transform: number[] }[]
+      plates: { id: string; name: string; objects: { id: string }[] }[]
+      activePlate: string
+      toast: { text: string } | null
+      slice: { status: string; stale?: boolean; result?: { collisions?: { kind: string }[] } }
+    }
+  }
+  const state = (page: Page) => page.evaluate(() => {
+    const s = (window as unknown as { __sx: Unplaced }).__sx.getState()
+    return { plate: s.plate.map((e) => ({ id: e.id, at: [e.transform[12], e.transform[13]] })), plates: s.plates.map((p) => ({ name: p.name, count: p.id === s.activePlate ? s.plate.length : p.objects.length })), toast: s.toast?.text ?? null, slice: s.slice.status === 'done' && !s.slice.stale ? (s.slice.result?.collisions ?? []).map((c) => c.kind) : null }
+  })
+
+  async function sliceShown(page: Page): Promise<string[]> {
+    await page.getByRole('button', { name: /^Slice plate/ }).first().click()
+    await expect.poll(async () => (await state(page)).slice !== null, { timeout: 150_000 }).toBe(true)
+    return (await state(page)).slice!
+  }
+
+  for (const c of [
+    { name: 'by object, 10 cubes of 20 mm', n: 10, size: 20, cols: 5, pitch: 30, x0: 63, y0: 103, sequence: 'by object' as const },
+    { name: 'by layer, 42 cubes of 30 mm', n: 42, size: 30, cols: 7, pitch: 34, x0: 10, y0: 10, sequence: 'by layer' as const },
+  ]) {
+    test(`${c.name}: the cubes with no room move to Plate 2, each plate slices clean, and one undo puts them back`, async ({ page }) => {
+      test.setTimeout(300_000)
+      interceptFileDialogs(page)
+      await page.addInitScript(() => {
+        localStorage.setItem('slicerx.debug', '1')
+        if (sessionStorage.getItem('sx-e2e')) return
+        sessionStorage.setItem('sx-e2e', '1')
+        localStorage.setItem('slicerx.prefs.v1', JSON.stringify({ workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' }, autoSlice: false }))
+      })
+      await page.goto('./')
+      await plateReady(page)
+      const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
+      await chooser.setFiles({ name: 'Cubes.3mf', mimeType: 'model/3mf', buffer: cubesProject(c.n, c.size, c.cols, c.pitch, c.x0, c.y0, c.sequence) })
+      await expect.poll(async () => (await state(page)).plate.length, { timeout: 60_000 }).toBe(c.n)
+      const before = await state(page)
+      await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Arrange all' }).click()
+      await expect.poll(async () => (await state(page)).plates.length, { timeout: 120_000 }).toBe(2)
+      const after = await state(page)
+      const moved = after.plates[1]!.count
+      expect(moved).toBeGreaterThan(0)
+      expect(after.plates[0]!.count + moved).toBe(c.n)
+      expect(after.plates[1]!.name).toBe('Plate 2')
+      expect(after.toast).toBe(moved === 1 ? '1 object did not fit, so it moved to Plate 2.' : `${moved} objects did not fit, so they moved to Plate 2.`)
+      await expect(page.getByText(after.toast!)).toBeVisible()
+      // Plate 1 stays shown and slices with no collision, and so does Plate 2.
+      await expect(page.getByTestId('plate-picker-current').locator('.pp-no')).toHaveText('Plate 1')
+      expect(await sliceShown(page)).toEqual([])
+      await pickPlate(page, 2)
+      expect((await state(page)).plate).toHaveLength(moved)
+      expect(await sliceShown(page)).toEqual([])
+      await pickPlate(page, 1)
+      // One undo: the start grid on one plate again.
+      await page.keyboard.press('ControlOrMeta+z')
+      await expect.poll(async () => (await state(page)).plates.length).toBe(1)
+      expect((await state(page)).plate).toEqual(before.plate)
+    })
+  }
+})

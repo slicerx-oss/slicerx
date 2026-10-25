@@ -47,12 +47,12 @@ export function switchPlate(id: string): void {
   )
 }
 
-/** Adds an empty plate after the others and shows it. Returns its id. */
-export function addPlate(settings: PlateSettings = activeMeta()?.settings ?? {}): string {
+/** Adds an empty plate after the others and shows it, or with `show` false leaves the shown plate as it is. Returns its id. */
+export function addPlate(settings: PlateSettings = activeMeta()?.settings ?? {}, show = true): string {
   const s = get()
   const id = newId()
   set({ plates: [...s.plates, { id, name: nextName(s.plates), objects: [], settings: { ...settings } }] })
-  switchPlate(id)
+  if (show) switchPlate(id)
   return id
 }
 
@@ -149,6 +149,28 @@ export function moveObjectsToPlate(targetId: string, objectIds: readonly string[
   })
   markStale()
   return moving.length
+}
+
+/**
+ * Moves objects of the shown plate that arrange found no room for to new plates after the others, each with the shown
+ * plate's settings, as many on each as fit there (moveObjectsToPlate arranges them), until all are placed. The shown
+ * plate stays shown. Returns the plates made with how many went to each, and the ids no empty bed holds, which stay.
+ */
+export function moveToNewPlates(objectIds: readonly string[]): { plates: { id: string; name: string; count: number }[]; left: string[] } {
+  const made: { id: string; name: string; count: number }[] = []
+  let left = [...objectIds]
+  while (left.length > 0) {
+    const s = get()
+    const moving = s.plate.filter((p) => left.includes(p.id))
+    const r = arrange(moving, [], s.bed)
+    const fit = moving.filter((m) => r.transforms[m.id]).map((m) => m.id)
+    if (fit.length === 0) break
+    const id = addPlate(activeMeta()?.settings ?? {}, false)
+    moveObjectsToPlate(id, fit)
+    made.push({ id, name: get().plates.find((p) => p.id === id)?.name ?? '', count: fit.length })
+    left = left.filter((x) => !fit.includes(x))
+  }
+  return { plates: made, left }
 }
 
 /** The project's name for file names: its first object, without extension or odd characters. */
