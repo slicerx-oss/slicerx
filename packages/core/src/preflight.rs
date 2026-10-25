@@ -661,21 +661,27 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
 
 /// What the second head of a dual-head printer does while the first prints: copy every move a fixed distance to the
 /// right (duplication), or mirror every move about the middle of the X travel (mirror). Either way it prints a second
-/// part from the same moves, and that part has to land on the bed too.
+/// part from the same moves, and that part has to land on the bed too. Marlin's `M605` sets the first two; Klipper's
+/// `SET_DUAL_CARRIAGE` sets the last two.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CopyMode {
-    /// The copy prints this many mm to the right of the move.
+    /// The copy prints this many mm to the right of the move (`M605 S2`).
     Shift(f64),
-    /// The copy mirrors the move about this X, mm.
+    /// The copy mirrors the move about this X, mm (`M605 S3`).
     Mirror(f64),
+    /// `SET_DUAL_CARRIAGE MODE=COPY`: the copy prints as far to the right as the carriages stand apart when the mode
+    /// is set, which the command does not say; taken as this many mm, half the X travel.
+    CarriageCopy(f64),
+    /// `SET_DUAL_CARRIAGE MODE=MIRROR`: the copy mirrors the move about this X, mm, the middle of the travel.
+    CarriageMirror(f64),
 }
 
 impl CopyMode {
     /// Where the copy of a move to `p` prints.
     fn copy(self, p: [f64; 2]) -> [f64; 2] {
         match self {
-            Self::Shift(d) => [p[0] + d, p[1]],
-            Self::Mirror(mid) => [2.0 * mid - p[0], p[1]],
+            Self::Shift(d) | Self::CarriageCopy(d) => [p[0] + d, p[1]],
+            Self::Mirror(mid) | Self::CarriageMirror(mid) => [2.0 * mid - p[0], p[1]],
         }
     }
 }
@@ -683,7 +689,10 @@ impl CopyMode {
 /// The copy mode the rendered start G-code `start` leaves the printer in, from its last `M605` with `S2`
 /// (duplication) or `S3` (mirror) outside a comment; another `M605` mode (one head, auto-park, backup) clears it.
 /// A duplication with an `X` word shifts the copy that far; without one the firmware shifts it half the bed's X
-/// travel. The travel and the middle come from the printer's `printable_area`.
+/// travel. Klipper's `SET_DUAL_CARRIAGE` counts the same way: `MODE=COPY` copies, `MODE=MIRROR` mirrors, and any
+/// other mode, or none given (the primary carriage alone), clears it. A copy there shifts as far as the carriages
+/// stand apart, which the command does not say, so half the travel is taken. Macros are not expanded: what they do
+/// lives on the printer. The travel and the middle come from the printer's `printable_area`.
 pub fn copy_mode(start: &str, cfg: &PrintConfig) -> Option<CopyMode> {
     let bb = bounds(&cfg.printable_area);
     let (lo, hi) = (bb[0], bb[2]);
@@ -691,7 +700,29 @@ pub fn copy_mode(start: &str, cfg: &PrintConfig) -> Option<CopyMode> {
     for line in start.lines() {
         let code = line.split(';').next().unwrap_or("");
         let mut words = code.split_whitespace();
-        if !words.next().is_some_and(|w| w.eq_ignore_ascii_case("M605")) {
+        let Some(first) = words.next() else {
+            continue;
+        };
+        if first.eq_ignore_ascii_case("SET_DUAL_CARRIAGE") {
+            // Klipper also takes `#` as a comment
+            let picked = code
+                .split('#')
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .skip(1)
+                .filter_map(|w| w.split_once('='))
+                .filter(|(k, _)| k.eq_ignore_ascii_case("MODE"))
+                .map(|(_, v)| v.to_ascii_uppercase())
+                .last();
+            mode = match picked.as_deref() {
+                Some("COPY") => Some(CopyMode::CarriageCopy((hi - lo) / 2.0)),
+                Some("MIRROR") => Some(CopyMode::CarriageMirror(f64::midpoint(lo, hi))),
+                _ => None,
+            };
+            continue;
+        }
+        if !first.eq_ignore_ascii_case("M605") {
             continue;
         }
         let mut s = None;
@@ -733,7 +764,8 @@ pub fn check_copy(out: &SliceOutput, base: &PrintConfig, mode: CopyMode) -> Vec<
                     .and_then(|k| pts.get(k))
                     .map_or(at, |q| [f64::from(q.x) / SCALE, f64::from(q.y) / SCALE]);
                 let (c, cf) = (mode.copy(at), mode.copy(from));
-                let why = if matches!(mode, CopyMode::Mirror(mid) if at[0] > mid + EDGE_TOL_MM) {
+                let why = if matches!(mode, CopyMode::Mirror(mid) | CopyMode::CarriageMirror(mid) if at[0] > mid + EDGE_TOL_MM)
+                {
                     Some("where the two heads would cross")
                 } else if c[0] < bb[0] - EDGE_TOL_MM || c[0] > bb[2] + EDGE_TOL_MM {
                     Some("past the bed")
@@ -779,6 +811,14 @@ pub fn check_copy(out: &SliceOutput, base: &PrintConfig, mode: CopyMode) -> Vec<
         ),
         CopyMode::Mirror(mid) => format!(
             "mirrors every move about X{} (M605 S3, mirror mode)",
+            crate::firmware::fmt_g(mid)
+        ),
+        CopyMode::CarriageCopy(d) => format!(
+            "prints a copy {} mm to the right (SET_DUAL_CARRIAGE MODE=COPY, copy mode; the command does not say how far apart the carriages stand, so half the X travel is assumed)",
+            crate::firmware::fmt_g(d)
+        ),
+        CopyMode::CarriageMirror(mid) => format!(
+            "mirrors every move about X{} (SET_DUAL_CARRIAGE MODE=MIRROR, mirror mode)",
             crate::firmware::fmt_g(mid)
         ),
     };
@@ -1390,6 +1430,69 @@ mod tests {
         assert_eq!(copy_mode("; M605 S2 X162\nG28\n", &bed), None);
         assert_eq!(copy_mode("M605 S4 ; backup\n", &bed), None);
         assert_eq!(copy_mode("G28\n", &bed), None);
+    }
+
+    #[test]
+    fn klippers_dual_carriage_command_sets_the_copy_mode_too() {
+        let bed = j1_bed();
+        // copy: the shift is not in the command, so half the travel
+        assert_eq!(
+            copy_mode(
+                "G28\nSET_DUAL_CARRIAGE CARRIAGE=1\nSET_DUAL_CARRIAGE MODE=COPY CARRIAGE=0\n",
+                &bed
+            ),
+            Some(CopyMode::CarriageCopy(162.0))
+        );
+        assert_eq!(
+            copy_mode("set_dual_carriage carriage=1 mode=mirror\n", &bed),
+            Some(CopyMode::CarriageMirror(162.0))
+        );
+        // primary, or no mode at all, is one head; the last command counts, with M605 too
+        assert_eq!(
+            copy_mode(
+                "SET_DUAL_CARRIAGE MODE=COPY\nSET_DUAL_CARRIAGE MODE=PRIMARY\n",
+                &bed
+            ),
+            None
+        );
+        assert_eq!(
+            copy_mode(
+                "SET_DUAL_CARRIAGE MODE=COPY\nSET_DUAL_CARRIAGE CARRIAGE=0\n",
+                &bed
+            ),
+            None
+        );
+        assert_eq!(copy_mode("SET_DUAL_CARRIAGE MODE=COPY\nM605 S1\n", &bed), None);
+        assert_eq!(
+            copy_mode("M605 S2 X150\nSET_DUAL_CARRIAGE MODE=MIRROR\n", &bed),
+            Some(CopyMode::CarriageMirror(162.0))
+        );
+        // comments of either kind are no command, and a macro is not expanded
+        assert_eq!(copy_mode("; SET_DUAL_CARRIAGE MODE=COPY\n", &bed), None);
+        assert_eq!(copy_mode("SET_DUAL_CARRIAGE # MODE=COPY\n", &bed), None);
+        assert_eq!(copy_mode("PRINT_START MODE=COPY\nDUPLICATION\n", &bed), None);
+    }
+
+    #[test]
+    fn a_klipper_copy_off_the_bed_names_its_command_and_the_assumed_shift() {
+        let bed = j1_bed();
+        let off = output_with(&[(200.0, 90.0), (210.0, 90.0)], 0.2);
+        let found = check_copy(&off, &bed, CopyMode::CarriageCopy(162.0));
+        assert!(blocks(&found), "{found:?}");
+        assert!(
+            found[0].message.contains("SET_DUAL_CARRIAGE MODE=COPY")
+                && found[0].message.contains("half the X travel is assumed")
+                && found[0].message.contains("prints at X362.0, past the bed"),
+            "{}",
+            found[0].message
+        );
+        let found = check_copy(&off, &bed, CopyMode::CarriageMirror(162.0));
+        assert!(
+            found[0].message.contains("SET_DUAL_CARRIAGE MODE=MIRROR")
+                && found[0].message.contains("where the two heads would cross"),
+            "{}",
+            found[0].message
+        );
     }
 
     #[test]
