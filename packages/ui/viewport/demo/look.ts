@@ -12,6 +12,7 @@ import { subbanLight } from '../../src/themes'
 import { labParts, type LabScene } from './look-models'
 import { STUDIOS, compose, type ShadeId, type StudioId } from './looks'
 import { synthesizePreview, type SynthPart } from './synth-sxpv'
+import { labRoomSH } from './lab-env'
 
 declare global {
   interface Window {
@@ -126,7 +127,7 @@ if (hover) vp.setTool('face')
 interface Internals {
   camera: PerspectiveCamera
   renderer: WebGLRenderer
-  stage: { envSH: Vector3[] | null; bedRoot: { matrixWorld: import('three').Matrix4 } }
+  stage: { bedRoot: { matrixWorld: import('three').Matrix4 } }
   pipeline: { main: WebGLRenderTarget }
   renderFrame(aoMix: number, moving: boolean): void
 }
@@ -348,7 +349,7 @@ void (async () => {
   await settle()
   await sleep(900)
   const s = vp.stats()
-  const shc = I.stage.envSH
+  const shc = labRoomSH(I.renderer)
   let env: unknown = null
   if (shc) {
     const sh = new SphericalHarmonics3().set(shc)
