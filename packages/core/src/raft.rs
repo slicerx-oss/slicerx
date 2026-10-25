@@ -379,7 +379,7 @@ pub(crate) fn layer_paths(
         &[work],
         &planned,
         layer_id,
-        (&[], layer.top, None),
+        (&crate::seam::NO_SEAMS, layer.top, None),
         None,
         &[],
     );

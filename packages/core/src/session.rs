@@ -3809,7 +3809,7 @@ impl SliceSession {
             &works,
             cfg,
             p,
-            (&[], pl.top, None),
+            (&crate::seam::NO_SEAMS, pl.top, None),
             None,
             &self.object_hulls,
         );
@@ -9749,6 +9749,7 @@ impl SliceSession {
             })
             .copied()
             .collect();
+        let faces = crate::seam::SeamIndex::new(&faces);
         let vase = self
             .vase
             .filter(|&b| layer >= b && layer >= cfg.skirt_height)
