@@ -31,6 +31,12 @@ pub(crate) trait Strategy {
     fn nonlinear_thicknesses(&self, lower_bead_count: i64) -> Vec<i64>;
     fn split_middle_threshold(&self) -> f64;
     fn transitioning_angle(&self) -> f64;
+    /// The beads of `bead_count` at `thickness` where they border the infill area of a thicker part (the
+    /// capped count), rather than make up the whole cross section. The same as `compute` unless a strategy
+    /// fills a thin cross section differently from the walls of a thick one.
+    fn compute_walled(&self, thickness: i64, bead_count: i64) -> Beading {
+        self.compute(thickness, bead_count)
+    }
 }
 
 /// Nanometers in a millimeter.
@@ -386,6 +392,14 @@ impl Strategy for Widening {
     fn transitioning_angle(&self) -> f64 {
         self.parent.transitioning_angle()
     }
+
+    fn compute_walled(&self, thickness: i64, bead_count: i64) -> Beading {
+        if bead_count <= 1 {
+            self.compute(thickness, bead_count)
+        } else {
+            self.parent.compute_walled(thickness, bead_count)
+        }
+    }
 }
 
 /// Moves the outer wall inward by `offset` (never past the middle of the thickness).
@@ -400,9 +414,9 @@ impl OuterInset {
     }
 }
 
-impl Strategy for OuterInset {
-    fn compute(&self, thickness: i64, bead_count: i64) -> Beading {
-        let mut ret = self.parent.compute(thickness, bead_count);
+impl OuterInset {
+    /// `ret` with its outer bead moved in by the offset, where there are two beads or more.
+    fn moved(&self, mut ret: Beading, thickness: i64) -> Beading {
         let real = ret.bead_widths.iter().filter(|w| **w > 0).count();
         if real >= 2
             && let Some(first) = ret.toolpath_locations.first_mut()
@@ -410,6 +424,16 @@ impl Strategy for OuterInset {
             *first = (*first + self.offset).min(thickness / 2);
         }
         ret
+    }
+}
+
+impl Strategy for OuterInset {
+    fn compute(&self, thickness: i64, bead_count: i64) -> Beading {
+        self.moved(self.parent.compute(thickness, bead_count), thickness)
+    }
+
+    fn compute_walled(&self, thickness: i64, bead_count: i64) -> Beading {
+        self.moved(self.parent.compute_walled(thickness, bead_count), thickness)
     }
 
     fn optimal_thickness(&self, bead_count: i64) -> i64 {
@@ -485,7 +509,7 @@ impl Strategy for Limited {
             return ret;
         }
         let optimal = self.parent.optimal_thickness(max);
-        let mut ret = self.parent.compute(optimal, max);
+        let mut ret = self.parent.compute_walled(optimal, max);
         let count = ret.toolpath_locations.len();
         ret.left_over += thickness - ret.total_thickness;
         ret.total_thickness = thickness;
@@ -620,10 +644,35 @@ impl Athena {
         }
     }
 
-    /// One or two beads, where preFlight's center absorbing strategy (`CenterAbsorbBeadingStrategy`) widens
-    /// the beads to take up what the thickness leaves, by the factor width over spacing of the inner beads
-    /// (the overlap), never below a third of that width, and never past the wall itself.
-    fn absorb_thin(&self, thickness: i64, n: i64) -> Beading {
+    /// One or two beads that make up the whole cross section of a thin part (a fin, a small peg, the narrow
+    /// end of a wedge): one bead as wide as the part, or two that each take half of it, facing their own
+    /// outline. The thickness is of the outline already taken in by half the difference of the outer bead's
+    /// width and spacing on each side, so beads as wide as these spacings fill the part edge to edge.
+    /// Scaled by the outer spacing over the outer to first inner spacing instead, two beads in a 0.8 mm fin
+    /// were 13 percent too narrow under the precise outer wall (that spacing is then the mean of the two
+    /// widths, with no overlap), and in a 1 mm fin or peg they kept their width and stood off the surface:
+    /// 0.82 and 0.83 of the material on those fins and 0.70 on a 1 mm peg.
+    fn fill_thin(thickness: i64, n: i64) -> Beading {
+        let mut ret = Beading {
+            total_thickness: thickness,
+            ..Beading::default()
+        };
+        if n == 1 {
+            ret.bead_widths.push(thickness);
+            ret.toolpath_locations.push(thickness / 2);
+        } else {
+            let half = thickness / 2;
+            ret.bead_widths = vec![half, half];
+            ret.toolpath_locations = vec![half / 2, thickness - half / 2];
+        }
+        ret
+    }
+
+    /// One or two beads bordering the infill area (the walls of a thicker part capped at one wall), where
+    /// preFlight's center absorbing strategy (`CenterAbsorbBeadingStrategy`) widens the beads to take up what
+    /// the thickness leaves, by the factor width over spacing of the inner beads (the overlap), never below a
+    /// third of that width, and never past the wall itself.
+    fn walled_thin(&self, thickness: i64, n: i64) -> Beading {
         let mut ret = Beading {
             total_thickness: thickness,
             ..Beading::default()
@@ -699,7 +748,7 @@ impl Strategy for Athena {
         }
         let n = bead_count;
         if n <= 2 {
-            return self.absorb_thin(thickness, n);
+            return Self::fill_thin(thickness, n);
         }
         let k = (n + 1) / 2;
         // What the thickness leaves over the nominal spacing goes to the middle bead (or the middle two), which
@@ -787,6 +836,14 @@ impl Strategy for Athena {
     fn transitioning_angle(&self) -> f64 {
         let _ = self.add_middle;
         self.angle
+    }
+
+    fn compute_walled(&self, thickness: i64, bead_count: i64) -> Beading {
+        if (1..=2).contains(&bead_count) {
+            self.walled_thin(thickness, bead_count)
+        } else {
+            self.compute(thickness, bead_count)
+        }
     }
 }
 
@@ -916,6 +973,79 @@ mod tests {
         // Crowded (thinner than nominal), the middle beads keep their width and overlap a little.
         let c = s.compute(nm(1.48), 4);
         assert!(c.bead_widths.iter().all(|w| *w == nm(0.4)), "{:?}", c.bead_widths);
+    }
+
+    /// The stock 0.42 and 0.45 mm walls at 0.2 mm layers as spacings, with the precise outer wall's outer to
+    /// first inner spacing (the mean of the two widths), capped at `max` beads.
+    fn athena_precise(max: i64) -> Box<dyn Strategy> {
+        make(&Params {
+            outer_width: nm(0.377_08),
+            inner_width: nm(0.407_08),
+            transition_length: nm(0.4),
+            transitioning_angle: 10f64.to_radians(),
+            print_thin_walls: true,
+            min_bead_width: nm(0.34),
+            min_feature_size: nm(0.1),
+            split_middle: 0.85,
+            add_middle: 0.8,
+            max_bead_count: max,
+            outer_inset: 0,
+            distribution_count: 1,
+            min_variable_ratio: 0.5,
+            athena: Some((nm(0.435), nm(0.407_08))),
+        })
+    }
+
+    /// One or two aegis beads that are the whole of a thin part fill it: two beads each take half the thickness
+    /// and face their own outline, one bead takes all of it. The 0.8 and 1 mm fins and the 1 mm peg (taken in by
+    /// half the difference of width and spacing on each side) printed 0.82, 0.83 and 0.70 of their material.
+    #[test]
+    fn athena_thin_parts_are_filled_by_their_beads() {
+        let s = athena_precise(4);
+        for mm in [0.757, 0.957, 0.6, 1.0] {
+            let t = nm(mm);
+            assert_eq!(s.optimal_bead_count(t), 2, "{mm}");
+            let b = s.compute(t, 2);
+            assert_eq!(b.bead_widths.len(), 2, "{mm}: {b:?}");
+            assert!((b.bead_widths.iter().sum::<i64>() - t).abs() <= 1, "{mm}: {b:?}");
+            assert_eq!(b.bead_widths[0], b.bead_widths[1], "{mm}: {b:?}");
+            // Each bead's outer edge on its own outline, the two meeting in the middle.
+            assert!(
+                (b.toolpath_locations[0] - b.bead_widths[0] / 2).abs() <= 1,
+                "{mm}: {b:?}"
+            );
+            assert!(
+                (t - b.toolpath_locations[1] - b.bead_widths[1] / 2).abs() <= 1,
+                "{mm}: {b:?}"
+            );
+        }
+        // One bead past where the second one starts (inside a transition) is as wide as the part.
+        let b = s.compute(nm(0.7), 1);
+        assert_eq!(
+            (b.bead_widths.clone(), b.toolpath_locations.clone()),
+            (vec![nm(0.7)], vec![nm(0.35)])
+        );
+    }
+
+    /// The outer wall of a part capped at one wall (and of the one-wall run of top surfaces) keeps its width and
+    /// place: the capped beads border the infill area and are not a thin part to fill.
+    #[test]
+    fn athena_one_wall_walls_keep_their_place() {
+        let s = athena_precise(2);
+        let b = s.compute(nm(3.0), 3);
+        // The nominal thickness of two beads is 0.377 + 0.435; at it the outer beads keep the ratio of the outer
+        // spacing to the outer to first inner spacing.
+        let half = i64::midpoint(nm(0.377_08), nm(0.435));
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_precision_loss,
+            reason = "widths in nm"
+        )]
+        let width = (half as f64 * nm(0.377_08) as f64 / nm(0.435) as f64) as i64;
+        assert_eq!(b.bead_widths.first(), Some(&width), "{b:?}");
+        assert_eq!(b.toolpath_locations.first(), Some(&(half / 2)), "{b:?}");
+        assert_eq!(b.bead_widths.last(), Some(&width), "{b:?}");
+        assert!(b.bead_widths.contains(&0), "{b:?}");
     }
 
     #[test]

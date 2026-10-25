@@ -10,6 +10,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ### Changed
 
+- aegis walls fill thin parts: where one or two beads make up a part's whole cross section (a fin under about 1 mm, a small peg, the narrow end of a wedge), two beads each take half its thickness and one bead all of it. Before, two beads kept the ratio of the outer spacing to the outer to first inner spacing (in a 0.8 mm fin) or their own width (in a 1 mm fin or peg), and printed 0.82 and 0.83 of the material on those fins and 0.70 on a 1 mm peg with the stock walls. The walls of thicker parts, walls capped at one wall and the outer wall's place do not move.
 - aegis walls (the default) with inner walls printed first follow `precise_outer_wall`: with it on (the stock setting) the first inner wall sits (outer width + inner width) / 2 from the outer wall, with it off (outer width + inner width) / 2 - (1 - pi/4) h. Before, both came out (1 - pi/4) h / 2 off (0.0215 mm at 0.2 mm layers), and gap fill and infill with them. The outer wall does not move, so part sizes, holes and pegs keep their size.
 
 ## [0.2.2] - 2026-10-25
