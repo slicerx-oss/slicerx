@@ -3255,6 +3255,57 @@ fn preview_extras_find_moves_the_nozzle_offset_shifted() {
     assert_extras_match(&run(&req).unwrap(), -2.5, -3.5);
 }
 
+/// The start G-code's extrusions (a purge line) are drawn where the nozzle lays them, in the plate's frame like the
+/// toolpaths: on a printer whose moves are written less its nozzle offset, the drawn line is the G-code's plus that
+/// offset. The G-code keeps the start as written, and other printers draw it as written, an offset the writer does
+/// not apply included.
+#[test]
+fn preview_draws_the_start_lines_where_the_nozzle_lays_them() {
+    let purge = "G90\nM83\nG1 X20 Y5 Z0.3 F3000\nG1 X120 Y5 E8 F1200\nG1 X120 Y8 E0.3\n";
+    for (model, flavor, offset, (dx, dy)) in [
+        ("Bambu Lab P1S", "marlin", "0x2", (0.0f32, 2.0f32)),
+        ("Elegoo Neptune 4 Pro", "klipper", "-2.5x-3.5", (-2.5, -3.5)),
+        ("Bambu Lab A1", "marlin", "0x0", (0.0, 0.0)),
+        ("Generic Klipper Printer", "klipper", "5x5", (0.0, 0.0)),
+    ] {
+        let mut config = base_config();
+        config["printer_model"] = json!(model);
+        config["gcode_flavor"] = json!(flavor);
+        config["extruder_offset"] = json!([offset]);
+        config["machine_start_gcode"] = json!(purge);
+        let req: SliceRequest = serde_json::from_value(json!({
+            "plate": {"objects": [{"mesh": "x"}]},
+            "config": config,
+        }))
+        .unwrap();
+        let run = run(&req).unwrap();
+        assert!(
+            text(&run).contains("\nG1 X120 Y5 E8 F1200\nG1 X120 Y8 E0.3\n"),
+            "{model}"
+        );
+        let b = &run.preview;
+        let info = sx_core::preview::read_info(b).unwrap();
+        let f32at = |o: usize| f32::from_le_bytes(b[o..o + 4].try_into().unwrap());
+        // The start's moves are the first layer's first segments, drawn as custom paths (14).
+        let seg = |k: usize| {
+            let o = info.segments_at + k * 32;
+            ([f32at(o), f32at(o + 4), f32at(o + 8), f32at(o + 12)], b[o + 24])
+        };
+        let want = [
+            [20.0 + dx, 5.0 + dy, 120.0 + dx, 5.0 + dy],
+            [120.0 + dx, 5.0 + dy, 120.0 + dx, 8.0 + dy],
+        ];
+        for (k, w) in want.iter().enumerate() {
+            let (got, feature) = seg(k);
+            assert_eq!(feature, 14, "{model}: segment {k} is not the start's");
+            assert!(
+                got.iter().zip(w).all(|(g, w)| (g - w).abs() < 1e-4),
+                "{model}: segment {k} drawn at {got:?}, the nozzle lays it at {w:?}"
+            );
+        }
+    }
+}
+
 /// Every preview segment's G-code line is a move that ends where the segment ends, less the nozzle offset
 /// (`dx`, `dy`).
 fn assert_extras_match(run: &SliceRun, dx: f32, dy: f32) {

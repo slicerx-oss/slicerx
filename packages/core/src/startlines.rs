@@ -4,6 +4,7 @@
 //! drawn with the first layer as custom paths, since they print before it. They are read from the
 //! finished G-code, so they always show what the file does.
 
+use crate::config::PrintConfig;
 use crate::extras::{FLAG_PATH_START, SegExtra};
 use crate::fm::Fm as _;
 
@@ -189,6 +190,30 @@ pub fn read(gcode: &str, filament_diameter: f64, nozzle: f64) -> Vec<StartMove> 
         }
     }
     out
+}
+
+/// The start moves where the nozzle lays them, in the plate's frame the toolpaths are drawn in: on the printers whose
+/// G-code is written less the nozzle offset ([`crate::griffin::applies_offset`]), each move plus the offset of the tool
+/// laying it, as the writer takes it off a toolpath (a Bambu Lab P1 or X1 lays a purge line 2 mm further in Y than its
+/// G-code says). Every other printer's moves stay as written.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "preview coordinates are f32 by format"
+)]
+pub fn to_plate(moves: &mut [StartMove], c: &PrintConfig) {
+    for m in moves {
+        let slot = m.tool.saturating_add(1);
+        let off = crate::griffin::offset(c, crate::griffin::path_slot(c, c.gcode_flavor, slot, slot));
+        if off.x == 0 && off.y == 0 {
+            continue;
+        }
+        let (dx, dy) = (
+            (f64::from(off.x) / crate::geom::SCALE) as f32,
+            (f64::from(off.y) / crate::geom::SCALE) as f32,
+        );
+        m.from = (m.from.0 + dx, m.from.1 + dy);
+        m.to = (m.to.0 + dx, m.to.1 + dy);
+    }
 }
 
 /// The extras of the start moves, in the same order: their line, the start of each run, and the first
