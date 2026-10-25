@@ -10,13 +10,21 @@ use crate::fm::Fm as _;
 use crate::geom::{Point, SCALE};
 use crate::output::LayerPaths;
 
-/// What one object's layers meet. `k` is the object's place in print order.
-pub(crate) fn object_layers(model: &Model, k: usize, layers: &[LayerPaths], travel_speed: f64) -> Hits {
+/// What one object's layers meet. `k` is the object's place in print order; `travel_speed` and `lift_over_print`
+/// ([`super::lifts_over_print`]) come from the run's settings, not the session's.
+pub(crate) fn object_layers(
+    model: &Model,
+    k: usize,
+    layers: &[LayerPaths],
+    travel_speed: f64,
+    lift_over_print: bool,
+) -> Hits {
     let mut w = Walker {
         m: model,
         k,
         reach: model.reach(),
         travel_speed: travel_speed.max(1.0),
+        lift_over_print,
         hits: Hits::default(),
         near: Vec::new(),
     };
@@ -59,6 +67,8 @@ struct Walker<'a> {
     k: usize,
     reach: f64,
     travel_speed: f64,
+    /// The change G-code lifts over the highest layer printed so far.
+    lift_over_print: bool,
     hits: Hits,
     near: Vec<Near>,
 }
@@ -413,7 +423,7 @@ impl Walker<'_> {
         };
         let stops = ch.route(usize::from(from.max(1) - 1), usize::from(to.max(1) - 1));
         let here = at[2].max(resume[2]);
-        let top = if m.lift_over_print {
+        let top = if self.lift_over_print {
             here.max(printed)
         } else {
             here
