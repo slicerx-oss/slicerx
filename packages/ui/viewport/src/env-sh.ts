@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Spherical-harmonic irradiance of a small cube render, for the toolpaths' ambient light (stage.ts). The faces are read
-// back in one go, right after the cube is drawn, so the projection itself never touches the GPU.
+// Spherical-harmonic irradiance of a small cube render, for the look lab's reading of the room (demo/lab-env.ts). The
+// faces are read back in one go, right after the cube is drawn, so the projection itself never touches the GPU.
 import { DataUtils, SphericalHarmonics3, Vector3 } from 'three'
 
 /**

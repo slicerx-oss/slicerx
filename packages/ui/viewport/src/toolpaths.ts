@@ -204,9 +204,11 @@ const BEAD_LIGHT_DECL = /* glsl */ `
 #if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
 uniform sampler2DShadow directionalShadowMap[ NUM_DIR_LIGHT_SHADOWS ];
 #endif
-uniform vec3 uEnvSH[ 9 ];
-uniform float uEnvDiffuse;
-uniform float uEnvSpec;
+// The room's light on the per-vertex beads: a flat ambient (the constant spherical-harmonic band only, in three.js
+// LightProbe units) at 0.9 for the diffuse and the glossy term.
+const vec3 SX_ROOM_SH0 = vec3( 0.9, 0.9, 0.95 );
+const float SX_ROOM_DIFFUSE = 0.9;
+const float SX_ROOM_SPEC = 0.9;
 uniform vec3 uLiveColor;
 uniform float uGlow;
 varying vec3 vLit;
@@ -218,7 +220,7 @@ const BEAD_LIGHT = /* glsl */ `
   vec3 n = normalize( transformedNormal );
   vec3 v = normalize( - mvPosition.xyz );
   vec3 albedo = vSegColor;
-  vec3 c = getLightProbeIrradiance( uEnvSH, n ) * uEnvDiffuse * BRDF_Lambert( albedo );
+  vec3 c = SX_ROOM_SH0 * 0.886227 * SX_ROOM_DIFFUSE * BRDF_Lambert( albedo );
   #if NUM_DIR_LIGHTS > 0
   IncidentLight L;
   for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {
@@ -241,8 +243,8 @@ const BEAD_LIGHT = /* glsl */ `
   #endif
   vec3 fr = F_Schlick( vec3( 0.04 ), 1.0, saturate( dot( n, v ) ) );
   // The glossy environment term uses the room's mean radiance (the SH constant band): at this
-  // roughness the reflection is a soft wash, and one lookup less per vertex is measurable.
-  c += uEnvSH[ 0 ] * 0.886227 * RECIPROCAL_PI * fr * uEnvSpec;
+  // roughness the reflection is a soft wash.
+  c += SX_ROOM_SH0 * 0.886227 * RECIPROCAL_PI * fr * SX_ROOM_SPEC;
   if ( vLive > 0.5 ) {
     float rim = pow( 1.0 - saturate( abs( dot( n, v ) ) ), 1.5 );
     c += mix( albedo, uLiveColor, 0.9 ) * ( 0.7 + rim * uGlow );
@@ -571,9 +573,6 @@ export class Toolpaths {
     uLiveColor: { value: new Color(SCENE.liveLayer) },
     uGlow: { value: 3 },
     uCamObj: { value: new Vector3() },
-    uEnvSH: { value: Array.from({ length: 9 }, (_, i) => (i === 0 ? new Vector3(0.9, 0.9, 0.95) : new Vector3())) },
-    uEnvDiffuse: { value: 0.9 },
-    uEnvSpec: { value: 0.9 },
     uViewH: { value: 800 },
     // The partly drawn move during playback: its ends and height pick it out, the share says how far it goes.
     uPartSeg: { value: new Vector4() },
@@ -688,11 +687,6 @@ export class Toolpaths {
     if (this.uniforms.uStale.value === v) return false
     this.uniforms.uStale.value = v
     return true
-  }
-
-  /** Room irradiance as nine spherical-harmonic coefficients (three.js LightProbe order). */
-  setEnvironment(sh: readonly Vector3[]): void {
-    sh.forEach((c, i) => this.uniforms.uEnvSH.value[i]?.copy(c))
   }
 
   /** Camera position in bed coordinates and the drawing buffer height in pixels, for bead level of detail. */
@@ -983,12 +977,6 @@ export class Toolpaths {
     const old = this.uniforms.uFinishLut.value
     this.uniforms.uFinishLut.value = finishTexture(finishes)
     old.dispose()
-  }
-
-  /** Scales the room environment's light on beads lit per vertex, to match the scene's environment intensity (look.ts). */
-  setEnvironmentScale(k: number): void {
-    this.uniforms.uEnvDiffuse.value = 0.9 * k
-    this.uniforms.uEnvSpec.value = 0.9 * k
   }
 
   /** How dark the groove between stacked layers is, 0 (none) to 1. */
