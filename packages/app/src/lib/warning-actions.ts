@@ -6,6 +6,7 @@ import type { SliceWarning } from '@slicerx/contracts'
 import type { ColorMode } from '../state/store'
 import { cameraBus } from '../plate/tools'
 import { get, markStale, set, toast } from '../state/store'
+import { pickParts } from '../plate/pick-parts'
 
 export type WarningFixId = 'supports' | 'arrange' | 'repair' | 'settings'
 
@@ -54,13 +55,11 @@ export function jumpToWarning(w: SliceWarning): void {
     patch.colorMode = mode
     patch.colorModePicked = true
   }
-  if (w.objectId && get().plate.some((p) => p.id === w.objectId)) {
-    patch.selection = w.objectId
-    patch.selectedIds = [w.objectId]
-  }
   set(patch)
-  // The camera eases to the spot, at the height of the layer when it has one.
+  // Its object is selected and ringed on the bed. The camera eases to the spot, at the height of the layer when it has
+  // one; with no spot it frames the object when it is off screen (one past the bed's edge, say).
   const spot = warningSpot(w)
+  if (w.objectId) pickParts([w.objectId], { frame: !spot })
   if (spot) cameraBus()?.focusBedPoint?.(spot.x, spot.y, w.layer !== undefined ? (get().preview?.layerZ[w.layer] ?? 0) : 0, { animate: true })
 }
 

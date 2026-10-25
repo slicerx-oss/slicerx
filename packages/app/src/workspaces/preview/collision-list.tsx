@@ -2,15 +2,18 @@
 // Copyright (C) 2026 The SlicerX contributors
 // heimdall's collisions in Preview: each strike with when it happens and how deep, a jump that plays the head to that
 // moment, and the fixes with what they cost. A new order and print by layer apply with one click; the rest explain.
+// A click or a tap on a strike's row selects the parts it names, rings them on the bed and frames them when they are
+// off screen; while they are the selection the row reads as pressed.
 import type { Collision, CollisionFix } from '@slicerx/contracts'
-import { Block, Button, Icon } from '@slicerx/ui'
+import { Block, Button, Icon, tipAttrs } from '@slicerx/ui'
 import { useState } from 'react'
 import { useHost } from '../../host'
 import { clock } from '../../lib/preview-timeline'
-import { collisionsOf, fixesOf } from '../../plate/heimdall'
+import { collisionParts, collisionsOf, fixesOf } from '../../plate/heimdall'
 import { applyCollisionFix } from '../../plate/heimdall-fix'
-import { jumpTo } from '../../plate/heimdall-jump'
+import { jumpTo, pickCollision } from '../../plate/heimdall-jump'
 import { collisionDetail, collisionTitle, fixDetail, fixTitle, wordsOf } from '../../plate/heimdall-words'
+import { isPicked } from '../../plate/pick-parts'
 import { get, set, shownSlice, useApp } from '../../state/store'
 
 const KIND: Record<Collision['kind'], string> = {
@@ -43,6 +46,8 @@ export function CollisionList() {
   const stale = useApp((s) => shownSlice(s.slice)?.stale ?? false)
   // The names follow the plate; the station follows the printer, read when the list draws.
   const plate = useApp((s) => s.plate)
+  const selection = useApp((s) => s.selection)
+  const selectedIds = useApp((s) => s.selectedIds)
   const { name, station } = wordsOf(get())
   const [busy, setBusy] = useState(false)
   if (!list.length) return null
@@ -53,19 +58,24 @@ export function CollisionList() {
   return (
     <Block title="Collisions" aside={<span className={hits ? 'app-tag strike-tag' : 'app-tag'}>{label}</span>} data-section="collisions">
       <ol className="strikes" aria-label="Collisions">
-        {list.map((c, i) => (
-          <li key={`${c.kind}-${c.objectId}-${c.hitId}-${i}`} className={pick === i ? 'sel' : undefined} data-severity={c.severity} onPointerEnter={() => set({ strikeHover: i })} onPointerLeave={() => set({ strikeHover: null })}>
-            <Icon name="strike" size={18} />
-            <div>
-              <b>{collisionTitle(c, name, station)}</b>
-              <p>{collisionDetail(c, name, station)}</p>
-              <span className="strike-when">{when(c)}</span>
-            </div>
-            <Button size="sm" variant="ghost" aria-label={`Jump to: ${collisionTitle(c, name, station)}`} tip={{ title: 'Jump', body: 'Move the sliders to this moment and play the toolhead up to it.' }} onClick={() => jumpTo(i)}>
-              Jump
-            </Button>
-          </li>
-        ))}
+        {list.map((c, i) => {
+          const parts = collisionParts({ plate }, c)
+          return (
+            <li key={`${c.kind}-${c.objectId}-${c.hitId}-${i}`} className={pick === i ? 'sel' : undefined} data-severity={c.severity} onPointerEnter={() => set({ strikeHover: i })} onPointerLeave={() => set({ strikeHover: null })}>
+              <button type="button" className="strike-pick" data-testid="collision-select" aria-pressed={isPicked({ selection, selectedIds }, parts)} disabled={parts.length === 0} {...tipAttrs({ title: parts.length > 1 ? 'Select both' : 'Select it', body: 'Select on the plate and show where it is.' })} onClick={() => pickCollision(i)}>
+                <Icon name="strike" size={18} />
+                <span className="strike-text">
+                  <b>{collisionTitle(c, name, station)}</b>
+                  <span className="strike-detail">{collisionDetail(c, name, station)}</span>
+                  <span className="strike-when">{when(c)}</span>
+                </span>
+              </button>
+              <Button size="sm" variant="ghost" aria-label={`Jump to: ${collisionTitle(c, name, station)}`} tip={{ title: 'Jump', body: 'Move the sliders to this moment and play the toolhead up to it.' }} onClick={() => jumpTo(i)}>
+                Jump
+              </Button>
+            </li>
+          )
+        })}
       </ol>
       {fixes.length ? (
         <>

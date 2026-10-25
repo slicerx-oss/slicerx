@@ -17,6 +17,15 @@ export function collisionsOf(s: Pick<AppState, 'slice'>): Collision[] {
 
 const NO_FIXES: CollisionFix[] = []
 
+/**
+ * The plate objects a collision names: the one printing, then the one it meets when that is a part on the plate (a
+ * keep-out zone or the prime tower is not one). Both for a strike between two parts, one for the gantry over a part
+ * of its own or a path into a zone.
+ */
+export function collisionParts(s: Pick<AppState, 'plate'>, c: Pick<Collision, 'objectId' | 'hitId'>): string[] {
+  return [...new Set([c.objectId, c.hitId])].filter((id) => s.plate.some((p) => p.id === id))
+}
+
 export function fixesOf(s: Pick<AppState, 'slice'>): CollisionFix[] {
   return s.slice.status === 'done' ? (s.slice.result.collisionFixes ?? NO_FIXES) : NO_FIXES
 }

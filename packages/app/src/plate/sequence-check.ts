@@ -19,7 +19,7 @@ type Pt = [number, number]
 const shapes = new WeakMap<PlateEntry, { hull: Pt[]; top: number }>()
 
 /** The object's footprint on the bed (the convex hull of its points) and its height, as the engine measures them. */
-function shapeOf(e: PlateEntry): { hull: Pt[]; top: number } {
+export function shapeOf(e: PlateEntry): { hull: Pt[]; top: number } {
   const kept = shapes.get(e)
   if (kept) return kept
   const shape = footprint(e.parts.map((p) => p.positions), e.transform)

@@ -8,6 +8,7 @@ import { get, set, showSliced, type AppState } from '../state/store'
 import { keepOutPolygons } from '../viewport/bed-exclude'
 import { areaOrigin, polygonsToPlate } from './bed-origin'
 import { collisionsOf } from './heimdall'
+import { pickParts } from './pick-parts'
 import type { PreflightSpot } from './preflight'
 import { cameraBus } from './tools'
 
@@ -85,7 +86,8 @@ export function showRefusal(spot: RefusalSpot): void {
   const step = Number(cfg['layer_height']) || 0.2
   const z = spot.layer > 0 ? first + spot.layer * step : 0
   const obj = spot.object ? s.plate.find((p) => p.name === spot.object) : undefined
-  if (obj) set({ selection: obj.id, selectedIds: [obj.id] })
+  // The object is selected and ringed on the bed; the camera turns to the spot below.
+  if (obj) pickParts([obj.id], { frame: false })
   // The camera turn alone does not say "here": the spot gets the strike mark, and an excluded area its outline.
   set({ refusalSpot: { x: mark.x, y: mark.y, z, area: mark.area, slice: s.slice } })
   cameraBus()?.focusBedPoint?.(mark.x, mark.y, z, { animate: true })

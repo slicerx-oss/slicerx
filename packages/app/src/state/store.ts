@@ -349,6 +349,8 @@ export interface AppState {
    * the refusal it belongs to. The mark shows while that refusal is the slice on screen.
    */
   refusalSpot: { x: number; y: number; z: number; area: [number, number][] | null; slice: SliceState } | null
+  /** The parts a warning or a collision row picked: a ring marks each on the bed while they are the selection. */
+  pickRing: string[] | null
   shortcutsOpen: boolean
   /** A prompt handed to the Pilot workspace by a command; it clears it once started. */
   pilotPrompt: string | null
@@ -756,6 +758,7 @@ export const appStore = createStore<AppState>()(() => ({
   strikeJump: null,
   strikeHover: null,
   refusalSpot: null,
+  pickRing: null,
   shortcutsOpen: false,
   pilotPrompt: null,
   fleetRefresh: 0,

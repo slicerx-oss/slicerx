@@ -51,6 +51,7 @@ import { headFor } from '@slicerx/viewport'
 import { strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
 import { activeClearance } from '../plate/sequence-check'
+import { pickRingsOf } from '../plate/pick-parts'
 import { markOpenStage, markViewDrawn, onOpenStage, openStagesPassed } from '../lib/open-mark'
 import { drawnFrom } from './drawn'
 import { viewportStatsFrom } from './stats'
@@ -85,6 +86,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'se
   setCutPlane?: Viewport['setCutPlane']
   setGapLines?: Viewport['setGapLines']
   setClearance?: Viewport['setClearance']
+  setPickRings?: Viewport['setPickRings']
   setGuides?: Viewport['setGuides']
   /** Model's Shift and drag box select. */
   setBoxSelect?: Viewport['setBoxSelect']
@@ -109,6 +111,7 @@ export type Drive = Pick<Viewport, 'setMode' | 'setPlate' | 'drawnObjects' | 'se
   setGcodeMarkers?: Viewport['setGcodeMarkers']
   setProbeFaces?: Viewport['setProbeFaces']
   zoomToSelection?: Viewport['zoomToSelection']
+  showSelection?: Viewport['showSelection']
   zoomToBed?: Viewport['zoomToBed']
   zoomBy?: Viewport['zoomBy']
   focusBedPoint?: Viewport['focusBedPoint']
@@ -907,6 +910,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         ...(vp.zoomToBed ? { zoomToBed: (o?: { animate?: boolean }) => vp.zoomToBed?.(o) } : {}),
         ...(vp.zoomBy ? { zoomBy: (f: number, o?: { animate?: boolean }) => vp.zoomBy?.(f, o) } : {}),
         ...(vp.focusBedPoint ? { focusBedPoint: (x: number, y: number, z: number, o?: { animate?: boolean }) => vp.focusBedPoint?.(x, y, z, o) } : {}),
+        ...(vp.showSelection ? { showSelection: (o?: { animate?: boolean }) => vp.showSelection?.(o) ?? false } : {}),
         ...(vp.toggleProjection ? { toggleProjection: () => vp.toggleProjection?.() } : {}),
         ...(vp.getCamera ? { pose: () => ({ ...vp.getCamera!(), ...(vp.getProjection ? { projection: vp.getProjection() } : {}), preset: cameraPreset }) } : {}),
         ...(vp.setGuides ? { guides: (g: Parameters<Viewport['setGuides']>[0]) => vp.setGuides?.(g), probeFaces: (on: boolean) => vp.setProbeFaces?.(on) } : {}),
@@ -946,6 +950,22 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         offs.push(
           appStore.subscribe((s, prev) => {
             if (s.plate !== prev.plate || s.plates !== prev.plates || s.activePlate !== prev.activePlate || s.easy !== prev.easy || s.overrides !== prev.overrides || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.bed !== prev.bed || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode || s.slice !== prev.slice) pushClearance(s)
+          }),
+        )
+      }
+      // The parts a warning or a collision row picked: a ring round each on the bed while they stay selected.
+      if (vp.setPickRings) {
+        let ringed: ReturnType<typeof pickRingsOf> = null
+        const pushRings = (s: AppState) => {
+          const next = pickRingsOf(s)
+          if (next === null && ringed === null) return
+          ringed = next
+          vp.setPickRings?.(next)
+        }
+        pushRings(appStore.getState())
+        offs.push(
+          appStore.subscribe((s, prev) => {
+            if (s.pickRing !== prev.pickRing || s.plate !== prev.plate || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode || s.slice !== prev.slice || s.plates !== prev.plates || s.activePlate !== prev.activePlate || s.easy !== prev.easy || s.overrides !== prev.overrides) pushRings(s)
           }),
         )
       }
