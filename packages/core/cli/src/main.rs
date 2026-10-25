@@ -749,14 +749,29 @@ fn print_config_report(r: &sx_core::api::ConfigReport) {
 /// How many keys the stderr block lists one per line.
 const REPORT_LINES: usize = 50;
 
-/// [`collision_refusal`] of a request's slice, with its objects' names.
+/// A refused request's collisions and fixes on stdout, as the result would carry them (`collisions`,
+/// `collisionFixes`) with `refused: "collision"`: the words on stderr name the objects, these give their ids, so a
+/// client can tell two objects of one name apart.
+fn print_refused_collisions(report: &sx_core::api::SliceReport) {
+    let out = serde_json::json!({
+        "refused": "collision",
+        "collisions": report.collisions,
+        "collisionFixes": report.collision_fixes,
+    });
+    println!("{out}");
+}
+
+/// [`collision_refusal`] of a request's slice, with its objects' names. A refusal also prints its collisions on
+/// stdout ([`print_refused_collisions`]).
 fn request_collision_refusal(
     report: &sx_core::api::SliceReport,
     objects: &[sx_core::api::ObjectSpec],
     args: &[String],
 ) -> Option<String> {
     let names: Vec<(&str, &str)> = objects.iter().map(|o| (o.id.as_str(), o.name.as_str())).collect();
-    collision_refusal(&report.collisions, &report.collision_fixes, &names, args)
+    let why = collision_refusal(&report.collisions, &report.collision_fixes, &names, args)?;
+    print_refused_collisions(report);
+    Some(why)
 }
 
 /// Why a slice is refused when its head, gantry or tool changer would meet a printed part, two objects' paths cross,

@@ -320,6 +320,14 @@ fn a_3mf_plate_slices_as_its_objects() {
     // a gantry 3 mm over the nozzle passes through the 10 mm box while the 4 mm one prints: refused
     let out = run(40, 3, false);
     assert_eq!(out.status.code(), Some(3));
+    // the hits as data on stdout, naming the two objects the file holds by their ids
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["refused"], "collision", "{v}");
+    let hit = &v["collisions"][0];
+    assert_eq!(hit["kind"], "gantry", "{v}");
+    let ids = [hit["objectId"].as_str().unwrap(), hit["hitId"].as_str().unwrap()];
+    assert!(ids.iter().all(|id| *id == "p-1" || *id == "p-2"), "{v}");
+    assert_ne!(ids[0], ids[1], "{v}");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
         err.contains("printing by object is not safe: The gantry hits tall."),
@@ -353,6 +361,9 @@ fn keep_out_paths_are_refused_in_their_own_words() {
     std::fs::write(&path, req.to_string()).unwrap();
     let out = sx().args(["slice", "--request"]).arg(&path).output().unwrap();
     assert_eq!(out.status.code(), Some(3));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["collisions"][0]["kind"], "keep_out", "{v}");
+    assert_eq!(v["collisions"][0]["hitId"], "wrap-check-zone", "{v}");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
         err.contains("A print path or travel enters the nozzle wrap check corner: c1 on layers 1 to"),
