@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { PreviewBuffers } from '@slicerx/contracts'
 import { loadPrefs, normalizePrefs } from '../src/state/prefs'
 import { get, set } from '../src/state/store'
+import { FRAMED_OVERLAYS, overlayInsets } from '../src/viewport/overlay-insets'
 import { toggleLegend } from '../src/workspaces/preview/layer-keys'
 import { Legend } from '../src/workspaces/preview/preview-hud'
 
@@ -68,6 +69,20 @@ describe('the legend chip', () => {
     expect(list()).toBeTruthy()
     act(() => toggleLegend())
     expect(list()).toBeNull()
+  })
+
+  it('leaves the camera framing alone when the list opens: only the chip counts as an inset', () => {
+    // Boxes as at 1440 wide: the chip in the corner row, the list hanging below it over the view.
+    const at = (el: Element) => (el.matches('.legend') ? { left: 445, top: 190, right: 645, bottom: 530 } : el.matches('.legend-chip') ? { left: 445, top: 140, right: 600, bottom: 180 } : { left: 0, top: 0, right: 0, bottom: 0 })
+    const stage = { left: 421, top: 69, right: 1375, bottom: 855 }
+    const insets = () => overlayInsets(stage, [...document.querySelectorAll(FRAMED_OVERLAYS)].map(at))
+    render(createElement(Legend))
+    const shut = insets()
+    expect(shut.top).toBeGreaterThan(0)
+    fireEvent.click(toggle())
+    expect(list()).toBeTruthy()
+    expect(list()!.matches(FRAMED_OVERLAYS)).toBe(false)
+    expect(insets()).toEqual(shut)
   })
 
   it('keeps open or shut between sessions', () => {
