@@ -27,8 +27,19 @@ describe('overlay insets', () => {
     expect(overlayInsets(stage, [toolbar])).toEqual({ left: 0, right: 0, top: 196 - 100 + OVERLAY_GAP, bottom: 0 })
   })
 
+  it('puts a one-row bar in the top corner (the view switch and the legend chip) on the top, not on a side', () => {
+    const look = { left: 30, top: 164, right: 272, bottom: 210 }
+    const chip = { left: 280, top: 164, right: 434, bottom: 210 }
+    expect(overlayInsets(stage, [look, chip])).toEqual({ left: 0, right: 0, top: 210 - 100 + OVERLAY_GAP, bottom: 0 })
+  })
+
+  it('puts the plate chip over the playback bar on the bottom when the view is wide, not on the left', () => {
+    const chip = { left: 30, top: 700, right: 470, bottom: 742 }
+    expect(overlayInsets(stage, [chip])).toEqual({ left: 0, right: 0, top: 0, bottom: 900 - 700 + OVERLAY_GAP })
+  })
+
   it('keeps the largest claim on a side', () => {
-    expect(overlayInsets(stage, [legend, { left: 30, top: 540, right: 400, bottom: 600 }]).left).toBe(400 - 18 + OVERLAY_GAP)
+    expect(overlayInsets(stage, [legend, { left: 30, top: 540, right: 400, bottom: 640 }]).left).toBe(400 - 18 + OVERLAY_GAP)
   })
 
   it('has nothing to give on an empty stage', () => {

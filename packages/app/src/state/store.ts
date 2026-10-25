@@ -323,8 +323,8 @@ export interface AppState {
   /** The colors the last slice chose by itself: filament when it prints with more than one, else feature type. */
   colorModeAuto: 'tool' | 'feature' | null
   layerHi: number
-  /** The person hid the toolpath legend with its key. */
-  legendHidden: boolean
+  /** The toolpath legend is open below its chip (the chip's list button, or the look's legend key). Kept between sessions. */
+  legendOpen: boolean
   /** The jump to a layer field is open in the playback bar (the look's jump key, or a click on the layer number). */
   layerJump: boolean
   /** First drawn layer, 1 based (the bottom handle of the layer slider). */
@@ -741,7 +741,7 @@ export const appStore = createStore<AppState>()(() => ({
   colorModePicked: false,
   colorModeAuto: null,
   layerHi: 0,
-  legendHidden: false,
+  legendOpen: prefs.legendOpen ?? false,
   layerJump: false,
   layerLo: 1,
   moveCut: 1,
@@ -893,7 +893,7 @@ function alwaysAutoSliceDefault(): boolean {
 }
 
 
-const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'toolheadSkipMatching', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirRememberWithoutAsking', 'mimirMemorySync', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
+const PERSISTED = ['workspace', 'modelModeDefault', 'sliceLook', 'rails', 'recents', 'appearance', 'sidebarFolds', 'showToolhead', 'showGantry', 'playbackSpeed', 'followNozzle', 'legendOpen', 'easy', 'goal', 'goalBase', 'printerId', 'scheme', 'lookAndFeel', 'themeFollowsSystem', 'themeIds', 'userThemes', 'themeCache', 'fonts', 'settingsMode', 'tooltips', 'autoSlice', 'autoSliceBySize', 'multiBodyImport', 'cadTools', 'electricity', 'units', 'printerNozzles', 'printerExtruders', 'toolheadSkipMatching', 'handPrinters', 'bays', 'printerBays', 'printersView', 'easyTouched', 'paneSizes', 'queue', 'spoolLinks', 'presetSync', 'firstRun', 'crashReports', 'mimirShare', 'mimirRememberWithoutAsking', 'mimirMemorySync', 'mimirNotice', 'motion', 'agreement', 'installId', 'setupPilotOff', 'noPrinter', 'pilot', 'sendChoices', 'dryMarks', 'activePresets', 'settingsTab', 'settingsSections', 'settingsPins'] as const satisfies readonly (keyof AppState)[]
 
 // the tab remembers that setup is open (first-run.tsx notes each step), so a reload goes back to it
 const setup0 = appStore.getState().setup
@@ -916,6 +916,7 @@ appStore.subscribe((s, prev) => {
       showGantry: s.showGantry,
       playbackSpeed: s.playbackSpeed,
       followNozzle: s.followNozzle,
+      legendOpen: s.legendOpen,
       easy: s.easy,
       goal: s.goal,
       goalBase: s.goalBase,
