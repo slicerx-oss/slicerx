@@ -573,7 +573,8 @@ pub(crate) fn island_areas(
     areas
 }
 
-/// The part of the bed a brim may cover: the printable area less every excluded area (`bed_exclude_area`).
+/// The part of the bed a brim may cover: the printable area less every keep-out zone (`bed_exclude_area` and the
+/// nozzle wrap check corner, `head_wrap_detect_zone`).
 /// A brim area is cut to it, so the outermost loop lies half a line spacing inside the bed's edge (the loops
 /// start half a spacing in from their area) and the bead stays on the bed.
 pub(crate) struct Bed {
@@ -594,7 +595,7 @@ impl Bed {
         if cfg.printable_area.len() < 3 {
             return None;
         }
-        let zones: Vec<Shapes> = crate::preflight::exclude_zones(cfg)
+        let zones: Vec<Shapes> = crate::preflight::keep_out_zones(cfg)
             .iter()
             .map(|z| shape(z))
             .collect();

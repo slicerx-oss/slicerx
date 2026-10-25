@@ -22,7 +22,7 @@ import { formatDuration } from './slicer'
 export function sxFailure(code: number | null, why: string): ToolInputError {
   if (/no plate \d+/.test(why)) return new ToolInputError(`sx exited with code ${code}: ${why}`, 'no_such_plate')
   if (/safety preflight/.test(why)) {
-    // A toolpath refusal's count covers the layers the engine checked before it refused, which the message names.
+    // A toolpath refusal's count names the layers its hits are on, within those the engine checked before it refused.
     const range = /\bin layers? (\d+)(?: to (\d+))?/.exec(why)
     const layers = range ? { layers: [Number(range[1]), Number(range[2] ?? range[1])] } : {}
     if (/outside the printable area/.test(why)) {

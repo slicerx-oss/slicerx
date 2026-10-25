@@ -41,12 +41,8 @@ pub(crate) fn zones(config: &crate::config::PrintConfig) -> Vec<(u8, Vec<[f64; 2
     for z in crate::preflight::exclude_zones(config) {
         out.push((ZONE_EXCLUSION, z));
     }
-    if let Some(serde_json::Value::Array(pts)) = config.raw.get("head_wrap_detect_zone") {
-        // "80x95" from a preset, or [80, 95] once a host has read it into the schema's shape
-        let poly: Vec<[f64; 2]> = pts.iter().filter_map(crate::preflight::point).collect();
-        if poly.len() >= 3 {
-            out.push((ZONE_WRAP_CHECK, poly));
-        }
+    if let Some(poly) = crate::preflight::wrap_check_zone(config) {
+        out.push((ZONE_WRAP_CHECK, poly));
     }
     out
 }

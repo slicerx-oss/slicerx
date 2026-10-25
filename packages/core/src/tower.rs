@@ -511,7 +511,7 @@ fn grid_reach(cfg: &PrintConfig, line: f64, pad: f64) -> f64 {
 }
 
 /// Boxes `[min x, min y, max x, max y]` the tower must stay out of besides the objects: every
-/// `bed_exclude_area` zone (Bambu's cutter and purge corner among them) and the purge line the
+/// keep-out zone (`bed_exclude_area`, with Bambu's cutter and purge corner, and the nozzle wrap check corner) and the purge line the
 /// start G-code draws on the bed (its extruding moves below 1 mm, as literal coordinates).
 fn no_go(cfg: &PrintConfig) -> Vec<[f64; 4]> {
     let bbox = |pts: &[[f64; 2]]| {
@@ -519,7 +519,7 @@ fn no_go(cfg: &PrintConfig) -> Vec<[f64; 4]> {
             [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
         })
     };
-    let mut out: Vec<[f64; 4]> = crate::preflight::exclude_zones(cfg)
+    let mut out: Vec<[f64; 4]> = crate::preflight::keep_out_zones(cfg)
         .iter()
         .map(|z| bbox(z))
         .collect();

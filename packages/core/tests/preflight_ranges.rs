@@ -125,6 +125,7 @@ fn layers_over_the_height_name_the_layers_they_counted() {
     });
     let ((n1, lo1, hi1), (n4, lo4, hi4)) = at_one_and_four(&c, [128.0, 128.0], "above the printable height");
     assert_eq!(n1, n4, "every such layer is in the last shard");
-    assert_eq!(hi1, hi4);
-    assert!(lo1 == 1 && lo4 > 1, "{lo1} and {lo4}");
+    // The count names the layers that are over, not every layer checked.
+    assert_eq!((lo1, hi1), (lo4, hi4));
+    assert!(lo1 > 1, "{lo1}");
 }
