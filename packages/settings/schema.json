@@ -11598,7 +11598,7 @@
    "mode": "hidden",
    "default": "undefine",
    "group": "profile",
-   "invalidates": "preview",
+   "invalidates": "paths",
    "enumLabels": [
     "Not set",
     "CoreXY",
