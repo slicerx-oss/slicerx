@@ -5,7 +5,7 @@
 // its first layer and its print reach past it (print-margins.ts). Pure, so either host runs it next to its own engine
 // call: the app's geometry worker, the server's sx-geom.
 import type { SettingValue } from '@slicerx/contracts'
-import { marginFlag as flag, marginNumber as num, marginText as text, objectPrintMargins, skirtSettings, type FirstLayerShape, type PrintSize } from './print-margins'
+import { marginFlag as flag, marginNumber as num, marginText as text, objectPrintMargins, settingNumber, skirtSettings, type FirstLayerShape, type PrintSize } from './print-margins'
 
 type Pt = [number, number]
 
@@ -126,7 +126,8 @@ export function towerRoomOf(cfg: Record<string, SettingValue>, tools: number, pl
   const [ox, oy] = plate.origin
   let x = tower && !tower.auto ? tower.x : num(cfg['wipe_tower_x'], 15) - ox
   let y = tower && !tower.auto ? tower.y : num(cfg['wipe_tower_y'], 220) - oy
-  const width = tower?.size?.width ?? Math.max(5, num(cfg['prime_tower_width'], 35))
+  // Unset, the width sx prints the tower at: the schema default, as for the skirt keys.
+  const width = tower?.size?.width ?? Math.max(5, settingNumber(cfg, 'prime_tower_width'))
   const depth = tower?.size?.depth ?? width
   const angle = tower?.size?.angle ?? num(cfg['wipe_tower_rotation_angle'], 0)
   const brim = Math.max(0, num(cfg['prime_tower_brim_width'], 3))
