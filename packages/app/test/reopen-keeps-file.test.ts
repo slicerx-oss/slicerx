@@ -45,7 +45,8 @@ async function replaceAndReopen(back: string[]): Promise<void> {
   await openModelBytes(host, 'tower.sx3mf', design('tower'), undefined, { fresh: true })
   expect(names()).toEqual(['tower'])
   expect(get().projectFile).toBeNull()
-  const note = get().toast
+  // The kept note sits under the printer card, with the open's own note.
+  const note = get().openNote
   expect(note?.text).toBe(KEPT_NOTE)
   expect(note?.action?.label).toBe('Reopen')
   note!.action!.run()
@@ -58,7 +59,7 @@ beforeAll(async () => void (await import('../src/export/actions')))
 
 beforeEach(() => {
   setSnapshotStore(memorySnapshots())
-  set({ plate: [], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', selection: null, selectedIds: [], unsavedPrompt: null, projectOpenAsk: null, projectFile: null, toast: null, overrides: {} })
+  set({ plate: [], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', selection: null, selectedIds: [], unsavedPrompt: null, projectOpenAsk: null, projectFile: null, toast: null, openNote: null, overrides: {} })
   startDirtyTracking()
   markClean()
   saveTo.mockClear()
