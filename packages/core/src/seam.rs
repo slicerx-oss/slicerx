@@ -356,6 +356,27 @@ impl SeamIndex {
         }
     }
 
+    /// The same triangles with no grid: every query tests every triangle, as the scan did.
+    #[cfg(test)]
+    fn scan(faces: &[SeamFace]) -> Self {
+        let of = |enforcer: bool| {
+            let tris: Vec<[[f64; 3]; 3]> = faces
+                .iter()
+                .filter(|f| f.enforcer == enforcer)
+                .map(|f| f.tri)
+                .collect();
+            KindGrid {
+                boxes: tris.iter().map(bounds).collect(),
+                tris,
+                ..KindGrid::EMPTY
+            }
+        };
+        Self {
+            blockers: of(false),
+            enforcers: of(true),
+        }
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.blockers.tris.is_empty() && self.enforcers.tris.is_empty()
     }
@@ -664,5 +685,84 @@ mod tests {
                 assert_same(&odd, &idx, p, r);
             }
         }
+    }
+
+    #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "small test counts"
+    )]
+    fn a_painted_ring_starts_where_the_scan_puts_it() {
+        let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+        let modes = [
+            SeamPosition::Back,
+            SeamPosition::Nearest,
+            SeamPosition::Aligned,
+            SeamPosition::AlignedBack,
+            SeamPosition::Random,
+        ];
+        let mut placed = 0;
+        for case in 0..60 {
+            // A ring of 3 to 40 points around (50, 50), wobbly enough to have sharp corners.
+            let n = 3 + case % 38;
+            let r0 = rng.range(2.0, 20.0);
+            let ring: Vec<IntPoint<i32>> = (0..n)
+                .map(|i| {
+                    let a = std::f64::consts::TAU * f64::from(i) / f64::from(n);
+                    let r = r0 * rng.range(0.6, 1.0);
+                    unmm(50.0 + r * a.m_cos(), 50.0 + r * a.m_sin())
+                })
+                .collect();
+            // Painted pieces near the ring at this height, some touching it, some not.
+            let z = rng.range(0.2, 10.0);
+            let faces: Vec<SeamFace> = (0..rng.range(1.0, 300.0) as usize)
+                .map(|_| {
+                    let a = rng.range(0.0, std::f64::consts::TAU);
+                    let r = r0 * rng.range(0.4, 1.3);
+                    let c = [
+                        50.0 + r * a.m_cos(),
+                        50.0 + r * a.m_sin(),
+                        z + rng.range(-0.6, 0.6),
+                    ];
+                    let s = rng.range(0.05, 3.0);
+                    let mut v = || {
+                        [
+                            c[0] + rng.range(-s, s),
+                            c[1] + rng.range(-s, s),
+                            c[2] + rng.range(-s, s),
+                        ]
+                    };
+                    SeamFace {
+                        tri: [v(), v(), v()],
+                        enforcer: rng.unit() < 0.7,
+                    }
+                })
+                .collect();
+            let (idx, scan) = (SeamIndex::new(&faces), SeamIndex::scan(&faces));
+            let width = rng.range(0.3, 0.6);
+            let cursor = Point::from_mm(rng.range(0.0, 100.0), rng.range(0.0, 100.0));
+            for mode in modes {
+                let got = painted(&ring, &idx, z, mode, cursor, case as u64, width);
+                let want = painted(&ring, &scan, z, mode, cursor, case as u64, width);
+                placed += usize::from(want.is_some());
+                assert_eq!(got, want, "case {case} {mode:?}");
+            }
+        }
+        // Most cases touch paint, so the comparison covers placed seams, not only `None`.
+        assert!(placed > 150, "{placed}");
+        assert_eq!(
+            painted(
+                &[unmm(0.0, 0.0); 4],
+                &NO_SEAMS,
+                0.0,
+                SeamPosition::Back,
+                Point::from_mm(0.0, 0.0),
+                0,
+                0.4
+            ),
+            None
+        );
     }
 }
