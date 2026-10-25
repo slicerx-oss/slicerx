@@ -3721,11 +3721,51 @@ fn smart_layers_name_the_object_layer_heights_they_replace() {
 /// 10 mm cube with its left edge at `x`, on a plate named `plate`. The J1's start G-code picks the dual-head mode from
 /// the plate's name: `IDEXDupl` prints a copy 162 mm to the right (`M605 S2 X162`), `IDEXMirr` a mirrored one.
 fn j1_cube(x: f64, plate: Option<&str>) -> (std::process::Output, TempDir) {
-    let dir = temp_dir(format!(
-        "sx-cli-idex-{}-{x}-{}",
-        std::process::id(),
-        plate.unwrap_or("normal")
-    ));
+    let profiles: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../profiles/machine.json"
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let mut config = profiles["models"]["snapmaker-j1"]["machine"].clone();
+    config["machine_start_gcode"] = serde_json::Value::String(shipped_start("snapmaker-j1"));
+    config["printer_model"] = serde_json::json!("Snapmaker J1");
+    config["layer_height"] = serde_json::json!(0.2);
+    if let Some(p) = plate {
+        config["plate_name"] = serde_json::json!(p);
+    }
+    cube_with(
+        x,
+        &format!("idex-{}-{x}-{}", std::process::id(), plate.unwrap_or("normal")),
+        &config,
+    )
+}
+
+/// A person's own Klipper printer preset for a dual-carriage machine, 300 x 300 mm, whose start G-code `start` sets
+/// the carriages' mode, with one 10 mm cube with its left edge at `x`.
+fn klipper_idex_cube(x: f64, start: &str) -> (std::process::Output, TempDir) {
+    let config = serde_json::json!({
+        "printer_model": "My dual carriage",
+        "gcode_flavor": "klipper",
+        "printable_area": ["0x0", "300x0", "300x300", "0x300"],
+        "printable_height": 300,
+        "nozzle_diameter": [0.4],
+        "layer_height": 0.2,
+        "skirt_loops": 0,
+        "brim_type": "no_brim",
+        "machine_start_gcode": start,
+    });
+    let tag = start
+        .bytes()
+        .fold(0u32, |h, b| h.wrapping_mul(31).wrapping_add(u32::from(b)));
+    cube_with(x, &format!("klipper-{}-{x}-{tag}", std::process::id()), &config)
+}
+
+/// Slices one 10 mm cube with its left edge at `x` (y 95) with `config`, in a temp dir named after `tag`.
+fn cube_with(x: f64, tag: &str, config: &serde_json::Value) -> (std::process::Output, TempDir) {
+    let dir = temp_dir(format!("sx-cli-{tag}"));
     std::fs::create_dir_all(&*dir).unwrap();
     // a closed 10 mm cube, binary STL
     let v = [
@@ -3765,21 +3805,6 @@ fn j1_cube(x: f64, plate: Option<&str>) -> (std::process::Output, TempDir) {
     }
     let mesh = dir.join("cube10.stl");
     std::fs::write(&mesh, stl).unwrap();
-    let profiles: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../profiles/machine.json"
-        ))
-        .unwrap(),
-    )
-    .unwrap();
-    let mut config = profiles["models"]["snapmaker-j1"]["machine"].clone();
-    config["machine_start_gcode"] = serde_json::Value::String(shipped_start("snapmaker-j1"));
-    config["printer_model"] = serde_json::json!("Snapmaker J1");
-    config["layer_height"] = serde_json::json!(0.2);
-    if let Some(p) = plate {
-        config["plate_name"] = serde_json::json!(p);
-    }
     let req = serde_json::json!({
         "schemaVersion": 1,
         "meshes": { "cube": mesh.to_string_lossy() },
@@ -3820,6 +3845,62 @@ fn a_dual_head_copy_that_would_print_past_the_bed_is_refused() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "{err}");
     assert!(err.contains("M605 S3"), "{err}");
+}
+
+#[test]
+fn a_klipper_dual_carriage_copy_or_mirror_that_would_print_past_the_bed_is_refused() {
+    // Copy: the command gives no distance, so the copy is taken half the 300 mm travel to the right; a cube at
+    // x 200..210 has its copy at 350..360.
+    let (out, _dir) = klipper_idex_cube(
+        200.0,
+        "G28\nSET_DUAL_CARRIAGE CARRIAGE=1\nSET_DUAL_CARRIAGE MODE=COPY",
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains("blocked by the safety preflight")
+            && err.contains("SET_DUAL_CARRIAGE MODE=COPY")
+            && err.contains("half the X travel is assumed"),
+        "{err}"
+    );
+    // Mirror about x 150: the cube right of the middle is where the two heads would cross.
+    let (out, _dir) = klipper_idex_cube(200.0, "G28\nSET_DUAL_CARRIAGE MODE=MIRROR");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{err}");
+    assert!(
+        err.contains("SET_DUAL_CARRIAGE MODE=MIRROR") && err.contains("where the two heads would cross"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_klipper_dual_carriage_copy_on_the_left_half_and_one_head_still_slice() {
+    // The copy of a cube at x 60..70 prints at 210..220 and the mirror at 230..240, on the bed.
+    for mode in ["MODE=COPY", "MODE=MIRROR"] {
+        let (out, dir) = klipper_idex_cube(60.0, &format!("G28\nSET_DUAL_CARRIAGE {mode}"));
+        assert!(
+            out.status.success(),
+            "{mode}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let gcode = std::fs::read_to_string(dir.join("slice.gcode")).unwrap();
+        assert!(
+            gcode.contains(&format!("SET_DUAL_CARRIAGE {mode}")),
+            "the start sets the mode"
+        );
+    }
+    // Back to the primary carriage, or a macro the slice cannot see into: one head, anywhere on the bed.
+    for start in [
+        "SET_DUAL_CARRIAGE MODE=COPY\nSET_DUAL_CARRIAGE MODE=PRIMARY",
+        "PRINT_START MODE=COPY",
+    ] {
+        let (out, _dir) = klipper_idex_cube(200.0, start);
+        assert!(
+            out.status.success(),
+            "{start}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
 }
 
 #[test]
