@@ -375,7 +375,10 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 
 | Test id | Control |
 | --- | --- |
-| `legend-color-by` | The legend's Color by menu: what the toolpath colors show |
+| `legend-row` | The row in the view's top left corner with the view switch (Solid, Layer lines, Toolpaths) and the legend chip |
+| `legend-chip` | The legend shut to one chip: its list button and the Color by menu |
+| `legend-toggle` | The chip's list button: opens and shuts the legend's list (`aria-expanded`), kept between sessions |
+| `legend-color-by` | The legend chip's Color by menu: what the toolpath colors show |
 | `legend-color-<mode>` | Its items: `legend-color-feature`, `legend-color-tool` (Filament), `legend-color-speed`, `legend-color-flow`, `legend-color-layer-time` |
 | `legend-slot` | A slot's swatch and path length in the Filament colors; `data-slot` is the slot number |
 

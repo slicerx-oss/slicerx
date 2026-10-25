@@ -611,6 +611,8 @@ test('a read client controls every preview marker and reads UI and native CLI ch
       for (const row of loaded.markers) expect(row.available).toBe(true)
       const allOn = { retractions: true, seams: true, lifts: true, wipes: true, toolChanges: true, pauses: true }
       await reader.ok('app_preview_markers_set', allOn)
+      // The legend starts shut to its chip; its list holds the marker switches.
+      if ((await page.getByTestId('legend-toggle').getAttribute('aria-expanded')) !== 'true') await page.getByTestId('legend-toggle').click()
       const legend = page.getByRole('list', { name: 'Toolpath legend' })
       const toggle = (label: string) => legend.locator('label').filter({ has: page.getByText(label, { exact: true }) }).getByRole('checkbox')
       for (const row of (await reader.ok('app_preview_markers')).markers) {

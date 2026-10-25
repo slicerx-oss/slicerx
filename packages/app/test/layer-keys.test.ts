@@ -22,7 +22,7 @@ function showToolpaths(): void {
     layerHi: LAYERS,
     layerLo: 1,
     moveCut: 1,
-    legendHidden: false,
+    legendOpen: false,
     layerJump: false,
     objectTool: null,
     setup: null,
@@ -32,7 +32,7 @@ function showToolpaths(): void {
   })
 }
 
-afterEach(() => set({ preview: null, layerHi: 0, layerLo: 1, legendHidden: false, layerJump: false }))
+afterEach(() => set({ preview: null, layerHi: 0, layerLo: 1, legendOpen: false, layerJump: false }))
 
 const press = (key: string, shift = false) => {
   const code = /^[A-Z]$/i.test(key) ? `Key${key.toUpperCase()}` : key
@@ -102,6 +102,10 @@ describe('the layer actions as app tools', () => {
     expect(layerView()).toMatchObject({ oneLayer: true, layer: LAYERS - 2, lowest: LAYERS - 2 })
     await call('app.layer_up')
     expect(layerView()).toMatchObject({ oneLayer: true, layer: LAYERS - 1, lowest: LAYERS - 1 })
+    // the legend starts shut to its chip; the action opens its list, and again shuts it
+    expect(layerView().legend).toBe(false)
+    await call('app.layer_legend')
+    expect(layerView().legend).toBe(true)
     await call('app.layer_legend')
     expect(layerView().legend).toBe(false)
     // the top is as far as a step goes
