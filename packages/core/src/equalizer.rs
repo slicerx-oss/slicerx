@@ -61,6 +61,8 @@ struct Ln<'a> {
     /// E of the line in units of 1e-5 mm, as written.
     e_units: i64,
     rate: f64,
+    /// `dist_xyz()`, worked out once when the line is read.
+    len: f64,
     rate_start: f64,
     rate_end: f64,
     slope_pos: f64,
@@ -188,6 +190,7 @@ fn parse<'a>(chunk: &'a str, p: &Params) -> Vec<Ln<'a>> {
             has: [false; 3],
             e_units: 0,
             rate: 0.0,
+            len: 0.0,
             rate_start: 0.0,
             rate_end: 0.0,
             slope_pos: 0.0,
@@ -252,6 +255,7 @@ fn parse<'a>(chunk: &'a str, p: &Params) -> Vec<Ln<'a>> {
         } else if let Some(t) = raw.strip_prefix('T').and_then(|t| t.trim().parse::<usize>().ok()) {
             tool = t;
         }
+        ln.len = ln.dist_xyz();
         out.push(ln);
     }
     out
@@ -259,7 +263,31 @@ fn parse<'a>(chunk: &'a str, p: &Params) -> Vec<Ln<'a>> {
 
 /// The extrusion rate at the start or end of the line `l` that a neighbor at `rate` allows over its length.
 fn reach(rate: f64, l: &Ln<'_>, slope: f64) -> f64 {
-    (rate * rate + 2.0 * l.rate * l.dist_xyz() * slope / l.feed()).sqrt()
+    (rate * rate + 2.0 * l.rate * l.len * slope / l.feed()).sqrt()
+}
+
+/// The slope of each role, and the roles a limit applies to (bit `r` for role `r`: not role 0, slope not 0).
+struct Slopes {
+    of: [f64; ROLES],
+    live: u32,
+}
+
+const _: () = assert!(ROLES <= 32, "roles fit a u32 mask");
+
+impl Slopes {
+    fn of(p: &Params) -> Self {
+        let mut s = Self {
+            of: [0.0; ROLES],
+            live: 0,
+        };
+        for r in 1..ROLES {
+            s.of[r] = p.slope_of(r);
+            if s.of[r] != 0.0 {
+                s.live |= 1 << r;
+            }
+        }
+        s
+    }
 }
 
 fn frozen(l: &Ln<'_>, p: &Params) -> bool {
@@ -271,8 +299,10 @@ fn frozen(l: &Ln<'_>, p: &Params) -> bool {
             && l.role != Feature::OverhangWall as usize + 1)
 }
 
-/// Orca's `adjust_volumetric_rate` over the lines `first..=last`.
-fn adjust(lines: &mut [Ln<'_>], first: usize, last: usize, p: &Params) {
+/// Orca's `adjust_volumetric_rate` over the lines `first..=last`. Each pass visits only the roles whose
+/// slot is set and whose slope is not 0, in ascending order as a loop over every role would. A slot is
+/// written only when it is visited, so the mask taken at the start of a pass holds for the whole pass.
+fn adjust(lines: &mut [Ln<'_>], first: usize, last: usize, s: &Slopes, p: &Params) {
     if last < first + 2 || !lines[last].extruding() {
         return;
     }
@@ -280,6 +310,7 @@ fn adjust(lines: &mut [Ln<'_>], first: usize, last: usize, p: &Params) {
     let mut i = last;
     let mut per_role = [f64::MAX; ROLES];
     per_role[lines[i].role] = lines[i].rate_start;
+    let mut mask = s.live & (1 << lines[i].role);
     while i != first {
         let mut prev = i - 1;
         while !lines[prev].extruding() && prev != first {
@@ -296,9 +327,13 @@ fn adjust(lines: &mut [Ln<'_>], first: usize, last: usize, p: &Params) {
         i = prev;
         let fixed = frozen(&lines[i], p);
         let l = &mut lines[i];
-        for (r, slot) in per_role.iter_mut().enumerate().skip(1) {
-            let slope = p.slope_of(r);
-            if slope == 0.0 || *slot == f64::MAX {
+        let mut bits = mask;
+        while bits != 0 {
+            let r = bits.trailing_zeros() as usize;
+            bits &= bits - 1;
+            let slope = s.of[r];
+            let slot = &mut per_role[r];
+            if *slot == f64::MAX {
                 continue;
             }
             let mut rate_end = *slot;
@@ -329,6 +364,7 @@ fn adjust(lines: &mut [Ln<'_>], first: usize, last: usize, p: &Params) {
     }
     let mut per_role = [f64::MAX; ROLES];
     per_role[lines[i].role] = lines[i].rate_end;
+    mask = s.live & (1 << lines[i].role);
     while i != last {
         let mut next = i + 1;
         while !lines[next].extruding() && next != last {
@@ -345,9 +381,13 @@ fn adjust(lines: &mut [Ln<'_>], first: usize, last: usize, p: &Params) {
         i = next;
         let fixed = frozen(&lines[i], p);
         let l = &mut lines[i];
-        for (r, slot) in per_role.iter_mut().enumerate().skip(1) {
-            let slope = p.slope_of(r);
-            if slope == 0.0 || *slot == f64::MAX {
+        let mut bits = mask;
+        while bits != 0 {
+            let r = bits.trailing_zeros() as usize;
+            bits &= bits - 1;
+            let slope = s.of[r];
+            let slot = &mut per_role[r];
+            if *slot == f64::MAX {
                 continue;
             }
             let mut rate_start = *slot;
@@ -380,6 +420,7 @@ fn adjust(lines: &mut [Ln<'_>], first: usize, last: usize, p: &Params) {
 
 /// Runs of extrusion joined over small gaps, each limited in windows of [`LOOK_BACK`] lines.
 fn smooth(lines: &mut [Ln<'_>], p: &Params) {
+    let s = Slopes::of(p);
     let n = lines.len();
     let mut end = 0usize;
     while end < n {
@@ -409,7 +450,7 @@ fn smooth(lines: &mut [Ln<'_>], p: &Params) {
             }
         }
         for k in begin..=end {
-            adjust(lines, begin.max(k.saturating_sub(LOOK_BACK)), k, p);
+            adjust(lines, begin.max(k.saturating_sub(LOOK_BACK)), k, &s, p);
         }
         end += 1;
     }
@@ -466,7 +507,7 @@ fn fmt(v: f64, decimals: usize) -> String {
 
 /// Orca's `output_gcode_line` for a modified line.
 fn write_line(out: &mut Out, l: &mut Ln<'_>, seg: f64) {
-    let len = l.dist_xyz();
+    let len = l.len;
     let n = (len / seg).ceil().max(1.0);
     let rate_delta = (l.rate_end - l.rate_start)
         .abs()
@@ -579,11 +620,15 @@ fn write_line(out: &mut Out, l: &mut Ln<'_>, seg: f64) {
 
 /// Smooths the extrusion rate of one layer chunk (relative extrusion distances, as the writer makes it).
 pub(crate) fn apply(chunk: &[u8], p: &Params) -> Vec<u8> {
+    apply_by(chunk, p, smooth)
+}
+
+fn apply_by(chunk: &[u8], p: &Params, run: impl Fn(&mut [Ln<'_>], &Params)) -> Vec<u8> {
     let Ok(text) = std::str::from_utf8(chunk) else {
         return chunk.to_vec();
     };
     let mut lines = parse(text, p);
-    smooth(&mut lines, p);
+    run(&mut lines, p);
     if !lines.iter().any(|l| l.modified) {
         return chunk.to_vec();
     }
@@ -622,6 +667,372 @@ pub(crate) fn apply(chunk: &[u8], p: &Params) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `reach` with the length worked out on every call, as before the cached length.
+    fn reach_ref(rate: f64, l: &Ln<'_>, slope: f64) -> f64 {
+        (rate * rate + 2.0 * l.rate * l.dist_xyz() * slope / l.feed()).sqrt()
+    }
+
+    /// The loop over every role as it was before the role mask, kept as the oracle for `adjust`.
+    fn adjust_ref(lines: &mut [Ln<'_>], first: usize, last: usize, p: &Params) {
+        if last < first + 2 || !lines[last].extruding() {
+            return;
+        }
+        let ironing = Feature::Ironing as usize + 1;
+        let mut i = last;
+        let mut per_role = [f64::MAX; ROLES];
+        per_role[lines[i].role] = lines[i].rate_start;
+        while i != first {
+            let mut prev = i - 1;
+            while !lines[prev].extruding() && prev != first {
+                prev -= 1;
+            }
+            if !lines[prev].extruding() {
+                break;
+            }
+            if lines[i].role == ironing {
+                i = prev;
+                continue;
+            }
+            let rate_succ = lines[i].rate_start;
+            i = prev;
+            let fixed = frozen(&lines[i], p);
+            let l = &mut lines[i];
+            for (r, slot) in per_role.iter_mut().enumerate().skip(1) {
+                let slope = p.slope_of(r);
+                if slope == 0.0 || *slot == f64::MAX {
+                    continue;
+                }
+                let mut rate_end = *slot;
+                if r == l.role && rate_succ < rate_end {
+                    rate_end = rate_succ;
+                }
+                if fixed {
+                    rate_end = l.rate_end;
+                } else if l.rate_end > rate_end {
+                    l.rate_end = rate_end;
+                    l.slope_neg = slope;
+                    l.modified = true;
+                } else if r == l.role {
+                    rate_end = l.rate_end;
+                }
+                if l.adjustable {
+                    let start = reach_ref(rate_end, l, slope);
+                    if start < l.rate_start {
+                        l.rate_start = start;
+                        l.slope_neg = slope;
+                        l.modified = true;
+                    }
+                }
+                if l.role != ironing {
+                    *slot = l.rate_start;
+                }
+            }
+        }
+        let mut per_role = [f64::MAX; ROLES];
+        per_role[lines[i].role] = lines[i].rate_end;
+        while i != last {
+            let mut next = i + 1;
+            while !lines[next].extruding() && next != last {
+                next += 1;
+            }
+            if !lines[next].extruding() {
+                break;
+            }
+            if lines[i].role == ironing {
+                i = next;
+                continue;
+            }
+            let rate_prec = lines[i].rate_end;
+            i = next;
+            let fixed = frozen(&lines[i], p);
+            let l = &mut lines[i];
+            for (r, slot) in per_role.iter_mut().enumerate().skip(1) {
+                let slope = p.slope_of(r);
+                if slope == 0.0 || *slot == f64::MAX {
+                    continue;
+                }
+                let mut rate_start = *slot;
+                if fixed {
+                    rate_start = l.rate_start;
+                } else if r == l.role && rate_prec < rate_start {
+                    rate_start = rate_prec;
+                }
+                if l.rate_start > rate_start {
+                    l.rate_start = rate_start;
+                    l.slope_pos = slope;
+                    l.modified = true;
+                } else if r == l.role {
+                    rate_start = l.rate_start;
+                }
+                if l.adjustable {
+                    let end = reach_ref(rate_start, l, slope);
+                    if end < l.rate_end {
+                        l.rate_end = end;
+                        l.slope_pos = slope;
+                        l.modified = true;
+                    }
+                }
+                if l.role != ironing {
+                    *slot = l.rate_end;
+                }
+            }
+        }
+    }
+
+    /// `smooth` over `adjust_ref`.
+    fn smooth_ref(lines: &mut [Ln<'_>], p: &Params) {
+        let n = lines.len();
+        let mut end = 0usize;
+        while end < n {
+            let Some(begin) = (end..n).find(|&k| lines[k].extruding()) else {
+                break;
+            };
+            end = begin;
+            loop {
+                let after = (end..n).find(|&k| !lines[k].extruding()).unwrap_or(n);
+                end = after.saturating_sub(1).max(begin);
+                // Carry the run on over travels of at most MAX_GAP_MM.
+                let mut gap = 0.0;
+                let mut cont = None;
+                for k in end + 1..n {
+                    if lines[k].extruding() {
+                        cont = Some(k);
+                        break;
+                    }
+                    gap += lines[k].dist_xy();
+                    if gap > MAX_GAP_MM {
+                        break;
+                    }
+                }
+                match cont {
+                    Some(k) => end = k,
+                    None => break,
+                }
+            }
+            for k in begin..=end {
+                adjust_ref(lines, begin.max(k.saturating_sub(LOOK_BACK)), k, p);
+            }
+            end += 1;
+        }
+    }
+
+    /// Small xorshift generator, so the random chunks are the same on every run.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+        fn below(&mut self, n: u64) -> u64 {
+            self.next() % n
+        }
+        fn unit(&mut self) -> f64 {
+            (self.next() >> 11) as f64 / (1u64 << 53) as f64
+        }
+        fn range(&mut self, lo: f64, hi: f64) -> f64 {
+            lo + (hi - lo) * self.unit()
+        }
+    }
+
+    /// A random layer chunk: mixed roles (ironing, bridges, prime tower, unknown labels), feed changes, short
+    /// and long travels, retractions, `G92`, tool changes, arcs, Z moves and runs longer than the window.
+    fn fuzz_chunk(rng: &mut Rng, n: usize) -> String {
+        let mut labels: Vec<&str> = Feature::ALL.iter().map(|f| f.gcode_label()).collect();
+        labels.extend(["Ironing", "Ironing", "Outer wall", "Sparse infill", "Unknown"]);
+        let (mut x, mut y, mut z) = (rng.range(20.0, 230.0), rng.range(20.0, 230.0), 0.2);
+        let mut g = format!(";LAYER_CHANGE\n;Z:{z}\nG1 Z{z} F600\n");
+        let step = |rng: &mut Rng, x: &mut f64, y: &mut f64, len: f64| {
+            let a = rng.range(0.0, std::f64::consts::TAU);
+            *x = (*x + len * a.m_cos()).clamp(1.0, 255.0);
+            *y = (*y + len * a.m_sin()).clamp(1.0, 255.0);
+        };
+        for _ in 0..n {
+            let pick = rng.below(100);
+            match pick {
+                0..=6 => {
+                    let l = labels[rng.below(labels.len() as u64) as usize];
+                    let _ = writeln!(g, ";TYPE:{l}");
+                }
+                7..=13 => {
+                    let _ = writeln!(g, "G1 F{}", fmt(rng.range(300.0, 18000.0), 3));
+                }
+                14..=64 | 90..=91 => {
+                    let len = match rng.below(10) {
+                        0 => rng.range(0.001, 0.05),
+                        1..=6 => rng.range(0.05, 4.0),
+                        _ => rng.range(4.0, 40.0),
+                    };
+                    step(rng, &mut x, &mut y, len);
+                    let _ = write!(g, "G1 X{} Y{}", fmt(x, 3), fmt(y, 3));
+                    if rng.below(20) == 0 {
+                        z += rng.range(-0.05, 0.05);
+                        let _ = write!(g, " Z{}", fmt(z, 3));
+                    }
+                    let _ = write!(g, " E{}", fmt(len * rng.range(0.005, 0.12), 5));
+                    if rng.below(4) == 0 {
+                        let _ = write!(g, " F{}", fmt(rng.range(300.0, 18000.0), 3));
+                    }
+                    if pick >= 90 {
+                        g.push_str(" ; note");
+                    }
+                    g.push('\n');
+                }
+                65..=74 => {
+                    let d = rng.range(0.1, 2.5);
+                    step(rng, &mut x, &mut y, d);
+                    let f = if rng.below(2) == 0 { " F12000" } else { "" };
+                    let _ = writeln!(g, "G0 X{} Y{}{f}", fmt(x, 3), fmt(y, 3));
+                }
+                75..=78 => {
+                    let d = rng.range(3.0, 60.0);
+                    step(rng, &mut x, &mut y, d);
+                    let _ = writeln!(g, "G1 X{} Y{} F12000", fmt(x, 3), fmt(y, 3));
+                }
+                79..=80 => g.push_str("G1 E-.8 F1800\n"),
+                81 => g.push_str("G1 E.8 F1800\n"),
+                82 => g.push_str("G92 E0\n"),
+                83 => {
+                    let _ = writeln!(g, "T{}", rng.below(3));
+                }
+                84 => {
+                    let d = rng.range(1.0, 6.0);
+                    step(rng, &mut x, &mut y, d);
+                    let _ = writeln!(g, "G2 X{} Y{} I1 J1 E.2", fmt(x, 3), fmt(y, 3));
+                }
+                85 => {
+                    let _ = writeln!(g, "G1 X{} Y{} E.1", fmt(x, 3), fmt(y, 3));
+                }
+                86 => {
+                    z += 0.4;
+                    let _ = writeln!(g, "G1 Z{} F600", fmt(z, 3));
+                    z -= 0.4;
+                    let _ = writeln!(g, "G1 Z{}", fmt(z, 3));
+                }
+                87 => g.push_str("M204 S5000\n"),
+                88 => g.push_str("; a comment\n"),
+                _ => {
+                    let d = rng.range(0.2, 8.0);
+                    step(rng, &mut x, &mut y, d);
+                    let _ = writeln!(g, "G1 X{} Y{}", fmt(x, 3), fmt(y, 3));
+                }
+            }
+        }
+        g
+    }
+
+    /// Smooths `chunk` with `smooth` and with the oracle and checks every line's limits bit for bit and the
+    /// written chunk byte for byte. Returns the count of lines the limits changed.
+    fn same_as_oracle(chunk: &str, p: &Params) -> usize {
+        let mut a = parse(chunk, p);
+        smooth(&mut a, p);
+        let mut b = parse(chunk, p);
+        smooth_ref(&mut b, p);
+        assert_eq!(a.len(), b.len());
+        for (k, (x, y)) in a.iter().zip(&b).enumerate() {
+            let bits = |l: &Ln<'_>| {
+                (
+                    l.rate_start.to_bits(),
+                    l.rate_end.to_bits(),
+                    l.slope_pos.to_bits(),
+                    l.slope_neg.to_bits(),
+                    l.modified,
+                    l.len.to_bits(),
+                )
+            };
+            assert_eq!(bits(x), bits(y), "line {k}: {}", x.raw);
+            assert_eq!(x.len.to_bits(), x.dist_xyz().to_bits(), "line {k}: {}", x.raw);
+        }
+        let ours = apply(chunk.as_bytes(), p);
+        let oracle = apply_by(chunk.as_bytes(), p, smooth_ref);
+        assert!(ours == oracle, "chunk output differs:\n{chunk}");
+        a.iter().filter(|l| l.modified).count()
+    }
+
+    fn param_set() -> Vec<Params> {
+        let mut out = Vec::new();
+        for slope in [0.5, 3.0, 20.0, 300.0, 1000.0] {
+            for external_only in [false, true] {
+                out.push(Params {
+                    slope: slope * 3600.0,
+                    segment: 3.0,
+                    external_only,
+                    areas: vec![2.405, 3.0],
+                });
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn role_mask_matches_the_full_role_loop_on_random_chunks() {
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        let params = param_set();
+        let (mut chunks, mut modified) = (0usize, 0usize);
+        for round in 0..400 {
+            let n = if round % 8 == 0 {
+                400 + rng.below(500) as usize
+            } else {
+                10 + rng.below(160) as usize
+            };
+            let chunk = fuzz_chunk(&mut rng, n);
+            for p in &params {
+                modified += same_as_oracle(&chunk, p);
+                chunks += 1;
+            }
+        }
+        // The chunks exercise the limits, not only the pass-through.
+        assert!(modified > 10_000, "{modified} lines changed over {chunks} chunks");
+        // The fixed chunks too.
+        for p in &params {
+            same_as_oracle(&chunk(), p);
+        }
+    }
+
+    /// Real chunks: the layers of the G-code files named in `SX_EQ_ORACLE_GCODE` (separated by `:`), written
+    /// with smoothing off, checked against the oracle at every slope of [`param_set`]. The tags a Bambu Lab
+    /// printer gets in the finished file are turned back into the ones the smoothing reads. Run with
+    /// `--release --ignored`.
+    #[test]
+    #[ignore = "reads G-code files named in SX_EQ_ORACLE_GCODE"]
+    fn role_mask_matches_the_full_role_loop_on_gcode_files() {
+        use rayon::prelude::*;
+        let paths = std::env::var("SX_EQ_ORACLE_GCODE").expect("SX_EQ_ORACLE_GCODE");
+        let params = param_set();
+        for path in paths.split(':').filter(|s| !s.is_empty()) {
+            let text = std::fs::read_to_string(path).expect("read G-code");
+            let mut chunks: Vec<String> = Vec::new();
+            for line in text.split_inclusive('\n') {
+                let line = if line.starts_with("; CHANGE_LAYER") {
+                    ";LAYER_CHANGE\n".to_owned()
+                } else if let Some(t) = line.strip_prefix("; FEATURE: ") {
+                    format!(";TYPE:{t}")
+                } else {
+                    line.to_owned()
+                };
+                if line.starts_with(";LAYER_CHANGE") || chunks.is_empty() {
+                    chunks.push(String::new());
+                }
+                if let Some(c) = chunks.last_mut() {
+                    c.push_str(&line);
+                }
+            }
+            let modified: usize = chunks
+                .par_iter()
+                .map(|c| params.iter().map(|p| same_as_oracle(c, p)).sum::<usize>())
+                .sum();
+            let lines: usize = chunks.iter().map(|c| c.lines().count()).sum();
+            println!(
+                "{path}: {} chunks, {lines} lines, {modified} line limits changed over {} slopes",
+                chunks.len(),
+                params.len()
+            );
+            assert!(chunks.len() > 1, "no layer tags in {path}");
+        }
+    }
 
     fn params(slope: f64) -> Params {
         Params {
