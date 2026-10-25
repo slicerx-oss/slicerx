@@ -168,6 +168,11 @@ describe('projectReport', () => {
     expect(reportText([r])).toContain('dragon.3mf (project settings)')
   })
 
+  it('names inherited arachne walls as the project has them, with no kept note', () => {
+    const r = projectReport('dragon.3mf', { ...raw, wall_generator: 'arachne' }, { source: 'BambuStudio-01.10.02.73' })
+    expect(r.notes).toEqual(['Walls: arachne walls, as the project has them.'])
+  })
+
   it("names the project's own walls when it changed them", () => {
     const r = projectReport('dragon.3mf', { ...raw, different_settings_to_system: ['wall_generator;precise_outer_wall', '', ''] })
     expect(r.notes).toEqual(["Walls: classic walls, the project's own choice."])
