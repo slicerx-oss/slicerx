@@ -893,10 +893,10 @@ test.describe('the fit check', () => {
     // A design adds to the plate where its file put it: both starters sit at the bed's center, so the cube overlaps the
     // clip and the fit check marks the two of them.
     await expect.poll(() => lines(page), { timeout: 30_000 }).toEqual([true])
-    // The first open kept whatever the step before left unsaved, so its own note can still be on the card. It goes
-    // first (the pointer off the card, so the card's time runs), and the note found below is this open's.
-    const saved = page.getByTestId('toast').filter({ hasText: 'Your previous plate is saved.' })
-    await page.mouse.move(1, 1)
+    // The first open kept whatever the step before left unsaved, so its own note can still be under the printer card.
+    // It is closed first, so the note found below is this open's.
+    const saved = page.getByTestId('open-note').filter({ hasText: 'Your previous plate is saved.' })
+    if (await saved.count()) await saved.getByTestId('open-note-dismiss').click()
     await expect(saved).toHaveCount(0, { timeout: 30_000 })
     await openFile(page, join(starters(), 'temperature-tower.sx3mf'))
     await expect(page.locator('.obj-name')).toHaveText(['Temperature tower'], { timeout: 60_000 })
@@ -917,8 +917,9 @@ test.describe('the fit check', () => {
       )
     await expect.poll(kept, { timeout: 30_000 }).toContain(2)
     // The open's own note is replaced by the kept one once the open is done: wait for that note's own button.
-    const reopen = saved.getByTestId('toast-action')
+    const reopen = saved.getByTestId('open-note-action')
     await expect(reopen).toHaveText('Reopen', { timeout: 30_000 })
+    await expect(page.getByTestId('toast').filter({ hasText: 'Your previous plate is saved.' })).toHaveCount(0)
     // The old plate's fit mark goes with it: the tower alone has none.
     await page.waitForTimeout(2500)
     expect(await lines(page)).toEqual([])
