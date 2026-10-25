@@ -1371,6 +1371,7 @@ pub(crate) fn walls_for(
         layer_height,
         top_or_bottom,
         None,
+        false,
     )
 }
 
@@ -1419,6 +1420,7 @@ pub(crate) fn classic_top_candidate(
 }
 
 /// [`walls_for`] with the neighbor layers known, so `only_one_wall_top` can give top surfaces one wall.
+/// `one_wall_top_layer`: the layer is the last one and `only_one_wall_top` took its walls down to one.
 #[allow(
     clippy::too_many_arguments,
     reason = "the walls' inputs, as in walls_for, plus the top context"
@@ -1432,9 +1434,19 @@ pub(crate) fn walls_for_top(
     layer_height: f64,
     top_or_bottom: bool,
     top: Option<&TopCtx>,
+    one_wall_top_layer: bool,
 ) -> (Vec<IslandWalls>, Shapes) {
     if cfg.arachne_walls() {
-        crate::arachne::island_walls(region, cfg, wall_loops, overlap, layer_height, top_or_bottom, top)
+        crate::arachne::island_walls(
+            region,
+            cfg,
+            wall_loops,
+            overlap,
+            layer_height,
+            top_or_bottom,
+            top,
+            one_wall_top_layer,
+        )
     } else {
         let mm = crate::geom::mm;
         let (ext, inner) = if cfg.has_feature_widths() {
@@ -1868,7 +1880,7 @@ mod tests {
         let region = vec![vec![rect(0, 0, 300_000, 300_000)]];
         let empty = Vec::new();
         let narrow = vec![vec![rect(1_000, 0, 300_000, 300_000)]];
-        let run = |top: Option<&TopCtx>| walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, top);
+        let run = |top: Option<&TopCtx>| walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, top, false);
         let expected = format!("{:?}", run(None));
         for context in [
             TopCtx {
@@ -1902,8 +1914,8 @@ mod tests {
             upper: &upper,
             lower: Some(&region),
         };
-        let (old, old_core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, None);
-        let (new, core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, Some(&context));
+        let (old, old_core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, None, false);
+        let (new, core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, Some(&context), false);
         let outer = |walls: &[IslandWalls]| {
             walls
                 .iter()
