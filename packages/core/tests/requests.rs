@@ -981,6 +981,83 @@ fn seam_position_places_the_wall_start() {
     );
 }
 
+/// The outer wall of a round pin on layer 6: the travel's end where it starts, then each extruding move, for
+/// the loop within 1 mm of the pin's center (`cx`, `cy`).
+fn pin_wall(g: &str, cx: f64, cy: f64) -> Vec<(f64, f64)> {
+    let layer = g.split(sx_core::extras::layer_mark(g)).nth(6).unwrap();
+    let (mut at, mut wall, mut out) = ((0.0, 0.0), false, Vec::new());
+    for line in layer.lines() {
+        if let Some(t) = line.strip_prefix(";TYPE:") {
+            wall = t == "Outer wall";
+            continue;
+        }
+        if !line.starts_with("G0 ") && !line.starts_with("G1 ") {
+            continue;
+        }
+        let next = (field(line, 'X').unwrap_or(at.0), field(line, 'Y').unwrap_or(at.1));
+        let moves = field(line, 'X').is_some() || field(line, 'Y').is_some();
+        let extrudes = line.starts_with("G1 ") && moves && field(line, 'E').is_some_and(|e| e > 0.0);
+        if wall && extrudes && (next.0 - cx).hypot(next.1 - cy) < 1.0 {
+            if out.is_empty() {
+                out.push(at);
+            }
+            out.push(next);
+        } else if moves && !out.is_empty() {
+            break;
+        }
+        at = next;
+    }
+    out
+}
+
+#[test]
+fn tiny_round_pins_get_the_seam_and_its_gap() {
+    // Pins 0.7, 0.8 and 0.9 mm across and a 1.2 mm one, whose wall has always been a closed loop.
+    let pins = [(0.7f32, 0.0f32), (0.8, 4.0), (0.9, 8.0), (1.2, 12.0)];
+    let mesh = Arc::new(Mesh {
+        name: "pins".into(),
+        parts: pins
+            .iter()
+            .map(|&(d, x)| round_prism(x, 0.0, d / 2.0, 256, [0.0, 3.0], false))
+            .collect(),
+        ..Mesh::default()
+    });
+    for generator in ["aegis", "arachne"] {
+        let req: SliceRequest = serde_json::from_value(json!({
+            "plate": {"objects": [{"mesh": "p", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
+            "config": {"wall_generator": generator, "seam_position": "back", "seam_gap": "15%", "wall_loops": 2,
+                       "brim_width": 0, "skirt_loops": 0, "enable_arc_fitting": false},
+            "options": {"flavor": "marlin2"},
+        }))
+        .unwrap();
+        let m = mesh.clone();
+        let r = common::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+        assert_valid(&r);
+        let g = text(&r);
+        for (d, x) in pins {
+            // Arachne fills the 0.7 mm pin with one open bead, not a loop.
+            if generator == "arachne" && d < 0.75 {
+                continue;
+            }
+            let pts = pin_wall(&g, 100.0 + f64::from(x), 100.0);
+            assert!(pts.len() > 4, "{generator} {d} mm pin: {pts:?}");
+            let (first, last) = (pts[0], pts[pts.len() - 1]);
+            // The loop stops the seam gap (15 % of the 0.4 mm nozzle) short of where it started.
+            let gap = (last.0 - first.0).hypot(last.1 - first.1);
+            assert!(
+                (0.04..0.08).contains(&gap),
+                "{generator} {d} mm pin: gap {gap:.4}, {pts:?}"
+            );
+            // A back seam starts the loop at its rearmost point.
+            let top = pts.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+            assert!(
+                first.1 > top - 0.01,
+                "{generator} {d} mm pin: starts at {first:?}, rear {top:.4}"
+            );
+        }
+    }
+}
+
 #[test]
 fn resume_z_declares_the_height_only_when_asked() {
     let plain = run(&request(json!({"resumeFromLayer": 100}), json!({}))).unwrap();

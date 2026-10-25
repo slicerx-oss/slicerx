@@ -657,7 +657,8 @@ impl Builder<'_> {
                 }
                 if self.gap > 0.0 {
                     let mut line: Vec<Point> = pts.iter().map(|p| Point::new(p.x, p.y)).collect();
-                    crate::scarf::clip_end(&mut line, self.gap);
+                    // The gap never takes more than a quarter of a tiny loop, so the loop is never clipped away.
+                    crate::scarf::clip_end(&mut line, self.gap.min(ring_len_mm(&pts) / 4.0));
                     pts = line.iter().map(|p| IntPoint::new(p.x, p.y)).collect();
                     widths.truncate(pts.len());
                 }
