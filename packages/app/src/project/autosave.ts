@@ -6,7 +6,7 @@
 // locked project is open the autosave is sealed with that file's key (project/locked-session.ts), and no copy
 // of it is kept in the clear. Opening another job over unsaved work keeps that work as a recent project first,
 // instead of asking to save or discard it.
-import type { Host } from '@slicerx/contracts'
+import type { FileRef, Host } from '@slicerx/contracts'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { allPlates } from '../plate/plates'
 import { lockedSession, setLockedSession } from './locked-session'
@@ -33,6 +33,10 @@ export interface Snapshot {
   locked?: boolean
   /** SNAPSHOT_VERSION when it was written; absent from autosaves of 0.2.4 and earlier. */
   v?: number
+  /** Work an open kept (keepProject): the project's file at the time, where Save wrote without asking. */
+  file?: FileRef
+  /** Work an open kept: it had unsaved changes. Opening it brings them back unsaved. */
+  dirty?: boolean
 }
 
 export interface SnapshotStore {
@@ -258,7 +262,8 @@ export async function openSnapshot(host: Host, snap: Snapshot): Promise<void> {
   const opened = snap.locked ? await (await import('../export/locked')).unlockBytes(host, snap.name, buf) : { name: snap.name, data: buf }
   if (!opened) return
   const { openModelBytes } = await import('../state/actions')
-  await openModelBytes(host, opened.name, opened.data, undefined, { fresh: true })
+  // Work an open kept comes back as it was: the same project file for Save, and unsaved when it was.
+  await openModelBytes(host, opened.name, opened.data, undefined, { fresh: true, restore: { file: snap.file ?? null, dirty: snap.dirty === true } })
   set({ projectsDialog: null })
 }
 
@@ -277,12 +282,15 @@ export async function keepProject(): Promise<Snapshot | null> {
   const { sx3mfBytes } = await import('../export/actions')
   const plain = await sx3mfBytes(allPlates(get()), {}, { offPage: true })
   if (plain.byteLength > MAX_SNAPSHOT_BYTES) return null
-  const file = get().projectFile?.name
-  const name = file && /\.sx3mf$/i.test(file) ? file : projectName()
+  const ref = get().projectFile
+  const name = ref && /\.sx3mf$/i.test(ref.name) ? ref.name : projectName()
+  // Reopen puts these back: the file Save writes to, and whether the work had unsaved changes. Only the plain fields of
+  // the file are stored, so a host's extras never stop the write.
+  const was: Pick<Snapshot, 'file' | 'dirty'> = { dirty: isDirty(), ...(ref ? { file: { id: ref.id, name: ref.name, size: ref.size, ...(ref.path ? { path: ref.path } : {}) } } : {}) }
   const key = lockedSession()
   const snap: Snapshot = key
-    ? { id: '', name: name.replace(/\.sx3mf$/i, '.sxlock'), savedAt: Date.now(), objects: n, data: await (await import('@slicerx/embed/sxlock')).resealSxlock(plain, key), locked: true, v: SNAPSHOT_VERSION }
-    : { id: '', name, savedAt: Date.now(), objects: n, data: plain, v: SNAPSHOT_VERSION }
+    ? { id: '', name: name.replace(/\.sx3mf$/i, '.sxlock'), savedAt: Date.now(), objects: n, data: await (await import('@slicerx/embed/sxlock')).resealSxlock(plain, key), locked: true, v: SNAPSHOT_VERSION, ...was }
+    : { id: '', name, savedAt: Date.now(), objects: n, data: plain, v: SNAPSHOT_VERSION, ...was }
   snap.id = `recent:${snap.name.toLowerCase()}`
   const store = snapshotStore()
   await store.put(snap)

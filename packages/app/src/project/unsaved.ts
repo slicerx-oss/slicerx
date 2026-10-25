@@ -22,6 +22,12 @@ export function markClean(): void {
   notify()
 }
 
+/** The project has changes that were never saved: work brought back as it was kept (Reopen, autosave.ts). */
+export function markDirty(): void {
+  dirty = true
+  notify()
+}
+
 /** Runs a store change that is not an edit of the project (setup choosing the bed): a project that was clean stays clean. */
 export function withoutDirtying(change: () => void): void {
   const clean = !isDirty()

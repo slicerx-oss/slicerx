@@ -44,7 +44,7 @@ export async function openModelFiles(host: Host, opts: { fresh?: boolean } = {})
 }
 
 /** Opens model bytes from somewhere other than a file dialog; `fresh` starts a new project. */
-export async function openModelBytes(host: Host, name: string, data: ArrayBuffer, source?: ModelSource, opts: { fresh?: boolean } = {}): Promise<void> {
+export async function openModelBytes(host: Host, name: string, data: ArrayBuffer, source?: ModelSource, opts: { fresh?: boolean; restore?: import('./open-models').OpenRestore } = {}): Promise<void> {
   return (await models()).openModelBytes(host, name, data, source, opts)
 }
 
