@@ -57,10 +57,9 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
     const s = await state()
     return (s.status === 'running' && s.startedAt !== since.startedAt) || (await slices()) > since.slices
   }
-  // The starter's own slice opens the right pane when it finishes; shut by hand, it stays shut.
+  // A finished slice leaves the right pane shut, as people get it.
   await expect.poll(async () => (await state()).status, { timeout: 120_000 }).not.toBe('running')
   const tab = page.getByTestId('edge-tab-right')
-  if ((await tab.getAttribute('aria-expanded')) === 'true') await tab.click()
   await expect(tab).toHaveAttribute('aria-expanded', 'false')
   const before = { startedAt: (await state()).startedAt, slices: await slices() }
   // One listener for the whole test: the plate's first slice can finish and draw while Ctrl+O is pressed, so the
@@ -82,11 +81,8 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
   const opened = Date.now() - from
   // A preset edit (the Fine goal) once that slice is done: the next one starts as soon.
   await expect.poll(async () => (await state()).status, { timeout: 120_000 }).not.toBe('running')
-  // The tube is a new project, so its finished slice opened the right pane again: the hand close held for the starter
-  // only. Shut it, so the edit runs with the pane shut as this test is about, and start the clock once the view has
-  // its new size, not while the canvas is being resized.
-  await expect(tab).toHaveAttribute('aria-expanded', 'true')
-  await tab.click()
+  // The tube is a new project, and its finished slice left the right pane shut too. Start the clock once the view has
+  // settled, not while the canvas is being resized.
   await expect(tab).toHaveAttribute('aria-expanded', 'false')
   await viewSized(page)
   const first = { startedAt: (await state()).startedAt, slices: await slices() }
