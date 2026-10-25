@@ -308,6 +308,19 @@ pub struct Meta {
 }
 
 impl Meta {
+    /// These facts with the travel speed, retraction, Z hop and Z speed of `config`, the settings of the run being
+    /// reported. A host keeps a session over edits of those, so the report reads them from each run, not from the
+    /// settings the session was prepared with.
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation, reason = "settings in mm and mm/s")]
+    pub fn with_run(mut self, config: &PrintConfig) -> Self {
+        self.travel_speed = config.travel_speed.max(1.0) as f32;
+        self.z_speed = config.raw_number("machine_max_speed_z", 12.0).max(1.0) as f32;
+        self.retract_s = (2.0 * config.retraction_length / config.retraction_speed.max(1.0)) as f32;
+        self.z_hop = config.z_hop as f32;
+        self
+    }
+
     /// The facts as JSON, for a layer range's JSON in the browser build: the objects as `[id, height, x, y]`, then
     /// the numbers.
     pub fn to_json(&self) -> serde_json::Value {
@@ -414,6 +427,12 @@ pub(crate) fn clearance_radius(config: &PrintConfig) -> f64 {
     }
 }
 
+/// The change G-code lifts over the highest layer printed so far (`max_layer_z`), as the makers' own do. Read from
+/// each run's settings: a host keeps a session over an edit of the change G-code.
+pub(crate) fn lifts_over_print(config: &PrintConfig) -> bool {
+    matches!(config.raw.get("change_filament_gcode"), Some(serde_json::Value::String(t)) if t.contains("max_layer_z"))
+}
+
 /// The plate's objects as obstacles and the machine that moves among them.
 pub(crate) struct Model {
     pub meta: Meta,
@@ -423,8 +442,6 @@ pub(crate) struct Model {
     extruder_of: Vec<usize>,
     changer: Option<Changer>,
     lift_mm: f64,
-    /// The change G-code lifts over the highest layer printed so far (`max_layer_z`).
-    lift_over_print: bool,
     rod: f64,
     to_rod: f64,
     lid: f64,
@@ -525,13 +542,11 @@ impl Model {
             rod: config.raw_number("extruder_clearance_height_to_rod", 40.0) as f32,
             lid: config.raw_number("extruder_clearance_height_to_lid", 120.0) as f32,
             layer_height: config.layer_height as f32,
-            travel_speed: config.travel_speed.max(1.0) as f32,
-            z_speed: config.raw_number("machine_max_speed_z", 12.0).max(1.0) as f32,
-            retract_s: (2.0 * config.retraction_length / config.retraction_speed.max(1.0)) as f32,
-            z_hop: config.z_hop as f32,
             by_layer,
             zones,
-        };
+            ..Meta::default()
+        }
+        .with_run(config);
         let lift_mm = changer.as_ref().map_or(3.0, |c| c.lift_mm);
         Self {
             meta,
@@ -540,7 +555,6 @@ impl Model {
             extruder_of,
             changer,
             lift_mm,
-            lift_over_print: matches!(config.raw.get("change_filament_gcode"), Some(serde_json::Value::String(t)) if t.contains("max_layer_z")),
             rod: if delta {
                 f64::INFINITY
             } else {

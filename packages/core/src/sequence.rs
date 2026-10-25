@@ -102,7 +102,13 @@ pub(crate) fn slice_range(
                 }
             }
             if let Some(model) = session.collide() {
-                out.collisions = crate::collide::walk::object_layers(model, k, &out.layers, cfg.travel_speed);
+                out.collisions = crate::collide::walk::object_layers(
+                    model,
+                    k,
+                    &out.layers,
+                    cfg.travel_speed,
+                    crate::collide::lifts_over_print(config),
+                );
             }
             match merged.as_mut() {
                 None => merged = Some(out),
