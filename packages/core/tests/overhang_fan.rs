@@ -96,6 +96,11 @@ fn wedge(angle: f32) -> Vec<u8> {
 }
 
 fn slice(model: &[u8], config: &Map<String, Value>) -> String {
+    slice_with_preview(model, config).0
+}
+
+/// The G-code and the SXPV preview of one slice.
+fn slice_with_preview(model: &[u8], config: &Map<String, Value>) -> (String, Vec<u8>) {
     let mesh = Arc::new(Mesh::load(model, "m.stl").unwrap());
     let (lo, hi) = mesh.bounds().unwrap();
     let (cx, cy) = (128.0 - lo[0].midpoint(hi[0]), 128.0 - lo[1].midpoint(hi[1]));
@@ -107,7 +112,7 @@ fn slice(model: &[u8], config: &Map<String, Value>) -> String {
     }))
     .unwrap();
     let r = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
-    String::from_utf8(r.gcode).unwrap()
+    (String::from_utf8(r.gcode).unwrap(), r.preview)
 }
 
 fn word(code: &str, k: char) -> Option<f64> {
@@ -875,4 +880,104 @@ fn overhang_wall_comments_state_the_raised_bead_above_a_bridge_flow_of_one() {
     // 0.8: the layer height, 0.368584 mm wide.
     check(0.8, 0.368_584, 0.2);
     check(1.0, 0.45, 0.2);
+}
+
+/// One preview segment: feature id, start and end X and Y, width and height in micrometers.
+#[derive(Debug, Clone, Copy)]
+struct PreviewSeg {
+    feature: u8,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    width_um: u16,
+    height_um: u16,
+}
+
+fn preview_segments(sxpv: &[u8]) -> Vec<PreviewSeg> {
+    let info = sx_core::preview::read_info(sxpv).unwrap();
+    let f32_at = |at: usize| f32::from_le_bytes(sxpv[at..at + 4].try_into().unwrap());
+    let u16_at = |at: usize| u16::from_le_bytes([sxpv[at], sxpv[at + 1]]);
+    (0..info.segments)
+        .map(|i| {
+            let s = info.segments_at + i * sx_core::preview::SEGMENT_BYTES;
+            PreviewSeg {
+                feature: sxpv[s + 24],
+                x0: f32_at(s),
+                y0: f32_at(s + 4),
+                x1: f32_at(s + 8),
+                y1: f32_at(s + 12),
+                width_um: u16_at(s + 20),
+                height_um: u16_at(s + 22),
+            }
+        })
+        .collect()
+}
+
+/// Item: the preview draws an overhang wall bead as the G-code comments state it. Above a `bridge_flow` of 1 a
+/// fully clear piece is drawn h x `bridge_flow` tall and as wide as a flat bead of the same area at that height
+/// (0.24 mm and 0.459 mm for a 0.45 mm wall, 0.2 mm layers and a flow of 1.2), so the preview segment's width and
+/// height match the piece's `; LINE_WIDTH:` and `; LAYER_HEIGHT:`. At a flow of 1 or below the preview keeps the
+/// bead's own width and the layer height, and no other feature changes height.
+#[test]
+fn the_preview_draws_overhang_walls_as_tall_as_the_gcode_states() {
+    const OVERHANG_WALL: u8 = 2;
+    const CUSTOM: u8 = 14;
+    let stock_cfg = stock("bambu-a1");
+    let model = wedge(75.0);
+    for (f, want) in [(1.2, (459, 240)), (1.0, (450, 200)), (0.8, (369, 200))] {
+        let mut cfg = stock_cfg.clone();
+        cfg.insert("bridge_flow".into(), json!(f.to_string()));
+        let (gcode, sxpv) = slice_with_preview(&model, &cfg);
+        let segs = preview_segments(&sxpv);
+        // The fully clear pieces: overhang wall segments longer than 2 mm along Y, the wedge's leaning side.
+        let clear: Vec<&PreviewSeg> = segs
+            .iter()
+            .filter(|s| {
+                s.feature == OVERHANG_WALL
+                    && (s.x1 - s.x0).abs() < 0.5
+                    && (s.x1 - s.x0).hypot(s.y1 - s.y0) > 2.0
+            })
+            .collect();
+        assert!(
+            clear.len() > 20,
+            "bridge flow {f}: {} clear segments",
+            clear.len()
+        );
+        for s in &clear {
+            assert_eq!(
+                (s.width_um, s.height_um),
+                want,
+                "bridge flow {f}: clear overhang wall segment {s:?}"
+            );
+        }
+        // The same width and height as the G-code comments of those pieces.
+        #[allow(clippy::cast_possible_truncation, reason = "micrometers")]
+        let stated: std::collections::BTreeSet<(i64, i64)> = clear_moves(&gcode)
+            .0
+            .iter()
+            .map(|m| {
+                (
+                    (m.width * 1000.0).round() as i64,
+                    (m.height * 1000.0).round() as i64,
+                )
+            })
+            .collect();
+        assert_eq!(
+            stated,
+            std::iter::once((i64::from(want.0), i64::from(want.1))).collect(),
+            "bridge flow {f}: G-code comments"
+        );
+        // Only overhang walls are drawn taller than the layer (the start G-code's purge line draws its own bead).
+        let tall: Vec<&PreviewSeg> = segs
+            .iter()
+            .filter(|s| ![OVERHANG_WALL, CUSTOM].contains(&s.feature) && s.height_um > 200)
+            .collect();
+        assert!(
+            tall.is_empty(),
+            "bridge flow {f}: {} other segments taller than the layer: {:?}",
+            tall.len(),
+            tall.first()
+        );
+    }
 }

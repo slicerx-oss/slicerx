@@ -470,6 +470,10 @@ pub struct SliceOutput {
     /// The chamber cooling mode the G-code reads (`chamber_cooling_mode`), for the whole plate; None when no
     /// G-code reads it.
     pub chamber: Option<crate::chamber::ChamberCooling>,
+    /// The `bridge_flow` above 1 that the base settings draw overhang wall beads taller with
+    /// (`overhang::raised_wall_flow`), for the preview; a layer under a height range's settings reads its own. None
+    /// when the G-code comments state the bead's own width and the layer height.
+    pub raised_wall_flow: Option<f64>,
 }
 
 /// The plate's first layer as the start G-code variables read it.

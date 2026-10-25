@@ -10,6 +10,9 @@ export interface Seg {
   tool?: number
   speed?: number
   flow?: number
+  /** Bead width and height in micrometers; 420 and 200 when left out. */
+  widthUm?: number
+  heightUm?: number
 }
 
 /** `layers[k]` lists the segments of layer k in print order. Layer height 0.2 mm. */
@@ -45,8 +48,8 @@ export function buildPreview(layers: Seg[][]): PreviewBuffers {
       dv.setFloat32(r + 8, s.b[0], true)
       dv.setFloat32(r + 12, s.b[1], true)
       dv.setFloat32(r + 16, (k + 1) * 0.2, true)
-      dv.setUint16(r + 20, 420, true)
-      dv.setUint16(r + 22, 200, true)
+      dv.setUint16(r + 20, s.widthUm ?? 420, true)
+      dv.setUint16(r + 22, s.heightUm ?? 200, true)
       dv.setUint8(r + 24, s.feature)
       dv.setUint8(r + 25, s.tool ?? 0)
       dv.setUint16(r + 26, Math.round((s.speed ?? 100) * 10), true)
