@@ -740,8 +740,9 @@ test.describe(BAMBU, () => {
   })
 
   // The same firmware answering the start with the unsigned-command refusal (`mqtt message verify failed`): the
-  // printer said it, so the sheet says it plainly and the hub's status carries it for clients to read back.
-  test('A1 refusing the start as unsigned: the sheet says Developer Mode is off, and the status says so', async ({ page }) => {
+  // printer said it, so the sheet says it plainly, without naming a cause, and the hub's status carries it for
+  // clients to read back.
+  test('A1 refusing the start as unsigned: the sheet says it turned the print away, and the status says so', async ({ page }) => {
     test.slow()
     await idleAgain('a1')
     await ctl('/bambu', { authorizationControl: 'verify' })
@@ -750,8 +751,10 @@ test.describe(BAMBU, () => {
       await start(sheet)
       const again = page.locator('dialog.print-sheet[open]')
       const box = again.getByTestId('developer-mode-needed')
-      await expect(box).toContainText('A1 sends its status but turned the print away. Bambu Lab printers do that while Developer Mode is off.', { timeout: 60_000 })
+      await expect(box).toContainText('A1 sends its status but turned the print away. You can send this plate with Bambu Connect, or make sure LAN Only Mode and Developer Mode are on and press Start again.', { timeout: 60_000 })
       await expect(box).not.toContainText('may be')
+      // The printer's answer is in the line's Details with one lead-in, the driver's own.
+      await expect(again.locator('.cl-more[data-tip-title="A1 didn\'t take the print"]')).toHaveAttribute('data-tip-body', /^The printer answered "mqtt message verify failed"\. Bambu Lab printers send this when they turn away a command from another app\./)
       await expect(again.getByRole('button', { name: 'Send as plain G-code' })).toHaveCount(0)
       expect(await mockLog()).toMatch(/unsigned project_file/)
       await expect.poll(async () => (await hub.admin.status('a1')).live?.needsDeveloperMode, { timeout: 10_000 }).toBe(true)

@@ -131,7 +131,7 @@ describe('printer side effects', () => {
   it('a start refused as unsigned says so plainly, with both remedies', async () => {
     const env = createEvalEnv({ client: createScriptedClient([{ calls: [{ name: 'slice', args: {} }] }, { calls: [{ name: 'printer.queue', args: { printerId: 'bay-2', plate: 1 } }] }, { text: 'done' }]), machine: MACHINE, objects: [CLIP] })
     env.sim.start = async () => {
-      throw Object.assign(new Error('printer bay-2 takes no prints from other apps: It answered "mqtt message verify failed".'), { code: 'needs_developer_mode' })
+      throw Object.assign(new Error('printer bay-2 takes no prints from other apps: The printer answered "mqtt message verify failed". Bambu Lab printers send this when they turn away a command from another app.'), { code: 'needs_developer_mode' })
     }
     const events: PilotEvent[] = []
     for await (const ev of env.pilot.run('t', 'test', { context: { machine: MACHINE } })) {
@@ -139,7 +139,7 @@ describe('printer side effects', () => {
       if (ev.type === 'approval_request') await env.pilot.resolveApproval(ev.request.id, { kind: 'approve', bedClear: true })
     }
     const result = events.find((e): e is Extract<PilotEvent, { type: 'tool_result' }> => e.type === 'tool_result' && !e.ok)
-    expect(result?.summary).toMatch(/turned the print away: Bambu Lab printers do that while Developer Mode is off/)
+    expect(result?.summary).toMatch(/turned the print away\. You can send the plate with Bambu Connect, or make sure the printer has LAN Only Mode and Developer Mode on\./)
     expect(result?.summary).not.toMatch(/may be/)
     expect(result?.output).toMatchObject({ error: 'needs_developer_mode', retry: false, sure: true })
   })

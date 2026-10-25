@@ -817,8 +817,9 @@ struct Shared {
     /// The last `device.nozzle` object (H2 printers). Kept apart because later reports send `device`
     /// without it.
     nozzle: Mutex<Option<Value>>,
-    /// Set when the printer answered a command with the unsigned-command refusal (Authorization
-    /// Control with Developer Mode off, when the report carries no `fun` flags that say so). Cleared
+    /// Set when the printer answered a command with the unsigned-command refusal (seen from
+    /// Authorization Control firmware turning a command away; the report's `fun` flags, when it
+    /// carries them, decide the status instead). Cleared
     /// when a start goes through. A send that only failed or went unanswered does not set it: that
     /// is a guess, said as one in the error, and the status keeps to what the printer said.
     refused_send: AtomicBool,
@@ -2422,10 +2423,7 @@ impl BambuSession {
             self.shared.note_refused_send();
             return Some(Error::NeedsDeveloperMode {
                 printer: self.id().to_owned(),
-                reason: format!(
-                    "It answered \"{}\". {UNSIGNED_REFUSED}",
-                    reason.trim_end_matches('.')
-                ),
+                reason: unsigned_reason(v, &reason),
                 sure: true,
             });
         }
@@ -2771,8 +2769,23 @@ const UPLOAD_REFUSED: &str = "The cause may be Developer Mode being off: with Ba
 /// What a start that got no answer, while status kept coming, may mean.
 const START_UNANSWERED: &str = "It sends status, but it did not answer the print start. That may be Bambu Lab's Authorization Control turning the start away while Developer Mode is off. Check the printer's screen first: if the print started after all, there is nothing to do. Otherwise turn on LAN Only Mode and Developer Mode, or print through Bambu Connect.";
 
-/// What the unsigned-command refusal means, and the two ways to print.
-const UNSIGNED_REFUSED: &str = "That is Bambu Lab's Authorization Control turning away a command from another app: the printer takes prints and commands only from Bambu Lab's apps while Developer Mode is off. Turn on LAN Only Mode and Developer Mode, or print through Bambu Connect.";
+/// What the unsigned-command refusal is known to mean, and the two things to try. It names no
+/// cause: an A1 was reported answering this way with Developer Mode on.
+const UNSIGNED_REFUSED: &str = "Bambu Lab printers send this when they turn away a command from another app. You can try LAN Only Mode with Developer Mode on, or print through Bambu Connect.";
+
+/// The words for the unsigned-command refusal `v`, whose reason reads `reason` (see
+/// [`project_refusal`]). The reason is the whole message the CLI, clients and the Print sheet
+/// show, so it carries its own lead-in: the printer's text in quotes, or the error code when it
+/// sent no text, then [`UNSIGNED_REFUSED`].
+fn unsigned_reason(v: &Value, reason: &str) -> String {
+    let own_text = v.get("reason").and_then(Value::as_str).map(str::trim) == Some(reason);
+    let words = reason.trim_end_matches('.');
+    if own_text {
+        format!("The printer answered \"{words}\". {UNSIGNED_REFUSED}")
+    } else {
+        format!("{words}. {UNSIGNED_REFUSED}")
+    }
+}
 
 /// Why a printer with Developer Mode off takes no command from SlicerX, and the two ways to print.
 const MONITOR_ONLY: &str = "Developer Mode is off on the printer, so it sends status but takes no commands from other apps. Print through Bambu Connect, or turn on Developer Mode in its LAN Only settings to print directly.";
@@ -3918,6 +3931,35 @@ mod tests {
             &json!({ "result": "fail", "err_code": 0x0300_4006_u64 })
         ));
         assert!(!unsigned_refusal(&json!({ "result": "success" })));
+    }
+
+    // The words for the unsigned-command refusal carry one lead-in of their own, since the CLI,
+    // clients and the Print sheet show them as they are, and they name no cause: an A1 was
+    // reported answering this way with Developer Mode on.
+    #[test]
+    fn the_unsigned_refusal_words_have_one_lead_in_and_name_no_cause() {
+        use super::{UNSIGNED_REFUSED, project_refusal, unsigned_reason};
+        let words = |v: serde_json::Value| unsigned_reason(&v, &project_refusal(&v).unwrap());
+        // A reply with the error code and no text.
+        let coded =
+            words(json!({ "command": "project_file", "result": "failed", "err_code": 0x0502_4007_u64 }));
+        assert_eq!(
+            coded,
+            format!("The printer reported error 0502_4007. {UNSIGNED_REFUSED}")
+        );
+        let quoted = words(
+            json!({ "command": "project_file", "result": "failed", "reason": "mqtt message verify failed", "err_code": 0x0502_4007_u64 }),
+        );
+        assert_eq!(
+            quoted,
+            format!("The printer answered \"mqtt message verify failed\". {UNSIGNED_REFUSED}")
+        );
+        for w in [&coded, &quoted] {
+            assert!(!w.contains("It answered"), "{w}");
+            assert!(!w.contains("Developer Mode is off"), "{w}");
+            assert!(w.contains("LAN Only Mode with Developer Mode"), "{w}");
+            assert!(w.contains("Bambu Connect"), "{w}");
+        }
     }
 
     #[test]
