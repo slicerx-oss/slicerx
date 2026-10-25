@@ -260,8 +260,9 @@ export class McpProject implements PilotProject {
       if (!p) continue
       for (const [k, v] of Object.entries(p.config)) {
         if (!isGcodeKey(k)) continue
-        // A profile SlicerX does not ship sets G-code it cannot vouch for.
-        if (!SHIPPED_GCODE_SOURCES.has(p.source)) return false
+        // A profile SlicerX does not ship sets G-code it cannot vouch for, unless that G-code is the printer's own as
+        // SlicerX ships it (a knowledge printer's, shippedPrinterGcode).
+        if (!SHIPPED_GCODE_SOURCES.has(p.source) && !p.shippedGcode) return false
         shipped[k] = v
       }
     }

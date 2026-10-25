@@ -4,7 +4,7 @@
 // printer and filament presets from knowledge/, and the Easy intent presets.
 import type { EasyGoal, SettingSection, SettingValue } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
-import { applyEasy, EASY_MAP, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, printerConfig, printerProfile, processConfig, resolvedNozzles, resolvedProfile, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
+import { applyEasy, EASY_MAP, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, printerConfig, printerProfile, processConfig, resolvedNozzles, resolvedProfile, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore } from './data'
 import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileByName, sameValue } from './settings'
 
@@ -24,6 +24,22 @@ export interface ProfileDetail extends ProfileSummary {
   config: Record<string, SettingValue>
   chain: string[]
   unknown_keys: string[]
+  /** Its G-code is the text SlicerX ships for the printer (shippedPrinterGcode), though the profile itself is not SlicerX's. */
+  shippedGcode?: boolean
+}
+
+/**
+ * The G-code SlicerX ships for a knowledge printer: start, end, layer change, filament change and the rest, from its
+ * own profile of the printer of that name (printerProfileByName), the text `machine:<id>` gives and the app prints
+ * with. Only once SlicerX has written G-code for that model (gcodeStatus). A printer linked to a profile of another
+ * model (printerProfileFor) takes only that model's name and clearances, not its G-code, so it gets none here.
+ */
+export function shippedPrinterGcode(name: string): Record<string, SettingValue> {
+  const id = printerProfileByName(name)
+  if (!id || gcodeStatus(id) !== 'written') return {}
+  const config = (printerConfig(id) ?? {}) as unknown as Record<string, unknown>
+  // the G-code settings, as config.ts isGcodeKey names them
+  return Object.fromEntries(Object.entries(config).filter((e): e is [string, string] => e[0].endsWith('_gcode') && typeof e[1] === 'string'))
 }
 
 const STOCK_FILAMENT = 'stock-filament:'
@@ -162,7 +178,9 @@ export class ProfileCatalog {
       const entry = this.store.findKnowledge([kind], id)
       if (!entry) return undefined
       const layer = kind === 'printer' ? printerLayer(this.store, entry) : filamentLayer(this.store, entry)
-      return { ...summary, config: layerConfig(layer), chain: [summary.name], unknown_keys: [] }
+      const gcode = kind === 'printer' ? shippedPrinterGcode(entry.name) : {}
+      const shipped = Object.keys(gcode).length > 0
+      return { ...summary, config: { ...layerConfig(layer), ...gcode }, chain: [summary.name], unknown_keys: [], ...(shipped ? { shippedGcode: true } : {}) }
     }
     if (kind === 'intent') {
       const base = defaultConfig(this.store)

@@ -53,14 +53,18 @@ function mushroomStl(w: number): Buffer {
   return out
 }
 
-/** Every X and Y the G-code extrudes to in its features (not the printer's own start script), mm. */
+/**
+ * Every X and Y the G-code extrudes to in its features, mm: not the printer's own scripts, which sx marks as the Custom
+ * feature (the P1S start script purges at the chute behind the bed, at Y 265).
+ */
 function extrudedPoints(gcode: string): [number, number][] {
   const out: [number, number][] = []
   let x = 0
   let y = 0
   let feature = false
   for (const raw of gcode.split('\n')) {
-    if (/^;\s*(FEATURE|TYPE):/.test(raw)) feature = true
+    const type = raw.match(/^;\s*(?:FEATURE|TYPE):\s*(.*)$/)
+    if (type) feature = !/^custom/i.test(type[1]!.trim())
     const line = raw.split(';')[0]!.trim()
     if (!feature || !/^G[0-3]\b/.test(line)) continue
     const word = (c: string) => line.match(new RegExp(String.raw`\b${c}(-?[\d.]+)`))?.[1]
