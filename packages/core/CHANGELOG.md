@@ -13,6 +13,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 - aegis walls fill thin parts: where one or two beads make up a part's whole cross section (a fin under about 1 mm, a small peg, the narrow end of a wedge), two beads each take half its thickness and one bead all of it. Before, two beads kept the ratio of the outer spacing to the outer to first inner spacing (in a 0.8 mm fin) or their own width (in a 1 mm fin or peg), and printed 0.82 and 0.83 of the material on those fins and 0.70 on a 1 mm peg with the stock walls. The walls of thicker parts, walls capped at one wall and the outer wall's place do not move.
 - aegis walls (the default) with inner walls printed first follow `precise_outer_wall`: with it on (the stock setting) the first inner wall sits (outer width + inner width) / 2 from the outer wall, with it off (outer width + inner width) / 2 - (1 - pi/4) h. Before, both came out (1 - pi/4) h / 2 off (0.0215 mm at 0.2 mm layers), and gap fill and infill with them. The outer wall does not move, so part sizes, holes and pegs keep their size.
 
+### Fixed
+
+- `SESSION_FREE_KEYS` no longer lists 39 settings that shape paths or that building a session reads, so `session_key` changes with each and a host prepares a new session: the wall deviation, resolution and minimum lengths, `line_width`, gap fill, infill overlap and density near the bed, gyroid and model-aligned infill, bridge flow and filtering, brim combining, the skirt's filament diameter, prime tower purges and ramming, priming lines, wall direction, scarf thresholds, the head clearances of the collision check, and the filament map and extruder variant keys. `align_infill_direction_to_model` turned on for objects turned apart sliced with the infill unturned on a kept session.
+
 ## [0.2.2] - 2026-10-25
 
 ## [0.2.1] - 2026-10-24

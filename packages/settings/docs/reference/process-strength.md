@@ -11,7 +11,7 @@ Turns the infill and the fixed bridge angles with the model when you rotate it o
 - Type: boolean
 - Default: off
 - Tier: Expert, strength
-- Changing it redoes: G-code only
+- Changing it redoes: infill
 - mimir class: read (not in the catalog: never written)
 
 ### `alternate_extra_wall`
@@ -181,7 +181,7 @@ Layers whose sparse infill prints solid, to stiffen tall parts. List layer numbe
 - Default: "nowhere"
 - Values: `everywhere` (Everywhere), `topbottom` (Top and bottom surfaces), `nowhere` (Nowhere)
 - Tier: Expert, strength
-- Changing it redoes: G-code only
+- Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
 ### `gyroid_optimized`
@@ -193,7 +193,7 @@ Shortens the gyroid's waves along the height at low densities (below about 30 %)
 - Type: boolean
 - Default: off
 - Tier: Expert, strength
-- Changing it redoes: G-code only
+- Changing it redoes: infill
 - mimir class: read (not in the catalog: never written)
 
 ### `infill_anchor`
@@ -433,7 +433,7 @@ On parts printed in more than one filament, gives each filament region its own s
 - Type: boolean
 - Default: off
 - Tier: Expert, strength
-- Changing it redoes: G-code only
+- Changing it redoes: surfaces
 - mimir class: read (not in the catalog: never written)
 
 ### `separated_infills`
@@ -603,7 +603,7 @@ How far the solid infill on the first and the topmost layer reaches into the wal
 - Unit: %
 - Default: 25
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: infill
 - mimir class: read (not in the catalog: never written)
 
 ### `top_layer_direction`

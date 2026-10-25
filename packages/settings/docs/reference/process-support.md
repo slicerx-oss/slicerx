@@ -10,7 +10,7 @@
 - Default: off
 - Used only when: Brim type (`brim_type`) is not "no_brim"
 - Tier: Expert, adhesion
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `enable_support`

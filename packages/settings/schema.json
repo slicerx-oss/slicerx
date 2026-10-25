@@ -1984,7 +1984,7 @@
    "mode": "expert",
    "default": false,
    "group": "multimaterial",
-   "invalidates": "gcode",
+   "invalidates": "paths",
    "intent": "multicolor",
    "showWhen": "multicolor"
   },
@@ -2401,7 +2401,7 @@
    "pilot": "edit",
    "orcaMin": 0,
    "orcaMax": 2,
-   "invalidates": "gcode",
+   "invalidates": "surfaces",
    "intent": "quality"
   },
   {
@@ -2458,7 +2458,7 @@
    "default": "none",
    "group": "overhangs",
    "pilot": "edit",
-   "invalidates": "gcode",
+   "invalidates": "surfaces",
    "enumValues": [
     "none",
     "partiallybridge",
@@ -2737,7 +2737,7 @@
     1
    ],
    "group": "profile",
-   "invalidates": "preview"
+   "invalidates": "layers"
   },
   {
    "key": "print_extruder_variant",
@@ -2793,7 +2793,7 @@
    "mode": "expert",
    "default": "disabled",
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "surfaces",
    "enumLabels": [
     "Filter",
     "Limited filtering",
@@ -2846,7 +2846,7 @@
    "mode": "expert",
    "default": 100,
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "infill",
    "intent": "quality"
   },
   {
@@ -2875,7 +2875,7 @@
    "mode": "expert",
    "default": "disabled",
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "surfaces",
    "enumLabels": [
     "Off",
     "Over external bridges",
@@ -2906,7 +2906,7 @@
    "mode": "expert",
    "default": 0,
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "perimeters",
    "intent": "quality"
   },
   {
@@ -2984,7 +2984,7 @@
    "mode": "expert",
    "default": 85,
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "perimeters",
    "intent": "quality"
   },
   {
@@ -3304,7 +3304,7 @@
    "pilot": "edit",
    "orcaMin": 0,
    "orcaMax": 1000,
-   "invalidates": "gcode",
+   "invalidates": "perimeters",
    "effect": {
     "increase": "Wider lines print faster and bond better",
     "decrease": "Narrower lines resolve finer detail"
@@ -3376,7 +3376,7 @@
    "mode": "expert",
    "default": 0.5,
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "perimeters",
    "intent": "quality"
   },
   {
@@ -3389,7 +3389,7 @@
    "mode": "expert",
    "default": "300%",
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "perimeters",
    "intent": "quality"
   },
   {
@@ -3505,7 +3505,7 @@
    "mode": "expert",
    "default": 155,
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "paths",
    "intent": "quality"
   },
   {
@@ -3531,7 +3531,7 @@
    "mode": "expert",
    "default": 40,
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "paths",
    "intent": "quality"
   },
   {
@@ -3967,7 +3967,7 @@
    "mode": "expert",
    "default": true,
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "surfaces",
    "intent": "quality"
   },
   {
@@ -4083,7 +4083,7 @@
    "mode": "expert",
    "default": "ccw",
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "paths",
    "enumLabels": [
     "Counterclockwise",
     "Clockwise"
@@ -4145,7 +4145,7 @@
    "mode": "expert",
    "default": 0.025,
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "perimeters",
    "intent": "quality"
   },
   {
@@ -4159,7 +4159,7 @@
    "mode": "expert",
    "default": 0.5,
    "group": "quality",
-   "invalidates": "gcode",
+   "invalidates": "perimeters",
    "intent": "quality"
   },
   {
@@ -5349,7 +5349,7 @@
    "mode": "expert",
    "default": false,
    "group": "strength",
-   "invalidates": "gcode",
+   "invalidates": "infill",
    "help": "Turns the infill and the fixed bridge angles with the model when you rotate it on the plate, so the lines keep the same direction on the part.",
    "intent": "strength"
   },
@@ -5648,7 +5648,7 @@
    "mode": "expert",
    "default": "nowhere",
    "group": "strength",
-   "invalidates": "gcode",
+   "invalidates": "perimeters",
    "enumLabels": [
     "Everywhere",
     "Top and bottom surfaces",
@@ -5664,7 +5664,7 @@
    "mode": "expert",
    "default": false,
    "group": "strength",
-   "invalidates": "gcode",
+   "invalidates": "infill",
    "help": "Shortens the gyroid's waves along the height at low densities (below about 30 %), so the infill resists crushing from above better at about the same filament.",
    "intent": "strength"
   },
@@ -5988,7 +5988,7 @@
    "mode": "expert",
    "default": false,
    "group": "strength",
-   "invalidates": "gcode",
+   "invalidates": "surfaces",
    "intent": "strength"
   },
   {
@@ -6240,7 +6240,7 @@
    "mode": "expert",
    "default": 25,
    "group": "strength",
-   "invalidates": "gcode",
+   "invalidates": "infill",
    "help": "How far the solid infill on the first and the topmost layer reaches into the walls, in percent of the gap between them. More overlap closes pinholes along the wall; too much makes the edge bulge. 25 to 30 % suits most prints.",
    "intent": "quality"
   },
@@ -6443,7 +6443,7 @@
    "mode": "expert",
    "default": false,
    "group": "support",
-   "invalidates": "gcode",
+   "invalidates": "paths",
    "enabledWhen": [
     {
      "key": "brim_type",
@@ -8173,7 +8173,7 @@
     1.75
    ],
    "group": "filament",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "filament_is_support",
@@ -8286,7 +8286,7 @@
     10
    ],
    "group": "multimaterial",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "filament_change_length_nc",
@@ -8300,7 +8300,7 @@
     10
    ],
    "group": "multimaterial",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "filament_flush_volumetric_speed",
@@ -8358,7 +8358,7 @@
     15
    ],
    "group": "multimaterial",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "filament_multitool_ramming",
@@ -8370,7 +8370,7 @@
     false
    ],
    "group": "multimaterial",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "filament_multitool_ramming_flow",
@@ -8398,7 +8398,7 @@
     10
    ],
    "group": "multimaterial",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "filament_prime_volume",
@@ -10054,7 +10054,7 @@
    "mode": "advanced",
    "default": 40,
    "group": "machine",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "extruder_clearance_height_to_lid",
@@ -10066,7 +10066,7 @@
    "mode": "advanced",
    "default": 120,
    "group": "machine",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "extruder_clearance_height_to_rod",
@@ -10078,7 +10078,7 @@
    "mode": "advanced",
    "default": 40,
    "group": "machine",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "extruder_clearance_radius",
@@ -10172,7 +10172,7 @@
     "Direct Drive"
    ],
    "group": "machine",
-   "invalidates": "gcode",
+   "invalidates": "layers",
    "enumLabels": [
     "Direct drive",
     "Bowden"
@@ -10318,7 +10318,7 @@
    "mode": "develop",
    "default": 2.5,
    "group": "machine",
-   "invalidates": "gcode"
+   "invalidates": "paths"
   },
   {
    "key": "nozzle_hrc",
@@ -11173,7 +11173,7 @@
     1
    ],
    "group": "multimaterial",
-   "invalidates": "gcode"
+   "invalidates": "layers"
   },
   {
    "key": "group_algo_with_time",
@@ -11246,7 +11246,7 @@
    "mode": "advanced",
    "default": 1,
    "group": "multimaterial",
-   "invalidates": "preview"
+   "invalidates": "layers"
   },
   {
    "key": "nozzle_flush_dataset",
@@ -11549,7 +11549,7 @@
     1
    ],
    "group": "profile",
-   "invalidates": "preview"
+   "invalidates": "layers"
   },
   {
    "key": "printer_extruder_variant",
@@ -12173,7 +12173,7 @@
    "mode": "advanced",
    "default": 68,
    "group": "machine",
-   "invalidates": "gcode",
+   "invalidates": "paths",
    "min": 0
   },
   {

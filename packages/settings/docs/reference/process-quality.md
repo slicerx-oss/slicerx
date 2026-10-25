@@ -23,7 +23,7 @@ Which small internal bridges are dropped so solid infill prints straight over th
 - Default: "disabled"
 - Values: `disabled` (Filter), `limited` (Limited filtering), `nofilter` (No filtering)
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: surfaces
 - mimir class: read (not in the catalog: never written)
 
 ### `elefant_foot_compensation`
@@ -61,7 +61,7 @@ Which small internal bridges are dropped so solid infill prints straight over th
 - Default: 100
 - Recommended range: 50 to 100
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: infill
 - mimir class: read (not in the catalog: never written)
 
 ### `enable_arc_fitting`
@@ -84,7 +84,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Default: "disabled"
 - Values: `disabled` (Off), `external_bridge_only` (Over external bridges), `internal_bridge_only` (Over internal bridges), `apply_to_all` (Over all bridges)
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: surfaces
 - mimir class: read (not in the catalog: never written)
 
 ### `enable_mixed_color_sublayer`
@@ -105,7 +105,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Unit: mm
 - Default: 0
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
 ### `hole_to_polyhole`
@@ -173,7 +173,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Default: 85
 - Recommended range: 0 to no maximum
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
 ### `initial_layer_print_height`
@@ -381,7 +381,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Orca limits: 0 to 1000
 - Automatic: The value 0 means automatic and is always allowed.
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: perimeters
 - mimir class: edit (may change in a plate override)
 - Effect: higher: Wider lines print faster and bond better. lower: Narrower lines resolve finer detail
 
@@ -432,7 +432,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Default: 0.5
 - Recommended range: 0 to 25
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
 ### `min_width_top_surface`
@@ -444,7 +444,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Default: "300%"
 - Recommended range: 0 to no maximum
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
 ### `only_one_wall_first_layer`
@@ -526,7 +526,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Default: 155
 - Recommended range: 0 to 180
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `scarf_joint_speed`
@@ -550,7 +550,7 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Default: 40
 - Recommended range: 0 to no maximum
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `seam_gap`
@@ -821,7 +821,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Type: boolean
 - Default: on
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: surfaces
 - mimir class: read (not in the catalog: never written)
 
 ### `top_surface_line_width`
@@ -880,7 +880,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Default: "ccw"
 - Values: `ccw` (Counterclockwise), `cw` (Clockwise)
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `wall_distribution_count`
@@ -915,7 +915,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Default: 0.025
 - Recommended range: 0.005 to 0.05
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
 ### `wall_maximum_resolution`
@@ -927,7 +927,7 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Default: 0.5
 - Recommended range: 0.005 to 0.5
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
 ### `wall_sequence`

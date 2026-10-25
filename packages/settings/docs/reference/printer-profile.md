@@ -35,7 +35,7 @@
 
 - Type: list of integers, one per extruder
 - Default: [1]
-- Changing it redoes: preview only
+- Changing it redoes: layers (the whole slice)
 - mimir class: read (not in the catalog: never written)
 
 ### `printer_extruder_variant`

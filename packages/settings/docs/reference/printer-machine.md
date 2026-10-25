@@ -186,7 +186,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Unit: mm
 - Default: 40
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `extruder_clearance_height_to_lid`
@@ -197,7 +197,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Unit: mm
 - Default: 120
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `extruder_clearance_height_to_rod`
@@ -208,7 +208,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Unit: mm
 - Default: 40
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `extruder_clearance_max_radius`
@@ -219,7 +219,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Unit: mm
 - Default: 68
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `extruder_clearance_radius`
@@ -291,7 +291,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Type: list of enum values, one per extruder
 - Default: ["Direct Drive"]
 - Values: `Direct Drive` (Direct drive), `Bowden`
-- Changing it redoes: G-code only
+- Changing it redoes: layers (the whole slice)
 - mimir class: read (not in the catalog: never written)
 
 ### `farthest_point_timelapse`
@@ -430,7 +430,7 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Unit: mm
 - Default: 2.5
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `nozzle_hrc`
