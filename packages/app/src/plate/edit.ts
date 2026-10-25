@@ -9,7 +9,8 @@ import { arrange, ARRANGE_DEFAULTS, fillCount, type ArrangeOptions, type Arrange
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { arrangeByObject, type Place } from './by-object-arrange'
 import { byObjectConfig } from './sequence-check'
-import { quietly } from './history'
+import { inStep, quietly } from './history'
+import { moveToNewPlates } from './plates'
 import { selectedEntry } from './select'
 import { bounds, centerOnBed, compose, dropToBed, identity, layOnFace, mirror, modelOrigin, scaleToSize, setScale, withTrs, type Box, type Mat4, type Trs, type Vec3 } from './transform'
 import { brandAccent, objectPalette } from '../edition'
@@ -144,7 +145,8 @@ export function setArrangeOptions(o: Partial<ArrangeOptions>): void {
 
 /**
  * Arrange every object, or only the selected ones around the rest, on their true outlines (nest.ts), or
- * on their bounds when the geometry engine cannot run. Returns how many did not fit.
+ * on their bounds when the geometry engine cannot run. The objects it finds no room for move to new plates
+ * (moveToNewPlates), in the same undo step. Returns how many did not fit on the shown plate.
  */
 export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: ArrangeOptions = arrangeOptions): Promise<number> {
   const { plate, bed } = get()
@@ -175,12 +177,28 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   const now = new Map(get().plate.map((p) => [p.id, p.transform]))
   const was = new Map(moving.map((p) => [p.id, p.transform]))
   const transforms = Object.fromEntries(Object.entries(r.transforms).filter(([id]) => now.get(id) === was.get(id)))
-  commitTransforms(transforms, r.order)
+  // The objects with no room go to new plates, so none is left on or beside a placed one: one undo step with the arrange.
+  const large = new Set(r.tooLarge.map((t) => t.id))
+  const unplaced = r.leftOver.filter((id) => !large.has(id) && now.get(id) === was.get(id))
+  let moved: ReturnType<typeof moveToNewPlates> = { plates: [], left: unplaced }
+  inStep({}, () => {
+    commitTransforms(transforms, r.order)
+    if (unplaced.length > 0) moved = moveToNewPlates(unplaced)
+  })
   const tooLarge = tooLargeNotice(r, plate)
-  const rest = r.leftOver.length - r.tooLarge.length
+  const rest = moved.left.length
   if (tooLarge) toast(tooLarge, 'warn')
+  if (moved.plates.length > 0) toast(movedToPlatesNotice(moved.plates), 'info')
   if (rest > 0) toast(`${rest} ${rest === 1 ? 'object does' : 'objects do'} not fit on the bed and stayed where ${rest === 1 ? 'it was' : 'they were'}.`, 'warn')
   return r.leftOver.length
+}
+
+/** One sentence for objects arrange moved to new plates: how many, and which plates. */
+export function movedToPlatesNotice(plates: readonly { name: string; count: number }[]): string {
+  const n = plates.reduce((sum, p) => sum + p.count, 0)
+  const names = plates.map((p) => p.name)
+  const where = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? '')
+  return n === 1 ? `1 object did not fit, so it moved to ${where}.` : `${n} objects did not fit, so they moved to ${where}.`
 }
 
 /** Plain words for objects that cannot sit on the bed alone, or null when there are none. */
