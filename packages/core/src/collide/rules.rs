@@ -225,22 +225,34 @@ pub(crate) mod support {
             && (enforcers || (!cfg.support.manual && overhang))
     }
 
-    /// How far an object's own first layer prints past its footprint, mm ([`crate::tower::room_with`]), with its
+    /// How far an object's own first layer prints past its footprint printing by object, mm: [`crate::tower::room_with`]
+    /// with the skirt counted round the object. By object each object prints a skirt of its own on its first layers,
+    /// whatever `skirt_type` says, so a combined skirt reaches as far as a skirt of its own.
+    pub(crate) fn object_room(cfg: &PrintConfig, brim: f64) -> f64 {
+        let mut own = cfg.clone();
+        own.raw.insert(
+            "skirt_type".to_owned(),
+            serde_json::Value::String("perobject".to_owned()),
+        );
+        crate::tower::room_with(&own, brim)
+    }
+
+    /// How far an object's own first layer prints past its footprint by object, mm ([`object_room`]), with its
     /// support's pad counted only when it gets support ([`gets_support`]).
     pub(crate) fn part_reach(cfg: &PrintConfig, brim: f64, supported: bool) -> f64 {
         if supported || !cfg.enable_support {
-            return crate::tower::room_with(cfg, brim);
+            return object_room(cfg, brim);
         }
         let mut bare = cfg.clone();
         bare.enable_support = false;
-        crate::tower::room_with(&bare, brim)
+        object_room(&bare, brim)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::super::grid::{Grid, Profile};
-    use super::support::{gets_support, has_overhang, overhang_limit_deg, part_reach};
+    use super::support::{gets_support, has_overhang, object_room, overhang_limit_deg, part_reach};
     use super::*;
     use crate::config::PrintConfig;
     use crate::fm::Fm as _;
@@ -914,7 +926,7 @@ mod tests {
             .into_iter()
             .map(|(name, config, brim)| {
                 let cfg = PrintConfig::from_value(&config).unwrap_or_default();
-                json!({ "name": name, "config": config, "brimMm": brim, "reachMm": round(crate::tower::room_with(&cfg, brim)) })
+                json!({ "name": name, "config": config, "brimMm": brim, "reachMm": round(object_room(&cfg, brim)) })
             })
             .collect();
         json!({

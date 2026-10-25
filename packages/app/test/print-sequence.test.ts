@@ -33,7 +33,8 @@ function entry(id: string, name: string, x: number, y: number, h: number) {
 }
 
 // The Bambu Lab A1: 40 mm around the nozzle, the gantry rod 25 mm up and 56.5 mm behind it, the lid at 256 mm.
-const A1 = { extruder_clearance_radius: 40, extruder_clearance_height_to_rod: 25, extruder_clearance_dist_to_rod: 56.5, extruder_clearance_height_to_lid: 256, nozzle_height: 4.76 }
+// No skirt: by object each object gets one round it, which the clearance would count (a test below).
+const A1 = { extruder_clearance_radius: 40, extruder_clearance_height_to_rod: 25, extruder_clearance_dist_to_rod: 56.5, extruder_clearance_height_to_lid: 256, nozzle_height: 4.76, skirt_loops: 0 }
 /** The printer profile the slice names: its head is the one heimdall moves, estimated on the A1, measured on the P1S. */
 const profileOf = (printerId: string) => ({ printerId }) as never
 
@@ -80,6 +81,8 @@ describe('the by-object clearance check', () => {
   it('refuses objects closer than the clearance radius and passes them at it', () => {
     expect(check([100, 118, 10], [150, 118, 10])).toMatch(/^Cube A and Cube B are 30\.0 mm apart; printing by object needs 40 mm between objects/)
     expect(check([100, 118, 10], [160, 118, 10])).toBe('')
+    // A combined skirt still goes round each object printed by object, so it counts like a skirt of its own.
+    expect(check([100, 118, 10], [160, 118, 10], { ...A1, skirt_loops: 1, skirt_type: 'combined' } as unknown as Record<string, number>)).toMatch(/^Cube A and Cube B are 3\d\.\d mm apart, counting the brim, skirt or support round/)
     // Two plates under the nozzle height meet only the nozzle.
     expect(check([100, 118, 2], [130, 118, 2])).toBe('')
     // Corner to corner on a diagonal the footprints are further apart than their boxes.
