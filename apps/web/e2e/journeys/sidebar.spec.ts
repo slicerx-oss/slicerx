@@ -873,7 +873,8 @@ test.describe('the selection', () => {
     const ctx = page.getByTestId('slice-ctx')
     await expect(ctx).toBeVisible()
     expect((await state(page)).selection).toBe(await rows(page).nth(2).getAttribute('data-object-id'))
-    await expect(ctx.getByRole('menuitem')).toHaveText(['Arrange', 'Transform', 'Skip', 'Lock', 'Center', 'Drop to bed', /^Duplicate/, /^Delete/])
+    // The object's own verbs follow Duplicate, and Delete stays last; Merge waits for a second object, and Split for a second piece (the example model has two).
+    await expect(ctx.getByRole('menuitem')).toHaveText(['Arrange', 'Transform', 'Skip', 'Lock', 'Center', 'Drop to bed', /^Duplicate/, /^Rename/, 'Object settings', 'Split to objects', 'Along X', 'Along Y', 'Along Z', /^Delete/])
     await ctx.getByTestId('slice-ctx-duplicate').click()
     await expect(rows(page)).toHaveCount(4)
     await sidebarDone(page)
