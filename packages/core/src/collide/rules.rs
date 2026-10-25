@@ -237,6 +237,25 @@ pub(crate) mod support {
         crate::tower::room_with(&own, brim)
     }
 
+    /// [`object_room`] for an object whose footprint is `hull` (mm): by object the skirt round it has the loops the
+    /// slice prints there, so `min_skirt_length` counts, which adds loops round a small object until they hold that
+    /// much filament (one extruder).
+    pub(crate) fn object_room_around(cfg: &PrintConfig, brim: f64, hull: &[[f64; 2]]) -> f64 {
+        if cfg.skirt_loops == 0 {
+            return object_room(cfg, brim);
+        }
+        let ring = hull
+            .iter()
+            .map(|p| {
+                i_overlay::i_float::int::point::IntPoint::new(crate::geom::mm(p[0]), crate::geom::mm(p[1]))
+            })
+            .collect();
+        let loops = crate::session::loops_around(ring, cfg, false, (1, 0)).len();
+        let mut own = cfg.clone();
+        own.skirt_loops = u32::try_from(loops).unwrap_or(u32::MAX).max(cfg.skirt_loops);
+        object_room(&own, brim)
+    }
+
     /// How far an object's own first layer prints past its footprint by object, mm ([`object_room`]), with its
     /// support's pad counted only when it gets support ([`gets_support`]).
     pub(crate) fn part_reach(cfg: &PrintConfig, brim: f64, supported: bool) -> f64 {
@@ -252,7 +271,9 @@ pub(crate) mod support {
 #[cfg(test)]
 mod tests {
     use super::super::grid::{Grid, Profile};
-    use super::support::{gets_support, has_overhang, object_room, overhang_limit_deg, part_reach};
+    use super::support::{
+        gets_support, has_overhang, object_room, object_room_around, overhang_limit_deg, part_reach,
+    };
     use super::*;
     use crate::config::PrintConfig;
     use crate::fm::Fm as _;
@@ -345,6 +366,64 @@ mod tests {
 
     fn leak(s: String) -> &'static str {
         Box::leak(s.into_boxed_str())
+    }
+
+    /// Skirts with `min_skirt_length` round a square footprint `side` mm across, the A1's 0.4 nozzle and PLA.
+    fn skirt_length_cases() -> Vec<(&'static str, Value, f64, f64)> {
+        let with = |extra: Value| {
+            let mut v = json!({ "line_width": 0.42, "initial_layer_print_height": 0.2, "layer_height": 0.2, "nozzle_diameter": [0.4], "filament_diameter": [1.75], "brim_type": "no_brim", "skirt_loops": 1, "skirt_distance": 2, "skirt_height": 1 });
+            if let (Some(m), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+                for (k, x) in e {
+                    m.insert(k.clone(), x.clone());
+                }
+            }
+            v
+        };
+        vec![
+            ("no minimum length, a 3 mm part", with(json!({})), 0.0, 3.0),
+            (
+                "a 4 mm minimum, a 3 mm part",
+                with(json!({ "min_skirt_length": 4 })),
+                0.0,
+                3.0,
+            ),
+            (
+                "a 4 mm minimum, a 12 mm part",
+                with(json!({ "min_skirt_length": 4 })),
+                0.0,
+                12.0,
+            ),
+            (
+                "a 20 mm minimum, a 3 mm part",
+                with(json!({ "min_skirt_length": 20 })),
+                0.0,
+                3.0,
+            ),
+            (
+                "a 20 mm minimum, a 12 mm part",
+                with(json!({ "min_skirt_length": 20 })),
+                0.0,
+                12.0,
+            ),
+            (
+                "a 20 mm minimum, a 60 mm part",
+                with(json!({ "min_skirt_length": 20 })),
+                0.0,
+                60.0,
+            ),
+            (
+                "a 20 mm minimum round a 5 mm brim, a 12 mm part",
+                with(json!({ "min_skirt_length": 20, "brim_type": "outer_only", "brim_width": 5 })),
+                5.0,
+                12.0,
+            ),
+            (
+                "a 20 mm minimum past 2 loops, a 12 mm part",
+                with(json!({ "min_skirt_length": 20, "skirt_loops": 2 })),
+                0.0,
+                12.0,
+            ),
+        ]
     }
 
     fn reach_cases() -> Vec<(&'static str, Value, f64)> {
@@ -922,13 +1001,19 @@ mod tests {
                 radius.push(json!({ "gapMm": gap, "reachMm": reach, "radiusMm": r, "estimated": estimated, "distanceMm": round(d), "result": hit }));
             }
         }
-        let reach: Vec<Value> = reach_cases()
+        let mut reach: Vec<Value> = reach_cases()
             .into_iter()
             .map(|(name, config, brim)| {
                 let cfg = PrintConfig::from_value(&config).unwrap_or_default();
                 json!({ "name": name, "config": config, "brimMm": brim, "reachMm": round(object_room(&cfg, brim)) })
             })
             .collect();
+        // With a footprint, a square `sideMm` across: the loops min_skirt_length adds round a small object count.
+        reach.extend(skirt_length_cases().into_iter().map(|(name, config, brim, side)| {
+            let cfg = PrintConfig::from_value(&config).unwrap_or_default();
+            let hull = [[0.0, 0.0], [side, 0.0], [side, side], [0.0, side]];
+            json!({ "name": name, "config": config, "brimMm": brim, "sideMm": side, "reachMm": round(object_room_around(&cfg, brim, &hull)) })
+        }));
         json!({
             "comment": "Written by packages/core/src/collide/rules.rs (SX_BLESS=1 cargo test -p sx-core collide::rules); read by packages/settings/js/by-object.golden.test.ts. The engine's by-object rules on a set of cases: the gantry beam on the 1 mm lattice, deltas, the clearance radius, and how far an object's own first layer prints past it; and whether an object gets support, so its support's pad counts in that reach.",
             "cellMm": CELL,
