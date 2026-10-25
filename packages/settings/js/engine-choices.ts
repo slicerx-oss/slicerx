@@ -11,7 +11,7 @@ import { LEGACY_KEYS } from './import'
 // aegis walls (wall widths fitted to the part, so thin features print solid with fewer width changes than Arachne or
 // Bambu Studio's classic walls) and the outer wall spaced from the inner ones so the outline lands on the model's size.
 const ENGINE_CHOICES = engineChoicesJson as {
-  keeps: Record<string, { value: string | boolean | number; note: string }>
+  keeps: Record<string, { value: string | boolean | number; over?: (string | boolean | number)[]; note: string }>
   defaults?: Record<string, { value: string | boolean | number }>
 }
 
@@ -35,6 +35,19 @@ export const SLICERX_KEEP_VALUES: Readonly<Record<string, string | boolean | num
  */
 export const SLICERX_DEFAULTS: Readonly<Record<string, string | boolean | number>> = Object.fromEntries(Object.entries(ENGINE_CHOICES.defaults ?? {}).map(([k, v]) => [k, v.value]))
 
+/**
+ * Whether SlicerX's kept choice for `key` goes over `inherited`, the value a project took from its presets: a keep that
+ * names the values it goes over (engine-choices.json `over`, for walls only Bambu's classic) leaves any other value as
+ * the project has it, so a project's inherited arachne walls stay arachne. A project that does not set the key gets the
+ * keep.
+ */
+export function keepsOver(key: string, inherited: unknown): boolean {
+  const keep = ENGINE_CHOICES.keeps[key]
+  if (!keep) return false
+  if (!keep.over || inherited === undefined) return true
+  return keep.over.some((v) => sameChoice(inherited, v))
+}
+
 /** SlicerX's defaults for the keys a project's settings leave out (none when the project sets them all). */
 export function projectDefaults(settings: Record<string, unknown>): Record<string, string | boolean | number> {
   return Object.fromEntries(Object.entries(SLICERX_DEFAULTS).filter(([k]) => settings[k] === undefined))
@@ -55,10 +68,13 @@ export function changedKeys(settings: Record<string, unknown>): Set<string> | un
   return out
 }
 
-/** The engine choices a project leaves to SlicerX: those its file does not list as changed. None when it does not say. */
+/**
+ * The engine choices a project leaves to SlicerX: those its file does not list as changed and whose inherited value the
+ * keep goes over (`keepsOver`). None when it does not say.
+ */
 export function keptEngineChoices(settings: Record<string, unknown>): string[] {
   const changed = changedKeys(settings)
-  return changed ? Object.keys(SLICERX_KEEPS).filter((k) => !changed.has(k)) : []
+  return changed ? Object.keys(SLICERX_KEEPS).filter((k) => !changed.has(k) && keepsOver(k, settings[k])) : []
 }
 
 /**
@@ -76,20 +92,22 @@ export interface WallsNote {
 const oneText = (v: unknown): string | undefined => (typeof v === 'string' ? v : Array.isArray(v) && typeof v[0] === 'string' ? v[0] : undefined)
 
 /**
- * The walls a project's settings give, by the rule above: SlicerX's where the project inherited its generator, else
- * the project's own. `source` is the app that wrote the file (`BambuStudio-…`, `OrcaSlicer-…`), when known. Undefined
+ * The walls a project's settings give, by the rule above: SlicerX's where the project inherited a generator the keep goes
+ * over (classic), else the project's own. `source` is the app that wrote the file (`BambuStudio-…`, `OrcaSlicer-…`), when known. Undefined
  * when the project names none and says nothing about what it changed.
  */
 export function projectWalls(raw: Record<string, unknown>, source?: string): WallsNote | undefined {
   const own = oneText(raw['wall_generator'])
   const ours = String(SLICERX_KEEP_VALUES['wall_generator'] ?? 'aegis')
   const changed = changedKeys(raw)
-  if (changed && !changed.has('wall_generator')) {
+  if (changed && !changed.has('wall_generator') && keepsOver('wall_generator', raw['wall_generator'])) {
     const maker = source?.startsWith('OrcaSlicer') ? "OrcaSlicer's" : source?.startsWith('BambuStudio') ? "Bambu's" : "its preset's"
     const text = own === undefined ? `${ours} walls, kept by ${productName()}; the project names none` : own === ours ? `${ours} walls, as the project has them` : `${ours} walls, kept by ${productName()}; the project used ${maker} default ${own}`
     return { generator: ours, source: 'kept', text }
   }
-  return own === undefined ? undefined : { generator: own, source: 'project', text: `${own} walls, the project's own choice` }
+  if (own === undefined) return undefined
+  // Inherited walls the keep does not go over (arachne) are the project's as its presets had them.
+  return { generator: own, source: 'project', text: changed && !changed.has('wall_generator') ? `${own} walls, as the project has them` : `${own} walls, the project's own choice` }
 }
 
 /** The same setting value written either way: `true` and `"1"`, `"aegis"` and `["aegis"]`. */
