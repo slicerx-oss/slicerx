@@ -17,6 +17,10 @@ describe('Strikes', () => {
     expect(a!.position.toArray()).toEqual([10, 20, 30])
     expect(b!.scale.x).toBeGreaterThan(a!.scale.x)
     expect(b!.name).toBe('strike selected')
+    // A strike whose parts are selected steps back to let the ringed parts lead.
+    s.set([{ x: 0, y: 0, z: 0, selected: true, yield: true }])
+    expect((s.root.children[0] as Sprite).scale.x).toBeLessThan(a!.scale.x)
+    s.set([{ x: 10, y: 20, z: 30 }, { x: 50, y: 60, z: 5, close: true, selected: true }])
     // Drawn over the toolpaths at a fixed size on screen.
     const m = a!.material as SpriteMaterial
     expect(m.depthTest).toBe(false)

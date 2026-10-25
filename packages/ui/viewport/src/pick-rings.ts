@@ -4,8 +4,8 @@
 // ring a selected object's clearance zone gets printing by object, drawn round the object itself. It shows over the
 // toolpaths, where a selected object has no outline, and on a phone, where an outline is a hairline at that zoom.
 // Each ring rides with its object, as the clearance zones do.
-import { DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial } from 'three'
-import { PICK_EDGE, PICK_GAP, ribbon } from './clearance'
+import { Color, DoubleSide, Group, Matrix4, Mesh, MeshBasicMaterial } from 'three'
+import { PICK_GAP, ribbon } from './clearance'
 
 type Pt = readonly [number, number]
 
@@ -16,6 +16,12 @@ export interface PickRing {
   /** The footprint (convex hull, counterclockwise) in bed coordinates at that transform. */
   hull: readonly Pt[]
 }
+
+/** Width of the ring, mm: wider than a selected zone's, so the parts read at a glance under a strike mark. */
+export const RING_EDGE = 5
+
+/** How far a light studio's ring goes from the selection color toward the dark contour ink, so it holds on the pale bed. */
+export const LIGHT_DEEPEN = 0.35
 
 /** Height of the ring over the bed, mm: over a first layer's brim or skirt, so the toolpaths there leave it in view. */
 export const PICK_Z = 0.45
@@ -38,8 +44,15 @@ export class PickRings {
     return this.drawn.map((d) => d.id)
   }
 
-  setColor(selection: string): void {
+  /** The selection color; on a light studio's bed (`light`) a darker tone of it. */
+  setColor(selection: string, light = false): void {
     this.mat.color.set(selection)
+    if (light) this.mat.color.lerp(new Color('#2d2b38'), LIGHT_DEEPEN)
+  }
+
+  /** The ring's color now, as hex. */
+  get color(): string {
+    return `#${this.mat.color.getHexString()}`
   }
 
   set(rings: readonly PickRing[] | null): void {
@@ -50,7 +63,7 @@ export class PickRings {
     this.drawn = []
     for (const r of rings ?? []) {
       if (r.hull.length < 3) continue
-      const mesh = new Mesh(ribbon(r.hull, PICK_EDGE, PICK_Z, PICK_GAP + PICK_EDGE / 2), this.mat)
+      const mesh = new Mesh(ribbon(r.hull, RING_EDGE, PICK_Z, PICK_GAP + RING_EDGE / 2), this.mat)
       mesh.name = 'pick-ring'
       mesh.renderOrder = 3
       mesh.matrixAutoUpdate = false
