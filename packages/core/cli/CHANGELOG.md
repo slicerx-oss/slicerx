@@ -16,4 +16,5 @@ Changes to the `sx` command's JSON input and output. Keep a Changelog format; se
 
 ### Changed
 
+- A custom G-code refusal for a printer `sx` knows, whose text matches none of that printer's stock versions, adds one stderr line: the text needs a person's review, and after their yes a request sets `trustedGcode`; when only comments or spacing changed, `--script-printer <model-id> --script-firmware <flavor>` recognizes it. Not added when a refused line blocks even with `trustedGcode`. Exit code 1 as before.
 - `sx slice <model>` writes the G-code to `-o` (or stdout without it, or with `-o -`). The one-line summary moved from stdout to stderr, so stdout carries nothing else.
