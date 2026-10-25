@@ -34,7 +34,7 @@ import { isPhoneLayout, onPhoneLayout } from '../lib/phone-layout'
 import { modelReveal, type RevealMemory } from './model-reveal'
 import { webgl2Available, watchFor, withRetries } from './context-retry'
 import { createFallbackViewport } from './fallback'
-import { OVERLAY_GAP, overlayInsets } from './overlay-insets'
+import { FRAMED_OVERLAYS, OVERLAY_GAP, overlayInsets } from './overlay-insets'
 import { shellGpu } from './shell-gpu'
 import { viewportTheme } from './scene-theme'
 import { clearViewportLook, syncViewportLook } from './viewport-look'
@@ -1032,13 +1032,13 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         const right = side ? Math.max(0, stage.getBoundingClientRect().right - side.getBoundingClientRect().left + OVERLAY_GAP) : 0
         return vp.setInsets({ left: 0, right, top: 0, bottom })
       }
-      const rects = [...root.querySelectorAll<HTMLElement>('.sx-overlay')].filter((e) => e.offsetParent !== null).map((e) => box(e.getBoundingClientRect()))
+      const rects = [...root.querySelectorAll<HTMLElement>(FRAMED_OVERLAYS)].filter((e) => e.offsetParent !== null).map((e) => box(e.getBoundingClientRect()))
       vp.setInsets(overlayInsets(box(stage.getBoundingClientRect()), rects))
     }
     const ro = new ResizeObserver(send)
     const watched = new Set<Element>()
     const watch = () => {
-      const now = new Set<Element>([stage, ...root.querySelectorAll('.sx-overlay')])
+      const now = new Set<Element>([stage, ...root.querySelectorAll(FRAMED_OVERLAYS)])
       for (const e of watched) {
         if (!now.has(e)) {
           ro.unobserve(e)
