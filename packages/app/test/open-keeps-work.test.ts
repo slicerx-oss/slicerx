@@ -27,7 +27,7 @@ beforeAll(async () => void (await import('../src/export/actions')))
 
 beforeEach(() => {
   setSnapshotStore(memorySnapshots())
-  set({ plate: [entry('a'), entry('b', 100)], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', selection: null, selectedIds: [], unsavedPrompt: null, projectOpenAsk: null, projectFile: null, toast: null, overrides: {} })
+  set({ plate: [entry('a'), entry('b', 100)], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', selection: null, selectedIds: [], unsavedPrompt: null, projectOpenAsk: null, projectFile: null, toast: null, openNote: null, overrides: {} })
   startDirtyTracking()
   markClean()
   // An edit: the plate has work that was never saved.
@@ -43,7 +43,8 @@ describe('opening a job over unsaved work', () => {
     expect(isDirty()).toBe(false)
     const recent = await listRecent()
     expect(recent.map((r) => [r.name, r.objects])).toEqual([['a.sx3mf', 3]])
-    const note = get().toast
+    // It sits under the printer card with the open's own note, not over the view.
+    const note = get().openNote
     expect(note?.text).toBe(KEPT_NOTE)
     expect(note?.action?.label).toBe('Reopen')
     note!.action!.run()
@@ -57,7 +58,7 @@ describe('opening a job over unsaved work', () => {
     expect(get().unsavedPrompt).toBeNull()
     expect(names()).toEqual(['clip'])
     expect((await listRecent()).map((r) => r.name)).toContain('a.sx3mf')
-    expect(get().toast?.text).toBe(KEPT_NOTE)
+    expect(get().openNote?.text).toBe(KEPT_NOTE)
   })
 
   it('a recent project opened over unsaved work keeps it too', async () => {
@@ -66,7 +67,7 @@ describe('opening a job over unsaved work', () => {
     expect(get().unsavedPrompt).toBeNull()
     expect(names()).toEqual(['tower'])
     expect((await listRecent()).map((r) => r.name)).toContain('a.sx3mf')
-    expect(get().toast?.action?.label).toBe('Reopen')
+    expect(get().openNote?.action?.label).toBe('Reopen')
   })
 
   it('another slicer project dropped on the plate as a whole project asks nothing about saving', async () => {
@@ -78,7 +79,7 @@ describe('opening a job over unsaved work', () => {
     expect(get().unsavedPrompt).toBeNull()
     expect(names()).toEqual(['tower'])
     expect((await listRecent()).map((r) => [r.name, r.objects])).toEqual([['a.sx3mf', 3]])
-    expect(get().toast?.text).toContain(KEPT_NOTE.replace(/\.$/, ''))
+    expect(get().openNote?.text).toContain(KEPT_NOTE.replace(/\.$/, ''))
   })
 
   it('keeps an opened file under its own name, and the autosave of the same work is not offered back as well', async () => {
@@ -93,7 +94,7 @@ describe('opening a job over unsaved work', () => {
     markClean()
     await openModelBytes(host, 'tower.sx3mf', design('tower'), undefined, { fresh: true })
     expect(await listRecent()).toEqual([])
-    expect(get().toast?.text).not.toBe(KEPT_NOTE)
+    expect(get().openNote?.text).not.toBe(KEPT_NOTE)
   })
 
   it('asks after all when the work cannot be kept: Cancel keeps the plate, Discard opens', async () => {
@@ -110,7 +111,8 @@ describe('opening a job over unsaved work', () => {
     answerUnsaved(true)
     await discarded
     expect(names()).toEqual(['tower'])
-    // Nothing was kept, so nothing says it was.
-    expect(get().toast?.text).not.toContain(KEPT_NOTE)
+    // Nothing was kept, so nothing says it was, under the printer card or over the view.
+    expect(get().openNote?.text ?? '').not.toContain(KEPT_NOTE)
+    expect(get().toast?.text ?? '').not.toContain(KEPT_NOTE)
   })
 })
