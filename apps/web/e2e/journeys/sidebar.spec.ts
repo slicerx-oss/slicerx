@@ -4,7 +4,7 @@
 // rail, the print settings' tabs and folds, the Objects card, the scope pill, and the selection bar. One page per
 // worker; each test sets up its own mode, printer and plate. The phone legs are in phone-shell.spec.ts.
 import { type Page } from '@playwright/test'
-import { pressable, screenOf, steady } from '../canvas-press'
+import { pressable, reducedMotion, screenOf, steady } from '../canvas-press'
 import { expectFileDialog, interceptFileDialogs } from '../file-dialog'
 import { addMenu, expect, openTransform, plateReady, renameRow, setPartFilament, tabName } from '../fixtures'
 import { addPlateFromPicker, pickPlate } from '../plate-project'
@@ -1084,21 +1084,23 @@ test.describe('the plate tools', () => {
     await panel.getByRole('radio', { name: /Filament 2/ }).click()
     // The panel shows the brush's state, not a stale one.
     await expect(panel.getByRole('radio', { name: /Filament 2/ })).toHaveAttribute('aria-checked', 'true')
-    // The view opens on the whole plate: the iso view (7) brings the model to the middle before painting it. It eases
-    // there over as many frames as the page needs, so the stroke waits until the camera stops. The wait watches a point
-    // above the model's middle, since a zoom toward the middle keeps the middle itself still on screen. The stroke starts
-    // on the model (a press beside it turns the view), at the middle where the X's arms cross, and runs up the crossing.
-    await page.keyboard.press('7')
-    const [mx, my, mz] = await layeredMid(page)
-    const end = await steady(page, mx, my, mz + 4)
-    const start = await pressable(page, await screenOf(page, mx, my, mz))
-    await page.mouse.move(start.x, start.y)
-    await page.mouse.down()
-    await page.mouse.move(end.x, end.y, { steps: 12 })
-    await page.mouse.up()
-    // The drag was the brush's: the view did not turn.
-    const after = await screenOf(page, mx, my, mz + 4)
-    expect(Math.hypot(after.x - end.x, after.y - end.y)).toBeLessThan(0.5)
+    // The view opens on the whole plate: the iso view (7) brings the model to the middle before painting it. With motion
+    // reduced that is a jump, and the stroke waits until the camera is still. The wait watches a point above the model's
+    // middle, since a zoom toward the middle keeps the middle itself still on screen. The stroke starts on the model (a
+    // press beside it turns the view), at the middle where the X's arms cross, and runs up the crossing.
+    await reducedMotion(page, async () => {
+      await page.keyboard.press('7')
+      const [mx, my, mz] = await layeredMid(page)
+      const end = await steady(page, mx, my, mz + 4)
+      const start = await pressable(page, await screenOf(page, mx, my, mz))
+      await page.mouse.move(start.x, start.y)
+      await page.mouse.down()
+      await page.mouse.move(end.x, end.y, { steps: 12 })
+      await page.mouse.up()
+      // The drag was the brush's: the view did not turn.
+      const after = await screenOf(page, mx, my, mz + 4)
+      expect(Math.hypot(after.x - end.x, after.y - end.y)).toBeLessThan(0.5)
+    })
     const clear = panel.getByRole('button', { name: /Clear color/ })
     await expect(clear).toBeEnabled()
     await page.getByRole('button', { name: 'Undo' }).click()
