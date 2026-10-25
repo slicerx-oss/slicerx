@@ -2,9 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The plate grid's pictures: the objects drawn shaded, so faces turned differently read differently, with a dark edge
 // around them, fitted to the picture, and the same plate always gives the same key (it is drawn once and kept).
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PlateEntry } from '../src/state/store'
-import { PictureCache, plateKey, rasterPlate } from '../src/workspaces/preview/plate-render'
+import { PictureCache, platePicture, plateKey, rasterPlate } from '../src/workspaces/preview/plate-render'
 
 function box(id: string, size: number, at: [number, number], color = '#a0a0a0'): PlateEntry {
   const s = size
@@ -88,5 +88,37 @@ describe('the kept pictures', () => {
     expect(revoked).toEqual(['blob:a1'])
     expect(c.bytes).toBe(120)
     expect(c.get('missing')).toBeUndefined()
+  })
+})
+
+describe('a picture made into a PNG', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('is made on a canvas kept in memory, so reading it back never waits for the graphics card', async () => {
+    // A canvas on the graphics card has to be read back from it for the PNG, and while the card draws a big slice that
+    // read held the page still for half a minute, right as the plate sheet opened.
+    const asked: unknown[] = []
+    const make = document.createElement.bind(document)
+    vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
+      if (tag !== 'canvas') return make(tag)
+      return {
+        width: 0,
+        height: 0,
+        getContext: (_kind: string, options?: unknown) => {
+          asked.push(options)
+          return { putImageData: () => undefined }
+        },
+        toBlob: (done: (b: Blob | null) => void) => done(new Blob(['png'])),
+      } as unknown as HTMLCanvasElement
+    }) as typeof document.createElement)
+    vi.stubGlobal('ImageData', class { constructor(readonly data: Uint8ClampedArray, readonly width: number, readonly height: number) {} })
+    vi.stubGlobal('URL', class extends URL { static override createObjectURL = () => 'blob:picture'; static override revokeObjectURL = () => undefined })
+    const objects = [box('in-memory', 20, [50, 50])]
+    await new Promise<void>((ready) => platePicture(objects, 32, 20, ready))
+    expect(platePicture(objects, 32, 20, () => undefined).url).toBe('blob:picture')
+    expect(asked).toEqual([{ willReadFrequently: true }])
   })
 })
