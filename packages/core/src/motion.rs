@@ -235,6 +235,16 @@ pub fn accel_enabled(cfg: &PrintConfig) -> bool {
     .any(|k| raw_f(cfg, k).is_some_and(|v| v > 0.0))
 }
 
+/// True when custom G-code sets an acceleration itself (`M204`, Repetier's `M201` and `M202`, Klipper's
+/// `SET_VELOCITY_LIMIT ACCEL=`), so what was last written is no longer in effect after it.
+pub fn sets_accel(text: &str) -> bool {
+    text.lines().any(|line| {
+        let code = line.split(';').next().unwrap_or("").trim().to_ascii_uppercase();
+        let word = code.split_whitespace().next().unwrap_or("");
+        matches!(word, "M204" | "M201" | "M202") || (word == "SET_VELOCITY_LIMIT" && code.contains("ACCEL="))
+    })
+}
+
 /// The acceleration and jerk last written, and the travel acceleration (0: not written yet).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Written {
@@ -804,6 +814,17 @@ fn trapezoid(b: &Block, v0: f64, v1: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_gcode_that_sets_an_acceleration() {
+        assert!(sets_accel("G1 X0\n  M204 S9000\nG1 X5"));
+        assert!(sets_accel("SET_VELOCITY_LIMIT ACCEL=3000"));
+        assert!(sets_accel("m201 X1000 Y1000"));
+        assert!(!sets_accel("G1 X0 F18000 ; M204 S9000 in a comment"));
+        assert!(!sets_accel("SET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=5"));
+        assert!(!sets_accel("SET_VELOCITY_LIMIT ACCEL_TO_DECEL=2500"));
+        assert!(!sets_accel("M2040\nM205 X7 Y7"));
+    }
 
     fn lim() -> Limits {
         Limits {
