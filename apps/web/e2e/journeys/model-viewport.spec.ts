@@ -325,6 +325,28 @@ test.describe('Model framing', () => {
     return last
   }
 
+  /**
+   * The camera once a pick's framing has landed: no eased move left, and the camera within 0.05 mm of the pose that
+   * frames the selection from the current angle, worked out in the page as the viewport works it out. Two equal reads
+   * can also come from a frame between moves, before the framing of the new pick has landed.
+   */
+  async function framed(page: Page): Promise<number[]> {
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            type Vec = { distanceTo(p: Vec): number }
+            type Vp = { rig: { move: unknown; framed(box: unknown): { pos: Vec } }; selectionBox(): unknown; camera: { position: Vec } }
+            const vp = (window as unknown as { __vp: Vp }).__vp
+            if (vp.rig.move != null) return Infinity
+            return vp.camera.position.distanceTo(vp.rig.framed(vp.selectionBox()).pos)
+          }),
+        { intervals: [250], timeout: 10_000 },
+      )
+      .toBeLessThan(0.05)
+    return (await camera(page)).map((v) => Math.round(v * 10) / 10)
+  }
+
   test('Frame the view: Always frames each pick, On open and add keeps the camera still', async ({ page }) => {
     await modelReset(page)
     await designTab(page).click()
@@ -335,9 +357,9 @@ test.describe('Model framing', () => {
     expect((await state(page)).appearance['modelFraming']).toBe('selection')
     try {
       await pickObject(page, a!)
-      const onA = await stopped(page)
+      const onA = await framed(page)
       await pickObject(page, b!)
-      const onB = await stopped(page)
+      const onB = await framed(page)
       expect(onB).not.toEqual(onA)
 
       await page.getByRole('button', { name: 'Settings', exact: true }).click()
