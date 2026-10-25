@@ -91,3 +91,50 @@ describe('Toolpaths pick', () => {
     expect(t.pick(new Vector3(5, 5, 50), down, 0)).toBeNull()
   })
 })
+
+describe('Toolpaths bead size', () => {
+  // An overhang wall above a bridge flow of 1 comes as a taller bead (0.459 mm wide, 0.24 mm tall at 0.2 mm layers
+  // and a flow of 1.2) beside a plain outer wall (0.45 mm, 0.2 mm).
+  const beads = buildPreview([
+    [
+      { a: [0, 0], b: [10, 0], feature: FEATURE.outerWall, widthUm: 450, heightUm: 200 },
+      { a: [10, 0], b: [10, 10], feature: FEATURE.overhangWall, widthUm: 459, heightUm: 240 },
+    ],
+  ])
+
+  /** Each instance's bead as the vertex shader builds it from aSegB: width, height, and bottom and top z. */
+  function bead(t: Toolpaths, i: number): { width: number; height: number; bottom: number; top: number } {
+    const mesh = t.root.children.find((c) => (c as Mesh).isMesh && c.name !== 'nozzle') as Mesh
+    const a = (mesh.geometry as InstancedBufferGeometry).getAttribute('aSegB') as InterleavedBufferAttribute
+    const words = new Uint32Array(a.data.array.buffer, a.data.array.byteOffset, a.data.array.length)
+    const o = i * a.data.stride + a.offset
+    const top = new Float32Array(new Uint32Array([words[o] ?? 0]).buffer)[0] ?? 0
+    const wh = words[o + 1] ?? 0
+    const hw = (wh & 0xffff) * 0.0005
+    const hh = (wh >>> 16) * 0.0005
+    return { width: 2 * hw, height: 2 * hh, bottom: top - 2 * hh, top }
+  }
+
+  it('draws a segment at its own width and height, hanging below the layer top', () => {
+    const t = new Toolpaths()
+    t.set(beads)
+    const wall = bead(t, 0)
+    const overhang = bead(t, 1)
+    expect(wall.width).toBeCloseTo(0.45, 6)
+    expect(wall.height).toBeCloseTo(0.2, 6)
+    expect(overhang.width).toBeCloseTo(0.459, 6)
+    expect(overhang.height).toBeCloseTo(0.24, 6)
+    expect(overhang.top).toBeCloseTo(wall.top, 6)
+    expect(overhang.bottom).toBeCloseTo(wall.top - 0.24, 6)
+  })
+
+  it('spans the width and height color ranges to the taller bead', () => {
+    const t = new Toolpaths()
+    t.set(beads)
+    const r = t.ranges()
+    expect(r.width[0]).toBeCloseTo(0.45, 6)
+    expect(r.width[1]).toBeCloseTo(0.459, 6)
+    expect(r.height[0]).toBeCloseTo(0.2, 6)
+    expect(r.height[1]).toBeCloseTo(0.24, 6)
+  })
+})
