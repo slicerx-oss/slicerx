@@ -57,8 +57,12 @@ export interface PrintMargins {
    * the engine sizes it, else estimated from the bounds.
    */
   grow(size: PrintSize, base?: readonly FirstLayerShape[]): number
-  /** How far the outermost thing printed for the object reaches, skirt included, mm. At least `grow`. */
-  reach(size: PrintSize, base?: readonly FirstLayerShape[]): number
+  /**
+   * How far the outermost thing printed for the object reaches, skirt included, mm. At least `grow`. `hull` is the
+   * footprint's convex hull, when known: a skirt of the object's own with a minimum length gets more loops round a
+   * smaller outline.
+   */
+  reach(size: PrintSize, base?: readonly FirstLayerShape[], hull?: readonly (readonly [number, number])[]): number
   /** True when a skirt or draft shield runs around the whole print, which can cross an excluded area between objects. */
   skirt: boolean
   /** Where the engine cuts the first layer an automatic brim is sized from, mm above the bed; unset without one. */

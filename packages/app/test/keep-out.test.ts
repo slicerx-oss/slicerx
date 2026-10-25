@@ -4,6 +4,7 @@
 // runs its nozzle wrap check in. Arrange keeps every part off them, printed by layer or by object, as the slice holds
 // the print to them (heimdall's keep_out check).
 import { afterEach, describe, expect, it } from 'vitest'
+import { byObjectReach } from '@slicerx/settings/by-object'
 import { setProfileLayer } from '../src/adapters/config'
 import { arrangePlate } from '../src/plate/edit'
 import { avoidAreas } from '../src/plate/arrange'
@@ -69,5 +70,27 @@ describe('the printer keep-out areas arrange keeps off', () => {
     const placed = boxes().filter((b) => b.x0 >= 0 && b.y0 >= 0 && b.x1 <= 256 && b.y1 <= 256)
     expect(placed.length).toBeGreaterThan(count / 2)
     for (const b of placed) expect(meets(b, A1_CORNER), `${b.id} at ${b.x0.toFixed(1)}, ${b.y0.toFixed(1)}`).toBe(false)
+  })
+
+  it('keeps the skirt a minimum skirt length adds round each small part off the A1 corner and on the bed, by object', async () => {
+    // One loop asked for and 20 mm of filament as the minimum: sx prints 16 loops round each 3 mm cube, its skirt
+    // reaching 8 mm out (byObjectReach on the cube's outline, from the slice's own loop count). Counted as one loop,
+    // a full plate put a skirt into the corner, where the slice is refused.
+    installPrintMargins(get)
+    set({ printerModel: { vendor: 'Bambu Lab', model: 'A1' } })
+    await profileReady()
+    const overrides = { ...get().overrides, print_sequence: 'by object', brim_type: 'no_brim', skirt_loops: 1, skirt_distance: 2, min_skirt_length: 20 }
+    set({ plate: Array.from({ length: 14 }, (_, i) => cube(i, 3)), overrides, selection: null, selectedIds: [] })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    // the A1's 0.42 mm line on its 0.2 mm first layer, as by-object-golden.json has it for this case
+    const skirt = byObjectReach({ ...overrides, line_width: 0.42, initial_layer_print_height: 0.2, filament_diameter: [1.75] }, 0, [[0, 0], [3, 0], [3, 3], [0, 3]])
+    expect(skirt).toBeCloseTo(8.033274, 5)
+    const placed = boxes().filter((b) => b.x0 >= 0 && b.y0 >= 0 && b.x1 <= 256 && b.y1 <= 256)
+    expect(placed.length).toBeGreaterThan(6)
+    for (const b of placed) {
+      const out = { x0: b.x0 - skirt, y0: b.y0 - skirt, x1: b.x1 + skirt, y1: b.y1 + skirt }
+      expect(meets(out, A1_CORNER), `${b.id} at ${b.x0.toFixed(1)}, ${b.y0.toFixed(1)}`).toBe(false)
+      expect(out.x0 >= 0 && out.y0 >= 0 && out.x1 <= 256 && out.y1 <= 256, `${b.id} at ${b.x0.toFixed(1)}, ${b.y0.toFixed(1)}`).toBe(true)
+    }
   })
 })
