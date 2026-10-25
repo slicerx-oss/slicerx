@@ -122,11 +122,12 @@ interface Printed {
 
 /**
  * Splits the extrusions between the objects by footprint (the boxes are far apart, so every extrusion near a box is
- * that box's), in print order. Extrusions near no box (the purge line) are left out.
+ * that box's), in print order. Extrusions near no box (the purge line) are left out. A project keeps its build
+ * positions, so each box prints where the file puts it.
  */
-function printed(gcode: string, boxes: Box[], shift: [number, number]): Printed {
+function printed(gcode: string, boxes: Box[]): Printed {
   const all = moves(gcode)
-  const rects = boxes.map((b) => ({ x0: b.x + shift[0] - b.w / 2, y0: b.y + shift[1] - b.d / 2, x1: b.x + shift[0] + b.w / 2, y1: b.y + shift[1] + b.d / 2 }))
+  const rects = boxes.map((b) => ({ x0: b.x - b.w / 2, y0: b.y - b.d / 2, x1: b.x + b.w / 2, y1: b.y + b.d / 2 }))
   const objects = rects.map((rect) => ({ rect, top: 0, first: -1, last: -1 }))
   const order: number[] = []
   all.forEach((m, i) => {
@@ -142,15 +143,9 @@ function printed(gcode: string, boxes: Box[], shift: [number, number]): Printed 
   return { objects, order, moves: all }
 }
 
-/** Where the engine put the plate: centered on the bed as a whole, so the shift from the file's coordinates. */
-function plateShift(boxes: Box[], bed: number): [number, number] {
-  const span = (lo: number[], hi: number[]) => (Math.min(...lo) + Math.max(...hi)) / 2
-  return [bed / 2 - span(boxes.map((b) => b.x - b.w / 2), boxes.map((b) => b.x + b.w / 2)), bed / 2 - span(boxes.map((b) => b.y - b.d / 2), boxes.map((b) => b.y + b.d / 2))]
-}
-
 /** Checks a by-object G-code file: the order, the lift before each later object, and no travel through a finished one. */
-function checkByObject(gcode: string, boxes: Box[], bed: number): { order: string[]; lifts: number[] } {
-  const p = printed(gcode, boxes, plateShift(boxes, bed))
+function checkByObject(gcode: string, boxes: Box[]): { order: string[]; lifts: number[] } {
+  const p = printed(gcode, boxes)
   // Each object finishes before the next starts.
   expect(p.order).toHaveLength(boxes.length)
   expect(new Set(p.order).size).toBe(boxes.length)
@@ -204,7 +199,7 @@ describe.skipIf(noSx())('print by object with the real sx CLI', { timeout: sxTim
     const r = await h.call('slicerx_slice_file', { model: project(join(h.dir, 'three.3mf'), three), profiles: A1, overrides: { print_sequence: 'by object' } })
     expect(r.isError, text(r)).toBeFalsy()
     const g = readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8')
-    const { order, lifts } = checkByObject(g, three, 256)
+    const { order, lifts } = checkByObject(g, three)
     expect(order).toEqual(['tall', 'short', 'middle'])
     // Over the 18 mm box before the short one, and still over it before the middle one.
     expect(lifts[0]).toBeGreaterThan(18)
@@ -231,14 +226,14 @@ describe.skipIf(noSx())('print by object with the real sx CLI', { timeout: sxTim
       const r = await h.call('slicerx_slice_file', { model: file, project_settings: true, profiles: A1_MINI })
       expect(r.isError, text(r)).toBeFalsy()
       const g = readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8')
-      expect(checkByObject(g, two, 180).order).toEqual(['left', 'right'])
+      expect(checkByObject(g, two).order).toEqual(['left', 'right'])
     }
     const info = await h.call('slicerx_inspect_project', { file: saved[1] })
     expect(data<{ plates: { print_sequence?: string }[] }>(info).plates[0]?.print_sequence).toBe('by object')
     // By layer, the same file interleaves the objects.
     const r = await h.call('slicerx_slice_file', { model: saved[0], project_settings: true, profiles: A1_MINI, overrides: { print_sequence: 'by layer' } })
     expect(r.isError, text(r)).toBeFalsy()
-    const p = printed(readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8'), two, plateShift(two, 180))
+    const p = printed(readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8'), two)
     expect(p.order.length).toBeGreaterThan(10)
   })
 
@@ -251,7 +246,14 @@ describe.skipIf(noSx())('print by object with the real sx CLI', { timeout: sxTim
     const h = await connect({ engine: 'sx', sxBin })
     const r = await h.call('slicerx_slice_file', { model: project(join(h.dir, 'apart.3mf'), apart), profiles: A1, overrides: { print_sequence: 'by object' } })
     expect(r.isError, text(r)).toBeFalsy()
-    expect(checkByObject(readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8'), apart, 256).lifts[0]).toBeGreaterThan(30)
+    const g = readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8')
+    // The tower prints where the file puts it, not moved with the plate to the middle of the bed: the gantry's
+    // premise rests on the 120 mm between the two in y.
+    const above = moves(g).filter((m) => m.extrude && m.z > 7)
+    const mid = (v: number[]) => (Math.min(...v) + Math.max(...v)) / 2
+    expect(mid(above.map((m) => m.x))).toBeCloseTo(128, 0)
+    expect(mid(above.map((m) => m.y))).toBeCloseTo(50, 0)
+    expect(checkByObject(g, apart).lifts[0]).toBeGreaterThan(30)
   })
 
   it('holds the A1 and A1 mini to the profile radius, as their head is not measured', async () => {
