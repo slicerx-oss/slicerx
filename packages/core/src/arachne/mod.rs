@@ -428,6 +428,35 @@ fn skeleton_walls(
             stitch_distance
         };
         let (mut open, closed) = lines::stitch(inset, distance, to_nm(0.01));
+        // The stitcher closes a chain only when it is longer than three stitch distances, so it never bridges a
+        // gap round a tiny shape. A wall that already comes back to where it started is a loop however short,
+        // though: the wall round a 0.8 mm pin, about 1.2 mm long, stayed an open line and printed with no seam
+        // and no seam gap. A line that runs out and back over itself encloses nothing and stays open.
+        if !zero_width {
+            let min_area2 = 2 * to_nm(0.1) * to_nm(0.1);
+            for line in open.iter_mut().filter(|l| !l.is_odd && l.junctions.len() > 3) {
+                let Some(first) = line.junctions.first().copied() else {
+                    continue;
+                };
+                let area2: i64 = line
+                    .junctions
+                    .windows(2)
+                    .map(|w| {
+                        let (a, b) = (w[0].p.minus(first.p), w[1].p.minus(first.p));
+                        a.x * b.y - b.x * a.y
+                    })
+                    .sum();
+                if area2.abs() < min_area2 {
+                    continue;
+                }
+                if let Some(last) = line.junctions.last_mut()
+                    && graph::dist(first.p, last.p) < to_nm(0.01)
+                {
+                    *last = first;
+                    line.is_closed = true;
+                }
+            }
+        }
         for mut line in closed {
             if line.junctions.is_empty() {
                 continue;
