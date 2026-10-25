@@ -310,8 +310,9 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// layer over sparse infill a bridge (`; FEATURE: Bridge`, was `Internal Bridge`), and again when the ring's beads
 /// reached out to the infill area's overlap with the wall. The tower's wall now prints with the layer's first filament,
 /// ahead of the first change, so only the tower's lines moved with it (the objects' extrusion is unchanged). Changed
-/// again when the strands of the bridge over the sparse infill spread evenly across it, wider where they stretch.
-const BY_OBJECT_FNV: &str = "c903a40d01455d9b";
+/// again when the strands of the bridge over the sparse infill spread evenly across it, wider where they stretch, and
+/// again when that bridge region started from the fixed-width inner wall's spacing, as with variable-width walls.
+const BY_OBJECT_FNV: &str = "9c57a10732ca6d35";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {
