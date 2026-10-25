@@ -103,6 +103,8 @@ describe('ui over the app link', () => {
       panels: { open: ['settings'], settingsSection: 'look', settable: ['settings', 'command', 'about', 'shortcuts', 'expert', 'printerChooser', 'printerSettings'] },
       // printing by layer there is no clearance plan
       byObject: null,
+      // nothing sliced, so no collisions to read
+      collisions: null,
     })
     setMimirOn(false)
     expect(await runCall('ui.get', {})).toMatchObject({ tabs: ['slice', 'design'] })
