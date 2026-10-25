@@ -48,7 +48,7 @@ function size(positions: Float64Array): number[] {
   return hi.map((h, k) => h - lo[k]!)
 }
 
-beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null }))
+beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null, openNote: null }))
 
 describe('reading STEP files', () => {
   it('routes .step and .stp to the automatic import', () => {
@@ -118,7 +118,7 @@ describe('adding STEP files to the plate', () => {
     const s = sizeOf(bounds(plate[0]!.parts, plate[0]!.transform)!)
     expect(s[0]).toBeCloseTo(20, 2)
     expect(s[2]).toBeCloseTo(25, 2)
-    expect(get().toast?.action?.label).not.toBe('Use as millimeters')
+    expect(get().openNote?.action?.label).not.toBe('Use as millimeters')
   })
 
   it('adds an inch file at its real size and says it was converted', async () => {
@@ -126,17 +126,17 @@ describe('adding STEP files to the plate', () => {
     const e = get().plate.find((p) => p.id === id)!
     expect(decompose(e.transform).scale[0]).toBeCloseTo(1)
     expect(sizeOf(bounds(e.parts, e.transform)!)[0]).toBeCloseTo(50.8, 2)
-    expect(get().toast?.text).toMatch(/Converted from inches to millimeters/)
+    expect(get().openNote?.text).toMatch(/Converted from inches to millimeters/)
   })
 
   it('says what an assembly became as its objects show, so it never talks over the next file', async () => {
-    // A file dropped as soon as the assembly shows ends with its own toast, not the assembly's arriving after it.
+    // A file dropped as soon as the assembly shows ends with its own note, not the assembly's arriving after it.
     let shown: string | undefined
     let seen = false
     const off = appStore.subscribe((s, prev) => {
       if (seen || s.plate.length <= prev.plate.length) return
       seen = true
-      queueMicrotask(() => (shown = get().toast?.text ?? ''))
+      queueMicrotask(() => (shown = get().openNote?.text ?? ''))
     })
     try {
       await addAutoImport(host, 'assembly.step', buffer(file('assembly.step')), undefined, convert)
@@ -145,7 +145,7 @@ describe('adding STEP files to the plate', () => {
     }
     expect(shown).toBe('assembly.step: Split into 2 objects.')
     await addAutoImport(host, 'bracket-inch.stp', buffer(file('bracket-inch.stp')), undefined, convert)
-    expect(get().toast?.text).toMatch(/^bracket-inch\.stp: Converted from inches to millimeters/)
+    expect(get().openNote?.text).toMatch(/^bracket-inch\.stp: Converted from inches to millimeters/)
   })
 
   it('adds nothing when the file cannot be read', async () => {

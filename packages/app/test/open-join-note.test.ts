@@ -42,7 +42,7 @@ function feet(): Map<string, number> {
 }
 
 beforeEach(async () => {
-  set((s) => ({ plate: [], plates: [{ ...s.plates[0]!, id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', projectSettings: null, projectPrinter: null, projectOpenAsk: null, toast: null, unsavedPrompt: null }))
+  set((s) => ({ plate: [], plates: [{ ...s.plates[0]!, id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', projectSettings: null, projectPrinter: null, projectOpenAsk: null, toast: null, openNote: null, unsavedPrompt: null }))
   await profileReady()
 })
 
@@ -54,7 +54,7 @@ describe('a plain 3MF with stacked objects', () => {
     expect(joined.get('Base band')).toBeCloseTo(0, 2)
     expect(joined.get('Top band')).toBeCloseTo(10, 2)
 
-    const note = get().toast
+    const note = get().openNote
     expect(note?.text).toMatch(/2 of its objects touch, so they were loaded as one object with parts/)
     expect(note?.action?.label).toBe('Keep separate')
     note!.action!.run()
