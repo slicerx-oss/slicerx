@@ -24,8 +24,11 @@ export const OPEN_PANELS = {
   printerSettings: 'printerSettingsOpen',
 } as const satisfies Record<string, keyof AppState>
 
-/** Open flags that are not a panel: the open of a file running, which the plate's state reads already. */
-export const NOT_PANELS: readonly (keyof AppState)[] = ['sliceDuringOpen']
+/**
+ * Open flags that are not a panel: the open of a file running, which the plate's state reads already, and the legend's
+ * list, which shows only with the toolpaths and which the layer view (`app_layers`) reads back as `legend`.
+ */
+export const NOT_PANELS: readonly (keyof AppState)[] = ['sliceDuringOpen', 'legendOpen']
 
 type UiSource = Pick<AppState, 'selection' | 'selectedIds' | 'subPicks' | 'pickFilter' | 'plate' | 'objectTool' | 'parked' | 'setup' | 'workspace'> & Pick<AppState, (typeof OPEN_PANELS)[keyof typeof OPEN_PANELS]>
 

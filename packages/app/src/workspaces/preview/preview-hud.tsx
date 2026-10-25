@@ -175,6 +175,7 @@ export function Legend() {
         <ul
           id={listId}
           className="legend sx-overlay"
+          data-no-frame=""
           aria-label="Toolpath legend"
           onKeyDown={(e) => {
             if (e.key !== 'Escape') return
