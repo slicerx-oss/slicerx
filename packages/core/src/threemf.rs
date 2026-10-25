@@ -155,12 +155,12 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
     let mut plates: std::collections::BTreeMap<u32, Vec<Mesh>> = std::collections::BTreeMap::new();
     let mut work = MAX_WORK;
     let mut costs = HashMap::new();
-    let ears = zip
+    let ears_text = zip
         .read("Metadata/brim_ear_points.txt")
         .ok()
-        .and_then(|b| String::from_utf8(b).ok())
-        .map(|t| parse_brim_ears(&t))
-        .unwrap_or_default();
+        .and_then(|b| String::from_utf8(b).ok());
+    let mut ears_note = ears_text.as_deref().and_then(brim_ears_note);
+    let ears = ears_text.as_deref().map(parse_brim_ears).unwrap_or_default();
     let ranges = zip
         .read("Metadata/layer_config_ranges.xml")
         .map(|x| parse_layer_ranges(&x))
@@ -171,7 +171,8 @@ pub(crate) fn load_plate_objects_legacy(bytes: &[u8], name: &str) -> Result<Vec<
         let mut parts = Vec::new();
         let mut volumes = Vec::new();
         let mut with_settings = Vec::new();
-        let mut notes = Vec::new();
+        // the file's note on ears it could not read goes with the first object
+        let mut notes: Vec<String> = ears_note.take().into_iter().collect();
         let mut ctx = Resolve {
             zip: &zip,
             models: &mut models,
@@ -301,6 +302,7 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<Vec<(u32, Vec<Me
             .collect()
     };
     let mut plates: std::collections::BTreeMap<u32, Vec<Mesh>> = std::collections::BTreeMap::new();
+    let mut ears_note = project.files.brim_ears.as_deref().and_then(brim_ears_note);
     let ears = project
         .files
         .brim_ears
@@ -338,7 +340,8 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<Vec<(u32, Vec<Me
         let mut parts: Vec<MeshPart> = Vec::new();
         let mut volumes: Vec<MeshVolume> = Vec::new();
         let mut with_settings = Vec::new();
-        let mut notes: Vec<String> = Vec::new();
+        // the file's note on ears it could not read goes with the first object
+        let mut notes: Vec<String> = ears_note.take().into_iter().collect();
         // the name a part without one gets, numbered as the legacy reader numbers it: once per mesh placed
         let mut fallback = String::new();
         let mut leaf: Option<(u32, Vec<[f32; 12]>)> = None;
@@ -621,20 +624,53 @@ pub struct BrimEars {
 }
 
 /// Parses `brim_ear_points.txt`: an optional `brim_points_format_version=` line, then one
-/// `object_id=N|x y z r x y z r ...` line per object.
+/// `object_id=N|...` line per object. Format 0 (or no header) writes four numbers per ear, `x y z r`; format 1
+/// writes five, `x y z r` and one more this reader does not use. An ear with a number that does not read, or a
+/// radius that is not positive, is dropped on its own, so the ears after it keep their place. A format this reader
+/// does not know gives no ears ([`brim_ears_note`] says so) rather than ears read in the wrong shape.
 fn parse_brim_ears(text: &str) -> Vec<(u32, Vec<[f32; 4]>)> {
+    let Some(stride) = brim_ears_stride(text) else {
+        return Vec::new();
+    };
     text.lines()
         .filter_map(|line| {
             let (head, body) = line.split_once('|')?;
             let id: u32 = head.strip_prefix("object_id=")?.trim().parse().ok()?;
-            let nums: Vec<f32> = body
+            let nums: Vec<Option<f32>> = body
                 .split_ascii_whitespace()
-                .filter_map(|v| v.parse().ok())
+                .map(|v| v.parse::<f32>().ok().filter(|f| f.is_finite()))
                 .collect();
-            let points: Vec<[f32; 4]> = nums.as_chunks::<4>().0.to_vec();
+            let points: Vec<[f32; 4]> = nums
+                .chunks_exact(stride)
+                .filter_map(|c| match c {
+                    [Some(x), Some(y), Some(z), Some(r), ..] if *r > 0.0 => Some([*x, *y, *z, *r]),
+                    _ => None,
+                })
+                .collect();
             (id > 0 && !points.is_empty()).then_some((id, points))
         })
         .collect()
+}
+
+/// The numbers per ear of a `brim_ear_points.txt` by its format line: 4 for format 0 or none, 5 for format 1, and
+/// `None` for any other.
+fn brim_ears_stride(text: &str) -> Option<usize> {
+    let version = text
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("brim_points_format_version="))
+        .map(str::trim);
+    match version {
+        None | Some("0") => Some(4),
+        Some("1") => Some(5),
+        Some(_) => None,
+    }
+}
+
+/// The note for a `brim_ear_points.txt` in a format this reader does not know, whose ears are left out.
+fn brim_ears_note(text: &str) -> Option<String> {
+    brim_ears_stride(text).is_none().then(|| {
+        "The project's painted brim ears are in a format this version does not read, so they are left out.".to_owned()
+    })
 }
 
 /// The painted brim ears of the build item at `item_no` (0-based; the file numbers them from 1), placed by the item's
@@ -2125,6 +2161,128 @@ mod tests {
         assert_eq!(ears.len(), 1);
         assert_eq!(ears[0].0, 1);
         assert_eq!(ears[0].1, vec![[1.5, 2.5, -0.1, 6.0], [3.0, 4.0, 0.0, 5.5]]);
+    }
+
+    /// Format 1 writes five numbers per ear (x, y, z, radius and a trailing -1); no header and format 0 write four.
+    #[test]
+    fn brim_ear_points_read_each_format() {
+        let v1 = "brim_points_format_version=1\nobject_id=1|-13 -7 -10 4 -1 17 -7 -10 3 -1 2 -7 -8 2.5 -1\n";
+        assert_eq!(
+            parse_brim_ears(v1),
+            vec![(
+                1,
+                vec![
+                    [-13.0, -7.0, -10.0, 4.0],
+                    [17.0, -7.0, -10.0, 3.0],
+                    [2.0, -7.0, -8.0, 2.5]
+                ]
+            )]
+        );
+        let bare = "object_id=2|1 2 3 4 5 6 7 8\n";
+        assert_eq!(
+            parse_brim_ears(bare),
+            vec![(2, vec![[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]])]
+        );
+        let v0 = "brim_points_format_version=0\nobject_id=2|1 2 3 4 5 6 7 8\n";
+        assert_eq!(parse_brim_ears(v0), parse_brim_ears(bare));
+        // A format this reader does not know is left out rather than read in the wrong shape.
+        assert!(parse_brim_ears("brim_points_format_version=7\nobject_id=1|1 2 3 4 -1\n").is_empty());
+    }
+
+    #[test]
+    fn brim_ears_without_a_positive_radius_are_dropped() {
+        let text = "object_id=1|1 2 3 0 4 5 6 -2 7 8 9 3 1 1 1 NaN\nobject_id=2|1 2 3 -1\n";
+        assert_eq!(parse_brim_ears(text), vec![(1, vec![[7.0, 8.0, 9.0, 3.0]])]);
+    }
+
+    /// A project like the ones that showed the bug: flat meshes, an item turned on two axes that stands them up,
+    /// components that only move them, a per part matrix in the settings that disagrees with the components (it must
+    /// be ignored), and format 1 brim ears. Every part lands where item x component puts it and every ear keeps its
+    /// place and size.
+    #[test]
+    fn turned_item_with_moved_parts_and_format_1_ears_loads_in_place() {
+        let bytes = turned_project();
+        let items = &load_plate_objects(&bytes, "turned.3mf").unwrap()[0].1;
+        assert_eq!(items.len(), 1);
+        let item = &items[0];
+        let close = |a: [f32; 3], b: [f32; 3]| a.iter().zip(b).all(|(p, q)| (p - q).abs() < 0.01);
+        let bounds = |p: &MeshPart| {
+            let mut lo = [f32::MAX; 3];
+            let mut hi = [f32::MIN; 3];
+            for v in &p.positions {
+                for k in 0..3 {
+                    lo[k] = lo[k].min(v[k]);
+                    hi[k] = hi[k].max(v[k]);
+                }
+            }
+            (lo, hi)
+        };
+        let (lo, hi) = bounds(&item.parts[0]);
+        assert!(
+            close(lo, [82.7417, 80.4282, 0.0]) && close(hi, [110.7224, 98.8923, 20.0]),
+            "{lo:?} {hi:?}"
+        );
+        let (lo, hi) = bounds(&item.parts[1]);
+        assert!(
+            close(lo, [90.6519, 87.5933, 5.0]) && close(hi, [100.8122, 95.1913, 15.0]),
+            "{lo:?} {hi:?}"
+        );
+        let legacy = &load_plate_objects_legacy(&bytes, "turned.3mf").unwrap()[0].1;
+        assert_eq!(legacy[0].brim_points.len(), item.brim_points.len());
+        for (a, b) in legacy[0].brim_points.iter().zip(&item.brim_points) {
+            assert!(a.iter().zip(b).all(|(p, q)| (p - q).abs() < 1e-3), "{a:?} {b:?}");
+        }
+        let ears = &item.brim_points;
+        assert_eq!(ears.len(), 3, "{ears:?}");
+        for (e, want) in ears.iter().zip([
+            [83.7417, 82.1603, 0.0, 4.0],
+            [109.7224, 97.1603, 0.0, 3.0],
+            [97.7321, 87.9282, 0.0, 2.5],
+        ]) {
+            assert!(
+                e.iter().zip(want).all(|(p, q)| (p - q).abs() < 0.01),
+                "{e:?} {want:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ears_in_an_unknown_format_are_left_out_with_a_note() {
+        let ears = "brim_points_format_version=9\nobject_id=1|1 2 0 5 -1 3\n";
+        let bytes = two_items_with(&[("Metadata/brim_ear_points.txt", ears)]);
+        for items in [
+            &load_plate_objects(&bytes, "p.3mf").unwrap()[0].1,
+            &load_plate_objects_legacy(&bytes, "p.3mf").unwrap()[0].1,
+        ] {
+            assert!(items.iter().all(|m| m.brim_points.is_empty()));
+            assert!(
+                items[0].notes.iter().any(|n| n.contains("brim ears")),
+                "{:?}",
+                items[0].notes
+            );
+        }
+    }
+
+    /// The project of [`turned_item_with_moved_parts_and_format_1_ears_loads_in_place`].
+    fn turned_project() -> Vec<u8> {
+        let sub = format!(
+            r#"<model unit="millimeter"><resources>{}{}</resources></model>"#,
+            box_object(1, [-15.0, -10.0, -2.0], [15.0, 10.0, 2.0]),
+            box_object(2, [-5.0, -5.0, -1.5], [5.0, 5.0, 1.5])
+        );
+        let main = r#"<model unit="millimeter" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06"><resources><object id="10" type="model"><components><component p:path="/3D/Objects/object_1.model" objectid="1" transform="1 0 0 0 1 0 0 0 1 2 3 -10"/><component p:path="/3D/Objects/object_1.model" objectid="2" transform="1 0 0 0 1 0 0 0 1 2 3 -12"/></components></object></resources><build><item objectid="10" transform="0.866025404 0.5 0 0 0 1 0.5 -0.866025404 0 100 80 7"/></build></model>"#;
+        let settings = r#"<config><object id="10"><metadata key="name" value="turned"/><metadata key="extruder" value="1"/>
+<part id="1" subtype="normal_part"><metadata key="name" value="body"/><metadata key="matrix" value="1 0 0 6 0 1 0 9 0 0 1 -30 0 0 0 1"/><metadata key="extruder" value="1"/></part>
+<part id="2" subtype="normal_part"><metadata key="name" value="inlay"/><metadata key="matrix" value="1 0 0 6 0 1 0 9 0 0 1 -36 0 0 0 1"/><metadata key="extruder" value="2"/></part>
+</object></config>"#;
+        let ears =
+            "brim_points_format_version=1\nobject_id=1|-13 -7 -10 4 -1 17 -7 -10 3 -1 2 -7 -8 2.5 -1\n";
+        zip(&[
+            ("3D/3dmodel.model", main.as_bytes(), true),
+            ("3D/Objects/object_1.model", sub.as_bytes(), true),
+            ("Metadata/model_settings.config", settings.as_bytes(), false),
+            ("Metadata/brim_ear_points.txt", ears.as_bytes(), false),
+        ])
     }
 
     /// Builds a ZIP with the given entries, stored or deflated.
