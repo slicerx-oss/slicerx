@@ -40,13 +40,17 @@ export interface ResizeSettleTiming {
   /** The longest a resize waits on motion in all, counted from its first wait on it. */
   hold: number
   now: () => number
+  /** Runs `run` at the next animation frame (requestAnimationFrame in a browser). */
+  frame: (run: () => void) => void
 }
 
 /**
  * Runs `resize` once the canvas box has kept still for `wait` ms and `motion` reports nothing still moving it. A wait
  * on motion ends when the motion does or when `hold` runs out, whichever comes first, so a transition that stays
- * paused or never finishes delays the resize by at most `hold`. A newer schedule() or dispose() drops any wait still
- * pending, so a stale one never resizes twice or after dispose.
+ * paused or never finishes delays the resize by at most `hold` and a frame. When the hold runs out the resize waits for
+ * the next frame: a page that draws no frame for longer than the hold (a busy machine) also leaves a running slide
+ * where it was, and that frame ends the slide, so the buffer is sized once, for where it stops. A newer schedule() or
+ * dispose() drops any wait still pending, so a stale one never resizes twice or after dispose.
  */
 export class ResizeSettle {
   private timer: ReturnType<typeof setTimeout> | null = null
@@ -92,10 +96,16 @@ export class ResizeSettle {
         if (this.disposed || generation !== this.generation) return
         if (this.holdTimer !== null) clearTimeout(this.holdTimer)
         this.holdTimer = null
-        this.waiting = false
-        // Still moving after the whole hold: size the buffer for the box as it is now.
-        if (why === 'held') this.run()
-        else this.schedule()
+        if (why === 'moved') {
+          this.waiting = false
+          return this.schedule()
+        }
+        // Still moving after the whole hold: size the buffer at the next frame, for the box as that frame lays it out.
+        this.timing.frame(() => {
+          if (this.disposed || generation !== this.generation) return
+          this.waiting = false
+          this.run()
+        })
       })
     }, this.timing.wait)
   }
