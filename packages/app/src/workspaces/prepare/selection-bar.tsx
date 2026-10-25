@@ -2,14 +2,15 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The selection bar under the object list: how many are selected and what to do with them. Its menu, the rows' context
 // menu and the view's share one list of items, so a verb is the same wherever it is asked for.
-import { Button, ContextMenu, Menu, MenuAnchor, MenuItems, Popover, SelectionBar, type MenuEntry, type MenuPoint } from '@slicerx/ui'
-import { useEffect, useState } from 'react'
+import { Button, ContextMenu, Menu, MenuAnchor, MenuItems, MenuSeparator, Popover, SelectionBar, type MenuEntry, type MenuPoint } from '@slicerx/ui'
+import { useEffect, useMemo, useState } from 'react'
 import { createStore, useStore } from 'zustand'
-import { runCommand } from '../../commands/registry'
+import { getCommand, isEnabled, runCommand, useCommands } from '../../commands/registry'
 import { effectiveMode, useLayout } from '../../first-run/look'
 import { formatShortcut } from '../../lib/keys'
 import { clearSelection } from '../../plate/edit'
 import { history } from '../../plate/history'
+import { splitPieces } from '../../plate/mesh-ops'
 import { toggleLock, togglePrintable } from '../../plate/object-list'
 import { moveSelectedToPlate } from '../../plate/plates'
 import { selectionSummary } from '../../plate/selection'
@@ -79,15 +80,64 @@ function useSelectionVerbs() {
   return { ids, sum, verbs, hasPlates: others.length > 0 }
 }
 
+/** Whether a command is there and on for the selection now. */
+function canRun(id: string): boolean {
+  const c = getCommand(id)
+  return c !== undefined && isEnabled(c)
+}
+
+/**
+ * The verbs for the object itself, after Duplicate: rename, its own settings, merge, split and mirror. Each is offered
+ * only where its command is on for the selection (split also needs a second piece to split off), and each runs that
+ * command, so the menu, the palette and the object list's menu do the same thing.
+ */
+export function objectVerbs(opts: { count: number; split: { objects: boolean; parts: boolean }; run?: (id: string) => void }): MenuEntry[] {
+  const cmd = opts.run ?? ((id: string) => void runCommand(id))
+  const one = opts.count === 1
+  const out: MenuEntry[] = []
+  if (one && canRun('object-rename')) out.push({ id: 'rename', label: 'Rename', icon: 'rename', shortcut: 'F2', testId: 'slice-ctx-rename', run: () => cmd('object-rename') })
+  // The scope bar at the top of Print settings, switched to the selection.
+  if (opts.count > 0) out.push({ id: 'object-settings', label: 'Object settings', icon: 'sliders', testId: 'slice-ctx-object-settings', run: () => set({ settingsScope: 'objects' }) })
+  if (opts.count > 1 && canRun('merge-objects')) out.push({ id: 'merge', label: 'Merge selected objects', icon: 'merge', testId: 'slice-ctx-merge', run: () => cmd('merge-objects') })
+  const split: MenuEntry[] = []
+  if (one && opts.split.objects && canRun('split-objects')) split.push({ id: 'split-objects', label: 'Split to objects', icon: 'split', testId: 'slice-ctx-split-objects', run: () => cmd('split-objects') })
+  if (one && opts.split.parts && canRun('split-parts')) split.push({ id: 'split-parts', label: 'Split to parts', icon: 'split', testId: 'slice-ctx-split-parts', run: () => cmd('split-parts') })
+  if (split.length) out.push({ id: 'split', label: 'Split', children: split })
+  const mirror = one
+    ? (['x', 'y', 'z'] as const).filter((a) => canRun(`mirror-${a}`)).map((a): MenuEntry => ({ id: `mirror-${a}`, label: `Along ${a.toUpperCase()}`, icon: 'mirror', testId: `slice-ctx-mirror-${a}`, run: () => cmd(`mirror-${a}`) }))
+    : []
+  if (mirror.length) out.push({ id: 'mirror', label: 'Mirror', children: mirror })
+  return out
+}
+
 /** The context menu for the selection, on a row or in the view: every verb. */
 export function SelectionMenu({ at, onClose, label }: { at: MenuPoint | null; onClose: () => void; label: string }) {
-  const { verbs, hasPlates } = useSelectionVerbs()
+  const { ids, verbs, hasPlates } = useSelectionVerbs()
   // Transform opens from the bar; with its pane shut there is nowhere to show it.
   const bar = useStore(transformStore, (s) => s.bars > 0)
-  const items = [verbs.arrange, ...(bar ? [verbs.transform] : []), ...(hasPlates ? [verbs.move] : []), verbs.skip, verbs.lock, verbs.center, verbs.drop, verbs.duplicate, verbs.delete]
+  // The commands register as the host loads, so the menu follows them.
+  useCommands()
+  const object = useApp((s) => (ids.length === 1 ? s.plate.find((p) => p.id === ids[0]) : undefined))
+  // Pieces are counted when the menu opens, not on every render: it walks the mesh.
+  const open = at !== null
+  const split = useMemo(() => {
+    if (!open || !object) return { objects: false, parts: false }
+    const pieces = splitPieces(object.parts).length
+    return { objects: pieces > 1 && !object.history?.exact, parts: pieces > object.parts.length }
+  }, [open, object?.parts, object?.history?.exact])
+  const items = [verbs.arrange, ...(bar ? [verbs.transform] : []), ...(hasPlates ? [verbs.move] : []), verbs.skip, verbs.lock, verbs.center, verbs.drop, verbs.duplicate]
+  const more = objectVerbs({ count: ids.length, split })
   return (
     <ContextMenu at={at} onClose={onClose} label={label} testId="slice-ctx" target="selection">
       <MenuItems items={items} onClose={onClose} />
+      {more.length ? (
+        <>
+          <MenuSeparator />
+          <MenuItems items={more} onClose={onClose} />
+        </>
+      ) : null}
+      <MenuSeparator />
+      <MenuItems items={[verbs.delete]} onClose={onClose} />
     </ContextMenu>
   )
 }
