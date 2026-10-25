@@ -264,6 +264,14 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* How Slice shows the slice (Solid, Layer lines or Toolpaths): in a row of the view's top left corner with the legend
    chip on a desktop, beside the look button on a phone (studio.tsx). Never floating on its own. */
 .slice-look { flex: none; border-radius: var(--r-md); padding: 3px; }
+/* The phone's top bar with a slice: the look button, then the view switch in the first row, the legend chip under
+   them, and the view buttons down the right edge. The switch is its own item, next to the look button's row. */
+.hud-top.look-top { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.hud-top.look-top > .hud-col:not(.end) { display: contents; }
+.hud-top.look-top > .hud-col:not(.end) > * { grid-column: 1 / 3; justify-self: start; }
+.hud-top.look-top > .hud-col:not(.end) > .hud-row:first-child { grid-area: 1 / 1; }
+.hud-top.look-top > .slice-look { grid-area: 1 / 2; justify-self: start; }
+.hud-top.look-top > .hud-col.end { grid-area: 1 / 3 / span 2; align-self: start; }
 /* With the toolpaths showing, the layer dock takes the bottom: the plate list and chip sit above it, and a floating Slice action moves up under the View menu. */
 .studio[data-layers] .hud-bl { bottom: 216px; right: 12px; }
 .studio[data-layers] .slice-float { bottom: auto; top: 104px; right: 64px; }
