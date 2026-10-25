@@ -2927,6 +2927,44 @@ fn a_project_slices_with_its_own_settings() {
     assert!(err.contains("sx: walls: arachne walls, set by --config"), "{err}");
 }
 
+/// A project for a printer we have no profile for (`fixtures/project-keeps-settings.json`, which the app's open test
+/// reads too) slices with its own values and our walls over the classic ones it inherited. Its G-code has no config
+/// block, so the walls come from the note on stderr; the precise outer wall default is covered by
+/// `a_project_keeps_its_own_precise_outer_wall`.
+#[test]
+fn a_project_for_a_printer_without_a_profile_keeps_the_engine_choices() {
+    let dir = temp_dir(format!("sx-cli-keeps-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let text = std::fs::read_to_string(fixture("project-keeps-settings.json")).unwrap();
+    let settings: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let path = dir.join("acme.3mf");
+    std::fs::write(&path, box_3mf(Some(&settings))).unwrap();
+    let gcode = path.with_extension("gcode");
+    let out = sx()
+        .arg("slice")
+        .arg(&path)
+        .arg("-o")
+        .arg(&gcode)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{err}");
+    assert!(
+        err.contains("sx: walls: aegis walls, kept by SlicerX; the project used Bambu's default classic"),
+        "{err}"
+    );
+    assert!(
+        err.contains("Kept SlicerX's aegis walls; the project used Bambu's default."),
+        "{err}"
+    );
+    let g = std::fs::read_to_string(&gcode).unwrap();
+    assert!(
+        g.lines().any(|l| l == "; wall_loops = 3"),
+        "{}",
+        &g[..1500.min(g.len())]
+    );
+}
+
 #[test]
 fn a_project_keeps_inherited_arachne_walls_and_aegis_over_inherited_classic() {
     let dir = temp_dir(format!("sx-cli-wallgen-{}", std::process::id()));

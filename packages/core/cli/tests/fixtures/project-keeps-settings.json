@@ -1,0 +1,11 @@
+{
+  "printer_settings_id": "Acme Printer 9000 0.4 nozzle",
+  "printer_model": "Acme Printer 9000",
+  "nozzle_diameter": ["0.4"],
+  "gcode_flavor": "marlin",
+  "wall_generator": "classic",
+  "wall_loops": "3",
+  "brim_type": "no_brim",
+  "skirt_loops": "0",
+  "different_settings_to_system": ["wall_loops;brim_type", "", ""]
+}
