@@ -2001,6 +2001,19 @@ impl PrintConfig {
             .any(|k| matches!(self.raw.get(*k), Some(Value::String(s)) if s == "arachne" || is_aegis(s)))
     }
 
+    /// Variable-width walls from arachne itself, not aegis (which also prints variable-width walls; read as
+    /// [`athena_spacing`] reads it).
+    pub fn arachne_generator(&self) -> bool {
+        let generator =
+            ["perimeter_generator", "wall_generator"]
+                .iter()
+                .find_map(|k| match self.raw.get(*k) {
+                    Some(Value::String(s)) => Some(s.as_str()),
+                    _ => None,
+                });
+        self.arachne_walls() && !generator.is_some_and(is_aegis)
+    }
+
     /// True when `print_sequence` is `by object`: each object prints completely before the next.
     pub fn print_by_object(&self) -> bool {
         matches!(self.raw.get("print_sequence"), Some(Value::String(s)) if s == "by object")

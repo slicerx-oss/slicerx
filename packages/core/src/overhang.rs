@@ -412,7 +412,10 @@ pub(crate) struct Overhang {
     /// `overhang_reverse`: where a wall counts as steeply overhanging, and whether outer walls stay put.
     reverse: Option<Reverse>,
     /// The bead overhang walls print with: its width in mm and its flow against a flat bead of that width.
+    /// The width (mm) and flow of an inner loop's overhang wall bead.
     bead: (f32, f32),
+    /// The same for the outer loop's.
+    outer_bead: (f32, f32),
 }
 
 #[derive(Debug, Clone)]
@@ -487,21 +490,32 @@ pub(crate) fn bead(cfg: &PrintConfig, h: f64) -> (f64, f64) {
     (b.width, b.flow)
 }
 
-/// The bead of an overhang wall piece (a wall piece hanging fully clear of the layer below). On a Bambu Lab printer
-/// whose `bridge_line_width` is not set away from the schema default (the maker's app has no such key), the piece
-/// prints at the inner wall's width, whichever loop it belongs to, as a flat bead at `bridge_flow`: a plain wall
-/// bead at the default flow of 1. A bridge line width set by hand, `thick_bridges`, and other printers keep the
-/// bridge strand of [`bead`]. Only the width changes, not the path.
-pub(crate) fn wall_bead(cfg: &PrintConfig, h: f64) -> (f64, f64) {
+/// The bead of an overhang wall piece (a wall piece hanging fully clear of the layer below) on the loop `outer` says.
+/// On a Bambu Lab printer whose `bridge_line_width` is not set away from the schema default (the maker's app has no
+/// such key), the piece is a flat bead at `bridge_flow` built on the wall width: the inner wall's, whichever loop it
+/// belongs to, except that arachne walls print their outer loop's pieces at the outer wall's width. At the default
+/// flow of 1 that is a plain wall bead. A bridge line width set by hand, `thick_bridges`, and other printers keep the
+/// bridge strand of [`bead`] on every loop. Only the width changes, not the path.
+pub(crate) fn wall_bead(cfg: &PrintConfig, h: f64, outer: bool) -> (f64, f64) {
     let unset = cfg
         .raw
         .get("bridge_line_width")
         .is_none_or(|v| crate::motion::is_schema_default("bridge_line_width", v));
     if unset && !cfg.thick_bridges && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
-        let b = bridge_bead(cfg.inner_wall_width(), h, cfg.bridge_flow, false);
+        let w = if outer && cfg.arachne_generator() {
+            cfg.outer_wall_width()
+        } else {
+            cfg.inner_wall_width()
+        };
+        let b = bridge_bead(w, h, cfg.bridge_flow, false);
         return (b.width, b.flow);
     }
     bead(cfg, h)
+}
+
+#[allow(clippy::cast_possible_truncation, reason = "a width and a flow ratio")]
+fn bead32((w, flow): (f64, f64)) -> (f32, f32) {
+    (w as f32, flow as f32)
 }
 
 fn speed_of(v: f64) -> Option<f32> {
@@ -557,17 +571,14 @@ impl Overhang {
         Self {
             tiers,
             reverse,
-            bead: {
-                let (w, flow) = wall_bead(cfg, h);
-                #[allow(clippy::cast_possible_truncation, reason = "a width and a flow ratio")]
-                (w as f32, flow as f32)
-            },
+            bead: bead32(wall_bead(cfg, h, false)),
+            outer_bead: bead32(wall_bead(cfg, h, true)),
         }
     }
 
-    /// The width (mm) and flow of an overhang wall's bead.
-    pub(crate) fn bead(&self) -> (f32, f32) {
-        self.bead
+    /// The width (mm) and flow of an overhang wall's bead on the outer loop or an inner one.
+    pub(crate) fn bead(&self, outer: bool) -> (f32, f32) {
+        if outer { self.outer_bead } else { self.bead }
     }
 
     /// Whether `overhang_reverse` is on.
@@ -689,22 +700,50 @@ mod tests {
         cfg.raw
             .insert("bridge_line_width".into(), serde_json::json!("100%"));
         // Another printer: the bridge strand of the bridge line width.
-        assert_eq!(wall_bead(&cfg, 0.2), bead(&cfg, 0.2));
-        assert!((wall_bead(&cfg, 0.2).0 - cfg.nozzle_diameter).abs() < 1e-9);
+        assert_eq!(wall_bead(&cfg, 0.2, false), bead(&cfg, 0.2));
+        assert!((wall_bead(&cfg, 0.2, false).0 - cfg.nozzle_diameter).abs() < 1e-9);
         cfg.raw
             .insert("printer_model".into(), serde_json::json!("Bambu Lab A1"));
-        let (w, flow) = wall_bead(&cfg, 0.2);
+        let (w, flow) = wall_bead(&cfg, 0.2, false);
         assert!((w - 0.6).abs() < 1e-9 && (flow - 1.0).abs() < 1e-9, "{w} {flow}");
         // The key left out reads as the default.
         cfg.raw.remove("bridge_line_width");
-        assert!((wall_bead(&cfg, 0.2).0 - 0.6).abs() < 1e-9);
+        assert!((wall_bead(&cfg, 0.2, false).0 - 0.6).abs() < 1e-9);
         // Set by hand, or thick bridges: the bridge strand.
         cfg.raw
             .insert("bridge_line_width".into(), serde_json::json!(0.35));
-        assert_eq!(wall_bead(&cfg, 0.2), bead(&cfg, 0.2));
+        assert_eq!(wall_bead(&cfg, 0.2, false), bead(&cfg, 0.2));
         cfg.raw.remove("bridge_line_width");
         cfg.thick_bridges = true;
-        assert_eq!(wall_bead(&cfg, 0.2), bead(&cfg, 0.2));
+        assert_eq!(wall_bead(&cfg, 0.2, false), bead(&cfg, 0.2));
+    }
+
+    #[test]
+    fn an_arachne_outer_loop_overhang_wall_takes_the_outer_wall_width() {
+        let mut cfg = PrintConfig::default();
+        cfg.feature_widths.inner_wall = Some(0.45);
+        cfg.feature_widths.outer_wall = Some(0.42);
+        cfg.raw
+            .insert("printer_model".into(), serde_json::json!("Bambu Lab A1"));
+        cfg.raw.remove("bridge_line_width");
+        let width = |cfg: &PrintConfig, outer: bool| wall_bead(cfg, 0.2, outer).0;
+        // Fixed-width walls (the key left out) and aegis: the inner wall's width on both loops.
+        for generator in [None, Some("classic"), Some("aegis"), Some("athena")] {
+            if let Some(g) = generator {
+                cfg.raw.insert("wall_generator".into(), serde_json::json!(g));
+            }
+            assert!((width(&cfg, true) - 0.45).abs() < 1e-9, "{generator:?}");
+            assert!((width(&cfg, false) - 0.45).abs() < 1e-9, "{generator:?}");
+        }
+        cfg.raw
+            .insert("wall_generator".into(), serde_json::json!("arachne"));
+        assert!((width(&cfg, true) - 0.42).abs() < 1e-9);
+        assert!((width(&cfg, false) - 0.45).abs() < 1e-9);
+        // A bridge line width set by hand wins on both loops.
+        cfg.raw
+            .insert("bridge_line_width".into(), serde_json::json!(0.35));
+        assert_eq!(wall_bead(&cfg, 0.2, true), bead(&cfg, 0.2));
+        assert!((width(&cfg, true) - 0.35).abs() < 1e-9);
     }
 
     fn square(x0: i32, y0: i32, x1: i32, y1: i32) -> Shapes {

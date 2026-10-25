@@ -687,3 +687,142 @@ fn a_fully_clear_wall_piece_prints_at_the_inner_wall_width() {
         0.2,
     );
 }
+
+/// One extruding overhang wall move longer than 2 mm that runs along Y (the wedge's leaning side): the layer, its
+/// X, the width and height its `; LINE_WIDTH:` and `; LAYER_HEIGHT:` comments state, its filament per mm, and the
+/// height stated for the next feature after it on the same layer, if any.
+#[derive(Debug, Clone, Copy)]
+struct ClearMove {
+    layer: usize,
+    x: f64,
+    width: f64,
+    height: f64,
+    per_mm: f64,
+}
+
+fn clear_moves(gcode: &str) -> (Vec<ClearMove>, Vec<f64>) {
+    let mut out = Vec::new();
+    // The height in force when the first feature after an overhang wall starts.
+    let mut after = Vec::new();
+    let (mut layer, mut feature, mut width, mut height) = (0usize, String::new(), 0.0f64, 0.0f64);
+    let (mut x, mut y) = (0.0f64, 0.0f64);
+    for line in gcode.lines() {
+        let code = line.split(';').next().unwrap_or("").trim();
+        if line.starts_with("; CHANGE_LAYER") {
+            layer += 1;
+        } else if let Some(name) = line.strip_prefix("; FEATURE: ") {
+            if feature == "Overhang wall" && name.trim() != "Overhang wall" {
+                after.push(f64::NAN);
+            }
+            name.trim().clone_into(&mut feature);
+        } else if let Some(w) = line.strip_prefix("; LINE_WIDTH: ") {
+            width = w.trim().parse().unwrap_or(0.0);
+        } else if let Some(h) = line.strip_prefix("; LAYER_HEIGHT: ") {
+            height = h.trim().parse().unwrap_or(0.0);
+        } else if code.starts_with("G1") || code.starts_with("G0") {
+            let (nx, ny) = (word(code, 'X').unwrap_or(x), word(code, 'Y').unwrap_or(y));
+            let len = (nx - x).hypot(ny - y);
+            let e = word(code, 'E').filter(|e| *e > 0.0);
+            if let Some(last) = after.last_mut()
+                && last.is_nan()
+                && e.is_some()
+            {
+                *last = height;
+            }
+            if feature == "Overhang wall"
+                && len > 2.0
+                && (nx - x).abs() < 0.5
+                && let Some(e) = e
+            {
+                out.push(ClearMove {
+                    layer,
+                    x: nx,
+                    width,
+                    height,
+                    per_mm: e / len,
+                });
+            }
+            (x, y) = (nx, ny);
+        }
+    }
+    after.retain(|h| !h.is_nan());
+    (out, after)
+}
+
+/// Item: overhang wall width with variable-width (arachne) walls. A fully clear piece of the outer loop prints at
+/// `outer_wall_line_width`, a piece of an inner loop at `inner_wall_line_width`; each a flat bead of its width at
+/// the layer height. Fixed-width walls and aegis keep the inner wall's width on every loop, and a
+/// `bridge_line_width` set by hand still wins on every loop.
+#[test]
+fn arachne_overhang_walls_take_the_width_of_their_loop() {
+    let stock_cfg = stock("bambu-a1");
+    // At 80 degrees the inner loop hangs fully clear too.
+    let model = wedge(80.0);
+    let ratio = first_number(&stock_cfg["filament_flow_ratio"]);
+    let filament = std::f64::consts::PI * 1.75 * 1.75 / 4.0;
+    let per_mm = |w: f64, h: f64| (h * (w - h) + std::f64::consts::PI * h * h / 4.0) * ratio / filament;
+    let run = |edits: &[(&str, Value)]| {
+        let mut cfg = stock_cfg.clone();
+        for (k, v) in edits {
+            cfg.insert((*k).to_owned(), v.clone());
+        }
+        clear_moves(&slice(&model, &cfg)).0
+    };
+    // Per layer, the moves furthest out in X are the outer loop's; the rest sit a loop or more inside it.
+    let split = |moves: &[ClearMove]| -> (Vec<ClearMove>, Vec<ClearMove>) {
+        let mut outer_x: BTreeMap<usize, f64> = BTreeMap::new();
+        for m in moves {
+            let e = outer_x.entry(m.layer).or_insert(f64::MIN);
+            *e = e.max(m.x);
+        }
+        moves.iter().copied().partition(|m| outer_x[&m.layer] - m.x < 0.2)
+    };
+    let check = |label: &str, moves: &[ClearMove], w: f64| {
+        assert!(!moves.is_empty(), "{label}: no moves");
+        let want = per_mm(w, 0.2);
+        for m in moves {
+            assert!(
+                (m.width - w).abs() < 5e-4 && (m.height - 0.2).abs() < 5e-4,
+                "{label}, layer {}: width {} height {}, want {w} 0.2",
+                m.layer,
+                m.width,
+                m.height
+            );
+            assert!(
+                (m.per_mm / want - 1.0).abs() < 0.005,
+                "{label}, layer {}: {:.5} filament per mm, want {want:.5}",
+                m.layer,
+                m.per_mm
+            );
+        }
+    };
+
+    // Stock A1 (outer 0.42, inner 0.45) with arachne walls.
+    let arachne = run(&[("wall_generator", json!("arachne"))]);
+    let (outer, inner) = split(&arachne);
+    assert!(outer.len() > 20, "{} outer loop moves", outer.len());
+    check("arachne, outer loop", &outer, 0.42);
+    check("arachne, inner loops", &inner, 0.45);
+    // A wider outer wall: the outer loop follows it.
+    let wide = run(&[
+        ("wall_generator", json!("arachne")),
+        ("outer_wall_line_width", json!("0.5")),
+    ]);
+    check("arachne, outer 0.5, outer loop", &split(&wide).0, 0.5);
+
+    // Fixed-width walls and aegis: the inner wall's width whichever loop.
+    check("classic", &run(&[]), 0.45);
+    check("aegis", &run(&[("wall_generator", json!("aegis"))]), 0.45);
+
+    // A bridge line width set by hand is kept on every loop, arachne or not.
+    for generator in ["arachne", "classic"] {
+        check(
+            &format!("{generator}, bridge line 0.35"),
+            &run(&[
+                ("wall_generator", json!(generator)),
+                ("bridge_line_width", json!("0.35")),
+            ]),
+            0.35,
+        );
+    }
+}
