@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type Locator, type Page } from '@playwright/test'
 import { expectFileDialog, interceptFileDialogs } from '../file-dialog'
-import { pressable, steady } from '../canvas-press'
+import { pressable, reducedMotion, steady } from '../canvas-press'
 import { addMenu, panesSettled, plateReady, prepareContext, preparePage, setPartFilament, sliceCount, sliced, tab, viewSized } from '../fixtures'
 import { expect, journey as test } from '../journey'
 import { plateSheet, shutPlateSheet } from '../plate-project'
@@ -1853,17 +1853,18 @@ test.describe('the G-code a slice writes', () => {
       await panel.getByRole('radio', { name: 'Seam' }).click()
       await panel.getByRole('radiogroup', { name: 'Brush' }).getByRole('radio', { name: 'Fill', exact: true }).click()
       // The view opens on the whole plate: bring the model to the middle of the view before painting it, once the right
-      // pane the tool opens has finished sliding. The zoom eases over as many frames as the page needs to draw it, so the
-      // clicks wait until the camera stops. The middle is where the zoom eases to and stays put meanwhile, so the wait
-      // watches a point above it.
+      // pane the tool opens has finished sliding. With motion reduced the zoom is a jump, and the clicks wait until the
+      // camera is still. The middle is where a zoom goes and stays put, so the wait watches a point above it.
       await panesSettled(page)
-      await page.keyboard.press('z')
-      const [mx, my, mz] = await layeredMid(page)
-      await steady(page, mx, my, mz + 4)
-      const { x: cx, y: cy } = await pressable(page, await screenOf(page, mx, my, mz))
-      // Bucket fill on a spread of points over the model paints whole surfaces with the seam enforcer. A click between the
-      // X's arms misses it and keeps the object selected for the next one.
-      for (const [dx, dy] of [[-50, 0], [50, 0], [0, -40], [0, 40], [-30, 25], [30, -25], [-70, 30], [70, -30], [0, 0]] as const) await page.mouse.click(cx + dx, cy + dy)
+      await reducedMotion(page, async () => {
+        await page.keyboard.press('z')
+        const [mx, my, mz] = await layeredMid(page)
+        await steady(page, mx, my, mz + 4)
+        const { x: cx, y: cy } = await pressable(page, await screenOf(page, mx, my, mz))
+        // Bucket fill on a spread of points over the model paints whole surfaces with the seam enforcer. A click between
+        // the X's arms misses it and keeps the object selected for the next one.
+        for (const [dx, dy] of [[-50, 0], [50, 0], [0, -40], [0, 40], [-30, 25], [30, -25], [-70, 30], [70, -30], [0, 0]] as const) await page.mouse.click(cx + dx, cy + dy)
+      })
       await expect(panel.getByRole('button', { name: /Clear seam/ })).toBeEnabled()
       await startSlice(page)
       const painted = await exportedFromPalette(page)

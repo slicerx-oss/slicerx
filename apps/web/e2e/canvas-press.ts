@@ -95,3 +95,23 @@ export async function steady(page: Page, x: number, y: number, z: number): Promi
 
 /** Whether the view is in an eased camera move (a zoom, a view preset, a framing) that has not reached its end. */
 const cameraMoving = (page: Page) => page.evaluate(() => (window as unknown as { __vp: { stats(): { cameraMoving: boolean } } }).__vp.stats().cameraMoving)
+
+/**
+ * Runs `steps` with the app's Motion setting (Settings, Appearance) on Reduced, and puts the setting back after. With
+ * motion reduced a view preset or a zoom is a jump. An eased move goes forward only when the page draws a frame, and a
+ * busy machine can go seconds without one, longer than `steady` waits for the camera to stop.
+ */
+export async function reducedMotion<T>(page: Page, steps: () => Promise<T>): Promise<T> {
+  type Sx = { __sx: { getState(): { motion: unknown }; setState(p: { motion: unknown }): void } }
+  const was = await page.evaluate(() => {
+    const sx = (window as unknown as Sx).__sx
+    const m = sx.getState().motion
+    sx.setState({ motion: 'reduced' })
+    return m
+  })
+  try {
+    return await steps()
+  } finally {
+    await page.evaluate((m) => (window as unknown as Sx).__sx.setState({ motion: m }), was)
+  }
+}
