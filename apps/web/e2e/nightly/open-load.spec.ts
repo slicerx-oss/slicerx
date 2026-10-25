@@ -95,8 +95,8 @@ test('a big project opens with the page answering and each model built once', { 
   const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
   await chooser.setFiles({ name: 'tube.3mf', mimeType: 'model/3mf', buffer: file })
   await expect(page.locator('.obj-name')).toHaveText(['Tube', 'Ring'], { timeout: 120_000 })
-  // On the person's own P1S when they have one, else as the project's printer.
-  await expect(page.getByTestId('toast').filter({ hasText: /Opened (as|on) / })).toBeVisible({ timeout: 120_000 })
+  // On the person's own P1S when they have one, else as the project's printer; the note sits under the printer card.
+  await expect(page.getByTestId('open-note').filter({ hasText: /Opened (as|on) / })).toBeVisible({ timeout: 120_000 })
   // The open is over (the slice after it is not waited for: a shared runner's browser engine takes minutes on this mesh).
   await expect.poll(() => page.evaluate(() => performance.getEntriesByName('sx:open:done').length + performance.getEntriesByName('sx:open:drawn').length), { timeout: 120_000 }).toBe(2)
   const run = await page.evaluate(() => {

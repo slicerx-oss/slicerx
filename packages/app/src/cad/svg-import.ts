@@ -7,7 +7,7 @@ import type { Host, MeshPart } from '@slicerx/contracts'
 import type { SvgImport, SvgOptions } from '../geom/cad'
 import { fromGeom } from '../geom/client'
 import { centerOnBed, compose, dropToBed } from '../plate/transform'
-import { get, markStale, set, toast, type PlateEntry } from '../state/store'
+import { get, markStale, openNote, set, toast, type PlateEntry } from '../state/store'
 
 export type SvgRunner = (svg: string, options: SvgOptions) => Promise<SvgImport>
 
@@ -51,6 +51,7 @@ export async function addSvgRelief(host: Host, name: string, svg: string, form: 
   markStale()
   const size = result.sizeMm.map((v) => `${Math.round(v * 10) / 10}`).join(' x ')
   const note = `Added ${title}: ${shown.length} ${shown.length === 1 ? 'color' : 'colors'}, ${size} mm.`
-  toast(result.warnings.length ? `${note} ${result.warnings.join(' ')}` : note, result.warnings.length ? 'warn' : 'ok')
+  if (result.warnings.length) toast(`${note} ${result.warnings.join(' ')}`, 'warn')
+  else openNote(note)
   return entry.id
 }

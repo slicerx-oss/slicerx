@@ -63,7 +63,7 @@ function engine(): { host: Host; requests: SliceRequest[] } {
 }
 
 beforeEach(async () => {
-  set((s) => ({ plate: [], plates: s.plates.map((p) => ({ ...p, objects: [] })), overrides: {}, projectSettings: null, projectGcode: null, resume: null, calibration: {}, layerMarks: {}, slice: { status: 'idle' }, toast: null }))
+  set((s) => ({ openNote: null, plate: [], plates: s.plates.map((p) => ({ ...p, objects: [] })), overrides: {}, projectSettings: null, projectGcode: null, resume: null, calibration: {}, layerMarks: {}, slice: { status: 'idle' }, toast: null }))
   await profileReady()
 })
 
@@ -96,7 +96,7 @@ describe("a Bambu Studio project's -1 values", () => {
     const { host, requests } = engine()
     await openModelBytes(host, 'p1s.3mf', project(p1s))
     expect(get().projectPrinter?.profileId).toBe('bambu-p1s')
-    expect(get().toast?.text).toMatch(/^Opened as P1S 0\.4 mm from the project\./)
+    expect(get().openNote?.text).toMatch(/^Opened as P1S 0\.4 mm from the project\./)
     const cfg = resolveConfig(get().easy, get().overrides) as Record<string, SettingValue>
     expect(cfg['enable_support']).toBe(true)
     expect(cfg['raft_first_layer_expansion']).toBe(2)
