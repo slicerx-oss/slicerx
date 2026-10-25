@@ -23,12 +23,13 @@ use crate::config::PrintConfig;
 use crate::fm::Fm;
 use crate::perimeters::{self, Shapes};
 use i_overlay::i_float::int::point::IntPoint;
+use std::sync::Arc;
 
 type Pt = IntPoint<i32>;
 
 /// Boundary edges of a region on a uniform grid, for point tests and
 /// segment crossings.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Support {
     edges: Vec<[Pt; 2]>,
     min_x: i64,
@@ -392,9 +393,9 @@ pub(crate) fn split_polyline(path: &[Pt], support: &Support) -> Vec<(Vec<Pt>, bo
     pieces
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct Tier {
-    support: Support,
+    support: Arc<Support>,
     /// Speed for this degree, or the wall's own when unset.
     speed: Option<f32>,
     /// Walls at this degree or beyond are labeled overhang walls: those whose bead
@@ -404,7 +405,7 @@ struct Tier {
 }
 
 /// Where the walls of one layer hang over the layer below.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct Overhang {
     /// Support region per degree, from the least: only degrees that have a speed
     /// set, then the full overhang (100 percent hanging).
@@ -418,11 +419,11 @@ pub(crate) struct Overhang {
     outer_bead: (f32, f32),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Reverse {
     /// The layer below grown by the threshold less half a line; walls outside it are steep. `None` when the
     /// threshold is zero, which reverses every odd layer.
-    limit: Option<Support>,
+    limit: Option<Arc<Support>>,
     internal_only: bool,
 }
 
@@ -546,25 +547,91 @@ fn speed_of(v: f64) -> Option<f32> {
     (v > 0.0).then_some(v as f32)
 }
 
+/// The overhangs of the regions of one layer, which all hang over the same layer below. The layer below grown by
+/// a distance (the slow, full union part of the work) is worked out once per distance and shared by every region,
+/// whatever its filament, and the rest once per wall width and settings; only the clear speed is the filament's
+/// own.
+pub(crate) struct Overhangs<'b, 'c> {
+    below: &'b Shapes,
+    h: f64,
+    /// The layer below grown by a distance in internal units, and its grid once one is wanted.
+    grown: Vec<(i32, Arc<Shapes>, Option<Arc<Support>>)>,
+    /// The overhang per wall width and settings, without its clear speed.
+    built: Vec<(i32, &'c PrintConfig, Overhang)>,
+}
+
+impl<'b, 'c> Overhangs<'b, 'c> {
+    /// `below` is the material of the layer below, `h` the layer height in mm.
+    pub(crate) fn new(below: &'b Shapes, h: f64) -> Self {
+        Self {
+            below,
+            h,
+            grown: Vec::new(),
+            built: Vec::new(),
+        }
+    }
+
+    fn entry(&mut self, delta: i32) -> usize {
+        if let Some(i) = self.grown.iter().position(|(d, ..)| *d == delta) {
+            return i;
+        }
+        self.grown
+            .push((delta, Arc::new(perimeters::offset(self.below, delta)), None));
+        self.grown.len() - 1
+    }
+
+    /// The layer below grown by `delta` internal units.
+    pub(crate) fn grown(&mut self, delta: i32) -> Arc<Shapes> {
+        let i = self.entry(delta);
+        self.grown.get(i).map(|(_, g, _)| g.clone()).unwrap_or_default()
+    }
+
+    /// The grid of the layer below grown by `delta` internal units.
+    fn support(&mut self, delta: i32) -> Arc<Support> {
+        let i = self.entry(delta);
+        let Some((_, g, s)) = self.grown.get_mut(i) else {
+            return Arc::default();
+        };
+        s.get_or_insert_with(|| Arc::new(Support::new(g))).clone()
+    }
+
+    /// The overhang of walls `w` internal units wide, printed with settings `cfg` and filament `slot`.
+    pub(crate) fn get(&mut self, w: i32, cfg: &'c PrintConfig, slot: u8) -> Overhang {
+        if let Some((.., o)) = self
+            .built
+            .iter()
+            .find(|(bw, bc, _)| *bw == w && std::ptr::eq(*bc, cfg))
+        {
+            return o.clone().with_clear_speed(cfg, slot);
+        }
+        let o = Overhang::shared(self, w, cfg);
+        self.built.push((w, cfg, o.clone()));
+        o.with_clear_speed(cfg, slot)
+    }
+
+    /// How many times the layer below was grown.
+    #[cfg(test)]
+    fn grows(&self) -> usize {
+        self.grown.len()
+    }
+}
+
 impl Overhang {
-    /// `below` is the material of the layer below, `w` the line width in
-    /// internal units, `h` the layer height in mm, `slot` the filament the walls print with.
+    /// Everything about the overhang of walls `w` internal units wide with settings `cfg` but the filament's
+    /// clear speed ([`Self::with_clear_speed`]).
     #[allow(
         clippy::cast_possible_truncation,
         reason = "offsets are a fraction of a line width"
     )]
-    pub(crate) fn new(below: &Shapes, w: i32, h: f64, cfg: &PrintConfig, slot: u8) -> Self {
+    fn shared(below: &mut Overhangs<'_, '_>, w: i32, cfg: &PrintConfig) -> Self {
         let wf = f64::from(w);
         // Orca grows the lower layer by half the nozzle (`generate_lower_polygons_series` and
         // `lower_slices_polygons`), whatever the line width. Overhang walls, whose bead hangs fully clear, print
         // at the clear speed (`overhang_totally_speed`, `quality::clear_speed`); the slowdown on the way out over
         // the edge is worked out point by point (`quality.rs`).
         let tiers = vec![Tier {
-            support: Support::new(&perimeters::offset(
-                below,
-                crate::geom::mm(cfg.nozzle_diameter / 2.0),
-            )),
-            speed: speed_of(crate::quality::clear_speed(cfg, slot)),
+            support: below.support(crate::geom::mm(cfg.nozzle_diameter / 2.0)),
+            speed: None,
             label: true,
         }];
         let reverse = crate::tower::flag(cfg, "overhang_reverse").then(|| {
@@ -586,17 +653,24 @@ impl Overhang {
                 None => 0.5 * wf,
             };
             Reverse {
-                limit: (threshold > 1.0)
-                    .then(|| Support::new(&perimeters::offset(below, (threshold - 0.5 * wf).round() as i32))),
+                limit: (threshold > 1.0).then(|| below.support((threshold - 0.5 * wf).round() as i32)),
                 internal_only: crate::tower::flag(cfg, "overhang_reverse_internal_only"),
             }
         });
         Self {
             tiers,
             reverse,
-            bead: bead32(wall_bead(cfg, h, false)),
-            outer_bead: bead32(wall_bead(cfg, h, true)),
+            bead: bead32(wall_bead(cfg, below.h, false)),
+            outer_bead: bead32(wall_bead(cfg, below.h, true)),
         }
+    }
+
+    /// The overhang with the clear speed of filament `slot` on its fully clear tier.
+    fn with_clear_speed(mut self, cfg: &PrintConfig, slot: u8) -> Self {
+        if let Some(t) = self.tiers.last_mut() {
+            t.speed = speed_of(crate::quality::clear_speed(cfg, slot));
+        }
+        self
     }
 
     /// The width (mm) and flow of an overhang wall's bead on the outer loop or an inner one.
@@ -679,6 +753,59 @@ impl Overhang {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A layer printed with three filaments grows the layer below once, and each filament's overhang is the one
+    /// worked out on its own, clear speed included.
+    #[test]
+    fn regions_on_several_filaments_grow_the_layer_below_once() {
+        let sq = |x0: i32, y0: i32, x1: i32, y1: i32| {
+            vec![vec![
+                IntPoint::new(x0, y0),
+                IntPoint::new(x1, y0),
+                IntPoint::new(x1, y1),
+                IntPoint::new(x0, y1),
+            ]]
+        };
+        let below: Shapes = vec![sq(0, 0, 100_000, 100_000), sq(150_000, 0, 200_000, 60_000)];
+        let mut cfg = PrintConfig::default();
+        cfg.raw.insert(
+            "override_process_overhang_speed".into(),
+            serde_json::json!(["1", "0", "1"]),
+        );
+        cfg.raw.insert(
+            "filament_overhang_totally_speed".into(),
+            serde_json::json!(["7", "8", "9"]),
+        );
+        cfg.raw
+            .insert("enable_overhang_speed".into(), serde_json::json!(true));
+        cfg.raw.insert("overhang_reverse".into(), serde_json::json!(true));
+        cfg.raw
+            .insert("overhang_reverse_threshold".into(), serde_json::json!("100%"));
+        let w = crate::geom::mm(0.42);
+        let mut shared = Overhangs::new(&below, 0.2);
+        let got: Vec<Overhang> = [1, 2, 3].iter().map(|&slot| shared.get(w, &cfg, slot)).collect();
+        // Two distances, half the nozzle and the reverse threshold less half a line, each grown once for the
+        // three filaments.
+        assert_eq!(shared.grows(), 2);
+        let _ = shared.get(w, &cfg, 2);
+        assert_eq!(shared.grows(), 2);
+        let mut speeds = Vec::new();
+        for (slot, o) in [1, 2, 3].into_iter().zip(&got) {
+            let mut own = Overhangs::new(&below, 0.2);
+            assert_eq!(*o, own.get(w, &cfg, slot), "slot {slot}");
+            speeds.push(o.speed(0));
+        }
+        assert_eq!(speeds[0], Some(7.0));
+        assert_eq!(speeds[2], Some(9.0));
+        assert_ne!(speeds[1], speeds[0]);
+        // The grown layer the extra overhang walls read is the same one.
+        let grown = shared.grown(crate::geom::mm(cfg.nozzle_diameter / 2.0));
+        assert_eq!(shared.grows(), 2);
+        assert_eq!(
+            *grown,
+            perimeters::offset(&below, crate::geom::mm(cfg.nozzle_diameter / 2.0))
+        );
+    }
 
     #[test]
     fn flat_bridge_narrows_below_a_flow_of_one() {
