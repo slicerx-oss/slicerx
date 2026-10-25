@@ -36,6 +36,16 @@ fn mm(v: i32) -> f32 {
     (f64::from(v) / crate::geom::SCALE) as f32
 }
 
+/// A width or height, mm, in the micrometers of a segment record.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "micrometers of a bead fit in u16"
+)]
+fn micrometers(v: f64) -> u16 {
+    (v * 1000.0).round().clamp(0.0, 65535.0) as u16
+}
+
 /// Spare room in a new buffer for the start G-code's moves (up to 4096), so [`with_start`] puts them in place.
 const START_ROOM: usize = 4096 * (SEGMENT_BYTES + OBJECT_BYTES + EXTRA_BYTES) + 8;
 
@@ -125,6 +135,12 @@ pub fn preview_buffers(out: &SliceOutput) -> Vec<u8> {
             reason = "micrometers of a layer fit in u16"
         )]
         let h_um = (h * 1000.0).round().clamp(0.0, 65535.0) as u16;
+        // An overhang wall at a `bridge_flow` above 1 is drawn as the taller bead its G-code comments state
+        // (`overhang::raised_wall_label`), under this layer's settings.
+        let raise = usize::from(l.cfg)
+            .checked_sub(1)
+            .and_then(|i| out.configs.get(i))
+            .map_or(out.raised_wall_flow, crate::overhang::raised_wall_flow);
         for p in &l.paths {
             let pts = l.path_points(p);
             if finder.is_some() {
@@ -148,6 +164,13 @@ pub fn preview_buffers(out: &SliceOutput) -> Vec<u8> {
                 (f64::from(p.speed_mm_s) * 10.0).round().clamp(0.0, 65535.0) as u16,
                 (bead_area(f64::from(p.width_mm), h) * f64::from(p.speed_mm_s) * f64::from(p.flow)) as f32,
             );
+            let (w_um, h_um) = match raise {
+                Some(f) if p.feature == Feature::OverhangWall => {
+                    let (w, tall) = crate::overhang::raised_wall_label(f64::from(p.width_mm), h, f);
+                    (micrometers(w), micrometers(tall))
+                }
+                _ => (w_um, h_um),
+            };
             for (i, w) in pts.windows(2).enumerate() {
                 let [a, c] = w else { continue };
                 // A spiral layer climbs: the segment sits at the height of its end.
