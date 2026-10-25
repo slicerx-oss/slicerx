@@ -132,9 +132,8 @@ test.describe('a Bambu Studio project', () => {
     const buffer = zip({ '3D/3dmodel.model': cubeModel(), 'Metadata/project_settings.config': '; an older export\nlayer_height = 0.3\nnozzle_diameter = 0.4\n' })
     await openModel(page, { name: 'older.3mf', mimeType: 'model/3mf', buffer })
     await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
-    await expect
-      .poll(() => toastWith(page, 'print settings were left out'), { timeout: 30_000 })
-      .toContain("This project's print settings were left out because they are in an older key = value format, so it opens with the current settings.")
+    // The note sits under the printer card, not in a toast.
+    await expect(page.getByTestId('open-note-text')).toContainText("This project's print settings were left out because they are in an older key = value format, so it opens with the current settings.", { timeout: 30_000 })
   })
 
   // Screenshots for review: SX_SHOTS=1, saved to SX_SHOTS_DIR (test-results/shots by default).
