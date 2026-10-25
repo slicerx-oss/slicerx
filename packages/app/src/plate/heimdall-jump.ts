@@ -6,6 +6,9 @@ import { buildTimeline, changeBefore, fitOf, timeAt } from '../lib/preview-timel
 import { toolChangerFor } from '../lib/toolchanger'
 import { get, set, type AppState } from '../state/store'
 import { collisionParts, collisionsOf } from './heimdall'
+import { currentEdition } from '../edition'
+import { presetFor } from '../first-run/look'
+import { isPhoneLayout } from '../lib/phone-layout'
 import { pickParts } from './pick-parts'
 import { cameraBus } from './tools'
 
@@ -28,6 +31,21 @@ export function collisionTime(s: AppState, c: Collision): number | null {
 let jumps = 0
 
 /**
+ * Opens Slice's summary pane, on the side the settings leave free, at the collision list: the way Show me on a strike
+ * leads there. Only a person's click does this; a slice, refused or not, never opens it by itself. A phone keeps its
+ * sheet down, so the parts the strike names stay in view; its list is a tab away.
+ */
+export function openCollisionList(): void {
+  if (isPhoneLayout()) return
+  const s = get()
+  const side = presetFor(s.lookAndFeel ?? { id: currentEdition().firstRun.defaultLook }).layout.sidebar.side === 'left' ? 'right' : 'left'
+  set({ rails: { ...s.rails, preview: { ...s.rails['preview'], [side]: true } }, rightShut: null })
+  if (typeof requestAnimationFrame !== 'function' || typeof document === 'undefined') return
+  // The list draws with the pane: bring it into view once it is there.
+  requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector('[data-section="collisions"]')?.scrollIntoView({ block: 'start' })))
+}
+
+/**
  * Picks the parts of collision `i` from its row: they become the selection, ringed on the bed, and the view frames them
  * when some of them are off screen. Its strike is the one marked; the sliders stay where they are.
  */
@@ -41,14 +59,14 @@ export function pickCollision(i: number): string[] {
 
 /**
  * Shows collision `i`: its parts are selected, the sliders go to its moment, the head is drawn there, and the playback
- * bar plays the seconds before it and stops on it.
+ * bar plays the seconds before it and stops on it. The camera turns to the strike; with `frame` it frames the parts
+ * instead, when some of them are off screen (Show me).
  */
-export function jumpTo(i: number): void {
+export function jumpTo(i: number, opts: { frame?: boolean } = {}): void {
   const s = get()
   const c = collisionsOf(s)[i]
   if (!c) return
-  // The camera turns to the strike below, so the pick leaves it where it is.
-  pickParts(collisionParts(s, c), { frame: false })
+  pickParts(collisionParts(s, c), { frame: opts.frame === true })
   const p = s.preview
   const a = p?.layerStart[c.layer] ?? 0
   const b = p?.layerStart[c.layer + 1] ?? a
@@ -62,6 +80,6 @@ export function jumpTo(i: number): void {
     toolChange: null,
     ...(t !== null ? { strikeJump: { timeS: t, seq: ++jumps } } : {}),
   })
-  cameraBus()?.focusBedPoint?.(c.worstPoint[0], c.worstPoint[1], c.worstPoint[2], { animate: true })
+  if (!opts.frame) cameraBus()?.focusBedPoint?.(c.worstPoint[0], c.worstPoint[1], c.worstPoint[2], { animate: true })
 }
 

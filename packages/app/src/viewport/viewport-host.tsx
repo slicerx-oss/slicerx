@@ -535,7 +535,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         }
         if (vp.setToolChange && (first || s.toolChange !== prev.toolChange || s.preview !== prev.preview)) vp.setToolChange(s.toolChange)
         // heimdall's strikes where the machine would meet a printed part.
-        if (first || s.slice !== prev.slice || s.strikePick !== prev.strikePick || s.strikeHover !== prev.strikeHover || s.layerHi !== prev.layerHi) (vp as unknown as Viewport).setStrikes?.(strikeMarks(s))
+        if (first || s.slice !== prev.slice || s.strikePick !== prev.strikePick || s.strikeHover !== prev.strikeHover || s.layerHi !== prev.layerHi || s.pickRing !== prev.pickRing || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.plate !== prev.plate) (vp as unknown as Viewport).setStrikes?.(strikeMarks(s))
         // Show me on a refused slice marks its spot (and the excluded area it enters) while that refusal is on screen.
         if (first || s.slice !== prev.slice || s.refusalSpot !== prev.refusalSpot) {
           const r = s.refusalSpot

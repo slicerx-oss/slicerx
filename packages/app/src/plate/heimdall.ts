@@ -49,12 +49,17 @@ export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'act
  * layer it starts on, so the bed is not marked before the part is there; before then the picked one and the one under
  * the pointer in the list show as a faint ghost, to say where to look.
  */
-export function strikeMarks(s: Pick<AppState, 'slice' | 'strikePick' | 'strikeHover' | 'layerHi'>): StrikeMark[] {
+export function strikeMarks(s: Pick<AppState, 'slice' | 'strikePick' | 'strikeHover' | 'layerHi'> & Partial<Pick<AppState, 'plate' | 'pickRing' | 'selection' | 'selectedIds'>>): StrikeMark[] {
   const out: StrikeMark[] = []
+  // A strike whose parts were picked and are still the selection steps back: the rings round them lead.
+  const ringed = s.pickRing && s.plate && s.selection && s.selectedIds?.includes(s.selection) && s.selectedIds.length === s.pickRing.length && s.pickRing.every((id) => s.selectedIds!.includes(id)) ? new Set(s.pickRing) : null
+  const plate = s.plate
   collisionsOf(s).forEach((c, i) => {
     const early = s.layerHi - 1 < c.layer
     if (early && s.strikePick !== i && s.strikeHover !== i) return
-    out.push({ x: c.worstPoint[0], y: c.worstPoint[1], z: c.worstPoint[2], ...(c.severity === 'close' ? { close: true } : {}), ...(s.strikePick === i ? { selected: true } : {}), ...(early ? { ghost: true } : {}) })
+    const parts = ringed && plate ? collisionParts({ plate }, c) : []
+    const steps = parts.length > 0 && parts.every((id) => ringed!.has(id))
+    out.push({ x: c.worstPoint[0], y: c.worstPoint[1], z: c.worstPoint[2], ...(c.severity === 'close' ? { close: true } : {}), ...(s.strikePick === i ? { selected: true } : {}), ...(early ? { ghost: true } : {}), ...(steps ? { yield: true } : {}) })
   })
   return out
 }

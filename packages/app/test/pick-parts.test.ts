@@ -11,10 +11,11 @@ import type { Collision, Host, SliceResult, SliceWarning } from '@slicerx/contra
 import { collisionsReadback } from '../src/app-link/ui'
 import { HostContext } from '../src/host'
 import { jumpToWarning } from '../src/lib/warning-actions'
-import { collisionParts } from '../src/plate/heimdall'
+import { collisionParts, strikeMarks } from '../src/plate/heimdall'
 import { jumpTo, pickCollision } from '../src/plate/heimdall-jump'
 import { isPicked, pickParts, pickRingsOf } from '../src/plate/pick-parts'
-import { showRefusal } from '../src/plate/preflight-show'
+import { showRefusal, showSpot } from '../src/plate/preflight-show'
+import { cancelSlice, slicePlate } from '../src/state/actions'
 import { setCameraBus } from '../src/plate/tools'
 import { get, set } from '../src/state/store'
 import { CollisionList } from '../src/workspaces/preview/collision-list'
@@ -88,6 +89,16 @@ describe('picking the parts a collision names', () => {
     expect(pickRingsOf(get())).toBeNull()
   })
 
+  it('draws the strike of picked parts smaller, so the ringed parts lead', () => {
+    set({ layerHi: 99 })
+    expect(strikeMarks(get()).some((m) => m.yield)).toBe(false)
+    pickCollision(0)
+    // both strikes name parts that are now the ringed selection; the keep-out one names Clip only
+    expect(strikeMarks(get()).map((m) => m.yield === true)).toEqual([true, false, false])
+    set({ selection: 'a', selectedIds: ['a'] })
+    expect(strikeMarks(get()).some((m) => m.yield)).toBe(false)
+  })
+
   it('leaves the ring to the clearance zones a by-object plate draws before it is sliced again', () => {
     set({ overrides: { print_sequence: 'by object', extruder_clearance_radius: 40, extruder_clearance_height_to_rod: 25, extruder_clearance_dist_to_rod: 56.5, extruder_clearance_height_to_lid: 256, skirt_loops: 0 } as never })
     pickCollision(0)
@@ -155,6 +166,58 @@ describe('warnings and refusals', () => {
     expect(get()).toMatchObject({ selectedIds: ['c'], pickRing: ['c'] })
     expect(camera.showSelection).not.toHaveBeenCalled()
     expect(camera.focusBedPoint).toHaveBeenCalledTimes(1)
+  })
+})
+
+/** A one-layer SXPV preview. */
+function rawPreview(): ArrayBuffer {
+  const b = new ArrayBuffer(48)
+  const d = new DataView(b)
+  d.setUint32(0, 0x56505853, true)
+  d.setUint16(4, 1, true)
+  d.setUint32(12, 1, true)
+  d.setUint32(20, 1, true)
+  d.setFloat32(24, 0.2, true)
+  d.setFloat32(40, 0.2, true)
+  return b
+}
+
+describe('Show me and the summary pane', () => {
+  const shut = { left: false, right: false }
+
+  it('Show me opens the summary pane at the collision list, then selects and frames the parts of the strike', async () => {
+    set({ rails: { ...get().rails, preview: shut }, rightShut: 1, jobSeq: 1, preview: null })
+    await showSpot({ kind: 'collision', index: 0 })
+    const s = get()
+    expect(Object.values(s.rails['preview'] ?? {})).toContain(true)
+    expect(s.rightShut).toBeNull()
+    expect(s).toMatchObject({ selectedIds: ['b', 'a'], pickRing: ['b', 'a'], strikePick: 0, sliceLook: 'toolpaths' })
+    // framed when off screen, not turned to the strike's point
+    expect(camera.showSelection).toHaveBeenCalledTimes(1)
+    expect(camera.focusBedPoint).not.toHaveBeenCalled()
+  })
+
+  const sliceWith = async (slice: () => Promise<SliceResult>) => {
+    set({ rails: { ...get().rails, preview: shut }, rightShut: null, slice: { status: 'idle' }, autoSlice: false, overrides: { smart_layer: 'off' } as never, plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }] as never, activePlate: 'plate-1', calibration: {}, layerMarks: {}, resume: null })
+    try {
+      await slicePlate({ kind: 'web', capabilities: { threads: 1 }, slicer: { slice, getPreview: async () => rawPreview() } } as unknown as Host)
+    } finally {
+      cancelSlice({ quiet: true })
+    }
+    return get()
+  }
+
+  it('a slice never opens the pane by itself, one a strike holds back or one refused alike; Show me does', async () => {
+    const struck = await sliceWith(async () => result([strike]))
+    expect(struck.slice.status).toBe('done')
+    expect(struck.rails['preview']).toEqual(shut)
+    const refused = await sliceWith(async () => {
+      throw new Error('toolpaths leave the bed from layer 1 (X-4.2 Y120.0, brim of "Clip")')
+    })
+    expect(refused.slice.status).toBe('error')
+    expect(refused.rails['preview']).toEqual(shut)
+    const clean = await sliceWith(async () => result([{ ...strike, severity: 'close' }]))
+    expect(clean.rails['preview']).toEqual(shut)
   })
 })
 

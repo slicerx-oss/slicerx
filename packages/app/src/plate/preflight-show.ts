@@ -15,8 +15,10 @@ import { cameraBus } from './tools'
 export async function showSpot(spot: PreflightSpot): Promise<void> {
   showSliced()
   if (spot.kind === 'collision') {
-    const { jumpTo } = await import('./heimdall-jump')
-    jumpTo(spot.index)
+    // The collision list opens at the strike, and its parts are selected and framed, as a click on its row does.
+    const { jumpTo, openCollisionList } = await import('./heimdall-jump')
+    openCollisionList()
+    jumpTo(spot.index, { frame: true })
     return
   }
   const n = get().preview?.layerCount ?? 0
