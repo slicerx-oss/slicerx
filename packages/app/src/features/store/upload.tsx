@@ -109,12 +109,14 @@ export function uploadStage(l: Listing): { stage: UploadStage; label: string; no
 }
 
 /** Encodes a drawn cover as WebP (PNG where the browser has no WebP encoder). */
-async function encodeCover(img: CoverImage): Promise<PendingImage | null> {
+export async function encodeCover(img: CoverImage): Promise<PendingImage | null> {
   if (typeof document === 'undefined') return null
   const canvas = document.createElement('canvas')
   canvas.width = img.width
   canvas.height = img.height
-  const ctx = canvas.getContext('2d')
+  // A canvas kept in memory, not on the graphics card: reading a card-backed one back for the WebP waits for the card,
+  // which right after a big slice held the page still.
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) return null
   ctx.putImageData(new ImageData(new Uint8ClampedArray(img.rgba), img.width, img.height), 0, 0)
   const blob = (await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/webp', 0.88))) ?? (await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png')))

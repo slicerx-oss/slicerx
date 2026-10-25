@@ -97,3 +97,20 @@ describe('GIF banners', () => {
     expect(container.querySelector('canvas[role=img]')?.getAttribute('aria-label')).toBe('Current banner')
   })
 })
+
+describe('a picked picture', () => {
+  it('is scaled on a canvas kept in memory, so reading it back never waits for the graphics card', async () => {
+    // A canvas on the graphics card has to be read back from it for the WebP, and right after a big slice that read
+    // held the page still.
+    const asked: unknown[] = []
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((_kind: string, options?: unknown) => {
+      asked.push(options)
+      return { drawImage: () => undefined }
+    }) as never)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((done: BlobCallback) => done(new Blob(['webp'], { type: 'image/webp' })))
+    vi.stubGlobal('createImageBitmap', async () => ({ width: 3200, height: 2400, close: () => undefined }))
+    const r = await prepareImage(file(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), 'photo.png', 'image/png'), 'cover')
+    expect(typeof r === 'string' ? r : r.contentType).toBe('image/webp')
+    expect(asked).toEqual([{ willReadFrequently: true }])
+  })
+})

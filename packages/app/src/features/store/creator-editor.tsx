@@ -180,7 +180,8 @@ export async function prepareImage(file: File, kind: CreatorImageKind): Promise<
     const canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
-    canvas.getContext('2d')?.drawImage(bmp, 0, 0, w, h)
+    // Kept in memory, not on the graphics card, so reading it back for the WebP never waits for the card.
+    canvas.getContext('2d', { willReadFrequently: true })?.drawImage(bmp, 0, 0, w, h)
     bmp.close()
     const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/webp', 0.86))
     if (blob && blob.type === 'image/webp' && (scale < 1 || blob.size < original.byteLength)) out = { bytes: new Uint8Array(await blob.arrayBuffer()), type: 'image/webp' }

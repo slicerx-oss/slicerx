@@ -3,13 +3,13 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Host, Listing } from '@slicerx/contracts'
 import { createStore } from '@slicerx/store'
 import { renderCover, stlMesh } from '../src/export/cover'
 import { HostContext } from '../src/host'
 import { openUpload, resetSheets } from '../src/features/store/sheets'
-import { formatOf, parseTags, submitUpload, uploadErrors, uploadName, uploadStage, UploadHost } from '../src/features/store/upload'
+import { encodeCover, formatOf, parseTags, submitUpload, uploadErrors, uploadName, uploadStage, UploadHost } from '../src/features/store/upload'
 import { boxMesh } from '../src/plate/mesh-ops'
 
 afterEach(() => {
@@ -66,6 +66,29 @@ describe('cover drawing', () => {
     expect(stlMesh(stl)?.indices).toHaveLength(3)
     expect(stlMesh(new TextEncoder().encode('solid x\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid'))?.positions).toHaveLength(9)
     expect(stlMesh(new Uint8Array([1, 2, 3]))).toBeNull()
+  })
+})
+
+describe('a drawn cover made into a picture', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('is made on a canvas kept in memory, so reading it back never waits for the graphics card', async () => {
+    // A canvas on the graphics card has to be read back from it for the WebP, and right after a big slice that read
+    // held the page still.
+    const asked: unknown[] = []
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((_kind: string, options?: unknown) => {
+      asked.push(options)
+      return { putImageData: () => undefined }
+    }) as never)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((done: BlobCallback) => done(new Blob(['webp'], { type: 'image/webp' })))
+    vi.stubGlobal('ImageData', class { constructor(readonly data: Uint8ClampedArray, readonly width: number, readonly height: number) {} })
+    vi.stubGlobal('URL', class extends URL { static override createObjectURL = () => 'blob:cover'; static override revokeObjectURL = () => undefined })
+    const out = await encodeCover({ width: 2, height: 1, rgba: new Uint8ClampedArray(8) })
+    expect(out?.contentType).toBe('image/webp')
+    expect(asked).toEqual([{ willReadFrequently: true }])
   })
 })
 
