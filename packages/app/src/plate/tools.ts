@@ -50,6 +50,8 @@ export interface CameraPose {
 export interface CameraBus {
   view?(preset: 'iso' | 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' | 'fit' | 'bed', opts?: { animate?: boolean }): void
   zoomToSelection?(opts?: { animate?: boolean }): void
+  /** Frames the selection only when some of it is off screen or under an overlay; answers whether the camera moved. */
+  showSelection?(opts?: { animate?: boolean }): boolean
   zoomToBed?(opts?: { animate?: boolean }): void
   /** Moves the camera closer by `factor` (below 1 moves away), keeping the angle. */
   zoomBy?(factor: number, opts?: { animate?: boolean }): void
