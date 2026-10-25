@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The plate toolbar and, under it, the Solid / Layer lines / Toolpaths switch, as one group the person can drag
-// anywhere in the view by the grip at the bar's end. The grip shows on hover in a place kept for it, so the buttons never
+// The plate toolbar, as a group the person can drag anywhere in the view by the grip at the bar's end. The grip shows on hover in a place kept for it, so the buttons never
 // move. The group stays inside the view, also when the view gets smaller. Where it was put is not kept: a new
 // session, or a new view, starts it at the top.
 import type { LayoutSpec } from '@slicerx/contracts'
 import { tipAttrs } from '@slicerx/ui'
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { PlateToolbar } from './plate-toolbar'
 
 /** How far inside the view's edges the group stays, px. */
@@ -38,7 +37,7 @@ function Grip({ onDrag, onKey }: { onDrag: (e: PointerEvent<HTMLButtonElement>) 
   )
 }
 
-export function PlateToolsGroup({ layout, look }: { layout: LayoutSpec; look: ReactNode }) {
+export function PlateToolsGroup({ layout }: { layout: LayoutSpec }) {
   const ref = useRef<HTMLDivElement>(null)
   const [off, setOff] = useState<Offset>({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
@@ -112,7 +111,6 @@ export function PlateToolsGroup({ layout, look }: { layout: LayoutSpec; look: Re
   return (
     <div ref={ref} className="plate-tools-group" data-testid="plate-tools-group" data-placement={layout.toolbar} data-moved={moved || undefined} data-dragging={dragging || undefined}>
       <PlateToolbar layout={layout} grip={<Grip onDrag={drag} onKey={key} />} />
-      {look}
     </div>
   )
 }
