@@ -24,6 +24,25 @@ export interface AppUi {
   panels: { open: string[]; settingsSection: string | null; settable: string[] }
   /** Printing by object, the shown plate's clearance plan (the app's warning and zones); null by layer. Older apps leave it out. */
   byObject?: ByObjectReadback | null
+  /** The shown slice's collisions, each naming its plate objects by id; null before a slice. Older apps leave it out. */
+  collisions?: AppCollisions | null
+}
+
+/** The collisions of the slice the app shows (packages/app app-link/ui.ts, collisionsReadback). */
+export interface AppCollisions {
+  /** The plate changed since the slice. */
+  stale: boolean
+  items: {
+    kind: string
+    severity: 'hit' | 'close'
+    part: string
+    /** The plate objects it names, the one printing first. */
+    objects: { id: string; name: string | null }[]
+    /** The zone or the prime tower it meets, when that is no plate object. */
+    zone?: string
+    firstLayer: number
+    lastLayer: number
+  }[]
 }
 
 export const UI_PANELS = ['settings', 'command', 'about', 'shortcuts', 'expert', 'printerChooser', 'printerSettings'] as const
@@ -57,7 +76,17 @@ function summary(u: AppUi): string {
   const calls = u.byObject ? u.byObject.pairs.filter((p) => p.severity === 'soft').length : 0
   const soft = calls ? `${calls} close ${calls === 1 ? 'call' : 'calls'} sx slices` : ''
   const byObject = u.byObject ? `; by object, ${close ? `${close} clearance ${close === 1 ? 'problem' : 'problems'}${soft ? ` and ${soft}` : ''} (slicerx_arrange spaces the objects)` : soft ? `${soft} (slicerx_arrange spaces the objects)` : 'clear'}` : ''
-  return `${where}; ${picked}; ${plate}; ${printer}; ${panels}${byObject}.`
+  return `${where}; ${picked}; ${plate}; ${printer}; ${panels}${byObject}${collided(u.collisions)}.`
+}
+
+/** The slice's collisions in a few words: the first strike's objects, so a client knows what to select. */
+function collided(c: AppCollisions | null | undefined): string {
+  if (!c?.items.length) return ''
+  const hits = c.items.filter((i) => i.severity === 'hit')
+  const first = hits[0] ?? c.items[0]!
+  const names = first.objects.map((o) => `${o.name ?? o.id} (${o.id})`).join(' and ')
+  const count = hits.length ? `${hits.length} ${hits.length === 1 ? 'collision' : 'collisions'}` : `${c.items.length} close ${c.items.length === 1 ? 'call' : 'calls'}`
+  return `; ${c.stale ? 'the last slice, before the plate changed, has' : 'the slice has'} ${count}${names ? `, the first ${names}` : ''}`
 }
 
 const defined = (i: Record<string, unknown>) => Object.fromEntries(Object.entries(i).filter(([, v]) => v !== undefined))
@@ -68,7 +97,7 @@ export function appUiTools(link: AppLinkCaller | undefined, appName: string): Pi
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Read ${appName}'s window as the person sees it: workspace (with workspaces, the ids and labels the top bar offers), tab (the first workspace's mode: slice, design for Model, or mimir; tabs lists the ones shown), selection (primary and objects on the shown plate, primary first, each with id and name), plate (the plate shown: number from 1, id, name and count), printer (the one the project slices for: name, vendor, model, nozzleMm and fromProject for an opened project's own printer; null when none is chosen; never an id, serial, access code or address) and panels (open: the dialogs and panels up, such as settings, command, about, shortcuts, expert, printerChooser, printerSettings or setup; settingsSection, the Settings section shown; settable, the panels slicerx_app_ui_select opens). Reads through the app link; the app must be open with the link on. byObject, when the shown plate prints by object: needMm (the clearance), pairs closer than it (a and b with id and name, gapMm, severity: block when sx refuses the slice for it, soft when sx slices it as a close call), tall objects the gantry or lid would hit (id, name, topMm, what, limitMm), the gantry (rodMm, reachMm) and outlines (per object its footprint and its clearance zone, bed mm; zones that overlap are objects too close); null by layer.`,
+    description: `Read ${appName}'s window as the person sees it: workspace (with workspaces, the ids and labels the top bar offers), tab (the first workspace's mode: slice, design for Model, or mimir; tabs lists the ones shown), selection (primary and objects on the shown plate, primary first, each with id and name), plate (the plate shown: number from 1, id, name and count), printer (the one the project slices for: name, vendor, model, nozzleMm and fromProject for an opened project's own printer; null when none is chosen; never an id, serial, access code or address) and panels (open: the dialogs and panels up, such as settings, command, about, shortcuts, expert, printerChooser, printerSettings or setup; settingsSection, the Settings section shown; settable, the panels slicerx_app_ui_select opens). Reads through the app link; the app must be open with the link on. byObject, when the shown plate prints by object: needMm (the clearance), pairs closer than it (a and b with id and name, gapMm, severity: block when sx refuses the slice for it, soft when sx slices it as a close call), tall objects the gantry or lid would hit (id, name, topMm, what, limitMm), the gantry (rodMm, reachMm) and outlines (per object its footprint and its clearance zone, bed mm; zones that overlap are objects too close); null by layer. collisions, once the shown plate is sliced: each collision in the slice (kind, severity hit or close, part, objects it names with id and name, the one printing first, zone when it meets a keep-out zone or the prime tower, firstLayer and lastLayer counted from 1) and stale when the plate changed since; slicerx_app_ui_select with those ids selects them, as a click on the collision's row does; null before a slice.`,
     input: z.object({}),
     async run() {
       const out = await call(link, appName, 'ui.get', {})

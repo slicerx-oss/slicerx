@@ -133,6 +133,38 @@ describe.skipIf(noSx())('a by-object refusal from sx', () => {
       expect(e.details?.['needMm']).toBe(73)
       const pairs = e.details?.['pairs'] as ByObjectReadback['pairs']
       expect(pairs.map((p) => [p.a.id, p.b.id, p.severity])).toEqual([[...ids, 'block']])
+      // The collision itself names the two objects by the ids slicerx_project_show gives them.
+      const items = e.details?.['collisions'] as { kind: string; object_ids?: string[]; engine_objects?: string[] }[]
+      expect(items[0]?.kind).toBe('clearance')
+      expect([...(items[0]?.object_ids ?? [])].sort()).toEqual([...ids].sort())
+      expect(items[0]?.engine_objects).toHaveLength(2)
+    } finally {
+      await h.client.close()
+    }
+  }, 240_000)
+
+  it('names two copies of one model whose paths cross by their own ids', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      writeFileSync(join(h.dir, 'peg.stl'), boxStl(20, 20, 10))
+      await call(h, 'slicerx_project_open', { printer: 'Bambu Lab P1S', filament: 'Bambu PLA Basic' })
+      await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'peg.stl') })
+      await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'peg.stl') })
+      await call(h, 'slicerx_project_set_overrides', { changes: { skirt_loops: 0, brim_type: 'no_brim' } })
+      const ids = (await call<Shown>(h, 'slicerx_project_show')).output.plates[0]!.placements.map((p) => p.id)
+      expect(ids).toHaveLength(2)
+      // the second one 10 mm into the first
+      await call(h, 'slicerx_project_move', { object: ids[0], x: 120, y: 128 })
+      await call(h, 'slicerx_project_move', { object: ids[1], x: 130, y: 128 })
+      const r = await h.call('slicerx_slice')
+      expect(r.isError).toBe(true)
+      const e = data<Res<unknown>>(r).error!
+      expect(e.code).toBe('collision')
+      const items = e.details?.['collisions'] as { kind: string; objects?: string[]; object_ids?: string[] }[]
+      const cross = items.find((i) => i.kind === 'paths_cross')
+      // The words name both by the one file name; the ids tell them apart.
+      expect(cross?.objects?.[0]).toBe(cross?.objects?.[1])
+      expect([...(cross?.object_ids ?? [])].sort()).toEqual([...ids].sort())
     } finally {
       await h.client.close()
     }
