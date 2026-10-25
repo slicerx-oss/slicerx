@@ -3,6 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import { betterNest, byObjectApart, byObjectSpacing, byObjectSpacingModes, clearanceRadius, KEEP_OUT_GAP_MM, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, nestProblem, plateMargins, shiftKeep, zoneKeep, type NestItem, type NestMargins } from './arrange-room'
 import { printerConfig } from './index'
+import { settingDefault } from './defaults'
+import { settingNumber } from './print-margins'
 
 const plate = { origin: [0, 0] as const, size: { widthMm: 256, depthMm: 256 } }
 
@@ -147,5 +149,16 @@ describe("the nest request for the printer's keep-out areas", () => {
     const bed = { widthMm: 256, depthMm: 256 }
     expect(layoutCenterShift(boxes.map((box) => ({ box, reach: 0, keep: 0 })), bed, [corner])).toEqual([0, 27])
     expect(layoutCenterShift(boxes.map((box) => ({ box, reach: 0, keep: shiftKeep(0, 0) })), bed, [corner])).toEqual([0, 0])
+  })
+})
+
+describe('a prime tower whose width the config leaves out', () => {
+  // sx prints it at the schema default (its PrintConfig::default reads the same defaults.json), so arrange keeps that much.
+  it('takes the room of the schema default width', () => {
+    const plate = { origin: [0, 0] as const, size: { widthMm: 256, depthMm: 256 } }
+    const room = (cfg: Record<string, unknown>) => plateMargins({ enable_prime_tower: true, prime_tower_auto_position: false, ...cfg } as never, 2, plate).keepOut
+    expect(settingNumber({}, 'prime_tower_width')).toBe(settingDefault('prime_tower_width'))
+    expect(room({})).toEqual(room({ prime_tower_width: settingDefault('prime_tower_width') }))
+    expect(room({})[0]!.w).toBeCloseTo(Number(settingDefault('prime_tower_width')) + 2 * (3 + MARGIN_SAFETY_MM), 9)
   })
 })

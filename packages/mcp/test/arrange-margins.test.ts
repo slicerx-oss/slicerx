@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import type { SettingValue } from '@slicerx/contracts'
+import { plateMargins } from '@slicerx/settings/arrange-room'
 import { bedArea } from '../src/bed'
 import { geomEngine } from '../src/geom'
 import { boxFillCount, boxPlate, fillCount, nestPlate, type NestObject } from '../src/plate-nest'
@@ -159,3 +160,76 @@ for (const planner of ['boxes', 'outlines'] as const) {
     }
   }, 240_000)
 }
+
+/** The extruded X and Y of the G-code's prime tower moves, mm. */
+function towerPoints(gcode: string): [number, number][] {
+  const out: [number, number][] = []
+  let x = 0
+  let y = 0
+  let tower = false
+  for (const raw of gcode.split('\n')) {
+    const type = raw.match(/^;\s*(?:TYPE|FEATURE):\s*(.*)$/)
+    if (type) {
+      tower = /prime tower/i.test(type[1]!)
+      continue
+    }
+    const line = raw.split(';')[0]!.trim()
+    if (!/^G[0-3]\b/.test(line)) continue
+    const word = (c: string) => line.match(new RegExp(String.raw`\b${c}(-?[\d.]+)`))?.[1]
+    x = Number(word('X') ?? x)
+    y = Number(word('Y') ?? y)
+    if (tower && Number(word('E') ?? 0) > 0) out.push([x, y])
+  }
+  return out
+}
+
+// The same integrator config printing in two filaments, the prime tower at its configured spot. Neither profile sets
+// prime_tower_width, so sx prints the tower at the schema's 60 mm. The fill plan used to keep 35 mm for it (43 with
+// its brim and 1 mm), while sx laid it 66 mm wide.
+it.skipIf(noSx())('fills a two filament bed for a config with no prime tower width, keeping room as wide as the tower sx prints', async () => {
+  const h = await connect()
+  try {
+    const profile = async (id: string) => data<{ config: Record<string, SettingValue> }>(await h.call('slicerx_get_profile', { profile: id })).config
+    const config: Record<string, SettingValue> = {
+      ...(await profile('process:slicerx-default')),
+      ...(await profile('machine:prusa-mk4')),
+      enable_prime_tower: true,
+      prime_tower_auto_position: false,
+      filament_colour: ['#FFFFFF', '#2255FF'],
+      filament_type: ['PLA', 'PLA'],
+      filament_diameter: [1.75, 1.75],
+    }
+    expect(config['prime_tower_width']).toBeUndefined()
+    const stl = boxStl(20, 20, 4)
+    const model = join(h.dir, 'box.stl')
+    writeFileSync(model, stl)
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+    const o: NestObject = { id: 'box', meshId: 'box', parts: () => [partOf(stl)], linear: identity, size: [20, 20, 4], min: [0, 0, 0], config, copies: 1 }
+    const bedBox = bedArea(config)
+    const plate = { bed: bedBox, config, tools: 2, gapMm: 6, fixed: [] }
+    const room = plateMargins(config, 2, { origin: [bedBox.x0, bedBox.y0], size: { widthMm: bedBox.widthMm, depthMm: bedBox.depthMm } }).keepOut
+    expect(room).toHaveLength(1)
+    const copies = boxFillCount(plate, o, 500)
+    const placements = boxPlate({ ...plate, moving: [{ ...o, copies }], center: false }).placements
+    expect(placements.length).toBeGreaterThan(20)
+    // every other copy in filament 2, so the plate changes filament and prints the tower
+    const objects = placements.map((q, i) => ({ id: `box${i + 1}`, mesh: model, transform: [...identity.slice(0, 12), q.offset[0], q.offset[1], 0, 1], ...(i % 2 ? { slotOverrides: { 'box.stl': 2 } } : {}) }))
+    const bed = bedOf(config)
+    const out = join(h.dir, 'out')
+    mkdirSync(out, { recursive: true })
+    writeFileSync(join(out, 'request.json'), JSON.stringify({ schemaVersion: 1, plate: { ...(bed ? { bed } : {}), objects }, config: sxConfig(config), options: { emitGcode: true, emitPreview: false } }))
+    const ran = await runSx(sxBin, ['slice', '--request', join(out, 'request.json'), '--out-dir', out], sxTimeout)
+    expect(ran.code, ran.stderr).toBe(0)
+    const points = towerPoints(readFileSync((JSON.parse(ran.stdout) as { files: { gcode: string } }).files.gcode, 'utf8'))
+    expect(points.length).toBeGreaterThan(100)
+    // the tower itself: its moves around the middle row, leaving out the odd priming move away from it
+    const ys = points.map((p) => p[1]).sort((a, b) => a - b)
+    const mid = ys[Math.floor(ys.length / 2)]!
+    const xs = points.filter((p) => Math.abs(p[1] - mid) < 30).map((p) => p[0])
+    const [x0, x1] = [Math.min(...xs), Math.max(...xs)]
+    expect(x0, `tower printed from x ${x0} to ${x1}, room from ${room[0]!.x} to ${room[0]!.x + room[0]!.w}`).toBeGreaterThanOrEqual(room[0]!.x)
+    expect(x1, `tower printed from x ${x0} to ${x1}, room from ${room[0]!.x} to ${room[0]!.x + room[0]!.w}`).toBeLessThanOrEqual(room[0]!.x + room[0]!.w)
+  } finally {
+    await h.client.close()
+  }
+}, 240_000)

@@ -290,6 +290,14 @@ export function supportReach(cfg: Record<string, SettingValue>, line: number): n
   return style === 'default' || style === 'grid' ? gridReach(cfg, line, pad) : pad + line
 }
 
+/**
+ * A number setting as sx reads it: the config's value, or for a key the config leaves out its schema default, the one
+ * sx's PrintConfig::default gives it (packages/settings/defaults.json, built into the engine). 0 when it has neither.
+ */
+export function settingNumber(cfg: Record<string, SettingValue>, key: string): number {
+  return marginNumber(cfg[key], marginNumber(settingDefault(key), 0))
+}
+
 /** The skirt and draft shield settings sx prints: loops, distance (mm), height (layers), min_skirt_length (mm) and the shield. */
 export interface SkirtSettings {
   loops: number
@@ -305,7 +313,7 @@ export interface SkirtSettings {
  * gets the skirt sx prints round it, not none.
  */
 export function skirtSettings(cfg: Record<string, SettingValue>): SkirtSettings {
-  const n = (key: string) => marginNumber(cfg[key], marginNumber(settingDefault(key), 0))
+  const n = (key: string) => settingNumber(cfg, key)
   return {
     loops: Math.max(0, Math.floor(n('skirt_loops'))),
     distance: Math.max(0, n('skirt_distance')),
