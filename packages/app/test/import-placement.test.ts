@@ -158,7 +158,7 @@ describe('opening a project laid out for a larger bed', () => {
   const host = { kind: 'web', capabilities: { threads: 1 }, slicer: { loadParts: async (name: string) => handle(name) } } as unknown as Host
 
   beforeEach(async () => {
-    set((s) => ({ plate: [], plates: [{ ...s.plates[0]!, objects: [] }], overrides: {}, projectSettings: null, projectPrinter: null, printerId: 'a1-mini', printerModel: { id: 'a1-mini', vendor: 'Bambu Lab', model: 'A1 mini' }, toast: null }))
+    set((s) => ({ openNote: null, plate: [], plates: [{ ...s.plates[0]!, objects: [] }], overrides: {}, projectSettings: null, projectPrinter: null, printerId: 'a1-mini', printerModel: { id: 'a1-mini', vendor: 'Bambu Lab', model: 'A1 mini' }, toast: null }))
     await profileReady()
     startProjectPrinterSync()
     markClean()
@@ -172,7 +172,7 @@ describe('opening a project laid out for a larger bed', () => {
     const e = get().plate[0]!
     expect(objectWarnings(e, get(), NO_MARGINS)).toEqual([])
     expect(centerOf(e)[0]).toBeCloseTo(90)
-    expect(get().toast?.text).toMatch(/off this bed where the file placed them, so they were moved onto it/)
+    expect(get().openNote?.text).toMatch(/off this bed where the file placed them, so they were moved onto it/)
   })
 
   it('m.3mf keeps its place, which is on the A1 mini bed', async () => {
@@ -180,6 +180,6 @@ describe('opening a project laid out for a larger bed', () => {
     const e = get().plate[0]!
     expect(objectWarnings(e, get(), NO_MARGINS)).toEqual([])
     expect(decompose(e.transform).position[0]).toBeCloseTo(130.19, 1)
-    expect(get().toast?.text ?? '').not.toMatch(/moved onto it/)
+    expect(get().openNote?.text ?? '').not.toMatch(/moved onto it/)
   })
 })

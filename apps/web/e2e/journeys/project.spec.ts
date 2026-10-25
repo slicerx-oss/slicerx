@@ -112,9 +112,9 @@ test.describe('a Bambu Studio project', () => {
     await fresh(page)
     await openProject(page, 'a1-mini.3mf', INHERITED)
     try {
-      // The note's first sentence shows; Details opens the rest in place.
-      const note = page.getByTestId('toast').filter({ hasText: /Settings > Presets lists the 1 setting it did not carry over/ })
-      await note.getByTestId('toast-details').click({ timeout: 30_000 })
+      // The note sits under the printer card on one line; Details opens the rest in place.
+      const note = page.getByTestId('open-note').filter({ hasText: /Settings > Presets lists the 1 setting it did not carry over/ })
+      await note.getByTestId('open-note-details').click({ timeout: 30_000 })
       await expect(note.getByText(/Settings > Presets lists the 1 setting it did not carry over/)).toBeVisible()
       await setState(page, { settingsOpen: true, settingsSection: 'presets' })
       const report = page.locator('.imp-report').filter({ hasText: 'Opened a1-mini.3mf' })
@@ -296,8 +296,9 @@ test.describe('a project with its own printer', () => {
     const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
     await chooser.setFiles({ name: 'keychain.3mf', mimeType: 'model/3mf', buffer: projectZip(P1S, {}, [118, 118]) })
     await expect(page.locator('.obj-name')).toHaveText(['Cube'], { timeout: 60_000 })
-    // Toasts stack; the note is the one that names the printer.
-    await expect(page.getByTestId('toast').filter({ hasText: 'Opened as P1S' })).toContainText('Opened as P1S 0.2 mm from the project.')
+    // The open's note sits under the printer card, not over the view.
+    await expect(page.getByTestId('open-note')).toContainText('Opened as P1S 0.2 mm from the project.')
+    await expect(page.getByTestId('toast').filter({ hasText: 'Opened as P1S' })).toHaveCount(0)
     // The button names the printer; the project it came from is in the tooltip.
     await expect(page.locator('[data-section="printer"] .printer-name')).toHaveText('P1S 0.2')
     await expect(page.getByTestId('slice-machine-printer')).toHaveAttribute('data-tip-body', /^P1S 0\.2 from keychain\.3mf\. /)

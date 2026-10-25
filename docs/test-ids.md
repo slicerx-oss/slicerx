@@ -375,6 +375,11 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 
 | Test id | Control |
 | --- | --- |
+| `open-note` | The last open's or import's note under the printer card in the left pane (printer it opened on, settings applied, "Added cube.stl") |
+| `open-note-text` | Its text, one line until Details |
+| `open-note-details` | Shows the whole note when the line cuts it short (`aria-expanded`) |
+| `open-note-action` | The note's action, such as Change printer, Keep separate or Use as millimeters |
+| `open-note-dismiss` | Closes the note |
 | `legend-row` | The row in the view's top left corner with the view switch (Solid, Layer lines, Toolpaths) and the legend chip |
 | `legend-chip` | The legend shut to one chip: its list button and the Color by menu |
 | `legend-toggle` | The chip's list button: opens and shuts the legend's list (`aria-expanded`), kept between sessions |

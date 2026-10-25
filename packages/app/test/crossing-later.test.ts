@@ -22,7 +22,7 @@ const quiet: Quiet = { wait: async () => undefined, onBusy: () => () => undefine
 
 const rebuilt = { positions: [0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 2], indices: [0, 2, 1, 0, 1, 3, 1, 2, 3, 0, 3, 2] }
 
-beforeEach(() => set({ plate: [], toast: null }))
+beforeEach(() => set({ plate: [], toast: null, openNote: null }))
 
 describe('the crossing check after the model shows', () => {
   it('puts a rebuilt part in place of a crossing one, and says so', async () => {
@@ -39,7 +39,7 @@ describe('the crossing check after the model shows', () => {
     expect(loaded).toEqual(['o'])
     expect(released).toEqual(['o#0'])
     expect(asked).toEqual([true, true])
-    expect(get().toast?.text).toBe('m.stl: Repaired: fixed self-intersections in 1 part.')
+    expect(get().openNote?.text).toBe('m.stl: Repaired: fixed self-intersections in 1 part.')
   })
 
   it('notes a crossing part too big to rebuild and leaves it', async () => {
@@ -63,6 +63,6 @@ describe('the crossing check after the model shows', () => {
     expect(await checkCrossings(host, 'm.stl', [{ id: 'o', perShell: true }, { id: 'gone', perShell: true }], cross, undefined, quiet)).toEqual({ fixed: 0, left: 0 })
     expect([...get().plate[0]!.parts[0]!.positions]).toEqual([...part(5).positions])
     expect(loaded).toEqual([])
-    expect(get().toast).toBeNull()
+    expect(get().openNote).toBeNull()
   })
 })

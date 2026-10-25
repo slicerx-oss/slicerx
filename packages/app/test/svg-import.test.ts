@@ -21,7 +21,7 @@ const answer = (over: Partial<SvgImport> = {}): SvgImport => ({
   ...over,
 })
 
-beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null }))
+beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null, openNote: null }))
 
 describe('svg import', () => {
   it('turns the form into engine options and rejects bad numbers in plain words', () => {
@@ -41,7 +41,7 @@ describe('svg import', () => {
     expect(e.parts.map((p) => p.slot)).toEqual([1, 2])
     expect(e.colors).toEqual(['#ff0000', '#0000ff'])
     expect(bounds(e.parts, e.transform)!.min[2]).toBeCloseTo(0)
-    expect(get().toast?.text).toBe('Added logo: 2 colors, 10 x 10 x 2 mm.')
+    expect(get().openNote?.text).toBe('Added logo: 2 colors, 10 x 10 x 2 mm.')
   })
 
   it('passes the engine warnings on in a warning toast', async () => {

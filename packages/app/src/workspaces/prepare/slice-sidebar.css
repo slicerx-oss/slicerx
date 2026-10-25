@@ -12,3 +12,11 @@
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block:has(.srow[data-compact]) { padding-bottom: var(--s-2); }
 .studio[data-mode="prepare"]:not([data-model-mode="design"]) > .pane .pane-body > .sx-block:has(.srow[data-compact]) > .sx-block-h { margin-bottom: var(--s-2); }
 .sx-block:has(.srow[data-compact]) .scope-bar { margin-bottom: var(--s-2); }
+
+/* The last open's note under the printer card (open-note.tsx): flat, part of the pane. The text keeps to one line
+   (Details shows the rest), the close button ends that line, and the actions sit under the text. */
+.open-note { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 4px; align-items: center; padding: 8px 8px 8px 12px; border: 1px solid var(--surface-line, var(--line)); border-radius: var(--r-md); background: var(--surface-card, var(--panel)); font-size: var(--fs-sm); color: var(--muted); }
+.open-note > .sx-ic { color: var(--cyan); }
+.open-note-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.open-note[data-open] .open-note-text { white-space: normal; }
+.open-note-acts { grid-column: 2 / 4; display: flex; gap: 8px; margin-left: -8px; }

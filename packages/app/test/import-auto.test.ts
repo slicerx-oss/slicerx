@@ -32,7 +32,7 @@ function result(over: Partial<AutoImport> & { scale?: number; apply?: boolean; b
   } as AutoImport
 }
 
-beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null }))
+beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null, openNote: null }))
 
 describe('automatic import', () => {
   it('knows the formats it routes', () => {
@@ -50,7 +50,7 @@ describe('automatic import', () => {
     const b = bounds(e.parts, e.transform)!
     expect(sizeOf(b)[0]).toBeCloseTo(25.4)
     expect(b.min[2]).toBeCloseTo(0)
-    const t = get().toast!
+    const t = get().openNote!
     expect(t.text).toMatch(/inches.*25.4 x 25.4 x 25.4 mm.*Closed 2 holes/)
     t.action!.run()
     expect(decompose(get().plate[0]!.transform).scale[0]).toBeCloseTo(1)
@@ -61,7 +61,7 @@ describe('automatic import', () => {
     expect(ids).toHaveLength(2)
     expect(get().plate).toHaveLength(2)
     expect(decompose(get().plate[0]!.transform).scale[0]).toBeCloseTo(1)
-    expect(get().toast?.action).toBeUndefined()
+    expect(get().openNote?.action).toBeUndefined()
   })
 
   it('keeps the bodies split from one model where the model has them, centered together, and moves nothing after', async () => {

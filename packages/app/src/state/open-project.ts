@@ -15,7 +15,7 @@ import { clearProject } from '../project/new'
 import { keepBeforeOpen } from '../project/autosave'
 import type { OpenScope } from '../project/unsaved'
 import { identity, uid } from './actions'
-import { get, markStale, set, toast, type PlateEntry, type PlateVolumeEntry } from './store'
+import { get, markStale, openNote, set, toast, type PlateEntry, type PlateVolumeEntry } from './store'
 import { quietly } from '../plate/history'
 
 /**
@@ -275,7 +275,7 @@ async function addProjectShown(
   if (!note) return 'opened'
   // A newer open took over meanwhile: its note is the one to show.
   mine(() => undefined)
-  toast(note, 'info', joined.length ? { label: 'Keep separate', run: () => void keepSeparate(host, joined) } : match?.kind === 'match' ? pp?.CHANGE_PRINTER : undefined)
+  openNote(note, joined.length ? { label: 'Keep separate', run: () => void keepSeparate(host, joined) } : match?.kind === 'match' ? pp?.CHANGE_PRINTER : undefined)
   return 'told'
 }
 

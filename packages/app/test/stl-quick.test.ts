@@ -45,7 +45,7 @@ function counting() {
   return { host, loaded, released }
 }
 
-beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null }))
+beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null, openNote: null }))
 
 describe('reading a binary STL', () => {
   it('welds the corners that are the same point, in the order they first appear', () => {
@@ -144,6 +144,6 @@ describe('opening a binary STL', () => {
       throw new Error('no engine')
     })
     expect(get().plate.map((p) => p.id)).toEqual(ids)
-    expect(get().toast?.text).toBe('Added cube.stl')
+    expect(get().openNote?.text).toBe('Added cube.stl')
   })
 })

@@ -76,18 +76,18 @@ beforeEach(async () => {
 })
 
 describe('project settings that are not JSON, as the project opens', () => {
-  it('opens with the note in the open toast', async () => {
+  it('opens with the note in the open note', async () => {
     for (const [settings, note] of [[INI, OLDER], [JSON_SETTINGS.slice(0, 30), DAMAGED]] as const) {
-      set({ plate: [], toast: null })
+      set({ plate: [], toast: null, openNote: null })
       await openModelBytes(host, 'community.3mf', buf(box(settings)), undefined, { fresh: true })
       expect(get().plate.map((p) => p.name), settings).toEqual(['box'])
-      expect(get().toast?.text, settings).toContain(note)
+      expect(get().openNote?.text, settings).toContain(note)
     }
   })
 
   it('says nothing for an empty file', async () => {
     await openModelBytes(host, 'empty.3mf', buf(box('')), undefined, { fresh: true })
     expect(get().plate.map((p) => p.name)).toEqual(['box'])
-    expect(get().toast?.text ?? '').not.toContain('print settings were left out')
+    expect(get().openNote?.text ?? '').not.toContain('print settings were left out')
   })
 })
