@@ -14,7 +14,7 @@ function fixFor(id: string, n: FitNote): { label: string; tip: string; run: () =
   if (n.kind === 'touch')
     return {
       label: 'Move it clear',
-      tip: 'Moves this object to the nearest free spot on the plate.',
+      tip: 'Moves this object to the nearest free spot on the plate, or to a new plate when this one is full.',
       run: () => {
         set({ selection: id, selectedIds: [id] })
         void arrangePlate('selection')
