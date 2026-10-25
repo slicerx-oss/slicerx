@@ -39,6 +39,7 @@ type Sx = {
     autoSliceBySize: boolean
     bed: { widthMm: number; depthMm: number; heightMm: number; round?: boolean }
     slice: { status: string; stale?: boolean; result?: { id: string; primeTower?: unknown } }
+    projectFile: { id: string; name: string; size: number; path?: string } | null
   }
   setState(p: unknown): void
 }
@@ -898,6 +899,10 @@ test.describe('the fit check', () => {
     const saved = page.getByTestId('toast').filter({ hasText: 'Your previous plate is saved.' })
     await page.mouse.move(1, 1)
     await expect(saved).toHaveCount(0, { timeout: 30_000 })
+    // The clip as the desktop app opens it, from a file on disk that Save writes back to (the browser's files have no
+    // path, so the step gives it one).
+    const clipFile = { id: 'clip-file', name: 'cable-clip.sx3mf', size: 1, path: '/home/maker/cable-clip.sx3mf' }
+    await setState(page, { projectFile: clipFile })
     await openFile(page, join(starters(), 'temperature-tower.sx3mf'))
     await expect(page.locator('.obj-name')).toHaveText(['Temperature tower'], { timeout: 60_000 })
     await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
@@ -929,6 +934,29 @@ test.describe('the fit check', () => {
     await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
     // It comes back as it was kept, the cube still over the clip, so the fit check marks them again.
     await expect.poll(() => lines(page), { timeout: 30_000 }).toEqual([true])
+    try {
+      // Still the clip's file, the one Save writes to without asking for a name on the desktop, and the top bar names it.
+      expect((await store(page)).projectFile).toEqual(clipFile)
+      await expect(page.locator('.sx-projname')).toContainText('cable-clip')
+      await expect(page.locator('.sx-projname')).toHaveAttribute('data-tip-title', clipFile.path)
+      // And still unsaved: the autosave, written only for unsaved work, picks it up again with both objects.
+      const autosave = () =>
+        page.evaluate(
+          () =>
+            new Promise<number | null>((resolve) => {
+              const req = indexedDB.open('slicerx-projects')
+              req.onsuccess = () => {
+                const one = req.result.transaction('snapshots').objectStore('snapshots').get('autosave')
+                one.onsuccess = () => resolve((one.result as { objects: number } | undefined)?.objects ?? null)
+                one.onerror = () => resolve(null)
+              }
+              req.onerror = () => resolve(null)
+            }),
+        )
+      await expect.poll(autosave, { timeout: 30_000 }).toBe(2)
+    } finally {
+      await setState(page, { projectFile: null })
+    }
   })
 
   test('moving an object does not rebuild the scene, with a prime tower on the plate', { tag: '@gpu' }, async ({ page }) => {
