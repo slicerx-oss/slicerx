@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! The printer's keep-out zones, `bed_exclude_area` and the nozzle wrap check corner (`head_wrap_detect_zone`),
-//! are kept clear by the same rules: the brim is cut to the bed less both, and a skirt that runs into either is
-//! refused.
+//! are kept clear by the same rules: the brim and the skirt are cut to the bed less both, and a cut skirt is noted.
 
 use serde_json::{Value, json};
 use std::path::PathBuf;
@@ -117,89 +116,99 @@ fn in_a1_corner(p: [f64; 2]) -> bool {
 
 const SKIRT: &str = r#"{"skirt_loops": 2, "skirt_distance": 3, "skirt_height": 1}"#;
 
+/// The slice report's warnings.
+fn warnings(out: &Output) -> Vec<String> {
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap_or(Value::Null);
+    report["warnings"]
+        .as_array()
+        .map(|w| {
+            w.iter()
+                .filter_map(|w| w["message"].as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The note for a skirt cut beside one of `names`.
+fn skirt_noted(out: &Output, names: &[&str]) -> bool {
+    warnings(out).iter().any(|w| {
+        names
+            .iter()
+            .any(|n| *w == format!("The skirt near \"{n}\" was cut to fit on the bed"))
+    })
+}
+
 #[test]
-fn a_skirt_in_the_a1_wrap_check_corner_is_refused() {
-    // The cube 0.1 mm into the corner: its walls stay inside their outline, its skirt runs 3.7 mm into the corner.
+fn a_skirt_at_the_a1_wrap_check_corner_is_cut_out_of_it() {
+    // The cube 0.1 mm into the corner: its walls stay inside their outline, its skirt would run 3.7 mm into the
+    // corner. It is cut where the corner starts, and the slice says so.
     let c = config("a1", &serde_json::from_str(SKIRT).unwrap());
     for args in [&[][..], &["--allow-collisions"][..]] {
-        let (out, _) = slice("skirt", &c, &[[206.1, 230.0]], args);
-        let err = stderr(&out);
-        assert_eq!(out.status.code(), Some(1), "{err}");
-        assert!(
-            err.contains(
-                "toolpaths enter an excluded bed area (the nozzle wrap check corner) from layer 1 (X226.1 Y226.4, skirt nearest \"Near\"), 28 moves in layer 1; move \"Near\" out of it or arrange the plate"
-            ),
-            "{err}"
-        );
+        let (out, gcode) = slice("skirt", &c, &[[206.1, 230.0]], args);
+        assert!(out.status.success(), "{}", stderr(&out));
+        let skirt = moves(&gcode, "Skirt");
+        assert!(!skirt.is_empty(), "a skirt");
+        assert!(!skirt.iter().any(|p| in_a1_corner(*p)), "skirt in the corner");
+        assert!(skirt_noted(&out, &["Near"]), "{:?}", warnings(&out));
     }
-    // 5 mm clear, the skirt's 3.6 mm reach fits.
+    // 5 mm clear, the skirt's 3.6 mm reach fits: whole, and no note.
     let (out, gcode) = slice("skirt-clear", &c, &[[201.0, 230.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
     let skirt = moves(&gcode, "Skirt");
     assert!(!skirt.is_empty() && !skirt.iter().any(|p| in_a1_corner(*p)));
+    assert!(
+        !warnings(&out).iter().any(|w| w.contains("skirt")),
+        "{:?}",
+        warnings(&out)
+    );
 }
 
 #[test]
-fn a_plate_skirt_round_two_parts_beside_the_a1_corner_is_refused() {
-    // One cube 10 mm left of the corner, one 10 mm in front of it: the skirt round both cuts across the corner. Moving
-    // either cube alone toward the open bed does not help, so the refusal says what does.
+fn a_plate_skirt_round_two_parts_beside_the_a1_corner_is_cut_out_of_it() {
+    // One cube 10 mm left of the corner, one 10 mm in front of it: the skirt round both would cut across the corner.
     let at = [[196.0, 230.0], [230.0, 194.0]];
     let c = config("a1", &serde_json::from_str(SKIRT).unwrap());
-    let (out, _) = slice("flank", &c, &at, &[]);
-    let err = stderr(&out);
-    assert_eq!(out.status.code(), Some(1), "{err}");
-    assert!(
-        err.contains("toolpaths enter an excluded bed area (the nozzle wrap check corner) from layer 1"),
-        "{err}"
-    );
-    assert!(
-        err.contains(
-            "; the skirt round the whole plate runs into it between \"Near\" and \"Far\": move them apart or give each part a skirt of its own"
-        ) || err.contains(
-            "; the skirt round the whole plate runs into it between \"Far\" and \"Near\": move them apart or give each part a skirt of its own"
-        ),
-        "{err}"
-    );
+    let (out, gcode) = slice("flank", &c, &at, &[]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(!moves(&gcode, "Skirt").iter().any(|p| in_a1_corner(*p)));
+    assert!(skirt_noted(&out, &["Near", "Far"]), "{:?}", warnings(&out));
     // A skirt of each part's own stays clear of it.
     let mut own = c;
     own["skirt_type"] = json!("perobject");
     let (out, gcode) = slice("flank-own", &own, &at, &[]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(!moves(&gcode, "Skirt").iter().any(|p| in_a1_corner(*p)));
+    assert!(
+        !warnings(&out).iter().any(|w| w.contains("skirt")),
+        "{:?}",
+        warnings(&out)
+    );
 }
 
 #[test]
-fn a_plate_skirt_round_two_parts_beside_the_p1s_corner_names_both() {
-    // The same on the P1S's excluded corner: cubes 12 mm right of it and 12 mm behind it.
+fn a_plate_skirt_round_two_parts_beside_the_p1s_corner_is_cut_out_of_it() {
+    // The same on the P1S's excluded corner: cubes 12 mm right of it and 12 mm behind it. The P1S writes its G-code
+    // 2 mm in front of the plate (`extruder_offset`).
     let c = config("p1s", &serde_json::from_str(SKIRT).unwrap());
-    let (out, _) = slice("flank-p1s", &c, &[[30.0, 4.0], [4.0, 40.0]], &[]);
-    let err = stderr(&out);
-    assert_eq!(out.status.code(), Some(1), "{err}");
+    let (out, gcode) = slice("flank-p1s", &c, &[[30.0, 4.0], [4.0, 40.0]], &[]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let skirt = moves(&gcode, "Skirt");
+    assert!(!skirt.is_empty(), "a skirt");
     assert!(
-        err.contains("toolpaths enter an excluded bed area from layer 1"),
-        "{err}"
+        !skirt.iter().any(|p| p[0] < 17.95 && p[1] + 2.0 < 27.95),
+        "skirt in the excluded corner"
     );
-    assert!(
-        err.contains("the skirt round the whole plate runs into it between")
-            && err.contains("move them apart"),
-        "{err}"
-    );
+    assert!(skirt_noted(&out, &["Near", "Far"]), "{:?}", warnings(&out));
 }
 
 #[test]
-fn a_plate_skirt_at_one_parts_own_reach_names_that_part() {
-    // A cube in the A1 corner and one in the middle: the skirt round both enters the corner round the near cube, so
-    // moving that cube clears it.
+fn a_plate_skirt_cut_at_one_parts_own_reach_names_that_part() {
+    // A cube in the A1 corner and one in the middle: the skirt round both is cut at the corner round the near cube.
     let c = config("a1", &serde_json::from_str(SKIRT).unwrap());
-    let (out, _) = slice("near-mid", &c, &[[206.1, 230.0], [118.0, 118.0]], &[]);
-    let err = stderr(&out);
-    assert_eq!(out.status.code(), Some(1), "{err}");
-    assert!(
-        err.contains("skirt nearest \"Near\")")
-            && err.contains("; move \"Near\" out of it or arrange the plate"),
-        "{err}"
-    );
-    assert!(!err.contains("skirt round the whole plate"), "{err}");
+    let (out, gcode) = slice("near-mid", &c, &[[206.1, 230.0], [118.0, 118.0]], &[]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(!moves(&gcode, "Skirt").iter().any(|p| in_a1_corner(*p)));
+    assert!(skirt_noted(&out, &["Near"]), "{:?}", warnings(&out));
 }
 
 #[test]

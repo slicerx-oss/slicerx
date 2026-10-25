@@ -88,6 +88,30 @@ test('a refused slice clears the toolpaths of the slice before it', { tag: '@smo
   }
 })
 
+test('a skirt over the bed edge is cut, and the slice notes it in plain words with Arrange as the fix', async ({ page }) => {
+  test.slow()
+  await calm(page)
+  await patch(page, { overrides: { skirt_loops: '1', skirt_distance: '2', skirt_height: '1', brim_type: 'no_brim' }, slotSetup: {}, slice: { status: 'idle' } })
+  await boxOnPlate(page)
+  try {
+    // The 20 mm box with its back edge 2 mm from the bed's: the skirt, 2 mm out, would leave the bed.
+    await page.evaluate(() => {
+      const sx = (window as unknown as { __sx: { getState(): { plate: { transform: number[] }[]; bed: { depthMm: number } }; setState(p: unknown): void } }).__sx
+      const s = sx.getState()
+      sx.setState({ plate: s.plate.map((e) => ({ ...e, transform: e.transform.map((v, i) => (i === 13 ? s.bed.depthMm - 12 : v)) })) })
+    })
+    await startSlice(page)
+    expect((await state(page)).slice.status).toBe('done')
+    const note = page.locator('[data-section="result"] .warns li').filter({ hasText: /skirt/ })
+    await expect(note).toHaveCount(1)
+    // One short line, plain words, no setting keys.
+    await expect(note.locator('.warn-jump span')).toHaveText(/^The skirt near ".+" was cut to fit on the bed$/)
+    await expect(note.getByRole('button', { name: 'Arrange' })).toBeVisible()
+  } finally {
+    await patch(page, { overrides: {}, plate: [], selection: null, selectedIds: [], slice: { status: 'idle' } })
+  }
+})
+
 test('the Estimate block keeps its height while a slice runs, and muninn stays clear of its text', { tag: '@smoke' }, async ({ page }) => {
   await calm(page, 'simple')
   await patch(page, { slice: { status: 'idle' } })

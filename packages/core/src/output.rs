@@ -266,6 +266,16 @@ pub struct LayerPaths {
     /// the first work of each filament on this object's layer, for the plate's purges (`sequence.rs`). Empty
     /// otherwise.
     pub(crate) turns: Vec<TurnRoom>,
+    /// Where the layer's skirt was cut to the bed, when it was.
+    pub(crate) skirt_cut: Option<SkirtCut>,
+}
+
+/// A skirt cut to the bed on one layer: a point where it was cut (mm, plate space), and whether less than one whole
+/// loop's length of it is left on the bed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct SkirtCut {
+    pub at: [f64; 2],
+    pub short: bool,
 }
 
 /// The first work of a filament on a layer of one object: whether it prints its sparse infill first and what a

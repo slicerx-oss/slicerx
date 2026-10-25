@@ -51,17 +51,37 @@ fn refusal_in_shards(objects: &[(&str, f64, f64)], shards: u32) -> String {
 }
 
 #[test]
-fn a_skirt_off_the_bed_names_the_object_it_runs_around_and_suggests_arranging() {
-    // The cube's back edge is 1 mm inside the bed, so only the skirt 2 mm out leaves it.
-    let y = 209.0 - half_depth();
-    let msg = refusal(&[("left cube", 60.0, 100.0), ("back cube", 150.0, y)]);
-    assert!(msg.contains("outside the printable area"), "{msg}");
-    assert!(msg.contains("skirt nearest \"back cube\""), "{msg}");
-    assert!(
-        msg.contains("move \"back cube\" onto the bed or arrange the plate"),
-        "{msg}"
+fn a_skirt_past_the_bed_edge_is_cut_and_the_note_names_the_object_it_runs_around() {
+    // The cube's back edge is 1 mm inside the bed, so only the skirt 2 mm out leaves it: the skirt is cut to the bed
+    // and the slice notes beside which object, as an off-the-bed warning (the app offers to arrange the plate). The
+    // cube's mesh starts at its origin, so it is placed by its front left corner.
+    let y = 209.0 - 2.0 * half_depth();
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [
+            {"id": "o0", "name": "left cube", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 60.0, 100.0, 0, 1]},
+            {"id": "o1", "name": "back cube", "mesh": "c", "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 150.0, y, 0, 1]},
+        ]},
+        "config": {
+            "printable_area": ["0x0", "250x0", "250x210", "0x210"],
+            "skirt_loops": 1, "skirt_distance": 2, "skirt_height": 1, "brim_width": 0,
+        },
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let m = cube();
+    let run = api::run_request(&req, &move |_: &str| Ok(m.clone())).expect("the skirt is cut, not refused");
+    let notes: Vec<_> = run
+        .report
+        .warnings
+        .iter()
+        .filter(|w| w.message.contains("skirt"))
+        .collect();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert_eq!(
+        notes[0].message,
+        "The skirt near \"back cube\" was cut to fit on the bed"
     );
-    assert!(!msg.contains("left cube"), "{msg}");
+    assert_eq!(notes[0].code, sx_core::WarningCode::OutsideBed);
 }
 
 #[test]

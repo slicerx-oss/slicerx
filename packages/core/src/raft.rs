@@ -14,7 +14,6 @@ use crate::geom::{Point, mm};
 use crate::output::LayerPaths;
 use crate::paths::ToolWork;
 use crate::perimeters::{self, Shapes};
-use i_overlay::i_float::int::point::IntPoint;
 
 /// What a raft layer is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -267,7 +266,7 @@ pub(crate) fn layer_paths(
     first_cfg: &PrintConfig,
     center: [f64; 2],
     tool: u8,
-    skirt: Vec<Vec<IntPoint<i32>>>,
+    skirt: Vec<crate::paths::SkirtPath>,
     (trees, columns, pad): (&Shapes, &Shapes, Vec<Vec<Point>>),
 ) -> LayerPaths {
     let Some(layer) = plan.layers.get(k).copied() else {
@@ -439,6 +438,7 @@ fn join_rows(rows: Vec<Vec<Point>>, area: &Shapes, max_link: f64) -> Vec<Vec<Poi
 #[allow(clippy::unwrap_used, clippy::indexing_slicing)]
 mod tests {
     use super::*;
+    use i_overlay::i_float::int::point::IntPoint;
 
     fn cfg(layers: u32) -> PrintConfig {
         let mut c = PrintConfig::default();

@@ -606,6 +606,21 @@ impl Bed {
         })
     }
 
+    /// The bed less its keep-out zones, shrunk by `inset` (internal units): where a centerline may run so that a bead
+    /// `inset` wide on each side stays on the bed.
+    pub(crate) fn room(&self, inset: i32) -> Shapes {
+        let free = if self.zones.is_empty() {
+            self.area.clone()
+        } else {
+            perimeters::difference(&self.area, &self.zones)
+        };
+        if inset > 0 {
+            perimeters::offset(&free, -inset)
+        } else {
+            free
+        }
+    }
+
     /// `areas` cut to the bed, and whether anything was cut. Areas already on the bed come back as they
     /// are, so a brim that fits prints exactly as before.
     pub(crate) fn cut(&self, areas: Vec<Shapes>) -> (Vec<Shapes>, bool) {

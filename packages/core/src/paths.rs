@@ -22,12 +22,20 @@ fn round_flow(d: f64, h: f64) -> f32 {
     }
 }
 
+/// One path of the skirt: a whole loop, or a piece of one cut at the bed's edge or an excluded area.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SkirtPath {
+    pub(crate) points: Vec<IntPoint<i32>>,
+    /// A piece with two ends rather than a closed loop.
+    pub(crate) open: bool,
+}
+
 /// Everything one filament slot prints on one layer.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ToolWork {
     pub(crate) tool: u8,
     pub(crate) brim: Vec<Vec<IntPoint<i32>>>,
-    pub(crate) skirt: Vec<Vec<IntPoint<i32>>>,
+    pub(crate) skirt: Vec<SkirtPath>,
     /// Prime tower wall and purge rows, printed first: the purge follows the tool change.
     pub(crate) tower: Vec<crate::tower::TowerPath>,
     /// Prime tower rows printed last, right before the next tool change: the old filament rammed out
@@ -434,6 +442,25 @@ impl Builder<'_> {
             return;
         };
         self.push_closed(tool, feature, speed, &ring, wall, crate::geom::area2_int(c) < 0);
+    }
+
+    /// An open piece of a loop, printed from whichever of its ends lies nearer the nozzle (or the start point asked for).
+    fn push_piece(&mut self, tool: u8, feature: Feature, speed: f32, piece: &[IntPoint<i32>]) {
+        let at = self
+            .start_point
+            .take()
+            .unwrap_or([self.cursor.x_mm(), self.cursor.y_mm()]);
+        let (Some(first), Some(last)) = (piece.first(), piece.last()) else {
+            return;
+        };
+        let gap =
+            |p: &IntPoint<i32>| (f64::from(p.x) / SCALE - at[0]).m_hypot(f64::from(p.y) / SCALE - at[1]);
+        let pts = piece.iter().map(|p| Point::new(p.x, p.y));
+        if gap(last) < gap(first) {
+            self.push(tool, feature, speed, pts.rev());
+        } else {
+            self.push(tool, feature, speed, pts);
+        }
     }
 
     /// A closed loop that starts at `ring[0]`: with a scarf joint when the settings ask for one, else
@@ -1864,9 +1891,14 @@ pub(crate) fn plan_layer_paths(
         }
         for (i, c) in w.skirt.iter().enumerate() {
             if i == 0 && layer == 0 {
-                b.start_point = skirt_start_point(c, cfg.raw_number("skirt_start_angle", -135.0));
+                b.start_point = skirt_start_point(&c.points, cfg.raw_number("skirt_start_angle", -135.0));
             }
-            b.push_loop(w.tool, Feature::Skirt, skirt_speed.unwrap_or(speeds.brim), c);
+            let speed = skirt_speed.unwrap_or(speeds.brim);
+            if c.open {
+                b.push_piece(w.tool, Feature::Skirt, speed, &c.points);
+            } else {
+                b.push_loop(w.tool, Feature::Skirt, speed, &c.points);
+            }
         }
         for c in &w.brim {
             b.push_loop(w.tool, Feature::Brim, speeds.brim, c);
