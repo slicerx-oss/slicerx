@@ -10,7 +10,7 @@
 - Unit: mm
 - Default: [10]
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `filament_change_length_nc`
@@ -21,7 +21,7 @@
 - Unit: mm
 - Default: [10]
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `filament_flush_volumetric_speed`
@@ -66,7 +66,7 @@
 - Unit: mm3
 - Default: [15]
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `filament_multitool_ramming`
@@ -75,7 +75,7 @@
 
 - Type: list of booleans, one per extruder
 - Default: [false]
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `filament_multitool_ramming_flow`
@@ -97,7 +97,7 @@
 - Unit: mm3
 - Default: [10]
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `filament_prime_volume`

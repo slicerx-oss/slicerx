@@ -234,7 +234,7 @@ Puts the prime tower on a free spot next to the objects, clear of the printer's 
 - Type: boolean
 - Default: off
 - Tier: Expert, multicolor, shown with two or more filaments
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `sparse_infill_filament_id`

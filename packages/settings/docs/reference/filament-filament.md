@@ -51,7 +51,7 @@
 - Unit: mm
 - Default: [1.75]
 - Recommended range: 0 to no maximum
-- Changing it redoes: G-code only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `filament_is_support`

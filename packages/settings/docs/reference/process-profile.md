@@ -49,7 +49,7 @@
 - Type: list of integers, one per extruder
 - Default: [1]
 - Tier: Hidden (profile key)
-- Changing it redoes: preview only
+- Changing it redoes: layers (the whole slice)
 - mimir class: read (not in the catalog: never written)
 
 ### `print_extruder_variant`

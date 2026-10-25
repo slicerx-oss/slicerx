@@ -3,6 +3,8 @@
 //! A prepared session a host keeps ([`api::prepare`], [`api::run_prepared`]) slices any request with the same
 //! [`api::session_key`] to the bytes a fresh session gives: G-code, preview and report.
 
+#![allow(clippy::disallowed_methods, reason = "test geometry, not engine output")]
+
 mod common;
 
 use serde_json::{Value, json};
@@ -38,6 +40,48 @@ fn wedge(len: f32, wide: f32, low: f32, high: f32) -> Arc<Mesh> {
         bytes.extend_from_slice(&[0, 0]);
     }
     Arc::new(Mesh::load(&bytes, "wedge.stl").unwrap())
+}
+
+/// A binary STL of a round peg `r` mm in radius and `h` mm tall with a round hole of radius `hole` through it, in
+/// `n` facets around: walls that the wall deviation and resolution simplify.
+fn ring(r: f32, hole: f32, h: f32, n: usize) -> Arc<Mesh> {
+    #[allow(clippy::cast_precision_loss, reason = "a few hundred facets")]
+    let at = |rad: f32, k: usize, z: f32| -> [f32; 3] {
+        let a = std::f32::consts::TAU * (k % n) as f32 / n as f32;
+        [rad * a.cos(), rad * a.sin(), z]
+    };
+    let mut tris: Vec<[[f32; 3]; 3]> = Vec::new();
+    for k in 0..n {
+        let (o0, o1, o0t, o1t) = (at(r, k, 0.0), at(r, k + 1, 0.0), at(r, k, h), at(r, k + 1, h));
+        let (i0, i1, i0t, i1t) = (
+            at(hole, k, 0.0),
+            at(hole, k + 1, 0.0),
+            at(hole, k, h),
+            at(hole, k + 1, h),
+        );
+        tris.extend([
+            [o0, o1, o1t],
+            [o0, o1t, o0t],
+            [i1, i0, i0t],
+            [i1, i0t, i1t],
+            [o0t, o1t, i1t],
+            [o0t, i1t, i0t],
+            [o1, o0, i0],
+            [o1, i0, i1],
+        ]);
+    }
+    let mut bytes = vec![0u8; 80];
+    bytes.extend_from_slice(&u32::try_from(tris.len()).unwrap().to_le_bytes());
+    for t in &tris {
+        bytes.extend_from_slice(&[0u8; 12]);
+        for p in t {
+            for v in p {
+                bytes.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&[0, 0]);
+    }
+    Arc::new(Mesh::load(&bytes, "ring.stl").unwrap())
 }
 
 /// An object of a synthetic plate: its id, mesh and transform (None: placed in a row).
@@ -166,6 +210,11 @@ fn cases() -> Vec<Case> {
             "tree support",
             vec![("s", wedge(30.0, 20.0, 1.0, 12.0), overhang)],
             &json!({"enable_support": true, "support_type": "tree(auto)", "support_threshold_angle": 45}),
+        ),
+        Case::new(
+            "round walls",
+            vec![("r", ring(12.0, 4.0, 1.6, 180), None)],
+            &json!({"wall_generator": "aegis", "seam_position": "aligned", "layer_height": 0.2, "wall_loops": 3}),
         ),
         Case::new(
             "by object",
@@ -434,6 +483,31 @@ fn a_setting_of_each_class_keeps_or_replaces_the_session_as_it_should() {
             }
         }
     }
+}
+
+/// The key leaves out only settings the schema files under G-code or preview, so a note that says a setting redoes
+/// only G-code holds for the session too.
+#[test]
+fn every_free_setting_is_a_gcode_or_preview_setting() {
+    let defs = schema();
+    let other: Vec<String> = api::SESSION_FREE_KEYS
+        .iter()
+        .filter_map(|k| {
+            let stage = defs
+                .iter()
+                .find(|d| d["key"] == json!(k))
+                .map(|d| d["invalidates"].clone());
+            match stage.as_ref().and_then(Value::as_str) {
+                Some("gcode" | "preview") => None,
+                _ => Some(format!("{k}: {stage:?}")),
+            }
+        })
+        .collect();
+    assert!(
+        other.is_empty(),
+        "free settings of another stage:\n{}",
+        other.join("\n")
+    );
 }
 
 /// Every setting the key leaves out, changed together in groups: a kept session still slices as a fresh one. The
