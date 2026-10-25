@@ -293,6 +293,18 @@ export function zoneKeep(grow: number, reach: number, gapMm: number, apart = 0, 
   return nest ? Math.max(edge, gapMm / 2, apart / 2, grow > 0 ? grow + MARGIN_SAFETY_MM / 2 : 0) : edge
 }
 
+/** The least a part keeps from the printer's keep-out areas by object, mm: the nest's default gap (NestOptions). */
+export const KEEP_OUT_GAP_MM = 6
+
+/**
+ * How far a part of a finished layout keeps from a zone when the layout moves as a whole (layoutCenterShift): the edge
+ * spacing the nest gives the printer's keep-out areas, its reach (`reach`, by object with the skirt round it) and a
+ * little more, at least KEEP_OUT_GAP_MM, and its brim's grow when that is more.
+ */
+export function shiftKeep(grow: number, reach: number): number {
+  return Math.max(grow, KEEP_OUT_GAP_MM, reach > 0 ? reach + MARGIN_SAFETY_MM : 0)
+}
+
 /** An object of a finished layout: its box on the bed, how far what prints round it reaches, and how far it keeps from a zone. */
 export interface LaidOut {
   box: Rect
