@@ -217,7 +217,7 @@
   "wall_direction": "The direction outer wall loops print in, seen from above. Holes print the other way; switching it can move where small blobs show up.",
   "wall_distribution_count": "How many walls, counted from the center, share the width changes aegis or Arachne make. Lower keeps the outer walls an even width.",
   "wall_generator": "How walls are laid out. aegis (the default) varies wall width to fit the part, so thin features print solid and walls stay even; Arachne does the same with more width changes, and classic keeps one width.",
-  "wall_maximum_deviation": "How far simplified walls may stray from the model, in mm. Larger makes smaller G-code and slightly less accurate walls.",
+  "wall_maximum_deviation": "How far simplified walls may stray from the model, in mm, and never more than the slice resolution or 0.01 mm, whichever is larger. Larger makes smaller G-code and slightly less accurate walls.",
   "wall_maximum_resolution": "The shortest wall segment kept, in mm. Smaller keeps finer detail and makes larger G-code.",
   "wall_sequence": "Which walls print first on each layer. Inner then outer gives the best outer surface; outer first is more accurate; inner, outer, inner is a middle ground.",
   "wall_transition_angle": "Where a wedge gets thin, how sharp it must be before the number of walls changes, in degrees. Lower leaves fewer extra center walls but may leave gaps.",

@@ -53,6 +53,9 @@ pub(crate) struct Params {
     pub(crate) min_length_factor: f64,
     pub(crate) wall_maximum_resolution: f64,
     pub(crate) wall_maximum_deviation: f64,
+    /// The profile's slice resolution: the wall outline and wall lines stray from the model by no more than
+    /// this either, down to [`WALL_DEVIATION_FLOOR`] (see [`Params::wall_deviation`]).
+    pub(crate) resolution: f64,
     pub(crate) is_top_or_bottom_layer: bool,
     /// Athena: the center distance of the outer bead to the first inner one and of inner beads, mm.
     pub(crate) athena: Option<(f64, f64)>,
@@ -80,10 +83,27 @@ impl Default for Params {
             min_length_factor: 0.5,
             wall_maximum_resolution: 0.5,
             wall_maximum_deviation: 0.025,
+            resolution: 0.012,
             is_top_or_bottom_layer: false,
             athena: None,
             keep_diagram: false,
         }
+    }
+}
+
+/// The slice resolution caps the wall deviation down to this, mm. Round pegs and holes keep their size from
+/// a 0.01 mm deviation down; a profile with a finer resolution (0.001 mm on some) would only add wall points.
+pub(crate) const WALL_DEVIATION_FLOOR: f64 = 0.01;
+
+impl Params {
+    /// How far the simplified wall outline and wall lines may move from the model, mm: the wall deviation,
+    /// capped by the slice resolution but not below [`WALL_DEVIATION_FLOOR`]. At the stock 0.025 mm deviation,
+    /// chords that deep cut into every round peg and hole and printed them 0.02 to 0.03 mm small, and the coarse
+    /// chords left nothing for arc fitting; at the stock 0.012 mm resolution they keep their size and print as
+    /// arcs.
+    pub(crate) fn wall_deviation(&self) -> f64 {
+        self.wall_maximum_deviation
+            .min(self.resolution.max(WALL_DEVIATION_FLOOR))
     }
 }
 
@@ -168,7 +188,7 @@ fn same_params(a: &Params, b: &Params) -> bool {
         && a.wall_distribution_count == b.wall_distribution_count
         && f(a.min_length_factor, b.min_length_factor)
         && f(a.wall_maximum_resolution, b.wall_maximum_resolution)
-        && f(a.wall_maximum_deviation, b.wall_maximum_deviation)
+        && f(a.wall_deviation(), b.wall_deviation())
         && a.is_top_or_bottom_layer == b.is_top_or_bottom_layer
         && pair(a.athena, b.athena)
 }
@@ -192,7 +212,7 @@ pub(crate) fn walls(outline: &Shapes, prm: &Params) -> Option<Walls> {
 /// The outline cleaned for the wall generator, one list of rings per shape.
 fn prepared_outline(outline: &Shapes, prm: &Params) -> Vec<Vec<Vec<P>>> {
     let smallest_segment = to_nm(prm.wall_maximum_resolution);
-    let allowed_distance = to_nm(prm.wall_maximum_deviation);
+    let allowed_distance = to_nm(prm.wall_deviation());
     let epsilon = allowed_distance / 2 - 1;
     let small_area_length = to_nm(prm.bead_width_0) as f64 / 2.0;
     prepare_outline(
@@ -315,10 +335,7 @@ fn max_beads(prm: &Params) -> i64 {
 
 /// The wall lines simplified to the resolution and deviation of the settings; empty insets dropped.
 fn simplify_insets(actual: &mut Vec<Vec<Line>>, prm: &Params) {
-    let (smallest, allowed) = (
-        to_nm(prm.wall_maximum_resolution),
-        to_nm(prm.wall_maximum_deviation),
-    );
+    let (smallest, allowed) = (to_nm(prm.wall_maximum_resolution), to_nm(prm.wall_deviation()));
     for inset in actual.iter_mut() {
         for line in inset {
             lines::simplify(line, smallest * smallest, allowed * allowed, to_nm(2.0));
@@ -523,6 +540,7 @@ pub(crate) fn island_walls(
         min_length_factor: percent(cfg, "min_length_factor", 0.5),
         wall_maximum_resolution: percent(cfg, "wall_maximum_resolution", 0.5),
         wall_maximum_deviation: percent(cfg, "wall_maximum_deviation", 0.025),
+        resolution: cfg.raw_number("resolution", 0.012).max(1e-4),
         is_top_or_bottom_layer: top_or_bottom,
         athena,
         // Where one-wall top surfaces apply (`one_wall_top`), these rings are built again with one wall.
@@ -531,7 +549,7 @@ pub(crate) fn island_walls(
     // The outline is taken in to where the outer bead's edge would be if its width were the spacing.
     let inset = crate::geom::mm(if precise { 2.0 * half_gap } else { half_gap });
     let min_infill_spacing = crate::geom::mm(cfg.flow_spacing() * 0.6);
-    let resolution = f64::from(crate::geom::mm(cfg.raw_number("resolution", 0.012).max(1e-4)));
+    let resolution = f64::from(crate::geom::mm(prm.resolution));
     let mut islands = Vec::with_capacity(region.len());
     let mut inner: Shapes = Vec::new();
     for shape in region {
@@ -628,7 +646,7 @@ fn one_wall_top(
     // The infill area inside the outer wall lies inside the outline as the generator prepares it, which
     // the simplification moves out by at most the allowed deviation. Where the layer above covers all of
     // that there is no top surface, and the walls are the usual ones without the one-wall run.
-    let reach = crate::geom::mm(prm.wall_maximum_deviation) + 2;
+    let reach = crate::geom::mm(prm.wall_deviation()) + 2;
     if perimeters::difference(&perimeters::offset(outline, reach), t.upper).is_empty() {
         return walls(outline, prm);
     }
@@ -1199,6 +1217,30 @@ fn remove_colinear(ring: &mut Vec<P>, max_deviation: f64) {
 mod tests {
     use super::*;
 
+    /// The wall deviation is the profile's, capped by the slice resolution, but never below 0.01 mm: a profile
+    /// with a 0.001 mm resolution (as some stock processes set) simplifies its walls at 0.01 mm.
+    #[test]
+    fn wall_deviation_is_capped_by_the_resolution_down_to_the_floor() {
+        let dev = |wall_maximum_deviation: f64, resolution: f64| {
+            Params {
+                wall_maximum_deviation,
+                resolution,
+                ..Params::default()
+            }
+            .wall_deviation()
+        };
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-12;
+        assert!(close(dev(0.025, 0.012), 0.012), "stock profile");
+        assert!(close(dev(0.025, 0.001), 0.01), "0.001 mm resolution");
+        assert!(close(dev(0.025, 0.008), 0.01), "0.008 mm resolution");
+        assert!(close(dev(0.025, 0.0125), 0.0125), "0.0125 mm resolution");
+        assert!(close(dev(0.005, 0.001), 0.005), "a finer wall deviation stays");
+        assert!(
+            close(dev(0.025, 0.05), 0.025),
+            "a coarser resolution leaves the deviation"
+        );
+    }
+
     fn rect(w_mm: f64, h_mm: f64) -> Shapes {
         let (w, h) = ((w_mm * 10_000.0) as i32, (h_mm * 10_000.0) as i32);
         vec![vec![vec![
@@ -1370,7 +1412,7 @@ mod tests {
             ..Params::default()
         };
         let r = walls(&gear, &prm).expect("walls");
-        let reach = crate::geom::mm(prm.wall_maximum_deviation) + 2;
+        let reach = crate::geom::mm(prm.wall_deviation()) + 2;
         let outside = perimeters::difference(&r.inner, &perimeters::offset(&gear, reach));
         assert!(outside.is_empty(), "infill area outside the gear: {outside:?}");
         let rings: Vec<usize> = r.inner.iter().map(Vec::len).collect();
