@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Fixed
+
+- `slicerx_arrange` without sx-geom, or when sx-geom fails, packs the copies' boxes the way the app's Arrange does without its engine, with the same room: brims, rafts and the skirt, the excluded areas and the A1's nozzle wrap check corner, the prime tower's room, and printing by object the clearance radius and a gantry lane for each copy taller than the rod. More copies than that fits are refused with "Only N of M fit", and the project is left as it was. It used to report the copies placed while they stayed in the starting rows, 5 mm apart, so a by-object slice was refused.
+
 ## [0.2.1] - 2026-10-24
 
 ### Added
