@@ -2818,6 +2818,53 @@ fn a_project_slices_with_its_own_settings() {
 }
 
 #[test]
+fn a_project_keeps_its_own_precise_outer_wall() {
+    let dir = temp_dir(format!("sx-cli-precise-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let header = |settings: &serde_json::Value, name: &str| -> String {
+        let path = dir.join(name);
+        std::fs::write(&path, box_3mf(Some(settings))).unwrap();
+        let gcode = path.with_extension("gcode");
+        let out = sx()
+            .arg("slice")
+            .arg(&path)
+            .arg("-o")
+            .arg(&gcode)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        let g = std::fs::read_to_string(&gcode).unwrap();
+        g.lines()
+            .find(|l| l.starts_with("; precise_outer_wall = "))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let base = serde_json::json!({
+        "printer_settings_id": "Bambu Lab X1 Carbon 0.4 nozzle",
+        "printer_model": "Bambu Lab X1 Carbon",
+        "gcode_flavor": "marlin",
+        "brim_type": "no_brim",
+        "skirt_loops": "0",
+        "different_settings_to_system": ["brim_type", "", ""]
+    });
+    // The project's own value, set by its preset and not listed as changed, stays.
+    let mut off = base.clone();
+    off["precise_outer_wall"] = serde_json::json!("0");
+    assert_eq!(header(&off, "off.3mf"), "; precise_outer_wall = 0");
+    let mut on = base.clone();
+    on["precise_outer_wall"] = serde_json::json!("1");
+    assert_eq!(header(&on, "on.3mf"), "; precise_outer_wall = 1");
+    // A project that does not set it gets SlicerX's default, whether or not it lists its changes.
+    assert_eq!(header(&base, "unset.3mf"), "; precise_outer_wall = 1");
+    let mut unlisted = base.clone();
+    unlisted
+        .as_object_mut()
+        .unwrap()
+        .remove("different_settings_to_system");
+    assert_eq!(header(&unlisted, "unlisted.3mf"), "; precise_outer_wall = 1");
+}
+
+#[test]
 fn a_mesh_named_by_several_objects_and_a_volume_slices_for_each() {
     // The command line lets a mesh go once the last object or volume naming it has it, so every use must still
     // find it: two objects and a modifier on the first all name the same cube.

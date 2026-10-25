@@ -163,10 +163,8 @@ describe('projectReport', () => {
       ['sparse_infill_density', 'invalid'],
       ['top_one_wall_type', 'unsupported'],
     ])
-    expect(r.notes).toEqual([
-      "Kept SlicerX's precise outer wall; the project used Bambu's default.",
-      "Walls: aegis walls, kept by SlicerX; the project used Bambu's default classic.",
-    ])
+    // The project's own precise outer wall is kept as it is, so only the walls get a note.
+    expect(r.notes).toEqual(["Walls: aegis walls, kept by SlicerX; the project used Bambu's default classic."])
     expect(reportText([r])).toContain('dragon.3mf (project settings)')
   })
 

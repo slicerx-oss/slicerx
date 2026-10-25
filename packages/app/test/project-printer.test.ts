@@ -197,6 +197,20 @@ describe('a project opens with the process and filaments it was made with', () =
     expect(cfg['layer_height']).toBe(0.12)
   })
 
+  it("keeps the project's own precise outer wall, listed as changed or not", async () => {
+    const { host } = capture()
+    await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, precise_outer_wall: '0' }))
+    expect(resolved()['precise_outer_wall']).toBe(false)
+    expect(get().toast?.text ?? '').not.toContain('precise outer wall')
+  })
+
+  it("gives a project that does not set the precise outer wall SlicerX's default", async () => {
+    const { host } = capture()
+    const unset = Object.fromEntries(Object.entries(FINE_P1S).filter(([k]) => k !== 'precise_outer_wall'))
+    await openModelBytes(host, 'fine.3mf', project(unset))
+    expect(resolved()['precise_outer_wall']).toBe(true)
+  })
+
   it('takes the walls the person chose in the project, with no note', async () => {
     const { host } = capture()
     const listed = [`${(FINE_P1S['different_settings_to_system'] as string[])[0]};wall_generator`, '', '', '', '', '']

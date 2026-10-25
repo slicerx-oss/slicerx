@@ -104,6 +104,7 @@ describe("SlicerX's engine choices in an opened project", () => {
     const read = readProjectFile(wallsProject(h.dir, 'inherited.3mf', 'sparse_infill_density'))
     // SlicerX's own values (engine-choices.json), as sx slice <project.3mf> uses them.
     expect(read.config['wall_generator']).toBe('aegis')
+    // The project's own precise outer wall.
     expect(read.config['precise_outer_wall']).toBe(true)
     const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'inherited.3mf', config: read.config } })
     expect(r.config['wall_generator']).toBe('aegis')
@@ -113,7 +114,7 @@ describe("SlicerX's engine choices in an opened project", () => {
     const h = await connect()
     const read = readProjectFile(wallsProject(h.dir, 'changed.3mf', 'wall_generator;sparse_infill_density'))
     expect(read.config['wall_generator']).toBe('arachne')
-    // Not listed as changed, so SlicerX's precise outer wall stays.
+    // The project's own precise outer wall (1), listed as changed or not.
     expect(read.config['precise_outer_wall']).toBe(true)
     const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'changed.3mf', config: read.config } })
     expect(r.config['wall_generator']).toBe('arachne')
@@ -146,6 +147,40 @@ function retractionProject(dir: string, name: string, mode: string, stickiness: 
   )
   return path
 }
+
+/** A Bambu project that sets `precise` as its precise outer wall, or leaves the key out when undefined. */
+function preciseProject(dir: string, name: string, precise: string | undefined): string {
+  const path = join(dir, name)
+  writeFileSync(
+    path,
+    writeZip([
+      { name: '3D/3dmodel.model', data: MODEL },
+      {
+        name: 'Metadata/project_settings.config',
+        data: JSON.stringify({
+          printer_settings_id: 'Bambu Lab A1 0.4 nozzle',
+          printer_model: 'Bambu Lab A1',
+          ...(precise !== undefined ? { precise_outer_wall: precise } : {}),
+          different_settings_to_system: ['sparse_infill_density', '', ''],
+        }),
+      },
+    ]),
+  )
+  return path
+}
+
+describe("a project's precise outer wall", () => {
+  it("keeps the project's own value, listed as changed or not", async () => {
+    const h = await connect()
+    expect(readProjectFile(preciseProject(h.dir, 'off.3mf', '0')).config['precise_outer_wall']).toBe(false)
+    expect(readProjectFile(preciseProject(h.dir, 'on.3mf', '1')).config['precise_outer_wall']).toBe(true)
+  })
+
+  it("is SlicerX's default when the project does not set it", async () => {
+    const h = await connect()
+    expect(readProjectFile(preciseProject(h.dir, 'unset.3mf', undefined)).config['precise_outer_wall']).toBe(true)
+  })
+})
 
 describe("a project's reduce_infill_retraction_mode", () => {
   it('reaches the engine as reduce_infill_retraction: Auto with PLA skips retraction inside infill', async () => {
@@ -189,7 +224,8 @@ describe('a project read for slicing', () => {
     )
     const read = readProjectFile(path)
     expect(read.config['wall_generator']).toBe('aegis')
-    expect(read.config['precise_outer_wall']).toBe(true)
+    // The project's own precise outer wall, even though it inherited it, as sx slice <project.3mf> keeps it.
+    expect(read.config['precise_outer_wall']).toBe(false)
     expect(read.config['top_color_penetration_layers']).toBe(5)
     expect(read.config['bottom_color_penetration_layers']).toBe(3)
     expect(read.summary.import_report.other_slicer).toEqual([])

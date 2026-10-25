@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectWalls, ProjectVariantError, selectVariants, SLICERX_KEEP_VALUES, type WallsNote } from '@slicerx/settings'
+import { importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, selectVariants, SLICERX_KEEP_VALUES, type WallsNote } from '@slicerx/settings'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
@@ -280,6 +280,9 @@ export function readProjectFile(path: string): ProjectRead {
     if (ours === undefined) delete config[k]
     else config[k] = ours
   }
+  // SlicerX's defaults for the keys a file with settings does not set at all (precise outer wall); a value the file
+  // sets stays. A project without settings slices as a plain model.
+  if (hasSettings) for (const [k, v] of Object.entries(projectDefaults(raw))) config[k] = v
 
   // The support settings as the file has them, in schema shapes where the import read them.
   const support: Record<string, SettingValue> = {}

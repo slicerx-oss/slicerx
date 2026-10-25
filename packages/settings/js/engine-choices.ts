@@ -10,7 +10,10 @@ import { LEGACY_KEYS } from './import'
 // The list lives in engine-choices.json, so sx-core (sx slice <project.3mf>) keeps the same ones:
 // aegis walls (wall widths fitted to the part, so thin features print solid with fewer width changes than Arachne or
 // Bambu Studio's classic walls) and the outer wall spaced from the inner ones so the outline lands on the model's size.
-const ENGINE_CHOICES = engineChoicesJson as { keeps: Record<string, { value: string | boolean | number; note: string }> }
+const ENGINE_CHOICES = engineChoicesJson as {
+  keeps: Record<string, { value: string | boolean | number; note: string }>
+  defaults?: Record<string, { value: string | boolean | number }>
+}
 
 /**
  * Engine choices of SlicerX that stay when a project opens, unless the person changed them in the project (its
@@ -25,6 +28,17 @@ export const SLICERX_KEEPS: Readonly<Record<string, string>> = Object.defineProp
 
 /** The value SlicerX prints each kept engine choice with. */
 export const SLICERX_KEEP_VALUES: Readonly<Record<string, string | boolean | number>> = Object.fromEntries(Object.entries(ENGINE_CHOICES.keeps).map(([k, v]) => [k, v.value]))
+
+/**
+ * SlicerX's values for keys a project does not set at all (engine-choices.json `defaults`): a value the project sets is
+ * its own, whether or not it lists the key as changed.
+ */
+export const SLICERX_DEFAULTS: Readonly<Record<string, string | boolean | number>> = Object.fromEntries(Object.entries(ENGINE_CHOICES.defaults ?? {}).map(([k, v]) => [k, v.value]))
+
+/** SlicerX's defaults for the keys a project's settings leave out (none when the project sets them all). */
+export function projectDefaults(settings: Record<string, unknown>): Record<string, string | boolean | number> {
+  return Object.fromEntries(Object.entries(SLICERX_DEFAULTS).filter(([k]) => settings[k] === undefined))
+}
 
 /**
  * The keys a project lists as changed from its system presets (`different_settings_to_system`: the process, then each
