@@ -8179,7 +8179,9 @@ impl SliceSession {
             0 => base_cfg,
             k => mods.get(usize::from(k) - 1).unwrap_or(base_cfg),
         };
-        let mut overhangs: Vec<(i32, &PrintConfig, u8, crate::overhang::Overhang)> = Vec::new();
+        // Every region of the layer hangs over the same layer below: it is grown once per distance, whatever the
+        // region's filament, and the rest worked out once per wall width and settings.
+        let mut overhangs = below.map(|b| crate::overhang::Overhangs::new(b, layer_height));
         // The layer below for the point by point overhang speed, once per region's settings.
         let lower = below.map(crate::overhang::Support::new).map(std::sync::Arc::new);
         let curled = layer.checked_sub(1).and_then(|k| {
@@ -8256,21 +8258,10 @@ impl SliceSession {
                 tool: *slot,
                 islands,
                 width: (region_k != 0).then(|| mm_f32(cfg.line_width)),
-                overhang: below
+                overhang: overhangs
+                    .as_mut()
                     .filter(|_| crate::tower::flag_or(cfg, "detect_overhang_wall", true))
-                    .map(|b| {
-                        // Every region of the layer hangs over the same layer below: work it out once per
-                        // wall width, settings and filament.
-                        if let Some((.., o)) = overhangs
-                            .iter()
-                            .find(|(ow, oc, os, _)| *ow == w && std::ptr::eq(*oc, cfg) && *os == *slot)
-                        {
-                            return o.clone();
-                        }
-                        let o = crate::overhang::Overhang::new(b, w, layer_height, cfg, *slot);
-                        overhangs.push((w, cfg, *slot, o.clone()));
-                        o
-                    }),
+                    .map(|o| o.get(w, cfg, *slot)),
                 quality: lower
                     .as_ref()
                     .filter(|_| crate::quality::overhang_speed_on(cfg))
@@ -8311,7 +8302,10 @@ impl SliceSession {
                     cfg.spacing_for(width)
                 };
                 // OrcaSlicer measures against the layer below grown by half the nozzle.
-                let grown = perimeters::offset(under, mm(cfg.nozzle_diameter / 2.0));
+                let grown = overhangs
+                    .as_mut()
+                    .map(|o| o.grown(mm(cfg.nozzle_diameter / 2.0)))
+                    .unwrap_or_default();
                 let (extra, filled) =
                     crate::extraperim::generate(&inner, &grown, cfg.wall_loops, mm(width), mm(spacing));
                 if !extra.is_empty() {
