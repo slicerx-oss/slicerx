@@ -524,18 +524,27 @@ impl Builder<'_> {
             if n == last && self.gap > 0.0 {
                 crate::scarf::clip_end(&mut line, self.gap);
             }
-            self.push_bead(tool, f, sp, line, o);
+            // Fixed-width walls print every loop's overhang pieces with the inner loop's bead.
+            self.push_bead(tool, f, sp, line, o, false);
         }
     }
 
-    /// A piece of wall; an overhang wall prints with Orca's overhang flow (`Overhang::bead`).
-    fn push_bead(&mut self, tool: u8, feature: Feature, speed: f32, line: Vec<Point>, o: &Overhang) {
+    /// A piece of wall; an overhang wall prints with the overhang bead (`Overhang::bead`) of the loop `outer` says.
+    fn push_bead(
+        &mut self,
+        tool: u8,
+        feature: Feature,
+        speed: f32,
+        line: Vec<Point>,
+        o: &Overhang,
+        outer: bool,
+    ) {
         if feature != Feature::OverhangWall {
             self.push(tool, feature, speed, line.into_iter());
             return;
         }
         let keep = (self.width_mm, self.flow);
-        (self.width_mm, self.flow) = o.bead();
+        (self.width_mm, self.flow) = o.bead(outer);
         self.push(tool, feature, speed, line.into_iter());
         (self.width_mm, self.flow) = keep;
     }
@@ -673,7 +682,7 @@ impl Builder<'_> {
                 };
                 if f == Feature::OverhangWall {
                     let line: Vec<Point> = piece.iter().map(|p| Point::new(p.x, p.y)).collect();
-                    self.push_bead(tool, f, sp, line, o);
+                    self.push_bead(tool, f, sp, line, o, l.inset == 0);
                     continue;
                 }
                 // The width of a cut point is the one of the nearest junction.
