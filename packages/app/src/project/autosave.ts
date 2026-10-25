@@ -11,7 +11,7 @@ import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { allPlates } from '../plate/plates'
 import { lockedSession, setLockedSession } from './locked-session'
 import { confirmDiscard, isDirty, markClean } from './unsaved'
-import { appStore, get, set, toast, type AppState } from '../state/store'
+import { appStore, get, openNote, set, type AppState } from '../state/store'
 
 export const AUTOSAVE_DELAY_MS = 4000
 /** The longest slices back to back hold back a due autosave. */
@@ -310,7 +310,7 @@ export async function keepBeforeOpen(host: Host, what: string): Promise<boolean>
   try {
     const snap = await keepProject()
     if (snap) {
-      kept = { host, snap, since: get().toast?.id ?? 0 }
+      kept = { host, snap, since: get().openNote?.id ?? 0 }
       markClean()
       return true
     }
@@ -323,18 +323,19 @@ export async function keepBeforeOpen(host: Host, what: string): Promise<boolean>
 const sentence = (t: string): string => (/[.!?]$/.test(t) ? t : `${t}.`)
 
 /**
- * The note for work an open kept, once the open is done: one sentence with Reopen. A note the open showed itself stays
- * in front of it; one with an action of its own keeps that action and points to the recent projects instead.
+ * The note for work an open kept, once the open is done: one sentence with Reopen, in the open's note under the printer
+ * card. A note the open showed itself stays in front of it; one with an action of its own keeps that action and points
+ * to the recent projects instead. A warning or error the open raised stays its own toast.
  */
 export function sayKept(): void {
   const k = kept
   if (!k) return
   kept = null
-  const t = get().toast
-  const theirs = t && t.id > k.since && !/^Added /.test(t.text) ? t : null
+  const n = get().openNote
+  const theirs = n && n.id > k.since && !/^Added /.test(n.text) ? n : null
   if (theirs?.action) {
-    toast(`${sentence(theirs.text)} ${KEPT_NOTE.replace(/\.$/, '')} in Recent projects.`, theirs.tone, theirs.action)
+    openNote(`${sentence(theirs.text)} ${KEPT_NOTE.replace(/\.$/, '')} in Recent projects.`, theirs.action)
     return
   }
-  toast(theirs ? `${sentence(theirs.text)} ${KEPT_NOTE}` : KEPT_NOTE, theirs?.tone ?? 'info', { label: 'Reopen', run: () => void openSnapshot(k.host, k.snap) })
+  openNote(theirs ? `${sentence(theirs.text)} ${KEPT_NOTE}` : KEPT_NOTE, { label: 'Reopen', run: () => void openSnapshot(k.host, k.snap) })
 }
