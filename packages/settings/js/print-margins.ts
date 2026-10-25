@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import type { SettingValue } from '@slicerx/contracts'
+import { settingDefault } from './defaults'
 
 export interface PrintSize { w: number; h: number; height: number }
 
@@ -289,16 +290,40 @@ export function supportReach(cfg: Record<string, SettingValue>, line: number): n
   return style === 'default' || style === 'grid' ? gridReach(cfg, line, pad) : pad + line
 }
 
+/** The skirt and draft shield settings sx prints: loops, distance (mm), height (layers), min_skirt_length (mm) and the shield. */
+export interface SkirtSettings {
+  loops: number
+  distance: number
+  height: number
+  minLength: number
+  shield: boolean
+}
+
+/**
+ * The skirt settings as sx reads them. A key the config leaves out takes its schema default, which is what sx's
+ * PrintConfig::default gives it (packages/settings/defaults.json, built into the engine), so a config with no skirt keys
+ * gets the skirt sx prints round it, not none.
+ */
+export function skirtSettings(cfg: Record<string, SettingValue>): SkirtSettings {
+  const n = (key: string) => marginNumber(cfg[key], marginNumber(settingDefault(key), 0))
+  return {
+    loops: Math.max(0, Math.floor(n('skirt_loops'))),
+    distance: Math.max(0, n('skirt_distance')),
+    height: n('skirt_height'),
+    minLength: n('min_skirt_length'),
+    shield: marginText(cfg['draft_shield'] ?? settingDefault('draft_shield')) === 'enabled',
+  }
+}
+
 /** The skirt or draft shield: how far past the part (and its brim) the outermost loop lies, or 0 without one. */
 function skirtOf(cfg: Record<string, SettingValue>, grow: number): number {
-  const shield = marginText(cfg['draft_shield']) === 'enabled'
-  const loops = Math.max(0, Math.floor(marginNumber(cfg['skirt_loops'], 0)))
+  const { loops, distance, shield } = skirtSettings(cfg)
   if (loops === 0 && !shield) return 0
   const nozzle = marginNumber(cfg['nozzle_diameter'], 0.4)
   const spacing = Math.max(marginNumber(cfg['line_width'], 0), nozzle * 1.2)
   const brim = marginText(cfg['brim_type']) === 'no_brim' ? 0 : Math.max(0, marginNumber(cfg['brim_width'], 0))
   // The engine puts the skirt at the brim width plus the skirt distance from the outline, or from the brim with a draft shield.
-  return Math.max(grow, brim) + Math.max(0, marginNumber(cfg['skirt_distance'], 2)) + Math.max(1, loops) * spacing
+  return Math.max(grow, brim) + distance + Math.max(1, loops) * spacing
 }
 
 /**

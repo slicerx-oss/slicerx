@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { boxStl, connect, data, noSx, sxBin } from './helpers'
+import type { SettingValue } from '@slicerx/contracts'
+import { bedArea } from '../src/bed'
+import { geomEngine } from '../src/geom'
+import { boxFillCount, boxPlate, fillCount, nestPlate, type NestObject } from '../src/plate-nest'
+import { bedOf, runSx, sxConfig } from '../src/sx'
+import { boxStl, connect, data, noSx, noSxGeom, sxBin, sxGeomBin, sxTimeout } from './helpers'
 
 it.skipIf(noSx()).each([
   // 39, not 40: the A1 keeps its nozzle wrap check corner clear.
@@ -103,3 +108,54 @@ it.skipIf(noSx())('keeps a supported part and the skirt round its support on the
     await h.client.close()
   }
 }, 240_000)
+
+/** A binary STL's triangles as the nest reads a part: corners and their indices, three a triangle. */
+function partOf(stl: Buffer): { positions: Float32Array; indices: Uint32Array } {
+  const n = stl.readUInt32LE(80)
+  const positions = new Float32Array(n * 9)
+  for (let t = 0; t < n; t++) for (let k = 0; k < 9; k++) positions[t * 9 + k] = stl.readFloatLE(84 + t * 50 + 12 + k * 4)
+  return { positions, indices: Uint32Array.from({ length: n * 3 }, (_, i) => i) }
+}
+
+// A config merged the way docs/integrators/engine-path.md tells an integrator to: the SlicerX default process and a
+// printer, neither of which sets a skirt key. sx then prints its default skirt, so a fill plan on the same config has
+// to keep that skirt's room at the bed edge. The plan used to read the missing skirt_loops as no skirt and set copies
+// 6 mm in, where the skirt 7.2 mm round them ran 1.2 mm past the bed and the slice was refused.
+for (const planner of ['boxes', 'outlines'] as const) {
+  it.skipIf(noSx() || (planner === 'outlines' && noSxGeom()))(`fills a bed on its ${planner} for a config with no skirt keys, and sx slices it with its default skirt`, async () => {
+    const h = await connect()
+    try {
+      const profile = async (id: string) => data<{ config: Record<string, SettingValue> }>(await h.call('slicerx_get_profile', { profile: id })).config
+      const config = { ...(await profile('process:slicerx-default')), ...(await profile('machine:prusa-mk4')) }
+      expect(Object.keys(config).filter((k) => k.includes('skirt'))).toEqual([])
+      const stl = boxStl(20, 20, 10)
+      const model = join(h.dir, 'box.stl')
+      writeFileSync(model, stl)
+      const part = partOf(stl)
+      const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+      const o: NestObject = { id: 'box', meshId: 'box', parts: () => [part], linear: identity, size: [20, 20, 10], min: [0, 0, 0], config, copies: 1 }
+      // The arrange tool's default gap between copies.
+      const plate = { bed: bedArea(config), config, tools: 1, gapMm: 6, fixed: [] }
+      let placements
+      if (planner === 'boxes') {
+        const copies = boxFillCount(plate, o, 500)
+        placements = boxPlate({ ...plate, moving: [{ ...o, copies }], center: false }).placements
+      } else {
+        const engine = geomEngine(sxGeomBin)
+        const cache = new Map()
+        const copies = await fillCount(engine, plate, o, 500, cache)
+        placements = (await nestPlate(engine, { ...plate, moving: [{ ...o, copies }], center: false }, cache)).placements
+      }
+      expect(placements.length).toBeGreaterThan(20)
+      const objects = placements.map((q, i) => ({ id: `box${i + 1}`, mesh: model, transform: [...identity.slice(0, 12), q.offset[0], q.offset[1], 0, 1] }))
+      const bed = bedOf(config)
+      const out = join(h.dir, 'out')
+      mkdirSync(out, { recursive: true })
+      writeFileSync(join(out, 'request.json'), JSON.stringify({ schemaVersion: 1, plate: { ...(bed ? { bed } : {}), objects }, config: sxConfig(config), options: { emitGcode: true, emitPreview: false } }))
+      const ran = await runSx(sxBin, ['slice', '--request', join(out, 'request.json'), '--out-dir', out], sxTimeout)
+      expect(ran.code, ran.stderr).toBe(0)
+    } finally {
+      await h.client.close()
+    }
+  }, 240_000)
+}

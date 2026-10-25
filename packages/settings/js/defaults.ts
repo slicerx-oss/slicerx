@@ -16,6 +16,15 @@ export function defaultConfig(section?: SettingSection): Record<string, SettingV
   return out
 }
 
+/**
+ * The schema default of one setting, or undefined for a key with no default. For a process key this is the value sx
+ * slices with when a config leaves the key out: its PrintConfig::default applies the same defaults.json.
+ */
+export function settingDefault(key: string): SettingValue | undefined {
+  const entry = table[key]
+  return entry ? structuredClone(entry[1]) : undefined
+}
+
 /** The section a key belongs to, or undefined for a key the schema does not know. */
 export function sectionOf(key: string): SettingSection | undefined {
   return table[key]?.[0]
