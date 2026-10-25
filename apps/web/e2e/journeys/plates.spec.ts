@@ -890,6 +890,14 @@ test.describe('the fit check', () => {
     await expect(page.locator('.obj-name', { hasText: '20 mm calibration cube' })).toBeVisible({ timeout: 60_000 })
     // The drop has finished, so the open below starts from a settled plate.
     await expect.poll(async () => (await store(page)).plateLoading, { timeout: 60_000 }).toBe(false)
+    // A design adds to the plate where its file put it: both starters sit at the bed's center, so the cube overlaps the
+    // clip and the fit check marks the two of them.
+    await expect.poll(() => lines(page), { timeout: 30_000 }).toEqual([true])
+    // The first open kept whatever the step before left unsaved, so its own note can still be on the card. It goes
+    // first (the pointer off the card, so the card's time runs), and the note found below is this open's.
+    const saved = page.getByTestId('toast').filter({ hasText: 'Your previous plate is saved.' })
+    await page.mouse.move(1, 1)
+    await expect(saved).toHaveCount(0, { timeout: 30_000 })
     await openFile(page, join(starters(), 'temperature-tower.sx3mf'))
     await expect(page.locator('.obj-name')).toHaveText(['Temperature tower'], { timeout: 60_000 })
     await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
@@ -909,9 +917,9 @@ test.describe('the fit check', () => {
       )
     await expect.poll(kept, { timeout: 30_000 }).toContain(2)
     // The open's own note is replaced by the kept one once the open is done: wait for that note's own button.
-    const reopen = page.getByTestId('toast').filter({ hasText: 'Your previous plate is saved.' }).getByTestId('toast-action')
+    const reopen = saved.getByTestId('toast-action')
     await expect(reopen).toHaveText('Reopen', { timeout: 30_000 })
-    // The old plate's fit marks go with it.
+    // The old plate's fit mark goes with it: the tower alone has none.
     await page.waitForTimeout(2500)
     expect(await lines(page)).toEqual([])
     await reopen.click()
@@ -919,6 +927,8 @@ test.describe('the fit check', () => {
     await expect.poll(async () => (await store(page)).plateLoading, { timeout: 60_000 }).toBe(false)
     // The plate was clean when Reopen ran, so it asks nothing either.
     await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
+    // It comes back as it was kept, the cube still over the clip, so the fit check marks them again.
+    await expect.poll(() => lines(page), { timeout: 30_000 }).toEqual([true])
   })
 
   test('moving an object does not rebuild the scene, with a prime tower on the plate', { tag: '@gpu' }, async ({ page }) => {
