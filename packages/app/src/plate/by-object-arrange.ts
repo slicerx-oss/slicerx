@@ -6,7 +6,7 @@
 // gets a lane of its own, so the gantry over a later one never meets an earlier one. The print order is the plate's
 // own order, which the 3MF keeps and the engine prints in.
 import type { Bed, SettingValue } from '@slicerx/contracts'
-import { byObjectApart, layoutCenterShift, zoneKeep } from '@slicerx/settings/arrange-room'
+import { byObjectApart, layoutCenterShift, shiftKeep, zoneKeep } from '@slicerx/settings/arrange-room'
 import { arrangeReach, arrangeRules, byObjectOrder, byObjectPlan, CELL_MM, gantryLane, overRod } from '@slicerx/settings/by-object'
 import type { PlateEntry } from '../state/store'
 import { arrangeZones, currentMargins, printSizeOf, type ArrangeOptions, type ArrangeResult } from './arrange'
@@ -114,7 +114,8 @@ export async function arrangeByObject(
       const b = transforms[e.id] ? bounds(e.parts, transforms[e.id]!) : undefined
       if (!b) return []
       const size = printSizeOf(b)
-      return [{ box: { x: b.min[0], y: b.min[1], w: size.w, h: size.h }, reach: margins.reach(size), keep: margins.grow(size) }]
+      // as far from a zone as the nest keeps a part from the printer's keep-out areas, its skirt by object counted
+      return [{ box: { x: b.min[0], y: b.min[1], w: size.w, h: size.h }, reach: margins.reach(size), keep: shiftKeep(margins.grow(size), Math.max(margins.reach(size), reach.get(e.id) ?? 0)) }]
     })
     const [dx, dy] = layoutCenterShift(placed, bed, [...arrangeZones(margins), ...(opts.zones ?? [])], CELL_MM)
     if (dx !== 0 || dy !== 0) {
