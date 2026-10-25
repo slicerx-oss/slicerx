@@ -255,6 +255,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-selection-clear` | Clear selection, Advanced and up (Esc does the same; Simple has it in the bar's menu) |
 | `slice-ctx` | The selection's context menu, on a row or in the view (`data-target="selection"`) |
 | `slice-ctx-arrange`, `slice-ctx-transform`, `slice-ctx-move-plate`, `slice-ctx-skip`, `slice-ctx-lock`, `slice-ctx-center`, `slice-ctx-drop`, `slice-ctx-duplicate` | Its items, the same in the bar's menu |
+| `slice-ctx-rename`, `slice-ctx-object-settings`, `slice-ctx-merge`, `slice-ctx-split-objects`, `slice-ctx-split-parts` | The object's own verbs after Duplicate, in the selection's menu on a row or in the view: Rename (one object), Object settings (Print settings for the selection), Merge (two or more), Split to objects and Split to parts (one object with more than one piece) |
+| `slice-ctx-mirror-<axis>` | Mirror along `x`, `y` or `z`, for one object |
 | `slice-ctx-more` | Volumes, in Simple's bar menu: shows the selected object's volumes |
 | `slice-ctx-clear` | Clear selection, in Simple's bar menu |
 | `slice-ctx-plate-<n>` | A plate to move the selection to, by its number |
