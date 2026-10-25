@@ -53,6 +53,16 @@ fn block(w: f32, d: f32, h: f32) -> Arc<Mesh> {
 
 /// Slices `objects` (name, mesh, x, y) by object, in that order, with `extra` settings and options.
 fn run(objects: &[(&str, Arc<Mesh>, f32, f32)], extra: Value, options: Value) -> SliceRun {
+    let (req, load) = request(objects, extra, options);
+    common::run_request(&req, &load).unwrap()
+}
+
+/// The request [`run`] slices (its config before the test base) and its mesh loader.
+fn request(
+    objects: &[(&str, Arc<Mesh>, f32, f32)],
+    extra: Value,
+    options: Value,
+) -> (SliceRequest, impl Fn(&str) -> sx_core::Result<Arc<Mesh>> + use<>) {
     let mut cfg = json!({"brim_width": 0, "skirt_loops": 0, "print_sequence": "by object"});
     if let Value::Object(m) = extra {
         cfg.as_object_mut().unwrap().extend(m);
@@ -68,14 +78,14 @@ fn run(objects: &[(&str, Arc<Mesh>, f32, f32)], extra: Value, options: Value) ->
         .iter()
         .map(|(n, m, _, _)| ((*n).to_owned(), m.clone()))
         .collect();
-    common::run_request(&req, &move |id: &str| {
+    let load = move |id: &str| {
         Ok(meshes
             .iter()
             .find(|(n, _)| n == id)
             .map(|(_, m)| m.clone())
             .unwrap())
-    })
-    .unwrap()
+    };
+    (req, load)
 }
 
 fn kinds(r: &SliceRun) -> Vec<(Kind, Part, Severity, String, String)> {
@@ -672,12 +682,21 @@ fn a_travel_between_the_islands_of_one_object_runs_through_the_object_printed_be
 
 /// A U1 plate: a 30 mm box at the back in the way to the dock, printed first, then a two-color box at the front.
 fn u1_plate(change: &str) -> SliceRun {
+    let (objects, cfg, options) = u1_request(change);
+    run(&objects, cfg, options)
+}
+
+/// A plate's objects (name, mesh, x, y), settings and options, as [`run`] takes them.
+type PlateRequest<const N: usize> = ([(&'static str, Arc<Mesh>, f32, f32); N], Value, Value);
+
+/// [`u1_plate`]'s objects, settings and options.
+fn u1_request(change: &str) -> PlateRequest<2> {
     let two = mesh(vec![
         cuboid([0.0, 14.0], [0.0, 14.0], [0.0, 3.0], 1),
         cuboid([14.0, 28.0], [0.0, 14.0], [0.0, 3.0], 2),
     ]);
-    run(
-        &[
+    (
+        [
             ("back", block(30.0, 20.0, 30.0), 25.0, 200.0),
             ("front", two, 30.0, 40.0),
         ],
@@ -735,6 +754,110 @@ fn shards_report_the_same_collisions_as_one_run() {
     assert!(!one.report.collisions.is_empty());
     assert_eq!(one.report.collisions, four.report.collisions);
     assert_eq!(one.report.collision_fixes, four.report.collision_fixes);
+}
+
+/// The G-code, preview and report of a run, the report without its wall time.
+fn output(run: &SliceRun) -> (Vec<u8>, Vec<u8>, Value) {
+    let mut report = serde_json::to_value(&run.report).unwrap();
+    if let Some(m) = report.as_object_mut() {
+        m.remove("wallMs");
+        m.remove("stageMicros");
+    }
+    (run.gcode.clone(), run.preview.clone(), report)
+}
+
+/// Each edit of `edits` on a session kept from the plate's first request: the same session key, and the kept
+/// session gives a fresh slice's G-code, preview and report. Returns the edits that did not.
+fn kept_session_misses(
+    objects: &[(&str, Arc<Mesh>, f32, f32)],
+    extra: Value,
+    options: Value,
+    edits: &[(&str, Value)],
+) -> Vec<String> {
+    let (mut req, load) = request(objects, extra, options);
+    req.config = common::with_base(&req.config);
+    let hash = |id: &str| load(id).ok().map(|m| m.content_hash());
+    let prepared = api::prepare(&req, &load).unwrap();
+    let first = api::run_prepared(&req, &prepared, &sx_core::NoProgress).unwrap();
+    assert!(!first.report.collisions.is_empty());
+    let mut missed = Vec::new();
+    for (key, value) in edits {
+        let mut edited = req.clone();
+        edited.config[*key] = value.clone();
+        assert_eq!(
+            api::session_key(&edited, &hash),
+            api::session_key(&req, &hash),
+            "{key}"
+        );
+        let fresh = api::run_request(&edited, &load).unwrap();
+        let kept = api::run_prepared(&edited, &prepared, &sx_core::NoProgress).unwrap();
+        let (fresh, kept) = (output(&fresh), output(&kept));
+        if kept.0 != fresh.0 {
+            missed.push(format!("{key}: other G-code"));
+        }
+        if kept.1 != fresh.1 {
+            missed.push(format!("{key}: other preview"));
+        }
+        if kept.2 != fresh.2 {
+            missed.push(format!(
+                "{key}: other report, kept {} {}, fresh {} {}",
+                kept.2["collisions"],
+                kept.2["collisionFixes"],
+                fresh.2["collisions"],
+                fresh.2["collisionFixes"]
+            ));
+        }
+    }
+    missed
+}
+
+/// Travel, retraction, Z hop, Z speed and the change G-code are read every run, not when the session was prepared:
+/// on a session a host keeps, an edit of one reports the collisions and fixes a fresh slice does.
+#[test]
+fn a_kept_session_reports_collisions_with_the_edited_travel_lift_and_change_settings() {
+    let mut missed = Vec::new();
+    // The gantry plate: printing by layer is offered, its cost from travel, retraction, Z hop and Z speed.
+    missed.extend(kept_session_misses(
+        &[
+            ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+            ("low", block(20.0, 20.0, 6.0), 140.0, 100.0),
+        ],
+        json!({"extruder_clearance_height_to_rod": 10, "extruder_clearance_dist_to_rod": 40}),
+        json!({}),
+        &[
+            ("travel_speed", json!([60])),
+            ("retraction_length", json!([3])),
+            ("retraction_speed", json!([10])),
+            ("z_hop", json!([2])),
+            ("machine_max_speed_z", json!([4, 4])),
+        ],
+    ));
+    // A travel through the part printed before: the raised lift offered, its height from Z hop, its cost from Z speed.
+    let feet = mesh(vec![
+        cuboid([0.0, 15.0], [0.0, 15.0], [0.0, 4.0], 1),
+        cuboid([120.0, 135.0], [0.0, 15.0], [0.0, 4.0], 1),
+    ]);
+    missed.extend(kept_session_misses(
+        &[
+            ("box", block(15.0, 15.0, 15.0), 90.0, 100.0),
+            ("feet", feet, 30.0, 100.0),
+        ],
+        json!({"extruder_clearance_height_to_rod": 60}),
+        json!({}),
+        &[("z_hop", json!([1.5])), ("machine_max_speed_z", json!([4, 4]))],
+    ));
+    // The U1 dock trip crosses the back box until the change G-code lifts over what is printed.
+    let (objects, cfg, options) = u1_request("T[next_extruder]");
+    missed.extend(kept_session_misses(
+        &objects,
+        cfg,
+        options,
+        &[(
+            "change_filament_gcode",
+            json!("G1 Z{max_layer_z + 2}\nT[next_extruder]"),
+        )],
+    ));
+    assert!(missed.is_empty(), "{}", missed.join("\n"));
 }
 
 #[test]

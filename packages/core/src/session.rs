@@ -2464,6 +2464,12 @@ impl SliceSession {
             .or(self.collide_meta.as_deref())
     }
 
+    /// [`Self::collide_meta`] with the travel, retraction, Z hop and Z speed of the run's settings `config`, which
+    /// the report's fixes cost with.
+    pub fn collide_meta_for(&self, config: &PrintConfig) -> Option<crate::collide::Meta> {
+        self.collide_meta().map(|m| m.clone().with_run(config))
+    }
+
     /// The objects of this by-object plate could print layer by layer instead: one layer plan, no spiral vase.
     pub(crate) fn could_print_by_layer(&self, config: &PrintConfig) -> bool {
         let (h, f, c) = (self.plan.height, self.plan.first_height, &self.plan.custom);

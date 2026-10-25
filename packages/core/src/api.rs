@@ -1999,7 +1999,7 @@ fn run_prepared_timed(
         gcode_sha = sha;
     }
     let collisions = collision_report(
-        held.get().session.collide_meta(),
+        held.get().session.collide_meta_for(&config).as_ref(),
         &hits,
         &report.layer_time_s,
         report.stats.prepare_s,
