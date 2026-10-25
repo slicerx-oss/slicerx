@@ -271,7 +271,7 @@ struct Builder<'a> {
     /// The planned seams of the whole object (`seamplan.rs`), read by wall rings.
     plan: Option<&'a crate::seamplan::Plan>,
     /// Painted seam pieces near this layer, and the layer's height.
-    faces: &'a [crate::seam::SeamFace],
+    faces: &'a crate::seam::SeamIndex,
     z: f64,
     /// The layer below as the walls see it, so a seam avoids stretches that hang free.
     hang: Option<&'a Overhang>,
@@ -1748,7 +1748,7 @@ pub(crate) fn plan_layer(
     works: &[ToolWork],
     cfg: &PrintConfig,
     layer: u32,
-    seams: (&[crate::seam::SeamFace], f64, Option<&crate::seamplan::Plan>),
+    seams: (&crate::seam::SeamIndex, f64, Option<&crate::seamplan::Plan>),
     vase: Option<&crate::spiral::VaseLayer>,
     object_hulls: &[Vec<IntPoint<i32>>],
 ) {
@@ -1762,7 +1762,7 @@ pub(crate) fn plan_layer_paths(
     works: &[ToolWork],
     cfg: &PrintConfig,
     layer: u32,
-    seams: (&[crate::seam::SeamFace], f64, Option<&crate::seamplan::Plan>),
+    seams: (&crate::seam::SeamIndex, f64, Option<&crate::seamplan::Plan>),
     vase: Option<&crate::spiral::VaseLayer>,
     object_hulls: &[Vec<IntPoint<i32>>],
 ) {
@@ -1820,7 +1820,7 @@ pub(crate) fn plan_layer_paths(
         b.scarf = None;
         b.gap = 0.0;
         b.cursor = v.anchor;
-        b.faces = &[];
+        b.faces = &crate::seam::NO_SEAMS;
         b.fuzzy = None;
         b.painted = None;
         b.clockwise =
