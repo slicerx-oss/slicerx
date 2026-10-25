@@ -350,7 +350,7 @@ test.describe('a project with its own printer', () => {
 test.describe('a project with painted brim ears', () => {
   type Ear = [number, number, number, number]
   type Entry = { name: string; transform: number[]; brimPoints?: Ear[] }
-  type Sx = { getState(): { plate: Entry[]; plates: { id: string; objects: Entry[] }[]; activePlate: string; slice: { status: string; message?: string; result?: { collisions?: { kind: string }[] } } } }
+  type Sx = { getState(): { plate: Entry[]; plates: { id: string; objects: Entry[] }[]; activePlate: string; slicesDone: number; slice: { status: string; message?: string; result?: { collisions?: { kind: string }[] } } } }
 
   /** Every ear of every plate in world space, [x, y, z, r], with the object it is on. */
   const earsOnPlates = (page: Page) =>
@@ -368,12 +368,21 @@ test.describe('a project with painted brim ears', () => {
       return out
     })
 
-  /** Slices the plate shown and returns how it ended: the slice's status, its refusal if any, and its collisions. */
+  /**
+   * Slices the plate shown and returns how it ended: the slice's status, its refusal if any, and its collisions. It waits
+   * for this slice to finish (the count of finished slices goes up) or be refused. A wait on the status alone can see
+   * the idle state from before the click, and two reads of it can straddle the start of the slice.
+   */
   async function sliceShown(page: Page): Promise<{ status: string; message?: string; collisions: string[] }> {
     const before = await sliceCount(page)
+    const finished = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slicesDone)
     await page.getByRole('button', { name: 'Slice plate' }).first().click()
-    const status = () => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slice.status)
-    await expect.poll(async () => (await status()) !== 'running' && (await status()) !== 'idle', { timeout: 150_000 }).toBe(true)
+    const ended = (done: number) =>
+      page.evaluate((done) => {
+        const s = (window as unknown as { __sx: Sx }).__sx.getState()
+        return s.slicesDone > done || s.slice.status === 'error'
+      }, done)
+    await expect.poll(() => ended(finished), { timeout: 150_000 }).toBe(true)
     const end = await page.evaluate(() => {
       const sl = (window as unknown as { __sx: Sx }).__sx.getState().slice
       return { status: sl.status, ...(sl.message ? { message: sl.message } : {}), collisions: (sl.result?.collisions ?? []).map((c) => c.kind) }
