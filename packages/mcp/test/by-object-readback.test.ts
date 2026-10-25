@@ -143,28 +143,28 @@ describe.skipIf(noSx())('a by-object refusal from sx', () => {
     }
   }, 240_000)
 
-  it('names two copies of one model whose paths cross by their own ids', async () => {
+  it('names two copies of one model that enter a keep-out zone by their own ids', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     try {
       writeFileSync(join(h.dir, 'peg.stl'), boxStl(20, 20, 10))
-      await call(h, 'slicerx_project_open', { printer: 'Bambu Lab P1S', filament: 'Bambu PLA Basic' })
+      await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
       await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'peg.stl') })
       await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'peg.stl') })
-      await call(h, 'slicerx_project_set_overrides', { changes: { skirt_loops: 0, brim_type: 'no_brim' } })
+      await call(h, 'slicerx_project_move', { object: 'obj-1', x: 100, y: 128 })
+      await call(h, 'slicerx_project_move', { object: 'obj-2', x: 160, y: 128 })
+      // an A1 style nozzle wrap check zone over the whole bed
+      await call(h, 'slicerx_project_set_overrides', { changes: { skirt_loops: 0, brim_type: 'no_brim', head_wrap_detect_zone: ['0x0', '256x0', '256x256', '0x256'] } })
       const ids = (await call<Shown>(h, 'slicerx_project_show')).output.plates[0]!.placements.map((p) => p.id)
       expect(ids).toHaveLength(2)
-      // the second one 10 mm into the first
-      await call(h, 'slicerx_project_move', { object: ids[0], x: 120, y: 128 })
-      await call(h, 'slicerx_project_move', { object: ids[1], x: 130, y: 128 })
       const r = await h.call('slicerx_slice')
-      expect(r.isError).toBe(true)
+      expect(r.isError, JSON.stringify(data(r)).slice(0, 400)).toBe(true)
       const e = data<Res<unknown>>(r).error!
       expect(e.code).toBe('collision')
-      const items = e.details?.['collisions'] as { kind: string; objects?: string[]; object_ids?: string[] }[]
-      const cross = items.find((i) => i.kind === 'paths_cross')
+      const items = (e.details?.['collisions'] as { kind: string; object?: string; object_ids?: string[] }[]).filter((i) => i.kind === 'keep_out')
       // The words name both by the one file name; the ids tell them apart.
-      expect(cross?.objects?.[0]).toBe(cross?.objects?.[1])
-      expect([...(cross?.object_ids ?? [])].sort()).toEqual([...ids].sort())
+      expect(items).toHaveLength(2)
+      expect(items[0]?.object).toBe(items[1]?.object)
+      expect(items.flatMap((i) => i.object_ids ?? []).sort()).toEqual([...ids].sort())
     } finally {
       await h.client.close()
     }
