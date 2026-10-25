@@ -10034,10 +10034,11 @@ fn even_bridges(cfg: &PrintConfig) -> bool {
 }
 
 /// How a bridge piece spreads its strands on a printer that does ([`even_bridges`]), for strands of `bead` at
-/// `density`. The piece is cut from the infill area, which starts half the inner wall's width past the inner
-/// wall's centerline, less `infill_wall_overlap` of the line width. Its edge moves to where the bridge region
-/// starts: half the inner wall's spacing past that centerline, less `infill_wall_overlap` of the mean of the
-/// inner wall's and the internal solid infill's spacings.
+/// `density`. The piece is cut from the infill area. With variable-width walls that area starts half the inner
+/// wall's spacing past the inner wall's centerline; with fixed-width walls, half its width. Either way it reaches
+/// back by `infill_wall_overlap` of the line width. The piece's edge moves to where the bridge region starts: half
+/// the inner wall's spacing past that centerline, less `infill_wall_overlap` of the mean of the inner wall's and the
+/// internal solid infill's spacings.
 fn stretch_of(
     cfg: &PrintConfig,
     bead: &crate::overhang::BridgeBead,
@@ -10048,7 +10049,12 @@ fn stretch_of(
     }
     let share = cfg.infill_wall_overlap / 100.0;
     let (inner, solid) = (cfg.inner_wall_width(), cfg.solid_infill_width());
-    let infill = inner / 2.0 - share * cfg.line_width;
+    let past_wall = if cfg.arachne_walls() {
+        cfg.spacing_for(inner)
+    } else {
+        inner
+    };
+    let infill = past_wall / 2.0 - share * cfg.line_width;
     let region =
         cfg.spacing_for(inner) / 2.0 - share * f64::midpoint(cfg.spacing_for(inner), cfg.spacing_for(solid));
     Some(crate::bridging::Stretch {

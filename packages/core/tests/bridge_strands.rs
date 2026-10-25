@@ -493,3 +493,35 @@ fn other_printers_keep_the_strand_grid() {
     }
     assert_eq!(got.widths, vec![rule.nozzle]);
 }
+
+/// Flat strands over air with variable-width walls: the bridge region follows the inner wall wherever the wall
+/// generator and `precise_outer_wall` put it.
+fn flat_strands_follow_the_inner_wall(generator: &str, precise: bool, sizes: [(f32, usize); 2]) {
+    let cfg = a1(&json!({"wall_generator": generator, "precise_outer_wall": precise}));
+    let rule = Rule::of(&cfg);
+    for (d, cells) in sizes {
+        let name = format!("{generator} precise {precise} block {d}");
+        let moves = slice(block(d), &cfg);
+        let (z, got) = strands(&moves, rule.solid_spacing);
+        assert_eq!(z, "4.20", "{name}");
+        let c = rule.edge(&moves, "4.00", f64::from(d), true);
+        check(&name, &got, &rule, (14.0, f64::from(d)), c, false, cells);
+    }
+}
+
+#[test]
+fn aegis_strands_follow_the_inner_wall_with_precise_outer_wall() {
+    // The first inner wall's centerline sits 0.645 mm in, so the region starts 0.790 mm in.
+    flat_strands_follow_the_inner_wall("aegis", true, [(5.294, 9), (5.407, 10)]);
+}
+
+#[test]
+fn aegis_strands_follow_the_inner_wall_without_precise_outer_wall() {
+    // The first inner wall's centerline sits 0.602 mm in, so the region starts 0.747 mm in.
+    flat_strands_follow_the_inner_wall("aegis", false, [(5.208, 9), (5.321, 10)]);
+}
+
+#[test]
+fn arachne_strands_follow_the_inner_wall() {
+    flat_strands_follow_the_inner_wall("arachne", true, [(5.294, 9), (5.407, 10)]);
+}
