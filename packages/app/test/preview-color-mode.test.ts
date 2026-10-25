@@ -30,7 +30,8 @@ const land = (p: PreviewBuffers) => set({ preview: p, ...colorModeAfterSlice(get
 const handle = (id: string, slots: number[]): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [10, 10, 10], openEdges: 0, parts: slots.map((slot, i) => ({ name: `p${i}`, slot, triangles: 12 })) })
 const entry = (slots: number[], colors: string[]): PlateEntry => ({ id: 'a', name: 'a', handle: handle('a', slots), parts: [], colors, transform: [] })
 
-beforeEach(() => set({ preview: null, colorMode: 'feature', colorModePicked: false, colorModeAuto: null, plate: [], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', printerSlots: [], slotSetup: {}, fileSlotColors: [] }))
+// The legend's list open, as the rows below read it; the chip on its own is tested in legend-chip.test.ts.
+beforeEach(() => set({ preview: null, colorMode: 'feature', colorModePicked: false, colorModeAuto: null, plate: [], plates: [{ id: 'p1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'p1', printerSlots: [], slotSetup: {}, fileSlotColors: [], legendOpen: true }))
 afterEach(cleanup)
 
 describe('the toolpath colors after a slice', () => {

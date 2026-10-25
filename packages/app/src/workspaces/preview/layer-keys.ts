@@ -19,6 +19,7 @@ export interface LayerView {
   /** The bottom drawn layer, 1 based. */
   lowest: number
   oneLayer: boolean
+  /** The legend's list is open below its chip; shut, only the chip shows. */
   legend: boolean
   /** The jump to a layer field is open in the playback bar. */
   jumpOpen: boolean
@@ -35,13 +36,14 @@ export function layerView(): LayerView {
     layerCount: n,
     lowest: n ? Math.max(1, Math.min(s.layerLo, layer)) : 0,
     oneLayer: oneLayerOn(),
-    legend: !s.legendHidden,
+    legend: s.legendOpen,
     jumpOpen: s.layerJump,
   }
 }
 
+/** Opens the legend's list below its chip, or shuts it back to the chip. The choice is kept between sessions. */
 export function toggleLegend(): void {
-  set((s) => ({ legendHidden: !s.legendHidden }))
+  set((s) => ({ legendOpen: !s.legendOpen }))
 }
 
 /** One layer: the bottom handle joins the top one; again, it goes back to the first layer. Shows the toolpaths. */

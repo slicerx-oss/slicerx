@@ -68,12 +68,12 @@ describe('the layer slider keys in Slice', () => {
   }
   beforeEach(() => {
     setCameraBus({ view: vi.fn() } as unknown as Parameters<typeof setCameraBus>[0])
-    set({ workspace: 'prepare', objectTool: null, setup: null, modelMode: 'slice', sliceLook: 'toolpaths', preview: { layerCount: 10 } as unknown as ReturnType<typeof get>['preview'], layerHi: 10, layerLo: 1, legendHidden: false })
+    set({ workspace: 'prepare', objectTool: null, setup: null, modelMode: 'slice', sliceLook: 'toolpaths', preview: { layerCount: 10 } as unknown as ReturnType<typeof get>['preview'], layerHi: 10, layerLo: 1, legendOpen: false })
   })
   afterEach(() => {
     off()
     off = () => undefined
-    set({ preview: null, layerHi: 0, layerLo: 1, legendHidden: false, layerJump: false })
+    set({ preview: null, layerHi: 0, layerLo: 1, legendOpen: false, layerJump: false })
   })
   const press = (key: string, at: EventTarget = window, shiftKey = false) => {
     const e = new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true })
@@ -150,11 +150,11 @@ describe('the layer slider keys in Slice', () => {
     expect(get().layerJump).toBe(false)
   })
 
-  it('hides and shows the legend with its key', () => {
+  it('opens the legend from its chip with its key, and shuts it again', () => {
     bind('slicerx')
     press('l')
-    expect(get().legendHidden).toBe(true)
+    expect(get().legendOpen).toBe(true)
     press('l')
-    expect(get().legendHidden).toBe(false)
+    expect(get().legendOpen).toBe(false)
   })
 })
