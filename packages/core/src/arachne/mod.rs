@@ -63,6 +63,9 @@ pub(crate) struct Params {
     /// island walls of a layer with one-wall top surfaces are built with one wall and with all of them. The
     /// walls do not depend on it.
     pub(crate) keep_diagram: bool,
+    /// The walls are the one-wall run of a top surface (`only_one_wall_top`): under aegis, its outer bead keeps
+    /// the width and place it has on the layers with every wall.
+    pub(crate) one_wall_outer: bool,
 }
 
 impl Default for Params {
@@ -87,6 +90,7 @@ impl Default for Params {
             is_top_or_bottom_layer: false,
             athena: None,
             keep_diagram: false,
+            one_wall_outer: false,
         }
     }
 }
@@ -191,6 +195,7 @@ fn same_params(a: &Params, b: &Params) -> bool {
         && f(a.wall_deviation(), b.wall_deviation())
         && a.is_top_or_bottom_layer == b.is_top_or_bottom_layer
         && pair(a.athena, b.athena)
+        && a.one_wall_outer == b.one_wall_outer
 }
 
 /// Generates the walls of `outline`. `None` when the outline could not be processed (the caller then
@@ -373,6 +378,7 @@ fn strategy(prm: &Params) -> (Box<dyn beading::Strategy>, skeleton::Settings) {
         distribution_count: prm.wall_distribution_count,
         min_variable_ratio: 0.5,
         athena: prm.athena.map(|(e, i)| (to_nm(e), to_nm(i))),
+        one_wall_outer: prm.one_wall_outer,
     });
     let st = skeleton::Settings {
         keep_diagram: prm.keep_diagram,
@@ -477,6 +483,11 @@ fn percent(cfg: &crate::config::PrintConfig, key: &str, default: f64) -> f64 {
 /// Walls of every island of `region` by the Arachne generator, in the shape the rest of the pipeline
 /// reads: per island the wall lines, and the area left for infill (`overlap` is the infill overlap,
 /// in units). Falls back to fixed-width walls for an island the generator cannot process.
+/// `one_wall_top_layer`: the layer is the last one and `only_one_wall_top` took its walls down to one.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the walls' inputs, as in perimeters::walls_for_top"
+)]
 pub(crate) fn island_walls(
     region: &Shapes,
     cfg: &crate::config::PrintConfig,
@@ -485,6 +496,7 @@ pub(crate) fn island_walls(
     layer_height: f64,
     top_or_bottom: bool,
     top: Option<&perimeters::TopCtx>,
+    one_wall_top_layer: bool,
 ) -> (Vec<perimeters::IslandWalls>, Shapes) {
     let (spacing_0, spacing_x) = (
         cfg.spacing_for(cfg.outer_wall_width()),
@@ -545,6 +557,7 @@ pub(crate) fn island_walls(
         athena,
         // Where one-wall top surfaces apply (`one_wall_top`), these rings are built again with one wall.
         keep_diagram: loops > 1 && crate::tower::flag(cfg, "only_one_wall_top"),
+        one_wall_outer: one_wall_top_layer && loops == 1,
     };
     // The outline is taken in to where the outer bead's edge would be if its width were the spacing.
     let inset = crate::geom::mm(if precise { 2.0 * half_gap } else { half_gap });
@@ -652,6 +665,7 @@ fn one_wall_top(
     }
     let first = Params {
         inset_count: 1,
+        one_wall_outer: true,
         ..prm.clone()
     };
     let one = walls(outline, &first)?;
@@ -686,6 +700,7 @@ fn one_wall_top(
         inset_count: prm.inset_count.saturating_sub(1),
         wall_0_inset: 0.0,
         keep_diagram: false,
+        one_wall_outer: false,
         ..prm.clone()
     };
     let grown = perimeters::offset(&not_top, crate::geom::mm(-prm.wall_0_inset));
@@ -1516,7 +1531,7 @@ mod tests {
             }
             best
         };
-        let (islands, _) = island_walls(region, cfg, loops, 0, h, false, None);
+        let (islands, _) = island_walls(region, cfg, loops, 0, h, false, None, false);
         // (distance, length) samples per ring and wall, so a median weighs the walls by length. Along a round
         // ring the samples are the points (each with half the segments beside it), since a segment's middle sits
         // inside the curve; along a straight ring they are the segments' middles, so the corners count little.
@@ -1709,7 +1724,7 @@ mod tests {
         cfg.apply_value(&serde_json::json!({"wall_generator": "arachne"}))
             .unwrap();
         let bar = rect(20.0, 1.2);
-        let (islands, _) = island_walls(&bar, &cfg, 2, 0, 0.2, false, None);
+        let (islands, _) = island_walls(&bar, &cfg, 2, 0, 0.2, false, None, false);
         let wide: Vec<&WallLine> = islands.iter().flat_map(|i| i.wide.iter()).collect();
         let middle = wide.iter().find(|l| l.is_odd).expect("a middle bead");
         let mid = middle.widths[middle.widths.len() / 2];

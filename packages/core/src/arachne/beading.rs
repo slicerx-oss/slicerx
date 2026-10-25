@@ -608,6 +608,9 @@ pub(crate) struct Athena {
     angle: f64,
     split_middle: f64,
     add_middle: f64,
+    /// The beads are the one-wall run of a top surface: capped at one wall, the outer bead keeps the width and
+    /// place it has where every wall prints.
+    one_wall_outer: bool,
 }
 
 impl Athena {
@@ -631,6 +634,15 @@ impl Athena {
             angle,
             split_middle,
             add_middle,
+            one_wall_outer: false,
+        }
+    }
+
+    /// The same strategy for the one-wall run of a top surface (see [`Athena::walled_thin`]).
+    pub(crate) fn one_wall_outer(self, on: bool) -> Self {
+        Self {
+            one_wall_outer: on,
+            ..self
         }
     }
 
@@ -695,6 +707,15 @@ impl Athena {
             ret.bead_widths.push(width);
             ret.toolpath_locations.push(thickness / 2);
             ret.left_over = 0;
+            return ret;
+        }
+        // The one-wall run of a top surface: the outer bead stays as wide and as far in as on the layers with
+        // every wall, so the top layer prints at the size of the part. Scaled down to keep the overlap ratio, it
+        // sat 0.014 mm further in and was 0.395 mm wide instead of 0.42 under the precise outer wall.
+        if self.one_wall_outer {
+            let at = self.outer_width / 2;
+            ret.bead_widths = vec![self.outer_width; 2];
+            ret.toolpath_locations = vec![at, thickness - at];
             return ret;
         }
         // Two beads face their own outline, each in half the thickness.
@@ -864,6 +885,8 @@ pub(crate) struct Params {
     pub(crate) min_variable_ratio: f64,
     /// Athena: the spacing of the outer bead to the first inner one and of inner beads, nm; None keeps Arachne.
     pub(crate) athena: Option<(i64, i64)>,
+    /// Athena only: the beads are the one-wall run of a top surface, whose outer bead keeps its normal width and place.
+    pub(crate) one_wall_outer: bool,
 }
 
 pub(crate) fn make(p: &Params) -> Box<dyn Strategy> {
@@ -874,16 +897,19 @@ pub(crate) fn make(p: &Params) -> Box<dyn Strategy> {
         p.inner_width
     };
     let mut s: Box<dyn Strategy> = if let Some((ext, inner)) = p.athena {
-        Box::new(Athena::new(
-            p.outer_width,
-            p.inner_width,
-            ext,
-            inner,
-            p.transition_length,
-            p.transitioning_angle,
-            p.split_middle,
-            p.add_middle,
-        ))
+        Box::new(
+            Athena::new(
+                p.outer_width,
+                p.inner_width,
+                ext,
+                inner,
+                p.transition_length,
+                p.transitioning_angle,
+                p.split_middle,
+                p.add_middle,
+            )
+            .one_wall_outer(p.one_wall_outer),
+        )
     } else {
         let base: Box<dyn Strategy> = Box::new(Distributed::new(
             optimal,
@@ -924,6 +950,7 @@ mod tests {
             distribution_count: 1,
             min_variable_ratio: 0.5,
             athena: None,
+            one_wall_outer: false,
         })
     }
 
@@ -956,6 +983,7 @@ mod tests {
             distribution_count: 1,
             min_variable_ratio: 0.5,
             athena: Some((nm(0.38), nm(0.36))),
+            one_wall_outer: false,
         });
         // Four beads: nominal thickness 2 * (0.2 + 0.38) + 0.36 = 1.52.
         assert_eq!(s.optimal_bead_count(nm(1.52)), 4);
@@ -978,6 +1006,11 @@ mod tests {
     /// The stock 0.42 and 0.45 mm walls at 0.2 mm layers as spacings, with the precise outer wall's outer to
     /// first inner spacing (the mean of the two widths), capped at `max` beads.
     fn athena_precise(max: i64) -> Box<dyn Strategy> {
+        athena_precise_run(max, false)
+    }
+
+    /// [`athena_precise`] for the one-wall run of a top surface (`one_wall_outer`) or for any other walls.
+    fn athena_precise_run(max: i64, one_wall_outer: bool) -> Box<dyn Strategy> {
         make(&Params {
             outer_width: nm(0.377_08),
             inner_width: nm(0.407_08),
@@ -993,6 +1026,7 @@ mod tests {
             distribution_count: 1,
             min_variable_ratio: 0.5,
             athena: Some((nm(0.435), nm(0.407_08))),
+            one_wall_outer,
         })
     }
 
@@ -1027,8 +1061,8 @@ mod tests {
         );
     }
 
-    /// The outer wall of a part capped at one wall (and of the one-wall run of top surfaces) keeps its width and
-    /// place: the capped beads border the infill area and are not a thin part to fill.
+    /// The outer wall of a part capped at one wall keeps its width and place: the capped beads border the infill
+    /// area and are not a thin part to fill. (The one-wall run of a top surface is the next test.)
     #[test]
     fn athena_one_wall_walls_keep_their_place() {
         let s = athena_precise(2);
@@ -1046,6 +1080,40 @@ mod tests {
         assert_eq!(b.toolpath_locations.first(), Some(&(half / 2)), "{b:?}");
         assert_eq!(b.bead_widths.last(), Some(&width), "{b:?}");
         assert!(b.bead_widths.contains(&0), "{b:?}");
+    }
+
+    /// The one-wall run of a top surface keeps the outer bead of the layers with every wall: as wide as the outer
+    /// spacing and half of it in from the outline, with the infill area starting at its inner edge.
+    #[test]
+    fn athena_one_wall_top_outer_bead_keeps_its_normal_width_and_place() {
+        let normal = athena_precise_run(4, false).compute(nm(3.0), 5);
+        let s = athena_precise_run(2, true);
+        let b = s.compute(nm(3.0), 3);
+        assert_eq!(b.bead_widths.first(), Some(&nm(0.377_08)), "{b:?}");
+        assert_eq!(
+            b.bead_widths.first(),
+            normal.bead_widths.first(),
+            "{b:?} {normal:?}"
+        );
+        assert_eq!(b.toolpath_locations.first(), Some(&(nm(0.377_08) / 2)), "{b:?}");
+        assert_eq!(
+            b.toolpath_locations.first(),
+            normal.toolpath_locations.first(),
+            "{b:?} {normal:?}"
+        );
+        assert_eq!(b.bead_widths.get(1), Some(&0), "{b:?}");
+        assert_eq!(b.toolpath_locations.get(1), Some(&nm(0.377_08)), "{b:?}");
+        assert_eq!(b.bead_widths.last(), Some(&nm(0.377_08)), "{b:?}");
+        assert_eq!(
+            b.toolpath_locations.last(),
+            Some(&(nm(3.0) - nm(0.377_08) / 2)),
+            "{b:?}"
+        );
+        // Walls capped at one wall for any other reason keep the scaled bead.
+        assert_ne!(
+            athena_precise(2).compute(nm(3.0), 3).bead_widths.first(),
+            Some(&nm(0.377_08))
+        );
     }
 
     #[test]
