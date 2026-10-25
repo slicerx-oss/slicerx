@@ -12,7 +12,8 @@ import type { ImportedObject } from '../export/import3mf'
 import { clearanceFor } from '../plate/clearance'
 import { bounds, compose } from '../plate/transform'
 import { clearProject } from '../project/new'
-import { confirmDiscard, type OpenScope } from '../project/unsaved'
+import { keepBeforeOpen } from '../project/autosave'
+import type { OpenScope } from '../project/unsaved'
 import { identity, uid } from './actions'
 import { get, markStale, set, toast, type PlateEntry, type PlateVolumeEntry } from './store'
 import { quietly } from '../plate/history'
@@ -60,7 +61,8 @@ async function addProjectShown(
     if (choice === null) return 'told'
     if (choice === 'geometry') geometryOnly = true
     else {
-      if (!(await confirmDiscard('open this project'))) return 'told'
+      // Unsaved work is kept as a recent project first, with no question (keepBeforeOpen).
+      if (!(await keepBeforeOpen(host, 'open this project'))) return 'told'
       mine(() => clearProject())
       wasEmpty = true
     }

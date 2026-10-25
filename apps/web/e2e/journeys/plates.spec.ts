@@ -881,7 +881,7 @@ test.describe('the fit check', () => {
     await expect(note).toHaveCount(1)
   })
 
-  test('opening a design asks once about unsaved work, and Cancel keeps the plate', { tag: '@gpu' }, async ({ page }) => {
+  test('opening a design over unsaved work asks nothing, keeps it, and Reopen brings it back', { tag: '@gpu' }, async ({ page }) => {
     test.slow()
     await openStarter(page, 'cable-clip.sx3mf')
     await expect(page.locator('.obj-name', { hasText: 'Cable clip' })).toBeVisible({ timeout: 60_000 })
@@ -889,13 +889,13 @@ test.describe('the fit check', () => {
     await drop(page, 'calibration-cube-20mm.sx3mf')
     await expect(page.locator('.obj-name', { hasText: '20 mm calibration cube' })).toBeVisible({ timeout: 60_000 })
     await openFile(page, join(starters(), 'temperature-tower.sx3mf'))
-    const ask = page.getByRole('dialog')
-    await expect(ask).toContainText('open another design')
-    await ask.getByRole('button', { name: 'Cancel' }).click()
-    await expect(page.locator('.obj-name')).toHaveText(['Cable clip', '20 mm calibration cube'])
-    await openFile(page, join(starters(), 'temperature-tower.sx3mf'))
-    await page.getByRole('dialog').getByRole('button', { name: "Don't save" }).click()
     await expect(page.locator('.obj-name')).toHaveText(['Temperature tower'], { timeout: 60_000 })
+    await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
+    const note = page.getByText('Your previous plate is saved.')
+    await expect(note).toBeVisible()
+    await page.getByRole('button', { name: 'Reopen' }).click()
+    await expect(page.locator('.obj-name')).toHaveText(['Cable clip', '20 mm calibration cube'], { timeout: 60_000 })
+    await expect(page.getByRole('dialog', { name: 'Save changes first?' })).toHaveCount(0)
     await page.waitForTimeout(2500)
     expect(await lines(page)).toEqual([])
   })
