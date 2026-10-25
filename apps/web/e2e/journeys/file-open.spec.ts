@@ -28,6 +28,7 @@ type Sx = {
     plate: { id: string; name: string; parts: { name: string; positions: ArrayLike<number> }[]; transform: number[] }[]
     slice: { status: string; stale?: boolean; result?: { id: string; layerZ: ArrayLike<number> } }
     toast: { text: string } | null
+    openNote: { text: string } | null
   }
   setState(p: unknown): void
 }
@@ -145,21 +146,21 @@ test('a dropped STEP assembly becomes named objects and slices', async ({ page }
   test.slow()
   const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'app', 'test', 'fixtures', 'step')
   const drop = (name: string) => dropFile(page, name, readFileSync(join(fixtures, name)), 'application/step')
-  await setState(page, { plate: [], selection: null, selectedIds: [], toast: null })
+  await setState(page, { plate: [], selection: null, selectedIds: [], toast: null, openNote: null })
 
   await drop('assembly.step')
   await expect(page.locator('.obj-name', { hasText: 'assembly' })).toBeVisible({ timeout: 60_000 })
   await expect(page.locator('.obj-name', { hasText: 'cube' })).toBeVisible()
   const plate = (await store(page)).plate
   expect(plate.find((p) => p.name === 'assembly')?.parts.map((p) => p.name)).toEqual(['assembly base', 'assembly post'])
-  // The open ends with the toast that says what the file became. The next file is dropped after that, so the last toast
-  // is its own and not one still on its way from this file.
-  await expect.poll(async () => { const s = await store(page); return s.plateLoading ? 'loading' : (s.toast?.text ?? '') }).toBe('assembly.step: Split into 2 objects.')
+  // The open ends with the note under the printer card that says what the file became. The next file is dropped after
+  // that, so the last note is its own and not one still on its way from this file.
+  await expect.poll(async () => { const s = await store(page); return s.plateLoading ? 'loading' : (s.openNote?.text ?? '') }).toBe('assembly.step: Split into 2 objects.')
 
-  // An inch file arrives at its real size, and the toast says it was converted.
+  // An inch file arrives at its real size, and the note says it was converted.
   await drop('bracket-inch.stp')
   await expect(page.locator('.obj-name', { hasText: 'bracket-inch' })).toBeVisible({ timeout: 60_000 })
-  await expect.poll(async () => (await store(page)).toast?.text ?? '').toMatch(/^bracket-inch\.stp: Converted from inches to millimeters/)
+  await expect.poll(async () => (await store(page)).openNote?.text ?? '').toMatch(/^bracket-inch\.stp: Converted from inches to millimeters/)
 
   // A file with nothing in it is refused in words and adds nothing.
   const before = (await store(page)).plate.length
