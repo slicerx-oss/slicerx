@@ -1749,9 +1749,19 @@ async function exportedGcode(page: Page): Promise<string> {
 async function exportedFromPalette(page: Page): Promise<string> {
   await page.evaluate(() => Reflect.deleteProperty(window, 'showSaveFilePicker'))
   await page.keyboard.press('ControlOrMeta+k')
+  // The command bar loads on its first use: keys typed before it is open go to the page instead.
+  await expect(page.getByRole('dialog', { name: 'Commands' })).toBeVisible()
   await page.keyboard.type('Export G-code')
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('.sx-palette-item', { hasText: /^Export G-code/ }).first().click()])
   return readFileSync(await download.path(), 'utf8')
+}
+
+/** Whether a slice that finished after the first `after` slices of the page is the plate's current slice, made with the Layered X paint on it. */
+function paintedSlice(page: Page, after: number): Promise<boolean> {
+  return page.evaluate((after) => {
+    const s = (window as unknown as { __sx: { getState(): { slicesDone: number; slice: { status: string; stale?: boolean }; plate: { name: string; paint?: object }[] } } }).__sx.getState()
+    return s.slicesDone > after && s.slice.status === 'done' && !s.slice.stale && s.plate.some((p) => p.name === 'Layered X' && !!p.paint)
+  }, after)
 }
 
 /** The Print sheet of the sliced Layered X plate, open and with its file check done. The slice is the one this page already holds when it is current. */
@@ -1842,6 +1852,7 @@ test.describe('the G-code a slice writes', () => {
   test('seam paint changes where the seam lands in the sliced G-code', { tag: '@gpu' }, async ({ page }) => {
     test.slow()
     await sliceLayered(page)
+    await keep(page, 'plate')
     try {
       const plainText = await exportedFromPalette(page)
       expect(plainText).toContain('G1')
@@ -1866,15 +1877,21 @@ test.describe('the G-code a slice writes', () => {
         for (const [dx, dy] of [[-50, 0], [50, 0], [0, -40], [0, 40], [-30, 25], [30, -25], [-70, 30], [70, -30], [0, 0]] as const) await page.mouse.click(cx + dx, cy + dy)
       })
       await expect(panel.getByRole('button', { name: /Clear seam/ })).toBeEnabled()
-      await startSlice(page)
+      // The slice of the painted plate, and its G-code once that slice is the plate's current one. The toolpaths it
+      // shows are drawn in software, which on a busy machine takes far longer than the slice: the export waits for the
+      // slice, not for the drawing.
+      const n = await page.evaluate(() => (window as unknown as { __sx: { getState(): { slicesDone: number } } }).__sx.getState().slicesDone)
+      await command(page, 'Slice the plate')
+      await expect.poll(() => paintedSlice(page, n), { timeout: 120_000 }).toBe(true)
       const painted = await exportedFromPalette(page)
       expect(painted).toContain('G1')
-      expect(painted).not.toBe(plainText)
       // The same slice twice is the same G-code, so the difference is the paint.
-      await tab(page, 'prepare').click()
-      await page.getByRole('button', { name: 'Undo' }).click()
+      expect(painted).not.toBe(plainText)
     } finally {
+      // The plate goes back without its paint, so the next test finds the plate it stashed. Putting it back takes no tab
+      // change or Undo button, whose clicks wait for the drawing too.
       await patch(page, { objectTool: null })
+      await restore(page)
     }
   })
 
