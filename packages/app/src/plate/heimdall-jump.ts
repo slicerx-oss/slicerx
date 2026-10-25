@@ -5,7 +5,8 @@ import type { Collision } from '@slicerx/contracts'
 import { buildTimeline, changeBefore, fitOf, timeAt } from '../lib/preview-timeline'
 import { toolChangerFor } from '../lib/toolchanger'
 import { get, set, type AppState } from '../state/store'
-import { collisionsOf } from './heimdall'
+import { collisionParts, collisionsOf } from './heimdall'
+import { pickParts } from './pick-parts'
 import { cameraBus } from './tools'
 
 /** The playback time of a collision's first moment on Preview's own timeline, or null without a preview. */
@@ -27,13 +28,27 @@ export function collisionTime(s: AppState, c: Collision): number | null {
 let jumps = 0
 
 /**
- * Shows collision `i`: the sliders go to its moment, the head is drawn there, and the playback bar plays the seconds
- * before it and stops on it.
+ * Picks the parts of collision `i` from its row: they become the selection, ringed on the bed, and the view frames them
+ * when some of them are off screen. Its strike is the one marked; the sliders stay where they are.
+ */
+export function pickCollision(i: number): string[] {
+  const s = get()
+  const c = collisionsOf(s)[i]
+  if (!c) return []
+  set({ strikePick: i })
+  return pickParts(collisionParts(s, c))
+}
+
+/**
+ * Shows collision `i`: its parts are selected, the sliders go to its moment, the head is drawn there, and the playback
+ * bar plays the seconds before it and stops on it.
  */
 export function jumpTo(i: number): void {
   const s = get()
   const c = collisionsOf(s)[i]
   if (!c) return
+  // The camera turns to the strike below, so the pick leaves it where it is.
+  pickParts(collisionParts(s, c), { frame: false })
   const p = s.preview
   const a = p?.layerStart[c.layer] ?? 0
   const b = p?.layerStart[c.layer + 1] ?? a

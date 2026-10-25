@@ -7,8 +7,9 @@
 // the row reads as pressed, so a phone, which has no panel to name the selection, says what the view outlines.
 import { Button, tipAttrs } from '@slicerx/ui'
 import { arrangePlate } from '../../plate/edit'
+import { pickParts } from '../../plate/pick-parts'
 import type { ClearancePlan } from '../../plate/sequence-check'
-import { set, toast, useApp } from '../../state/store'
+import { toast, useApp } from '../../state/store'
 
 const mm = (v: number) => (v < 10 ? v.toFixed(1) : Math.round(v).toString())
 /** A value and its unit, kept on one line. */
@@ -22,11 +23,13 @@ function rowIds(plan: ClearancePlan): string[] {
   return pair ? [pair.a.id, pair.b.id] : plan.tall[0] ? [plan.tall[0].id] : []
 }
 
-/** Selects the objects of the warning's row, the first one primary. */
+/**
+ * Selects the objects of the warning's row, the first one primary, and frames them when some of them are off screen.
+ * Their clearance zones ring them, so they get no ring of their own.
+ */
 export function selectClearance(plan: ClearancePlan): string[] {
   const ids = rowIds(plan)
-  if (ids.length) set({ selection: ids[0]!, selectedIds: ids, towerSelected: false })
-  return ids
+  return ids.length ? pickParts(ids, { ring: false }) : []
 }
 
 const blocking = (plan: ClearancePlan) => plan.pairs.filter((p) => p.severity === 'block')

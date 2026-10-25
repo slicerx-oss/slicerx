@@ -1129,12 +1129,21 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 /* heimdall: the strike, where the machine would meet a printed part. Red for a hit, orange for a close call. */
 .app-tag.strike-tag { color: var(--red); }
 .strikes { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.strikes li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px; border-radius: var(--r-md); border: 1px solid transparent; }
+.strikes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 4px; border-radius: var(--r-md); border: 1px solid transparent; }
 .strikes li.sel { border-color: color-mix(in srgb, var(--red) 55%, transparent); background: color-mix(in srgb, var(--red) 8%, transparent); }
-.strikes li > .sx-ic { color: var(--red); margin-top: 1px; }
-.strikes li[data-severity="close"] > .sx-ic { color: var(--orange); }
-.strikes b { font: var(--fw-semibold) calc(13px * var(--text-scale)) var(--f-body); color: var(--fg); display: block; }
-.strikes p { margin: 2px 0 4px; font-size: calc(12px * var(--text-scale)); color: var(--muted); line-height: 1.45; }
+/* The strike's row is one button: a click selects the parts it names. Pressed, it takes a selected control's fill and line, at the same size. */
+.strike-pick { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; align-items: start; min-width: 0; padding: 4px; border: 1px solid transparent; border-radius: var(--r-sm); background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.strike-pick:hover { background: var(--ink-3); }
+.strike-pick:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.strike-pick[aria-pressed="true"] { background: var(--control-selected); border-color: var(--control-selected-line); color: var(--control-selected-fg); --muted: var(--control-selected-muted); }
+.strike-pick:disabled { cursor: default; }
+.strike-pick:disabled:hover { background: none; }
+@media (pointer: coarse) { .strike-pick { min-height: 44px; } }
+.strike-pick > .sx-ic { color: var(--red); margin-top: 1px; }
+.strikes li[data-severity="close"] .strike-pick > .sx-ic { color: var(--orange); }
+.strike-text { display: block; min-width: 0; }
+.strikes b { font: var(--fw-semibold) calc(13px * var(--text-scale)) var(--f-body); color: inherit; display: block; }
+.strike-detail { display: block; margin: 2px 0 4px; font-size: calc(12px * var(--text-scale)); color: var(--muted); line-height: 1.45; }
 .strike-when { font-size: calc(11.5px * var(--text-scale)); color: var(--dim); font-variant-numeric: tabular-nums; }
 .strike-fixes-h { margin: 12px 0 6px; font: var(--fw-semibold) calc(11px * var(--text-scale)) var(--f-body); color: var(--dim); text-transform: none; }
 .strike-fixes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
