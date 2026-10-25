@@ -5,11 +5,13 @@
 // is the app's (@slicerx/settings/arrange-room): each outline grown by its brim, sized from its first layer as the
 // engine sizes it, its raft and the skirt, clear of the printer's excluded areas and the prime tower's room. The plate
 // counts in bed coordinates; the nest counts from the printable area's front left corner.
+// Without the engine the same layout runs on the objects' boxes (boxPlate), as the app's arrange does then.
 import type { EngineCall } from '@slicerx/cad-history'
 import type { MeshPart, SettingValue } from '@slicerx/contracts'
 import { betterNest, byObjectApart, byObjectSpacingModes, keepOutBoxes, layoutCenterShift, nestItem, nestProblem, placesMore, plateMargins, withoutKeepOut, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
 import { arrangeReach, arrangeRules, CELL_MM, gantryLane, objectGetsSupport, overRod } from '@slicerx/settings/by-object'
 import { marginFlag as flag, marginNumber, marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
+import { edgeOf, findSpot, type Placed, type Want } from '@slicerx/settings/box-pack'
 import type { BedArea } from './bed'
 
 /** An object for the nest, as placed: its rotation and scale, without the move. */
@@ -181,6 +183,105 @@ export async function nestInLanes(engine: EngineCall, p: NestPlate, cache: Footp
   const zones = [...avoidOf(p.config, origin), ...plate.keepOut, ...plate.towerRoom, ...(p.zones ?? []).map((r) => ({ ...r, x: r.x - origin[0], y: r.y - origin[1] }))]
   const [dx, dy] = layoutCenterShift(placed, { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm }, zones, CELL_MM)
   return { ...rest, placements: all.map((q) => ({ ...q, offset: [q.offset[0] + dx, q.offset[1] + dy] })) }
+}
+
+/**
+ * The same layout on the objects' boxes, for when the geometry engine cannot run (none installed, or it failed): the
+ * box packer the app's arrange falls back to (@slicerx/settings/box-pack), with the same room as the nest, each box
+ * grown by its brim estimated from its bounds, its raft and the skirt, clear of the printer's keep-out areas, the
+ * prime tower's room and `zones`, and printing by object the clearance radius apart. Largest first, as the app packs.
+ * Offsets in bed coordinates; copies that find no spot are left over.
+ */
+export function boxPlate(p: NestPlate): NestReply {
+  const origin = [p.bed.x0, p.bed.y0] as const
+  const plate = plateMargins(p.config, p.tools, { origin, size: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm } })
+  const skirt = p.skirt === false ? false : plate.skirt
+  const bed = { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm, ...(p.bed.circle ? { round: true } : {}) }
+  const towers = [...plate.keepOut, ...plate.towerRoom]
+  const avoid = [...avoidOf(p.config, origin), ...(p.zones ?? []).map((r) => ({ ...r, x: r.x - origin[0], y: r.y - origin[1] }))]
+  const zones = [...avoid, ...towers]
+  const wantOf = (o: NestObject): Want => {
+    const m = objectPrintMargins(o.config)
+    const size = { w: o.size[0], h: o.size[1], height: o.size[2] }
+    const want = { w: size.w, h: size.h, grow: m.grow(size), reach: m.reach(size) }
+    if (marginText(o.config['print_sequence']) !== 'by object') return want
+    // Printing by object, as the nest does (itemOf): each pair keeps the clearance and the reach of its own two objects,
+    // a support pad only when the object gets support, here on the object's box.
+    const hull: [number, number][] = [[0, 0], [size.w, 0], [size.w, size.h], [0, size.h]]
+    const supported = objectGetsSupport(o.config, o.enforcers ?? false, o.parts(), o.linear)
+    return { ...want, ar: arrangeReach({ id: o.id, name: o.id, hull, top: o.size[2], supported }, o.config) }
+  }
+  const placed: Placed[] = p.fixed.map((o) => {
+    const want = wantOf(o)
+    return { r: { x: o.min[0] + (o.at?.[0] ?? 0) - origin[0], y: o.min[1] + (o.at?.[1] ?? 0) - origin[1], w: want.w, h: want.h }, grow: want.grow, reach: want.reach, ...(want.ar !== undefined ? { ar: want.ar } : {}) }
+  })
+  const copies = p.moving.flatMap((o) => Array.from({ length: o.copies }, (_, k) => ({ o, copy: k + 1, want: wantOf(o) })))
+  copies.sort((a, b) => b.want.w * b.want.h - a.want.w * a.want.h || a.o.id.localeCompare(b.o.id) || a.copy - b.copy)
+  const placements: NestPlacement[] = []
+  const left = new Map<string, number>()
+  const tooLarge = new Map<string, boolean>()
+  const fitsAlone = (w: number, h: number, edge: number) => (p.bed.circle ? Math.hypot(w, h) / 2 + edge <= p.bed.circle.r + 1e-6 : w + 2 * edge <= bed.widthMm + 1e-6 && h + 2 * edge <= bed.depthMm + 1e-6)
+  for (const { o, copy, want } of copies) {
+    const spot = findSpot(want, placed, zones, towers, bed, p.gapMm, skirt, plate.apart, avoid)
+    if (!spot) {
+      left.set(o.id, (left.get(o.id) ?? 0) + 1)
+      if (!fitsAlone(want.w, want.h, edgeOf(want.reach, p.gapMm))) tooLarge.set(o.id, fitsAlone(want.w, want.h, p.gapMm))
+      continue
+    }
+    placements.push({ id: o.id, copy, angleDeg: 0, offset: [spot.x + origin[0] - o.min[0], spot.y + origin[1] - o.min[1]] })
+    placed.push({ r: { x: spot.x, y: spot.y, w: want.w, h: want.h }, grow: want.grow, reach: want.reach, ...(want.ar !== undefined ? { ar: want.ar } : {}) })
+  }
+  const wanted = copies.length
+  return {
+    placements,
+    leftOver: [...left].map(([id, n]) => ({ id, copies: n })),
+    tooLarge: [...tooLarge].map(([id, withoutMargin]) => ({ id, withoutMargin })),
+    stats: { placed: placements.length, wanted, passes: 1, utilization: 0 },
+  }
+}
+
+/**
+ * nestInLanes on the boxes (boxPlate): the copies taller than the gantry rod one at a time, each clear of the lanes of
+ * the ones before it, then the rest around them. Null when a tall copy does not fit outside the lanes.
+ */
+export function boxInLanes(p: NestPlate): NestReply | null {
+  const tall = (o: NestObject) => overRod(o.size[2], p.config)
+  const origin = [p.bed.x0, p.bed.y0] as const
+  const apart = plateMargins(p.config, p.tools, { origin, size: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm } }).apart
+  const fixed = [...p.fixed]
+  const boxHull = (o: NestObject, at: readonly [number, number]): [number, number][] => {
+    const [x0, y0] = [o.min[0] + at[0], o.min[1] + at[1]]
+    const [x1, y1] = [x0 + o.size[0], y0 + o.size[1]]
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+  }
+  const hulls = fixed.filter((o) => tall(o) && o.at).map((o) => boxHull(o, o.at!))
+  const placements: NestPlacement[] = []
+  for (const o of p.moving.filter(tall)) {
+    const m = objectPrintMargins(o.config)
+    const size = { w: o.size[0], h: o.size[1], height: o.size[2] }
+    const away = zoneKeep(m.grow(size), m.reach(size), p.gapMm, apart, false)
+    for (let c = 1; c <= o.copies; c++) {
+      const lanes = hulls.map((h) => gantryLane(h, arrangeRules(p.config), p.bed.x0, p.bed.widthMm, away))
+      const r = boxPlate({ ...p, moving: [{ ...o, copies: 1 }], fixed, center: false, zones: [...(p.zones ?? []), ...lanes], skirt: false })
+      const q = r.placements.find((x) => x.id === o.id)
+      if (!q) return null
+      placements.push({ ...q, copy: c })
+      fixed.push({ ...o, id: `${o.id}~${c}`, copies: 1, at: q.offset })
+      hulls.push(boxHull(o, q.offset))
+    }
+  }
+  const low = p.moving.filter((o) => !tall(o))
+  const rest: NestReply = low.length > 0 ? boxPlate({ ...p, moving: low, fixed, center: false }) : { placements: [], leftOver: [], tooLarge: [], stats: { placed: 0, wanted: 0, passes: 0, utilization: 0 } }
+  return { ...rest, placements: [...placements, ...rest.placements] }
+}
+
+/** fillCount on the boxes (boxPlate): how many copies of `o` fit around the ones that stay, up to `max`. */
+export function boxFillCount(p: Omit<NestPlate, 'moving' | 'center'>, o: NestObject, max: number): number {
+  const bed = p.bed.circle ? Math.PI * p.bed.circle.r ** 2 : p.bed.widthMm * p.bed.depthMm
+  const area = o.size[0] * o.size[1]
+  const copies = area > 0 ? Math.min(max, Math.floor(bed / area)) : max
+  if (copies <= 0) return 0
+  return boxPlate({ ...p, moving: [{ ...o, copies }], center: false }).placements.filter((q) => q.id === o.id).length
 }
 
 /** The area an outline covers, holes taken out, mm2. */
