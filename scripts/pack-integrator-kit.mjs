@@ -3,7 +3,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Packs the packages an app that builds SlicerX in installs (@slicerx/viewport, @slicerx/embed and
 // @slicerx/mcp) into one folder, built, as npm would publish them, with the credit kit
-// (docs/integrators/credit-kit) beside them. Use it for a build that is not on npm yet:
+// (docs/integrators/credit-kit) and every setting's default (defaults.json) beside them. Use it for a build that is
+// not on npm yet:
 //   node scripts/pack-integrator-kit.mjs ~/slicerx-kit
 //   npm install ~/slicerx-kit/slicerx-viewport.tgz ~/slicerx-kit/slicerx-embed.tgz ~/slicerx-kit/slicerx-mcp.tgz
 //
@@ -123,6 +124,22 @@ function flag(args, name) {
   return i >= 0 ? args[i + 1] : undefined
 }
 
+/**
+ * Plain files the kit ships at its top level, copied byte for byte: `defaults.json` is every setting's scope and
+ * default value (`{ key: [scope, value] }`), the same file the app and the engine read.
+ */
+export const KIT_FILES = [{ name: 'defaults.json', from: ['packages', 'settings', 'defaults.json'] }]
+
+/** Copies KIT_FILES into `dest` and returns each one's `name` and `sha256`, for the manifest's `files`. */
+export function writeKitFiles(dest) {
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  return KIT_FILES.map(({ name, from }) => {
+    const bytes = readFileSync(join(root, ...from))
+    writeFileSync(join(dest, name), bytes)
+    return { name, sha256: createHash('sha256').update(bytes).digest('hex') }
+  })
+}
+
 // stable copies work on platforms where extracting symlinks needs extra privileges.
 export function writePackageManifest(dest, packages) {
   const entries = packages.map(({ name, version }) => {
@@ -133,7 +150,7 @@ export function writePackageManifest(dest, packages) {
     writeFileSync(join(dest, file), bytes)
     return { name, version, file, archive, sha256: createHash('sha256').update(bytes).digest('hex') }
   })
-  const manifest = { schemaVersion: 1, packages: entries }
+  const manifest = { schemaVersion: 1, packages: entries, files: writeKitFiles(dest) }
   writeFileSync(join(dest, 'kit-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
   return manifest
 }
@@ -147,6 +164,7 @@ function packPackages(dest) {
   const metadata = kitPackages()
   const packages = metadata.map((p) => p.name)
   rmSync(join(dest, 'kit-manifest.json'), { force: true })
+  for (const { name } of KIT_FILES) rmSync(join(dest, name), { force: true })
   for (const f of readdirSync(dest)) if (/^slicerx-(viewport|embed|mcp)(?:-.*)?\.tgz$/.test(f)) rmSync(join(dest, f))
   const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
   for (const p of packages) {
