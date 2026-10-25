@@ -7566,13 +7566,15 @@ impl SliceSession {
             {
                 loops += 1;
             }
+            // A layer taken down to one wall keeps the outer wall of its part (`island_walls`).
+            let mut one_wall_layer = false;
             if layer == 0 && self.raft.is_none() && cfg.only_one_wall_first_layer {
+                one_wall_layer = loops > 1;
                 loops = loops.min(1);
             }
             // The topmost layer is one wall, so its top surface reaches the outer wall.
-            let mut one_wall_top_layer = false;
             if crate::tower::flag(cfg, "only_one_wall_top") && layer + 1 == n && loops > 0 {
-                one_wall_top_layer = loops > 1;
+                one_wall_layer |= loops > 1;
                 loops = 1;
             }
             let top_ctx = upper_slice
@@ -7605,7 +7607,7 @@ impl SliceSession {
                             layer_height,
                             top_or_bottom,
                             top_ctx.as_ref(),
-                            one_wall_top_layer,
+                            one_wall_layer,
                         );
                         walled_group = Some(inner.clone());
                         (islands, inner)
@@ -7628,7 +7630,7 @@ impl SliceSession {
                         layer_height,
                         top_or_bottom,
                         top_ctx.as_ref(),
-                        one_wall_top_layer,
+                        one_wall_layer,
                     );
                     (islands, perimeters::union_all(&[&inner, &counterbore]))
                 }
@@ -7675,7 +7677,7 @@ impl SliceSession {
                             layer_height,
                             top_or_bottom,
                             top_ctx.as_ref(),
-                            one_wall_top_layer,
+                            one_wall_layer,
                         ),
                     }
                 }
