@@ -8068,7 +8068,7 @@ impl SliceSession {
                 // `internal_bridge_density`: the strands sit 1 over the density closer than the flow's spacing.
                 let density = bridge_density(cfg, "internal_bridge_density");
                 let spacing = bead.spacing / density;
-                let stretch = stretch_of(cfg, &bead, density);
+                let stretch = stretch_of(cfg, self.plan.thickness(layer), &bead, density);
                 let filter = match cfg.raw.get("dont_filter_internal_bridges") {
                     Some(serde_json::Value::String(s)) => s.as_str(),
                     _ => "disabled",
@@ -8562,7 +8562,7 @@ impl SliceSession {
                 // `bridge_density` (external bridges): the strands sit 1 over the density closer.
                 let density = bridge_density(cfg, "bridge_density");
                 let pitch = bead.spacing / density;
-                let stretch = stretch_of(cfg, &bead, density);
+                let stretch = stretch_of(cfg, layer_height, &bead, density);
                 let reference = (
                     mm(f64::midpoint(self.bounds[0], self.bounds[2])),
                     mm(f64::midpoint(self.bounds[1], self.bounds[3])),
@@ -10034,13 +10034,16 @@ fn even_bridges(cfg: &PrintConfig) -> bool {
 }
 
 /// How a bridge piece spreads its strands on a printer that does ([`even_bridges`]), for strands of `bead` at
-/// `density`. The piece is cut from the infill area. With variable-width walls that area starts half the inner
-/// wall's spacing past the inner wall's centerline; with fixed-width walls, half its width. Either way it reaches
-/// back by `infill_wall_overlap` of the line width. The piece's edge moves to where the bridge region starts: half
-/// the inner wall's spacing past that centerline, less `infill_wall_overlap` of the mean of the inner wall's and the
-/// internal solid infill's spacings.
+/// `density`. The bridge region starts half the innermost wall's spacing past that wall's centerline, less
+/// `infill_wall_overlap` of the mean of the inner wall's and the internal solid infill's spacings, whatever the wall
+/// generator. The piece is cut from the infill area, so its edge moves from where the infill area starts to there.
+/// With variable-width walls the infill area starts half the inner wall's spacing past the innermost wall's
+/// centerline, less `infill_wall_overlap` of the line width. Fixed-width walls cut it at the walls' widths from the
+/// outline (the outer wall's and one inner wall's per further loop, less the same overlap), while their inner walls
+/// sit by the precise outer wall setting, so the edge is worked out from the outline.
 fn stretch_of(
     cfg: &PrintConfig,
+    height: f64,
     bead: &crate::overhang::BridgeBead,
     density: f64,
 ) -> Option<crate::bridging::Stretch> {
@@ -10048,17 +10051,39 @@ fn stretch_of(
         return None;
     }
     let share = cfg.infill_wall_overlap / 100.0;
-    let (inner, solid) = (cfg.inner_wall_width(), cfg.solid_infill_width());
-    let past_wall = if cfg.arachne_walls() {
-        cfg.spacing_for(inner)
+    let (outer, inner, solid) = (
+        cfg.outer_wall_width(),
+        cfg.inner_wall_width(),
+        cfg.solid_infill_width(),
+    );
+    // Spacings at a layer height, and how far the region starts past the innermost wall's centerline.
+    let spacing = |w: f64, h: f64| (w - h * (1.0 - std::f64::consts::FRAC_PI_4)).max(w * 0.5);
+    let past_wall =
+        |h: f64| spacing(inner, h) / 2.0 - share * f64::midpoint(spacing(inner, h), spacing(solid, h));
+    // Where the infill area starts past that centerline cancels most of the region's own offset, so these two keep
+    // the set layer height.
+    let set = cfg.layer_height;
+    let edge = if cfg.arachne_walls() {
+        spacing(inner, set) / 2.0 - share * cfg.line_width - past_wall(set)
+    } else if cfg.wall_loops < 2 {
+        inner / 2.0 - share * cfg.line_width - past_wall(set)
     } else {
-        inner
+        // The innermost wall's centerline from the outline, at the layer's own height as its walls are laid: the
+        // outer wall's, then the first inner wall's pitch (the two widths' mean with the precise outer wall and inner
+        // walls first, else the two spacings' mean), then an inner spacing for each further inner wall.
+        let precise = crate::tower::flag_or(cfg, "precise_outer_wall", true)
+            && cfg.wall_sequence == crate::config::WallSequence::InnerOuter;
+        let first = if precise {
+            f64::midpoint(outer, inner)
+        } else {
+            f64::midpoint(spacing(outer, height), spacing(inner, height))
+        };
+        let innermost = outer / 2.0 + first + f64::from(cfg.wall_loops - 2) * spacing(inner, height);
+        let infill = outer + inner * f64::from(cfg.wall_loops - 1) - share * cfg.line_width;
+        infill - (innermost + past_wall(height))
     };
-    let infill = past_wall / 2.0 - share * cfg.line_width;
-    let region =
-        cfg.spacing_for(inner) / 2.0 - share * f64::midpoint(cfg.spacing_for(inner), cfg.spacing_for(solid));
     Some(crate::bridging::Stretch {
-        edge: infill - region,
+        edge,
         density,
         gap: bead.width - bead.spacing,
     })

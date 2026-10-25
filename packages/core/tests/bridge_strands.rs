@@ -497,14 +497,28 @@ fn other_printers_keep_the_strand_grid() {
 /// Flat strands over air with variable-width walls: the bridge region follows the inner wall wherever the wall
 /// generator and `precise_outer_wall` put it.
 fn flat_strands_follow_the_inner_wall(generator: &str, precise: bool, sizes: [(f32, usize); 2]) {
-    let cfg = a1(&json!({"wall_generator": generator, "precise_outer_wall": precise}));
-    let rule = Rule::of(&cfg);
+    flat_strands_follow_the_inner_wall_at(generator, precise, 0.2, sizes);
+}
+
+/// [`flat_strands_follow_the_inner_wall`] at `h` mm layers: the region starts from the inner wall of the layer
+/// under the slab's first layer.
+fn flat_strands_follow_the_inner_wall_at(generator: &str, precise: bool, h: f64, sizes: [(f32, usize); 2]) {
+    let cfg = a1(&json!({"wall_generator": generator, "precise_outer_wall": precise, "layer_height": h}));
     for (d, cells) in sizes {
-        let name = format!("{generator} precise {precise} block {d}");
+        let name = format!("{generator} precise {precise} h {h} block {d}");
         let moves = slice(block(d), &cfg);
-        let (z, got) = strands(&moves, rule.solid_spacing);
-        assert_eq!(z, "4.20", "{name}");
-        let c = rule.edge(&moves, "4.00", f64::from(d), true);
+        let (z, got) = strands(&moves, Rule::of(&cfg).solid_spacing);
+        // The rule reads the bridge layer's own height, which runs short of a full layer where the slab starts,
+        // and its own inner wall.
+        let below = moves
+            .keys()
+            .map(|k| k.parse::<f64>().unwrap())
+            .filter(|k| *k < z.parse::<f64>().unwrap())
+            .fold(0.0, f64::max);
+        let mut layer = cfg.clone();
+        layer["layer_height"] = json!(z.parse::<f64>().unwrap() - below);
+        let rule = Rule::of(&layer);
+        let c = rule.edge(&moves, &z, f64::from(d), true);
         check(&name, &got, &rule, (14.0, f64::from(d)), c, false, cells);
     }
 }
@@ -524,4 +538,20 @@ fn aegis_strands_follow_the_inner_wall_without_precise_outer_wall() {
 #[test]
 fn arachne_strands_follow_the_inner_wall() {
     flat_strands_follow_the_inner_wall("arachne", true, [(5.294, 9), (5.407, 10)]);
+}
+
+#[test]
+fn classic_strands_follow_the_inner_wall_without_precise_outer_wall() {
+    // The first inner wall's centerline sits 0.602 mm in at 0.2 mm layers, so the region starts 0.747 mm in. At
+    // 0.3 mm layers the bridge layer is 0.28 mm thick (the slab starts between two layers): 0.585 and 0.723.
+    flat_strands_follow_the_inner_wall_at("classic", false, 0.2, [(5.208, 9), (5.321, 10)]);
+    flat_strands_follow_the_inner_wall_at("classic", false, 0.3, [(4.991, 9), (5.099, 10)]);
+}
+
+#[test]
+fn classic_strands_follow_the_inner_wall_with_precise_outer_wall() {
+    // The first inner wall's centerline sits 0.645 mm in at both heights, so the region starts 0.790 mm in at 0.2 mm
+    // layers and 0.784 mm in on the 0.28 mm bridge layer at 0.3.
+    flat_strands_follow_the_inner_wall_at("classic", true, 0.2, [(5.294, 9), (5.407, 10)]);
+    flat_strands_follow_the_inner_wall_at("classic", true, 0.3, [(5.112, 9), (5.220, 10)]);
 }
