@@ -142,7 +142,8 @@ fn lifts(code: &str) -> bool {
 struct Block {
     /// The layer it is in, from 0.
     layer: usize,
-    /// The `M204 S` values written between the layer's last extrusion before the block and the block.
+    /// The `M204 S` values written between the layer's last extrusion before the block and the block: the wipe's
+    /// (inside its block) and then the travel's.
     pre: Vec<i64>,
     /// The acceleration in effect at the lift before the block.
     lift: Option<i64>,
@@ -239,7 +240,8 @@ fn travel_of(layer: usize, first: i64, rest: i64) -> i64 {
 
 /// Every block: the travel acceleration is in effect at the lift, at the template's travels and (with `after`) at
 /// the travel after the block. It is written once before the lift when the acceleration in effect differs, and never
-/// after the block.
+/// after the block. The wipe before the lift may write its own line first (the layer's wipe acceleration), so the
+/// travel's line is written when it differs from the wipe's.
 fn check_blocks_with(g: &str, first: i64, rest: i64, after: bool) -> Vec<Block> {
     let all = blocks(g);
     assert!(!all.is_empty(), "no timelapse block");
@@ -248,10 +250,17 @@ fn check_blocks_with(g: &str, first: i64, rest: i64, after: bool) -> Vec<Block> 
         assert_eq!(b.lift, Some(want), "lift acceleration: {b:?}");
         assert_eq!(b.safe.len(), 3, "three safe position travels: {b:?}");
         assert!(b.safe.iter().all(|&a| a == want), "safe position travels: {b:?}");
-        assert!(b.pre.len() <= 1, "at most one line before the lift: {b:?}");
         assert!(
-            b.pre.iter().all(|&a| a == want),
+            b.pre.len() <= 2,
+            "at most the wipe's line and the travel's before the lift: {b:?}"
+        );
+        assert!(
+            b.pre.last().is_none_or(|&a| a == want),
             "the line before the lift: {b:?}"
+        );
+        assert!(
+            b.pre.len() < 2 || b.pre.first() != Some(&want),
+            "the wipe's line, then the travel's: {b:?}"
         );
         if !after {
             continue;
@@ -277,9 +286,15 @@ fn check_blocks(g: &str, first: i64, rest: i64) -> Vec<Block> {
 fn stock_a1_sets_the_travel_acceleration_before_the_lift() {
     let g = slice(a1(&json!({})));
     let all = check_blocks(&g, 6000, 10000);
-    // The first layer prints at 500 and the later walls at 5000, so every block writes its line.
+    // The first layer prints and wipes at 500, so its block writes the travel's line alone. The later walls print at
+    // 5000 and wipe at the default 6000, so each later block writes the wipe's line, then the travel's.
     for b in &all {
-        assert_eq!(b.pre, vec![travel_of(b.layer, 6000, 10000)], "{b:?}");
+        let want = if b.layer == 0 {
+            vec![6000]
+        } else {
+            vec![6000, 10000]
+        };
+        assert_eq!(b.pre, want, "{b:?}");
     }
     let first = all.iter().find(|b| b.layer == 0).unwrap();
     assert!(first.post.is_empty(), "{first:?}");
@@ -309,7 +324,7 @@ fn the_values_follow_the_settings() {
     ));
     let all = check_blocks(&g, 3000, 8000);
     assert!(all.iter().any(|b| b.layer == 0 && b.pre == vec![3000]));
-    assert!(all.iter().any(|b| b.layer == 1 && b.pre == vec![8000]));
+    assert!(all.iter().any(|b| b.layer == 1 && b.pre == vec![6000, 8000]));
 }
 
 /// Every acceleration 3000 writes no line around the blocks.
@@ -343,27 +358,28 @@ fn first_layer_equal_accelerations_write_no_line() {
     assert!(first.pre.is_empty() && first.post.is_empty(), "{first:?}");
 }
 
-/// A travel acceleration equal to the outer wall's is already in effect: no line before the lift, and
-/// none after the template.
+/// A travel acceleration equal to the outer wall's: the wipe after the outer wall runs at the default 6000, so the
+/// travel's line follows it before the lift, and none comes after the template.
 #[test]
 fn travel_equal_to_the_outer_wall_writes_no_line() {
     let g = slice(a1(&json!({"travel_acceleration": [5000]})));
     for b in check_blocks(&g, 6000, 5000) {
         if b.layer > 0 {
-            assert!(b.pre.is_empty(), "{b:?}");
+            assert_eq!(b.pre, vec![6000, 5000], "{b:?}");
         }
     }
 }
 
-/// Without a lift (`z_hop` 0) nothing is written before the block; the travel after it sets the travel
-/// acceleration as before.
+/// Without a lift (`z_hop` 0) no travel line is written before the block, only the wipe's own line (6000 on the
+/// later layers, after walls at 5000); the travel after it sets the travel acceleration as before.
 #[test]
 fn no_lift_no_line_before_the_block() {
     let g = slice(a1(&json!({"z_hop": [0]})));
     let all = blocks(&g);
     assert!(!all.is_empty());
     for b in &all {
-        assert!(b.pre.is_empty(), "{b:?}");
+        let wipe = if b.layer == 0 { vec![] } else { vec![6000] };
+        assert_eq!(b.pre, wipe, "{b:?}");
         let want = travel_of(b.layer, 6000, 10000);
         assert_eq!(b.travel, Some(want), "{b:?}");
     }

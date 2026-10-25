@@ -1301,13 +1301,13 @@ fn footer(out: &SliceOutput, c: &PrintConfig, flavor: GcodeFlavor) -> Result<Vec
 }
 
 /// The print's closing retraction: Orca wipes along the last path while it retracts, when the filament wipes.
-/// `off` is the nozzle offset the last layer's moves were written less.
+/// `off` is the nozzle offset the last layer's moves were written less. `accel` gives the wipe's acceleration line.
 fn closing_retract(
     b: &mut Vec<u8>,
     style: Retraction,
     (rc, c): (&PrintConfig, &PrintConfig),
-    last: &LayerPaths,
-    off: Point,
+    (last, off): (&LayerPaths, Point),
+    accel: &mut dyn FnMut() -> String,
 ) {
     let tail = last.wipe_tail();
     if rc.retraction_length > 0.0
@@ -1328,6 +1328,7 @@ fn closing_retract(
             (e_units(rc.retraction_length), feed(rc.retraction_speed)),
             speed,
             off,
+            accel,
         );
     } else if rc.retraction_length > 0.0 {
         b.extend_from_slice(b"G1 E-");
@@ -1364,8 +1365,22 @@ fn footer_body(out: &SliceOutput, c: &PrintConfig, flavor: GcodeFlavor) -> Resul
         .is_some_and(|l| crate::timelapse::ends_print_with_block(c, flavor, l, out.prime_tower.is_some()));
     if !done && let Some(l) = out.layers.last() {
         // The wipe goes out with the offset the last layer's moves ended on.
-        let off = crate::griffin::end_offset(out.config_at(c, l.cfg), flavor, l);
-        closing_retract(&mut b, style, (&rc, c), l, off);
+        let lc = out.config_at(c, l.cfg);
+        let off = crate::griffin::end_offset(lc, flavor, l);
+        // The last layer's wipe, against what its last path left in effect.
+        let slot = lc.for_slot(last_tool);
+        let mut accel = || {
+            if !crate::motion::accel_enabled(lc) {
+                return String::new();
+            }
+            let mut motion = crate::motion::Motion::new(&slot, flavor, l.index == 0);
+            let mut state = crate::motion::Written {
+                accel: l.paths.last().map_or(0, |p| motion.print_accel(p.feature)),
+                ..Default::default()
+            };
+            motion.wipe_lines(&mut state)
+        };
+        closing_retract(&mut b, style, (&rc, c), (l, off), &mut accel);
     }
     let mut ctx = crate::customgcode::context(c, out);
     ctx.set_num("layer_num", f64::from(out.layer_count.saturating_sub(1)));
@@ -1799,6 +1814,31 @@ fn emit_layer(
     // orca's change_layer retract wipes along the layer below's last path when wipe is on
     let tail = &l.below_wipe;
     let mut layer_wiped: Option<Wiped> = None;
+    let accel_on = crate::motion::accel_enabled(c);
+    // The wipe belongs to the layer below: it runs at that layer's acceleration, with its settings and filament.
+    let below_cfg = prev.for_slot(l.start_tool.max(1));
+    let below_first = l.index == 1;
+    // What the layer below left in effect (0: not known): its last path's acceleration, unless custom G-code that
+    // may set one of its own came after that path (a timelapse block that ends the layer, or this layer change's
+    // G-code before the retraction).
+    let before_sets = crate::motion::sets_accel(&before)
+        || (deferred && templates.iter().any(|t| crate::motion::sets_accel(t)));
+    // This layer's block stands for the one below: the same template, a layer earlier.
+    let block_sets = crate::timelapse::moves_head(&lapse_body) || crate::motion::sets_accel(&lapse_body);
+    let below_accel = match tail.feature {
+        Some(f) if accel_on && !before_sets => {
+            let ends_with_block = block_sets
+                && crate::timelapse::may_end_with_block(base, flavor, f, out.prime_tower.is_some());
+            if ends_with_block {
+                0
+            } else {
+                crate::motion::Motion::new(&below_cfg, flavor, below_first).print_accel(f)
+            }
+        }
+        _ => 0,
+    };
+    // The acceleration the layer change's wipe left in effect, when it wiped.
+    let mut wipe_state: Option<crate::motion::Written> = None;
     let mut layer_change_retract = |b: &mut Vec<u8>| {
         if !retracts {
             return;
@@ -1818,6 +1858,22 @@ fn emit_layer(
                     (retract, retract_feed),
                     speed,
                     off,
+                    &mut || {
+                        if !accel_on {
+                            return String::new();
+                        }
+                        let mut state = crate::motion::Written {
+                            accel: below_accel,
+                            ..Default::default()
+                        };
+                        let lines = crate::motion::Motion::new(&below_cfg, flavor, below_first)
+                            .wipe_lines(&mut state);
+                        wipe_state = Some(crate::motion::Written {
+                            accel: state.accel,
+                            ..Default::default()
+                        });
+                        lines
+                    },
                 );
             }
             None => retract_move(b, style, -retract, retract_feed),
@@ -2167,9 +2223,11 @@ fn emit_layer(
     blocks.retain(|(_, t)| !t.is_empty());
     // The printer's keep-out zones, which travels go round (zoneroute.rs) and lifts keep out of.
     let zone_router = crate::zoneroute::Router::of(c);
-    let accel_on = crate::motion::accel_enabled(c);
-    // Acceleration and jerk last written in this layer (0: not yet), and the lines that set them.
-    let mut motion_now = crate::motion::Written::default();
+    // Acceleration and jerk last written in this layer (0: not yet), and the lines that set them. A layer change that
+    // wiped left the wipe's acceleration in effect, unless its G-code after the retraction may set one of its own.
+    let after_sets = (!deferred && crate::motion::sets_accel(&after))
+        || (lapse == Some(crate::timelapse::Spot::LayerChange) && crate::motion::sets_accel(&lapse_body));
+    let mut motion_now = wipe_state.filter(|_| !after_sets).unwrap_or_default();
     // One per filament slot: each path accelerates as its extruder's settings say ([`PrintConfig::for_slot`]).
     let top_tool = l.paths.iter().map(|p| p.tool).max().unwrap_or(0);
     let slot_cfgs: Vec<std::borrow::Cow<'_, PrintConfig>> = (0..=top_tool).map(|t| c.for_slot(t)).collect();
@@ -2196,6 +2254,7 @@ fn emit_layer(
             pending_drop = true;
         }
         push_lines(b, text);
+        motion_now.stale |= crate::motion::sets_accel(text);
         if crate::timelapse::moves_z(text) && !pending_drop {
             b.extend_from_slice(b"G1 Z");
             put_fixed(b, z, 3);
@@ -2251,6 +2310,7 @@ fn emit_layer(
         {
             if !retracted && style.active(retract) {
                 let at = cursor.unwrap_or(start);
+                let slot = if tool == u8::MAX { p.tool } else { tool };
                 if let Some(w) = retract_wiping(
                     b,
                     style,
@@ -2259,6 +2319,7 @@ fn emit_layer(
                     (retract, retract_feed),
                     speed_feed,
                     off,
+                    &mut || wipe_accel_lines(accel_on, &mut motions, slot, &mut motion_now),
                 ) {
                     speed_feed = w.feed;
                     cursor = Some(w.end);
@@ -2287,6 +2348,7 @@ fn emit_layer(
                 pending_drop = true;
             }
             push_lines(b, text);
+            motion_now.stale |= crate::motion::sets_accel(text);
             if crate::timelapse::moves_z(text) && !pending_drop {
                 b.extend_from_slice(b"G1 Z");
                 put_fixed(b, z, 3);
@@ -2361,6 +2423,7 @@ fn emit_layer(
                     (tc, retract_feed),
                     speed_feed,
                     off,
+                    &mut || wipe_accel_lines(accel_on, &mut motions, tool, &mut motion_now),
                 ) {
                     speed_feed = w.feed;
                     // The wipe moved the nozzle: the lift below starts where it stopped.
@@ -2773,13 +2836,17 @@ fn emit_layer(
         // Orca's GCode::_extrude calls travel_to, which writes the travel's acceleration and jerk, only when the
         // nozzle is not already at the path's first point or a layer change still owes its lift: paths that
         // join end to start (a zig-zag fill) get no travel lines between them.
-        if accel_on && (cursor != Some(start) || pending_lift.is_some()) {
-            // A travel shorter than the retraction minimum is short whether or not it retracts.
-            let short = dist < rc.retraction_minimum_travel;
-            if let Some(motion) = motions.get_mut(usize::from(p.tool)) {
-                let lines = motion.travel_lines(short, p.feature, &mut motion_now);
-                b.extend_from_slice(lines.as_bytes());
-            }
+        let travel_accel = accel_on && (cursor != Some(start) || pending_lift.is_some());
+        // A travel shorter than the retraction minimum is short whether or not it retracts.
+        let short = dist < rc.retraction_minimum_travel;
+        // A retraction that wipes runs at the layer's wipe acceleration: the travel's lines follow the wipe instead.
+        let wipes_first = need_retract && pending_lift.is_none() && wipes(&rc, last_pts);
+        if travel_accel
+            && !wipes_first
+            && let Some(motion) = motions.get_mut(usize::from(p.tool))
+        {
+            let lines = motion.travel_lines(short, p.feature, &mut motion_now);
+            b.extend_from_slice(lines.as_bytes());
         }
         let mut lifted = std::mem::take(&mut pending_drop);
         // A slope lift too steep for its travel climbs on the travel move itself (Orca's `travel_to_xyz`).
@@ -2812,6 +2879,7 @@ fn emit_layer(
         }
         if need_retract {
             let at = cursor.unwrap_or(start);
+            let slot = if tool == u8::MAX { p.tool } else { tool };
             if let Some(w) = retract_wiping(
                 b,
                 style,
@@ -2820,7 +2888,14 @@ fn emit_layer(
                 (retract, retract_feed),
                 speed_feed,
                 off,
+                &mut || wipe_accel_lines(accel_on, &mut motions, slot, &mut motion_now),
             ) {
+                // After the wipe and its retraction, before the lift: the travel's lines, when they differ from the
+                // wipe's.
+                if travel_accel && let Some(motion) = motions.get_mut(usize::from(p.tool)) {
+                    let lines = motion.travel_lines(short, p.feature, &mut motion_now);
+                    b.extend_from_slice(lines.as_bytes());
+                }
                 speed_feed = w.feed;
                 // The wipe moved the nozzle along the last path: the lift and the travel start where it stopped,
                 // so the route is planned again from there.
@@ -3261,7 +3336,10 @@ fn emit_layer(
     if closing {
         if !retracted {
             let last_tool = l.paths.last().map_or(1, |p| p.tool.max(1));
-            closing_retract(b, style, (&c.for_filament(last_tool), c), l, off);
+            let slot = l.paths.last().map_or(0, |p| p.tool);
+            closing_retract(b, style, (&c.for_filament(last_tool), c), (l, off), &mut || {
+                wipe_accel_lines(accel_on, &mut motions, slot, &mut motion_now)
+            });
         }
         if let (Some(lb), Some(prev)) = (labels.as_ref(), open_object.take()) {
             for t in [lb.comment_end(prev), lb.fw_end(prev)].into_iter().flatten() {
@@ -3306,6 +3384,7 @@ fn emit_layer(
             );
         }
         push_lines(b, text);
+        motion_now.stale |= crate::motion::sets_accel(text);
         // A block that parked the head off the part: back to where the layer's last path ended, still lifted, before
         // the nozzle comes down and primes, so the next layer's wipe and prime happen over the part and nothing
         // extrudes or wipes from the park position.
@@ -3399,6 +3478,8 @@ struct Wipe<'a> {
     /// Share of the retraction done fast before the wipe, 0 to 1.
     before: f64,
     distance_mm: f64,
+    /// The acceleration line the wipe runs at, written after its feed rate (empty when already in effect).
+    accel: &'a str,
     speed_mm_s: f64,
 }
 
@@ -3425,8 +3506,18 @@ fn wipe_speed_mm_s(c: &PrintConfig, current_feed: i64) -> f64 {
     speed.max(10.0)
 }
 
+/// Whether a retraction with `rc` wipes along `path` ([`retract_wiping`]).
+fn wipes(rc: &PrintConfig, path: &[Point]) -> bool {
+    rc.wipe && rc.wipe_distance > 0.0 && path.len() >= 2
+}
+
 /// a retraction that wipes along `path` from `at` when wipe is on and there is a path (orca's
-/// `GCode::retract`), else a plain one; the wipe's result when it wiped
+/// `GCode::retract`), else a plain one; the wipe's result when it wiped. `accel` gives the wipe's acceleration
+/// line ([`crate::motion::Motion::wipe_lines`]); it is asked only when the retraction wipes.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the retraction's parts, each from its own place"
+)]
 fn retract_wiping(
     b: &mut Vec<u8>,
     style: Retraction,
@@ -3435,11 +3526,13 @@ fn retract_wiping(
     (retract, retract_feed): (i64, i64),
     speed_feed: i64,
     off: Point,
+    accel: &mut dyn FnMut() -> String,
 ) -> Option<Wiped> {
-    if !(rc.wipe && rc.wipe_distance > 0.0 && path.len() >= 2) {
+    if !wipes(rc, path) {
         retract_move(b, style, -retract, retract_feed);
         return None;
     }
+    let accel = accel();
     Some(wipe_retract(
         b,
         style,
@@ -3453,6 +3546,7 @@ fn retract_wiping(
             before: rc.raw_number("retract_before_wipe", 100.0).clamp(0.0, 100.0) / 100.0,
             distance_mm: rc.wipe_distance,
             speed_mm_s: wipe_speed_mm_s(c, speed_feed),
+            accel: &accel,
         },
     ))
 }
@@ -3537,6 +3631,7 @@ fn wipe_retract(b: &mut Vec<u8>, style: Retraction, w: &Wipe<'_>) -> Wiped {
     b.extend_from_slice(b"G1 F");
     put_int(b, feed);
     b.push(b'\n');
+    b.extend_from_slice(w.accel.as_bytes());
     let span = path_mm.max(1e-6);
     let end = walk.last().map_or(w.cursor, |s| s.0);
     for (p, len) in walk {
@@ -4300,6 +4395,26 @@ fn lift_travel_lines(
         motions.first_mut()
     };
     motion.map_or_else(String::new, |m| m.travel_lines(false, Feature::Custom, state))
+}
+
+/// The wipe's acceleration line ([`crate::motion::Motion::wipe_lines`]) for filament slot `tool`'s settings (the
+/// print's own when the layer has no path on that slot); nothing with accelerations off.
+fn wipe_accel_lines(
+    on: bool,
+    motions: &mut [crate::motion::Motion<'_>],
+    tool: u8,
+    state: &mut crate::motion::Written,
+) -> String {
+    if !on {
+        return String::new();
+    }
+    let i = usize::from(tool);
+    let motion = if i < motions.len() {
+        motions.get_mut(i)
+    } else {
+        motions.first_mut()
+    };
+    motion.map_or_else(String::new, |m| m.wipe_lines(state))
 }
 
 /// The lift made at once before custom G-code, from the height the nozzle is at to the lifted one (`z`,

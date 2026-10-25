@@ -251,6 +251,10 @@ pub struct Written {
     pub accel: i64,
     pub jerk: f64,
     pub travel: i64,
+    /// Custom G-code set an acceleration of its own since `accel` was written, so `accel` may not be in effect: the
+    /// next print or wipe acceleration is written even when it equals `accel`. A travel acceleration still compares
+    /// with `accel`, so the travels after a timelapse template keep running at what the template set.
+    pub stale: bool,
 }
 
 #[allow(
@@ -352,15 +356,19 @@ fn set_acceleration(set: &LineSettings, travel: bool, accel: i64, state: &mut Wr
         accel = cap.travel_accel;
     }
     let separate = travel && separate_travel(flavor);
+    let forced = !travel && state.stale;
     let last = if separate {
         &mut state.travel
     } else {
         &mut state.accel
     };
-    if accel == 0 || accel == *last {
+    if accel == 0 || (accel == *last && !forced) {
         return;
     }
     *last = accel;
+    if !separate {
+        state.stale = false;
+    }
     match flavor {
         GcodeFlavor::Repetier => {
             let _ = writeln!(
@@ -443,7 +451,13 @@ fn set_jerk(set: &LineSettings, jerk: f64, state: &mut Written, out: &mut String
 
 #[allow(clippy::cast_precision_loss, reason = "accelerations are small")]
 /// `GCodeWriter::set_accel_and_jerk` (Klipper): both on one `SET_VELOCITY_LIMIT` line.
-fn set_accel_and_jerk(set: &LineSettings, accel: i64, jerk: f64, state: &mut Written, out: &mut String) {
+fn set_accel_and_jerk(
+    set: &LineSettings,
+    travel: bool,
+    (accel, jerk): (i64, f64),
+    state: &mut Written,
+    out: &mut String,
+) {
     use std::fmt::Write as _;
     let cap = set.caps;
     let accel = if cap.accel > 0 && accel > cap.accel {
@@ -453,12 +467,13 @@ fn set_accel_and_jerk(set: &LineSettings, accel: i64, jerk: f64, state: &mut Wri
     };
     let mut line = String::from("SET_VELOCITY_LIMIT");
     let mut empty = true;
-    if accel != 0 && accel != state.accel {
+    if accel != 0 && (accel != state.accel || (!travel && state.stale)) {
         let _ = write!(line, " ACCEL={accel}");
         if let Some(f) = set.accel_to_decel {
             let _ = write!(line, " ACCEL_TO_DECEL={}", num(accel as f64 * f / 100.0));
         }
         state.accel = accel;
+        state.stale = false;
         empty = false;
     }
     let mut j = jerk;
@@ -507,10 +522,21 @@ impl LineSettings {
     fn lines(&self, travel: bool, accel: i64, jerk: f64, state: &mut Written) -> String {
         let mut s = String::new();
         if self.flavor == crate::config::GcodeFlavor::Klipper {
-            set_accel_and_jerk(self, accel, jerk, state, &mut s);
+            set_accel_and_jerk(self, travel, (accel, jerk), state, &mut s);
         } else {
             set_acceleration(self, travel, accel, state, &mut s);
             set_jerk(self, jerk, state, &mut s);
+        }
+        s
+    }
+
+    /// The print acceleration line alone, with no jerk, or nothing when `state` already holds it.
+    fn accel_line(&self, accel: i64, state: &mut Written) -> String {
+        let mut s = String::new();
+        if self.flavor == crate::config::GcodeFlavor::Klipper {
+            set_accel_and_jerk(self, false, (accel, 0.0), state, &mut s);
+        } else {
+            set_acceleration(self, false, accel, state, &mut s);
         }
         s
     }
@@ -555,6 +581,22 @@ impl<'a> Motion<'a> {
             None => value(),
         };
         self.set.lines(false, accel, jerk, state)
+    }
+
+    /// The acceleration line of a wipe, or nothing when `state` already holds it. Every wipe runs at the layer's own
+    /// acceleration whatever path it follows: `initial_layer_acceleration` on the first layer, `default_acceleration`
+    /// after it. The jerk is left as it is.
+    pub fn wipe_lines(&mut self, state: &mut Written) -> String {
+        // A custom path takes no feature's own acceleration: the first layer's, else the default.
+        let accel = rounded(gcode_accel(self.cfg, Feature::Custom, self.first_layer));
+        self.set.accel_line(accel, state)
+    }
+
+    /// The print acceleration a path of `feature` leaves in effect once its lines are written (0: none).
+    pub fn print_accel(&mut self, feature: Feature) -> i64 {
+        let mut state = Written::default();
+        let _ = self.accel_lines(feature, &mut state);
+        state.accel
     }
 
     /// The lines before a travel, as `GCode::travel_to` writes them (see `travel_motion`).
@@ -1259,5 +1301,87 @@ mod tests {
             "the print acceleration slot"
         );
         assert_eq!(travel(F::Repetier), "M202 X8000 Y8000\nM207 X12\n");
+    }
+
+    #[test]
+    fn a_wipe_runs_at_the_layers_acceleration() {
+        use crate::config::GcodeFlavor as F;
+        let cfg = with(&[
+            ("default_acceleration", serde_json::json!(4000)),
+            ("initial_layer_acceleration", serde_json::json!(800)),
+            ("outer_wall_acceleration", serde_json::json!(3500)),
+            ("sparse_infill_acceleration", serde_json::json!(3000)),
+            ("default_jerk", serde_json::json!(9)),
+            ("outer_wall_jerk", serde_json::json!(7)),
+        ]);
+        // After an outer wall: the default, and the jerk is left as the wall set it.
+        let mut st = Written::default();
+        let mut later = Motion::new(&cfg, F::Marlin, false);
+        assert_eq!(
+            later.accel_lines(Feature::OuterWall, &mut st),
+            "M204 S3500\nM205 X7 Y7\n"
+        );
+        assert_eq!(later.wipe_lines(&mut st), "M204 S4000\n");
+        assert!((st.jerk - 7.0).abs() < 1e-9);
+        // Already in effect: nothing.
+        assert_eq!(later.wipe_lines(&mut st), "");
+        // The first layer's own, whatever the feature.
+        let mut first = Motion::new(&cfg, F::Marlin, true);
+        let mut st = Written::default();
+        assert_eq!(
+            first.accel_lines(Feature::SparseInfill, &mut st),
+            "M204 S800\nM205 X9 Y9\n"
+        );
+        assert_eq!(first.wipe_lines(&mut st), "");
+        // Klipper: the acceleration alone on its line.
+        let mut st = Written::default();
+        assert_eq!(
+            Motion::new(&cfg, F::Klipper, false).wipe_lines(&mut st),
+            "SET_VELOCITY_LIMIT ACCEL=4000 ACCEL_TO_DECEL=2000\n"
+        );
+        // No default acceleration: no line.
+        let off = with(&[("default_acceleration", serde_json::json!(0))]);
+        assert_eq!(
+            Motion::new(&off, F::Marlin, false).wipe_lines(&mut Written::default()),
+            ""
+        );
+        // What a path leaves in effect.
+        assert_eq!(later.print_accel(Feature::SparseInfill), 3000);
+    }
+
+    #[test]
+    fn custom_gcode_acceleration_is_written_over_by_the_next_print_line() {
+        use crate::config::GcodeFlavor as F;
+        let cfg = with(&[
+            ("default_acceleration", serde_json::json!(10000)),
+            ("travel_acceleration", serde_json::json!(10000)),
+        ]);
+        let mut m = Motion::new(&cfg, F::Marlin, false);
+        let mut st = Written::default();
+        assert_eq!(
+            m.travel_lines(false, Feature::SparseInfill, &mut st),
+            "M204 S10000\n"
+        );
+        // A template set its own acceleration: the travels after it keep running at it, the next path or wipe
+        // writes its own even when equal to the one last written.
+        st.stale = true;
+        assert_eq!(m.travel_lines(false, Feature::SparseInfill, &mut st), "");
+        assert_eq!(m.wipe_lines(&mut st), "M204 S10000\n");
+        assert!(!st.stale);
+        assert_eq!(m.accel_lines(Feature::SparseInfill, &mut st), "");
+        st.stale = true;
+        assert_eq!(m.accel_lines(Feature::SparseInfill, &mut st), "M204 S10000\n");
+        // Klipper the same way.
+        let mut k = Motion::new(&cfg, F::Klipper, false);
+        let mut st = Written {
+            accel: 10000,
+            stale: true,
+            ..Written::default()
+        };
+        assert!(
+            k.wipe_lines(&mut st)
+                .starts_with("SET_VELOCITY_LIMIT ACCEL=10000")
+        );
+        assert!(!st.stale);
     }
 }
