@@ -140,7 +140,7 @@ describe('true shape nesting', () => {
   })
 
   it('printing by object keeps the extruder clearance between parts, and the bed edge only the gap', async () => {
-    const margins = marginsFor({ print_sequence: 'by object', extruder_clearance_radius: 40 })
+    const margins = marginsFor({ print_sequence: 'by object', extruder_clearance_radius: 40, skirt_loops: 0 })
     expect(margins.apart).toBeGreaterThanOrEqual(40)
     const bed = { widthMm: 256, depthMm: 256, heightMm: 50 }
     const items = ['a', 'b'].map((id, i) => nestEntry(id, boxes([[0, 0, 20, 20]]), at(i * 25, 0)))
@@ -151,7 +151,7 @@ describe('true shape nesting', () => {
   })
 
   it('printing by object keeps the clearance past a brim, whose moves heimdall holds to the radius too', async () => {
-    const margins = marginsFor({ print_sequence: 'by object', extruder_clearance_radius: 40, brim_type: 'outer_only', brim_width: 5, brim_object_gap: 0 })
+    const margins = marginsFor({ print_sequence: 'by object', extruder_clearance_radius: 40, brim_type: 'outer_only', brim_width: 5, brim_object_gap: 0, skirt_loops: 0 })
     expect(margins.reach({ w: 20, h: 20, height: 5 })).toBe(5)
     const bed = { widthMm: 256, depthMm: 256, heightMm: 50 }
     const items = ['a', 'b'].map((id, i) => nestEntry(id, boxes([[0, 0, 20, 20]]), at(i * 25, 0)))
@@ -296,7 +296,7 @@ describe('true shape nesting next to an excluded area', () => {
     // the A1's 73 mm clearance radius: parts 74 mm apart, an ordinary zone half that. The excluded strip at the right
     // has nothing printed in it, so a part keeps the 6 mm gap from it: 6 + 40 + 74 + 40 leaves 10 mm to x 170
     setAvoidAreas([{ x: 170, y: 0, w: 30, h: 60 }])
-    const margins = marginsFor({ print_sequence: 'by object', extruder_clearance_radius: 73 })
+    const margins = marginsFor({ print_sequence: 'by object', extruder_clearance_radius: 73, skirt_loops: 0 })
     expect(margins.apart).toBeGreaterThanOrEqual(73)
     const bed = { widthMm: 200, depthMm: 60, heightMm: 50 }
     const items = ['a', 'b'].map((id, i) => nestEntry(id, boxes([[0, 0, 40, 40]]), at(i * 45, 0)))
