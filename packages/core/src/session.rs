@@ -1165,11 +1165,11 @@ impl SliceSession {
 
     /// Which of a layer's `works` prints the skirt `loops`: the first, unless the filament map puts it on an extruder
     /// that does not reach the whole skirt (`extruder_printable_area`), then the first that does.
-    fn skirt_tool_at(&self, cfg: &PrintConfig, works: &[ToolWork], loops: &[Vec<IntPoint<i32>>]) -> usize {
+    fn skirt_tool_at(&self, cfg: &PrintConfig, works: &[ToolWork], loops: &[paths::SkirtPath]) -> usize {
         let Some(map) = self.nozzle_map.as_ref() else {
             return 0;
         };
-        let pts = loops.iter().flatten();
+        let pts = loops.iter().flat_map(|l| &l.points);
         let Some(b) = pts.fold(None::<[f64; 4]>, |acc, p| {
             let (x, y) = (f64::from(p.x) / SCALE, f64::from(p.y) / SCALE);
             Some(acc.map_or([x, y, x, y], |a| {
@@ -3840,6 +3840,7 @@ impl SliceSession {
                 regions: vec![(tool, area)],
                 ..LayerRegions::default()
             };
+            let room = skirt_room(config);
             skirt_loops(
                 &here,
                 &[],
@@ -3847,10 +3848,12 @@ impl SliceSession {
                 self.draft_hull.as_deref(),
                 &self.skirt_groups,
                 (usize::from(self.tool_count), 0),
+                room.as_ref(),
             )
         } else {
-            Vec::new()
+            Skirt::default()
         };
+        let cut = skirt_cut(&skirt);
         // Organic branches pass through the raft down to the bed: the raft prints around them (OrcaSlicer
         // trims the raft layers by the tree polygons).
         let trees = if config.enable_support && Self::is_organic(config) {
@@ -3895,9 +3898,10 @@ impl SliceSession {
             first_cfg,
             center,
             tool,
-            skirt,
+            skirt.paths,
             (&trees, &columns, pad),
         );
+        out.skirt_cut = cut;
         out.index = p;
         out.local = p;
         out.start_tool = tool;
@@ -4355,6 +4359,7 @@ impl SliceSession {
             };
         }
         let mut warnings = self.warnings.clone();
+        warnings.extend(self.skirt_note(&out_layers)?);
         let open: usize = object_range(&asked).filter_map(get).map(|r| r.open_chains).sum();
         if open > 0 {
             warnings.push(SliceWarning {
@@ -4402,6 +4407,28 @@ impl SliceSession {
             },
             warnings,
         })
+    }
+
+    /// The note for a skirt cut to the bed on any of `layers`, naming the object it was cut beside, or the refusal when
+    /// less than one whole loop of it is left on the bed.
+    fn skirt_note(&self, layers: &[LayerPaths]) -> Result<Option<SliceWarning>> {
+        let mut cuts = layers.iter().filter_map(|l| l.skirt_cut.map(|c| (l.index, c)));
+        let Some((layer, first)) = cuts.next() else {
+            return Ok(None);
+        };
+        if let Some((_, short)) = std::iter::once((layer, first)).chain(cuts).find(|(_, c)| c.short) {
+            let name = crate::preflight::nearest_name(&self.objects, short.at);
+            return Err(Error::Blocked(format!(
+                "the skirt round {name} does not fit on the bed: less than one full loop of it is left inside the \
+                 printable area; move {name} in from the edge, or lower the skirt distance"
+            )));
+        }
+        let name = crate::preflight::nearest_name(&self.objects, first.at);
+        Ok(Some(SliceWarning {
+            code: WarningCode::OutsideBed,
+            message: format!("The skirt near {name} was cut to fit on the bed"),
+            layer: Some(layer),
+        }))
     }
 
     /// The area of the volumes with `role` on a layer, cut at height `z`; None when there are none.
@@ -9716,19 +9743,23 @@ impl SliceSession {
             }
         }
         if skirt_here && !works.is_empty() {
-            let loops = skirt_loops(
+            // A skirt near the bed's edge or a keep-out zone is cut to the bed rather than run off it, as the brim is.
+            let room = skirt_room(cfg);
+            let skirt = skirt_loops(
                 here,
                 &skirt_extra,
                 cfg,
                 self.draft_hull.as_deref(),
                 &self.skirt_groups,
                 (usize::from(self.tool_count), layer),
+                room.as_ref(),
             );
+            out.skirt_cut = skirt_cut(&skirt);
             // The layer's first filament prints the skirt, as in Orca, unless its extruder cannot reach it (H2D,
             // H2C): then the first filament whose extruder reaches all of it does.
-            let at = self.skirt_tool_at(cfg, &works, &loops);
+            let at = self.skirt_tool_at(cfg, &works, &skirt.paths);
             if let Some(w) = works.get_mut(at) {
-                w.skirt = loops;
+                w.skirt = skirt.paths;
             }
         }
         // Painted seam pieces within reach of this layer.
@@ -10165,10 +10196,28 @@ fn hull_gap(a: &[IntPoint<i32>], b: &[IntPoint<i32>]) -> f64 {
     if crossing { 0.0 } else { near(a, b).min(near(b, a)) }
 }
 
+/// A layer's skirt: its paths in print order, a point where it was cut to the bed, and a point of a skirt of which
+/// less than one whole loop's length is left on the bed (the plate is refused then).
+#[derive(Debug, Default)]
+struct Skirt {
+    paths: Vec<paths::SkirtPath>,
+    cut: Option<IntPoint<i32>>,
+    short: Option<IntPoint<i32>>,
+}
+
+impl Skirt {
+    fn add(&mut self, other: Self) {
+        self.paths.extend(other.paths);
+        self.cut = self.cut.or(other.cut);
+        self.short = self.short.or(other.short);
+    }
+}
+
 /// Skirt loops around a layer: the convex hull of everything on it, grown by
 /// the brim width and `skirt_distance`, then one loop per `skirt_loops`, the
 /// innermost first, as the slicers print them. With `groups` (`skirt_type`
-/// per object) each group of objects gets the loops of its own hull.
+/// per object) each group of objects gets the loops of its own hull. With `room`
+/// (the bed less its keep-out zones, [`skirt_room`]) each loop is cut to it ([`skirt_around`]).
 fn skirt_loops(
     here: &LayerRegions,
     extra: &[IntPoint<i32>],
@@ -10176,7 +10225,8 @@ fn skirt_loops(
     whole: Option<&[IntPoint<i32>]>,
     groups: &[Vec<IntPoint<i32>>],
     (tools, layer): (usize, u32),
-) -> Vec<Vec<IntPoint<i32>>> {
+    room: Option<&Shapes>,
+) -> Skirt {
     let mut points: Vec<IntPoint<i32>> = here
         .regions
         .iter()
@@ -10197,14 +10247,15 @@ fn skirt_loops(
                 b.push(p);
             }
         }
-        return buckets
-            .into_iter()
-            .flat_map(|b| loops_around(convex_hull(b), cfg, false, (tools, layer)))
-            .collect();
+        let mut all = Skirt::default();
+        for b in buckets {
+            all.add(skirt_around(convex_hull(b), cfg, false, (tools, layer), room));
+        }
+        return all;
     }
     match whole {
-        Some(h) => loops_around(h.to_vec(), cfg, true, (tools, layer)),
-        None if extra.is_empty() => loops_around(convex_hull(points), cfg, false, (tools, layer)),
+        Some(h) => skirt_around(h.to_vec(), cfg, true, (tools, layer), room),
+        None if extra.is_empty() => skirt_around(convex_hull(points), cfg, false, (tools, layer), room),
         // Orca's occupied outline: the objects with their brim, then the support and the tower as they print.
         None => {
             let objects = convex_hull(points);
@@ -10219,22 +10270,61 @@ fn skirt_loops(
                 objects
             };
             occupied.extend_from_slice(extra);
-            loops_around(convex_hull(occupied), cfg, true, (tools, layer))
+            skirt_around(convex_hull(occupied), cfg, true, (tools, layer), room)
         }
     }
+}
+
+/// Where a skirt's centerline may run: the bed less its keep-out zones (`bed_exclude_area`, the nozzle wrap check
+/// corner), half a skirt line spacing in from their edges so the bead stays on the bed, the way the brim is cut to
+/// it. None when the settings name no printable area.
+fn skirt_room(cfg: &PrintConfig) -> Option<Shapes> {
+    crate::brim::Bed::of(cfg).map(|bed| bed.room(mm(skirt_spacing_mm(cfg)) / 2))
+}
+
+/// A layer's record of its skirt cut to the bed, when it was.
+fn skirt_cut(skirt: &Skirt) -> Option<crate::output::SkirtCut> {
+    let mm_of = |p: IntPoint<i32>| [f64::from(p.x) / SCALE, f64::from(p.y) / SCALE];
+    skirt.cut.map(|at| crate::output::SkirtCut {
+        at: mm_of(skirt.short.unwrap_or(at)),
+        short: skirt.short.is_some(),
+    })
 }
 
 /// The loops around one hull (a whole-part hull already includes the brim), outermost first.
 /// As in Orca: `skirt_loops` of them, and with `min_skirt_length` more until the filament
 /// of the loops, counted extruder by extruder, reaches that many mm for the extruder in turn.
+#[cfg(test)]
 pub(crate) fn loops_around(
     hull: Vec<IntPoint<i32>>,
     cfg: &PrintConfig,
     includes_brim: bool,
-    (tools, layer): (usize, u32),
+    tools_layer: (usize, u32),
 ) -> Vec<Vec<IntPoint<i32>>> {
+    skirt_around(hull, cfg, includes_brim, tools_layer, None)
+        .paths
+        .into_iter()
+        .map(|p| p.points)
+        .collect()
+}
+
+/// [`loops_around`], each loop cut to `room` when one is given. A loop that lies inside it stays whole, so a skirt
+/// that fits prints exactly as before. A loop that leaves it is kept as its pieces inside.
+///
+/// The length of a cut skirt is what is left on the bed: `min_skirt_length` counts only that, and the loops it adds
+/// are cut too. A cut skirt keeps at least one whole loop's length on the bed (the length of its innermost loop
+/// before the cut): when the loops asked for leave less, loops are added outward, each cut, until they do, as
+/// `min_skirt_length` adds them. When no loop adds anything more on the bed, the skirt is short (`Skirt::short`)
+/// and the plate is refused.
+fn skirt_around(
+    hull: Vec<IntPoint<i32>>,
+    cfg: &PrintConfig,
+    includes_brim: bool,
+    (tools, layer): (usize, u32),
+    room: Option<&Shapes>,
+) -> Skirt {
     if hull.len() < 3 {
-        return Vec::new();
+        return Skirt::default();
     }
     let base: Shapes = vec![vec![hull]];
     // As in OrcaSlicer, loop k sits `skirt_distance + spacing * (k + 0.5)` from the occupied
@@ -10252,7 +10342,9 @@ pub(crate) fn loops_around(
     let e_per_mm = skirt_spacing_mm(cfg) * cfg.initial_layer_print_height
         / (std::f64::consts::PI * diameter * diameter / 4.0);
     let (mut extruded, mut extruder) = (0.0_f64, 0usize);
-    let mut out = Vec::new();
+    let mut out: Vec<Vec<paths::SkirtPath>> = Vec::new();
+    // The skirt's length on the bed and one whole loop's length, mm, and where it was cut.
+    let (mut on_bed, mut one_loop, mut cut) = (0.0_f64, None::<f64>, None::<IntPoint<i32>>);
     // Draft shield with no skirt asked for is one loop, as in Orca.
     let mut remaining = cfg.skirt_loops.max(1);
     let mut k = 0;
@@ -10268,8 +10360,25 @@ pub(crate) fn loops_around(
             break;
         };
         let ring = perimeters::simplify_ring(&ring, 500);
+        let whole = ring_length_mm(&ring);
+        let first_loop = *one_loop.get_or_insert(whole);
+        let (paths, length) = match room {
+            Some(room) => {
+                let (paths, length, at) = clip_ring(&ring, room);
+                cut = cut.or(at);
+                (paths, length)
+            }
+            None => (
+                vec![paths::SkirtPath {
+                    points: ring,
+                    open: false,
+                }],
+                whole,
+            ),
+        };
+        on_bed += length;
         if min_length > 0.0 {
-            extruded += ring_length_mm(&ring) * e_per_mm;
+            extruded += length * e_per_mm;
             if extruded < min_length {
                 if remaining == 0 {
                     remaining = 1;
@@ -10279,8 +10388,15 @@ pub(crate) fn loops_around(
                 extruded = 0.0;
             }
         }
-        out.push(ring);
-        if k >= 1000 {
+        if cut.is_some() && remaining == 0 && on_bed < first_loop {
+            remaining = 1;
+        }
+        // A loop with nothing on the bed: the loops further out have nothing on it either.
+        let empty = paths.is_empty();
+        if !empty {
+            out.push(paths);
+        }
+        if k >= 1000 || empty {
             break;
         }
     }
@@ -10289,7 +10405,72 @@ pub(crate) fn loops_around(
     if layer > 0 && crate::tower::flag(cfg, "single_loop_draft_shield") && out.len() > 1 {
         out.drain(..out.len() - 1);
     }
-    out
+    let short = cut.filter(|_| on_bed < one_loop.unwrap_or(0.0));
+    Skirt {
+        paths: out.into_iter().flatten().collect(),
+        cut,
+        short,
+    }
+}
+
+/// The shortest piece of a cut skirt loop that is kept, internal units: a shorter one would only leave a blob.
+const SKIRT_PIECE_MIN: f64 = 1.0 * SCALE;
+
+/// `ring` cut to `room`: the ring itself when it lies inside, else its pieces inside (the two at the ring's start
+/// joined into one), with the length kept on the bed (mm) and, when it was cut, a point where it was.
+fn clip_ring(ring: &[IntPoint<i32>], room: &Shapes) -> (Vec<paths::SkirtPath>, f64, Option<IntPoint<i32>>) {
+    let Some(&start) = ring.first() else {
+        return (Vec::new(), 0.0, None);
+    };
+    let mut closed = ring.to_vec();
+    closed.push(start);
+    let mut pieces = crate::support::clip_inside(&closed, room);
+    if pieces.len() == 1 && pieces.first() == Some(&closed) {
+        let length = ring_length_mm(ring);
+        return (
+            vec![paths::SkirtPath {
+                points: ring.to_vec(),
+                open: false,
+            }],
+            length,
+            None,
+        );
+    }
+    // A cut loop whose start lies inside: its last piece runs on into its first.
+    if pieces.len() >= 2
+        && pieces.first().and_then(|p| p.first()) == Some(&start)
+        && pieces.last().and_then(|p| p.last()) == Some(&start)
+        && let Some(mut last) = pieces.pop()
+        && let Some(first) = pieces.first_mut()
+    {
+        last.extend(first.iter().skip(1).copied());
+        *first = last;
+    }
+    let polyline = |p: &[IntPoint<i32>]| -> f64 {
+        p.windows(2)
+            .map(|w| match w {
+                [a, b] => f64::from(b.x - a.x).m_hypot(f64::from(b.y - a.y)),
+                _ => 0.0,
+            })
+            .sum()
+    };
+    // Where it was cut: the end of the first piece, on the edge, or the ring's start when nothing is left.
+    let at = pieces.first().and_then(|p| p.last()).copied().unwrap_or(start);
+    let mut length = 0.0;
+    let kept: Vec<paths::SkirtPath> = pieces
+        .into_iter()
+        .filter_map(|p| {
+            let l = polyline(&p);
+            (l >= SKIRT_PIECE_MIN).then(|| {
+                length += l;
+                paths::SkirtPath {
+                    points: p,
+                    open: true,
+                }
+            })
+        })
+        .collect();
+    (kept, length / SCALE, Some(at))
 }
 
 /// The length of a closed ring, mm.
