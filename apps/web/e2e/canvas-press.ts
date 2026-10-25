@@ -81,7 +81,10 @@ export async function steady(page: Page, x: number, y: number, z: number): Promi
       // The poll asks once right away, and two looks inside one frame always agree, so a look counts only once the
       // one before it is far enough back.
       if (Date.now() - since < 600) return false
-      const still = Math.hypot(again.x - at.x, again.y - at.y) < 0.5
+      // Two looks also agree when the page drew no frame between them, which a busy machine does for longer than the
+      // gap, while the eased move is only part of the way. So the view's own move has to be over too.
+      const moving = await cameraMoving(page)
+      const still = !moving && Math.hypot(again.x - at.x, again.y - at.y) < 0.5
       at = again
       since = Date.now()
       return still
@@ -89,3 +92,6 @@ export async function steady(page: Page, x: number, y: number, z: number): Promi
     .toBe(true)
   return at
 }
+
+/** Whether the view is in an eased camera move (a zoom, a view preset, a framing) that has not reached its end. */
+const cameraMoving = (page: Page) => page.evaluate(() => (window as unknown as { __vp: { stats(): { cameraMoving: boolean } } }).__vp.stats().cameraMoving)
