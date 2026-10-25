@@ -450,6 +450,54 @@ mod tests {
     }
 
     #[test]
+    fn a_skirt_round_the_whole_print_keeps_its_hull_off_a_keep_out_zone_too() {
+        // printed by layer with one skirt round everything: a keep-out zone at its edge spacing still keeps the
+        // skirt's hull off it, so the parts cannot flank it. A part fixed beside a corner zone and a block over the rest
+        // leave a new part only the strip on the corner's other side, where the hull would cross it. The corner at the
+        // back right as on an A1, then the plate turned half round, at the front left as on a P1S.
+        for turned in [false, true] {
+            let r = |x: f64, y: f64, w: f64, h: f64| {
+                if turned {
+                    rect(80.0 - x - w, 80.0 - y - h, w, h)
+                } else {
+                    rect(x, y, w, h)
+                }
+            };
+            let fixed = |id: &str, p: Polygon| NestFixed {
+                id: id.into(),
+                polygons: vec![p],
+                grow: 0.0,
+                reach: 2.5,
+                apart_extra: 0.0,
+                hull: vec![],
+            };
+            let run = |skirt: bool| {
+                nest(NestProblem {
+                    bed: bed(80.0, 80.0),
+                    items: vec![item("b", vec![rect(0.0, 0.0, 12.0, 12.0)])],
+                    fixed: vec![
+                        fixed("a", r(0.0, 62.0, 50.0, 16.0)),
+                        fixed("c", r(0.0, 0.0, 50.0, 54.0)),
+                    ],
+                    zones: vec![NestZone {
+                        polygons: vec![r(56.0, 56.0, 24.0, 24.0)],
+                    }],
+                    options: NestOptions {
+                        skirt,
+                        keep_out_zones: 1,
+                        rotate: false,
+                        center: false,
+                        ..opts(4.0)
+                    },
+                })
+                .unwrap()
+            };
+            assert_eq!(run(false).placements.len(), 1, "turned {turned}");
+            assert_eq!(run(true).placements.len(), 0, "turned {turned}");
+        }
+    }
+
+    #[test]
     fn a_keep_out_zone_keeps_the_edge_spacing_and_the_parts_keep_theirs() {
         // printing by object the parts keep 74 mm apart, and an ordinary zone gets half of that, 37 mm; the printer's
         // keep-out zone at the right, nothing printed in it, keeps only the edge spacing, at least the 6 mm gap
