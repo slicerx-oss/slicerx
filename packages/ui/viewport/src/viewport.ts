@@ -617,8 +617,6 @@ class ViewportImpl implements Viewport {
       this.startup.envMs = (this.startup.envMs ?? 0) + (t1 - t0)
       markSpan('env', t0, t1)
       if (!done) return this.bakeSoon()
-      // Toolpaths keep their flat ambient light when the bake failed.
-      if (this.stage.envSH) this.toolpaths.setEnvironment(this.stage.envSH)
       // A look set before the bake took the scene's environment while it was still empty: give it the baked one.
       if (this.lookBeforeEnv) setMaterialLook(this.lookSet, this.theme.scene.bgTop, this.stage.scene.environment)
       this.lookBeforeEnv = false
@@ -3221,7 +3219,6 @@ class ViewportImpl implements Viewport {
     this.pipeline.aoStrength = L.geometry.aoStrength
     this.stage.setLights(L.lighting)
     this.stage.setPlateLook(L.plate)
-    this.toolpaths.setEnvironmentScale(L.lighting.environment)
     setMaterialLook(this.lookSet, scene.bgTop, this.stage.scene.environment)
     if (!this.stage.envReady) this.lookBeforeEnv = true
     this.pipeline.setSilhouetteColor(cadLook(scene.bgTop).edge)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The environment's irradiance, projected from cube faces read back at once (stage.ts).
+// The environment's irradiance, projected from cube faces read back at once (the look lab, demo/lab-env.ts).
 import { DataUtils, HalfFloatType, NoColorSpace, WebGLCoordinateSystem, type WebGLCubeRenderTarget, type WebGLRenderer } from 'three'
 import { LightProbeGenerator } from 'three/addons/lights/LightProbeGenerator.js'
 import { describe, expect, it } from 'vitest'

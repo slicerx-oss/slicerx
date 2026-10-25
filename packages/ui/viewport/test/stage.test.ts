@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The environment bake reads its cube back before the stage's first frame and releases the target at once, so a stage
-// torn down early (a reload, a remount) has nothing of it left to release. It runs in steps (bakeNext), one per task,
-// after the constructor; the steps give the same data as the bake in one go.
+// The environment bake is the PMREM prefilter of the room, run (bakeNext) in a task of its own after the constructor.
+// It reads nothing back from the GPU: a read back waits for all the GPU work queued before it, about a second of a held
+// page on software WebGL.
 import { describe, expect, it, vi } from 'vitest'
 import type { Line, LineBasicMaterial, Mesh, ShaderMaterial, WebGLRenderTarget, WebGLRenderer } from 'three'
 
@@ -78,21 +78,15 @@ function make(failRead = false, bake = true) {
 }
 
 describe('stage environment bake', () => {
-  it('reads all six faces before the first frame and releases the cube target once', () => {
-    const { stage, r } = make()
-    expect(r.reads).toEqual([0, 1, 2, 3, 4, 5])
-    expect(stage.envSH).toHaveLength(9)
-    expect(r.released).toBe(1)
-    expect(r.props.size).toBe(0)
-  })
-
-  it('a refused read back leaves the flat ambient light and still releases the target', () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const { stage, r } = make(true)
-    expect(stage.envSH).toBeNull()
-    expect(r.released).toBe(1)
-    expect(warn).toHaveBeenCalledOnce()
-    warn.mockRestore()
+  it('reads nothing back from the GPU and makes no cube target, in steps or in one go', () => {
+    const stepped = make(false, false)
+    while (!stepped.stage.bakeNext());
+    const whole = make()
+    for (const { r } of [stepped, whole]) {
+      expect(r.reads).toEqual([])
+      expect(r.props.size).toBe(0)
+      expect(r.released).toBe(0)
+    }
   })
 
   it('bakes nothing in the constructor, so the view setup and the bake can run as separate tasks', () => {
@@ -102,61 +96,28 @@ describe('stage environment bake', () => {
     expect(r.reads).toEqual([])
     expect(stage.envReady).toBe(false)
     expect(stage.scene.environment).toBeNull()
-    expect(stage.envSH).toBeNull()
   })
 
-  it('runs the bake in two steps: the prefilter first, then the irradiance read back', () => {
+  it('is ready after one step, the prefilter, and runs nothing again', () => {
     envBakes.length = 0
     const { stage, r } = make(false, false)
-    expect(stage.bakeNext()).toBe(false)
-    expect(envBakes).toHaveLength(1)
-    expect(stage.scene.environment).not.toBeNull()
-    expect(r.reads).toEqual([])
-    expect(stage.envReady).toBe(false)
     expect(stage.bakeNext()).toBe(true)
-    expect(r.reads).toEqual([0, 1, 2, 3, 4, 5])
     expect(stage.envReady).toBe(true)
-    expect(stage.envSH).toHaveLength(9)
-    // nothing runs again once it is done
+    expect(envBakes).toHaveLength(1)
+    // models, the plate and the toolpaths reflect the room through it
+    expect(stage.scene.environment).not.toBeNull()
     expect(stage.bakeNext()).toBe(true)
     expect(envBakes).toHaveLength(1)
-    expect(r.reads).toHaveLength(6)
+    expect(r.reads).toEqual([])
   })
 
-  it('gives the same irradiance in steps as the bake in one go and as the faces summed directly', async () => {
-    const { cubeFacesSH } = await import('../src/env-sh')
-    const stepped = make(false, false).stage
-    while (!stepped.bakeNext());
-    const whole = make().stage
-    const faces = Array.from({ length: 6 }, (_, face) => {
-      const px = new Uint16Array(32 * 32 * 4)
-      for (let i = 0; i < px.length; i++) px[i] = 0x3800 + ((i * 37 + face * 1013) % 0x0800)
-      return px
-    })
-    // the fake renderer reports WebGL's coordinate system, as the stage's flip reads it
-    const direct = cubeFacesSH(faces, 32, -1)
-    const flat = (v: { x: number; y: number; z: number }[] | null) => (v ?? []).flatMap((c) => [c.x, c.y, c.z])
-    expect(flat(stepped.envSH)).toHaveLength(27)
-    expect(flat(stepped.envSH)).toEqual(flat(whole.envSH))
-    expect(flat(stepped.envSH)).toEqual(flat(direct))
-  })
-
-  it('releases the room when the stage goes away between the bake steps', () => {
-    const { stage, r } = make(false, false)
-    stage.bakeNext()
+  it('bakes nothing for a stage that went away first', () => {
+    envBakes.length = 0
+    const { stage } = make(false, false)
     stage.dispose()
     expect(stage.bakeNext()).toBe(true)
-    expect(r.reads).toEqual([])
-    expect(stage.envSH).toBeNull()
-  })
-
-  it('has nothing of the bake to release when the stage and renderer go away', () => {
-    const { stage, r } = make()
-    // Viewport.dispose: the stage first, then the renderer.
-    stage.dispose()
-    r.dispose()
-    stage.dispose()
-    expect(r.released).toBe(1)
+    expect(envBakes).toHaveLength(0)
+    expect(stage.scene.environment).toBeNull()
   })
 })
 
