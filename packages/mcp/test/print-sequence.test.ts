@@ -321,6 +321,8 @@ describe.skipIf(noSx())('print by object with the real sx CLI', { timeout: sxTim
     expect(e.message).toMatch(/^Keep-out\.3mf prints into the nozzle wrap check corner on layers? 1/)
     expect(e.message).not.toMatch(/--allow-collisions|sx exited|sx slice/)
     expect(e.details?.collisions?.[0]).toMatchObject({ kind: 'keep_out', zone: 'the nozzle wrap check corner', object: 'keep-out.3mf' })
+    // and the engine's id for the object, which the words name after the file
+    expect((e.details?.collisions?.[0] as { engine_objects?: string[] } | undefined)?.engine_objects).toEqual([expect.stringMatching(/^o0(-1)?$/)])
     expect(e.details?.allow_collisions).toBe(true)
     const ok = await h.call('slicerx_slice_file', { model: file, profiles: A1, overrides, allow_collisions: true })
     expect(ok.isError, text(ok)).toBeFalsy()

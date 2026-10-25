@@ -60,6 +60,29 @@ describe('app ui tools', () => {
     expect((await clear!.run({} as never, {} as never)).summary).toMatch(/; by object, clear\.$/)
   })
 
+  it('read the collisions of the slice back with the ids of the objects each names, for a client to select them', async () => {
+    const collisions = {
+      stale: false,
+      items: [
+        { kind: 'keep_out', severity: 'close' as const, part: 'nozzle', objects: [{ id: 'obj_3', name: 'Lid' }], zone: 'exclusion-area', firstLayer: 1, lastLayer: 2 },
+        { kind: 'hotend', severity: 'hit' as const, part: 'toolhead', objects: [{ id: 'obj_2', name: 'Clip' }, { id: 'obj_1', name: 'Box' }], firstLayer: 3, lastLayer: 4 },
+      ],
+    }
+    const call = vi.fn(async () => ({ ...UI, tab: 'slice', collisions }))
+    const [get, , select] = appUiTools({ call } as unknown as AppLinkCaller, 'SlicerX')
+    const read = await get!.run({} as never, {} as never)
+    expect((read.output as AppUi).collisions).toEqual(collisions)
+    expect(read.summary).toMatch(/; the slice has 1 collision, the first Clip \(obj_2\) and Box \(obj_1\)\.$/)
+    // selecting what the first collision names is the click on its row
+    const ids = (read.output as AppUi).collisions!.items[1]!.objects.map((o) => o.id)
+    await select!.run(select!.input.parse({ selection: ids }) as never, {} as never)
+    expect(call).toHaveBeenLastCalledWith('ui.select', { selection: ['obj_2', 'obj_1'] })
+    const [stale] = appUiTools({ call: async () => ({ ...UI, tab: 'slice', collisions: { stale: true, items: [collisions.items[0]!] } }) } as unknown as AppLinkCaller, 'SlicerX')
+    expect((await stale!.run({} as never, {} as never)).summary).toMatch(/; the last slice, before the plate changed, has 1 close call, the first Lid \(obj_3\)\.$/)
+    const [none] = appUiTools({ call: async () => ({ ...UI, tab: 'slice', collisions: { stale: false, items: [] } }) } as unknown as AppLinkCaller, 'SlicerX')
+    expect((await none!.run({} as never, {} as never)).summary).toMatch(/\(look\)\.$/)
+  })
+
   it('say when nothing is selected, no printer is chosen and another workspace is up', async () => {
     const other: AppUi = { ...UI, workspace: 'library', selection: { primary: null, objects: [] }, printer: null, panels: { ...UI.panels, open: [], settingsSection: null } }
     const [get] = appUiTools({ call: async () => other } as unknown as AppLinkCaller, 'SlicerX')

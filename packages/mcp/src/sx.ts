@@ -7,7 +7,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { accessSync, constants, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, delimiter, extname, join } from 'node:path'
 import type { SettingValue, ScriptReview, ScriptReviewInput, ScriptReplacement, AppliedScriptReplacement } from '@slicerx/contracts'
-import { collisionError } from './collide'
+import { collisionError, refusedHits } from './collide'
 import { featureFilaments } from './feature-filaments'
 import { ToolInputError } from './models'
 import type { SlicerBackend, SliceSummary } from './slicer'
@@ -275,7 +275,8 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       if (code !== 0) {
         const why = stderr.trim().split('\n').slice(-3).join(' ') || 'no error output'
         // Collisions come back as their own code, in words for a person and with the objects and layers as details.
-        const collided = code === 3 ? collisionError(why, objects.map((o) => o.name)) : undefined
+        const hits = code === 3 ? refusedHits(stdout) : undefined
+        const collided = code === 3 ? collisionError(why, objects.map((o) => o.name), hits ? { hits, objects: objects.map((o) => ('id' in o && o.id ? { id: o.id } : {})) } : undefined) : undefined
         if (collided) throw collided
         throw sxFailure(code, why)
       }
