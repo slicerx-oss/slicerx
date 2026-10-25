@@ -191,7 +191,7 @@ export interface NestFootprint {
 /** How far what prints round an object reaches past it, as print-margins.ts gives it, plus a by-object plate's spacing. */
 export interface NestMargins {
   grow(size: PrintSize, base?: readonly FirstLayerShape[]): number
-  reach(size: PrintSize, base?: readonly FirstLayerShape[]): number
+  reach(size: PrintSize, base?: readonly FirstLayerShape[], hull?: readonly Pt[]): number
   skirt: boolean
   /** Printing by object: the extruder clearance between objects, mm. */
   apart?: number
@@ -235,7 +235,7 @@ export function nestItem(id: string, foot: NestFootprint, size: PrintSize, bound
     hull = []
   }
   const first = foot.base && foot.base.length > 0 ? foot.base : undefined
-  return { id, polygons, hull, grow: margins.grow(size, first), reach: margins.reach(size, first), copies }
+  return { id, polygons, hull, grow: margins.grow(size, first), reach: margins.reach(size, first, hull.length >= 3 ? hull : undefined), copies }
 }
 
 /**

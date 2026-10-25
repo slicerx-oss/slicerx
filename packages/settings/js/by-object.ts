@@ -8,7 +8,7 @@
 // zones and the MCP server's read-back say the same.
 import type { SettingValue } from '@slicerx/contracts'
 import { clearanceRadius, type Rect } from './arrange-room'
-import { marginFlag, marginNumber as num, marginText, printedGrowth, skirtSettings, supportReach, widthMm } from './print-margins'
+import { marginFlag, marginNumber as num, marginText, printedGrowth, skirtLoops, skirtSettings, skirtSpacing, supportReach, widthMm } from './print-margins'
 import headShapes from '../head-shapes.json'
 
 export type Pt = [number, number]
@@ -83,39 +83,9 @@ export function byObjectReach(cfg: Record<string, SettingValue>, brimMm: number,
   return under + distance + loops * spacing
 }
 
-/** The spacing of the skirt's loops, mm: its line width at the first layer's height, as the engine spaces them. */
-function skirtSpacing(cfg: Record<string, SettingValue>): number {
-  const nozzle = num(cfg['nozzle_diameter'], 0.4)
-  const line = widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
-  const first = num(cfg['initial_layer_print_height'], 0.2)
-  return Math.max(line - first * (1 - Math.PI / 4), line * 0.5)
-}
-
 /** The length round a closed outline, mm. */
 function perimeterOf(hull: readonly Pt[]): number {
   return hull.reduce((sum, p, i) => sum + Math.hypot(hull[(i + 1) % hull.length]![0] - p[0], hull[(i + 1) % hull.length]![1] - p[1]), 0)
-}
-
-/**
- * How many loops the skirt round one object prints, as the engine lays them: `skirt_loops`, and with
- * `min_skirt_length` (mm of filament) more until the loops hold that much. Loop k runs `gapMm` (brim and skirt
- * distance) plus k and a half spacings out from a convex outline `perimeterMm` round, its corners rounded. One extruder.
- */
-export function skirtLoops(cfg: Record<string, SettingValue>, perimeterMm: number, gapMm: number): number {
-  const { loops, minLength: min } = skirtSettings(cfg)
-  const asked = Math.max(1, loops)
-  if (!(min > 0)) return asked
-  const spacing = skirtSpacing(cfg)
-  const d = Math.max(0.1, num(cfg['filament_diameter'], 1.75))
-  const perMm = (spacing * num(cfg['initial_layer_print_height'], 0.2)) / ((Math.PI * d * d) / 4)
-  let fed = 0
-  let k = 0
-  while (k < 1000) {
-    fed += (perimeterMm + 2 * Math.PI * (gapMm + spacing * (k + 0.5))) * perMm
-    k++
-    if (k >= asked && fed >= min) break
-  }
-  return k
 }
 
 /** A part's triangles as the engine slices them: corners (x, y, z, mm, in the part's own space) and corner indices, three a triangle, wound with their normals out. */

@@ -323,15 +323,89 @@ export function skirtSettings(cfg: Record<string, SettingValue>): SkirtSettings 
   }
 }
 
-/** The skirt or draft shield: how far past the part (and its brim) the outermost loop lies, or 0 without one. */
-function skirtOf(cfg: Record<string, SettingValue>, grow: number): number {
+/** The spacing of the skirt's loops, mm: its line width at the first layer's height, as the engine spaces them. */
+export function skirtSpacing(cfg: Record<string, SettingValue>): number {
+  const nozzle = marginNumber(cfg['nozzle_diameter'], 0.4)
+  const line = widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
+  const first = marginNumber(cfg['initial_layer_print_height'], 0.2)
+  return Math.max(line - first * (1 - Math.PI / 4), line * 0.5)
+}
+
+/**
+ * How many loops the skirt round one object prints, as the engine lays them: `skirt_loops`, and with
+ * `min_skirt_length` (mm of filament) more until the loops hold that much. Loop k runs `gapMm` (brim and skirt
+ * distance) plus k and a half spacings out from a convex outline `perimeterMm` round, its corners rounded. One extruder.
+ */
+export function skirtLoops(cfg: Record<string, SettingValue>, perimeterMm: number, gapMm: number): number {
+  const { loops, minLength: min } = skirtSettings(cfg)
+  const asked = Math.max(1, loops)
+  if (!(min > 0)) return asked
+  const spacing = skirtSpacing(cfg)
+  const d = Math.max(0.1, marginNumber(cfg['filament_diameter'], 1.75))
+  const perMm = (spacing * marginNumber(cfg['initial_layer_print_height'], 0.2)) / ((Math.PI * d * d) / 4)
+  let fed = 0
+  let k = 0
+  while (k < 1000) {
+    fed += (perimeterMm + 2 * Math.PI * (gapMm + spacing * (k + 0.5))) * perMm
+    k++
+    if (k >= asked && fed >= min) break
+  }
+  return k
+}
+
+/**
+ * Whether each object prints a skirt of its own, round its own outline: printing by object, whatever `skirt_type`
+ * says, or with `skirt_type` per object. A combined skirt goes round the whole plate.
+ */
+function ownSkirt(cfg: Record<string, SettingValue>): boolean {
+  return marginText(cfg['print_sequence']) === 'by object' || marginText(cfg['skirt_type'] ?? settingDefault('skirt_type')) === 'perobject'
+}
+
+/** The length round the convex hull of `pts`, mm. */
+function hullLength(pts: readonly Pt[]): number {
+  const sorted = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  if (sorted.length < 3) return 0
+  const cross = (o: Pt, a: Pt, b: Pt) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+  const half = (list: readonly Pt[]): Pt[] => {
+    const out: Pt[] = []
+    for (const p of list) {
+      while (out.length >= 2 && cross(out[out.length - 2]!, out[out.length - 1]!, p) <= 0) out.pop()
+      out.push(p)
+    }
+    return out.slice(0, -1)
+  }
+  const ring = [...half(sorted), ...half([...sorted].reverse())]
+  return ring.reduce((sum, p, i) => sum + Math.hypot(ring[(i + 1) % ring.length]![0] - p[0], ring[(i + 1) % ring.length]![1] - p[1]), 0)
+}
+
+/**
+ * The length round an object's outline that its own skirt follows, mm: the convex hull of its first layer when known
+ * (`base`), else of its footprint (`hull`). With only its size, the shortest a convex outline that wide and deep can be
+ * (twice its diagonal), so the loops a minimum skirt length adds are never undercounted.
+ */
+function outlineLength(size: PrintSize, base?: readonly FirstLayerShape[], hull?: readonly Pt[]): number {
+  const first = base ? hullLength(base.flatMap((s) => s.outer)) : 0
+  if (first > 0) return first
+  const foot = hull ? hullLength(hull) : 0
+  return foot > 0 ? foot : 2 * Math.hypot(size.w, size.h)
+}
+
+/**
+ * The skirt or draft shield: how far past the part (and its brim) the outermost loop lies, or 0 without one. Given the
+ * length round the object (`perimeterMm`), a skirt of its own counts the loops `min_skirt_length` adds round it
+ * (skirtLoops), at the engine's spacing.
+ */
+function skirtOf(cfg: Record<string, SettingValue>, grow: number, perimeterMm?: number): number {
   const { loops, distance, shield } = skirtSettings(cfg)
   if (loops === 0 && !shield) return 0
   const nozzle = marginNumber(cfg['nozzle_diameter'], 0.4)
   const spacing = Math.max(marginNumber(cfg['line_width'], 0), nozzle * 1.2)
   const brim = marginText(cfg['brim_type']) === 'no_brim' ? 0 : Math.max(0, marginNumber(cfg['brim_width'], 0))
+  const asked = Math.max(1, loops)
   // The engine puts the skirt at the brim width plus the skirt distance from the outline, or from the brim with a draft shield.
-  return Math.max(grow, brim) + distance + Math.max(1, loops) * spacing
+  const reach = Math.max(grow, brim) + distance + asked * spacing
+  if (perimeterMm === undefined || !ownSkirt(cfg)) return reach
+  return reach + (skirtLoops(cfg, perimeterMm, brim + distance) - asked) * skirtSpacing(cfg)
 }
 
 /**
@@ -345,16 +419,17 @@ export function printedGrowth(cfg: Record<string, SettingValue>, size: PrintSize
 /**
  * The object's first-layer growth and the outermost printed boundary. Each takes the object's first layer when the
  * caller has it (cut at `firstLayerMm`, set when an automatic brim is sized from it); else the brim is estimated from
- * the bounds.
+ * the bounds. The boundary also takes the footprint's convex `hull` when known: a skirt of its own with a minimum
+ * length gets more loops round a smaller outline (outlineLength).
  */
 export function objectPrintMargins(cfg: Record<string, SettingValue>) {
   const support = supportOf(cfg)
   const cut = firstLayerCut(cfg)
   return {
     grow: (size: PrintSize, base?: readonly FirstLayerShape[]) => growOf(cfg, size, base),
-    reach: (size: PrintSize, base?: readonly FirstLayerShape[]) => {
+    reach: (size: PrintSize, base?: readonly FirstLayerShape[], hull?: readonly Pt[]) => {
       const own = Math.max(growOf(cfg, size, base), support)
-      return Math.max(own, skirtOf(cfg, own))
+      return Math.max(own, skirtOf(cfg, own, outlineLength(size, base, hull)))
     },
     skirt: skirtOf(cfg, 0) > 0,
     ...(cut !== undefined ? { firstLayerMm: cut } : {}),
