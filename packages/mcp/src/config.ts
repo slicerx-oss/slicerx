@@ -126,7 +126,7 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
     if (!p) throw new ToolInputError(`No profile "${name}". Use slicerx_list_profiles to find ids such as printer:bambu_x1c or filament:petg.`, 'unknown_profile')
     Object.assign(explicit, p.config)
     applied.push(p.id)
-    if (!SHIPPED_GCODE_SOURCES.has(p.source) && Object.keys(p.config).some(isGcodeKey)) untrustedProfile = true
+    if (!SHIPPED_GCODE_SOURCES.has(p.source) && !p.shippedGcode && Object.keys(p.config).some(isGcodeKey)) untrustedProfile = true
   }
   for (const layer of extra.presets ?? []) {
     Object.assign(explicit, layer.values)
