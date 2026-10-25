@@ -35,7 +35,7 @@
 - Recommended range: 0.5 to 1.5
 - Orca limits: 0 to 2
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: surfaces
 - mimir class: edit (may change in a plate override)
 
 ### `bridge_line_width`
@@ -84,7 +84,7 @@ Bridges the step of a counterbore hole so it prints without supports. Partially 
 - Default: "none"
 - Values: `none` (None), `partiallybridge` (Partially bridge), `sacrificiallayer` (Sacrificial layer)
 - Tier: Expert, quality
-- Changing it redoes: G-code only
+- Changing it redoes: surfaces
 - mimir class: edit (may change in a plate override)
 
 ### `detect_overhang_wall`

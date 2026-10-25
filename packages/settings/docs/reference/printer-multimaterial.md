@@ -50,7 +50,7 @@
 - Type: list of integers, one per extruder
 - Default: [1]
 - Nullable: A profile can store `nil` to take the value from another profile; the key is then left out.
-- Changing it redoes: G-code only
+- Changing it redoes: layers (the whole slice)
 - mimir class: read (not in the catalog: never written)
 
 ### `group_algo_with_time`
@@ -116,7 +116,7 @@
 
 - Type: integer
 - Default: 1
-- Changing it redoes: preview only
+- Changing it redoes: layers (the whole slice)
 - mimir class: read (not in the catalog: never written)
 
 ### `nozzle_flush_dataset`
