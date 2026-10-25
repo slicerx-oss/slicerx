@@ -309,8 +309,8 @@ describe.skipIf(noSx())('print by object with the real sx CLI', { timeout: sxTim
   it('refuses a path into a keep-out zone with collision, in words for a person, and slices it with allow_collisions', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     const file = project(join(h.dir, 'keep-out.3mf'), [{ name: 'Cube A', x: 128, y: 128, w: 20, d: 20, h: 8 }])
-    // an A1 style nozzle wrap check corner over the cube
-    const overrides = { head_wrap_detect_zone: ['0x0', '256x0', '256x256', '0x256'] }
+    // an A1 style nozzle wrap check corner over the cube; with no skirt this checks the object's own paths (a skirt in a zone is refused at the preflight, see keep_out_zones.rs)
+    const overrides = { head_wrap_detect_zone: ['0x0', '256x0', '256x256', '0x256'], skirt_loops: 0 }
     const r = await h.call('slicerx_slice_file', { model: file, profiles: A1, overrides })
     expect(r.isError, text(r)).toBe(true)
     const e = data<Err & { error: { details?: { collisions?: { kind: string; object?: string }[]; allow_collisions?: boolean } } }>(r).error
