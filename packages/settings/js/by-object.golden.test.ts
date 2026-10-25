@@ -43,7 +43,12 @@ describe('the by-object rules give the engine\'s answers', () => {
   })
 
   it('how far an object\'s own first layer prints past it', () => {
-    for (const c of golden.reach) expect(Math.round(byObjectReach(c.config, c.brimMm) * 1e6) / 1e6, c.name).toBe(c.reachMm)
+    for (const c of golden.reach) {
+      // a square footprint `sideMm` across, where the case gives one
+      const side = 'sideMm' in c ? (c as { sideMm: number }).sideMm : undefined
+      const hull: [number, number][] | undefined = side === undefined ? undefined : [[0, 0], [side, 0], [side, side], [0, side]]
+      expect(Math.round(byObjectReach(c.config, c.brimMm, hull) * 1e6) / 1e6, c.name).toBe(c.reachMm)
+    }
   })
 
   it('whether an object gets support, so the support pad counts in its reach', () => {

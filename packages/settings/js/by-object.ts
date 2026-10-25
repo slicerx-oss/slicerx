@@ -70,17 +70,53 @@ export function radiusHit(d: number, radius: number, estimated: boolean): 'block
 /**
  * How far an object's own first layer prints past its footprint, mm, as the engine counts it: its brim (`brimMm`, past
  * the footprint), its support's pad and brim, and the skirt round those. Printing by object each object gets a skirt
- * of its own on its first layers, whatever `skirt_type` says, so a combined skirt counts the same.
+ * of its own on its first layers, whatever `skirt_type` says, so a combined skirt counts the same. Given the footprint's
+ * `hull`, the skirt has as many loops as the slice prints round it (skirtLoops), min_skirt_length counted.
  */
-export function byObjectReach(cfg: Record<string, SettingValue>, brimMm: number): number {
+export function byObjectReach(cfg: Record<string, SettingValue>, brimMm: number, hull?: readonly Pt[]): number {
   const nozzle = num(cfg['nozzle_diameter'], 0.4)
   const under = Math.max(Math.max(0, brimMm), supportReach(cfg, widthMm(cfg['support_line_width'], nozzle, nozzle)))
-  const loops = Math.max(0, Math.floor(num(cfg['skirt_loops'], 0)))
-  if (loops === 0 || num(cfg['skirt_height'], 1) === 0) return under
+  const asked = Math.max(0, Math.floor(num(cfg['skirt_loops'], 0)))
+  if (asked === 0 || num(cfg['skirt_height'], 1) === 0) return under
+  const spacing = skirtSpacing(cfg)
+  const distance = Math.max(0, num(cfg['skirt_distance'], 2))
+  const loops = hull ? skirtLoops(cfg, perimeterOf(hull), Math.max(0, brimMm) + distance) : asked
+  return under + distance + loops * spacing
+}
+
+/** The spacing of the skirt's loops, mm: its line width at the first layer's height, as the engine spaces them. */
+function skirtSpacing(cfg: Record<string, SettingValue>): number {
+  const nozzle = num(cfg['nozzle_diameter'], 0.4)
   const line = widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
   const first = num(cfg['initial_layer_print_height'], 0.2)
-  const spacing = Math.max(line - first * (1 - Math.PI / 4), line * 0.5)
-  return under + Math.max(0, num(cfg['skirt_distance'], 2)) + loops * spacing
+  return Math.max(line - first * (1 - Math.PI / 4), line * 0.5)
+}
+
+/** The length round a closed outline, mm. */
+function perimeterOf(hull: readonly Pt[]): number {
+  return hull.reduce((sum, p, i) => sum + Math.hypot(hull[(i + 1) % hull.length]![0] - p[0], hull[(i + 1) % hull.length]![1] - p[1]), 0)
+}
+
+/**
+ * How many loops the skirt round one object prints, as the engine lays them: `skirt_loops`, and with
+ * `min_skirt_length` (mm of filament) more until the loops hold that much. Loop k runs `gapMm` (brim and skirt
+ * distance) plus k and a half spacings out from a convex outline `perimeterMm` round, its corners rounded. One extruder.
+ */
+export function skirtLoops(cfg: Record<string, SettingValue>, perimeterMm: number, gapMm: number): number {
+  const asked = Math.max(1, Math.floor(num(cfg['skirt_loops'], 0)))
+  const min = num(cfg['min_skirt_length'], 0)
+  if (!(min > 0)) return asked
+  const spacing = skirtSpacing(cfg)
+  const d = Math.max(0.1, num(cfg['filament_diameter'], 1.75))
+  const perMm = (spacing * num(cfg['initial_layer_print_height'], 0.2)) / ((Math.PI * d * d) / 4)
+  let fed = 0
+  let k = 0
+  while (k < 1000) {
+    fed += (perimeterMm + 2 * Math.PI * (gapMm + spacing * (k + 0.5))) * perMm
+    k++
+    if (k >= asked && fed >= min) break
+  }
+  return k
 }
 
 /** A part's triangles as the engine slices them: corners (x, y, z, mm, in the part's own space) and corner indices, three a triangle, wound with their normals out. */
@@ -439,7 +475,7 @@ export function shapeReach(o: ByObjectShape, cfg: Record<string, SettingValue>):
   const xs = o.hull.map((p) => p[0])
   const [y0, y1] = ySpan(o.hull)
   const grown = printedGrowth(own, { w: Math.max(...xs) - Math.min(...xs), h: y1 - y0, height: o.top })
-  return byObjectReach(o.supported === false ? { ...own, enable_support: false } : own, grown)
+  return byObjectReach(o.supported === false ? { ...own, enable_support: false } : own, grown, o.hull)
 }
 
 const reachOf = shapeReach

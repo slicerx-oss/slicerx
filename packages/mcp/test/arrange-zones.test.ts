@@ -355,6 +355,19 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
     expect(sliced.output.total.grams).toBeGreaterThan(0)
   }, 240_000)
 
+  it('slices a plate of 12 mm cubes on an A1 by object whose skirt has a minimum length, which adds loops round each', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    writeFileSync(join(h.dir, 'part.stl'), boxStl(12, 12, 5))
+    await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+    // one loop asked for; 20 mm of filament takes seven round a 12 mm cube
+    await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', brim_type: 'no_brim', skirt_loops: 1, min_skirt_length: 20 } })
+    await call(h, 'slicerx_arrange', { count: 9 })
+    expect(await boxes(h)).toHaveLength(9)
+    const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
+    expect(sliced.output.total.grams).toBeGreaterThan(0)
+  }, 240_000)
+
   it('slices both plates when it puts ten 20 mm cubes five to a plate on an A1 by object, with the skirt round each', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     writeFileSync(join(h.dir, 'part.stl'), boxStl(20, 20, 20))

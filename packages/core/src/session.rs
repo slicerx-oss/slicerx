@@ -10119,7 +10119,7 @@ fn skirt_loops(
 /// The loops around one hull (a whole-part hull already includes the brim), outermost first.
 /// As in Orca: `skirt_loops` of them, and with `min_skirt_length` more until the filament
 /// of the loops, counted extruder by extruder, reaches that many mm for the extruder in turn.
-fn loops_around(
+pub(crate) fn loops_around(
     hull: Vec<IntPoint<i32>>,
     cfg: &PrintConfig,
     includes_brim: bool,
