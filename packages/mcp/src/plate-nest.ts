@@ -8,7 +8,7 @@
 // Without the engine the same layout runs on the objects' boxes (boxPlate), as the app's arrange does then.
 import type { EngineCall } from '@slicerx/cad-history'
 import type { MeshPart, SettingValue } from '@slicerx/contracts'
-import { betterNest, byObjectApart, byObjectSpacingModes, keepOutBoxes, layoutCenterShift, nestItem, nestProblem, placesMore, plateMargins, withoutKeepOut, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
+import { betterNest, byObjectApart, byObjectSpacingModes, keepOutBoxes, layoutCenterShift, nestItem, nestProblem, placesMore, plateMargins, shiftKeep, withoutKeepOut, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
 import { arrangeReach, arrangeRules, CELL_MM, gantryLane, objectGetsSupport, overRod } from '@slicerx/settings/by-object'
 import { marginFlag as flag, marginNumber, marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
 import { edgeOf, findSpot, type Placed, type Want } from '@slicerx/settings/box-pack'
@@ -177,7 +177,10 @@ export async function nestInLanes(engine: EngineCall, p: NestPlate, cache: Footp
     if (!o) return []
     const size = { w: o.size[0], h: o.size[1], height: o.size[2] }
     const margins = objectPrintMargins(o.config)
-    return [{ box: { x: o.min[0] + q.offset[0] - origin[0], y: o.min[1] + q.offset[1] - origin[1], w: size.w, h: size.h }, reach: margins.reach(size), keep: margins.grow(size) }]
+    // as far from a zone as the nest keeps a part from the printer's keep-out areas, its skirt by object counted
+    const box: [number, number][] = [[0, 0], [size.w, 0], [size.w, size.h], [0, size.h]]
+    const ar = arrangeReach({ id: o.id, name: o.id, hull: box, top: o.size[2], supported: objectGetsSupport(o.config, o.enforcers ?? false, o.parts(), o.linear) }, o.config)
+    return [{ box: { x: o.min[0] + q.offset[0] - origin[0], y: o.min[1] + q.offset[1] - origin[1], w: size.w, h: size.h }, reach: margins.reach(size), keep: shiftKeep(margins.grow(size), Math.max(margins.reach(size), ar)) }]
   })
   const plate = plateMargins(p.config, p.tools, { origin, size: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm } })
   const zones = [...avoidOf(p.config, origin), ...plate.keepOut, ...plate.towerRoom, ...(p.zones ?? []).map((r) => ({ ...r, x: r.x - origin[0], y: r.y - origin[1] }))]

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { betterNest, byObjectApart, byObjectSpacing, byObjectSpacingModes, clearanceRadius, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, nestProblem, plateMargins, zoneKeep, type NestItem, type NestMargins } from './arrange-room'
+import { betterNest, byObjectApart, byObjectSpacing, byObjectSpacingModes, clearanceRadius, KEEP_OUT_GAP_MM, keepOutBoxes, keepOutPolygons, layoutCenterShift, MARGIN_SAFETY_MM, nestProblem, plateMargins, shiftKeep, zoneKeep, type NestItem, type NestMargins } from './arrange-room'
 import { printerConfig } from './index'
 
 const plate = { origin: [0, 0] as const, size: { widthMm: 256, depthMm: 256 } }
@@ -135,5 +135,17 @@ describe("the nest request for the printer's keep-out areas", () => {
     const r = nestProblem({ ...base, keepOut: 1, margins })
     expect(r.options).not.toHaveProperty('keepOutZones')
     expect(JSON.stringify(r)).toBe(JSON.stringify(nestProblem({ ...base, margins })))
+  })
+
+  it('keeps a layout moved to the middle as far from them as the nest keeps a part', () => {
+    expect(shiftKeep(0, 0)).toBe(KEEP_OUT_GAP_MM)
+    expect(shiftKeep(0, 7.5)).toBe(7.5 + MARGIN_SAFETY_MM)
+    // two bare 230 x 58 mm brackets in lanes on an A1: moved to the middle, the back one would end 0.6 mm in front of
+    // the wrap check corner, so the layout stays where the nest put it
+    const boxes = [{ x: 13, y: 6, w: 230, h: 58 }, { x: 13, y: 138.4, w: 230, h: 58 }]
+    const corner = { x: 226, y: 224, w: 30, h: 32 }
+    const bed = { widthMm: 256, depthMm: 256 }
+    expect(layoutCenterShift(boxes.map((box) => ({ box, reach: 0, keep: 0 })), bed, [corner])).toEqual([0, 27])
+    expect(layoutCenterShift(boxes.map((box) => ({ box, reach: 0, keep: shiftKeep(0, 0) })), bed, [corner])).toEqual([0, 0])
   })
 })
