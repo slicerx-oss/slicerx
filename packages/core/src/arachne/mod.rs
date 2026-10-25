@@ -63,8 +63,9 @@ pub(crate) struct Params {
     /// island walls of a layer with one-wall top surfaces are built with one wall and with all of them. The
     /// walls do not depend on it.
     pub(crate) keep_diagram: bool,
-    /// The walls are the one-wall run of a top surface (`only_one_wall_top`): under aegis, its outer bead keeps
-    /// the width and place it has on the layers with every wall.
+    /// The walls are one wall bordering the infill area: a part with `wall_loops` 1, a layer that
+    /// `only_one_wall_first_layer` or `only_one_wall_top` took down to one wall, or the one-wall run of a top
+    /// surface. Under aegis, the outer bead keeps the width and place it has where two or more walls print.
     pub(crate) one_wall_outer: bool,
 }
 
@@ -483,7 +484,7 @@ fn percent(cfg: &crate::config::PrintConfig, key: &str, default: f64) -> f64 {
 /// Walls of every island of `region` by the Arachne generator, in the shape the rest of the pipeline
 /// reads: per island the wall lines, and the area left for infill (`overlap` is the infill overlap,
 /// in units). Falls back to fixed-width walls for an island the generator cannot process.
-/// `one_wall_top_layer`: the layer is the last one and `only_one_wall_top` took its walls down to one.
+/// `one_wall_layer`: `only_one_wall_first_layer` or `only_one_wall_top` took the layer's walls down to one.
 #[allow(
     clippy::too_many_arguments,
     reason = "the walls' inputs, as in perimeters::walls_for_top"
@@ -496,7 +497,7 @@ pub(crate) fn island_walls(
     layer_height: f64,
     top_or_bottom: bool,
     top: Option<&perimeters::TopCtx>,
-    one_wall_top_layer: bool,
+    one_wall_layer: bool,
 ) -> (Vec<perimeters::IslandWalls>, Shapes) {
     let (spacing_0, spacing_x) = (
         cfg.spacing_for(cfg.outer_wall_width()),
@@ -557,7 +558,8 @@ pub(crate) fn island_walls(
         athena,
         // Where one-wall top surfaces apply (`one_wall_top`), these rings are built again with one wall.
         keep_diagram: loops > 1 && crate::tower::flag(cfg, "only_one_wall_top"),
-        one_wall_outer: one_wall_top_layer && loops == 1,
+        // One wall on a part with one wall, or on a layer taken down to one: the outer bead as with more walls.
+        one_wall_outer: loops == 1 && (one_wall_layer || cfg.wall_loops == 1),
     };
     // The outline is taken in to where the outer bead's edge would be if its width were the spacing.
     let inset = crate::geom::mm(if precise { 2.0 * half_gap } else { half_gap });

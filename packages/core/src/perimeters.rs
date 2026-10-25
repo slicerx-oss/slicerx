@@ -1420,7 +1420,7 @@ pub(crate) fn classic_top_candidate(
 }
 
 /// [`walls_for`] with the neighbor layers known, so `only_one_wall_top` can give top surfaces one wall.
-/// `one_wall_top_layer`: the layer is the last one and `only_one_wall_top` took its walls down to one.
+/// `one_wall_layer`: `only_one_wall_first_layer` or `only_one_wall_top` took the layer's walls down to one.
 #[allow(
     clippy::too_many_arguments,
     reason = "the walls' inputs, as in walls_for, plus the top context"
@@ -1434,7 +1434,7 @@ pub(crate) fn walls_for_top(
     layer_height: f64,
     top_or_bottom: bool,
     top: Option<&TopCtx>,
-    one_wall_top_layer: bool,
+    one_wall_layer: bool,
 ) -> (Vec<IslandWalls>, Shapes) {
     if cfg.arachne_walls() {
         crate::arachne::island_walls(
@@ -1445,7 +1445,7 @@ pub(crate) fn walls_for_top(
             layer_height,
             top_or_bottom,
             top,
-            one_wall_top_layer,
+            one_wall_layer,
         )
     } else {
         let mm = crate::geom::mm;
