@@ -543,9 +543,9 @@ pub struct KeptChoice {
 }
 
 /// A project's own print settings (`Metadata/project_settings.config`), as a config: the file's values, keys a file
-/// may never set (scripts, credentials) left out, and our engine choices
-/// (`packages/settings/engine-choices.json`) kept where the project did not change them, as the app and the MCP
-/// server open a project.
+/// may never set (scripts, credentials) left out, our engine choices (`packages/settings/engine-choices.json`) kept
+/// where the project did not change them, and our defaults for keys it does not set, as the app and the MCP server
+/// open a project.
 #[derive(Debug, Clone, Default)]
 pub struct ProjectConfig {
     pub settings: serde_json::Map<String, serde_json::Value>,
@@ -558,6 +558,27 @@ pub struct ProjectConfig {
     /// Why the file's `Metadata/project_settings.config` was left out (it is not a JSON object of settings); `settings`
     /// is then empty and the project slices as one without settings.
     pub skipped: Option<String>,
+}
+
+/// Our defaults for a project that does not set a key at all (`defaults` in engine-choices.json): key and value. A value
+/// the project sets is its own.
+fn engine_defaults() -> &'static [(String, serde_json::Value)] {
+    use crate::par::Init as _;
+    static DEFAULTS: std::sync::OnceLock<Vec<(String, serde_json::Value)>> = std::sync::OnceLock::new();
+    DEFAULTS.once(|| {
+        let parsed: serde_json::Value =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/engine-choices.json")))
+                .unwrap_or_default();
+        parsed
+            .get("defaults")
+            .and_then(serde_json::Value::as_object)
+            .map(|m| {
+                m.iter()
+                    .map(|(k, v)| (k.clone(), v.get("value").cloned().unwrap_or_default()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    })
 }
 
 /// Our engine choices: key, the value we print with, and the note.
@@ -683,6 +704,11 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
                     note: note.replace("SlicerX", app_name()),
                 });
             }
+            settings.insert(key.clone(), value.clone());
+        }
+    }
+    for (key, value) in engine_defaults() {
+        if !settings.contains_key(key) {
             settings.insert(key.clone(), value.clone());
         }
     }
