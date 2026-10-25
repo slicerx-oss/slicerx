@@ -238,7 +238,8 @@ fn a_brim_at_the_a1_wrap_check_corner_is_cut_to_it() {
 fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     // The P1S's excluded corner was already kept clear this way: a cube right beside it, its brim cut to the corner,
     // prints the same bytes. A change that alters them updates the hash and says why. Changed when bridge strands on
-    // Bambu Lab printers spread evenly: the cube's first solid layer over sparse infill is a bridge.
+    // Bambu Lab printers spread evenly: the cube's first solid layer over sparse infill is a bridge. Changed again when
+    // every wipe ran at the layer's acceleration: the travel line after a wipe goes when it equals the wipe's.
     let c = config("p1s", &json!({"brim_type": "outer_only", "brim_width": 5}));
     let (out, gcode) = slice("p1s", &c, &[[18.0, 6.0], [140.0, 140.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -252,7 +253,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "c517221aadd15b2c",
+        "c9fab15d6ab49c9c",
         "the P1S plate's G-code changed"
     );
 }
