@@ -1056,6 +1056,182 @@
       },
       "name": "tree support past a wide brim",
       "reachMm": 15.0
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "filament_diameter": [
+          1.75
+        ],
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 1,
+        "skirt_loops": 1
+      },
+      "name": "no minimum length, a 3 mm part",
+      "reachMm": 2.37708,
+      "sideMm": 3.0
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "filament_diameter": [
+          1.75
+        ],
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "min_skirt_length": 4,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 1,
+        "skirt_loops": 1
+      },
+      "name": "a 4 mm minimum, a 3 mm part",
+      "reachMm": 3.885398,
+      "sideMm": 3.0
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "filament_diameter": [
+          1.75
+        ],
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "min_skirt_length": 4,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 1,
+        "skirt_loops": 1
+      },
+      "name": "a 4 mm minimum, a 12 mm part",
+      "reachMm": 3.131239,
+      "sideMm": 12.0
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "filament_diameter": [
+          1.75
+        ],
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "min_skirt_length": 20,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 1,
+        "skirt_loops": 1
+      },
+      "name": "a 20 mm minimum, a 3 mm part",
+      "reachMm": 8.033274,
+      "sideMm": 3.0
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "filament_diameter": [
+          1.75
+        ],
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "min_skirt_length": 20,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 1,
+        "skirt_loops": 1
+      },
+      "name": "a 20 mm minimum, a 12 mm part",
+      "reachMm": 5.393717,
+      "sideMm": 12.0
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "filament_diameter": [
+          1.75
+        ],
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "min_skirt_length": 20,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 1,
+        "skirt_loops": 1
+      },
+      "name": "a 20 mm minimum, a 60 mm part",
+      "reachMm": 3.131239,
+      "sideMm": 60.0
+    },
+    {
+      "brimMm": 5.0,
+      "config": {
+        "brim_type": "outer_only",
+        "brim_width": 5,
+        "filament_diameter": [
+          1.75
+        ],
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "min_skirt_length": 20,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 1,
+        "skirt_loops": 1
+      },
+      "name": "a 20 mm minimum round a 5 mm brim, a 12 mm part",
+      "reachMm": 9.639557,
+      "sideMm": 12.0
+    },
+    {
+      "brimMm": 0.0,
+      "config": {
+        "brim_type": "no_brim",
+        "filament_diameter": [
+          1.75
+        ],
+        "initial_layer_print_height": 0.2,
+        "layer_height": 0.2,
+        "line_width": 0.42,
+        "min_skirt_length": 20,
+        "nozzle_diameter": [
+          0.4
+        ],
+        "skirt_distance": 2,
+        "skirt_height": 1,
+        "skirt_loops": 2
+      },
+      "name": "a 20 mm minimum past 2 loops, a 12 mm part",
+      "reachMm": 5.393717,
+      "sideMm": 12.0
     }
   ],
   "support": [

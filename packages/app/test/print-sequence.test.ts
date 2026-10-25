@@ -83,6 +83,11 @@ describe('the by-object clearance check', () => {
     expect(check([100, 118, 10], [160, 118, 10])).toBe('')
     // A combined skirt still goes round each object printed by object, so it counts like a skirt of its own.
     expect(check([100, 118, 10], [160, 118, 10], { ...A1, skirt_loops: 1, skirt_type: 'combined' } as unknown as Record<string, number>)).toMatch(/^Cube A and Cube B are 3\d\.\d mm apart, counting the brim, skirt or support round/)
+    // A skirt with a minimum length gets more loops round a small object, as the slice prints them: one loop of a
+    // 20 mm cube clears at 43.5 mm, the seven that hold 20 mm of filament do not.
+    const skirt = { ...A1, skirt_loops: 1, skirt_type: 'combined' }
+    expect(check([100, 118, 10], [163.5, 118, 10], skirt as unknown as Record<string, number>)).toBe('')
+    expect(check([100, 118, 10], [163.5, 118, 10], { ...skirt, min_skirt_length: 20 } as unknown as Record<string, number>)).toMatch(/^Cube A and Cube B are 3\d\.\d mm apart, counting the brim, skirt or support round/)
     // Two plates under the nozzle height meet only the nozzle.
     expect(check([100, 118, 2], [130, 118, 2])).toBe('')
     // Corner to corner on a diagonal the footprints are further apart than their boxes.
