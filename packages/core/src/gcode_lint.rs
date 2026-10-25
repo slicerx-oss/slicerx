@@ -633,6 +633,12 @@ pub fn lint(text: &str, section: Section, trust: Trust, limits: &Limits) -> Repo
     rep
 }
 
+/// Whether a finding `code` that blocks imported text only warns, in every section, once a person approved the
+/// text: a refusal with nothing else can say how that yes is given.
+pub fn approvable(code: &str) -> bool {
+    MAKER_SETUP.contains(&code) || WARN_BLOCKS_UNTRUSTED.contains(&code)
+}
+
 /// Warnings that block when the text is from an imported file.
 const WARN_BLOCKS_UNTRUSTED: &[&str] = &[
     "power_loss",
@@ -835,6 +841,27 @@ mod tests {
             ["end_leaves_bed_on"]
         );
         assert!(lint("M104 S0", Section::End, Trust::Untrusted, &Limits::default()).ok());
+    }
+
+    #[test]
+    fn approvable_codes_only_warn_in_approved_text() {
+        let l = Limits::default();
+        for (text, code) in [
+            ("M500", "eeprom_write"),
+            ("M211 X0", "endstops"),
+            ("M413 S0", "power_loss"),
+        ] {
+            assert!(approvable(code), "{code}");
+            let r = lint(text, Section::Start, Trust::Untrusted, &l);
+            assert!(r.errors().any(|f| f.code == code), "{text}");
+            assert!(lint(text, Section::Start, Trust::Trusted, &l).ok(), "{text}");
+        }
+        for (text, code) in [("M502", "factory_reset"), ("M104 S999", "nozzle_over_limit")] {
+            assert!(!approvable(code), "{code}");
+            assert!(!lint(text, Section::Start, Trust::Trusted, &l).ok(), "{text}");
+        }
+        // Turning the motors off only warns in a trusted start, so it is not approvable everywhere.
+        assert!(!approvable("motors_off"));
     }
 
     #[test]

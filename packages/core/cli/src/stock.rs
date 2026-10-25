@@ -35,6 +35,11 @@ fn first_str(v: Option<&Value>) -> Option<&str> {
 /// The printer models the settings name, by profile (`Bambu Lab P1S 0.4 nozzle`) or model name (`Bambu Lab P1S`).
 /// A name can cover several models, such as the sizes of a Voron.
 pub fn models_of<'t>(t: &'t Value, config: &Map<String, Value>) -> Vec<&'t str> {
+    named(t, config).map(|(_, models)| models).unwrap_or_default()
+}
+
+/// The first name in the settings the table knows, with the models it names.
+fn named<'t, 'c>(t: &'t Value, config: &'c Map<String, Value>) -> Option<(&'c str, Vec<&'t str>)> {
     let names = &t["names"];
     ["printer_settings_id", "inherits", "printer_model"]
         .iter()
@@ -44,9 +49,8 @@ pub fn models_of<'t>(t: &'t Value, config: &Map<String, Value>) -> Vec<&'t str> 
             names[n]
                 .as_array()
                 .or_else(|| names[without_nozzle(n)].as_array())
+                .map(|ids| (n, ids.iter().filter_map(Value::as_str).collect()))
         })
-        .map(|ids| ids.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default()
 }
 
 /// `Bambu Lab X1 Carbon 0.6 nozzle` without its nozzle: `Bambu Lab X1 Carbon`.
@@ -119,6 +123,12 @@ pub fn unknown_printer(config: &Map<String, Value>) -> Option<String> {
         .map(str::trim)
         .find(|n| !n.is_empty())
         .map(str::to_owned)
+}
+
+/// The printer the settings name when `sx` knows it, as the settings name it, so a refusal of its text can say the
+/// text is not one of that printer's stock versions.
+pub fn known_printer(config: &Map<String, Value>) -> Option<String> {
+    named(&table(), config).map(|(name, _)| name.to_owned())
 }
 
 /// extracts current declarations for both recognition and replacement.

@@ -14,6 +14,9 @@ import type { SlicerBackend, SliceSummary } from './slicer'
 import { formatDuration } from './slicer'
 
 /** Finds a binary by name: an explicit path, other candidates in order, then PATH. */
+/** The engine's line after a custom G-code refusal for a printer it knows whose text matches none of its stock versions. */
+const GCODE_REVIEW_NOTE = /\s*This project's G-code for (.+?) matches no known stock version, so a person has to review it\..*$/s
+
 /**
  * The error for a failed `sx` run, from its exit code and the last lines it wrote. Exit codes: 1 slicing failed,
  * 2 usage, 3 invalid input (docs/embedding.md). A plate refused because its toolpaths leave the bed carries the
@@ -30,6 +33,13 @@ export function sxFailure(code: number | null, why: string): ToolInputError {
     }
     if (/excluded bed area/.test(why)) {
       return new ToolInputError(`sx exited with code ${code}: ${why}. In a project, slicerx_arrange places the objects clear of it.`, 'preflight_blocked', { reason: 'in_exclusion_zone', fix: 'slicerx_arrange', ...layers })
+    }
+    // The engine's note on G-code a person has to review names its command line and request options, which a tool
+    // call has neither of: say it in this server's terms.
+    const review = GCODE_REVIEW_NOTE.exec(why)
+    if (review) {
+      const printer = review[1]!
+      return new ToolInputError(`sx exited with code ${code}: ${why.slice(0, review.index).trimEnd()} The G-code for ${printer} matches no known stock version, so a person has to review it, and no tool call can approve it. Leave out the G-code settings to slice with the printer profile's own.`, 'preflight_blocked', { reason: 'gcode_review', printer })
     }
     const reason = /outside the reach of extruder/.test(why) ? 'outside_extruder_reach' : /above the printable height/.test(why) ? 'over_height' : undefined
     return new ToolInputError(`sx exited with code ${code}: ${why}`, 'preflight_blocked', reason ? { reason, ...layers } : undefined)

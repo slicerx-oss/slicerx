@@ -584,5 +584,11 @@ describe.skipIf(noSx())('with the real sx CLI', { timeout: sxTimeout }, () => {
     const edited = await h.call('slicerx_estimate_file', { model: join(h.dir, 'cube.stl'), profiles: ['machine:bambu-a1'], overrides: { machine_end_gcode: 'M18' } })
     expect(data<Err>(edited).error.code).toBe('preflight_blocked')
     expect(text(edited)).toMatch(/safety preflight/)
+    // Text a person could approve says so in this server's words, not the engine's command line.
+    const saving = await h.call('slicerx_estimate_file', { model: join(h.dir, 'cube.stl'), profiles: ['machine:bambu-a1'], overrides: { machine_end_gcode: 'M104 S0\nM140 S0\nM500' } })
+    expect(data<Err>(saving).error.code).toBe('preflight_blocked')
+    expect(data<{ error: { details?: unknown } }>(saving).error.details).toEqual({ reason: 'gcode_review', printer: 'Bambu Lab A1' })
+    expect(text(saving)).toMatch(/no tool call can approve it/)
+    expect(text(saving)).not.toMatch(/--script-printer|trustedGcode/)
   })
 })

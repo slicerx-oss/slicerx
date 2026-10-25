@@ -530,22 +530,41 @@ fn review_config_scripts(
     }
 }
 
-/// A custom G-code refusal, with one more line when `sx` doesn't know the printer the settings name: then even the
-/// maker's own text is checked as custom G-code, which is the real reason for the refusal.
+/// A custom G-code refusal, with one more line about the printer the settings name. When `sx` doesn't know it, even
+/// the maker's own text is checked as custom G-code, which is the real reason for the refusal. When it knows it, the
+/// text matches none of that printer's stock versions, so a person has to review it; the line says how their yes is
+/// given, unless the refusal names a line that blocks even then.
 fn with_printer_note(why: String, config: Option<&serde_json::Map<String, Value>>) -> String {
     #[cfg(feature = "stock-gcode")]
-    {
-        if why.contains("safety preflight: custom G-code")
-            && let Some(name) = config.and_then(stock::unknown_printer)
-        {
+    if let Some(config) = config.filter(|_| why.contains("safety preflight: custom G-code")) {
+        if let Some(name) = stock::unknown_printer(config) {
             return format!(
                 "{why}\nsx doesn't know the printer this project names ({name}), so its G-code is checked as custom G-code."
+            );
+        }
+        if let Some(name) = stock::known_printer(config).filter(|_| approvable_refusal(&why)) {
+            return format!(
+                "{why}\nThis project's G-code for {name} matches no known stock version, so a person has to review it. After their yes, slice a request with \"trustedGcode\": true; if only comments or spacing changed, --script-printer <model-id> --script-firmware <flavor> recognizes it."
             );
         }
     }
     #[cfg(not(feature = "stock-gcode"))]
     let _ = config;
     why
+}
+
+/// Whether every line a custom G-code refusal names (`line N: <why> (<code>)`, joined by `; `) would only warn in
+/// text a person approved.
+#[cfg(feature = "stock-gcode")]
+fn approvable_refusal(why: &str) -> bool {
+    why.split_once("custom G-code: ").is_some_and(|(_, lines)| {
+        lines.split("; ").all(|line| {
+            line.trim_end()
+                .strip_suffix(')')
+                .and_then(|l| l.rsplit_once('('))
+                .is_some_and(|(_, code)| sx_core::gcode_lint::approvable(code))
+        })
+    })
 }
 
 /// `with_printer_note` for a request: only the stock check can trust its text, not a request a person already

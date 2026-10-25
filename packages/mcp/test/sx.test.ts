@@ -35,6 +35,12 @@ describe('sx output', () => {
     expect(reach.details).toEqual({ reason: 'outside_extruder_reach', layers: [1, 25] })
     const zone = sxFailure(1, 'sx slice: blocked by the safety preflight: toolpaths enter an excluded bed area from layer 2 (X128.0 Y128.0, sparse infill of "cube"), 1 move in layer 2; move "cube" out of it or arrange the plate')
     expect(zone.details).toEqual({ reason: 'in_exclusion_zone', fix: 'slicerx_arrange', layers: [2, 2] })
+    // G-code a person has to review: the engine's command line hints become this server's.
+    const note = "This project's G-code for Bambu Lab A1 matches no known stock version, so a person has to review it. After their yes, slice a request with \"trustedGcode\": true; if only comments or spacing changed, --script-printer <model-id> --script-firmware <flavor> recognizes it."
+    const gcode = sxFailure(1, `sx slice: blocked by the safety preflight: custom G-code: line 3: M500 writes settings to the printer's memory (eeprom_write) ${note}`)
+    expect(gcode.code).toBe('preflight_blocked')
+    expect(gcode.message).toBe("sx exited with code 1: sx slice: blocked by the safety preflight: custom G-code: line 3: M500 writes settings to the printer's memory (eeprom_write) The G-code for Bambu Lab A1 matches no known stock version, so a person has to review it, and no tool call can approve it. Leave out the G-code settings to slice with the printer profile's own.")
+    expect(gcode.details).toEqual({ reason: 'gcode_review', printer: 'Bambu Lab A1' })
     // A refusal of the settings (no toolpaths) carries no details.
     expect(sxFailure(1, 'sx slice: blocked by the safety preflight: the start G-code turns off the motors').details).toBeUndefined()
     expect(sxFailure(3, 'cube.stl: no plate 2').code).toBe('no_such_plate')
