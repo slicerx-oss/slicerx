@@ -69,13 +69,14 @@ export function radiusHit(d: number, radius: number, estimated: boolean): 'block
 
 /**
  * How far an object's own first layer prints past its footprint, mm, as the engine counts it: its brim (`brimMm`, past
- * the footprint), its support's pad and brim, and a skirt of its own round those.
+ * the footprint), its support's pad and brim, and the skirt round those. Printing by object each object gets a skirt
+ * of its own on its first layers, whatever `skirt_type` says, so a combined skirt counts the same.
  */
 export function byObjectReach(cfg: Record<string, SettingValue>, brimMm: number): number {
   const nozzle = num(cfg['nozzle_diameter'], 0.4)
   const under = Math.max(Math.max(0, brimMm), supportReach(cfg, widthMm(cfg['support_line_width'], nozzle, nozzle)))
   const loops = Math.max(0, Math.floor(num(cfg['skirt_loops'], 0)))
-  if (marginText(cfg['skirt_type']) !== 'perobject' || loops === 0 || num(cfg['skirt_height'], 1) === 0) return under
+  if (loops === 0 || num(cfg['skirt_height'], 1) === 0) return under
   const line = widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
   const first = num(cfg['initial_layer_print_height'], 0.2)
   const spacing = Math.max(line - first * (1 - Math.PI / 4), line * 0.5)

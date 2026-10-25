@@ -354,6 +354,20 @@ describe.skipIf(noSx() || noSxGeom())('an arranged plate sliced with sx', () => 
     const sliced = await call<{ total: { grams: number } }>(h, 'slicerx_slice')
     expect(sliced.output.total.grams).toBeGreaterThan(0)
   }, 240_000)
+
+  it('slices both plates when it puts ten 20 mm cubes five to a plate on an A1 by object, with the skirt round each', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    writeFileSync(join(h.dir, 'part.stl'), boxStl(20, 20, 20))
+    await call(h, 'slicerx_project_open', { printer: 'Bambu Lab A1', filament: 'Bambu PLA Basic' })
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+    // the profile's own skirt, combined: printing by object each cube still gets one round it
+    await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', skirt_loops: 1, skirt_type: 'combined' } })
+    expect((await call(h, 'slicerx_arrange', { count: 10, plates: 2 })).summary).toBe('5 per plate on 2 plates')
+    for (const plate of [1, 2]) {
+      const sliced = await call<{ plates: { plate: number }[] }>(h, 'slicerx_slice', { plates: [plate] })
+      expect(sliced.output.plates.map((p) => p.plate)).toEqual([plate])
+    }
+  }, 240_000)
 })
 
 /**
@@ -416,17 +430,23 @@ describe('slicerx_arrange next to the printer keep-out corner, printing by objec
     expect(Math.max(p.y0, q.y0) - Math.min(p.y1, q.y1)).toBeGreaterThanOrEqual(2 * b.gantry.reachMm)
   })
 
-  it('never places fewer copies than spacing the corner like any other zone', async () => {
-    // a skirt round the whole print: with the corner at its edge spacing the nest leaves one of nine over here, so the
-    // corner is tried at the half spacing too and the layout that places more kept
+  it('fits two more 25 mm boxes on a P1S than spacing its corner like a gantry lane', async () => {
+    // spaced like a lane (half the 68 mm clearance) seven fit; a skirt round the whole print would also go round each
+    // box by object, and the nest tries the half spacing too if the edge spacing ever left copies over
     const h = await connect({ geomEngine: g.engine })
-    await fullByObject(h, 'Bambu Lab P1S', { brim_type: 'no_brim', skirt_loops: 2, skirt_distance: 3 }, 9)
-    expect(await boxes(h)).toHaveLength(9)
+    writeFileSync(join(h.dir, 'part.stl'), boxStl(25, 25, 10))
+    await call(h, 'slicerx_project_open', { printer: 'Bambu Lab P1S', filament: 'Bambu PLA Basic' })
+    await call(h, 'slicerx_project_add_model', { model: join(h.dir, 'part.stl') })
+    await call(h, 'slicerx_project_set_overrides', { changes: { print_sequence: 'by object', brim_type: 'no_brim', skirt_loops: 0 } })
+    await call(h, 'slicerx_arrange', { count: 9 })
+    const placed = await boxes(h)
+    expect(placed).toHaveLength(9)
+    expect(placed.some((b) => overlaps(b, KEEP_OUT['Bambu Lab P1S']!))).toBe(false)
   })
 })
 
 describe.skipIf(noSx() || noSxGeom())('a plate arranged next to the printer keep-out corner, sliced with sx', () => {
-  it.each(FULL)('slices a full %s plate with %s by object, never refused for the corner', async (printer, name, changes, count) => {
+  it.each(FULL)('slices a full %s plate with %s by object', async (printer, _name, changes, count) => {
     const h = await connect({ engine: 'sx', sxBin })
     await fullByObject(h, printer, changes, count)
     expect(await boxes(h)).toHaveLength(count)
@@ -436,11 +456,7 @@ describe.skipIf(noSx() || noSxGeom())('a plate arranged next to the printer keep
     } catch (e) {
       refused = String(e)
     }
-    expect(refused).not.toMatch(/corner|excluded/i)
-    // By object, arrange keeps the A1's 74 mm between outlines without counting a brim or skirt, so sx can still refuse
-    // those two plates for the head's clearance between copies, as it does before this change. Every other one slices.
-    if (printer === 'Bambu Lab P1S' || name === 'no brim or skirt') expect(refused).toBe('')
-    else if (refused) expect(refused).toMatch(/toolhead comes within/)
+    expect(refused).toBe('')
   }, 240_000)
 
   it('slices the two tall 230 x 58 mm brackets on an A1', async () => {
