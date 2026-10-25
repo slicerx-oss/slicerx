@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+
+- `printer_structure` is part of the session key. A kept session built the collision model with the structure of its first request, so switching to or from a delta kept the old gantry rule in the report.
+
 ## [0.2.3] - 2026-10-25
 
 ### Added
