@@ -86,7 +86,10 @@ export function ViewMenu() {
   )
 }
 
-/** The legend's Color by menu: what the toolpath colors show. A pick stays through later slices. */
+/**
+ * The legend chip's Color by menu: what the toolpath colors show. A pick stays through later slices. The button reads
+ * the current colors ("Feature type"); "Color by" is its name for screen readers and its tip.
+ */
 export function ColorBy() {
   const mode = useApp((s) => s.colorMode)
   const [open, setOpen] = useState(false)
@@ -97,7 +100,7 @@ export function ColorBy() {
   }
   return (
     <div className="legend-color-by">
-      <span id="legend-color-by-label">Color by</span>
+      <span id="legend-color-by-label" className="sr-only">Color by</span>
       <MenuAnchor>
         <Button variant="ghost" size="sm" iconEnd="chevron-down" data-testid="legend-color-by" aria-haspopup="menu" aria-expanded={open} aria-labelledby="legend-color-by-label legend-color-by-value" tip={{ title: 'Toolpath colors', body: 'Color the toolpaths by feature, filament, speed, flow or layer time.', demo: 'rec-color-by' }} onClick={() => setOpen(!open)}>
           <span id="legend-color-by-value">{cur.label}</span>

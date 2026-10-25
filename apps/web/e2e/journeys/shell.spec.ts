@@ -986,6 +986,8 @@ test.describe('tips', () => {
     await exampleX(page)
     await mode(page, 'advanced')
     await sliceNow(page)
+    // The legend starts shut to its chip: open its list.
+    if ((await page.getByTestId('legend-toggle').getAttribute('aria-expanded')) !== 'true') await page.getByTestId('legend-toggle').click()
     const legend = page.getByRole('list', { name: 'Toolpath legend' })
     const rows = legend.locator('.legend-markers label')
     await expect(rows.nth(1)).toBeVisible({ timeout: 40_000 })

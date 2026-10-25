@@ -32,6 +32,8 @@ export interface Prefs {
   playbackSpeed?: number | undefined
   /** Preview playback keeps the camera on the nozzle. */
   followNozzle?: boolean | undefined
+  /** The toolpath legend is open below its chip. Shut by default, so the view starts clear. */
+  legendOpen?: boolean | undefined
   easy: { detail: number; strength: number; speed: 'quality' | 'balanced' | 'fast' | 'fastest' | 'gentle' | 'maximum' | 'silent' | 'standard' | 'sport' | 'ludicrous'; supports: 'off' | 'auto' | 'painted' | 'everywhere'; brim: boolean; varyLayerHeight?: boolean; smartLayer?: 'off' | 'quality' | 'strength' } | null
   goal: 'draft' | 'standard' | 'fine' | 'strong' | 'custom'
   /** The goal the plate's settings started from: its tile stays picked, marked edited, while they differ from it. */
@@ -305,6 +307,7 @@ export function normalizePrefs(v: unknown): Prefs {
     showGantry: or(bool(r['showGantry']), false),
     playbackSpeed: or((PLAYBACK_SPEEDS as readonly number[]).includes(r['playbackSpeed'] as number) ? (r['playbackSpeed'] as number) : undefined, DEFAULT_PLAYBACK_SPEED),
     followNozzle: or(bool(r['followNozzle']), false),
+    legendOpen: or(bool(r['legendOpen']), false),
     easy: or(nullable(r['easy'], easy), null),
     goal: or(oneOf(r['goal'], ['draft', 'standard', 'fine', 'strong', 'custom'] as const), 'standard'),
     ...opt('goalBase', oneOf(r['goalBase'], ['draft', 'standard', 'fine', 'strong'] as const)),

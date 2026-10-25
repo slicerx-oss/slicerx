@@ -67,7 +67,7 @@ const PREVIEW_RIGHT: PaneSection[] = [
 // With the toolpaths, the color legend runs down the left under the top row: the toast keeps to its right.
 // mimir's sizes panel runs down the right while a sheet is up: the toast keeps to its left, off Build and Cancel.
 // The toast card takes the pointer (hovering it stops its timer), so it keeps above the bottom panel's tab too.
-const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .pp-sheet, .dock, .bpanel-body, .bpanel .sx-edge-tab', top: '.plate-tools, .slice-look, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel' }
+const OVERLAYS: OverlaySelectors = { bottom: '.hud-bl, .pp-sheet, .dock, .bpanel-body, .bpanel .sx-edge-tab', top: '.plate-tools, .hud-top .hud-row, .hud-top .hud-col.end', left: '.hud-top .legend', side: '.mimir-sheet-panel' }
 const PHONE_OVERLAYS: OverlaySelectors = { ...OVERLAYS, cover: '.pane.sheet.sheet-open' }
 
 const PLATES_SECTION: PaneSection = { id: 'plates', icon: 'plates', label: 'Plates' }
@@ -275,8 +275,6 @@ export function Studio() {
         <SliceProgress />
         <StepReadingBar />
         {cad ? null : <ViewSelectionMenu />}
-        {/* With the toolbar on top, the view switch hangs under it and moves with it (plate-tools-group.tsx). */}
-        {cad || !hasPreview || groupTools ? null : <SliceLookSwitch />}
         {cad || phone ? null : <ParkedChip />}
         <div className="hud hud-top">
           <div className="hud-col">
@@ -288,6 +286,8 @@ export function Studio() {
               ) : null}
               {/* on a phone in Model the look button joins the view buttons on the right, so the pill row fits */}
               {design && phone ? null : <RenderMenu />}
+              {/* on a phone the view switch shares the top row with the look button; the legend chip goes under them */}
+              {phone && !cad && hasPreview ? <SliceLookSwitch /> : null}
               {design ? (
                 <Suspense fallback={null}>
                   <SelectPill />
@@ -299,8 +299,13 @@ export function Studio() {
                 <PhoneHandles />
               </Suspense>
             ) : null}
-            {layers ? (
-              <Legend />
+            {/* The view switch and the legend chip, one row in the top left corner under the look button, clear of
+                the plate toolbar; the legend's list opens below its chip. Nothing about the slice floats on its own. */}
+            {!cad && hasPreview && (layers || !phone) ? (
+              <div className="hud-row legend-row" data-testid="legend-row">
+                {phone ? null : <SliceLookSwitch />}
+                {layers ? <Legend /> : null}
+              </div>
             ) : null}
           </div>
           <div className="hud-col end">
@@ -323,7 +328,7 @@ export function Studio() {
         </div>
 
         {/* a phone views and prints: no plate tools */}
-        {cad || phone ? null : groupTools ? <PlateToolsGroup layout={layout} look={hasPreview ? <SliceLookSwitch /> : null} /> : <PlateToolbar layout={layout} />}
+        {cad || phone ? null : groupTools ? <PlateToolsGroup layout={layout} /> : <PlateToolbar layout={layout} />}
         {layers ? <LayerDock /> : null}
         {/* After the playback bar: on a phone it sits under it, so opening the bar moves nothing above it. */}
         {!cad && !sliceInSidebar ? (

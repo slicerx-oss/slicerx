@@ -24,8 +24,9 @@ const MIN_SIZE = 72
 
 /**
  * Each overlay claims the side it sits against. A bar as wide as half the view or more, or one centered across the
- * view (the plate toolbar, the look switch), is a top or bottom bar; anything else is a panel on the left or right,
- * by which half of the view it sits in.
+ * view (the plate toolbar), is a top or bottom bar, and so is any one-row bar (the view switch and the legend chip in
+ * the top left corner, the plate chip over the playback bar), by which half it sits in; anything else is a panel on the
+ * left or right, by which half of the view it sits in.
  */
 export function overlayInsets(stage: Rect, overlays: readonly Rect[]): PxInsets {
   const out: PxInsets = { left: 0, right: 0, top: 0, bottom: 0 }
@@ -38,7 +39,8 @@ export function overlayInsets(stage: Rect, overlays: readonly Rect[]): PxInsets 
     const rh = r.bottom - r.top
     if (rw <= 0 || rh <= 0 || (rw < MIN_SIZE && rh < MIN_SIZE)) continue
     const centered = Math.abs((r.left + r.right) / 2 - (stage.left + stage.right) / 2) < w * 0.1
-    if (rw >= w * 0.5 || centered) {
+    const oneRow = rh < MIN_SIZE
+    if (rw >= w * 0.5 || centered || oneRow) {
       if ((r.top + r.bottom) / 2 > (stage.top + stage.bottom) / 2) out.bottom = Math.max(out.bottom, stage.bottom - r.top + OVERLAY_GAP)
       else out.top = Math.max(out.top, r.bottom - stage.top + OVERLAY_GAP)
     } else if ((r.left + r.right) / 2 < (stage.left + stage.right) / 2) out.left = Math.max(out.left, r.right - stage.left + OVERLAY_GAP)

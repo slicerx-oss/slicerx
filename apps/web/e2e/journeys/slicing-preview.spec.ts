@@ -1024,7 +1024,7 @@ test.describe('Slice tab defaults', () => {
 
 // What a new session shows, and what a reload keeps: this needs a cold start of its own, so it opens a page of its own
 // (fresh storage, the session flags a person's first load has) beside the shared one.
-test('the playback bar starts shut and Show toolhead on, the choices are kept, and the plate toolbar starts at the top again', async ({ browser }) => {
+test('the playback bar starts shut, the legend as its chip and Show toolhead on, the choices are kept, and the plate toolbar starts at the top again', async ({ browser }) => {
   test.slow()
   const use = test.info().project.use
   const context = await browser.newContext({ viewport: use.viewport ?? { width: 1440, height: 900 }, ...(use.baseURL ? { baseURL: use.baseURL } : {}) })
@@ -1048,6 +1048,21 @@ test('the playback bar starts shut and Show toolhead on, the choices are kept, a
       await startSlice(page)
     }
     await slice()
+    // The legend starts shut to its chip, in one row with the view switch in the top left corner, clear of the plate
+    // toolbar; its list opens from the chip's list button.
+    const legendRow = page.getByTestId('legend-row')
+    const legendList = page.getByRole('list', { name: 'Toolpath legend' })
+    const legendToggle = page.getByTestId('legend-toggle')
+    await expect(legendRow.getByTestId('legend-color-by')).toBeVisible()
+    await expect(legendRow.getByRole('radiogroup', { name: 'How the plate shows the slice' })).toBeVisible()
+    await expect(legendToggle).toHaveAttribute('aria-expanded', 'false')
+    await expect(legendList).toHaveCount(0)
+    const row = (await legendRow.boundingBox())!
+    const bar = (await page.getByTestId('plate-tools-group').boundingBox())!
+    expect(row.y).toBeGreaterThanOrEqual(bar.y + bar.height)
+    await legendToggle.click()
+    await expect(legendList).toBeVisible()
+    await expect(legendToggle).toHaveAttribute('aria-expanded', 'true')
     const dock = page.getByTestId('preview-drawer')
     const edgeTab = dock.getByTestId('edge-tab-bottom')
     await expect(dock).toHaveAttribute('data-mode', 'slim')
@@ -1107,6 +1122,9 @@ test('the playback bar starts shut and Show toolhead on, the choices are kept, a
     await expect(page.getByTestId('preview-drawer')).toHaveAttribute('data-mode', 'full')
     await expect(page.getByTestId('pv-show-toolhead')).not.toBeChecked()
     await expect(page.getByTestId('pv-show-gantry')).toBeChecked()
+    // The legend's list stays open, as it was left.
+    await expect(page.getByTestId('legend-toggle')).toHaveAttribute('aria-expanded', 'true')
+    await expect(page.getByRole('list', { name: 'Toolpath legend' })).toBeVisible()
   } finally {
     await context.close()
   }

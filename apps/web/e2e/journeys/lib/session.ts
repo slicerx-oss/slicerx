@@ -184,7 +184,7 @@ export async function askTab(page: Page, text: string): Promise<void> {
 
 /* ------------------------------------------------------------------ the app, up (desktop and phone) */
 
-/** Slice runs and shows the layers in place; a phone drops the legend, so it picks the color from Cmd+K. */
+/** Slice runs and shows the layers in place, with the legend shut to its chip; a phone picks the color from Cmd+K. */
 export async function sliceAndColorBy(page: Page, phone: boolean): Promise<void> {
   await goTab(page, 'prepare')
   await plateReady(page)
@@ -194,8 +194,9 @@ export async function sliceAndColorBy(page: Page, phone: boolean): Promise<void>
   await expect(sliced(page, before)).toBeVisible({ timeout: 30_000 })
   await expect(page.getByRole('group', { name: 'Layers and moves' })).toBeVisible()
   if (phone) {
-    // A phone gives the toolpaths the room and drops the legend; the color choice is in Cmd+K.
-    await expect(page.getByTestId('legend-color-by')).toBeHidden()
+    // A phone keeps the view clear: the legend is its chip, and the color choice is in Cmd+K as well.
+    await expect(page.getByTestId('legend-color-by')).toBeVisible()
+    await expect(page.getByRole('list', { name: 'Toolpath legend' })).toBeHidden()
     await page.keyboard.press('ControlOrMeta+k')
     await page.keyboard.type('Color toolpaths by Layer time')
     await page.locator('.sx-palette-item', { hasText: 'Color toolpaths by Layer time' }).click()

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { EdgeTab, Icon, keymapFor, Menu, MenuAnchor, MenuItem, Range, ResizeEdge, Seg, tipAttrs, type IconName } from '@slicerx/ui'
+import { Button, EdgeTab, Icon, keymapFor, Menu, MenuAnchor, MenuItem, Range, ResizeEdge, Seg, tipAttrs, type IconName } from '@slicerx/ui'
 import { COLORBLIND_THEME, FEATURE_COLORS, SCENE } from '@slicerx/viewport/palette'
 import type { MarkerKind } from '@slicerx/viewport'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -126,6 +126,12 @@ function MarkerToggles({ hasExtras }: { hasExtras: boolean }) {
   )
 }
 
+/**
+ * The toolpath legend: a small chip in the view's top left corner with the Color by menu, and the list (each feature or
+ * filament with its length, the color vision palette and the markers) that opens below it from the chip's list button.
+ * The list starts shut, so a job opens with the view clear; open or shut is kept between sessions, and the look's
+ * legend key does the same as the button. Escape in the list shuts it and gives the focus back to the button.
+ */
 export function Legend() {
   const preview = useApp((s) => s.preview)
   const colorMode = useApp((s) => s.colorMode)
@@ -135,47 +141,80 @@ export function Legend() {
   // Each slot reads the filament it uses, as Filament use does, so the two agree; the toolpath length is the fallback
   // for a slice that reports no filament.
   const filamentMm = useApp((s) => shownSlice(s.slice)?.result.stats.filamentMm)
-  const hidden = useApp((s) => s.legendHidden)
-  if (!preview || hidden) return null
-  const stats = colorMode === 'feature' ? previewStats(preview) : null
-  const tools = colorMode === 'tool' ? previewStats(preview).toolLengthM : null
+  const open = useApp((s) => s.legendOpen)
+  const listId = useId()
+  const anchor = useRef<HTMLDivElement>(null)
+  const choice = useLookChoice()
+  const chord = keymapFor(choice.id, choice.overrides?.keys ?? {})['preview.legend']
+  if (!preview) return null
+  const stats = open && colorMode === 'feature' ? previewStats(preview) : null
+  const tools = open && colorMode === 'tool' ? previewStats(preview).toolLengthM : null
   const colors = slotColors.split(',')
+  const shut = () => {
+    set({ legendOpen: false })
+    anchor.current?.querySelector<HTMLElement>('[data-testid="legend-toggle"]')?.focus()
+  }
   return (
-    <ul className="legend sx-overlay" aria-label="Toolpath legend">
-      <li className="legend-mode">
+    <div className="legend-anchor" ref={anchor}>
+      {/* The list button comes first, so a longer color name never moves it. */}
+      <div className="legend-chip sx-overlay" data-testid="legend-chip">
+        <Button
+          variant="ghost"
+          size="sm"
+          icon="list"
+          data-testid="legend-toggle"
+          aria-label="Legend"
+          aria-expanded={open}
+          aria-controls={open ? listId : undefined}
+          tip={{ title: open ? 'Hide the legend' : 'Show the legend', body: 'The length of each feature or filament, and the markers.', ...(chord ? { key: chord } : {}) }}
+          onClick={() => set({ legendOpen: !open })}
+        />
         <ColorBy />
-      </li>
-      {tools?.flatMap((m, i) =>
-        m > 0
-          ? [
-              <li key={i} data-testid="legend-slot" data-slot={i + 1}>
-                <Swatch color={colors[i] ?? 'var(--dim)'} size="sm" />
-                <span>Slot {i + 1}</span>
-                {filamentMm?.[i] ? (
-                  <b {...tipAttrs({ title: 'Filament used', body: `${lengthLabel(m)} of toolpaths` })}>{`${(filamentMm[i]! / 1000).toFixed(2)} m`}</b>
-                ) : (
-                  <b {...tipAttrs({ title: 'Toolpath length' })}>{lengthLabel(m)}</b>
-                )}
-              </li>,
-            ]
-          : [],
-      )}
-      {stats?.features.slice(0, 7).map((f) => (
-        <li key={f.feature}>
-          <i className="bar-key" style={{ background: featureStyle(f.feature).color }} />
-          <span>{featureStyle(f.feature).label}</span>
-          <b>{lengthLabel(f.lengthM)}</b>
-        </li>
-      ))}
-      {stats ? (
-        <li className="legend-palette">
-          <label>
-            <input type="checkbox" checked={vision !== 'standard'} onChange={(e) => set({ appearance: { ...get().appearance, colorVision: e.target.checked ? 'redgreen' : 'standard' } })} /> Color vision colors
-          </label>
-        </li>
+      </div>
+      {open ? (
+        <ul
+          id={listId}
+          className="legend sx-overlay"
+          aria-label="Toolpath legend"
+          onKeyDown={(e) => {
+            if (e.key !== 'Escape') return
+            e.stopPropagation()
+            shut()
+          }}
+        >
+          {tools?.flatMap((m, i) =>
+            m > 0
+              ? [
+                  <li key={i} data-testid="legend-slot" data-slot={i + 1}>
+                    <Swatch color={colors[i] ?? 'var(--dim)'} size="sm" />
+                    <span>Slot {i + 1}</span>
+                    {filamentMm?.[i] ? (
+                      <b {...tipAttrs({ title: 'Filament used', body: `${lengthLabel(m)} of toolpaths` })}>{`${(filamentMm[i]! / 1000).toFixed(2)} m`}</b>
+                    ) : (
+                      <b {...tipAttrs({ title: 'Toolpath length' })}>{lengthLabel(m)}</b>
+                    )}
+                  </li>,
+                ]
+              : [],
+          )}
+          {stats?.features.slice(0, 7).map((f) => (
+            <li key={f.feature}>
+              <i className="bar-key" style={{ background: featureStyle(f.feature).color }} />
+              <span>{featureStyle(f.feature).label}</span>
+              <b>{lengthLabel(f.lengthM)}</b>
+            </li>
+          ))}
+          {stats ? (
+            <li className="legend-palette">
+              <label>
+                <input type="checkbox" checked={vision !== 'standard'} onChange={(e) => set({ appearance: { ...get().appearance, colorVision: e.target.checked ? 'redgreen' : 'standard' } })} /> Color vision colors
+              </label>
+            </li>
+          ) : null}
+          <MarkerToggles hasExtras={preview.extrasOffset >= 0} />
+        </ul>
       ) : null}
-      <MarkerToggles hasExtras={preview.extrasOffset >= 0} />
-    </ul>
+    </div>
   )
 }
 
