@@ -88,6 +88,8 @@ export interface ImportedProject {
   historyNote?: string
   /** Why the project's print settings were left out, when its settings file is there but not JSON settings. */
   settingsNote?: string
+  /** Why the project's painted brim ears were left out, when they are in a format this version does not read. */
+  earsNote?: string
 }
 
 /** Text made only of `key = value` lines, with `;` or `#` comments and `[section]` headers between them. */
@@ -351,17 +353,40 @@ function plateOffset(index: number, count: number, bed: { widthMm: number; depth
   return [(index % cols) * bed.widthMm * gap, -Math.floor(index / cols) * bed.depthMm * gap]
 }
 
-/** Metadata/brim_ear_points.txt: an optional `brim_points_format_version=` line, then `object_id=N|x y z r x y z r ...` per build item (1-based). Untrusted: bad numbers and huge lists are dropped. */
+/**
+ * Numbers per ear in Metadata/brim_ear_points.txt by its format line: 4 for format 0 or none, 5 for format 1 (x y z r
+ * and one more that is not used here), null for a format this reader does not know.
+ */
+function brimEarStride(text: string): 4 | 5 | null {
+  const m = /^\s*brim_points_format_version=(.*)$/m.exec(text)
+  const v = m?.[1]?.trim()
+  return v === undefined || v === '0' ? 4 : v === '1' ? 5 : null
+}
+
+/** The note for brim ears in a format this reader does not know, which are left out; undefined otherwise. */
+export function brimEarsNote(bytes: Uint8Array | undefined): string | undefined {
+  if (!bytes || brimEarStride(new TextDecoder().decode(bytes)) !== null) return undefined
+  return "The project's painted brim ears are in a format this version does not read, so they are left out."
+}
+
+/**
+ * Metadata/brim_ear_points.txt: an optional `brim_points_format_version=` line, then `object_id=N|...` per build item
+ * (1-based), four numbers per ear (x y z r) in format 0 and five in format 1. Untrusted: an ear with a bad number or a
+ * radius outside (0, 50] is dropped on its own, huge lists are cut, and a format this reader does not know gives none.
+ */
 export function parseBrimEars(bytes: Uint8Array | undefined): Map<number, [number, number, number, number][]> {
   const out = new Map<number, [number, number, number, number][]>()
   if (!bytes) return out
-  for (const line of new TextDecoder().decode(bytes).split(/\r?\n/)) {
+  const text = new TextDecoder().decode(bytes)
+  const stride = brimEarStride(text)
+  if (stride === null) return out
+  for (const line of text.split(/\r?\n/)) {
     const bar = line.indexOf('|')
     const m = /^object_id=(\d+)$/.exec(bar < 0 ? '' : line.slice(0, bar).trim())
     if (!m) continue
     const nums = line.slice(bar + 1).trim().split(/\s+/).map(Number)
     const pts: [number, number, number, number][] = []
-    for (let i = 0; i + 3 < nums.length && pts.length < 2000; i += 4) {
+    for (let i = 0; i + stride - 1 < nums.length && pts.length < 2000; i += stride) {
       const q = nums.slice(i, i + 4) as [number, number, number, number]
       if (q.every(Number.isFinite) && q[3] > 0 && q[3] <= 50) pts.push(q)
     }
@@ -770,6 +795,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const plateOf = (objectId: string): number => Math.max(0, plateCfg.findIndex((p) => p.objectIds.includes(objectId)))
   const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), objects: [] }))
   const ears = parseBrimEars(files.get('Metadata/brim_ear_points.txt'))
+  const earsNote = brimEarsNote(files.get('Metadata/brim_ear_points.txt'))
   // Orca places objects on the machine; the plate counts from the printable area's front left corner.
   const [ax, ay] = projectOrigin(files.get('Metadata/project_settings.config'))
   // Plates after the first sit to the side of it by the size of the bed the project was laid out on.
@@ -862,5 +888,5 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const histories = parseHistories(files, fileIds)
   const note = historyNewer(files) ?? historyLost(files, fileIds, histories)
   const timeline = histories.size ? parseTimeline(files, fileIds) : null
-  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : {}) }
+  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : {}), ...(earsNote ? { earsNote } : {}) }
 }
