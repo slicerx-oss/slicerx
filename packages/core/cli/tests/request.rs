@@ -2928,6 +2928,69 @@ fn a_project_slices_with_its_own_settings() {
 }
 
 #[test]
+fn a_project_keeps_inherited_arachne_walls_and_aegis_over_inherited_classic() {
+    let dir = temp_dir(format!("sx-cli-wallgen-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    // The G-code's wall generator line and the walls note of a slice of the project with `generator`, listed as
+    // changed by the person or not.
+    let slice = |generator: &str, listed: bool, name: &str| -> (String, String) {
+        let changed = if listed {
+            "brim_type;wall_generator"
+        } else {
+            "brim_type"
+        };
+        let settings = serde_json::json!({
+            "printer_settings_id": "Bambu Lab X1 Carbon 0.4 nozzle",
+            "printer_model": "Bambu Lab X1 Carbon",
+            "gcode_flavor": "marlin",
+            "brim_type": "no_brim",
+            "skirt_loops": "0",
+            "wall_generator": generator,
+            "different_settings_to_system": [changed, "", ""]
+        });
+        let path = dir.join(name);
+        std::fs::write(&path, box_3mf(Some(&settings))).unwrap();
+        let gcode = path.with_extension("gcode");
+        let out = sx()
+            .arg("slice")
+            .arg(&path)
+            .arg("-o")
+            .arg(&gcode)
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(out.status.success(), "{err}");
+        let g = std::fs::read_to_string(&gcode).unwrap();
+        let line = g
+            .lines()
+            .find(|l| l.starts_with("; wall_generator = "))
+            .unwrap_or_default()
+            .to_owned();
+        let walls = err
+            .lines()
+            .find(|l| l.starts_with("sx: walls: "))
+            .unwrap_or_default()
+            .to_owned();
+        (line, walls)
+    };
+    // Inherited arachne walls stay arachne, with no kept note.
+    let (line, walls) = slice("arachne", false, "inherited-arachne.3mf");
+    assert_eq!(line, "; wall_generator = arachne");
+    assert_eq!(walls, "sx: walls: arachne walls, as the project has them");
+    // Inherited classic walls give way to SlicerX's aegis, as before.
+    let (line, walls) = slice("classic", false, "inherited-classic.3mf");
+    assert_eq!(line, "; wall_generator = aegis");
+    assert_eq!(
+        walls,
+        "sx: walls: aegis walls, kept by SlicerX; the project used Bambu's default classic"
+    );
+    // Classic walls the person picked stay classic.
+    let (line, walls) = slice("classic", true, "picked-classic.3mf");
+    assert_eq!(line, "; wall_generator = classic");
+    assert_eq!(walls, "sx: walls: classic walls, the project's own choice");
+}
+
+#[test]
 fn a_project_keeps_its_own_precise_outer_wall() {
     let dir = temp_dir(format!("sx-cli-precise-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

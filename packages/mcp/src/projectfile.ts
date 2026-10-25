@@ -274,7 +274,8 @@ export function readProjectFile(path: string): ProjectRead {
   // open keeps the same ones, engine-choices.ts in @slicerx/settings).
   const config: Record<string, SettingValue> = { ...projectKeys, ...(imported.config as unknown as Record<string, SettingValue>) }
   // SlicerX's engine choices the project did not change print with SlicerX's own values (engine-choices.json), as
-  // sx slice <project.3mf> does, rather than whatever a lower settings layer holds.
+  // sx slice <project.3mf> does, rather than whatever a lower settings layer holds. An inherited value the keep does not
+  // go over (arachne walls) is not one of them, so it stays as the file has it.
   for (const k of keptEngineChoices(raw)) {
     const ours = SLICERX_KEEP_VALUES[k]
     if (ours === undefined) delete config[k]

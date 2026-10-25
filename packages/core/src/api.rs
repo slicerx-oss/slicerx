@@ -594,11 +594,31 @@ fn engine_defaults() -> &'static [(String, serde_json::Value)] {
     })
 }
 
-/// Our engine choices: key, the value we print with, and the note.
-fn engine_choices() -> &'static [(String, serde_json::Value, String)] {
+/// One of our engine choices (`keeps` in engine-choices.json): the key, the value we print with, the inherited values
+/// it goes over (`over`; every value when the file gives none) and the note.
+struct EngineKeep {
+    key: String,
+    value: serde_json::Value,
+    over: Option<Vec<serde_json::Value>>,
+    note: String,
+}
+
+impl EngineKeep {
+    /// Whether the keep goes over `inherited`, the value a project took from its presets: a keep that names the values
+    /// it goes over (for walls only classic) leaves any other as the project has it, so inherited arachne walls stay
+    /// arachne. A project that does not set the key gets the keep.
+    fn goes_over(&self, inherited: Option<&serde_json::Value>) -> bool {
+        match (&self.over, inherited) {
+            (Some(over), Some(v)) => over.iter().any(|o| same_value(v, o)),
+            _ => true,
+        }
+    }
+}
+
+/// Our engine choices.
+fn engine_choices() -> &'static [EngineKeep] {
     use crate::par::Init as _;
-    static CHOICES: std::sync::OnceLock<Vec<(String, serde_json::Value, String)>> =
-        std::sync::OnceLock::new();
+    static CHOICES: std::sync::OnceLock<Vec<EngineKeep>> = std::sync::OnceLock::new();
     CHOICES.once(|| {
         let parsed: serde_json::Value =
             serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/engine-choices.json")))
@@ -608,15 +628,15 @@ fn engine_choices() -> &'static [(String, serde_json::Value, String)] {
             .and_then(serde_json::Value::as_object)
             .map(|m| {
                 m.iter()
-                    .map(|(k, v)| {
-                        (
-                            k.clone(),
-                            v.get("value").cloned().unwrap_or_default(),
-                            v.get("note")
-                                .and_then(serde_json::Value::as_str)
-                                .unwrap_or_default()
-                                .to_owned(),
-                        )
+                    .map(|(k, v)| EngineKeep {
+                        key: k.clone(),
+                        value: v.get("value").cloned().unwrap_or_default(),
+                        over: v.get("over").and_then(serde_json::Value::as_array).cloned(),
+                        note: v
+                            .get("note")
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned(),
                     })
                     .collect()
             })
@@ -706,18 +726,22 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
     let walls = project_walls(&settings, changed.as_ref(), app.as_deref());
     let mut kept = Vec::new();
     if let Some(changed) = changed {
-        for (key, value, note) in engine_choices() {
-            if changed.contains(key) {
+        for keep in engine_choices() {
+            // Listed as changed, or inherited with a value the keep does not go over (arachne walls): the project's.
+            if changed.contains(&keep.key) || !keep.goes_over(settings.get(&keep.key)) {
                 continue;
             }
-            if settings.get(key).is_some_and(|v| !same_value(v, value)) {
+            if settings
+                .get(&keep.key)
+                .is_some_and(|v| !same_value(v, &keep.value))
+            {
                 // engine-choices.json says SlicerX; a white-label edition's name goes in its place
                 kept.push(KeptChoice {
-                    key: key.clone(),
-                    note: note.replace("SlicerX", app_name()),
+                    key: keep.key.clone(),
+                    note: keep.note.replace("SlicerX", app_name()),
                 });
             }
-            settings.insert(key.clone(), value.clone());
+            settings.insert(keep.key.clone(), keep.value.clone());
         }
     }
     for (key, value) in engine_defaults() {
@@ -796,19 +820,19 @@ fn own_settings(
 }
 
 /// The walls a project's settings give, by the rule that keeps our engine choices: ours where the project inherited
-/// its generator (`different_settings_to_system` does not list it), else the project's own.
+/// a generator our keep goes over (`different_settings_to_system` does not list it, and it is classic), else the
+/// project's own.
 fn project_walls(
     settings: &serde_json::Map<String, serde_json::Value>,
     changed: Option<&std::collections::HashSet<String>>,
     app: Option<&str>,
 ) -> Option<WallsNote> {
     let own = WallsNote::named(settings);
-    let ours = engine_choices()
-        .iter()
-        .find(|(k, _, _)| k == "wall_generator")
-        .and_then(|(_, v, _)| v.as_str().map(str::to_owned));
-    if let (Some(changed), Some(ours)) = (changed, ours)
-        && !changed.contains("wall_generator")
+    let keep = engine_choices().iter().find(|k| k.key == "wall_generator");
+    let ours = keep.and_then(|k| k.value.as_str().map(str::to_owned));
+    let inherited = changed.is_some_and(|c| !c.contains("wall_generator"));
+    if let (true, Some(ours)) = (inherited, ours)
+        && keep.is_some_and(|k| k.goes_over(settings.get("wall_generator")))
     {
         let maker = match app {
             Some(a) if a.starts_with("BambuStudio") => "Bambu's",
@@ -829,8 +853,13 @@ fn project_walls(
             text,
         });
     }
+    // Inherited walls our keep does not go over (arachne) are the project's as its presets had them.
     own.map(|o| WallsNote {
-        text: format!("{o} walls, the project's own choice"),
+        text: if inherited {
+            format!("{o} walls, as the project has them")
+        } else {
+            format!("{o} walls, the project's own choice")
+        },
         generator: o,
         source: "project".to_owned(),
     })

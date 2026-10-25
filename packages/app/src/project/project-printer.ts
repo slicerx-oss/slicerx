@@ -5,7 +5,7 @@
 // exports G-code and slices with the project's machine G-code. Switching to one of the person's printers takes that
 // printer's G-code wholesale and keeps the settings that suit it, so no project G-code reaches another machine.
 import type { PrinterInfo, SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, SLICERX_KEEPS, changedKeys, importFlat, listPrinterProfiles, machineEntry, printerProfile, projectDefaults, reviewProjectGcode, settingDef } from '@slicerx/settings'
+import { GCODE_TEXT_KEYS, SLICERX_KEEPS, changedKeys, importFlat, keptEngineChoices, listPrinterProfiles, machineEntry, printerProfile, projectDefaults, reviewProjectGcode, settingDef } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
 import { appName } from '../edition'
 import { projectSettingChanges } from '../export/project-settings'
@@ -143,13 +143,15 @@ export function applyProjectSettings(source: string, settings: Record<string, un
   // value of other presets behind (a "0.12mm Fine" project sliced at 0.20 mm; a Generic PLA project at Bambu PLA
   // Basic's flow). The printer keeps to what the file lists, since its profile is that printer's system preset. A
   // project made for another nozzle keeps to its list too.
-  // A few engine choices of ours stay unless the person changed them in the project (SLICERX_KEEPS); the note says so.
+  // A few engine choices of ours stay unless the person changed them in the project (SLICERX_KEEPS), or the value it
+  // inherited is one the keep leaves alone (arachne walls); the note says so.
+  const keeps = new Set(keptEngineChoices(settings))
   const whole = (k: string) => {
     const section = settingDef(k)?.section
-    return !match.asked && (section === 'process' || section === 'filament') && !(k in SLICERX_KEEPS)
+    return !match.asked && (section === 'process' || section === 'filament') && !keeps.has(k)
   }
   const applied = only ? Object.fromEntries(Object.entries(values).filter(([k]) => only.has(k) || whole(k))) : values
-  const keptNote = only && !match.asked ? Object.keys(values).filter((k) => k in SLICERX_KEEPS && !only.has(k)).map((k) => SLICERX_KEEPS[k]!).join(' ') : ''
+  const keptNote = only && !match.asked ? Object.keys(values).filter((k) => keeps.has(k)).map((k) => SLICERX_KEEPS[k]!).join(' ') : ''
   if (match.own) {
     // One of the person's printers: its own G-code, as on any switch to it.
     const kept = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))

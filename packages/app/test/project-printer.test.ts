@@ -197,6 +197,21 @@ describe('a project opens with the process and filaments it was made with', () =
     expect(cfg['layer_height']).toBe(0.12)
   })
 
+  it("keeps the project's inherited arachne walls, with no note", async () => {
+    const { host } = capture()
+    await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, wall_generator: 'arachne' }))
+    expect(resolved()['wall_generator']).toBe('arachne')
+    expect(get().toast?.text ?? '').not.toContain('aegis')
+    expect(get().projectImport?.report.notes).toContain('Walls: arachne walls, as the project has them.')
+  })
+
+  it('keeps aegis over inherited classic walls, and the walls note says so', async () => {
+    const { host } = capture()
+    await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, wall_generator: 'classic' }))
+    expect(resolved()['wall_generator']).toBe('aegis')
+    expect(get().projectImport?.report.notes).toContain("Walls: aegis walls, kept by SlicerX; the project used its preset's default classic.")
+  })
+
   it("keeps the project's own precise outer wall, listed as changed or not", async () => {
     const { host } = capture()
     await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, precise_outer_wall: '0' }))
