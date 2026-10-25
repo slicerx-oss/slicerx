@@ -72,7 +72,7 @@
 - Type: enum
 - Default: "undefine"
 - Values: `undefine` (Not set), `corexy` (CoreXY), `i3` (Bed slinger (i3)), `hbot` (H-bot), `delta` (Delta)
-- Changing it redoes: preview only
+- Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
 ### `printer_technology`

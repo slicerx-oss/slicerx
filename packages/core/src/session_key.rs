@@ -276,7 +276,6 @@ pub const SESSION_FREE_KEYS: &[&str] = &[
     "pressure_advance",
     "print_flow_ratio",
     "print_in_clockwise",
-    "printer_structure",
     "printer_technology",
     "printhost_authorization_type",
     "printhost_ssl_ignore_revoke",
