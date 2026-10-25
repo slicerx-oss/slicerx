@@ -5,7 +5,7 @@
 // exports G-code and slices with the project's machine G-code. Switching to one of the person's printers takes that
 // printer's G-code wholesale and keeps the settings that suit it, so no project G-code reaches another machine.
 import type { PrinterInfo, SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, SLICERX_KEEPS, changedKeys, importFlat, keptEngineChoices, listPrinterProfiles, machineEntry, printerProfile, projectDefaults, reviewProjectGcode, settingDef } from '@slicerx/settings'
+import { GCODE_TEXT_KEYS, SLICERX_KEEPS, SLICERX_KEEP_VALUES, changedKeys, importFlat, keptEngineChoices, listPrinterProfiles, machineEntry, printerProfile, projectDefaults, reviewProjectGcode, sameChoice, settingDef } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
 import { appName } from '../edition'
 import { projectSettingChanges } from '../export/project-settings'
@@ -124,16 +124,23 @@ export async function switchToProjectPrinter(source: string, settings: Record<st
  */
 export function applyProjectSettings(source: string, settings: Record<string, unknown>, match: ProjectPrinterMatch | null): { keys: string[]; note: string } {
   const s = get()
+  const current = resolveConfig(s.easy, s.overrides)
   // SlicerX's defaults for the keys the project does not set at all (precise outer wall); a value it sets is its own.
-  const { values } = projectSettingChanges({ ...projectDefaults(settings), ...settings }, resolveConfig(s.easy, s.overrides))
+  const { values } = projectSettingChanges({ ...projectDefaults(settings), ...settings }, current)
   if (match?.kind !== 'match') {
     const fileNozzle = match?.nozzle ?? Number(first(settings['nozzle_diameter']))
     const sameNozzle = !Number.isFinite(fileNozzle) || !s.profile || sameMm(fileNozzle, s.profile.nozzle)
-    const { kept, dropped } = carryOver(Object.fromEntries(Object.entries(values).filter(([k]) => !GCODE_TEXT_KEYS.includes(k))), [], sameNozzle)
+    // The engine choices the project did not change print with SlicerX's values here too, as on its own printer and as
+    // sx slice <project.3mf> and the MCP read give them, so the same file slices the same everywhere.
+    const keeps = keptEngineChoices(settings)
+    const own = Object.fromEntries(Object.entries(values).filter(([k]) => !GCODE_TEXT_KEYS.includes(k) && !keeps.includes(k)))
+    const ours = Object.fromEntries(keeps.filter((k) => !sameChoice(current[k], SLICERX_KEEP_VALUES[k])).map((k) => [k, SLICERX_KEEP_VALUES[k] as SettingValue]))
+    const { kept, dropped } = carryOver({ ...own, ...ours }, [], sameNozzle)
     set((st) => ({ overrides: { ...st.overrides, ...kept }, ...(Object.keys(kept).length ? { goal: 'custom' as const } : {}) }))
     const here = s.printerModel ? `the ${s.printerModel.model}` : 'the generic bed'
     const left = dropped.length ? ` Left out, made for a ${mm(fileNozzle)} nozzle: ${labels(dropped)}.` : ''
-    const note = match ? `${source} is for a ${match.name}, which ${appName()} has no profile for, so it opened on ${here}.${left}` : `Applied ${Object.keys(kept).length} settings from ${source}.${left}`
+    const keptNote = keeps.filter((k) => k in values).map((k) => ` ${SLICERX_KEEPS[k]!}`).join('')
+    const note = match ? `${source} is for a ${match.name}, which ${appName()} has no profile for, so it opened on ${here}.${left}${keptNote}` : `Applied ${Object.keys(kept).length} settings from ${source}.${left}${keptNote}`
     return { keys: Object.keys(kept), note }
   }
   const only = changedKeys(settings)
