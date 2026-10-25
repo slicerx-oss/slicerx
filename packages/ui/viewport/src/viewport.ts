@@ -3183,7 +3183,7 @@ class ViewportImpl implements Viewport {
     this.strikes.setColors(t.scene.overhangRed, t.scene.overhangAmber)
     // On the light bed the overhang red reads at 2:1; the zones take a deeper red that keeps 3:1 (ui spec 5).
     this.clearance.setColors(lightStudio(t.scene.bgTop) ? CLEARANCE_RED_LIGHT : t.scene.overhangRed, lightStudio(t.scene.bgTop) ? '#4a4e63' : '#c9cfe2', t.scene.selection)
-    this.pickRings.setColor(t.scene.selection)
+    this.pickRings.setColor(t.scene.selection, lightStudio(t.scene.bgTop))
     this.spot.setColors(t.scene.overhangRed, t.scene.overhangAmber)
     this.toolpaths.setGantryColor(t.scene.overhangRed)
     if (this.lookSet) this.applyLook(this.lookSet)
