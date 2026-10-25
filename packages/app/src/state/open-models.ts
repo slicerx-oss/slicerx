@@ -9,7 +9,8 @@ import { withAutoSpools } from '../filament/pick'
 import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { markOpenEnded, markOpenStage, markOpenStarted } from '../lib/open-mark'
 import { clearProject } from '../project/new'
-import { beginOpen, confirmDiscard, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
+import { keepBeforeOpen, sayKept } from '../project/autosave'
+import { beginOpen, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
 import { isGcodeName, openGcodeRef } from '../workspaces/preview/gcode-file'
 import { identity, uid } from './actions'
 import { get, markStale, set, toast, type ModelSource, type PlateEntry } from './store'
@@ -95,14 +96,17 @@ export function seedExamplePlate(host: Host): Promise<void> {
   return loadDemoModel(host, DEFAULT_MODEL, { replace: true, keep: () => opened === 0 })
 }
 
-/** A new project for an opened design: asks about unsaved work first (Save, Discard, Cancel). False when canceled. */
-async function startFresh(): Promise<boolean> {
+/**
+ * A new project for an opened design. Unsaved work is kept as a recent project first, with no question; only when that
+ * fails does it ask (Save, Discard, Cancel). False when canceled.
+ */
+async function startFresh(host: Host): Promise<boolean> {
   opened++
   // Onto an empty plate (a file the system hands over at launch) the hold starts now, before the studio first draws,
   // so the default printer and an empty plate never show ahead of the project.
   const empty = get().plate.length === 0 && get().plates.every((p) => p.objects.length === 0)
   if (empty) set({ revealHold: true })
-  if (!(await confirmDiscard('open another design'))) {
+  if (!(await keepBeforeOpen(host, 'open another design'))) {
     if (empty) set({ revealHold: false })
     return false
   }
@@ -162,7 +166,7 @@ async function addBytes(host: Host, name: string, data: ArrayBuffer, scope?: Ope
  * a recent project) starts a new project; otherwise they go onto the plate as it is.
  */
 export async function openModelBytes(host: Host, name: string, data: ArrayBuffer, source?: ModelSource, opts: { fresh?: boolean } = {}): Promise<void> {
-  if (opts.fresh && !(await startFresh())) return
+  if (opts.fresh && !(await startFresh(host))) return
   // A new project ends clean, unless the person edited it while it opened.
   const scope = opts.fresh ? beginOpen() : undefined
   markOpenStarted(name)
@@ -189,6 +193,8 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
     if (!scope?.superseded) {
       set({ plateLoading: false, sliceDuringOpen: false, revealHold: false })
       markOpenEnded()
+      // The work this open kept, said last so the open's own note does not hide it.
+      sayKept()
     }
   }
 }
@@ -206,7 +212,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
   const unlocked = refs.some((r) => /\.sxlock$/i.test(r.name)) ? await (await import('../export/locked')).unlockRefs(host, refs) : new Map<FileRef, { name: string; data: ArrayBuffer }>()
   if (!unlocked) return
   const project = refs.some((r) => /\.(sx3mf|3mf|sxlock)$/i.test(r.name))
-  if (opts.fresh && !(await startFresh())) return
+  if (opts.fresh && !(await startFresh(host))) return
   const wasEmpty = get().plate.length === 0 && get().plates.every((p) => p.objects.length === 0)
   // A new project, or a project onto an empty plate, ends clean, unless the person edited it while it opened.
   const scope = opts.fresh || (project && wasEmpty) ? beginOpen() : undefined
@@ -243,6 +249,8 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
     if (!scope?.superseded) {
       set({ plateLoading: false, sliceDuringOpen: false, revealHold: false })
       markOpenEnded()
+      // The work this open kept, said last so the open's own note does not hide it.
+      sayKept()
     }
   }
 }

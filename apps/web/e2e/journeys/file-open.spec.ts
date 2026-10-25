@@ -104,7 +104,7 @@ test('a design opened over a plate that is slicing loads at once, and the old sl
   try {
     await openModel(page, join(starters(), 'calibration-cube-20mm.sx3mf'))
     await expect(page.locator('.obj-name')).toHaveText(['20 mm calibration cube'], { timeout: 60_000 })
-    // An edit, so opening asks about unsaved work, a bed full of cubes and very thin solid layers, so the slice runs
+    // An edit, so opening keeps unsaved work first, a bed full of cubes and very thin solid layers, so the slice runs
     // well past the open.
     await openTransform(page)
     await page.getByRole('button', { name: 'Fill bed' }).click()
@@ -114,16 +114,14 @@ test('a design opened over a plate that is slicing loads at once, and the old sl
     await setState(page, { overrides: { layer_height: '0.04', sparse_infill_density: '100%' } })
     await page.getByRole('button', { name: 'Slice plate' }).click()
     await expect.poll(status).toBe('running')
-    await openFile(page, join(starters(), 'cable-clip.sx3mf'))
-    const ask = page.getByRole('dialog').getByRole('button', { name: "Don't save" })
-    await expect(ask).toBeVisible()
     // The slice must still be running here, or the step proves nothing about stopping it.
     expect(await status()).toBe('running')
-    await ask.click()
-    const asked = Date.now()
+    const picked = Date.now()
+    await openFile(page, join(starters(), 'cable-clip.sx3mf'))
     await expect(page.locator('.obj-name')).toHaveText(['Cable clip'], { timeout: 60_000 })
-    const ms = Date.now() - asked
-    console.log(`open-while-slicing: the clip loaded ${ms} ms after Don't save`)
+    const ms = Date.now() - picked
+    console.log(`open-while-slicing: the clip loaded ${ms} ms after the file was picked`)
+    // Opening asks nothing: the old plate is kept as a recent project first, and that write is part of the time.
     expect(ms).toBeLessThan(5_000)
     // The old plate's slice never lands on the new one.
     await page.waitForTimeout(3000)
