@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Projects another slicer wrote and the person's own, opened on the person's A1 mini, on one page: Bambu Studio's -1
 // values, a project's import report, a project with its own start G-code, a cosmetic stock script, a P1S 0.2 project that opens as its own
-// printer, the saved .sx3mf and its metadata, and the CAD-only build's real STL download. Each project is made here (projectZip). Each step starts over
+// printer, painted brim ears in file format 1, the saved .sx3mf and its metadata, and the CAD-only build's real STL download. Each project is made here (projectZip). Each step starts over
 // with the example plate on the A1 mini and opens its own project.
 import { readFileSync } from 'node:fs'
 import type { Page } from '@playwright/test'
@@ -10,6 +10,8 @@ import { command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
 import { addMenu, expect, sliceCount, sliced, tab } from '../fixtures'
 import { journey as test } from '../journey'
+import { earsProject } from '../ears-project'
+import { pickPlate } from '../plate-project'
 import { cubeModel, projectZip, zip } from '../project-zip'
 import { examplePlate, openModel, setFlags, setState, useFileDialogs, useFlags } from './lib/model'
 
@@ -330,6 +332,77 @@ test.describe('a project with its own printer', () => {
     await expect(dialog).toHaveCount(0)
     await expect(page.locator('.obj-name')).toHaveText(['Layered X', 'Cube'], { timeout: 60_000 })
     await expect(page.locator('[data-section="printer"] .printer-name')).toContainText('A1 mini')
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Painted brim ears in a project file
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Metadata/brim_ear_points.txt comes in two formats: four numbers per ear (x y z r), or five with a trailing -1 under
+ * `brim_points_format_version=1`. Read four at a time, a format 1 file came in shifted after its first ear: radii read
+ * as coordinates, ears up to 48 mm wide and below the bed, and the slice refused with "Paths cross". This opens a
+ * project made here (ears-project.ts: three objects on two plates, parts that only move, an item turned on two axes,
+ * a per part matrix that disagrees, format 1 ears of radius 4), checks every ear as it is on the plates, then slices
+ * each plate.
+ */
+test.describe('a project with painted brim ears', () => {
+  type Ear = [number, number, number, number]
+  type Entry = { name: string; transform: number[]; brimPoints?: Ear[] }
+  type Sx = { getState(): { plate: Entry[]; plates: { id: string; objects: Entry[] }[]; activePlate: string; slice: { status: string; message?: string; result?: { collisions?: { kind: string }[] } } } }
+
+  /** Every ear of every plate in world space, [x, y, z, r], with the object it is on. */
+  const earsOnPlates = (page: Page) =>
+    page.evaluate(() => {
+      const s = (window as unknown as { __sx: Sx }).__sx.getState()
+      const out: { object: string; ear: number[] }[] = []
+      for (const p of s.plates) {
+        for (const o of p.id === s.activePlate ? s.plate : p.objects) {
+          const t = o.transform
+          for (const [x, y, z, r] of o.brimPoints ?? []) {
+            out.push({ object: o.name, ear: [t[0]! * x + t[4]! * y + t[8]! * z + t[12]!, t[1]! * x + t[5]! * y + t[9]! * z + t[13]!, t[2]! * x + t[6]! * y + t[10]! * z + t[14]!, r] })
+          }
+        }
+      }
+      return out
+    })
+
+  /** Slices the plate shown and returns how it ended: the slice's status, its refusal if any, and its collisions. */
+  async function sliceShown(page: Page): Promise<{ status: string; message?: string; collisions: string[] }> {
+    const before = await sliceCount(page)
+    await page.getByRole('button', { name: 'Slice plate' }).first().click()
+    const status = () => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().slice.status)
+    await expect.poll(async () => (await status()) !== 'running' && (await status()) !== 'idle', { timeout: 150_000 }).toBe(true)
+    const end = await page.evaluate(() => {
+      const sl = (window as unknown as { __sx: Sx }).__sx.getState().slice
+      return { status: sl.status, ...(sl.message ? { message: sl.message } : {}), collisions: (sl.result?.collisions ?? []).map((c) => c.kind) }
+    })
+    if (end.status === 'done') await expect(sliced(page, before)).toBeVisible({ timeout: 120_000 })
+    return end
+  }
+
+  test("format 1 ears open with the file's count and radius, on the bed, and each plate slices with no collision", async ({ page }) => {
+    test.slow()
+    const file = earsProject()
+    await fresh(page)
+    await openModel(page, { name: 'ears-format-1.3mf', mimeType: 'model/3mf', buffer: file.buffer }, { asProject: true })
+    await expect(page.locator('.obj-name')).toHaveCount(2, { timeout: 60_000 })
+    const ears = await earsOnPlates(page)
+    // Each check lists the ears that are wrong, so a failure shows how they came in.
+    const show = (list: typeof ears) => list.map((e) => `${e.object} [${e.ear.map((v) => Math.round(v * 100) / 100).join(', ')}]`)
+    expect.soft(ears.length, "the ear count is the file's").toBe(file.ears)
+    expect.soft(show(ears.filter((e) => Math.abs(e.ear[3]! - file.radius) > 0.01)), `every ear's radius is the file's ${file.radius}`).toEqual([])
+    expect.soft(show(ears.filter((e) => Math.abs(e.ear[2]!) > 0.01)), 'every ear sits at z 0 on the bed').toEqual([])
+    expect.soft(show(ears.filter((e) => e.ear[2]! < -0.01)), 'no ear is below the bed').toEqual([])
+    expect.soft(show(ears.filter((e) => e.ear[3]! > 2 * file.radius)), 'no ear is oversized').toEqual([])
+    const named = [...new Set(ears.map((e) => e.object))]
+    expect.soft(named.map((o) => ears.filter((e) => e.object === o).length).sort(), 'each object keeps its ears').toEqual([...file.perObject].sort())
+    // Both plates slice. Discs of the wrong size crossed their neighbors and the slice was refused.
+    for (const n of [1, 2]) {
+      if (n === 2) await pickPlate(page, 2)
+      expect(await sliceShown(page), `plate ${n} slices without a refusal`).toEqual({ status: 'done', collisions: [] })
+    }
   })
 })
 
