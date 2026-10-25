@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
@@ -143,6 +143,24 @@ test('the kit ships the settings defaults byte for byte and lists them in the ma
     for (const [key, entry] of Object.entries(JSON.parse(source.toString('utf8')))) {
       assert.ok(Array.isArray(entry) && entry.length === 2, key)
       assert.ok(['process', 'printer', 'filament'].includes(entry[0]), key)
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('a pack leaves no untracked docs in the packages: every doc copied before packing is git-ignored', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'sx-kit-ignored-'))
+  try {
+    execFileSync(process.execPath, [resolve(import.meta.dirname, 'copy-integrator-docs.mjs'), tmp])
+    const copied = readdirSync(tmp)
+    assert.ok(copied.length > 0)
+    const repo = resolve(import.meta.dirname, '..')
+    for (const pkg of ['packages/mcp', 'packages/embed']) {
+      for (const f of copied) {
+        const r = spawnSync('git', ['check-ignore', '-q', `${pkg}/${f}`], { cwd: repo })
+        assert.equal(r.status, 0, `${pkg}/${f} is written by the pack but not in ${pkg}/.gitignore`)
+      }
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true })
