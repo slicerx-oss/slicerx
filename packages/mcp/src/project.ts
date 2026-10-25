@@ -17,7 +17,7 @@ import { marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
 import { byObjectPlan, byObjectReadback, objectGetsSupport, overRod, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
 import { bedArea, boxRows, describeBed, EDGE_MM, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
-import { fillCount, nestInLanes, nestPlate, plateTools, type FootprintCache, type NestObject } from './plate-nest'
+import { boxFillCount, boxInLanes, boxPlate, fillCount, nestInLanes, nestPlate, plateTools, type FootprintCache, type NestObject } from './plate-nest'
 
 /** A volume of an object, in the object's own (as modeled) coordinates: a cut, a support region or a settings modifier. */
 export interface ProjectVolume {
@@ -107,7 +107,7 @@ export class McpProject implements PilotProject {
   private readonly nested = new Map<number, { key: string; at: Map<string, [number, number]> }>()
   private readonly feet: FootprintCache = new Map()
 
-  /** `geom` is the geometry engine (sx-geom) arrange nests true outlines with; without it arrange lays rows. */
+  /** `geom` is the geometry engine (sx-geom) arrange nests true outlines with; without it arrange packs boxes (boxPlate). */
   constructor(
     settings: ProjectSettings,
     private readonly store: DataStore,
@@ -316,29 +316,35 @@ export class McpProject implements PilotProject {
   }
 
   /**
-   * How many copies of an object fit on a plate. With the geometry engine, as many as its nest fills the bed with, on
-   * the object's true outline, clear of the excluded areas and the prime tower's room; else as many as fit in the rows.
+   * How many copies of an object fit on a plate: as many as arrange places (arrangePlates), on the object's true outline
+   * with the geometry engine, else on its box, clear of the excluded areas and the prime tower's room and, printing by
+   * object, the clearance radius apart. Without a mesh, as many as fit in the rows.
    */
   async arrangeCapacity(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): Promise<number> {
-    const rows = this.rowCapacity(objectId, bed, spacing, plateIndex)
     const e = this.entries.get(objectId)
-    if (!this.geom || !e?.meshId) return rows
+    if (!e?.meshId) return this.rowCapacity(objectId, bed, spacing, plateIndex)
     const cfg = this.config(plateIndex)
-    try {
-      return await fillCount(this.geom, { bed: this.bed(plateIndex), config: cfg, tools: this.toolsOf(cfg, [e]), gapMm: spacing, fixed: [] }, this.nestObject(e as Entry & { meshId: string }, cfg, 1), 500, this.feet)
-    } catch {
-      return rows
+    const plate = { bed: this.bed(plateIndex), config: cfg, tools: this.toolsOf(cfg, [e]), gapMm: spacing, fixed: [] }
+    const o = this.nestObject(e as Entry & { meshId: string }, cfg, 1)
+    if (this.geom) {
+      try {
+        return await fillCount(this.geom, plate, o, 500, this.feet)
+      } catch {
+        // The engine failed: count on the boxes, as arrange then places them.
+      }
     }
+    return boxFillCount(plate, o, 500)
   }
 
   /**
    * Lays the plates out on true outlines with the geometry engine, as the app's arrange does: each object's outline
    * grown by its brim (sized from its first layer), raft and skirt, clear of the printer's excluded areas, the prime
    * tower's room and the copies a client placed. The layout holds until the plate's copies, rotation, scale or bed
-   * change; then the plate goes back to the rows. Without the engine, or when it fails, the plates keep the rows.
+   * change; then the plate goes back to the rows. Without the engine, or when it fails, the same layout runs on the
+   * objects' boxes (boxPlate), as the app's arrange does then; the rows never stand in for an arranged plate.
    */
   async arrangePlates(plateIndexes: readonly number[], spacing: number): Promise<PlatesLeftOff | undefined> {
-    if (!this.geom) return undefined
+    const geom = this.geom
     let leftOff = 0
     for (const index of plateIndexes) {
       this.nested.delete(index)
@@ -372,12 +378,17 @@ export class McpProject implements PilotProject {
         }
         return at
       }
-      let at: Map<string, [number, number]>
-      try {
-        at = layout(await nestPlate(this.geom, request, this.feet))
-      } catch {
-        continue
+      // The nest on true outlines, or the boxes when there is no engine or it fails.
+      let boxes = !geom
+      let at: Map<string, [number, number]> | undefined
+      if (geom) {
+        try {
+          at = layout(await nestPlate(geom, request, this.feet))
+        } catch {
+          boxes = true
+        }
       }
+      at ??= layout(boxPlate(request))
       if (at.size < wanted) {
         leftOff += wanted - at.size
         continue
@@ -389,7 +400,7 @@ export class McpProject implements PilotProject {
       const before = this.byObject(index)
       if (tall < 2 || !before || before.tall.length === 0) continue
       try {
-        const laned = await nestInLanes(this.geom, request, this.feet)
+        const laned = boxes || !geom ? boxInLanes(request) : await nestInLanes(geom, request, this.feet)
         const lanes = laned ? layout(laned) : undefined
         if (!lanes || lanes.size < wanted) continue
         this.nested.set(index, { key: this.nestKey(index), at: lanes })

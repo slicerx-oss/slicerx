@@ -4,13 +4,11 @@
 // build circle), not a rectangle, so the viewport, arrange and the off-bed check read the circle rather than its
 // bounding box. A bed is a circle when the area's points sit on one circle and its box is square.
 import type { Bed } from '@slicerx/contracts'
+import type { Circle } from '@slicerx/settings/box-pack'
 import { point } from './bed-origin'
 
-export interface Circle {
-  cx: number
-  cy: number
-  r: number
-}
+// The box packer's bed checks (@slicerx/settings/box-pack), shared with the MCP server's arrange.
+export { bedCircle, boxInBed, type Circle } from '@slicerx/settings/box-pack'
 
 /** Fewest points that read as a circle: a square or an octagon cut from a rectangle printer stays a rectangle. */
 const MIN_RING_POINTS = 12
@@ -48,22 +46,3 @@ function round3(v: number): number {
   return Math.round(v * 1000) / 1000
 }
 
-/** The circle of a round bed on the plate (front left corner at 0, 0), or null for a rectangle. */
-export function bedCircle(bed: Pick<Bed, 'widthMm' | 'depthMm' | 'round'>): Circle | null {
-  if (!bed.round) return null
-  return { cx: bed.widthMm / 2, cy: bed.depthMm / 2, r: Math.min(bed.widthMm, bed.depthMm) / 2 }
-}
-
-/**
- * True when the box sits inside the bed with `inset` mm to spare. A round bed holds a box when all four corners are
- * inside the circle; a rectangle when the box is inside it.
- */
-export function boxInBed(bed: Pick<Bed, 'widthMm' | 'depthMm' | 'round'>, x0: number, y0: number, x1: number, y1: number, inset = 0): boolean {
-  const c = bedCircle(bed)
-  if (!c) return x0 >= inset && y0 >= inset && x1 <= bed.widthMm - inset && y1 <= bed.depthMm - inset
-  const r = c.r - inset
-  if (r < 0) return false
-  const dx = Math.max(Math.abs(x0 - c.cx), Math.abs(x1 - c.cx))
-  const dy = Math.max(Math.abs(y0 - c.cy), Math.abs(y1 - c.cy))
-  return dx * dx + dy * dy <= r * r + 1e-9
-}
