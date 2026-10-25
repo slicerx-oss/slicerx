@@ -10,7 +10,7 @@ import { DEFAULT_MODEL, demoModel } from '../lib/demo-models'
 import { markOpenEnded, markOpenStage, markOpenStarted } from '../lib/open-mark'
 import { clearProject } from '../project/new'
 import { keepBeforeOpen, sayKept } from '../project/autosave'
-import { beginOpen, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
+import { beginOpen, markClean, markDirty, OpenSuperseded, type OpenScope } from '../project/unsaved'
 import { isGcodeName, openGcodeRef } from '../workspaces/preview/gcode-file'
 import { identity, uid } from './actions'
 import { get, markStale, set, toast, type ModelSource, type PlateEntry } from './store'
@@ -161,11 +161,18 @@ async function addBytes(host: Host, name: string, data: ArrayBuffer, scope?: Ope
   return false
 }
 
+/** A kept project's state that a fresh open puts back once it is done (Reopen): its file and its unsaved changes. */
+export interface OpenRestore {
+  file: FileRef | null
+  dirty: boolean
+}
+
 /**
  * Opens model bytes that came from somewhere other than a file dialog (a download, a feature). `fresh` (a Vault design,
- * a recent project) starts a new project; otherwise they go onto the plate as it is.
+ * a recent project) starts a new project; otherwise they go onto the plate as it is. `restore`, with `fresh`, ends the
+ * open as the kept project was instead of as a new, clean, untitled one.
  */
-export async function openModelBytes(host: Host, name: string, data: ArrayBuffer, source?: ModelSource, opts: { fresh?: boolean } = {}): Promise<void> {
+export async function openModelBytes(host: Host, name: string, data: ArrayBuffer, source?: ModelSource, opts: { fresh?: boolean; restore?: OpenRestore } = {}): Promise<void> {
   if (opts.fresh && !(await startFresh(host))) return
   // A new project ends clean, unless the person edited it while it opened.
   const scope = opts.fresh ? beginOpen() : undefined
@@ -183,6 +190,10 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
     }
     scope?.run(() => undefined)
     scope?.finish()
+    if (scope && opts.restore && !scope.superseded) {
+      set({ projectFile: opts.restore.file })
+      if (opts.restore.dirty) markDirty()
+    }
     if (!told) toast(`Added ${name}`)
   } catch (e) {
     scope?.finish(false)
