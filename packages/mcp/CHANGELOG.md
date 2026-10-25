@@ -4,6 +4,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-25
+
 ### Added
 
 - `slicerx_slice_file` and `slicerx_estimate_file` of a project with more than one plate, given no `plate`, say so: `plate` is the plate sliced (the first), `plate_count` how many plates have something to print, and an `other_plates` notice (also in `warnings`) says to pass `plate` for another. Needs the sx engine.

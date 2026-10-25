@@ -4,6 +4,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-25
+
 ### Added
 
 - `load_3mf_items_counted`: `load_3mf_items`, and how many plates of the project have something to print, read in the same pass.
