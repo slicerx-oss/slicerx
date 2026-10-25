@@ -608,8 +608,8 @@ pub(crate) struct Athena {
     angle: f64,
     split_middle: f64,
     add_middle: f64,
-    /// The beads are the one-wall run of a top surface: capped at one wall, the outer bead keeps the width and
-    /// place it has where every wall prints.
+    /// The beads are one wall bordering the infill area (a one-wall part, a layer taken down to one wall, the
+    /// one-wall run of a top surface): the outer bead keeps the width and place it has where every wall prints.
     one_wall_outer: bool,
 }
 
@@ -638,7 +638,7 @@ impl Athena {
         }
     }
 
-    /// The same strategy for the one-wall run of a top surface (see [`Athena::walled_thin`]).
+    /// The same strategy for one wall bordering the infill area (see [`Athena::walled_thin`]).
     pub(crate) fn one_wall_outer(self, on: bool) -> Self {
         Self {
             one_wall_outer: on,
@@ -709,9 +709,10 @@ impl Athena {
             ret.left_over = 0;
             return ret;
         }
-        // The one-wall run of a top surface: the outer bead stays as wide and as far in as on the layers with
-        // every wall, so the top layer prints at the size of the part. Scaled down to keep the overlap ratio, it
-        // sat 0.014 mm further in and was 0.395 mm wide instead of 0.42 under the precise outer wall.
+        // One wall bordering the infill area (a one-wall part, a layer taken down to one wall, the one-wall run of
+        // a top surface): the outer bead stays as wide and as far in as on the layers with every wall, so the
+        // layer prints at the size of the part. Scaled down to keep the overlap ratio, it sat 0.014 mm further in
+        // and was 0.395 mm wide instead of 0.42 under the precise outer wall.
         if self.one_wall_outer {
             let at = self.outer_width / 2;
             ret.bead_widths = vec![self.outer_width; 2];
@@ -885,7 +886,7 @@ pub(crate) struct Params {
     pub(crate) min_variable_ratio: f64,
     /// Athena: the spacing of the outer bead to the first inner one and of inner beads, nm; None keeps Arachne.
     pub(crate) athena: Option<(i64, i64)>,
-    /// Athena only: the beads are the one-wall run of a top surface, whose outer bead keeps its normal width and place.
+    /// Athena only: the beads are one wall bordering the infill area, whose outer bead keeps its normal width and place.
     pub(crate) one_wall_outer: bool,
 }
 
