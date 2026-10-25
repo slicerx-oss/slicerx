@@ -608,10 +608,21 @@ pub fn check_toolpaths(out: &SliceOutput, base: &PrintConfig) -> Vec<Issue> {
             } else {
                 None
             };
-            let fix = owner.or(nearest).map_or_else(
-                || "move the objects out of it or arrange the plate".to_owned(),
-                |o| format!("move {} out of it or arrange the plate", object_name(out, o)),
-            );
+            let bridge = (zone_first.0 == Feature::Skirt && owner.is_none())
+                .then(|| plate_skirt_bridge(out, base, [in_zone.x, in_zone.y]))
+                .flatten();
+            let fix = if let Some((a, b)) = bridge {
+                format!(
+                    "the skirt round the whole plate runs into it between {} and {}: move them apart or give each part a skirt of its own",
+                    object_name(out, a),
+                    object_name(out, b)
+                )
+            } else {
+                owner.or(nearest).map_or_else(
+                    || "move the objects out of it or arrange the plate".to_owned(),
+                    |o| format!("move {} out of it or arrange the plate", object_name(out, o)),
+                )
+            };
             // The wrap check corner keeps the excluded area's words, which hosts read, and says which it is.
             let area = if zone_wrap {
                 "an excluded bed area (the nozzle wrap check corner)"
@@ -812,6 +823,66 @@ fn whose(out: &SliceOutput, feature: &str, owner: Option<usize>, nearest: Option
         (None, Some(o)) => format!("{feature} nearest {}", object_name(out, o)),
         (None, None) => feature.to_owned(),
     }
+}
+
+/// How far `q` is from the outline `hull` (its edges; a single point for a one-point hull), mm.
+fn hull_gap(hull: &[[f64; 2]], q: [f64; 2]) -> f64 {
+    match hull {
+        [] => f64::INFINITY,
+        [only] => (only[0] - q[0]).m_hypot(only[1] - q[1]),
+        _ => (0..hull.len())
+            .filter_map(|k| Some((hull.get(k)?, hull.get((k + 1) % hull.len())?)))
+            .map(|(a, b)| dist_to_segment(q[0], q[1], a, b))
+            .fold(f64::INFINITY, f64::min),
+    }
+}
+
+/// The two objects a plate skirt runs between at `q`, a skirt point in a keep-out zone. With one skirt round the
+/// whole plate (printed by layer, no skirt per part, no draft shield), the skirt follows the convex hull of every
+/// part, so between two parts it runs along a straight edge that belongs to neither. When `q` lies on such a stretch
+/// (more than 1 mm closer to the plate's hull than to any part), moving one part toward the open bed may not clear the
+/// zone: the parts have to move apart, or each part needs a skirt of its own.
+fn plate_skirt_bridge(out: &SliceOutput, base: &PrintConfig, q: [f64; 2]) -> Option<(usize, usize)> {
+    let text = |k: &str, v: &str| matches!(base.raw.get(k), Some(Value::String(t)) if t == v);
+    if text("skirt_type", "perobject")
+        || text("draft_shield", "enabled")
+        || base.print_by_object()
+        || out.objects.len() < 2
+    {
+        return None;
+    }
+    let hull =
+        crate::firmware::convex_hull(out.objects.iter().flat_map(|o| o.hull.iter().copied()).collect());
+    let n = hull.len();
+    if n < 3 {
+        return None;
+    }
+    let (k, to_plate) = (0..n)
+        .filter_map(|k| {
+            Some((
+                k,
+                dist_to_segment(q[0], q[1], hull.get(k)?, hull.get((k + 1) % n)?),
+            ))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))?;
+    let to_part = out
+        .objects
+        .iter()
+        .map(|o| hull_gap(&o.hull, q))
+        .fold(f64::INFINITY, f64::min);
+    if to_part - to_plate < 1.0 {
+        return None;
+    }
+    // The edge's two ends are corners of the parts it joins.
+    let owner = |p: &[f64; 2]| {
+        out.objects.iter().position(|o| {
+            o.hull
+                .iter()
+                .any(|v| (v[0] - p[0]).abs() < 1e-9 && (v[1] - p[1]).abs() < 1e-9)
+        })
+    };
+    let (a, b) = (owner(hull.get(k)?)?, owner(hull.get((k + 1) % n)?)?);
+    (a != b).then_some((a, b))
 }
 
 /// The plate object a path prints, when it belongs to one (not the skirt, a shared brim or the prime tower).
