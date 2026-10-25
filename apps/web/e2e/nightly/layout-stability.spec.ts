@@ -834,6 +834,9 @@ test.describe('the view\'s panels open without moving anything', { tag: '@nightl
     const n = Number((await page.locator('.studio').getAttribute('data-slices')) ?? 0)
     await page.keyboard.press('ControlOrMeta+Enter')
     await expect(page.locator(`.studio[data-layers][data-slice="current"]:not([data-slices="${n}"])`)).toBeVisible({ timeout: 120_000 })
+    // The slice leaves the pane shut; its tab opens it.
+    await expect(tab).toHaveAttribute('aria-expanded', 'false')
+    await tab.click()
     await expect(tab).toHaveAttribute('aria-expanded', 'true')
     await settled(page)
     const moved = shifts('right pane opening', before, await boxesOf(page, beside))
