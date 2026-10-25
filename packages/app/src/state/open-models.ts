@@ -13,7 +13,7 @@ import { keepBeforeOpen, sayKept } from '../project/autosave'
 import { beginOpen, markClean, OpenSuperseded, type OpenScope } from '../project/unsaved'
 import { isGcodeName, openGcodeRef } from '../workspaces/preview/gcode-file'
 import { identity, uid } from './actions'
-import { get, jobOpened, markStale, set, toast, type ModelSource, type PlateEntry } from './store'
+import { get, jobOpened, markStale, openNote, set, toast, type ModelSource, type PlateEntry } from './store'
 
 /** Places the object at the bed center; models are stored centered on X and Y. */
 function centered(bedW: number, bedD: number): number[] {
@@ -183,7 +183,7 @@ export async function openModelBytes(host: Host, name: string, data: ArrayBuffer
     }
     scope?.run(() => undefined)
     scope?.finish()
-    if (!told) toast(`Added ${name}`)
+    if (!told) openNote(`Added ${name}`)
   } catch (e) {
     scope?.finish(false)
     // A newer open took over: it says what it opened.
@@ -240,7 +240,7 @@ export async function addFileRefs(host: Host, refs: FileRef[], opts: { fresh?: b
     scope?.finish()
     // A new job: Slice's right pane starts shut again, so the view is clear.
     if (scope && !scope.superseded) jobOpened()
-    if (!told || refs.length > 1) toast(refs.length === 1 ? `Added ${refs[0]?.name ?? 'model'}` : `Added ${refs.length} models`)
+    if (!told || refs.length > 1) openNote(refs.length === 1 ? `Added ${refs[0]?.name ?? 'model'}` : `Added ${refs.length} models`)
   } catch (e) {
     scope?.finish(false)
     // A newer open took over: it says what it opened.

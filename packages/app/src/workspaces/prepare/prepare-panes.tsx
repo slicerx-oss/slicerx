@@ -46,6 +46,7 @@ import { MiddleName, shortPrinterName } from '../../lib/short-name'
 import { EasySettingsPanel } from './easy-settings'
 import { ScopeBar, useScope } from './scope-bar'
 import { Loading } from '../../shell/loading'
+import { OpenNote } from './open-note'
 const ExpertSettings = lazy(() => import('./expert-settings').then((m) => ({ default: m.ExpertSettings })))
 
 
@@ -98,6 +99,7 @@ function SlicePrinter() {
   return (
     <>
       <MachineCard />
+      <OpenNote />
       <FilamentBlock />
     </>
   )

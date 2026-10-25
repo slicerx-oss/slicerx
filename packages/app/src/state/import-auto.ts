@@ -14,7 +14,7 @@ import type { AutoImport, Unit } from '../geom/cad'
 import type { StepConverter } from './import-step'
 import { centerOnBed, compose, dropToBed, setScale, type Mat4 } from '../plate/transform'
 import { repairChanged, rememberRepair, showRepairReport, type RepairEntry } from '../plate/repair-report'
-import { appStore, get, markStale, set, toast, type AppState, type PlateEntry } from './store'
+import { appStore, get, markStale, openNote, set, toast, type AppState, type PlateEntry } from './store'
 import { fitSettledFor, onFitSettled } from '../plate/fit-state'
 import { brandAccent, objectPalette } from '../edition'
 import { withAutoSpools } from '../filament/pick'
@@ -243,7 +243,7 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
     // Without the engine's import (a host with no engine, or a failure) the model stays as it was read.
     if (!quick) throw e
     markStale()
-    toast(`Added ${name}`)
+    openNote(`Added ${name}`)
     return [quick.id]
   }
   const { bed } = get()
@@ -301,9 +301,10 @@ export async function addAutoImport(host: Host, name: string, data: ArrayBuffer,
   if (u.autoApply) {
     const size = u.sizeAfter.map((v) => `${Math.round(v * 10) / 10}`).join(' x ')
     notes.unshift(`${name} looked like ${u.unit === 'inch' ? 'inches' : u.unit === 'meter' ? 'meters' : u.unit}, so it was scaled to ${size} mm.`)
-    toast(notes.join(' '), 'info', { label: 'Use as millimeters', run: () => useAsMillimeters(ids) })
-  } else if (notes.length) toast(`${name}: ${notes.join(' ')}`, result.warnings.length ? 'warn' : 'info', repairAction ?? undefined)
-  else toast(`Added ${name}`)
+    openNote(notes.join(' '), { label: 'Use as millimeters', run: () => useAsMillimeters(ids) })
+  } else if (notes.length && result.warnings.length) toast(`${name}: ${notes.join(' ')}`, 'warn', repairAction ?? undefined)
+  else if (notes.length) openNote(`${name}: ${notes.join(' ')}`, repairAction ?? undefined)
+  else openNote(`Added ${name}`)
   if (run === engine) void checkCrossings(host, name, entries.map((e, i) => ({ id: e.id, perShell: same ? (made[0]?.perShell ?? true) : (made[i]?.perShell ?? false) })), cross, edit)
   return ids
 }
@@ -363,7 +364,7 @@ export async function checkCrossings(host: Host, name: string, objects: { id: st
   }
   if (fixed) {
     markStale()
-    toast(`${name}: Repaired: fixed self-intersections in ${fixed} ${fixed === 1 ? 'part' : 'parts'}.`)
+    openNote(`${name}: Repaired: fixed self-intersections in ${fixed} ${fixed === 1 ? 'part' : 'parts'}.`)
   }
   if (left) toast(`${name}: ${left} ${left === 1 ? 'part still crosses itself' : 'parts still cross themselves'} (too large to rebuild during import).`, 'warn')
   return { fixed, left }

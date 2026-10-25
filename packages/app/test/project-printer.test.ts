@@ -86,7 +86,7 @@ const until = async (ok: () => boolean): Promise<void> => {
 const A1_MINI = { id: 'a1-mini', vendor: 'Bambu Lab', model: 'A1 mini' }
 
 beforeEach(async () => {
-  set((s) => ({ plate: [], plates: s.plates.map((p) => ({ ...p, objects: [] })), slotSetup: {}, projectFlush: null, towerFromProject: false, tower: { auto: true, x: 0, y: 0 }, overrides: {}, vouchedGcode: {}, projectGcode: null, projectSettings: null, projectPrinter: null, projectOpenAsk: null, printerId: A1_MINI.id, printerModel: A1_MINI, printerNozzles: {}, nozzleReported: {}, resume: null, calibration: {}, layerMarks: {}, slice: { status: 'idle' }, toast: null, goal: 'standard' }))
+  set((s) => ({ plate: [], plates: s.plates.map((p) => ({ ...p, objects: [] })), slotSetup: {}, openNote: null, projectFlush: null, towerFromProject: false, tower: { auto: true, x: 0, y: 0 }, overrides: {}, vouchedGcode: {}, projectGcode: null, projectSettings: null, projectPrinter: null, projectOpenAsk: null, printerId: A1_MINI.id, printerModel: A1_MINI, printerNozzles: {}, nozzleReported: {}, resume: null, calibration: {}, layerMarks: {}, slice: { status: 'idle' }, toast: null, goal: 'standard' }))
   await profileReady()
   startProjectPrinterSync()
   markClean()
@@ -193,7 +193,7 @@ describe('a project opens with the process and filaments it was made with', () =
     await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, wall_generator: 'classic', precise_outer_wall: '0' }))
     const cfg = resolved()
     expect(cfg['wall_generator']).toBe('aegis')
-    expect(get().toast?.text).toContain("Kept SlicerX's aegis walls; the project used Bambu's default.")
+    expect(get().openNote?.text).toContain("Kept SlicerX's aegis walls; the project used Bambu's default.")
     expect(cfg['layer_height']).toBe(0.12)
   })
 
@@ -202,7 +202,7 @@ describe('a project opens with the process and filaments it was made with', () =
     const listed = [`${(FINE_P1S['different_settings_to_system'] as string[])[0]};wall_generator`, '', '', '', '', '']
     await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, wall_generator: 'classic', different_settings_to_system: listed }))
     expect(resolved()['wall_generator']).toBe('classic')
-    expect(get().toast?.text).not.toContain('Kept SlicerX')
+    expect(get().openNote?.text).not.toContain('Kept SlicerX')
   })
 
   // A saved quality tile and saved Simple-mode settings apply to plain models and new plates, never over a project's
@@ -218,7 +218,7 @@ describe('a project opens with the process and filaments it was made with', () =
         set({ goal: 'standard', autoSlice: auto, settingsMode: 'simple', easy: { detail: 40, strength: 20, speed: 'balanced', supports: 'auto', brim: true, varyLayerHeight: false }, easyTouched: ['varyLayerHeight'] })
         const { host, requests } = capture([{ id: p1s.id, name: p1s.name, vendor: p1s.vendor, model: p1s.model, plugin: 'export', nozzleCount: 1 }])
         await openModelBytes(host, 'tangela.3mf', project(FINE_P1S))
-        expect(get().toast?.text).toContain("Opened on P1S, a P1S 0.4 mm like the project's.")
+        expect(get().openNote?.text).toContain("Opened on P1S, a P1S 0.4 mm like the project's.")
         expect(get().goal).toBe('custom')
         await slicePlate(host, auto ? { auto: true } : {}).catch(() => undefined)
         expect(requests.at(-1)?.config['layer_height']).toBe(0.12)
@@ -271,8 +271,8 @@ describe('a P1S 0.2 project on an empty plate', () => {
     // Not listed as changed, but part of the process the project was sliced with.
     expect(cfg['sparse_infill_density']).toBe(35)
     expect(cfg['machine_start_gcode']).toBe(START)
-    expect(s.toast?.text).toBe('Opened as P1S 0.2 mm from the project.')
-    expect(s.toast?.action?.label).toBe('Change printer')
+    expect(s.openNote?.text).toBe('Opened as P1S 0.2 mm from the project.')
+    expect(s.openNote?.action?.label).toBe('Change printer')
   })
 
   it("takes the layer height of the project's process preset, which the file does not list as changed", async () => {
@@ -360,7 +360,7 @@ describe('a P1S 0.2 project on an empty plate', () => {
     expect(get().profile).toMatchObject({ printerId: 'bambu-p1s', nozzle: 0.2 })
     expect(get().overrides['layer_height']).toBe(0.08)
     expect(get().overrides).not.toHaveProperty('machine_start_gcode')
-    expect(get().toast?.text).toBe("Opened on Bay 2, a P1S 0.2 mm like the project's.")
+    expect(get().openNote?.text).toBe("Opened on Bay 2, a P1S 0.2 mm like the project's.")
   })
 
   it('a P1S with another nozzle is not picked', async () => {
@@ -389,7 +389,7 @@ describe('a P1S 0.2 project on an empty plate', () => {
     expect(get().overrides).toMatchObject({ wall_loops: 3 })
     expect(get().overrides).not.toHaveProperty('layer_height')
     expect(get().overrides).not.toHaveProperty('machine_start_gcode')
-    expect(get().toast?.text).toBe('acme.3mf is for a Acme Printer 9000 0.2 nozzle, which SlicerX has no profile for, so it opened on the A1 mini. Left out, made for a 0.2 mm nozzle: layer height.')
+    expect(get().openNote?.text).toBe('acme.3mf is for a Acme Printer 9000 0.2 nozzle, which SlicerX has no profile for, so it opened on the A1 mini. Left out, made for a 0.2 mm nozzle: layer height.')
   })
 })
 
@@ -402,7 +402,7 @@ describe('settings by height', () => {
       { minZ: 0, maxZ: 1.2, settings: { layer_height: 0.06, wall_loops: 4 } },
       { minZ: 1.2, maxZ: 4, settings: { layer_height: 0.14 } },
     ])
-    expect(get().toast?.text).toBe('Opened as P1S 0.2 mm from the project. Not imported from its height ranges: infill density.')
+    expect(get().openNote?.text).toBe('Opened as P1S 0.2 mm from the project. Not imported from its height ranges: infill density.')
     await slicePlate(host, { auto: true })
     const o = requests[0]!.options!
     // The engine plans the layers from the ranges' layer heights (packages/core/src/layers.rs, plate_range_tops).
@@ -456,7 +456,7 @@ describe('feature filaments by height in a Bambu Studio file', () => {
     const e = get().plate[0]!
     const filaments = { outer_wall_filament_id: 3, inner_wall_filament_id: 3, sparse_infill_filament_id: 2, internal_solid_filament_id: 2 }
     expect(e.layerRanges).toEqual([{ minZ: 8, maxZ: 14, settings: { layer_height: 0.08, ...filaments } }])
-    expect(get().toast?.text ?? '').not.toContain('Not imported from its height ranges')
+    expect(get().openNote?.text ?? '').not.toContain('Not imported from its height ranges')
     await slicePlate(host, { auto: true })
     // The range's layer height goes with it, for the engine's layer plan.
     expect(requests[0]!.options!.heightRanges).toEqual([{ zFromMm: 8, zToMm: 14, settings: { ...filaments, layer_height: 0.08 }, objects: [e.id] }])
@@ -476,9 +476,9 @@ describe('layer heights by height that differ between objects', () => {
     const { host, requests } = capture()
     await openModelBytes(host, 'two.3mf', bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer)
     expect(get().plate).toHaveLength(2)
-    expect(get().toast?.text).toContain('Per-object layer heights are not imported yet')
+    expect(get().openNote?.text).toContain('Per-object layer heights are not imported yet')
     // In the engine's words for the same plate (packages/core/tests/fixtures/range-layer-heights.json, note).
-    expect(get().toast?.text).toContain('change layer height at different heights')
+    expect(get().openNote?.text).toContain('change layer height at different heights')
     // The plate keeps one layer height: no layer heights go to the slice.
     await slicePlate(host, { auto: true })
     expect(requests[0]!.options?.heightRanges?.some((r) => 'layer_height' in r.settings) ?? false).toBe(false)
@@ -553,7 +553,7 @@ describe("a project's flush volumes and tower spot", () => {
   it('slices with the file\'s matrix, multiplier and tower spot, and names them', async () => {
     const { host, requests } = capture()
     await openModelBytes(host, 'flush.3mf', project(H2D_FLUSH))
-    expect(get().toast?.text).toContain("Kept the project's flush volumes and prime tower position.")
+    expect(get().openNote?.text).toContain("Kept the project's flush volumes and prime tower position.")
     twoSlots()
     await slicePlate(host, { auto: true }).catch(() => undefined)
     const cfg = requests.at(-1)!.config as Record<string, SettingValue>

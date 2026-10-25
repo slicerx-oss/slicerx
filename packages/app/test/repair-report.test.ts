@@ -39,7 +39,7 @@ describe('repair report', () => {
 })
 
 describe('repair details from an import', () => {
-  beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null }))
+  beforeEach(() => set({ plate: [], selection: null, selectedIds: [], toast: null, openNote: null }))
   const run = (repair: object, summary: string[]) => async () =>
     ({
       name: 'f',
@@ -51,15 +51,15 @@ describe('repair details from an import', () => {
       slotColors: [],
     }) as unknown as AutoImport
 
-  it('puts a Repair details action on the toast and remembers the report', async () => {
+  it('puts a Repair details action on the import note and remembers the report', async () => {
     await addAutoImport(host, 'f.stl', new ArrayBuffer(4), run({ holesFilled: 2 }, ['Repaired: closed 2 holes.']))
-    expect(get().toast?.action?.label).toBe('Repair details')
+    expect(get().openNote?.action?.label).toBe('Repair details')
     expect(lastRepairForTest()?.entries[0]?.report.holesFilled).toBe(2)
     expect(showLastRepair()).toBe(true)
   })
 
   it('adds no action when nothing was repaired', async () => {
     await addAutoImport(host, 'f.stl', new ArrayBuffer(4), run({ holesFilled: 0 }, ['Loaded as one object with 1 parts.']))
-    expect(get().toast?.action).toBeUndefined()
+    expect(get().openNote?.action).toBeUndefined()
   })
 })
