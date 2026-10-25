@@ -292,7 +292,9 @@ function pngOf(data: Uint8ClampedArray, width: number, height: number): Promise<
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
-  const ctx = canvas.getContext('2d')
+  // A canvas kept in memory, not on the graphics card: reading a card-backed one back for the PNG waits for the card,
+  // and while it draws a big slice that held the page still for half a minute.
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
   if (!ctx) return Promise.resolve(null)
   ctx.putImageData(new ImageData(data as Uint8ClampedArray<ArrayBuffer>, width, height), 0, 0)
   return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'))
