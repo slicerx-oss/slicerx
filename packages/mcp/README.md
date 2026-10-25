@@ -16,6 +16,7 @@ Reading is always allowed. The permission class of the other tools decides what 
 | `slicerx_list_profiles`, `slicerx_get_profile` | Printer, filament and process profiles, with OrcaSlicer `inherits` resolved, including the makers' own filament presets (`stock-filament:BBL/Bambu PLA Basic @BBL A1`). | read |
 | `slicerx_plan_settings` | Settings to change for a filament, printer, nozzle and intent, each with before, after, a reason and sources, plus a `config_patch`. | read |
 | `slicerx_explain_setting`, `slicerx_find_settings`, `slicerx_validate_config` | Look up, search and check the 700 or so OrcaSlicer settings. | read |
+| `slicerx_list_setting_defaults` | Every setting's default and scope (process, printer or filament), or one section's or the keys given. Only process defaults are what the engine slices with when a key is missing. | read |
 | `slicerx_knowledge_lookup` | Filament, printer, troubleshooting and workflow entries with sources. | read |
 | `slicerx_project_open`, `slicerx_project_add_model`, `slicerx_project_show` | Start a project with a printer and filament, add STL models with copies (a file of several bodies as one object, one object with parts, or an object per body), show it. | read |
 | `slicerx_project_set_overrides` | Change or clear settings for the project (never a saved profile). With `--app`, edits the live project and returns its overrides and effective shown-plate values. | slice |

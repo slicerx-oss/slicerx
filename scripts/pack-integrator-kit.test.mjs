@@ -125,3 +125,26 @@ test('the manifest guide is copied and included by the embedding packages', () =
     rmSync(tmp, { recursive: true, force: true })
   }
 })
+
+test('the kit ships the settings defaults byte for byte and lists them in the manifest', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'sx-kit-defaults-'))
+  try {
+    const packages = kitPackages().map(({ name, version }) => ({ name, version }))
+    for (const p of packages) writeFileSync(join(tmp, `${p.name.replace('@', '').replace('/', '-')}-${p.version}.tgz`), p.name)
+    writePackageManifest(tmp, packages)
+    const source = readFileSync(resolve(import.meta.dirname, '..', 'packages', 'settings', 'defaults.json'))
+    const shipped = readFileSync(join(tmp, 'defaults.json'))
+    assert.ok(shipped.equals(source), 'defaults.json in the kit must equal packages/settings/defaults.json')
+    const manifest = JSON.parse(readFileSync(join(tmp, 'kit-manifest.json'), 'utf8'))
+    assert.equal(manifest.schemaVersion, 1)
+    assert.equal(manifest.packages.length, 3)
+    assert.deepEqual(manifest.files, [{ name: 'defaults.json', sha256: createHash('sha256').update(source).digest('hex') }])
+    // every entry is [scope, value] and nothing else
+    for (const [key, entry] of Object.entries(JSON.parse(source.toString('utf8')))) {
+      assert.ok(Array.isArray(entry) && entry.length === 2, key)
+      assert.ok(['process', 'printer', 'filament'].includes(entry[0]), key)
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+})

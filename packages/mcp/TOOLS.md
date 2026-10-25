@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-246 tools.
+247 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -147,6 +147,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_knowledge_lookup` | Look up print knowledge | kb | read, ungated | Read an entry from the SlicerX print knowledge base: filaments (temperatures, drying, plates, failure modes), printers (build volume, hotend, profile baseline), accessories, troubleshooting trees (stringing, warping, layer shift and others) and workflow guides. |
 | `slicerx_list_fleets` | List fleets | fleets | read, ungated | List the fleets: optional groups of printers the user made, such as "Workshop", with their printer ids. |
 | `slicerx_list_profiles` | List profiles | settings | read, ungated | List printer, filament and process profiles. |
+| `slicerx_list_setting_defaults` | List setting defaults | settings | read, ungated | List the default value of every setting, or of one section or the keys given, each with its scope (process, printer or filament), from the same data as slicerx_explain_setting and equal to defaults.json in the integrator kit. |
 | `slicerx_local_ai_check` |  |  | read | Check whether this computer can run mimir's model locally: the graphics card and its memory, system memory and cores, one recommended model with the reason in plain words, its download size and license, and whether Ollama or LM Studio is running. |
 | `slicerx_local_ai_setup` |  |  | profile | Download a local model through Ollama (the recommended one, or model by id or Ollama tag), then check one tool call and the speed. |
 | `slicerx_local_ai_status` |  |  | read | Show the local models installed in Ollama and LM Studio, with license and tool use for the ones SlicerX knows, and the model slicerx_local_ai_setup last set up and checked. |
