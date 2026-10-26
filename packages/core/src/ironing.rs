@@ -200,7 +200,13 @@ pub(crate) fn add(
     let Some(k) = kind(cfg) else { return false };
     let nozzle = cfg.nozzle_diameter;
     let spacing = raw_f(cfg, "ironing_spacing").filter(|v| *v > 0.0).unwrap_or(0.1);
-    let flow_pct = raw_f(cfg, "ironing_flow").unwrap_or(10.0).max(0.0);
+    // Percent of a layer's flow: `15%` as a project file writes it, or 15.
+    let flow_pct = cfg
+        .raw
+        .get("ironing_flow")
+        .and_then(|v| crate::config::float_or_percent(v, 100.0))
+        .unwrap_or(10.0)
+        .max(0.0);
     let speed = raw_f(cfg, "ironing_speed").filter(|v| *v > 0.0).unwrap_or(20.0);
     let inset = raw_f(cfg, "ironing_inset").unwrap_or(0.0).max(0.0);
     let fixed = crate::firmware::truthy(cfg, "ironing_angle_fixed");
@@ -385,6 +391,20 @@ mod tests {
             pts.iter()
                 .all(|q| q.x_mm() >= 0.19 && q.x_mm() <= 19.81 && q.y_mm() >= 0.19 && q.y_mm() <= 9.81)
         );
+    }
+
+    #[test]
+    fn a_flow_written_as_a_percent_reads_as_that_percent() {
+        // A project file writes the flow as "15%", a request as 15: the same lines either way, and not the 10% default.
+        let flow = |v: serde_json::Value| {
+            let (mut out, areas) = layer();
+            let mut c = cfg("top");
+            c.raw.insert("ironing_flow".into(), v);
+            add(&mut out, &areas, &c, false, 0.0, &[]);
+            out.paths[0].flow
+        };
+        assert!((flow(serde_json::json!("15%")) - flow(serde_json::json!(15))).abs() < 1e-6);
+        assert!(flow(serde_json::json!("15%")) > flow(serde_json::json!(10)) * 1.2);
     }
 
     #[test]

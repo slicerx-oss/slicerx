@@ -52,10 +52,11 @@ describe('sx output', () => {
     expect(() => parseSxOutput('segfault')).toThrow(/Could not read/)
   })
 
-  it('turns percent and auto line widths into millimeters or drops them', () => {
-    expect(sxConfig({ nozzle_diameter: [0.6], line_width: '100%', outer_wall_line_width: '0', inner_wall_line_width: '0.45', layer_height: 0.2 })).toEqual({
+  it('turns percent line widths into millimeters and keeps an automatic 0', () => {
+    expect(sxConfig({ nozzle_diameter: [0.6], line_width: '100%', outer_wall_line_width: '0', inner_wall_line_width: '0.45', top_surface_line_width: 'wide', layer_height: 0.2 })).toEqual({
       nozzle_diameter: [0.6],
       line_width: 0.6,
+      outer_wall_line_width: 0,
       inner_wall_line_width: 0.45,
       layer_height: 0.2,
     })
