@@ -98,6 +98,57 @@ pub fn load_3mf_placement(
     crate::threemf::plate_placement(bytes, file_name, plate, layout)
 }
 
+/// Which entry of a project's per-plate lists (`wipe_tower_x`, `wipe_tower_y`) belongs to plate `plate` of a 3MF, from
+/// 0, as Bambu Studio and Orca keep one tower spot per plate: the plate's place in the file, when the file numbers its
+/// plates 1, 2, 3 and so on in its order (or names none and `plate` is 1). `None` when the numbering leaves it open.
+pub fn load_3mf_plate_index(bytes: &[u8], file_name: &str, plate: u32) -> Result<Option<usize>> {
+    crate::threemf::plate_list_index(bytes, file_name, plate)
+}
+
+/// What a project's prime tower spot came to for one of its plates ([`keep_plate_tower`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlateTower {
+    /// The settings do not set both `wipe_tower_x` and `wipe_tower_y`.
+    Unset,
+    /// The plate's own spot, one number each.
+    Kept,
+    /// The settings hold one spot per plate, but which one is this plate's is not certain: left as they are.
+    Unsure,
+}
+
+/// A project's prime tower spot for one of its plates, kept as the app keeps an opened project's: `wipe_tower_x` and
+/// `wipe_tower_y` (one entry per plate in a project, or one number) become the plate's own entry, entry `index`
+/// ([`load_3mf_plate_index`]). With `keep`, `prime_tower_auto_position` then goes off so the tower stands there, unless
+/// the settings set it themselves (`auto_set`). An unsure spot changes nothing: the engine places the tower, as it does
+/// for a project without a spot.
+pub fn keep_plate_tower(
+    settings: &mut serde_json::Map<String, serde_json::Value>,
+    index: Option<usize>,
+    keep: bool,
+    auto_set: bool,
+) -> PlateTower {
+    const KEYS: [&str; 2] = ["wipe_tower_x", "wipe_tower_y"];
+    let picked = KEYS.map(|k| match settings.get(k) {
+        Some(serde_json::Value::Array(a)) => index.and_then(|i| a.get(i)).cloned(),
+        other => other.cloned(),
+    });
+    if KEYS.iter().any(|k| !settings.contains_key(*k)) {
+        return PlateTower::Unset;
+    }
+    let [Some(x), Some(y)] = picked else {
+        return PlateTower::Unsure;
+    };
+    settings.insert(KEYS[0].to_owned(), x);
+    settings.insert(KEYS[1].to_owned(), y);
+    if keep && !auto_set {
+        settings.insert(
+            "prime_tower_auto_position".to_owned(),
+            serde_json::Value::Bool(false),
+        );
+    }
+    PlateTower::Kept
+}
+
 /// A plate's number and its build items, as [`load_3mf_items`] gives them.
 pub type PlateItems = (u32, Vec<Mesh>);
 
@@ -2234,6 +2285,60 @@ pub const RESULT_SCHEMA: &str = r#"{
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A project's tower spot for one plate: the plate's own entry of the per-plate lists, auto placement off with
+    /// `keep` unless the settings set it themselves. One number is every plate's spot. A list with no entry for the
+    /// plate, or a plate whose entry is not certain, leaves the settings as they are, and so do settings with one of
+    /// the two keys only.
+    #[test]
+    fn a_plate_keeps_its_own_entry_of_the_project_tower_spot() {
+        use serde_json::{Value, json};
+        let lists = || {
+            json!({"wipe_tower_x": ["30", "180", "200"], "wipe_tower_y": ["200", "30", "180"]})
+                .as_object()
+                .unwrap()
+                .clone()
+        };
+        let mut s = lists();
+        assert_eq!(keep_plate_tower(&mut s, Some(1), true, false), PlateTower::Kept);
+        assert_eq!(
+            Value::Object(s),
+            json!({"wipe_tower_x": "180", "wipe_tower_y": "30", "prime_tower_auto_position": false})
+        );
+        // the settings' own switch stays, on or off
+        let mut s = lists();
+        s.insert("prime_tower_auto_position".to_owned(), json!(true));
+        assert_eq!(keep_plate_tower(&mut s, Some(2), true, true), PlateTower::Kept);
+        assert_eq!(
+            Value::Object(s),
+            json!({"wipe_tower_x": "200", "wipe_tower_y": "180", "prime_tower_auto_position": true})
+        );
+        // without keep only the lists are read
+        let mut s = lists();
+        assert_eq!(keep_plate_tower(&mut s, Some(0), false, false), PlateTower::Kept);
+        assert_eq!(
+            Value::Object(s),
+            json!({"wipe_tower_x": "30", "wipe_tower_y": "200"})
+        );
+        // one number each is every plate's
+        let mut s = json!({"wipe_tower_x": 15, "wipe_tower_y": 220})
+            .as_object()
+            .unwrap()
+            .clone();
+        assert_eq!(keep_plate_tower(&mut s, None, true, false), PlateTower::Kept);
+        assert_eq!(s["wipe_tower_x"], json!(15));
+        assert_eq!(s["prime_tower_auto_position"], json!(false));
+        // not certain, or no entry for the plate: nothing changes
+        for index in [None, Some(3)] {
+            let mut s = lists();
+            assert_eq!(keep_plate_tower(&mut s, index, true, false), PlateTower::Unsure);
+            assert_eq!(s, lists());
+        }
+        // one key only
+        let mut s = json!({"wipe_tower_x": ["30"]}).as_object().unwrap().clone();
+        assert_eq!(keep_plate_tower(&mut s, Some(0), true, false), PlateTower::Unset);
+        assert_eq!(Value::Object(s), json!({"wipe_tower_x": ["30"]}));
+    }
 
     /// A request's own object and part settings read Bambu Studio's prime tower keys as ours, and a key under our
     /// own name keeps its value.

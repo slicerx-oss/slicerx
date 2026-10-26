@@ -18,7 +18,8 @@ export interface ProjectFlush {
 }
 
 const list = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : typeof v === 'string' ? v.split(/[;,]/) : [])
-const firstNumber = (v: unknown): number => Number(Array.isArray(v) ? v[0] : v)
+/** Entry `index` of a per-plate list, or the one value every plate shares; NaN when the list has no such entry. */
+const entryAt = (v: unknown, index: number): number => Number(Array.isArray(v) ? (index < v.length ? v[index] : NaN) : v)
 
 /** The file's flush matrix, multiplier and filaments, or null when it has no whole matrix for them. */
 export function projectFlushFrom(settings: Record<string, unknown>): ProjectFlush | null {
@@ -49,19 +50,42 @@ export function keptFlush(f: ProjectFlush, slots: readonly { color: string; type
   return out
 }
 
-/** The tower's front left corner on the plate from the file's wipe_tower_x and wipe_tower_y (printer coordinates). */
-export function projectTowerFrom(settings: Record<string, unknown>, origin: readonly [number, number]): { x: number; y: number } | null {
-  const x = firstNumber(settings['wipe_tower_x'])
-  const y = firstNumber(settings['wipe_tower_y'])
+/**
+ * A plate's tower front left corner on the plate from the file's wipe_tower_x and wipe_tower_y (printer coordinates):
+ * Bambu Studio and Orca keep one entry per plate, and entry `index` is the plate's. Null when the file has no spot for it.
+ */
+export function projectTowerFrom(settings: Record<string, unknown>, origin: readonly [number, number], index = 0): { x: number; y: number } | null {
+  const x = entryAt(settings['wipe_tower_x'], index)
+  const y = entryAt(settings['wipe_tower_y'], index)
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null
   return { x: Math.round((x - origin[0]) * 10) / 10, y: Math.round((y - origin[1]) * 10) / 10 }
 }
 
-/** Keeps an opened project's flush volumes and tower spot. Returns the line for the open's note, or '' when the file has neither. */
-export function keepProjectFlushAndTower(settings: Record<string, unknown>): string {
+/**
+ * Which entry of the per-plate lists each of a project's plates reads, by the plates' numbers in the file's order: the
+ * plate's place, when the plates are numbered 1, 2, 3 in that order (or a lone plate has no number), so place and
+ * number agree, as the engine reads them for sx slice. Otherwise which entry is whose is not certain, and no plate
+ * gets one (null): the engine places those towers.
+ */
+export function plateTowerIndexes(plateNos: readonly (number | undefined)[]): (number | null)[] {
+  const sure = (plateNos.length === 1 && plateNos[0] === undefined) || plateNos.every((n, i) => n === i + 1)
+  return plateNos.map((_, i) => (sure ? i : null))
+}
+
+/**
+ * Keeps an opened project's flush volumes and tower spots: each of `plates` (the app's plate ids, in the file's order,
+ * with the file's plate numbers) stands its tower at its own entry of the file's spot, and the shown plate's goes in
+ * the tower state. Returns the line for the open's note, or '' when the file has neither.
+ */
+export function keepProjectFlushAndTower(settings: Record<string, unknown>, plates: readonly { id: string; plateNo?: number }[] = [{ id: get().activePlate }]): string {
   const flush = projectFlushFrom(settings)
-  const tower = projectTowerFrom(settings, areaOrigin(resolveConfig(get().easy, get().overrides)['printable_area']))
-  set({ projectFlush: flush, towerFromProject: !!tower, ...(tower ? { tower: { auto: false, ...tower } } : {}) })
-  const kept = [flush ? 'flush volumes' : '', tower ? 'prime tower position' : ''].filter(Boolean)
-  return kept.length ? `Kept the project's ${kept.join(' and ')}.` : ''
+  const origin = areaOrigin(resolveConfig(get().easy, get().overrides)['printable_area'])
+  const indexes = plateTowerIndexes(plates.map((p) => p.plateNo))
+  const towers: Record<string, { x: number; y: number } | null> = {}
+  for (const [i, p] of plates.entries()) towers[p.id] = indexes[i] === null ? null : projectTowerFrom(settings, origin, indexes[i])
+  const kept = Object.values(towers).some(Boolean)
+  const shown = towers[get().activePlate]
+  set({ projectFlush: flush, towerFromProject: kept, projectTowers: kept ? towers : {}, ...(kept ? { tower: shown ? { auto: false, ...shown } : { auto: true, x: 0, y: 0 } } : {}) })
+  const note = [flush ? 'flush volumes' : '', kept ? 'prime tower position' : ''].filter(Boolean)
+  return note.length ? `Kept the project's ${note.join(' and ')}.` : ''
 }

@@ -3,7 +3,7 @@
 // The prime tower's place. Auto is on by default: the engine picks a spot clear of the objects and reports it
 // (SliceResult.primeTower). Moving the tower by hand turns auto off and sends the spot as wipe_tower_x and wipe_tower_y.
 import type { PrimeTowerPlacement } from '@slicerx/contracts'
-import { get, markStale, set } from '../state/store'
+import { get, markStale, set, type AppState } from '../state/store'
 
 export const TOWER_ID = 'prime-tower'
 
@@ -11,14 +11,26 @@ export function setTowerAuto(on: boolean): void {
   const s = get()
   // Turning auto off keeps the tower where it stands now, so nothing jumps.
   const reported = s.slice.status === 'done' ? s.slice.result.primeTower : undefined
-  set({ tower: on ? { ...s.tower, auto: true } : { auto: false, x: reported?.x ?? s.tower.x, y: reported?.y ?? s.tower.y } })
+  // The person's choice, for every plate: the project's own spots per plate are let go.
+  set({ tower: on ? { ...s.tower, auto: true } : { auto: false, x: reported?.x ?? s.tower.x, y: reported?.y ?? s.tower.y }, towerFromProject: false, projectTowers: {} })
   markStale()
+}
+
+/**
+ * The tower plate `plateId` slices with: the tower state, or while the tower stands where an opened project put it,
+ * that plate's own spot (the engine places it where the project's spot for the plate is not certain). A plate the
+ * project did not bring follows the tower state.
+ */
+export function plateTower(s: Pick<AppState, 'tower' | 'towerFromProject' | 'projectTowers'>, plateId: string): AppState['tower'] {
+  if (!s.towerFromProject || !Object.hasOwn(s.projectTowers, plateId)) return s.tower
+  const own = s.projectTowers[plateId]
+  return own ? { auto: false, ...own } : { auto: true, x: 0, y: 0 }
 }
 
 /** A hand move: the new front left corner, mm. Turns auto off. */
 export function moveTower(x: number, y: number): void {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return
-  set({ tower: { auto: false, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }, towerFromProject: false })
+  set({ tower: { auto: false, x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 }, towerFromProject: false, projectTowers: {} })
   markStale()
 }
 
