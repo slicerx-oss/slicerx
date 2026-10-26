@@ -35,9 +35,13 @@ export const journeys = [
   { paths: ['packages/app/src/viewport/', 'packages/ui/viewport/', 'packages/app/src/plate/pick-filter.ts', 'packages/app/src/plate/select-other-pick.ts', 'packages/app/src/plate/sub-pick.ts'], journeys: model },
   // plates, objects and files
   { paths: ['packages/app/src/plate/'], journeys: ['plates', 'sidebar', 'phone-model'] },
-  { paths: ['packages/app/src/plate/tower.ts'], journeys: ['tower'] },
-  { paths: ['packages/app/src/project/', 'packages/app/src/export/', 'packages/sx3mf/', 'packages/threemf/'], journeys: ['project', 'file-open'] },
-  { paths: ['packages/app/src/state/open-', 'packages/app/src/state/import-', 'packages/app/src/state/multi-body.ts'], journeys: ['file-open'] },
+  { paths: ['packages/app/src/plate/tower.ts'], journeys: ['tower', 'tower-plates'] },
+  { paths: ['packages/app/src/plate/plates.ts'], journeys: ['plates', 'sidebar', 'phone-model', 'tower-plates'] },
+  { paths: ['packages/app/src/project/', 'packages/app/src/export/', 'packages/sx3mf/', 'packages/threemf/'], journeys: ['project', 'file-open', 'tower-plates'] },
+  { paths: ['packages/app/src/state/open-', 'packages/app/src/state/import-', 'packages/app/src/state/multi-body.ts'], journeys: ['file-open', 'tower-plates'] },
+  // a project's prime tower spot per plate, from the file to the slice request
+  { paths: ['packages/app/src/filament/project-kept.ts', 'packages/app/src/filament/slot-config.ts'], journeys: [...settings, 'tower-plates'] },
+  { paths: ['packages/app/src/state/slice-plate.ts'], journeys: ['slicing-preview', 'tower', 'tower-plates'] },
   // slicing and the result
   { paths: ['packages/app/src/workspaces/preview/', 'packages/app/src/workspaces/slice-progress.tsx', 'packages/app/src/state/auto-slice', 'packages/core/web/', 'packages/core/wasm/'], journeys: slicing },
   { paths: ['packages/app/src/workspaces/prepare/', 'packages/app/src/presets/', 'packages/app/src/filament/', 'packages/app/src/adapters/', 'packages/app/src/calibration/', 'packages/settings/', 'packages/profiles/'], journeys: settings },
