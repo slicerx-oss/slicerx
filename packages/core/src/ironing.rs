@@ -279,7 +279,12 @@ fn lines(
     let nozzle = cfg.nozzle_diameter;
     // The extrusion: height from the flow percent, width from the nozzle, flow multiplier for the writer's bead.
     let layer_h = f64::from(out.height);
-    let ext_h = layer_h * flow_pct / 100.0 * spacing / nozzle;
+    // The ironed height comes from the layer height setting, not this layer's own height: a thicker first layer, a
+    // height range or a smart layer irons the same mm3 per mm as a layer at the setting. The setting is rounded to the
+    // layer's f32 height, so a layer at the setting irons exactly as before.
+    #[allow(clippy::cast_possible_truncation, reason = "layer heights are small")]
+    let set_h = f64::from(cfg.layer_height as f32);
+    let ext_h = set_h * flow_pct / 100.0 * spacing / nozzle;
     let width = nozzle + ext_h * (1.0 - std::f64::consts::FRAC_PI_4);
     let flow = nozzle * ext_h / crate::gcode::bead_area(width, layer_h).max(1e-9);
     let polylines: Vec<Vec<Pt>> = if concentric(cfg) {
@@ -455,5 +460,42 @@ mod tests {
         let owners = vec![(1u8, areas.slice.clone())];
         assert!(add(&mut out, &areas, &c, false, 0.0, &owners));
         assert!(out.paths.len() > before && out.paths.iter().all(|p| p.tool == 1));
+    }
+
+    /// The volume per millimeter and the width of the first ironing line of `c` on a layer `h` mm thick, with the
+    /// layer height setting at 0.2 mm.
+    fn first_line(c: &PrintConfig, h: f32) -> (f64, f64) {
+        let (mut out, areas) = layer();
+        out.height = h;
+        let mut c = c.clone();
+        c.layer_height = 0.2;
+        assert!(add(&mut out, &areas, &c, false, 0.0, &[]));
+        let p = out.paths[0];
+        (
+            crate::gcode::bead_area(f64::from(p.width_mm), f64::from(h)) * f64::from(p.flow),
+            f64::from(p.width_mm),
+        )
+    }
+
+    #[test]
+    fn a_thick_first_layer_irons_at_the_layer_height_setting() {
+        // 0.2 x 15% x 0.1 = 0.0030 mm3 per mm on a 0.3 mm layer, not 0.3 x 15% x 0.1 = 0.0045.
+        let mut c = cfg("solid");
+        c.raw.insert("ironing_flow".into(), serde_json::json!(15));
+        c.raw.insert("ironing_spacing".into(), serde_json::json!(0.1));
+        let (vol, width) = first_line(&c, 0.3);
+        assert!((vol - 0.0030).abs() < 1e-5, "{vol}");
+        assert!((width - 0.401_61).abs() < 1e-5, "{width}");
+    }
+
+    #[test]
+    fn a_thin_layer_irons_at_the_layer_height_setting() {
+        // 0.2 x 25% x 0.15 = 0.0075 mm3 per mm on a 0.1 mm layer, not 0.1 x 25% x 0.15 = 0.00375.
+        let mut c = cfg("top");
+        c.raw.insert("ironing_flow".into(), serde_json::json!(25));
+        c.raw.insert("ironing_spacing".into(), serde_json::json!(0.15));
+        let (vol, width) = first_line(&c, 0.1);
+        assert!((vol - 0.0075).abs() < 1e-5, "{vol}");
+        assert!((width - 0.404_02).abs() < 1e-5, "{width}");
     }
 }
