@@ -75,7 +75,9 @@ export function radiusHit(d: number, radius: number, estimated: boolean): 'block
  */
 export function byObjectReach(cfg: Record<string, SettingValue>, brimMm: number, hull?: readonly Pt[]): number {
   const nozzle = num(cfg['nozzle_diameter'], 0.4)
-  const under = Math.max(Math.max(0, brimMm), supportReach(cfg, widthMm(cfg['support_line_width'], nozzle, nozzle)))
+  // A support width of 0 or unset is the line width.
+  const support = widthMm(cfg['support_line_width'], nozzle, widthMm(cfg['line_width'], nozzle, nozzle * 1.125))
+  const under = Math.max(Math.max(0, brimMm), supportReach(cfg, support))
   const { loops: asked, height, distance } = skirtSettings(cfg)
   if (asked === 0 || height === 0) return under
   const spacing = skirtSpacing(cfg)
