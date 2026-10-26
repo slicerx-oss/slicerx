@@ -218,6 +218,12 @@ export interface SliceOptions {
   thumbnail?: { width: number; height: number; rgba: Uint8Array }
   /** The printer profile id (`bambu-h2d`): heimdall checks the plate with that printer's head, gantry and tool changer. */
   printerId?: string
+  /**
+   * sx CLI: fill the keys the config lacks that the app that wrote the project file the plate names reads its own way,
+   * as `sx slice <project.3mf>` does (a Bambu Studio project gets the rib tower, 500 mm/s2 first layer travel and
+   * internal bridges at the bridge speed). Off by default: the config is taken as given.
+   */
+  projectDefaults?: boolean
 }
 
 export interface SliceRequest {

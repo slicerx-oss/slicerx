@@ -364,6 +364,12 @@ pub struct RequestOptions {
     /// gantry and tool changer of that printer, else of the settings' `printer_model`, else a generic head.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub printer_id: Option<String>,
+    /// Fill the keys `config` lacks that the app that wrote the project file the plate names reads its own way, as
+    /// `sx slice <project.3mf>` does (`fromApp` in engine-choices.json, [`apply_project_defaults`]): a Bambu Studio
+    /// project gets the rib tower, 500 mm/s2 first layer travel and internal bridges at the bridge speed. Off by
+    /// default, so a config is taken as given. The host that reads the project file applies it (`sx` does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_defaults: Option<bool>,
 }
 
 /// What `filename_format` reads from a request besides the settings.
@@ -662,6 +668,36 @@ pub fn app_missing_keys(
         })
         .map(|row| (row.key.clone(), row.value.clone()))
         .collect()
+}
+
+/// For a request with `options.projectDefaults`: fills the keys `config` lacks that the app that wrote `project` (a
+/// 3MF the request names) reads its own way ([`app_missing_keys`]), as `sx slice <project.3mf>` reads them. A null
+/// config becomes an object of those keys; a config that is not an object is left as it is. Returns the keys added,
+/// sorted.
+pub fn apply_project_defaults(config: &mut serde_json::Value, project: &[u8]) -> Vec<String> {
+    let application = crate::threemf::application(project);
+    let empty = serde_json::Map::new();
+    let have = match config {
+        serde_json::Value::Object(m) => &*m,
+        serde_json::Value::Null => &empty,
+        _ => return Vec::new(),
+    };
+    let missing = app_missing_keys(have, application.as_deref());
+    if missing.is_empty() {
+        return Vec::new();
+    }
+    if config.is_null() {
+        *config = serde_json::Value::Object(serde_json::Map::new());
+    }
+    let mut keys = Vec::with_capacity(missing.len());
+    if let Some(m) = config.as_object_mut() {
+        for (key, value) in missing {
+            keys.push(key.clone());
+            m.insert(key, value);
+        }
+    }
+    keys.sort();
+    keys
 }
 
 /// One of our engine choices (`keeps` in engine-choices.json): the key, the value we print with, the inherited values
@@ -2149,7 +2185,8 @@ pub const REQUEST_SCHEMA: &str = r#"{
         "plateName": { "type": "string", "description": "For filename_format: {plate_name}" },
         "plateNumber": { "type": "integer", "minimum": 1, "description": "For filename_format: {plate_number}, from 1" },
         "modelName": { "type": "string", "description": "For filename_format: {model_name}, the project's name" },
-        "printerId": { "type": "string", "description": "Printer profile id (bambu-h2d): the head, gantry and tool changer the collision check uses" }
+        "printerId": { "type": "string", "description": "Printer profile id (bambu-h2d): the head, gantry and tool changer the collision check uses" },
+        "projectDefaults": { "type": "boolean", "description": "sx CLI: fill the keys config lacks that the app that wrote the first project file the plate names reads its own way, as sx slice <project.3mf> does (a Bambu Studio project: wipe_tower_wall_type rib unless prime_tower_rib_wall is set, initial_layer_travel_acceleration 500, internal_bridge_speed 100%). Off by default: config is taken as given" }
       }
     },
     "meshes": { "type": "object", "additionalProperties": { "oneOf": [ { "type": "string" }, { "type": "object", "required": ["file"], "properties": { "file": { "type": "string" }, "paint": { "type": "object", "description": "Paint written over the file's own: { part index: { color | seam | support | fuzzy: { triangle index: paint text } } }, texts as a 3MF's per-triangle paint; an empty text clears a triangle" } } } ] }, "description": "sx CLI only: mesh reference to file path, or to { file, paint }" }

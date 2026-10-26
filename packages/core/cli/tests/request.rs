@@ -4382,3 +4382,174 @@ fn a_project_3mf_keeps_its_positions() {
         near(&request(model, plate, config), &want, &format!("request, {what}"));
     }
 }
+
+/// The settings of a bare Bambu Studio project of two boxes on two filaments (so it has a prime tower), with none of
+/// the keys its app reads differently when they are missing.
+fn bare_bambu_settings() -> serde_json::Value {
+    serde_json::json!({
+        "printer_model": "Bambu Lab P1S", "enable_prime_tower": "1",
+        "filament_colour": ["#ff0000", "#00ff00"], "nozzle_temperature": ["220", "225"],
+        "layer_height": "0.2", "initial_layer_print_height": "0.2", "brim_width": "0", "skirt_loops": "0"
+    })
+}
+
+/// A config block line of a G-code file: `; key = value`.
+fn header_value<'a>(gcode: &'a str, key: &str) -> Option<&'a str> {
+    let prefix = format!("; {key} = ");
+    gcode.lines().find_map(|l| l.strip_prefix(prefix.as_str()))
+}
+
+/// The G-code of `request`, written as a file in `dir` so its mesh paths are relative to the project there.
+fn request_gcode(dir: &Path, name: &str, request: &serde_json::Value) -> String {
+    let path = dir.join(format!("{name}.json"));
+    std::fs::write(&path, request.to_string()).unwrap();
+    let out_dir = dir.join(name);
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&path)
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{name}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap()
+}
+
+/// `sx project-settings <project.3mf>` prints the settings `sx slice <project.3mf>` takes from the project: its own,
+/// with our engine choices and its app's reading of the keys it lacks (a bare Bambu Studio project gets the rib tower,
+/// 500 mm/s2 first layer travel and 100 percent internal bridges). A request that passes them as `config` prints the
+/// same config block as `sx slice` does.
+#[test]
+fn sx_project_settings_prints_the_settings_sx_slice_takes() {
+    let dir = temp_dir(format!("sx-cli-project-settings-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let project = dir.join("bare.3mf");
+    std::fs::write(&project, bambu_two_boxes_3mf(&bare_bambu_settings())).unwrap();
+    let out = sx().arg("project-settings").arg(&project).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let config: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(config["wipe_tower_wall_type"], "rib");
+    assert_eq!(
+        config["initial_layer_travel_acceleration"],
+        serde_json::json!(["500"])
+    );
+    assert_eq!(config["internal_bridge_speed"], serde_json::json!(["100%"]));
+    assert_eq!(config["precise_outer_wall"], true);
+    assert_eq!(config["layer_height"], "0.2");
+
+    let cli = sx()
+        .arg("slice")
+        .arg(&project)
+        .args(["--plate", "1", "-o", "-"])
+        .output()
+        .unwrap();
+    assert!(cli.status.success(), "{}", String::from_utf8_lossy(&cli.stderr));
+    let cli = String::from_utf8_lossy(&cli.stdout).into_owned();
+    let request = serde_json::json!({
+        "schemaVersion": 1, "meshes": {"m": "bare.3mf#1"}, "plate": {"objects": [{"id": "m", "mesh": "m"}]},
+        "config": config, "options": {"emitGcode": true}
+    });
+    let req = request_gcode(&dir, "from-settings", &request);
+    let block = |g: &str| {
+        g.lines()
+            .skip_while(|l| !l.starts_with("; CONFIG_BLOCK_START"))
+            .take_while(|l| !l.starts_with("; CONFIG_BLOCK_END"))
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    assert!(!block(&cli).is_empty());
+    assert_eq!(block(&req), block(&cli));
+
+    // A plain 3MF has no settings: an empty object. A missing path is a usage error.
+    let plain = dir.join("plain.3mf");
+    std::fs::write(&plain, box_3mf_by(None, None, &[])).unwrap();
+    let out = sx().arg("project-settings").arg(&plain).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "{}");
+    assert_eq!(
+        sx().arg("project-settings").output().unwrap().status.code(),
+        Some(2)
+    );
+}
+
+/// With `options.projectDefaults`, a request that names a project file gets that project's app's reading of the keys
+/// the request's config lacks, as `sx slice <project.3mf>` does; without it the config is taken as given. A project
+/// another app wrote gets nothing, and a key the config sets stays.
+#[test]
+fn project_defaults_option_reads_the_named_projects_app() {
+    let dir = temp_dir(format!("sx-cli-project-defaults-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("bare.3mf"), bambu_two_boxes_3mf(&bare_bambu_settings())).unwrap();
+    let request = |options: serde_json::Value, config: serde_json::Value| {
+        let mut o = serde_json::json!({"emitGcode": true});
+        o.as_object_mut()
+            .unwrap()
+            .extend(options.as_object().unwrap().clone());
+        serde_json::json!({
+            "schemaVersion": 1, "meshes": {"m": "bare.3mf#1"}, "plate": {"objects": [{"id": "m", "mesh": "m"}]},
+            "config": config, "options": o
+        })
+    };
+    let given = bare_bambu_settings();
+    let on = request_gcode(
+        &dir,
+        "on",
+        &request(serde_json::json!({"projectDefaults": true}), given.clone()),
+    );
+    assert_eq!(header_value(&on, "wipe_tower_wall_type"), Some("rib"));
+    assert_eq!(
+        header_value(&on, "initial_layer_travel_acceleration"),
+        Some("500")
+    );
+    assert_eq!(header_value(&on, "internal_bridge_speed"), Some("100%"));
+    for (name, options) in [
+        ("off", serde_json::json!({})),
+        ("false", serde_json::json!({"projectDefaults": false})),
+    ] {
+        let g = request_gcode(&dir, name, &request(options, given.clone()));
+        assert_eq!(
+            header_value(&g, "wipe_tower_wall_type"),
+            Some("rectangle"),
+            "{name}"
+        );
+        assert_ne!(
+            header_value(&g, "initial_layer_travel_acceleration"),
+            Some("500"),
+            "{name}"
+        );
+    }
+    let mut own = given.clone();
+    own["wipe_tower_wall_type"] = serde_json::json!("rectangle");
+    let kept = request_gcode(
+        &dir,
+        "own",
+        &request(serde_json::json!({"projectDefaults": true}), own),
+    );
+    assert_eq!(header_value(&kept, "wipe_tower_wall_type"), Some("rectangle"));
+    assert_eq!(header_value(&kept, "internal_bridge_speed"), Some("100%"));
+
+    std::fs::write(
+        dir.join("orca.3mf"),
+        box_3mf_by(Some("OrcaSlicer-2.3.0"), Some(given.to_string().as_bytes()), &[]),
+    )
+    .unwrap();
+    let mut orca = request(serde_json::json!({"projectDefaults": true}), given);
+    orca["meshes"]["m"] = serde_json::json!("orca.3mf");
+    let g = request_gcode(&dir, "orca", &orca);
+    assert_ne!(header_value(&g, "initial_layer_travel_acceleration"), Some("500"));
+    assert_ne!(header_value(&g, "internal_bridge_speed"), Some("100%"));
+}
+
+#[test]
+fn the_request_schema_has_project_defaults() {
+    let out = sx().args(["schema", "request"]).output().unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        v["properties"]["options"]["properties"]["projectDefaults"]["type"],
+        "boolean"
+    );
+}

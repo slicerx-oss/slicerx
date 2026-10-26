@@ -7,6 +7,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 ### Added
 
 - `slicerx_list_setting_defaults` lists every setting's default with its `scope` (`process`, `printer` or `filament`), from the same data as `slicerx_explain_setting`. `section` keeps one scope and `keys` keeps the keys given; an unknown key is refused with `invalid_settings` and the closest keys. Each entry in `settings` is `{ key, scope, default }`, `total` counts them, and `no_default` names the keys the engine works out for itself. Only process defaults are what the engine slices with when a config leaves a key out; printer and filament defaults are the app's starting preset, and presets and project values override all of them. The values equal `defaults.json`, which packed integrator kits now ship at the top level and list under `files` in `kit-manifest.json`.
+- `slicerx_inspect_project` 1.1.0 returns `project_config` for a project with settings: the settings `slicerx_slice_file` takes from it with `project_settings: true`, as one object a request client can pass as `config`.
 
 ### Changed
 
