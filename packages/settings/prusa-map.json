@@ -1,5 +1,5 @@
 {
- "comment": "Maps PrusaSlicer preset keys to SlicerX keys. A key that is in the schema under the same name needs no entry. Source: PrusaSlicer print_config_def and handle_legacy (commit 30ef591), compared key by key with our schema. Composite conversions (support, first layer speed, bed temperature, ironing, travel lift) and percent bases are in js/prusa.ts.",
+ "comment": "Maps PrusaSlicer preset keys to SlicerX keys. A key that is in the schema under the same name needs no entry. A key in onlyMappedValues carries over only through a values row (PrusaSlicer writes no shrinkage as 0%, SlicerX as 100%); any other value is left out and reported as not applied. A key in zeroIsUnset with the value 0 means not set there and is read as absent. Source: PrusaSlicer print_config_def and handle_legacy (commit 30ef591), compared key by key with our schema. Composite conversions (support, first layer speed, bed temperature, ironing, travel lift) and percent bases are in js/prusa.ts.",
  "prusaCommit": "30ef591",
  "rename": {
   "arc_fitting": "enable_arc_fitting",
@@ -300,7 +300,24 @@
    "key": "scarf_seam_placement",
    "from": "everywhere",
    "to": "all"
+  },
+  {
+   "key": "filament_shrinkage_compensation_xy",
+   "from": "0%",
+   "to": "100%"
+  },
+  {
+   "key": "filament_shrinkage_compensation_z",
+   "from": "0%",
+   "to": "100%"
   }
+ ],
+ "onlyMappedValues": [
+  "filament_shrinkage_compensation_xy",
+  "filament_shrinkage_compensation_z"
+ ],
+ "zeroIsUnset": [
+  "first_layer_infill_speed"
  ],
  "percentOf": {
   "external_perimeter_speed": "perimeter_speed",
