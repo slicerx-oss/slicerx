@@ -91,6 +91,8 @@ const config = { ...process.config, ...printer.config, ...filament.config, ...ov
 
 Never copy credentials or `post_process` into a config from a project or preset file.
 
+To slice a Bambu Studio or OrcaSlicer project with the settings it was saved with, take `config` from `sx project-settings project.3mf` (or `project_config` from `slicerx_inspect_project`) rather than the raw `Metadata/project_settings.config`. That object is what `sx slice project.3mf` slices with: the project's own values plus the reading of keys it lacks by the app that wrote it. A Bambu Studio project that names no prime tower wall gets the rib tower, for example. If you already send the raw project settings, `"options": { "projectDefaults": true }` fills in the same app reading of the missing keys from the project file the plate names. It is off by default, so a request without it slices as before.
+
 ## 4. Slice and estimate
 
 Run `sx` from the main process, never from the window, and hand the window only bytes and numbers:

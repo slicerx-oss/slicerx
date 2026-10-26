@@ -10,6 +10,7 @@
 //! script recognition: --script-printer <model-id> --script-firmware <flavor>
 //! sx --version
 //! sx metadata <project.3mf>
+//! sx project-settings <project.3mf>
 //! sx call [server options] <tool> [json] [<tool> [json] ...]
 //! sx canonical-script <file | -> [--batch]
 //! sx review-script <request.json | -> [--batch]
@@ -87,6 +88,7 @@ fn main() -> ExitCode {
         Some("slice") => cmd_slice(&args[1..]),
         Some("schema") => return cmd_schema(&args[1..]),
         Some("metadata") => cmd_metadata(&args[1..]),
+        Some("project-settings") => return cmd_project_settings(&args[1..]),
         Some("bench") => cmd_bench(&args[1..]),
         Some("time") => cmd_time(&args[1..]),
         Some("call") => tool_call::run(&args[1..]),
@@ -100,7 +102,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
+                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx project-settings <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
             );
             return ExitCode::from(2);
         }
@@ -310,6 +312,36 @@ fn split_ref(full: &str) -> (&str, Option<u32>) {
         Some((p, n)) if n.parse::<u32>().is_ok() => (p, n.parse::<u32>().ok()),
         _ => (full, None),
     }
+}
+
+/// With `options.projectDefaults`: the keys the request's config lacks that the app that wrote the first project file
+/// the plate names reads its own way ([`sx_core::api::apply_project_defaults`]), added to the config and named on
+/// stderr. Nothing without the option or a 3MF among the objects' meshes.
+fn project_defaults(
+    req: &mut sx_core::api::SliceRequest,
+    base: &Path,
+    paths: &std::collections::HashMap<String, String>,
+) -> sx_core::Result<()> {
+    if req.options.project_defaults != Some(true) {
+        return Ok(());
+    }
+    let project = req.plate.objects.iter().find_map(|o| {
+        let key = o.mesh_ref();
+        let full = paths.get(&key).map_or(key, Clone::clone);
+        let (rel, _) = split_ref(&full);
+        rel.to_ascii_lowercase().ends_with(".3mf").then(|| rel.to_owned())
+    });
+    let Some(rel) = project else { return Ok(()) };
+    let path = base.join(&rel);
+    let bytes = std::fs::read(&path).map_err(|e| sx_core::Error::Mesh {
+        name: path.display().to_string(),
+        reason: e.to_string(),
+    })?;
+    let added = sx_core::api::apply_project_defaults(&mut req.config, &bytes);
+    if !added.is_empty() {
+        eprintln!("sx: project defaults: {rel} adds {}", added.join(", "));
+    }
+    Ok(())
 }
 
 /// Meshes loaded while splitting a request's projects, by key.
@@ -686,6 +718,9 @@ fn cmd_request(args: &[String]) -> ExitCode {
     };
     report_options(&mut req, args);
     let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
+    if let Err(e) = project_defaults(&mut req, &base, &paths) {
+        return fail(EXIT_INPUT, e.to_string());
+    }
     let (cache, plate_notes) = match split_projects(&mut req, &base, &paths, &painted) {
         Ok(split) => split,
         Err(e) => return fail(EXIT_INPUT, e.to_string()),
@@ -931,6 +966,42 @@ fn cmd_metadata(args: &[String]) -> Res<ExitCode> {
     let meta = sx_core::api::project_metadata(&std::fs::read(path)?, path)?;
     println!("{}", serde_json::to_string(&meta)?);
     Ok(ExitCode::SUCCESS)
+}
+
+/// Prints the settings `sx slice <project.3mf>` takes from a project ([`sx_core::api::project_config`]) as one JSON
+/// object on stdout, for a request's `config`: the project's own, our engine choices it did not change, our defaults
+/// for keys it does not set, and its app's reading of keys it lacks. A 3MF without settings prints `{}`. The engine
+/// choices kept, the walls and a settings file that could not be read are noted on stderr.
+fn cmd_project_settings(args: &[String]) -> ExitCode {
+    let Some(path) = args.first().filter(|a| !a.starts_with('-') && args.len() == 1) else {
+        eprintln!("usage: sx project-settings <project.3mf>");
+        return ExitCode::from(EXIT_USAGE);
+    };
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("sx project-settings: {path}: {e}");
+            return ExitCode::from(EXIT_INPUT);
+        }
+    };
+    let project = match sx_core::api::project_config(&bytes, path) {
+        Ok(p) => p.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("sx project-settings: {e}");
+            return ExitCode::from(EXIT_INPUT);
+        }
+    };
+    if let Some(why) = &project.skipped {
+        eprintln!("sx: {why}");
+    }
+    if let Some(w) = &project.walls {
+        eprintln!("sx: walls: {}", w.text);
+    }
+    for k in &project.kept {
+        eprintln!("sx: kept {}: {}", k.key, k.note);
+    }
+    println!("{}", Value::Object(project.settings));
+    ExitCode::SUCCESS
 }
 
 /// The print time of a G-code file as the engine estimates it (Orca's G-code processor model), in

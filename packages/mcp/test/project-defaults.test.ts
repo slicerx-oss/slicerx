@@ -50,6 +50,22 @@ describe("readProjectFile and the keys a project's app reads differently", () =>
   }
 })
 
+describe('slicerx_inspect_project', () => {
+  it('returns the settings a project slices with as project_config, with its app defaults', async () => {
+    const h = await connect()
+    const bare = cases.cases[0]
+    if (!bare) throw new Error('no cases')
+    const path = project(bare.application, bare.settings, false, h.dir)
+    const r = data<{ project_config?: Record<string, unknown> }>(await h.call('slicerx_inspect_project', { file: path }))
+    expect(r.project_config).toEqual(readProjectFile(path).config)
+    expect(one(r.project_config?.['wipe_tower_wall_type'])).toBe('rib')
+    // a plain 3MF has no settings, so no project_config
+    const plain = join(h.dir, 'plain.3mf')
+    writeFileSync(plain, writeZip([{ name: '3D/3dmodel.model', data: model(undefined) }]))
+    expect(data<{ project_config?: unknown }>(await h.call('slicerx_inspect_project', { file: plain })).project_config).toBeUndefined()
+  })
+})
+
 /** The X and Y size of the prime tower's extrusions from layer 2 up (2nd to 98th percentile), mm. */
 function towerSize(gcode: string): { x: number; y: number } {
   let feature = ''
