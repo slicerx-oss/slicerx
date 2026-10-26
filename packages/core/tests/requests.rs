@@ -6471,18 +6471,12 @@ fn spiral_layers_take_the_timelapse_photo_without_a_retraction_or_lift() {
     for (i, l) in layers.iter().enumerate() {
         let (before, after, top) = around_the_shot(l);
         let retracts = before.iter().any(|x| x.starts_with("G1 E-"));
-        if i < 2 {
-            // The solid base still retracts and lifts before the photo.
-            assert!(retracts, "layer {i}: {before:?}");
-            assert!(moves_up(&before, top), "layer {i}: {before:?}");
-            continue;
-        }
         if i == 19 {
             // The print's last layer makes its closing retraction before the photo.
             continue;
         }
         // The wall goes on into the next layer from where it stopped: the photo with no retraction, lift, travel or
-        // prime around it.
+        // prime around it. The solid base takes it the same way, at the end of its last path.
         assert!(!retracts, "layer {i}: {before:?}");
         assert!(!moves_up(&before, top), "layer {i}: {before:?}");
         assert!(
@@ -6493,8 +6487,8 @@ fn spiral_layers_take_the_timelapse_photo_without_a_retraction_or_lift() {
             "layer {i}: {after:?}"
         );
         assert!(after.contains(&"M971 S11 C10 O0"), "layer {i}: {after:?}");
-        // Above the first spiral layer, which travels in from the base, nothing retracts at all.
-        assert!(i == 2 || !l.contains("E-"), "layer {i} retracts");
+        // Above the first spiral layer, which can travel in from a base that ends far from the wall, nothing retracts.
+        assert!(i <= 2 || !l.contains("E-"), "layer {i} retracts");
     }
 }
 

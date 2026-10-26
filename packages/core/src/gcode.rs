@@ -1787,7 +1787,19 @@ fn emit_layer(
     let layer_retract = !rc.raw.contains_key("retract_when_changing_layer")
         || crate::firmware::truthy(&rc, "retract_when_changing_layer");
     let style = Retraction::of(c, flavor);
-    let retracts = style.active(retract) && !l.paths.is_empty() && layer_retract && !spiral;
+    // A solid base layer of a spiral vase whose wall starts next to where the layer below ended goes on from there
+    // like the spiral above it: no retraction or lift at the layer change, only the move to the new height, and a
+    // timelapse block that leaves the nozzle in place goes in without a retraction around it.
+    let vase_base = !spiral && crate::spiral::enabled(c);
+    let in_place_lapse = |text: &str| !crate::timelapse::moves_head(text) && !crate::timelapse::moves_z(text);
+    let vase_step = vase_base
+        && in_place_lapse(&lapse_body)
+        && crate::timelapse::wrapping_spot(base, l).is_none()
+        && !layer_gcode.iter().any(|g| g.layer == l.index)
+        && l.enter_from
+            .zip(l.paths.first().and_then(|p| l.path_points(p).first()))
+            .is_some_and(|(at, first)| at.dist_mm(*first) <= rc.retraction_minimum_travel);
+    let retracts = style.active(retract) && !l.paths.is_empty() && layer_retract && !spiral && !vase_step;
     // Where the layer below left the nozzle: the end of its last path as written, moved a little into the part
     // when a wipe on loops left a closed outer wall there.
     let below_spiral = spiral && !l.spiral_start;
@@ -3356,8 +3368,8 @@ fn emit_layer(
     {
         // A spiral layer's wall goes on into the next layer's without a break. A block that leaves the nozzle where
         // it is (the photo a timelapse template takes in spiral mode) goes in as it is, with no retraction, lift or
-        // prime around it to leave a seam or a blob on the wall.
-        let in_place = spiral && !crate::timelapse::moves_head(text) && !crate::timelapse::moves_z(text);
+        // prime around it to leave a seam or a blob on the wall. The solid base under a spiral takes it the same way.
+        let in_place = (spiral || vase_base) && in_place_lapse(text);
         let primed = !in_place && !retracted && style.active(retract);
         if primed {
             retract_move(b, style, -retract, retract_feed);

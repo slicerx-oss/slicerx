@@ -294,6 +294,9 @@ struct Builder<'a> {
     unsupported: std::cell::Cell<f32>,
     /// Points with their own Z and flow: (index, z, flow).
     pz: Vec<(u32, f32, f32)>,
+    /// A solid base layer of a spiral vase: an aligned seam on a ring with no corner, where every point scores the
+    /// same, goes to the point nearest the nozzle, which the layer starts at where the layer below ended.
+    round_nearest: bool,
 }
 
 impl Builder<'_> {
@@ -397,7 +400,20 @@ impl Builder<'_> {
             let flags: Vec<bool> = c.iter().map(|p| !o.hangs(*p)).collect();
             (flags.iter().any(|f| *f) && flags.iter().any(|f| !*f)).then_some(flags)
         });
-        let seam = seam_index(c, self.seam, self.cursor, key, supported.as_deref())?;
+        let mode = if self.round_nearest
+            && self.seam == SeamPosition::Aligned
+            && corner_index(c, |i, _| {
+                supported
+                    .as_ref()
+                    .is_none_or(|s| s.get(i).copied().unwrap_or(false))
+            })
+            .is_none()
+        {
+            SeamPosition::Nearest
+        } else {
+            self.seam
+        };
+        let seam = seam_index(c, mode, self.cursor, key, supported.as_deref())?;
         let n = c.len();
         let mut ring: Vec<IntPoint<i32>> = (0..n).filter_map(|i| c.get((seam + i) % n).copied()).collect();
         self.orient(&mut ring);
@@ -1752,20 +1768,22 @@ pub(crate) fn plan_layer(
     vase: Option<&crate::spiral::VaseLayer>,
     object_hulls: &[Vec<IntPoint<i32>>],
 ) {
-    plan_layer_paths(out, works, cfg, layer, seams, vase, object_hulls);
+    plan_layer_paths(out, works, cfg, layer, seams, (vase, None), object_hulls);
     cool(out, cfg);
 }
 
-/// [`plan_layer`] up to the layer's time.
+/// [`plan_layer`] up to the layer's time. `vase` is a spiral layer's, or for a solid base layer of a spiral vase
+/// where the layer below ended (its walls start nearest there).
 pub(crate) fn plan_layer_paths(
     out: &mut LayerPaths,
     works: &[ToolWork],
     cfg: &PrintConfig,
     layer: u32,
     seams: (&crate::seam::SeamIndex, f64, Option<&crate::seamplan::Plan>),
-    vase: Option<&crate::spiral::VaseLayer>,
+    vase: (Option<&crate::spiral::VaseLayer>, Option<Point>),
     object_hulls: &[Vec<IntPoint<i32>>],
 ) {
+    let (vase, base_entry) = vase;
     // Each filament prints at its extruder's speeds where the extruders differ (a Bowden extruder, a high flow
     // nozzle): the settings as that extruder prints with them, per filament slot.
     let top_tool = works.iter().map(|w| w.tool).max().unwrap_or(0);
@@ -1808,6 +1826,7 @@ pub(crate) fn plan_layer_paths(
         start_point: None,
         unsupported: std::cell::Cell::new(f32::MIN),
         pz: Vec::new(),
+        round_nearest: false,
         vol_caps: (1..=works.iter().map(|w| w.tool).max().unwrap_or(1))
             .map(|s| crate::tower::per_slot_raw(cfg, "filament_max_volumetric_speed", s, 0.0))
             .collect(),
@@ -1825,6 +1844,9 @@ pub(crate) fn plan_layer_paths(
         b.painted = None;
         b.clockwise =
             !matches!(cfg.raw.get("wall_direction"), Some(serde_json::Value::String(s)) if s == "ccw");
+    } else if let Some(at) = base_entry {
+        b.cursor = at;
+        b.round_nearest = true;
     }
     // Per work: its paths and how they slow down over the layer below.
     let mut vary: Vec<(usize, usize, &crate::quality::Context)> = Vec::new();
