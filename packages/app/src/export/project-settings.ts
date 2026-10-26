@@ -6,17 +6,13 @@
 // extra solid infill layers). Free text, G-code, scripts (`post_process`), network and credential keys,
 // and the printer's own settings (its bed and limits) are left for the person's own printer to decide.
 import type { PrintConfig, SettingValue } from '@slicerx/contracts'
-import { importFlat, sameValue, selectVariants, settingDef } from '@slicerx/settings'
+import { importFlat, isProjectUnread, sameValue, selectVariants, settingDef, takesProjectValue } from '@slicerx/settings'
 import type { PlateEntry } from '../state/store'
-import { takenFromFile } from '../lib/setting-text'
 
-// Plain numbers, percents, switches and choices, one or one per extruder or filament (overhang speeds are mm/s or %).
-const TAKEN = new Set(['float', 'int', 'percent', 'bool', 'enum', 'floats', 'ints', 'percents', 'floatOrPercent', 'floatsOrPercents', 'bools', 'enums'])
-
-/** A value a file may set: a plain one, or a text setting with a grammar (infill angle templates, extra solid layers). */
-function taken(def: { type: string; key: string; section: string }, value: unknown): boolean {
-  return TAKEN.has(def.type) || (def.type === 'string' && def.section === 'process' && takenFromFile(def.key, value))
-}
+// What a file may set is one rule, shared with the engine and the MCP server (prusa-map.json `projectTakes`, read by
+// `takesProjectValue`): plain numbers, percents, switches and choices of the print and filament settings, one or one
+// per extruder or filament (overhang speeds are mm/s or %), or a text setting with a grammar (infill angle templates,
+// extra solid layers).
 
 export interface ProjectSettings {
   /** Changes against the current settings, in our keys. */
@@ -28,19 +24,17 @@ export interface ProjectSettings {
 // Bambu Studio's per-variant values down to the ones that apply (shared with the MCP server's project reading).
 export { selectVariants } from '@slicerx/settings'
 
-// Bambu Studio prints a project's own values for these on nothing ("1", the stock value, and every other alike); an
-// object's, a part's or a modifier's own still count (`modifierSettings`).
-const PROJECT_UNREAD = new Set(['wall_filament', 'sparse_infill_filament', 'solid_infill_filament'])
-
+// Bambu Studio prints a project's own values for wall_filament, sparse_infill_filament and solid_infill_filament on
+// nothing ("1", the stock value, and every other alike), so the rule leaves a project's out (`unread`); an object's, a
+// part's or a modifier's own still count (`modifierSettings`).
 export function projectSettingChanges(raw: Record<string, unknown>, current: PrintConfig): ProjectSettings {
-  const read = Object.fromEntries(Object.entries(raw).filter(([k]) => !PROJECT_UNREAD.has(k)))
+  const read = Object.fromEntries(Object.entries(raw).filter(([k]) => !isProjectUnread(k)))
   const imported = importFlat(selectVariants(read)).config as Record<string, SettingValue>
   const now = current as unknown as Record<string, SettingValue | undefined>
   const values: Record<string, SettingValue> = {}
   const left: string[] = []
   for (const [key, value] of Object.entries(imported)) {
-    const def = settingDef(key)
-    if (!def || def.section === 'printer' || !taken(def, value)) {
+    if (!takesProjectValue(key, value)) {
       left.push(key)
       continue
     }
@@ -54,8 +48,7 @@ export function modifierSettings(raw: Record<string, string>): Record<string, Se
   const out: Record<string, SettingValue> = {}
   const config = importFlat(raw).config as Record<string, SettingValue>
   for (const [key, value] of Object.entries(config)) {
-    const def = settingDef(key)
-    if (def && def.section === 'process' && taken(def, value)) out[key] = value
+    if (settingDef(key)?.section === 'process' && takesProjectValue(key, value)) out[key] = value
   }
   return out
 }

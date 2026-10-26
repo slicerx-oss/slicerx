@@ -8,6 +8,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ### Added
 
+- `project_config` and `ProjectMetadata::project_settings` read a PrusaSlicer project's own settings (`Metadata/Slic3r_PE.config`, when the file has no `project_settings.config`): the print and filament values it may set, in our keys, through packages/settings/prusa-map.json, the table the app and the MCP server read. Printer settings, G-code and text stay the current printer's, and no engine choices or defaults are added, as the app opens such a project. `ProjectMetadata::settings_from` is `prusaslicer` for one. Before, both returned no settings for it.
 - `app_missing_keys`: the keys a project's settings lack that the app that wrote it reads its own way, with their values, from `fromApp` in packages/settings/engine-choices.json. `project_config` applies them from that table instead of its own copy; what it returns is unchanged.
 - `apply_project_defaults`: the same keys filled into a request's `config` from the project file it names, and `RequestOptions::project_defaults` (`projectDefaults`) for hosts that apply it. The request schema lists the option.
 ### Changed
@@ -22,6 +23,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ### Fixed
 
+- An ironing flow written as a percent string (`"15%"`, as a project file writes it) prints at that percent. It printed at the 10% default; a number (15) was read right.
 - `printer_structure` is part of the session key. A kept session built the collision model with the structure of its first request, so switching to or from a delta kept the old gantry rule in the report.
 
 ## [0.2.3] - 2026-10-25

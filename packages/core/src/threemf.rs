@@ -606,14 +606,20 @@ fn object_names(xml: &[u8]) -> HashMap<u32, String> {
     map
 }
 
-/// The settings a Bambu Studio or Orca project carries next to its geometry.
+/// The settings a Bambu Studio, Orca or `PrusaSlicer` project carries next to its geometry.
 /// The field names match the request of `sx-settings`' `import_project_json`.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectMetadata {
-    /// `Metadata/project_settings.config`, parsed (a JSON object of Orca keys).
+    /// `Metadata/project_settings.config`, parsed (a JSON object of Orca keys). A `PrusaSlicer` project, which has
+    /// `Metadata/Slic3r_PE.config` instead, gets what that config may set as Orca keys ([`crate::prusa::project_settings`]),
+    /// the same values the app and the MCP server open it with.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_settings: Option<serde_json::Value>,
+    /// The app whose settings `project_settings` holds when they are not an Orca or Bambu Studio project's own:
+    /// `prusaslicer` for a `PrusaSlicer` project.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub settings_from: Option<String>,
     /// Why `Metadata/project_settings.config` was left out, when the file has one that is not a JSON object of
     /// settings (INI style lines, a damaged file). The project then opens and slices as one without settings.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -964,6 +970,17 @@ pub fn metadata(bytes: &[u8], name: &str) -> Result<ProjectMetadata> {
             )),
         ),
     };
+    // A PrusaSlicer project: no project_settings.config (or an empty one), its settings in Slic3r_PE.config.
+    let mut settings_from = None;
+    if project_settings.is_none()
+        && settings_skipped.is_none()
+        && let Some(config) = text("Metadata/Slic3r_PE.config")
+    {
+        project_settings = Some(serde_json::Value::Object(
+            crate::prusa::project_settings(&config).0,
+        ));
+        settings_from = Some("prusaslicer".to_owned());
+    }
     let mut dropped_keys = Vec::new();
     if let Some(serde_json::Value::Object(map)) = project_settings.as_mut() {
         map.retain(|k, _| {
@@ -1019,6 +1036,7 @@ pub fn metadata(bytes: &[u8], name: &str) -> Result<ProjectMetadata> {
         .unwrap_or_default();
     Ok(ProjectMetadata {
         project_settings,
+        settings_from,
         settings_skipped,
         model_settings: text("Metadata/model_settings.config"),
         layer_ranges: text("Metadata/layer_config_ranges.xml"),

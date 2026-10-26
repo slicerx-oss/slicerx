@@ -615,7 +615,8 @@ pub struct KeptChoice {
 /// A project's own print settings (`Metadata/project_settings.config`), as a config: the file's values, keys a file
 /// may never set (scripts, credentials) left out, our engine choices (`packages/settings/engine-choices.json`) kept
 /// where the project did not change them, and our defaults for keys it does not set, as the app and the MCP server
-/// open a project.
+/// open a project. A `PrusaSlicer` project's are what its `Metadata/Slic3r_PE.config` may set, in our keys, with no
+/// engine choices or defaults added, as the app opens one on the current printer.
 #[derive(Debug, Clone, Default)]
 pub struct ProjectConfig {
     pub settings: serde_json::Map<String, serde_json::Value>,
@@ -832,6 +833,18 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
     let Some(serde_json::Value::Object(mut settings)) = meta.project_settings else {
         return Ok(None);
     };
+    if meta.settings_from.as_deref() == Some("prusaslicer") {
+        // A PrusaSlicer project's print and filament values go on the current printer as they are, as the app opens
+        // one: its config lists nothing as changed and names none of our engine choices, and the app adds no engine
+        // choices or defaults for it, so neither does the engine.
+        let walls = project_walls(&settings, None, None);
+        return Ok(Some(ProjectConfig {
+            settings,
+            walls,
+            dropped: meta.dropped_keys,
+            ..ProjectConfig::default()
+        }));
+    }
     // The keys the project lists as changed from its presets; when it does not say, every value is its own.
     let changed: Option<std::collections::HashSet<String>> = settings
         .get("different_settings_to_system")

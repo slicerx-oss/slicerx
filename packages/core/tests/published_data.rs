@@ -29,6 +29,10 @@ fn data_copies_match_the_settings_schema() {
             include_str!(concat!(env!("OUT_DIR"), "/int_keys.txt")),
         ),
         (
+            "setting_types.txt",
+            include_str!(concat!(env!("OUT_DIR"), "/setting_types.txt")),
+        ),
+        (
             "defaults.json",
             include_str!(concat!(env!("OUT_DIR"), "/defaults.json")),
         ),

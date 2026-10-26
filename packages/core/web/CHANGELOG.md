@@ -6,6 +6,7 @@ Keep a Changelog format; semver.
 
 ### Added
 
+- `projectMetadata` returns a PrusaSlicer project's print and filament settings as `projectSettings`, with `settingsFrom: "prusaslicer"`.
 - The slice result carries `chamberCooling` (the chamber cooling mode the printer's G-code reads, and where it came from), from the shards; `chamberCoolingOf` and `plateFacts` read it.
 - `meshParts(id)` and `projectMetadata(data, fileName)` on the pool host, and `decodeParts`.
 - `createWebSlicer` with the WASM worker pool (default) or the synthetic stub (`fake`).

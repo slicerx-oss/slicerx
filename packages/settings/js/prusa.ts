@@ -21,11 +21,66 @@ interface PrusaMap {
   onlyMappedValues: string[]
   /** Keys whose value 0 means not set, read as absent. */
   zeroIsUnset: string[]
+  /** Keys that carry over in mm only; a percent is left out and reported as not applied. */
+  noPercent: string[]
+  composites: {
+    /** One key's value set on each of several keys. */
+    fanOut: Record<string, string[]>
+    /** Another key's value picked by this key's value, `else` for any value the table does not list. */
+    valueToKey: Record<string, { to: string; values: Record<string, string>; else: string }>
+  }
+  /** What a project file's settings may set (see `takesProjectValue`). */
+  projectTakes: {
+    sections: string[]
+    types: string[]
+    /** Text settings with a grammar of their own: the characters each may hold, as a regular expression class. */
+    text: Record<string, string>
+    textSection: string
+    textMaxLength: number
+    unread: string[]
+    unsetValues: string[]
+  }
 }
 const MAP = mapJson as unknown as PrusaMap
 const IGNORED = new Set(MAP.ignoredKeys)
 const ONLY_MAPPED = new Set(MAP.onlyMappedValues)
 const ZERO_IS_UNSET = new Set(MAP.zeroIsUnset)
+const NO_PERCENT = new Set(MAP.noPercent)
+const TAKES = MAP.projectTakes
+const TAKEN_SECTIONS = new Set(TAKES.sections)
+const TAKEN_TYPES = new Set(TAKES.types)
+const UNREAD = new Set(TAKES.unread)
+const UNSET_VALUES = new Set(TAKES.unsetValues)
+
+/** The text settings a project file may set, with what each accepts (the settings rows check typed text the same way). */
+export const PROJECT_TEXT_RULES: Readonly<Record<string, RegExp>> = Object.fromEntries(Object.entries(TAKES.text).map(([k, cls]) => [k, new RegExp(`^[${cls}]*$`)]))
+
+/** Whether `text` is a value a text setting can hold: one line, not too long, and the setting's own grammar when it has one. */
+export function projectTextOk(key: string, text: string): boolean {
+  if (/[\r\n]/.test(text) || text.length > TAKES.textMaxLength) return false
+  const rule = PROJECT_TEXT_RULES[key]
+  return rule ? rule.test(text) : true
+}
+
+/** A key a project's own settings leave unread (`projectTakes.unread`), dropped before any older name is read as ours. */
+export function isProjectUnread(key: string): boolean {
+  return UNREAD.has(key)
+}
+
+/**
+ * Whether a project file's settings may set `key` to `value` (prusa-map.json `projectTakes`): a plain number, percent,
+ * switch or choice of the print or filament settings, or one of the text settings with a grammar the value fits. Free
+ * text, G-code, scripts, credentials, the printer's own settings and a value that means unset (`nil`) are left for the
+ * person's own printer and presets. The app's project open, `prusaProjectConfig` and the engine's PrusaSlicer project
+ * reading all use this rule.
+ */
+export function takesProjectValue(key: string, value: unknown): boolean {
+  if (isProjectUnread(key) || (typeof value === 'string' && UNSET_VALUES.has(value))) return false
+  const def = settingDef(key)
+  if (!def || !TAKEN_SECTIONS.has(def.section)) return false
+  if (TAKEN_TYPES.has(def.type)) return true
+  return def.type === 'string' && def.section === TAKES.textSection && key in TAKES.text && typeof value === 'string' && projectTextOk(key, value)
+}
 const IGNORED_RE = new RegExp(MAP.ignoredPattern)
 
 /** Prusa key to SlicerX key, for the keys that are renamed. */
@@ -178,12 +233,10 @@ export function mapPrusaValues(given: Raw): { values: Record<string, unknown>; u
   }
   if (prusa['ironing'] === '0') take('ironing_type')
 
-  // Bed temperature: one value in Prusa, one per plate in Orca. A smooth or textured PEI sheet is the common case.
-  if ('bed_temperature' in prusa) { setTemp(['hot_plate_temp', 'textured_plate_temp'], prusa['bed_temperature'] as string); take('bed_temperature') }
-  if ('first_layer_bed_temperature' in prusa) { setTemp(['hot_plate_temp_initial_layer', 'textured_plate_temp_initial_layer'], prusa['first_layer_bed_temperature'] as string); take('first_layer_bed_temperature') }
-
-  // Travel lift: a ramping lift is Orca's slope lift.
-  if ('travel_ramping_lift' in prusa) { put('z_hop_types', prusa['travel_ramping_lift'] === '1' ? 'Slope Lift' : 'Normal Lift'); take('travel_ramping_lift') }
+  // One value set on several keys (bed temperature: one value in Prusa, one per plate in Orca; a smooth or textured PEI
+  // sheet is the common case), and a value that picks another key's (a ramping travel lift is Orca's slope lift).
+  for (const [key, to] of Object.entries(MAP.composites.fanOut)) if (key in prusa) { setTemp(to, prusa[key] as string); take(key) }
+  for (const [key, row] of Object.entries(MAP.composites.valueToKey)) if (key in prusa) { put(row.to, row.values[prusa[key] as string] ?? row.else); take(key) }
 
   for (const [key, rawValue] of Object.entries(prusa)) {
     if (done.has(key)) continue
@@ -196,6 +249,7 @@ export function mapPrusaValues(given: Raw): { values: Record<string, unknown>; u
       const a = absolute(key, prusa)
       if (a !== undefined && percent(v) !== undefined) v = String(a)
     }
+    if (NO_PERCENT.has(key) && percent(v) !== undefined) { notApplied.push({ key, value: rawValue, reason: 'invalid', target }); continue }
     const vm = MAP.values.find((r) => r.key === key && r.from === v)
     if (vm) v = vm.to
     else if (ONLY_MAPPED.has(key)) { notApplied.push({ key, value: rawValue, reason: 'invalid', target }); continue }
@@ -327,6 +381,25 @@ export function prusaProjectSettings(text: string): { values: Record<string, unk
     if (list.length) values['filament_colour'] = list
   }
   return { values, unmapped: m.unmapped, notApplied: m.notApplied }
+}
+
+/**
+ * What a PrusaSlicer project's settings set when it opens (`prusaProjectSettings` through `takesProjectValue`): the
+ * print and filament values a project may set, in the Orca-format values project_settings.config has. The printer's own
+ * settings, G-code and text stay the current printer's. The app's project open, the MCP server's `readProjectFile` and
+ * the engine (`sx project-settings`, `sx slice <project.3mf>`) give the same config; fixtures/prusa-project-settings.json
+ * holds the cases all of them run. `left` lists the mapped keys a project may not set; `colors` are the filament colors.
+ */
+export function prusaProjectConfig(text: string): { config: Record<string, unknown>; unmapped: string[]; notApplied: Dropped[]; left: string[]; colors: string[] } {
+  const m = prusaProjectSettings(text)
+  const config: Record<string, unknown> = {}
+  const left: string[] = []
+  for (const [k, v] of Object.entries(m.values)) {
+    if (takesProjectValue(k, v)) config[k] = v
+    else left.push(k)
+  }
+  const colors = Array.isArray(m.values['filament_colour']) ? (m.values['filament_colour'] as string[]) : []
+  return { config, unmapped: m.unmapped, notApplied: m.notApplied, left: left.sort(), colors }
 }
 
 /** One object's or volume's Prusa settings (`Slic3r_PE_model.config` metadata) as Orca-format strings. */
