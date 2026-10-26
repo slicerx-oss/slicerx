@@ -184,10 +184,11 @@ fn area(
 }
 
 /// Adds the ironing paths of `layer` to `out` and returns whether any were added. `owners` is the part of the layer
-/// each filament irons (its top surface filament, with the regions it covers). With one filament ironing, the lines
-/// print last on the filament of the layer's last top surface. With more, each filament irons its own part right
-/// after the last of its own paths, so the layer still ends on the filament its planned order ends on and the next
-/// layer starts on the filament the plan says it does.
+/// each filament irons (its top surface filament, as the feature filament settings assign it, with the regions it
+/// covers). Each filament irons its own part right after the last of its own paths, so the layer still ends on the
+/// filament its planned order ends on and the next layer starts on the filament the plan says it does. With one
+/// filament ironing, it irons the whole area. With no owners (no regions), the layer's last top surface's filament
+/// irons, else the first.
 pub(crate) fn add(
     out: &mut LayerPaths,
     areas: &LayerAreas,
@@ -209,55 +210,54 @@ pub(crate) fn add(
     };
     let knobs = (spacing, flow_pct, speed, angle);
     // Each filament's share of the area. When one filament irons it all, the area is kept whole.
-    let parts: Vec<(u8, Shapes)> = owners
+    let mut parts: Vec<(u8, Shapes)> = owners
         .iter()
         .map(|(t, own)| (*t, perimeters::intersection(&region, own)))
         .filter(|(_, r)| !r.is_empty())
         .collect();
-    match parts.as_slice() {
-        [(tool, _)] if owners.len() > 1 => {
-            let paths = lines(out, &region, cfg, *tool, knobs);
-            place(out, *tool, paths)
-        }
-        [_, _, ..] => {
-            let mut added = false;
-            for (tool, part) in &parts {
-                let paths = lines(out, part, cfg, *tool, knobs);
-                added |= place(out, *tool, paths);
-            }
-            added
-        }
-        _ => {
-            // The top surface's filament irons (Orca: `top_surface_filament_id`), else the layer's last.
-            let tool = out
-                .paths
-                .iter()
-                .rev()
-                .find(|p| p.feature == Feature::TopSurface)
-                .or_else(|| out.paths.last())
-                .map_or(1, |p| p.tool)
-                .max(1);
-            let paths = lines(out, &region, cfg, tool, knobs);
-            let added = !paths.is_empty();
-            out.paths.extend(paths);
-            added
-        }
+    if parts.len() < 2 {
+        // The top surface's filament irons (Orca: `top_surface_filament_id`): the one owner's, else the layer's last
+        // top surface's.
+        let tool = parts
+            .first()
+            .map(|(t, _)| *t)
+            .or_else(|| {
+                out.paths
+                    .iter()
+                    .rev()
+                    .find(|p| p.feature == Feature::TopSurface)
+                    .map(|p| p.tool)
+            })
+            .or_else(|| owners.first().map(|(t, _)| *t))
+            .unwrap_or(1)
+            .max(1);
+        parts = vec![(tool, region)];
     }
+    let mut added = false;
+    for (tool, part) in &parts {
+        // Ironing follows a top surface printed in its filament, so a layer that never loads it irons nothing with it.
+        let Some(at) = spot(out, *tool) else { continue };
+        let paths = lines(out, part, cfg, *tool, knobs);
+        added |= !paths.is_empty();
+        out.paths.splice(at..at, paths);
+    }
+    added
 }
 
-/// Puts `paths` of `tool` right after that filament's last path that is not the prime tower (its tower rows
-/// before a change stay right before the change), or last when the layer has none. Returns whether there were any.
-fn place(out: &mut LayerPaths, tool: u8, paths: Vec<PathInfo>) -> bool {
-    if paths.is_empty() {
-        return false;
-    }
-    let at = out
+/// Where ironing on `tool` goes so that it never adds a tool change: right after that filament's last path that is
+/// not the prime tower (its tower rows before a change stay right before the change), or at the end when every later
+/// path is on the same filament. None when the layer never loads the filament (an empty layer takes it at the end).
+fn spot(out: &LayerPaths, tool: u8) -> Option<usize> {
+    let end = out.paths.len();
+    match out
         .paths
         .iter()
         .rposition(|p| p.tool == tool && p.feature != Feature::PrimeTower)
-        .map_or(out.paths.len(), |i| i + 1);
-    out.paths.splice(at..at, paths);
-    true
+    {
+        Some(i) if out.paths.iter().skip(i + 1).all(|p| p.tool == tool) => Some(end),
+        Some(i) => Some(i + 1),
+        None => out.paths.last().is_none_or(|p| p.tool == tool).then_some(end),
+    }
 }
 
 /// The ironing lines over `region` on `tool`: their points go to the end of `out.points`, the paths are returned.
@@ -418,5 +418,22 @@ mod tests {
                 .unwrap()
         };
         assert!(dy(&a) < dy(&b), "a turned line runs along y");
+    }
+
+    #[test]
+    fn a_filament_the_layer_never_loads_irons_nothing_and_adds_no_change() {
+        let (mut out, areas) = layer();
+        let c = cfg("top");
+        let walls = lines(&mut out, &areas.slice, &c, 1, (0.5, 10.0, 25.0, 0.0));
+        out.paths.extend(walls);
+        let before = out.paths.len();
+        let owners = vec![(2u8, areas.slice.clone())];
+        assert!(!add(&mut out, &areas, &c, false, 0.0, &owners));
+        assert_eq!(out.paths.len(), before);
+        assert!(out.paths.iter().all(|p| p.tool == 1));
+        // The filament the layer does load irons, at the end where it already is.
+        let owners = vec![(1u8, areas.slice.clone())];
+        assert!(add(&mut out, &areas, &c, false, 0.0, &owners));
+        assert!(out.paths.len() > before && out.paths.iter().all(|p| p.tool == 1));
     }
 }
