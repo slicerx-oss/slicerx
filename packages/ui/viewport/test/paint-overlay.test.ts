@@ -174,3 +174,15 @@ describe('paint data round trip', () => {
     expect(p.getData('o', 0, 'color')).toEqual({ 0: original[0] })
   })
 })
+
+describe('paint slot colors', () => {
+  it('redraws for new slot colors only, not for the same colors sent again', () => {
+    let redraws = 0
+    const painter = new Painter(() => undefined, new Group(), () => void redraws++, () => {}, () => CONTROL_PRESETS['orcaslicer'].gizmo.paint)
+    painter.setColors(['#ff0000', '#00ff00'])
+    painter.setColors(['#ff0000', '#00ff00'])
+    expect(redraws).toBe(1)
+    painter.setColors(['#0000ff'])
+    expect(redraws).toBe(2)
+  })
+})

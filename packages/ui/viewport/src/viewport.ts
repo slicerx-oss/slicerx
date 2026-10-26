@@ -233,6 +233,16 @@ interface PickHit {
   depth?: number
 }
 
+/**
+ * Still frames left to draw after a frame drawn with `settle` left. After motion they fade ambient occlusion back in.
+ * Without AO a still frame draws the picture before it again, and a big preview on software graphics takes seconds a
+ * frame, so then one follows only a moving frame drawn at reduced quality, to draw it at full quality.
+ */
+export function settleLeft(settle: number, moving: boolean, low: boolean, ao: boolean): number {
+  if (ao) return moving ? settle : Math.max(0, settle - 1)
+  return moving && low ? 1 : 0
+}
+
 /** A #rrggbb color at a quarter of its strength, for parts on a filament that is not picked out. */
 export function dimHex(hex: string): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex)
@@ -789,13 +799,13 @@ class ViewportImpl implements Viewport {
       if (low) {
         // Fade AO out over a few frames instead of cutting it, so starting to orbit does not pop the plate and shadows.
         this.aoLevel = Math.max(0, this.aoLevel - 0.34)
-      } else this.aoLevel = Math.min(1, this.aoLevel + 1 / SETTLE_FRAMES)
+      } else this.aoLevel = this.aoOn ? Math.min(1, this.aoLevel + 1 / SETTLE_FRAMES) : 1
       const aoMix = this.aoLevel
-      if (!moving && this.settle > 0) this.settle--
       if (low) this.pipeline.motionScale = level.scale
       const programs = this.compileClock.programs
       const t0 = performance.now()
       this.renderFrame(aoMix, low)
+      this.settle = settleLeft(this.settle, moving, low, this.aoOn)
       // Only frames a person moves are timed: reveal frames and transitions are animations over a view, and a frame that
       // compiled shaders says nothing about the next one.
       if (moving && !transition && !revealing && !this.gpuTiming && programs === this.compileClock.programs) this.timeFrame(t0, low ? level.scale : 1)
@@ -4222,14 +4232,14 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
+  // The app sends these again each time a printer reports its slots. A redraw of a big preview takes seconds on
+  // software graphics, so only a real change draws.
   setToolColors(colors: string[]): void {
-    this.toolpaths.setToolColors(colors)
-    this.invalidate()
+    if (this.toolpaths.setToolColors(colors)) this.invalidate()
   }
 
   setToolFinishes(finishes: ToolpathFinish[]): void {
-    this.toolpaths.setToolFinishes(finishes)
-    this.invalidate()
+    if (this.toolpaths.setToolFinishes(finishes)) this.invalidate()
   }
 
   setPlateStyle(style: PlateStyle): void {

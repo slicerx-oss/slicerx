@@ -474,6 +474,11 @@ export function beadFinish(f: FilamentFinish | ToolpathFinish | undefined): Tool
   return f === 'matte' || f === 'silk' || f === 'glossy' ? f : f === 'petg' || f === 'translucent' ? 'glossy' : 'satin'
 }
 
+/** The same items in the same order. */
+function sameList<T>(a: readonly T[], b: readonly T[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i])
+}
+
 /** One finish per tool (16 at most), satin for tools without one. */
 function finishTexture(finishes: readonly (ToolpathFinish | undefined)[], size = 16): DataTexture {
   const data = new Float32Array(size * 4)
@@ -583,6 +588,7 @@ export class Toolpaths {
   private travelColor: string = SCENE.travel
   private themeToolColors: readonly string[] = DEFAULT_TOOL_COLORS
   private userToolColors: readonly string[] | null = null
+  private toolFinishes: readonly ToolpathFinish[] = []
   private extras: PreviewExtras | null = null
   private readonly markers: Record<MarkerKind, Points | null> = { retractions: null, seams: null, lifts: null, wipes: null, toolChanges: null, pauses: null }
   private readonly markerShown: Record<MarkerKind, boolean> = { retractions: false, seams: false, lifts: false, wipes: false, toolChanges: false, pauses: false }
@@ -972,11 +978,17 @@ export class Toolpaths {
     this.markerRange.value = [this.lo, this.hi]
   }
 
-  /** The finish each tool's filament prints with (tool 1 first): matte, satin, glossy or silk. A tool without one is satin. */
-  setToolFinishes(finishes: readonly ToolpathFinish[]): void {
+  /**
+   * The finish each tool's filament prints with (tool 1 first): matte, satin, glossy or silk. A tool without one is satin.
+   * False when they are the finishes already set, so the caller need not draw again.
+   */
+  setToolFinishes(finishes: readonly ToolpathFinish[]): boolean {
+    if (sameList(finishes, this.toolFinishes)) return false
+    this.toolFinishes = [...finishes]
     const old = this.uniforms.uFinishLut.value
     this.uniforms.uFinishLut.value = finishTexture(finishes)
     old.dispose()
+    return true
   }
 
   /** How dark the groove between stacked layers is, 0 (none) to 1. */
@@ -984,9 +996,12 @@ export class Toolpaths {
     this.uniforms.uCrease.value = Math.max(0, Math.min(1, amount))
   }
 
-  setToolColors(colors: readonly string[]): void {
-    this.userToolColors = colors.length ? colors : null
+  /** False when they are the colors already set, so the caller need not draw again. */
+  setToolColors(colors: readonly string[]): boolean {
+    if (sameList(colors, this.userToolColors ?? [])) return false
+    this.userToolColors = colors.length ? [...colors] : null
     this.uploadToolColors()
+    return true
   }
 
   /** Feature colors, heat ramp, default tool colors, live layer and travel colors. Tool colors from setToolColors stay. */
