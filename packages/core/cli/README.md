@@ -9,6 +9,7 @@ sx slice <model> [--plate N] [--config <config.json>] [-o out.gcode | -o -] [--p
 sx slice --request <req.json | -> [--out-dir <dir>]
 sx schema [request | result]
 sx metadata <project.3mf>
+sx project-settings <project.3mf>
 sx call [server options] <tool> [json] [<tool> [json] ...]
 sx bench --config <bench.json> [--runs 15] [--warmup 3] [--threads N] [--json] [--no-shards]
          [--append results.jsonl] [--change "..."] [--write-baseline]
@@ -20,9 +21,11 @@ sx bench --config <bench.json> --incremental sparse_infill_density [--runs 15]
 
 `sx metadata` prints the settings a Bambu or Orca project carries (`projectSettings`, `modelSettings`, `layerRanges`, each only when present) as one JSON line, ready to pass to the settings crate's `import_project_json`.
 
+`sx project-settings` prints the settings `sx slice <project.3mf>` takes from a project as one JSON object on stdout, ready to pass as a request's `config`: the project's own values, the engine choices it did not change, our defaults for keys it does not set, and the reading of keys it lacks by the app that wrote it (a Bambu Studio project without them gets `wipe_tower_wall_type` rib, `initial_layer_travel_acceleration` 500 and `internal_bridge_speed` 100%). A 3MF without settings prints `{}`. The walls and the engine choices kept go to stderr.
+
 `--plate` picks a plate of a Bambu or Orca 3MF project (the first plate by default).
 
-`sx slice --request` reads a `SliceRequest` JSON (`sx schema request`) from a file or stdin and prints a result JSON with `schemaVersion` (`sx schema result`). An object's `mesh` is a key of the optional top-level `meshes` map (reference to file path) or a file path, relative to the request file. `file.3mf#2` picks plate 2 of a Bambu or Orca project (the first plate otherwise). Without a `transform`, the mesh is centered on the bed and set down on z = 0; a 3MF plate becomes one object per build item, placed as the file places them with the plate centered as a whole, so print by object sees each object. With `--out-dir`, the G-code and SXPV land there as `slice.gcode` and `slice.sxpv` and the result lists the paths under `files`.
+`sx slice --request` reads a `SliceRequest` JSON (`sx schema request`) from a file or stdin and prints a result JSON with `schemaVersion` (`sx schema result`). An object's `mesh` is a key of the optional top-level `meshes` map (reference to file path) or a file path, relative to the request file. `file.3mf#2` picks plate 2 of a Bambu or Orca project (the first plate otherwise). Without a `transform`, the mesh is centered on the bed and set down on z = 0; a 3MF plate becomes one object per build item, placed as the file places them with the plate centered as a whole, so print by object sees each object. With `--out-dir`, the G-code and SXPV land there as `slice.gcode` and `slice.sxpv` and the result lists the paths under `files`. A request takes its `config` as given; with `"options": {"projectDefaults": true}`, the keys it lacks that the app that wrote the first project file the plate names reads its own way are filled in first, as `sx slice <project.3mf>` fills them, and stderr names them.
 
 Exit codes: 0 success, 1 slicing failed, 2 usage error, 3 invalid input (unreadable request or mesh, bad JSON or config).
 
