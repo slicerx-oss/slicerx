@@ -58,7 +58,7 @@ export function clearProject(): void {
     projectOpenAsk: null,
     // the next plate's flush volumes come from its slots again, and a tower the project placed goes back to auto
     projectFlush: null,
-    ...(get().towerFromProject ? { tower: { auto: true, x: 0, y: 0 }, towerFromProject: false } : {}),
+    ...(get().towerFromProject ? { tower: { auto: true, x: 0, y: 0 }, towerFromProject: false, projectTowers: {} } : {}),
     namedValues: [],
     fileSlotColors: [],
     // A resume plan belongs to the failed job: the next project slices from its first layer.

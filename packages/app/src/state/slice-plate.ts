@@ -32,7 +32,7 @@ function overridesOf(meta: PlateMeta | undefined, p: PlateEntry): { slotOverride
 export function plateSliceConfig(s: AppState, meta: PlateMeta | undefined): PrintConfig {
   const base = resolveConfig(s.easy, s.overrides)
   // The plate type picks the bed temperatures (the engine's curr_bed_type), so it goes with the plate's other settings.
-  return { ...base, ...slotConfig(s), ...plateConfig(meta), ...bedTypeConfig(meta, base) } as PrintConfig
+  return { ...base, ...slotConfig(s, meta?.id), ...plateConfig(meta), ...bedTypeConfig(meta, base) } as PrintConfig
 }
 
 /**

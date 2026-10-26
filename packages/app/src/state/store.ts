@@ -488,6 +488,11 @@ export interface AppState {
   projectFlush: import('../filament/project-kept').ProjectFlush | null
   /** The tower stands where the opened project put it; a new project sets it back to auto. */
   towerFromProject: boolean
+  /**
+   * While the tower stands where the opened project put it: each of its plates' own spot by plate id, null where the
+   * engine places it. `tower` is the shown plate's; a plate not listed (one added later) follows `tower`.
+   */
+  projectTowers: Record<string, { x: number; y: number } | null>
   /** The tower is the selected thing in the 3D view. */
   towerSelected: boolean
   /** Slots set by hand, by 1-based slot number. */
@@ -833,6 +838,7 @@ export const appStore = createStore<AppState>()(() => ({
   tower: { auto: true, x: 0, y: 0 },
   projectFlush: null,
   towerFromProject: false,
+  projectTowers: {},
   towerSelected: false,
   slotSetup: {},
   fileSlotColors: [],

@@ -7,6 +7,7 @@ import { nozzleMapConfig } from '../filament/nozzle-map'
 import { fullPlate, get, markStale, selectedIds, set, type AppState, type PlateEntry, type PlateMeta, type PlateSettings } from '../state/store'
 import { arrange } from './arrange'
 import { quietly } from './history'
+import { plateTower } from './tower'
 
 /** The plates with the active one's objects filled in. */
 export function allPlates(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'> & Partial<Pick<AppState, 'historyEdit'>> = get()): PlateMeta[] {
@@ -39,6 +40,8 @@ export function switchPlate(id: string): void {
       plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, objects: s.plate } : p.id === id ? { ...p, objects: [] } : p)),
       plate: target.objects,
       activePlate: id,
+      // an opened project's tower stands at the shown plate's own spot
+      tower: plateTower(s, id),
       selection: null,
       selectedIds: [],
       slice: { status: 'idle' },

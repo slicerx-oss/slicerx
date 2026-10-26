@@ -164,6 +164,8 @@ async function addProjectShown(
     }
     return out
   }
+  // The app's plate made of each of the file's plates, with the file's plate number (the project's tower spots are per plate).
+  const madePlates: { id: string; plateNo?: number }[] = []
   for (const [i, plate] of project.plates.entries()) {
     // A project opened as the job keeps the file's plates as they are, empty ones too, so plate N here is plate N in the
     // file. Added to plates the person already has, it brings only the plates with objects on them.
@@ -173,7 +175,11 @@ async function addProjectShown(
     if (i > 0) {
       const id = mine(() => addPlate({ ...(plate.sequence ? { sequence: plate.sequence } : {}), ...(plate.nozzleMap ? { nozzleMap: plate.nozzleMap } : {}) }))
       mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === id ? { ...p, name: plate.name } : p)) })))
-    } else if (wasEmpty && !/^Plate \d+$/.test(plate.name)) {
+      madePlates.push({ id, ...(plate.plateNo ? { plateNo: plate.plateNo } : {}) })
+    } else {
+      madePlates.push({ id: get().activePlate, ...(plate.plateNo ? { plateNo: plate.plateNo } : {}) })
+    }
+    if (i === 0 && wasEmpty && !/^Plate \d+$/.test(plate.name)) {
       // The file's first plate is the one the project opens onto, so it takes the file's name as the others do.
       mine(() => set((s) => ({ plates: s.plates.map((p) => (p.id === s.activePlate ? { ...p, name: plate.name } : p)) })))
     }
@@ -223,7 +229,7 @@ async function addProjectShown(
     if (left) note = `${note} Settings > Presets lists the ${left} ${left === 1 ? 'setting' : 'settings'} it did not carry over.`
     // the file's flush volumes and tower spot, as Bambu Studio opens them
     const { keepProjectFlushAndTower } = await import('../filament/project-kept')
-    const kept = mine(() => keepProjectFlushAndTower(project.settings))
+    const kept = mine(() => keepProjectFlushAndTower(project.settings, madePlates))
     if (kept) note = `${note} ${kept}`
   } else if (wasEmpty && hasSettings) {
     mine(() => set({ projectImport: null }))

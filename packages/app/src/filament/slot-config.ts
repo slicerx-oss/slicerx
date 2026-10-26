@@ -9,6 +9,7 @@ import { keptFlush } from './project-kept'
 import { defaultConfig } from '@slicerx/settings/defaults'
 import { tunedValues, tuneContext } from '../calibration/tuned'
 import { areaOrigin } from '../plate/bed-origin'
+import { plateTower } from '../plate/tower'
 import type { AppState } from '../state/store'
 import { resolveSlots, type ResolvedSlot } from './slots'
 
@@ -64,7 +65,7 @@ export function tunedFilamentConfig(s: AppState, list: readonly ResolvedSlot[]):
  * The filament keys a multi-color slice carries: one entry per slot up to the highest one used, plus
  * the flush matrix. Single-color plates send nothing, so they slice exactly as before.
  */
-export function slotConfig(s: AppState): Record<string, SettingValue> {
+export function slotConfig(s: AppState, plateId: string = s.activePlate): Record<string, SettingValue> {
   const slots = resolveSlots(s)
   const top = slots.reduce((n, r) => (r.used ? Math.max(n, r.index) : n), 0)
   const tuned = tunedFilamentConfig(s, slots.slice(0, Math.max(1, top)))
@@ -73,8 +74,10 @@ export function slotConfig(s: AppState): Record<string, SettingValue> {
   const plan = flushPlan(s, top)
   // an opened project's own matrix while its slots are as the file has them
   const kept = s.projectFlush ? keptFlush(s.projectFlush, list.map((r) => ({ color: r.color, type: r.type })), plan.nozzles.length) : null
+  // The plate's own tower: an opened project keeps one spot per plate.
+  const tower = plateTower(s, plateId)
   // A hand placed tower is a plate spot; the engine reads wipe_tower_x and wipe_tower_y on the machine.
-  const [ox, oy] = s.tower.auto ? [0, 0] : areaOrigin(resolveConfig(s.easy, s.overrides)['printable_area'])
+  const [ox, oy] = tower.auto ? [0, 0] : areaOrigin(resolveConfig(s.easy, s.overrides)['printable_area'])
   return {
     ...tuned,
     filament_colour: list.map((r) => r.color),
@@ -84,7 +87,7 @@ export function slotConfig(s: AppState): Record<string, SettingValue> {
     flush_volumes_matrix: kept ?? plan.nozzles.flatMap((z) => flushValues(list.map((r) => r.color), s.flush, z.mins, z.dataset)),
     flush_multiplier: kept && s.projectFlush ? s.projectFlush.multiplier : plan.multiplier,
     // The engine picks the tower's spot unless the person placed it.
-    prime_tower_auto_position: s.tower.auto,
-    ...(s.tower.auto ? {} : { wipe_tower_x: s.tower.x + ox, wipe_tower_y: s.tower.y + oy }),
+    prime_tower_auto_position: tower.auto,
+    ...(tower.auto ? {} : { wipe_tower_x: tower.x + ox, wipe_tower_y: tower.y + oy }),
   }
 }
