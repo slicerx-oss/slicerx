@@ -109,6 +109,11 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
     const plain: number[] = []
     const inChange: number[] = []
     const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] ?? 0
+    // The mean of the middle half of the intervals: the shortest and longest quarters left out (see the check below).
+    const middleMean = (v: number[]) => {
+      const mid = [...v].sort((a, b) => a - b).slice(Math.floor(v.length / 4), Math.ceil((v.length * 3) / 4))
+      return mid.length ? mid.reduce((sum, x) => sum + x, 0) / mid.length : 0
+    }
     // What the renderer holds: compiled shader programs, uploaded geometries and textures.
     const held = () => {
       const i = w.__vp.renderer.info
@@ -165,7 +170,7 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
     document.removeEventListener('visibilitychange', onVisibility)
     if (changeFrom < 0) shownTo = shown()
     const view = { from: shownFrom, to: shownTo, hidden }
-    return { plainFrom, changeFrom, changeTo, drawn, plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), reached, view, renderer: { before, after, mostPrograms } }
+    return { plainFrom, changeFrom, changeTo, drawn, plain: plain.length, inChange: inChange.length, medianPlain: median(plain), medianInChange: median(inChange), pacePlain: middleMean(plain), paceInChange: middleMean(inChange), reached, view, renderer: { before, after, mostPrograms } }
   }, { from: plainStart, until: info.first!.start + info.first!.duration + 2, warmUp: WARM_UP })
   sampling = false
   await sampler
@@ -187,8 +192,13 @@ test('playback through a tool change on the H2C runs clean and keeps its frame r
   expect(result.inChange).toBeGreaterThanOrEqual(MIN_FRAMES)
   // The change keeps the frame rate of plain playback, measured in the same run; a limit in milliseconds would
   // measure the machine and not the app. Drawing the head at the rack, the rack and the purge may cost a little more:
-  // the change's median frame stays within 1.5 times the plain median.
-  expect(result.medianInChange).toBeLessThanOrEqual(1.5 * result.medianPlain)
+  // the change's frames stay within 1.5 times plain playback's. Frames land on display refreshes, so on a 60 Hz lane an
+  // interval is 16.7 or 33.3 ms. When the pace sits between the two, about half the frames take each, and the median
+  // jumps from one to the other on a few percent of frames: one run had 52% one-refresh intervals before the change and
+  // 47% in it, means of 24.7 and 25.5 ms, and medians of 16.7 and 33.2 ms. So each window's pace is the mean of its
+  // middle half, which moves with that share instead of jumping, and still leaves out the longest frames, which measure
+  // the machine (below).
+  expect(result.paceInChange).toBeLessThanOrEqual(1.5 * result.pacePlain)
   // No limit on single long frames: when the system runs other processes for a while, the main thread waits several
   // display frames while using almost no CPU time, in either window (a blank page beside the other timing specs
   // shows the same gaps), so the longest frame measures the machine and not the app. A stall of the app's own
