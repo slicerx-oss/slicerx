@@ -6,7 +6,8 @@
 //! Writes the keys whose type is a percent (`percent` and `percents` in `packages/settings/schema.json`,
 //! Orca's `coPercent` and `coPercents`), one per line, so the configuration block writes them with their `%`,
 //! and the whole number keys (`int` and `ints`, Orca's `coInt` and `coInts`), which the placeholder language
-//! reads as integers, and copies `packages/settings/defaults.json` next to them, with the `PrusaSlicer` key map
+//! reads as integers, every key's section and type (`setting_types.txt`, tab separated), which the `PrusaSlicer`
+//! project reading checks against what a project may set, and copies `packages/settings/defaults.json` next to them, with the `PrusaSlicer` key map
 //! (`packages/settings/prusa-map.json`), the older setting names (`packages/settings/legacy.json`) and the head shapes the collision check uses
 //! (`packages/ui/viewport/data/head-shapes.json`).
 //!
@@ -61,6 +62,7 @@ fn main() {
                 keys.join("\n").as_bytes(),
             );
         }
+        write_setting_types(&parsed, &out.join("setting_types.txt"));
         copy(&settings.join("defaults.json"), &out.join("defaults.json"));
         copy(
             &settings.join("engine-choices.json"),
@@ -74,6 +76,7 @@ fn main() {
             "variant_filament_keys.txt",
             "percent_keys.txt",
             "int_keys.txt",
+            "setting_types.txt",
             "defaults.json",
             "engine-choices.json",
             "prusa-map.json",
@@ -254,6 +257,27 @@ fn string_literals(code: &str) -> Vec<String> {
         }
     }
     out
+}
+
+/// Every setting's key, section and type, tab separated, one per line, sorted.
+fn write_setting_types(schema: &serde_json::Value, to: &Path) {
+    let mut types: Vec<String> = schema["settings"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|d| {
+            Some(format!(
+                "{}\t{}\t{}",
+                d["key"].as_str()?,
+                d["section"].as_str()?,
+                d["type"].as_str()?
+            ))
+        })
+        .collect();
+    types.sort_unstable();
+    types.dedup();
+    write(to, types.join("\n").as_bytes());
 }
 
 fn copy(from: &Path, to: &Path) {

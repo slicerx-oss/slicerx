@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { appMissingKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, selectVariants, SLICERX_KEEP_VALUES, type WallsNote } from '@slicerx/settings'
+import { appMissingKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, type WallsNote } from '@slicerx/settings'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
@@ -21,7 +21,7 @@ export interface ProjectPlate {
 
 export interface ProjectSummary {
   file: string
-  /** True when the file carries print settings (a Bambu Studio, OrcaSlicer or SlicerX project); false for a plain 3MF. */
+  /** True when the file carries print settings (a Bambu Studio, OrcaSlicer, PrusaSlicer or SlicerX project); false for a plain 3MF. */
   has_settings: boolean
   plates: ProjectPlate[]
   presets: { printer?: string; process?: string; filaments: string[] }
@@ -213,9 +213,15 @@ export function readProjectFile(path: string): ProjectRead {
   const zip = readZip(readFileSync(path), name)
   if (!zip.names().some((n) => n.toLowerCase().endsWith('.model'))) throw new ToolInputError(`${name} has no 3D model part, so it is not a 3MF project`, 'invalid_model')
   const read = projectSettingsOf(name, zip.text('Metadata/project_settings.config'))
-  const hasSettings = read.raw !== undefined
+  // A PrusaSlicer project (no project_settings.config, or a blank one) keeps its settings in Slic3r_PE.config: what it
+  // may set, mapped to our keys as the app and sx slice <project.3mf> open it (prusaProjectConfig, prusa-map.json). Its
+  // printer settings and G-code stay the printer's the slice names.
+  const prusaText = read.raw === undefined && read.skipped === undefined ? zip.text('Metadata/Slic3r_PE.config') : undefined
+  const prusa = prusaText === undefined ? undefined : prusaProjectConfig(prusaText)
+  const prusaRaw = prusaText === undefined ? {} : readPrusaConfig(prusaText)
+  const hasSettings = read.raw !== undefined || prusa !== undefined
   const modelSettings = zip.text('Metadata/model_settings.config')
-  const raw: Record<string, unknown> = read.raw ?? {}
+  const raw: Record<string, unknown> = read.raw ?? prusa?.config ?? {}
   const dropped = Object.keys(raw).filter(isNeverImported).sort()
   // Bambu Studio 2 writes some values once per hotend variant: the ones that slice, as the app takes them.
   let kept: Record<string, unknown>
@@ -231,7 +237,8 @@ export function readProjectFile(path: string): ProjectRead {
   // The app that wrote the file reads some keys its project lacks its own way (engine-choices.json fromApp), as the
   // app's project open and `sx slice <project.3mf>` read them: a Bambu Studio project without them gets the rib
   // tower, 500 mm/s2 first layer travel and internal bridges at the bridge speed.
-  Object.assign(kept, appMissingKeys(kept, source))
+  // The app opens a PrusaSlicer project's values on the current printer as they are, so none of this applies to one.
+  if (!prusa) Object.assign(kept, appMissingKeys(kept, source))
   const imported = importProject({ projectSettings: kept, ...(modelSettings ? { modelSettings } : {}) })
 
   // Plates and how many objects sit on each, from model_settings.config; a plain 3MF is one plate.
@@ -247,8 +254,8 @@ export function readProjectFile(path: string): ProjectRead {
   }
   if (plates.length === 0) plates.push({ index: 1, objects: buildItems(zip.text(mainModel(zip.names())) ?? '') })
 
-  const types = listOf(raw['filament_type'])
-  const colors = listOf(raw['filament_colour'])
+  const types = listOf(prusa ? prusaRaw['filament_type'] : raw['filament_type'])
+  const colors = prusa ? prusa.colors : listOf(raw['filament_colour'])
   const presets = imported.names.filaments
   const slots = Math.max(types.length, colors.length, presets.length)
   const filaments = Array.from({ length: slots }, (_, i) => ({
@@ -282,7 +289,7 @@ export function readProjectFile(path: string): ProjectRead {
   }
   // SlicerX's defaults for the keys a file with settings does not set at all (precise outer wall); a value the file
   // sets stays. A project without settings slices as a plain model.
-  if (hasSettings) for (const [k, v] of Object.entries(projectDefaults(raw))) config[k] = v
+  if (hasSettings && !prusa) for (const [k, v] of Object.entries(projectDefaults(raw))) config[k] = v
 
   // The support settings as the file has them, in schema shapes where the import read them.
   const support: Record<string, SettingValue> = {}
@@ -299,11 +306,11 @@ export function readProjectFile(path: string): ProjectRead {
   const importReport: ImportReport = {
     ...(source ? { source } : {}),
     ...(read.skipped ? { skipped: read.skipped } : {}),
-    unknown: imported.unknownKeys.map((k) => ({ key: k, value: raw[k] })),
+    unknown: [...imported.unknownKeys.map((k) => ({ key: k, value: raw[k] })), ...(prusa?.unmapped ?? []).map((k) => ({ key: k, value: prusaRaw[k] }))],
     retired: imported.ignoredKeys.filter((k) => !LEGACY_GROUPS.foreign.has(k)),
     other_slicer: imported.ignoredKeys.filter((k) => LEGACY_GROUPS.foreign.has(k)),
     renamed,
-    invalid: imported.invalidKeys.map((k) => ({ key: k, value: raw[k] ?? raw[fromOf.get(k) ?? ''] })),
+    invalid: [...imported.invalidKeys.map((k) => ({ key: k, value: raw[k] ?? raw[fromOf.get(k) ?? ''] })), ...(prusa?.notApplied ?? []).map((d) => ({ key: d.key, value: d.value }))],
   }
   const walls = hasSettings ? projectWalls(raw, source) : undefined
   if (walls) importReport.walls = walls
@@ -315,7 +322,7 @@ export function readProjectFile(path: string): ProjectRead {
       plates,
       presets: { ...(imported.names.printer ? { printer: imported.names.printer } : {}), ...(imported.names.process ? { process: imported.names.process } : {}), filaments: presets },
       filaments,
-      unknown_keys: [...imported.unknownKeys, ...imported.invalidKeys].sort(),
+      unknown_keys: [...imported.unknownKeys, ...imported.invalidKeys, ...(prusa?.unmapped ?? []), ...(prusa?.notApplied ?? []).map((d) => d.key)].sort(),
       dropped_keys: dropped,
       support,
       import_report: importReport,
