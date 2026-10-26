@@ -551,7 +551,8 @@ impl Builder<'_> {
             return;
         };
         let last = pieces.len().saturating_sub(1);
-        for (n, (pts, tier)) in pieces.into_iter().enumerate() {
+        let spans = o.span_speeds(&pieces, true);
+        for (n, ((pts, tier), span)) in pieces.into_iter().zip(spans).enumerate() {
             let (f, sp) = match tier {
                 None => (feature, speed),
                 Some(t) => (
@@ -560,7 +561,7 @@ impl Builder<'_> {
                     } else {
                         feature
                     },
-                    o.speed(t).unwrap_or(speed),
+                    span.or_else(|| o.speed(t)).unwrap_or(speed),
                 ),
             };
             let mut line: Vec<Point> = pts.iter().map(|p| Point::new(p.x, p.y)).collect();
@@ -712,7 +713,8 @@ impl Builder<'_> {
                 self.push_thick(tool, feature, speed, &pts, &widths);
                 continue;
             };
-            for (piece, tier) in pieces {
+            let spans = o.span_speeds(&pieces, l.closed);
+            for ((piece, tier), span) in pieces.into_iter().zip(spans) {
                 let (f, sp) = match tier {
                     None => (feature, speed),
                     Some(t) => (
@@ -721,7 +723,7 @@ impl Builder<'_> {
                         } else {
                             feature
                         },
-                        o.speed(t).unwrap_or(speed),
+                        span.or_else(|| o.speed(t)).unwrap_or(speed),
                     ),
                 };
                 if f == Feature::OverhangWall {
