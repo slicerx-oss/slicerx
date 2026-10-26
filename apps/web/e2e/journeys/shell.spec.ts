@@ -407,7 +407,10 @@ test.describe('resizable panes', () => {
   test('a pane slide that stalls partway still sizes the canvas buffer once', async ({ page }) => {
     // On a busy runner a slide can draw no frame for longer than the viewport's resize wait (100 ms), which once
     // sized the buffer for a box the slide was about to leave and then again for the box it stopped at (690, then
-    // 536, then 534 px). Holding the slide still for 300 ms near its end gives that gap on any machine.
+    // 536, then 534 px). Holding the slide still for 300 ms near its end gives that gap on any machine. The hold then
+    // ends the slide, as the first frame after a gap that long does: play() would leave it where it was for one more
+    // frame (it waits a frame to start again), and a page that stalls past the viewport's 1 s hold meanwhile has its
+    // buffer sized on that frame, for the box short of the end, as a slide paused that long should be.
     await watchBufferWrites(page)
     await defaultPanes(page)
     try {
@@ -425,7 +428,7 @@ test.describe('resizable panes', () => {
           slide.pause()
           slide.currentTime = Number(slide.effect!.getComputedTiming().duration) * 0.7
           setTimeout(() => {
-            slide.play()
+            slide.finish()
             state.slideHeld = true
           }, 300)
         }
