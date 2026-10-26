@@ -1069,13 +1069,10 @@ pub fn clamp_config(cfg: &mut PrintConfig, limits: &Limits) -> Vec<Issue> {
     }
     let nozzle = cfg.nozzle_diameter;
 
-    // Layer height.
-    let min_h = machine_limit(cfg, "min_layer_height")
-        .unwrap_or(MIN_LAYER_MM)
-        .max(MIN_LAYER_MM);
-    let max_h = machine_limit(cfg, "max_layer_height")
-        .unwrap_or(nozzle * MAX_LAYER_OF_NOZZLE)
-        .min(nozzle * MAX_LAYER_OF_NOZZLE);
+    // Layer height. A height the user set prints as set: the printer's `min_layer_height` and `max_layer_height` bound
+    // generated variable layers and support layers, never a fixed or per-object height. Only the nozzle (a layer
+    // taller than the nozzle cannot be laid down) and the least height any slicer offers stay hard limits.
+    let max_h = nozzle * MAX_LAYER_OF_NOZZLE;
     if !cfg.layer_height.is_finite() || cfg.layer_height <= 0.0 {
         issues.push(error(
             "layer_height",
@@ -1090,15 +1087,15 @@ pub fn clamp_config(cfg: &mut PrintConfig, limits: &Limits) -> Vec<Issue> {
             ),
         ));
         cfg.layer_height = max_h;
-    } else if cfg.layer_height < min_h - 1e-9 {
+    } else if cfg.layer_height < MIN_LAYER_MM - 1e-9 {
         issues.push(warn(
             "layer_height_clamped",
             format!(
-                "layer height {} mm is below the {min_h:.2} mm minimum; using {min_h:.2} mm",
+                "layer height {} mm is below the {MIN_LAYER_MM:.2} mm minimum; using {MIN_LAYER_MM:.2} mm",
                 cfg.layer_height
             ),
         ));
-        cfg.layer_height = min_h;
+        cfg.layer_height = MIN_LAYER_MM;
     }
     if !cfg.initial_layer_print_height.is_finite() || cfg.initial_layer_print_height <= 0.0 {
         issues.push(error(
@@ -1819,6 +1816,37 @@ mod tests {
         assert!((c.hot_plate_temp - 110.0).abs() < 1e-9);
         assert!(!blocks(&issues));
         assert_eq!(issues.len(), 4);
+    }
+
+    #[test]
+    fn the_printer_layer_limits_never_move_a_set_layer_height() {
+        // min_layer_height and max_layer_height bound generated variable layers, not a height the user set.
+        for lh in [0.32, 0.06] {
+            let mut c = cfg(json!({
+                "layer_height": lh,
+                "max_layer_height": ["0.24"],
+                "min_layer_height": ["0.1"],
+                "nozzle_diameter": [0.4],
+            }));
+            let issues = clamp_config(&mut c, &Limits::default());
+            assert!(
+                (c.layer_height - lh).abs() < 1e-9,
+                "{lh} became {}",
+                c.layer_height
+            );
+            assert!(issues.is_empty(), "{lh}: {issues:?}");
+        }
+        // The nozzle stays a hard limit.
+        let mut c = PrintConfig {
+            layer_height: 1.2,
+            ..PrintConfig::default()
+        };
+        c.raw.insert("max_layer_height".to_owned(), json!(["0.24"]));
+        let issues = clamp_config(&mut c, &Limits::default());
+        assert!((c.layer_height - 0.4).abs() < 1e-9);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].code, "layer_height_clamped");
+        assert_eq!(issues[0].severity, Severity::Warning);
     }
 
     #[test]
