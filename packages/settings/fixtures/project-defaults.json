@@ -1,0 +1,52 @@
+{
+  "comment": "Cases for engine-choices.json fromApp: the settings a project file carries, the app that wrote it (the model's Application metadata) and the keys a project open adds because the file lacks them. sx-core's project_config, appMissingKeys in @slicerx/settings, the MCP server's readProjectFile and the app's project open all run these cases.",
+  "cases": [
+    {
+      "name": "Bambu Studio project with none of the keys",
+      "application": "BambuStudio-02.08.02.61",
+      "settings": { "layer_height": "0.2", "enable_prime_tower": "1" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib" }
+    },
+    {
+      "name": "older Bambu Studio project with none of the keys",
+      "application": "BambuStudio-01.10.02.73",
+      "settings": { "layer_height": "0.2" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib" }
+    },
+    {
+      "name": "Bambu Studio project that sets all three",
+      "application": "BambuStudio-02.08.02.61",
+      "settings": { "layer_height": "0.2", "prime_tower_rib_wall": "0", "initial_layer_travel_acceleration": ["1000"], "internal_bridge_speed": ["60%"] },
+      "added": {}
+    },
+    {
+      "name": "Bambu Studio project with the rib wall switch on and nothing else",
+      "application": "BambuStudio-02.08.02.61",
+      "settings": { "layer_height": "0.2", "prime_tower_rib_wall": "1" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"] }
+    },
+    {
+      "name": "Bambu Studio project that names its tower wall type",
+      "application": "BambuStudio-02.08.02.61",
+      "settings": { "layer_height": "0.2", "wipe_tower_wall_type": "rectangle" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"] }
+    },
+    {
+      "name": "Bambu Studio project with its own first layer travel acceleration",
+      "application": "BambuStudio-02.08.02.61",
+      "settings": { "layer_height": "0.2", "initial_layer_travel_acceleration": ["6000"] },
+      "added": { "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib" }
+    },
+    {
+      "name": "OrcaSlicer project with none of the keys",
+      "application": "OrcaSlicer-2.3.0",
+      "settings": { "layer_height": "0.2", "enable_prime_tower": "1" },
+      "added": {}
+    },
+    {
+      "name": "project with no app named",
+      "settings": { "layer_height": "0.2" },
+      "added": {}
+    }
+  ]
+}

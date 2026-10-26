@@ -36,7 +36,7 @@ describe('first layer travel acceleration of a project without the key', () => {
   it('counts as changed when the project lists what it changed, so a project opened with only those still gets it', async () => {
     const s = await open('BambuStudio-02.01.00.00', { different_settings_to_system: ['layer_height;', '', ''] })
     expect(s['initial_layer_travel_acceleration']).toEqual(['500'])
-    expect(s['different_settings_to_system']).toEqual(['layer_height;initial_layer_travel_acceleration;internal_bridge_speed', '', ''])
+    expect(s['different_settings_to_system']).toEqual(['layer_height;initial_layer_travel_acceleration;internal_bridge_speed;wipe_tower_wall_type', '', ''])
   })
 
   it('gives internal bridges the bridge speed the same way', async () => {

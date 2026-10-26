@@ -1,5 +1,5 @@
 {
-  "comment": "Engine choices of SlicerX for an opened project. keeps: stay when a project opens, unless the person changed them in the project (its different_settings_to_system lists the key); over, when given, names the only inherited values a keep replaces, so any other value the project inherited stays its own (a project that does not set the key still gets the keep); note says what the open kept when the project's inherited value differs. defaults: apply only when the project does not set the key at all; a value the project sets is its own. The app, the MCP server (engine-choices.ts) and sx slice <project.3mf> (sx-core, through build.rs) all read this file. value: what SlicerX prints with.",
+  "comment": "Engine choices of SlicerX for an opened project. keeps: stay when a project opens, unless the person changed them in the project (its different_settings_to_system lists the key); over, when given, names the only inherited values a keep replaces, so any other value the project inherited stays its own (a project that does not set the key still gets the keep); note says what the open kept when the project's inherited value differs. defaults: apply only when the project does not set the key at all; a value the project sets is its own. fromApp: by the app that wrote the file (the model's Application metadata starts with the name), its reading of keys its project lacks: each applies only when the project does not set the key, nor any key in unlessAny. The app, the MCP server (engine-choices.ts) and sx slice <project.3mf> (sx-core, through build.rs) all read this file. value: what SlicerX prints with.",
   "keeps": {
     "wall_generator": {
       "value": "aegis",
@@ -10,6 +10,23 @@
   "defaults": {
     "precise_outer_wall": {
       "value": true
+    }
+  },
+  "fromApp": {
+    "BambuStudio": {
+      "initial_layer_travel_acceleration": {
+        "value": ["500"],
+        "note": "Bambu Studio reads a missing first layer travel acceleration as 500 mm/s2, not as a share of the travel acceleration."
+      },
+      "internal_bridge_speed": {
+        "value": ["100%"],
+        "note": "Its presets have no internal bridge speed, and it prints internal bridges at the bridge speed, not our 150 percent."
+      },
+      "wipe_tower_wall_type": {
+        "value": "rib",
+        "unlessAny": ["prime_tower_rib_wall"],
+        "note": "A project saved before the rib wall switch existed has neither key: the rib wall, that app's default."
+      }
     }
   }
 }
