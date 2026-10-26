@@ -4,6 +4,9 @@
 //! ratio, print flow ratio or role ratio on top, on Bambu Lab type towers and on type 2 towers alike. The rest of
 //! the plate keeps its ratios.
 //!
+//! On a type 2 tower the purge rows are stated `wipe_tower_extra_flow` times the wall bead wide, laid that far
+//! apart, and put down that many times the wall bead's volume per mm.
+//!
 //! Two 15 mm boxes 30 mm apart, A 8 mm tall on filament 1 and B 3 mm on filament 2, so every layer up to 3 mm
 //! changes filament once.
 
@@ -168,6 +171,8 @@ struct Seg {
     /// The stated line width and layer height.
     w: f64,
     h: f64,
+    from: [f64; 2],
+    to: [f64; 2],
     len: f64,
     e: f64,
 }
@@ -248,6 +253,8 @@ fn segs(gcode: &str) -> Vec<Seg> {
                 feature: feature.clone(),
                 w,
                 h,
+                from: at,
+                to,
                 len,
                 e,
             });
@@ -390,6 +397,88 @@ fn a_type_2_tower_wall_ignores_the_filament_flow_ratios() {
     let gcode = slice(mmu(&[("filament_flow_ratio", json!(["0.9", "1.05"]))]), MMU_BED);
     let t = tower(&gcode);
     all_at(&later(&t, 0.5, 0.2), plain(0.5, 0.2), &[0, 1], "MMU mix");
+}
+
+/// The gaps between neighboring rows: tower moves along X of 10 mm or more on one layer and tool, by Y.
+fn row_gaps(rows: &[&Seg]) -> Vec<f64> {
+    let mut gaps = Vec::new();
+    let mut keys: Vec<(usize, u8)> = rows.iter().map(|s| (s.layer, s.tool)).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    for (layer, tool) in keys {
+        let mut ys: Vec<f64> = rows
+            .iter()
+            .filter(|s| s.layer == layer && s.tool == tool)
+            .map(|s| s.from[1])
+            .collect();
+        ys.sort_by(f64::total_cmp);
+        ys.dedup_by(|a, b| (*a - *b).abs() < 1e-3);
+        gaps.extend(ys.windows(2).map(|w| w[1] - w[0]));
+    }
+    gaps
+}
+
+/// Later-layer purge rows of a type 2 tower that is not turned: moves along X of 10 mm or more, inside the wall
+/// (the front and back of the layer's tower are the wall's).
+fn rows(t: &[Seg]) -> Vec<&Seg> {
+    let edge = |layer: usize| {
+        t.iter()
+            .filter(|s| s.layer == layer)
+            .flat_map(|s| [s.from[1], s.to[1]])
+            .fold((f64::MAX, f64::MIN), |(lo, hi), y| (lo.min(y), hi.max(y)))
+    };
+    t.iter()
+        .filter(|s| {
+            let (lo, hi) = edge(s.layer);
+            s.layer > 1
+                && s.len >= 10.0
+                && (s.from[1] - s.to[1]).abs() < 1e-3
+                && (s.h - 0.2).abs() < 1e-6
+                && s.from[1] > lo + 0.1
+                && s.from[1] < hi - 0.1
+        })
+        .collect()
+}
+
+#[test]
+fn type_2_purge_rows_are_the_wall_bead_laid_side_by_side() {
+    let gcode = slice(mmu(&[("filament_flow_ratio", json!(["0.9", "1.05"]))]), MMU_BED);
+    let t = tower(&gcode);
+    let rows = rows(&t);
+    assert!(rows.len() > 20, "{} rows", rows.len());
+    for s in &rows {
+        assert!((s.w - 0.5).abs() < 1e-6, "row stated {} wide", s.w);
+    }
+    all_at(&rows, plain(0.5, 0.2), &[0, 1], "MMU mix rows");
+    let gaps = row_gaps(&rows);
+    assert!(!gaps.is_empty());
+    for g in gaps {
+        assert!((g - 0.5).abs() < 0.01 || g > 0.99, "rows {g} apart");
+    }
+}
+
+#[test]
+fn type_2_purge_rows_with_extra_flow_put_down_that_much_more_of_the_wall_bead() {
+    let gcode = slice(
+        mmu(&[
+            ("filament_flow_ratio", json!(["0.9", "1.05"])),
+            ("wipe_tower_extra_flow", json!("120%")),
+        ]),
+        MMU_BED,
+    );
+    let t = tower(&gcode);
+    let rows = rows(&t);
+    assert!(rows.len() > 20, "{} rows", rows.len());
+    for s in &rows {
+        assert!((s.w - 0.6).abs() < 1e-6, "row stated {} wide", s.w);
+    }
+    all_at(&rows, 1.2 * plain(0.5, 0.2), &[0, 1], "MMU xf rows");
+    assert!((1.2 * plain(0.5, 0.2) - 0.04561).abs() < 1e-4);
+    let gaps = row_gaps(&rows);
+    assert!(!gaps.is_empty());
+    for g in gaps {
+        assert!((g - 0.6).abs() < 0.01 || g > 1.19, "rows {g} apart");
+    }
 }
 
 #[test]
