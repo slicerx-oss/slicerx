@@ -594,6 +594,76 @@ fn engine_defaults() -> &'static [(String, serde_json::Value)] {
     })
 }
 
+/// One row of `fromApp` in engine-choices.json: the key, the value the app reads a missing key as, and the keys that,
+/// when the settings have any, leave it out.
+struct AppDefault {
+    key: String,
+    value: serde_json::Value,
+    unless_any: Vec<String>,
+}
+
+/// `fromApp` in engine-choices.json: by the name the file's app starts with, its rows.
+fn app_defaults() -> &'static [(String, Vec<AppDefault>)] {
+    use crate::par::Init as _;
+    static TABLE: std::sync::OnceLock<Vec<(String, Vec<AppDefault>)>> = std::sync::OnceLock::new();
+    TABLE.once(|| {
+        let parsed: serde_json::Value =
+            serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/engine-choices.json")))
+                .unwrap_or_default();
+        let Some(apps) = parsed.get("fromApp").and_then(serde_json::Value::as_object) else {
+            return Vec::new();
+        };
+        apps.iter()
+            .map(|(app, rows)| {
+                let rows = rows
+                    .as_object()
+                    .map(|m| {
+                        m.iter()
+                            .map(|(k, v)| AppDefault {
+                                key: k.clone(),
+                                value: v.get("value").cloned().unwrap_or_default(),
+                                unless_any: v
+                                    .get("unlessAny")
+                                    .and_then(serde_json::Value::as_array)
+                                    .map(|a| {
+                                        a.iter()
+                                            .filter_map(serde_json::Value::as_str)
+                                            .map(str::to_owned)
+                                            .collect()
+                                    })
+                                    .unwrap_or_default(),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (app.clone(), rows)
+            })
+            .collect()
+    })
+}
+
+/// The keys `settings` lacks that `application`, the app that wrote the project (the model's `Application` metadata,
+/// `BambuStudio-02.08.02.61`), reads its own way, with the value it reads them as (`fromApp` in engine-choices.json):
+/// none for a key the settings have, or when they have any key the row's `unlessAny` names. Empty for another app or
+/// none. The app's project open and the MCP server's project read use the same table (`appMissingKeys`).
+pub fn app_missing_keys(
+    settings: &serde_json::Map<String, serde_json::Value>,
+    application: Option<&str>,
+) -> Vec<(String, serde_json::Value)> {
+    let Some(application) = application else {
+        return Vec::new();
+    };
+    app_defaults()
+        .iter()
+        .filter(|(app, _)| application.starts_with(app.as_str()))
+        .flat_map(|(_, rows)| rows)
+        .filter(|row| {
+            !settings.contains_key(&row.key) && !row.unless_any.iter().any(|k| settings.contains_key(k))
+        })
+        .map(|row| (row.key.clone(), row.value.clone()))
+        .collect()
+}
+
 /// One of our engine choices (`keeps` in engine-choices.json): the key, the value we print with, the inherited values
 /// it goes over (`over`; every value when the file gives none) and the note.
 struct EngineKeep {
@@ -695,33 +765,11 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
         settings.remove(k);
     }
     bambu_tower_keys(&mut settings);
-    // A Bambu Studio project saved before the rib wall switch existed has neither key: the rib wall, that app's
-    // default. Other projects without either keep the engine's default.
-    if app.as_deref().is_some_and(|a| a.starts_with("BambuStudio"))
-        && !settings.contains_key("wipe_tower_wall_type")
-        && !settings.contains_key("prime_tower_rib_wall")
-    {
-        settings.insert(
-            "wipe_tower_wall_type".to_owned(),
-            serde_json::Value::String("rib".to_owned()),
-        );
-    }
-    // Bambu Studio reads a missing first layer travel acceleration as 500 mm/s2, not as a share of the travel
-    // acceleration (our default), so a project of its that lacks the key travels the first layer at 500.
-    if app.as_deref().is_some_and(|a| a.starts_with("BambuStudio"))
-        && !settings.contains_key("initial_layer_travel_acceleration")
-    {
-        settings.insert(
-            "initial_layer_travel_acceleration".to_owned(),
-            serde_json::json!(["500"]),
-        );
-    }
-    // Its presets have no internal bridge speed, and it prints internal bridges at the bridge speed: a project of its
-    // without the key gets 100 percent of the bridge speed, not our default 150.
-    if app.as_deref().is_some_and(|a| a.starts_with("BambuStudio"))
-        && !settings.contains_key("internal_bridge_speed")
-    {
-        settings.insert("internal_bridge_speed".to_owned(), serde_json::json!(["100%"]));
+    // The app that wrote the file reads some keys its project lacks its own way (`fromApp` in engine-choices.json):
+    // a Bambu Studio project without them gets the rib tower, 500 mm/s2 first layer travel and internal bridges at
+    // the bridge speed.
+    for (key, value) in app_missing_keys(&settings, app.as_deref()) {
+        settings.insert(key, value);
     }
     let walls = project_walls(&settings, changed.as_ref(), app.as_deref());
     let mut kept = Vec::new();

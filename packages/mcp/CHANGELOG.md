@@ -8,6 +8,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 - `slicerx_list_setting_defaults` lists every setting's default with its `scope` (`process`, `printer` or `filament`), from the same data as `slicerx_explain_setting`. `section` keeps one scope and `keys` keeps the keys given; an unknown key is refused with `invalid_settings` and the closest keys. Each entry in `settings` is `{ key, scope, default }`, `total` counts them, and `no_default` names the keys the engine works out for itself. Only process defaults are what the engine slices with when a config leaves a key out; printer and filament defaults are the app's starting preset, and presets and project values override all of them. The values equal `defaults.json`, which packed integrator kits now ship at the top level and list under `files` in `kit-manifest.json`.
 
+### Changed
+
+- A Bambu Studio project that sets neither `wipe_tower_wall_type` nor `prime_tower_rib_wall` slices with the rib prime tower through `slicerx_slice_file` and the project tools with `project_settings`, as `sx slice <project.3mf>` and that app slice it. It got the rectangle tower before (on a test plate about 34.6 x 11.8 mm, against about 24.5 x 24 mm for the rib). The rule comes from `fromApp` in engine-choices.json, the table the engine and the app read too.
+
 ## [0.2.3] - 2026-10-25
 
 ### Added
