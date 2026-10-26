@@ -971,16 +971,20 @@ pub fn metadata(bytes: &[u8], name: &str) -> Result<ProjectMetadata> {
         ),
     };
     // A PrusaSlicer project: no project_settings.config (or an empty one), its settings in Slic3r_PE.config.
-    let mut settings_from = None;
-    if project_settings.is_none()
+    #[cfg(feature = "import")]
+    let settings_from = if project_settings.is_none()
         && settings_skipped.is_none()
         && let Some(config) = text("Metadata/Slic3r_PE.config")
     {
         project_settings = Some(serde_json::Value::Object(
             crate::prusa::project_settings(&config).0,
         ));
-        settings_from = Some("prusaslicer".to_owned());
-    }
+        Some("prusaslicer".to_owned())
+    } else {
+        None
+    };
+    #[cfg(not(feature = "import"))]
+    let settings_from: Option<String> = None;
     let mut dropped_keys = Vec::new();
     if let Some(serde_json::Value::Object(map)) = project_settings.as_mut() {
         map.retain(|k, _| {
