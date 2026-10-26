@@ -14,6 +14,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 - `PrintConfig::check` (and so every request) refuses a layer height taller than the nozzle with `config key layer_height: layer height 0.44 mm cannot exceed the 0.4 mm nozzle diameter`, before the line width checks, which named a bridge or skin line instead. A layer height below 0.04 mm is refused with `layer height 0.03 mm is below the 0.04 mm minimum`, also on the listed path (`configReport`, projects), where it used to slice at the default 0.2 mm with a note.
 - `support_line_width` is held to the layer only when support lines print (`enable_support`, or `raft_layers` of 1 or more). With support off, a 0.38 mm support line and a 0.38 mm layer were refused.
 
+### Changed
+
+- `project_config` gives a project that does not set `support_top_z_distance` or `support_bottom_z_distance` 0.2 for each, from `defaults` in packages/settings/engine-choices.json, as it gives `precise_outer_wall`. `sx slice <project.3mf>` prints the same G-code as before (0.2 was already the schema's default there); `sx project-settings` now lists both keys. A request with `layer_height` and no gaps keeps gaps of one layer, and `apply_project_defaults` still fills only the `fromApp` keys.
+
 ### Fixed
 
 - `printer_structure` is part of the session key. A kept session built the collision model with the structure of its first request, so switching to or from a delta kept the old gantry rule in the report.
