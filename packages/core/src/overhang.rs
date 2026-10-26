@@ -394,6 +394,104 @@ pub(crate) fn split_polyline(path: &[Pt], support: &Support) -> Vec<(Vec<Pt>, bo
     pieces
 }
 
+/// How far, in internal units (0.01 mm), a point of a bridged piece may sit from the straight line between its ends.
+const SPAN_TOLERANCE: f64 = 100.0;
+
+/// Which pieces of a split wall are bridged: a run of labeled (fully clear) pieces that is not the whole wall, has
+/// a piece that is not labeled on each side (it begins and ends at the edge of the support), and lies along one
+/// straight line, every point within [`SPAN_TOLERANCE`] of the segment between its ends, with the supported wall on
+/// each side going on along that line (a span across a gap, not a face that ends at corners). On a ring (`closed`) the
+/// last piece runs on into the first, so a piece the ring's start cuts in two is judged whole. On an open path a
+/// run at either end of the path is not held there.
+pub(crate) fn bridged(pieces: &[(Vec<Pt>, Option<usize>)], labeled: &[bool], closed: bool) -> Vec<bool> {
+    let n = pieces.len().min(labeled.len());
+    let mut out = vec![false; pieces.len()];
+    let lab = |i: usize| labeled.get(i).copied().unwrap_or(false);
+    if n < 2 || (0..n).all(lab) || !(0..n).any(lab) {
+        return out;
+    }
+    // Each run starts at a labeled piece whose predecessor is not labeled; on a ring a run may wrap past the end.
+    for start in 0..n {
+        if !lab(start) {
+            continue;
+        }
+        let before = match start {
+            0 if closed => n - 1,
+            0 => continue,
+            _ => start - 1,
+        };
+        if lab(before) {
+            continue;
+        }
+        let mut run = vec![start];
+        let mut i = start;
+        let after = loop {
+            let next = if i + 1 < n {
+                i + 1
+            } else if closed {
+                0
+            } else {
+                break None;
+            };
+            if !lab(next) {
+                break Some(next);
+            }
+            run.push(next);
+            i = next;
+        };
+        let Some(after) = after else { continue };
+        let mut pts: Vec<Pt> = Vec::new();
+        for &k in &run {
+            for p in pieces.get(k).map_or(&[][..], |(p, _)| p.as_slice()) {
+                if pts.last() != Some(p) {
+                    pts.push(*p);
+                }
+            }
+        }
+        let (Some(&a), Some(&b)) = (pts.first(), pts.last()) else {
+            continue;
+        };
+        let tol2 = SPAN_TOLERANCE * SPAN_TOLERANCE;
+        // The supported wall goes on along the same line past each end: the piece spans a gap, not a corner.
+        let beyond = pieces
+            .get(before)
+            .and_then(|(p, _)| p.iter().rev().find(|q| **q != a))
+            .copied();
+        let past = pieces
+            .get(after)
+            .and_then(|(p, _)| p.iter().find(|q| **q != b))
+            .copied();
+        let goes_on = |q: Option<Pt>, from: Pt, to: Pt| q.is_some_and(|q| on_line_past(q, from, to));
+        if a != b
+            && pts.iter().all(|p| seg_dist2(*p, &[a, b]) <= tol2)
+            && goes_on(beyond, a, b)
+            && goes_on(past, b, a)
+        {
+            for k in run {
+                if let Some(o) = out.get_mut(k) {
+                    *o = true;
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Whether `q` lies on the line through `from` and `to`, within [`SPAN_TOLERANCE`], on the far side of `from`.
+fn on_line_past(q: Pt, from: Pt, to: Pt) -> bool {
+    let (dx, dy) = (
+        f64::from(to.x) - f64::from(from.x),
+        f64::from(to.y) - f64::from(from.y),
+    );
+    let (qx, qy) = (
+        f64::from(q.x) - f64::from(from.x),
+        f64::from(q.y) - f64::from(from.y),
+    );
+    let len2 = dx * dx + dy * dy;
+    let off = qx * dy - qy * dx;
+    len2 > 0.0 && qx * dx + qy * dy < 0.0 && off * off <= SPAN_TOLERANCE * SPAN_TOLERANCE * len2
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 struct Tier {
     support: Arc<Support>,
@@ -418,6 +516,9 @@ pub(crate) struct Overhang {
     bead: (f32, f32),
     /// The same for the outer loop's.
     outer_bead: (f32, f32),
+    /// The speed of a bridged piece ([`bridged`]), mm/s: the filament's extruder's `bridge_speed` on a Bambu Lab
+    /// printer with the overhang speeds on. None elsewhere, where every fully clear piece keeps the clear speed.
+    span_speed: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -696,6 +797,7 @@ impl Overhang {
             reverse,
             bead: bead32(wall_bead(cfg, below.h, false)),
             outer_bead: bead32(wall_bead(cfg, below.h, true)),
+            span_speed: None,
         }
     }
 
@@ -704,7 +806,29 @@ impl Overhang {
         if let Some(t) = self.tiers.last_mut() {
             t.speed = speed_of(crate::quality::clear_speed(cfg, slot));
         }
+        // A straight fully clear piece held at both ends spans a gap like a bridge and prints at the bridge speed on
+        // Bambu Lab printers. With the overhang speeds off every clear piece is at the bridge speed already.
+        self.span_speed = (crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
+            && crate::quality::overhang_speed_on(cfg))
+        .then(|| speed_of(cfg.for_slot(slot).bridge_speed))
+        .flatten();
         self
+    }
+
+    /// The speed of each of the pieces of a split wall (`closed` for a ring) that is a bridged piece ([`bridged`]),
+    /// None for every other piece. All None when this printer gives bridged pieces no speed of their own.
+    pub(crate) fn span_speeds(&self, pieces: &[(Vec<Pt>, Option<usize>)], closed: bool) -> Vec<Option<f32>> {
+        let Some(v) = self.span_speed else {
+            return vec![None; pieces.len()];
+        };
+        let labeled: Vec<bool> = pieces
+            .iter()
+            .map(|(_, t)| t.is_some_and(|t| self.labeled(t)))
+            .collect();
+        bridged(pieces, &labeled, closed)
+            .into_iter()
+            .map(|b| b.then_some(v))
+            .collect()
     }
 
     /// The width (mm) and flow of an overhang wall's bead on the outer loop or an inner one.
@@ -1020,6 +1144,83 @@ mod tests {
         s.crossings(Pt::new(-10_000, 50_000), Pt::new(50_000, 50_000), &mut hits);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].1, Pt::new(0, 50_000));
+    }
+
+    /// Test 7: the bridged check on hand-made pieces (internal units, ten thousand to the mm).
+    #[test]
+    fn a_straight_held_piece_is_bridged() {
+        let p = |x: i32, y: i32| Pt::new(x, y);
+        let piece = |pts: &[Pt], clear: bool| (pts.to_vec(), clear.then_some(0));
+        let check = |pieces: &[(Vec<Pt>, Option<usize>)], closed: bool| {
+            let labeled: Vec<bool> = pieces.iter().map(|(_, t)| t.is_some()).collect();
+            bridged(pieces, &labeled, closed)
+        };
+        // A two-point piece between pieces that are not labeled.
+        let two = [
+            piece(&[p(0, 0), p(60_000, 0)], false),
+            piece(&[p(60_000, 0), p(210_000, 0)], true),
+            piece(&[p(210_000, 0), p(270_000, 0), p(270_000, 100_000)], false),
+        ];
+        assert_eq!(check(&two, false), [false, true, false]);
+        // A three-point piece whose middle point sits 0.001 mm off the chord is straight; 0.05 mm off is not.
+        let mid = |off: i32| {
+            [
+                piece(&[p(0, 0), p(60_000, 0)], false),
+                piece(&[p(60_000, 0), p(135_000, off), p(210_000, 0)], true),
+                piece(&[p(210_000, 0), p(270_000, 0)], false),
+            ]
+        };
+        assert_eq!(check(&mid(10), false), [false, true, false]);
+        assert_eq!(check(&mid(-10), true), [false, true, false]);
+        assert_eq!(check(&mid(500), false), [false, false, false]);
+        // A ring that is fully clear is not bridged.
+        let ring = [piece(
+            &[p(0, 0), p(100_000, 0), p(100_000, 100_000), p(0, 0)],
+            true,
+        )];
+        assert_eq!(check(&ring, true), [false]);
+        let all_clear = [
+            piece(&[p(0, 0), p(100_000, 0)], true),
+            piece(&[p(100_000, 0), p(100_000, 100_000), p(0, 0)], true),
+        ];
+        assert_eq!(check(&all_clear, true), [false, false]);
+        // A straight piece the ring's start cuts in two is bridged once its ends are joined; on an open path the
+        // same ends are not held.
+        let cut = [
+            piece(&[p(100_000, 0), p(210_000, 0)], true),
+            piece(
+                &[
+                    p(210_000, 0),
+                    p(270_000, 0),
+                    p(270_000, 100_000),
+                    p(0, 100_000),
+                    p(0, 0),
+                    p(60_000, 0),
+                ],
+                false,
+            ),
+            piece(&[p(60_000, 0), p(100_000, 0)], true),
+        ];
+        assert_eq!(check(&cut, true), [true, false, true]);
+        assert_eq!(check(&cut, false), [false, false, false]);
+        // Joined across the start, a bend at the start point is still a bend.
+        let mut kinked = cut.clone();
+        kinked[2].0 = vec![p(60_000, 0), p(100_000, 800)];
+        kinked[0].0[0] = p(100_000, 800);
+        assert_eq!(check(&kinked, true), [false, false, false]);
+        // A straight face whose supported neighbors turn corners at its ends (a leaning face) is not a span.
+        let face = [
+            piece(&[p(0, -100_000), p(0, 0)], false),
+            piece(&[p(0, 0), p(120_000, 0)], true),
+            piece(&[p(120_000, 0), p(120_000, -100_000)], false),
+        ];
+        assert_eq!(check(&face, false), [false, false, false]);
+        // A labeled piece at the start of an open path is not held there.
+        let open_end = [
+            piece(&[p(0, 0), p(60_000, 0)], true),
+            piece(&[p(60_000, 0), p(90_000, 0)], false),
+        ];
+        assert_eq!(check(&open_end, false), [false, false]);
     }
 
     #[test]
