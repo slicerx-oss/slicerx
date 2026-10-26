@@ -17,9 +17,15 @@ interface PrusaMap {
   percentBaseDefaults: Record<string, number>
   ignoredPattern: string
   ignoredKeys: string[]
+  /** Keys that carry over only through a `values` row; any other value is left out and reported as not applied. */
+  onlyMappedValues: string[]
+  /** Keys whose value 0 means not set, read as absent. */
+  zeroIsUnset: string[]
 }
 const MAP = mapJson as unknown as PrusaMap
 const IGNORED = new Set(MAP.ignoredKeys)
+const ONLY_MAPPED = new Set(MAP.onlyMappedValues)
+const ZERO_IS_UNSET = new Set(MAP.zeroIsUnset)
 const IGNORED_RE = new RegExp(MAP.ignoredPattern)
 
 /** Prusa key to SlicerX key, for the keys that are renamed. */
@@ -120,12 +126,16 @@ const SECTION_ORDER: SettingSection[] = ['process', 'filament', 'printer']
 
 /**
  * Map one preset's Prusa values to Orca-format values (the strings and lists `importFlat` reads). Returns the mapped
- * values and the Prusa keys that were not mapped or ignored.
+ * values, the Prusa keys that were not mapped or ignored, and the values left out because SlicerX reads them
+ * differently (`notApplied`, in Prusa's keys).
  */
-export function mapPrusaValues(prusa: Raw): { values: Record<string, unknown>; unmapped: string[]; ignored: string[] } {
+export function mapPrusaValues(given: Raw): { values: Record<string, unknown>; unmapped: string[]; ignored: string[]; notApplied: Dropped[] } {
+  // A 0 that means "not set" is read as if the key were absent, so the composites below fill it.
+  const prusa: Raw = Object.fromEntries(Object.entries(given).filter(([k, v]) => !(ZERO_IS_UNSET.has(k) && num(v) === 0)))
   const out: Record<string, unknown> = {}
   const unmapped: string[] = []
   const ignored: string[] = []
+  const notApplied: Dropped[] = []
   const done = new Set<string>()
   const put = (k: string, v: unknown): void => { out[k] = v }
   const setTemp = (keys: string[], v: string): void => { for (const k of keys) put(k, v) }
@@ -188,6 +198,7 @@ export function mapPrusaValues(prusa: Raw): { values: Record<string, unknown>; u
     }
     const vm = MAP.values.find((r) => r.key === key && r.from === v)
     if (vm) v = vm.to
+    else if (ONLY_MAPPED.has(key)) { notApplied.push({ key, value: rawValue, reason: 'invalid', target }); continue }
     if (key === 'first_layer_height' && percent(rawValue) !== undefined) {
       const a = absolute(key, prusa)
       if (a !== undefined) v = String(a)
@@ -199,7 +210,8 @@ export function mapPrusaValues(prusa: Raw): { values: Record<string, unknown>; u
     // Prusa writes gcode_label_objects and similar through the value map above; a bare 1/0 stays as is.
     if (!(target in out)) put(target, value)
   }
-  return { values: out, unmapped: unmapped.sort(), ignored: ignored.sort() }
+  notApplied.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+  return { values: out, unmapped: unmapped.sort(), ignored: ignored.sort(), notApplied }
 }
 
 function sectionOfKey(k: string): SettingSection | undefined {
@@ -228,9 +240,10 @@ function toPreset(section: SettingSection, name: string, inherits: string[], raw
   const back = (k: string): string => (k in raw ? k : (Object.keys(MAP.rename).find((p) => MAP.rename[p] === k && p in raw) ?? k))
   // A whole configuration feeds every kind; each unmapped key is reported with the kind it belongs to.
   const unmapped = mixed ? m.unmapped.filter((k) => prusaKeyKind(k) === section) : m.unmapped
-  const dropped: Dropped[] = [...unmapped.map((k): Dropped => ({ key: k, value: raw[k], reason: 'unsupported' })), ...r.dropped.map((d) => ({ ...d, key: back(d.key), value: raw[back(d.key)] ?? d.value }))]
+  const notApplied = m.notApplied.filter((d) => d.target === undefined || sectionOfKey(d.target) === section)
+  const dropped: Dropped[] = [...unmapped.map((k): Dropped => ({ key: k, value: raw[k], reason: 'unsupported' })), ...r.dropped.map((d) => ({ ...d, key: back(d.key), value: raw[back(d.key)] ?? d.value })), ...notApplied]
   dropped.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
-  const invalidKeys = r.dropped.filter((d) => d.reason === 'invalid').map((d) => d.target ?? d.key)
+  const invalidKeys = [...r.dropped, ...notApplied].filter((d) => d.reason === 'invalid').map((d) => d.target ?? d.key)
   return { section, name, inherits, config: r.config, unmappedKeys: unmapped, ignoredKeys: m.ignored, invalidKeys, dropped }
 }
 
@@ -301,10 +314,10 @@ export function readPrusaConfig(text: string): Raw {
 
 /**
  * A PrusaSlicer project's settings (`Metadata/Slic3r_PE.config`) as Orca-format values, the form project_settings.config
- * has in an Orca or Bambu Studio project, plus the Prusa keys that have no SlicerX setting. Filament colors come back
- * as `filament_colour`.
+ * has in an Orca or Bambu Studio project, plus the Prusa keys that have no SlicerX setting and the values left out
+ * because SlicerX reads them differently. Filament colors come back as `filament_colour`.
  */
-export function prusaProjectSettings(text: string): { values: Record<string, unknown>; unmapped: string[] } {
+export function prusaProjectSettings(text: string): { values: Record<string, unknown>; unmapped: string[]; notApplied: Dropped[] } {
   const raw = readPrusaConfig(text)
   const m = mapPrusaValues(raw)
   const values: Record<string, unknown> = { ...m.values }
@@ -313,7 +326,7 @@ export function prusaProjectSettings(text: string): { values: Record<string, unk
     const list = splitStrings(colors).map((c) => c.trim()).filter((c) => /^#[0-9A-Fa-f]{6}$/.test(c))
     if (list.length) values['filament_colour'] = list
   }
-  return { values, unmapped: m.unmapped }
+  return { values, unmapped: m.unmapped, notApplied: m.notApplied }
 }
 
 /** One object's or volume's Prusa settings (`Slic3r_PE_model.config` metadata) as Orca-format strings. */

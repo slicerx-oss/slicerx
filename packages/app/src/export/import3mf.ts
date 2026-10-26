@@ -861,15 +861,20 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   let colors: string[] = []
   let settings: Record<string, unknown> = {}
   let settingsFrom: ImportedProject['settingsFrom'] = 'orca'
+  let prusaNote: string | undefined
   // An empty settings file is as if there were none; one that is not JSON settings is left out with a note.
   const read = projectSettingsOf(files.get('Metadata/project_settings.config'))
   const ps = read.settings || read.note ? read : undefined
   const pe = ps ? undefined : files.get('Metadata/Slic3r_PE.config')
   if (pe) {
     // A PrusaSlicer project: its config, mapped to the Orca keys and value forms an Orca project carries.
-    const { prusaProjectSettings } = await import('@slicerx/settings')
-    settings = prusaProjectSettings(dec.decode(pe)).values
+    const { prusaProjectSettings, settingDef } = await import('@slicerx/settings')
+    const mapped = prusaProjectSettings(dec.decode(pe))
+    settings = mapped.values
     settingsFrom = 'prusaslicer'
+    // Values SlicerX reads differently (a shrinkage it would not size the same) are left out, and the open says so.
+    const labels = [...new Set(mapped.notApplied.map((d) => settingDef(d.target ?? d.key)?.label).filter((l): l is string => !!l))]
+    if (labels.length) prusaNote = `Not applied from its settings: ${labels.map((l) => l.charAt(0).toLowerCase() + l.slice(1)).join(', ')}.`
     if (Array.isArray(settings['filament_colour'])) colors = settings['filament_colour'].filter((c): c is string => typeof c === 'string')
   }
   if (read.settings) {
@@ -887,5 +892,5 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const histories = parseHistories(files, fileIds)
   const note = historyNewer(files) ?? historyLost(files, fileIds, histories)
   const timeline = histories.size ? parseTimeline(files, fileIds) : null
-  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : {}), ...(earsNote ? { earsNote } : {}) }
+  return { plates, colors, settings, settingsFrom, dimensions, histories, timeline, namedValues: parseValues(files), ...(note ? { historyNote: note } : {}), ...(read.note ? { settingsNote: read.note } : prusaNote ? { settingsNote: prusaNote } : {}), ...(earsNote ? { earsNote } : {}) }
 }

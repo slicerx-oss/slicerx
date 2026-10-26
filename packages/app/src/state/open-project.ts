@@ -239,7 +239,7 @@ async function addProjectShown(
     const n = Object.keys(values).length
     if (n) {
       mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const })))
-      note = `Applied ${n} settings from ${name}`
+      note = `Applied ${n} settings from ${name}${note ? `. ${note}` : ''}`
     }
     for (const k of Object.keys(values)) brought.add(k)
     // Its printer G-code: stock text needs nothing, anything else waits for the person at the next slice.
