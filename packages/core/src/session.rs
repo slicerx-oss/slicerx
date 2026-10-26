@@ -218,6 +218,8 @@ pub struct SliceSession {
     comp: Option<crate::compensate::Comp>,
     /// Spiral vase mode: the number of solid base layers; the layers above are the spiral.
     vase: Option<u32>,
+    /// Spiral vase mode: where each base layer ends ([`Self::vase_exits`]).
+    vase_exits: VaseExits,
     /// `interlocking_beam` settings, when the beams are on.
     interlock_params: Option<crate::interlock::Params>,
     interlock: std::sync::OnceLock<Option<crate::interlock::Layers>>,
@@ -837,6 +839,20 @@ impl Clone for Pending {
 }
 
 impl Clone for WholeRegions {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+/// Spiral vase mode: where each solid base layer ends, for the settings tag of the config they were planned with;
+/// a copy of a session starts without them.
+#[derive(Debug, Default)]
+struct VaseExits(std::sync::Mutex<Option<(u64, BaseExits)>>);
+
+/// Where each solid base layer of a spiral vase ends, by layer.
+type BaseExits = std::sync::Arc<Vec<Option<crate::geom::Point>>>;
+
+impl Clone for VaseExits {
     fn clone(&self) -> Self {
         Self::default()
     }
@@ -1882,6 +1898,7 @@ impl SliceSession {
             independent: false,
             seams: std::sync::OnceLock::new(),
             whole: WholeRegions::default(),
+            vase_exits: VaseExits::default(),
             curls: std::sync::OnceLock::new(),
             lightning: std::sync::OnceLock::new(),
             tree_lightning: std::sync::OnceLock::new(),
@@ -4257,10 +4274,27 @@ impl SliceSession {
                 .and_then(|i| regions.get(i as usize))
                 .or_else(|| beyond(l))
         };
+        // Spiral vase mode: each layer above the first starts from where the base layer below it ended.
+        let vase_exits = self.vase.filter(|_| objects.end > 1).map(|b| {
+            self.vase_exits(config, b, |l, entry| {
+                self.layer_paths(l, layer_cfg_of(l), &mod_cfgs, &get, &micros, &tags, entry)
+            })
+        });
         let object_paths = |l: u32, start: Option<LayerStart>| {
+            let entry = self.vase_entry(vase_exits.as_deref().map(Vec::as_slice), l);
             let mut p = match start {
-                Some(s) => self.layer_finish(s, l, layer_cfg_of(l), &mod_cfgs, &get, &micros, &tags, true),
-                None => self.layer_paths(l, layer_cfg_of(l), &mod_cfgs, &get, &micros, &tags),
+                Some(s) => self.layer_finish(
+                    s,
+                    l,
+                    layer_cfg_of(l),
+                    &mod_cfgs,
+                    &get,
+                    &micros,
+                    &tags,
+                    true,
+                    entry,
+                ),
+                None => self.layer_paths(l, layer_cfg_of(l), &mod_cfgs, &get, &micros, &tags, entry),
             };
             p.cfg = cfg_index(l);
             p.prev_cfg = if l == 0 { p.cfg } else { cfg_index(l - 1) };
@@ -7813,7 +7847,12 @@ impl SliceSession {
         out
     }
 
-    /// Stages 3 to 6 for one layer. `tags` holds the settings tags of the slice's configs.
+    /// Stages 3 to 6 for one layer. `tags` holds the settings tags of the slice's configs; `entry` is where a
+    /// spiral vase's layer starts from ([`Self::vase_entry`]).
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the layer, its settings and the slice's shared state"
+    )]
     fn layer_paths<'a>(
         &self,
         layer: u32,
@@ -7822,8 +7861,52 @@ impl SliceSession {
         get: &(dyn Fn(u32) -> Option<&'a LayerRegions> + Sync),
         micros: &Micros,
         tags: &Tags<'_>,
+        entry: Option<crate::geom::Point>,
     ) -> LayerPaths {
-        self.layer_paths_with(layer, cfg, mods, get, micros, tags, true)
+        self.layer_paths_with(layer, cfg, mods, get, micros, tags, true, entry)
+    }
+
+    /// Spiral vase mode: where each solid base layer ends, each planned from where the layer below it ended
+    /// (`plan(layer, entry)`), worked out in order once per config for every range of layers to read. A base
+    /// layer's walls start nearest the end of the layer below, and the spiral nearest the end of the last.
+    fn vase_exits(
+        &self,
+        config: &PrintConfig,
+        base: u32,
+        plan: impl Fn(u32, Option<crate::geom::Point>) -> LayerPaths,
+    ) -> BaseExits {
+        let tag = settings_tag(config);
+        if let Ok(g) = self.vase_exits.0.lock()
+            && let Some((t, v)) = g.as_ref()
+            && *t == tag
+        {
+            return std::sync::Arc::clone(v);
+        }
+        // Worked out with no lock held: two ranges that ask at once each plan the same layers.
+        let mut exits: Vec<Option<crate::geom::Point>> = Vec::with_capacity(base as usize);
+        let mut entry = None;
+        for layer in 0..base {
+            let end = plan(layer, entry).exit_point().or(entry);
+            exits.push(end);
+            entry = end;
+        }
+        let v = std::sync::Arc::new(exits);
+        if let Ok(mut g) = self.vase_exits.0.lock() {
+            *g = Some((tag, std::sync::Arc::clone(&v)));
+        }
+        v
+    }
+
+    /// Where object layer `layer` of a spiral vase starts from: the end of the base layer below it, and for the
+    /// spiral the end of the last base layer. None for the first layer and for other prints.
+    fn vase_entry(
+        &self,
+        exits: Option<&[Option<crate::geom::Point>]>,
+        layer: u32,
+    ) -> Option<crate::geom::Point> {
+        let base = self.vase?;
+        let below = layer.min(base).checked_sub(1)?;
+        exits?.get(below as usize).copied().flatten()
     }
 
     /// [`Self::layer_paths`]; `smooth` lets a spiral layer blend its XY with the loop below, which is planned
@@ -7841,9 +7924,10 @@ impl SliceSession {
         micros: &Micros,
         tags: &Tags<'_>,
         smooth: bool,
+        entry: Option<crate::geom::Point>,
     ) -> LayerPaths {
         let start = self.layer_start(layer, cfg, mods, get, micros, tags);
-        self.layer_finish(start, layer, cfg, mods, get, micros, tags, smooth)
+        self.layer_finish(start, layer, cfg, mods, get, micros, tags, smooth, entry)
     }
 
     /// The first part of [`Self::layer_paths_with`]: what the layer's regions print (walls, infill, surfaces,
@@ -9479,6 +9563,7 @@ impl SliceSession {
         micros: &Micros,
         tags: &Tags<'_>,
         smooth: bool,
+        entry: Option<crate::geom::Point>,
     ) -> LayerPaths {
         let LayerStart { mut out, rest } = start;
         let Some(StartRest {
@@ -9778,14 +9863,20 @@ impl SliceSession {
         let vase = self
             .vase
             .filter(|&b| layer >= b && layer >= cfg.skirt_height)
-            .map(|b| crate::spiral::VaseLayer {
-                first: layer == b.max(cfg.skirt_height),
-                last: layer + 1 == n,
-                anchor: crate::geom::Point::from_mm(
-                    f64::midpoint(self.bounds[0], self.bounds[2]),
-                    self.bounds[1] - 1000.0,
-                ),
-                blend: None,
+            .map(|b| {
+                let first = layer == b.max(cfg.skirt_height);
+                crate::spiral::VaseLayer {
+                    first,
+                    last: layer + 1 == n,
+                    anchor: entry.unwrap_or_else(|| {
+                        crate::geom::Point::from_mm(
+                            f64::midpoint(self.bounds[0], self.bounds[2]),
+                            self.bounds[1] - 1000.0,
+                        )
+                    }),
+                    enter: entry.filter(|_| first && layer == b),
+                    blend: None,
+                }
             })
             .map(|mut v| {
                 // `spiral_mode_smooth`: each point moves toward the loop below, as OrcaSlicer's vase mode does.
@@ -9794,7 +9885,7 @@ impl SliceSession {
                     && crate::firmware::truthy(cfg, "spiral_mode_smooth")
                     && let Some(below) = layer.checked_sub(1)
                 {
-                    let prev = self.layer_paths_with(below, cfg, mods, get, micros, tags, false);
+                    let prev = self.layer_paths_with(below, cfg, mods, get, micros, tags, false, entry);
                     if prev.spiral {
                         v.blend = Some(crate::spiral::Blend {
                             below: prev.points,
@@ -9854,7 +9945,10 @@ impl SliceSession {
             cfg,
             layer,
             (&faces, z, self.seams.get().and_then(Option::as_ref)),
-            vase.as_ref(),
+            (
+                vase.as_ref(),
+                entry.filter(|_| self.vase.is_some_and(|b| layer < b)),
+            ),
             &self.object_hulls,
         );
         let fc = tags.filament(cfg, paths::first_slot(&out));
