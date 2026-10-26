@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! Percent settings sent as text with a `%` sign, the way projects and printer presets write them ("60%"), slice
 //! the same as the plain number the app sends (60). The locked zag skin and skeleton densities used to drop the
-//! text and fall back to their 25% defaults.
+//! text and fall back to their 25% defaults. A small perimeter speed in the list form presets use (`["80%"]`) fell
+//! back to half the outer wall speed.
 
 mod common;
 
@@ -48,8 +49,16 @@ fn locked_zag(extra: &Value) -> String {
     let mut c = json!({
         "sparse_infill_pattern": "lockedzag",
         "sparse_infill_density": "40%",
-        "brim_width": 0,
     });
+    if let (Some(c), Some(e)) = (c.as_object_mut(), extra.as_object()) {
+        c.extend(e.clone());
+    }
+    slice(&c)
+}
+
+/// The G-code of the cube over `extra` settings, with no brim.
+fn slice(extra: &Value) -> String {
+    let mut c = json!({ "brim_width": 0 });
     if let (Some(c), Some(e)) = (c.as_object_mut(), extra.as_object()) {
         c.extend(e.clone());
     }
@@ -100,4 +109,44 @@ fn locked_zag_skin_density_reads_a_percent_sign() {
 #[test]
 fn locked_zag_skeleton_density_reads_a_percent_sign() {
     reads_as_its_number("skeleton_infill_density");
+}
+
+/// The feeds the outer walls print at, mm/min, with every loop of the cube a small perimeter (up to 20 x 2 pi mm)
+/// and a 170 mm/s outer wall.
+fn outer_wall_feeds(speed: &Value) -> Vec<u32> {
+    let g = slice(&json!({
+        "outer_wall_speed": 170,
+        "small_perimeter_threshold": [20],
+        "small_perimeter_speed": speed,
+    }));
+    let mut on = false;
+    let mut feeds = Vec::new();
+    for l in g.lines() {
+        if let Some(f) = l.strip_prefix(";TYPE:").or_else(|| l.strip_prefix("; FEATURE:")) {
+            on = f.trim() == "Outer wall";
+        } else if on && l.starts_with("G1 ") {
+            let feed = l
+                .split_whitespace()
+                .find_map(|w| w.strip_prefix('F').and_then(|v| v.parse::<u32>().ok()));
+            if let Some(feed) = feed
+                && !feeds.contains(&feed)
+            {
+                feeds.push(feed);
+            }
+        }
+    }
+    feeds
+}
+
+#[test]
+fn small_perimeter_speed_reads_a_percent_in_a_list() {
+    // 80% of 170 mm/s is 136 mm/s, F8160, as text, in a list, or as the number.
+    for speed in [json!(["80%"]), json!("80%"), json!(136), json!([136])] {
+        let feeds = outer_wall_feeds(&speed);
+        assert!(feeds.contains(&8160), "{speed}: {feeds:?}");
+        assert!(
+            !feeds.contains(&5100),
+            "{speed} prints at half the outer wall speed: {feeds:?}"
+        );
+    }
 }
