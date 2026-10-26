@@ -312,7 +312,9 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// ahead of the first change, so only the tower's lines moved with it (the objects' extrusion is unchanged). Changed
 /// again when the strands of the bridge over the sparse infill spread evenly across it, wider where they stretch, and
 /// again when that bridge region started from the fixed-width inner wall's spacing, as with variable-width walls.
-const BY_OBJECT_FNV: &str = "9c57a10732ca6d35";
+/// Changed again when the floating ring's bead started at the inner wall's spacing edge instead of overlapping the
+/// wall: only that bead, the travel into it, the progress lines and the filament total moved.
+const BY_OBJECT_FNV: &str = "fc2b6baf6248f169";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {
