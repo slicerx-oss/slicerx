@@ -163,3 +163,105 @@ fn a_layer_long_enough_with_its_ironing_keeps_its_speeds() {
         "{FEATURES:?} unslowed at a {target} s target"
     );
 }
+
+/// The G-code of the mushroom (a 40 mm cap on a thin stem) with normal support at independent layer heights and a
+/// 20 s minimum layer time, in `shards` layer ranges.
+fn supported(shards: u32) -> String {
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"id": "m", "name": "m", "mesh": "m",
+            "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 120, 120, 0, 1]}]},
+        "config": {
+            "layer_height": 0.2,
+            "initial_layer_print_height": 0.2,
+            "brim_width": 0,
+            "enable_support": true,
+            "support_type": "normal(auto)",
+            "support_top_z_distance": 0.15,
+            "independent_support_layer_height": true,
+            "slow_down_for_layer_cooling": true,
+            "slow_down_layer_time": 20,
+            "slow_down_min_speed": 5,
+        },
+        "options": {"flavor": "marlin2", "shards": shards},
+    }))
+    .unwrap();
+    let load = |_: &str| -> sx_core::Result<Arc<Mesh>> { Ok(Arc::new(common::organic_models::mushroom())) };
+    String::from_utf8(common::run_request(&req, &load).unwrap().gcode).unwrap()
+}
+
+/// Per feature of a layer: the feed rate (mm/s, to 0.01) it prints most of its length at.
+type Layer = BTreeMap<String, i64>;
+
+/// Every layer's [`Layer`] feeds.
+fn layer_feeds(g: &str) -> Vec<Layer> {
+    let mut out: Vec<BTreeMap<String, BTreeMap<i64, f64>>> = vec![BTreeMap::new()];
+    let (mut px, mut py, mut rate) = (0.0f64, 0.0f64, 0.0f64);
+    let mut feature = String::new();
+    for l in g.lines() {
+        if l.starts_with(";LAYER_CHANGE") {
+            out.push(BTreeMap::new());
+        } else if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.trim().clone_into(&mut feature);
+        } else if l.starts_with("G1 ") {
+            if let Some(v) = num(l, 'F') {
+                rate = v / 60.0;
+            }
+            let (nx, ny) = (num(l, 'X').unwrap_or(px), num(l, 'Y').unwrap_or(py));
+            let (dx, dy) = (nx - px, ny - py);
+            let d = (dx * dx + dy * dy).sqrt();
+            if num(l, 'E').is_some_and(|e| e > 0.0)
+                && d > 0.0
+                && let Some(layer) = out.last_mut()
+            {
+                #[allow(clippy::cast_possible_truncation, reason = "feeds are small")]
+                let key = (rate * 100.0).round() as i64;
+                *layer.entry(feature.clone()).or_default().entry(key).or_default() += d;
+            }
+            (px, py) = (nx, ny);
+        }
+    }
+    out.into_iter()
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            l.into_iter()
+                .map(|(k, feeds)| {
+                    let top = feeds
+                        .into_iter()
+                        .max_by(|a, b| a.1.total_cmp(&b.1))
+                        .map_or(0, |v| v.0);
+                    (k, top)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// A support-only layer slows down with the object layer after it, at one feed, and layer ranges that cut
+/// through such a pair write the same G-code as the whole plate.
+#[test]
+fn support_only_layers_slow_with_the_next_layer_in_any_range() {
+    let whole = supported(1);
+    let layers = layer_feeds(&whole);
+    let support = |l: &Layer| l.keys().all(|k| k.starts_with("Support"));
+    let pairs: Vec<(&Layer, &Layer)> = layers
+        .windows(2)
+        .filter_map(|w| match w {
+            [s, o] if support(s) && !support(o) => Some((s, o)),
+            _ => None,
+        })
+        .collect();
+    assert!(!pairs.is_empty(), "no support-only layer");
+    // The first pair is under the cap's flat underside, short enough to slow: support and object at one feed.
+    let (s, o) = pairs[0];
+    let feed = s.values().max().copied().unwrap_or(0);
+    assert!(
+        feed > 0 && o.values().all(|&v| v <= feed + 1),
+        "support {s:?}, next layer {o:?}"
+    );
+    for shards in 2..=7 {
+        assert!(
+            supported(shards) == whole,
+            "{shards} ranges print another G-code than one"
+        );
+    }
+}
