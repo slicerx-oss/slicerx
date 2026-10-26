@@ -3,8 +3,9 @@
 //! Ironing: a slow pass with almost no flow over top surfaces (or every solid surface) that
 //! melts the last layer flat. Settings: `ironing_type` (no ironing, top, topmost, solid),
 //! `ironing_pattern` (rectilinear, concentric), `ironing_spacing`, `ironing_flow` (percent of the
-//! layer height), `ironing_speed`, `ironing_inset`, `ironing_angle` (or `ironing_direction`, its name in Bambu Lab
-//! projects, while `ironing_angle` is 0) and `ironing_angle_fixed`.
+//! layer height), `ironing_speed` (the first layer's speed on the first layer), `ironing_inset`,
+//! `ironing_angle` (or `ironing_direction`, its name in Bambu Lab projects, while `ironing_angle` is
+//! 0) and `ironing_angle_fixed`.
 //!
 //! The area is the top surfaces (plus bottom surfaces and solid layers for `solid`), kept half a
 //! nozzle (or `ironing_inset`) inside the layer's outline. Lines run at the top surface angle
@@ -208,7 +209,21 @@ pub(crate) fn add(
         .and_then(|v| crate::config::float_or_percent(v, 100.0))
         .unwrap_or(10.0)
         .max(0.0);
-    let speed = raw_f(cfg, "ironing_speed").filter(|v| *v > 0.0).unwrap_or(20.0);
+    // The first layer (only solid irons it, and a raft makes it an ordinary layer) irons at the first layer's speed:
+    // `initial_layer_speed` on Bambu Lab printers, `initial_layer_infill_speed` on the others.
+    let first = if out.index == 0 && crate::raft::layers_asked(cfg) == 0 {
+        Some(if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+            cfg.initial_layer_speed
+        } else {
+            cfg.initial_layer_infill_speed
+        })
+    } else {
+        None
+    };
+    let speed = first
+        .filter(|v| *v > 0.0)
+        .or_else(|| raw_f(cfg, "ironing_speed").filter(|v| *v > 0.0))
+        .unwrap_or(20.0);
     let inset = raw_f(cfg, "ironing_inset").unwrap_or(0.0).max(0.0);
     let fixed = crate::firmware::truthy(cfg, "ironing_angle_fixed");
     // The turn from the top surface direction: `ironing_angle`, or in a project that names it `ironing_direction`
@@ -374,6 +389,7 @@ mod tests {
         };
         (
             LayerPaths {
+                index: 24,
                 height: 0.2,
                 z: 5.0,
                 ..LayerPaths::default()
@@ -515,6 +531,31 @@ mod tests {
         both.raw.insert("ironing_angle".into(), serde_json::json!(10));
         let d = line_direction(&both, 45.0);
         assert!((d - 55.0).abs() < 0.5, "{d}");
+    }
+
+    #[test]
+    fn solid_ironing_on_the_first_layer_runs_at_the_first_layer_speed() {
+        // The feed of the first ironing line on layer `index` of a solid ironing config for `printer`.
+        let feed = |printer: &str, index: u32| {
+            let (mut out, areas) = layer();
+            out.index = index;
+            let mut c = cfg("solid");
+            c.raw.insert("ironing_speed".into(), serde_json::json!(40));
+            c.raw.insert("printer_model".into(), serde_json::json!(printer));
+            c.initial_layer_speed = 27.0;
+            c.initial_layer_infill_speed = 33.0;
+            assert!(add(&mut out, &areas, &c, false, 0.0, &[]));
+            assert!(
+                out.paths
+                    .iter()
+                    .all(|p| (p.speed_mm_s - out.paths[0].speed_mm_s).abs() < 1e-6)
+            );
+            out.paths[0].speed_mm_s
+        };
+        assert!((feed("Bambu Lab A1", 0) - 27.0).abs() < 1e-6);
+        assert!((feed("Prusa MK4", 0) - 33.0).abs() < 1e-6);
+        assert!((feed("Bambu Lab A1", 1) - 40.0).abs() < 1e-6);
+        assert!((feed("Prusa MK4", 1) - 40.0).abs() < 1e-6);
     }
 
     /// The volume per millimeter and the width of the first ironing line of `c` on a layer `h` mm thick, with the
