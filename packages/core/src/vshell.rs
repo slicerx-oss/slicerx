@@ -12,6 +12,9 @@
 //!   first, otherwise the nearest next. The first closed bead starts where its longest supported run starts
 //!   (supported: not over the unsupported area, or on the lower layer's sparse lines); each later closed bead
 //!   starts at the supported point nearest the nozzle.
+//! - Band: the beads fill the piece from the inner wall's spacing edge, without `infill_wall_overlap` into the wall,
+//!   to [`reach`] past its edge over the sparse infill. A ring that rests wholly on the sparse infill below (under
+//!   the top shells beside a vertical wall) keeps its edge there.
 //! - Speed: `vertical_shell_speed` (mm/s, or a percent of `internal_solid_infill_speed`, 80% by default). With
 //!   `detect_floating_vertical_shell` on, the parts of a bead over the unsupported area print at `bridge_speed`
 //!   (or the printing filament's `filament_bridge_speed` when its `override_process_overhang_speed` is on),
@@ -38,6 +41,10 @@ type Pt = IntPoint<i32>;
 /// The hair the lower layer's sparse area shrinks by and a piece grows by before they are checked for overlap,
 /// internal units (0.001 mm): a piece that only meets the sparse area along an edge does not rest on it.
 const EPS: i32 = 10;
+
+/// Half the width of the slivers of sparse infill along the infill area's edge that do not pull a floating band in,
+/// internal units (0.005 mm).
+const HAIR: i32 = 50;
 
 /// Slowed parts and the supported gaps between them shorter than this are smoothed away, mm.
 const SMOOTH_MM: f64 = 2.0;
@@ -125,6 +132,114 @@ pub(crate) fn split(narrow: &Shapes, unsupported: &Shapes) -> (Shapes, Shapes) {
         }
     }
     (floating, rest)
+}
+
+/// How far past its piece a floating band reaches over the sparse infill, as a share of the internal solid infill
+/// spacing; `infill_wall_overlap` of the mean of the inner wall's and the internal solid infill's spacings comes off.
+const SPARSE_REACH: f64 = 0.21;
+
+/// How far a floating band reaches past its piece over the sparse infill, internal units: [`SPARSE_REACH`] of the
+/// internal solid infill spacing less `infill_wall_overlap` of the mean of the inner wall's and the internal solid
+/// infill's spacings (0.0204 mm with 0.42 mm lines, 0.20 mm layers and 15%). Negative when the overlap is larger:
+/// the band then stops short of the piece's edge.
+pub(crate) fn reach(cfg: &PrintConfig) -> i32 {
+    let solid = cfg.spacing_for(cfg.solid_infill_width());
+    let wall = cfg.spacing_for(cfg.inner_wall_width());
+    let mm = SPARSE_REACH * solid - cfg.infill_wall_overlap / 100.0 * f64::midpoint(wall, solid);
+    (mm * SCALE).round() as i32
+}
+
+/// How far the infill area without its overlap with the inner wall reaches past the inner wall's spacing edge,
+/// toward the wall, internal units: what the band's wall side grows by so it starts at that spacing edge. Variable
+/// width walls start the infill area there (0). Fixed-width walls start it at their widths from the outline (the
+/// outer wall's and one inner wall's per further loop), with the innermost wall's centerline placed by the precise
+/// outer wall setting, at the layer's `height`.
+pub(crate) fn wall_shift(cfg: &PrintConfig, height: f64) -> i32 {
+    if cfg.arachne_walls() {
+        return 0;
+    }
+    let spacing = |w: f64| (w - height * (1.0 - std::f64::consts::FRAC_PI_4)).max(w * 0.5);
+    let (outer, inner) = (cfg.outer_wall_width(), cfg.inner_wall_width());
+    let past = if cfg.wall_loops < 2 {
+        inner / 2.0
+    } else {
+        let precise = crate::tower::flag_or(cfg, "precise_outer_wall", true)
+            && cfg.wall_sequence == crate::config::WallSequence::InnerOuter;
+        let first = if precise {
+            f64::midpoint(outer, inner)
+        } else {
+            f64::midpoint(spacing(outer), spacing(inner))
+        };
+        let innermost = outer / 2.0 + first + f64::from(cfg.wall_loops - 2) * spacing(inner);
+        outer + inner * f64::from(cfg.wall_loops - 1) - innermost
+    };
+    ((past - spacing(inner) / 2.0) * SCALE).round() as i32
+}
+
+/// The band the beads of floating pieces fill: the pieces inside `flat` (the infill area without its overlap with
+/// the inner wall, so the beads start at the inner wall's spacing edge), with their edges over `sparse` moved
+/// `reach` (internal units) out over it, or in when `reach` is negative. A piece that rests almost wholly on the
+/// `unsupported` area below ([`on_air`]: the ring a vertical wall leaves under its top shells) keeps its edges.
+pub(crate) fn band(
+    pieces: &Shapes,
+    flat: &Shapes,
+    sparse: &Shapes,
+    unsupported: &Shapes,
+    reach: i32,
+) -> Shapes {
+    if sparse.is_empty() || reach == 0 {
+        return perimeters::intersection(pieces, flat);
+    }
+    let (rings, leaning): (Shapes, Shapes) = pieces
+        .iter()
+        .cloned()
+        .partition(|s| on_air(std::slice::from_ref(s), unsupported));
+    let moved = reached(&leaning, flat, sparse, reach);
+    if rings.is_empty() {
+        return moved;
+    }
+    let kept = perimeters::intersection(&rings, flat);
+    if moved.is_empty() {
+        return kept;
+    }
+    perimeters::union_all(&[&moved, &kept])
+}
+
+/// True when less than a quarter of a piece lies off the `unsupported` area below.
+fn on_air(piece: &[Vec<Vec<Pt>>], unsupported: &Shapes) -> bool {
+    let all = area(piece);
+    all > 0 && area(&perimeters::difference(&piece.to_vec(), unsupported)) * 4 < all
+}
+
+/// Twice the area of `s`, internal units squared.
+fn area(s: &[Vec<Vec<Pt>>]) -> i64 {
+    s.iter()
+        .flat_map(|sh| sh.iter())
+        .map(|r| crate::geom::area2_int(r))
+        .sum::<i64>()
+        .abs()
+}
+
+/// [`band`] for pieces whose edges over `sparse` move by `reach`.
+fn reached(pieces: &Shapes, flat: &Shapes, sparse: &Shapes, reach: i32) -> Shapes {
+    if pieces.is_empty() {
+        return Shapes::new();
+    }
+    if reach > 0 {
+        let over = perimeters::intersection(&perimeters::offset(pieces, reach), sparse);
+        return perimeters::intersection(&perimeters::union_all(&[pieces, &over]), flat);
+    }
+    let inside = perimeters::intersection(pieces, flat);
+    if inside.is_empty() {
+        return inside;
+    }
+    // Only the sparse infill inside `flat` pulls the band in: the strip of it over the wall overlap, outside `flat`,
+    // would cut the band's wall side too. The opening drops the hairs that clipping leaves along `flat`'s edge.
+    let open = perimeters::offset(&perimeters::intersection(sparse, flat), -HAIR);
+    if open.is_empty() {
+        return inside;
+    }
+    perimeters::difference(&inside, &perimeters::offset(&open, HAIR - reach))
 }
 
 /// A piece of a floating vertical shell bead, in print order: its points and widths, and whether it is a slowed
@@ -675,6 +790,138 @@ mod tests {
         let (f, r) = split(&vec![over.clone(), beside.clone()], &u);
         assert_eq!(f, vec![over]);
         assert_eq!(r, vec![beside]);
+    }
+
+    fn stock_widths(overlap_percent: f64) -> PrintConfig {
+        let mut c = PrintConfig {
+            layer_height: 0.2,
+            line_width: 0.42,
+            infill_wall_overlap: overlap_percent,
+            ..PrintConfig::default()
+        };
+        c.feature_widths.inner_wall = Some(0.45);
+        c.feature_widths.internal_solid_infill = Some(0.42);
+        c
+    }
+
+    /// The band's x range in mm.
+    fn x_range(s: &Shapes) -> (f64, f64) {
+        let b = perimeters::bounds(s).expect("a band");
+        (f64::from(b[0]) / SCALE, f64::from(b[2]) / SCALE)
+    }
+
+    #[test]
+    fn the_band_reaches_a_share_of_a_solid_spacing_less_the_overlap_over_the_sparse() {
+        // 0.21 x 0.3771 less 15% of the mean of 0.4071 and 0.3771: 0.0204 mm.
+        let r = f64::from(reach(&stock_widths(15.0))) / SCALE;
+        assert!((r - 0.0204).abs() < 0.0002, "{r}");
+        assert!((f64::from(reach(&stock_widths(0.0))) / SCALE - 0.0792).abs() < 0.0002);
+        // With 30% the overlap is the larger: the band stops 0.0384 mm short of the piece's edge.
+        assert!((f64::from(reach(&stock_widths(30.0))) / SCALE + 0.0384).abs() < 0.0002);
+    }
+
+    #[test]
+    fn fixed_width_walls_move_the_band_to_the_inner_wall_spacing_edge() {
+        // Two 0.42 mm classic walls with the precise outer wall: the innermost wall's centerline sits 0.63 mm in and
+        // the infill area 0.84 mm in, 0.21 mm past it, where the spacing edge is 0.1885 mm past it.
+        let mut c = PrintConfig {
+            layer_height: 0.2,
+            line_width: 0.42,
+            wall_loops: 2,
+            wall_sequence: crate::config::WallSequence::InnerOuter,
+            ..PrintConfig::default()
+        };
+        c.raw
+            .insert("wall_generator".into(), serde_json::json!("classic"));
+        c.raw.insert("precise_outer_wall".into(), serde_json::json!(true));
+        let s = f64::from(wall_shift(&c, 0.2)) / SCALE;
+        assert!((s - 0.0215).abs() < 0.0002, "{s}");
+        // Without it the first inner wall sits the two spacings' mean in: 0.587 mm, 0.253 mm short of the area.
+        c.raw
+            .insert("precise_outer_wall".into(), serde_json::json!(false));
+        let s = f64::from(wall_shift(&c, 0.2)) / SCALE;
+        assert!((s - 0.0644).abs() < 0.0002, "{s}");
+        // Variable-width walls already start the infill area at the spacing edge.
+        c.raw
+            .insert("wall_generator".into(), serde_json::json!("arachne"));
+        assert_eq!(wall_shift(&c, 0.2), 0);
+    }
+
+    #[test]
+    fn the_band_starts_at_the_inner_wall_spacing_edge_and_reaches_over_the_sparse() {
+        // The infill area (with its 0.063 mm overlap) starts at x 0, so its flat part at 0.063; the piece runs to
+        // x 0.5 and the sparse infill on from there.
+        let flat: Shapes = vec![vec![rect(0.063, -5.0, 20.0, 15.0)]];
+        let piece: Shapes = vec![vec![rect(0.0, 0.0, 0.5, 10.0)]];
+        let sparse: Shapes = vec![vec![rect(0.5, -5.0, 20.0, 15.0)]];
+        let (x0, x1) = x_range(&band(&piece, &flat, &sparse, &Shapes::new(), mm(0.0204)));
+        assert!(
+            (x0 - 0.063).abs() < 0.0002 && (x1 - 0.5204).abs() < 0.0002,
+            "{x0} {x1}"
+        );
+        // A negative reach pulls the sparse side in.
+        let (x0, x1) = x_range(&band(&piece, &flat, &sparse, &Shapes::new(), mm(-0.0384)));
+        assert!(
+            (x0 - 0.063).abs() < 0.0002 && (x1 - 0.4616).abs() < 0.0002,
+            "{x0} {x1}"
+        );
+        // Sparse infill over the wall overlap, beside a piece that starts at the spacing edge, moves neither edge
+        // on the wall side.
+        let piece: Shapes = vec![vec![rect(0.063, 0.0, 0.5, 10.0)]];
+        let strip: Shapes = vec![
+            vec![rect(0.0, -5.0, 0.063, 15.0)],
+            vec![rect(0.5, -5.0, 20.0, 15.0)],
+        ];
+        for r in [mm(0.0204), mm(-0.0384)] {
+            let (x0, x1) = x_range(&band(&piece, &flat, &strip, &Shapes::new(), r));
+            let far = 0.5 + f64::from(r) / SCALE;
+            assert!(
+                (x0 - 0.063).abs() < 0.0002 && (x1 - far).abs() < 0.0002,
+                "{x0} {x1}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_ring_wholly_over_the_sparse_below_keeps_its_edge() {
+        let flat: Shapes = vec![vec![rect(0.063, -5.0, 20.0, 15.0)]];
+        let piece: Shapes = vec![vec![rect(0.0, 0.0, 0.44, 10.0)]];
+        let sparse: Shapes = vec![vec![rect(0.44, -5.0, 20.0, 15.0)]];
+        // The layer below is sparse under all of it: a ring.
+        let below = unsupported(&vec![vec![rect(-0.2, -5.0, 20.0, 15.0)]]);
+        let (x0, x1) = x_range(&band(&piece, &flat, &sparse, &below, mm(0.0204)));
+        assert!(
+            (x0 - 0.063).abs() < 0.0002 && (x1 - 0.44).abs() < 0.0002,
+            "{x0} {x1}"
+        );
+        // Sparse below only its inner fifth (a band a leaning wall leaves): it reaches.
+        let below = unsupported(&vec![vec![rect(0.36, -5.0, 20.0, 15.0)]]);
+        let (x0, x1) = x_range(&band(&piece, &flat, &sparse, &below, mm(0.0204)));
+        assert!(
+            (x0 - 0.063).abs() < 0.0002 && (x1 - 0.4604).abs() < 0.0002,
+            "{x0} {x1}"
+        );
+    }
+
+    #[test]
+    fn a_slot_band_runs_between_the_two_spacing_edges() {
+        // A 1.515 mm slot between two walls, each overlapped by 0.063 mm: no sparse beside it, so the band is the
+        // 1.389 mm between the spacing edges whatever the reach.
+        let flat: Shapes = vec![vec![rect(0.063, -5.0, 1.452, 15.0)]];
+        let piece: Shapes = vec![vec![rect(0.0, 0.0, 1.515, 10.0)]];
+        let sparse: Shapes = vec![vec![rect(5.0, -5.0, 20.0, 15.0)]];
+        for r in [mm(0.0204), mm(-0.0384), 0] {
+            let (x0, x1) = x_range(&band(&piece, &flat, &sparse, &Shapes::new(), r));
+            assert!(
+                (x0 - 0.063).abs() < 0.0002 && (x1 - 1.452).abs() < 0.0002,
+                "{x0} {x1}"
+            );
+            let (x0, x1) = x_range(&band(&piece, &flat, &Shapes::new(), &Shapes::new(), r));
+            assert!(
+                (x0 - 0.063).abs() < 0.0002 && (x1 - 1.452).abs() < 0.0002,
+                "{x0} {x1}"
+            );
+        }
     }
 
     #[test]
