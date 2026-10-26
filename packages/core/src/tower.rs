@@ -43,6 +43,8 @@ pub(crate) struct Tower {
     /// Wall loop bead width and the wider bead the purge rows use, mm.
     wall_w: f64,
     wipe_w: f64,
+    /// A purge row's volume per mm over the wall bead's: `wipe_tower_extra_flow` on a type 2 tower, 1 on type 1.
+    row_flow: f64,
     /// Distance between purge rows at full density, mm.
     spacing: f64,
     /// Rotation about the front left corner, degrees (`wipe_tower_rotation_angle`).
@@ -782,6 +784,11 @@ impl Tower {
         [self.x, self.y]
     }
 
+    /// A purge row's volume per mm at height `h`, mm2: the wall bead's times [`Self::row_flow`].
+    fn row_area(&self, h: f64) -> f64 {
+        self.row_flow * bead(self.wall_w, h)
+    }
+
     /// The same tower with another width and rotation (its depth stays the rows it was made for).
     pub(crate) fn shaped(mut self, width: f64, angle: f64) -> Self {
         self.width = width.max(5.0);
@@ -838,7 +845,7 @@ impl Tower {
                     / 100.0,
             )
         } else {
-            (wall_w * 1.15 * extra_flow, wall_w * extra_flow * extra_spacing)
+            (wall_w * extra_flow, wall_w * extra_flow * extra_spacing)
         };
         let width = cfg.raw_number("prime_tower_width", 35.0).max(5.0);
         let rows = rows.max(1.0);
@@ -863,6 +870,7 @@ impl Tower {
             depth: rows * spacing + 2.0 * wall_w,
             wall_w,
             wipe_w,
+            row_flow: if type1(cfg) { 1.0 } else { extra_flow },
             spacing,
             angle: cfg.raw_number("wipe_tower_rotation_angle", 0.0),
             brim: cfg.raw_number("prime_tower_brim_width", 3.0),
@@ -1441,7 +1449,7 @@ impl Tower {
         };
         let (x0, x1) = (edge, self.width - edge);
         let row_len = x1 - x0;
-        let area = bead(self.wipe_w, layer_h);
+        let area = self.row_area(layer_h);
         let mut pts = Vec::new();
         let mut y = 2.0 * self.wall_w + start * self.spacing;
         let mut left = true;
@@ -1486,9 +1494,9 @@ impl Tower {
             left = !left;
         }
         // The last row is trimmed so the total matches the volume asked for.
-        let full = n * row_len * bead(self.wipe_w, layer_h);
+        let full = n * row_len * self.row_area(layer_h);
         if !self.whole_rows && n > 0.0 && full > volume + 1e-9 && pts.len() >= 2 {
-            let short = (full - volume) / bead(self.wipe_w, layer_h);
+            let short = (full - volume) / self.row_area(layer_h);
             if let (Some(a), Some(b)) = (pts.get(pts.len() - 2).copied(), pts.last().copied()) {
                 let len = (b.0 - a.0).abs();
                 let keep = (len - short).max(0.0) / len.max(1e-9);
@@ -1538,7 +1546,7 @@ impl Tower {
                 points: row_pts.into_iter().map(|(x, y)| self.place_point(x, y)).collect(),
                 width_mm: to_f32(self.wipe_w),
                 speed_mm_s: to_f32(speed),
-                flow: 1.0,
+                flow: to_f32(area / bead(self.wipe_w, layer_h)),
                 // A row a tool changer's ramming leads into is not the wipe's own start, and a contact wipe has none.
                 nozzle_wipe: k == 0 && self.skip_points && !lead_row && !contact,
                 hop: false,
@@ -1769,11 +1777,7 @@ fn plan_rows_with(
     let nozzle = cfg.nozzle_diameter;
     let wall_w = nozzle * 1.25;
     let extra_flow = (cfg.raw_number("wipe_tower_extra_flow", 100.0) / 100.0).clamp(0.5, 3.0);
-    let wipe_w = if type1(cfg) {
-        wall_w
-    } else {
-        wall_w * 1.15 * extra_flow
-    };
+    let row_flow = if type1(cfg) { 1.0 } else { extra_flow };
     let row_len = width.max(5.0) - 4.0 * wall_w;
     let mut cur = 0u8;
     // The most rows each block takes on any layer; the blocks stand side by side along the depth.
@@ -1791,7 +1795,7 @@ fn plan_rows_with(
                     v = t0.saved_wipe(cfg, v, h, l == 0, rows, t);
                 }
                 first_change = false;
-                let mut r = (v / (row_len * bead(wipe_w, h))).ceil().max(1.0);
+                let mut r = (v / (row_len * row_flow * bead(wall_w, h))).ceil().max(1.0);
                 if p.ram > 0.0 {
                     r += ram_rows(cfg, p, width, h);
                 }
@@ -1870,7 +1874,7 @@ impl TowerPlan {
             for &t in order {
                 if cur != 0 && t != cur {
                     let p = change_purge(cfg, tools, cur, t);
-                    let mut r = (p.wipe / (row_len * bead(tower.wipe_w, h))).ceil().max(1.0);
+                    let mut r = (p.wipe / (row_len * tower.row_area(h))).ceil().max(1.0);
                     if p.ram > 0.0 {
                         r += ram_rows(cfg, p, tower.width, h);
                     }
