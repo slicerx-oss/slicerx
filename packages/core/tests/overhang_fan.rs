@@ -981,3 +981,120 @@ fn the_preview_draws_overhang_walls_as_tall_as_the_gcode_states() {
         );
     }
 }
+
+/// Item: overhang wall labels with `thick_bridges`. A fully clear piece prints as a round thread the nozzle wide, so
+/// its `; LINE_WIDTH:` and its `; LAYER_HEIGHT:` both state the nozzle diameter, whatever the wall widths and the
+/// layer height, and the next feature's height is back at the layer's. Its filament per mm is a round thread of the
+/// nozzle. A `bridge_line_width` set by hand keeps the layer height in the comments.
+#[test]
+fn overhang_wall_comments_state_a_round_bead_with_thick_bridges() {
+    let stock_cfg = stock("bambu-a1");
+    let model = wedge(75.0);
+    let ratio = first_number(&stock_cfg["filament_flow_ratio"]);
+    let filament = std::f64::consts::PI * 1.75 * 1.75 / 4.0;
+    let check = |label: &str, edits: &[(&str, Value)], d: f64, h: f64, stated: f64| {
+        let mut cfg = stock_cfg.clone();
+        cfg.insert("thick_bridges".into(), json!("1"));
+        for (k, v) in edits {
+            cfg.insert((*k).to_owned(), v.clone());
+        }
+        let (moves, after) = clear_moves(&slice(&model, &cfg));
+        assert!(moves.len() > 20, "{label}: {} moves", moves.len());
+        let want = std::f64::consts::PI * d * d / 4.0 * ratio / filament;
+        for m in &moves {
+            assert!(
+                (m.width - d).abs() < 5e-4 && (m.height - stated).abs() < 5e-4,
+                "{label}, layer {}: width {} height {}, want {d} {stated}",
+                m.layer,
+                m.width,
+                m.height
+            );
+            assert!(
+                (m.per_mm / want - 1.0).abs() < 0.005,
+                "{label}, layer {}: {:.5} filament per mm, want {want:.5}",
+                m.layer,
+                m.per_mm
+            );
+        }
+        assert!(!after.is_empty(), "{label}: nothing after the pieces");
+        assert!(
+            after.iter().all(|a| (a - h).abs() < 5e-4),
+            "{label}: heights after the pieces {after:?}"
+        );
+    };
+    // Stock A1: 0.4 mm nozzle, inner walls 0.45, 0.2 mm layers.
+    check("stock", &[], 0.4, 0.2, 0.4);
+    // The inner wall's width does not enter.
+    check(
+        "inner 0.6",
+        &[("inner_wall_line_width", json!("0.6"))],
+        0.4,
+        0.2,
+        0.4,
+    );
+    // Nor does the layer height.
+    check(
+        "0.12 mm layers",
+        &[("layer_height", json!("0.12"))],
+        0.4,
+        0.12,
+        0.4,
+    );
+    // A bridge line width set by hand keeps its strand and the layer height in the comments.
+    check(
+        "bridge line 0.35",
+        &[("bridge_line_width", json!("0.35"))],
+        0.35,
+        0.2,
+        0.2,
+    );
+}
+
+/// Item: the preview draws a fully clear overhang wall piece with `thick_bridges` as the round thread its G-code
+/// comments state: the nozzle wide and the nozzle tall (0.4 mm and 0.4 mm at 0.2 mm layers), and no other feature
+/// changes height.
+#[test]
+fn the_preview_draws_overhang_walls_round_with_thick_bridges() {
+    const OVERHANG_WALL: u8 = 2;
+    const CUSTOM: u8 = 14;
+    let mut cfg = stock("bambu-a1");
+    cfg.insert("thick_bridges".into(), json!("1"));
+    let (gcode, sxpv) = slice_with_preview(&wedge(75.0), &cfg);
+    let segs = preview_segments(&sxpv);
+    let clear: Vec<&PreviewSeg> = segs
+        .iter()
+        .filter(|s| {
+            s.feature == OVERHANG_WALL && (s.x1 - s.x0).abs() < 0.5 && (s.x1 - s.x0).hypot(s.y1 - s.y0) > 2.0
+        })
+        .collect();
+    assert!(clear.len() > 20, "{} clear segments", clear.len());
+    for s in &clear {
+        assert_eq!(
+            (s.width_um, s.height_um),
+            (400, 400),
+            "clear overhang wall segment {s:?}"
+        );
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "micrometers")]
+    let stated: std::collections::BTreeSet<(i64, i64)> = clear_moves(&gcode)
+        .0
+        .iter()
+        .map(|m| {
+            (
+                (m.width * 1000.0).round() as i64,
+                (m.height * 1000.0).round() as i64,
+            )
+        })
+        .collect();
+    assert_eq!(stated, std::iter::once((400, 400)).collect(), "G-code comments");
+    let tall: Vec<&PreviewSeg> = segs
+        .iter()
+        .filter(|s| ![OVERHANG_WALL, CUSTOM].contains(&s.feature) && s.height_um > 200)
+        .collect();
+    assert!(
+        tall.is_empty(),
+        "{} other segments taller than the layer: {:?}",
+        tall.len(),
+        tall.first()
+    );
+}

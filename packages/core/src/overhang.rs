@@ -21,6 +21,7 @@
 
 use crate::config::PrintConfig;
 use crate::fm::Fm;
+use crate::output::RaisedWall;
 use crate::perimeters::{self, Shapes};
 use i_overlay::i_float::int::point::IntPoint;
 use std::sync::Arc;
@@ -513,28 +514,49 @@ pub(crate) fn wall_bead(cfg: &PrintConfig, h: f64, outer: bool) -> (f64, f64) {
 /// Whether overhang wall pieces print the flat bead built on the wall width of [`wall_bead`]: a Bambu Lab printer,
 /// `bridge_line_width` not set away from the schema default, `thick_bridges` off.
 fn wall_width_bead(cfg: &PrintConfig) -> bool {
+    !cfg.thick_bridges && bambu_wall_bead(cfg)
+}
+
+/// A Bambu Lab printer whose `bridge_line_width` is not set away from the schema default: there the comments of an
+/// overhang wall piece describe its bead as it prints (see [`raised_wall`]).
+fn bambu_wall_bead(cfg: &PrintConfig) -> bool {
     let unset = cfg
         .raw
         .get("bridge_line_width")
         .is_none_or(|v| crate::motion::is_schema_default("bridge_line_width", v));
-    unset && !cfg.thick_bridges && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
+    unset && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
 }
 
-/// The `bridge_flow` that draws the bead of an overhang wall piece taller in the G-code comments: above 1, on the
-/// flat bead of [`wall_bead`]; None otherwise, when the comments state the bead's own width and the layer height.
-pub(crate) fn raised_wall_flow(cfg: &PrintConfig) -> Option<f64> {
-    (cfg.bridge_flow > 1.0 && wall_width_bead(cfg)).then_some(cfg.bridge_flow)
+/// How the G-code comments draw the bead of an overhang wall piece other than flat at the layer height, on a Bambu
+/// Lab printer with no `bridge_line_width` set by hand: taller at a `bridge_flow` above 1 on the flat bead of
+/// [`wall_bead`], or round with `thick_bridges`. None otherwise, when the comments state the bead's own width and
+/// the layer height.
+pub(crate) fn raised_wall(cfg: &PrintConfig) -> Option<RaisedWall> {
+    if !bambu_wall_bead(cfg) {
+        return None;
+    }
+    if cfg.thick_bridges {
+        Some(RaisedWall::Round)
+    } else {
+        (cfg.bridge_flow > 1.0).then_some(RaisedWall::Flow(cfg.bridge_flow))
+    }
 }
 
-/// The width and height, mm, the comments state for an overhang wall bead `w` wide at layer height `h` and a
-/// `bridge_flow` `f` above 1: a bead `f` times taller, as wide as a flat bead of the same area at that height. The
-/// area, and so the extrusion, is the same `f` times a flat bead of `w` at `h`.
-pub(crate) fn raised_wall_label(w: f64, h: f64, f: f64) -> (f64, f64) {
-    let tall = h * f;
-    (
-        f * crate::gcode::bead_area(w, h) / tall + tall * (1.0 - std::f64::consts::FRAC_PI_4),
-        tall,
-    )
+/// The width and height, mm, the comments state for an overhang wall bead `w` wide at layer height `h`, drawn as
+/// `r` says. At a `bridge_flow` `f` above 1: a bead `f` times taller, as wide as a flat bead of the same area at that
+/// height (the area, and so the extrusion, is the same `f` times a flat bead of `w` at `h`). A round thread: as tall
+/// as it is wide, the nozzle at a `bridge_flow` of 1.
+pub(crate) fn raised_wall_label(w: f64, h: f64, r: RaisedWall) -> (f64, f64) {
+    match r {
+        RaisedWall::Flow(f) => {
+            let tall = h * f;
+            (
+                f * crate::gcode::bead_area(w, h) / tall + tall * (1.0 - std::f64::consts::FRAC_PI_4),
+                tall,
+            )
+        }
+        RaisedWall::Round => (w, w),
+    }
 }
 
 #[allow(clippy::cast_possible_truncation, reason = "a width and a flow ratio")]
@@ -898,7 +920,7 @@ mod tests {
 
     #[test]
     fn a_raised_overhang_wall_label_keeps_the_bead_area() {
-        let (w, h) = raised_wall_label(0.45, 0.2, 1.2);
+        let (w, h) = raised_wall_label(0.45, 0.2, RaisedWall::Flow(1.2));
         assert!(
             (w - 0.458_584).abs() < 1e-6 && (h - 0.24).abs() < 1e-12,
             "{w} {h}"
@@ -910,20 +932,34 @@ mod tests {
             ..PrintConfig::default()
         };
         // Other printers keep the bridge strand's own label.
-        assert_eq!(raised_wall_flow(&cfg), None);
+        assert_eq!(raised_wall(&cfg), None);
+        cfg.thick_bridges = true;
+        assert_eq!(raised_wall(&cfg), None);
+        cfg.thick_bridges = false;
         cfg.raw
             .insert("printer_model".into(), serde_json::json!("Bambu Lab A1"));
         cfg.raw.remove("bridge_line_width");
-        assert_eq!(raised_wall_flow(&cfg), Some(1.2));
+        assert_eq!(raised_wall(&cfg), Some(RaisedWall::Flow(1.2)));
         cfg.bridge_flow = 1.0;
-        assert_eq!(raised_wall_flow(&cfg), None);
+        assert_eq!(raised_wall(&cfg), None);
         cfg.bridge_flow = 1.2;
         cfg.thick_bridges = true;
-        assert_eq!(raised_wall_flow(&cfg), None);
+        assert_eq!(raised_wall(&cfg), Some(RaisedWall::Round));
+        cfg.bridge_flow = 1.0;
+        assert_eq!(raised_wall(&cfg), Some(RaisedWall::Round));
         cfg.thick_bridges = false;
+        cfg.bridge_flow = 1.2;
         cfg.raw
             .insert("bridge_line_width".into(), serde_json::json!(0.35));
-        assert_eq!(raised_wall_flow(&cfg), None);
+        assert_eq!(raised_wall(&cfg), None);
+        cfg.thick_bridges = true;
+        assert_eq!(raised_wall(&cfg), None);
+    }
+
+    #[test]
+    fn a_round_overhang_wall_label_is_as_tall_as_it_is_wide() {
+        assert_eq!(raised_wall_label(0.4, 0.2, RaisedWall::Round), (0.4, 0.4));
+        assert_eq!(raised_wall_label(0.6, 0.3, RaisedWall::Round), (0.6, 0.6));
     }
 
     fn square(x0: i32, y0: i32, x1: i32, y1: i32) -> Shapes {

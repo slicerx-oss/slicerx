@@ -2253,7 +2253,7 @@ impl SliceSession {
         };
         crate::gcode::settle_cooling(&mut out, config);
         out.filament_map.clone_from(&self.nozzle_map);
-        out.raised_wall_flow = crate::overhang::raised_wall_flow(config);
+        out.raised_wall = crate::overhang::raised_wall(config);
         // From the filaments the whole plate prints, so every range of layers reads the same mode.
         if let Some((chamber, warning)) = crate::chamber::resolve(config, &self.plate_slots()) {
             if let Some(message) = warning {
@@ -4461,7 +4461,7 @@ impl SliceSession {
             filament_map: self.nozzle_map.clone(),
             collisions: crate::collide::Hits::default(),
             chamber: None,
-            raised_wall_flow: None,
+            raised_wall: None,
             configs,
             stage_micros: StageMicros {
                 layers: self.prep_micros,

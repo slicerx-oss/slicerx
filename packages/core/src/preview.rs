@@ -135,12 +135,12 @@ pub fn preview_buffers(out: &SliceOutput) -> Vec<u8> {
             reason = "micrometers of a layer fit in u16"
         )]
         let h_um = (h * 1000.0).round().clamp(0.0, 65535.0) as u16;
-        // An overhang wall at a `bridge_flow` above 1 is drawn as the taller bead its G-code comments state
-        // (`overhang::raised_wall_label`), under this layer's settings.
+        // An overhang wall at a `bridge_flow` above 1 or with `thick_bridges` is drawn as the taller bead its G-code
+        // comments state (`overhang::raised_wall_label`), under this layer's settings.
         let raise = usize::from(l.cfg)
             .checked_sub(1)
             .and_then(|i| out.configs.get(i))
-            .map_or(out.raised_wall_flow, crate::overhang::raised_wall_flow);
+            .map_or(out.raised_wall, crate::overhang::raised_wall);
         for p in &l.paths {
             let pts = l.path_points(p);
             if finder.is_some() {
@@ -165,8 +165,8 @@ pub fn preview_buffers(out: &SliceOutput) -> Vec<u8> {
                 (bead_area(f64::from(p.width_mm), h) * f64::from(p.speed_mm_s) * f64::from(p.flow)) as f32,
             );
             let (w_um, h_um) = match raise {
-                Some(f) if p.feature == Feature::OverhangWall => {
-                    let (w, tall) = crate::overhang::raised_wall_label(f64::from(p.width_mm), h, f);
+                Some(r) if p.feature == Feature::OverhangWall => {
+                    let (w, tall) = crate::overhang::raised_wall_label(f64::from(p.width_mm), h, r);
                     (micrometers(w), micrometers(tall))
                 }
                 _ => (w_um, h_um),

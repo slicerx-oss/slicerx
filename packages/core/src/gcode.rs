@@ -2163,10 +2163,10 @@ fn emit_layer(
     // the width last written, in thousandths as written: the layer below's last, which orca's writer still holds
     #[allow(clippy::cast_possible_truncation, reason = "width in thousandths is small")]
     let thousandths = |w: f32| (f64::from(w) * 1000.0).round() as i64;
-    // At a `bridge_flow` above 1 an overhang wall's comments state a taller bead of the same area
-    // (`overhang::raised_wall_label`): its width and height in thousandths, as written. Other paths state their own
-    // width and the layer height.
-    let raise = crate::overhang::raised_wall_flow(c);
+    // At a `bridge_flow` above 1 an overhang wall's comments state a taller bead of the same area, and with
+    // `thick_bridges` a round thread as tall as it is wide (`overhang::raised_wall_label`): its width and height in
+    // thousandths, as written. Other paths state their own width and the layer height.
+    let raise = crate::overhang::raised_wall(c);
     #[allow(
         clippy::cast_possible_truncation,
         reason = "a layer height in thousandths is small"
@@ -2178,8 +2178,8 @@ fn emit_layer(
     )]
     let label = |feature: Feature, w: f32| -> (i64, i64) {
         match raise {
-            Some(f) if feature == Feature::OverhangWall => {
-                let (lw, lh) = crate::overhang::raised_wall_label(f64::from(w), h, f);
+            Some(r) if feature == Feature::OverhangWall => {
+                let (lw, lh) = crate::overhang::raised_wall_label(f64::from(w), h, r);
                 ((lw * 1000.0).round() as i64, (lh * 1000.0).round() as i64)
             }
             _ => (thousandths(w), layer_h),
