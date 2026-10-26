@@ -138,8 +138,10 @@ function scalar(v: SettingValue | undefined): number | undefined {
 
 /**
  * sx reads Orca keys and ignores the ones it does not implement yet. Line
- * widths given as a percent of the nozzle or as 0 (auto) become millimeters or
- * are left to sx's default, since sx wants millimeters.
+ * widths given as a percent of the nozzle become millimeters, since sx wants
+ * millimeters; a width of 0 stays 0, which sx reads as automatic, as
+ * `sx slice <project.3mf>` does. A width that is not a number is left to sx's
+ * default.
  */
 export function sxConfig(config: Record<string, SettingValue>): Record<string, SettingValue> {
   const nozzle = scalar(config['nozzle_diameter']) ?? 0.4
@@ -148,7 +150,7 @@ export function sxConfig(config: Record<string, SettingValue>): Record<string, S
     if (k.endsWith('line_width') && typeof v === 'string') {
       const t = v.trim()
       const mm = t.endsWith('%') ? (Number(t.slice(0, -1)) / 100) * nozzle : Number(t)
-      if (Number.isFinite(mm) && mm > 0) out[k] = Math.round(mm * 1000) / 1000
+      if (Number.isFinite(mm) && mm >= 0) out[k] = Math.round(mm * 1000) / 1000
       continue
     }
     out[k] = v
