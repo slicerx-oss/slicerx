@@ -226,6 +226,23 @@ describe('a project opens with the process and filaments it was made with', () =
     expect(resolved()['precise_outer_wall']).toBe(true)
   })
 
+  it('gives a project with fine layers and no support gaps 0.2 mm gaps, over the ones the plate had', async () => {
+    const { host } = capture()
+    set({ overrides: { support_top_z_distance: 0.1, support_bottom_z_distance: 0.1 } })
+    const unset = Object.fromEntries(Object.entries(FINE_P1S).filter(([k]) => k !== 'support_top_z_distance'))
+    await openModelBytes(host, 'fine.3mf', project(unset))
+    const cfg = resolved()
+    expect(cfg['layer_height']).toBe(0.12)
+    expect([cfg['support_top_z_distance'], cfg['support_bottom_z_distance']]).toEqual([0.2, 0.2])
+  })
+
+  it("keeps the project's own support gaps", async () => {
+    const { host } = capture()
+    await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, support_top_z_distance: '0.12', support_bottom_z_distance: '0.16' }))
+    const cfg = resolved()
+    expect([cfg['support_top_z_distance'], cfg['support_bottom_z_distance']]).toEqual([0.12, 0.16])
+  })
+
   it('takes the walls the person chose in the project, with no note', async () => {
     const { host } = capture()
     const listed = [`${(FINE_P1S['different_settings_to_system'] as string[])[0]};wall_generator`, '', '', '', '', '']

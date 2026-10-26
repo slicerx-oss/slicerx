@@ -2,17 +2,19 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A project open adds the keys the app that wrote the file reads differently when they are missing (engine-choices.json
 // fromApp in @slicerx/settings), against the shared cases sx-core and the MCP server run too, and counts them as changed
-// when the project lists what it changed.
+// when the project lists what it changed. The settings it applies also take SlicerX's defaults for the keys any project
+// leaves out (engine-choices.json defaults), so a project without support gaps slices with 0.2 mm ones.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { projectDefaults } from '@slicerx/settings'
 import { baseConfig } from '../src/adapters/settings'
 import { projectSettingChanges } from '../src/export/project-settings'
 import { readProject, withBambuMissingKeys } from '../src/export/import3mf'
 import { zip } from '../src/export/zip'
 
 const cases = JSON.parse(readFileSync(join(__dirname, '../../settings/fixtures/project-defaults.json'), 'utf8')) as {
-  cases: { name: string; application?: string; settings: Record<string, unknown>; added: Record<string, unknown> }[]
+  cases: { name: string; application?: string; settings: Record<string, unknown>; added: Record<string, unknown>; defaults: Record<string, unknown> }[]
 }
 
 const vertices = [[0, 0, 0], [20, 0, 0], [20, 20, 0], [0, 20, 0], [0, 0, 20], [20, 0, 20], [20, 20, 20], [0, 20, 20]]
@@ -51,5 +53,17 @@ describe("a project open and the keys its app reads differently", () => {
     // a project with Bambu Studio's rib switch off keeps the rectangle tower (the base value, so no change)
     const off = await open(bare.application, { ...bare.settings, prime_tower_rib_wall: '0' })
     expect(projectSettingChanges(off, baseConfig()).values['wipe_tower_wall_type'] ?? baseConfig()['wipe_tower_wall_type']).toBe('rectangle')
+  })
+
+  it('applies 0.2 mm support gaps to a project without them, and keeps the ones a project sets', async () => {
+    const gaps = ['support_top_z_distance', 'support_bottom_z_distance']
+    for (const c of cases.cases) {
+      const s = await open(c.application, c.settings)
+      expect(projectDefaults(s), c.name).toEqual(c.defaults)
+      // as applyProjectSettings takes them: the defaults under the file's own values, as changes on the base settings
+      const values = projectSettingChanges({ ...projectDefaults(s), ...s }, baseConfig()).values
+      const base = baseConfig() as unknown as Record<string, unknown>
+      for (const k of gaps) expect(values[k] ?? base[k], `${c.name}: ${k}`).toBe(Number(k in c.settings ? c.settings[k] : c.defaults[k]))
+    }
   })
 })
