@@ -970,7 +970,8 @@ fn cmd_metadata(args: &[String]) -> Res<ExitCode> {
 
 /// Prints the settings `sx slice <project.3mf>` takes from a project ([`sx_core::api::project_config`]) as one JSON
 /// object on stdout, for a request's `config`: the project's own, our engine choices it did not change, our defaults
-/// for keys it does not set, and its app's reading of keys it lacks. A 3MF without settings prints `{}`. The engine
+/// for keys it does not set, and its app's reading of keys it lacks. A `PrusaSlicer` project prints the print and
+/// filament values of its `Metadata/Slic3r_PE.config` in our keys. A 3MF without settings prints `{}`. The engine
 /// choices kept, the walls and a settings file that could not be read are noted on stderr.
 fn cmd_project_settings(args: &[String]) -> ExitCode {
     let Some(path) = args.first().filter(|a| !a.starts_with('-') && args.len() == 1) else {

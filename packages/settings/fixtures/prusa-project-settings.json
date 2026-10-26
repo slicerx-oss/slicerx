@@ -1,0 +1,551 @@
+{
+  "comment": "Cases for a PrusaSlicer project's own settings (Metadata/Slic3r_PE.config, given as its files or as its key = value lines): config is what the project sets when it opens, in the Orca-format values project_settings.config has, and unmapped the PrusaSlicer keys with no setting of ours. A project's printer settings, G-code, text and unset values stay the current printer's, and SlicerX adds no engine choices or defaults for one, so a project without support gaps keeps the printer's. prusaProjectConfig in @slicerx/settings, sx-core's project_config (sx project-settings and sx slice <project.3mf>), the MCP server's readProjectFile and the app's project open all run these cases.",
+  "cases": [
+    {
+      "name": "PrusaSlicer 2.9.6 projects as saved (MK4S, PETG, organic support, ironing)",
+      "files": [
+        "preset-files/prusaslicer-2.9.6.3mf",
+        "preset-files/prusaslicer-2.9.6-tslab.3mf"
+      ],
+      "config": {
+        "enable_support": "1",
+        "support_type": "tree(auto)",
+        "initial_layer_speed": "30",
+        "initial_layer_infill_speed": "100",
+        "hot_plate_temp": "85",
+        "textured_plate_temp": "85",
+        "hot_plate_temp_initial_layer": "80",
+        "textured_plate_temp_initial_layer": "80",
+        "enable_arc_fitting": "0",
+        "reduce_crossing_wall": "0",
+        "max_travel_detour_distance": "0",
+        "bottom_surface_pattern": "monotonic",
+        "bottom_shell_layers": "3",
+        "bottom_shell_thickness": "0",
+        "bridge_acceleration": "0",
+        "bridge_angle": "0",
+        "overhang_fan_speed": "100",
+        "bridge_flow": "1",
+        "bridge_speed": "60",
+        "brim_object_gap": "0",
+        "brim_type": "outer_only",
+        "brim_width": "0",
+        "chamber_minimal_temperature": "0",
+        "chamber_temperature": "0",
+        "print_sequence": "by layer",
+        "slow_down_for_layer_cooling": "1",
+        "default_acceleration": "0",
+        "close_fan_the_first_x_layers": "3",
+        "bridge_no_support": "1",
+        "draft_shield": "disabled",
+        "elefant_foot_compensation": "0",
+        "ensure_vertical_shell_thickness": "ensure_all",
+        "outer_wall_acceleration": "0",
+        "outer_wall_line_width": "0",
+        "outer_wall_speed": "30",
+        "wall_sequence": "inner wall/outer wall",
+        "extra_perimeters_on_overhangs": "0",
+        "filament_flow_ratio": "1",
+        "line_width": "0",
+        "fan_cooling_layer_time": "60",
+        "filament_cooling_final_speed": "3.4",
+        "filament_cooling_initial_speed": "2.2",
+        "filament_cooling_moves": "4",
+        "filament_cost": "0",
+        "filament_density": "0",
+        "filament_diameter": "1.75",
+        "filament_loading_speed": "28",
+        "filament_loading_speed_start": "3",
+        "filament_max_volumetric_speed": "12",
+        "filament_minimal_purge_on_wipe_tower": "15",
+        "filament_multitool_ramming": "0",
+        "filament_multitool_ramming_flow": "10",
+        "filament_multitool_ramming_volume": "10",
+        "filament_shrink": "100%",
+        "filament_shrinkage_compensation_z": "100%",
+        "filament_soluble": "0",
+        "filament_stamping_distance": "0",
+        "filament_stamping_loading_speed": "20",
+        "filament_toolchange_delay": "0",
+        "filament_unloading_speed": "90",
+        "filament_unloading_speed_start": "100",
+        "infill_direction": "45",
+        "sparse_infill_density": "20%",
+        "sparse_infill_pattern": "grid",
+        "initial_layer_acceleration": "0",
+        "initial_layer_line_width": "200%",
+        "initial_layer_print_height": "0.2",
+        "nozzle_temperature_initial_layer": "235",
+        "full_fan_speed_layer": "0",
+        "fuzzy_skin": "none",
+        "fuzzy_skin_point_distance": "0.8",
+        "fuzzy_skin_thickness": "0.3",
+        "gap_fill_target": "everywhere",
+        "gap_infill_speed": "20",
+        "gcode_comments": "0",
+        "gcode_label_objects": "0",
+        "resolution": "0.0125",
+        "sparse_infill_acceleration": "0",
+        "infill_anchor": "600%",
+        "infill_anchor_max": "50",
+        "sparse_infill_filament_id": "1",
+        "sparse_infill_line_width": "0",
+        "infill_wall_overlap": "25%",
+        "sparse_infill_speed": "200",
+        "interface_shells": "0",
+        "interlocking_beam": "0",
+        "interlocking_beam_layer_count": "2",
+        "interlocking_beam_width": "0.8",
+        "interlocking_boundary_avoidance": "2",
+        "interlocking_depth": "2",
+        "interlocking_orientation": "22.5",
+        "ironing_flow": "15%",
+        "ironing_spacing": "0.1",
+        "ironing_speed": "15",
+        "ironing_type": "top",
+        "layer_height": "0.2",
+        "fan_max_speed": "100",
+        "max_volumetric_extrusion_rate_slope": "0",
+        "min_bead_width": "85%",
+        "fan_min_speed": "35",
+        "min_feature_size": "25%",
+        "slow_down_min_speed": "10",
+        "min_skirt_length": "0",
+        "mmu_segmented_region_interlocking_depth": "0",
+        "mmu_segmented_region_max_width": "0",
+        "only_one_wall_first_layer": "0",
+        "ooze_prevention": "0",
+        "detect_overhang_wall": "1",
+        "inner_wall_acceleration": "0",
+        "outer_wall_filament_id": "1",
+        "inner_wall_line_width": "0",
+        "wall_generator": "arachne",
+        "inner_wall_speed": "60",
+        "wall_loops": "3",
+        "wall_direction": "ccw",
+        "raft_contact_distance": "0.1",
+        "raft_expansion": "1.5",
+        "raft_first_layer_density": "90%",
+        "raft_first_layer_expansion": "3",
+        "raft_layers": "0",
+        "seam_slope_entire_loop": "0",
+        "seam_slope_min_length": "20",
+        "seam_slope_inner_walls": "0",
+        "seam_slope_conditional": "1",
+        "seam_slope_type": "none",
+        "seam_slope_start_height": "0%",
+        "seam_gap": "15%",
+        "seam_position": "back",
+        "single_extruder_multi_material_priming": "1",
+        "skirt_distance": "6",
+        "skirt_height": "1",
+        "skirt_loops": "1",
+        "slice_closing_radius": "0.049",
+        "slicing_mode": "regular",
+        "slow_down_layer_time": "5",
+        "small_perimeter_speed": "15",
+        "internal_solid_infill_acceleration": "0",
+        "minimum_sparse_infill_area": "70",
+        "internal_solid_filament_id": "1",
+        "internal_solid_infill_line_width": "0",
+        "internal_solid_infill_speed": "20",
+        "spiral_mode": "0",
+        "staggered_inner_seams": "0",
+        "standby_temperature_delta": "-5",
+        "support_angle": "0",
+        "support_bottom_z_distance": "0",
+        "support_interface_bottom_layers": "-1",
+        "support_on_build_plate_only": "0",
+        "support_top_z_distance": "0.2",
+        "enforce_support_layers": "0",
+        "support_filament": "1",
+        "support_line_width": "0",
+        "support_interface_loop_pattern": "0",
+        "support_interface_filament": "1",
+        "support_interface_top_layers": "3",
+        "support_interface_pattern": "rectilinear",
+        "support_interface_spacing": "0",
+        "support_interface_speed": "60",
+        "support_base_pattern": "rectilinear",
+        "support_base_pattern_spacing": "2.5",
+        "support_speed": "60",
+        "support_style": "organic",
+        "support_threshold_angle": "0",
+        "tree_support_branch_angle_organic": "40",
+        "tree_support_angle_slow": "25",
+        "tree_support_branch_diameter_organic": "2",
+        "tree_support_branch_diameter_angle": "5",
+        "tree_support_branch_distance_organic": "1",
+        "tree_support_tip_diameter": "0.8",
+        "tree_support_top_rate": "15%",
+        "nozzle_temperature": "240",
+        "thick_bridges": "1",
+        "detect_thin_wall": "1",
+        "toolchange_ordering": "optimized",
+        "top_surface_pattern": "monotonic",
+        "top_surface_line_width": "0",
+        "top_surface_acceleration": "0",
+        "top_surface_speed": "15",
+        "top_shell_layers": "3",
+        "top_shell_thickness": "0",
+        "travel_acceleration": "0",
+        "travel_speed": "130",
+        "travel_speed_z": "0",
+        "wall_distribution_count": "1",
+        "wall_transition_angle": "10",
+        "wall_transition_filter_deviation": "25%",
+        "wall_transition_length": "100%",
+        "flush_into_infill": "0",
+        "flush_into_objects": "0",
+        "enable_prime_tower": "1",
+        "wipe_tower_bridging": "10",
+        "prime_tower_brim_width": "2",
+        "wipe_tower_cone_angle": "0",
+        "wipe_tower_extra_flow": "100%",
+        "wipe_tower_extra_spacing": "100%",
+        "wipe_tower_filament": "0",
+        "wipe_tower_no_sparse_layers": "0",
+        "prime_tower_width": "60",
+        "xy_contour_compensation": "0"
+      },
+      "unmapped": [
+        "autoemit_temperature_commands",
+        "automatic_extrusion_widths",
+        "automatic_infill_combination",
+        "automatic_infill_combination_max_layer_height",
+        "avoid_crossing_curled_overhangs",
+        "bed_temperature_extruder",
+        "between_objects_gcode",
+        "color_change_gcode",
+        "colorprint_heights",
+        "cooling_perimeter_transition_distance",
+        "cooling_slowdown_logic",
+        "custom_parameters_filament",
+        "custom_parameters_print",
+        "custom_parameters_printer",
+        "duplicate_distance",
+        "enable_dynamic_fan_speeds",
+        "enable_dynamic_overhang_speeds",
+        "extra_perimeters",
+        "extrusion_axis",
+        "fan_always_on",
+        "filament_abrasive",
+        "filament_flush_speed",
+        "filament_flush_volume",
+        "filament_infill_max_crossing_speed",
+        "filament_infill_max_speed",
+        "filament_load_time",
+        "filament_purge_multiplier",
+        "filament_seam_gap_distance",
+        "filament_spool_weight",
+        "filament_unload_time",
+        "first_layer_acceleration_over_raft",
+        "first_layer_speed_over_raft",
+        "gcode_substitutions",
+        "infill_every_layers",
+        "infill_first",
+        "machine_limits_usage",
+        "max_print_speed",
+        "max_volumetric_extrusion_rate_slope_negative",
+        "max_volumetric_speed",
+        "multimaterial_purging",
+        "nozzle_high_flow",
+        "only_retract_when_crossing_perimeters",
+        "over_bridge_speed",
+        "overhang_fan_speed_0",
+        "overhang_fan_speed_1",
+        "overhang_fan_speed_2",
+        "overhang_fan_speed_3",
+        "overhang_speed_0",
+        "overhang_speed_1",
+        "overhang_speed_2",
+        "overhang_speed_3",
+        "scarf_seam_max_segment_length",
+        "solid_infill_every_layers",
+        "support_material_closing_radius",
+        "support_material_synchronize_layers",
+        "support_material_with_sheath",
+        "support_tree_branch_diameter_double_wall",
+        "top_one_perimeter_type",
+        "travel_lift_before_obstacle",
+        "travel_short_distance_acceleration",
+        "use_volumetric_e",
+        "variable_layer_height",
+        "wipe_tower_acceleration",
+        "wiping_volumes_matrix",
+        "wiping_volumes_use_custom_matrix"
+      ]
+    },
+    {
+      "name": "percent speeds made absolute from the bases beside them",
+      "lines": [
+        "perimeter_speed = 40",
+        "external_perimeter_speed = 50%",
+        "small_perimeter_speed = 25%",
+        "infill_speed = 100",
+        "solid_infill_speed = 80%",
+        "top_solid_infill_speed = 50%",
+        "support_material_speed = 50",
+        "support_material_interface_speed = 100%"
+      ],
+      "config": {
+        "inner_wall_speed": "40",
+        "outer_wall_speed": "20",
+        "small_perimeter_speed": "10",
+        "sparse_infill_speed": "100",
+        "internal_solid_infill_speed": "80",
+        "top_surface_speed": "40",
+        "support_speed": "50",
+        "support_interface_speed": "50"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "percent speeds without their bases use PrusaSlicer's defaults",
+      "lines": [
+        "external_perimeter_speed = 50%",
+        "top_solid_infill_speed = 50%",
+        "first_layer_height = 75%"
+      ],
+      "config": {
+        "outer_wall_speed": "30",
+        "top_surface_speed": "10",
+        "initial_layer_print_height": "0.23"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer speed in mm/s with no first layer infill speed",
+      "lines": [
+        "first_layer_speed = 25"
+      ],
+      "config": {
+        "initial_layer_speed": "25",
+        "initial_layer_infill_speed": "25"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer speed in percent with a first layer infill speed of 0",
+      "lines": [
+        "first_layer_speed = 50%",
+        "first_layer_infill_speed = 0",
+        "perimeter_speed = 60",
+        "infill_speed = 200"
+      ],
+      "config": {
+        "initial_layer_speed": "30",
+        "initial_layer_infill_speed": "100",
+        "inner_wall_speed": "60",
+        "sparse_infill_speed": "200"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer speed in percent with its own first layer infill speed",
+      "lines": [
+        "first_layer_speed = 50%",
+        "first_layer_infill_speed = 30",
+        "perimeter_speed = 60",
+        "infill_speed = 200"
+      ],
+      "config": {
+        "initial_layer_speed": "30",
+        "initial_layer_infill_speed": "30",
+        "inner_wall_speed": "60",
+        "sparse_infill_speed": "200"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support off",
+      "lines": [
+        "support_material = 0",
+        "support_material_auto = 1",
+        "support_material_style = grid"
+      ],
+      "config": {
+        "enable_support": "0",
+        "support_type": "normal(auto)",
+        "support_style": "grid"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "organic support on",
+      "lines": [
+        "support_material = 1",
+        "support_material_auto = 1",
+        "support_material_style = organic",
+        "support_material_contact_distance = 0.2",
+        "support_material_bottom_contact_distance = 0"
+      ],
+      "config": {
+        "enable_support": "1",
+        "support_type": "tree(auto)",
+        "support_style": "organic",
+        "support_top_z_distance": "0.2",
+        "support_bottom_z_distance": "0"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "grid support on enforcers only",
+      "lines": [
+        "support_material = enforcers_only",
+        "support_material_auto = 1",
+        "support_material_style = grid"
+      ],
+      "config": {
+        "enable_support": "1",
+        "support_type": "normal(manual)",
+        "support_style": "grid"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support on without its gap settings",
+      "lines": [
+        "support_material = 1",
+        "support_material_auto = 1",
+        "support_material_style = grid",
+        "layer_height = 0.12"
+      ],
+      "config": {
+        "enable_support": "1",
+        "support_type": "normal(auto)",
+        "support_style": "grid",
+        "layer_height": "0.12"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "ironing off",
+      "lines": [
+        "ironing = 0",
+        "ironing_type = top"
+      ],
+      "config": {
+        "ironing_type": "no ironing"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "ironing on without its type",
+      "lines": [
+        "ironing = 1"
+      ],
+      "config": {
+        "ironing_type": "top"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "bed temperatures on each plate type",
+      "lines": [
+        "bed_temperature = 90",
+        "first_layer_bed_temperature = 85"
+      ],
+      "config": {
+        "hot_plate_temp": "90",
+        "textured_plate_temp": "90",
+        "hot_plate_temp_initial_layer": "85",
+        "textured_plate_temp_initial_layer": "85"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "no shrinkage, and a shrinkage that is not read",
+      "lines": [
+        "filament_shrinkage_compensation_xy = 0%",
+        "filament_shrinkage_compensation_z = 0.5%"
+      ],
+      "config": {
+        "filament_shrink": "100%"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer width in percent",
+      "lines": [
+        "first_layer_extrusion_width = 200%",
+        "extrusion_width = 0.45"
+      ],
+      "config": {
+        "initial_layer_line_width": "200%",
+        "line_width": "0.45"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support XY spacing in percent is not read",
+      "lines": [
+        "support_material_xy_spacing = 50%"
+      ],
+      "config": {},
+      "unmapped": []
+    },
+    {
+      "name": "support XY spacing in mm",
+      "lines": [
+        "support_material_xy_spacing = 0.6"
+      ],
+      "config": {
+        "support_object_xy_distance": "0.6"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "printer settings, G-code, lists of text and unset values stay the printer's",
+      "lines": [
+        "layer_height = 0.2",
+        "travel_ramping_lift = 1",
+        "bed_shape = 0x0,250x0,250x210,0x210",
+        "start_gcode = G28\\nG1 Z5",
+        "post_process = \"/bin/a;b\";c",
+        "notes = hello",
+        "idle_temperature = nil",
+        "gcode_flavor = marlin2",
+        "retract_length = 0.8"
+      ],
+      "config": {
+        "layer_height": "0.2"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "text settings with a grammar",
+      "lines": [
+        "sparse_infill_rotate_template = 0,90",
+        "solid_infill_rotate_template = rm -rf",
+        "extra_solid_infills = 1,7,9"
+      ],
+      "config": {
+        "sparse_infill_rotate_template": "0,90",
+        "extra_solid_infills": "1,7,9"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "older names and keys with no setting",
+      "lines": [
+        "infill_extruder = 2",
+        "perimeter_extruder = 1",
+        "extra_perimeters = 1",
+        "fill_pattern = monotonous",
+        "seam_position = rear",
+        "complete_objects = 0"
+      ],
+      "config": {
+        "sparse_infill_filament_id": "2",
+        "outer_wall_filament_id": "1",
+        "sparse_infill_pattern": "monotonic",
+        "seam_position": "back",
+        "print_sequence": "by layer"
+      },
+      "unmapped": [
+        "extra_perimeters"
+      ]
+    }
+  ]
+}

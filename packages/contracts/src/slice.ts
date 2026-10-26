@@ -51,8 +51,10 @@ export interface MeshPartInfo {
 
 /** The settings entries of a Bambu Studio or Orca 3MF project, in the request shape of the settings crate's project import. */
 export interface ProjectMetadata {
-  /** Metadata/project_settings.config, parsed. */
+  /** Metadata/project_settings.config, parsed; for a PrusaSlicer project, what its Metadata/Slic3r_PE.config may set, in Orca keys. */
   projectSettings?: Record<string, unknown>
+  /** `prusaslicer` when projectSettings come from a PrusaSlicer project's Metadata/Slic3r_PE.config. */
+  settingsFrom?: string
   /** Text of Metadata/model_settings.config. */
   modelSettings?: string
   /** Text of Metadata/layer_config_ranges.xml. */
