@@ -183,13 +183,18 @@ fn area(
     (!trimmed.is_empty()).then_some(trimmed)
 }
 
-/// Adds the ironing paths of `layer` to `out`, printed last, and returns whether any were added.
+/// Adds the ironing paths of `layer` to `out` and returns whether any were added. `owners` is the part of the layer
+/// each filament irons (its top surface filament, with the regions it covers). With one filament ironing, the lines
+/// print last on the filament of the layer's last top surface. With more, each filament irons its own part right
+/// after the last of its own paths, so the layer still ends on the filament its planned order ends on and the next
+/// layer starts on the filament the plan says it does.
 pub(crate) fn add(
     out: &mut LayerPaths,
     areas: &LayerAreas,
     cfg: &PrintConfig,
     topmost: bool,
     base_angle_deg: f64,
+    owners: &[(u8, Shapes)],
 ) -> bool {
     let Some(k) = kind(cfg) else { return false };
     let nozzle = cfg.nozzle_diameter;
@@ -202,28 +207,83 @@ pub(crate) fn add(
     let Some(region) = area(areas, cfg, k, topmost, nozzle, inset) else {
         return false;
     };
-    // The top surface's filament irons (Orca: `top_surface_filament_id`), else the layer's last.
-    let tool = out
+    let knobs = (spacing, flow_pct, speed, angle);
+    // Each filament's share of the area. When one filament irons it all, the area is kept whole.
+    let parts: Vec<(u8, Shapes)> = owners
+        .iter()
+        .map(|(t, own)| (*t, perimeters::intersection(&region, own)))
+        .filter(|(_, r)| !r.is_empty())
+        .collect();
+    match parts.as_slice() {
+        [(tool, _)] if owners.len() > 1 => {
+            let paths = lines(out, &region, cfg, *tool, knobs);
+            place(out, *tool, paths)
+        }
+        [_, _, ..] => {
+            let mut added = false;
+            for (tool, part) in &parts {
+                let paths = lines(out, part, cfg, *tool, knobs);
+                added |= place(out, *tool, paths);
+            }
+            added
+        }
+        _ => {
+            // The top surface's filament irons (Orca: `top_surface_filament_id`), else the layer's last.
+            let tool = out
+                .paths
+                .iter()
+                .rev()
+                .find(|p| p.feature == Feature::TopSurface)
+                .or_else(|| out.paths.last())
+                .map_or(1, |p| p.tool)
+                .max(1);
+            let paths = lines(out, &region, cfg, tool, knobs);
+            let added = !paths.is_empty();
+            out.paths.extend(paths);
+            added
+        }
+    }
+}
+
+/// Puts `paths` of `tool` right after that filament's last path that is not the prime tower (its tower rows
+/// before a change stay right before the change), or last when the layer has none. Returns whether there were any.
+fn place(out: &mut LayerPaths, tool: u8, paths: Vec<PathInfo>) -> bool {
+    if paths.is_empty() {
+        return false;
+    }
+    let at = out
         .paths
         .iter()
-        .rev()
-        .find(|p| p.feature == Feature::TopSurface)
-        .or_else(|| out.paths.last())
-        .map_or(1, |p| p.tool)
-        .max(1);
+        .rposition(|p| p.tool == tool && p.feature != Feature::PrimeTower)
+        .map_or(out.paths.len(), |i| i + 1);
+    out.paths.splice(at..at, paths);
+    true
+}
+
+/// The ironing lines over `region` on `tool`: their points go to the end of `out.points`, the paths are returned.
+/// `knobs` is the spacing, the flow percent, the speed and the line angle.
+fn lines(
+    out: &mut LayerPaths,
+    region: &Shapes,
+    cfg: &PrintConfig,
+    tool: u8,
+    knobs: (f64, f64, f64, f64),
+) -> Vec<PathInfo> {
+    let (spacing, flow_pct, speed, angle) = knobs;
+    let nozzle = cfg.nozzle_diameter;
     // The extrusion: height from the flow percent, width from the nozzle, flow multiplier for the writer's bead.
     let layer_h = f64::from(out.height);
     let ext_h = layer_h * flow_pct / 100.0 * spacing / nozzle;
     let width = nozzle + ext_h * (1.0 - std::f64::consts::FRAC_PI_4);
     let flow = nozzle * ext_h / crate::gcode::bead_area(width, layer_h).max(1e-9);
     let polylines: Vec<Vec<Pt>> = if concentric(cfg) {
-        crate::surface::fill(&region, crate::surface::Curve::Concentric, spacing, 0.0)
+        crate::surface::fill(region, crate::surface::Curve::Concentric, spacing, 0.0)
             .into_iter()
             .map(|pl| pl.into_iter().map(|p| [p.x_mm(), p.y_mm()]).collect())
             .collect()
     } else {
         let a = angle.to_radians();
-        let rs: Vec<Vec<Pt>> = rings(&region)
+        let rs: Vec<Vec<Pt>> = rings(region)
             .into_iter()
             .map(|r| r.into_iter().map(|p| rotate(p, -a)).collect())
             .collect();
@@ -232,7 +292,7 @@ pub(crate) fn add(
             .map(|pl| pl.into_iter().map(|p| rotate(p, a)).collect())
             .collect()
     };
-    let mut added = false;
+    let mut paths = Vec::new();
     for pl in polylines {
         if pl.len() < 2 {
             continue;
@@ -241,7 +301,7 @@ pub(crate) fn add(
         out.points.extend(pl.iter().map(|p| Point::from_mm(p[0], p[1])));
         let end = u32::try_from(out.points.len()).unwrap_or(u32::MAX);
         #[allow(clippy::cast_possible_truncation, reason = "speeds and widths are small")]
-        out.paths.push(PathInfo {
+        paths.push(PathInfo {
             tower_wipe: false,
             tower_hop: false,
             slow_span: false,
@@ -256,9 +316,8 @@ pub(crate) fn add(
             overhang_fan: false,
             owner: crate::preview::OBJECT_NONE,
         });
-        added = true;
     }
-    added
+    paths
 }
 
 #[cfg(test)]
@@ -307,7 +366,7 @@ mod tests {
     #[test]
     fn a_top_surface_gets_lines_at_the_spacing_with_a_tenth_of_the_flow() {
         let (mut out, areas) = layer();
-        assert!(add(&mut out, &areas, &cfg("top"), false, 0.0));
+        assert!(add(&mut out, &areas, &cfg("top"), false, 0.0, &[]));
         assert!(
             out.paths
                 .iter()
@@ -331,10 +390,10 @@ mod tests {
     #[test]
     fn topmost_irons_only_the_last_layer_and_none_irons_nothing() {
         let (mut out, areas) = layer();
-        assert!(!add(&mut out, &areas, &cfg("topmost"), false, 0.0));
-        assert!(add(&mut out, &areas, &cfg("topmost"), true, 0.0));
+        assert!(!add(&mut out, &areas, &cfg("topmost"), false, 0.0, &[]));
+        assert!(add(&mut out, &areas, &cfg("topmost"), true, 0.0, &[]));
         let (mut out2, areas2) = layer();
-        assert!(!add(&mut out2, &areas2, &PrintConfig::default(), true, 0.0));
+        assert!(!add(&mut out2, &areas2, &PrintConfig::default(), true, 0.0, &[]));
     }
 
     #[test]
@@ -343,14 +402,14 @@ mod tests {
         let mut c = cfg("top");
         c.raw
             .insert("ironing_pattern".into(), serde_json::json!("concentric"));
-        assert!(add(&mut out, &areas, &c, false, 0.0));
+        assert!(add(&mut out, &areas, &c, false, 0.0, &[]));
         assert!(out.paths.len() >= 8, "{} loops", out.paths.len());
         let (mut a, areas_a) = layer();
-        add(&mut a, &areas_a, &cfg("top"), false, 0.0);
+        add(&mut a, &areas_a, &cfg("top"), false, 0.0, &[]);
         let (mut b, areas_b) = layer();
         let mut turned = cfg("top");
         turned.raw.insert("ironing_angle".into(), serde_json::json!(90));
-        add(&mut b, &areas_b, &turned, false, 0.0);
+        add(&mut b, &areas_b, &turned, false, 0.0, &[]);
         let dy = |l: &LayerPaths| {
             l.path_points(&l.paths[0])
                 .windows(2)
