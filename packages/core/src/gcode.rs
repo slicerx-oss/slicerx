@@ -1652,7 +1652,7 @@ fn cooling_unit(config: &PrintConfig, support: &UnitLayer<'_>, object: &UnitLaye
         support.0.config_at(config, support.1.cfg),
         object.0.config_at(config, object.1.cfg),
     );
-    let outer = |c: &PrintConfig| crate::firmware::truthy(c, "dont_slow_down_outer_wall");
+    let outer = crate::paths::keeps_outer_wall;
     crate::paths::support_only(support.1)
         && !object.1.paths.is_empty()
         && !crate::paths::support_only(object.1)
