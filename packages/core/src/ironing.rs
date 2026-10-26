@@ -5,7 +5,8 @@
 //! `ironing_pattern` (rectilinear, concentric), `ironing_spacing`, `ironing_flow` (percent of the
 //! layer height), `ironing_speed` (the first layer's speed on the first layer), `ironing_inset`,
 //! `ironing_angle` (or `ironing_direction`, its name in Bambu Lab projects, while `ironing_angle` is
-//! 0) and `ironing_angle_fixed`.
+//! 0) and `ironing_angle_fixed`. The ironing filament's own `filament_ironing_flow`,
+//! `filament_ironing_spacing` and `filament_ironing_inset` replace the process values when set.
 //!
 //! The area is the top surfaces (plus bottom surfaces and solid layers for `solid`), kept half a
 //! nozzle (or `ironing_inset`) inside the layer's outline. Lines run at the top surface angle
@@ -244,7 +245,8 @@ pub(crate) fn add(
         .map(|(t, own)| (*t, perimeters::intersection(&region, own)))
         .filter(|(_, r)| !r.is_empty())
         .collect();
-    if parts.len() < 2 {
+    let whole = parts.len() < 2;
+    if whole {
         // The top surface's filament irons (Orca: `top_surface_filament_id`): the one owner's, else the layer's last
         // top surface's.
         let tool = parts
@@ -266,11 +268,42 @@ pub(crate) fn add(
     for (tool, part) in &parts {
         // Ironing follows a top surface printed in its filament, so a layer that never loads it irons nothing with it.
         let Some(at) = spot(out, *tool) else { continue };
-        let paths = lines(out, part, cfg, *tool, knobs);
+        // The filament's own ironing flow, spacing and inset, where it sets them (not empty and not `nil`), replace the
+        // process values. Its ironing speed does not: the process speed stays.
+        let own = |key: &str| cfg.filament_override(key, *tool);
+        let tool_flow = own("ironing_flow")
+            .and_then(|v| crate::config::float_or_percent(v, 100.0))
+            .map_or(knobs.1, |v| v.max(0.0));
+        let tool_spacing = own("ironing_spacing")
+            .and_then(plain)
+            .filter(|v| *v > 0.0)
+            .unwrap_or(knobs.0);
+        let tool_inset = own("ironing_inset").and_then(plain).map_or(inset, |v| v.max(0.0));
+        // Another inset trims the filament's share again from the surfaces.
+        let trimmed;
+        let part = if (tool_inset - inset).abs() > f64::EPSILON {
+            let Some(r) = area(areas, cfg, k, topmost, nozzle, tool_inset) else {
+                continue;
+            };
+            trimmed = match owners.iter().find(|(t, _)| t == tool) {
+                Some((_, own)) if !whole => perimeters::intersection(&r, own),
+                _ => r,
+            };
+            &trimmed
+        } else {
+            part
+        };
+        let paths = lines(out, part, cfg, *tool, (tool_spacing, tool_flow, knobs.2, knobs.3));
         added |= !paths.is_empty();
         out.paths.splice(at..at, paths);
     }
     added
+}
+
+/// A number, or a number written as text.
+fn plain(v: &serde_json::Value) -> Option<f64> {
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|t| t.trim().parse().ok()))
 }
 
 /// Where ironing on `tool` goes so that it never adds a tool change: right after that filament's last path that is
@@ -582,6 +615,61 @@ mod tests {
         let (vol, width) = first_line(&c, 0.3);
         assert!((vol - 0.0030).abs() < 1e-5, "{vol}");
         assert!((width - 0.401_61).abs() < 1e-5, "{width}");
+    }
+
+    #[test]
+    fn the_filament_ironing_flow_spacing_and_inset_replace_the_process_values() {
+        let with = |flow: serde_json::Value, spacing: serde_json::Value, inset: serde_json::Value| {
+            let mut c = cfg("top");
+            for (k, v) in [
+                ("ironing_flow", serde_json::json!(15)),
+                ("ironing_spacing", serde_json::json!(0.1)),
+                ("ironing_speed", serde_json::json!(40)),
+                ("filament_ironing_flow", serde_json::json!([flow])),
+                ("filament_ironing_spacing", serde_json::json!([spacing])),
+                ("filament_ironing_inset", serde_json::json!([inset])),
+                ("filament_ironing_speed", serde_json::json!(["25"])),
+            ] {
+                c.raw.insert(k.into(), v);
+            }
+            c
+        };
+        // The gap between neighboring lines (median), the lowest y ironed and the feed, on the top surface at 0 degrees.
+        let lay = |c: &PrintConfig| {
+            let (mut out, areas) = layer();
+            assert!(add(&mut out, &areas, c, false, 0.0, &[]));
+            let mut ys: Vec<f64> = out.points.iter().map(|p| p.y_mm()).collect();
+            ys.sort_by(f64::total_cmp);
+            ys.dedup_by(|a, b| (*a - *b).abs() < 1e-3);
+            let mut gaps: Vec<f64> = ys.windows(2).map(|w| w[1] - w[0]).collect();
+            gaps.sort_by(f64::total_cmp);
+            (gaps[gaps.len() / 2], ys[0], out.paths[0].speed_mm_s)
+        };
+        // 0.2 x 40% x 0.25 = 0.0200 mm3 per mm, lines 0.25 apart (a whole number of lines may widen it a little),
+        // kept 0.3 inside the outline, at the process speed of 40, not the filament's 25.
+        let c = with(
+            serde_json::json!("40%"),
+            serde_json::json!(0.25),
+            serde_json::json!(0.3),
+        );
+        let (vol, _) = first_line(&c, 0.2);
+        assert!((vol - 0.0200).abs() < 1e-5, "{vol}");
+        let (gap, low, speed) = lay(&c);
+        assert!((0.25..0.3).contains(&gap), "{gap}");
+        assert!(low > 0.29, "{low}");
+        assert!((speed - 40.0).abs() < 1e-6);
+        // `nil` keeps the process values: 0.2 x 15% x 0.1 = 0.0030, lines 0.1 apart, half a nozzle in.
+        let nil = with(
+            serde_json::json!("nil"),
+            serde_json::json!("nil"),
+            serde_json::json!("nil"),
+        );
+        let (vol, _) = first_line(&nil, 0.2);
+        assert!((vol - 0.0030).abs() < 1e-5, "{vol}");
+        let (gap, low, speed) = lay(&nil);
+        assert!((0.1..0.12).contains(&gap), "{gap}");
+        assert!(low < 0.26, "{low}");
+        assert!((speed - 40.0).abs() < 1e-6);
     }
 
     #[test]
