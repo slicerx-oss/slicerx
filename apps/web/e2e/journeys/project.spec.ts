@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Projects another slicer wrote and the person's own, opened on the person's A1 mini, on one page: Bambu Studio's -1
-// values, a project's import report, a project with its own start G-code, a cosmetic stock script, a P1S 0.2 project that opens as its own
-// printer, painted brim ears in file format 1, the saved .sx3mf and its metadata, and the CAD-only build's real STL download. Each project is made here (projectZip). Each step starts over
-// with the example plate on the A1 mini and opens its own project.
+// values, a project's import report, a project with its own start G-code, a cosmetic stock script, a P1S 0.2 project
+// that opens as its own printer, a PrusaSlicer project with 0% shrinkage, painted brim ears in file format 1, the saved
+// .sx3mf and its metadata, and the CAD-only build's real STL download. Each project is made here (projectZip), except the
+// PrusaSlicer ones, which are saved files. Each step starts over with the example plate on the A1 mini and opens its own
+// project.
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { Page } from '@playwright/test'
-import { command } from '../cad-helpers'
+import { bounds, command } from '../cad-helpers'
 import { expectFileDialog } from '../file-dialog'
 import { addMenu, expect, sliceCount, sliced, tab } from '../fixtures'
 import { journey as test } from '../journey'
@@ -413,6 +416,57 @@ test.describe('a project with painted brim ears', () => {
       expect(await sliceShown(page), `plate ${n} slices without a refusal`).toEqual({ status: 'done', collisions: [] })
     }
   })
+})
+
+// ---------------------------------------------------------------------------------------------------------------------
+// A PrusaSlicer project with 0% shrinkage
+// ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * A PrusaSlicer project writes filament_shrinkage_compensation_xy and filament_shrinkage_compensation_z as "0%" when
+ * the filament does not shrink. The engine's own filament_shrink counts the size that is left (100 means none), so a 0
+ * carried across as it was scaled the part by 100 and the safety preflight refused the plate as 2000 mm wide. Both
+ * projects are saved files from packages/settings/fixtures/preset-files, opened as a person opens them (Open and the
+ * file chooser). Each opens at its real size, asks which G-code to use because it carries its own, and slices.
+ */
+test.describe('a PrusaSlicer project with 0% shrinkage', () => {
+  const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'settings', 'fixtures', 'preset-files')
+  const PROJECTS = [
+    { file: 'prusaslicer-2.9.6.3mf', object: 'Cube with modifier', size: [20, 20, 20] },
+    { file: 'prusaslicer-2.9.6-tslab.3mf', object: 'T slab', size: [30, 8, 18] },
+  ] as const
+
+  for (const { file, object, size } of PROJECTS) {
+    test(`${file} opens at its real size and slices with no preflight block`, async ({ page }) => {
+      test.slow()
+      await fresh(page)
+      await openModel(page, join(fixtures, file), { asProject: true })
+      await expect(page.locator('.obj-name')).toHaveText([object], { timeout: 60_000 })
+      const id = await page.evaluate(() => (window as unknown as { __sx: { getState(): { plate: { id: string }[] } } }).__sx.getState().plate[0]!.id)
+      const box = await bounds(page, id)
+      expect(box.max.map((hi, k) => Math.round((hi - box.min[k]!) * 100) / 100)).toEqual(size)
+
+      const before = await sliceCount(page)
+      await page.getByRole('button', { name: 'Slice plate' }).click()
+      // The project has its own printer G-code, so the slice asks first; the printer's G-code is the answer here. The
+      // slice ends as a finished slice or as the estimate's error line (the preflight's refusal is shown there).
+      let outcome = 'working'
+      await expect
+        .poll(
+          async () => {
+            const use = page.getByTestId('project-gcode-use-profile')
+            if (await use.isVisible()) await use.click()
+            if (await page.getByTestId('slice-estimate-error').isVisible()) return (outcome = 'refused')
+            return (outcome = (await sliced(page, before).count()) ? 'sliced' : 'working')
+          },
+          { timeout: 120_000, intervals: [200, 300, 500] },
+        )
+        .not.toBe('working')
+      const refusal = await page.getByTestId('slice-estimate-error').first().textContent({ timeout: 1000 }).catch(() => null)
+      expect(outcome, `the slice was refused: ${refusal}`).toBe('sliced')
+      await expect(page.getByTestId('slice-estimate-error')).toHaveCount(0)
+    })
+  }
 })
 
 // ---------------------------------------------------------------------------------------------------------------------
