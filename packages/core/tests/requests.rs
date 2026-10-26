@@ -411,11 +411,12 @@ fn walls_more_than_half_the_nozzle_past_the_layer_below_are_overhang_walls() {
 }
 
 #[test]
-fn overhang_walls_print_with_the_bridge_flow() {
-    // Orca's overhang flow is the bridge flow of an inner wall (`bridging_flow(frPerimeter)`): a flat bead of
-    // the bridge line width at `bridge_flow`, or with `thick_bridges` a round thread of it.
+fn overhang_walls_keep_the_wall_width_whatever_the_bridge_flow() {
+    // On a printer with its own profile (not a Bambu Lab one) an overhang wall piece with thick bridges off is the
+    // plain bead of its wall: a flat 0.45 mm bead at the layer height and the wall flow, which `bridge_flow` does
+    // not scale. With `thick_bridges` it is a round thread the nozzle wide.
     let run = |extra: Value| {
-        let mut c = json!({"bridge_line_width": "100%"});
+        let mut c = json!({"bridge_line_width": "100%", "outer_wall_line_width": 0.45, "inner_wall_line_width": 0.45});
         c.as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
@@ -425,14 +426,14 @@ fn overhang_walls_print_with_the_bridge_flow() {
     };
     let (full, less) = (run(json!({"bridge_flow": 1.0})), run(json!({"bridge_flow": 0.8})));
     assert!(
-        (less / full - 0.8).abs() < 0.01,
+        (less / full - 1.0).abs() < 0.005,
         "{less} against {full} filament per mm"
     );
-    // A flat 0.4 mm bead 0.2 mm high, against 1.75 mm filament.
-    let area = 0.2 * (0.4 - 0.2 * (1.0 - std::f64::consts::FRAC_PI_4));
+    // A flat 0.45 mm bead 0.2 mm high, against 1.75 mm filament.
+    let area = 0.2 * (0.45 - 0.2 * (1.0 - std::f64::consts::FRAC_PI_4));
     let filament = std::f64::consts::PI * 1.75 * 1.75 / 4.0;
     assert!(
-        (full - area / filament).abs() < 0.01 * full,
+        (full - area / filament).abs() < 0.005 * full,
         "{full} filament per mm"
     );
     let thick = run(json!({"bridge_flow": 1.0, "thick_bridges": true}));

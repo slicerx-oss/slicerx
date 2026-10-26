@@ -949,7 +949,7 @@
         "support_type": "normal(auto)"
       },
       "name": "normal support",
-      "reachMm": 5.045619
+      "reachMm": 5.075619
     },
     {
       "brimMm": 0.0,
@@ -968,7 +968,7 @@
         "support_type": "normal(auto)"
       },
       "name": "normal support at 30 degrees",
-      "reachMm": 6.888784
+      "reachMm": 6.929765
     },
     {
       "brimMm": 0.0,
@@ -987,7 +987,7 @@
         "support_type": "normal(auto)"
       },
       "name": "snug support",
-      "reachMm": 3.4
+      "reachMm": 3.42
     },
     {
       "brimMm": 0.0,
@@ -1004,7 +1004,7 @@
         "support_type": "tree(auto)"
       },
       "name": "tree support",
-      "reachMm": 7.9
+      "reachMm": 7.92
     },
     {
       "brimMm": 0.0,
@@ -1037,7 +1037,7 @@
         "support_style": "snug"
       },
       "name": "snug support, line width unset",
-      "reachMm": 2.4
+      "reachMm": 2.45
     },
     {
       "brimMm": 15.0,
@@ -1619,7 +1619,7 @@
       "name": "tree support, a table",
       "object": {},
       "overhang": true,
-      "reachMm": 7.9,
+      "reachMm": 7.92,
       "transform": null
     },
     {
@@ -1769,7 +1769,7 @@
       "name": "normal support, a table",
       "object": {},
       "overhang": true,
-      "reachMm": 5.045619,
+      "reachMm": 5.075619,
       "transform": null
     },
     {
@@ -1919,7 +1919,7 @@
       "name": "snug support, a table",
       "object": {},
       "overhang": true,
-      "reachMm": 2.4,
+      "reachMm": 2.42,
       "transform": null
     },
     {
@@ -2068,7 +2068,7 @@
       "name": "a table turned over, two shells touching",
       "object": {},
       "overhang": true,
-      "reachMm": 7.9,
+      "reachMm": 7.92,
       "transform": [
         1.0,
         0.0,
@@ -2280,7 +2280,7 @@
       "name": "a 20 degree underside",
       "object": {},
       "overhang": true,
-      "reachMm": 7.9,
+      "reachMm": 7.92,
       "transform": null
     },
     {
@@ -2548,7 +2548,7 @@
       "name": "a 40 degree underside, threshold 0",
       "object": {},
       "overhang": true,
-      "reachMm": 5.045619,
+      "reachMm": 5.075619,
       "transform": null
     },
     {
@@ -2638,7 +2638,7 @@
       "name": "a 45 degree underside, 3 enforced layers",
       "object": {},
       "overhang": true,
-      "reachMm": 5.045619,
+      "reachMm": 5.075619,
       "transform": null
     },
     {
@@ -2876,7 +2876,7 @@
       "name": "manual support, a cube, an enforcer",
       "object": {},
       "overhang": false,
-      "reachMm": 7.9,
+      "reachMm": 7.92,
       "transform": null
     },
     {
@@ -2965,7 +2965,7 @@
       "name": "automatic support, a cube, an enforcer",
       "object": {},
       "overhang": false,
-      "reachMm": 7.9,
+      "reachMm": 7.92,
       "transform": null
     },
     {
@@ -3186,7 +3186,7 @@
       "name": "a part hanging from a point",
       "object": {},
       "overhang": true,
-      "reachMm": 5.045619,
+      "reachMm": 5.075619,
       "transform": null
     },
     {
@@ -3337,7 +3337,7 @@
         "enable_support": true
       },
       "overhang": true,
-      "reachMm": 7.9,
+      "reachMm": 7.92,
       "transform": null
     },
     {
