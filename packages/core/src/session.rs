@@ -9144,9 +9144,16 @@ impl SliceSession {
                         let get = |k: &str, d: f64| crate::motion::raw_f(cfg, k).unwrap_or(d);
                         let (skin_depth, lock_depth) =
                             (get("skin_infill_depth", 2.0), get("infill_lock_depth", 1.0));
+                        // Percent settings: "60%" as projects and presets write them, or 60.
+                        let percent = |k: &str, d: f64| {
+                            cfg.raw
+                                .get(k)
+                                .and_then(|v| crate::config::float_or_percent(v, 100.0))
+                                .unwrap_or(d)
+                        };
                         let (skin_density, skeleton_density) = (
-                            get("skin_infill_density", 25.0) / 100.0,
-                            get("skeleton_infill_density", 25.0) / 100.0,
+                            percent("skin_infill_density", 25.0) / 100.0,
+                            percent("skeleton_infill_density", 25.0) / 100.0,
                         );
                         let zig_area = perimeters::offset(area, -mm(skin_depth));
                         let skin_area = perimeters::difference(area, &zig_area);
