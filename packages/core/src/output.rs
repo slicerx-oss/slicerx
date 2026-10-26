@@ -135,6 +135,13 @@ pub struct StageMicros {
     pub paths: u64,
     pub gcode: u64,
     pub preview: u64,
+    /// The internal bridges of each layer and the facts they read from the layers around it (surface
+    /// classes, walls and sparse infill), less the other stages timed inside them.
+    #[serde(default)]
+    pub bridges: u64,
+    /// Planning the seams of the whole object, once a session, with the layer regions it cuts for itself.
+    #[serde(default)]
+    pub seams: u64,
 }
 
 /// One extrusion path inside a layer. Points live in [`LayerPaths::points`].
