@@ -3063,9 +3063,7 @@ fn motion_time(l: &LayerPaths, cfg: &PrintConfig, lim: &crate::motion::Limits) -
         let own: &PrintConfig = slot_cfgs.get(usize::from(p.tool)).map_or(cfg, |c| c);
         let accel = feature_accel(own, p.feature, first_layer);
         let jerk = feature_jerk(own, p.feature, first_layer).unwrap_or(0.0);
-        let e_per_mm = crate::gcode::bead_area(f64::from(p.width_mm), h) / fil_area(p.tool)
-            * cfg.flow_ratio(p.tool)
-            * f64::from(p.flow);
+        let e_per_mm = estimate_e_per_mm(cfg, p, h, fil_area(p.tool));
         for w in pts.windows(2) {
             if let [a, b] = w {
                 let (dx, dy) = (b.x_mm() - a.x_mm(), b.y_mm() - a.y_mm());
@@ -3080,6 +3078,18 @@ fn motion_time(l: &LayerPaths, cfg: &PrintConfig, lim: &crate::motion::Limits) -
         cursor = Some(*last);
     }
     crate::motion::time(&moves, lim) as f32
+}
+
+/// The filament a path draws per mm in the estimate, as the writer extrudes it: its bead over the filament's
+/// cross-section `fil_area`, times the filament's flow ratio and the path's flow. The prime tower prints the
+/// plain bead, with no flow ratio.
+fn estimate_e_per_mm(cfg: &PrintConfig, p: &PathInfo, h: f64, fil_area: f64) -> f64 {
+    let plain = crate::gcode::bead_area(f64::from(p.width_mm), h) / fil_area;
+    if p.feature == Feature::PrimeTower {
+        plain * f64::from(p.flow)
+    } else {
+        plain * cfg.flow_ratio(p.tool) * f64::from(p.flow)
+    }
 }
 
 #[allow(clippy::cast_possible_truncation, reason = "layer times are small")]
@@ -3165,6 +3175,34 @@ mod tests {
     fn outer_inner_turns_the_whole_order_round() {
         let order = loop_order(&ring(), WallSequence::OuterInner, 3);
         assert_eq!(order, [0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn the_estimate_draws_the_plain_bead_on_the_tower() {
+        let cfg = PrintConfig::from_value(&serde_json::json!({
+            "filament_flow_ratio": ["0.9"], "print_flow_ratio": "0.95", "filament_diameter": [1.75],
+        }))
+        .unwrap_or_default();
+        let path = |feature| PathInfo {
+            start: 0,
+            end: 2,
+            tool: 1,
+            feature,
+            speed_mm_s: 50.0,
+            width_mm: 0.5,
+            flow: 1.0,
+            dz: 0.0,
+            overhang_fan: false,
+            owner: crate::preview::OBJECT_NONE,
+            tower_wipe: false,
+            tower_hop: false,
+            slow_span: false,
+        };
+        let area = cfg.filament_area(1);
+        let tower = 100.0 * estimate_e_per_mm(&cfg, &path(Feature::PrimeTower), 0.2, area);
+        assert!((tower - 3.8006).abs() < 2e-4, "tower {tower}");
+        let wall = 100.0 * estimate_e_per_mm(&cfg, &path(Feature::OuterWall), 0.2, area);
+        assert!((wall - 3.4205).abs() < 2e-4, "outer wall {wall}");
     }
 
     #[test]
