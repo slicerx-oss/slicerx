@@ -317,7 +317,9 @@ jobs:
     # runner keeps its own build directory ($HOME/target/<runner name>), so both stay warm on core alone. A run by hand
     # follows RUST_CRATES_ON_PC too, so it tries exactly what the merge queue runs.
     runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (matrix.part == 'core' || (matrix.part == 'crates' && vars.RUST_CRATES_ON_PC != 'false'))) && ((matrix.part == 'core' && vars.RUST_CRATES_ON_PC == 'false') && fromJSON('["self-hosted","sx-pc"]') || fromJSON(format('["self-hosted","sx-pc-{0}"]', matrix.part))) || 'ubuntu-latest' }}
-    timeout-minutes: 45
+    # On a hosted runner the core part's tests alone took 34 minutes, and the desktop shell's libraries and build come
+    # after them, so 45 minutes no longer covered it.
+    timeout-minutes: ${{ matrix.part == 'core' && 60 || 45 }}
     permissions:
       contents: read
       actions: write
@@ -373,9 +375,11 @@ jobs:
       # compile it. Warm, this adds about a minute and a half to core, which still ends before firmware and requests.
       - if: matrix.part == 'core' && runner.environment == 'github-hosted'
         name: Linux system libraries for the desktop shell
+        # This step once ran 11 minutes, into the job's limit. Retry a stalled fetch, and fail here well before the limit.
+        timeout-minutes: 8
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev
       - if: matrix.part == 'core'
         name: Desktop shell clippy and tests
         run: |
