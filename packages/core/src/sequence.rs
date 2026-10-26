@@ -750,6 +750,8 @@ fn print_layer_as_plate(
     {
         l.time_s += seconds as f32;
     }
+    // Without sparse tower layers a change prints on top of the tower as it stands, below the layer.
+    crate::session::sink_tower(l, session.plate_tower_sunk(cfg, g));
     l.start_tool = start;
     (l.tools_before, l.changes_before, l.held_before) = session.plate_before(g);
 }

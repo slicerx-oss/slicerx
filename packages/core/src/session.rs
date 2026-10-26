@@ -2950,6 +2950,38 @@ impl SliceSession {
         changes_in(&self.tool_order, p as usize)
     }
 
+    /// How far below object layer `layer`'s top its prime tower prints, mm ([`crate::tower::sunk_by`]): 0 unless
+    /// `wipe_tower_no_sparse_layers` leaves out tower layers under it. The tower prints on the first layer and on
+    /// the layers the plan changes filament on.
+    pub(crate) fn tower_sunk(&self, cfg: &PrintConfig, layer: u32) -> f64 {
+        if self.tool_count < 2
+            || self.plate_tools.is_some()
+            || !crate::tower::flag(cfg, "wipe_tower_no_sparse_layers")
+        {
+            return 0.0;
+        }
+        let print = |l: u32| self.object_print.get(l as usize).copied().unwrap_or(l) as usize;
+        let mut last: Option<u8> = None;
+        let mut next = 0usize;
+        crate::tower::sunk_by((0..=layer).map(|q| {
+            let p = print(q);
+            let mut changes = false;
+            for (i, order) in self.tool_order.iter().enumerate().take(p + 1).skip(next) {
+                for &t in order {
+                    changes |= i == p && last.is_some_and(|l| l != t);
+                    last = Some(t);
+                }
+            }
+            next = next.max(p + 1);
+            let first = q == 0 && self.raft.is_none();
+            (
+                q == layer || first || changes,
+                self.plan.top(q),
+                self.plan.thickness(q),
+            )
+        }))
+    }
+
     /// The tools the plan prints with below print layer `p` (`LayerPaths::tools_before`).
     fn tools_before(&self, p: u32) -> u64 {
         tools_in(&self.tool_order, p as usize)
@@ -3346,6 +3378,40 @@ impl SliceSession {
             order_at: g,
         };
         Some((at, Some(walled)))
+    }
+
+    /// [`Self::tower_sunk`] for plate layer `g` on a plate with [`PlateTools`]: the plate plans the changes.
+    pub(crate) fn plate_tower_sunk(&self, cfg: &PrintConfig, g: u32) -> f64 {
+        let Some(tools) = self.plate_tools.as_deref() else {
+            return 0.0;
+        };
+        if !crate::tower::flag(cfg, "wipe_tower_no_sparse_layers") {
+            return 0.0;
+        }
+        // Each plate layer's top, height, and whether it is the print's first layer.
+        let level = |q: usize| {
+            tools.layers.get(q).and_then(|of| {
+                of.iter().zip(self.sequence()).find_map(|(p, s)| {
+                    let p = (*p)?;
+                    let first = s.object_layer(p) == Some(0) && s.raft.is_none();
+                    if s.print.is_empty() {
+                        return (p < s.plan.count()).then(|| (s.plan.top(p), s.plan.thickness(p), first));
+                    }
+                    let pl = s.print.get(p as usize)?;
+                    Some((pl.top, pl.height, first))
+                })
+            })
+        };
+        let mut last: Option<u8> = None;
+        crate::tower::sunk_by((0..=g as usize).filter_map(|q| {
+            let mut changes = false;
+            for &t in tools.orders.get(q).into_iter().flatten() {
+                changes |= last.is_some_and(|l| l != t);
+                last = Some(t);
+            }
+            let (top, h, first) = level(q)?;
+            Some((q == g as usize || first || changes, top, h))
+        }))
     }
 
     /// The tower's side of a plate layer that holds only support, over the filaments' turns: a purge into the tower
@@ -10033,6 +10099,8 @@ impl SliceSession {
         if let Some(role) = crate::brick::role(cfg, layer, n, top_n) {
             crate::brick::apply(&mut out, role);
         }
+        // Without sparse tower layers a change prints on top of the tower as it stands, below the layer.
+        sink_tower(&mut out, self.tower_sunk(cfg, layer));
         if !solid_areas.is_empty()
             && let Some(a) = out.areas.as_mut()
         {
@@ -10068,6 +10136,23 @@ impl SliceSession {
         }
         Micros::add(&micros.paths, &t);
         out
+    }
+}
+
+/// Prints the layer's prime tower `by` mm below the layer (`PathInfo::dz`); the G-code drops to it over the tower and
+/// comes back up there.
+pub(crate) fn sink_tower(out: &mut LayerPaths, by: f64) {
+    if by <= 0.0 {
+        return;
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "preview data is f32")]
+    let dz = -by as f32;
+    for p in out
+        .paths
+        .iter_mut()
+        .filter(|p| p.feature == crate::output::Feature::PrimeTower)
+    {
+        p.dz = dz;
     }
 }
 

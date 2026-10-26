@@ -2296,6 +2296,9 @@ fn emit_layer(
     let arcs = crate::firmware::truthy(c, "enable_arc_fitting") && !spiral && smoothing.is_none();
     // The nozzle's height in thousandths while it extrudes (a scarf rise starts below the layer).
     let mut cur_z: i64 = z;
+    // A prime tower printed below the layer (`wipe_tower_no_sparse_layers`) keeps the nozzle down between the pieces
+    // of its block: the height it stays at and where in the output it was left there.
+    let mut tower_low: Option<(i64, usize)> = None;
     // orca's bambu tower writer frames each tower block: `WIPE_TOWER_START` to `END`, and a change in
     // `CP TOOLCHANGE START` to `END` (`WipeTower::tool_change_new`); true while a change block is open
     let bbl_tower = crate::firmware::bambu_printer(c, flavor) && out.prime_tower.is_some();
@@ -3124,12 +3127,17 @@ fn emit_layer(
         if lifted_bead {
             #[allow(clippy::cast_possible_truncation, reason = "z in thousandths fits in i64")]
             let zb = z + (f64::from(p.dz) * 1000.0).round() as i64;
-            b.extend_from_slice(b"G1 Z");
-            put_fixed(b, zb, 3);
-            b.extend_from_slice(b" F");
-            put_int(b, z_feed);
-            b.push(b'\n');
-            speed_feed = -1;
+            let held = tower_low
+                .take()
+                .is_some_and(|(h, at)| h == zb && !writes_z(b.get(at..).unwrap_or(&[])));
+            if !held {
+                b.extend_from_slice(b"G1 Z");
+                put_fixed(b, zb, 3);
+                b.extend_from_slice(b" F");
+                put_int(b, z_feed);
+                b.push(b'\n');
+                speed_feed = -1;
+            }
         }
         // A slowed span of a floating vertical shell is marked, its feed rate included: once around the pieces it
         // was cut into where its width changes.
@@ -3306,7 +3314,23 @@ fn emit_layer(
             cur_z = z;
             speed_feed = -1;
         }
-        if lifted_bead {
+        // The tower's next piece in the same block prints at the same height: the nozzle stays down over the tower.
+        let stays_low = lifted_bead
+            && p.feature == Feature::PrimeTower
+            && l.paths.get(pi + 1).is_some_and(|q| {
+                q.feature == Feature::PrimeTower
+                    && q.tool == p.tool
+                    && q.dz.to_bits() == p.dz.to_bits()
+                    && !l.path_points(q).is_empty()
+            })
+            && !blocks
+                .iter()
+                .any(|(s, _)| *s == crate::timelapse::Spot::Before(pi + 1));
+        if stays_low {
+            #[allow(clippy::cast_possible_truncation, reason = "z in thousandths fits in i64")]
+            let zb = z + (f64::from(p.dz) * 1000.0).round() as i64;
+            tower_low = Some((zb, b.len()));
+        } else if lifted_bead {
             b.extend_from_slice(b"G1 Z");
             put_fixed(b, z, 3);
             b.extend_from_slice(b" F");
@@ -4836,6 +4860,22 @@ fn write_nozzle_wipe(
         prev = q;
     }
     (e_sum, prev)
+}
+
+/// True when `text` holds a move that sets Z (`G0` to `G3` with a Z word).
+fn writes_z(text: &[u8]) -> bool {
+    text.split(|&c| c == b'\n').any(|line| {
+        let code = line
+            .split(|&c| c == b';')
+            .next()
+            .unwrap_or(&[])
+            .trim_ascii_start();
+        matches!(code.get(..2), Some(b"G0" | b"G1" | b"G2" | b"G3"))
+            && code
+                .split(|&c| c == b' ')
+                .skip(1)
+                .any(|w| w.first() == Some(&b'Z'))
+    })
 }
 
 fn close_tower_block(b: &mut Vec<u8>, changed: bool, c: &PrintConfig) {
