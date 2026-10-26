@@ -100,7 +100,7 @@ export async function viewportReady(page: Page): Promise<void> {
 const FIRST_CONTEXT_MS = Number(process.env['SX_E2E_FIRST_CONTEXT_MS']) || 120_000
 
 /** `p`, or an error saying `what` once `ms` have passed without it. */
-async function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+export async function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const late = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(what)), ms)
