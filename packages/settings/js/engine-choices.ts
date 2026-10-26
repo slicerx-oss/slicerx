@@ -7,6 +7,8 @@ import { productName } from '@slicerx/contracts/brand'
 import engineChoicesJson from '../engine-choices.json'
 import { LEGACY_KEYS } from './import'
 
+export { appMissingKeys } from './app-defaults'
+
 // The list lives in engine-choices.json, so sx-core (sx slice <project.3mf>) keeps the same ones:
 // aegis walls (wall widths fitted to the part, so thin features print solid with fewer width changes than Arachne or
 // Bambu Studio's classic walls) and the outer wall spaced from the inner ones so the outline lands on the model's size.
