@@ -2919,7 +2919,9 @@ pub(crate) fn recool_unit(
 /// paths are capped first, at one common feed rate chosen so that the layer takes the minimum time, never
 /// below `slow_down_min_speed`; when even that is not enough every path goes down to the minimum speed. A
 /// path already at or under the minimum keeps its speed; with `dont_slow_down_outer_wall` the outer wall
-/// keeps its own. Times are the cooling buffer's (no acceleration); `extra` is time the layer's G-code
+/// keeps its own (on a Bambu Lab printer, with `no_slow_down_for_cooling_on_outwalls`, and its bridges,
+/// internal bridges and overhang walls always keep theirs).
+/// Times are the cooling buffer's (no acceleration); `extra` is time the layer's G-code
 /// spends outside its paths (custom G-code inside the layer).
 ///
 /// `fc` is the layer's filament config ([`layer_filament`]); the slowdown changes speeds only, so it holds
@@ -2927,6 +2929,19 @@ pub(crate) fn recool_unit(
 /// the layer needs no slowdown or nothing can slow, with the time left as it was.
 fn slow_down(l: &mut LayerPaths, cfg: &PrintConfig, fc: &PrintConfig, extra: f64) -> bool {
     slow_down_unit(&mut [(l, cfg, fc)], cfg, extra)
+}
+
+/// Whether the cooling slowdown leaves the outer wall at its own speed: `no_slow_down_for_cooling_on_outwalls` on a
+/// Bambu Lab printer, `dont_slow_down_outer_wall` on any other.
+pub(crate) fn keeps_outer_wall(cfg: &PrintConfig) -> bool {
+    crate::firmware::truthy(
+        cfg,
+        if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+            "no_slow_down_for_cooling_on_outwalls"
+        } else {
+            "dont_slow_down_outer_wall"
+        },
+    )
 }
 
 /// [`slow_down`] over a cooling unit of layers printed one after the other, each with its own settings and
@@ -2950,7 +2965,19 @@ fn slow_down_unit(
         return false;
     }
     let min_speed = cfg.slow_down_min_speed.max(0.0);
-    let keep_outer = crate::firmware::truthy(cfg, "dont_slow_down_outer_wall");
+    // Per vendor: on a Bambu Lab printer bridges, internal bridges and overhang walls keep their own speed, and
+    // its own key keeps the outer wall's; on any other printer every feature slows, and the outer-wall key keeps
+    // the outer wall only.
+    let bambu = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
+    let keep_outer = keeps_outer_wall(cfg);
+    let keeps = |f: Feature| {
+        (keep_outer && f == Feature::OuterWall)
+            || (bambu
+                && matches!(
+                    f,
+                    Feature::Bridge | Feature::InternalBridge | Feature::OverhangWall
+                ))
+    };
     // (layer, index, speed, time) of the paths that can slow down.
     let adjustable: Vec<(usize, usize, f64, f64)> = unit
         .iter()
@@ -2962,9 +2989,7 @@ fn slow_down_unit(
                 .zip(parts)
                 .enumerate()
                 .filter(|(_, (p, (len, _)))| {
-                    *len > 0.0
-                        && f64::from(p.speed_mm_s) > min_speed
-                        && !(keep_outer && matches!(p.feature, Feature::OuterWall | Feature::OverhangWall))
+                    *len > 0.0 && f64::from(p.speed_mm_s) > min_speed && !keeps(p.feature)
                 })
                 .map(move |(i, (p, (_, t)))| (k, i, f64::from(p.speed_mm_s), *t))
         })
@@ -3340,5 +3365,123 @@ mod tests {
         assert!(near(bambu_pf, 41.87), "{bambu_pf}");
         let tower = builder_speed(&serde_json::json!({}), Feature::PrimeTower);
         assert!(near(tower, 39.78), "{tower}");
+    }
+
+    /// A layer of straight paths end to end along X (no travels), each `(feature, length mm, speed mm/s)`, and the
+    /// config of `extra` settings with a 5 mm/s minimum speed, slowed by [`slow_down`]. The paths' speeds after it.
+    fn slowed(extra: &serde_json::Value, paths: &[(Feature, f64, f32)]) -> Vec<f32> {
+        let mut v = serde_json::json!({ "slow_down_for_layer_cooling": true, "slow_down_min_speed": 5 });
+        if let (Some(m), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+            m.extend(e.clone());
+        }
+        let cfg = PrintConfig::from_value(&v).unwrap_or_default();
+        let mut l = LayerPaths {
+            index: 3,
+            z: 0.8,
+            height: 0.2,
+            ..LayerPaths::default()
+        };
+        let mut x = 0.0;
+        for &(feature, len, speed) in paths {
+            #[allow(clippy::cast_possible_truncation, reason = "test lengths are small")]
+            let start = l.points.len() as u32;
+            l.points.push(Point::new(crate::geom::mm(x), 0));
+            x += len;
+            l.points.push(Point::new(crate::geom::mm(x), 0));
+            l.paths.push(PathInfo {
+                start,
+                end: start + 2,
+                tool: 1,
+                feature,
+                speed_mm_s: speed,
+                width_mm: 0.42,
+                flow: 1.0,
+                dz: 0.0,
+                overhang_fan: false,
+                owner: crate::preview::OBJECT_NONE,
+                tower_wipe: false,
+                tower_hop: false,
+                slow_span: false,
+            });
+        }
+        slow_down(&mut l, &cfg, &cfg, 0.0);
+        l.paths.iter().map(|p| p.speed_mm_s).collect()
+    }
+
+    /// Within 0.2%: the slowdown aims 0.1% over the target.
+    fn near(got: &[f32], want: &[f32]) -> bool {
+        got.len() == want.len() && got.iter().zip(want).all(|(a, b)| (a - b).abs() < 0.002 * b)
+    }
+
+    const BAMBU: &str = "Bambu Lab A1";
+
+    /// U5: on a Bambu Lab printer bridges and internal bridges keep their speed while the rest of the layer slows;
+    /// on any other printer they slow with it.
+    #[test]
+    fn bridges_keep_their_speed_in_the_slowdown_on_bambu_lab_printers_only() {
+        let paths = [
+            (Feature::Bridge, 50.0, 50.0),
+            (Feature::InternalBridge, 59.0, 59.0),
+            (Feature::InnerWall, 200.0, 100.0),
+        ];
+        let target = serde_json::json!({ "slow_down_layer_time": 7 });
+        let mut bambu = target.clone();
+        if let Some(m) = bambu.as_object_mut() {
+            m.insert("printer_model".into(), BAMBU.into());
+        }
+        let b = slowed(&bambu, &paths);
+        assert!(near(&b, &[50.0, 59.0, 40.0]), "Bambu Lab: {b:?}");
+        let o = slowed(&target, &paths);
+        assert!(near(&o, &[44.14, 44.14, 44.14]), "other printers: {o:?}");
+    }
+
+    /// U6: the outer-wall key per vendor.
+    #[test]
+    fn the_outer_wall_keeps_its_speed_under_its_vendors_key() {
+        let paths = [
+            (Feature::OuterWall, 100.0, 100.0),
+            (Feature::InnerWall, 100.0, 100.0),
+        ];
+        let run = |bambu: bool, key: &str| {
+            let mut v = serde_json::json!({ "slow_down_layer_time": 4 });
+            if let Some(m) = v.as_object_mut() {
+                m.insert(key.into(), true.into());
+                if bambu {
+                    m.insert("printer_model".into(), BAMBU.into());
+                }
+            }
+            slowed(&v, &paths)
+        };
+        let ns = run(true, "no_slow_down_for_cooling_on_outwalls");
+        assert!(near(&ns, &[100.0, 33.33]), "Bambu Lab, its key: {ns:?}");
+        let ds = run(true, "dont_slow_down_outer_wall");
+        assert!(near(&ds, &[50.0, 50.0]), "Bambu Lab, the other key: {ds:?}");
+        let other = run(false, "dont_slow_down_outer_wall");
+        assert!(near(&other, &[100.0, 33.33]), "other printers: {other:?}");
+    }
+
+    /// U7: under the outer-wall key the overhang wall slows with the layer on other printers, and keeps its speed on
+    /// Bambu Lab printers.
+    #[test]
+    fn the_overhang_wall_slows_under_the_outer_wall_key_except_on_bambu_lab_printers() {
+        let paths = [
+            (Feature::OuterWall, 100.0, 100.0),
+            (Feature::OverhangWall, 50.0, 50.0),
+            (Feature::InnerWall, 100.0, 100.0),
+        ];
+        let other = slowed(
+            &serde_json::json!({ "slow_down_layer_time": 6, "dont_slow_down_outer_wall": true }),
+            &paths,
+        );
+        assert!(near(&other, &[100.0, 30.0, 30.0]), "other printers: {other:?}");
+        let bambu = slowed(
+            &serde_json::json!({
+                "slow_down_layer_time": 6,
+                "no_slow_down_for_cooling_on_outwalls": true,
+                "printer_model": BAMBU,
+            }),
+            &paths,
+        );
+        assert!(near(&bambu, &[100.0, 50.0, 25.0]), "Bambu Lab: {bambu:?}");
     }
 }
