@@ -65,17 +65,17 @@ describe('the by-object clearance check', () => {
     const tree = { ...A1, brim_type: 'no_brim', skirt_loops: 0, enable_support: true, support_type: 'tree(auto)', support_threshold_angle: 25 } as unknown as Record<string, number>
     const off = { ...tree, enable_support: false } as unknown as Record<string, number>
     const pair = (b: never, cfg: Record<string, number>, own = {}) => clearanceProblems([entry('a', 'Cube A', 100, 118, 10), b], cfg, 'bambu-a1', own).join('; ')
-    // 45 mm apart, past the 40 mm radius, but the tree support pad round the ledge reaches 7.9 mm toward the cube.
-    expect(pair(ledge('b', 'Ledge B', 170), tree)).toMatch(/^Cube A and Ledge B are 37\.1 mm apart, counting the brim, skirt or support round Ledge B/)
+    // 45 mm apart, past the 40 mm radius, but the tree support pad round the ledge reaches 7.95 mm toward the cube.
+    expect(pair(ledge('b', 'Ledge B', 170), tree)).toMatch(/^Cube A and Ledge B are 37\.0 mm apart, counting the brim, skirt or support round Ledge B/)
     // A box with nothing to hold up prints no support, so nothing reaches past it; nor does the ledge with support off.
     expect(pair(entry('b', 'Cube B', 165, 118, 10), tree)).toBe('')
     expect(pair(ledge('b', 'Ledge B', 170), off)).toBe('')
     // The object's own settings decide: support off on the ledge alone, or on for it alone.
     expect(pair(ledge('b', 'Ledge B', 170), tree, { b: { enable_support: false } })).toBe('')
-    expect(pair(ledge('b', 'Ledge B', 170), off, { b: { enable_support: true } })).toMatch(/37\.1 mm apart, counting the brim, skirt or support round Ledge B/)
+    expect(pair(ledge('b', 'Ledge B', 170), off, { b: { enable_support: true } })).toMatch(/37\.0 mm apart, counting the brim, skirt or support round Ledge B/)
     // An enforcer on a box asks for support, so its pad counts.
     const enforced = { ...(entry('b', 'Cube B', 165, 118, 10) as object), volumes: [{ id: 'v', name: 'Enforcer', role: 'support_enforcer' }] } as never
-    expect(pair(enforced, tree)).toMatch(/Cube A and Cube B are 37\.1 mm apart, counting the brim, skirt or support round Cube B/)
+    expect(pair(enforced, tree)).toMatch(/Cube A and Cube B are 37\.0 mm apart, counting the brim, skirt or support round Cube B/)
   })
 
   it('refuses objects closer than the clearance radius and passes them at it', () => {

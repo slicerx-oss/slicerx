@@ -5858,10 +5858,7 @@ impl SliceSession {
             params: Self::organic_params(cfg),
             first_layer_height: self.plan.top(0) + self.raft.as_ref().map_or(0.0, |r| r.offset),
             first_layer_expansion: cfg.raw_number("raft_first_layer_expansion", 2.0),
-            first_layer_width: cfg
-                .feature_widths
-                .initial_layer
-                .unwrap_or_else(|| cfg.support_width()),
+            first_layer_width: cfg.first_layer_support_width(),
             gap_xy_first_layer: s.object_first_layer_gap,
             brim,
             vertical_points: self
@@ -5986,10 +5983,7 @@ impl SliceSession {
         use crate::organic::paths::ContactFill;
         let s = &cfg.support;
         let p = Self::organic_params(cfg);
-        let first_width = cfg
-            .feature_widths
-            .initial_layer
-            .unwrap_or_else(|| cfg.support_width());
+        let first_width = cfg.first_layer_support_width();
         let h0 = self.plan.thickness(0);
         let pattern = match cfg.raw.get("support_base_pattern") {
             Some(serde_json::Value::String(t)) => t.clone(),
@@ -6275,7 +6269,7 @@ impl SliceSession {
         let s = &cfg.support;
         let w = cfg.support_width();
         let spacing = cfg.spacing_for(w);
-        let first_width = cfg.feature_widths.initial_layer.unwrap_or(w);
+        let first_width = cfg.first_layer_support_width();
         let pattern = match cfg.raw.get("support_base_pattern") {
             Some(serde_json::Value::String(t)) => t.clone(),
             _ => "default".to_string(),
@@ -6749,7 +6743,7 @@ impl SliceSession {
         .max(0.01);
         let spacing = (wmm - h * (1.0 - std::f64::consts::FRAC_PI_4)).max(wmm * 0.5);
         let object_spacing = cfg.spacing_for(wmm);
-        let first_w = cfg.feature_widths.initial_layer.unwrap_or(wmm);
+        let first_w = cfg.first_layer_support_width();
         let h0 = self.plan.thickness(0);
         let first_spacing = (first_w - h0 * (1.0 - std::f64::consts::FRAC_PI_4)).max(first_w * 0.5);
         let pattern = match cfg.raw.get("support_base_pattern") {

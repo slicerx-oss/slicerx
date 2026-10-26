@@ -1270,8 +1270,14 @@ impl PrintConfig {
             ("initial_layer_line_width", &mut c.feature_widths.initial_layer),
         ] {
             if let Some(x) = get(key) {
-                // The top surface and the supports default to the nozzle's own width, the rest to 1.125 times it.
-                let auto = if matches!(key, "top_surface_line_width" | "support_line_width") {
+                // A first-layer or support width of 0 is not set: the first layer's features keep their own widths
+                // (`for_first_layer`) and the supports print at `line_width`.
+                if matches!(key, "initial_layer_line_width" | "support_line_width") && num(x) == Some(0.0) {
+                    *slot = None;
+                    continue;
+                }
+                // The top surface defaults to the nozzle's own width, the rest to 1.125 times it.
+                let auto = if key == "top_surface_line_width" {
                     AUTO_NOZZLE_WIDTH_RATIO
                 } else {
                     AUTO_WIDTH_RATIO
@@ -1714,11 +1720,31 @@ impl PrintConfig {
             .unwrap_or_else(|| self.outer_wall_width())
     }
 
-    /// The settings for the first layer: every width is `initial_layer_line_width` when it is set.
+    /// Whether `initial_layer_line_width` is 0, which leaves the first layer's width unset.
+    fn initial_layer_width_unset(&self) -> bool {
+        self.raw.get("initial_layer_line_width").and_then(num) == Some(0.0)
+    }
+
+    /// The support's line width on the first layer, mm: `initial_layer_line_width` when it is set, `line_width`
+    /// when it is 0, and the support's own width when the key is left out.
+    pub fn first_layer_support_width(&self) -> f64 {
+        match self.feature_widths.initial_layer {
+            Some(w) => w,
+            None if self.initial_layer_width_unset() => self.line_width,
+            None => self.support_width(),
+        }
+    }
+
+    /// The settings for the first layer: every width is `initial_layer_line_width` when it is set. At 0 each
+    /// feature keeps its own width, except the supports, which print at `line_width`.
     #[must_use]
     pub fn for_first_layer(&self) -> Self {
         let Some(w) = self.feature_widths.initial_layer else {
-            return self.clone();
+            let mut c = self.clone();
+            if self.initial_layer_width_unset() {
+                c.feature_widths.support = None;
+            }
+            return c;
         };
         let mut c = self.clone();
         c.line_width = w;
@@ -2453,7 +2479,7 @@ pub const DEFAULT_DENSITY: f64 = 1.24;
 /// Automatic line width as a multiple of the nozzle diameter.
 pub const AUTO_WIDTH_RATIO: f64 = 1.125;
 
-/// What a width of 0 means for the top surface and supports: the nozzle diameter itself (Orca's and Bambu
+/// What a width of 0 means for the top surface: the nozzle diameter itself (Orca's and Bambu
 /// Studio's `Flow::auto_extrusion_width`).
 pub const AUTO_NOZZLE_WIDTH_RATIO: f64 = 1.0;
 
@@ -2976,6 +3002,37 @@ mod tests {
                 assert!(PrintConfig::from_value(&json!({ key: ok })).is_ok(), "{key} {ok}");
             }
         }
+    }
+
+    #[test]
+    fn a_zero_first_layer_or_support_width_is_not_set() {
+        use serde_json::json;
+        let c = PrintConfig::from_value(&json!({
+            "line_width": 0.48, "outer_wall_line_width": 0.42, "inner_wall_line_width": 0.45,
+            "initial_layer_line_width": 0, "support_line_width": "0%"
+        }))
+        .unwrap();
+        assert_eq!(c.feature_widths.initial_layer, None);
+        assert!((c.support_width() - 0.48).abs() < 1e-9);
+        let first = c.for_first_layer();
+        assert!((first.outer_wall_width() - 0.42).abs() < 1e-9);
+        assert!((first.inner_wall_width() - 0.45).abs() < 1e-9);
+        assert!((first.line_width - 0.48).abs() < 1e-9);
+        // The first layer's supports print at `line_width`, over a support width of their own.
+        let c = PrintConfig::from_value(&json!({
+            "line_width": 0.48, "initial_layer_line_width": 0, "support_line_width": 0.4
+        }))
+        .unwrap();
+        assert!((c.support_width() - 0.4).abs() < 1e-9);
+        assert!((c.first_layer_support_width() - 0.48).abs() < 1e-9);
+        assert!((c.for_first_layer().support_width() - 0.48).abs() < 1e-9);
+        // Left out, the key reads as the schema default, 0; set, every first-layer line takes it.
+        let c = PrintConfig::from_value(&json!({ "line_width": 0.48, "support_line_width": 0.4 })).unwrap();
+        assert!((c.first_layer_support_width() - 0.48).abs() < 1e-9);
+        let c =
+            PrintConfig::from_value(&json!({ "initial_layer_line_width": 0.5, "support_line_width": 0.4 }))
+                .unwrap();
+        assert!((c.first_layer_support_width() - 0.5).abs() < 1e-9);
     }
 
     #[test]

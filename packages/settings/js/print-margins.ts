@@ -160,7 +160,8 @@ export function widthMm(v: SettingValue | undefined, nozzle: number, fallback: n
 function brimSpacing(cfg: Record<string, SettingValue>): number {
   const nozzle = marginNumber(cfg['nozzle_diameter'], 0.4)
   const line = widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
-  const first = cfg['initial_layer_line_width'] === undefined ? line : widthMm(cfg['initial_layer_line_width'], nozzle, nozzle * 1.125)
+  // A first-layer width of 0 or unset leaves the brim at the line width.
+  const first = widthMm(cfg['initial_layer_line_width'], nozzle, line)
   const h = Math.max(0, marginNumber(cfg['initial_layer_print_height'], 0.2))
   return Math.max(first - h * (1 - Math.PI / 4), first * 0.5)
 }
@@ -273,9 +274,9 @@ function gridReach(cfg: Record<string, SettingValue>, line: number, pad: number)
 function supportOf(cfg: Record<string, SettingValue>): number {
   if (!marginFlag(cfg['enable_support'])) return 0
   const nozzle = marginNumber(cfg['nozzle_diameter'], 0.4)
-  // Unset, support lines are as wide as the others (0.42 mm when those are unset too); 0 is the nozzle's width.
+  // Unset or 0, support lines are as wide as the others (0.42 mm when those are unset too).
   const general = cfg['line_width'] === undefined ? 0.42 : widthMm(cfg['line_width'], nozzle, nozzle * 1.125)
-  const line = cfg['support_line_width'] === undefined ? general : widthMm(cfg['support_line_width'], nozzle, nozzle)
+  const line = widthMm(cfg['support_line_width'], nozzle, general)
   return supportReach(cfg, line)
 }
 
