@@ -122,7 +122,7 @@ An app written in Node can also host the server in its own process with `createC
 | --- | --- |
 | `slicerx_slice_file` | Slices an STL, OBJ, 3MF or `.sx3mf` file, or one plate of a project. Writes G-code, and with `output: "gcode.3mf"` also a `.gcode.3mf`. With `preview: true` it writes the toolpath preview (SXPV) the embed viewport shows. |
 | `slicerx_estimate_file` | The same inputs, numbers only: time, filament per slot, layers. Writes no G-code. |
-| `slicerx_inspect_project` | A 3MF or `.sx3mf` project's plates, the presets it was saved with, its filament slots (type and color) and whether it carries print settings. |
+| `slicerx_inspect_project` | A 3MF or `.sx3mf` project's plates, the presets it was saved with, its filament slots (type and color), whether it carries print settings, and `project_config`: the settings a slice with `project_settings: true` takes from it, as one object. |
 | `slicerx_list_profiles`, `slicerx_get_profile` | Printer, process and filament profiles to pass as `profiles`. Filter by `section`, `source`, `vendor` or `query`. |
 | `slicerx_printer_profile_search` | Finds a printer model by vendor or model text, with its nozzle sizes. |
 | `slicerx_sxlock_inspect`, `slicerx_sxlock_open`, `slicerx_sxlock_export` | Locked projects: read the owner offline, open one to an `.sx3mf`, lock an `.sx3mf` for the account. |

@@ -7,6 +7,7 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 ### Added
 
 - `app_missing_keys`: the keys a project's settings lack that the app that wrote it reads its own way, with their values, from `fromApp` in packages/settings/engine-choices.json. `project_config` applies them from that table instead of its own copy; what it returns is unchanged.
+- `apply_project_defaults`: the same keys filled into a request's `config` from the project file it names, and `RequestOptions::project_defaults` (`projectDefaults`) for hosts that apply it. The request schema lists the option.
 
 ### Fixed
 

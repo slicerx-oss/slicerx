@@ -83,3 +83,37 @@ fn a_project_config_has_the_keys_its_app_reads_differently() {
         }
     }
 }
+
+#[test]
+fn request_project_defaults_fill_only_the_missing_keys() {
+    for case in cases() {
+        let name = case["name"].as_str().unwrap();
+        let bytes = project(
+            case["application"].as_str(),
+            &serde_json::json!({ "layer_height": "0.2" }),
+        );
+        let mut config = case["settings"].clone();
+        let added = sx_core::api::apply_project_defaults(&mut config, &bytes);
+        let mut want = case["settings"].as_object().unwrap().clone();
+        for (k, v) in case["added"].as_object().unwrap() {
+            want.insert(k.clone(), v.clone());
+        }
+        assert_eq!(config, Value::Object(want), "{name}");
+        let mut keys: Vec<&str> = case["added"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(added, keys, "{name}");
+    }
+    // A request with no config yet gets an object of the keys.
+    let bytes = project(
+        Some("BambuStudio-02.08.02.61"),
+        &serde_json::json!({ "layer_height": "0.2" }),
+    );
+    let mut config = Value::Null;
+    assert_eq!(sx_core::api::apply_project_defaults(&mut config, &bytes).len(), 3);
+    assert_eq!(config["wipe_tower_wall_type"], "rib");
+}

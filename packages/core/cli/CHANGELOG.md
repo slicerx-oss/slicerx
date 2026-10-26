@@ -6,6 +6,8 @@ Changes to the `sx` command's JSON input and output. Keep a Changelog format; se
 
 ### Added
 
+- `sx project-settings <project.3mf>`: the settings `sx slice <project.3mf>` takes from a project, as one JSON object on stdout to pass as a request's `config`. A 3MF without settings prints `{}`.
+- Request option `projectDefaults` (boolean, default false): fills the keys `config` lacks that the app that wrote the first project file the plate names reads its own way, as `sx slice <project.3mf>` does. A Bambu Studio project gets `wipe_tower_wall_type` rib (unless the config sets `prime_tower_rib_wall`), `initial_layer_travel_acceleration` 500 and `internal_bridge_speed` 100%. stderr names the keys added. Without it a request is unchanged. `sx schema request` lists it.
 - `sx call`: access the shared MCP commands, permissions and JSON read-back through the native CLI. Requires the installed tool runtime and Node.js 24+.
 - Custom G-code that is the printer maker's stock text, unchanged, for the printer the settings name (`printer_settings_id`, `inherits` or `printer_model`) runs as trusted without `trustedGcode`. Cargo feature `stock-gcode`, on by default.
 - `sx metadata <project.3mf>`: the project's settings entries as JSON.
