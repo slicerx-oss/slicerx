@@ -331,6 +331,8 @@ fn split_projects(
     use sx_core::api;
     let mut cache = std::collections::HashMap::new();
     let mut plate_notes: Vec<Value> = Vec::new();
+    // The project plates the request names: the file, the plate's number and its entry in per-plate lists.
+    let mut projects: Vec<(String, u32, Option<usize>)> = Vec::new();
     let bed = req.plate.bed.map_or_else(api::Bed::default, |b| api::Bed {
         width_mm: b.width_mm,
         depth_mm: b.depth_mm,
@@ -380,6 +382,15 @@ fn split_projects(
             }
             centered @ sx_core::plate::ItemsPlacement::Centered => centered,
         };
+        if placement != sx_core::plate::ItemsPlacement::Centered
+            && !projects.iter().any(|(f, n, _)| f == rel && *n == plate_no)
+        {
+            projects.push((
+                rel.to_owned(),
+                plate_no,
+                api::load_3mf_plate_index(&bytes, rel, plate_no)?,
+            ));
+        }
         let at = sx_core::plate::items_transforms(&items, bed, None, placement);
         if items.len() < 2 {
             // One object keeps its key, centered as the plate or where the project puts it; the ears the file paints
@@ -408,6 +419,19 @@ fn split_projects(
         }
     }
     req.plate.objects = out;
+    // A request naming one project plate keeps the project's tower spot its settings carry, as the app does: the plate's
+    // own entry of the per-plate lists, with auto placement off unless the request sets it.
+    if let [(file, plate_no, index)] = projects.as_slice()
+        && let Some(config) = req.config.as_object_mut()
+    {
+        let auto_set = config.contains_key("prime_tower_auto_position");
+        if api::keep_plate_tower(config, *index, true, auto_set) == api::PlateTower::Unsure {
+            eprintln!(
+                "sx: prime tower: which of {file}'s tower spots is plate {plate_no}'s is not certain (its plates are \
+                 not numbered 1, 2, 3 in order, or the list has no entry for it), so the project's spot is not kept"
+            );
+        }
+    }
     Ok((cache, plate_notes))
 }
 
@@ -1021,6 +1045,8 @@ struct Layered {
     skipped: Option<String>,
     /// The `--config` settings, which go over an object's own as over the plate's.
     preset: Option<Value>,
+    /// The project's own settings set its prime tower spot (`wipe_tower_x` and `wipe_tower_y`).
+    project_tower: bool,
 }
 
 /// The settings `sx slice <model>` prints with, lowest first: the engine's defaults, a project's own settings (our
@@ -1032,6 +1058,7 @@ fn layered_config(args: &[String], model: &str, bytes: &[u8], object: &Value) ->
     let mut chamber_from = None;
     let mut skipped = None;
     let mut preset = None;
+    let mut project_tower = false;
     let sets_chamber = |v: &Value| v.get(sx_core::chamber::KEY).is_some();
     let is_3mf = Path::new(model)
         .extension()
@@ -1041,6 +1068,9 @@ fn layered_config(args: &[String], model: &str, bytes: &[u8], object: &Value) ->
         && let Some(project) = sx_core::api::project_config(bytes, model)?
     {
         skipped = project.skipped;
+        project_tower = ["wipe_tower_x", "wipe_tower_y"]
+            .iter()
+            .all(|k| project.settings.contains_key(*k));
         let settings = Value::Object(project.settings);
         if sets_chamber(&settings) {
             chamber_from = Some("project");
@@ -1100,6 +1130,7 @@ fn layered_config(args: &[String], model: &str, bytes: &[u8], object: &Value) ->
         chamber_from,
         skipped,
         preset,
+        project_tower,
     })
 }
 
@@ -1180,6 +1211,29 @@ fn plate_refusal(
     collision_refusal(&found.collisions, &found.fixes, &names, args)
 }
 
+/// Keeps a project's prime tower spot for plate `plate_no` of `model` (its `bytes`) in `settings`
+/// ([`sx_core::api::keep_plate_tower`]): its own entry of the per-plate lists, and with `keep` (the project sets the
+/// spot) auto placement off unless `--config` (`preset`) turns it on or off itself. When which entry is the plate's is
+/// not certain, says so on stderr and leaves the tower to the engine.
+fn plate_tower(
+    settings: &mut serde_json::Map<String, Value>,
+    bytes: &[u8],
+    model: &str,
+    plate_no: u32,
+    keep: bool,
+    preset: Option<&Value>,
+) -> sx_core::Result<()> {
+    let auto_set = preset.is_some_and(|p| p.get("prime_tower_auto_position").is_some());
+    let index = sx_core::api::load_3mf_plate_index(bytes, model, plate_no)?;
+    if sx_core::api::keep_plate_tower(settings, index, keep, auto_set) == sx_core::api::PlateTower::Unsure {
+        eprintln!(
+            "sx: prime tower: which of {model}'s tower spots is plate {plate_no}'s is not certain (its plates are not \
+             numbered 1, 2, 3 in order, or the list has no entry for it), so the project's spot is not kept"
+        );
+    }
+    Ok(())
+}
+
 /// What `sx slice <model>` slices: a 3MF plate's build items, or one mesh of any other format.
 enum Model {
     /// The build items of a 3MF plate, the pause, color change and custom G-code marks the project sets on the
@@ -1208,6 +1262,21 @@ impl Model {
             sx_core::api::load_3mf_layer_gcode(bytes, plate),
             plate,
         ))
+    }
+
+    /// Keeps the project's prime tower spot for a 3MF plate ([`plate_tower`]); nothing for other files.
+    fn keep_tower(
+        &self,
+        settings: &mut serde_json::Map<String, Value>,
+        model: &str,
+        bytes: &[u8],
+        keep: bool,
+        preset: Option<&Value>,
+    ) -> sx_core::Result<()> {
+        match self {
+            Model::Items(_, _, plate_no) => plate_tower(settings, bytes, model, *plate_no, keep, preset),
+            Model::One(_) => Ok(()),
+        }
     }
 
     /// The marks the project sets on the plate's layers, which a request slicing the same plate takes too unless it
@@ -1299,6 +1368,7 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
         chamber_from,
         skipped,
         preset,
+        project_tower,
     } = layered_config(args, model, &bytes, &model_file.shared_settings())?;
     if let Some(code) = settings_notes(args, &report, skipped) {
         return Ok(code);
@@ -1315,6 +1385,8 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     for i in &issues {
         eprintln!("warning: {}", i.message);
     }
+    // A project's prime tower stands where the project puts it on this plate, as in the app.
+    model_file.keep_tower(&mut config.raw, model, &bytes, project_tower, preset.as_ref())?;
     // A slicer project stays where the file puts it; any other model goes to the middle of the profile's bed, as the
     // desktop slicers do.
     let marks = model_file.layer_marks().to_vec();

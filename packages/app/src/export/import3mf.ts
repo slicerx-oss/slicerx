@@ -66,6 +66,8 @@ export interface ImportedPlate {
   objects: ImportedObject[]
   /** Pause, color change and custom G-code from Metadata/custom_gcode_per_layer.xml. Untrusted: custom text is checked before it is used. */
   marks?: { z: number; kind: 'pause' | 'color_change' | 'custom'; gcode?: string; slot?: number }[]
+  /** The plate's number in the file (Bambu Studio and Orca's plater_id), when it has one. */
+  plateNo?: number
 }
 
 export interface ImportedProject {
@@ -562,17 +564,19 @@ interface Assembled {
 
 interface PlateCfg {
   name: string
+  plateNo?: number
   sequence?: 'by-layer' | 'by-object'
   nozzleMap?: number[]
   objectIds: string[]
 }
 
 /** A plate's settings from Bambu Studio and Orca's model_settings.config, as both readers give them. */
-function plateCfgOf(name: string, index: number, m: Record<string, string>, objectIds: string[]): PlateCfg {
+function plateCfgOf(name: string, index: number, m: Record<string, string>, objectIds: string[], no?: number): PlateCfg {
   // Bambu Studio's per plate filament map: kept when it was set by hand; an automatic one the slicer picks again.
   const maps = (m['filament_maps'] ?? '').split(/[\s,]+/).map(Number).filter((n) => n === 1 || n === 2)
   const manual = (m['filament_map_mode'] === 'Manual' || m['filament_map_mode'] === 'Nozzle Manual') && maps.length > 0
-  return { name: name || `Plate ${index + 1}`, ...(m['print_sequence'] === 'by object' ? { sequence: 'by-object' as const } : m['print_sequence'] === 'by layer' ? { sequence: 'by-layer' as const } : {}), ...(manual ? { nozzleMap: maps } : {}), objectIds }
+  const plateNo = no ?? Number(m['plater_id'])
+  return { name: name || `Plate ${index + 1}`, ...(Number.isInteger(plateNo) && plateNo > 0 ? { plateNo } : {}), ...(m['print_sequence'] === 'by object' ? { sequence: 'by-object' as const } : m['print_sequence'] === 'by layer' ? { sequence: 'by-layer' as const } : {}), ...(manual ? { nozzleMap: maps } : {}), objectIds }
 }
 
 /**
@@ -581,7 +585,7 @@ function plateCfgOf(name: string, index: number, m: Record<string, string>, obje
  * keys here, as the app reads them everywhere else. A part type the app does not know is left out, as before.
  */
 async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; items: Assembled[] }> {
-  const plateCfg = g.plates.map((p, i) => plateCfgOf(p.name, i, Object.fromEntries(p.settings), p.objects.map(String)))
+  const plateCfg = g.plates.map((p, i) => plateCfgOf(p.name, i, Object.fromEntries(p.settings), p.objects.map(String), p.id))
   const prusaOverrides = g.layout === 'prusa' ? (await import('@slicerx/settings')).prusaOverrides : null
   const raw = (list: [string, string][]): Record<string, string> => (prusaOverrides ? prusaOverrides(Object.fromEntries(list)) : Object.fromEntries(list))
   const items: Assembled[] = []
@@ -793,7 +797,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   const rootSource = sourceOf(marks.root)
   const { plateCfg, items } = scanned.geom ? await assembleGeom(scanned.geom) : await assembleScanned(scanned)
   const plateOf = (objectId: string): number => Math.max(0, plateCfg.findIndex((p) => p.objectIds.includes(objectId)))
-  const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), objects: [] }))
+  const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), ...(p.plateNo ? { plateNo: p.plateNo } : {}), objects: [] }))
   const ears = parseBrimEars(files.get('Metadata/brim_ear_points.txt'))
   const earsNote = brimEarsNote(files.get('Metadata/brim_ear_points.txt'))
   // Orca places objects on the machine; the plate counts from the printable area's front left corner.
