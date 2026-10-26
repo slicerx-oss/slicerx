@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Page, TestInfo } from '@playwright/test'
 import { aim, onCanvas, screenOf as screen } from '../canvas-press'
-import { closeSheet, expect, openSheet, openTransform, sliceCount, sliced, viewSized } from '../fixtures'
+import { closeSheet, expect, openSheet, openTransform, sliceCount, sliced, viewSized, within } from '../fixtures'
 import { journey as test } from '../journey'
 import { DECK_BOX_27, SMALL_3, addPlateFromPicker, pickPlate, plateProject, plateSheet, shownPlateSettings, shutPlateSheet } from '../plate-project'
 import { expectFileDialog, interceptFileDialogs } from '../file-dialog'
@@ -1037,9 +1037,22 @@ test.describe('arrange with more objects than the bed holds', () => {
     return { plate: s.plate.map((e) => ({ id: e.id, at: [e.transform[12], e.transform[13]] })), plates: s.plates.map((p) => ({ name: p.name, count: p.id === s.activePlate ? s.plate.length : p.objects.length })), toast: s.toast?.text ?? null, slice: s.slice.status === 'done' && !s.slice.stale ? (s.slice.result?.collisions ?? []).map((c) => c.kind) : null }
   })
 
+  // On a hosted runner the reply to one read can be lost: the read ran in the page and the app had the right state, but
+  // the answer never reached the test, and expect.poll waited on that one sample until its timeout. Inside a poll each
+  // read is bounded: a read with no answer in 2 s gives no value, which the matcher refuses, so the poll reads again
+  // (a throw would end the poll at once). Single reads keep no bound, since a slow page there is slow, not wrong.
+  const LOST = 'No answer from the page to a state read within 2 s'
+  async function sample<T>(page: Page, pick: (s: Awaited<ReturnType<typeof state>>) => T): Promise<T | undefined> {
+    const s = await within(state(page), 2_000, LOST).catch((e: unknown) => {
+      if (e instanceof Error && e.message === LOST) return undefined
+      throw e
+    })
+    return s === undefined ? undefined : pick(s)
+  }
+
   async function sliceShown(page: Page): Promise<string[]> {
     await page.getByRole('button', { name: /^Slice plate/ }).first().click()
-    await expect.poll(async () => (await state(page)).slice !== null, { timeout: 150_000 }).toBe(true)
+    await expect.poll(() => sample(page, (s) => s.slice !== null), { timeout: 150_000 }).toBe(true)
     return (await state(page)).slice!
   }
 
@@ -1060,10 +1073,10 @@ test.describe('arrange with more objects than the bed holds', () => {
       await plateReady(page)
       const chooser = await expectFileDialog(page, () => page.keyboard.press('ControlOrMeta+o'))
       await chooser.setFiles({ name: 'Cubes.3mf', mimeType: 'model/3mf', buffer: cubesProject(c.n, c.size, c.cols, c.pitch, c.x0, c.y0, c.sequence) })
-      await expect.poll(async () => (await state(page)).plate.length, { timeout: 60_000 }).toBe(c.n)
+      await expect.poll(() => sample(page, (s) => s.plate.length), { timeout: 60_000 }).toBe(c.n)
       const before = await state(page)
       await page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Arrange all' }).click()
-      await expect.poll(async () => (await state(page)).plates.length, { timeout: 120_000 }).toBe(2)
+      await expect.poll(() => sample(page, (s) => s.plates.length), { timeout: 120_000 }).toBe(2)
       const after = await state(page)
       const moved = after.plates[1]!.count
       expect(moved).toBeGreaterThan(0)
@@ -1080,7 +1093,7 @@ test.describe('arrange with more objects than the bed holds', () => {
       await pickPlate(page, 1)
       // One undo: the start grid on one plate again.
       await page.keyboard.press('ControlOrMeta+z')
-      await expect.poll(async () => (await state(page)).plates.length).toBe(1)
+      await expect.poll(() => sample(page, (s) => s.plates.length)).toBe(1)
       expect((await state(page)).plate).toEqual(before.plate)
     })
   }
