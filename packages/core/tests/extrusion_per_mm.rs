@@ -13,7 +13,9 @@
 //!
 //! An overhang wall piece with `thick_bridges` off prints at its own loop's width (the outer wall's or the inner
 //! wall's) and the layer height, at the plain wall flow, whatever `bridge_flow` is. With `thick_bridges` on it is a
-//! round bead the nozzle wide.
+//! round bead the nozzle wide, and its comments state the bead's diameter as both its width and its height (the
+//! nozzle times the root of `bridge_flow`), extra perimeters on overhangs included; the next feature states the
+//! layer height again. The preview draws those beads as tall as the comments state.
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -158,6 +160,11 @@ impl Sum {
 type Moves = BTreeMap<String, BTreeMap<String, BTreeMap<i64, Sum>>>;
 
 fn slice(parts: Vec<MeshPart>, config: &Value) -> Moves {
+    moves(&run(parts, config).0)
+}
+
+/// The G-code and the SXPV preview of one slice.
+fn run(parts: Vec<MeshPart>, config: &Value) -> (String, Vec<u8>) {
     let mesh = Arc::new(Mesh {
         name: "m".into(),
         parts,
@@ -170,7 +177,10 @@ fn slice(parts: Vec<MeshPart>, config: &Value) -> Moves {
     }))
     .unwrap();
     let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
-    let g = String::from_utf8(run.gcode).unwrap();
+    (String::from_utf8(run.gcode).unwrap(), run.preview)
+}
+
+fn moves(g: &str) -> Moves {
     let mut out = Moves::new();
     let (mut feature, mut width, mut z, mut at) = (String::new(), 0_i64, String::new(), (0.0, 0.0));
     for line in g.lines() {
@@ -381,4 +391,189 @@ fn a_thick_overhang_wall_stays_a_round_bead_the_nozzle_wide() {
         (per_mm / round - 1.0).abs() < 0.005,
         "{per_mm:.6} mm/mm, want {round:.6}"
     );
+}
+
+/// The overhang wall moves of the slab's first layer (z 5.2) by stated width and height in thousandths, and the
+/// height, in thousandths, each feature that follows an overhang wall block states when it first extrudes.
+fn stated_beads(g: &str) -> (BTreeMap<(i64, i64), Sum>, Vec<i64>) {
+    let thousandths = |v: &str| (v.trim().parse::<f64>().unwrap() * 1000.0).round() as i64;
+    let mut out: BTreeMap<(i64, i64), Sum> = BTreeMap::new();
+    let mut after = Vec::new();
+    let (mut feature, mut width, mut height, mut z) = (String::new(), 0_i64, 0_i64, String::new());
+    let (mut at, mut pending) = ((0.0, 0.0), false);
+    for line in g.lines() {
+        if let Some(f) = line.strip_prefix(";TYPE:") {
+            if feature == "Overhang wall" && f.trim() != "Overhang wall" {
+                pending = true;
+            }
+            f.trim().clone_into(&mut feature);
+            continue;
+        }
+        if let Some(w) = line.strip_prefix(";WIDTH:") {
+            width = thousandths(w);
+            continue;
+        }
+        if let Some(h) = line.strip_prefix(";HEIGHT:") {
+            height = thousandths(h);
+            continue;
+        }
+        let code = line.split(';').next().unwrap_or("");
+        let mut words = code.split_whitespace();
+        let Some(cmd) = words.next() else { continue };
+        if cmd != "G0" && cmd != "G1" {
+            continue;
+        }
+        let (mut to, mut e) = (at, 0.0);
+        for w in words {
+            let (k, v) = w.split_at(1);
+            let Ok(v) = v.parse::<f64>() else { continue };
+            match k {
+                "X" => to.0 = v,
+                "Y" => to.1 = v,
+                "Z" => z = format!("{v:.2}"),
+                "E" => e = v,
+                _ => {}
+            }
+        }
+        if cmd == "G1" && e > 0.0 && to != at {
+            if pending {
+                after.push(height);
+                pending = false;
+            }
+            if feature == "Overhang wall" && z == "5.20" {
+                let s = out.entry((width, height)).or_default();
+                s.len += (to.0 - at.0).hypot(to.1 - at.1);
+                s.e += e;
+            }
+        }
+        at = to;
+    }
+    (out, after)
+}
+
+/// Filament mm per mm of a round thread `d` across.
+fn round_per_mm(d: f64) -> f64 {
+    PI * d * d / 4.0 * FLOW / (PI * 0.875 * 0.875)
+}
+
+/// The ledge with extra perimeters on overhangs, on the Ender-3 V3 and the MK4 setups, then `extra`.
+fn extra_cases(extra: &Value) -> Vec<(&'static str, Value)> {
+    let mut on = json!({ "extra_perimeters_on_overhangs": true, "bridge_line_width": "100%" });
+    on.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    vec![("ender", ender(&on)), ("mk4", mk4(&on))]
+}
+
+#[test]
+fn a_round_overhang_bead_states_its_diameter_as_its_height() {
+    // A round thread 0.4 * sqrt(bridge_flow) across: 0.4 at a flow of 1, 0.357771 at 0.8.
+    for (flow, d) in [(1.0, 0.4_f64), (0.8, 0.357_771)] {
+        for (name, cfg) in extra_cases(&json!({ "thick_bridges": true, "bridge_flow": flow })) {
+            let what = format!("{name} bridge_flow {flow}");
+            let (g, _) = run(ledge(), &cfg);
+            let (got, after) = stated_beads(&g);
+            let want = (d * 1000.0).round() as i64;
+            let stated: Vec<(i64, i64)> = got.keys().copied().collect();
+            assert_eq!(
+                stated,
+                vec![(want, want)],
+                "{what}: overhang wall stated at {stated:?}"
+            );
+            let per_mm = got[&(want, want)].per_mm();
+            assert!(
+                (per_mm / round_per_mm(d) - 1.0).abs() < 0.005,
+                "{what}: {per_mm:.6} mm/mm, want {:.6}",
+                round_per_mm(d)
+            );
+            assert!(!after.is_empty(), "{what}: nothing after the overhang walls");
+            assert!(
+                after.iter().all(|h| *h == 200),
+                "{what}: heights after the overhang walls {after:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_flat_overhang_bead_states_the_layer_height() {
+    // thick_bridges off: extra perimeters print the flat strand (0.4, or 0.329 at a flow of 0.8, or the inner
+    // wall's 0.45 with no bridge line width) and loop pieces their loop's width, all at the layer height.
+    for (extra, widths) in [
+        (json!({ "bridge_flow": 1.0 }), vec![400, 420, 450]),
+        (json!({ "bridge_flow": 0.8 }), vec![329, 420, 450]),
+        (
+            json!({ "bridge_flow": 1.0, "bridge_line_width": 0 }),
+            vec![420, 450],
+        ),
+    ] {
+        for (name, cfg) in extra_cases(&extra) {
+            let what = format!("{name} {extra}");
+            let (got, after) = stated_beads(&run(ledge(), &cfg).0);
+            assert!(!got.is_empty(), "{what}: no overhang wall");
+            for ((w, h), s) in &got {
+                assert_eq!(*h, 200, "{what}: overhang wall {w} stated {h} tall");
+                assert!(widths.contains(w), "{what}: overhang wall stated {w} wide");
+                let exp = expected(*w as f64 / 1000.0);
+                assert!(
+                    (s.per_mm() / exp - 1.0).abs() < 0.005,
+                    "{what}: overhang wall at {w}: {:.6} mm/mm, want {exp:.6}",
+                    s.per_mm()
+                );
+            }
+            assert!(after.iter().all(|h| *h == 200), "{what}: {after:?}");
+        }
+    }
+}
+
+/// One preview segment: feature id, z, width and height in micrometers.
+fn preview_segments(sxpv: &[u8]) -> Vec<(u8, f32, u16, u16)> {
+    let info = sx_core::preview::read_info(sxpv).unwrap();
+    let u16_at = |at: usize| u16::from_le_bytes([sxpv[at], sxpv[at + 1]]);
+    (0..info.segments)
+        .map(|i| {
+            let s = info.segments_at + i * sx_core::preview::SEGMENT_BYTES;
+            let z = f32::from_le_bytes(sxpv[s + 16..s + 20].try_into().unwrap());
+            (sxpv[s + 24], z, u16_at(s + 20), u16_at(s + 22))
+        })
+        .collect()
+}
+
+#[test]
+fn the_preview_draws_a_round_overhang_bead_as_tall_as_it_is_wide() {
+    const OVERHANG_WALL: u8 = 2;
+    const CUSTOM: u8 = 14;
+    for (thick, want) in [(true, (400, 400)), (false, (0, 200))] {
+        for (name, cfg) in extra_cases(&json!({ "thick_bridges": thick })) {
+            let what = format!("{name} thick_bridges {thick}");
+            let segs = preview_segments(&run(ledge(), &cfg).1);
+            let overhang: Vec<_> = segs
+                .iter()
+                .filter(|s| s.0 == OVERHANG_WALL && (s.1 - 5.2).abs() < 0.01)
+                .collect();
+            assert!(
+                overhang.len() > 10,
+                "{what}: {} overhang wall segments",
+                overhang.len()
+            );
+            for s in &overhang {
+                if thick {
+                    assert_eq!((s.2, s.3), want, "{what}: overhang wall segment {s:?}");
+                } else {
+                    assert_eq!(s.3, want.1, "{what}: overhang wall segment {s:?}");
+                }
+            }
+            // No other feature is drawn taller than the layer.
+            let tall: Vec<_> = segs
+                .iter()
+                .filter(|s| ![OVERHANG_WALL, CUSTOM].contains(&s.0) && s.3 > 200)
+                .collect();
+            assert!(
+                tall.is_empty(),
+                "{what}: {} taller segments: {:?}",
+                tall.len(),
+                tall.first()
+            );
+        }
+    }
 }

@@ -537,13 +537,15 @@ fn bambu_wall_bead(cfg: &PrintConfig) -> bool {
     unset && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
 }
 
-/// How the G-code comments draw the bead of an overhang wall piece other than flat at the layer height, on a Bambu
+/// How the G-code comments draw the bead of an overhang wall piece other than flat at the layer height. On a Bambu
 /// Lab printer with no `bridge_line_width` set by hand: taller at a `bridge_flow` above 1 on the flat bead of
-/// [`wall_bead`], or round with `thick_bridges`. None otherwise, when the comments state the bead's own width and
-/// the layer height.
+/// [`wall_bead`], or round with `thick_bridges`. On other printers: round with `thick_bridges`, whose bead is always
+/// the round strand of [`bead`], extra perimeters on overhangs included. None otherwise, when the comments state the
+/// bead's own width and the layer height.
 pub(crate) fn raised_wall(cfg: &PrintConfig) -> Option<RaisedWall> {
     if !bambu_wall_bead(cfg) {
-        return None;
+        let other = !crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
+        return (other && cfg.thick_bridges).then_some(RaisedWall::Round);
     }
     if cfg.thick_bridges {
         Some(RaisedWall::Round)
@@ -893,8 +895,9 @@ mod tests {
                 assert_eq!(raised_wall(&cfg), None);
             }
         }
-        // Thick bridges: the round strand of the nozzle.
+        // Thick bridges: the round strand of the nozzle, stated as tall as it is wide.
         cfg.thick_bridges = true;
+        assert_eq!(raised_wall(&cfg), Some(RaisedWall::Round));
         assert_eq!(wall_bead(&cfg, 0.2, true), bead(&cfg, 0.2));
         assert!((wall_bead(&cfg, 0.2, false).0 - cfg.nozzle_diameter * 1.2_f64.sqrt()).abs() < 1e-9);
     }
@@ -962,10 +965,15 @@ mod tests {
             bridge_flow: 1.2,
             ..PrintConfig::default()
         };
-        // Other printers keep the bridge strand's own label.
+        // Other printers keep the bridge strand's own label above a flow of 1, and state the round thread of
+        // thick bridges as tall as it is wide, whatever the bridge line width.
         assert_eq!(raised_wall(&cfg), None);
         cfg.thick_bridges = true;
-        assert_eq!(raised_wall(&cfg), None);
+        assert_eq!(raised_wall(&cfg), Some(RaisedWall::Round));
+        cfg.raw
+            .insert("bridge_line_width".into(), serde_json::json!(0.35));
+        assert_eq!(raised_wall(&cfg), Some(RaisedWall::Round));
+        cfg.raw.remove("bridge_line_width");
         cfg.thick_bridges = false;
         cfg.raw
             .insert("printer_model".into(), serde_json::json!("Bambu Lab A1"));
