@@ -2964,16 +2964,7 @@ fn slow_down(l: &mut LayerPaths, cfg: &PrintConfig, fc: &PrintConfig, extra: f64
     true
 }
 
-/// Seconds to print a layer: extrusion length over speed, travels at travel
-/// speed, and a retract plus unretract for every travel longer than
-/// `retraction_minimum_travel` and at the layer change. Acceleration is not
-/// modeled yet, so this reads low on short moves.
-#[allow(clippy::cast_possible_truncation, reason = "layer times are small")]
-pub(crate) fn estimate_time(l: &LayerPaths, cfg: &PrintConfig) -> f32 {
-    estimate_time_with(l, cfg, &layer_filament(l, cfg))
-}
-
-/// [`estimate_time`] with the layer's filament config already worked out.
+/// Seconds to print a layer, with the layer's filament config already worked out.
 fn estimate_time_with(l: &LayerPaths, cfg: &PrintConfig, fc: &PrintConfig) -> f32 {
     if let Some(lim) = crate::motion::Limits::from_config(cfg) {
         return motion_time(l, fc, &lim);
