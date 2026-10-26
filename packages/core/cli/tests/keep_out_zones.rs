@@ -239,7 +239,9 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     // The P1S's excluded corner was already kept clear this way: a cube right beside it, its brim cut to the corner,
     // prints the same bytes. A change that alters them updates the hash and says why. Changed when bridge strands on
     // Bambu Lab printers spread evenly: the cube's first solid layer over sparse infill is a bridge. Changed again when
-    // every wipe ran at the layer's acceleration: the travel line after a wipe goes when it equals the wipe's.
+    // every wipe ran at the layer's acceleration: the travel line after a wipe goes when it equals the wipe's. Changed
+    // again when the floating vertical shell's beads started at the inner wall's spacing edge: only those beads, the
+    // travels into them, the progress lines and the filament total moved.
     let c = config("p1s", &json!({"brim_type": "outer_only", "brim_width": 5}));
     let (out, gcode) = slice("p1s", &c, &[[18.0, 6.0], [140.0, 140.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -253,7 +255,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "c9fab15d6ab49c9c",
+        "43032e3e99d2ed99",
         "the P1S plate's G-code changed"
     );
 }
