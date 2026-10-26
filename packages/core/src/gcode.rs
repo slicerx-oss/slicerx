@@ -3157,10 +3157,16 @@ fn emit_layer(
             speed_feed = f;
         }
         feed_mark = b.len();
-        let e_per_mm = bead_area(f64::from(p.width_mm), h) / fil_area(p.tool)
-            * c.flow_ratio(p.tool)
-            * f64::from(p.flow)
-            * role_flow.get(p.feature as usize).copied().unwrap_or(1.0);
+        // The prime tower prints the plain bead: no filament, print or role flow ratio on top.
+        let plain = bead_area(f64::from(p.width_mm), h) / fil_area(p.tool);
+        let e_per_mm = if p.feature == Feature::PrimeTower {
+            plain * f64::from(p.flow)
+        } else {
+            plain
+                * c.flow_ratio(p.tool)
+                * f64::from(p.flow)
+                * role_flow.get(p.feature as usize).copied().unwrap_or(1.0)
+        };
         let mut prev = start;
         let mut e_sum = 0i64;
         let small = small_area.as_ref().filter(|s| s.applies(p.feature, l.index == 0));
@@ -5986,5 +5992,55 @@ mod tests {
             Some("M104 T1 S220 N0 ;Wipe tower reheat before wipe\n")
         );
         assert_eq!(tower_reheat(&c, 2, 3, 0), None);
+    }
+
+    /// E per mm of a 100 mm path of `feature`, 0.5 wide at flow 1, alone on the third layer (0.2 mm) of a block
+    /// sliced at filament flow ratio 0.9 and print flow ratio 0.95.
+    fn e_per_mm_of(feature: Feature) -> f64 {
+        let (out, config) = block_layers(&serde_json::json!({
+            "filament_flow_ratio": ["0.9"], "print_flow_ratio": "0.95", "use_relative_e_distances": true,
+            "layer_height": 0.2, "initial_layer_print_height": 0.2, "brim_width": 0, "skirt_loops": 0,
+        }));
+        let mut l = out.layers[2].clone();
+        assert!((l.height - 0.2).abs() < 1e-6, "{}", l.height);
+        l.points = vec![Point::from_mm(110.0, 120.0), Point::from_mm(210.0, 120.0)];
+        l.zs.clear();
+        l.flows.clear();
+        l.paths = vec![crate::output::PathInfo {
+            start: 0,
+            end: 2,
+            tool: 1,
+            feature,
+            speed_mm_s: 50.0,
+            width_mm: 0.5,
+            flow: 1.0,
+            dz: 0.0,
+            overhang_fan: false,
+            owner: crate::preview::OBJECT_NONE,
+            tower_wipe: false,
+            tower_hop: false,
+            slow_span: false,
+        }];
+        let shared = Shared::new(&out, &config);
+        let chunk = emit_layer(&l, &out, &config, config.gcode_flavor, false, &[], &shared);
+        let text = String::from_utf8(chunk.bytes).unwrap();
+        let line = text
+            .lines()
+            .find(|s| s.starts_with("G1 X210") && s.contains(" E"))
+            .unwrap_or_else(|| panic!("{text}"));
+        let e: f64 = line
+            .split_whitespace()
+            .find_map(|w| w.strip_prefix('E'))
+            .and_then(|v| v.parse().ok())
+            .unwrap();
+        e / 100.0
+    }
+
+    #[test]
+    fn a_tower_path_extrudes_the_plain_bead_and_a_wall_its_flow_ratios() {
+        let tower = e_per_mm_of(Feature::PrimeTower);
+        assert!((tower - 0.038_006).abs() < 2e-6, "tower {tower}");
+        let wall = e_per_mm_of(Feature::OuterWall);
+        assert!((wall - 0.032_495).abs() < 2e-6, "outer wall {wall}");
     }
 }
