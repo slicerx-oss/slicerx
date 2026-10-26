@@ -21,8 +21,13 @@ pub(crate) struct VaseLayer {
     pub first: bool,
     /// The last layer of the print: a loop at constant Z follows, with the flow ramping down.
     pub last: bool,
-    /// The loop starts at the vertex nearest this point, so layers do not depend on each other.
+    /// The loop starts at the vertex nearest this point, so layers do not depend on each other: where the solid
+    /// base ended, when that is known.
     pub anchor: Point,
+    /// The first layer only: where the solid base ended. When the loop's start is within
+    /// `retraction_minimum_travel` of it, the loop starts there, so the nozzle goes on from the base into the
+    /// wall with its first extrusion and no travel, retraction or prime at the foot of the wall.
+    pub enter: Option<Point>,
     /// `spiral_mode_smooth`: the loop of the layer below.
     pub blend: Option<Blend>,
 }
@@ -138,10 +143,26 @@ pub(crate) fn apply(out: &mut LayerPaths, cfg: &PrintConfig, v: &VaseLayer, rela
     let mut paths: Vec<PathInfo> = Vec::with_capacity(out.paths.len());
     let mut is_wall: Vec<bool> = Vec::with_capacity(out.paths.len());
     let mut total = 0.0_f64;
-    for p in &out.paths {
+    // The first layer's wall goes on from where the base ended when that is near: its loop starts there.
+    let enter = v
+        .enter
+        .filter(|_| v.first)
+        .zip(out.paths.first().filter(|p| wall(p.feature)))
+        .and_then(|(at, p)| {
+            let q = out.path_points(p).first()?;
+            let d = at.dist_mm(*q);
+            (d > 0.0 && d <= cfg.retraction_minimum_travel).then_some(at)
+        });
+    for (k, p) in out.paths.iter().enumerate() {
         let src = out.path_points(p);
         let start = points.len();
         let mut last: Option<Point> = None;
+        if k == 0
+            && let Some(at) = enter
+        {
+            points.push(at);
+            last = Some(at);
+        }
         for &q in src {
             match last {
                 Some(l) if wall(p.feature) => {
