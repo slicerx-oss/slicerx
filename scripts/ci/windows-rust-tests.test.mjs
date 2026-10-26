@@ -5,8 +5,11 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { test } from 'node:test'
-import { commands } from './windows-rust-tests.mjs'
+import { mock, test } from 'node:test'
+import { fileURLToPath } from 'node:url'
+import { checkPartition, commands, createTimer, describe, loadWeights, partition, summary, unweightedWarning, writeSummary } from './windows-rust-tests.mjs'
+
+const script = fileURLToPath(new URL('./windows-rust-tests.mjs', import.meta.url))
 
 const names = ['firmware', 'requests', 'reference', 'new_test']
 const metadata = { workspace_members: ['core'], packages: [{ id: 'core', name: 'sx-core', targets: names.map((name) => ({ name, kind: ['test'] })) }] }
@@ -65,4 +68,195 @@ test('the release gate refuses a missing or failed slow Windows job', () => {
     assert.equal(dirname(resolve(dir)), resolve(tmpdir()))
     rmSync(dir, { recursive: true, force: true })
   }
+})
+
+const withTargets = (list) => ({ workspace_members: ['core'], packages: [{ id: 'core', name: 'sx-core', targets: list.map((name) => ({ name, kind: ['test'] })) }] })
+const sized = { rest: 100, targets: { a: 60, b: 50, c: 40, d: 30, e: 20, f: 10 } }
+const sizedMetadata = withTargets(Object.keys(sized.targets))
+const assigned = (parts) => parts.map((part) => part.items.map((item) => item.name))
+
+test('the main and slow plans are the same as before parts existed', () => {
+  const workspace = ['test', '--locked', '--workspace', '--exclude', 'slicerx-desktop', '--exclude', 'sx-core']
+  const unit = ['test', '--locked', '-p', 'sx-core', '--lib', '--bins', '--examples']
+  const doc = ['test', '--locked', '-p', 'sx-core', '--doc']
+  assert.deepEqual(commands(metadata, 'main'), [workspace, unit, ['test', '--locked', '-p', 'sx-core', '--test', 'new_test', '--test', 'reference'], doc])
+  assert.deepEqual(commands(metadata, 'slow'), [['test', '--locked', '-p', 'sx-core', '--test', 'firmware', '--test', 'requests']])
+})
+
+test('parts fill the lightest part with the heaviest item first, ties to the lowest part and the earliest name', () => {
+  assert.deepEqual(assigned(partition(sizedMetadata, 2, sized).parts), [['rest', 'c', 'e'], ['a', 'b', 'd', 'f']])
+  assert.deepEqual(assigned(partition(sizedMetadata, 3, sized).parts), [['rest'], ['a', 'd', 'e'], ['b', 'c', 'f']])
+  const equal = { rest: 10, targets: { x: 10, y: 10, z: 10 } }
+  assert.deepEqual(assigned(partition(withTargets(['z', 'y', 'x']), 2, equal).parts), [['rest', 'y'], ['x', 'z']])
+})
+
+test('every part computes the same partition whatever order cargo lists the targets in', () => {
+  const forward = partition(sizedMetadata, 3, sized)
+  const backward = partition(withTargets(Object.keys(sized.targets).reverse()), 3, sized)
+  assert.deepEqual(backward, forward)
+  assert.deepEqual(partition(sizedMetadata, 3, sized), forward)
+  const plans = [1, 2, 3].map((part) => commands(sizedMetadata, part, { of: 3, weights: sized }))
+  assert.deepEqual(plans, [1, 2, 3].map((part) => commands(withTargets(['f', 'e', 'd', 'c', 'b', 'a']), part, { of: 3, weights: sized })))
+})
+
+test('the parts are balanced on a fixture shaped like the repository', () => {
+  const heavy = { firmware: 324, requests: 330, determinism: 217, arrange_layer_one: 152, cancel_rerun: 104, organic2: 101, object_labels: 83, internal_solid: 61, floating_shell: 39, brim_bed: 26, collisions: 25, overhang_fan: 24, by_layer_order: 20 }
+  const targets = { ...heavy, ...Object.fromEntries(Array.from({ length: 66 }, (_, i) => [`small_${i}`, 2])) }
+  const fixture = withTargets(Object.keys(targets))
+  for (const count of [2, 3]) {
+    const { parts } = partition(fixture, count, { rest: 700, targets })
+    const loads = parts.map((part) => part.load)
+    assert.ok(Math.max(...loads) - Math.min(...loads) <= 2, `${count} parts: ${loads}`)
+    assert.equal(loads.reduce((a, b) => a + b, 0), 700 + Object.values(targets).reduce((a, b) => a + b, 0))
+    assert.ok(parts[0].items.some((item) => item.rest))
+  }
+})
+
+test('each part runs rest once and every integration target in exactly one part, new files included', () => {
+  const grown = withTargets([...Object.keys(sized.targets), 'brand_new', 'another_new'])
+  for (const count of [1, 2, 3, 4]) {
+    const plans = Array.from({ length: count }, (_, i) => commands(grown, i + 1, { of: count, weights: sized }))
+    assert.deepEqual(plans.flatMap(selected).sort(), [...Object.keys(sized.targets), 'brand_new', 'another_new'].sort())
+    assert.equal(plans.flat().filter((args) => args.includes('--workspace')).length, 1)
+    assert.equal(plans.flat().filter((args) => args.includes('--doc')).length, 1)
+    assert.equal(plans.flat().filter((args) => args.includes('--lib')).length, 1)
+  }
+  assert.deepEqual(commands(sizedMetadata, 1, { of: 1, weights: sized }), [
+    ['test', '--locked', '--workspace', '--exclude', 'slicerx-desktop', '--exclude', 'sx-core'],
+    ['test', '--locked', '-p', 'sx-core', '--lib', '--bins', '--examples'],
+    ['test', '--locked', '-p', 'sx-core', ...'abcdef'.split('').flatMap((name) => ['--test', name])],
+    ['test', '--locked', '-p', 'sx-core', '--doc'],
+  ])
+})
+
+test('a target with no weight counts as 5 s, is named in a warning and still lands in one part', () => {
+  const grown = withTargets([...Object.keys(sized.targets), 'unlisted'])
+  const { parts, unweighted } = partition(grown, 2, sized)
+  assert.deepEqual(unweighted, ['unlisted'])
+  assert.equal(parts.flatMap((part) => part.items).find((item) => item.name === 'unlisted').weight, 5)
+  assert.equal(parts.reduce((sum, part) => sum + part.load, 0), 310 + 5)
+  assert.equal(parts.filter((part) => part.items.some((item) => item.name === 'unlisted')).length, 1)
+  assert.match(unweightedWarning(unweighted), /unlisted/)
+  assert.match(unweightedWarning(unweighted), /5 s/)
+  assert.equal(unweightedWarning(partition(sizedMetadata, 2, sized).unweighted), null)
+})
+
+test('a target in no part or in two parts refuses', () => {
+  const targets = ['a', 'b']
+  const part = (...items) => ({ items: items.map((name) => ({ name, rest: name === 'rest', weight: 1 })), load: items.length })
+  checkPartition(targets, [part('rest', 'a'), part('b')])
+  assert.throws(() => checkPartition(targets, [part('rest', 'a'), part()]), /dropped integration target b: it is in no part/)
+  assert.throws(() => checkPartition(targets, [part('rest', 'a', 'b'), part('b')]), /repeated integration target b: it is in 2 parts/)
+  assert.throws(() => checkPartition(targets, [part('a', 'b'), part()]), /dropped the rest/)
+  assert.throws(() => checkPartition(targets, [part('rest', 'a', 'b'), part('rest')]), /repeated the rest/)
+  assert.throws(() => checkPartition(targets, [part('rest', 'a', 'b', 'gone')]), /unknown integration target: gone/)
+})
+
+test('a bad part number, part count or weight refuses', () => {
+  const options = { of: 2, weights: sized }
+  assert.throws(() => commands(sizedMetadata, 0, options), /Expected a part from 1 to 2/)
+  assert.throws(() => commands(sizedMetadata, 3, options), /Expected a part from 1 to 2/)
+  assert.throws(() => commands(sizedMetadata, 1, { weights: sized }), /Expected --of/)
+  assert.throws(() => partition(sizedMetadata, 0, sized), /part count/)
+  assert.throws(() => commands({ ...sizedMetadata, workspace_members: [] }, 1, options), /Missing sx-core/)
+  const dir = mkdtempSync(join(tmpdir(), 'sx-rust-weights-'))
+  try {
+    for (const bad of [{ targets: {} }, { rest: 0, targets: {} }, { rest: 5, targets: { a: -1 } }, { rest: 5, targets: { a: 'x' } }]) {
+      writeFileSync(join(dir, 'weights.json'), JSON.stringify(bad))
+      assert.throws(() => loadWeights(join(dir, 'weights.json')), /Expected a positive weight/)
+    }
+  } finally {
+    assert.equal(dirname(resolve(dir)), resolve(tmpdir()))
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('the checked-in weights are positive numbers for rest and each target', () => {
+  const weights = loadWeights()
+  assert.ok(weights.rest > 0)
+  assert.ok(Object.keys(weights.targets).length > 10)
+})
+
+test('the command line prints the plan and names a target with no weight', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sx-rust-parts-'))
+  const file = join(dir, 'metadata.json')
+  const run = (...args) => spawnSync(process.execPath, [script, ...args, '--metadata', file], { encoding: 'utf8' })
+  try {
+    writeFileSync(file, JSON.stringify(withTargets(['firmware', 'requests', 'determinism', 'brand_new'])))
+    const part = run('1', '--of', '2', '--plan')
+    assert.equal(part.status, 0, part.stderr)
+    assert.match(part.stderr, /no weight in rust-part-weights\.json for 1 sx-core integration target.*: brand_new/)
+    const plan = JSON.parse(part.stdout)
+    assert.deepEqual(plan, commands(withTargets(['firmware', 'requests', 'determinism', 'brand_new']), 1, { of: 2, weights: loadWeights() }))
+    const main = run('main', '--plan')
+    assert.equal(main.status, 0, main.stderr)
+    assert.equal(main.stderr, '')
+    assert.deepEqual(JSON.parse(main.stdout), commands(withTargets(['firmware', 'requests', 'determinism', 'brand_new']), 'main'))
+    const all = run('--of', '2', '--partition')
+    assert.equal(all.status, 0, all.stderr)
+    assert.match(all.stdout, /^part 1 of 2: weight \d+ s, \d+ items\n {2}rest 700/)
+    assert.match(all.stdout, /\npart 2 of 2: weight \d+ s/)
+    assert.notEqual(run('3', '--of', '2', '--plan').status, 0)
+    assert.notEqual(run('typo', '--plan').status, 0)
+  } finally {
+    assert.equal(dirname(resolve(dir)), resolve(tmpdir()))
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('the timer measures each test binary from its Running line to the next one', () => {
+  let clock = 0
+  const timer = createTimer(() => clock)
+  const at = (ms, line) => {
+    clock = ms
+    timer.feed(line)
+  }
+  at(0, '   Compiling sx-core v0.1.0')
+  at(1000, '\u001b[1m\u001b[92m     Running\u001b[0m unittests src/lib.rs (target/debug/deps/sx_core-0123456789abcdef)')
+  at(84000, '     Running tests\\firmware.rs (target\\debug\\deps\\firmware-0123456789abcdef.exe)')
+  at(90500, 'test result: ok. 3 passed; 0 failed')
+  at(410500, '   Doc-tests sx_core')
+  clock = 450000
+  timer.finish()
+  timer.finish()
+  assert.deepEqual(timer.rows, [
+    { name: 'sx_core', source: 'unittests src/lib.rs', seconds: 83 },
+    { name: 'firmware', source: 'tests/firmware.rs', seconds: 326.5 },
+    { name: 'sx_core', source: 'doc tests', seconds: 39.5 },
+  ])
+})
+
+test('the summary lists the slowest binaries first and goes to the step summary when one is set', () => {
+  const rows = [{ name: 'fast', source: 'tests/fast.rs', seconds: 1.04 }, { name: 'slow', source: 'tests/slow.rs', seconds: 320.26 }]
+  const text = summary(rows, 'Rust test binaries, Windows part 2 of 3', 794)
+  assert.equal(text, [
+    '### Rust test binaries, Windows part 2 of 3',
+    '',
+    'Predicted weight 794 s, measured binary time 321.3 s.',
+    '',
+    '| binary | source | seconds |',
+    '| --- | --- | ---: |',
+    '| slow | tests/slow.rs | 320.3 |',
+    '| fast | tests/fast.rs | 1.0 |',
+    '',
+  ].join('\n'))
+  const dir = mkdtempSync(join(tmpdir(), 'sx-rust-summary-'))
+  const file = join(dir, 'summary.md')
+  const log = mock.method(console, 'log', () => {})
+  try {
+    writeSummary(text, { GITHUB_STEP_SUMMARY: file })
+    assert.equal(readFileSync(file, 'utf8'), `${text}\n`)
+    assert.equal(log.mock.callCount(), 0)
+    writeSummary(text, {})
+    assert.deepEqual(log.mock.calls.map((call) => call.arguments), [[text]])
+  } finally {
+    log.mock.restore()
+    assert.equal(dirname(resolve(dir)), resolve(tmpdir()))
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('describe prints the weight sum and items of each part', () => {
+  const lines = describe(partition(sizedMetadata, 2, sized).parts)
+  assert.deepEqual(lines, ['part 1 of 2: weight 160 s, 3 items', '  rest 100, c 40, e 20', 'part 2 of 2: weight 150 s, 4 items', '  a 60, b 50, d 30, f 10'])
 })
