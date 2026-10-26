@@ -8674,9 +8674,16 @@ impl SliceSession {
                         work.region_narrow = rest;
                     }
                     if let (false, Some(u), Some(f)) = (floating.is_empty(), &unsupported, lower) {
-                        // A floating shell's beads fill the band out to the infill area's overlap with the wall, as
-                        // the printer maker's slicer prints them: one bead in a 0.40 mm band is 0.45 mm wide.
-                        let band = perimeters::intersection(&floating, &inner);
+                        // A floating shell's beads fill the band from the inner wall's spacing edge (the infill area
+                        // without its overlap with the wall, `vshell::wall_shift` closer to it for fixed-width walls)
+                        // to `vshell::reach` past the piece over the sparse infill, except on a ring that rests wholly
+                        // on the sparse infill below.
+                        let flat = perimeters::offset(
+                            &inner,
+                            crate::vshell::wall_shift(cfg, layer_height) - overlap,
+                        );
+                        let band =
+                            crate::vshell::band(&floating, &flat, &cls.sparse, u, crate::vshell::reach(cfg));
                         let support = crate::vshell::Support::new(u, f.segments(), cfg.sparse_infill_width());
                         work.floating = crate::vshell::beads(
                             &band,
