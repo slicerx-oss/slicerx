@@ -26,6 +26,10 @@ pub(crate) struct Params {
     pub anchor: f64,
     /// Longest boundary piece that joins two lines.
     pub anchor_max: f64,
+    /// A lone end's hook may run on along a narrow tongue of the region to its tip (see `hook_reach`). Only for a
+    /// region already pulled in half a line spacing, whose edge is where line centers go: along the edge of the
+    /// raw area a longer hook would lie on the walls and on the vertical shells that border the area.
+    pub tongues: bool,
 }
 
 /// One line end on a ring: Orca's `ContourIntersectionPoint`.
@@ -324,23 +328,25 @@ pub(crate) fn connect(lines: Vec<Vec<Point>>, region: &Shapes, p: Params) -> Vec
             let l = fp.max(fn_);
             if l > EPS {
                 if fp > fn_ {
+                    let reach = hook_reach(&ends, &edge, (i, prev, false), p);
                     take_limited(
                         &mut lines,
                         &edge,
                         &mut ends,
                         &parent,
                         (i, prev, true),
-                        p.anchor,
+                        reach,
                         half,
                     );
                 } else {
+                    let reach = hook_reach(&ends, &edge, (i, next, true), p);
                     take_limited(
                         &mut lines,
                         &edge,
                         &mut ends,
                         &parent,
                         (i, next, false),
-                        p.anchor,
+                        reach,
                         half,
                     );
                 }
@@ -355,6 +361,56 @@ pub(crate) fn connect(lines: Vec<Vec<Point>>, region: &Shapes, p: Params) -> Vec
     }
     out
 }
+
+/// How far a lone end's hook follows the ring from the end `at.0` toward its neighbor end `at.1` (`at.2`: forward,
+/// toward the next end): the anchor length, except where the arc between the two ends runs out and back along a
+/// tongue of the region (not a slot cut into it) that no line reaches, such as the start of the strip that capped walls leave between them on a
+/// part that widens. There the hook runs on to the tongue's tip (half the arc), up to [`TONGUE_ANCHORS`] anchor
+/// lengths and the longest join, and never shorter than the anchor length. Stopped at the anchor length (1.6 mm),
+/// it left the last 2 mm of such a strip empty on every layer: a void up to 0.43 mm wide where a wedge with
+/// 0.40 mm inner walls is 1.86 to 1.99 mm wide.
+fn hook_reach(ends: &[End], edge: &Edge, at: (usize, usize, bool), p: Params) -> f64 {
+    let (start, other, forward) = at;
+    let (Some(s), Some(o)) = (ends.get(start), ends.get(other)) else {
+        return p.anchor;
+    };
+    let arc = if forward { s.arc_next } else { s.arc_prev };
+    let half_arc = 0.5 * arc;
+    if !p.tongues || start == other || s.ring != o.ring || half_arc <= p.anchor {
+        return p.anchor;
+    }
+    // A tongue: the two sides of the arc stay within two line spacings of each other, from the two ends out to
+    // three quarters of the way to the tip. An arc round a whole region whose two ends happen to be close fails
+    // this at once.
+    let dir = if forward { 1.0 } else { -1.0 };
+    let narrow = (0..4).all(|k| {
+        let q = half_arc * 0.25 * f64::from(k);
+        match (
+            edge.point_at(s.ring, s.pos + dir * q),
+            edge.point_at(o.ring, o.pos - dir * q),
+        ) {
+            (Some(a), Some(b)) => a.dist_mm(b) <= 2.0 * p.spacing,
+            _ => false,
+        }
+    });
+    // And the arc goes round the region, not round a slot cut into it: closed by the line between the two ends, it
+    // turns the way the ring does (walked backward, the other way).
+    let ring = edge.walk(s.ring, 0.0, edge.ring_length(s.ring) - EPS, true);
+    let mut out_and_back = edge.walk(s.ring, s.pos, s.pos + dir * arc, forward);
+    out_and_back.dedup();
+    let turn = crate::geom::area2(&out_and_back).signum() * if forward { 1 } else { -1 };
+    if narrow && turn != 0 && turn == crate::geom::area2(&ring).signum() {
+        half_arc
+            .min(TONGUE_ANCHORS * p.anchor)
+            .min(p.anchor_max)
+            .max(p.anchor)
+    } else {
+        p.anchor
+    }
+}
+
+/// The longest hook into a tongue, in anchor lengths.
+const TONGUE_ANCHORS: f64 = 5.0;
 
 /// Joins the polylines rooted at `first` and `second` along ring `ring` from `pos_a` (an open end of the
 /// first) to `pos_b` (an open end of the second), going forward or back.
@@ -623,4 +679,145 @@ pub(crate) fn anchor_length(cfg: &crate::config::PrintConfig, spacing_mm: f64) -
         .and_then(|v| crate::config::float_or_percent(v, spacing_mm))
         .unwrap_or(4.0 * spacing_mm);
     own.min(cfg.anchor_max_mm())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+    use i_overlay::i_float::int::point::IntPoint;
+
+    const P: Params = Params {
+        spacing: 0.4,
+        anchor: 1.6,
+        anchor_max: 20.0,
+        tongues: true,
+    };
+
+    /// A region `len` by `width` mm from the origin, crossed by lines at x = `a` and x = `b`.
+    fn strip(len: f64, width: f64, a: f64, b: f64) -> (Vec<Vec<Point>>, Shapes) {
+        let p = |x: f64, y: f64| {
+            let q = Point::from_mm(x, y);
+            IntPoint::new(q.x, q.y)
+        };
+        let region = vec![vec![vec![p(0.0, 0.0), p(len, 0.0), p(len, width), p(0.0, width)]]];
+        let cross = |x: f64| vec![Point::from_mm(x, 0.0), Point::from_mm(x, width)];
+        (vec![cross(a), cross(b)], region)
+    }
+
+    /// How close to the narrow end (x = 0) the joined and hooked lines come, mm.
+    fn reach(len: f64, width: f64, a: f64) -> f64 {
+        let (lines, region) = strip(len, width, a, len - 1.0);
+        connect(lines, &region, P)
+            .iter()
+            .flatten()
+            .map(|q| q.x_mm())
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    /// A strip 0.2 mm wide whose only line is 4 mm from its tip: the hook runs to the tip instead of stopping
+    /// 1.6 mm along.
+    #[test]
+    fn a_hook_into_a_tongue_runs_to_its_tip() {
+        let x = reach(10.0, 0.2, 4.0);
+        assert!(x < 0.15, "{x}");
+    }
+
+    /// The same lines in a part 3 mm wide: the lone end keeps a hook of the anchor length.
+    #[test]
+    fn a_hook_round_a_wide_end_keeps_the_anchor_length() {
+        let x = reach(10.0, 3.0, 4.0);
+        assert!((x - (4.0 - P.anchor)).abs() < 0.02, "{x}");
+    }
+
+    /// A tongue whose tip the anchor length already reaches: the hook is the one of the anchor length.
+    #[test]
+    fn a_short_tongue_keeps_the_anchor_length() {
+        let (lines, region) = strip(10.0, 0.2, 1.0, 2.0);
+        let out = connect(lines, &region, P);
+        let hooked = out
+            .iter()
+            .flatten()
+            .map(|q| q.x_mm())
+            .fold(f64::INFINITY, f64::min);
+        assert!(hooked < 0.01, "{hooked}");
+        // Round the tip and 0.4 mm back along the other side (1.0 + 0.2 + 0.4 mm), from either side.
+        let back = P.anchor - 1.2;
+        let ends: Vec<Point> = out.iter().flat_map(|l| [l[0], l[l.len() - 1]]).collect();
+        assert!(
+            ends.iter().any(|q| [0.0, 0.2]
+                .iter()
+                .any(|y| q.dist_mm(Point::from_mm(back, *y)) < 0.02)),
+            "{out:?}"
+        );
+    }
+
+    /// A line across a corner of a 10 mm square: its two ends are close, but the long arc between them runs round
+    /// the whole square, not along a tongue, so each end keeps a hook of the anchor length.
+    #[test]
+    fn ends_close_together_on_a_wide_region_keep_the_anchor_length() {
+        let p = |x: f64, y: f64| {
+            let q = Point::from_mm(x, y);
+            IntPoint::new(q.x, q.y)
+        };
+        let region = vec![vec![vec![p(0.0, 0.0), p(10.0, 0.0), p(10.0, 10.0), p(0.0, 10.0)]]];
+        let line = vec![Point::from_mm(0.0, 0.3), Point::from_mm(0.3, 0.0)];
+        let length = |l: &[Point]| l.windows(2).map(|w| w[0].dist_mm(w[1])).sum::<f64>();
+        let before = length(&line);
+        let total: f64 = connect(vec![line], &region, P).iter().map(|l| length(l)).sum();
+        assert!(total - before <= 2.0 * P.anchor + 0.02, "{total}");
+    }
+
+    /// A slot 0.3 mm wide cut 14 mm into a region, with lines leaning away from both sides of its mouth: the arc
+    /// between their ends runs round the slot, which is not region, so the hooks stay at the anchor length.
+    #[test]
+    fn a_hook_round_a_slot_keeps_the_anchor_length() {
+        let p = |x: f64, y: f64| {
+            let q = Point::from_mm(x, y);
+            IntPoint::new(q.x, q.y)
+        };
+        let region = vec![vec![vec![
+            p(-3.0, 0.0),
+            p(0.85, 0.0),
+            p(0.85, 14.0),
+            p(1.15, 14.0),
+            p(1.15, 0.0),
+            p(10.0, 0.0),
+            p(10.0, 16.0),
+            p(-3.0, 16.0),
+        ]]];
+        let lines = vec![
+            vec![Point::from_mm(0.65, 0.0), Point::from_mm(-2.5, 16.0)],
+            vec![Point::from_mm(1.35, 0.0), Point::from_mm(8.0, 16.0)],
+        ];
+        let out = connect(lines, &region, P);
+        // Up a side of the slot by at most the anchor length less the 0.2 mm to its mouth.
+        let up = out
+            .iter()
+            .flatten()
+            .filter(|q| (q.x_mm() - 0.85).abs() < 0.01 || (q.x_mm() - 1.15).abs() < 0.01)
+            .map(|q| q.y_mm())
+            .fold(0.0, f64::max);
+        assert!(up < P.anchor - 0.2 + 0.02, "{up}: {out:?}");
+    }
+
+    /// The tongue of the first test on a region that was not pulled in (`tongues` off): the anchor length.
+    #[test]
+    fn without_tongues_a_hook_keeps_the_anchor_length() {
+        let (lines, region) = strip(10.0, 0.2, 4.0, 9.0);
+        let off = Params { tongues: false, ..P };
+        let x = connect(lines, &region, off)
+            .iter()
+            .flatten()
+            .map(|q| q.x_mm())
+            .fold(f64::INFINITY, f64::min);
+        assert!((x - (4.0 - P.anchor)).abs() < 0.02, "{x}");
+    }
+
+    /// A tongue longer than five anchor lengths: the hook stops at five.
+    #[test]
+    fn a_hook_into_a_long_tongue_stops_at_five_anchor_lengths() {
+        let x = reach(20.0, 0.2, 12.0);
+        assert!((x - (12.0 - TONGUE_ANCHORS * P.anchor)).abs() < 0.02, "{x}");
+    }
 }
