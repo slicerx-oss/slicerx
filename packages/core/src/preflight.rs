@@ -1374,8 +1374,9 @@ const PTFE_BLOCK_C: f64 = 260.0;
 
 /// Lowers the speed of every path of a layer to what the machine's axes and the
 /// filament's volumetric limit allow, before the time estimate is made from it.
-/// A bead at `width` by the layer height and `flow` times its usual cross-section
-/// may not push more than `filament_max_volumetric_speed` mm3/s through the nozzle.
+/// A bead at `width` by the layer height and `flow` times its usual cross-section, times the
+/// flow multipliers its extrusion carries ([`crate::config::CapFlow`]), may not push more than
+/// `filament_max_volumetric_speed` mm3/s through the nozzle.
 pub(crate) fn cap_speeds(layer: &mut crate::output::LayerPaths, cfg: &PrintConfig) {
     let axis = [
         machine_limit(cfg, "machine_max_speed_x"),
@@ -1385,10 +1386,11 @@ pub(crate) fn cap_speeds(layer: &mut crate::output::LayerPaths, cfg: &PrintConfi
     .flatten()
     .reduce(f64::min);
     let height = f64::from(layer.height);
+    let flows = cfg.cap_flow(layer.index == 0);
     for p in &mut layer.paths {
         let mut cap = axis.unwrap_or(f64::INFINITY);
         if let Some(v) = flow_cap_mm_s(cfg, p.tool, f64::from(p.width_mm), height) {
-            cap = cap.min(v / f64::from(p.flow).max(0.05));
+            cap = cap.min(v / (f64::from(p.flow).max(0.05) * flows.ratio(p.tool, p.feature)));
         }
         if cap.is_finite() && f64::from(p.speed_mm_s) > cap {
             #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
@@ -1957,5 +1959,67 @@ mod tests {
         let cap = flow_cap_mm_s(&c, 1, 0.42, 0.2).unwrap_or(0.0);
         assert!((cap - 12.0 / crate::gcode::bead_area(0.42, 0.2)).abs() < 1e-9);
         assert!(flow_cap_mm_s(&PrintConfig::default(), 1, 0.42, 0.2).is_none());
+    }
+
+    /// The speed `cap_speeds` leaves a 0.42 by 0.2 path of `feature` at, 300 mm/s asked, under `extra` settings
+    /// on top of a 3 mm3/s limit at filament flow ratio 0.9.
+    fn capped_speed(extra: &Value, feature: Feature, index: u32) -> f64 {
+        let mut v = json!({ "filament_max_volumetric_speed": ["3"], "filament_flow_ratio": ["0.9"] });
+        if let (Some(m), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+            m.extend(e.clone());
+        }
+        let mut layer = LayerPaths {
+            index,
+            height: 0.2,
+            points: vec![Point::new(0, 0), Point::new(10_000, 0)],
+            paths: vec![PathInfo {
+                tower_wipe: false,
+                tower_hop: false,
+                slow_span: false,
+                start: 0,
+                end: 2,
+                tool: 1,
+                feature,
+                speed_mm_s: 300.0,
+                width_mm: 0.42,
+                flow: 1.0,
+                dz: 0.0,
+                overhang_fan: false,
+                owner: crate::preview::OBJECT_NONE,
+            }],
+            ..LayerPaths::default()
+        };
+        cap_speeds(&mut layer, &cfg(v));
+        f64::from(layer.paths[0].speed_mm_s)
+    }
+
+    #[test]
+    fn the_volumetric_limit_holds_the_rate_the_path_extrudes() {
+        let near = |a: f64, b: f64| (a - b).abs() < 0.01;
+        // A printer other than Bambu Lab: the filament's flow ratio is in the extrusion, so in the limit too.
+        let other = capped_speed(&json!({}), Feature::OuterWall, 3);
+        assert!(near(other, 44.20), "{other}");
+        // A Bambu Lab printer: the limit is the bead's alone, apart from the print flow ratio.
+        let p1s = json!({ "printer_model": "Bambu Lab P1S" });
+        let bambu = capped_speed(&p1s, Feature::OuterWall, 3);
+        assert!(near(bambu, 39.78), "{bambu}");
+        let pf = json!({ "printer_model": "Bambu Lab P1S", "print_flow_ratio": "0.95" });
+        let bambu_pf = capped_speed(&pf, Feature::OuterWall, 3);
+        assert!(near(bambu_pf, 41.87), "{bambu_pf}");
+        // Role ratios count where they are on, the first layer's included.
+        let roles = json!({ "set_other_flow_ratios": "1", "outer_wall_flow_ratio": "0.9", "first_layer_flow_ratio": "0.9" });
+        let outer = capped_speed(&roles, Feature::OuterWall, 3);
+        assert!(
+            near(outer, 3.0 / (crate::gcode::bead_area(0.42, 0.2) * 0.81)),
+            "{outer}"
+        );
+        let first = capped_speed(&roles, Feature::OuterWall, 0);
+        assert!(
+            near(first, 3.0 / (crate::gcode::bead_area(0.42, 0.2) * 0.729)),
+            "{first}"
+        );
+        // The prime tower keeps the bead's limit.
+        let tower = capped_speed(&json!({}), Feature::PrimeTower, 3);
+        assert!(near(tower, 39.78), "{tower}");
     }
 }
