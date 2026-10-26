@@ -93,6 +93,8 @@ Never copy credentials or `post_process` into a config from a project or preset 
 
 To slice a Bambu Studio or OrcaSlicer project with the settings it was saved with, take `config` from `sx project-settings project.3mf` (or `project_config` from `slicerx_inspect_project`) rather than the raw `Metadata/project_settings.config`. That object is what `sx slice project.3mf` slices with: the project's own values plus the reading of keys it lacks by the app that wrote it. A Bambu Studio project that names no prime tower wall gets the rib tower, for example. If you already send the raw project settings, `"options": { "projectDefaults": true }` fills in the same app reading of the missing keys from the project file the plate names. It is off by default, so a request without it slices as before.
 
+A project that sets neither `support_top_z_distance` nor `support_bottom_z_distance` slices with 0.2 mm for each, and `sx project-settings` lists them. A request that sets `layer_height` and leaves both gaps out is not a project: its gaps follow the layer height (one layer, at most 0.2 mm), so set them in `config` when you want another value.
+
 ## 4. Slice and estimate
 
 Run `sx` from the main process, never from the window, and hand the window only bytes and numbers:

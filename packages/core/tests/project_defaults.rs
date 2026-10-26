@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 //! The keys a project's settings get because the app that wrote the file reads them differently when they are missing
-//! (`fromApp` in packages/settings/engine-choices.json), against the shared cases in
-//! packages/settings/fixtures/project-defaults.json. The settings package, the MCP server and the app run the same
-//! cases.
+//! (`fromApp` in packages/settings/engine-choices.json), and our defaults for the keys any project leaves out
+//! (`defaults` there), against the shared cases in packages/settings/fixtures/project-defaults.json. The settings
+//! package, the MCP server and the app run the same cases.
 
 use serde_json::{Map, Value};
 use std::path::Path;
@@ -81,6 +81,62 @@ fn a_project_config_has_the_keys_its_app_reads_differently() {
             }
             assert_eq!(config.settings.get(k), None, "{name}: {k}");
         }
+        // Our defaults for the keys the project leaves out, whatever app wrote it; a key it sets is its own.
+        for (k, v) in case["defaults"].as_object().unwrap() {
+            assert_eq!(config.settings.get(k), Some(v), "{name}: {k}");
+        }
+        for k in GAPS {
+            if let Some(own) = input.get(k) {
+                assert_eq!(config.settings.get(k), Some(own), "{name}: {k}");
+            }
+        }
+    }
+}
+
+const GAPS: [&str; 2] = ["support_top_z_distance", "support_bottom_z_distance"];
+
+/// The support gaps a case should print with: the project's own, else 0.2 from the defaults.
+fn want_gaps(case: &Value) -> (f64, f64) {
+    let gap = |k: &str| {
+        let v = case["settings"].get(k).unwrap_or(&case["defaults"][k]);
+        v.as_f64()
+            .or_else(|| v.as_str().and_then(|t| t.parse().ok()))
+            .unwrap()
+    };
+    (gap(GAPS[0]), gap(GAPS[1]))
+}
+
+#[test]
+fn a_project_without_support_gaps_prints_them_at_0_2_at_any_layer_height() {
+    for case in cases() {
+        let name = case["name"].as_str().unwrap();
+        let bytes = project(case["application"].as_str(), &case["settings"]);
+        let settings = sx_core::api::project_config(&bytes, "p.3mf")
+            .unwrap()
+            .unwrap()
+            .settings;
+        // as `sx slice <project.3mf>` reads them: the project's settings over the schema's defaults
+        let mut c = sx_core::config::PrintConfig::default();
+        c.apply_value_lenient(&Value::Object(settings)).unwrap();
+        assert_eq!(
+            (c.support.top_z_distance, c.support.bottom_z_distance),
+            want_gaps(&case),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_request_with_a_layer_height_and_no_support_gaps_still_follows_the_layer() {
+    // Not a project: a request's config with only a layer height keeps gaps of one layer, at most 0.2 mm.
+    for (h, gap) in [(0.08, 0.08), (0.12, 0.12), (0.28, 0.2)] {
+        let c = sx_core::config::PrintConfig::from_value(&serde_json::json!({ "layer_height": h })).unwrap();
+        assert_eq!(
+            (c.support.top_z_distance, c.support.bottom_z_distance),
+            (gap, gap),
+            "{h}"
+        );
+        assert_eq!(c.raw["support_top_z_distance"], "auto");
     }
 }
 
