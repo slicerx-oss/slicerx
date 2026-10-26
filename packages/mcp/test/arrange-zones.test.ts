@@ -133,7 +133,7 @@ describe('slicerx_arrange on true outlines', () => {
   })
 
   // Support on: copies of a box have nothing to hold up, so they keep the clearance alone; copies of a mushroom keep
-  // its tree support pad (7.9 mm) too, as the check counts them.
+  // its tree support pad (7.95 mm) too, as the check counts them.
   for (const [model, padded] of [['box', false], ['mushroom', true]] as const) {
     it(`spaces copies of a ${model} by the clearance${padded ? ' and its support pad' : ' alone'}, with support on`, async () => {
       const h = await connect({ geomEngine: g.engine })
@@ -145,7 +145,7 @@ describe('slicerx_arrange on true outlines', () => {
       expect(shown.outlines).toHaveLength(3)
       const d: number[] = []
       for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) d.push(hullDistance(shown.outlines[i]!.footprint, shown.outlines[j]!.footprint))
-      for (const v of d) expect(v).toBeGreaterThanOrEqual(shown.needMm - 0.1 + (padded ? 7.9 : 0))
+      for (const v of d) expect(v).toBeGreaterThanOrEqual(shown.needMm - 0.1 + (padded ? 7.95 : 0))
       if (!padded) expect(Math.min(...d)).toBeLessThan(shown.needMm + 7.9)
     })
   }

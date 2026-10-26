@@ -71,9 +71,10 @@ describe('the by-object read-back', () => {
       await call(h, 'slicerx_project_move', { object: 'obj-3', x: 110, y: 110 })
       const reach = async () => Object.fromEntries((await call<Shown>(h, 'slicerx_project_show')).output.plates[0]!.byObject!.pairs.map((p) => [`${p.a.id} ${p.b.id}`, p.reachMm]))
       const ids = (await call<Shown>(h, 'slicerx_project_show')).output.plates[0]!.placements.map((p) => p.id)
-      // The ledge's flat underside gets tree support, whose pad reaches 7.9 mm; the boxes have nothing to hold up.
+      // The ledge's flat underside gets tree support, whose pad reaches 7.95 mm (support lines at the 0.45 mm line
+      // width, its width left at 0), shown to a tenth; the boxes have nothing to hold up.
       const on = await reach()
-      expect(on[`${ids[0]} ${ids[1]}`]).toBeCloseTo(7.9, 1)
+      expect(on[`${ids[0]} ${ids[1]}`]).toBeCloseTo(8, 1)
       expect(on[`${ids[0]} ${ids[2]}`]).toBe(0)
       await call(h, 'slicerx_project_set_overrides', { changes: { enable_support: false } })
       expect((await reach())[`${ids[0]} ${ids[1]}`]).toBe(0)

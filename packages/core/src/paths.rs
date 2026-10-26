@@ -551,8 +551,8 @@ impl Builder<'_> {
             if n == last && self.gap > 0.0 {
                 crate::scarf::clip_end(&mut line, self.gap);
             }
-            // Fixed-width walls print every loop's overhang pieces with the inner loop's bead.
-            self.push_bead(tool, f, sp, line, o, false);
+            // The loop's overhang bead: on a Bambu Lab printer fixed-width walls take the inner loop's on every loop.
+            self.push_bead(tool, f, sp, line, o, feature == Feature::OuterWall);
         }
     }
 
