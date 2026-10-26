@@ -7728,40 +7728,34 @@ impl SliceSession {
                     (islands, perimeters::union_all(&[&inner, &counterbore]))
                 }
                 _ => {
-                    // unchanged classic regions can share walls that do not read the top context.
-                    let whole = self
-                        .cache_for_walls()
-                        .filter(|_| {
-                            loops == cfg.wall_loops
-                                && top_ctx.as_ref().is_none_or(|top| {
-                                    !cfg.arachne_walls()
-                                        && !perimeters::classic_top_candidate(
-                                            cfg,
-                                            shapes,
-                                            w,
-                                            own_overlap,
-                                            top,
-                                        )
-                                })
-                                && !top_or_bottom
-                                && *shapes == slice_shapes(here)
+                    // The walls of the whole outline without the top context, shared with the layers around.
+                    let shared = self.cache_for_walls().filter(|_| {
+                        loops == cfg.wall_loops && !top_or_bottom && *shapes == slice_shapes(here)
+                    });
+                    let memo = |c: &crate::shells::Cache| {
+                        c.walls(i64::from(layer), tags.of(cfg), || {
+                            Some(perimeters::walls_for(
+                                cfg,
+                                shapes,
+                                cfg.wall_loops,
+                                w,
+                                overlap,
+                                layer_height,
+                                false,
+                            ))
                         })
-                        .and_then(|c| {
-                            c.walls(i64::from(layer), tags.of(cfg), || {
-                                Some(perimeters::walls_for(
-                                    cfg,
-                                    shapes,
-                                    cfg.wall_loops,
-                                    w,
-                                    overlap,
-                                    layer_height,
-                                    false,
-                                ))
+                    };
+                    // unchanged classic regions can share walls that do not read the top context.
+                    let whole = shared
+                        .filter(|_| {
+                            top_ctx.as_ref().is_none_or(|top| {
+                                !cfg.arachne_walls()
+                                    && !perimeters::classic_top_candidate(cfg, shapes, w, own_overlap, top)
                             })
-                        });
-                    match whole {
-                        Some(v) => (*v).clone(),
-                        None => perimeters::walls_for_top(
+                        })
+                        .and_then(memo);
+                    let fresh = || {
+                        perimeters::walls_for_top(
                             cfg,
                             shapes,
                             loops,
@@ -7771,8 +7765,46 @@ impl SliceSession {
                             top_or_bottom,
                             top_ctx.as_ref(),
                             one_wall_layer,
+                        )
+                    };
+                    // Arachne regions whose islands get no one-wall top run share them too.
+                    let reused = std::cell::Cell::new(whole.is_some());
+                    let walls = match (&whole, shared, top_ctx.as_ref()) {
+                        (Some(v), ..) => (**v).clone(),
+                        (None, Some(c), Some(top)) if cfg.arachne_walls() => crate::arachne::island_walls_or(
+                            shapes,
+                            cfg,
+                            loops,
+                            own_overlap,
+                            layer_height,
+                            top_or_bottom,
+                            Some(top),
+                            one_wall_layer,
+                            Some(&|| {
+                                reused.set(true);
+                                memo(c).map(|v| (*v).clone())
+                            }),
                         ),
-                    }
+                        _ => fresh(),
+                    };
+                    #[cfg(test)]
+                    crate::walls_oracle::check(layer, &walls, reused.get(), top_ctx.is_some(), || {
+                        if cfg.arachne_walls() {
+                            crate::arachne::reference::island_walls(
+                                shapes,
+                                cfg,
+                                loops,
+                                own_overlap,
+                                layer_height,
+                                top_or_bottom,
+                                top_ctx.as_ref(),
+                                one_wall_layer,
+                            )
+                        } else {
+                            fresh()
+                        }
+                    });
+                    walls
                 }
             };
             Micros::add(&micros.perimeters, &t);
