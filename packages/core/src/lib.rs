@@ -248,7 +248,9 @@ pub use error::{Error, Result};
 pub use gcode::{EmitOptions, GcodeStats, emit_gcode, emit_gcode_with};
 pub use layers::{RangeLayerHeight, range_layer_tops};
 pub use mesh::{Mesh, MeshPart, MeshVolume};
-pub use output::{Feature, LayerPaths, PathInfo, SliceOutput, SliceWarning, Stage, StageMicros, WarningCode};
+pub use output::{
+    Feature, LayerPaths, PathInfo, RaisedWall, SliceOutput, SliceWarning, Stage, StageMicros, WarningCode,
+};
 pub use plate::{Bed, Plate, PlateObject};
 pub use preview::preview_buffers;
 pub use session::{HeightRange, SliceSession};

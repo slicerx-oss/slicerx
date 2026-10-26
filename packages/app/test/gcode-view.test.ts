@@ -224,6 +224,39 @@ describe('G-code file to toolpaths', () => {
     expect(v.getUint16(20, true)).toBe(450)
   })
 
+  it('draws a bead at the height its comments state, and the next feature at the layer height again', async () => {
+    // A fully clear overhang wall with thick bridges on a Bambu Lab printer: a round bead the nozzle wide and tall.
+    const text = [
+      '; filament_diameter = 1.75',
+      'G90',
+      'M83',
+      '; CHANGE_LAYER',
+      'G1 Z0.2 F600',
+      '; FEATURE: Outer wall',
+      '; LINE_WIDTH: 0.42',
+      '; LAYER_HEIGHT: 0.2',
+      'G1 X0 Y0 F6000',
+      'G1 X10 Y0 E0.5 F1800',
+      '; FEATURE: Overhang wall',
+      '; LINE_WIDTH: 0.4',
+      '; LAYER_HEIGHT: 0.4',
+      'G1 X10 Y10 E0.5',
+      '; FEATURE: Inner wall',
+      '; LINE_WIDTH: 0.45',
+      '; LAYER_HEIGHT: 0.2',
+      'G1 X0 Y10 E0.5',
+      '',
+    ].join('\n')
+    const { preview: p } = await parseGcodePreview(await indexLines(enc.encode(text), { pause: noWait }), { pause: noWait })
+    const v = new DataView(p.raw, p.segmentsOffset)
+    const beads = [...Array(p.segmentCount).keys()].map((i) => [v.getUint8(i * 32 + 24), v.getUint16(i * 32 + 20, true), v.getUint16(i * 32 + 22, true)])
+    expect(beads).toEqual([
+      [FEATURE.outerWall, 420, 200],
+      [FEATURE.overhangWall, 400, 400],
+      [FEATURE.innerWall, 450, 200],
+    ])
+  })
+
   it('names features from every slicer it knows and keeps the rest as custom', () => {
     expect(featureOf('External perimeter')).toBe(FEATURE.outerWall)
     expect(featureOf('WALL-INNER')).toBe(FEATURE.innerWall)
