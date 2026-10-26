@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, selectVariants, SLICERX_KEEP_VALUES, type WallsNote } from '@slicerx/settings'
+import { appMissingKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, selectVariants, SLICERX_KEEP_VALUES, type WallsNote } from '@slicerx/settings'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
@@ -228,11 +228,10 @@ export function readProjectFile(path: string): ProjectRead {
   const modelPath = zip.names().find((n) => n.toLowerCase() === '3d/3dmodel.model')
   // A project's main model only places its objects, so it is small; a plain 3MF's can be large and has no settings.
   const source = hasSettings && modelPath ? sourceApp(zip.text(modelPath)?.slice(0, 4096)) : undefined
-  // Bambu Studio reads a missing first layer travel acceleration as 500 mm/s2, as the app's project open and
-  // `sx slice <project.3mf>` do: a project of its that lacks the key travels the first layer at 500.
-  if (source?.startsWith('BambuStudio') && !('initial_layer_travel_acceleration' in kept)) kept['initial_layer_travel_acceleration'] = ['500']
-  // Its presets have no internal bridge speed, and it prints internal bridges at the bridge speed, not our 150 percent.
-  if (source?.startsWith('BambuStudio') && !('internal_bridge_speed' in kept)) kept['internal_bridge_speed'] = ['100%']
+  // The app that wrote the file reads some keys its project lacks its own way (engine-choices.json fromApp), as the
+  // app's project open and `sx slice <project.3mf>` read them: a Bambu Studio project without them gets the rib
+  // tower, 500 mm/s2 first layer travel and internal bridges at the bridge speed.
+  Object.assign(kept, appMissingKeys(kept, source))
   const imported = importProject({ projectSettings: kept, ...(modelSettings ? { modelSettings } : {}) })
 
   // Plates and how many objects sit on each, from model_settings.config; a plain 3MF is one plate.
