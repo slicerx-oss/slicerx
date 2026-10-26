@@ -10107,10 +10107,6 @@ impl SliceSession {
             &self.object_hulls,
         );
         let fc = tags.filament(cfg, paths::first_slot(&out));
-        paths::cool_with(&mut out, cfg, &fc);
-        if let Some(role) = crate::brick::role(cfg, layer, n, top_n) {
-            crate::brick::apply(&mut out, role);
-        }
         // Without sparse tower layers a change prints on top of the tower as it stands, below the layer.
         sink_tower(&mut out, self.tower_sunk(cfg, layer));
         if !solid_areas.is_empty()
@@ -10141,10 +10137,14 @@ impl SliceSession {
                     }
                 }
             }
-            if crate::ironing::add(&mut out, &areas, cfg, layer + 1 == n, base, &owners) {
-                out.time_s = paths::estimate_time(&out, cfg);
-            }
+            crate::ironing::add(&mut out, &areas, cfg, layer + 1 == n, base, &owners);
             out.areas = Some(areas);
+        }
+        // The layer's time and the cooling slowdown come after its ironing, so the slowdown pools the ironing with
+        // the layer's other paths and counts its time. Brick layers change flows only, after the time.
+        paths::cool_with(&mut out, cfg, &fc);
+        if let Some(role) = crate::brick::role(cfg, layer, n, top_n) {
+            crate::brick::apply(&mut out, role);
         }
         Micros::add(&micros.paths, &t);
         out
