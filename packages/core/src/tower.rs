@@ -2254,6 +2254,27 @@ pub(crate) fn per_slot_raw(cfg: &PrintConfig, key: &str, slot: u8, fallback: f64
     }
 }
 
+/// With `wipe_tower_no_sparse_layers` the tower prints only on its first layer and the layers with a tool change, each
+/// on top of the tower as it stands: one layer (that layer's height) above the last tower layer, never above the layer
+/// itself. `layers` gives, from the bottom up to the layer asked about, whether the tower prints on it, its top and
+/// its height, mm; the last entry is that layer. Gives how far below the layer's top its tower prints, mm (0 when the
+/// tower is level with it).
+pub(crate) fn sunk_by(layers: impl IntoIterator<Item = (bool, f64, f64)>) -> f64 {
+    let mut stands: Option<f64> = None;
+    let mut last = (0.0, 0.0);
+    for (prints, top, h) in layers {
+        // Level within a micron: the heights add up in floating point.
+        last = (
+            top,
+            stands.map_or(top, |s| if s + h < top - 1e-3 { s + h } else { top }),
+        );
+        if prints {
+            stands = Some(last.1);
+        }
+    }
+    (last.0 - last.1).max(0.0)
+}
+
 /// A true/false setting from the raw map (`1`, `true` or a number other than 0).
 pub(crate) fn flag(cfg: &PrintConfig, key: &str) -> bool {
     flag_or(cfg, key, false)
@@ -2946,5 +2967,24 @@ mod tests {
         )]);
         assert_eq!(flush_entry(&wide, 2, 1, 0), Some(3.0));
         assert!((purge_volume(&wide, 2, 2, 1) - 3.0 * PURGE_EXTRA).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_change_after_skipped_tower_layers_prints_on_the_tower_top() {
+        let layers = |prints: &[bool]| -> Vec<(bool, f64, f64)> {
+            prints
+                .iter()
+                .zip(1u32..)
+                .map(|(&p, i)| (p, 0.2 * f64::from(i), 0.2))
+                .collect()
+        };
+        // Level while every layer prints the tower.
+        assert!(sunk_by(layers(&[true, true, true])).abs() < 1e-9);
+        // Layers 2 to 4 skipped: layer 5 (top 1.2) prints one layer above layer 1's 0.4.
+        assert!((sunk_by(layers(&[true, true, false, false, false, true])) - 0.6).abs() < 1e-9);
+        // The next one stacks on that sunk layer, not on the layer heights.
+        assert!((sunk_by(layers(&[true, true, false, false, false, true, false, true])) - 0.8).abs() < 1e-9);
+        // The first tower layer stands at its own height.
+        assert!(sunk_by(layers(&[false, false, true])).abs() < 1e-9);
     }
 }
