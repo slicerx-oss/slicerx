@@ -203,18 +203,12 @@ impl Speeds {
             return None;
         }
         let outer = c.outer_wall_speed;
-        let speed = match c.raw.get("small_perimeter_speed") {
-            Some(serde_json::Value::String(t)) if t.trim().ends_with('%') => t
-                .trim()
-                .trim_end_matches('%')
-                .trim()
-                .parse::<f64>()
-                .ok()
-                .map(|p| outer * p / 100.0),
-            _ => crate::motion::raw_f(c, "small_perimeter_speed"),
-        }
-        .filter(|v| *v > 0.0)
-        .unwrap_or(outer * 0.5);
+        let speed = c
+            .raw
+            .get("small_perimeter_speed")
+            .and_then(|v| crate::config::float_or_percent(v, outer))
+            .filter(|v| *v > 0.0)
+            .unwrap_or(outer * 0.5);
         Some((threshold * std::f64::consts::TAU, speed as f32))
     }
 
