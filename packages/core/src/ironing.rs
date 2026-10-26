@@ -3,7 +3,8 @@
 //! Ironing: a slow pass with almost no flow over top surfaces (or every solid surface) that
 //! melts the last layer flat. Settings: `ironing_type` (no ironing, top, topmost, solid),
 //! `ironing_pattern` (rectilinear, concentric), `ironing_spacing`, `ironing_flow` (percent of the
-//! layer height), `ironing_speed`, `ironing_inset`, `ironing_angle` and `ironing_angle_fixed`.
+//! layer height), `ironing_speed`, `ironing_inset`, `ironing_angle` (or `ironing_direction`, its name in Bambu Lab
+//! projects, while `ironing_angle` is 0) and `ironing_angle_fixed`.
 //!
 //! The area is the top surfaces (plus bottom surfaces and solid layers for `solid`), kept half a
 //! nozzle (or `ironing_inset`) inside the layer's outline. Lines run at the top surface angle
@@ -210,7 +211,14 @@ pub(crate) fn add(
     let speed = raw_f(cfg, "ironing_speed").filter(|v| *v > 0.0).unwrap_or(20.0);
     let inset = raw_f(cfg, "ironing_inset").unwrap_or(0.0).max(0.0);
     let fixed = crate::firmware::truthy(cfg, "ironing_angle_fixed");
-    let angle = (if fixed { 0.0 } else { base_angle_deg }) + raw_f(cfg, "ironing_angle").unwrap_or(0.0);
+    // The turn from the top surface direction: `ironing_angle`, or in a project that names it `ironing_direction`
+    // (stock 45 on Bambu Lab printers), that key. The defaults always hold `ironing_angle` at 0, so a project's
+    // `ironing_direction` counts unless `ironing_angle` is set to something else.
+    let turn = raw_f(cfg, "ironing_angle")
+        .filter(|a| *a != 0.0)
+        .or_else(|| raw_f(cfg, "ironing_direction"))
+        .unwrap_or(0.0);
+    let angle = (if fixed { 0.0 } else { base_angle_deg }) + turn;
     let Some(region) = area(areas, cfg, k, topmost, nozzle, inset) else {
         return false;
     };
@@ -460,6 +468,53 @@ mod tests {
         let owners = vec![(1u8, areas.slice.clone())];
         assert!(add(&mut out, &areas, &c, false, 0.0, &owners));
         assert!(out.paths.len() > before && out.paths.iter().all(|p| p.tool == 1));
+    }
+
+    /// The direction of the longest ironing segment of `c` on a top surface at `base` degrees, in degrees from 0 to 180.
+    fn line_direction(c: &PrintConfig, base: f64) -> f64 {
+        let (mut out, areas) = layer();
+        assert!(add(&mut out, &areas, c, false, base, &[]));
+        let mut best = (0.0, 0.0);
+        for p in &out.paths {
+            for w in out.path_points(p).windows(2) {
+                let (dx, dy) = (w[1].x_mm() - w[0].x_mm(), w[1].y_mm() - w[0].y_mm());
+                let len = dx.m_hypot(dy);
+                if len > best.0 {
+                    best = (len, dy.m_atan2(dx).to_degrees().rem_euclid(180.0));
+                }
+            }
+        }
+        best.1
+    }
+
+    #[test]
+    fn a_project_ironing_direction_turns_the_lines_from_the_top_surface() {
+        let bambu = |dir: f64| {
+            let mut c = cfg("top");
+            c.raw
+                .insert("printer_model".into(), serde_json::json!("Bambu Lab A1"));
+            c.raw
+                .insert("ironing_direction".into(), serde_json::json!(dir.to_string()));
+            c
+        };
+        // 30 degrees from the top surface: 75 over a 45 degree top surface, 165 over a 135 degree one.
+        let d = line_direction(&bambu(30.0), 45.0);
+        assert!((d - 75.0).abs() < 0.5, "{d}");
+        let d = line_direction(&bambu(30.0), 135.0);
+        assert!((d - 165.0).abs() < 0.5, "{d}");
+        // At 0 the lines follow the top surface, as they do with no ironing_direction at all.
+        let d = line_direction(&bambu(0.0), 45.0);
+        assert!((d - 45.0).abs() < 0.5, "{d}");
+        let d = line_direction(&bambu(0.0), 135.0);
+        assert!((d - 135.0).abs() < 0.5, "{d}");
+        let d = line_direction(&cfg("top"), 45.0);
+        assert!((d - 45.0).abs() < 0.5, "{d}");
+        // The config holds the default ironing_angle of 0, as every config does; one set to something else wins over
+        // ironing_direction.
+        let mut both = bambu(30.0);
+        both.raw.insert("ironing_angle".into(), serde_json::json!(10));
+        let d = line_direction(&both, 45.0);
+        assert!((d - 55.0).abs() < 0.5, "{d}");
     }
 
     /// The volume per millimeter and the width of the first ironing line of `c` on a layer `h` mm thick, with the
