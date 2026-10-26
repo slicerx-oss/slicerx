@@ -2246,12 +2246,38 @@ impl SliceSession {
             let _ = mapped.to_mut().refresh_variants()?;
         }
         let config = mapped.as_ref();
-        let mut out = if self.followers.is_empty() && self.instances.is_empty() {
-            self.slice_object_range(config, layers, progress)?
-        } else {
-            crate::sequence::slice_range(self, config, layers, progress)?
+        let paths_of = |layers: Range<u32>, progress: &dyn Progress| {
+            if self.followers.is_empty() && self.instances.is_empty() {
+                self.slice_object_range(config, layers, progress)
+            } else {
+                crate::sequence::slice_range(self, config, layers, progress)
+            }
         };
-        crate::gcode::settle_cooling(&mut out, config);
+        let mut out = paths_of(layers.clone(), progress)?;
+        // A support-only layer slows down together with the object layer printed after it
+        // (`gcode::settle_cooling`): when such a pair spans an end of the range, the layer on the other side
+        // is sliced too, so every range settles its layers as the whole plate does.
+        let cools =
+            config.slow_down_for_layer_cooling || out.configs.iter().any(|c| c.slow_down_for_layer_cooling);
+        let below = match out.layers.first() {
+            Some(l)
+                if cools
+                    && layers.start > 0
+                    && !l.paths.is_empty()
+                    && !paths::support_only(l)
+                    && self.support_only_at(layers.start - 1) != Some(false) =>
+            {
+                Some(paths_of(layers.start - 1..layers.start, &crate::NoProgress)?)
+            }
+            _ => None,
+        };
+        let above = match out.layers.last() {
+            Some(l) if cools && layers.end < self.layer_count() && paths::support_only(l) => {
+                Some(paths_of(layers.end..layers.end + 1, &crate::NoProgress)?)
+            }
+            _ => None,
+        };
+        crate::gcode::settle_cooling(&mut out, config, (below.as_ref(), above.as_ref()));
         out.filament_map.clone_from(&self.nozzle_map);
         out.raised_wall = crate::overhang::raised_wall(config);
         // From the filaments the whole plate prints, so every range of layers reads the same mode.
@@ -3839,6 +3865,19 @@ impl SliceSession {
             index,
             st.top - st.height / 2.0 - lift,
         ))
+    }
+
+    /// Whether print layer `i` holds only support (no object layer and no raft), when this session prints the
+    /// plate's layers itself; None when they come from the sessions of its objects.
+    fn support_only_at(&self, i: u32) -> Option<bool> {
+        if !(self.followers.is_empty() && self.instances.is_empty()) {
+            return None;
+        }
+        Some(
+            self.print
+                .get(i as usize)
+                .is_some_and(|pl| pl.object.is_none() && pl.raft.is_none() && pl.support.is_some()),
+        )
     }
 
     /// A print layer that holds only support.

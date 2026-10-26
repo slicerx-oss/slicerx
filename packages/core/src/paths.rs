@@ -2867,6 +2867,53 @@ pub(crate) fn recool(l: &LayerPaths, cfg: &PrintConfig, fc: &PrintConfig, extra:
     Some(m)
 }
 
+/// A layer that prints nothing but support: every path is support or support interface.
+pub(crate) fn support_only(l: &LayerPaths) -> bool {
+    !l.paths.is_empty()
+        && l.paths
+            .iter()
+            .all(|p| matches!(p.feature, Feature::Support | Feature::SupportInterface))
+}
+
+/// [`recool`] for a cooling unit of two layers: a support-only layer and the object layer printed right after it.
+/// They slow down together, from each one's speeds before its own slowdown, to one common feed rate that makes
+/// the two take `slow_down_layer_time` once between them. Each layer comes with its settings and its filament
+/// config; `cfg` holds the slowdown's settings and `extra` is the time both written layers take beyond the model.
+/// None when neither layer changes: neither was slowed on its own, and the two together need no slowdown.
+pub(crate) fn recool_unit(
+    support: (&LayerPaths, &PrintConfig, &PrintConfig),
+    object: (&LayerPaths, &PrintConfig, &PrintConfig),
+    cfg: &PrintConfig,
+    extra: f64,
+) -> Option<[LayerPaths; 2]> {
+    if !cfg.slow_down_for_layer_cooling {
+        return None;
+    }
+    let mut slowed = false;
+    let mut unit = [support, object].map(|(l, lc, fc)| {
+        let mut m = l.clone();
+        m.written = None;
+        if let Some(speeds) = l.unslowed.as_ref().filter(|s| s.len() == l.paths.len()) {
+            slowed = true;
+            for (p, &s) in m.paths.iter_mut().zip(speeds.iter()) {
+                p.speed_mm_s = s;
+            }
+        }
+        (m, lc, fc)
+    });
+    let [(s, sc, sf), (o, oc, of)] = &mut unit;
+    if !slow_down_unit(&mut [(s, sc, sf), (o, oc, of)], cfg, extra) {
+        if !slowed {
+            return None;
+        }
+        // Back at their own speeds: the unit takes longer than the target as it is.
+        for (m, lc, fc) in &mut unit {
+            m.time_s = estimate_time_with(m, lc, fc);
+        }
+    }
+    Some(unit.map(|(m, ..)| m))
+}
+
 /// Slows a layer that prints faster than `slow_down_layer_time` as Orca's cooling buffer does
 /// (`CoolingBuffer::calculate_layer_slowdown`, `extruder_range_slow_down_non_proportional`): the fastest
 /// paths are capped first, at one common feed rate chosen so that the layer takes the minimum time, never
@@ -2878,31 +2925,49 @@ pub(crate) fn recool(l: &LayerPaths, cfg: &PrintConfig, fc: &PrintConfig, extra:
 /// `fc` is the layer's filament config ([`layer_filament`]); the slowdown changes speeds only, so it holds
 /// throughout. True when it went through to the end and set the layer's time for the new speeds; false when
 /// the layer needs no slowdown or nothing can slow, with the time left as it was.
-#[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
 fn slow_down(l: &mut LayerPaths, cfg: &PrintConfig, fc: &PrintConfig, extra: f64) -> bool {
-    if l.paths.is_empty() {
+    slow_down_unit(&mut [(l, cfg, fc)], cfg, extra)
+}
+
+/// [`slow_down`] over a cooling unit of layers printed one after the other, each with its own settings and
+/// filament config: one pool of paths and one common feed rate for all of them, so that together they take
+/// `slow_down_layer_time` once. `cfg` holds the slowdown's settings; `extra` is the time the unit's G-code spends
+/// outside its paths. True when it went through to the end and set each layer's time for its new speeds.
+#[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
+fn slow_down_unit(
+    unit: &mut [(&mut LayerPaths, &PrintConfig, &PrintConfig)],
+    cfg: &PrintConfig,
+    extra: f64,
+) -> bool {
+    if unit.is_empty() || unit.iter().any(|(l, ..)| l.paths.is_empty()) {
         return false;
     }
     let target = cfg.slow_down_layer_time * 1.001;
-    let (fixed, parts) = cooling_parts(l, fc);
-    let total = fixed + extra + parts.iter().map(|p| p.1).sum::<f64>();
+    let timed: Vec<(f64, Vec<(f64, f64)>)> = unit.iter().map(|(l, _, fc)| cooling_parts(l, fc)).collect();
+    let fixed: f64 = timed.iter().map(|t| t.0).sum();
+    let total = fixed + extra + timed.iter().flat_map(|t| &t.1).map(|p| p.1).sum::<f64>();
     if total > target {
         return false;
     }
     let min_speed = cfg.slow_down_min_speed.max(0.0);
     let keep_outer = crate::firmware::truthy(cfg, "dont_slow_down_outer_wall");
-    // (index, speed, time) of the paths that can slow down.
-    let adjustable: Vec<(usize, f64, f64)> = l
-        .paths
+    // (layer, index, speed, time) of the paths that can slow down.
+    let adjustable: Vec<(usize, usize, f64, f64)> = unit
         .iter()
-        .zip(&parts)
+        .zip(&timed)
         .enumerate()
-        .filter(|(_, (p, (len, _)))| {
-            *len > 0.0
-                && f64::from(p.speed_mm_s) > min_speed
-                && !(keep_outer && matches!(p.feature, Feature::OuterWall | Feature::OverhangWall))
+        .flat_map(|(k, ((l, ..), (_, parts)))| {
+            l.paths
+                .iter()
+                .zip(parts)
+                .enumerate()
+                .filter(|(_, (p, (len, _)))| {
+                    *len > 0.0
+                        && f64::from(p.speed_mm_s) > min_speed
+                        && !(keep_outer && matches!(p.feature, Feature::OuterWall | Feature::OverhangWall))
+                })
+                .map(move |(i, (p, (_, t)))| (k, i, f64::from(p.speed_mm_s), *t))
         })
-        .map(|(i, (p, (_, t)))| (i, f64::from(p.speed_mm_s), *t))
         .collect();
     if adjustable.is_empty() {
         return false;
@@ -2914,20 +2979,20 @@ fn slow_down(l: &mut LayerPaths, cfg: &PrintConfig, fc: &PrintConfig, extra: f64
         // Time when every adjustable path runs at the minimum speed.
         let at_min: f64 = adjustable
             .iter()
-            .map(|&(_, f, t)| t * (f / min_speed - 1.0))
+            .map(|&(_, _, f, t)| t * (f / min_speed - 1.0))
             .sum();
         if at_min <= stretch {
             Some(min_speed)
         } else {
             // The common cap F with sum over paths faster than F of t (f / F - 1) = stretch.
             let mut by_speed = adjustable.clone();
-            crate::sorting::sort_by(&mut by_speed, |a, b| b.1.total_cmp(&a.1));
+            crate::sorting::sort_by(&mut by_speed, |a, b| b.2.total_cmp(&a.2));
             let (mut tf, mut tt) = (0.0, 0.0);
             let mut cap = min_speed;
-            for (k, &(_, f, t)) in by_speed.iter().enumerate() {
+            for (k, &(_, _, f, t)) in by_speed.iter().enumerate() {
                 tf += t * f;
                 tt += t;
-                let next = by_speed.get(k + 1).map_or(min_speed, |n| n.1.max(min_speed));
+                let next = by_speed.get(k + 1).map_or(min_speed, |n| n.2.max(min_speed));
                 let c = tf / (stretch + tt);
                 if c >= next - 1e-9 {
                     cap = c.max(min_speed);
@@ -2937,30 +3002,34 @@ fn slow_down(l: &mut LayerPaths, cfg: &PrintConfig, fc: &PrintConfig, extra: f64
             Some(cap)
         }
     };
-    if l.unslowed.is_none() {
-        l.unslowed = Some(l.paths.iter().map(|p| p.speed_mm_s).collect());
+    for (l, ..) in unit.iter_mut() {
+        if l.unslowed.is_none() {
+            l.unslowed = Some(l.paths.iter().map(|p| p.speed_mm_s).collect());
+        }
     }
     if let Some(c) = cap {
-        for &(i, f, _) in &adjustable {
+        for &(k, i, f, _) in &adjustable {
             if f > c
-                && let Some(p) = l.paths.get_mut(i)
+                && let Some(p) = unit.get_mut(k).and_then(|u| u.0.paths.get_mut(i))
             {
                 p.speed_mm_s = c as f32;
             }
         }
     } else {
         // No minimum speed: every adjustable path slows in proportion.
-        let adj_time: f64 = adjustable.iter().map(|a| a.2).sum();
+        let adj_time: f64 = adjustable.iter().map(|a| a.3).sum();
         if adj_time > 0.0 {
             let rate = (adj_time + stretch) / adj_time;
-            for &(i, f, _) in &adjustable {
-                if let Some(p) = l.paths.get_mut(i) {
+            for &(k, i, f, _) in &adjustable {
+                if let Some(p) = unit.get_mut(k).and_then(|u| u.0.paths.get_mut(i)) {
                     p.speed_mm_s = (f / rate) as f32;
                 }
             }
         }
     }
-    l.time_s = estimate_time_with(l, cfg, fc);
+    for (l, lc, fc) in unit.iter_mut() {
+        l.time_s = estimate_time_with(l, lc, fc);
+    }
     true
 }
 

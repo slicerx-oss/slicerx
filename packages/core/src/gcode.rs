@@ -1574,7 +1574,15 @@ impl<'c> Shared<'c> {
 /// worked out again from the layer's speeds before it, with the time the written layer spends beyond the
 /// model, which the fan reads too. That time does not depend on the paths' speeds. The G-code and the
 /// preview both use the settled layers.
-pub(crate) fn settle_cooling(out: &mut SliceOutput, config: &PrintConfig) {
+///
+/// A support-only layer slows down together with the object layer printed right after it, one cooling unit
+/// (`settle_units`). `beside` holds the layers just below and just above a range when they were sliced for it,
+/// so a range that starts or ends inside such a pair settles its own layer from both.
+pub(crate) fn settle_cooling(
+    out: &mut SliceOutput,
+    config: &PrintConfig,
+    beside: (Option<&SliceOutput>, Option<&SliceOutput>),
+) {
     type Settled = (Option<LayerPaths>, f32, Option<LayerChunk>);
     let flavor = config.gcode_flavor;
     let settled: Vec<Option<Settled>> = {
@@ -1615,6 +1623,8 @@ pub(crate) fn settle_cooling(out: &mut SliceOutput, config: &PrintConfig) {
             Some((relaid, beyond, same.then_some(chunk)))
         })
     };
+    let mut settled = settled;
+    settle_units(out, config, beside, &mut settled);
     for (l, s) in out.layers.iter_mut().zip(settled) {
         if let Some((relaid, beyond, chunk)) = s {
             if let Some(m) = relaid {
@@ -1622,6 +1632,152 @@ pub(crate) fn settle_cooling(out: &mut SliceOutput, config: &PrintConfig) {
             }
             l.cooling_extra_s = beyond;
             l.written = chunk.map(std::sync::Arc::new);
+        }
+    }
+}
+
+/// A layer of [`settle_cooling`] as it settled on its own: its new paths (None when they stay), the seconds
+/// the written layer takes beyond the paths' model, and its G-code when nothing changed.
+type SettledLayer = (Option<LayerPaths>, f32, Option<LayerChunk>);
+
+/// One layer of a cooling unit: the output that holds it, the layer, and its index in the range being settled
+/// (None for a layer beside the range).
+type UnitLayer<'a> = (&'a SliceOutput, &'a LayerPaths, Option<usize>);
+
+/// Whether `support` and `object`, printed one after the other, form one cooling unit: a support-only layer
+/// between two object layers (an independent support layer height; never a raft layer) and the object layer
+/// right after it, slowed with the same settings.
+fn cooling_unit(config: &PrintConfig, support: &UnitLayer<'_>, object: &UnitLayer<'_>) -> bool {
+    let (sc, oc) = (
+        support.0.config_at(config, support.1.cfg),
+        object.0.config_at(config, object.1.cfg),
+    );
+    let outer = |c: &PrintConfig| crate::firmware::truthy(c, "dont_slow_down_outer_wall");
+    crate::paths::support_only(support.1)
+        && !object.1.paths.is_empty()
+        && !crate::paths::support_only(object.1)
+        && object.1.local == support.1.local + 1
+        && support.1.local >= crate::raft::layers_asked(sc)
+        && sc.slow_down_for_layer_cooling
+        && oc.slow_down_for_layer_cooling
+        && sc
+            .slow_down_layer_time
+            .total_cmp(&oc.slow_down_layer_time)
+            .is_eq()
+        && sc.slow_down_min_speed.total_cmp(&oc.slow_down_min_speed).is_eq()
+        && outer(sc) == outer(oc)
+}
+
+/// What a layer of a cooling unit takes as written beyond the paths' model of it.
+#[derive(Clone, Copy)]
+enum Beyond {
+    /// Too long for the slowdown or the fan to respond: never slowed, and it stays as it is.
+    Long,
+    /// The seconds beyond the model.
+    Secs(f64),
+}
+
+/// [`Beyond`] for a layer, as [`settle_cooling`] works it out; None when the layer cannot be written.
+fn written_beyond(l: &LayerPaths, view: &SliceOutput, config: &PrintConfig) -> Option<Beyond> {
+    let c = view.config_at(config, l.cfg);
+    let fc = c.for_filament(crate::paths::first_slot(l));
+    let planned = crate::paths::cooling_time(l, &fc);
+    if planned > 2.0 * c.slow_down_layer_time.max(c.fan_cooling_layer_time) + 30.0 {
+        return Some(Beyond::Long);
+    }
+    let shared = Shared::new(view, config);
+    let chunk = emit_layer(l, view, config, config.gcode_flavor, false, &[], &shared);
+    if chunk.error.is_some() {
+        return None;
+    }
+    Some(Beyond::Secs(
+        crate::cooling::layer_time_from(&chunk.bytes, chunk.start, chunk.change_at) - planned,
+    ))
+}
+
+/// Settles each cooling unit of a support-only layer and the object layer after it (`cooling_unit`) together:
+/// one slowdown over both from their speeds before it, with their summed time held to the target once
+/// (`paths::recool_unit`). `settled` holds what each layer of the range settled to on its own; a unit's layers
+/// in the range take the unit's result instead. The layers in `beside` are only read.
+fn settle_units(
+    out: &SliceOutput,
+    config: &PrintConfig,
+    beside: (Option<&SliceOutput>, Option<&SliceOutput>),
+    settled: &mut [Option<SettledLayer>],
+) {
+    let below = beside.0.and_then(|b| b.layers.last().map(|l| (b, l, None)));
+    let above = beside.1.and_then(|a| a.layers.first().map(|l| (a, l, None)));
+    let layers: Vec<UnitLayer<'_>> = below
+        .into_iter()
+        .chain(out.layers.iter().enumerate().map(|(i, l)| (out, l, Some(i))))
+        .chain(above)
+        .collect();
+    let units: Vec<[UnitLayer<'_>; 2]> = layers
+        .windows(2)
+        .filter_map(|w| match w {
+            [s, o] if cooling_unit(config, s, o) => Some([*s, *o]),
+            _ => None,
+        })
+        .collect();
+    if units.is_empty() {
+        return;
+    }
+    // Per unit layer: what it takes beyond the model, or None when its unit is left as its layers settled alone.
+    let beyond = |u: &UnitLayer<'_>| -> Option<Beyond> {
+        match u.2.map(|i| settled.get(i).and_then(Option::as_ref)) {
+            Some(Some(s)) => Some(Beyond::Secs(f64::from(s.1))),
+            Some(None) => {
+                let c = u.0.config_at(config, u.1.cfg);
+                let fc = c.for_filament(crate::paths::first_slot(u.1));
+                let long = crate::paths::cooling_time(u.1, &fc)
+                    > 2.0 * c.slow_down_layer_time.max(c.fan_cooling_layer_time) + 30.0;
+                long.then_some(Beyond::Long)
+            }
+            None => written_beyond(u.1, u.0, config),
+        }
+    };
+    // What each unit's layers settle to instead of what they settled to alone (None: keep that).
+    let results: Vec<Option<[Option<SettledLayer>; 2]>> = crate::par::map(&units, |unit| {
+        let [s, o] = unit;
+        let (bs, bo) = (beyond(s)?, beyond(o)?);
+        let (sc, oc) = (s.0.config_at(config, s.1.cfg), o.0.config_at(config, o.1.cfg));
+        let (sf, of) = (
+            sc.for_filament(crate::paths::first_slot(s.1)),
+            oc.for_filament(crate::paths::first_slot(o.1)),
+        );
+        let secs = |b: Beyond| match b {
+            Beyond::Long => 0.0,
+            Beyond::Secs(t) => t,
+        };
+        let extra = secs(bs) + secs(bo);
+        let relaid = crate::paths::recool_unit((s.1, sc, &sf), (o.1, oc, &of), oc, extra);
+        let mut k = 0;
+        Some([(s, bs), (o, bo)].map(|(u, b)| {
+            let mine = relaid.as_ref().and_then(|r| r.get(k));
+            k += 1;
+            // A layer too long to respond was never slowed and stays as it is.
+            let Beyond::Secs(b) = b else { return None };
+            #[allow(clippy::cast_possible_truncation, reason = "layer times are small")]
+            let b = b as f32;
+            let kept =
+                u.2.and_then(|i| settled.get(i))
+                    .is_some_and(|own| own.as_ref().is_some_and(|own| own.0.is_none()));
+            match mine {
+                Some(m) => Some((Some(m.clone()), b, None)),
+                // Unchanged: as it settled on its own when that left its speeds, else back at them.
+                None if kept => None,
+                None => Some((None, b, None)),
+            }
+        }))
+    });
+    for (unit, r) in units.iter().zip(results) {
+        let Some(r) = r else { continue };
+        for (u, s) in unit.iter().zip(r) {
+            if let (Some(i), Some(s)) = (u.2, s)
+                && let Some(slot) = settled.get_mut(i)
+            {
+                *slot = Some(s);
+            }
         }
     }
 }
@@ -6042,5 +6198,96 @@ mod tests {
         assert!((tower - 0.038_006).abs() < 2e-6, "tower {tower}");
         let wall = e_per_mm_of(Feature::OuterWall);
         assert!((wall - 0.032_495).abs() < 2e-6, "outer wall {wall}");
+    }
+
+    /// Layer `index`: one straight `feature` path `mm` long at `speed`, at 0.2 mm layers.
+    fn line_layer(index: u32, feature: Feature, mm: f64, speed: f32) -> LayerPaths {
+        let y = 10.0 + f64::from(index);
+        #[allow(clippy::cast_precision_loss, reason = "a small layer index")]
+        let z = 0.2 * (index + 1) as f32;
+        LayerPaths {
+            index,
+            local: index,
+            z,
+            height: 0.2,
+            start_tool: 1,
+            points: vec![Point::from_mm(10.0, y), Point::from_mm(10.0 + mm, y)],
+            paths: vec![crate::output::PathInfo {
+                start: 0,
+                end: 2,
+                tool: 1,
+                feature,
+                speed_mm_s: speed,
+                width_mm: 0.42,
+                flow: 1.0,
+                dz: 0.0,
+                overhang_fan: false,
+                owner: crate::preview::OBJECT_NONE,
+                tower_wipe: false,
+                tower_hop: false,
+                slow_span: false,
+            }],
+            ..LayerPaths::default()
+        }
+    }
+
+    /// A support-only layer (60 mm of support at 60 mm/s, 1 s) and the object layer after it (240 mm of inner wall
+    /// at 80 mm/s, 3 s), each slowed on its own for a 10 s layer time at `min_speed`, then settled: the two
+    /// layers' speeds and their summed time in the cooling model.
+    fn settled_support_pair(min_speed: f64) -> (f32, f32, f64) {
+        let cfg = PrintConfig {
+            slow_down_for_layer_cooling: true,
+            slow_down_layer_time: 10.0,
+            slow_down_min_speed: min_speed,
+            ..PrintConfig::default()
+        };
+        let mut layers = vec![
+            line_layer(4, Feature::Support, 60.0, 60.0),
+            line_layer(5, Feature::InnerWall, 240.0, 80.0),
+        ];
+        for l in &mut layers {
+            crate::paths::cool(l, &cfg);
+        }
+        let mut out = SliceOutput {
+            layers,
+            tool_count: 1,
+            ..SliceOutput::default()
+        };
+        settle_cooling(&mut out, &cfg, (None, None));
+        let speed = |k: usize| {
+            out.layers
+                .get(k)
+                .and_then(|l| l.paths.first())
+                .map_or(0.0, |p| p.speed_mm_s)
+        };
+        let time: f64 = out
+            .layers
+            .iter()
+            .map(|l| crate::paths::cooling_time(l, &cfg) + f64::from(l.cooling_extra_s))
+            .sum();
+        (speed(0), speed(1), time)
+    }
+
+    #[test]
+    fn a_support_only_layer_slows_with_the_object_layer_after_it() {
+        // U3: one feed for both, 30 mm/s, and 10 s between them (each slowed to 10 s alone: 6 and 24 mm/s).
+        let (support, wall, time) = settled_support_pair(5.0);
+        assert!(
+            (support - wall).abs() < 0.005 * wall,
+            "support {support}, wall {wall}"
+        );
+        assert!((28.0..32.0).contains(&wall), "support {support}, wall {wall}");
+        assert!((time - 10.0).abs() < 0.3, "{time} s");
+    }
+
+    #[test]
+    fn a_support_and_object_unit_stops_at_the_minimum_speed() {
+        // U4: the minimum speed holds both at 40 mm/s, 7.5 s, short of the target.
+        let (support, wall, time) = settled_support_pair(40.0);
+        assert!(
+            (support - 40.0).abs() < 1e-3 && (wall - 40.0).abs() < 1e-3,
+            "support {support}, wall {wall}"
+        );
+        assert!((time - 7.5).abs() < 0.3, "{time} s");
     }
 }
