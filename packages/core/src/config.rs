@@ -737,10 +737,13 @@ impl PrintConfig {
         let mut issues = Vec::new();
         loop {
             let mut c = self.clone();
-            match c
-                .apply_value(&Value::Object(map.clone()))
-                .and_then(|()| c.check())
-            {
+            let applied = c.apply_value(&Value::Object(map.clone()));
+            // A layer height below 0.04 mm or taller than the nozzle refuses the slice: printing it at the default
+            // height instead would be a different print from the one asked for.
+            if applied.is_ok() {
+                c.check_layer_height()?;
+            }
+            match applied.and_then(|()| c.check()) {
                 Ok(()) => {
                     *self = c;
                     return Ok(issues);
@@ -1297,11 +1300,35 @@ impl PrintConfig {
         Ok(())
     }
 
+    /// The two hard limits of a set layer height, refused with a layer height message: below 0.04 mm, the least any
+    /// slicer offers, and taller than the nozzle, which cannot lay down a layer thicker than its own opening. The
+    /// printer's `min_layer_height` and `max_layer_height` are not limits here: they bound generated variable layers.
+    /// A file that sets either refuses the slice rather than slicing at the default height
+    /// ([`Self::apply_value_lenient`]).
+    pub fn check_layer_height(&self) -> Result<()> {
+        let h = self.layer_height;
+        let nozzle = self.nozzle_diameter;
+        if h.is_finite() && h > 0.0 && h < 0.04 - 1e-9 {
+            return Err(Error::Config {
+                key: "layer_height",
+                reason: format!("layer height {h} mm is below the 0.04 mm minimum"),
+            });
+        }
+        if h.is_finite() && nozzle.is_finite() && nozzle > 0.0 && h > nozzle + 1e-9 {
+            return Err(Error::Config {
+                key: "layer_height",
+                reason: format!("layer height {h} mm cannot exceed the {nozzle} mm nozzle diameter"),
+            });
+        }
+        Ok(())
+    }
+
     /// Orca's `validate_extrusion_width` (Print.cpp): a line width set by hand (not 0, which is automatic)
     /// must be wider than the layer it prints ("Too small line width"); a bridge line may not be wider
     /// than the nozzle, and is held to the layer too unless bridges and internal bridges are both thick.
-    /// The layer is the one `preflight::clamp_config` keeps, at most the nozzle. A line far thinner than the
-    /// layer sliced into an unbounded amount of infill (it froze a test machine).
+    /// The layer is the one set, at most the nozzle ([`Self::check_layer_height`] refuses a taller one). The support
+    /// width is held to it only when support lines print (support on, or a raft). A line far thinner than the layer
+    /// sliced into an unbounded amount of infill (it froze a test machine).
     fn check_widths_against_layer(&self) -> Result<()> {
         let nozzle = self.nozzle_diameter;
         let layer = self.layer_height.min(nozzle);
@@ -1313,6 +1340,8 @@ impl PrintConfig {
             key,
             reason: format!("a {w:.3} mm line is not wider than the {layer} mm layer"),
         };
+        // Support lines print only with support on or under a raft; with neither, their width is never used.
+        let supports = self.enable_support || self.raw_number("raft_layers", 0.0) >= 1.0;
         for key in [
             "line_width",
             "outer_wall_line_width",
@@ -1324,6 +1353,9 @@ impl PrintConfig {
             "skin_infill_line_width",
             "skeleton_infill_line_width",
         ] {
+            if key == "support_line_width" && !supports {
+                continue;
+            }
             if let Some(w) = set_by_hand(key) {
                 if !(0.1..=2.0).contains(&w) {
                     return Err(Error::Config {
@@ -1364,6 +1396,7 @@ impl PrintConfig {
                 })
             }
         };
+        self.check_layer_height()?;
         range("layer_height", self.layer_height, 0.04, 0.8)?;
         range(
             "initial_layer_print_height",

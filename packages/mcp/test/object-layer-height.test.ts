@@ -72,3 +72,42 @@ describe.skipIf(noSx())('slicerx_slice_file with the default smart layers', { ti
     expect(out.warnings.some((w) => w.startsWith('Smart layer heights'))).toBe(false)
   })
 })
+
+describe.skipIf(noSx())("a layer height past the printer profile's limits", { timeout: sxTimeout }, () => {
+  const slice = async (own: Record<string, string>, overrides: Record<string, unknown>) => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      return await h.call('slicerx_slice_file', { model: project(h.dir, own), overrides: { print_sequence: 'by object', layer_height: 0.2, initial_layer_print_height: 0.2, smart_layer: 'off', max_layer_height: [0.24], min_layer_height: [0.1], ...overrides } })
+    } finally { await h.client.close() }
+  }
+
+  it('slices a plate height above the maximum as set', async () => {
+    const r = await slice({ wall_loops: '3' }, { layer_height: 0.32 })
+    expect(r.isError, text(r)).toBeFalsy()
+    // 12 mm: 0.2 then 0.32 mm layers on both boxes, 38 each. Lowered to 0.24 it was 50 each.
+    expect(data<{ layer_count: number }>(r).layer_count).toBe(2 * 38)
+  })
+
+  it('slices an object at its own height above the maximum', async () => {
+    const r = await slice({ layer_height: '0.32' }, {})
+    expect(r.isError, text(r)).toBeFalsy()
+    // 12 mm: tuned 0.2 then 0.32 mm layers (38), plain 0.2 mm layers (60).
+    expect(data<{ layer_count: number }>(r).layer_count).toBe(98)
+  })
+
+  it('slices a plate height below the minimum as set', async () => {
+    const r = await slice({ wall_loops: '3' }, { layer_height: 0.06 })
+    expect(r.isError, text(r)).toBeFalsy()
+    // 0.2 then 0.06 mm layers on both boxes: 198 each. Raised to 0.1 it was 119 each.
+    expect(data<{ layer_count: number }>(r).layer_count).toBe(2 * 198)
+  })
+
+  it('refuses an object taller than the nozzle with a layer height message', async () => {
+    // The overrides are checked before the engine sees them (Layer height 0.44 mm is larger than the 0.4 mm nozzle);
+    // an object's own height in the project reaches the engine, which refused it over a line width before.
+    const r = await slice({ layer_height: '0.44' }, { bridge_line_width: 0.4 })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('layer height 0.44 mm cannot exceed the 0.4 mm nozzle diameter')
+    expect(text(r)).not.toContain('line is not wider')
+  })
+})

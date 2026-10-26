@@ -11,6 +11,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Changed
 
+- With the sx engine, a layer height set in `overrides`, a profile or a project object prints as set: the printer's `max_layer_height` and `min_layer_height` no longer change it, so `layer_count` follows the height asked for. A layer taller than the nozzle is refused with a layer height message (`layer height 0.44 mm cannot exceed the 0.4 mm nozzle diameter`) rather than a line width one, and a layer below 0.04 mm is refused rather than sliced at 0.2 mm.
 - A slice the sx engine refuses over custom G-code a person could approve for a printer it knows (a G-code override, for example) says so in this server's terms: no tool call can approve it, and leaving out the G-code settings slices with the printer profile's own. `error.details` is `{ reason: "gcode_review", printer }`.
 - A Bambu Studio project that sets neither `wipe_tower_wall_type` nor `prime_tower_rib_wall` slices with the rib prime tower through `slicerx_slice_file` and the project tools with `project_settings`, as `sx slice <project.3mf>` and that app slice it. It got the rectangle tower before (on a test plate about 34.6 x 11.8 mm, against about 24.5 x 24 mm for the rib). The rule comes from `fromApp` in engine-choices.json, the table the engine and the app read too.
 

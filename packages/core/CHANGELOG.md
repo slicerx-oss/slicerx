@@ -8,6 +8,11 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 - `app_missing_keys`: the keys a project's settings lack that the app that wrote it reads its own way, with their values, from `fromApp` in packages/settings/engine-choices.json. `project_config` applies them from that table instead of its own copy; what it returns is unchanged.
 - `apply_project_defaults`: the same keys filled into a request's `config` from the project file it names, and `RequestOptions::project_defaults` (`projectDefaults`) for hosts that apply it. The request schema lists the option.
+### Changed
+
+- A layer height the config sets, for the plate, an object or a filament, prints as set. `max_layer_height` and `min_layer_height` no longer lower or raise it, and `clamp_config` reports `layer_height_clamped` only for a layer above the nozzle or below 0.04 mm. A 20 mm cube at 0.32 mm on a printer with a 0.28 mm maximum printed 72 layers of 0.28 mm; it now prints 63 of 0.32 mm. The two limits still bound support layers.
+- `PrintConfig::check` (and so every request) refuses a layer height taller than the nozzle with `config key layer_height: layer height 0.44 mm cannot exceed the 0.4 mm nozzle diameter`, before the line width checks, which named a bridge or skin line instead. A layer height below 0.04 mm is refused with `layer height 0.03 mm is below the 0.04 mm minimum`, also on the listed path (`configReport`, projects), where it used to slice at the default 0.2 mm with a note.
+- `support_line_width` is held to the layer only when support lines print (`enable_support`, or `raft_layers` of 1 or more). With support off, a 0.38 mm support line and a 0.38 mm layer were refused.
 
 ### Fixed
 
