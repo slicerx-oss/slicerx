@@ -2038,6 +2038,23 @@ impl PrintConfig {
         v
     }
 
+    /// The flow multipliers a path's volumetric speed limit divides by on top of its bead area and its own flow,
+    /// for one layer ([`CapFlow`]).
+    pub fn cap_flow(&self, first_layer: bool) -> CapFlow<'_> {
+        use crate::output::Feature as F;
+        let bambu = crate::firmware::bambu_printer(self, self.gcode_flavor);
+        let print = self.raw_number("print_flow_ratio", 1.0);
+        CapFlow {
+            cfg: self,
+            bambu,
+            role: F::ALL.map(|f| match f {
+                F::PrimeTower => 1.0,
+                _ if bambu => print,
+                _ => self.role_flow_ratio(f, first_layer),
+            }),
+        }
+    }
+
     /// Pressure advance for a slot when enabled, else 0.
     pub fn pressure_advance_for(&self, slot: u8) -> f64 {
         if self.enable_pressure_advance {
@@ -2109,6 +2126,32 @@ impl PrintConfig {
             r[3] = r[3].max(p[1]);
         }
         r
+    }
+}
+
+/// The flow multipliers a path's volumetric speed limit divides by on top of its bead area and its own flow, so
+/// the limit holds the mm3/s the path really extrudes: on a printer other than Bambu Lab, the filament's flow ratio
+/// times the role's ([`PrintConfig::role_flow_ratio`]), as its E carries them; on a Bambu Lab printer, the print
+/// flow ratio alone. The prime tower keeps its bead area and flow alone. One layer's, from
+/// [`PrintConfig::cap_flow`].
+#[derive(Debug, Clone)]
+pub struct CapFlow<'a> {
+    cfg: &'a PrintConfig,
+    bambu: bool,
+    /// By feature, in [`crate::output::Feature::ALL`] order.
+    role: [f64; crate::output::Feature::ALL.len()],
+}
+
+impl CapFlow<'_> {
+    /// The multiplier for filament `slot` printing `feature`; 1 when the settings give none above 0.
+    pub fn ratio(&self, slot: u8, feature: crate::output::Feature) -> f64 {
+        let role = self.role.get(feature as usize).copied().unwrap_or(1.0);
+        let v = if self.bambu || feature == crate::output::Feature::PrimeTower {
+            role
+        } else {
+            self.cfg.flow_ratio(slot) * role
+        };
+        if v.is_finite() && v > 0.0 { v } else { 1.0 }
     }
 }
 
@@ -3164,5 +3207,38 @@ mod tests {
     #[test]
     fn rejects_out_of_range() {
         assert!(PrintConfig::from_json(br#"{"layer_height":5}"#).is_err());
+    }
+
+    #[test]
+    fn the_volumetric_limit_carries_the_flow_multipliers_of_the_extrusion() {
+        use crate::output::Feature as F;
+        let c = |v: Value| PrintConfig::from_value(&v).unwrap_or_default();
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        let other = c(
+            serde_json::json!({ "filament_flow_ratio": ["0.9", "1.05"], "print_flow_ratio": "0.95",
+            "set_other_flow_ratios": "1", "sparse_infill_flow_ratio": "0.8", "first_layer_flow_ratio": "0.9" }),
+        );
+        let f = other.cap_flow(false);
+        assert!(near(f.ratio(1, F::OuterWall), 0.9 * 0.95));
+        assert!(near(f.ratio(2, F::SparseInfill), 1.05 * 0.95 * 0.8));
+        assert!(near(f.ratio(2, F::PrimeTower), 1.0));
+        assert!(near(
+            other.cap_flow(true).ratio(1, F::SparseInfill),
+            0.9 * 0.95 * 0.8 * 0.9
+        ));
+        // A Bambu Lab printer: the print flow ratio alone.
+        let bambu = c(
+            serde_json::json!({ "printer_model": "Bambu Lab A1", "filament_flow_ratio": ["0.9"], "print_flow_ratio": "0.95",
+            "top_solid_infill_flow_ratio": "0.8" }),
+        );
+        let f = bambu.cap_flow(true);
+        assert!(near(f.ratio(1, F::OuterWall), 0.95));
+        assert!(near(f.ratio(1, F::TopSurface), 0.95));
+        assert!(near(f.ratio(1, F::PrimeTower), 1.0));
+        // Nothing set: 1, so nothing moves.
+        assert!(near(
+            PrintConfig::default().cap_flow(false).ratio(1, F::InnerWall),
+            1.0
+        ));
     }
 }

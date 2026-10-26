@@ -285,6 +285,8 @@ struct Builder<'a> {
     fuzzy_mask: Option<Shapes>,
     /// `filament_max_volumetric_speed` of each filament slot (mm3/s), 0 for none.
     vol_caps: Vec<f64>,
+    /// The flow multipliers the volumetric limit divides by on top of the bead's cross-section and flow.
+    cap_flow: crate::config::CapFlow<'a>,
     /// Scarf seams (`seam_slope_type`), and the seam gap that ends every loop short of its start, mm.
     scarf: Option<crate::scarf::Scarf>,
     gap: f64,
@@ -311,7 +313,7 @@ impl Builder<'_> {
     /// A speed held to the filament's volumetric limit (Orca: `filament_max_volumetric_speed` over the bead's
     /// cross-section, a rectangle with rounded ends, times the flow ratio).
     #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
-    fn capped(&self, tool: u8, speed: f32) -> f32 {
+    fn capped(&self, tool: u8, feature: Feature, speed: f32) -> f32 {
         let Some(&cap) = self
             .vol_caps
             .get(usize::from(tool.max(1) - 1))
@@ -320,8 +322,10 @@ impl Builder<'_> {
             return speed;
         };
         let h = f64::from(self.out.height);
-        let area =
-            h * (f64::from(self.width_mm) - h * (1.0 - std::f64::consts::FRAC_PI_4)) * f64::from(self.flow);
+        let area = h
+            * (f64::from(self.width_mm) - h * (1.0 - std::f64::consts::FRAC_PI_4))
+            * f64::from(self.flow)
+            * self.cap_flow.ratio(tool, feature);
         if area > 0.0 {
             speed.min((cap / area) as f32)
         } else {
@@ -330,7 +334,7 @@ impl Builder<'_> {
     }
 
     fn push(&mut self, tool: u8, feature: Feature, speed: f32, pts: impl Iterator<Item = Point>) {
-        let speed = self.capped(tool, speed);
+        let speed = self.capped(tool, feature, speed);
         #[allow(
             clippy::cast_possible_truncation,
             reason = "per-layer point counts fit in u32"
@@ -1806,6 +1810,7 @@ pub(crate) fn plan_layer_paths(
         cfg.top_surface_width() as f32,
         cfg.support_width() as f32,
     ];
+    let first_layer = out.index == 0;
     let mut b = Builder {
         out,
         cursor: Point::new(0, 0),
@@ -1830,6 +1835,7 @@ pub(crate) fn plan_layer_paths(
         vol_caps: (1..=works.iter().map(|w| w.tool).max().unwrap_or(1))
             .map(|s| crate::tower::per_slot_raw(cfg, "filament_max_volumetric_speed", s, 0.0))
             .collect(),
+        cap_flow: cfg.cap_flow(first_layer),
     };
     // A spiral loop starts at the vertex nearest a fixed point and always turns the same way (clockwise,
     // unless `wall_direction` is `ccw`), so a layer does not depend on the one below.
@@ -2615,7 +2621,7 @@ pub(crate) fn plan_layer_paths(
     }
     let mut scarf_points = std::mem::take(&mut b.pz);
     if !vary.is_empty() {
-        vary_speeds(out, &vary, &mut scarf_points);
+        vary_speeds(out, cfg, &vary, &mut scarf_points);
     }
     if !scarf_points.is_empty() {
         out.zs = vec![out.z; out.points.len()];
@@ -2645,11 +2651,13 @@ type Piece = (f32, bool, Vec<Point>, Vec<(usize, usize, f64)>);
 #[allow(clippy::cast_possible_truncation, reason = "point counts and coordinates")]
 fn vary_speeds(
     out: &mut LayerPaths,
+    cfg: &PrintConfig,
     vary: &[(usize, usize, &crate::quality::Context)],
     pz: &mut Vec<(u32, f32, f32)>,
 ) {
     let mut pieces: Vec<Option<Vec<Piece>>> = vec![None; out.paths.len()];
     let mut any = false;
+    let flows = cfg.cap_flow(out.index == 0);
     for &(from, to, q) in vary {
         for (i, p) in out.paths.iter().enumerate().take(to).skip(from) {
             let kind = match p.feature {
@@ -2664,8 +2672,9 @@ fn vary_speeds(
                 continue;
             }
             let mm: Vec<(f64, f64)> = pts.iter().map(|q| (q.x_mm(), q.y_mm())).collect();
-            let mm3 =
-                crate::gcode::bead_area(f64::from(p.width_mm), f64::from(out.height)) * f64::from(p.flow);
+            let mm3 = crate::gcode::bead_area(f64::from(p.width_mm), f64::from(out.height))
+                * f64::from(p.flow)
+                * flows.ratio(p.tool, p.feature);
             // An overhang wall piece is measured with the bridge strand's width, whatever width its bead prints at.
             let measure = if kind == crate::quality::Kind::Clear {
                 q.clear_width
@@ -3179,5 +3188,63 @@ mod tests {
             loop_order(&loops[..3], WallSequence::InnerOuterInner, 0),
             [2, 1, 0]
         );
+    }
+
+    /// The speed a builder holds a 0.42 by 0.2 path of `feature` to, 300 mm/s asked, under a 3 mm3/s limit at
+    /// filament flow ratio 0.9 and `extra` settings.
+    fn builder_speed(extra: &serde_json::Value, feature: Feature) -> f32 {
+        let mut v =
+            serde_json::json!({ "filament_max_volumetric_speed": ["3"], "filament_flow_ratio": ["0.9"] });
+        if let (Some(m), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+            m.extend(e.clone());
+        }
+        let cfg = PrintConfig::from_value(&v).unwrap_or_default();
+        let mut out = LayerPaths {
+            index: 3,
+            height: 0.2,
+            ..LayerPaths::default()
+        };
+        let b = Builder {
+            out: &mut out,
+            cursor: Point::new(0, 0),
+            width_mm: 0.42,
+            flow: 1.0,
+            seam: cfg.seam_position,
+            layer: 3,
+            plan: None,
+            faces: &crate::seam::NO_SEAMS,
+            z: 0.8,
+            hang: None,
+            clockwise: false,
+            fuzzy: None,
+            painted: None,
+            fuzzy_mask: None,
+            vol_caps: vec![3.0],
+            cap_flow: cfg.cap_flow(false),
+            scarf: None,
+            gap: 0.0,
+            start_point: None,
+            unsupported: std::cell::Cell::new(f32::MIN),
+            pz: Vec::new(),
+            round_nearest: false,
+        };
+        b.capped(1, feature, 300.0)
+    }
+
+    #[test]
+    fn the_builder_holds_the_rate_the_path_extrudes_to_the_volumetric_limit() {
+        let near = |a: f32, b: f32| (a - b).abs() < 0.01;
+        let other = builder_speed(&serde_json::json!({}), Feature::OuterWall);
+        assert!(near(other, 44.20), "{other}");
+        let bambu = builder_speed(
+            &serde_json::json!({ "printer_model": "Bambu Lab P1S" }),
+            Feature::OuterWall,
+        );
+        assert!(near(bambu, 39.78), "{bambu}");
+        let pf = serde_json::json!({ "printer_model": "Bambu Lab P1S", "print_flow_ratio": "0.95" });
+        let bambu_pf = builder_speed(&pf, Feature::OuterWall);
+        assert!(near(bambu_pf, 41.87), "{bambu_pf}");
+        let tower = builder_speed(&serde_json::json!({}), Feature::PrimeTower);
+        assert!(near(tower, 39.78), "{tower}");
     }
 }
