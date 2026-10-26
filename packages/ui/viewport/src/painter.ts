@@ -165,7 +165,10 @@ export class Painter {
   }
 
   setColors(colors: readonly string[]): void {
-    this.colors = colors.length ? colors : SLOT_FALLBACK
+    const next = colors.length ? colors : SLOT_FALLBACK
+    // The same colors again (a printer reporting its slots) would repaint every part and redraw the view for nothing.
+    if (next.length === this.colors.length && next.every((c, i) => c === this.colors[i])) return
+    this.colors = next === SLOT_FALLBACK ? next : [...next]
     for (const p of this.parts.values()) p.dirty = true
     this.invalidate()
   }

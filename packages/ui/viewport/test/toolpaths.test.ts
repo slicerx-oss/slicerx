@@ -138,3 +138,19 @@ describe('Toolpaths bead size', () => {
     expect(r.height[1]).toBeCloseTo(0.24, 6)
   })
 })
+
+describe('Toolpaths tool colors and finishes', () => {
+  // The app sends the slots' colors and finishes again whenever a printer reports its slots, about once a second. Each
+  // change redraws the preview, which takes seconds on software graphics, so the same colors again must not count.
+  it('reports a change only when the colors or finishes differ from the ones set', () => {
+    const t = new Toolpaths()
+    expect(t.setToolColors(['#e07a2e', '#3e6fc0'])).toBe(true)
+    expect(t.setToolColors(['#e07a2e', '#3e6fc0'])).toBe(false)
+    expect(t.setToolColors(['#e07a2e', '#ffffff'])).toBe(true)
+    expect(t.setToolColors([])).toBe(true)
+    expect(t.setToolColors([])).toBe(false)
+    expect(t.setToolFinishes(['silk', 'matte'])).toBe(true)
+    expect(t.setToolFinishes(['silk', 'matte'])).toBe(false)
+    expect(t.setToolFinishes(['silk'])).toBe(true)
+  })
+})
