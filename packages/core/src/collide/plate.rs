@@ -424,12 +424,13 @@ fn crossing_keep(l: &LayerPaths) -> Option<Vec<bool>> {
     }
     let joins: std::collections::HashSet<(Point, Point)> =
         l.joins.iter().flat_map(|&[a, b]| [(a, b), (b, a)]).collect();
-    // Every segment of the layer, with the path it belongs to, by 1 mm cell of the bed.
+    // Every segment of the layer, with the path it belongs to, by 1 mm cell of the bed. Ironing is left out: it
+    // passes over the finished surface, turns included, and lays no line a turn could meet.
     let segs: Vec<(usize, [f64; 2], [f64; 2])> = l
         .paths
         .iter()
         .enumerate()
-        .filter(|(_, p)| p.feature != Feature::Custom)
+        .filter(|(_, p)| !matches!(p.feature, Feature::Custom | Feature::Ironing))
         .flat_map(|(i, p)| {
             l.path_points(p)
                 .windows(2)
@@ -810,6 +811,14 @@ mod tests {
         }
         // A line of the same fill there (same feature, tool and width) is laid out by the neighbor rules: kept.
         let mut out = joined_lines(Feature::InternalSolid, 0.42);
+        assert_eq!(drop_crossing_joins(&mut out), 0);
+        assert_eq!(out.layers[0].paths.len(), 4);
+    }
+
+    #[test]
+    fn ironing_over_the_surface_keeps_its_joins() {
+        // Ironing runs over the finished surface, turns and all, so it is no path a turn would meet: the turn stays.
+        let mut out = joined_lines(Feature::Ironing, 0.45);
         assert_eq!(drop_crossing_joins(&mut out), 0);
         assert_eq!(out.layers[0].paths.len(), 4);
     }

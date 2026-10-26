@@ -277,3 +277,20 @@ fn turns_on_square_edges_are_unchanged() {
     assert!(long - short < 0.02, "{short} to {long} mm");
     assert_eq!(j.runs, 1);
 }
+
+#[test]
+fn ironing_the_first_layer_keeps_its_turns_at_any_speed() {
+    // Ironing every solid surface passes over the first layer's bottom surface, turns and all. That is no path a turn
+    // meets, so the bottom surface still prints in one run, at a slow ironing speed (a long layer) as at a fast one.
+    let rect = [[113.0, 118.0], [143.0, 118.0], [143.0, 138.0], [113.0, 138.0]];
+    for speed in [15, 100] {
+        let g = slice(
+            prism(&rect, 1.0),
+            json!({"ironing_type": "solid", "ironing_speed": speed}),
+        );
+        assert!(g.contains(";TYPE:Ironing"), "{speed} mm/s: no ironing");
+        let j = joins(&g, "Bottom surface", 0..=0);
+        assert!(!j.joins.is_empty(), "{speed} mm/s: no turns");
+        assert_eq!(j.runs, 1, "{speed} mm/s: {} runs", j.runs);
+    }
+}
