@@ -251,7 +251,25 @@ impl FixedInt {
         if count > CHUNKS {
             return overflow();
         }
-        // Row by row: the exact product, whose chunks are the ones the original's column loop writes.
+        if count < CHUNKS {
+            // Row by row straight into the result: row `i` reaches chunk `i + n2`, at most `count`, which
+            // fits, and the chunks past it stay zero.
+            let n2 = c2.len();
+            for (i, &a) in c1.iter().enumerate() {
+                let row = &mut c[i..=i + n2];
+                let mut carry = 0_u64;
+                for (r, &b) in row.iter_mut().zip(c2) {
+                    let t = u64::from(a) * u64::from(b) + u64::from(*r) + carry;
+                    *r = t as u32;
+                    carry = t >> 32;
+                }
+                row[n2] = carry as u32;
+            }
+            let n = if c[count] != 0 { count + 1 } else { count };
+            return Self { n: n as i32, c };
+        }
+        // `count == CHUNKS`: the carry chunk is past the array, so the product is worked out in a buffer
+        // twice as long and a carry is an overflow.
         let mut wide = [0_u32; 2 * CHUNKS];
         for (i, &a) in c1.iter().enumerate() {
             let mut carry = 0_u64;
@@ -401,6 +419,7 @@ impl fmt::Debug for FixedInt {
 #[cfg(test)]
 mod tests {
     use super::{CHUNKS, FixedInt, take_overflow};
+    use num_traits::Zero;
     use crate::extended_scalar::extended_int::ExtendedInt;
 
     /// An `ExtendedInt` and a `FixedInt` with the same chunks and signed count.
@@ -506,6 +525,157 @@ mod tests {
         for v in [0_i32, 1, -1, i32::MAX, i32::MIN] {
             assert!(same(&ExtendedInt::from(v), &FixedInt::from(v)), "{v}");
         }
+    }
+
+    /// The product of two magnitudes as it was worked out before it wrote rows straight into the result:
+    /// every product of 3 or more chunks in a zeroed buffer twice as long, then copied back.
+    fn mul_mag_before(c1: &[u32], c2: &[u32]) -> FixedInt {
+        let count = c1.len() + c2.len() - 1;
+        let mut c = [0_u32; CHUNKS];
+        if c1.len() <= 2 && c2.len() <= 2 {
+            let value = |x: &[u32]| -> u128 {
+                if x.len() == 2 {
+                    (u128::from(x[1]) << 32) | u128::from(x[0])
+                } else {
+                    u128::from(x[0])
+                }
+            };
+            let p = value(c1) * value(c2);
+            c[0] = p as u32;
+            c[1] = (p >> 32) as u32;
+            c[2] = (p >> 64) as u32;
+            c[3] = (p >> 96) as u32;
+            let n = if c[count] != 0 { count + 1 } else { count };
+            return FixedInt { n: n as i32, c };
+        }
+        if count > CHUNKS {
+            return super::overflow();
+        }
+        let mut wide = [0_u32; 2 * CHUNKS];
+        for (i, &a) in c1.iter().enumerate() {
+            let mut carry = 0_u64;
+            for (j, &b) in c2.iter().enumerate() {
+                let t = u64::from(a) * u64::from(b) + u64::from(wide[i + j]) + carry;
+                wide[i + j] = t as u32;
+                carry = t >> 32;
+            }
+            wide[i + c2.len()] = carry as u32;
+        }
+        let mut n = count;
+        if wide[count] != 0 {
+            if count == CHUNKS {
+                return super::overflow();
+            }
+            n += 1;
+        }
+        c[..n].copy_from_slice(&wide[..n]);
+        FixedInt { n: n as i32, c }
+    }
+
+    /// `a * b` with [`mul_mag_before`], signs and zeros as `Mul` handles them.
+    fn mul_before(a: &FixedInt, b: &FixedInt) -> FixedInt {
+        if a.n == 0 || b.n == 0 {
+            return FixedInt::zero();
+        }
+        let r = mul_mag_before(a.chunks(), b.chunks());
+        if (a.n > 0) ^ (b.n > 0) { r.negated() } else { r }
+    }
+
+    /// A `FixedInt` with these chunks (a zero top chunk kept, as differences can leave one) and sign.
+    fn fixed(chunks: &[u32], neg: bool) -> FixedInt {
+        pair(chunks, neg).1
+    }
+
+    /// Products give the same value, count, every one of the 24 chunks (the unused ones too) and the same
+    /// overflow flag as before, for operands of 0 to 24 chunks: random chunks, all-ones limbs, ones, zero
+    /// chunks and zero top chunks, both signs, and the lengths around the overflow boundary (a product of
+    /// 23, 24 and 25 chunks, with and without a carry chunk).
+    #[test]
+    fn products_match_the_buffered_product() {
+        let mut state: u64 = 0x2545_f491_4f6c_dd1d;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let check = |a: &FixedInt, b: &FixedInt, what: &str| {
+            let _ = take_overflow();
+            let got = a * b;
+            let got_flag = take_overflow();
+            let want = mul_before(a, b);
+            let want_flag = take_overflow();
+            assert_eq!(got_flag, want_flag, "overflow flag, {what}: {a:?} * {b:?}");
+            assert_eq!(got.n, want.n, "count, {what}: {:?} {:?}", a.chunks(), b.chunks());
+            assert_eq!(got.c, want.c, "chunks, {what}: {:?} {:?}", a.chunks(), b.chunks());
+            got_flag
+        };
+        let mut cases = 0_u64;
+        let mut overflows = 0_u64;
+        let mut boundary = 0_u64;
+        // Every pair of lengths, with fixed patterns: all-ones limbs (the largest magnitude, a carry chunk at
+        // every length), ones (no carry), random, and random with a zero top chunk.
+        for la in 0..=CHUNKS {
+            for lb in 0..=CHUNKS {
+                for pattern in 0..4 {
+                    let fill = |next: &mut dyn FnMut() -> u64, len: usize| -> Vec<u32> {
+                        (0..len)
+                            .map(|k| match pattern {
+                                0 => u32::MAX,
+                                1 => 1,
+                                3 if k + 1 == len => 0,
+                                _ => next() as u32,
+                            })
+                            .collect()
+                    };
+                    let ca = fill(&mut next, la);
+                    let cb = fill(&mut next, lb);
+                    for (na, nb) in [(false, false), (false, true), (true, false), (true, true)] {
+                        let (a, b) = (fixed(&ca, na), fixed(&cb, nb));
+                        overflows += u64::from(check(&a, &b, "sweep"));
+                        cases += 1;
+                        if la > 0 && lb > 0 && (la + lb).abs_diff(CHUNKS + 1) <= 1 {
+                            boundary += 1;
+                        }
+                    }
+                }
+            }
+        }
+        // Random operands, a third of them on the boundary lengths.
+        for round in 0..200_000_u32 {
+            let la = 1 + (next() % CHUNKS as u64) as usize;
+            let lb = if round % 3 == 0 {
+                // A product of 23, 24 or 25 chunks before a carry chunk.
+                let target = CHUNKS - 1 + (next() % 3) as usize;
+                (target + 1).saturating_sub(la).clamp(1, CHUNKS)
+            } else {
+                1 + (next() % CHUNKS as u64) as usize
+            };
+            let chunks = |next: &mut dyn FnMut() -> u64, len: usize| -> Vec<u32> {
+                (0..len)
+                    .map(|_| {
+                        let r = next();
+                        match r % 8 {
+                            0 => u32::MAX,
+                            1 => 0,
+                            2 => 1,
+                            3 => u32::MAX - (r >> 40) as u32 % 16,
+                            _ => (r >> 16) as u32,
+                        }
+                    })
+                    .collect()
+            };
+            let ca = chunks(&mut next, la);
+            let cb = chunks(&mut next, lb);
+            let a = fixed(&ca, next() % 2 == 0);
+            let b = fixed(&cb, next() % 2 == 0);
+            overflows += u64::from(check(&a, &b, &format!("round {round}")));
+            cases += 1;
+            if (la + lb).abs_diff(CHUNKS + 1) <= 1 {
+                boundary += 1;
+            }
+        }
+        assert!(cases > 200_000 && boundary > 50_000 && overflows > 1_000, "{cases} {boundary} {overflows}");
     }
 
     /// A product past the fixed chunks raises the overflow flag once.

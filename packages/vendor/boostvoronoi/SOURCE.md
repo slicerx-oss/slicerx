@@ -38,6 +38,11 @@ changes make it cheaper and keep every result the same, chunk for chunk:
   verification build that runs every exact predicate on both found no difference on the request fixtures
   and the benchmark requests.
 
+  A `FixedInt` product of 3 to 23 chunks is worked out row by row straight into the value's chunks; only
+  one of exactly 24 chunks, whose carry chunk would not fit, goes through a buffer twice as long first. A
+  test keeps the earlier product (every product of 3 or more chunks in a zeroed buffer, then copied) and
+  compares the count, all 24 chunks and the overflow flag with it on operands of 0 to 24 chunks.
+
   An earlier attempt at a fixed-size integer (boost's own `extended_int<64>`, 64 chunks) measured slower:
   every operation then copies 256 bytes. This one keeps 24 chunks (96 bytes), which hold all but a handful
   of values, and leaves those to `ExtendedInt`.
