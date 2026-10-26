@@ -98,6 +98,9 @@ export function slicePrinter(profiles: ProfileCatalog, names: string[], presets:
   return printer
 }
 
+/** The support gaps the engine reads as one layer height when a request leaves them out (sx-core `PrintConfig::from_value`). */
+const LAYER_FOLLOWING_GAPS = ['support_top_z_distance', 'support_bottom_z_distance'] as const
+
 /** Profiles must be loaded with `profiles.prepare(names)` first, for stock filament presets and the makers' supports. */
 export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, names: string[], overrides: Record<string, unknown> | undefined, extra: ExtraLayers = {}): ResolvedConfig {
   const explicit: Record<string, SettingValue> = {}
@@ -150,6 +153,12 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   const errors = validateConfig(store, typed).filter((i) => i.severity === 'error' || i.code === 'unknown_key')
   if (errors.length > 0) throw new ToolInputError(`Invalid overrides:\n${errors.map((i) => `- ${i.message}`).join('\n')}`, 'invalid_settings')
   Object.assign(explicit, typed)
+  // A project's slice gets the printer layer's support gaps when no layer sets them, as sx slice <project.3mf> and the
+  // app's open do; the engine reads gaps a request leaves out as one layer height.
+  if (extra.project) {
+    const below = { ...defaultConfig(store), ...explicit }
+    for (const k of LAYER_FOLLOWING_GAPS) if (explicit[k] === undefined && below[k] !== undefined) explicit[k] = below[k]
+  }
   const { kept, replaced } = extra.project ? projectGcode(store, profiles, names, extra.project, explicit, extra.scriptReviews) : { kept: [], replaced: [] }
   // A preset file's G-code inherited from a shipped profile is that profile's text; only its own G-code is untrusted.
   // The project's G-code that is left is stock text, which projectGcode checked.

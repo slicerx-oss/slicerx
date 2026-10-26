@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { importFlat } from '@slicerx/settings'
 import { readProjectFile } from '../src/projectfile'
-import { writeZip } from '../src/zip'
+import { readZip, writeZip } from '../src/zip'
 import { connect, data, noSx, sxBin, sxTimeout } from './helpers'
 
 const fixtures = join(__dirname, '../../settings/fixtures')
@@ -76,6 +76,31 @@ describe.skipIf(noSx())('a PrusaSlicer project through the MCP server and sx sli
     const viaCli = readFileSync(join(h.dir, 'cli.gcode'), 'utf8')
     const viaMcp = readFileSync(String(data<{ gcode_path: string }>(r).gcode_path), 'utf8')
     expect(viaCli.split('\n').filter((l) => l === ';TYPE:Support').length).toBeGreaterThan(50)
+    expect(moves(viaMcp)).toEqual(moves(viaCli))
+  })
+
+  it('prints the same support for a project without support gaps', { timeout: sxTimeout * 3 }, async () => {
+    // The T slab with neither contact distance, on 0.12 mm layers: the gaps are the printer's, 0.2 mm in sx slice as in
+    // the app, not one layer, which the engine gives a request that leaves them out.
+    const h = await connect({ engine: 'sx', sxBin })
+    const src = readZip(readFileSync(join(fixtures, 'preset-files/prusaslicer-2.9.6-tslab.3mf')), 'tslab')
+    const config = src
+      .text('Metadata/Slic3r_PE.config')!
+      .split('\n')
+      .filter((l) => !/^; support_material(_bottom)?_contact_distance = /.test(l))
+      .map((l) => l.replace(/^; layer_height = .*/, '; layer_height = 0.12'))
+      .join('\n')
+    const path = join(h.dir, 'nogaps.3mf')
+    writeFileSync(path, writeZip(src.names().map((n) => ({ name: n, data: n === 'Metadata/Slic3r_PE.config' ? config : src.read(n)! }))))
+    const cli = spawnSync(sxBin, ['slice', path, '-o', join(h.dir, 'cli.gcode')], { encoding: 'utf8' })
+    expect(cli.status, cli.stderr).toBe(0)
+    const r = await h.call('slicerx_slice_file', { model: path, project_settings: true })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const viaCli = readFileSync(join(h.dir, 'cli.gcode'), 'utf8')
+    const viaMcp = readFileSync(String(data<{ gcode_path: string }>(r).gcode_path), 'utf8')
+    const support = (g: string) => g.split('\n').filter((l) => l === ';TYPE:Support').length
+    expect(support(viaCli)).toBeGreaterThan(50)
+    expect(support(viaMcp)).toBe(support(viaCli))
     expect(moves(viaMcp)).toEqual(moves(viaCli))
   })
 })
