@@ -132,6 +132,8 @@ pub(crate) fn slice_range(
                         paths: a.paths + b.paths,
                         gcode: 0,
                         preview: 0,
+                        bridges: a.bridges + b.bridges,
+                        seams: a.seams + b.seams,
                     };
                 }
             }

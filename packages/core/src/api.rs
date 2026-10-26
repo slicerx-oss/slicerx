@@ -1863,6 +1863,8 @@ fn run_prepared_timed(
         acc.surfaces += m.surfaces;
         acc.infill += m.infill;
         acc.paths += m.paths;
+        acc.bridges += m.bridges;
+        acc.seams += m.seams;
         if s == 0 {
             report.warnings = out.warnings;
         } else {

@@ -1621,6 +1621,7 @@ fn cmd_bench(args: &[String]) -> Res<ExitCode> {
                 "prepare": ms(sm.layers), "contours": ms(sm.contours),
                 "perimeters": ms(sm.perimeters), "surfaces": ms(sm.surfaces),
                 "infill": ms(sm.infill), "paths": ms(sm.paths),
+                "bridges": ms(sm.bridges), "seams": ms(sm.seams),
                 "gcode_wall": ms(sm.gcode), "preview_wall": ms(sm.preview),
             },
             "gcode_bytes": gcode.len(),

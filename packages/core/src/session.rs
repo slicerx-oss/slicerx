@@ -765,11 +765,43 @@ struct Micros {
     surfaces: AtomicU64,
     infill: AtomicU64,
     paths: AtomicU64,
+    bridges: AtomicU64,
+    seams: AtomicU64,
+}
+
+thread_local! {
+    /// The microseconds the stage timers on this thread counted since the innermost [`OwnTimer`] started.
+    static COUNTED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 impl Micros {
     fn add(counter: &AtomicU64, t: &Timer) {
-        counter.fetch_add(t.micros(), Ordering::Relaxed);
+        let us = t.micros();
+        counter.fetch_add(us, Ordering::Relaxed);
+        COUNTED.with(|c| c.set(c.get() + us));
+    }
+}
+
+/// A stage timer for work that can run other timed stages inside it (the regions or walls of a layer it
+/// reads, or a layer job the thread picks up while it waits for its parallel work): it counts its time less
+/// what the stage timers on its thread counted meanwhile, so no time is counted twice.
+struct OwnTimer {
+    t: Timer,
+    outer: u64,
+}
+
+impl OwnTimer {
+    fn start() -> Self {
+        Self {
+            outer: COUNTED.with(|c| c.replace(0)),
+            t: Timer::start(),
+        }
+    }
+
+    fn stop(self, counter: &AtomicU64) {
+        let us = self.t.micros();
+        let inner = COUNTED.with(|c| c.replace(self.outer + us));
+        counter.fetch_add(us.saturating_sub(inner), Ordering::Relaxed);
     }
 }
 
@@ -4138,7 +4170,9 @@ impl SliceSession {
             let plans = || {
                 // Ahead of the first contour, the seam plan's layers move the bar; beside the layer jobs they would
                 // only send it back.
+                let t = Timer::start();
                 self.seam_plan(config, (!beside).then_some(progress));
+                Micros::add(&micros.seams, &t);
                 if !beside {
                     progress.report(Stage::Layers, LAYERS_SEAM_PLAN);
                 }
@@ -4404,6 +4438,8 @@ impl SliceSession {
                 paths: micros.paths.load(Ordering::Relaxed),
                 gcode: 0,
                 preview: 0,
+                bridges: micros.bridges.load(Ordering::Relaxed),
+                seams: micros.seams.load(Ordering::Relaxed),
             },
             warnings,
         })
@@ -7932,6 +7968,7 @@ impl SliceSession {
             }
         };
         // Internal bridges over sparse infill (bridging.rs), worked out from the layers around this one.
+        let bridges_timer = OwnTimer::start();
         let bridges_on = cfg.sparse_infill_density > 0.0 && base_shell.top_n > 0;
         // A floating vertical shell (vshell.rs) reads the sparse infill of the layer below from the same facts.
         let floating_on = crate::vshell::wanted(cfg, mods);
@@ -8195,6 +8232,7 @@ impl SliceSession {
         } else {
             (None, None)
         };
+        bridges_timer.stop(&micros.bridges);
         let mut solid_areas: Vec<Shapes> = Vec::new();
         let mut works: Vec<ToolWork> = Vec::with_capacity(here.regions.len());
         let mut events = Vec::new();
