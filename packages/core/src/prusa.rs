@@ -19,6 +19,10 @@ struct PrusaMap {
     percent_base_defaults: HashMap<String, f64>,
     ignored_prefixes: Vec<String>,
     ignored_keys: Vec<String>,
+    /// Keys that carry over only through a `values` row; any other value is left out.
+    only_mapped_values: Vec<String>,
+    /// Keys whose value 0 means not set, read as absent.
+    zero_is_unset: Vec<String>,
 }
 
 fn map() -> &'static PrusaMap {
@@ -37,6 +41,12 @@ fn map() -> &'static PrusaMap {
                 .unwrap_or_default()
         };
         let text = |e: &Value, k: &str| e.get(k).and_then(Value::as_str).unwrap_or("").to_owned();
+        let list = |k: &str| -> Vec<String> {
+            v.get(k)
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+                .unwrap_or_default()
+        };
         // `^(a|b|c)`: a list of plain prefixes
         let pattern = v.get("ignoredPattern").and_then(Value::as_str).unwrap_or("");
         PrusaMap {
@@ -67,11 +77,9 @@ fn map() -> &'static PrusaMap {
                 .filter(|p| !p.is_empty())
                 .map(str::to_owned)
                 .collect(),
-            ignored_keys: v
-                .get("ignoredKeys")
-                .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(Value::as_str).map(str::to_owned).collect())
-                .unwrap_or_default(),
+            ignored_keys: list("ignoredKeys"),
+            only_mapped_values: list("onlyMappedValues"),
+            zero_is_unset: list("zeroIsUnset"),
         }
     })
 }
@@ -109,6 +117,9 @@ fn plain(n: f64) -> String {
 /// Keys with no Orca name keep their own, so the caller can say they are not applied.
 pub(crate) fn overrides(list: &[(String, String)]) -> Map<String, Value> {
     let m = map();
+    // A 0 that means "not set" is read as if the key were absent.
+    let unset = |k: &str, v: &str| m.zero_is_unset.iter().any(|z| z == k) && number(v) == Some(0.0);
+    let list: Vec<&(String, String)> = list.iter().filter(|(k, v)| !unset(k, v)).collect();
     let raw: HashMap<&str, &str> = list.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let mut out = Map::new();
     let put = |out: &mut Map<String, Value>, k: &str, v: String| {
@@ -189,6 +200,8 @@ pub(crate) fn overrides(list: &[(String, String)]) -> Map<String, Value> {
         }
         if let Some((_, _, to)) = m.values.iter().find(|(k, from, _)| k == key && *from == v) {
             v.clone_from(to);
+        } else if m.only_mapped_values.iter().any(|k| k == key) {
+            continue;
         }
         put(&mut out, target, v);
     }
@@ -231,5 +244,23 @@ mod tests {
         assert_eq!(o["internal_solid_infill_speed"], "60");
         assert!(!o.contains_key("sla_print_settings_id"));
         assert!(!o.contains_key("support_material"));
+    }
+
+    #[test]
+    fn no_shrinkage_and_an_unset_first_layer_infill_speed() {
+        // 0% is no shrinkage, 100% in our settings; any other value is left out.
+        let o = of(&[
+            ("filament_shrinkage_compensation_xy", "0%"),
+            ("filament_shrinkage_compensation_z", "0.5%"),
+            ("first_layer_infill_speed", "0"),
+            ("first_layer_speed", "50%"),
+            ("infill_speed", "200"),
+        ]);
+        assert_eq!(o["filament_shrink"], "100%");
+        assert!(!o.contains_key("filament_shrinkage_compensation_z"));
+        assert!(!o.contains_key("filament_shrinkage_compensation_xy"));
+        assert_eq!(o["initial_layer_infill_speed"], "100");
+        let o = of(&[("first_layer_infill_speed", "30"), ("first_layer_speed", "50%")]);
+        assert_eq!(o["initial_layer_infill_speed"], "30");
     }
 }
