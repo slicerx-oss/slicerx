@@ -10039,7 +10039,22 @@ impl SliceSession {
                 .or_else(|| self.template_angle(cfg, "solid_infill_rotate_template", layer))
                 .unwrap_or(if dir == Dir::D45 { 45.0 } else { 135.0 })
                 + self.model_turn(cfg);
-            if crate::ironing::add(&mut out, &areas, cfg, layer + 1 == n, base) {
+            // What each top surface filament irons: the regions it is the top surface filament of.
+            let mut owners: Vec<(u8, Shapes)> = Vec::new();
+            if crate::ironing::kind(cfg).is_some() {
+                for (ri, (slot, shapes)) in here.regions.iter().enumerate() {
+                    let rc = match here.region_cfg.get(ri).copied().unwrap_or(0) {
+                        0 => cfg,
+                        k => mods.get(usize::from(k) - 1).unwrap_or(cfg),
+                    };
+                    let tool = self.feature_tools(rc, *slot).top.max(1);
+                    match owners.iter_mut().find(|(t, _)| *t == tool) {
+                        Some((_, own)) => *own = perimeters::union_all(&[&*own, shapes]),
+                        None => owners.push((tool, shapes.clone())),
+                    }
+                }
+            }
+            if crate::ironing::add(&mut out, &areas, cfg, layer + 1 == n, base, &owners) {
                 out.time_s = paths::estimate_time(&out, cfg);
             }
             out.areas = Some(areas);
