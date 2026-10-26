@@ -4764,6 +4764,7 @@ impl SliceSession {
                         spacing,
                         anchor: crate::anchor::anchor_length(cfg, spacing),
                         anchor_max: cfg.anchor_max_mm(),
+                        tongues: true,
                     },
                 ))
             }
@@ -4781,6 +4782,7 @@ impl SliceSession {
                         spacing,
                         anchor: crate::anchor::anchor_length(cfg, spacing),
                         anchor_max: cfg.anchor_max_mm(),
+                        tongues: false,
                     },
                 ))
             }
@@ -9132,6 +9134,7 @@ impl SliceSession {
                                 cfg.spacing_for(cfg.sparse_infill_width()),
                             ),
                             anchor_max: cfg.anchor_max_mm(),
+                            tongues: false,
                         },
                     ));
                 }

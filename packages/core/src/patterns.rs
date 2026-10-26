@@ -395,6 +395,7 @@ fn sparse_on(inp: &SparseIn<'_>) -> Vec<Vec<Point>> {
             spacing: spacing_mm,
             anchor: anchor_mm,
             anchor_max: connect_mm,
+            tongues: true,
         };
         // The lines of the multi-sweep patterns end on the region pulled in half a spacing, which is the
         // boundary Orca joins them along; the other patterns were given that region already.
@@ -567,6 +568,7 @@ pub(crate) fn support_lines(
             spacing: w_mm,
             anchor: 0.0,
             anchor_max: connect_mm,
+            tongues: false,
         };
         raw = crate::anchor::connect(raw, &inner, params);
     }
