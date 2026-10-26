@@ -496,6 +496,12 @@ pub(crate) struct Context {
     /// The width, mm, an overhang wall piece is measured with: the bridge strand's (`overhang::bead`). Its bead may
     /// print wider (`overhang::wall_bead`); the speeds and the points they add stay those of the strand.
     pub clear_width: f32,
+    /// Arachne walls (`wall_generator` arachne, not aegis): walls follow [`arachne_wall_share`] and
+    /// [`arachne_wall_degree`] in place of [`wall_degree`].
+    pub arachne: bool,
+    /// Per filament slot from 1, with arachne walls: the speed of a wall stretch whose bead hangs fully clear
+    /// ([`clear_speed`]), mm/s. Empty otherwise; a slot past the list takes the bridge speed.
+    pub clear: Vec<f64>,
 }
 
 /// Orca's overhang fan levels (`GCode::_extrude`, `check_overhang_fan`): the overlap at or under which a
@@ -640,7 +646,28 @@ impl Context {
                 .collect(),
             #[allow(clippy::cast_possible_truncation, reason = "a line width")]
             clear_width: crate::overhang::bead(cfg, f64::from(height)).0 as f32,
+            arachne: cfg.arachne_generator(),
+            clear: Vec::new(),
         }
+    }
+
+    /// With arachne walls, the clear speed of each filament slot the settings set up, read from `cfg`, the
+    /// settings before [`PrintConfig::for_extruder`] (which [`clear_speed`] applies itself).
+    ///
+    /// [`PrintConfig::for_extruder`]: crate::config::PrintConfig::for_extruder
+    pub(crate) fn with_clear_speeds(mut self, cfg: &crate::config::PrintConfig) -> Self {
+        if self.arachne {
+            let slots = cfg
+                .raw
+                .get("filament_colour")
+                .and_then(serde_json::Value::as_array)
+                .map_or(1, Vec::len)
+                .clamp(1, 64);
+            #[allow(clippy::cast_possible_truncation, reason = "1 to 64")]
+            let speeds = (1..=slots as u8).map(|slot| clear_speed(cfg, slot)).collect();
+            self.clear = speeds;
+        }
+        self
     }
 }
 
@@ -678,6 +705,37 @@ pub(crate) fn wall_degree(u: f64) -> f64 {
         }
     };
     (m * 40.0).round() / 40.0
+}
+
+/// How far an arachne wall bead hangs past the layer below, as the share of the bead that hangs clear: `d` the
+/// distance its outer edge sits past the layer below, `w` the bead's own width, `h` the layer height, all mm.
+/// Both shrink by half the bead spacing, `e = h (1 - pi/4) / 2`: `x = (d - e) / (w - 2e)`. At 0 or less the
+/// bead counts as supported, at 1 or more it hangs fully clear.
+pub(crate) fn arachne_wall_share(d: f64, w: f64, h: f64) -> f64 {
+    let e = h * (1.0 - std::f64::consts::FRAC_PI_4) / 2.0;
+    let span = w - 2.0 * e;
+    if span <= 0.0 {
+        return if d > e { 1.0 } else { 0.0 };
+    }
+    (d - e) / span
+}
+
+/// The degree 0 to 1 an arachne wall's share `x` ([`arachne_wall_share`]) prints at: straight lines through
+/// (0, 0), (0.1, 1/4), (0.25, 2/4) and (0.75, 1), cut down to a whole number of sixteenths, so each of the four
+/// speed bands has four equal steps.
+pub(crate) fn arachne_wall_degree(x: f64) -> f64 {
+    const KNOTS: [(f64, f64); 4] = [(0.0, 0.0), (0.1, 0.25), (0.25, 0.5), (0.75, 1.0)];
+    let m = if x <= 0.0 {
+        0.0
+    } else if x >= 0.75 {
+        1.0
+    } else {
+        let i = KNOTS.iter().position(|k| x <= k.0).unwrap_or(KNOTS.len() - 1);
+        let ((x0, m0), (x1, m1)) = (KNOTS[i - 1], KNOTS[i]);
+        m0 + (m1 - m0) * (x - x0) / (x1 - x0)
+    };
+    // A hair over the level so that a share exactly on a step lands on it, not one below from rounding.
+    ((m * 16.0 + 1e-9).floor() / 16.0).min(1.0)
 }
 
 /// The speed at degree `m` on straight lines between `knots` at 0, 1/4, 2/4, 3/4 and 1.
@@ -817,10 +875,17 @@ impl Context {
             // Another rule (a small loop, the first layer) slowed this wall below its own speed: keep it.
             let limit = (f64::from(speed) < plain - 1.0).then_some(f64::from(speed));
             let half = f64::from(width).midpoint(self.nozzle);
-            (knots, cap, limit, half)
+            // Arachne walls: the speed of a stretch whose bead hangs fully clear.
+            let clear = self.arachne.then(|| {
+                self.clear
+                    .get(usize::from(tool.max(1) - 1))
+                    .copied()
+                    .unwrap_or(self.bridge_speed)
+            });
+            (knots, cap, limit, half, clear)
         });
         let min_distance = match wall {
-            Some((.., half)) => (0.105 * half) as f32,
+            Some((.., half, _)) => (0.105 * half) as f32,
             None => min_distance,
         };
         let lines = Lines {
@@ -828,15 +893,56 @@ impl Context {
             signed: true,
         };
         let ext = estimate_points(pts, &lines, width, true, -1.0, min_distance, wall.is_some());
-        let wall_speed = |d: f32| -> f32 {
-            let Some((knots, cap, limit, half)) = wall else {
-                return speed;
+        // Arachne walls work out each stretch's speed before the volumetric cap, against the path's own speed
+        // before the cap, and cap last (`arachne_cap`): a level a little under a capped wall speed stays that level.
+        let arachne_path = wall.and_then(|(knots, _, limit, _, clear)| {
+            clear?;
+            Some(if limit.is_some() || knots[0] <= 0.0 {
+                f64::from(speed)
+            } else {
+                knots[0]
+            })
+        });
+        let arachne_cap = |v: f32| -> f32 {
+            let (Some((_, cap, limit, _, _)), Some(path)) = (wall, arachne_path) else {
+                return v;
             };
-            let m = wall_degree(f64::from(d.max(0.0)) / half);
-            if m <= 0.0 {
+            #[allow(clippy::cast_possible_truncation, reason = "a speed")]
+            if v.to_bits() == (path as f32).to_bits() {
                 return speed;
             }
-            let mut v = degree_speed(m, knots).round();
+            let mut v = f64::from(v);
+            if let Some(c) = cap {
+                v = v.min(c);
+            }
+            if let Some(l) = limit {
+                v = v.min(l);
+            }
+            v as f32
+        };
+        let wall_speed = |d: f32| -> f32 {
+            let Some((knots, cap, limit, half, clear)) = wall else {
+                return speed;
+            };
+            let mut v = if let (Some(clear), Some(path)) = (clear, arachne_path) {
+                // Arachne walls: the share of the bead's own width that hangs clear, in sixteenths of a degree;
+                // a bead hanging fully clear prints at the clear speed, whatever its label. Not capped yet.
+                let x = arachne_wall_share(f64::from(d), f64::from(width), f64::from(self.height));
+                let m = arachne_wall_degree(x);
+                return if x >= 1.0 {
+                    clear as f32
+                } else if m <= 0.0 {
+                    path as f32
+                } else {
+                    degree_speed(m, knots) as f32
+                };
+            } else {
+                let m = wall_degree(f64::from(d.max(0.0)) / half);
+                if m <= 0.0 {
+                    return speed;
+                }
+                degree_speed(m, knots).round()
+            };
             if let Some(c) = cap {
                 v = v.min(c);
             }
@@ -926,12 +1032,17 @@ impl Context {
             .copied()
             .flatten();
         let fan_at = |i: usize| limit.is_some_and(|l| overlaps.get(i).is_some_and(|&o| o <= l));
+        // The speed the writer's rule below compares with: the path's own, or for arachne walls the path's own
+        // before the cap.
+        #[allow(clippy::cast_possible_truncation, reason = "a speed")]
+        let path = arachne_path.map_or(speed, |p| p as f32);
+        let fans = (1..ext.len()).any(|i| fan_at(i - 1) && fan_at(i));
         // A path keeps its speed and its fan when no stretch slows and none needs the overhang fan. A wall whose
         // overhang speeds equal its own speed still gets the fan where it hangs past the threshold.
         if !point_speeds
             .iter()
-            .any(|s| (f64::from(*s) - f64::from(speed)).abs() > 1.0)
-            && !(1..ext.len()).any(|i| fan_at(i - 1) && fan_at(i))
+            .any(|s| (f64::from(*s) - f64::from(path)).abs() > 1.0)
+            && !fans
         {
             return None;
         }
@@ -949,14 +1060,18 @@ impl Context {
             let new_speed = point_speeds[i - 1];
             if (last_set - new_speed).abs() > 1.0 {
                 last_set = new_speed;
-            } else if (speed - new_speed).abs() <= 1.0 {
-                last_set = speed;
+            } else if (path - new_speed).abs() <= 1.0 {
+                last_set = path;
             }
             out.push(Stretch {
                 to: *to,
-                speed: last_set,
+                speed: arachne_cap(last_set),
                 fan: fan_at(i - 1) && fan_at(i),
             });
+        }
+        // Arachne walls: every stretch the cap brought back to the path's own speed keeps the path whole.
+        if arachne_path.is_some() && !fans && out.iter().all(|st| st.speed.to_bits() == speed.to_bits()) {
+            return None;
         }
         Some((first, out))
     }
@@ -1021,6 +1136,8 @@ mod tests {
             height: 0.2,
             fan_overlap: Vec::new(),
             clear_width: 0.4,
+            arachne: false,
+            clear: Vec::new(),
         }
     }
 
@@ -1186,6 +1303,57 @@ mod tests {
         ] {
             assert!((at(d) - want).abs() < 0.5, "d {d}: {} want {want}", at(d));
         }
+    }
+
+    /// The arachne level function at 0.2 mm layers and a 0.42 mm bead: a share 0.002 below each of the 16
+    /// thresholds lands one sixteenth under it, 0.002 above lands on it; a share of 1 hangs fully clear, just under
+    /// 1 does not. Through the wall rule, each level prints its own speed on knots far apart.
+    #[test]
+    fn the_arachne_degree_steps_in_sixteenths_at_its_thresholds() {
+        let (h, w) = (0.2, 0.42);
+        let e = h * (1.0 - std::f64::consts::FRAC_PI_4) / 2.0;
+        let mut c = ctx(&square(0.0, 0.0, 10.0, 10.0));
+        c.overhang = [150.0, 100.0, 50.0, 10.0];
+        c.arachne = true;
+        c.clear = vec![5.0];
+        let speed = |n: u32| -> f32 {
+            let m = f64::from(n) / 16.0;
+            #[allow(clippy::cast_possible_truncation, reason = "speeds")]
+            let v = degree_speed(m, [200.0, 150.0, 100.0, 50.0, 10.0]) as f32;
+            v
+        };
+        for n in 1..=16u32 {
+            let t = if n <= 4 {
+                0.025 * f64::from(n)
+            } else if n <= 8 {
+                0.1 + 0.0375 * f64::from(n - 4)
+            } else {
+                0.25 + 0.0625 * f64::from(n - 8)
+            };
+            for (dx, level) in [(-0.002, n - 1), (0.002, n)] {
+                let x = t + dx;
+                let d = e + x * (w - 2.0 * e);
+                assert!((arachne_wall_share(d, w, h) - x).abs() < 1e-12);
+                assert_eq!(arachne_wall_degree(x), f64::from(level) / 16.0, "x {x}");
+                let got = leaning_speed(&c, d, 0.42, Kind::Outer, 200.0);
+                assert!(
+                    (got - speed(level)).abs() < 0.01,
+                    "x {x}: {got} want {}",
+                    speed(level)
+                );
+            }
+        }
+        // Fully clear: the totally clear speed; just under, the 4/4 level.
+        let at = |x: f64| leaning_speed(&c, e + x * (w - 2.0 * e), 0.42, Kind::Outer, 200.0);
+        assert!((at(1.002) - 5.0).abs() < 0.01, "{}", at(1.002));
+        assert!((at(0.998) - 10.0).abs() < 0.01, "{}", at(0.998));
+        assert_eq!(arachne_wall_degree(1.0), 1.0);
+        assert_eq!(arachne_wall_degree(0.0), 0.0);
+        assert_eq!(arachne_wall_degree(-0.3), 0.0);
+        // Classic walls are untouched by the arachne rule.
+        c.arachne = false;
+        c.overhang = [0.0, 50.0, 30.0, 10.0];
+        assert!((leaning_speed(&c, 0.168, 0.42, Kind::Outer, 200.0) - 44.0).abs() < 0.5);
     }
 
     #[test]

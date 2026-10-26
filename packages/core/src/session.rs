@@ -8339,12 +8339,15 @@ impl SliceSession {
                             return q.clone();
                         }
                         #[allow(clippy::cast_possible_truncation, reason = "a layer height in mm")]
-                        let q = std::sync::Arc::new(crate::quality::Context::new(
-                            &cfg.for_extruder(e),
-                            low.clone(),
-                            curled.clone(),
-                            self.plan.thickness(layer) as f32,
-                        ));
+                        let q = std::sync::Arc::new(
+                            crate::quality::Context::new(
+                                &cfg.for_extruder(e),
+                                low.clone(),
+                                curled.clone(),
+                                self.plan.thickness(layer) as f32,
+                            )
+                            .with_clear_speeds(cfg),
+                        );
                         qualities.push((cfg, e, q.clone()));
                         q
                     }),
