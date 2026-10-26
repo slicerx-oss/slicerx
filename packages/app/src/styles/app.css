@@ -286,8 +286,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .vp-empty b { display: block; font: var(--fw-semibold) calc(15px * var(--text-scale)) var(--f-body); margin: 10px 0 6px; }
 .vp-empty p { margin: 0; color: var(--muted); font-size: calc(13px * var(--text-scale)); }
 .vp-empty > div > button { margin-top: 12px; }
-/* The view switch and the legend chip share one row; the legend's list hangs below its chip, over the view, so opening
-   it moves nothing. The chip's list button comes first, so a longer color name only grows the chip's far end. */
+/* The view switch and the legend chip share one row (one above the other in a narrow view, below); the legend's list
+   hangs below its chip, over the view, so opening it moves nothing. The chip's list button comes first, so a longer
+   color name only grows the chip's far end. */
 .legend-row { align-items: stretch; }
 .legend-anchor { position: relative; display: flex; }
 .legend-chip { display: flex; align-items: center; gap: 4px; padding: 3px; border-radius: var(--r-md); }
@@ -295,9 +296,14 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .legend-chip [data-testid="legend-toggle"][aria-expanded="true"] { background: var(--control-selected); box-shadow: inset 0 0 0 1px var(--control-selected-line); }
 .legend { position: absolute; top: calc(100% + 8px); left: 0; z-index: 1; min-width: 200px; max-height: min(60vh, 560px); overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 8px 12px; border-radius: var(--r-md); display: grid; gap: 3px; }
 /* On a desktop the row sits a step below the plate toolbar, which spans the middle of the top edge; a narrow view puts
-   the toolbar under the corner buttons, and the row under the toolbar. */
+   the toolbar under the corner buttons, and the row under the toolbar. A narrow view has no room for the switch and the
+   chip side by side (they ran off the right edge at phone widths), so there the chip goes under the switch, whatever
+   the color choice: a longer color name never moves the switch or folds the row. */
 .vp:has(> .plate-tools-group) > .hud-top .legend-row { margin-top: 12px; }
-@container vp (max-width: 600px) { .vp:has(> .plate-tools-group) > .hud-top .legend-row { margin-top: 56px; } }
+@container vp (max-width: 600px) {
+  .vp:has(> .plate-tools-group) > .hud-top .legend-row { margin-top: 56px; }
+  .hud-top .legend-row { flex-direction: column; align-items: flex-start; }
+}
 .vp:has(> .plate-tools-group) .legend-row > .slice-look, .vp:has(> .plate-tools-group) .legend-chip { padding: 4px; }
 .vp:has(> .plate-tools-group) .legend-row > .slice-look .sx-seg > button { height: 30px; padding: 0 16px; }
 .vp:has(> .plate-tools-group) .legend-chip .sx-btn[data-size="sm"] { height: 30px; }

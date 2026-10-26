@@ -6,12 +6,13 @@
 // the touch tip, and long names. One page serves the whole file. The Model build and the Slice build differ by a boot flag
 // the app reads at load, so a test that needs the other one reloads the page (boot below); the rest share the page as it is.
 //
-// The last test runs on a desktop window: the long names must also fit at 1440 and 1100 wide. The phone project runs
-// only this file, so that test never runs there; it is here so the long-names checks stay in one place, and the config
-// can let the desktop project run this file too.
+// The desktop describe runs on a desktop window: the long names must also fit at 1440 and 1100 wide. The phone project
+// never runs it; it is here so the long-names checks stay in one place, and the config can let the desktop project run
+// this file too. The view chips test runs in both: a phone, and a desktop window as narrow as one.
 import { type CDPSession, type Page } from '@playwright/test'
 import { addMenu, appReady, closeSheet, expect, goTab, openSheet, plateReady, sliceCount, sliced, tab, viewportReady } from '../fixtures'
 import { journey as test } from '../journey'
+import { shotsDir, shotsOn } from './lib/session'
 
 // Debug hooks (__sx, __vp) on, the Slice tab, mimir off. The phone opens Slice in Simple whatever was saved, so a pref saved
 // from a desktop is set here too: the slim studio must leave it alone for the person's desktop.
@@ -23,11 +24,13 @@ const LONG = 'Workshop enclosure printer with the hardened nozzle, bay 12 A'
 const PRINTER = { id: 'e2e-long-name', name: LONG, profileId: 'bambu-a1', vendor: 'Bambu Lab', model: 'A1', nozzleCount: 1 }
 const longName = (kind: string, n = 1) => `${kind} ${n} for the workshop enclosure with the hardened nozzle`.slice(0, 60)
 
-type Boot = 'model' | 'slice' | 'long'
+type Boot = 'model' | 'slice' | 'long' | 'window'
 const BOOTS: Record<Boot, { prefs: Record<string, unknown>; cadOnly: boolean }> = {
   model: { prefs: { workspace: 'prepare', pilot: { mode: 'off' } }, cadOnly: true },
   slice: { prefs: SLICE, cadOnly: false },
   long: { prefs: { workspace: 'prepare', settingsMode: 'expert', pilot: { mode: 'off' }, handPrinters: [PRINTER], printerId: PRINTER.id }, cadOnly: false },
+  // Slice on a desktop window: SLICE would open Model there (modelModeDefault), so the journey's own prefs.
+  window: { prefs: { workspace: 'prepare', settingsMode: 'advanced', pilot: { mode: 'off' } }, cadOnly: false },
 }
 
 /**
@@ -569,6 +572,65 @@ test.describe('desktop', () => {
       })
     }
   })
+})
+
+// ---- The view chips after a slice ------------------------------------------------------------------------------------------
+
+// The view switch (Solid, Layer lines, Toolpaths) and the legend chip at phone widths, after a slice: on a phone, and in a
+// desktop window as narrow as one (the compact layout, with the mouse). Each chip is whole inside the window and the
+// view, none sits over another or over the corner buttons, and pressing a look moves neither chip. Both projects run it.
+test('at 390 and 360 px, after a slice every view chip is inside the view and none overlap', async ({ page, isMobile }, info) => {
+  test.slow()
+  await boot(page, isMobile ? 'slice' : 'window')
+  if (isMobile) await shutSheet(page)
+  else await page.keyboard.press('Escape')
+  const n = await sliceCount(page)
+  await page.keyboard.press('ControlOrMeta+Enter')
+  await expect(sliced(page, n)).toBeVisible({ timeout: 120_000 })
+  const switcher = page.locator('.slice-look')
+  const chip = page.getByTestId('legend-chip')
+  for (const width of [390, 360]) {
+    await sized(page, { width, height: 844 }, async () => {
+      await panesStill(page)
+      await expect(switcher).toBeVisible()
+      await expect(chip).toBeVisible()
+      const at = await page.locator('.vp').evaluate((vp) => {
+        const box = (el: Element) => {
+          const r = el.getBoundingClientRect()
+          return { x: r.x, y: r.y, w: r.width, h: r.height }
+        }
+        const chips = [...vp.querySelectorAll('.slice-look, [data-testid="legend-chip"]')].map((el) => ({ name: el.className, ...box(el) }))
+        const corner = [...vp.querySelectorAll('.hud-top .hud-col > .hud-row:first-child > *, .hud-top .hud-col.end > *')].map((el) => ({ name: el.className, ...box(el) }))
+        const row = vp.querySelector('[data-testid="legend-row"]')!
+        return { window: innerWidth, view: box(vp), chips, corner, rowOver: row.scrollWidth - row.clientWidth }
+      })
+      expect(at.chips, `at ${width} px`).toHaveLength(2)
+      const outside = at.chips
+        .filter((c) => c.x < Math.max(0, at.view.x) - 0.5 || c.x + c.w > Math.min(at.window, at.view.x + at.view.w) + 0.5)
+        .map((c) => `${c.name} ${Math.round(c.x)} to ${Math.round(c.x + c.w)} of ${Math.round(at.view.x)} to ${Math.round(at.view.x + at.view.w)}`)
+      expect(outside, `at ${width} px`).toEqual([])
+      expect(at.rowOver, `at ${width} px`).toBeLessThanOrEqual(0)
+      const pairs = at.chips.flatMap((a, i) => [...at.chips.slice(i + 1), ...at.corner].filter((b) => meet(a, b)).map((b) => `${a.name} / ${b.name}`))
+      expect(pairs, `at ${width} px`).toEqual([])
+      // Static controls: pressing a look moves neither chip.
+      const before = { switcher: await switcher.boundingBox(), chip: await chip.boundingBox() }
+      await switcher.getByRole('radio', { name: 'Layer lines' }).click()
+      await expect(switcher).toBeVisible()
+      expect(await switcher.boundingBox()).toEqual(before.switcher)
+      await switcher.getByRole('radio', { name: 'Toolpaths' }).click()
+      await expect(chip).toBeVisible()
+      await panesStill(page)
+      expect({ switcher: await switcher.boundingBox(), chip: await chip.boundingBox() }).toEqual(before)
+      if (shotsOn()) {
+        for (const scheme of ['dark', 'light']) {
+          await setState(page, { scheme })
+          await expect(page.locator('html')).toHaveAttribute('data-scheme', scheme)
+          await page.screenshot({ path: `${shotsDir(info)}/view-chips-${isMobile ? 'phone' : 'window'}-${width}-${scheme}.png` })
+        }
+        await setState(page, { scheme: 'dark' })
+      }
+    })
+  }
 })
 
 // ---- Helpers the slice and long-name tests share ---------------------------------------------------------------------------
