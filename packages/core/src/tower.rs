@@ -304,6 +304,12 @@ fn shared_ramming(cfg: &PrintConfig, from: u8) -> Option<(f64, RamLine)> {
     ))
 }
 
+/// True where the ramming before a change is a single nozzle's ([`shared_ramming`]), which runs at the speeds its
+/// filament lists, past the volumetric limit.
+pub(crate) fn rams_past_cap(cfg: &PrintConfig) -> bool {
+    !type1(cfg) && flag_or(cfg, "single_extruder_multi_material", true)
+}
+
 /// How long a single nozzle rams at each speed its `filament_ramming_parameters` lists, s.
 pub(crate) const RAM_STEP: f64 = 0.25;
 
@@ -1626,6 +1632,9 @@ impl Tower {
         layer_h: f64,
         start: f64,
     ) -> (Vec<TowerPath>, f64, Option<(f64, bool)>) {
+        if let Some(line) = p.ram_line {
+            return self.shared_ramming(cfg, p.ram, line, from, layer_h, start);
+        }
         let w = ram_width(cfg, p.nozzle_change);
         let (x0, x1) = (w, (self.width - w).max(w + 1.0));
         let row_len = x1 - x0;
@@ -1679,6 +1688,67 @@ impl Tower {
             ram: true,
         };
         (vec![path], rows, end.filter(|_| !p.nozzle_change))
+    }
+}
+
+impl Tower {
+    /// A single nozzle's ramming of `volume` mm3 of filament `from` before a change ([`shared_ramming`]): lines
+    /// `line.width` wide and `line.pitch` apart from row `start`, centered from half a pitch into the change's
+    /// band, each running between 1.5 wall beads in from the tower's sides and starting at the left one. Each
+    /// speed the filament's `filament_ramming_parameters` lists lays [`RAM_STEP`] seconds of filament as its own
+    /// pieces (split where a line turns) at that speed over the plain bead, past the volumetric limit; the last
+    /// line stops at the volume, and the step to the next line is a travel. Returns the paths, the tower rows
+    /// taken and where the last line stopped across the tower and whether it was heading right.
+    fn shared_ramming(
+        &self,
+        cfg: &PrintConfig,
+        volume: f64,
+        line: RamLine,
+        from: u8,
+        layer_h: f64,
+        start: f64,
+    ) -> (Vec<TowerPath>, f64, Option<(f64, bool)>) {
+        let (w, pitch) = (line.width, line.pitch);
+        let inset = 1.5 * self.wall_w;
+        let (x0, x1) = (inset, (self.width - inset).max(inset + 1.0));
+        let row_len = x1 - x0;
+        let area = bead(w, layer_h);
+        let lines = ram_lines(volume, row_len, area);
+        let speeds = ramming_tokens(cfg, from).map_or_else(Vec::new, |t| t.speeds);
+        let mut y = 2.0 * self.wall_w + start * self.spacing + (pitch - self.spacing) / 2.0;
+        let (mut x, mut right, mut line_no) = (x0, true, 1.0);
+        let mut paths = Vec::new();
+        for s in speeds.iter().copied().filter(|s| *s > 0.0) {
+            let mut len = RAM_STEP * s / area;
+            let speed = to_f32(s / area);
+            while len > 1e-9 {
+                let end = if right { x1 } else { x0 };
+                let mut room = (end - x).abs();
+                if room <= 1e-9 && line_no < lines {
+                    // The line is full: a travel steps to the next one, which runs back the other way.
+                    y += pitch;
+                    right = !right;
+                    line_no += 1.0;
+                    room = row_len;
+                }
+                // The last line takes what is left, even a rounding past its end.
+                let take = if line_no < lines { len.min(room) } else { len };
+                let to = if right { x + take } else { x - take };
+                paths.push(TowerPath {
+                    points: vec![self.place_point(x, y), self.place_point(to, y)],
+                    width_mm: to_f32(w),
+                    speed_mm_s: speed,
+                    flow: 1.0,
+                    nozzle_wipe: false,
+                    hop: false,
+                    ram: true,
+                });
+                x = to;
+                len -= take;
+            }
+        }
+        let rows = (lines * pitch / self.spacing - 1e-9).ceil();
+        (paths, rows, Some((x, right)))
     }
 }
 
@@ -2187,6 +2257,14 @@ fn ram_width(cfg: &PrintConfig, nozzle_change: bool) -> f64 {
 /// Tower rows (at the tower's own row spacing) the ramming of one change takes on a tower `width` wide.
 fn ram_rows(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> f64 {
     let wall_w = cfg.nozzle_diameter * 1.25;
+    if let Some(line) = p.ram_line {
+        // A single nozzle's lines run 1.5 wall beads in from each side, `line.pitch` apart, on a type 2 tower's
+        // rows (`wipe_tower_extra_flow` times `wipe_tower_extra_spacing` wall beads apart).
+        let lines = ram_lines(p.ram, (width - 3.0 * wall_w).max(1.0), bead(line.width, h));
+        let extra_flow = (cfg.raw_number("wipe_tower_extra_flow", 100.0) / 100.0).clamp(0.5, 3.0);
+        let extra_spacing = (cfg.raw_number("wipe_tower_extra_spacing", 100.0) / 100.0).clamp(0.5, 5.0);
+        return (lines * line.pitch / (wall_w * extra_flow * extra_spacing) - 1e-9).ceil();
+    }
     let w = ram_width(cfg, p.nozzle_change);
     let row_len = (width - 2.0 * w).max(1.0);
     let lines = (p.ram / (row_len * bead(w, h))).ceil().max(1.0);
@@ -2200,6 +2278,12 @@ fn ram_rows(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> f64 {
         wall_w
     };
     (lines * w * if p.nozzle_change { 1.25 } else { 1.0 } / spacing).ceil()
+}
+
+/// Lines a single nozzle's ramming of `volume` mm3 takes at `area` mm2 a bead, `row_len` mm a line: the last one
+/// stops at the volume.
+fn ram_lines(volume: f64, row_len: f64, area: f64) -> f64 {
+    (volume / (row_len * area) - 1e-9).ceil().max(1.0)
 }
 
 /// Cross-section of a bead `w` wide and `h` tall with rounded edges, mm2.
@@ -3194,6 +3278,102 @@ mod tests {
             &[("single_extruder_multi_material", serde_json::json!("0"))],
         );
         assert!(ram(&tools).abs() < 1e-9 && change_purge(&tools, 2, 1, 2).ram_line.is_none());
+    }
+
+    /// The ramming lines of a change on `c` from the tower's first row: each line's Y, its X ends from the tower's
+    /// origin and its width, the volume laid, the paths' feeds (mm/s) and the rows taken.
+    #[allow(clippy::type_complexity, reason = "a test summary")]
+    fn ram_lines_of(c: &PrintConfig) -> (Vec<(f64, f64, f64, f64)>, f64, Vec<f64>, f64, Option<(f64, bool)>) {
+        let p = change_purge(c, 2, 1, 2);
+        let t = Tower::new(c, 2, 40.0).unwrap();
+        let (x0, y0) = (t.x, t.y);
+        let (paths, rows, end) = t.ramming(c, p, 1, 0.2, 0.0);
+        let mut lines: Vec<(f64, f64, f64, f64)> = Vec::new();
+        let mut volume = 0.0;
+        for path in &paths {
+            assert!(path.ram && path.points.len() == 2);
+            let (a, b) = (path.points[0], path.points[1]);
+            assert!((a.y_mm() - b.y_mm()).abs() < 1e-6, "a ramming piece runs along X");
+            volume += path_volume(path, 0.2);
+            let (y, xa, xb) = (a.y_mm() - y0, a.x_mm() - x0, b.x_mm() - x0);
+            match lines.last_mut() {
+                Some(l) if (l.0 - y).abs() < 1e-6 => {
+                    l.1 = l.1.min(xa.min(xb));
+                    l.2 = l.2.max(xa.max(xb));
+                }
+                _ => lines.push((y, xa.min(xb), xa.max(xb), f64::from(path.width_mm))),
+            }
+        }
+        let feeds = paths.iter().map(|p| f64::from(p.speed_mm_s)).collect();
+        (lines, volume, feeds, rows, end)
+    }
+
+    #[test]
+    fn a_shared_nozzle_rams_in_wide_lines_across_the_tower() {
+        let c = mmu_ram(60.0, STOCK_RAM, &[]);
+        let (lines, volume, feeds, rows, end) = ram_lines_of(&c);
+        assert_eq!(lines.len(), 4, "{lines:?}");
+        assert!((volume - 50.0).abs() < 1e-3, "{volume}");
+        for (k, l) in lines.iter().enumerate() {
+            assert!((l.3 - 1.25).abs() < 1e-6, "width {}", l.3);
+            // Every line reaches 59.25; the last runs back from there and stops short of 0.75.
+            assert!((l.2 - 59.25).abs() < 1e-3, "line {k} ends at {}", l.2);
+            if k < 3 {
+                assert!((l.1 - 0.75).abs() < 1e-3, "line {k} starts at {}", l.1);
+            }
+            if k > 0 {
+                assert!((l.0 - lines[k - 1].0 - 1.25).abs() < 1e-6, "pitch");
+            }
+        }
+        // The first line is centered half a line into the band below the first row.
+        assert!(
+            (lines[0].0 - (2.0 * 0.5 - 0.25 + 0.625)).abs() < 1e-6,
+            "{}",
+            lines[0].0
+        );
+        let last = lines[3].2 - lines[3].1;
+        assert!((last - 31.61).abs() < 0.01, "last line {last}");
+        // Five pieces of 10 mm3 at 40 mm3/s over the 1.25 mm bead (F9941), one split where the line turns.
+        assert!(feeds.iter().all(|f| (f * 60.0 - 9941.0).abs() < 1.0), "{feeds:?}");
+        assert!(feeds.len() > 5);
+        // Four lines 1.25 apart take ten rows; the fourth line runs right to left and stops 31.6 mm in.
+        assert!((rows - 10.0).abs() < 1e-9, "{rows}");
+        assert!((rows - ram_rows(&c, change_purge(&c, 2, 1, 2), 60.0, 0.2)).abs() < 1e-9);
+        let (x, right) = end.unwrap();
+        assert!(!right && (x - (59.25 - 31.611)).abs() < 0.01, "{x}");
+        // A 40 mm tower: six lines, the last 14.6 mm.
+        let (lines, volume, _, rows, _) = ram_lines_of(&mmu_ram(40.0, STOCK_RAM, &[]));
+        assert_eq!(lines.len(), 6);
+        assert!((volume - 50.0).abs() < 1e-3 && (lines[0].2 - 39.25).abs() < 1e-3);
+        assert!((lines[5].2 - lines[5].1 - 14.6).abs() < 0.05, "{lines:?}");
+        assert!((rows - 15.0).abs() < 1e-9);
+        // The first token 500: two lines 2.5 wide and 2.5 apart.
+        let (lines, ..) = ram_lines_of(&mmu_ram(60.0, "500 100 40 40 40 40 40", &[]));
+        assert_eq!(lines.len(), 2);
+        assert!((lines[0].3 - 2.5).abs() < 1e-6 && (lines[1].0 - lines[0].0 - 2.5).abs() < 1e-6);
+        // The second token 150, or `wipe_tower_extra_spacing` 150%: lines 1.875 apart.
+        for c in [
+            mmu_ram(60.0, "250 150 40 40 40 40 40", &[]),
+            mmu_ram(
+                60.0,
+                STOCK_RAM,
+                &[("wipe_tower_extra_spacing", serde_json::json!("150%"))],
+            ),
+        ] {
+            let (lines, ..) = ram_lines_of(&c);
+            assert_eq!(lines.len(), 4);
+            assert!((lines[1].0 - lines[0].0 - 1.875).abs() < 1e-6, "{lines:?}");
+        }
+        // Each speed is its own feed over the bead: 10 to 60 mm3/s is F2485 to F14912.
+        let (_, volume, feeds, ..) = ram_lines_of(&mmu_ram(60.0, "250 100 10 20 30 40 50 60", &[]));
+        assert!((volume - 52.5).abs() < 1e-3);
+        let (lo, hi) = feeds
+            .iter()
+            .fold((f64::MAX, 0.0f64), |a, f| (a.0.min(*f), a.1.max(*f)));
+        assert!(
+            (lo * 60.0 - 2485.0).abs() < 1.0 && (hi * 60.0 - 14912.0).abs() < 2.0,
+            "{feeds:?}"
+        );
     }
 
     #[test]

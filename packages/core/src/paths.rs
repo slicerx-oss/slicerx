@@ -1871,6 +1871,10 @@ pub(crate) fn plan_layer_paths(
     }
     // Per work: its paths and how they slow down over the layer below.
     let mut vary: Vec<(usize, usize, &crate::quality::Context)> = Vec::new();
+    // A single nozzle's ramming pieces (where each starts, its width and its speed), which the layer's speed cap
+    // leaves at their own feed.
+    let free_feed = crate::tower::rams_past_cap(cfg);
+    let mut rammed: Vec<(Point, f32, f32)> = Vec::new();
     for w in works {
         let cfg: &PrintConfig = slot_cfgs.get(usize::from(w.tool)).map_or(layer_cfg, |c| c);
         let speeds = Speeds::for_layer(cfg, layer);
@@ -2636,6 +2640,12 @@ pub(crate) fn plan_layer_paths(
                 b.width_mm = t.width_mm;
                 b.flow = if t.flow > 0.0 { t.flow } else { 1.0 };
                 let before = b.out.paths.len();
+                if t.ram
+                    && free_feed
+                    && let Some(&at) = t.points.first()
+                {
+                    rammed.push((at, t.width_mm, t.speed_mm_s));
+                }
                 b.push(
                     w.tool,
                     Feature::PrimeTower,
@@ -2678,6 +2688,22 @@ pub(crate) fn plan_layer_paths(
     }
     crate::tall::apply(out, cfg);
     crate::preflight::cap_speeds(out, cfg);
+    if !rammed.is_empty() {
+        // A single nozzle rams at the speeds its filament lists, held only to the machine's axes.
+        let axis = crate::preflight::axis_cap(cfg).unwrap_or(f64::INFINITY);
+        for p in out.paths.iter_mut().filter(|p| p.feature == Feature::PrimeTower) {
+            let at = out.points.get(p.start as usize).copied();
+            if let Some(r) = rammed
+                .iter()
+                .find(|r| Some(r.0) == at && r.1.to_bits() == p.width_mm.to_bits())
+            {
+                #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
+                {
+                    p.speed_mm_s = r.2.min(axis as f32);
+                }
+            }
+        }
+    }
 }
 
 /// Orca's point by point overhang speed (`quality.rs`) over the walls and bridges of each work, in their
