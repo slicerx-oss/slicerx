@@ -102,16 +102,17 @@ pub(crate) fn purge_volume(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> f6
         return cfg.raw_number("prime_volume", 45.0) * PURGE_EXTRA;
     }
     let mult = cfg.raw_number("flush_multiplier", 1.0).max(0.0);
-    let asked = match flush_entry(
+    let floor = per_slot_raw(cfg, "filament_minimal_purge_on_wipe_tower", to, 15.0).max(0.0);
+    match flush_entry(
         cfg,
         tools,
         usize::from(from.max(1) - 1),
         usize::from(to.max(1) - 1),
     ) {
-        Some(v) if v > 0.0 => v * mult,
-        _ => cfg.raw_number("prime_volume", 45.0),
-    };
-    asked * PURGE_EXTRA
+        // A flush never purges less than the new filament's `filament_minimal_purge_on_wipe_tower`.
+        Some(v) if v > 0.0 => (v * mult * PURGE_EXTRA).max(floor),
+        _ => cfg.raw_number("prime_volume", 45.0) * PURGE_EXTRA,
+    }
 }
 
 /// The prime volume a filament gets when the settings list none for it, mm3.
@@ -2801,6 +2802,54 @@ mod tests {
     }
 
     #[test]
+    fn a_shared_nozzle_purges_at_least_the_new_filaments_minimal_purge() {
+        let semm = |matrix: serde_json::Value, floor: Option<serde_json::Value>| {
+            let mut pairs = vec![
+                ("flush_volumes_matrix", matrix),
+                ("flush_multiplier", serde_json::json!(0.3)),
+            ];
+            pairs.extend(floor.map(|f| ("filament_minimal_purge_on_wipe_tower", f)));
+            cfg(&pairs)
+        };
+        // 50 x 0.3 x 1.1 is 16.5: into filament 2 its floor of 40 wins, into filament 1 its 15 does not.
+        let low = semm(
+            serde_json::json!([0, 50, 50, 0]),
+            Some(serde_json::json!(["15", "40"])),
+        );
+        assert!((purge_volume(&low, 2, 1, 2) - 40.0).abs() < 1e-9);
+        assert!((change_purge(&low, 2, 1, 2).wipe - 40.0).abs() < 1e-9);
+        assert!((purge_volume(&low, 2, 2, 1) - 16.5).abs() < 1e-9);
+        // Above the floor the flush stands: 280 x 0.3 x 1.1.
+        let stock = semm(
+            serde_json::json!([0, 280, 280, 0]),
+            Some(serde_json::json!([15, 15])),
+        );
+        assert!((purge_volume(&stock, 2, 1, 2) - 84.0 * PURGE_EXTRA).abs() < 1e-9);
+        // Unset, the floor is 15: 10 x 0.3 x 1.1 is 3.3.
+        let unset = semm(serde_json::json!([0, 10, 10, 0]), None);
+        assert!((purge_volume(&unset, 2, 1, 2) - 15.0).abs() < 1e-9);
+        // With no matrix entry the change purges `prime_volume`, floor or not.
+        let fallback = cfg(&[
+            ("prime_volume", serde_json::json!(5)),
+            ("filament_minimal_purge_on_wipe_tower", serde_json::json!(40)),
+        ]);
+        assert!((purge_volume(&fallback, 2, 1, 2) - 5.0 * PURGE_EXTRA).abs() < 1e-9);
+        // A tool changer's `prime_volume` and a type 1 tower's prime volume take no floor.
+        let tools = cfg(&[
+            ("single_extruder_multi_material", serde_json::json!(0)),
+            ("prime_volume", serde_json::json!(5)),
+            ("filament_minimal_purge_on_wipe_tower", serde_json::json!(40)),
+        ]);
+        assert!((purge_volume(&tools, 2, 1, 2) - 5.0 * PURGE_EXTRA).abs() < 1e-9);
+        let bambu = cfg(&[
+            ("printer_model", serde_json::json!("Bambu Lab A1")),
+            ("filament_prime_volume", serde_json::json!([5, 5])),
+            ("filament_minimal_purge_on_wipe_tower", serde_json::json!(40)),
+        ]);
+        assert!((purge_volume(&bambu, 2, 1, 2) - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
     fn a_type_1_tower_wipes_each_filaments_own_prime_volume() {
         let bambu = |extra: &[(&str, serde_json::Value)]| {
             let mut pairs = vec![("printer_model", serde_json::json!("Bambu Lab A1"))];
@@ -2961,10 +3010,13 @@ mod tests {
         // To filament 1 (block of nozzle 2): row 1, column 0.
         assert_eq!(flush_entry(&c, 2, 1, 0), Some(444.0));
         // A matrix for more filaments than the plate uses is still read by its own side.
-        let wide = cfg(&[(
-            "flush_volumes_matrix",
-            serde_json::json!([0, 1, 2, 3, 0, 5, 6, 7, 0]),
-        )]);
+        let wide = cfg(&[
+            (
+                "flush_volumes_matrix",
+                serde_json::json!([0, 1, 2, 3, 0, 5, 6, 7, 0]),
+            ),
+            ("filament_minimal_purge_on_wipe_tower", serde_json::json!(0)),
+        ]);
         assert_eq!(flush_entry(&wide, 2, 1, 0), Some(3.0));
         assert!((purge_volume(&wide, 2, 2, 1) - 3.0 * PURGE_EXTRA).abs() < 1e-9);
     }
