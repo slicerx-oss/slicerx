@@ -334,24 +334,68 @@ fn around_of(i: &Input<'_>) -> Shared<Around> {
     }
 }
 
-/// The part of `solid` ([`solid_area`] of the same input) that only the coverage rule makes solid, past the
-/// neighbors' surfaces: the band a leaning wall leaves, and the strip under the walls of a part that stands on the
-/// layers above. Empty with `surfaces_only`, and where the coverage rule adds nothing.
-pub(crate) fn coverage_band(i: &Input<'_>, solid: &Shapes) -> Shapes {
-    if solid.is_empty() || i.surfaces_only {
-        return Vec::new();
+/// The part of a region's solid area that only the coverage rule makes solid, past the neighbors' surfaces: the
+/// band a leaning wall leaves, and the strip under the walls of a part that stands on the layers above. Worked out
+/// when first asked for ([`Band::area`]), since only a narrow piece on the layer above reads it.
+#[derive(Clone, Default)]
+pub(crate) enum Band {
+    /// No band: the coverage rule adds nothing, or `surfaces_only`.
+    #[default]
+    None,
+    /// The band, worked out.
+    Ready(Shapes),
+    /// The region's solid area ([`solid_area`]) and what the rule read from the layers around.
+    Lazy { solid: Shapes, around: Shared<Around> },
+}
+
+impl std::fmt::Debug for Band {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::None => "Band::None",
+            Self::Ready(_) => "Band::Ready",
+            Self::Lazy { .. } => "Band::Lazy",
+        })
     }
-    let around = around_of(i);
-    if around.classic.as_ref().is_none_or(Vec::is_empty) {
-        return Vec::new();
+}
+
+impl Band {
+    /// The band of the input's region, from its solid area `solid` ([`solid_area`] of the same input).
+    pub(crate) fn of(i: &Input<'_>, solid: Shapes) -> Self {
+        if solid.is_empty() || i.surfaces_only {
+            return Self::None;
+        }
+        let around = around_of(i);
+        if around.classic.as_ref().is_none_or(Vec::is_empty) {
+            return Self::None;
+        }
+        Self::Lazy { solid, around }
     }
-    let surfaces = around
-        .surfaces_kept
-        .once(|| opened(&around.surfaces, around.band_open));
-    if surfaces.is_empty() {
-        return solid.clone();
+
+    /// The band within `shell`, the region's internal solid area.
+    pub(crate) fn area(&self, shell: &Shapes) -> Shapes {
+        match self {
+            Self::None => Vec::new(),
+            Self::Ready(band) => perimeters::intersection(band, shell),
+            Self::Lazy { solid, around } => {
+                if shell.is_empty() {
+                    return Vec::new();
+                }
+                let surfaces = around
+                    .surfaces_kept
+                    .once(|| opened(&around.surfaces, around.band_open));
+                let band = if surfaces.is_empty() {
+                    solid.clone()
+                } else {
+                    perimeters::difference(solid, surfaces)
+                };
+                if band.is_empty() {
+                    band
+                } else {
+                    perimeters::intersection(&band, shell)
+                }
+            }
+        }
     }
-    perimeters::difference(solid, surfaces)
 }
 
 /// The narrowest solid band the shell rule keeps, in solid infill line spacings: with narrow detection off, and on.

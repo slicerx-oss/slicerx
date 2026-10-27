@@ -42,9 +42,9 @@ pub(crate) struct Classes {
     pub(crate) bottom: Shapes,
     pub(crate) shell: Shapes,
     pub(crate) sparse: Shapes,
-    /// The part of `shell` only the coverage band of the vertical shell rule makes solid
-    /// (`shells::coverage_band`), worked out where a floating vertical shell can print (`vshell::wanted_for`).
-    pub(crate) band: Shapes,
+    /// The part of `shell` only the coverage band of the vertical shell rule makes solid (`shells::Band`), kept
+    /// where a floating vertical shell can print (`vshell::wanted_for`).
+    pub(crate) band: crate::shells::Band,
     /// Bottom surfaces over air above the first layer, grown into the areas beside them, with their strand direction.
     pub(crate) bridges: Vec<crate::bridging::Bridged>,
 }
@@ -177,7 +177,7 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
     top = sub(&top, &bottom);
 
     // discover_vertical_shells or discover_horizontal_shells.
-    let mut band = Vec::new();
+    let mut band = crate::shells::Band::None;
     let solid = if i.top_layers == 0 && i.bottom_layers == 0 {
         Vec::new()
     } else {
@@ -199,7 +199,7 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
                 };
                 let solid = crate::shells::solid_area(&input);
                 if crate::vshell::wanted_for(cfg) {
-                    band = crate::shells::coverage_band(&input, &solid);
+                    band = crate::shells::Band::of(&input, solid.clone());
                 }
                 solid
             }
@@ -304,11 +304,6 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
         shell = union(&shell, &small);
         sparse = big;
     }
-    let band = if band.is_empty() {
-        band
-    } else {
-        meet(&band, &shell)
-    };
     Classes {
         top,
         bottom,
