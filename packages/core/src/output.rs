@@ -407,6 +407,8 @@ pub enum WarningCode {
     SafetyLimit,
     /// The print sequence would run the nozzle or gantry into a printed object.
     Collision,
+    /// Two objects sliced together overlap; the overlap prints once, as part of the first.
+    ObjectsOverlap,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -487,6 +489,8 @@ pub struct SliceOutput {
     pub filament_map: Option<crate::nozzles::Map>,
     /// By object: what these layers' moves and tool changes meet of the other objects (`collide`).
     pub collisions: crate::collide::Hits,
+    /// By layer: the objects sliced together that overlap, and on which layers (`collide::plate::overlaps`).
+    pub overlaps: crate::collide::Hits,
     /// The chamber cooling mode the G-code reads (`chamber_cooling_mode`), for the whole plate; None when no
     /// G-code reads it.
     pub chamber: Option<crate::chamber::ChamberCooling>,

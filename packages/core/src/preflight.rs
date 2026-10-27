@@ -982,7 +982,7 @@ fn object_name(out: &SliceOutput, i: usize) -> String {
 }
 
 /// [`object_name`] among `objects`.
-fn name_of(objects: &[crate::output::ObjectFootprint], i: usize) -> String {
+pub(crate) fn name_of(objects: &[crate::output::ObjectFootprint], i: usize) -> String {
     objects.get(i).map_or_else(
         || format!("object {}", i + 1),
         |o| {

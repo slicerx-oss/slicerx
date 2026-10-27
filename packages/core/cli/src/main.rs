@@ -1250,6 +1250,8 @@ fn slice_checked(
     sx_core::api::set_collision_check(&mut session, plate, config, None);
     let mut out = session.slice_range_with(config, 0..session.layer_count(), &sx_core::NoProgress)?;
     sx_core::api::check_paths(&session, config, &mut out);
+    out.warnings
+        .extend(sx_core::api::overlap_notes(&out.overlaps, &out.objects));
     let meta = session.collide_meta().cloned();
     let hits = std::mem::take(&mut out.collisions);
     let layer_gcode = sx_core::api::layer_gcode(marks, &session)?;
