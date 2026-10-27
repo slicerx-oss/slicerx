@@ -9105,7 +9105,9 @@ impl SliceSession {
                             let turns: Vec<bool> = pl
                                 .windows(2)
                                 .map(|w| match w {
-                                    [a, b] => d.st(a.x, a.y).0 != d.st(b.x, b.y).0,
+                                    // A point halves its scanline value to land on the grid, so the two ends of
+                                    // one line can read scanline values one unit apart: a turn moves further.
+                                    [a, b] => (d.st(a.x, a.y).0 - d.st(b.x, b.y).0).abs() > 1,
                                     _ => false,
                                 })
                                 .collect();
@@ -12714,4 +12716,119 @@ fn thin_bands(region: &Shapes, spacing_mm: f64) -> Shapes {
     let reach = perimeters::offset(&core, mm(0.5 * spacing_mm) + k);
     let rest = perimeters::difference(region, &reach);
     perimeters::offset(&perimeters::offset(&rest, -k), k)
+}
+
+#[cfg(test)]
+mod solid_join_tests {
+    use crate::fm::Fm;
+    use crate::geom::SCALE;
+    use crate::mesh::{Mesh, MeshPart};
+    use crate::output::Feature;
+    use crate::plate::Plate;
+    use crate::session::SliceSession;
+
+    /// A 10 x 10 mm block, 2 mm tall and turned 20 degrees: every layer is a solid surface, and its edges meet the
+    /// fill lines at uneven places. (The edges of a square turned 0 or 45 degrees meet the lines where both ends of a
+    /// line round alike.)
+    fn block() -> Mesh {
+        let (sin, cos) = 20.0_f32.to_radians().m_sin_cos();
+        let corners = [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]
+            .map(|[x, y]: [f32; 2]| [x * cos - y * sin, x * sin + y * cos]);
+        let positions = [0.0, 2.0]
+            .iter()
+            .flat_map(|&z| corners.map(|[x, y]| [x, y, z]))
+            .collect();
+        Mesh {
+            name: "block".to_owned(),
+            parts: vec![MeshPart {
+                name: "block".to_owned(),
+                slot: 1,
+                color: None,
+                positions,
+                triangles: vec![
+                    [0, 2, 1],
+                    [0, 3, 2],
+                    [4, 5, 6],
+                    [4, 6, 7],
+                    [0, 1, 5],
+                    [0, 5, 4],
+                    [1, 2, 6],
+                    [1, 6, 5],
+                    [2, 3, 7],
+                    [2, 7, 6],
+                    [3, 0, 4],
+                    [3, 4, 7],
+                ],
+                paint: Vec::new(),
+                support_paint: Vec::new(),
+                seam_paint: Vec::new(),
+                fuzzy_paint: Vec::new(),
+                paint_texts: Vec::new(),
+            }],
+            ..Mesh::default()
+        }
+    }
+
+    /// A join of a straight solid surface links two scanlines. A fill line whose two ends round to scanline values
+    /// one unit apart is a line, on the 135 degree layers too: no join runs along the layer's lines.
+    #[test]
+    fn a_solid_join_always_links_two_scanlines() {
+        let req: crate::api::SliceRequest = serde_json::from_value(serde_json::json!({
+            "plate": { "objects": [{ "mesh": "block" }] },
+            "config": {
+                "bottom_surface_pattern": "monotonic",
+                "internal_solid_infill_pattern": "monotonic",
+                "top_surface_pattern": "monotonic",
+                "bottom_shell_layers": 3,
+                "top_shell_layers": 7,
+            },
+        }))
+        .expect("the request parses");
+        let config = crate::api::request_config(&req).expect("the config builds");
+        let session = SliceSession::new(&Plate::single(block()), &config).expect("the plate builds");
+        let out = session
+            .slice_range_with(&config, 0..session.layer_count(), &crate::NoProgress)
+            .expect("the block slices");
+        let solid = |f: Feature| {
+            matches!(
+                f,
+                Feature::BottomSurface | Feature::InternalSolid | Feature::TopSurface
+            )
+        };
+        let (mut at_135, mut checked) = (0, 0);
+        for (z, l) in out.layers.iter().enumerate() {
+            // The layer's fill direction, from its longest solid line.
+            let Some(dir) = l
+                .paths
+                .iter()
+                .filter(|p| solid(p.feature))
+                .flat_map(|p| l.path_points(p).windows(2))
+                .filter_map(|w| {
+                    let (a, b) = (w.first()?, w.get(1)?);
+                    let v = [f64::from(b.x - a.x), f64::from(b.y - a.y)];
+                    Some((v[0].m_hypot(v[1]), v))
+                })
+                .max_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(n, v)| [v[0] / n, v[1] / n])
+            else {
+                continue;
+            };
+            if dir[0] * dir[1] < 0.0 {
+                at_135 += 1;
+            }
+            for [a, b] in &l.joins {
+                let v = [f64::from(b.x - a.x), f64::from(b.y - a.y)];
+                let across = (v[0] * dir[1] - v[1] * dir[0]).abs() / SCALE;
+                // A line's ends sit a unit or two (0.1 um each) off its scanline; a turn, even one piece of a
+                // turn round a corner, moves 0.005 mm or more across.
+                assert!(
+                    across > 0.002,
+                    "layer {z}: a join from {a:?} to {b:?} moves {across:.4} mm across the lines"
+                );
+                checked += 1;
+            }
+        }
+        assert!(at_135 >= 3, "the block has 135 degree solid layers ({at_135})");
+        assert!(checked > 50, "the block's surfaces have joins ({checked})");
+    }
 }
