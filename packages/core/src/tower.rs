@@ -1835,9 +1835,15 @@ impl Tower {
         let (mut cur, mut rows) = (from, 0.0);
         for &t in order {
             if cur != 0 && t != cur {
-                rows += self
-                    .purge(change_purge(cfg, tools, cur, t).wipe, h, first, rows)
-                    .1;
+                let p = change_purge(cfg, tools, cur, t);
+                // A single nozzle's ramming band comes before the purge, which finishes its last row: no free depth.
+                let mut lead = None;
+                if p.ram_line.is_some() {
+                    let (_, r, end) = self.ramming(cfg, p, cur, h, rows);
+                    rows += r;
+                    lead = end;
+                }
+                rows += self.purge_lead(p.wipe, h, first, rows, lead, false).1;
             }
             cur = t;
         }
@@ -3440,6 +3446,28 @@ mod tests {
         let (paths, _) = t.purge_lead(70.0, 0.2, false, 10.0, Some((20.0, false)), false);
         let spacing = t.spacing;
         assert!((paths[0].points[0].y_mm() - (220.0 + 1.0 + 9.5 * spacing)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_shared_nozzles_save_leaves_the_ramming_band_alone() {
+        let c = mmu_ram(60.0, STOCK_RAM, &[]);
+        let h = 0.2;
+        let p = change_purge(&c, 2, 1, 2);
+        // Planned for one change a layer: the ramming's rows, then the purge that finishes its last row.
+        let t = Tower::new(&c, 2, 40.0).unwrap();
+        let (_, ram, lead) = t.ramming(&c, p, 1, h, 0.0);
+        let rows = ram + t.purge_lead(84.0, h, false, ram, lead, false).1;
+        let t = Tower::new(&c, 2, rows).unwrap();
+        let planned = t.planned_rows(&c, 2, 1, &[2], h, false);
+        assert!((planned - rows).abs() < 1e-9, "{planned} against {rows}");
+        // The ramming's band is no free depth: only the wall comes off the purge.
+        let wall = path_volume(&t.wall(false, 0.0), h);
+        let saved = t.saved_first_wipe(&c, 84.0, h, false, planned, 2);
+        assert!(
+            (saved - (84.0 - wall)).abs() < 1e-9,
+            "{saved} against {}",
+            84.0 - wall
+        );
     }
 
     #[test]

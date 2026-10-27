@@ -297,24 +297,24 @@ fn the_ramming_band_adds_to_the_towers_depth() {
     let within = |d: f64, lo: f64, hi: f64, what: &str| {
         assert!((lo..=hi).contains(&d), "{what}: depth {d:.2}, not {lo} to {hi}");
     };
-    within(depth(mmu(2, STOCK, &[]), TWO), 10.5, 11.5, "stock");
-    within(depth(mmu(4, STOCK, &[]), FOUR), 35.0, 38.0, "four filaments");
+    within(depth(mmu(2, STOCK, &[]), TWO), 11.5, 12.5, "stock");
+    within(depth(mmu(4, STOCK, &[]), FOUR), 36.0, 39.0, "four filaments");
     within(
         depth(mmu(2, STOCK, &[("flush_multiplier", json!(["1"]))]), TWO),
-        28.0,
-        30.0,
+        29.0,
+        31.5,
         "flush x 1.0",
     );
     within(
         depth(mmu(2, STOCK, &[("prime_tower_width", json!("40"))]), TWO),
-        16.5,
         17.5,
+        19.0,
         "40 mm tower",
     );
     within(
         depth(mmu(2, "250 150 40 40 40 40 40 | 0.05 40", &[]), TWO),
-        13.0,
         14.0,
+        15.0,
         "lines 1.5 apart",
     );
 }
