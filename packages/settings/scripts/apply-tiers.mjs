@@ -4,8 +4,14 @@
 // showWhen. Idempotent. Run: node scripts/apply-tiers.mjs, then gen-defaults.mjs and gen-reference.mjs.
 import { readFileSync, writeFileSync } from 'node:fs'
 
+// --check: write nothing, name every schema entry that a run would change, and exit 1 when there is any
+// (scripts/check-generated.mjs runs it this way).
+const checkOnly = process.argv.includes('--check')
 const url = (p) => new URL(p, import.meta.url)
-const schema = JSON.parse(readFileSync(url('../schema.json'), 'utf8'))
+const schemaText = readFileSync(url('../schema.json'), 'utf8')
+const schema = JSON.parse(schemaText)
+// A second parse, because the run below edits the entries of `schema` in place.
+const before = new Map(JSON.parse(schemaText).settings.map((d) => [d.key, d]))
 const t = JSON.parse(readFileSync(url('./tiers.json'), 'utf8'))
 const list = schema.settings
 const byKey = new Map(list.map((d) => [d.key, d]))
@@ -54,7 +60,35 @@ for (const d of list) {
   const multi = d.group === 'multimaterial' || t.showWhenMulticolorKeys.includes(d.key) || t.showWhenMulticolorPrefix.some((p) => d.key.startsWith(p))
   if (multi) d.showWhen = 'multicolor'
 }
-writeFileSync(url('../schema.json'), JSON.stringify(schema, null, 1) + '\n')
+const out = JSON.stringify(schema, null, 1) + '\n'
+if (checkOnly) {
+  // Entries are compared with their key order, since the file keeps it.
+  const differs = []
+  const describe = (a, b) => {
+    const ka = Object.keys(a), kb = Object.keys(b)
+    const gone = ka.filter((k) => !kb.includes(k)).map((k) => `drops ${k}`)
+    const added = kb.filter((k) => !ka.includes(k)).map((k) => `adds ${k}`)
+    const changed = kb.filter((k) => ka.includes(k) && JSON.stringify(a[k]) !== JSON.stringify(b[k])).map((k) => `changes ${k}`)
+    const parts = [...gone, ...added, ...changed]
+    return parts.length ? parts.join(', ') : `field order differs, a run writes ${kb.slice(kb.findIndex((k, i) => k !== ka[i])).join(', ')} last`
+  }
+  for (const d of list) {
+    const old = before.get(d.key)
+    if (!old) differs.push(`${d.key}: new entry`)
+    else if (JSON.stringify(old) !== JSON.stringify(d)) differs.push(`${d.key}: ${describe(old, d)}`)
+  }
+  if (!differs.length && out !== schemaText) differs.push('schema.json: text differs outside the settings entries')
+  if (differs.length) {
+    // check-generated shows the last 15 lines of a failing generator, so a long list is cut to its first 12.
+    const shown = differs.slice(0, 12).map((l) => `  ${l}`)
+    if (differs.length > shown.length) shown.push(`  and ${differs.length - shown.length} more`)
+    console.log(`apply-tiers would change ${differs.length} schema.json ${differs.length === 1 ? 'entry' : 'entries'}:\n${shown.join('\n')}`)
+    process.exit(1)
+  }
+  console.log('apply-tiers: schema.json is current')
+  process.exit(0)
+}
+writeFileSync(url('../schema.json'), out)
 const counts = {}
 for (const d of list) if (d.section === 'process') counts[d.mode] = (counts[d.mode] ?? 0) + 1
 console.log(counts)

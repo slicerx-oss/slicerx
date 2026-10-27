@@ -786,8 +786,7 @@
    "max": 2,
    "mode": "hidden",
    "group": "advanced",
-   "invalidates": "paths",
-   "intent": "quality"
+   "invalidates": "paths"
   },
   {
    "key": "gap_fill_flow_ratio",
@@ -1907,12 +1906,12 @@
      "value": true
     }
    ],
-   "intent": "multicolor",
-   "showWhen": "multicolor",
    "effect": {
     "increase": "The prime tower prints faster on Bambu Lab printers: its wipe rows, wall and fill",
     "decrease": "The prime tower prints slower on Bambu Lab printers, which can help a tall, thin tower stay put"
-   }
+   },
+   "intent": "multicolor",
+   "showWhen": "multicolor"
   },
   {
    "key": "prime_tower_skip_points",
@@ -5574,11 +5573,11 @@
      "value": true
     }
    ],
-   "intent": "strength",
    "effect": {
     "increase": "Narrow solid bands over sparse infill slow down where they hang over it, which costs a little time",
     "decrease": "Those bands print at one speed all the way around"
-   }
+   },
+   "intent": "strength"
   },
   {
    "key": "detect_narrow_internal_solid_infill",

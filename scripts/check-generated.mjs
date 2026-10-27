@@ -22,6 +22,9 @@ const win = process.platform === 'win32'
 // Order matters where one generator reads another's output: knowledge.json feeds the printer profiles, and
 // the icon tables feed design/icons.js.
 const GENERATORS = [
+  // apply-tiers rewrites schema.json in place, which gen:defaults and gen:reference read, so it runs first. It runs in --check
+  // mode so that the report names the schema entries that differ; `fix` is the command that rewrites the file.
+  { name: 'settings apply-tiers', run: ['node', 'packages/settings/scripts/apply-tiers.mjs', '--check'], fix: ['node', 'packages/settings/scripts/apply-tiers.mjs'], outputs: ['packages/settings/schema.json'] },
   { name: 'settings gen:knowledge', run: ['pnpm', '--filter', '@slicerx/settings', 'gen:knowledge'], outputs: ['packages/settings/knowledge.json'] },
   { name: 'settings gen:profiles', run: ['pnpm', '--filter', '@slicerx/settings', 'gen:profiles'], outputs: ['packages/settings/profiles/printers.json'] },
   { name: 'settings gen:defaults', run: ['pnpm', '--filter', '@slicerx/settings', 'gen:defaults'], outputs: ['packages/settings/defaults.json'] },
@@ -52,7 +55,7 @@ const failures = []
 const started = Date.now()
 for (const gen of GENERATORS.filter((g) => !wanted.length || wanted.includes(g.name))) {
   const t0 = Date.now()
-  const command = gen.run.join(' ')
+  const command = (gen.fix ?? gen.run).join(' ')
   // pnpm is a .cmd shim on Windows, which spawn only finds through a shell
   const result = spawnSync(win ? gen.run.join(' ') : gen.run[0], win ? [] : gen.run.slice(1), { cwd: root, encoding: 'utf8', shell: win, timeout: 180_000, maxBuffer: 64 * 1024 * 1024 })
   let problem = ''
@@ -78,7 +81,7 @@ for (const gen of GENERATORS.filter((g) => !wanted.length || wanted.includes(g.n
 const total = ((Date.now() - started) / 1000).toFixed(1)
 if (failures.length) {
   console.log(`\n${failures.length} generated ${failures.length === 1 ? 'file set is' : 'file sets are'} out of date (${total}s). Run these in this order, then commit the result:`)
-  for (const gen of failures) console.log(`  ${gen.run.join(' ')}`)
+  for (const gen of failures) console.log(`  ${(gen.fix ?? gen.run).join(' ')}`)
   process.exit(1)
 }
 console.log(`\nall generated files are current (${total}s)`)

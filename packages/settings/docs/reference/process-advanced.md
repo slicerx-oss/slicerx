@@ -68,7 +68,7 @@ Applies extrusion rate smoothing only to outer walls and overhangs, where speed 
 - Type: number
 - Default: none (the slice works it out when nothing sets it)
 - Recommended range: 0 to 2
-- Tier: Hidden (profile key), quality
+- Tier: Hidden (profile key)
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
