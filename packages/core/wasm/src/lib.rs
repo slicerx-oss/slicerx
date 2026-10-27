@@ -258,7 +258,10 @@ pub extern "C" fn sx_slice_shard(shard: u32, shards: u32) -> u32 {
                 out.layers.iter().map(|l| l.index).zip(parsed).collect();
             sx_core::preview::with_layer_extras(sx_core::preview_buffers(&out), &layers)
         };
-        let mut warnings = serde_json::to_value(&out.warnings).map_err(|e| e.to_string())?;
+        // Objects that overlap get a note per shard, for the layers this shard holds.
+        let mut notes = out.warnings.clone();
+        notes.extend(api::overlap_notes(&out.overlaps, &out.objects));
+        let mut warnings = serde_json::to_value(&notes).map_err(|e| e.to_string())?;
         if shard == 0
             && let Some(list) = warnings.as_array_mut()
         {

@@ -2481,6 +2481,20 @@ impl SliceSession {
         )
     }
 
+    /// Each object's own slice on the object layer that print layer `i` prints, when this session slices several
+    /// objects together (`collide::plate::overlaps`).
+    pub(crate) fn print_layer_slices(&self, i: u32) -> Option<std::sync::Arc<crate::owners::Slices>> {
+        let first = self.part_object.first();
+        if self.part_object.iter().all(|o| Some(o) == first) {
+            return None;
+        }
+        let k = match self.print.get(i as usize) {
+            None => i,
+            Some(pl) => pl.object?,
+        };
+        self.object_slices_at(k as usize)
+    }
+
     /// The owners of a print layer's paths (`owners.rs`): `object` is the object layer it prints (None for a raft
     /// or support only layer, `next` then the first object layer over it). `min_held` is the support's line spacing
     /// (`owners::assign`).
@@ -4601,6 +4615,7 @@ impl SliceSession {
             vary_layer_cost: self.vary_cost,
             filament_map: self.nozzle_map.clone(),
             collisions: crate::collide::Hits::default(),
+            overlaps: crate::collide::Hits::default(),
             chamber: None,
             raised_wall: None,
             configs,

@@ -1573,7 +1573,45 @@ pub fn check_paths(session: &SliceSession, config: &PrintConfig, out: &mut Slice
             crate::zoneroute::Router::of(config).as_ref(),
         );
         out.collisions.merge(found);
+        // Objects sliced together whose areas overlap print as one region: no paths of theirs cross, and the overlap
+        // prints once, so it is a note ([`overlap_notes`]), not a collision.
+        if !config.print_by_object() {
+            let slices = |i: u32| session.print_layer_slices(i);
+            let found = crate::collide::plate::overlaps(out, &slices, config.nozzle_diameter);
+            out.overlaps.merge(found);
+        }
     }
+}
+
+/// The notes for objects sliced together that overlap (`SliceOutput::overlaps`), one per pair with the layers they
+/// overlap on: the later object on the plate first, then the one whose part the overlap prints as. `objects` are the
+/// plate's footprints (`SliceOutput::objects`).
+pub fn overlap_notes(
+    overlaps: &crate::collide::Hits,
+    objects: &[crate::output::ObjectFootprint],
+) -> Vec<SliceWarning> {
+    overlaps
+        .0
+        .iter()
+        .map(|h| {
+            let name = |i: u32| crate::preflight::name_of(objects, i as usize);
+            let layers = if h.last_layer > h.first.layer {
+                format!("layers {} to {}", h.first.layer + 1, h.last_layer + 1)
+            } else {
+                format!("layer {}", h.first.layer + 1)
+            };
+            SliceWarning {
+                code: WarningCode::ObjectsOverlap,
+                message: format!(
+                    "{} overlaps {} on {layers}; the overlap prints once, as part of {}.",
+                    name(h.mover),
+                    name(h.obstacle),
+                    name(h.obstacle)
+                ),
+                layer: Some(h.first.layer),
+            }
+        })
+        .collect()
 }
 
 /// heimdall's model of a by-object plate with two objects or more: the plate's objects (before any shrinkage
@@ -1930,6 +1968,9 @@ fn run_prepared_timed(
     let resume_at = req.options.resume_from_layer.filter(|&r| r > 0).unwrap_or(0);
     let mut extras: Vec<(u32, crate::extras::LayerExtras)> = Vec::new();
     let mut hits = crate::collide::Hits::default();
+    // Objects sliced together that overlap, over every range, and the plate's objects that name them.
+    let mut overlaps = crate::collide::Hits::default();
+    let mut overlap_objects = Vec::new();
     let mut feature_use = FeatureUse::default();
     let draw = want_gcode && given.is_none() && !thumb_specs.is_empty();
     for s in 0..shards {
@@ -1949,6 +1990,10 @@ fn run_prepared_timed(
         }
         let session = &held.get().session;
         hits.merge(std::mem::take(&mut out.collisions));
+        if !out.overlaps.is_empty() {
+            overlaps.merge(std::mem::take(&mut out.overlaps));
+            overlap_objects.clone_from(&out.objects);
+        }
         feature_use.add(&out);
         let drawing = if draw {
             let side = thumb_specs
@@ -2036,6 +2081,7 @@ fn run_prepared_timed(
             }
         }
     }
+    report.warnings.extend(overlap_notes(&overlaps, &overlap_objects));
     let hardness = crate::preflight::nozzle_hardness(&config, &report.stats.filament_mm);
     for i in config_issues.iter().chain(&hardness) {
         report.warnings.push(SliceWarning {
@@ -2327,7 +2373,7 @@ pub const RESULT_SCHEMA: &str = r#"{
         "type": "object",
         "required": ["code", "message"],
         "properties": {
-          "code": { "enum": ["open_edges", "thin_wall", "floating_region", "long_bridge", "outside_bed", "unsupported_setting", "manual_step", "safety_limit"] },
+          "code": { "enum": ["open_edges", "thin_wall", "floating_region", "long_bridge", "outside_bed", "unsupported_setting", "manual_step", "safety_limit", "objects_overlap"] },
           "message": { "type": "string" },
           "layer": { "type": "integer" }
         }

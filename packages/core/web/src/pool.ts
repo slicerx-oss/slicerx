@@ -162,7 +162,7 @@ function strongParts(list: readonly WeakPart[]): MeshPart[] | null {
   return out
 }
 
-const WARNING_CODES: readonly SliceWarningCode[] = ['open_edges', 'thin_wall', 'floating_region', 'long_bridge', 'outside_bed', 'unsupported_setting', 'manual_step']
+const WARNING_CODES: readonly SliceWarningCode[] = ['open_edges', 'thin_wall', 'floating_region', 'long_bridge', 'outside_bed', 'unsupported_setting', 'manual_step', 'objects_overlap']
 
 function toWarning(w: ShardInfo['warnings'][number]): SliceWarning {
   const code = WARNING_CODES.find((c) => c === w.code) ?? 'unsupported_setting'

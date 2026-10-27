@@ -295,6 +295,73 @@ pub(crate) fn check(
     hits
 }
 
+/// Objects sliced together, in one session, whose own slices overlap on a layer by more than a line (`width`, mm).
+/// Their areas merge into one region there, so no path of one crosses a path of the other and the overlap prints
+/// once, as part of the first of them in plate order (`owners.rs`). Each pair is a hit with the later object as the
+/// mover and the layers it overlaps on, read as a note (`api::overlap_notes`), not as a collision; objects that only
+/// touch do not count. `slices` gives the objects' slices on a print layer (`SliceSession::print_layer_slices`).
+pub(crate) fn overlaps(
+    out: &SliceOutput,
+    slices: &(dyn Fn(u32) -> Option<std::sync::Arc<crate::owners::Slices>> + Sync),
+    width: f64,
+) -> Hits {
+    let inset = -crate::geom::mm(width / 2.0);
+    let found = crate::par::map(&out.layers, |l| {
+        let mut pairs = Vec::new();
+        let Some(here) = slices(l.index) else {
+            return pairs;
+        };
+        for (i, a) in here.iter().enumerate() {
+            for b in here.iter().skip(i + 1) {
+                let (p, q) = (a.bounds, b.bounds);
+                if p[0] >= q[2] || q[0] >= p[2] || p[1] >= q[3] || q[1] >= p[3] {
+                    continue;
+                }
+                let both = crate::perimeters::intersection(&a.shapes, &b.shapes);
+                let Some(c) = crate::perimeters::bounds(&crate::perimeters::offset(&both, inset)) else {
+                    continue;
+                };
+                #[allow(clippy::cast_possible_truncation, reason = "preview data is f32")]
+                let at = [
+                    (f64::midpoint(f64::from(c[0]), f64::from(c[2])) / SCALE) as f32,
+                    (f64::midpoint(f64::from(c[1]), f64::from(c[3])) / SCALE) as f32,
+                    l.z,
+                ];
+                pairs.push((a.object.max(b.object), a.object.min(b.object), at));
+            }
+        }
+        pairs
+    });
+    let mut hits = Hits::default();
+    for (l, pairs) in out.layers.iter().zip(found) {
+        for (mover, obstacle, at) in pairs {
+            let m = Moment {
+                layer: l.index,
+                segment: 0,
+                share: 0.0,
+                at,
+                point: at,
+                change: None,
+            };
+            hits.add(Hit {
+                kind: Kind::PathConflict,
+                severity: Severity::Hit,
+                part: Part::Nozzle,
+                mover: u32::from(mover),
+                obstacle: u32::from(obstacle),
+                first: m,
+                worst: m,
+                depth: 0.0,
+                push: 0.0,
+                last_layer: l.index,
+                moves: 1,
+                near: f32::MAX,
+            });
+        }
+    }
+    hits
+}
+
 /// A layer's travels, straight from the end of one path to the start of the next (the travel into the layer from where
 /// the layer below's last path ended first), each owned by the object it leaves, else the one it goes to. Travels to or from a
 /// custom path (the printer's own G-code may go into its zones on purpose) and between skirt paths are left out. Its

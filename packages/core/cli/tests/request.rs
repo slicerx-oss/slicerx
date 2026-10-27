@@ -379,6 +379,169 @@ fn keep_out_paths_are_refused_in_their_own_words() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
 }
 
+/// An ASCII STL of a box from `lo` to `hi`, mm.
+fn box_stl(lo: [f64; 3], hi: [f64; 3]) -> String {
+    use std::fmt::Write as _;
+    // corner k takes `hi` on the axes whose bit is set: x 1, y 2, z 4
+    let corner = |k: usize| [0, 1, 2].map(|axis| if (k >> axis) & 1 == 1 { hi[axis] } else { lo[axis] });
+    let faces = [
+        [0, 3, 1],
+        [0, 2, 3],
+        [4, 5, 7],
+        [4, 7, 6],
+        [0, 1, 5],
+        [0, 5, 4],
+        [1, 3, 7],
+        [1, 7, 5],
+        [3, 2, 6],
+        [3, 6, 7],
+        [2, 0, 4],
+        [2, 4, 6],
+    ];
+    let mut s = String::from("solid box\n");
+    for f in faces {
+        s.push_str("facet normal 0 0 0\nouter loop\n");
+        for k in f {
+            let [x, y, z] = corner(k);
+            let _ = writeln!(s, "vertex {x} {y} {z}");
+        }
+        s.push_str("endloop\nendfacet\n");
+    }
+    s.push_str("endsolid box\n");
+    s
+}
+
+/// `sx slice --request` of two boxes, `twoa` and `twob`, each `[lo, hi]` in its own file, centered on the bed (no
+/// transforms) or where its file places it (identity transforms), with `twob_settings` as twob's own settings.
+fn two_boxes(
+    name: &str,
+    boxes: [[[f64; 3]; 2]; 2],
+    centered: bool,
+    twob_settings: &serde_json::Value,
+) -> std::process::Output {
+    let dir = temp_dir(format!("sx-cli-two-boxes-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let a = dir.join("twoa.stl");
+    let b = dir.join("twob.stl");
+    std::fs::write(&a, box_stl(boxes[0][0], boxes[0][1])).unwrap();
+    std::fs::write(&b, box_stl(boxes[1][0], boxes[1][1])).unwrap();
+    let mut objects = vec![
+        serde_json::json!({"id": "o0", "name": "twoa", "mesh": "m0"}),
+        serde_json::json!({"id": "o1", "name": "twob", "mesh": "m1"}),
+    ];
+    if !twob_settings.is_null() {
+        objects[1]["settings"] = twob_settings.clone();
+    }
+    if !centered {
+        for o in &mut objects {
+            o["transform"] = serde_json::json!([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+        }
+    }
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": {"m0": a.to_str().unwrap(), "m1": b.to_str().unwrap()},
+        "plate": {"bed": {"widthMm": 250, "depthMm": 210, "heightMm": 220}, "objects": objects},
+        "config": {"layer_height": 0.2, "initial_layer_print_height": 0.2, "brim_width": 0, "skirt_loops": 0},
+    });
+    let path = dir.join("request.json");
+    std::fs::write(&path, req.to_string()).unwrap();
+    sx().args(["slice", "--request"])
+        .arg(&path)
+        .arg("--out-dir")
+        .arg(dir.join("out"))
+        .output()
+        .unwrap()
+}
+
+/// A 12 x 20 mm box 3 mm tall and one 6 mm tall, 6 mm apart in their files.
+const TWO_BOXES: [[[f64; 3]; 2]; 2] = [
+    [[110.0, 95.0, 0.0], [122.0, 115.0, 3.0]],
+    [[128.0, 95.0, 0.0], [140.0, 115.0, 6.0]],
+];
+
+/// A 20 mm cube and a 6 mm cube sunk 3 mm into its corner.
+const SUNK_CUBE: [[[f64; 3]; 2]; 2] = [
+    [[118.0, 118.0, 0.0], [138.0, 138.0, 10.0]],
+    [[135.0, 135.0, 0.0], [141.0, 141.0, 6.0]],
+];
+
+/// The `objects_overlap` notes of a slice's JSON.
+fn overlap_notes(v: &serde_json::Value) -> Vec<String> {
+    v["warnings"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|w| w["code"] == "objects_overlap")
+        .map(|w| w["message"].as_str().unwrap_or("").to_owned())
+        .collect()
+}
+
+/// Objects sliced together that overlap print as one region, the overlap as part of the first: sliced with a note
+/// naming the two and the layers, not refused. Two boxes without transforms are both centered on the bed, so the
+/// shorter one lies wholly inside the taller one.
+#[test]
+fn overlapping_objects_slice_with_a_note() {
+    let none = serde_json::Value::Null;
+    for (name, boxes, centered, note) in [
+        (
+            "centered",
+            TWO_BOXES,
+            true,
+            r#""twob" overlaps "twoa" on layers 1 to 15; the overlap prints once, as part of "twoa"."#,
+        ),
+        (
+            "sunk",
+            SUNK_CUBE,
+            false,
+            r#""twob" overlaps "twoa" on layers 1 to 30; the overlap prints once, as part of "twoa"."#,
+        ),
+    ] {
+        let out = two_boxes(name, boxes, centered, &none);
+        assert!(
+            out.status.success(),
+            "{name}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(overlap_notes(&v), [note], "{name}: {v}");
+        assert!(v.get("collisions").is_none(), "{name}: {v}");
+    }
+}
+
+/// With settings of its own an object is sliced apart from the others, so where it overlaps one their walls cross:
+/// refused as crossing paths, with no overlap note.
+#[test]
+fn overlapping_objects_sliced_apart_are_refused_as_crossing_paths() {
+    let out = two_boxes(
+        "sunk-apart",
+        SUNK_CUBE,
+        false,
+        &serde_json::json!({"wall_loops": 3}),
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["collisions"][0]["kind"], "path_conflict", "{v}");
+    assert!(overlap_notes(&v).is_empty(), "{v}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("Paths cross: twob and twoa on layers 1 to"), "{err}");
+}
+
+/// The two boxes where their files place them, 6 mm apart: no note and nothing to report.
+#[test]
+fn objects_side_by_side_slice_without_a_note() {
+    let out = two_boxes("apart", TWO_BOXES, false, &serde_json::Value::Null);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(overlap_notes(&v).is_empty(), "{v}");
+    assert!(v.get("collisions").is_none(), "{v}");
+    assert_eq!(v["layerCount"], 30, "{v}");
+}
+
 #[test]
 fn untrusted_start_gcode_names_the_preflight_once() {
     let mut req: serde_json::Value =
