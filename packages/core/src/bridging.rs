@@ -33,7 +33,7 @@ pub(crate) struct Facts {
     pub(crate) shell: Shapes,
     pub(crate) sparse: Shapes,
     /// The part of `shell` only the vertical shell rule's coverage band makes solid (`classify::Classes::band`).
-    pub(crate) band: Shapes,
+    pub(crate) band: crate::shells::Band,
     /// The sparse infill of a pattern laid on scanlines, as segments.
     pub(crate) lines: Vec<Line>,
     /// The sparse infill paths of the other patterns, as the layer prints them over `sparse`.
