@@ -32,6 +32,8 @@ pub(crate) struct Facts {
     pub(crate) bottom: Shapes,
     pub(crate) shell: Shapes,
     pub(crate) sparse: Shapes,
+    /// The part of `shell` only the vertical shell rule's coverage band makes solid (`classify::Classes::band`).
+    pub(crate) band: Shapes,
     /// The sparse infill of a pattern laid on scanlines, as segments.
     pub(crate) lines: Vec<Line>,
     /// The sparse infill paths of the other patterns, as the layer prints them over `sparse`.
@@ -63,6 +65,7 @@ impl Facts {
             bottom: self.own_bottom.clone(),
             shell: self.shell.clone(),
             sparse: self.sparse.clone(),
+            band: self.band.clone(),
             bridges: self.external.clone(),
         }
     }
@@ -800,6 +803,29 @@ pub(crate) fn ensuring(env: &Env<'_>, l: i64, memo: &Memo) -> Shapes {
         sub(&fill, &shrink(&fill, env.solid_spacing))
     };
     meet(&ring, &near)
+}
+
+/// What layer `l` prints over part of its sparse infill area instead of sparse infill: its internal bridges (with
+/// the second layer over the bridges below when `second`, `d` the solid infill line width in mm) and the ring
+/// [`ensuring`] keeps under the bridges of the layer above.
+pub(crate) fn printed_cut(env: &Env<'_>, l: i64, memo: &Memo, d: f64, second: bool) -> Shapes {
+    if l < 1 || l >= env.count {
+        return Shapes::new();
+    }
+    let own = bridge_layer(env, l, memo);
+    let mut cut = own.iter().fold(Shapes::new(), |acc, b| union(&acc, &b.area));
+    if second {
+        for b in second_internal(env, l, memo, d, &own) {
+            cut = union(&cut, &b.area);
+        }
+    }
+    let ens = ensuring(env, l, memo);
+    if !ens.is_empty()
+        && let Some(f) = (env.facts)(l)
+    {
+        cut = union(&cut, &meet(&ens, &f.inner));
+    }
+    cut
 }
 
 /// Monotonic strands over `area` along `angle` (radians), at `spacing` mm, joined along the wall

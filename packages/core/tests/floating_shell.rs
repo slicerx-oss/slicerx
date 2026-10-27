@@ -5,8 +5,9 @@
 //! with the internal solid infill's filament; its spans over the sparse infill slow to the bridge speed.
 //!
 //! Our own shapes on P1S-like settings (0.20 mm layers, 0.42 mm solid lines, 15% sparse): a cone that leans in
-//! (r 15 to 5 mm, 20 mm tall), the same cone painted with filament 2 on its x > 0 half, a cone that leans out, and
-//! a 6 and a 10 mm wide wall.
+//! (r 15 to 5 mm, 20 mm tall), the same cone painted with filament 2 on its x > 0 half, a cone that leans out, a 6
+//! and a 10 mm wide wall, a 30 mm box under a smaller one that leaves a ring 4 to 6 mm wide on top of it, and a five
+//! step pyramid with 6 mm steps.
 #![allow(
     clippy::disallowed_methods,
     clippy::cast_possible_truncation,
@@ -76,6 +77,47 @@ fn wall(w: f32) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
         triangles.push([k, 4 + n, 4 + k]);
     }
     (positions, triangles)
+}
+
+/// Square boxes centered on the plate, one closed box per (side, bottom, top) in mm.
+fn boxes(tiers: &[(f32, f32, f32)]) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    let mut positions = Vec::new();
+    let mut triangles = Vec::new();
+    for &(side, z0, z1) in tiers {
+        let first = positions.len() as u32;
+        let (lo, hi) = (128.0 - side / 2.0, 128.0 + side / 2.0);
+        for z in [z0, z1] {
+            for (x, y) in [(lo, lo), (hi, lo), (hi, hi), (lo, hi)] {
+                positions.push([x, y, z]);
+            }
+        }
+        let mut faces = vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7]];
+        for k in 0..4u32 {
+            let n = (k + 1) % 4;
+            faces.push([k, n, 4 + n]);
+            faces.push([k, 4 + n, 4 + k]);
+        }
+        triangles.extend(faces.into_iter().map(|f: [u32; 3]| f.map(|i| first + i)));
+    }
+    (positions, triangles)
+}
+
+/// A 30 x 30 x 2 mm box under a centered square box from z 2 to 4 that leaves a ring `ring` mm wide on top of the
+/// lower box. With 5 top layers the ring's internal bridge prints at z 1.2 and its solid at z 1.4, 1.6 and 1.8 (layers
+/// 6, 7 and 8 counted from 0).
+fn step(ring: f32) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    boxes(&[(30.0, 0.0, 2.0), (30.0 - 2.0 * ring, 2.0, 4.0)])
+}
+
+/// Five 2 mm tiers, 70 mm wide at the bottom and 12 mm narrower each step: rings 6 mm wide.
+fn pyramid() -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    boxes(&[
+        (70.0, 0.0, 2.0),
+        (58.0, 2.0, 4.0),
+        (46.0, 4.0, 6.0),
+        (34.0, 6.0, 8.0),
+        (22.0, 8.0, 10.0),
+    ])
 }
 
 /// The mesh, with the triangles whose middle has x > 0 (plate x > 128) painted filament 2 when `paint`.
@@ -150,6 +192,8 @@ struct Read {
     e: BTreeMap<(String, u32), f64>,
     /// The layers (0-based) that print each feature.
     layers: BTreeMap<String, BTreeSet<u32>>,
+    /// Filament (mm) per feature and layer.
+    per_layer: BTreeMap<(String, u32), f64>,
     /// `; FEATURE: Floating vertical shell` blocks per layer.
     blocks: BTreeMap<u32, u32>,
     /// Feed rates of the floating vertical shell's moves, and of those inside slowed spans.
@@ -209,6 +253,7 @@ fn read(g: &str) -> Read {
         }
         *r.e.entry((feature.clone(), tool)).or_default() += e;
         r.layers.entry(feature.clone()).or_default().insert(layer);
+        *r.per_layer.entry((feature.clone(), layer)).or_default() += e;
         if feature == FLOATING {
             r.feeds.insert(feed);
             if slow {
@@ -245,6 +290,42 @@ impl Read {
     fn on(&self, feature: &str) -> BTreeSet<u32> {
         self.layers.get(feature).cloned().unwrap_or_default()
     }
+
+    /// Filament (mm) of `feature` on `layer`.
+    fn at(&self, feature: &str, layer: u32) -> f64 {
+        self.per_layer
+            .get(&(feature.to_owned(), layer))
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    /// Which of the floating vertical shell and the internal solid infill `layer` prints: "floating", "solid", both
+    /// or neither ("-").
+    fn label(&self, layer: u32) -> &'static str {
+        match (self.at(FLOATING, layer) >= 0.05, self.at(SOLID, layer) >= 0.05) {
+            (true, true) => "both",
+            (true, false) => "floating",
+            (false, true) => "solid",
+            (false, false) => "-",
+        }
+    }
+}
+
+/// The ring's three solid layers (z 1.4, 1.6 and 1.8) of `step(ring)` with `walls`, as labels, and the filament of
+/// the first and the second.
+fn ring_layers(ring: f32, walls: &str, extra: &Value) -> ([&'static str; 3], f64, f64) {
+    let mut set = json!({"wall_generator": walls, "sparse_infill_pattern": "grid"});
+    if let (Some(c), Some(e)) = (set.as_object_mut(), extra.as_object()) {
+        c.extend(e.clone());
+    }
+    let (g, _) = slice(step(ring), false, &set);
+    let r = read(&g);
+    let e = |l: u32| r.at(FLOATING, l) + r.at(SOLID, l);
+    ([r.label(6), r.label(7), r.label(8)], e(6), e(7))
+}
+
+fn near(value: f64, target: f64) -> bool {
+    (value / target - 1.0).abs() <= 0.1
 }
 
 #[test]
@@ -401,4 +482,102 @@ fn the_time_report_counts_the_floating_shell_as_internal_solid_infill() {
         "{:?}",
         est.features
     );
+}
+
+#[test]
+fn the_solid_over_a_ring_bridge_rests_on_it_and_the_narrow_layers_above_float() {
+    // The printer maker's slicer on the stock P1S profile, filament of the first and the second solid layer.
+    for (ring, walls, first, second) in [
+        (4.0, "classic", 34.98, 34.98),
+        (4.0, "aegis", 32.27, 32.27),
+        (4.5, "classic", 38.19, 38.19),
+        (4.5, "aegis", 35.44, 35.44),
+    ] {
+        let (labels, a, b) = ring_layers(ring, walls, &json!({}));
+        assert_eq!(
+            labels,
+            ["solid", "floating", "floating"],
+            "{ring} mm ring, {walls} walls"
+        );
+        assert!(
+            near(a, first) && near(b, second),
+            "{ring} mm ring, {walls} walls: {a:.2} and {b:.2}"
+        );
+    }
+}
+
+#[test]
+fn a_ring_of_4_75_mm_floats_with_variable_width_walls_only() {
+    let (labels, a, _) = ring_layers(4.75, "classic", &json!({}));
+    assert_eq!(labels, ["solid", "solid", "solid"], "classic walls");
+    assert!(near(a, 40.11), "classic walls: {a:.2}");
+    let (labels, a, b) = ring_layers(4.75, "aegis", &json!({}));
+    assert_eq!(labels, ["solid", "floating", "floating"], "aegis walls");
+    assert!(near(a, 37.11) && near(b, 37.11), "aegis walls: {a:.2} and {b:.2}");
+}
+
+#[test]
+fn rings_of_5_mm_and_more_stay_internal_solid_infill() {
+    for (ring, walls, solid) in [
+        (5.0, "classic", 41.56),
+        (5.0, "aegis", 39.1),
+        (6.0, "classic", 46.89),
+        (6.0, "aegis", 44.72),
+    ] {
+        let (labels, a, b) = ring_layers(ring, walls, &json!({}));
+        assert_eq!(
+            labels,
+            ["solid", "solid", "solid"],
+            "{ring} mm ring, {walls} walls"
+        );
+        assert!(
+            near(a, solid) && near(b, solid),
+            "{ring} mm ring, {walls} walls: {a:.2} and {b:.2}"
+        );
+    }
+}
+
+#[test]
+fn a_ring_floats_only_with_the_vertical_shell_rule_and_narrow_detection_on() {
+    // Without the vertical shell rule the ring's solid does not reach past the solid under it; with narrow detection
+    // off nothing floats.
+    for extra in [
+        json!({"ensure_vertical_shell_thickness": "disabled"}),
+        json!({"detect_narrow_internal_solid_infill": false}),
+    ] {
+        let (labels, _, _) = ring_layers(4.0, "classic", &extra);
+        assert_eq!(labels, ["solid", "solid", "solid"], "{extra}");
+    }
+}
+
+#[test]
+fn the_pyramid_floats_only_the_loop_under_each_step_bridge() {
+    // The printer maker's slicer on the stock P1S profile: floating 25.5 mm under the bridges at z 1, 3, 5, 7 and 9
+    // (layers 4 to 44), internal solid infill 1994.6 mm. Its classic walls also float a loop on the two layers over
+    // each step, which this does not cover.
+    for (walls, solid) in [("classic", 1994.56), ("aegis", 1932.06)] {
+        let (g, _) = slice(
+            pyramid(),
+            false,
+            &json!({"wall_generator": walls, "sparse_infill_pattern": "grid"}),
+        );
+        let r = read(&g);
+        assert_eq!(
+            r.on(FLOATING),
+            BTreeSet::from([4, 14, 24, 34, 44]),
+            "{walls} walls"
+        );
+        let (floating, internal) = (r.total(FLOATING), r.total(SOLID));
+        assert!(near(floating, 25.47), "{walls} walls: floating {floating:.1}");
+        assert!(
+            near(internal, solid),
+            "{walls} walls: internal solid {internal:.1}"
+        );
+    }
+    let (g, _) = slice(
+        pyramid(),
+        false,
+        &json!({"sparse_infill_pattern": "grid", "detect_narrow_internal_solid_infill": false}),
+    );
+    assert_eq!(read(&g).total(FLOATING), 0.0);
 }

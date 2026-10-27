@@ -201,6 +201,12 @@ pub(crate) struct Around {
     /// `surfaces_only`), less the bands too thin to keep, before the cut to a region, so a band's width is the
     /// neighbors' doing, not the walls'.
     kept: Shapes,
+    /// The neighbors' surfaces within the shell layers alone, when `kept` holds `classic` too (empty otherwise),
+    /// and the radius `kept` is opened by, mm.
+    surfaces: Shapes,
+    band_open: f64,
+    /// `surfaces` opened as `kept` is, worked out when first asked for (`coverage_band`).
+    surfaces_kept: std::sync::OnceLock<Shapes>,
     /// The outline the layers below and above share, read only for small pieces.
     object: std::sync::OnceLock<Shapes>,
 }
@@ -294,24 +300,23 @@ fn around(i: &Input<'_>) -> Around {
         Some(c) => opened(&perimeters::union_all(&[&shell, c]), 0.5 * band_min * i.spacing),
         None => Vec::new(),
     };
+    let surfaces = match &classic {
+        Some(c) if !i.surfaces_only && !c.is_empty() => shell,
+        _ => Vec::new(),
+    };
     Around {
         classic,
         kept,
+        surfaces,
+        band_open: 0.5 * band_min * i.spacing,
+        surfaces_kept: std::sync::OnceLock::new(),
         object: std::sync::OnceLock::new(),
     }
 }
 
-/// The narrowest solid band the shell rule keeps, in solid infill line spacings: with narrow detection off, and on.
-const BAND_MIN: f64 = 0.79;
-const BAND_MIN_NARROW: f64 = 0.6825;
-
-/// The infill area that must be solid beyond what the coverage rule already makes solid, and that
-/// rule's own area, cleaned up together. Empty when the region needs nothing.
-pub(crate) fn solid_area(i: &Input<'_>) -> Shapes {
-    if i.inner.is_empty() {
-        return Vec::new();
-    }
-    let around = match i.cache {
+/// What the shell rule reads from the layers around the input's layer, shared through the cache.
+fn around_of(i: &Input<'_>) -> Shared<Around> {
+    match i.cache {
         Some(c) => {
             let key = (
                 i.layer,
@@ -326,7 +331,40 @@ pub(crate) fn solid_area(i: &Input<'_>) -> Shapes {
             c.around(key, || around(i))
         }
         None => std::sync::Arc::new(around(i)),
-    };
+    }
+}
+
+/// The part of `solid` ([`solid_area`] of the same input) that only the coverage rule makes solid, past the
+/// neighbors' surfaces: the band a leaning wall leaves, and the strip under the walls of a part that stands on the
+/// layers above. Empty with `surfaces_only`, and where the coverage rule adds nothing.
+pub(crate) fn coverage_band(i: &Input<'_>, solid: &Shapes) -> Shapes {
+    if solid.is_empty() || i.surfaces_only {
+        return Vec::new();
+    }
+    let around = around_of(i);
+    if around.classic.as_ref().is_none_or(Vec::is_empty) {
+        return Vec::new();
+    }
+    let surfaces = around
+        .surfaces_kept
+        .once(|| opened(&around.surfaces, around.band_open));
+    if surfaces.is_empty() {
+        return solid.clone();
+    }
+    perimeters::difference(solid, surfaces)
+}
+
+/// The narrowest solid band the shell rule keeps, in solid infill line spacings: with narrow detection off, and on.
+const BAND_MIN: f64 = 0.79;
+const BAND_MIN_NARROW: f64 = 0.6825;
+
+/// The infill area that must be solid beyond what the coverage rule already makes solid, and that
+/// rule's own area, cleaned up together. Empty when the region needs nothing.
+pub(crate) fn solid_area(i: &Input<'_>) -> Shapes {
+    if i.inner.is_empty() {
+        return Vec::new();
+    }
+    let around = around_of(i);
     let s = 1.05 * i.spacing;
     let close = mm(0.5 * 1.2 * s);
     let total = match &around.classic {

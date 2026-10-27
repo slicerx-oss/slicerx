@@ -42,6 +42,9 @@ pub(crate) struct Classes {
     pub(crate) bottom: Shapes,
     pub(crate) shell: Shapes,
     pub(crate) sparse: Shapes,
+    /// The part of `shell` only the coverage band of the vertical shell rule makes solid
+    /// (`shells::coverage_band`), worked out where a floating vertical shell can print (`vshell::wanted_for`).
+    pub(crate) band: Shapes,
     /// Bottom surfaces over air above the first layer, grown into the areas beside them, with their strand direction.
     pub(crate) bridges: Vec<crate::bridging::Bridged>,
 }
@@ -174,23 +177,32 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
     top = sub(&top, &bottom);
 
     // discover_vertical_shells or discover_horizontal_shells.
+    let mut band = Vec::new();
     let solid = if i.top_layers == 0 && i.bottom_layers == 0 {
         Vec::new()
     } else {
         match crate::shells::mode_of(cfg) {
-            None => crate::shells::solid_area(&crate::shells::Input {
-                cache: i.cache,
-                inner,
-                slice: i.slice,
-                layer,
-                top_layers: i64::from(i.top_layers),
-                bottom_layers: i64::from(i.bottom_layers),
-                spacing: sp_solid,
-                wall_offset: f64::midpoint(w_ext, sp_ext) + f64::from(i.wall_loops.saturating_sub(1)) * sp_in,
-                opening,
-                surfaces_only: crate::shells::surfaces_only(cfg),
-                narrow: crate::tower::flag_or(cfg, "detect_narrow_internal_solid_infill", true),
-            }),
+            None => {
+                let input = crate::shells::Input {
+                    cache: i.cache,
+                    inner,
+                    slice: i.slice,
+                    layer,
+                    top_layers: i64::from(i.top_layers),
+                    bottom_layers: i64::from(i.bottom_layers),
+                    spacing: sp_solid,
+                    wall_offset: f64::midpoint(w_ext, sp_ext)
+                        + f64::from(i.wall_loops.saturating_sub(1)) * sp_in,
+                    opening,
+                    surfaces_only: crate::shells::surfaces_only(cfg),
+                    narrow: crate::tower::flag_or(cfg, "detect_narrow_internal_solid_infill", true),
+                };
+                let solid = crate::shells::solid_area(&input);
+                if crate::vshell::wanted_for(cfg) {
+                    band = crate::shells::coverage_band(&input, &solid);
+                }
+                solid
+            }
             Some(mode) => crate::shells::horizontal_area(&crate::shells::HInput {
                 cache: i.cache,
                 tag: i.tag,
@@ -292,11 +304,17 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
         shell = union(&shell, &small);
         sparse = big;
     }
+    let band = if band.is_empty() {
+        band
+    } else {
+        meet(&band, &shell)
+    };
     Classes {
         top,
         bottom,
         shell,
         sparse,
+        band,
         bridges,
     }
 }

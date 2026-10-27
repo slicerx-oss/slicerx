@@ -8271,9 +8271,10 @@ impl SliceSession {
         let bridges_on = cfg.sparse_infill_density > 0.0 && base_shell.top_n > 0;
         // A floating vertical shell (vshell.rs) reads the sparse infill of the layer below from the same facts.
         let floating_on = crate::vshell::wanted(cfg, mods);
-        let (bridges, lower_facts): (
+        let (bridges, lower_facts, lower_cut): (
             Option<crate::bridging::LayerBridges>,
             Option<std::sync::Arc<crate::bridging::Facts>>,
+            Shapes,
         ) = if layer >= 1 && (bridges_on || floating_on) {
             use std::sync::Arc;
             let cfg_tag = tags.of(cfg);
@@ -8369,6 +8370,7 @@ impl SliceSession {
                         let own_bottom = all(&|p| &p.cls.bottom);
                         let shell = all(&|p| &p.cls.shell);
                         let sparse = all(&|p| &p.cls.sparse);
+                        let band = all(&|p| &p.cls.band);
                         let external: Vec<crate::bridging::Bridged> =
                             parts.iter().flat_map(|p| p.cls.bridges.iter().cloned()).collect();
                         let bridged =
@@ -8380,6 +8382,7 @@ impl SliceSession {
                             bottom: perimeters::union_all(&[&own_bottom, &bridged]),
                             shell,
                             sparse,
+                            band,
                             lines,
                             paths,
                             external,
@@ -8414,6 +8417,7 @@ impl SliceSession {
                         bottom: perimeters::union_all(&[&cls.bottom, &bridged]),
                         shell: cls.shell,
                         sparse: cls.sparse,
+                        band: cls.band,
                         lines,
                         paths,
                         external: cls.bridges,
@@ -8429,6 +8433,9 @@ impl SliceSession {
                 facts_cache.borrow_mut().insert(l, f.clone());
                 f
             };
+            // What the layer below prints over part of its sparse infill area instead (`bridging::printed_cut`), for
+            // the floating vertical shell: a narrow piece over it rests on solid infill.
+            let mut lower_cut = Shapes::new();
             let layer_bridges = if bridges_on {
                 let print_z = |l: i64| -> f64 { u32::try_from(l).map_or(0.0, |u| self.plan.top(u)) };
                 let ratio = crate::motion::raw_f(cfg, "bridge_flow").unwrap_or(1.0);
@@ -8489,6 +8496,15 @@ impl SliceSession {
                     );
                     areas.extend(second);
                 }
+                if floating_on {
+                    lower_cut = crate::bridging::printed_cut(
+                        &env,
+                        i64::from(layer) - 1,
+                        &memo,
+                        cfg.solid_infill_width(),
+                        extra.internal,
+                    );
+                }
                 let extra_external = if extra.external {
                     let band = cfg.outer_wall_width()
                         + cfg.inner_wall_width() * f64::from(cfg.wall_loops.saturating_sub(1));
@@ -8520,9 +8536,9 @@ impl SliceSession {
             } else {
                 None
             };
-            (layer_bridges, lower)
+            (layer_bridges, lower, lower_cut)
         } else {
-            (None, None)
+            (None, None, Shapes::new())
         };
         bridges_timer.stop(&micros.bridges);
         let mut solid_areas: Vec<Shapes> = Vec::new();
@@ -8872,12 +8888,15 @@ impl SliceSession {
                     crate::narrow::split_core(&shell_area, solid_spacing_mm)
                 };
                 if !narrow.is_empty() {
-                    // On a Bambu Lab printer a narrow piece that rests on the sparse infill of the layer below is
-                    // a floating vertical shell (vshell.rs); the others stay internal solid infill.
+                    // On a Bambu Lab printer a narrow piece that rests on the sparse infill of the layer below, or
+                    // on the band its vertical shell rule alone makes solid (`vshell::open_below`), is a floating
+                    // vertical shell (vshell.rs) when it is narrow enough (`vshell::floating_width`); the others
+                    // stay internal solid infill.
                     let lower = lower_facts.as_deref().filter(|_| bambu);
                     let unsupported = lower.map(|f| crate::vshell::unsupported(&f.sparse));
-                    let (floating, rest) = match &unsupported {
-                        Some(u) => crate::vshell::split(&narrow, u),
+                    let open = lower.map(|f| crate::vshell::open_below(f, &lower_cut, cfg));
+                    let (floating, rest) = match &open {
+                        Some(o) => crate::vshell::split(&narrow, o, crate::vshell::floating_width(cfg)),
                         None => (Shapes::new(), narrow),
                     };
                     if !rest.is_empty() {
