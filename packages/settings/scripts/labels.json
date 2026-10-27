@@ -36,6 +36,7 @@
   "slowdown_for_curled_perimeters": "Slow down on curling walls",
   "sparse_infill_line_width": "Line width of sparse infill",
   "supertack_plate_temp": "Bed temperature on the SuperTack plate",
+  "support_base_edge_inset": "Support base edge inset",
   "support_interface_top_layers": "Interface layers under the part",
   "support_on_build_plate_only": "Only support from the bed",
   "support_top_z_distance": "Vertical gap between support and part",

@@ -1,6 +1,6 @@
 # Process: Support
 
-39 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+40 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `combine_brims`
 
@@ -68,6 +68,17 @@
 - Default: 0
 - Recommended range: 0 to 359
 - Tier: Expert, supports
+- Changing it redoes: paths
+- mimir class: read (not in the catalog: never written)
+
+### `support_base_edge_inset`
+
+**Support base edge inset**
+
+- Type: enum
+- Default: none (the slice works it out when nothing sets it)
+- Values: `half_spacing` (Half a line spacing), `half_width` (Half a line width)
+- Tier: Hidden (profile key)
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 

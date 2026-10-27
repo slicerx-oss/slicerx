@@ -6748,11 +6748,21 @@ impl SliceSession {
             } else {
                 s.angle
             };
+            // Both fills pull the lines in half a spacing. With `support_base_edge_inset` at `half_width` the area
+            // first gives up the rest of half a line width, so the outer lines' edges sit on the xy gap at any
+            // layer height.
+            let narrowed;
+            let base = if s.edge_half_width {
+                narrowed = perimeters::offset(&sl.base, -mm(0.5 * (wmm - spacing)));
+                &narrowed
+            } else {
+                &sl.base
+            };
             support = if spacing / pitch <= 0.95 {
-                crate::supportfill::support_base(&sl.base, spacing, spacing / pitch, angle, center)
+                crate::supportfill::support_base(base, spacing, spacing / pitch, angle, center)
             } else {
                 crate::patterns::support_lines(
-                    &sl.base,
+                    base,
                     spacing,
                     pitch,
                     angle,

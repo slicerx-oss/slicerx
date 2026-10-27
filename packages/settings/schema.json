@@ -6803,6 +6803,23 @@
    "intent": "supports"
   },
   {
+   "key": "support_base_edge_inset",
+   "section": "process",
+   "type": "enum",
+   "label": "Support base edge inset",
+   "enumValues": [
+    "half_spacing",
+    "half_width"
+   ],
+   "mode": "hidden",
+   "group": "support",
+   "invalidates": "paths",
+   "enumLabels": [
+    "Half a line spacing",
+    "Half a line width"
+   ]
+  },
+  {
    "key": "support_object_xy_distance",
    "section": "process",
    "type": "float",

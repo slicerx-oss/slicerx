@@ -158,6 +158,7 @@
         "support_on_build_plate_only": "0",
         "support_top_z_distance": "0.2",
         "support_object_xy_distance": "0.225",
+        "support_base_edge_inset": "half_width",
         "enforce_support_layers": "0",
         "support_filament": "1",
         "support_line_width": "0",
@@ -417,6 +418,58 @@
         "support_type": "normal(auto)",
         "support_style": "grid",
         "layer_height": "0.12"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "grid support with an XY spacing in mm keeps the gap to the outer line's edge",
+      "lines": [
+        "support_material = 1",
+        "support_material_auto = 1",
+        "support_material_style = grid",
+        "support_material_xy_spacing = 0.8",
+        "layer_height = 0.3"
+      ],
+      "config": {
+        "enable_support": "1",
+        "support_type": "normal(auto)",
+        "support_style": "grid",
+        "support_object_xy_distance": "0.8",
+        "layer_height": "0.3",
+        "support_base_edge_inset": "half_width"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "snug support with an XY spacing in percent keeps the gap to the outer line's edge",
+      "lines": [
+        "support_material = 1",
+        "support_material_auto = 1",
+        "support_material_style = snug",
+        "support_material_xy_spacing = 50%"
+      ],
+      "config": {
+        "enable_support": "1",
+        "support_type": "normal(auto)",
+        "support_style": "snug",
+        "support_object_xy_distance": "0.225",
+        "support_base_edge_inset": "half_width"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support off with an XY spacing leaves the outer line where it was",
+      "lines": [
+        "support_material = 0",
+        "support_material_auto = 1",
+        "support_material_style = grid",
+        "support_material_xy_spacing = 0.8"
+      ],
+      "config": {
+        "enable_support": "0",
+        "support_type": "normal(auto)",
+        "support_style": "grid",
+        "support_object_xy_distance": "0.8"
       },
       "unmapped": []
     },
