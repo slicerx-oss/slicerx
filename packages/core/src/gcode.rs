@@ -35,6 +35,63 @@ pub fn bead_area(width: f64, height: f64) -> f64 {
     (width - height) * height + std::f64::consts::PI * (height / 2.0) * (height / 2.0)
 }
 
+/// What the `;WIDTH:` and `;HEIGHT:` comments of a path state on a printer other than a Bambu Lab one, where they
+/// describe its bead as it prints rather than its width at the layer height. A round bridge strand (`thick_bridges`
+/// over air, `thick_internal_bridges` over infill) is as tall as it is wide. A flat strand over air at a
+/// `bridge_flow` above 1 is the taller bead of the same area an overhang wall states
+/// (`overhang::raised_wall_label`). Other paths, and a strand whose flow is not the one its settings give (a wave
+/// overhang ring), state their own width and the layer height.
+#[derive(Debug, Clone, Copy)]
+struct BeadLabels {
+    /// Round strands over air.
+    round_bridges: bool,
+    /// Round strands over infill, and the `internal_bridge_flow` their flow carries on top.
+    round_internal: Option<f64>,
+    /// The `bridge_flow` above 1 of flat strands over air.
+    raised: Option<f64>,
+}
+
+impl BeadLabels {
+    fn of(c: &PrintConfig) -> Self {
+        let other = !crate::firmware::bambu_printer(c, c.gcode_flavor);
+        let internal_flow = c.raw_number("internal_bridge_flow", 1.0).max(0.0);
+        Self {
+            round_bridges: other && c.thick_bridges,
+            round_internal: (other
+                && internal_flow > 0.0
+                && crate::tower::flag_or(c, "thick_internal_bridges", true))
+            .then_some(internal_flow),
+            raised: (other && !c.thick_bridges && c.bridge_flow > 1.0).then_some(c.bridge_flow),
+        }
+    }
+
+    /// The width and height, mm, a path of `feature` `w` wide at `flow` states at layer height `h`, when they are
+    /// not its own width and the layer height.
+    fn stated(self, feature: Feature, w: f64, flow: f64, h: f64) -> Option<(f64, f64)> {
+        let round = |f: f64| same_flow(f, std::f64::consts::PI * w * w / 4.0 / bead_area(w, h));
+        match feature {
+            Feature::Bridge if self.round_bridges => round(flow).then_some((w, w)),
+            Feature::Bridge => self
+                .raised
+                .filter(|f| same_flow(flow, *f))
+                .and_then(|_| self.flat_bridge(w, h)),
+            Feature::InternalBridge => self.round_internal.filter(|fi| round(flow / fi)).map(|_| (w, w)),
+            _ => None,
+        }
+    }
+
+    /// The width and height a flat strand over air `w` wide states at layer height `h`, when it is raised.
+    fn flat_bridge(self, w: f64, h: f64) -> Option<(f64, f64)> {
+        self.raised
+            .map(|f| crate::overhang::raised_wall_label(w, h, crate::output::RaisedWall::Flow(f)))
+    }
+}
+
+/// Two flow ratios equal to within what a path's single-precision flow keeps.
+fn same_flow(a: f64, b: f64) -> bool {
+    (a - b).abs() <= 1e-4 * b.abs().max(1.0)
+}
+
 /// One layer's G-code and what the file's totals need from it.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct LayerChunk {
@@ -2167,6 +2224,8 @@ fn emit_layer(
     // `thick_bridges` a round thread as tall as it is wide (`overhang::raised_wall_label`): its width and height in
     // thousandths, as written. Other paths state their own width and the layer height.
     let raise = crate::overhang::raised_wall(c);
+    // Bridge strands state their bead as it prints on printers other than Bambu Lab's ([`BeadLabels`]).
+    let beads = BeadLabels::of(c);
     #[allow(
         clippy::cast_possible_truncation,
         reason = "a layer height in thousandths is small"
@@ -2176,17 +2235,28 @@ fn emit_layer(
         clippy::cast_possible_truncation,
         reason = "a width and a height in thousandths are small"
     )]
-    let label = |feature: Feature, w: f32| -> (i64, i64) {
+    let label = |feature: Feature, w: f32, flow: f32| -> (i64, i64) {
         match raise {
             Some(r) if feature == Feature::OverhangWall => {
                 let (lw, lh) = crate::overhang::raised_wall_label(f64::from(w), h, r);
                 ((lw * 1000.0).round() as i64, (lh * 1000.0).round() as i64)
             }
-            _ => (thousandths(w), layer_h),
+            _ => match beads.stated(feature, f64::from(w), f64::from(flow), h) {
+                Some((lw, lh)) => ((lw * 1000.0).round() as i64, (lh * 1000.0).round() as i64),
+                None => (thousandths(w), layer_h),
+            },
         }
     };
+    #[allow(clippy::cast_possible_truncation, reason = "a width in thousandths is small")]
     let mut width_written = if l.below_wipe.overhang_wall {
-        label(Feature::OverhangWall, l.below_wipe.width_mm).0
+        label(Feature::OverhangWall, l.below_wipe.width_mm, 1.0).0
+    } else if l.below_wipe.feature == Some(Feature::Bridge) {
+        // The layer below may have ended on a bridge strand stated taller than it is wide.
+        beads
+            .flat_bridge(f64::from(l.below_wipe.width_mm), h)
+            .map_or(thousandths(l.below_wipe.width_mm), |(lw, _)| {
+                (lw * 1000.0).round() as i64
+            })
     } else {
         thousandths(l.below_wipe.width_mm)
     };
@@ -3016,7 +3086,7 @@ fn emit_layer(
                 b.extend_from_slice(lines.as_bytes());
             }
         }
-        let (width_label, height_label) = label(p.feature, p.width_mm);
+        let (width_label, height_label) = label(p.feature, p.width_mm, p.flow);
         if feature != Some(p.feature) {
             if let Some(rc) = role_ctx.as_mut() {
                 match crate::customgcode::role_change(
