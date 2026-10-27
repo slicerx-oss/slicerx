@@ -634,3 +634,151 @@ fn the_preview_draws_a_round_overhang_bead_as_tall_as_it_is_wide() {
         }
     }
 }
+
+/// One extruding move at least 1 mm long: its feature, the width and height its comments state and the layer's own
+/// height (thousandths), and its length and filament.
+#[derive(Debug, Clone)]
+struct Labeled {
+    feature: String,
+    width: i64,
+    height: i64,
+    layer: i64,
+    len: f64,
+    e: f64,
+}
+
+fn labeled(g: &str) -> Vec<Labeled> {
+    let thousandths = |v: &str| (v.trim().parse::<f64>().unwrap() * 1000.0).round() as i64;
+    let mut out = Vec::new();
+    let (mut feature, mut width, mut height, mut layer) = (String::new(), 0_i64, 0_i64, 0_i64);
+    let (mut at, mut change) = ((0.0, 0.0), false);
+    for line in g.lines() {
+        if line.starts_with(";LAYER_CHANGE") {
+            change = true;
+            continue;
+        }
+        if let Some(f) = line.strip_prefix(";TYPE:") {
+            f.trim().clone_into(&mut feature);
+            continue;
+        }
+        if let Some(w) = line.strip_prefix(";WIDTH:") {
+            width = thousandths(w);
+            continue;
+        }
+        if let Some(h) = line.strip_prefix(";HEIGHT:") {
+            height = thousandths(h);
+            if change {
+                layer = height;
+                change = false;
+            }
+            continue;
+        }
+        let code = line.split(';').next().unwrap_or("");
+        let mut words = code.split_whitespace();
+        let Some(cmd) = words.next() else { continue };
+        if cmd != "G0" && cmd != "G1" {
+            continue;
+        }
+        let (mut to, mut e) = (at, 0.0);
+        for w in words {
+            let (k, v) = w.split_at(1);
+            let Ok(v) = v.parse::<f64>() else { continue };
+            match k {
+                "X" => to.0 = v,
+                "Y" => to.1 = v,
+                "E" => e = v,
+                _ => {}
+            }
+        }
+        let len = (to.0 - at.0).hypot(to.1 - at.1);
+        if cmd == "G1" && e > 0.0 && len >= 1.0 {
+            out.push(Labeled {
+                feature: feature.clone(),
+                width,
+                height,
+                layer,
+                len,
+                e,
+            });
+        }
+        at = to;
+    }
+    out
+}
+
+/// The stated (width, height) of `feature`'s moves, with their filament per mm.
+fn stated_of(moves: &[Labeled], feature: &str) -> BTreeMap<(i64, i64), Sum> {
+    let mut out: BTreeMap<(i64, i64), Sum> = BTreeMap::new();
+    for m in moves.iter().filter(|m| m.feature == feature) {
+        let s = out.entry((m.width, m.height)).or_default();
+        s.len += m.len;
+        s.e += m.e;
+    }
+    out
+}
+
+/// `feature` is stated at `want` only and prints `per_mm` filament per mm to 0.5 percent.
+fn assert_stated(moves: &[Labeled], feature: &str, want: (i64, i64), per_mm: f64, what: &str) {
+    let got = stated_of(moves, feature);
+    let stated: Vec<(i64, i64)> = got.keys().copied().collect();
+    assert_eq!(stated, vec![want], "{what}: {feature} stated at {stated:?}");
+    let p = got[&want].per_mm();
+    assert!(
+        (p / per_mm - 1.0).abs() < 0.005,
+        "{what}: {feature} {p:.6} mm/mm, want {per_mm:.6}"
+    );
+}
+
+/// A box 20 mm square and 6 mm tall: its first solid layer over the 15 % sparse infill is an internal bridge.
+fn tall_box() -> Vec<MeshPart> {
+    vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 6.0], "box")]
+}
+
+#[test]
+fn a_bridge_strand_states_its_bead_as_it_prints() {
+    let blw = |extra: Value| {
+        let mut e = json!({ "bridge_line_width": "100%" });
+        e.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        ender(&e)
+    };
+    // Thick bridges at a flow of 1.3: a round strand 0.4 sqrt(1.3) = 0.456 across, as tall as it is wide.
+    let moves = labeled(
+        &run(
+            ledge(),
+            &blw(json!({ "thick_bridges": true, "bridge_flow": 1.3 })),
+        )
+        .0,
+    );
+    assert_stated(&moves, "Bridge", (456, 456), round_per_mm(0.4) * 1.3, "thick 1.3");
+    // Flat at 1.3: the 0.4 bead at 1.3 times its extrusion, stated 0.413 wide and 0.26 tall.
+    let moves = labeled(
+        &run(
+            ledge(),
+            &blw(json!({ "thick_bridges": false, "bridge_flow": 1.3 })),
+        )
+        .0,
+    );
+    assert_stated(&moves, "Bridge", (413, 260), expected(0.4) * 1.3, "flat 1.3");
+    // Flat at 1: the layer height.
+    let moves = labeled(
+        &run(
+            ledge(),
+            &blw(json!({ "thick_bridges": false, "bridge_flow": 1.0 })),
+        )
+        .0,
+    );
+    assert_stated(&moves, "Bridge", (400, 200), expected(0.4), "flat 1");
+    // A round internal bridge strand the nozzle across.
+    let cfg =
+        blw(json!({ "thick_internal_bridges": true, "bridge_flow": 1.0, "sparse_infill_density": "15%" }));
+    let moves = labeled(&run(tall_box(), &cfg).0);
+    assert_stated(
+        &moves,
+        "Internal Bridge",
+        (400, 400),
+        round_per_mm(0.4),
+        "internal",
+    );
+}
