@@ -31,8 +31,9 @@ describe('schema', () => {
     for (const d of SETTINGS) expect(SLICE_STAGES, d.key).toContain(d.invalidates)
   })
 
-  // The slice works these out when nothing sets them, so a default config leaves them out.
-  const NO_DEFAULT = ['chamber_cooling_mode']
+  // The slice works these out when nothing sets them, so a default config leaves them out. An unset first layer flow
+  // ratio prints at 1, and a default would add the key to the settings block of every file.
+  const NO_DEFAULT = ['initial_layer_flow_ratio', 'chamber_cooling_mode']
 
   it('gives every setting a default, except the ones the slice works out', () => {
     expect(SETTINGS.filter((d) => d.default === undefined).map((d) => d.key)).toEqual(NO_DEFAULT)

@@ -7,6 +7,24 @@
    "from": "0.20mm Standard @Demo"
   },
   {
+   "name": "Bambu Lab project with a first layer flow ratio",
+   "kind": "project",
+   "projectSettings": {
+    "printer_model": "Bambu Lab A1",
+    "initial_layer_flow_ratio": "0.9",
+    "layer_height": "0.2"
+   }
+  },
+  {
+   "name": "other printer's project with initial_layer_flow_ratio",
+   "kind": "project",
+   "projectSettings": {
+    "printer_model": "Generic Klipper Printer",
+    "initial_layer_flow_ratio": "0.9",
+    "layer_height": "0.2"
+   }
+  },
+  {
    "name": "0.12mm Fine @Demo",
    "kind": "profile",
    "from": "0.12mm Fine @Demo"

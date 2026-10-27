@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 753 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 754 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -9,7 +9,7 @@ How to read the fields is in the [guide](../guide.md).
 Print settings: layers, walls, infill, speeds, supports, adhesion.
 
 - [Adhesion: skirt, brim and raft](process-adhesion.md): 27 settings
-- [Advanced extrusion](process-advanced.md): 29 settings
+- [Advanced extrusion](process-advanced.md): 30 settings
 - [G-code](process-gcode.md): 8 settings
 - [Acceleration, jerk and machine limits](process-motion.md): 21 settings
 - [Multi material](process-multimaterial.md): 43 settings
@@ -347,6 +347,7 @@ Alphabetical, each linking to its group file.
 - `inherits`: Inherits, [process/profile](process-profile.md#inherits)
 - `initial_layer_acceleration`: First layer acceleration, [process/motion](process-motion.md#initial_layer_acceleration)
 - `initial_layer_fan_speed`: Initial layer fan speed, [filament/cooling](filament-cooling.md#initial_layer_fan_speed)
+- `initial_layer_flow_ratio`: Initial layer flow ratio, [process/advanced](process-advanced.md#initial_layer_flow_ratio)
 - `initial_layer_infill_speed`: Infill speed on the first layer, [process/speed](process-speed.md#initial_layer_infill_speed)
 - `initial_layer_jerk`: Initial layer jerk, [process/motion](process-motion.md#initial_layer_jerk)
 - `initial_layer_line_width`: Line width on the first layer, [process/quality](process-quality.md#initial_layer_line_width)
