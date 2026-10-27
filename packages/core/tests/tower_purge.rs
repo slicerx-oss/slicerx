@@ -272,7 +272,16 @@ fn flush_into_infill_leaves_at_least_the_floor_on_the_tower() {
     let stock = later_rows(infill(&[]));
     let plain = later_rows(mmu(&[("sparse_infill_density", json!(50))]));
     assert!(
-        stock.iter().any(|r| *r < 90.0) && plain.iter().all(|r| *r > 90.0),
+        stock.iter().any(|r| *r < plain[0] - 5.0) && plain.iter().all(|r| (r - plain[0]).abs() < 0.1),
         "{stock:.2?} against {plain:.2?}"
     );
+}
+
+#[test]
+fn a_change_purges_the_flush_times_the_multiplier_in_whole_rows() {
+    // 280 x 0.3 is 84 mm3, laid as the least whole rows that reach it.
+    let rows = later_rows(mmu(&[]));
+    all_in(&rows, 84.0, 91.0, "matrix 280 x 0.3");
+    let full = later_rows(mmu(&[("flush_multiplier", json!(["1"]))]));
+    all_in(&full, 280.0, 287.0, "matrix 280 x 1.0");
 }

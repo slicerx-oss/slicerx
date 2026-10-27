@@ -3996,7 +3996,7 @@ fn a_change_between_layers_keeps_the_tower_when_the_infill_cannot_take_the_flush
     let big = tower_mm(&text(&run(json!({"prime_volume": 400}))));
     assert!(hollow > 0.0, "{hollow}");
     // Right at the boundary: the infill of a 20 mm layer holds about 10 mm3, and the room must beat the
-    // flush (with the purge rows' tenth extra) by a quarter. 6 mm3 clears it, 9 mm3 does not.
+    // flush by a quarter. 6 mm3 clears it, 9 mm3 does not.
     assert_eq!(tower_mm(&text(&run(json!({"prime_volume": 6})))), 0.0);
     assert!(tower_mm(&text(&run(json!({"prime_volume": 9})))) > 0.0);
     assert!(big > 0.0, "{big}");
