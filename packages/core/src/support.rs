@@ -819,6 +819,16 @@ pub(crate) fn clear_of_part(
     perimeters::difference(area, &perimeters::union_all(&refs))
 }
 
+/// A filler layer's area under a round strand: the overhang's interface footprint `footprint` less the bridge layer
+/// `bridge` grown by the XY distance. It is not opened: a strip too narrow for a line gets none from the interface
+/// fill, and the wider ones print.
+fn filler_area(footprint: &Shapes, bridge: &Shapes, cfg: &SupportConfig) -> Shapes {
+    if footprint.is_empty() {
+        return Vec::new();
+    }
+    perimeters::difference(footprint, &perimeters::offset(bridge, units(cfg.xy_distance)))
+}
+
 /// Support printed on layers of its own height (`independent_support_layer_height`), as Orca's
 /// `PrintObjectSupportMaterial` plans it: a contact layer the top gap under each overhang (contacts
 /// closer than `min_h` merge), a contact layer over each top surface support stands on, and between
@@ -848,6 +858,9 @@ pub(crate) fn stack(
 
     // Top contacts, one per overhang layer, then merged where closer than the thinnest layer.
     let mut contacts: Vec<(Slab, Vec<usize>)> = Vec::new();
+    // Under a round strand that hangs below its layer: the lowered contact's top, where the contact would sit
+    // under a flat strand, and the overhang layer. Filler layers print between the two around the strand.
+    let mut fillers: Vec<(f64, f64, usize)> = Vec::new();
     for l in 1..n {
         if hang.get(l).is_none_or(Vec::is_empty) {
             continue;
@@ -863,7 +876,8 @@ pub(crate) fn stack(
                 height: below,
             }
         } else {
-            let z = match h.bridge_h.filter(|d| *d > thick_of(l) + Z_EPS) {
+            let dropped = h.bridge_h.filter(|d| *d > thick_of(l) + Z_EPS);
+            let z = match dropped {
                 Some(d) => top_of(l) - d - cfg.top_z_distance,
                 None => bottom_l - cfg.top_z_distance,
             };
@@ -890,6 +904,9 @@ pub(crate) fn stack(
                     },
                 }
             } else {
+                if dropped.is_some() {
+                    fillers.push((z, bottom_l - cfg.top_z_distance, l));
+                }
                 // Its thickness is decided with the layers under it.
                 Slab {
                     kind: Kind::Top,
@@ -1145,12 +1162,40 @@ pub(crate) fn stack(
         }
     }
 
+    // The filler layers: from each lowered contact up to where it would sit under a flat strand, in the fewest
+    // equal layers no thicker than `max_h`, the top one level with that height.
+    let mut filler_slabs: Vec<(Slab, usize)> = Vec::new();
+    for &(lo, hi, l) in &fillers {
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a layer count"
+        )]
+        let count = ((hi - lo - Z_EPS) / h.max_h).ceil().max(1.0) as usize;
+        #[allow(clippy::cast_precision_loss, reason = "a layer count")]
+        let step = (hi - lo) / count as f64;
+        for i in 1..=count {
+            #[allow(clippy::cast_precision_loss, reason = "a layer count")]
+            let top = if i == count { hi } else { lo + i as f64 * step };
+            filler_slabs.push((
+                Slab {
+                    kind: Kind::Between,
+                    top,
+                    bottom: top - step,
+                    height: step,
+                },
+                l,
+            ));
+        }
+    }
+
     // Every layer height in the stack, merged where they are the same.
     let mut zs: Vec<(f64, f64)> = contacts
         .iter()
         .map(|c| c.0)
         .chain(bottoms.iter().map(|b| b.0))
         .chain(between.iter().copied())
+        .chain(filler_slabs.iter().map(|f| f.0))
         // The raft prints everything up to its contact layer.
         .filter(|s| s.height > 0.0 && h.raft.is_none_or(|r| s.top > r.contact_top + Z_EPS))
         .map(|s| (s.top, s.height))
@@ -1218,6 +1263,13 @@ pub(crate) fn stack(
             }
         }
     }
+    // The overhang layers each layer is a filler layer of.
+    let mut filler_at: Vec<Vec<usize>> = vec![Vec::new(); stack.len()];
+    for (slab, l) in &filler_slabs {
+        if let Some(v) = filler_at.get_mut(index_of(slab.top)) {
+            v.push(*l);
+        }
+    }
     let mut extra: Vec<Shapes> = vec![Vec::new(); stack.len()];
     let mut landing: Vec<Shapes> = vec![Vec::new(); stack.len()];
     let mut on_part: Vec<Shapes> = vec![Vec::new(); stack.len()];
@@ -1255,11 +1307,33 @@ pub(crate) fn stack(
             Some(e) => perimeters::union_all(&[&column, e]),
             None => column,
         };
-        if area.is_empty() {
+        let filler = match filler_at.get(s).filter(|ls| !ls.is_empty()) {
+            Some(ls) => {
+                let parts: Vec<Shapes> = ls
+                    .iter()
+                    .map(|&l| filler_area(&footprint(&[l]), models.get(l).unwrap_or(&empty), cfg))
+                    .collect();
+                let sets: Vec<&Shapes> = parts.iter().collect();
+                clear_of_part(
+                    &perimeters::union_all(&sets),
+                    t,
+                    bottom,
+                    models,
+                    tops,
+                    thickness,
+                    cfg,
+                )
+            }
+            None => Vec::new(),
+        };
+        if area.is_empty() && filler.is_empty() {
             continue;
         }
         area = clear_of_part(&area, t, bottom, models, tops, thickness, cfg);
-        let area = open(&area, w);
+        let mut area = open(&area, w);
+        if !filler.is_empty() {
+            area = perimeters::union_all(&[&area, &filler]);
+        }
         if area.is_empty() {
             continue;
         }
@@ -1277,11 +1351,14 @@ pub(crate) fn stack(
             // Orca grows the bottom contact by one support line width.
             dense = perimeters::union_all(&[&dense, &perimeters::offset(l, w)]);
         }
-        let interface = if dense.is_empty() {
+        let mut interface = if dense.is_empty() {
             Vec::new()
         } else {
             open(&perimeters::intersection(&area, &dense), w)
         };
+        if !filler.is_empty() {
+            interface = perimeters::union_all(&[&interface, &filler]);
+        }
         let (mut contact, mut hang_here) = (Vec::new(), Vec::new());
         if let Some(ks) = contact_at
             .get(s)
@@ -1431,8 +1508,8 @@ mod grid_tests {
     fn the_contact_keeps_its_gap_under_a_round_strand() {
         // A 0.45 mm strand under the 10.2 mm layer: the contact at 10.2 - 0.45 - 0.2 = 9.55 mm, over 32 even steps.
         let stack = round_strands(Some(0.45), None, false, &SupportConfig::default());
-        assert_eq!(stack.len(), 33);
-        assert!(stack[1..].iter().all(|l| (l.height - 9.35 / 32.0).abs() < 1e-6));
+        assert_eq!(stack.len(), 34);
+        assert!(stack[1..33].iter().all(|l| (l.height - 9.35 / 32.0).abs() < 1e-6));
         assert!((stack[32].top - 9.55).abs() < 1e-6);
         assert!(
             stack[30..]
@@ -1442,7 +1519,7 @@ mod grid_tests {
         assert!(stack[29].layer.interface.is_empty());
         // A 0.75 mm strand: the contact at 9.25 mm, over 31 steps.
         let stack = round_strands(Some(0.75), None, false, &SupportConfig::default());
-        assert_eq!(stack.len(), 32);
+        assert_eq!(stack.len(), 34);
         assert!((stack[31].top - 9.25).abs() < 1e-6);
         assert!((stack[31].height - 9.05 / 31.0).abs() < 1e-6);
     }
@@ -1481,9 +1558,73 @@ mod grid_tests {
         assert!(stack[0].height <= 0.38 + 1e-9);
         assert!(!stack[0].layer.on_part.is_empty());
         assert!(stack[1..].iter().all(|l| l.layer.on_part.is_empty()));
-        assert_eq!(stack.len(), 18);
-        assert!(stack[1..].iter().all(|l| (l.height - 4.97 / 17.0).abs() < 1e-6));
+        assert_eq!(stack.len(), 19);
+        assert!(stack[1..18].iter().all(|l| (l.height - 4.97 / 17.0).abs() < 1e-6));
         assert!((stack[17].top - 9.55).abs() < 1e-6);
+    }
+
+    /// Whether `area` covers the point (x, y), mm.
+    fn holds(area: &Shapes, x: f64, y: f64) -> bool {
+        !perimeters::intersection(area, &rect(x - 0.005, y - 0.005, x + 0.005, y + 0.005)).is_empty()
+    }
+
+    #[test]
+    fn filler_layers_fill_around_the_strand_up_to_the_flat_contact() {
+        // A 0.45 mm strand: one 0.25 mm filler layer from the contact at 9.55 mm up to 9.8 mm, where the contact
+        // sits under a flat strand. It is interface around the square only: from the footprint's edge, 11.7 mm out
+        // from the center on the 2.877 mm grid, in to the square grown by the 0.35 mm XY distance.
+        let stack = round_strands(Some(0.45), None, false, &SupportConfig::default());
+        let fill: Vec<&StackLayer> = stack.iter().filter(|l| l.top > 9.55 + 1e-6).collect();
+        assert_eq!(fill.len(), 1);
+        assert!((fill[0].top - 9.8).abs() < 1e-6 && (fill[0].height - 0.25).abs() < 1e-6);
+        let a = &fill[0].layer;
+        assert!(a.base.is_empty() && a.contact.is_empty() && a.bottom.is_empty());
+        for (x, y) in [(99.0, 110.0), (121.0, 110.0), (110.0, 98.6), (110.0, 121.4)] {
+            assert!(holds(&a.interface, x, y), "({x}, {y})");
+        }
+        for (x, y) in [
+            (110.0, 110.0),
+            (99.8, 110.0),
+            (110.0, 120.2),
+            (120.2, 120.2),
+            (97.9, 110.0),
+        ] {
+            assert!(!holds(&a.interface, x, y), "({x}, {y})");
+        }
+        // A 0.75 mm strand drops 0.55 mm: two filler layers of 0.275 mm, at 9.525 and 9.8 mm.
+        let stack = round_strands(Some(0.75), None, false, &SupportConfig::default());
+        let fill: Vec<(f64, f64)> = stack
+            .iter()
+            .filter(|l| l.top > 9.25 + 1e-6)
+            .map(|l| (l.top, l.height))
+            .collect();
+        assert_eq!(fill.len(), 2);
+        for ((t, h), want) in fill.iter().zip([9.525, 9.8]) {
+            assert!((t - want).abs() < 1e-6 && (h - 0.275).abs() < 1e-6, "{t} {h}");
+        }
+    }
+
+    #[test]
+    fn the_filler_area_is_the_footprint_less_the_bridge_layer_grown_by_the_xy_distance() {
+        let footprint = rect(75.26, 101.16, 84.0, 118.84);
+        let bridge = rect(77.0, 102.0, 83.0, 118.0);
+        let area = filler_area(&footprint, &bridge, &SupportConfig::default());
+        assert!(holds(&area, 76.0, 110.0) && holds(&area, 80.0, 101.40));
+        assert!(!holds(&area, 76.85, 110.0) && !holds(&area, 80.0, 110.0));
+        let far = SupportConfig {
+            xy_distance: 1.2,
+            ..SupportConfig::default()
+        };
+        let area = filler_area(&footprint, &bridge, &far);
+        assert!(holds(&area, 75.45, 110.0) && !holds(&area, 75.9, 110.0));
+        // A strip 0.49 mm wide stays: the interface fill decides whether a line fits. Opening would drop it.
+        let strip = filler_area(
+            &rect(100.0, 100.0, 120.0, 120.84),
+            &rect(100.0, 100.0, 120.0, 120.0),
+            &SupportConfig::default(),
+        );
+        assert!(!strip.is_empty());
+        assert!(open(&strip, units(0.42)).is_empty());
     }
 }
 
