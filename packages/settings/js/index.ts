@@ -28,7 +28,7 @@ export { machineEntry, gcodeStatus, listPrinterProfiles, printerProfile, printer
 export type { PrinterProfile, FilamentProfile, ProcessPreset } from './profiles'
 export { FILAMENT_SOURCES, filamentBrands, filamentPresetCount, listFilamentFamilies, loadFilamentPreset, loadVendorFile, resolveFilamentPreset, resolveFilamentRaw } from './filaments'
 export type { FilamentFamilyInfo, FilamentPreset, VendorFile } from './filaments'
-export { PROJECT_TEXT_RULES, PRUSA_KEY_MAP, importPrusaIni, isProjectUnread, mapPrusaValues, parseIni, projectTextOk, prusaKeyKind, prusaOverrides, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, takesProjectValue } from './prusa'
+export { PROJECT_TEXT_RULES, PRUSA_KEY_MAP, importPrusaIni, isProjectUnread, mapPrusaValues, parseIni, projectTextOk, prusaKeyKind, prusaObjectOverrides, prusaOverrides, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, takesProjectValue } from './prusa'
 export { buildReport, countDefaulted, defaultedText, displayRaw, displayValue, importLayers, importValues, insteadText, parentText, projectReport, reasonText, reportText, settingLabel, sourceText } from './report'
 export type { DropReason, Dropped, ImportLayer, ImportReport, Instead, KeyFamily, ReportInput, ReportItem, ValueSource } from './report'
 export { BundleError, MAX_BUNDLE_PRESETS, MAX_PRESET_BYTES, importPresetFiles, presetKind, readPresetBundle } from './presetfile'

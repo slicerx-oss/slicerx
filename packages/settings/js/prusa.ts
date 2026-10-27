@@ -15,6 +15,8 @@ interface PrusaMap {
   values: { key: string; from: string; to: string }[]
   percentOf: Record<string, string>
   percentBaseDefaults: Record<string, number>
+  /** Width keys a project gives as a percent of a height, by the key the percent is of. */
+  widthPercentOf: Record<string, string>
   ignoredPattern: string
   ignoredKeys: string[]
   /** Keys that carry over only through a `values` row; any other value is left out and reported as not applied. */
@@ -175,6 +177,46 @@ function absolute(key: string, raw: Raw, seen = new Set<string>()): number | und
   seen.add(key)
   const b = absolute(base, raw, seen)
   return b === undefined ? undefined : Math.round(b * p) / 100
+}
+
+/** The outer wall's width at the layer height in a project's own settings: its own width when set (a percent of the
+ * layer height), else the general width, else 1.125 times the project's own nozzle diameter (0.4 when it has none). */
+function outerWidth(raw: Raw): number | undefined {
+  const lh = absolute('layer_height', raw)
+  if (lh === undefined) return undefined
+  for (const key of ['external_perimeter_extrusion_width', 'extrusion_width']) {
+    const v = raw[key]
+    if (v === undefined) continue
+    const p = percent(v)
+    const w = p === undefined ? num(v) : (p / 100) * lh
+    if (w !== undefined && w !== 0) return w
+  }
+  const nozzle = raw['nozzle_diameter'] === undefined ? MAP.percentBaseDefaults['nozzle_diameter'] : num(raw['nozzle_diameter'].split(',')[0])
+  return nozzle === undefined ? undefined : 1.125 * nozzle
+}
+
+/**
+ * The mm a width percent in a project's own settings stands for (prusa-map.json `widthPercentOf`): a percent of the
+ * first layer height for the first layer width, of the layer height for the other widths, and of the outer wall's width
+ * for the support's XY gap. Heights are the project's own, as the project sets them, else the defaults.
+ */
+function widthMm(key: string, p: number, raw: Raw): number | undefined {
+  const of = MAP.widthPercentOf[key]
+  if (of === undefined) return undefined
+  const base = of === 'external_perimeter_width' ? outerWidth(raw) : absolute(of, raw)
+  // Kept to a nanometer, so float noise does not show: 150% of 0.15 is 0.225.
+  return base === undefined ? undefined : Math.round(((base * p) / 100) * 1e9) / 1e9
+}
+
+/** A project's own settings with each width percent of `widthPercentOf` in mm, all read from the settings as given. */
+function projectWidths(raw: Raw): Raw {
+  const out: Raw = { ...raw }
+  for (const [key, v] of Object.entries(raw)) {
+    const p = percent(v)
+    const mm = p === undefined ? undefined : widthMm(key, p, raw)
+    if (mm !== undefined) out[key] = String(mm)
+  }
+  return out
 }
 
 const SECTION_ORDER: SettingSection[] = ['process', 'filament', 'printer']
@@ -373,7 +415,7 @@ export function readPrusaConfig(text: string): Raw {
  */
 export function prusaProjectSettings(text: string): { values: Record<string, unknown>; unmapped: string[]; notApplied: Dropped[] } {
   const raw = readPrusaConfig(text)
-  const m = mapPrusaValues(raw)
+  const m = mapPrusaValues(projectWidths(raw))
   const values: Record<string, unknown> = { ...m.values }
   const colors = raw['extruder_colour'] ?? raw['filament_colour']
   if (colors !== undefined) {
@@ -400,6 +442,26 @@ export function prusaProjectConfig(text: string): { config: Record<string, unkno
   }
   const colors = Array.isArray(m.values['filament_colour']) ? (m.values['filament_colour'] as string[]) : []
   return { config, unmapped: m.unmapped, notApplied: m.notApplied, left: left.sort(), colors }
+}
+
+/**
+ * One object's Prusa settings as `prusaOverrides` gives them, plus each width percent that the object's own layer height
+ * decides, in mm: one the object sets, and the project's own when the object has its own `layer_height`. Both are of the
+ * object's layer height (the project's when it sets none), and the support XY spacing of the object's outer wall width.
+ * The first layer width stays the project's. `projectText` is the text of `Metadata/Slic3r_PE.config`.
+ */
+export function prusaObjectOverrides(meta: Readonly<Record<string, string>>, projectText?: string): Record<string, string> {
+  const out = prusaOverrides(meta)
+  const raw: Raw = { ...(projectText === undefined ? {} : readPrusaConfig(projectText)), ...meta }
+  const ownHeight = 'layer_height' in meta
+  for (const key of Object.keys(MAP.widthPercentOf).sort()) {
+    if (key === 'first_layer_extrusion_width' || !(ownHeight || key in meta)) continue
+    const v = raw[key]
+    const p = v === undefined ? undefined : percent(v)
+    const mm = p === undefined ? undefined : widthMm(key, p, raw)
+    if (mm !== undefined) out[MAP.rename[key] ?? key] = String(mm)
+  }
+  return out
 }
 
 /** One object's or volume's Prusa settings (`Slic3r_PE_model.config` metadata) as Orca-format strings. */

@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+
+- `project_config` reads a PrusaSlicer project's width percents as that file format means them and passes them on in mm: `first_layer_extrusion_width` as a percent of the first layer height, `extrusion_width`, `external_perimeter_extrusion_width`, `perimeter_extrusion_width`, `infill_extrusion_width`, `solid_infill_extrusion_width`, `top_infill_extrusion_width` and `support_material_extrusion_width` as a percent of the layer height, and `support_material_xy_spacing` as a percent of the outer wall width (its own width, else the general width, else 1.125 times the project's own nozzle diameter). A 200% first layer width on a 0.2 mm first layer was `200%` of the nozzle (0.8 mm on a 0.4 nozzle) and is now 0.4 mm, and a percent support XY spacing, which was left out, now carries over. An object with its own `layer_height` gets these widths of its own layer height, from its own percents or the project's (and its XY spacing of its own outer wall width), and an object's own width percents are of the project's layer height when it sets none. A single object at 0.3 mm layers in a 0.1 mm project with a 150% inner wall prints 0.45 mm walls. Volume settings and the first layer width of an object are unchanged.
+
 ## [0.2.4] - 2026-10-26
 
 ### Added
