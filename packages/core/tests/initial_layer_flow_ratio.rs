@@ -10,6 +10,9 @@
 //! part the next filament prints after it takes the ratio on its E and on its stated width. The purge with no XY
 //! travel keeps its E, and the tower keeps ignoring the filament and print flow ratios.
 //!
+//! On other printers `initial_layer_flow_ratio` is the bottom surface's flow ratio on every layer, in place of
+//! `bottom_solid_infill_flow_ratio` when both are set, and `first_layer_flow_ratio` scales the first layer as before.
+//!
 //! Each test compares two slices that differ in one setting: per layer (the first, or any above it), feature and
 //! filament, the ratio of E per mm.
 #![allow(
@@ -728,4 +731,160 @@ fn the_tower_ignores_the_filament_flow_ratios() {
 #[test]
 fn the_print_flow_ratio_leaves_the_tower_part_alone() {
     tower_case(Printer::A1, &[("print_flow_ratio", json!("0.9"))], 0.9);
+}
+
+/// The composite on a Marlin printer other than a Bambu Lab one: every setting stated, 2 skirt loops, a 3 mm outer
+/// brim, normal support and ironing on top surfaces (`tests/fixtures/marlin-composite-config.json`), the islands 11 mm
+/// to the left of [`composite`]'s; then `extra`.
+fn marlin_comp(extra: &[(&str, Value)]) -> String {
+    let path = format!(
+        "{}/tests/fixtures/marlin-composite-config.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let mut cfg: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    set(&mut cfg, extra);
+    // Read as `sx slice --config` reads a preset: a value the engine cannot read is left out.
+    for issue in sx_core::PrintConfig::default().apply_value_lenient(&cfg).unwrap() {
+        cfg.as_object_mut().unwrap().remove(&issue.key);
+    }
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"bed": {"widthMm": 256, "depthMm": 256, "heightMm": 250},
+                  "objects": [{"id": "o1", "name": "composite", "mesh": "composite",
+                               "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -11, 0, 0, 1]}]},
+        "config": cfg,
+        "options": {"trustedGcode": true},
+    }))
+    .unwrap();
+    let mesh = Arc::new(Mesh::load(&composite(), "composite.stl").unwrap());
+    let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    String::from_utf8_lossy(&run.gcode).into_owned()
+}
+
+/// `k` on the bottom surface, on every layer; 1 everywhere else.
+fn bottom(k: f64) -> impl Fn(&Group) -> f64 {
+    move |g: &Group| if g.1 == "Bottom surface" { k } else { 1.0 }
+}
+
+#[test]
+fn on_another_printer_it_is_the_bottom_surface_ratio() {
+    let base = marlin_comp(&[]);
+    let case = marlin_comp(&[("initial_layer_flow_ratio", json!("0.9"))]);
+    let pair = Pair::of(&base, &case, "il090");
+    pair.expect("il090", &RULE_ONE, bottom(0.9));
+    pair.same_widths_and_feeds("il090");
+    // With first_layer_flow_ratio as well, the first layer's bottom surface takes both.
+    let so1 = ("set_other_flow_ratios", json!("1"));
+    let base = marlin_comp(std::slice::from_ref(&so1));
+    let case = marlin_comp(&[
+        so1,
+        ("initial_layer_flow_ratio", json!("0.9")),
+        ("first_layer_flow_ratio", json!("0.9")),
+    ]);
+    let pair = Pair::of(&base, &case, "il090-fl090");
+    pair.expect("il090-fl090", &RULE_ONE, |g| {
+        let first = if g.0 && g.1 != "Brim" && g.1 != "Skirt" {
+            0.9
+        } else {
+            1.0
+        };
+        first * bottom(0.9)(g)
+    });
+}
+
+#[test]
+fn on_another_printer_it_wins_over_the_bottom_surface_ratio() {
+    let base = marlin_comp(&[]);
+    let case = marlin_comp(&[
+        ("initial_layer_flow_ratio", json!("0.9")),
+        ("bottom_solid_infill_flow_ratio", json!("0.8")),
+    ]);
+    let pair = Pair::of(&base, &case, "il090-bs080");
+    pair.expect("il090-bs080", &RULE_ONE, bottom(0.9));
+    pair.same_widths_and_feeds("il090-bs080");
+}
+
+#[test]
+fn on_another_printer_a_raft_leaves_it_on_the_object_bottom() {
+    let base = marlin_comp(&[("raft_layers", json!("2")), ("set_other_flow_ratios", json!("1"))]);
+    let case = marlin_comp(&[
+        ("raft_layers", json!("2")),
+        ("initial_layer_flow_ratio", json!("0.9")),
+    ]);
+    let pair = Pair::of(&base, &case, "raft2-il090");
+    pair.expect("raft2-il090", &["Support", "Skirt"], bottom(0.9));
+    // The raft's first layer has no bottom surface; the object's, on the raft, takes the ratio.
+    let layers: std::collections::BTreeSet<usize> = pair
+        .case
+        .iter()
+        .filter(|m| m.feature == "Bottom surface")
+        .map(|m| m.layer)
+        .collect();
+    assert!(
+        layers.first().is_some_and(|&l| l > 1),
+        "the object's bottom surface on layers {layers:?}"
+    );
+}
+
+/// A case: its name, its settings, the features' own ratios and the ratio of every move.
+type Case<'a> = (&'a str, Vec<(&'a str, Value)>, Vec<(&'a str, f64)>, f64);
+
+#[test]
+fn on_another_printer_the_first_layer_flow_ratio_multiplies_the_rest() {
+    let so1 = ("set_other_flow_ratios", json!("1"));
+    let fl = ("first_layer_flow_ratio", json!("0.9"));
+    let base = marlin_comp(std::slice::from_ref(&so1));
+    // The first layer but brim and skirt takes 0.9, on top of each feature's own ratio on every layer.
+    let first = |g: &Group| {
+        if g.0 && g.1 != "Brim" && g.1 != "Skirt" {
+            0.9
+        } else {
+            1.0
+        }
+    };
+    let own = |g: &Group, of: &[(&str, f64)]| of.iter().find(|(f, _)| *f == g.1).map_or(1.0, |o| o.1);
+    let cases: [Case; 4] = [
+        ("fl090", vec![], vec![], 1.0),
+        (
+            "ow080-fl090",
+            vec![
+                ("outer_wall_flow_ratio", json!("0.8")),
+                ("inner_wall_flow_ratio", json!("0.85")),
+                ("gap_fill_flow_ratio", json!("0.7")),
+                ("support_flow_ratio", json!("0.75")),
+                ("sparse_infill_flow_ratio", json!("0.95")),
+            ],
+            vec![
+                ("Outer wall", 0.8),
+                ("Inner wall", 0.85),
+                ("Gap infill", 0.7),
+                ("Gap fill", 0.7),
+                ("Support", 0.75),
+                ("Sparse infill", 0.95),
+            ],
+            1.0,
+        ),
+        (
+            "bs080-fl090",
+            vec![
+                ("bottom_solid_infill_flow_ratio", json!("0.8")),
+                ("brim_flow_ratio", json!("0.85")),
+                ("top_solid_infill_flow_ratio", json!("0.7")),
+            ],
+            vec![("Bottom surface", 0.8), ("Brim", 0.85), ("Top surface", 0.7)],
+            1.0,
+        ),
+        (
+            "ffr090-fl090",
+            vec![("filament_flow_ratio", json!(["0.9"]))],
+            vec![],
+            0.9,
+        ),
+    ];
+    for (what, extra, of, all) in cases {
+        let mut settings = vec![so1.clone(), fl.clone()];
+        settings.extend(extra);
+        let pair = Pair::of(&base, &marlin_comp(&settings), what);
+        pair.expect(what, &RULE_ONE, |g| all * own(g, &of) * first(g));
+        pair.same_widths_and_feeds(what);
+    }
 }

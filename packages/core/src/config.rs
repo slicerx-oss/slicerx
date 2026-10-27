@@ -2010,7 +2010,8 @@ impl PrintConfig {
     /// The extrusion multiplier Orca applies by role (`GCode::_extrude`): the print flow ratio, the top and
     /// bottom solid and brim ratios, and with `set_other_flow_ratios` the ratios of the other roles and of the
     /// first layer. On a Bambu Lab printer the first layer takes `initial_layer_flow_ratio` instead of
-    /// `first_layer_flow_ratio` ([`Self::initial_layer_flow`]).
+    /// `first_layer_flow_ratio` ([`Self::initial_layer_flow`]). On other printers `initial_layer_flow_ratio`, when set,
+    /// is the bottom surface's ratio on every layer, in place of `bottom_solid_infill_flow_ratio`.
     pub fn role_flow_ratio(&self, feature: crate::output::Feature, first_layer: bool) -> f64 {
         use crate::output::Feature as F;
         let r = |k: &str| self.raw_number(k, 1.0);
@@ -2018,6 +2019,11 @@ impl PrintConfig {
         let mut v = r("print_flow_ratio");
         v *= match feature {
             F::TopSurface => r("top_solid_infill_flow_ratio"),
+            F::BottomSurface
+                if !bambu && self.raw_number("initial_layer_flow_ratio", f64::NAN).is_finite() =>
+            {
+                r("initial_layer_flow_ratio")
+            }
             F::BottomSurface => r("bottom_solid_infill_flow_ratio"),
             F::Brim => r("brim_flow_ratio"),
             _ => 1.0,
@@ -3317,5 +3323,31 @@ mod tests {
         let other = c(serde_json::json!({ "initial_layer_flow_ratio": "0.9" }));
         assert!(near(other.role_flow_ratio(F::OuterWall, true), 1.0));
         assert!(near(other.initial_layer_flow_ratio(), 1.0));
+    }
+
+    #[test]
+    fn on_other_printers_the_initial_layer_flow_ratio_is_the_bottom_surface_ratio() {
+        use crate::output::Feature as F;
+        let c = |v: Value| PrintConfig::from_value(&v).unwrap_or_default();
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        // On every layer, in place of bottom_solid_infill_flow_ratio, and on nothing else.
+        let other = c(
+            serde_json::json!({ "initial_layer_flow_ratio": "0.9", "bottom_solid_infill_flow_ratio": "0.8" }),
+        );
+        for first in [true, false] {
+            assert!(near(other.role_flow_ratio(F::BottomSurface, first), 0.9));
+            assert!(near(other.role_flow_ratio(F::OuterWall, first), 1.0));
+            assert!(near(other.role_flow_ratio(F::TopSurface, first), 1.0));
+            assert!(near(other.cap_flow(first).ratio(1, F::BottomSurface), 0.9));
+        }
+        let unset = c(serde_json::json!({ "bottom_solid_infill_flow_ratio": "0.8" }));
+        assert!(near(unset.role_flow_ratio(F::BottomSurface, false), 0.8));
+        // A Bambu Lab printer keeps its bottom surface ratio above the first layer.
+        let bambu = c(
+            serde_json::json!({ "printer_model": "Bambu Lab A1", "initial_layer_flow_ratio": "0.9",
+            "bottom_solid_infill_flow_ratio": "0.8" }),
+        );
+        assert!(near(bambu.role_flow_ratio(F::BottomSurface, false), 0.8));
+        assert!(near(bambu.role_flow_ratio(F::BottomSurface, true), 0.8 * 0.9));
     }
 }
