@@ -73,6 +73,9 @@ pub(crate) struct Tower {
     /// A single nozzle's ramming leads into the wipe ([`rams_past_cap`]): the row it finishes is the last of the
     /// ramming's band, a whole row spacing before the wipe's own rows.
     full_lead: bool,
+    /// The wall's centerline is the box and the rows start at its inner edge ([`walls_on_box`]); otherwise the wall
+    /// runs half a bead inside the box and the rows start two beads in.
+    on_box: bool,
     /// Orca's rib wall, once the tower's height is known ([`Tower::ribbed`]).
     rib: Option<Rib>,
 }
@@ -315,6 +318,18 @@ fn shared_ramming(cfg: &PrintConfig, from: u8) -> Option<(f64, RamLine)> {
 /// filament lists, past the volumetric limit.
 pub(crate) fn rams_past_cap(cfg: &PrintConfig) -> bool {
     !type1(cfg) && flag_or(cfg, "single_extruder_multi_material", true)
+}
+
+/// True where a single nozzle's ramming runs on a type 2 tower for a plate with `tools` filaments: ramming is on and
+/// some filament lists a ramming speed ([`shared_ramming`]). Such a tower's wall runs on its box, the first band
+/// starts at the wall's inner edge and the ramming band is its lines' exact pitch, with no rounding to whole rows.
+fn walls_on_box(cfg: &PrintConfig, tools: u8) -> bool {
+    let listed = match cfg.raw.get("filament_ramming_parameters") {
+        Some(serde_json::Value::Array(a)) => a.len(),
+        _ => 1,
+    };
+    let slots = u8::try_from(listed).unwrap_or(u8::MAX).max(tools);
+    rams_past_cap(cfg) && (1..=slots).any(|s| shared_ramming(cfg, s).is_some())
 }
 
 /// How long a single nozzle rams at each speed its `filament_ramming_parameters` lists, s.
@@ -936,7 +951,12 @@ impl Tower {
             x: cfg.raw_number("wipe_tower_x", 15.0),
             y: cfg.raw_number("wipe_tower_y", 220.0),
             width,
-            depth: rows * spacing + 2.0 * wall_w,
+            depth: rows * spacing
+                + if walls_on_box(cfg, tools) {
+                    wall_w
+                } else {
+                    2.0 * wall_w
+                },
             wall_w,
             wipe_w,
             row_flow: if type1(cfg) { 1.0 } else { extra_flow },
@@ -960,6 +980,7 @@ impl Tower {
             whole_rows: type1(cfg) || prusa_tools(cfg) || flush_on_tower(cfg),
             skip_points: type1(cfg) && flag_or(cfg, "prime_tower_skip_points", true),
             full_lead: rams_past_cap(cfg),
+            on_box: walls_on_box(cfg, tools),
             rib: None,
         })
     }
@@ -1037,9 +1058,10 @@ impl Tower {
         wall
     }
 
-    /// The wall loop at height `z`, closed: inside the tower's edge, or Orca's rib wall on its edge.
+    /// The wall loop at height `z`, closed: inside the tower's edge (on it where [`walls_on_box`]), or Orca's rib wall
+    /// on its edge.
     pub(crate) fn wall(&self, first: bool, z: f64) -> TowerPath {
-        let h = self.wall_w / 2.0;
+        let h = self.wall_inset();
         TowerPath {
             points: if self.rib.is_some() {
                 let mut pts: Vec<Point> = self
@@ -1071,7 +1093,22 @@ impl Tower {
         } else {
             2.0 * self.wall_w
         };
-        (edge, 2.0 * self.wall_w + start * self.spacing)
+        (edge, self.row_origin() + start * self.spacing)
+    }
+
+    /// How far inside the box the wall's centerline runs: on the box ([`walls_on_box`]), else half a bead in, mm.
+    fn wall_inset(&self) -> f64 {
+        if self.on_box { 0.0 } else { self.wall_w / 2.0 }
+    }
+
+    /// The center of the tower's first row from its front edge, mm: half a row spacing past the wall's inner edge on
+    /// a tower whose wall runs on the box ([`walls_on_box`]), else two wall beads in.
+    fn row_origin(&self) -> f64 {
+        if self.on_box {
+            f64::midpoint(self.wall_w, self.spacing)
+        } else {
+            2.0 * self.wall_w
+        }
     }
 
     /// The wall loop at height `z` with an opening level with each wipe start in `starts` (the tower's own frame),
@@ -1238,13 +1275,15 @@ impl Tower {
         first: bool,
     ) -> Vec<TowerPath> {
         let w = self.wall_w;
-        let (x0, x1) = (1.5 * w, self.width - 1.5 * w);
+        // The outline's centerline runs a bead inside the wall's.
+        let inner = if self.on_box { w } else { 1.5 * w };
+        let (x0, x1) = (inner, self.width - inner);
         let y0 = if used_rows > 0.0 {
-            2.0 * w + used_rows * self.spacing
+            self.row_origin() + used_rows * self.spacing
         } else {
-            1.5 * w
+            inner
         };
-        let y1 = to.map_or(self.depth - 1.5 * w, |r| r * self.spacing + 0.5 * w);
+        let y1 = to.map_or(self.depth - inner, |r| r * self.spacing + 0.5 * w);
         if y1 - y0 <= 1e-4 || x1 - x0 <= 4.0 * w {
             return Vec::new();
         }
@@ -1407,7 +1446,7 @@ impl Tower {
         (1..=loops)
             .map(|k| {
                 #[allow(clippy::cast_precision_loss, reason = "a loop count")]
-                let inset = self.wall_w / 2.0 - k as f64 * spacing;
+                let inset = self.wall_inset() - k as f64 * spacing;
                 TowerPath {
                     points: self.ring(inset),
                     width_mm: to_f32(self.wall_w),
@@ -1426,6 +1465,7 @@ impl Tower {
     /// negative brim). That layer prints the most: the brim (or brim chamfer) only narrows above it. A brim's
     /// loops run inside its width from the box (`brim`); a type 1 tower's chamfer loops go round its wall, one
     /// spacing apart, so the last bead reaches half a bead past them (`chamfer`). A rib wall runs on the box.
+    /// So does the wall of a tower whose ramming runs ([`walls_on_box`]), and its brim's loops go round it.
     pub(crate) fn print_margin(&self, first_h: f64, height: f64) -> f64 {
         let width = if self.brim < 0.0 {
             (height / 100.0).min(1.0) * 8.0
@@ -1444,11 +1484,11 @@ impl Tower {
             0.0
         };
         if loops == 0.0 {
-            wall
+            wall.max(self.wall_w / 2.0 - self.wall_inset())
         } else if self.type1 {
             loops * spacing + self.wall_w / 2.0
         } else {
-            (loops * spacing).max(wall)
+            (loops * spacing + self.wall_w / 2.0 - self.wall_inset()).max(wall)
         }
     }
 
@@ -1521,7 +1561,7 @@ impl Tower {
         let row_len = x1 - x0;
         let area = self.row_area(layer_h);
         let mut pts = Vec::new();
-        let mut y = 2.0 * self.wall_w + start * self.spacing;
+        let mut y = self.row_origin() + start * self.spacing;
         let mut left = true;
         let mut volume = volume;
         let mut lead_row = false;
@@ -1723,7 +1763,7 @@ impl Tower {
         let area = bead(w, layer_h);
         let lines = ram_lines(volume, row_len, area);
         let speeds = ramming_tokens(cfg, from).map_or_else(Vec::new, |t| t.speeds);
-        let mut y = 2.0 * self.wall_w + start * self.spacing + (pitch - self.spacing) / 2.0;
+        let mut y = self.row_origin() + start * self.spacing + (pitch - self.spacing) / 2.0;
         let (mut x, mut right, mut line_no) = (x0, true, 1.0);
         let mut paths = Vec::new();
         for s in speeds.iter().copied().filter(|s| *s > 0.0) {
@@ -1755,7 +1795,13 @@ impl Tower {
                 len -= take;
             }
         }
-        let rows = (lines * pitch / self.spacing - 1e-9).ceil();
+        // On the box the band is exact, and the wipe's lead row centers past the last line by half the beads'
+        // difference.
+        let rows = if self.on_box {
+            (lines * pitch - (pitch - w) / 2.0 + (self.spacing - self.wall_w) / 2.0) / self.spacing
+        } else {
+            (lines * pitch / self.spacing - 1e-9).ceil()
+        };
         (paths, rows, Some((x, right)))
     }
 }
@@ -2284,7 +2330,8 @@ fn ram_rows(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> f64 {
         let lines = ram_lines(p.ram, (width - 3.0 * wall_w).max(1.0), bead(line.width, h));
         let extra_flow = (cfg.raw_number("wipe_tower_extra_flow", 100.0) / 100.0).clamp(0.5, 3.0);
         let extra_spacing = (cfg.raw_number("wipe_tower_extra_spacing", 100.0) / 100.0).clamp(0.5, 5.0);
-        return (lines * line.pitch / (wall_w * extra_flow * extra_spacing) - 1e-9).ceil();
+        // Ramming that runs puts the tower's wall on its box (`walls_on_box`), where the band is exact.
+        return lines * line.pitch / (wall_w * extra_flow * extra_spacing);
     }
     let w = ram_width(cfg, p.nozzle_change);
     let row_len = (width - 2.0 * w).max(1.0);
@@ -3370,11 +3417,7 @@ mod tests {
             }
         }
         // The first line is centered half a line into the band below the first row.
-        assert!(
-            (lines[0].0 - (2.0 * 0.5 - 0.25 + 0.625)).abs() < 1e-6,
-            "{}",
-            lines[0].0
-        );
+        assert!((lines[0].0 - (0.5 - 0.25 + 0.625)).abs() < 1e-6, "{}", lines[0].0);
         let last = lines[3].2 - lines[3].1;
         assert!((last - 31.61).abs() < 0.01, "last line {last}");
         // Five pieces of 10 mm3 at 40 mm3/s over the 1.25 mm bead (F9941), one split where the line turns.
@@ -3431,7 +3474,7 @@ mod tests {
         let first = &paths[0];
         let (a, b) = (first.points[0], first.points[1]);
         assert!((a.x_mm() - 15.0 - (59.25 - 31.611)).abs() < 0.01 && (b.x_mm() - 16.0).abs() < 1e-6);
-        let row_y = |k: f64| 220.0 + 2.0 * 0.5 + k * 0.5;
+        let row_y = |k: f64| 220.0 + 0.5 + k * 0.5;
         assert!((a.y_mm() - row_y(rows - 1.0)).abs() < 1e-6, "{}", a.y_mm());
         assert!((paths[1].points[0].y_mm() - row_y(rows)).abs() < 1e-6);
         // The plan counts the same lead row.
@@ -3468,6 +3511,118 @@ mod tests {
             "{saved} against {}",
             84.0 - wall
         );
+    }
+
+    /// The X and Y extent of `path` from the tower's origin `t`.
+    fn extent(t: &Tower, path: &TowerPath) -> [f64; 4] {
+        path.points
+            .iter()
+            .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, p| {
+                let (x, y) = (p.x_mm() - t.x, p.y_mm() - t.y);
+                [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]
+            })
+    }
+
+    #[test]
+    fn a_shared_nozzles_wall_runs_on_the_box_where_it_rams() {
+        let c = mmu_ram(60.0, STOCK_RAM, &[]);
+        let t = Tower::new(&c, 2, 23.0).unwrap();
+        // 23 rows half a millimeter apart and one wall bead: the wall's centerline is the box.
+        assert!((t.depth - 12.0).abs() < 1e-9, "{}", t.depth);
+        let wall = extent(&t, &t.wall(false, 1.0));
+        for (got, want) in wall.iter().zip([0.0, 0.0, 60.0, 12.0]) {
+            assert!((got - want).abs() < 1e-6, "{wall:?}");
+        }
+        // The first row is centered half a row spacing past the wall's inner edge; the rows keep their X.
+        let (x, y) = t.row_start(0.0);
+        assert!((x - 1.0).abs() < 1e-9 && (y - 0.5).abs() < 1e-9, "{x} {y}");
+        // The first ramming line is centered half a pitch past the wall's inner edge.
+        let (lines, ..) = ram_lines_of(&c);
+        assert!((lines[0].0 - (0.25 + 0.625)).abs() < 1e-6, "{}", lines[0].0);
+        // The tower prints half a bead past its box with no brim, and its brim's loops go round the wall.
+        let mut bare = c.clone();
+        bare.raw
+            .insert("prime_tower_brim_width".into(), serde_json::json!(0));
+        let bare = Tower::new(&bare, 2, 23.0).unwrap();
+        assert!((bare.print_margin(0.2, 8.0) - 0.25).abs() < 1e-9);
+        let spacing = 0.5 - 0.2 * (1.0 - std::f64::consts::FRAC_PI_4);
+        assert!((t.print_margin(0.2, 8.0) - (7.0 * spacing + 0.25)).abs() < 1e-9);
+        let brim = t.brim(0.2, 8.0);
+        let outer = extent(&t, brim.last().unwrap());
+        assert!(
+            (outer[0] + 7.0 * spacing).abs() < 1e-3 && (outer[2] - 60.0 - 7.0 * spacing).abs() < 1e-3,
+            "{outer:?}"
+        );
+        // The fill keeps a bead inside the wall's centerline.
+        let fill = extent(&t, &t.fill(&c, 0.0, false)[0]);
+        for (got, want) in fill.iter().zip([0.5, 0.5, 59.5, 11.5]) {
+            assert!((got - want).abs() < 1e-6, "{fill:?}");
+        }
+        // Without ramming, with no ramming speed, on a tool changer or a Bambu Lab printer the wall stays half a
+        // bead inside the box and the rows start two beads in.
+        for other in [
+            mmu_ram(
+                60.0,
+                STOCK_RAM,
+                &[("enable_filament_ramming", serde_json::json!("0"))],
+            ),
+            mmu_ram(60.0, "250 100", &[]),
+            mmu_ram(
+                60.0,
+                STOCK_RAM,
+                &[("single_extruder_multi_material", serde_json::json!("0"))],
+            ),
+            mmu_ram(
+                60.0,
+                STOCK_RAM,
+                &[("printer_model", serde_json::json!("Bambu Lab A1"))],
+            ),
+        ] {
+            let t = Tower::new(&other, 2, 23.0).unwrap();
+            assert!(!t.on_box);
+            assert!((t.depth - (23.0 * t.spacing + 2.0 * t.wall_w)).abs() < 1e-9);
+            assert!((extent(&t, &t.wall(false, 1.0))[0] - 0.25).abs() < 1e-6);
+            assert!((t.row_start(0.0).1 - 1.0).abs() < 1e-9);
+        }
+        // One filament that rams is enough.
+        let mix = mmu_ram(
+            60.0,
+            STOCK_RAM,
+            &[(
+                "filament_ramming_parameters",
+                serde_json::json!(["250 100", STOCK_RAM]),
+            )],
+        );
+        assert!(Tower::new(&mix, 2, 23.0).unwrap().on_box);
+    }
+
+    #[test]
+    fn a_shared_nozzles_ramming_band_is_its_exact_pitch() {
+        let p = |c: &PrintConfig| change_purge(c, 2, 1, 2);
+        // Three 1.25 mm lines at width 80 are 7.5 rows, four at 60 are 10.
+        let w80 = mmu_ram(80.0, STOCK_RAM, &[]);
+        let rows = ram_rows(&w80, p(&w80), 80.0, 0.2);
+        assert!((rows - 7.5).abs() < 1e-9, "{rows}");
+        let w60 = mmu_ram(60.0, STOCK_RAM, &[]);
+        assert!((ram_rows(&w60, p(&w60), 60.0, 0.2) - 10.0).abs() < 1e-9);
+        // The printed band agrees at stock, and the wipe's lead row centers past the last line by half the beads'
+        // difference, (1.25 - 0.5) / 2, so the two touch.
+        let t = Tower::new(&w80, 2, 40.0).unwrap();
+        let (paths, rows, _) = t.ramming(&w80, p(&w80), 1, 0.2, 0.0);
+        assert!((rows - 7.5).abs() < 1e-9, "{rows}");
+        let last = paths.last().unwrap().points[0].y_mm() - t.y;
+        let lead = t.row_start(rows - 1.0).1;
+        assert!((lead - last - 0.375).abs() < 1e-6, "{lead} {last}");
+        // So it does with `wipe_tower_extra_spacing` 150%, where the band is no whole number of rows.
+        let x150 = mmu_ram(
+            60.0,
+            STOCK_RAM,
+            &[("wipe_tower_extra_spacing", serde_json::json!("150%"))],
+        );
+        let t = Tower::new(&x150, 2, 40.0).unwrap();
+        let (paths, rows, _) = t.ramming(&x150, p(&x150), 1, 0.2, 0.0);
+        let last = paths.last().unwrap().points[0].y_mm() - t.y;
+        assert!((t.row_start(rows - 1.0).1 - last - 0.375).abs() < 1e-6);
     }
 
     #[test]
