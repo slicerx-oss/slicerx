@@ -189,6 +189,23 @@ fn solid_area(areas: &LayerAreas) -> Shapes {
     perimeters::union_all(&parts)
 }
 
+/// What one region adds to the solid fill that ironing every solid surface irons, besides the layer's top and bottom
+/// surfaces: its internal solid shell `shell`. The region's top surface is ironed through the layer's own top (the
+/// slice less the layer above), exactly as top ironing irons it, so the classified top surface, which runs on under
+/// the next layer's walls at a step, adds nothing. Where the next layer rises off the top surface `top`, the shell
+/// under its walls (`next_walls`, its outline less its infill area) within `reach` of `top` is left out too: no fill
+/// prints there for the ironing to smooth.
+pub(crate) fn solid_fill(shell: &Shapes, top: &Shapes, next_walls: &Shapes, reach: i32) -> Shapes {
+    if shell.is_empty() || top.is_empty() || next_walls.is_empty() {
+        return shell.clone();
+    }
+    let under = perimeters::intersection(next_walls, &perimeters::offset(top, reach));
+    if under.is_empty() {
+        return shell.clone();
+    }
+    perimeters::difference(shell, &under)
+}
+
 /// The ironing area of a layer, or None when this layer is not ironed.
 fn area(
     areas: &LayerAreas,
@@ -800,6 +817,61 @@ mod tests {
         // As one object, the layer has sparse infill, so the left island irons only its fill.
         let pts = solid_points(slice, solid, sparse, Vec::new(), 0.0);
         assert!(fills(&pts, [1.0, 1.0, 9.0, 9.0], 0.06), "{:?}", extents(&pts));
+    }
+
+    /// The ironing points of a layer with a top surface `top` and solid fill `solid`, under `kind` at 0.1 mm.
+    fn step_points(kind: &str, top: Shapes, solid: Shapes) -> Vec<Pt> {
+        let mut c = cfg(kind);
+        c.raw.insert("ironing_spacing".into(), serde_json::json!(0.1));
+        c.raw.insert("ironing_inset".into(), serde_json::json!(0));
+        let areas = LayerAreas {
+            slice: rect(0.0, 0.0, 20.0, 10.0),
+            top,
+            solid,
+            sparse: rect(1.0, 1.0, 8.8, 9.0),
+            ..LayerAreas::default()
+        };
+        let mut out = LayerPaths {
+            index: 24,
+            height: 0.2,
+            z: 5.0,
+            ..LayerPaths::default()
+        };
+        add(&mut out, &areas, &c, false, 0.0, &[]);
+        out.paths
+            .iter()
+            .flat_map(|p| out.path_points(p))
+            .map(|p| [p.x_mm(), p.y_mm()])
+            .collect()
+    }
+
+    #[test]
+    fn solid_ironing_irons_a_top_surface_at_a_step_as_top_ironing_does() {
+        // The next layer covers x 0 to 10. Its walls stand on this layer's top surface out to x 8.8, where the
+        // classified top surface reaches; the solid fill holds no shell, so the top surface is all that is ironed.
+        let top = rect(10.0, 0.0, 20.0, 10.0);
+        let solid = step_points("solid", top.clone(), Vec::new());
+        let only_top = step_points("top", top, Vec::new());
+        assert!(!solid.is_empty());
+        assert_eq!(solid, only_top);
+        assert!(solid.iter().all(|p| p[0] >= 10.0 - 1e-3), "{:?}", extents(&solid));
+    }
+
+    #[test]
+    fn the_shell_under_the_next_layers_walls_at_a_step_is_not_ironed() {
+        // The next layer covers x 0 to 10 with 1 mm of walls; this layer's top surface is x 10 to 20.
+        let top = rect(10.0, 0.0, 20.0, 10.0);
+        let walls = perimeters::difference(&rect(0.0, 0.0, 10.0, 10.0), &rect(1.0, 1.0, 9.0, 9.0));
+        let reach = crate::geom::mm(1.5);
+        // A shell piece under the walls beside the top surface is left out; one under the walls away from it stays.
+        let shell = perimeters::union_all(&[&rect(9.2, 1.0, 10.0, 9.0), &rect(1.0, 0.2, 7.0, 1.0)]);
+        let fill = solid_fill(&shell, &top, &walls, reach);
+        let b = perimeters::bounds(&fill).expect("the shell away from the step stays");
+        assert!(b[2] <= crate::geom::mm(7.0) + 1, "{b:?}");
+        // No shell, no fill: the classified top surface adds nothing.
+        assert!(solid_fill(&Vec::new(), &top, &walls, reach).is_empty());
+        // With no top surface (or nothing above), the shell is ironed whole.
+        assert_eq!(solid_fill(&shell, &Vec::new(), &walls, reach), shell);
     }
 
     #[test]

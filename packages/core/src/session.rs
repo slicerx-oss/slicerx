@@ -8847,7 +8847,42 @@ impl SliceSession {
             let mut shell_area = cls.shell.clone();
             let mut internal_bridge: Spans = Vec::new();
             if crate::ironing::kind(cfg) == Some(crate::ironing::Kind::Solid) {
-                solid_areas.push(perimeters::union_all(&[&cls.top, &cls.shell]));
+                // The top surface irons through the layer's own top (the slice less the layer above). Where the next
+                // layer's walls stand on this layer's top surface, the shell under them, out to the walls' inner edge
+                // (the next layer's infill area less its overlap), is not ironed.
+                let next_walls = match (&upper_slice, layer.checked_add(1).filter(|&l| l < n)) {
+                    (Some(up), Some(l)) if !cls.shell.is_empty() => {
+                        let top = perimeters::difference(shapes, up);
+                        let inner = if top.is_empty() {
+                            None
+                        } else {
+                            self.cache.inner(i64::from(l), tags.of(cfg), || {
+                                get(l).map(|r| {
+                                    perimeters::walls_for(
+                                        cfg,
+                                        &slice_shapes(r),
+                                        cfg.wall_loops,
+                                        w,
+                                        overlap,
+                                        self.plan.thickness(l),
+                                        false,
+                                    )
+                                })
+                            })
+                        };
+                        inner.map(|i| (top, perimeters::difference(up, &perimeters::offset(&i, -overlap))))
+                    }
+                    _ => None,
+                };
+                let reach = w.saturating_mul(
+                    i32::try_from(cfg.wall_loops)
+                        .unwrap_or(i32::MAX)
+                        .saturating_add(1),
+                );
+                solid_areas.push(match &next_walls {
+                    Some((top, walls)) => crate::ironing::solid_fill(&cls.shell, top, walls, reach),
+                    None => cls.shell.clone(),
+                });
             }
             // Narrow bands of internal solid infill are filled with variable-width beads instead of lines.
             let solid_spacing_mm = cfg.spacing_for(cfg.solid_infill_width());
