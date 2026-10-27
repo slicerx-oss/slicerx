@@ -304,7 +304,7 @@ fn the_towers_span_stays_with_the_wall_on_the_box() {
         (
             mmu(2, &[("flush_multiplier", json!(["1"]))]),
             TWO,
-            30.5,
+            30.0,
             "flush x 1.0",
         ),
     ] {
