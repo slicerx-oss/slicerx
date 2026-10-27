@@ -290,6 +290,7 @@ infill_wall_overlap	process	percent
 inherits	process	string
 initial_layer_acceleration	process	floats
 initial_layer_fan_speed	filament	ints
+initial_layer_flow_ratio	process	float
 initial_layer_infill_speed	process	floats
 initial_layer_jerk	process	floats
 initial_layer_line_width	process	floatOrPercent

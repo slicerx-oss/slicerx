@@ -102,6 +102,7 @@ infill_shift_step
 infill_wall_overlap
 inherits
 initial_layer_acceleration
+initial_layer_flow_ratio
 initial_layer_infill_speed
 initial_layer_jerk
 initial_layer_line_width

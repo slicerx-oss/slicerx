@@ -24,8 +24,9 @@ fn entries_are_complete_and_unique() {
     }
 }
 
-/// The settings with no default: the slice works each out when nothing sets it.
-const NO_DEFAULT: [&str; 1] = ["chamber_cooling_mode"];
+/// The settings with no default: the slice works each out when nothing sets it. An unset first layer flow ratio
+/// prints at 1, and a default would add the key to the settings block of every file.
+const NO_DEFAULT: [&str; 2] = ["initial_layer_flow_ratio", "chamber_cooling_mode"];
 
 #[test]
 fn only_the_worked_out_settings_have_no_default() {

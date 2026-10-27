@@ -211,6 +211,21 @@ pub(crate) struct Flat {
     pub invalid: Vec<String>,
 }
 
+/// A key that is our own setting on a Bambu Lab printer and an older name for another setting elsewhere (legacy.json):
+/// `initial_layer_flow_ratio` is the first layer's flow ratio in a Bambu Lab project, which the engine reads under that
+/// name, and the bottom surface flow ratio in other files.
+const OWN_ON_BAMBU: [&str; 1] = ["initial_layer_flow_ratio"];
+
+/// True when the settings are for a Bambu Lab printer, as the engine tells: its flavor or its model name.
+fn for_bambu(merged: &BTreeMap<String, Json>) -> bool {
+    let text = |k: &str| match merged.get(k) {
+        Some(Json::Array(a)) => a.first().and_then(Json::as_str).unwrap_or(""),
+        Some(v) => v.as_str().unwrap_or(""),
+        None => "",
+    };
+    text("gcode_flavor") == "bambu" || text("printer_model").starts_with("Bambu Lab")
+}
+
 /// Read one flat object of Orca JSON values (a merged profile, or a project's settings file).
 pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
     let rules = rules();
@@ -218,6 +233,7 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
     let (mut unknown, mut ignored, mut nil, mut invalid) =
         (BTreeSet::new(), BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
     let from_mode = infill_retraction_from_mode(merged);
+    let bambu = for_bambu(merged);
     for (raw_key, raw_value) in merged {
         if rules.meta.contains(raw_key) {
             continue;
@@ -240,10 +256,12 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
             ignored.insert(raw_key.clone());
             continue;
         }
-        let renamed = setting_def(raw_key)
-            .is_none()
-            .then(|| rules.rename.get(raw_key))
-            .flatten();
+        let older = if OWN_ON_BAMBU.contains(&raw_key.as_str()) {
+            !bambu
+        } else {
+            setting_def(raw_key).is_none()
+        };
+        let renamed = older.then(|| rules.rename.get(raw_key)).flatten();
         let key = renamed.cloned().unwrap_or_else(|| raw_key.clone());
         if setting_def(&key).is_none() {
             unknown.insert(raw_key.clone());

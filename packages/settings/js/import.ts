@@ -99,6 +99,23 @@ export interface FlatImport {
   invalidKeys: string[]
 }
 
+/**
+ * A key that is our own setting on a Bambu Lab printer and an older name for another setting elsewhere (legacy.json):
+ * `initial_layer_flow_ratio` is the first layer's flow ratio in a Bambu Lab project, which the engine reads under that
+ * name, and the bottom surface flow ratio in other files.
+ */
+const OWN_ON_BAMBU = new Set(['initial_layer_flow_ratio'])
+
+/** True when the settings are for a Bambu Lab printer, as the engine tells: its flavor or its model name. */
+function forBambu(merged: Record<string, unknown>): boolean {
+  const text = (k: string): string => {
+    const v = merged[k]
+    const one = Array.isArray(v) ? v[0] : v
+    return typeof one === 'string' ? one : ''
+  }
+  return text('gcode_flavor') === 'bambu' || text('printer_model').startsWith('Bambu Lab')
+}
+
 /** Read one flat object of Orca JSON values (a merged profile, or a project's settings file). */
 export function importFlat(merged: Record<string, unknown>): FlatImport {
   const config: PrintConfig = {} as PrintConfig
@@ -107,6 +124,7 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
   const nilKeys: string[] = []
   const invalidKeys: string[] = []
   const fromMode = infillRetractionFromMode(merged)
+  const bambu = forBambu(merged)
   for (const [rawKey, rawValue] of Object.entries(merged)) {
     if (PROFILE_META_KEYS.has(rawKey)) continue
     // The mode replaces the old switch when the file has both (see infillRetractionFromMode).
@@ -121,7 +139,8 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
       ignoredKeys.push(rawKey)
       continue
     }
-    const renamed = !settingDef(rawKey) && LEGACY.rename[rawKey] !== undefined
+    const older = OWN_ON_BAMBU.has(rawKey) ? !bambu : !settingDef(rawKey)
+    const renamed = older && LEGACY.rename[rawKey] !== undefined
     const key = renamed ? LEGACY.rename[rawKey]! : rawKey
     const def = settingDef(key)
     if (!def) {
