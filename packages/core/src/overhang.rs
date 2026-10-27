@@ -597,10 +597,11 @@ pub(crate) fn bead(cfg: &PrintConfig, h: f64) -> (f64, f64) {
 /// On a Bambu Lab printer whose `bridge_line_width` is not set away from the schema default (the maker's app has no
 /// such key), the piece is a flat bead at `bridge_flow` built on the wall width: the inner wall's, whichever loop it
 /// belongs to, except that arachne walls print their outer loop's pieces at the outer wall's width. At the default
-/// flow of 1 that is a plain wall bead. On other printers with `thick_bridges` off, arachne walls print the plain bead
-/// of the piece's own loop: the outer wall's width on the outer loop, the inner wall's on the others, at the wall flow
-/// whatever `bridge_flow` is. Fixed-width walls there, a bridge line width set by hand on a Bambu Lab printer and
-/// `thick_bridges` keep the bridge strand of [`bead`] on every loop. Only the width changes, not the path.
+/// flow of 1 that is a plain wall bead. On other printers with `thick_bridges` off, arachne walls print the bead of
+/// the piece's own loop: the outer wall's width on the outer loop, the inner wall's on the others, at the wall flow
+/// at a `bridge_flow` of 1 or less and at `bridge_flow` above it. Fixed-width walls there, a bridge line width set by
+/// hand on a Bambu Lab printer and `thick_bridges` keep the bridge strand of [`bead`] on every loop. Only the width
+/// and the flow change, not the path.
 pub(crate) fn wall_bead(cfg: &PrintConfig, h: f64, outer: bool) -> (f64, f64) {
     if wall_width_bead(cfg) {
         let w = if outer && cfg.arachne_generator() {
@@ -618,7 +619,7 @@ pub(crate) fn wall_bead(cfg: &PrintConfig, h: f64, outer: bool) -> (f64, f64) {
         } else {
             cfg.inner_wall_width()
         };
-        return (w, 1.0);
+        return (w, cfg.bridge_flow.max(1.0));
     }
     bead(cfg, h)
 }
@@ -642,9 +643,8 @@ fn bambu_wall_bead(cfg: &PrintConfig) -> bool {
 /// How the G-code comments draw the bead of an overhang wall piece other than flat at the layer height. On a Bambu
 /// Lab printer with no `bridge_line_width` set by hand: taller at a `bridge_flow` above 1 on the flat bead of
 /// [`wall_bead`], or round with `thick_bridges`. On other printers: round with `thick_bridges`, whose bead is always
-/// the round strand of [`bead`], extra perimeters on overhangs included, and with fixed-width walls taller at a
-/// `bridge_flow` above 1 on the flat bridge strand. None otherwise, when the comments state the bead's own width and
-/// the layer height.
+/// the round strand of [`bead`], extra perimeters on overhangs included, and taller at a `bridge_flow` above 1 on
+/// the flat bead of [`wall_bead`]. None otherwise, when the comments state the bead's own width and the layer height.
 pub(crate) fn raised_wall(cfg: &PrintConfig) -> Option<RaisedWall> {
     if !bambu_wall_bead(cfg) {
         if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
@@ -653,8 +653,7 @@ pub(crate) fn raised_wall(cfg: &PrintConfig) -> Option<RaisedWall> {
         if cfg.thick_bridges {
             return Some(RaisedWall::Round);
         }
-        return (!cfg.arachne_generator() && cfg.bridge_flow > 1.0)
-            .then_some(RaisedWall::Flow(cfg.bridge_flow));
+        return (cfg.bridge_flow > 1.0).then_some(RaisedWall::Flow(cfg.bridge_flow));
     }
     if cfg.thick_bridges {
         Some(RaisedWall::Round)
@@ -1018,18 +1017,59 @@ mod tests {
             .insert("bridge_line_width".into(), serde_json::json!("100%"));
         cfg.raw
             .insert("wall_generator".into(), serde_json::json!("arachne"));
-        // The plain wall bead of the loop, whatever the bridge flow.
-        for flow in [1.0, 0.8, 1.2] {
+        // The plain wall bead of the loop at a bridge flow of 1 or less.
+        for flow in [1.0, 0.8] {
             cfg.bridge_flow = flow;
             assert_eq!(wall_bead(&cfg, 0.2, true), (0.42, 1.0), "{flow}");
             assert_eq!(wall_bead(&cfg, 0.2, false), (0.45, 1.0), "{flow}");
             assert_eq!(raised_wall(&cfg), None);
         }
+        // Above 1 the same width at the bridge flow.
+        cfg.bridge_flow = 1.2;
+        assert_eq!(wall_bead(&cfg, 0.2, true), (0.42, 1.2));
+        assert_eq!(wall_bead(&cfg, 0.2, false), (0.45, 1.2));
+        assert_eq!(raised_wall(&cfg), Some(RaisedWall::Flow(1.2)));
         // Thick bridges: the round strand of the nozzle, stated as tall as it is wide.
         cfg.thick_bridges = true;
         assert_eq!(raised_wall(&cfg), Some(RaisedWall::Round));
         assert_eq!(wall_bead(&cfg, 0.2, true), bead(&cfg, 0.2));
         assert!((wall_bead(&cfg, 0.2, false).0 - cfg.nozzle_diameter * 1.2_f64.sqrt()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn an_arachne_overhang_wall_takes_the_bridge_flow_above_one_on_other_printers() {
+        let mut cfg = PrintConfig {
+            nozzle_diameter: 0.4,
+            ..PrintConfig::default()
+        };
+        cfg.feature_widths.outer_wall = Some(0.42);
+        cfg.feature_widths.inner_wall = Some(0.5);
+        cfg.raw
+            .insert("bridge_line_width".into(), serde_json::json!("100%"));
+        cfg.raw
+            .insert("wall_generator".into(), serde_json::json!("arachne"));
+        cfg.bridge_flow = 1.3;
+        assert_eq!(wall_bead(&cfg, 0.2, true), (0.42, 1.3));
+        assert_eq!(wall_bead(&cfg, 0.2, false), (0.5, 1.3));
+        assert_eq!(raised_wall(&cfg), Some(RaisedWall::Flow(1.3)));
+        let (w, tall) = raised_wall_label(0.42, 0.2, RaisedWall::Flow(1.3));
+        assert!(
+            (w - 0.432_876).abs() < 1e-6 && (tall - 0.26).abs() < 1e-9,
+            "{w} {tall}"
+        );
+        cfg.bridge_flow = 0.7;
+        assert_eq!(wall_bead(&cfg, 0.2, true), (0.42, 1.0));
+        assert_eq!(wall_bead(&cfg, 0.2, false), (0.5, 1.0));
+        assert_eq!(raised_wall(&cfg), None);
+        // A Bambu Lab printer keeps the flat bead built on the wall width.
+        cfg.raw
+            .insert("printer_model".into(), serde_json::json!("Bambu Lab A1"));
+        let narrow = bridge_bead(0.5, 0.2, 0.7, false);
+        assert_eq!(wall_bead(&cfg, 0.2, false), (narrow.width, narrow.flow));
+        assert!(narrow.width < 0.5);
+        cfg.bridge_flow = 1.3;
+        assert_eq!(wall_bead(&cfg, 0.2, true), (0.42, 1.3));
+        assert_eq!(raised_wall(&cfg), Some(RaisedWall::Flow(1.3)));
     }
 
     #[test]
