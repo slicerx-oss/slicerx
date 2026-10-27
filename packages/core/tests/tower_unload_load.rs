@@ -761,3 +761,86 @@ fn the_change_ends_the_old_filament_and_starts_the_new_one() {
     }
     assert!(seen >= 5, "{seen} changes into filament 1");
 }
+
+/// The lines of the layer-2 tower block: from the line before the ramming's first piece to the first line after
+/// the wipe.
+fn block_lines(gcode: &str) -> Vec<String> {
+    let lines: Vec<&str> = gcode.lines().map(str::trim).collect();
+    let layer2 = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| l.starts_with(";LAYER_CHANGE"))
+        .nth(1)
+        .unwrap()
+        .0;
+    let ram = layer2
+        + lines[layer2..]
+            .iter()
+            .position(|l| *l == ";TYPE:Prime tower")
+            .unwrap();
+    let from = ram.saturating_sub(12);
+    let to = (ram + 140).min(lines.len());
+    lines[from..to].iter().map(|l| (*l).to_owned()).collect()
+}
+
+#[test]
+fn the_tower_block_sets_the_firmware_for_the_change() {
+    let marlin = block_lines(&slice(mmu(&[])));
+    let pos = |b: &[String], l: &str| b.iter().position(|t| t == l);
+    let (Some(save), Some(reset), Some(restore), Some(ram)) = (
+        pos(&marlin, "M220 B"),
+        pos(&marlin, "M220 S100"),
+        pos(&marlin, "M220 R"),
+        pos(&marlin, "G1 E-15 F6000"),
+    ) else {
+        panic!("{marlin:#?}");
+    };
+    assert!(save + 1 == reset && reset < ram && ram < restore, "{marlin:#?}");
+    // Klipper resets the feed rate only.
+    let klipper = block_lines(&slice(mmu(&[("gcode_flavor", json!("klipper"))])));
+    assert!(pos(&klipper, "M220 S100").is_some(), "{klipper:#?}");
+    assert!(
+        pos(&klipper, "M220 B").is_none() && pos(&klipper, "M220 R").is_none(),
+        "{klipper:#?}"
+    );
+    // The extruder's high current for the swap, back to the usual one after the load and after the block.
+    let hc = block_lines(&slice(mmu(&[("high_current_on_filament_swap", json!("1"))])));
+    let high = pos(&hc, "M907 E750").unwrap_or_else(|| panic!("{hc:#?}"));
+    let lows: Vec<usize> = hc
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| *l == "M907 E550")
+        .map(|(i, _)| i)
+        .collect();
+    let load = pos(&hc, "G1 E18 F180").unwrap();
+    assert_eq!(lows.len(), 2, "{hc:#?}");
+    assert!(high < load && load < lows[0] && lows[0] < lows[1], "{hc:#?}");
+    // With pressure advance on, it is off for the ramming and back to the filament's own value after the change.
+    let pa = block_lines(&slice(mmu(&[
+        ("enable_pressure_advance", json!(["1", "1"])),
+        ("pressure_advance", json!(["0.03", "0.03"])),
+    ])));
+    let off = pos(&pa, "M900 K0").unwrap_or_else(|| panic!("{pa:#?}"));
+    let back = pos(&pa, "M900 K0.03").unwrap_or_else(|| panic!("{pa:#?}"));
+    let unload = pos(&pa, "G1 E-15 F6000").unwrap();
+    assert!(off < unload && unload < back, "{pa:#?}");
+    // Without a value to go back to, pressure advance is left alone.
+    assert!(pos(&marlin, "M900 K0").is_none(), "{marlin:#?}");
+}
+
+#[test]
+fn a_manual_change_writes_the_tool_as_a_comment() {
+    let gcode = slice(mmu(&[("manual_filament_change", json!("1"))]));
+    let all = changes(&gcode);
+    assert!(all.len() >= 10, "{} changes", all.len());
+    assert!(gcode.lines().any(|l| l == "; MANUAL_TOOL_CHANGE T0"));
+    // The moves stay, and the change counts in the time estimate as a `T` does.
+    assert_run(&change(&all, 2, 1).after, &[e_at(18.0, 180.0)]);
+    let time = |g: &str| {
+        g.lines()
+            .find_map(|l| l.strip_prefix("; estimated printing time (normal mode) = "))
+            .map(str::to_owned)
+    };
+    assert!(time(&gcode).is_some());
+    assert_eq!(time(&gcode), time(&slice(mmu(&[]))));
+}

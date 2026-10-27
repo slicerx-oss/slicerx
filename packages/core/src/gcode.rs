@@ -2633,8 +2633,10 @@ fn emit_layer(
         1.0
     };
     let mut tower_block: Option<bool> = None;
-    // A single nozzle's moves around each change ([`LayerPaths::tower_changes`]): the next one to write.
+    // A single nozzle's moves around each change ([`LayerPaths::tower_changes`]): the next one to write and the
+    // tower blocks they stand in.
     let mut next_change = 0usize;
+    let change_spans = change_blocks(l);
     for (pi, p) in l.paths.iter().enumerate() {
         let pts = l.path_points(p);
         let Some(&start) = pts.first() else { continue };
@@ -2648,6 +2650,14 @@ fn emit_layer(
         if bbl_tower && tower_block.is_none() && p.feature == Feature::PrimeTower && !swaps_here {
             b.extend_from_slice(b"; WIPE_TOWER_START\n");
             tower_block = Some(false);
+        }
+        // A single nozzle's tower block around a change: the firmware lines before and after it.
+        if change_spans.iter().any(|&(_, last)| last + 1 == pi) {
+            block_end(b, c, flavor);
+        }
+        if let Some(&(_, last)) = change_spans.iter().find(|&&(first, _)| first == pi) {
+            let to = l.paths.get(last).map_or(p.tool, |q| q.tool);
+            block_start(b, c, flavor, to);
         }
         // A block that waits for a moment inside the layer: retracted, out of the object's label.
         // orca's retract with apply_instantly: a wipe when on, the object's label left open (process_layer)
@@ -2757,6 +2767,7 @@ fn emit_layer(
             } else {
                 None
             };
+            let manual = moves.is_some() && crate::tower::flag(c, "manual_filament_change");
             let unload_from = b.len();
             let unload_at = cursor.map(|q| [q.x_mm(), q.y_mm()]);
             if let Some(m) = moves {
@@ -3070,6 +3081,9 @@ fn emit_layer(
                         toolchange_prefix(flavor)
                     };
                     if !changes_tool(&text, prefix, next) {
+                        if manual {
+                            b.extend_from_slice(b"; MANUAL_TOOL_CHANGE ");
+                        }
                         b.extend_from_slice(prefix.as_bytes());
                         put_int(b, next);
                         b.push(b'\n');
@@ -3095,23 +3109,31 @@ fn emit_layer(
                     }
                 }
                 _ => {
+                    if manual {
+                        b.extend_from_slice(b"; MANUAL_TOOL_CHANGE ");
+                    }
                     b.extend_from_slice(toolchange_prefix(flavor).as_bytes());
                     put_int(b, next);
                     b.push(b'\n');
                 }
             }
-            // A single nozzle's change on its tower starts the new filament.
-            if moves.is_some()
-                && let Some(cx) = ctx.as_ref()
-            {
-                let mut fctx = cx.clone();
-                fctx.set_num("filament_extruder_id", f64::from(p.tool.max(1) - 1));
-                fctx.extruder = usize::from(p.tool.max(1) - 1);
-                match crate::customgcode::render_slot(base, &fctx, "filament_start_gcode", p.tool.max(1)) {
-                    Ok(t) => push_lines(b, &t.unwrap_or_default()),
-                    Err(e) => {
-                        error.get_or_insert(e);
+            // A single nozzle's change on its tower starts the new filament, with its own pressure advance back after
+            // the ramming's `M900 K0`.
+            if moves.is_some() {
+                if let Some(cx) = ctx.as_ref() {
+                    let mut fctx = cx.clone();
+                    fctx.set_num("filament_extruder_id", f64::from(p.tool.max(1) - 1));
+                    fctx.extruder = usize::from(p.tool.max(1) - 1);
+                    match crate::customgcode::render_slot(base, &fctx, "filament_start_gcode", p.tool.max(1))
+                    {
+                        Ok(t) => push_lines(b, &t.unwrap_or_default()),
+                        Err(e) => {
+                            error.get_or_insert(e);
+                        }
                     }
+                }
+                if c.enable_pressure_advance && ramming_pa_off(c, flavor, p.tool) {
+                    pressure_advance(b, flavor, 1, c.pressure_advance_for(p.tool));
                 }
             }
             if oozing && c.raw_number("standby_temperature_delta", -5.0) != 0.0 {
@@ -3179,6 +3201,9 @@ fn emit_layer(
                 b.extend_from_slice(SWAP_END);
                 // The new filament's tower block goes on from here.
                 within_tower = p.feature == Feature::PrimeTower;
+                if crate::tower::flag(c, "high_current_on_filament_swap") {
+                    b.extend_from_slice(b"M907 E550\n");
+                }
                 change_time += gcode_text_time(c, b.get(load_from..).unwrap_or(&[]), load_at, f64::from(l.z));
                 // The filament the change uses up net, counted with the new filament.
                 if let Some(e) = chunk.e_units.get_mut(usize::from(p.tool.max(1) - 1)) {
@@ -3801,6 +3826,9 @@ fn emit_layer(
         cursor = Some(prev);
         last_pts = pts;
         last_was_loop = wipes_forward(pts, p.feature);
+    }
+    if change_spans.iter().any(|&(_, last)| last + 1 == l.paths.len()) {
+        block_end(b, c, flavor);
     }
     if let Some(changed) = tower_block {
         close_tower_block(b, changed, c);
@@ -5207,6 +5235,87 @@ fn take_change<'a>(
             .position(|m| m.from == from && m.to == to)?;
     *next = at + 1;
     changes.get(at)
+}
+
+/// The tower block of each change that has moves of its own ([`LayerPaths::tower_changes`]), as path indices: from
+/// the first of the old filament's tower paths right before the change (its ramming) to the last of the new
+/// filament's right after it (its wall and wipe), in change order.
+fn change_blocks(l: &LayerPaths) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    if l.tower_changes.is_empty() {
+        return out;
+    }
+    let tower = |i: usize, t: u8| {
+        l.paths
+            .get(i)
+            .is_some_and(|p| p.feature == Feature::PrimeTower && p.tool == t)
+    };
+    let mut next = 0usize;
+    for at in 1..l.paths.len() {
+        let (Some(a), Some(q)) = (l.paths.get(at - 1), l.paths.get(at)) else {
+            continue;
+        };
+        if a.tool == q.tool
+            || take_change(&l.tower_changes, &mut next, a.tool, q.tool).is_none()
+            || q.dz < 0.0
+        {
+            continue;
+        }
+        let mut first = at;
+        while first > 0 && tower(first - 1, a.tool) {
+            first -= 1;
+        }
+        let mut last = at;
+        while tower(last + 1, q.tool) {
+            last += 1;
+        }
+        out.push((first, last));
+    }
+    out
+}
+
+/// Whether a single nozzle's change turns pressure advance off for its ramming (`M900 K0`): on Marlin firmware,
+/// when the new filament `to` gets its own value back after the change (pressure advance on, or a start G-code
+/// that sets it).
+fn ramming_pa_off(c: &PrintConfig, flavor: GcodeFlavor, to: u8) -> bool {
+    let start_sets = match c.raw.get("filament_start_gcode") {
+        Some(serde_json::Value::Array(a)) => a
+            .get(usize::from(to.max(1) - 1))
+            .or_else(|| a.last())
+            .and_then(|v| v.as_str())
+            .is_some_and(|t| t.contains("M900")),
+        Some(serde_json::Value::String(t)) => t.contains("M900"),
+        _ => false,
+    };
+    matches!(flavor, GcodeFlavor::Marlin | GcodeFlavor::Marlin2) && (c.enable_pressure_advance || start_sets)
+}
+
+/// The firmware lines that open a single nozzle's tower block into filament `to`: the feed rate override saved
+/// and reset (`M220 B`, `M220 S100`; Klipper only resets it), the extruder's high current for the swap
+/// (`high_current_on_filament_swap`) and pressure advance off for the ramming ([`ramming_pa_off`]).
+fn block_start(b: &mut Vec<u8>, c: &PrintConfig, flavor: GcodeFlavor, to: u8) {
+    match flavor {
+        GcodeFlavor::Marlin | GcodeFlavor::Marlin2 => b.extend_from_slice(b"M220 B\nM220 S100\n"),
+        GcodeFlavor::Klipper => b.extend_from_slice(b"M220 S100\n"),
+        _ => {}
+    }
+    if crate::tower::flag(c, "high_current_on_filament_swap") {
+        b.extend_from_slice(b"M907 E750\n");
+    }
+    if ramming_pa_off(c, flavor, to) {
+        b.extend_from_slice(b"M900 K0\n");
+    }
+}
+
+/// The firmware lines that close a single nozzle's tower block: the saved feed rate override back (`M220 R`, on
+/// Marlin) and the extruder's usual current.
+fn block_end(b: &mut Vec<u8>, c: &PrintConfig, flavor: GcodeFlavor) {
+    if matches!(flavor, GcodeFlavor::Marlin | GcodeFlavor::Marlin2) {
+        b.extend_from_slice(b"M220 R\n");
+    }
+    if crate::tower::flag(c, "high_current_on_filament_swap") {
+        b.extend_from_slice(b"M907 E550\n");
+    }
 }
 
 /// The marks around a single nozzle's filament swap, from the unload to the end of the load: inside them the filament

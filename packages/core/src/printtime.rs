@@ -1676,6 +1676,9 @@ impl Reader {
             self.segment += 1;
         } else if c == "LAYER_CHANGE" || c == " CHANGE_LAYER" {
             self.layer += 1;
+        } else if let Some(t) = c.trim_start().strip_prefix("MANUAL_TOOL_CHANGE ") {
+            // A tool change written as a comment (`manual_filament_change`) still changes the filament.
+            self.tool(t.trim());
         } else if let Some(rest) = c.strip_prefix("VG1 ") {
             // Bambu Studio's H2D change template writes the in-printer flush as comment lines the printer skips
             // (`;VG1 E<length> F<feed>`); its estimate times each as a move of the extruder alone. The position
