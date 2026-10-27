@@ -311,3 +311,37 @@ fn aligned_model_adds_turn_to_set_angles() {
     let g = slice_turned(json!({"solid_infill_direction": 0}), 30.0);
     assert_eq!(main_direction(&g, "Bottom surface", 0), 0);
 }
+
+/// A project of one box written by `app`, with `settings` as its `Metadata/project_settings.config`.
+fn project(app: &str, settings: &Value) -> Vec<u8> {
+    let model = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">{app}</metadata><resources><object id="1" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="10"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="1" v3="3"/><triangle v1="1" v2="2" v3="3"/><triangle v1="2" v2="0" v3="3"/></triangles></mesh></object></resources><build><item objectid="1"/></build></model>"#
+    );
+    let settings = settings.to_string();
+    common::organic_models::stored_zip(&[
+        ("3D/3dmodel.model", model.as_bytes()),
+        ("Metadata/project_settings.config", settings.as_bytes()),
+    ])
+}
+
+#[test]
+fn bambu_project_solid_follows_infill_direction() {
+    let settings = json!({"layer_height": "0.2", "infill_direction": "30", "solid_infill_direction": "0"});
+    let read = |app: &str| {
+        sx_core::api::project_config(&project(app, &settings), "p.3mf")
+            .unwrap()
+            .unwrap()
+            .settings
+    };
+    // Bambu Studio has no solid infill direction: its infill direction sets the solid lines too.
+    let bambu = read("BambuStudio-02.08.02.61");
+    assert_eq!(bambu["solid_infill_direction"], "30");
+    let g = slice(json!({
+        "infill_direction": bambu["infill_direction"],
+        "solid_infill_direction": bambu["solid_infill_direction"],
+    }));
+    assert_eq!(main_direction(&g, "Bottom surface", 0), 30);
+    assert_eq!(main_direction(&g, "Internal solid infill", 1), 120);
+    // Another app's project keeps its own.
+    assert_eq!(read("OrcaSlicer-2.3.0")["solid_infill_direction"], "0");
+}
