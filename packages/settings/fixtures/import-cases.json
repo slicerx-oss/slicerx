@@ -25,6 +25,46 @@
    }
   },
   {
+   "name": "other printer's project with both bottom surface ratios",
+   "kind": "project",
+   "projectSettings": {
+    "printer_model": "Generic Klipper Printer",
+    "bottom_solid_infill_flow_ratio": "0.8",
+    "initial_layer_flow_ratio": "0.9",
+    "layer_height": "0.2"
+   }
+  },
+  {
+   "name": "other printer's project with a nil initial_layer_flow_ratio",
+   "kind": "project",
+   "projectSettings": {
+    "printer_model": "Generic Klipper Printer",
+    "bottom_solid_infill_flow_ratio": "0.8",
+    "initial_layer_flow_ratio": "nil",
+    "layer_height": "0.2"
+   }
+  },
+  {
+   "name": "other printer's project with an empty initial_layer_flow_ratio",
+   "kind": "project",
+   "projectSettings": {
+    "printer_model": "Generic Klipper Printer",
+    "bottom_solid_infill_flow_ratio": "0.8",
+    "initial_layer_flow_ratio": "",
+    "layer_height": "0.2"
+   }
+  },
+  {
+   "name": "Bambu Lab project with both flow ratios",
+   "kind": "project",
+   "projectSettings": {
+    "printer_model": "Bambu Lab A1",
+    "bottom_solid_infill_flow_ratio": "0.8",
+    "initial_layer_flow_ratio": "0.9",
+    "layer_height": "0.2"
+   }
+  },
+  {
    "name": "0.12mm Fine @Demo",
    "kind": "profile",
    "from": "0.12mm Fine @Demo"
