@@ -1931,7 +1931,16 @@ fn emit_layer(
     ]
     .iter()
     .any(|k| crate::customgcode::text(base, k).is_some())
-        || layer_gcode.iter().any(|g| g.layer == l.index);
+        || layer_gcode.iter().any(|g| g.layer == l.index)
+        // A single nozzle's change on its tower ends and starts the filaments.
+        || (!l.tower_changes.is_empty()
+            && ["filament_start_gcode", "filament_end_gcode"].iter().any(|k| match base.raw.get(*k) {
+                Some(serde_json::Value::Array(a)) => {
+                    a.iter().any(|v| v.as_str().is_some_and(|t| !t.trim().is_empty()))
+                }
+                Some(serde_json::Value::String(t)) => !t.trim().is_empty(),
+                _ => false,
+            }));
     let mut ctx = wants_templates.then(|| shared.context());
     if let Some(ctx) = ctx.as_mut() {
         ctx.set_num("layer_num", f64::from(l.index));
@@ -2180,6 +2189,8 @@ fn emit_layer(
     }
     // The nozzle temperatures the layer's start sets, in order.
     let mut start_temps: Vec<i64> = Vec::new();
+    // One nozzle that the filaments share takes one plain temperature for the filament in it, not one per filament.
+    let one_nozzle = out.tool_count > 1 && shared_nozzle_temps(c, flavor) && !resume_first;
     // Settings a height range changes, written when they differ from the layer below.
     for slot in 1..=out.tool_count.max(1) {
         #[allow(clippy::cast_possible_truncation, reason = "temperatures are small")]
@@ -2188,7 +2199,7 @@ fn emit_layer(
             PrintConfig::per_slot(&prev.nozzle_temperature, slot, 220.0).round() as i64,
         );
         #[allow(clippy::cast_precision_loss, reason = "temperatures are small")]
-        if t != t_prev {
+        if t != t_prev && !one_nozzle {
             start_temps.push(t);
             temperature_line(
                 b,
@@ -2217,7 +2228,7 @@ fn emit_layer(
                 PrintConfig::per_slot(&c.nozzle_temperature, slot, 220.0).round() as i64,
             );
             #[allow(clippy::cast_precision_loss, reason = "temperatures are small")]
-            if first != usual {
+            if first != usual && !one_nozzle {
                 start_temps.push(usual);
                 temperature_line(
                     b,
@@ -2244,6 +2255,25 @@ fn emit_layer(
             b.extend_from_slice(b"M140 S");
             put_int(b, bed.round() as i64);
             b.push(b'\n');
+        }
+    }
+    // The filament in a shared nozzle at the layer's start prints at its temperature for this layer: written when
+    // that differs from the one it printed the layer below at.
+    if one_nozzle && l.index > 0 {
+        let loaded = if l.start_tool == 0 {
+            crate::paths::first_slot(l)
+        } else {
+            l.start_tool
+        };
+        #[allow(clippy::cast_possible_truncation, reason = "temperatures are small")]
+        let (want, had) = (
+            print_temp(c, loaded, l.index).round() as i64,
+            print_temp(prev, loaded, l.index - 1).round() as i64,
+        );
+        if want != had {
+            start_temps.push(want);
+            #[allow(clippy::cast_precision_loss, reason = "temperatures are small")]
+            temperature_line(b, flavor, want as f64, false, None, "");
         }
     }
     // Marlin firmware with junction deviation: the first layer sets it (`GCodeWriter::set_junction_deviation`),
@@ -2787,6 +2817,20 @@ fn emit_layer(
                 retracted_by = tc;
             }
             let change_from = b.len();
+            // A single nozzle's change on its tower ends the old filament before the lift.
+            if moves.is_some()
+                && let Some(cx) = ctx.as_ref()
+            {
+                let mut fctx = cx.clone();
+                fctx.set_num("filament_extruder_id", f64::from(tool.max(1) - 1));
+                fctx.extruder = usize::from(tool.max(1) - 1);
+                match crate::customgcode::render_slot(base, &fctx, "filament_end_gcode", tool.max(1)) {
+                    Ok(t) => push_lines(b, &t.unwrap_or_default()),
+                    Err(e) => {
+                        error.get_or_insert(e);
+                    }
+                }
+            }
             // Whether the travel acceleration went out before the change's lift.
             let mut change_lifted = false;
             if oozing && let Some(t) = standby_temp(c, tool, l.index) {
@@ -3047,6 +3091,20 @@ fn emit_layer(
                     b.extend_from_slice(toolchange_prefix(flavor).as_bytes());
                     put_int(b, next);
                     b.push(b'\n');
+                }
+            }
+            // A single nozzle's change on its tower starts the new filament.
+            if moves.is_some()
+                && let Some(cx) = ctx.as_ref()
+            {
+                let mut fctx = cx.clone();
+                fctx.set_num("filament_extruder_id", f64::from(p.tool.max(1) - 1));
+                fctx.extruder = usize::from(p.tool.max(1) - 1);
+                match crate::customgcode::render_slot(base, &fctx, "filament_start_gcode", p.tool.max(1)) {
+                    Ok(t) => push_lines(b, &t.unwrap_or_default()),
+                    Err(e) => {
+                        error.get_or_insert(e);
+                    }
                 }
             }
             if oozing && c.raw_number("standby_temperature_delta", -5.0) != 0.0 {
