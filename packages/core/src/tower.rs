@@ -35,6 +35,10 @@ pub(crate) struct TowerPath {
 
 /// The tower's geometry for a plate.
 #[derive(Debug, Clone, Copy)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent marks of how the tower prints"
+)]
 pub(crate) struct Tower {
     x: f64,
     y: f64,
@@ -66,6 +70,9 @@ pub(crate) struct Tower {
     whole_rows: bool,
     /// Each wipe after a tool change starts with a short nozzle wipe (`prime_tower_skip_points` on a type 1 tower).
     skip_points: bool,
+    /// A single nozzle's ramming leads into the wipe ([`rams_past_cap`]): the row it finishes is the last of the
+    /// ramming's band, a whole row spacing before the wipe's own rows.
+    full_lead: bool,
     /// Orca's rib wall, once the tower's height is known ([`Tower::ribbed`]).
     rib: Option<Rib>,
 }
@@ -952,6 +959,7 @@ impl Tower {
             type1: type1(cfg),
             whole_rows: type1(cfg) || prusa_tools(cfg) || flush_on_tower(cfg),
             skip_points: type1(cfg) && flag_or(cfg, "prime_tower_skip_points", true),
+            full_lead: rams_past_cap(cfg),
             rib: None,
         })
     }
@@ -1521,7 +1529,7 @@ impl Tower {
             let x = x.clamp(x0, x1);
             let to = if right { x1 } else { x0 };
             if (to - x).abs() > 1e-3 {
-                let ly = y - 0.5 * self.spacing;
+                let ly = y - if self.full_lead { 1.0 } else { 0.5 } * self.spacing;
                 pts.push((x, ly));
                 pts.push((to, ly));
                 volume -= (to - x).abs() * area;
@@ -1985,6 +1993,13 @@ fn plan_rows_with(
                 }
                 first_change = false;
                 let mut r = (v / (row_len * row_flow * bead(wall_w, h))).ceil().max(1.0);
+                if p.ram_line.is_some() {
+                    // The wipe first finishes the ramming's last row, then lays its own.
+                    let lead = ram_lead(cfg, p, width, h) * row_flow * bead(wall_w, h);
+                    r = ((v - lead).max(0.0) / (row_len * row_flow * bead(wall_w, h)))
+                        .ceil()
+                        .max(if lead > 0.0 { 0.0 } else { 1.0 });
+                }
                 if p.ram > 0.0 {
                     r += ram_rows(cfg, p, width, h);
                 }
@@ -2278,6 +2293,29 @@ fn ram_rows(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> f64 {
         wall_w
     };
     (lines * w * if p.nozzle_change { 1.25 } else { 1.0 } / spacing).ceil()
+}
+
+/// The row a single nozzle's ramming leaves for the wipe to finish on a type 2 tower `width` wide at height `h`, mm:
+/// from where its last line stops to the end of the wipe's rows (2 wall beads in from the side), 0 when it stops
+/// there.
+fn ram_lead(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> f64 {
+    let Some(line) = p.ram_line else {
+        return 0.0;
+    };
+    let wall_w = cfg.nozzle_diameter * 1.25;
+    let inset = 1.5 * wall_w;
+    let (x0, x1) = (inset, (width - inset).max(inset + 1.0));
+    let area = bead(line.width, h);
+    let lines = ram_lines(p.ram, x1 - x0, area);
+    let last = (p.ram / area - (lines - 1.0) * (x1 - x0)).clamp(0.0, x1 - x0);
+    let (lo, hi) = (2.0 * wall_w, width - 2.0 * wall_w);
+    // Odd lines run left to right.
+    let len = if (lines - 2.0 * (lines / 2.0).floor() - 1.0).abs() < 1e-9 {
+        hi - (x0 + last).clamp(lo, hi)
+    } else {
+        (x1 - last).clamp(lo, hi) - lo
+    };
+    if len > 1e-3 { len } else { 0.0 }
 }
 
 /// Lines a single nozzle's ramming of `volume` mm3 takes at `area` mm2 a bead, `row_len` mm a line: the last one
@@ -3374,6 +3412,34 @@ mod tests {
             (lo * 60.0 - 2485.0).abs() < 1.0 && (hi * 60.0 - 14912.0).abs() < 2.0,
             "{feeds:?}"
         );
+    }
+
+    #[test]
+    fn a_shared_nozzles_wipe_finishes_the_ramming_row() {
+        let c = mmu_ram(60.0, STOCK_RAM, &[]);
+        let t = Tower::new(&c, 2, 40.0).unwrap();
+        let (_, rows, lead) = t.ramming(&c, change_purge(&c, 2, 1, 2), 1, 0.2, 0.0);
+        let (paths, _) = t.purge_lead(70.0, 0.2, false, rows, lead, false);
+        // The leading row runs from where the ramming stopped to the row's end, one row spacing before the wipe's
+        // own rows, on the last row of the ramming's band.
+        let first = &paths[0];
+        let (a, b) = (first.points[0], first.points[1]);
+        assert!((a.x_mm() - 15.0 - (59.25 - 31.611)).abs() < 0.01 && (b.x_mm() - 16.0).abs() < 1e-6);
+        let row_y = |k: f64| 220.0 + 2.0 * 0.5 + k * 0.5;
+        assert!((a.y_mm() - row_y(rows - 1.0)).abs() < 1e-6, "{}", a.y_mm());
+        assert!((paths[1].points[0].y_mm() - row_y(rows)).abs() < 1e-6);
+        // The plan counts the same lead row.
+        let lead_len = ram_lead(&c, change_purge(&c, 2, 1, 2), 60.0, 0.2);
+        assert!((lead_len - (59.25 - 31.611 - 1.0)).abs() < 0.01, "{lead_len}");
+        // A tool changer's lead row stays half a row spacing before the wipe's.
+        let tools = tower_cfg(&[
+            ("wipe_tower_type", serde_json::json!("type2")),
+            ("single_extruder_multi_material", serde_json::json!(0)),
+        ]);
+        let t = Tower::new(&tools, 2, 40.0).unwrap();
+        let (paths, _) = t.purge_lead(70.0, 0.2, false, 10.0, Some((20.0, false)), false);
+        let spacing = t.spacing;
+        assert!((paths[0].points[0].y_mm() - (220.0 + 1.0 + 9.5 * spacing)).abs() < 1e-6);
     }
 
     #[test]
