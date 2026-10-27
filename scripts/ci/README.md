@@ -42,7 +42,30 @@ change: `e2e` and `rust-tests` pass when what they gather was not needed. When t
 
 A label event starts its own run (the concurrency comment in `ci.yml`). A run for a label that adds nothing (any label
 but `full-ci`, or `full-ci` already on the pull request when it opened) skips every job except `rust`, which starts
-and skips its steps, so its required matrix name `rust (ubuntu-latest)` still reports, as passed.
+and skips its steps, so its required matrix name `rust (ubuntu-latest)` still reports, as passed, and the gate
+`rust (windows-latest)`, which passes at once.
+
+## Rust test parts
+
+A push to main runs the whole Rust test suite on macOS and Windows, and a pull request labeled `full-ci` runs it on
+Windows. Each system is a set of parts that run side by side (`rust-macos-parts`: 2, `rust-windows-parts`: 3), and the
+jobs named `rust (macos-latest)` and `rust (windows-latest)` gather them: they fail when any part failed, timed out or
+never ran, and they keep the names `required-checks.txt` lists. A part runs `node scripts/ci/windows-rust-tests.mjs
+<part> --of <parts>`. The script reads cargo metadata, so a new sx-core test file is picked up with no list to edit:
+the items are the workspace crates other than sx-core with its unit tests and doctests (always part 1, with fmt,
+clippy and the sx-cloud build) and one item per sx-core test file, handed out heaviest first to the lightest part. The
+weights are seconds in `rust-part-weights.json`; a file without one counts as 5 s and is named in a warning. Each part
+writes a table of its test binaries and their times to the job summary, which is where to read new weights from. Only
+part 1 saves the cache, so parts that end together do not race for the key.
+
+On hosted Linux (a pull request, or the queue with `RUST_TESTS_ON_PC` set to `false`) sx-core's other test files are
+split the same way into `core-a` and `core-b`, and the desktop shell's clippy and tests are the `desktop` part, with
+`apt-desktop-libs.sh` installing its libraries (one `apt-get update`, then up to three `apt-get install` tries of
+150 s each). The `core` part on the self-hosted runners stays whole.
+
+`node scripts/ci/rust-part-coverage.mjs` proves every test file of every package is in exactly one part and that the
+matrices in `ci.yml` have as many parts as the split uses. The `rust` job runs it on every pull request, so a change to
+the test layout or to a part count fails there first.
 
 ## Setup
 
@@ -262,7 +285,7 @@ package's run fails, `pr-test.sh` lets it pass only when every failure is a name
 not load, a hook, an unhandled error), stays a failure. The e2e shards (`ci.yml`, `e2e-shard`) hold to the same rule with
 Playwright's `--retries=1`: `playwright-results.mjs` reads the JSON report, a test that passed only on the retry must be
 on either list, and a test that failed both times fails the job unless it counts as quarantined. The desktop shell's
-tests (in `rust tests (core)`) run through `cargo-retry.sh`: a failing run reruns its failing tests once by exact name,
+tests (in `rust tests (core)`, or `rust tests (desktop)` on a hosted runner) run through `cargo-retry.sh`: a failing run reruns its failing tests once by exact name,
 as the machine runs do, a test that passes only on the rerun must be on either list (`flaky-check.sh retried`), and
 quarantined failures are not rerun or failed on. The other cargo steps on pull requests have no retry; the machine
 runs rerun them. A self-hosted run step whose heavy lock is not free within

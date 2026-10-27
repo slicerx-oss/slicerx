@@ -22,8 +22,8 @@ on:
         description: Run the rust test parts on the self-hosted Linux runners as the merge queue does (core, and crates unless RUST_CRATES_ON_PC is false)
         type: boolean
         default: true
-      windows_rust:
-        description: Run both Windows Rust jobs to validate their split before merging
+      rust_parts:
+        description: Run the macOS and Windows Rust parts as a push to main does, to validate their split before merging
         type: boolean
         default: false
 
@@ -229,17 +229,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Main covers all platforms; full-ci and an explicit dispatch also exercise the Windows split.
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","macos-latest","windows-latest"]') || (contains(github.event.pull_request.labels.*.name, 'full-ci') || inputs.windows_rust) && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        # Linux only. macOS and Windows run on a push to main (and Windows on full-ci) as the part jobs below, which the
+        # jobs named rust (macos-latest) and rust (windows-latest) gather.
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
-    # A cold hosted macOS run needs about 60 minutes and Windows more. The limit was 45, which killed both, and a job
-    # killed by its limit skips the cache save, so every later run stayed cold. The test steps below stop sooner.
-    timeout-minutes: ${{ matrix.os == 'macos-latest' && 85 || matrix.os == 'windows-latest' && 90 || 45 }}
+    timeout-minutes: 45
     env:
       # also on Linux after a push the merge queue already tested (detect's queued): it reports passed in seconds
       DUP: >-
         ${{ needs.detect.result == 'skipped' || (needs.detect.outputs.queued == 'true' && matrix.os == 'ubuntu-latest') }}
-      FULL_TESTS: ${{ github.event_name == 'push' || matrix.os == 'windows-latest' }}
+      FULL_TESTS: ${{ github.event_name == 'push' }}
     steps:
       - if: env.DUP != 'true'
         uses: actions/checkout@v4
@@ -249,19 +248,21 @@ jobs:
       - if: env.DUP != 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ${{ matrix.os == 'windows-latest' && 'windows-rust' || '' }}
           # Also save after a failed (or timed out, see the test steps) run, so the next one starts warm.
           cache-on-failure: true
       # A Cargo.lock that no longer matches the manifests fails here, before a build quietly rewrites it.
       - if: env.DUP != 'true'
         run: cargo metadata --locked --format-version 1 > /dev/null
         shell: bash
+      # Every test file of the workspace is in exactly one part of the macOS, Windows and hosted Linux splits below.
+      - if: env.DUP != 'true'
+        run: node scripts/ci/rust-part-coverage.mjs
       - if: env.DUP != 'true'
         run: cargo fmt --all --check
       - if: env.DUP != 'true'
         run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
       # A pull request and the merge queue run the unit tests and the G-code goldens here, and the integration tests in
-      # rust-tests below; Windows separates its two slow core binaries into rust-windows-slow.
+      # rust-tests below; main runs them all here when its commit was not tested in the queue.
       - if: env.DUP != 'true' && env.FULL_TESTS != 'true'
         run: cargo test --workspace --exclude slicerx-desktop --lib --bins
       - if: env.DUP != 'true' && env.FULL_TESTS != 'true'
@@ -269,37 +270,123 @@ jobs:
       # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
       - if: env.DUP != 'true' && env.FULL_TESTS == 'true'
         run: cargo build -p sx-cloud
-      # The step limit is under the job's, so a slow run fails here and the cache save still runs; a job cancelled by
-      # its own limit skips it.
-      - if: env.DUP != 'true' && env.FULL_TESTS == 'true' && matrix.os != 'windows-latest'
+      - if: env.DUP != 'true' && env.FULL_TESTS == 'true'
         run: cargo test --workspace --exclude slicerx-desktop
-        # macOS push runs took 55 to 59 minutes in all with a 55 minute test step, too close to the limit.
-        timeout-minutes: ${{ matrix.os == 'macos-latest' && 70 || 40 }}
-      - if: env.DUP != 'true' && matrix.os == 'windows-latest'
-        run: node scripts/ci/windows-rust-tests.mjs main
-        timeout-minutes: 65
+        timeout-minutes: 40
 
-  rust-windows-slow:
-    name: rust (windows-slow)
+  # The full Rust tests on macOS and Windows, which only a push to main runs (and Windows with the full-ci label, and
+  # both by hand with rust_parts). One job each was too long: the test step alone took 52 minutes on a slow hosted
+  # Windows runner and about as long on macOS. Each job is split in parts that run side by side. A part runs its share of
+  # the tests, read from cargo metadata by scripts/ci/windows-rust-tests.mjs (part, then --of and the number of parts), so
+  # a new test file needs no edit here. Part 1 also runs fmt, clippy and the sx-cloud build, which the tests of the
+  # workspace crates need (the script always gives the workspace crates to part 1). Only part 1 saves the cache; the
+  # others restore it, so parts that finish together never race to save the same key. Step limits sit under the job
+  # limits so that a slow run fails its step and still saves the cache (a job cancelled by its own limit skips the save).
+  # The number of parts is in three places: the matrix, --of, and the check in scripts/ci/rust-part-coverage.mjs.
+  rust-macos-parts:
+    name: rust part (macos-latest, ${{ matrix.part }}/2)
     needs: detect
-    if: needs.detect.outputs.rust == 'true' && (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci') || inputs.windows_rust)
-    runs-on: windows-latest
-    timeout-minutes: 45
+    if: needs.detect.outputs.rust == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.rust_parts))
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2]
+    runs-on: macos-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      # The same compiler as the rust job above, so both read one cache key (the key hashes the installed versions).
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: windows-rust
-          # The main Windows job saves the full workspace dependency cache.
-          save-if: false
-      - run: node scripts/ci/windows-rust-tests.mjs slow
+          shared-key: macos-parts
+          save-if: ${{ matrix.part == 1 }}
+          cache-on-failure: true
+      - if: matrix.part == 1
+        run: cargo metadata --locked --format-version 1 > /dev/null
+      - if: matrix.part == 1
+        run: cargo fmt --all --check
+      - if: matrix.part == 1
+        run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
+      # sx-link's real-service test runs the sx-cloud binary; it fails here, not skips, when it is missing.
+      - if: matrix.part == 1
+        run: cargo build -p sx-cloud
+      - run: node scripts/ci/windows-rust-tests.mjs ${{ matrix.part }} --of 2
+        timeout-minutes: 45
+
+  rust-windows-parts:
+    name: rust part (windows-latest, ${{ matrix.part }}/3)
+    needs: detect
+    if: needs.detect.outputs.rust == 'true' && (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci') || (github.event_name == 'workflow_dispatch' && inputs.rust_parts))
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3]
+    runs-on: windows-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows-parts
+          save-if: ${{ matrix.part == 1 }}
+          cache-on-failure: true
+      - if: matrix.part == 1
+        run: cargo metadata --locked --format-version 1 > /dev/null
+        shell: bash
+      - if: matrix.part == 1
+        run: cargo fmt --all --check
+      - if: matrix.part == 1
+        run: cargo clippy --workspace --exclude slicerx-desktop --all-targets -- -D warnings
+      - if: matrix.part == 1
+        run: cargo build -p sx-cloud
+      - run: node scripts/ci/windows-rust-tests.mjs ${{ matrix.part }} --of 3
+        timeout-minutes: 40
+
+  # One result per system for the parts above, under the names the release check reads (scripts/ci/required-checks.txt).
+  # A part that failed, timed out (GitHub reports that as cancelled) or never ran fails its gate. When the parts were not
+  # started at all (the gate's own if is the same as theirs) the gate does not run either.
+  rust-macos:
+    name: rust (macos-latest)
+    needs: [detect, rust-macos-parts]
+    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.rust_parts)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          DETECT: ${{ needs.detect.result }}
+          PARTS: ${{ needs.rust-macos-parts.result }}
+        run: |
+          echo "detect: $DETECT, macOS parts: $PARTS"
+          [ "$DETECT" = success ] || exit 1
+          [ "$PARTS" = success ] || [ "$PARTS" = skipped ]
+
+  rust-windows:
+    name: rust (windows-latest)
+    needs: [detect, rust-windows-parts]
+    if: ${{ !cancelled() && (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'full-ci') || (github.event_name == 'workflow_dispatch' && inputs.rust_parts)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          DETECT: ${{ needs.detect.result }}
+          PARTS: ${{ needs.rust-windows-parts.result }}
+        run: |
+          echo "detect: $DETECT, Windows parts: $PARTS"
+          # a pull request's second run for another label has no detect and skips the parts: that counts as passed
+          [ "$DETECT" = skipped ] && exit 0
+          [ "$DETECT" = success ] || exit 1
+          [ "$PARTS" = success ] || [ "$PARTS" = skipped ]
 
   # The integration tests (each crate's tests/) for the merge queue and for a pull request labeled full-ci, so one that
-  # breaks never lands; main runs them in the rust job. One run takes about 18 minutes, so they are split in four that
-  # run side by side: sx-core's two longest (firmware, requests), the rest of sx-core with the desktop shell's clippy
-  # and tests, and every other crate (with the MCP server's tests on the real core).
+  # breaks never lands; main runs them in the rust job and the macOS and Windows parts. They are split in four that run
+  # side by side: sx-core's two longest (firmware, requests), the rest of sx-core with the desktop shell's clippy and
+  # tests, and every other crate (with the MCP server's tests on the real core).
+  # On hosted runners (a pull request, or the queue with RUST_TESTS_ON_PC set to false) the rest of sx-core alone took
+  # 34 minutes and the desktop shell came after it, so there it is split in six: sx-core's other test files in two halves
+  # by weight (core-a, core-b, the same assignment as the macOS and Windows parts, scripts/ci/rust-part-weights.json),
+  # and the desktop shell's libraries, clippy and tests as a part of its own (desktop), so a stalled package download
+  # fails only that part.
   rust-tests-part:
     name: rust tests (${{ matrix.part }})
     needs: detect
@@ -307,7 +394,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [firmware, requests, core, crates]
+        # core runs once, on the self-hosted runner, where it takes about 2 minutes; hosted it is core-a, core-b and desktop
+        part: ${{ ((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && fromJSON('["firmware","requests","core","crates"]') || fromJSON('["firmware","requests","core-a","core-b","crates","desktop"]') }}
     # In the merge queue the two longest parts run on the self-hosted Linux runners (sx-pc), whose build directory stays
     # warm between runs: there they take about 2 minutes, against 8 to 11 on a fresh hosted runner, and they leave the
     # hosted job limit to the e2e shards. Each part has a runner of its own (labels sx-pc-core and sx-pc-crates), so
@@ -318,9 +406,8 @@ jobs:
     # runner keeps its own build directory ($HOME/target/<runner name>), so both stay warm on core alone. A run by hand
     # follows RUST_CRATES_ON_PC too, so it tries exactly what the merge queue runs.
     runs-on: ${{ (((github.event_name == 'merge_group' && vars.RUST_TESTS_ON_PC != 'false') || (github.event_name == 'workflow_dispatch' && inputs.rust_tests_on_pc)) && (matrix.part == 'core' || (matrix.part == 'crates' && vars.RUST_CRATES_ON_PC != 'false'))) && ((matrix.part == 'core' && vars.RUST_CRATES_ON_PC == 'false') && fromJSON('["self-hosted","sx-pc"]') || fromJSON(format('["self-hosted","sx-pc-{0}"]', matrix.part))) || 'ubuntu-latest' }}
-    # On a hosted runner the core part's tests alone took 34 minutes, and the desktop shell's libraries and build come
-    # after them, so 45 minutes no longer covered it.
-    timeout-minutes: ${{ matrix.part == 'core' && 60 || 45 }}
+    # Hosted, a half of core or the desktop shell part takes about 20 minutes, 40 covers a slow runner.
+    timeout-minutes: ${{ (startsWith(matrix.part, 'core-') || matrix.part == 'desktop') && 40 || 45 }}
     permissions:
       contents: read
       actions: write
@@ -333,11 +420,12 @@ jobs:
       # Hosted runners install the toolchain and restore a cache. The self-hosted runners have the pinned toolchain
       # installed and keep one build directory per runner, and each cargo step there holds the machine's heavy lock.
       - if: runner.environment == 'github-hosted'
-        uses: dtolnay/rust-toolchain@stable
+        run: rustup toolchain install
       - if: runner.environment == 'github-hosted'
         uses: Swatinem/rust-cache@v2
         with:
           key: tests-${{ matrix.part }}
+          cache-on-failure: true
       # The runner service sets HOME but not PATH: the toolchain in that HOME goes on PATH here, and a missing one stops
       # the job at once with a clear message instead of failing every cargo step.
       - if: runner.environment != 'github-hosted'
@@ -361,6 +449,8 @@ jobs:
       - if: matrix.part == 'firmware' || matrix.part == 'requests'
         run: cargo test -p sx-core --test ${{ matrix.part }}
       # every other test file of sx-core, read from the directory so a new one is never left out
+      - if: matrix.part == 'core-a' || matrix.part == 'core-b'
+        run: node scripts/ci/windows-rust-tests.mjs ${{ matrix.part == 'core-a' && 1 || 2 }} --of 2 --core-only
       - if: matrix.part == 'core'
         run: |
           args=""
@@ -371,17 +461,16 @@ jobs:
           eval "$SX_GROUP_CHECK"
           ${HEAVY:-} cargo test -p sx-core $args
       # The desktop shell (slicerx-desktop), which the workspace runs leave out: it links WebKitGTK and embeds the
-      # frontend. Its clippy and tests, bridge included, ride on the core part, the shortest one on its runner (the
-      # self-hosted runner has the system libraries; a hosted runner installs them). A placeholder page is enough to
+      # frontend. Its clippy and tests, bridge included, ride on the core part on the self-hosted runner (which has the
+      # system libraries), and are the desktop part on a hosted one, which installs them. A placeholder page is enough to
       # compile it. Warm, this adds about a minute and a half to core, which still ends before firmware and requests.
-      - if: matrix.part == 'core' && runner.environment == 'github-hosted'
+      - if: matrix.part == 'desktop'
         name: Linux system libraries for the desktop shell
-        # This step once ran 11 minutes, into the job's limit. Retry a stalled fetch, and fail here well before the limit.
-        timeout-minutes: 8
-        run: |
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
-          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev
-      - if: matrix.part == 'core'
+        # Some hosted runners stall on the package mirror for 10 minutes or more. The script cuts each try off and
+        # retries, and fails here before the job's limit (scripts/ci/apt-desktop-libs.sh).
+        timeout-minutes: 10
+        run: bash scripts/ci/apt-desktop-libs.sh
+      - if: matrix.part == 'core' || matrix.part == 'desktop'
         name: Desktop shell clippy and tests
         run: |
           [ -f apps/desktop/dist/index.html ] || { mkdir -p apps/desktop/dist && echo '<!doctype html><title>ci</title>' > apps/desktop/dist/index.html; }
@@ -392,7 +481,7 @@ jobs:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
       # A failing desktop test gets one rerun by exact name (cargo-retry.sh); one that passes only on the rerun fails
       # here unless scripts/ci/flaky.d or quarantine.d lists it ("Flaky tests" in scripts/ci/README.md).
-      - if: always() && matrix.part == 'core'
+      - if: always() && (matrix.part == 'core' || matrix.part == 'desktop')
         run: bash scripts/ci/flaky-check.sh retried "$SX_FLAKY_OUT"
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
@@ -470,9 +559,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Linux system libraries
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev
+        timeout-minutes: 10
+        run: bash scripts/ci/apt-desktop-libs.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

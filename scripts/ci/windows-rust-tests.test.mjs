@@ -46,23 +46,24 @@ test('a core package with only slow integrations does not run them again in main
   assert.deepEqual(selected(plan), [])
 })
 
-test('the release gate refuses a missing or failed slow Windows job', () => {
+test('the release gate refuses a missing or failed Windows job', () => {
   const required = readFileSync(new URL('./required-checks.txt', import.meta.url), 'utf8').split(/\r?\n/).filter((s) => s && !s.startsWith('#'))
   assert.ok(required.includes('rust (windows-latest)'))
-  assert.ok(required.includes('rust (windows-slow)'))
+  assert.ok(required.includes('rust (macos-latest)'))
+  assert.ok(!required.includes('rust (windows-slow)'), 'its tests are Windows parts now')
   const dir = mkdtempSync(join(tmpdir(), 'sx-windows-gate-'))
   const file = join(dir, 'checks.tsv')
   const bash = process.platform === 'win32' ? 'C:/Program Files/Git/bin/bash.exe' : 'bash'
   try {
     for (const state of ['missing', 'failure', 'success']) {
-      const rows = required.flatMap((name, i) => name === 'rust (windows-slow)' && state === 'missing' ? [] : [`${i + 1}\t${name}\tcompleted\t${name === 'rust (windows-slow)' ? state : 'success'}`])
+      const rows = required.flatMap((name, i) => name === 'rust (windows-latest)' && state === 'missing' ? [] : [`${i + 1}\t${name}\tcompleted\t${name === 'rust (windows-latest)' ? state : 'success'}`])
       writeFileSync(file, rows.join('\n') + '\n')
       const result = spawnSync(bash, ['-c', 'gh() { cat "$SX_FAKE_CHECKS"; }; export -f gh; bash scripts/ci/require-green.sh HEAD slicerx-oss/slicerx'], {
         encoding: 'utf8',
         env: { ...process.env, SX_FAKE_CHECKS: file.replaceAll('\\', '/'), SX_GREEN_WAIT: '0', SX_PUBLISH_ALLOW_RED: '0' },
       })
       assert.equal(result.status, state === 'success' ? 0 : 1, `${state}: ${result.error ?? result.stderr}`)
-      if (state !== 'success') assert.match(result.stderr, new RegExp(`rust \\(windows-slow\\): ${state}`))
+      if (state !== 'success') assert.match(result.stderr, new RegExp(`rust \\(windows-latest\\): ${state}`))
     }
   } finally {
     assert.equal(dirname(resolve(dir)), resolve(tmpdir()))
