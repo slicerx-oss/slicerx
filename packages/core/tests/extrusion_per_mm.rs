@@ -11,8 +11,11 @@
 //! support at `line_width`. `support_line_width` at 0: support and its interface print at `line_width` on every
 //! layer.
 //!
-//! An overhang wall piece with `thick_bridges` off prints at its own loop's width (the outer wall's or the inner
-//! wall's) and the layer height, at the plain wall flow, whatever `bridge_flow` is. With `thick_bridges` on it is a
+//! An overhang wall piece with `thick_bridges` off and classic walls prints the external bridge bead on every loop:
+//! `bridge_line_width` at `bridge_flow`, narrowed at the layer height below a flow of 1, and above 1 stated as a
+//! bead `bridge_flow` times taller of the same area. With arachne walls it prints at its own loop's width (the outer
+//! wall's or the inner wall's) and the layer height, at the plain wall flow at a `bridge_flow` of 1 or less. With
+//! `thick_bridges` on it is a
 //! round bead the nozzle wide, and its comments state the bead's diameter as both its width and its height (the
 //! nozzle times the root of `bridge_flow`), extra perimeters on overhangs included; the next feature states the
 //! layer height again. The preview draws those beads as tall as the comments state.
@@ -345,37 +348,80 @@ fn overhang(cfg: &Value) -> BTreeMap<i64, Sum> {
 }
 
 #[test]
-fn an_overhang_wall_keeps_its_own_width_on_a_printer_with_its_own_profile() {
-    for generator in ["classic", "arachne"] {
-        for bridge_flow in [1.0, 0.8] {
-            for (name, cfg) in [
-                (
-                    "mk4",
-                    mk4(&json!({ "wall_generator": generator, "bridge_flow": bridge_flow })),
-                ),
-                (
-                    "ender",
-                    ender(&json!({ "wall_generator": generator, "bridge_flow": bridge_flow })),
-                ),
-            ] {
-                let what = format!("{name} {generator} bridge_flow {bridge_flow}");
-                let got = overhang(&cfg);
-                let stated: Vec<i64> = got.keys().copied().collect();
-                assert_eq!(
-                    stated,
-                    vec![420, 450],
-                    "{what}: overhang wall stated at {stated:?}"
+fn an_arachne_overhang_wall_keeps_its_own_width_on_a_printer_with_its_own_profile() {
+    for bridge_flow in [1.0, 0.8] {
+        for (name, cfg) in [
+            (
+                "mk4",
+                mk4(&json!({ "wall_generator": "arachne", "bridge_flow": bridge_flow })),
+            ),
+            (
+                "ender",
+                ender(&json!({ "wall_generator": "arachne", "bridge_flow": bridge_flow })),
+            ),
+        ] {
+            let what = format!("{name} arachne bridge_flow {bridge_flow}");
+            let got = overhang(&cfg);
+            let stated: Vec<i64> = got.keys().copied().collect();
+            assert_eq!(
+                stated,
+                vec![420, 450],
+                "{what}: overhang wall stated at {stated:?}"
+            );
+            for (w, s) in &got {
+                let w = *w as f64 / 1000.0;
+                let exp = expected(w);
+                assert!(
+                    (s.per_mm() / exp - 1.0).abs() < 0.005,
+                    "{what}: overhang wall at {w}: {:.6} mm/mm, want {exp:.6}",
+                    s.per_mm()
                 );
-                for (w, s) in &got {
-                    let w = *w as f64 / 1000.0;
-                    let exp = expected(w);
-                    assert!(
-                        (s.per_mm() / exp - 1.0).abs() < 0.005,
-                        "{what}: overhang wall at {w}: {:.6} mm/mm, want {exp:.6}",
-                        s.per_mm()
-                    );
-                }
             }
+        }
+    }
+}
+
+/// A flat bead `w` wide at the layer height and `flow` times its extrusion: the width and height the comments state,
+/// in thousandths (above a flow of 1 a bead `flow` times taller of the same area), and its filament per mm.
+fn flat_bead(w: f64, flow: f64) -> ((i64, i64), f64) {
+    let per_mm = expected(w) * flow;
+    if flow <= 1.0 {
+        return (((w * 1000.0).round() as i64, 200), per_mm);
+    }
+    let tall = H * flow;
+    let area = w * H - H * H * (1.0 - PI / 4.0);
+    let width = flow * area / tall + tall * (1.0 - PI / 4.0);
+    (
+        ((width * 1000.0).round() as i64, (tall * 1000.0).round() as i64),
+        per_mm,
+    )
+}
+
+/// The overhang wall pieces of the slab's first layer are stated at `want` only, each at its filament per mm.
+fn assert_overhang_beads(cfg: &Value, want: &[((i64, i64), f64)], what: &str) {
+    let (got, _) = stated_beads(&run(ledge(), cfg).0);
+    let stated: Vec<(i64, i64)> = got.keys().copied().collect();
+    let keys: Vec<(i64, i64)> = want.iter().map(|w| w.0).collect();
+    assert_eq!(stated, keys, "{what}: overhang wall stated at {stated:?}");
+    for (key, exp) in want {
+        let per_mm = got[key].per_mm();
+        assert!(
+            (per_mm / exp - 1.0).abs() < 0.005,
+            "{what}: overhang wall at {key:?}: {per_mm:.6} mm/mm, want {exp:.6}"
+        );
+    }
+}
+
+#[test]
+fn a_classic_overhang_wall_prints_the_bridge_bead_on_a_printer_with_its_own_profile() {
+    // `bridge_line_width` 100% of the 0.4 nozzle on both loops: 0.4 at a flow of 1, narrowed to 0.328584 at 0.8, and
+    // at 1.2 the 0.4 bead at 1.2 times its extrusion, stated 0.408584 wide and 0.24 tall.
+    for (bridge_flow, w) in [(1.0_f64, 0.4), (0.8, 0.328_584), (1.2, 0.4)] {
+        let extra = json!({ "bridge_flow": bridge_flow, "bridge_line_width": "100%" });
+        for (name, cfg) in [("mk4", mk4(&extra)), ("ender", ender(&extra))] {
+            let what = format!("{name} classic bridge_flow {bridge_flow}");
+            // Below 1 the narrowed bead carries the flow in its width.
+            assert_overhang_beads(&cfg, &[flat_bead(w, bridge_flow.max(1.0))], &what);
         }
     }
 }
@@ -497,8 +543,8 @@ fn a_round_overhang_bead_states_its_diameter_as_its_height() {
 
 #[test]
 fn a_flat_overhang_bead_states_the_layer_height() {
-    // thick_bridges off: extra perimeters print the flat strand (0.4, or 0.329 at a flow of 0.8, or the inner
-    // wall's 0.45 with no bridge line width) and loop pieces their loop's width, all at the layer height.
+    // thick_bridges off: extra perimeters and the classic loop pieces print the flat strand (0.4, or 0.329 at a
+    // flow of 0.8, or the inner wall's 0.45 with no bridge line width), all at the layer height.
     for (extra, widths) in [
         (json!({ "bridge_flow": 1.0 }), vec![400, 420, 450]),
         (json!({ "bridge_flow": 0.8 }), vec![329, 420, 450]),
