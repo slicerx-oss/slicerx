@@ -13,7 +13,8 @@
 //! plus `ironing_angle`, one sweep in the order of `monotonic`, each line the other way round and joined to the next along
 //! the edge when the gap is under three spacings. Each line carries `ironing_flow` percent of a layer of the layer
 //! height over the ironing spacing: the volume per millimeter is the nozzle diameter times
-//! `layer_height * flow * spacing / nozzle`.
+//! `layer_height * flow * spacing / nozzle`. The speed is held to `filament_max_volumetric_speed` over that volume,
+//! as every other feature's is.
 
 use crate::config::PrintConfig;
 use crate::fm::Fm as _;
@@ -343,6 +344,9 @@ fn lines(
     let ext_h = set_h * flow_pct / 100.0 * spacing / nozzle;
     let width = nozzle + ext_h * (1.0 - std::f64::consts::FRAC_PI_4);
     let flow = nozzle * ext_h / crate::gcode::bead_area(width, layer_h).max(1e-9);
+    #[allow(clippy::cast_possible_truncation, reason = "speeds and widths are small")]
+    let (width, flow) = (width as f32, flow as f32);
+    let speed = capped(cfg, out.index == 0, tool, (width, flow, out.height), speed);
     let polylines: Vec<Vec<Pt>> = if concentric(cfg) {
         crate::surface::fill(region, crate::surface::Curve::Concentric, spacing, 0.0)
             .into_iter()
@@ -377,14 +381,30 @@ fn lines(
             tool,
             feature: Feature::Ironing,
             speed_mm_s: speed as f32,
-            width_mm: width as f32,
-            flow: flow as f32,
+            width_mm: width,
+            flow,
             dz: 0.0,
             overhang_fan: false,
             owner: crate::preview::OBJECT_NONE,
         });
     }
     paths
+}
+
+/// `speed` held to the filament's volumetric limit, as every other feature is: `filament_max_volumetric_speed` over
+/// the bead of `width` by `height` mm times its `flow` and the flow multipliers the ironing E carries
+/// ([`crate::config::CapFlow`]). The bead is the one written, so the limit holds the mm3/s the lines really extrude.
+fn capped(cfg: &PrintConfig, first_layer: bool, tool: u8, bead: (f32, f32, f32), speed: f64) -> f64 {
+    let (width, flow, height) = bead;
+    let cap = crate::tower::per_slot_raw(cfg, "filament_max_volumetric_speed", tool, 0.0);
+    let mm3 = crate::gcode::bead_area(f64::from(width), f64::from(height))
+        * f64::from(flow)
+        * cfg.cap_flow(first_layer).ratio(tool, Feature::Ironing);
+    if cap > 0.0 && mm3 > 0.0 {
+        speed.min(cap / mm3)
+    } else {
+        speed
+    }
 }
 
 #[cfg(test)]
@@ -681,5 +701,41 @@ mod tests {
         let (vol, width) = first_line(&c, 0.1);
         assert!((vol - 0.0075).abs() < 1e-5, "{vol}");
         assert!((width - 0.404_02).abs() < 1e-5, "{width}");
+    }
+
+    #[test]
+    fn the_speed_is_held_to_the_volumetric_limit_over_the_flow_the_lines_carry() {
+        // 0.2 x 15% x 0.15 = 0.0045 mm3 per mm times the filament's flow ratio: at 300 mm/s that is 1.215 to 1.418
+        // mm3/s, over a 1.2 mm3/s limit, so the lines slow to exactly the limit.
+        let lay = |ratio: f64, cap: f64| {
+            let mut c = cfg("top");
+            for (k, v) in [
+                ("ironing_flow", serde_json::json!("15%")),
+                ("ironing_spacing", serde_json::json!(0.15)),
+                ("ironing_speed", serde_json::json!(300)),
+                ("filament_max_volumetric_speed", serde_json::json!([cap])),
+            ] {
+                c.raw.insert(k.into(), v);
+            }
+            c.filament_flow_ratio = vec![ratio];
+            let (mut out, areas) = layer();
+            assert!(add(&mut out, &areas, &c, false, 0.0, &[]));
+            let p = out.paths[0];
+            assert!(
+                out.paths
+                    .iter()
+                    .all(|q| q.speed_mm_s.to_bits() == p.speed_mm_s.to_bits())
+            );
+            let per_mm = crate::gcode::bead_area(f64::from(p.width_mm), 0.2) * f64::from(p.flow) * ratio;
+            (f64::from(p.speed_mm_s), per_mm * f64::from(p.speed_mm_s))
+        };
+        for ratio in [0.9, 0.98, 1.05] {
+            let (speed, rate) = lay(ratio, 1.2);
+            assert!(speed < 300.0, "{ratio}: {speed}");
+            assert!((rate - 1.2).abs() < 1.2e-6, "{ratio}: {rate} mm3/s");
+        }
+        // A limit the lines stay under leaves the speed alone.
+        let (speed, _) = lay(1.05, 50.0);
+        assert!((speed - 300.0).abs() < 1e-6, "{speed}");
     }
 }
