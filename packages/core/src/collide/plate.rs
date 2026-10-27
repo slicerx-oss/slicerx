@@ -382,6 +382,10 @@ pub(crate) fn drop_crossing_joins(out: &mut SliceOutput) -> usize {
         let before = l.paths.len();
         let mut it = keep.iter();
         l.paths.retain(|_| it.next().copied().unwrap_or(true));
+        if l.paths.len() < before {
+            // The G-code the cooling step wrote for the layer still has the turns, so the writer writes it again.
+            l.written = None;
+        }
         dropped += before - l.paths.len();
     }
     dropped
@@ -813,6 +817,21 @@ mod tests {
         let mut out = joined_lines(Feature::InternalSolid, 0.42);
         assert_eq!(drop_crossing_joins(&mut out), 0);
         assert_eq!(out.layers[0].paths.len(), 4);
+    }
+
+    #[test]
+    fn a_dropped_join_leaves_no_settled_gcode_behind() {
+        // A short layer the cooling step wrote and left as it was keeps that G-code for the writer. A turn dropped
+        // afterwards must not stay in it, or whether the turn prints would follow the layer's time.
+        let mut out = joined_lines(Feature::InnerWall, 0.45);
+        let config = crate::config::PrintConfig {
+            slow_down_for_layer_cooling: false,
+            ..crate::config::PrintConfig::default()
+        };
+        crate::gcode::settle_cooling(&mut out, &config);
+        assert!(out.layers[0].written.is_some());
+        assert_eq!(drop_crossing_joins(&mut out), 1);
+        assert!(out.layers[0].written.is_none());
     }
 
     #[test]
