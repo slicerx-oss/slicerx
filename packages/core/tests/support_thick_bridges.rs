@@ -6,7 +6,8 @@
 //! A round strand `d` across (the bridge line width times the root of `bridge_flow`) hangs `d` minus the layer height
 //! below its layer, so the top contact under it sits the top gap below the strand: at `T - d - gap`, where `T` is the
 //! top of the first layer over the overhang, instead of `T - h - gap`. The layers under the contact step evenly up to
-//! it, as before.
+//! it, as before. A support layer resting on a top surface of the part is `bw f` thick (the bridge line width times
+//! `bridge_flow`), from the surface plus the bottom gap up, and prints a round bead of that diameter over the part.
 //!
 //! The model is a bridge span: a 2 mm slab over two posts `p` mm tall, with wings past the posts and a box beside
 //! it, and optionally a 2 mm pad under the left wing.
@@ -248,12 +249,13 @@ fn slice(parts: Vec<MeshPart>, config: &Value) -> String {
     String::from_utf8(run.gcode).unwrap()
 }
 
-/// An extruding move: its feature, the layer's z and the segment's ends.
+/// An extruding move: its feature, the layer's z, the segment's ends and its filament.
 struct Move {
     feature: String,
     z: f64,
     from: (f64, f64),
     to: (f64, f64),
+    e: f64,
 }
 
 fn moves(g: &str) -> Vec<Move> {
@@ -288,6 +290,7 @@ fn moves(g: &str) -> Vec<Move> {
                 z,
                 from: at,
                 to: (x, y),
+                e,
             });
         }
         at = (x, y);
@@ -300,6 +303,20 @@ fn support_moves(g: &str) -> Vec<Move> {
         .into_iter()
         .filter(|m| m.feature.starts_with("Support"))
         .collect()
+}
+
+/// Where the part sits on the bed: its smallest x and its middle in y, from the part's own paths.
+fn part_at(g: &str) -> (f64, f64) {
+    let ms = moves(g);
+    let part = ms
+        .iter()
+        .filter(|m| !m.feature.starts_with("Support") && !m.feature.starts_with("Skirt"))
+        .flat_map(|m| [m.from, m.to]);
+    let (mut x0, mut y0, mut y1) = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+    for (x, y) in part {
+        (x0, y0, y1) = (x0.min(x), y0.min(y), y1.max(y));
+    }
+    (x0, f64::midpoint(y0, y1))
 }
 
 fn len(m: &Move) -> f64 {
@@ -483,4 +500,78 @@ fn without_round_strands_or_a_top_gap_the_contact_stays() {
         &config('e', &json!({"support_top_z_distance": 0, "thick_bridges": true})),
     );
     assert_eq!(support_zs(&flat, 4.5), support_zs(&round, 4.5));
+}
+
+#[test]
+fn support_resting_on_the_part_prints_a_round_bead() {
+    // (case, printer, extra settings, top of the layer resting on the pad, its filament per mm over the pad).
+    // The bead is `bw f` across: pi (bw f)^2 / 4 mm2 of plastic, over the 1.75 mm filament's 2.4053 mm2.
+    let tb = json!({"thick_bridges": true, "support_on_build_plate_only": false});
+    let with = |v: Value| merged(&tb, &v);
+    let cases: Vec<(&str, char, Value, f64, f64)> = vec![
+        ("e-tb1pad", 'e', tb.clone(), 2.6, 0.05224),
+        (
+            "e-tb1padb3",
+            'e',
+            with(json!({"support_bottom_z_distance": 0.3})),
+            2.7,
+            0.05224,
+        ),
+        (
+            "e-tb1padh28",
+            'e',
+            with(json!({"layer_height": 0.28})),
+            2.48,
+            0.05224,
+        ),
+        ("e-tb1padn6", 'e', with(nozzle6('e')), 2.8, 0.11756),
+        ("m-tb1pad", 'm', tb.clone(), 2.6, 0.0522),
+        (
+            "m-tb1padn6b3",
+            'm',
+            with(merged(&nozzle6('m'), &json!({"support_bottom_z_distance": 0.3}))),
+            2.9,
+            0.1176,
+        ),
+        ("v-tb1pad", 'v', tb.clone(), 2.58, 0.04715),
+        ("v-tb1padn6", 'v', with(nozzle6('v')), 2.77, 0.1061),
+    ];
+    std::thread::scope(|s| {
+        for (name, printer, extra, top, per_mm) in &cases {
+            s.spawn(move || {
+                let model = span(Span { pad: true, ..SPAN });
+                let g = slice(model, &config(*printer, extra));
+                // The pad, 1 to 5 mm in from the left wing's edge, and the line width around it that rests on it.
+                let (x0, y) = part_at(&g);
+                let over_pad = |p: (f64, f64)| {
+                    (x0 + 0.5..=x0 + 5.5).contains(&p.0) && (y - 8.5..=y + 8.5).contains(&p.1)
+                };
+                let zs = support_zs(&g, 2.05);
+                let lowest = zs.first().copied().unwrap_or(0.0);
+                // The lowest support over the pad's top (2 mm) is the layer resting on it.
+                let on_pad: Vec<Move> = support_moves(&g)
+                    .into_iter()
+                    .filter(|m| over_pad(m.from) && over_pad(m.to) && len(m) >= 1.0)
+                    .collect();
+                let first = on_pad
+                    .iter()
+                    .map(|m| m.z)
+                    .filter(|z| *z > 2.0)
+                    .fold(f64::INFINITY, f64::min);
+                assert!(
+                    (first - top).abs() < 0.0015,
+                    "{name}: support over the pad starts at {first}, want {top} (lowest support {lowest})"
+                );
+                let (l, e) = on_pad
+                    .iter()
+                    .filter(|m| (m.z - first).abs() < 1e-6)
+                    .fold((0.0, 0.0), |(l, e), m| (l + len(m), e + m.e));
+                assert!(
+                    l > 2.0 && ((e / l) / per_mm - 1.0).abs() < 0.01,
+                    "{name}: {:.5} mm of filament per mm over {l:.1} mm at {first}, want {per_mm}",
+                    e / l
+                );
+            });
+        }
+    });
 }

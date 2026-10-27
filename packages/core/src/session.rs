@@ -543,6 +543,9 @@ pub(crate) fn bead_ratio(width: f64, a: f64, b: f64) -> f32 {
 struct SupportPaths {
     support: Vec<Vec<crate::geom::Point>>,
     interface: Vec<Vec<crate::geom::Point>>,
+    /// Support and interface over a top surface of the part, printed as round beads (`SupportLayer::on_part`).
+    round: Vec<Vec<crate::geom::Point>>,
+    round_interface: Vec<Vec<crate::geom::Point>>,
     /// Ironing over the top contact (`support_ironing`).
     ironing: Vec<Vec<crate::geom::Point>>,
 }
@@ -3742,6 +3745,7 @@ impl SliceSession {
             max_h,
             bottom_contact_h: config.layer_height,
             bridge_h: round_support_beads(config).map(|b| b.0),
+            bottom_h: round_support_beads(config).map(|b| b.1),
             raft: raft.map(|r| r.1),
         };
         let stack = if !independent {
@@ -3917,7 +3921,8 @@ impl SliceSession {
         out.changes_before = self.changes_before(p);
         out.held_before = self.held_before(p);
         let mut works: Vec<ToolWork> = Vec::new();
-        place_support(&mut works, sp, 0.0, support_tools(cfg, tool));
+        let round = round_support_flow(cfg, pl.height);
+        place_support(&mut works, sp, (0.0, round), support_tools(cfg, tool));
         // Starting on the filament the layer below ended on saves a change.
         crate::sorting::sort_by_key(&mut works, |w| w.tool != tool);
         let mut current = tool;
@@ -6054,6 +6059,7 @@ impl SliceSession {
             support,
             interface: loops,
             ironing: iron,
+            ..SupportPaths::default()
         }
     }
 
@@ -6465,6 +6471,7 @@ impl SliceSession {
             support,
             interface: loops,
             ironing: iron,
+            ..SupportPaths::default()
         }
     }
 
@@ -6581,6 +6588,34 @@ impl SliceSession {
         }
         if let Some(o) = &sl.organic {
             return self.organic_support_paths(cfg, o, layer, center);
+        }
+        if !sl.on_part.is_empty() {
+            // Where the layer rests on a top surface of the part it is filled on its own, the same way, so those
+            // lines can print as round beads.
+            let cut = |a: &Shapes, keep: bool| {
+                if a.is_empty() {
+                    Vec::new()
+                } else if keep {
+                    perimeters::intersection(a, &sl.on_part)
+                } else {
+                    perimeters::difference(a, &sl.on_part)
+                }
+            };
+            let part = |keep: bool| crate::support::SupportLayer {
+                base: cut(&sl.base, keep),
+                interface: cut(&sl.interface, keep),
+                normal: cut(&sl.normal, keep),
+                contact: cut(&sl.contact, keep),
+                hang: sl.hang.clone(),
+                bottom: cut(&sl.bottom, keep),
+                ..crate::support::SupportLayer::default()
+            };
+            let mut out = self.support_paths(cfg, &part(false), layer, z);
+            let on = self.support_paths(cfg, &part(true), layer, z);
+            out.round = on.support;
+            out.round_interface = on.interface;
+            out.ironing.extend(on.ironing);
+            return out;
         }
         // Support flows are sized at the object layer height, so every layer's lines stay aligned.
         let spacing = cfg.spacing_for(wmm);
@@ -9805,12 +9840,20 @@ impl SliceSession {
         {
             let sp = self.support_paths(cfg, sl, index, z);
             if skirt_here {
-                for p in sp.support.iter().chain(&sp.interface).flatten() {
+                for p in sp
+                    .support
+                    .iter()
+                    .chain(&sp.interface)
+                    .chain(&sp.round)
+                    .chain(&sp.round_interface)
+                    .flatten()
+                {
                     skirt_extra.push(IntPoint::new(p.x, p.y));
                 }
             }
             out.support_areas = support_islands(sl);
-            place_support(&mut works, sp, flow, support_tools(cfg, active));
+            let round = round_support_flow(cfg, self.plan.thickness(layer));
+            place_support(&mut works, sp, (flow, round), support_tools(cfg, active));
         }
         let t = Timer::start();
         // Tools print in the planned order, which starts on the tool the layer below ended on.
@@ -10403,6 +10446,18 @@ fn round_support_beads(cfg: &PrintConfig) -> Option<(f64, f64)> {
     let w = bridge_nominal(cfg, true);
     let f = cfg.bridge_flow.max(0.0);
     Some((w * f.sqrt(), w * f))
+}
+
+/// The flow of a support layer's round beads over the part ([`round_support_beads`]) against a support bead of
+/// height `h`; 0 when there are none.
+#[allow(clippy::cast_possible_truncation, reason = "a flow ratio")]
+fn round_support_flow(cfg: &PrintConfig, h: f64) -> f32 {
+    match round_support_beads(cfg) {
+        Some((_, d)) if h > 0.0 => {
+            (std::f64::consts::PI * d * d / 4.0 / crate::gcode::bead_area(cfg.support_width(), h)) as f32
+        }
+        _ => 0.0,
+    }
 }
 
 /// Bambu Lab printers spread the strands of each bridge piece evenly across it (`bridging::fill_even`); the
@@ -11225,7 +11280,12 @@ fn support_islands(sl: &crate::support::SupportLayer) -> Option<Box<crate::outpu
     (!islands.is_empty()).then(|| Box::new(crate::output::SupportAreas { islands, keep_order }))
 }
 
-fn place_support(works: &mut Vec<ToolWork>, sp: SupportPaths, flow: f32, (base, iface): (u8, u8)) {
+fn place_support(
+    works: &mut Vec<ToolWork>,
+    sp: SupportPaths,
+    (flow, round): (f32, f32),
+    (base, iface): (u8, u8),
+) {
     fn at(works: &mut Vec<ToolWork>, tool: u8) -> usize {
         if let Some(k) = works.iter().position(|w| w.tool == tool) {
             return k;
@@ -11236,17 +11296,21 @@ fn place_support(works: &mut Vec<ToolWork>, sp: SupportPaths, flow: f32, (base, 
         });
         works.len() - 1
     }
-    if !sp.support.is_empty() {
+    if !sp.support.is_empty() || !sp.round.is_empty() {
         let k = at(works, base);
         if let Some(w) = works.get_mut(k) {
             w.support = sp.support;
+            w.support_round = sp.round;
+            w.support_round_flow = round;
             w.support_flow = flow;
         }
     }
-    if !sp.interface.is_empty() || !sp.ironing.is_empty() {
+    if !sp.interface.is_empty() || !sp.ironing.is_empty() || !sp.round_interface.is_empty() {
         let k = at(works, iface);
         if let Some(w) = works.get_mut(k) {
             w.support_interface = sp.interface;
+            w.support_interface_round = sp.round_interface;
+            w.support_round_flow = round;
             w.support_ironing = sp.ironing;
             w.support_flow = flow;
         }
@@ -11829,6 +11893,17 @@ fn work_solid_volume(work: &paths::ToolWork, width: f64, height: f64) -> f64 {
 
 /// Volume of the support a tool prints on a layer, mm3.
 fn work_support_volume(work: &paths::ToolWork, width: f64, height: f64) -> f64 {
+    let length = |paths: &[Vec<crate::geom::Point>]| -> f64 {
+        paths
+            .iter()
+            .map(|p| {
+                p.iter()
+                    .zip(p.iter().skip(1))
+                    .map(|(a, b)| a.dist_mm(*b))
+                    .sum::<f64>()
+            })
+            .sum()
+    };
     let len: f64 = work
         .support
         .iter()
@@ -11840,7 +11915,9 @@ fn work_support_volume(work: &paths::ToolWork, width: f64, height: f64) -> f64 {
                 .sum::<f64>()
         })
         .sum();
+    let round = length(&work.support_round) + length(&work.support_interface_round);
     len * crate::gcode::bead_area(width, height)
+        + round * crate::gcode::bead_area(width, height) * f64::from(work.support_round_flow)
 }
 
 /// The part of a triangle between two heights, as a polygon in the plane (Sutherland-Hodgman).

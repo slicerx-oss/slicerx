@@ -61,6 +61,11 @@ pub(crate) struct ToolWork {
     /// Flow of the support beads against a bead of this layer's height: a support layer of
     /// another thickness printed at the same height. 0 means 1.
     pub(crate) support_flow: f32,
+    /// Support and interface over a top surface of the part, printed as round beads at `support_round_flow` against
+    /// a bead of this layer's height (`thick_bridges`).
+    pub(crate) support_round: Vec<Vec<Point>>,
+    pub(crate) support_interface_round: Vec<Vec<Point>>,
+    pub(crate) support_round_flow: f32,
     pub(crate) bottom: Vec<[Point; 2]>,
     /// Solid infill of the top shell under the visible top surface.
     pub(crate) shell: Vec<[Point; 2]>,
@@ -1995,6 +2000,19 @@ pub(crate) fn plan_layer_paths(
                 p.iter().copied(),
             );
         }
+        let layer_flow = b.flow;
+        if w.support_round_flow > 0.0 {
+            b.flow = w.support_round_flow;
+        }
+        for p in &w.support_round {
+            b.push(
+                w.tool,
+                Feature::Support,
+                path_speed(p, cfg.support.speed),
+                p.iter().copied(),
+            );
+        }
+        b.flow = layer_flow;
         let interface_from = b.out.paths.len();
         for p in &w.support_interface {
             b.push(
@@ -2004,6 +2022,18 @@ pub(crate) fn plan_layer_paths(
                 p.iter().copied(),
             );
         }
+        if w.support_round_flow > 0.0 {
+            b.flow = w.support_round_flow;
+        }
+        for p in &w.support_interface_round {
+            b.push(
+                w.tool,
+                Feature::SupportInterface,
+                path_speed(p, cfg.support.interface_speed),
+                p.iter().copied(),
+            );
+        }
+        b.flow = layer_flow;
         // Orca (`generate_support_toolpaths`, `GCode::extrude_support`): the support paths and the interface paths
         // are chained nearest first from where the nozzle is; a tree island keeps its own order (the sheath
         // before the fill).

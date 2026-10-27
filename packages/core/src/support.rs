@@ -37,6 +37,9 @@ pub(crate) struct SupportLayer {
     pub(crate) classic: Option<std::sync::Arc<crate::treeclassic::TreeLayer>>,
     /// Organic trees: the layer's areas by kind, which their toolpaths read.
     pub(crate) organic: Option<std::sync::Arc<crate::organic::OrganicLayer>>,
+    /// With round bridge strands ([`StackHeights::bottom_h`]): the part of the layer that rests on a top surface of
+    /// the part, which prints as round beads of that diameter.
+    pub(crate) on_part: Shapes,
 }
 
 pub(crate) fn units(mm: f64) -> i32 {
@@ -666,6 +669,7 @@ pub(crate) fn columns_from(
                 bottom: Shapes::new(),
                 classic: None,
                 organic: None,
+                on_part: Shapes::new(),
             };
         }
     }
@@ -727,6 +731,9 @@ pub(crate) struct StackHeights {
     /// Round bridge strands (`thick_bridges`): their diameter, mm. A strand thicker than its layer hangs below it,
     /// and the top contact keeps the gap under the strand.
     pub(crate) bridge_h: Option<f64>,
+    /// Round bridge strands: the diameter of the bead the layer resting on a top surface prints over the part (the
+    /// bridge line width times `bridge_flow`), which is also that layer's thickness, mm.
+    pub(crate) bottom_h: Option<f64>,
     /// The raft under the part, when there is one: the top of its interface layers, the top and
     /// thickness of its contact layer, and its layer count (`SlicingParameters`). The object tops are
     /// then lifted by the raft and its gap.
@@ -973,10 +980,8 @@ pub(crate) fn stack(
         let (mut z, mut height) = if zero_bottom {
             (top_of(b + 1), thick_of(b + 1))
         } else {
-            (
-                top_of(b) + h.bottom_contact_h + cfg.bottom_z_distance,
-                h.bottom_contact_h,
-            )
+            let contact_h = h.bottom_h.unwrap_or(h.bottom_contact_h);
+            (top_of(b) + contact_h + cfg.bottom_z_distance, contact_h)
         };
         if !zero_bottom {
             // Snap to a top contact closer than the thinnest layer, so no layer comes out thinner.
@@ -1215,10 +1220,17 @@ pub(crate) fn stack(
     }
     let mut extra: Vec<Shapes> = vec![Vec::new(); stack.len()];
     let mut landing: Vec<Shapes> = vec![Vec::new(); stack.len()];
+    let mut on_part: Vec<Shapes> = vec![Vec::new(); stack.len()];
     for (slab, grown, b) in &bottoms {
         let at = index_of(slab.top);
         if let Some(e) = extra.get_mut(at) {
             *e = perimeters::union_all(&[e, grown]);
+        }
+        if h.bottom_h.is_some()
+            && !zero_bottom
+            && let Some(o) = on_part.get_mut(at)
+        {
+            *o = perimeters::union_all(&[o, grown]);
         }
         if cfg.interface_bottom_layers > 0 {
             let touch = lands.get(*b).unwrap_or(&empty);
@@ -1284,6 +1296,10 @@ pub(crate) fn stack(
             let sets: Vec<&Shapes> = ls.iter().filter_map(|&l| hang.get(l)).collect();
             hang_here = perimeters::union_all(&sets);
         }
+        let on_part = match on_part.get(s).filter(|o| !o.is_empty()) {
+            Some(o) => perimeters::intersection(&area, o),
+            None => Vec::new(),
+        };
         let base = if interface.is_empty() {
             area
         } else {
@@ -1303,6 +1319,7 @@ pub(crate) fn stack(
             bottom,
             classic: None,
             organic: None,
+            on_part,
         };
         out.push(layer);
     }
@@ -1340,6 +1357,7 @@ mod grid_tests {
             max_h: 0.3,
             bottom_contact_h: 0.2,
             bridge_h: None,
+            bottom_h: None,
             raft: None,
         };
         let cfg = SupportConfig::default();
@@ -1368,18 +1386,22 @@ mod grid_tests {
         assert!(stack[29].layer.interface.is_empty());
     }
 
-    /// The same square, with round bridge strands `bridge_h` across.
-    fn round_strands(bridge_h: Option<f64>, cfg: &SupportConfig) -> Vec<StackLayer> {
+    /// The same square, with round bridge strands `bridge_h` across and bottom beads `bottom_h`, over a 30 mm pad
+    /// 4 mm tall when `pad`.
+    fn round_strands(
+        bridge_h: Option<f64>,
+        bottom_h: Option<f64>,
+        pad: bool,
+        cfg: &SupportConfig,
+    ) -> Vec<StackLayer> {
         let n = 60_u32;
         let tops: Vec<f64> = (1..=n).map(|i| f64::from(i) * 0.2).collect();
         let thickness = vec![0.2; tops.len()];
         let models: Vec<Shapes> = (0..n)
-            .map(|i| {
-                if i >= 50 {
-                    rect(100.0, 100.0, 120.0, 120.0)
-                } else {
-                    Vec::new()
-                }
+            .map(|i| match i {
+                50.. => rect(100.0, 100.0, 120.0, 120.0),
+                0..20 if pad => rect(95.0, 95.0, 125.0, 125.0),
+                _ => Vec::new(),
             })
             .collect();
         let none: Vec<Shapes> = vec![Vec::new(); tops.len()];
@@ -1389,6 +1411,7 @@ mod grid_tests {
             max_h: 0.3,
             bottom_contact_h: 0.2,
             bridge_h,
+            bottom_h,
             raft: None,
         };
         stack(
@@ -1407,7 +1430,7 @@ mod grid_tests {
     #[test]
     fn the_contact_keeps_its_gap_under_a_round_strand() {
         // A 0.45 mm strand under the 10.2 mm layer: the contact at 10.2 - 0.45 - 0.2 = 9.55 mm, over 32 even steps.
-        let stack = round_strands(Some(0.45), &SupportConfig::default());
+        let stack = round_strands(Some(0.45), None, false, &SupportConfig::default());
         assert_eq!(stack.len(), 33);
         assert!(stack[1..].iter().all(|l| (l.height - 9.35 / 32.0).abs() < 1e-6));
         assert!((stack[32].top - 9.55).abs() < 1e-6);
@@ -1418,7 +1441,7 @@ mod grid_tests {
         );
         assert!(stack[29].layer.interface.is_empty());
         // A 0.75 mm strand: the contact at 9.25 mm, over 31 steps.
-        let stack = round_strands(Some(0.75), &SupportConfig::default());
+        let stack = round_strands(Some(0.75), None, false, &SupportConfig::default());
         assert_eq!(stack.len(), 32);
         assert!((stack[31].top - 9.25).abs() < 1e-6);
         assert!((stack[31].height - 9.05 / 31.0).abs() < 1e-6);
@@ -1427,18 +1450,40 @@ mod grid_tests {
     #[test]
     fn the_contact_stays_without_a_strand_below_the_layer_or_a_top_gap() {
         let tops = |s: &[StackLayer]| s.iter().map(|l| (l.top, l.height)).collect::<Vec<_>>();
-        let plain = round_strands(None, &SupportConfig::default());
+        let plain = round_strands(None, None, false, &SupportConfig::default());
         // A strand no thicker than its layer does not hang below it.
-        let thin = round_strands(Some(0.15), &SupportConfig::default());
+        let thin = round_strands(Some(0.15), None, false, &SupportConfig::default());
         assert_eq!(tops(&plain), tops(&thin));
         let zero = SupportConfig {
             top_z_distance: 0.0,
             ..SupportConfig::default()
         };
         assert_eq!(
-            tops(&round_strands(None, &zero)),
-            tops(&round_strands(Some(0.45), &zero))
+            tops(&round_strands(None, None, false, &zero)),
+            tops(&round_strands(Some(0.45), None, false, &zero))
         );
+    }
+
+    #[test]
+    fn support_resting_on_the_part_is_as_thick_as_its_round_bead() {
+        let cfg = SupportConfig {
+            on_build_plate_only: false,
+            ..SupportConfig::default()
+        };
+        // Today's bottom contact: one layer height over the gap, printed flat.
+        let flat = round_strands(None, None, true, &cfg);
+        assert!((flat[0].top - 4.4).abs() < 1e-6);
+        assert!(flat.iter().all(|l| l.layer.on_part.is_empty()));
+        // A 0.38 mm bead: the layer resting on the pad tops out at 4.0 + 0.2 + 0.38 mm, its part over the pad
+        // prints round, and 17 even steps reach the contact at 9.55 mm.
+        let stack = round_strands(Some(0.45), Some(0.38), true, &cfg);
+        assert!((stack[0].top - 4.58).abs() < 1e-6, "{}", stack[0].top);
+        assert!(stack[0].height <= 0.38 + 1e-9);
+        assert!(!stack[0].layer.on_part.is_empty());
+        assert!(stack[1..].iter().all(|l| l.layer.on_part.is_empty()));
+        assert_eq!(stack.len(), 18);
+        assert!(stack[1..].iter().all(|l| (l.height - 4.97 / 17.0).abs() < 1e-6));
+        assert!((stack[17].top - 9.55).abs() < 1e-6);
     }
 }
 
