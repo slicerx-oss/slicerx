@@ -1,0 +1,1010 @@
+{
+  "range": "desktop-v0.2.14..desktop-v0.2.15",
+  "since": "d662fe01",
+  "to": "a074a553",
+  "sinceDate": "2026-10-25T13:15:58Z",
+  "toDate": "2026-10-26T16:15:02Z",
+  "commits": [
+    {
+      "hash": "a074a55306a36b601e676b0ddbf9a6ad1ab91c84",
+      "subject": "chore(release): engine 0.2.4 and desktop 0.2.15"
+    },
+    {
+      "hash": "8afd4ed1b43f8fcfc8f0416153bc8fd97f64dcf7",
+      "subject": "chore(core): refresh the published PrusaSlicer key map copy"
+    },
+    {
+      "hash": "ebede04dd4c2ebce56c42a445945c8d314b2192f",
+      "subject": "fix(settings): read a PrusaSlicer project's 0% shrinkage as no shrinkage",
+      "userNote": [
+        "PrusaSlicer projects open at their real size and slice again."
+      ]
+    },
+    {
+      "hash": "7dbc89d7a4766a705daebe8a6409be9d6022537c",
+      "subject": "fix(core): iron each object on its own filament inside the layer's tool order",
+      "userNote": [
+        "Multi-filament plates with ironing now keep each part on its own filament."
+      ]
+    },
+    {
+      "hash": "8476f492898bef725929ede9899410797c833c18",
+      "subject": "fix(core): state a round overhang bead's diameter as its height",
+      "userNote": [
+        "Overhang walls with thick bridges now show their real round height in the preview."
+      ]
+    },
+    {
+      "hash": "412313fab7c97319b0b223c6f8d1966450f1926f",
+      "subject": "test(e2e): bound the arrange undo journey's poll reads"
+    },
+    {
+      "hash": "7495313e11e0698950137beb145a016300b3ab77",
+      "subject": "test(core): refresh goldens for the floating shell band edge"
+    },
+    {
+      "hash": "2e62bfbfa1a16f2394c6d80ab6e0c13caab15f2b",
+      "subject": "fix(core): start the floating shell band at the inner wall's spacing edge",
+      "userNote": [
+        "Floating vertical shells on Bambu Lab printers no longer push into the inner wall, and on leaning walls they fill out to the edge of the band over the infill."
+      ]
+    },
+    {
+      "hash": "6df1fbc831c7048e1bc3827c12b9bc45335e12bb",
+      "subject": "perf(core): build a layer's arachne walls once when no top run applies"
+    },
+    {
+      "hash": "9d2e9ad2ef6a44ffc34d504219961ca9c5765975",
+      "subject": "test(e2e): end the held pane slide instead of playing it on"
+    },
+    {
+      "hash": "7fbd4298a26ed532f2780202a0b48ccffb357f12",
+      "subject": "fix(core): zero first-layer and support widths, overhang wall width",
+      "userNote": [
+        "First-layer and support widths set to 0, and overhang walls, now print at the right width."
+      ]
+    },
+    {
+      "hash": "f37105881614fa9fd2abde2de2b5fafbfb149d1e",
+      "subject": "fix(core): run sparse hooks to the tip of a narrow tongue",
+      "userNote": [
+        "Tapering parts with narrower inner walls or three or more walls no longer leave an empty strip down the middle where the infill starts."
+      ]
+    },
+    {
+      "hash": "af79b6baeaf3a4f7d68c1436bd29f1fe0a244026",
+      "subject": "fix(core): slow arachne overhang walls by the share of their own bead",
+      "userNote": [
+        "Leaning arachne walls slow down in finer steps that follow each bead's own width."
+      ]
+    },
+    {
+      "hash": "c04b18155101d2ae5e82e43036dbdb9c84ded9b9",
+      "subject": "fix(core): print a set layer height as set",
+      "userNote": [
+        "Layer heights above or below the printer's listed range now print at the height you set."
+      ]
+    },
+    {
+      "hash": "3ac54d981907ab9386558c23456f9541c3205120",
+      "subject": "fix(core): label thick bridge overhang walls as round beads the nozzle tall",
+      "userNote": [
+        "With thick bridges on, the preview draws fully clear overhang walls as round beads the nozzle tall."
+      ]
+    },
+    {
+      "hash": "86e4c32ff2bef0601b01a6f5af76810b62393e31",
+      "subject": "fix(core): start a vase's spiral where its base ends",
+      "userNote": [
+        "Spiral vases start their wall straight from the base, with no retraction or prime blob at the foot of the wall."
+      ]
+    },
+    {
+      "hash": "0d5b3ccdf3a2e0bf9a59f6c5aa90c42f22e71266",
+      "subject": "feat(cli): add sx project-settings and the projectDefaults request option"
+    },
+    {
+      "hash": "fe95e63482752831dc1878043b0f1179c3e13d2b",
+      "subject": "fix: read the Bambu Studio project defaults from one shared table",
+      "userNote": [
+        "Bambu Studio projects sliced in the app or through the MCP server now get the rib prime tower."
+      ]
+    },
+    {
+      "hash": "c83a0c76bb896825749081644a9bab8b824cc800",
+      "subject": "fix(app): stack the view switch and the legend chip in a narrow view",
+      "userNote": [
+        "At phone widths the color chip of the toolpath legend now sits under the Solid, Layer lines and Toolpaths switch instead of running off the right edge."
+      ]
+    },
+    {
+      "hash": "d589c032ba81135dbdcb8e34a58ba8d5eaeac417",
+      "subject": "test(e2e): journey for a project's prime tower spot on each plate"
+    },
+    {
+      "hash": "d7da3cf6318d4398e8151709292cc5ead264a3a0",
+      "subject": "fix: print each plate's prime tower at the project's own spot",
+      "userNote": [
+        "Each plate of a multi-plate project prints its prime tower where the project put it."
+      ]
+    },
+    {
+      "hash": "329f338572660eed46eab5c9c32e242c89b8a7f6",
+      "subject": "feat(core): time the internal bridges and the seam plan as stages"
+    },
+    {
+      "hash": "106f7633ab4346c736a4ca4ad8d2e6a388b66802",
+      "subject": "perf(voronoi): write FixedInt products straight into the result"
+    },
+    {
+      "hash": "d8712bade52edaf99f52b281912ae317d05206fc",
+      "subject": "fix(cli): say when a known printer's G-code needs a person's review",
+      "userNote": [
+        "A refused project G-code now says it needs review and how to approve it."
+      ]
+    },
+    {
+      "hash": "e575bb3cffca8d894281421bd8a2aa23bce9df18",
+      "subject": "fix(gcode): run every wipe at the layer's acceleration",
+      "userNote": [
+        "Wipes on every printer now run at the layer's default acceleration, not the last path's."
+      ]
+    },
+    {
+      "hash": "59573ff00b785e4ed26161181b99f4b8165c727d",
+      "subject": "fix(gcode): set the travel acceleration before a timelapse lift",
+      "userNote": [
+        "On the A1 and A1 mini, the lift and the moves to the timelapse park position now run at the travel acceleration instead of the print acceleration."
+      ]
+    },
+    {
+      "hash": "b00b3dab0133d91922c418a2fa42d8dce9ccbcb1",
+      "subject": "fix(kit): ignore the assistant-brand.md copies a pack writes"
+    },
+    {
+      "hash": "8f8a6b43b17fdc2f85204eaaa2b8d8cb4e91ec00",
+      "subject": "feat(kit): ship every setting's default to integrators"
+    },
+    {
+      "hash": "ffb3e7edb555f546999e19ceb3b219ce304a60f6",
+      "subject": "perf(equalizer): visit only the live role in the rate smoothing window"
+    },
+    {
+      "hash": "b4c37b246bd2eefadb8fcd2b38bcba36d98886c4",
+      "subject": "test(core): check painted ring seams against the full scan"
+    },
+    {
+      "hash": "46ff37763e44e151b27b54a7c0f074308e21d7d8",
+      "subject": "perf(core): index painted seam triangles for the near test",
+      "userNote": [
+        "Projects with painted seams slice faster."
+      ]
+    },
+    {
+      "hash": "a0dc17877f225d7dbef241a5beb66354e963478c",
+      "subject": "test(e2e): wait for the plate's own slice in the brim ears project test"
+    },
+    {
+      "hash": "6bc81bd47bde424d9ec45edd587c02fd3fc4f3aa",
+      "subject": "fix(viewport): size a starved pane slide's canvas on the next frame",
+      "userNote": [
+        "Resizing a side pane on a very slow computer holds up the 3D view once instead of twice."
+      ]
+    },
+    {
+      "hash": "756cabd48643147b2915b3b6beed3bbbf22e57ee",
+      "subject": "fix(viewport): aim clicks at the view a camera jump goes to",
+      "userNote": [
+        "A click right after a view change on a slow computer lands where the new view shows it."
+      ]
+    },
+    {
+      "hash": "21240f8de33243b927d32a42ae2f3e26ce68fee6",
+      "subject": "fix(core): cut the skirt to the bed like the brim",
+      "userNote": [
+        "A skirt over the bed edge is now cut with a note instead of printing off the bed or being refused."
+      ]
+    },
+    {
+      "hash": "5be825a56b6b4f10d72ae3d14b6d0a2df3dc93e0",
+      "subject": "perf(viewport): drop the app's irradiance read back"
+    },
+    {
+      "hash": "6f869bd42e42d1cc3f9fafbc1e3e49f92f9c3fc2",
+      "subject": "fix(core): draw the start purge line where the nozzle lays it",
+      "userNote": [
+        "the preview draws a P1S, X1 or Neptune 4 purge line where it prints"
+      ]
+    },
+    {
+      "hash": "b59f261b6d8766d58273a428328ea8f060a5191e",
+      "subject": "perf(core): grow the layer below once per layer for every filament",
+      "userNote": [
+        "Multi-filament plates slice faster."
+      ]
+    },
+    {
+      "hash": "f2b17e8a96bc7f07a460c2c56326581e3898706c",
+      "subject": "test(e2e): wait for a pick's framing to land in the Model framing test"
+    },
+    {
+      "hash": "7ba9a16211d4d6d68068285c15e10a4cca90ed5b",
+      "subject": "fix(walls): give tiny closed walls their seam and seam gap",
+      "userNote": [
+        "Tiny pins and pegs now get a seam and seam gap instead of overlapping at the start."
+      ]
+    },
+    {
+      "hash": "7648d59f50047ea071ebb5f50b806fec8547ec95",
+      "subject": "test(e2e): raise the stand-in 3D view notice with its close mark"
+    },
+    {
+      "hash": "f7aa798ff0ec533d7b1fef195cd67c1d40317857",
+      "subject": "test(e2e): close the 3D view notice in emptyMimirTab instead of waiting it out"
+    },
+    {
+      "hash": "9c085051bd4c2733bae6765a7419ba0bb4342254",
+      "subject": "fix(core): printer_structure keys the session",
+      "userNote": [
+        "Collision warnings now update right away when you switch a printer to or from a delta."
+      ]
+    },
+    {
+      "hash": "4b2fdb1938a7d8d1731d505ca390227344b35a0f",
+      "subject": "fix(walls): keep the outer wall's width and place on aegis one-wall parts",
+      "userNote": [
+        "Single-wall parts and first layers keep full size with aegis walls."
+      ]
+    },
+    {
+      "hash": "547aa6c2c9724aa6e0f6e37e26d46dc822e83b8f",
+      "subject": "fix(mcp): give a project the G-code SlicerX ships for its printer",
+      "userNote": [
+        "Projects opened through the MCP by printer name now print with that printer's start and filament change G-code."
+      ]
+    },
+    {
+      "hash": "99ef92c1a2e1178f8fd077366af843ac5b66c9de",
+      "subject": "fix(core): read the collision report's travel and lift settings per run",
+      "userNote": [
+        "Collision warnings and fix times now follow edits to travel, retraction, Z hop and change G-code."
+      ]
+    },
+    {
+      "hash": "168160b4b2bb7886a8a97ff46248aabbe3db9b8f",
+      "subject": "fix(arrange): keep a small part's long skirt off the bed edge and keep-out areas",
+      "userNote": [
+        "Arrange keeps a skirt with a minimum length off the bed edge and the printer's keep-out areas."
+      ]
+    },
+    {
+      "hash": "07b8baeef39817799376cf92a5962467451b62c6",
+      "subject": "chore: say which builds start a slicer pool in two comments"
+    },
+    {
+      "hash": "b27b4541da4fb95b9e1b8d5edccf440eb1011ff1",
+      "subject": "fix(core): key a new session on settings that shape paths",
+      "userNote": [
+        "Turning on \"Turn infill with the model\" now updates the infill of turned objects right away."
+      ]
+    },
+    {
+      "hash": "02f10b6a3aa9bc1a285e361e77de119a7e86c11e",
+      "subject": "fix(walls): keep the outer wall's width and place on aegis one-wall tops",
+      "userNote": [
+        "Top surfaces now print at full size with aegis walls."
+      ]
+    },
+    {
+      "hash": "2f777271dba25ebfdc7f3955c939594b23d5fa04",
+      "subject": "fix(engine): keep round pegs and holes at size by capping wall deviation",
+      "userNote": [
+        "Round pegs and holes print closer to their true size."
+      ]
+    }
+  ],
+  "prs": [
+    {
+      "number": 1553,
+      "title": "chore(release): engine 0.2.4 and desktop 0.2.15",
+      "body": "## For users\nEngine and kit packages report 0.2.4, and the desktop app reports 0.2.15.\n\nIntegrators: no breaking changes since 0.2.3. `sx project-settings` and the `projectDefaults` request option are new, and the kit now ships every setting's default. Read the `sx-core` and `@slicerx/mcp` 0.2.4 changelogs for the rest.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1553",
+      "labels": [
+        {
+          "name": "roadmap:other"
+        },
+        {
+          "name": "integrators"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "a074a55306a36b601e676b0ddbf9a6ad1ab91c84"
+      },
+      "mergedAt": "2026-10-26T16:37:01Z"
+    },
+    {
+      "number": 1552,
+      "title": "fix(settings): read a PrusaSlicer project's 0% shrinkage as no shrinkage",
+      "body": "## For users\nPrusaSlicer projects open at their real size and slice again. A project with a nonzero shrinkage compensation opens without it, and the open note says so.\n\nEffective config from the app's open path, main against this branch, for the 2.9.6 fixture and a T slab saved in 2.9.6. Only these keys change:\n\n| Setting | main | branch |\n|---|---|---|\n| `filament_shrink` | [0] | [100] |\n| `filament_shrinkage_compensation_z` | [0] | [100] |\n| `initial_layer_infill_speed` | [0] | [100] (50% of the 200 mm/s infill speed) |\n\nEach config, sliced by the CLI on the default printer (256 x 256 mm plate):\n\n| File | main | branch |\n|---|---|---|\n| prusaslicer-2.9.6.3mf | refused, part 2000 x 2000 mm | 100 layers |\n| prusaslicer-2.9.6-tslab.3mf | refused, part 3000 x 800 mm | 90 layers |\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1552",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "8afd4ed1b43f8fcfc8f0416153bc8fd97f64dcf7"
+      },
+      "mergedAt": "2026-10-26T16:11:39Z"
+    },
+    {
+      "number": 1550,
+      "title": "fix(core): iron each object on its own filament inside the layer's tool order",
+      "body": "## For users\nMulti-filament plates with ironing now keep each part on its own filament. On main, an A1 plate with a 5 mm box on filament 1 and a 20 mm box on filament 2 printed the 20 mm box from 5.2 mm up on filament 1. The same happened on P1S, X1C and H2D projects, with or without the prime tower and with support on or off. Plates without ironing, or printed by object, print as before.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1550",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "7dbc89d7a4766a705daebe8a6409be9d6022537c"
+      },
+      "mergedAt": "2026-10-26T15:05:50Z"
+    },
+    {
+      "number": 1549,
+      "title": "fix(core): state a round overhang bead's diameter as its height",
+      "body": "## For users\nOverhang walls with thick bridges now show their real round height in the preview.\n\nMoves, E and speeds are byte identical. Only the `;HEIGHT:` lines and the preview's segment heights for those beads change.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1549",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "8476f492898bef725929ede9899410797c833c18"
+      },
+      "mergedAt": "2026-10-26T14:35:06Z"
+    },
+    {
+      "number": 1547,
+      "title": "test(e2e): bound the arrange undo journey's poll reads",
+      "body": "## For users\nNothing changes for users. This is test-only.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1547",
+      "labels": [
+        {
+          "name": "roadmap:stability"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "412313fab7c97319b0b223c6f8d1966450f1926f"
+      },
+      "mergedAt": "2026-10-26T14:04:02Z"
+    },
+    {
+      "number": 1546,
+      "title": "fix(core): start the floating shell band at the inner wall's spacing edge",
+      "body": "## For users\nFloating vertical shells no longer push into the inner wall. On leaning walls they fill out to the edge of the band over the infill. Against main, the estimated print time of the 20 stock P1S, X1C, A1 and H2D test projects changes by 0.04% or less (x-mark 3207.0 to 3205.7 s on the P1S). Slicing time is the same: x-mark 0.201 to 0.202 s wall, 2.497 to 2.505 s CPU (median of 30 interleaved runs).\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1546",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "7495313e11e0698950137beb145a016300b3ab77"
+      },
+      "mergedAt": "2026-10-26T13:18:37Z"
+    },
+    {
+      "number": 1544,
+      "title": "test(e2e): end the held pane slide instead of playing it on",
+      "body": "## For users\nNothing changes for users. This is test-only.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1544",
+      "labels": [
+        {
+          "name": "roadmap:stability"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "9d2e9ad2ef6a44ffc34d504219961ca9c5765975"
+      },
+      "mergedAt": "2026-10-26T11:09:03Z"
+    },
+    {
+      "number": 1543,
+      "title": "perf(core): build a layer's arachne walls once when no top run applies",
+      "body": "## For users\nSingle-part prints with only one wall on top slice about 2% faster, with the same G-code.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1543",
+      "labels": [
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "6df1fbc831c7048e1bc3827c12b9bc45335e12bb"
+      },
+      "mergedAt": "2026-10-26T11:37:12Z"
+    },
+    {
+      "number": 1542,
+      "title": "fix(core): zero first-layer and support widths, overhang wall width",
+      "body": "## For users\nFirst-layer and support widths set to 0, and overhang walls, now print at the right width.\n\nFilament per mm by feature, main against this branch, from our own G-code (feature labels as written). MK4 and Ender-3 V3 KE are the shipped profiles. The \"zero\" setups use outer 0.42, inner 0.45, internal solid 0.42, first layer and support at 0, and line width 0.48 (MK4) or 0.42 (Ender). L1 is the first layer. Cube is a 20 mm cube, ledge is a 24 mm slab hanging 16 mm off an 8 mm pillar.\n\n| Setup | Part | Feature | main | branch | Change |\n|---|---|---|---|---|---|\n| MK4 | cube | all | | | same file |\n| MK4 | x-mark | Overhang wall | 0.029097 | 0.029404 | +1.1% |\n| MK4 | ledge, bridge flow 1 | Overhang wall | 0.029098 | 0.031227 | +7.3% |\n| MK4 | ledge, bridge flow 0.8 | Overhang wall | 0.023278 | 0.031227 | +34.2% |\n| Ender | cube | all | | | same file |\n| Ender | x-mark | Overhang wall | 0.029098 | 0.030736 | +5.6% |\n| Ender | ledge, bridge flow 1 | Overhang wall | 0.029097 | 0.031924 | +9.7% |\n| Ender | ledge, bridge flow 0.8 | Overhang wall | 0.023277 | 0.031924 | +37.2% |\n| MK4 zero | cube | L1 outer wall | 0.033173 | 0.030729 | -7.4% |\n| MK4 zero | cube | L1 bottom surface | 0.033172 | 0.030729 | -7.4% |\n| MK4 zero | ledge | L1 inner wall | 0.033175 | 0.033175 | 0.0% |\n| MK4 zero | ledge, support | L1 support | 0.033171 | 0.035616 | +7.4% |\n| MK4 zero | ledge, support | Support | 0.037290 | 0.044439 | +19.2% |\n| MK4 zero | ledge, support | Support interface | 0.039626 | 0.048996 | +23.6% |\n| MK4 zero | ledge, bridge flow 1 | Overhang wall | 0.029098 | 0.032323 | +11.1% |\n| MK4 zero | x-mark | L1 outer wall | 0.033174 | 0.030729 | -7.4% |\n| Ender zero | cube | L1 outer wall | 0.033173 | 0.030729 | -7.4% |\n| Ender zero | ledge, support | L1 support | 0.033171 | 0.030726 | -7.4% |\n| Ender zero | ledge, support | Support interface | 0.042045 | 0.044566 | +6.0% |\n| Ender zero | x-mark | L1 bottom surface | 0.033172 | 0.030727 | -7.4% |\n\nEvery other feature is within 0.2% of main. Support layers use their own heights here (`independent_support_layer_height` is on), so the whole-print support numbers mix layer heights; the tests below check support at 0.2 mm layers exactly. Total filament on the x-mark moves by 0.1 to 0.5 mm. On the zero-width ledge with support it goes from 374.9 to 403.9 mm (MK4) and 365.8 to 372.6 mm (Ender).\n\nBambu Lab output is byte-identical to main for stock profiles, which set `initial_layer_line_width` to 0.42 (checked below). A Bambu Lab project file that leaves `initial_layer_line_width` out now reads it as unset, the same as 0, so its first-layer lines and first-layer support print at their own feature widths instead of one shared width. Those projects may see different first-layer and support widths after this change.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1542",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "7fbd4298a26ed532f2780202a0b48ccffb357f12"
+      },
+      "mergedAt": "2026-10-26T10:41:26Z"
+    },
+    {
+      "number": 1541,
+      "title": "fix(core): run sparse hooks to the tip of a narrow tongue",
+      "body": "## For users\n- Tapering parts no longer leave an empty strip down the middle where sparse infill starts, with inner walls narrower than the stock width or with three or more walls.\n- Filament: +0.24 % to +0.34 % on the affected parts we measured (+0.26 % with 0.40 mm inner walls, +0.34 % with 0.55 mm inner walls, +0.24 % with three walls). Every stock project opens byte for byte as on main, so 0 % there.\n- Still open:\n  - With four walls, a strip that ends at the wide end of a part before any sparse line enters it (part widths 3.66 to 3.91 mm on the test wedge, up to 3.9 mm of part empty). The hook needs a line end to start from, and there is none there.\n  - Tongues longer than five anchor lengths (about 8 mm) keep their last stretch empty: 1.0 to 1.4 mm on the test wedge, with 3 or 4 walls and inner walls of 0.35 to 0.38 mm.\n  - The spot where the strip is still narrower than one sparse line, about 0.3 mm of part, stays as before.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1541",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "f37105881614fa9fd2abde2de2b5fafbfb149d1e"
+      },
+      "mergedAt": "2026-10-26T09:38:21Z"
+    },
+    {
+      "number": 1540,
+      "title": "fix(core): print a set layer height as set",
+      "body": "## For users\nLayer counts on a 20 mm cube (a cone for the C, A and S rows), main against this branch. P1S and A1 profiles: maximum 0.28 mm, minimum 0.08 mm. Ender-3 V3 profile: maximum 0.35 mm, minimum 0.10 mm. \"Ender-3 V3 at 0.24\" is the same profile with its maximum set to 0.24 mm. First layer 0.2 mm unless the row says otherwise.\n\n| Printer | Case | main | This branch |\n|---|---|---|---|\n| P1S, A1 | Layer 0.30 | 72 (0.28 mm) | 67 (0.30 mm) |\n| P1S, A1 | Layer 0.32 | 72 (0.28 mm) | 63 (0.32 mm) |\n| P1S, A1 | Layer 0.36 | 72 (0.28 mm) | 56 (0.36 mm) |\n| P1S, A1 | Cone, layer 0.32 (plain, adaptive key, sleipnir quality) | 72 (0.28 mm) | 63 (0.32 mm) |\n| P1S, A1 | First layer 0.32, layer 0.32 | 71 (0.32, then 0.28 mm) | 62 (all 0.32 mm) |\n| P1S, A1 | Object layer 0.32, plate 0.20 | 72 (0.28 mm) | 63 (0.32 mm) |\n| P1S, A1 | Layer 0.05 | 248 (0.08 mm) | 397 (0.05 mm) |\n| P1S, A1 | Layer 0.03 | 100 (fell back to 0.20 mm) | Refused: layer height 0.03 mm is below the 0.04 mm minimum |\n| P1S, A1 | Layer 0.44 | Refused: bridge_line_width, a 0.400 mm line is not wider than the 0.4 mm layer | Refused: layer height 0.44 mm cannot exceed the 0.4 mm nozzle diameter |\n| Ender-3 V3 | Layer 0.38 | 58 (0.35 mm) | 53 (0.38 mm) |\n| Ender-3 V3 | Object layer 0.38, support off | Refused: support_line_width, a 0.380 mm line is not wider than the 0.38 mm layer | 53 (0.38 mm) |\n| Ender-3 V3 | Layer 0.06 | 199 (0.10 mm) | 331 (0.06 mm) |\n| Ender-3 V3 | Layer 0.03 | 100 (fell back to 0.20 mm) | Refused: below the 0.04 mm minimum |\n| Ender-3 V3 | Layer 0.44 | Refused: skin_infill_line_width, line not wider than the layer | Refused: cannot exceed the 0.4 mm nozzle diameter |\n| Ender-3 V3 at 0.24 | Layer 0.32 | 83 (0.24 mm) | 63 (0.32 mm) |\n\nUnchanged on every printer: layer 0.20 and 0.12, layer equal to the maximum (0.28, 0.35), first layer above the maximum with 0.20 layers, object layer 0.12, and every height range case.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1540",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "c04b18155101d2ae5e82e43036dbdb9c84ded9b9"
+      },
+      "mergedAt": "2026-10-26T08:06:39Z"
+    },
+    {
+      "number": 1539,
+      "title": "fix(core): slow arachne overhang walls by the share of their own bead",
+      "body": "## For users\nOn arachne walls, overhangs start slowing at a smaller lean, about 8.8 degrees on a 0.42 mm wall at 0.2 mm layers (the classic curve starts near 13). The slowdown now comes in finer steps that follow each bead's real width. With the stock A1 and P1S overhang speeds, the first slower step is at 20 degrees (162.5 mm/s), where the classic curve held 200 until 23 degrees. Print time goes up slightly on leaning parts. On our 31-wedge stock A1 sweep the estimate went from 52m 16s to 52m 37s.\n\nSlicing time against main, 7 interleaved base/new rounds of 5 projects, release build, median wall time per slice (1-minute load 25.6 to 27.9 at round start):\n\n| Project | main | this branch |\n| --- | --- | --- |\n| 31 wedges, stock A1 | 0.083 s | 0.083 s |\n| 71 wedges, knots far apart | 0.161 s | 0.164 s |\n| 66 wedges, 0.25 degree steps | 0.139 s | 0.137 s |\n| 44 wedges, three wall loops | 0.132 s | 0.131 s |\n| 48 thin leaning plates | 0.122 s | 0.120 s |\n\nThe differences are within run-to-run spread.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1539",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "af79b6baeaf3a4f7d68c1436bd29f1fe0a244026"
+      },
+      "mergedAt": "2026-10-26T09:00:38Z"
+    },
+    {
+      "number": 1537,
+      "title": "fix: read the Bambu Studio project defaults from one shared table",
+      "body": "## For users\nCompared with main, one case gets worse in time: a Bambu Studio project that never names a prime tower wall, sliced in the app or through the MCP server, now prints the rib tower, as it already did through `sx slice`. On the test project (P1S, two filaments, tower on) the tower goes from about 34.6 x 11.8 mm (rectangle) to about 24.5 x 24.1 mm (rib), and the estimate goes from 1h28m58s to 1h34m38s.\n\nIntegrators: Bambu Studio projects with no tower wall key now slice with the rib tower through the MCP server and the app, as they do through `sx slice`. `sx project-settings <file.3mf>` prints the settings a project slices with, `slicerx_inspect_project` returns them as `project_config`, and requests can opt in with `\"options\": {\"projectDefaults\": true}`. Request clients should take `config` from one of these instead of the raw project JSON.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1537",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        },
+        {
+          "name": "integrators"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "0d5b3ccdf3a2e0bf9a59f6c5aa90c42f22e71266"
+      },
+      "mergedAt": "2026-10-26T05:58:43Z"
+    },
+    {
+      "number": 1536,
+      "title": "fix(core): label thick bridge overhang walls as round beads the nozzle tall",
+      "body": "## For users\nWith thick bridges on, the slice preview now shows overhang walls as the round, nozzle-tall threads they print as. Before, it drew them as flat strips one layer tall, so the preview understated how those overhangs would look. The printed part is the same as before.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1536",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "3ac54d981907ab9386558c23456f9541c3205120"
+      },
+      "mergedAt": "2026-10-26T07:04:01Z"
+    },
+    {
+      "number": 1535,
+      "title": "fix(core): start a vase's spiral where its base ends",
+      "body": "## For users\nSpiral vases start their wall straight from the base, with no retraction or prime blob at the foot of the wall.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1535",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "86e4c32ff2bef0601b01a6f5af76810b62393e31"
+      },
+      "mergedAt": "2026-10-26T06:33:02Z"
+    },
+    {
+      "number": 1534,
+      "title": "fix(app): stack the view switch and the legend chip in a narrow view",
+      "body": "## For users\nIn a narrow window, the view switch and the legend chip over the 3D view no longer run off the right edge.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1534",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:phone"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "c83a0c76bb896825749081644a9bab8b824cc800"
+      },
+      "mergedAt": "2026-10-26T05:32:28Z"
+    },
+    {
+      "number": 1532,
+      "title": "fix(cli): say when a known printer's G-code needs a person's review",
+      "body": "## For users\nA refused project G-code now says it needs review and how to approve it.\n\nIntegrators: a CLI refusal of custom G-code for a known printer has a second stderr line; MCP slice errors for G-code a person could approve carry `details.reason` `gcode_review`.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1532",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        },
+        {
+          "name": "integrators"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "d8712bade52edaf99f52b281912ae317d05206fc"
+      },
+      "mergedAt": "2026-10-26T03:04:46Z"
+    },
+    {
+      "number": 1531,
+      "title": "fix: print each plate's prime tower at the project's own spot",
+      "body": "## For users\nEach plate of a multi-plate project prints its prime tower where the project put it.\n\nIntegrators: `sx slice` of a project, and a request that names a project plate while its config carries `wipe_tower_x` and `wipe_tower_y`, now keep that spot with automatic placement off unless the request sets `prime_tower_auto_position`.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1531",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        },
+        {
+          "name": "integrators"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "d589c032ba81135dbdcb8e34a58ba8d5eaeac417"
+      },
+      "mergedAt": "2026-10-26T04:01:51Z"
+    },
+    {
+      "number": 1530,
+      "title": "perf(voronoi): write FixedInt products straight into the result, and time two more stages",
+      "body": "## For users\nSlicing is about 1.5 to 2% lighter on CPU, with the same G-code. The timing report now has internal bridge and seam plan stages.\n\nIntegrators: `stageMicros` gains two keys, `bridges` and `seams`. Code that reads known stage names is unaffected, and code that sums every key now counts these two as well.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1530",
+      "labels": [
+        {
+          "name": "roadmap:slice"
+        },
+        {
+          "name": "integrators"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "329f338572660eed46eab5c9c32e242c89b8a7f6"
+      },
+      "mergedAt": "2026-10-26T03:30:04Z"
+    },
+    {
+      "number": 1529,
+      "title": "fix(gcode): acceleration for wipes and layer-end travels",
+      "body": "## For users\nOn the A1 and A1 mini, the lift and the moves to the timelapse park position now run at the travel acceleration instead of the print acceleration. Wipes on every printer now run at the layer's default acceleration, not the last path's.\n\nMost prints change by a few seconds against main: the A1 x-mark goes from 1h 13m 16s to 1h 13m 3s, and the A1 two-color x-mark from 3h 3m 9s to 3h 2m 45s. An A1 with every acceleration set to 3000 gets slower (13m 39s to 13m 56s on a cube), because its paths after the head wrap check now run at the 3000 the person set instead of the template's 5000.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1529",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "e575bb3cffca8d894281421bd8a2aa23bce9df18"
+      },
+      "mergedAt": "2026-10-26T02:31:17Z"
+    },
+    {
+      "number": 1527,
+      "title": "fix(viewport): three merge queue flakes, two of them in the 3D view",
+      "body": "## For users\nA click right after a view change on a slow computer lands where the new view shows it.\nResizing a side pane on a very slow computer holds up the 3D view once instead of twice.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1527",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:stability"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "a0dc17877f225d7dbef241a5beb66354e963478c"
+      },
+      "mergedAt": "2026-10-26T00:34:25Z"
+    },
+    {
+      "number": 1526,
+      "title": "feat(kit): ship every setting's default to integrators",
+      "body": "## For users\nIntegrators: read every setting's default from `defaults.json` in the kit (listed under `files` in `kit-manifest.json`) or with `slicerx_list_setting_defaults`, instead of hardcoding values. Only process defaults are what the engine slices with when a key is missing; printer and filament defaults are the app's starting preset.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1526",
+      "labels": [
+        {
+          "name": "roadmap:other"
+        },
+        {
+          "name": "integrators"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "b00b3dab0133d91922c418a2fa42d8dce9ccbcb1"
+      },
+      "mergedAt": "2026-10-26T02:04:35Z"
+    },
+    {
+      "number": 1525,
+      "title": "perf(equalizer): visit only the live role in the rate smoothing window",
+      "body": "## For users\nPlates that use extrusion rate smoothing slice faster, with the same G-code.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1525",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "ffb3e7edb555f546999e19ceb3b219ce304a60f6"
+      },
+      "mergedAt": "2026-10-26T01:27:55Z"
+    },
+    {
+      "number": 1524,
+      "title": "perf(core): index painted seam triangles for the near test",
+      "body": "## For users\nProjects with painted seams slice faster, with the same G-code.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1524",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "b4c37b246bd2eefadb8fcd2b38bcba36d98886c4"
+      },
+      "mergedAt": "2026-10-26T01:03:58Z"
+    },
+    {
+      "number": 1523,
+      "title": "fix(core): cut the skirt to the bed like the brim",
+      "body": "## For users\nA skirt over the bed edge is now cut to fit with a note naming the part, instead of printing off the bed or refusing the plate.\n\nIntegrators: A skirt over the bed edge is now clipped with a note instead of printing off the bed or being refused.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1523",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        },
+        {
+          "name": "integrators"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "21240f8de33243b927d32a42ae2f3e26ce68fee6"
+      },
+      "mergedAt": "2026-10-26T00:05:03Z"
+    },
+    {
+      "number": 1522,
+      "title": "perf(viewport): drop the app's irradiance read back",
+      "body": "## For users\nOn computers without a working graphics card, the 3D view shows up 0.7 to 1.3 s sooner. It looks the same.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1522",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:other"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "5be825a56b6b4f10d72ae3d14b6d0a2df3dc93e0"
+      },
+      "mergedAt": "2026-10-25T23:29:39Z"
+    },
+    {
+      "number": 1521,
+      "title": "fix(core): draw the start purge line where the nozzle lays it",
+      "body": "## For users\nThe preview draws a P1S, X1 or Neptune 4 purge line where it prints.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1521",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "6f869bd42e42d1cc3f9fafbc1e3e49f92f9c3fc2"
+      },
+      "mergedAt": "2026-10-25T22:34:07Z"
+    },
+    {
+      "number": 1520,
+      "title": "perf(core): grow the layer below once per layer for every filament",
+      "body": "## For users\nMulti-filament plates slice faster, with the same G-code. On a 250-layer project plate that uses three filaments, the slice drops from 8.92 s to 4.31 s (median of 5 interleaved rounds) and CPU time from 71 s to 31 s. A single-filament plate (x-mark on a P1S) is unchanged: 0.298 s before, 0.291 s after, which is within noise.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1520",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "b59f261b6d8766d58273a428328ea8f060a5191e"
+      },
+      "mergedAt": "2026-10-25T21:59:26Z"
+    },
+    {
+      "number": 1519,
+      "title": "test(e2e): wait for a pick's framing to land in the Model framing test",
+      "body": "## For users\nNothing changes for users. This is test-only.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1519",
+      "labels": [
+        {
+          "name": "roadmap:stability"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "f2b17e8a96bc7f07a460c2c56326581e3898706c"
+      },
+      "mergedAt": "2026-10-25T21:04:21Z"
+    },
+    {
+      "number": 1518,
+      "title": "fix(walls): give tiny closed walls their seam and seam gap",
+      "body": "## For users\nTiny pins under about 1 mm get a proper seam and seam gap, so their wall no longer runs back over its own start.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1518",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "7ba9a16211d4d6d68068285c15e10a4cca90ed5b"
+      },
+      "mergedAt": "2026-10-25T20:31:44Z"
+    },
+    {
+      "number": 1517,
+      "title": "test(e2e): close the 3D view notice in emptyMimirTab instead of waiting it out",
+      "body": "## For users\nNothing changes for users. This is test-only.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1517",
+      "labels": [
+        {
+          "name": "roadmap:stability"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "7648d59f50047ea071ebb5f50b806fec8547ec95"
+      },
+      "mergedAt": "2026-10-25T19:34:11Z"
+    },
+    {
+      "number": 1516,
+      "title": "fix(core): printer_structure keys the session",
+      "body": "## For users\nIn the desktop app, switching a printer to or from a delta now updates the collision warnings without reopening the project.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1516",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "9c085051bd4c2733bae6765a7419ba0bb4342254"
+      },
+      "mergedAt": "2026-10-25T19:05:25Z"
+    },
+    {
+      "number": 1515,
+      "title": "fix(walls): keep the outer wall's width and place on aegis one-wall parts",
+      "body": "## For users\nWith aegis walls, single-wall parts and a single-wall first layer now print the outer wall at full width and in its proper place.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1515",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "4b2fdb1938a7d8d1731d505ca390227344b35a0f"
+      },
+      "mergedAt": "2026-10-25T18:35:34Z"
+    },
+    {
+      "number": 1514,
+      "title": "fix(mcp): give a project the G-code SlicerX ships for its printer",
+      "body": "## For users\nA project opened through the MCP server by printer name now slices with that printer's start and filament change G-code, the same as in the app.\n\nIntegrators: project requests now carry the printer's start and change G-code, and slicerx_get_profile for a printer: profile lists that G-code too.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1514",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        },
+        {
+          "name": "integrators"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "547aa6c2c9724aa6e0f6e37e26d46dc822e83b8f"
+      },
+      "mergedAt": "2026-10-25T18:00:20Z"
+    },
+    {
+      "number": 1513,
+      "title": "fix(core): read the collision report's travel and lift settings per run",
+      "body": "## For users\nIn the desktop app, collision warnings and their suggested fixes now follow edits to travel speed, retraction, Z hop, Z speed and the filament change G-code without reopening the project.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1513",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "99ef92c1a2e1178f8fd077366af843ac5b66c9de"
+      },
+      "mergedAt": "2026-10-25T17:04:38Z"
+    },
+    {
+      "number": 1512,
+      "title": "fix(arrange): keep a small part's long skirt off the bed edge and keep-out areas",
+      "body": "## For users\nArrange keeps a skirt with a minimum length off the bed edge and the printer's keep-out areas.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1512",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "168160b4b2bb7886a8a97ff46248aabbe3db9b8f"
+      },
+      "mergedAt": "2026-10-25T16:31:55Z"
+    },
+    {
+      "number": 1511,
+      "title": "fix(core): key a new session on settings that shape paths",
+      "body": "## For users\nIn the desktop app, turning on infill aligned to the model after a first slice now turns the infill on the next slice, without reopening the project.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1511",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "b27b4541da4fb95b9e1b8d5edccf440eb1011ff1"
+      },
+      "mergedAt": "2026-10-25T16:03:31Z"
+    },
+    {
+      "number": 1508,
+      "title": "fix(walls): keep the outer wall's width and place on aegis one-wall tops",
+      "body": "## For users\nWith aegis walls, the top layer's outer wall now prints at the same width and place as the layers below, so tops come out at size.\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1508",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "02f10b6a3aa9bc1a285e361e77de119a7e86c11e"
+      },
+      "mergedAt": "2026-10-25T14:28:29Z"
+    },
+    {
+      "number": 1507,
+      "title": "fix(engine): keep round pegs and holes at size by capping wall deviation",
+      "body": "## For users\nRound pegs and holes print closer to size with aegis and arachne walls. With arc fitting off, files with many round walls get bigger (about 17 percent on a part full of holes).\n",
+      "url": "https://github.com/slicerx-oss/slicerx/pull/1507",
+      "labels": [
+        {
+          "name": "user-facing"
+        },
+        {
+          "name": "roadmap:slice"
+        }
+      ],
+      "mergeCommit": {
+        "oid": "2f777271dba25ebfdc7f3955c939594b23d5fa04"
+      },
+      "mergedAt": "2026-10-25T14:04:03Z"
+    }
+  ]
+}
