@@ -6,8 +6,11 @@
 //! inner edge lies over sparse infill.
 //!
 //! - Which pieces: one that overlaps the lower layer's unsupported area (the sparse infill areas of every region
-//!   of the layer below, empty ones at 0% density included) is a floating vertical shell; the other narrow pieces
-//!   stay internal solid infill. Each piece is decided on its own.
+//!   of the layer below, empty ones at 0% density included, and the band its vertical shell rule alone makes
+//!   solid where it is a sparse line wide, less its internal bridges: [`open_below`]) is a floating vertical shell
+//!   when no circle [`floating_width`] wide fits in it; the other narrow pieces stay internal solid infill. Each
+//!   piece is decided on its own. So the first solid layer over an internal bridge rests on it, and the layers
+//!   above that one float where they reach past the solid the surfaces below them ask for.
 //! - How: concentric variable-width beads, like the other narrow pieces. A bead that encloses another prints
 //!   first, otherwise the nearest next. The first closed bead starts where its longest supported run starts
 //!   (supported: not over the unsupported area, or on the lower layer's sparse lines); each later closed bead
@@ -113,8 +116,52 @@ pub(crate) fn unsupported(lower_sparse: &Shapes) -> Shapes {
     perimeters::offset(lower_sparse, -EPS)
 }
 
-/// The narrow pieces that rest on the unsupported area (the floating vertical shell), and the others.
-pub(crate) fn split(narrow: &Shapes, unsupported: &Shapes) -> (Shapes, Shapes) {
+/// The widest a floating piece may be with fixed-width walls, mm: a narrow piece that a circle this wide fits in
+/// stays internal solid infill. On the stock 0.42 mm lines and two walls, the ring a box leaves around a smaller
+/// box on top floats up to 4.5 mm wide, and not from 4.75 mm.
+const FLOATING_WIDTH_MM: f64 = 4.625;
+
+/// [`FLOATING_WIDTH_MM`] with variable-width walls: the ring floats up to 4.75 mm wide, and not from 5.0 mm.
+const FLOATING_WIDTH_VARIABLE_MM: f64 = 4.9;
+
+/// The widest a floating piece may be with the region's walls, internal units.
+pub(crate) fn floating_width(cfg: &PrintConfig) -> i32 {
+    let mm = if cfg.arachne_walls() {
+        FLOATING_WIDTH_VARIABLE_MM
+    } else {
+        FLOATING_WIDTH_MM
+    };
+    (mm * SCALE).round() as i32
+}
+
+/// The area of the layer below (`lower`) that leaves a narrow piece over it unsupported, for [`split`]: its sparse
+/// infill area and the band its vertical shell rule alone makes solid where that band is at least a sparse infill
+/// line wide (the strip under the walls of a part that stands on the layers above, past the solid the surfaces ask
+/// for; not the thin bands along a leaning wall), less what the layer prints there instead of sparse infill (`cut`,
+/// `bridging::printed_cut`, grown by half a sparse infill line over the ragged edge of its bridges, which falls a
+/// tenth of a millimeter or two short of the piece above in places), shrunk by a hair as [`unsupported`] is.
+pub(crate) fn open_below(lower: &crate::bridging::Facts, cut: &Shapes, cfg: &PrintConfig) -> Shapes {
+    let r = (cfg.sparse_infill_width() / 2.0 * SCALE).round() as i32;
+    let core = if lower.band.is_empty() {
+        Shapes::new()
+    } else {
+        perimeters::offset(&lower.band, -r)
+    };
+    let open = if core.is_empty() {
+        lower.sparse.clone()
+    } else {
+        let wide = perimeters::intersection(&perimeters::offset(&core, r), &lower.band);
+        perimeters::union_all(&[&lower.sparse, &wide])
+    };
+    if cut.is_empty() || open.is_empty() {
+        return unsupported(&open);
+    }
+    unsupported(&perimeters::difference(&open, &perimeters::offset(cut, r)))
+}
+
+/// The narrow pieces that rest on the unsupported area and that no circle `width` (internal units) wide fits in
+/// (the floating vertical shell), and the others.
+pub(crate) fn split(narrow: &Shapes, unsupported: &Shapes, width: i32) -> (Shapes, Shapes) {
     let (mut floating, mut rest) = (Shapes::new(), Shapes::new());
     let ub = perimeters::bounds(unsupported);
     for shape in narrow {
@@ -125,7 +172,10 @@ pub(crate) fn split(narrow: &Shapes, unsupported: &Shapes) -> (Shapes, Shapes) {
             }
             _ => false,
         };
-        if near && !perimeters::intersection(&perimeters::offset(&one, EPS), unsupported).is_empty() {
+        if near
+            && perimeters::offset(&one, -(width / 2)).is_empty()
+            && !perimeters::intersection(&perimeters::offset(&one, EPS), unsupported).is_empty()
+        {
             floating.push(shape.clone());
         } else {
             rest.push(shape.clone());
@@ -787,9 +837,20 @@ mod tests {
         let u = unsupported(&sparse);
         let over = vec![rect(9.0, 2.0, 12.0, 8.0)];
         let beside = vec![rect(10.0, 2.0, 13.0, 8.0)];
-        let (f, r) = split(&vec![over.clone(), beside.clone()], &u);
+        let (f, r) = split(&vec![over.clone(), beside.clone()], &u, mm(4.625));
         assert_eq!(f, vec![over]);
         assert_eq!(r, vec![beside]);
+    }
+
+    #[test]
+    fn a_piece_that_a_circle_of_the_floating_width_fits_in_does_not_float() {
+        let sparse: Shapes = vec![vec![rect(0.0, 0.0, 10.0, 10.0)]];
+        let u = unsupported(&sparse);
+        let thin = vec![rect(9.0, 0.0, 13.5, 10.0)];
+        let wide = vec![rect(9.0, 0.0, 13.75, 10.0)];
+        let (f, r) = split(&vec![thin.clone(), wide.clone()], &u, mm(4.625));
+        assert_eq!(f, vec![thin]);
+        assert_eq!(r, vec![wide]);
     }
 
     fn stock_widths(overlap_percent: f64) -> PrintConfig {
