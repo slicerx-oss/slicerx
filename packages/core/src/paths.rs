@@ -1194,8 +1194,12 @@ pub(crate) fn push_tower(
 }
 
 /// The speed of gap beads in the fill: the gap infill speed, never above the inner wall's.
+/// On the first layer (over no raft) they print at the first layer's infill speed instead.
 #[allow(clippy::cast_possible_truncation, reason = "speeds are small")]
-fn fill_gap_speed(cfg: &PrintConfig, inner: f32) -> f32 {
+fn fill_gap_speed(cfg: &PrintConfig, layer: u32, inner: f32) -> f32 {
+    if layer == 0 && crate::raft::layers_asked(cfg) == 0 {
+        return cfg.initial_layer_infill_speed as f32;
+    }
     cfg.gap_infill_speed.min(f64::from(inner)) as f32
 }
 
@@ -2282,7 +2286,7 @@ pub(crate) fn plan_layer_paths(
                 b.push(
                     w.tool,
                     Feature::GapFill,
-                    fill_gap_speed(cfg, speeds.inner),
+                    fill_gap_speed(cfg, layer, speeds.inner),
                     path.iter().map(|p| Point::new(p.x, p.y)),
                 );
             }
@@ -2291,7 +2295,7 @@ pub(crate) fn plan_layer_paths(
                 b.push_thick(
                     w.tool,
                     Feature::GapFill,
-                    fill_gap_speed(cfg, speeds.inner),
+                    fill_gap_speed(cfg, layer, speeds.inner),
                     &l.points,
                     &l.widths,
                 );
@@ -2344,7 +2348,7 @@ pub(crate) fn plan_layer_paths(
         let g = b.out.paths.len();
         b.width_mm = fw(3);
         b.push_lines(w.tool, bottom_feature, speeds.solid, &w.bottom);
-        b.push_gaps(w.tool, fill_gap_speed(cfg, speeds.inner), &w.gap_bottom);
+        b.push_gaps(w.tool, fill_gap_speed(cfg, layer, speeds.inner), &w.gap_bottom);
         b.width_mm = base_width;
         groups.push(Group {
             start: g,
@@ -2534,7 +2538,7 @@ pub(crate) fn plan_layer_paths(
         let g = b.out.paths.len();
         b.width_mm = fw(3);
         b.push_lines(w.tool, Feature::InternalSolid, speeds.solid, &w.shell);
-        b.push_gaps(w.tool, fill_gap_speed(cfg, speeds.inner), &w.gap_shell);
+        b.push_gaps(w.tool, fill_gap_speed(cfg, layer, speeds.inner), &w.gap_shell);
         groups.push(Group {
             start: g,
             end: b.out.paths.len(),
@@ -2545,7 +2549,7 @@ pub(crate) fn plan_layer_paths(
         let g = b.out.paths.len();
         b.width_mm = fw(4);
         b.push_lines(w.tool, Feature::TopSurface, speeds.top, &w.top);
-        b.push_gaps(w.tool, fill_gap_speed(cfg, speeds.inner), &w.gap_top);
+        b.push_gaps(w.tool, fill_gap_speed(cfg, layer, speeds.inner), &w.gap_top);
         b.width_mm = base_width;
         groups.push(Group {
             start: g,
