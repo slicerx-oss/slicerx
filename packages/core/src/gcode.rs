@@ -876,6 +876,21 @@ fn ooze_prevention(c: &PrintConfig) -> bool {
         && !crate::tower::flag_or(c, "single_extruder_multi_material", true)
 }
 
+/// One nozzle that several filaments share, on a printer that is not a Bambu Lab one: a tool change sets the nozzle
+/// to the new filament's temperature itself (a `G4 S0` and a plain `M104` before the change).
+fn shared_nozzle_temps(c: &PrintConfig, flavor: GcodeFlavor) -> bool {
+    crate::tower::flag_or(c, "single_extruder_multi_material", true)
+        && crate::nozzles::extruders(c) <= 1
+        && !crate::tower::type1(c)
+        && !crate::firmware::bambu_printer(c, flavor)
+}
+
+/// The one temperature in `temps`, or None when they differ (or there are none).
+fn single_temp(temps: &[i64]) -> Option<i64> {
+    let (&first, rest) = temps.split_first()?;
+    rest.iter().all(|&t| t == first).then_some(first)
+}
+
 /// The temperature `slot` prints at on layer `index`.
 fn print_temp(c: &PrintConfig, slot: u8, index: u32) -> f64 {
     let usual = PrintConfig::per_slot(&c.nozzle_temperature, slot, 220.0);
@@ -2163,6 +2178,8 @@ fn emit_layer(
         put_int(b, i64::from(l.index) + 1);
         b.push(b'\n');
     }
+    // The nozzle temperatures the layer's start sets, in order.
+    let mut start_temps: Vec<i64> = Vec::new();
     // Settings a height range changes, written when they differ from the layer below.
     for slot in 1..=out.tool_count.max(1) {
         #[allow(clippy::cast_possible_truncation, reason = "temperatures are small")]
@@ -2172,6 +2189,7 @@ fn emit_layer(
         );
         #[allow(clippy::cast_precision_loss, reason = "temperatures are small")]
         if t != t_prev {
+            start_temps.push(t);
             temperature_line(
                 b,
                 flavor,
@@ -2200,6 +2218,7 @@ fn emit_layer(
             );
             #[allow(clippy::cast_precision_loss, reason = "temperatures are small")]
             if first != usual {
+                start_temps.push(usual);
                 temperature_line(
                     b,
                     flavor,
@@ -2342,6 +2361,29 @@ fn emit_layer(
     }
 
     let mut tool: u8 = if l.start_tool == 0 { u8::MAX } else { l.start_tool };
+    // A shared nozzle: the temperature it was last set to, None when that is not one known value (the layer's start
+    // set different ones). Without a line of the layer's own it is the loaded filament's, which the start or the
+    // last change set.
+    let nozzle_temps = out.tool_count > 1 && shared_nozzle_temps(c, flavor);
+    #[allow(clippy::cast_possible_truncation, reason = "temperatures are small")]
+    let mut nozzle_temp: Option<i64> = if !nozzle_temps {
+        None
+    } else if !start_temps.is_empty() {
+        single_temp(&start_temps)
+    } else if resume_first {
+        // The resumed start heats every filament's nozzle temperature.
+        let all: Vec<i64> = (1..=out.tool_count)
+            .map(|slot| print_temp(c, slot, l.index).round() as i64)
+            .collect();
+        single_temp(&all)
+    } else {
+        let loaded = if l.start_tool == 0 {
+            crate::paths::first_slot(l)
+        } else {
+            l.start_tool
+        };
+        Some(print_temp(c, loaded, l.index).round() as i64)
+    };
     // The filament the start G-code leaves loaded (its last `T` under 255, Orca's
     // `GCodeProcessor::get_gcode_last_filament`): the first layer starts on it without a tool
     // command of its own, as Orca's `set_extruder` after the start G-code writes none.
@@ -2668,6 +2710,18 @@ fn emit_layer(
                     kind(tool.max(1)),
                     kind(p.tool.max(1)),
                 );
+            }
+            // A shared nozzle heats to the new filament's temperature for the layer before the change, once the moves
+            // before it are done (`G4 S0`), when the nozzle was last set to another one.
+            if swap && nozzle_temps {
+                #[allow(clippy::cast_possible_truncation, reason = "temperatures are small")]
+                let want = print_temp(c, p.tool, l.index).round() as i64;
+                if nozzle_temp != Some(want) {
+                    b.extend_from_slice(b"G4 S0\n");
+                    #[allow(clippy::cast_precision_loss, reason = "temperatures are small")]
+                    temperature_line(b, flavor, want as f64, false, None, "");
+                }
+                nozzle_temp = Some(want);
             }
             let tc = e_units(crate::tower::per_slot_raw(
                 &rc,
