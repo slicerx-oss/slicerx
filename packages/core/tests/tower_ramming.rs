@@ -141,6 +141,13 @@ fn slice(cfg: Value, boxes: &[(f64, f64, f64, u8)]) -> String {
 }
 
 const TWO: &[(f64, f64, f64, u8)] = &[(8.0, 102.5, 102.5, 1), (3.0, 132.5, 102.5, 2)];
+const FOUR: &[(f64, f64, f64, u8)] = &[
+    (8.0, 102.5, 102.5, 1),
+    (3.0, 132.5, 102.5, 2),
+    (8.0, 102.5, 132.5, 3),
+    (3.0, 132.5, 132.5, 4),
+];
+
 /// The ramming before one tool change: the layer (1 for the first), the filament it changes away from, the volume
 /// rammed (tower moves wider than 1 mm of bead), mm3, the beads' widths at 0.2 mm, their feeds (mm/min) and the
 /// tower moves between ramming moves that step along Y with filament.
@@ -284,3 +291,30 @@ fn a_shared_nozzle_rams_before_each_change_at_its_own_feeds() {
     }
 }
 
+#[test]
+fn the_ramming_band_adds_to_the_towers_depth() {
+    let depth = |cfg: Value, boxes| rams_of(cfg, boxes).1;
+    let within = |d: f64, lo: f64, hi: f64, what: &str| {
+        assert!((lo..=hi).contains(&d), "{what}: depth {d:.2}, not {lo} to {hi}");
+    };
+    within(depth(mmu(2, STOCK, &[]), TWO), 10.5, 11.5, "stock");
+    within(depth(mmu(4, STOCK, &[]), FOUR), 35.0, 38.0, "four filaments");
+    within(
+        depth(mmu(2, STOCK, &[("flush_multiplier", json!(["1"]))]), TWO),
+        28.0,
+        30.0,
+        "flush x 1.0",
+    );
+    within(
+        depth(mmu(2, STOCK, &[("prime_tower_width", json!("40"))]), TWO),
+        16.5,
+        17.5,
+        "40 mm tower",
+    );
+    within(
+        depth(mmu(2, "250 150 40 40 40 40 40 | 0.05 40", &[]), TWO),
+        13.0,
+        14.0,
+        "lines 1.5 apart",
+    );
+}
