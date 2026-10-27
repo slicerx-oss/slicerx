@@ -264,3 +264,50 @@ fn infill_combination_prints_sparse_infill_every_few_layers() {
     // Capped at the nozzle: four 0.1 mm layers at most.
     assert!(b.windows(2).all(|w| w[1] - w[0] <= 4), "{b:?}");
 }
+
+#[test]
+fn solid_direction_sets_straight_solid_surfaces() {
+    for (deg, odd) in [(0, 90), (30, 120)] {
+        let g = slice(json!({ "solid_infill_direction": deg }));
+        assert_eq!(main_direction(&g, "Bottom surface", 0), deg, "{deg}");
+        assert_eq!(main_direction(&g, "Internal solid infill", 1), odd, "{deg}");
+        assert_eq!(main_direction(&g, "Internal solid infill", 2), deg, "{deg}");
+        assert_eq!(main_direction(&g, "Top surface", 19), odd, "{deg}");
+    }
+}
+
+#[test]
+fn sparse_direction_sets_rectilinear() {
+    for (deg, odd) in [(90, 0), (30, 120)] {
+        let g = slice(json!({ "infill_direction": deg }));
+        assert_eq!(main_direction(&g, "Sparse infill", 8), deg, "{deg}");
+        assert_eq!(main_direction(&g, "Sparse infill", 9), odd, "{deg}");
+    }
+}
+
+#[test]
+fn templates_win_over_directions() {
+    let g = slice(json!({"solid_infill_direction": 30, "solid_infill_rotate_template": "0"}));
+    assert_eq!(main_direction(&g, "Bottom surface", 0), 0);
+    assert_eq!(main_direction(&g, "Internal solid infill", 1), 0);
+    assert_eq!(main_direction(&g, "Internal solid infill", 2), 0);
+    assert_eq!(main_direction(&g, "Top surface", 19), 0);
+    let g = slice(json!({"infill_direction": 90, "sparse_infill_rotate_template": "0,90"}));
+    assert_eq!(main_direction(&g, "Sparse infill", 8), 0);
+    assert_eq!(main_direction(&g, "Sparse infill", 9), 90);
+}
+
+#[test]
+fn aligned_model_adds_turn_to_set_angles() {
+    let g = slice_turned(
+        json!({"align_infill_direction_to_model": true, "solid_infill_direction": 0, "infill_direction": 90}),
+        30.0,
+    );
+    assert_eq!(main_direction(&g, "Bottom surface", 0), 30);
+    assert_eq!(main_direction(&g, "Internal solid infill", 1), 120);
+    assert_eq!(main_direction(&g, "Sparse infill", 8), 120);
+    assert_eq!(main_direction(&g, "Sparse infill", 9), 30);
+    // Not aligned, the angles stay on the bed.
+    let g = slice_turned(json!({"solid_infill_direction": 0}), 30.0);
+    assert_eq!(main_direction(&g, "Bottom surface", 0), 0);
+}
