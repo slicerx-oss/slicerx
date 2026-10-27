@@ -1378,13 +1378,7 @@ const PTFE_BLOCK_C: f64 = 260.0;
 /// flow multipliers its extrusion carries ([`crate::config::CapFlow`]), may not push more than
 /// `filament_max_volumetric_speed` mm3/s through the nozzle.
 pub(crate) fn cap_speeds(layer: &mut crate::output::LayerPaths, cfg: &PrintConfig) {
-    let axis = [
-        machine_limit(cfg, "machine_max_speed_x"),
-        machine_limit(cfg, "machine_max_speed_y"),
-    ]
-    .into_iter()
-    .flatten()
-    .reduce(f64::min);
+    let axis = axis_cap(cfg);
     let height = f64::from(layer.height);
     let flows = cfg.cap_flow(layer.index == 0);
     for p in &mut layer.paths {
@@ -1399,6 +1393,17 @@ pub(crate) fn cap_speeds(layer: &mut crate::output::LayerPaths, cfg: &PrintConfi
             }
         }
     }
+}
+
+/// The lower of the machine's X and Y speed limits, mm/s. `None` when the profile sets neither.
+pub(crate) fn axis_cap(cfg: &PrintConfig) -> Option<f64> {
+    [
+        machine_limit(cfg, "machine_max_speed_x"),
+        machine_limit(cfg, "machine_max_speed_y"),
+    ]
+    .into_iter()
+    .flatten()
+    .reduce(f64::min)
 }
 
 /// Highest print speed the filament's volumetric limit allows for a line of
