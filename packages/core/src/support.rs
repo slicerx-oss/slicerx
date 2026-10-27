@@ -724,6 +724,9 @@ pub(crate) struct StackHeights {
     pub(crate) max_h: f64,
     /// Thickness of the layer that rests on a top surface of the part (the interface flow's), mm.
     pub(crate) bottom_contact_h: f64,
+    /// Round bridge strands (`thick_bridges`): their diameter, mm. A strand thicker than its layer hangs below it,
+    /// and the top contact keeps the gap under the strand.
+    pub(crate) bridge_h: Option<f64>,
     /// The raft under the part, when there is one: the top of its interface layers, the top and
     /// thickness of its contact layer, and its layer count (`SlicingParameters`). The object tops are
     /// then lifted by the raft and its gap.
@@ -853,7 +856,10 @@ pub(crate) fn stack(
                 height: below,
             }
         } else {
-            let z = bottom_l - cfg.top_z_distance;
+            let z = match h.bridge_h.filter(|d| *d > thick_of(l) + Z_EPS) {
+                Some(d) => top_of(l) - d - cfg.top_z_distance,
+                None => bottom_l - cfg.top_z_distance,
+            };
             if z < h.first - Z_EPS {
                 // Under the first layer: nothing can be printed there.
                 continue;
@@ -1333,6 +1339,7 @@ mod grid_tests {
             min_h: 0.07,
             max_h: 0.3,
             bottom_contact_h: 0.2,
+            bridge_h: None,
             raft: None,
         };
         let cfg = SupportConfig::default();
@@ -1359,6 +1366,79 @@ mod grid_tests {
                 .all(|l| l.layer.base.is_empty() && !l.layer.interface.is_empty())
         );
         assert!(stack[29].layer.interface.is_empty());
+    }
+
+    /// The same square, with round bridge strands `bridge_h` across.
+    fn round_strands(bridge_h: Option<f64>, cfg: &SupportConfig) -> Vec<StackLayer> {
+        let n = 60_u32;
+        let tops: Vec<f64> = (1..=n).map(|i| f64::from(i) * 0.2).collect();
+        let thickness = vec![0.2; tops.len()];
+        let models: Vec<Shapes> = (0..n)
+            .map(|i| {
+                if i >= 50 {
+                    rect(100.0, 100.0, 120.0, 120.0)
+                } else {
+                    Vec::new()
+                }
+            })
+            .collect();
+        let none: Vec<Shapes> = vec![Vec::new(); tops.len()];
+        let h = StackHeights {
+            first: 0.2,
+            min_h: 0.07,
+            max_h: 0.3,
+            bottom_contact_h: 0.2,
+            bridge_h,
+            raft: None,
+        };
+        stack(
+            &models,
+            &tops,
+            &thickness,
+            cfg,
+            units(0.42),
+            &none,
+            &none,
+            [110.0, 110.0],
+            h,
+        )
+    }
+
+    #[test]
+    fn the_contact_keeps_its_gap_under_a_round_strand() {
+        // A 0.45 mm strand under the 10.2 mm layer: the contact at 10.2 - 0.45 - 0.2 = 9.55 mm, over 32 even steps.
+        let stack = round_strands(Some(0.45), &SupportConfig::default());
+        assert_eq!(stack.len(), 33);
+        assert!(stack[1..].iter().all(|l| (l.height - 9.35 / 32.0).abs() < 1e-6));
+        assert!((stack[32].top - 9.55).abs() < 1e-6);
+        assert!(
+            stack[30..]
+                .iter()
+                .all(|l| l.layer.base.is_empty() && !l.layer.interface.is_empty())
+        );
+        assert!(stack[29].layer.interface.is_empty());
+        // A 0.75 mm strand: the contact at 9.25 mm, over 31 steps.
+        let stack = round_strands(Some(0.75), &SupportConfig::default());
+        assert_eq!(stack.len(), 32);
+        assert!((stack[31].top - 9.25).abs() < 1e-6);
+        assert!((stack[31].height - 9.05 / 31.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_contact_stays_without_a_strand_below_the_layer_or_a_top_gap() {
+        let tops = |s: &[StackLayer]| s.iter().map(|l| (l.top, l.height)).collect::<Vec<_>>();
+        let plain = round_strands(None, &SupportConfig::default());
+        // A strand no thicker than its layer does not hang below it.
+        let thin = round_strands(Some(0.15), &SupportConfig::default());
+        assert_eq!(tops(&plain), tops(&thin));
+        let zero = SupportConfig {
+            top_z_distance: 0.0,
+            ..SupportConfig::default()
+        };
+        assert_eq!(
+            tops(&round_strands(None, &zero)),
+            tops(&round_strands(Some(0.45), &zero))
+        );
     }
 }
 

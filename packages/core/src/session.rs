@@ -3741,6 +3741,7 @@ impl SliceSession {
             min_h,
             max_h,
             bottom_contact_h: config.layer_height,
+            bridge_h: round_support_beads(config).map(|b| b.0),
             raft: raft.map(|r| r.1),
         };
         let stack = if !independent {
@@ -10390,6 +10391,18 @@ fn bridge_nominal(cfg: &PrintConfig, round: bool) -> f64 {
         return cfg.solid_infill_width();
     }
     line.unwrap_or_else(|| cfg.solid_infill_width())
+}
+
+/// Round bridge strands (`thick_bridges`) on a printer other than a Bambu Lab one: the strand's diameter (the bridge
+/// line width times the root of `bridge_flow`) and the diameter of the bead a support layer prints where it rests on
+/// a top surface of the part (the bridge line width times `bridge_flow`), mm.
+fn round_support_beads(cfg: &PrintConfig) -> Option<(f64, f64)> {
+    if !cfg.thick_bridges || crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+        return None;
+    }
+    let w = bridge_nominal(cfg, true);
+    let f = cfg.bridge_flow.max(0.0);
+    Some((w * f.sqrt(), w * f))
 }
 
 /// Bambu Lab printers spread the strands of each bridge piece evenly across it (`bridging::fill_even`); the
