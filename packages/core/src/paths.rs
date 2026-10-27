@@ -841,6 +841,16 @@ impl Builder<'_> {
         }
         let extra = f64::from(self.out.height) * (1.0 - std::f64::consts::FRAC_PI_4);
         let tol = 0.05 * SCALE;
+        // A piece of gap fill takes the strip's width at its middle, but no less than a tenth of a millimeter where
+        // its wider end has that much; any other piece takes the width of its wider end.
+        let floor = 0.1 * SCALE;
+        let width = |w0: f64, w1: f64| {
+            if feature == Feature::GapFill {
+                f64::midpoint(w0, w1).max(w0.max(w1).min(floor))
+            } else {
+                w0.max(w1)
+            }
+        };
         // (start, end, width of the piece) in order.
         let mut pieces: Vec<(Point, Point, f64)> = Vec::new();
         for i in 0..pts.len() - 1 {
@@ -870,10 +880,10 @@ impl Builder<'_> {
                 for k in 0..count {
                     let w0 = wa + (wb - wa) * k as f64 / n;
                     let w1 = wa + (wb - wa) * (k + 1) as f64 / n;
-                    pieces.push((at(k), at(k + 1), w0.max(w1)));
+                    pieces.push((at(k), at(k + 1), width(w0, w1)));
                 }
             } else {
-                pieces.push((pa, pb, wa.max(wb)));
+                pieces.push((pa, pb, width(wa, wb)));
             }
         }
         let mut i = 0;
