@@ -620,6 +620,41 @@ fn the_toolchange_delay_waits_before_the_park() {
 }
 
 #[test]
+fn the_new_filaments_temperature_follows_the_unload() {
+    let all = changes(&slice(mmu(&[
+        ("nozzle_temperature", json!(["220", "228"])),
+        ("nozzle_temperature_initial_layer", json!(["212", "225"])),
+    ])));
+    assert!(all.len() >= 10, "{} changes", all.len());
+    for c in &all {
+        let want = match (c.layer, c.to) {
+            (1, 2) => "M104 S225",
+            (_, 1) => "M104 S220",
+            _ => "M104 S228",
+        };
+        let unloaded = assert_run(&c.before, &stock_unload()) + 4;
+        // The line follows the unload's last move, before the cooling.
+        let ms = moves(&c.before);
+        let last = ms[unloaded - 1];
+        let at = c.before.iter().position(|l| std::ptr::eq(l, last)).unwrap();
+        assert_eq!(
+            c.before.get(at + 1..at + 3),
+            Some(&[Line::Other("G4 S0".into()), Line::Other(want.into())][..]),
+            "{c:?}"
+        );
+    }
+    // No temperature for a filament slot: one nozzle.
+    let gcode = slice(mmu(&[
+        ("nozzle_temperature", json!(["220", "228"])),
+        ("nozzle_temperature_initial_layer", json!(["212", "225"])),
+    ]));
+    assert!(
+        !gcode.lines().any(|l| l.starts_with("M104 ") && l.contains(" T")),
+        "a per-filament temperature line"
+    );
+}
+
+#[test]
 fn without_ramming_lines_the_cooling_spans_the_tower() {
     let all = changes(&slice(mmu(&[("filament_ramming_parameters", json!(["", ""]))])));
     let c = change(&all, 2, 1);
@@ -698,4 +733,31 @@ fn ramming_off_or_a_tool_changer_gets_no_moves() {
         ("single_extruder_multi_material", json!("0")),
         ("nozzle_diameter", json!(["0.4", "0.4"])),
     ])));
+}
+
+#[test]
+fn the_change_ends_the_old_filament_and_starts_the_new_one() {
+    let gcode = slice(mmu(&[
+        ("filament_start_gcode", json!(["; start A", "; start B"])),
+        ("filament_end_gcode", json!(["; end A", "; end B"])),
+    ]));
+    let lines: Vec<&str> = gcode.lines().map(str::trim).collect();
+    let all = changes(&gcode);
+    assert!(all.len() >= 10, "{} changes", all.len());
+    // Each change into filament 1 ends filament 2 after the park and starts filament 1 after the `T`, before the
+    // nozzle goes back to the park point to load.
+    let mut seen = 0;
+    for (i, l) in lines.iter().enumerate() {
+        if *l != "T0" || i < 40 {
+            continue;
+        }
+        let end = lines[..i].iter().rposition(|t| *t == "; end B").unwrap();
+        let park = lines[..i].iter().rposition(|t| *t == "G1 E2 F2000").unwrap();
+        assert!(park < end, "{:?}", &lines[park..=i]);
+        let start = i + lines[i..].iter().position(|t| *t == "; start A").unwrap();
+        let load = i + lines[i..].iter().position(|t| *t == "G1 E18 F180").unwrap();
+        assert!(start < load, "{:?}", &lines[i..=load]);
+        seen += 1;
+    }
+    assert!(seen >= 5, "{seen} changes into filament 1");
 }
