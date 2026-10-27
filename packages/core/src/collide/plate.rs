@@ -367,12 +367,12 @@ fn seg_dist(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> f64 {
     pd(a, c, d).min(pd(b, c, d)).min(pd(c, a, b)).min(pd(d, a, b))
 }
 
-/// Drops the joins of the solid surfaces (top, bottom, internal solid) that would cross or touch any other path on their
+/// Drops the joins of the solid surfaces (top, bottom, internal solid) that would cross or touch another path on their
 /// layer: a turn along the edge from one fill line to the next is new material, so where it meets another object's
-/// path, the prime tower, a wall or a narrow band's beads beside the surface, the nozzle travels instead (the writer then
-/// moves between the two lines as between any two paths). The joins are the ones the fill made (`LayerPaths::joins`);
-/// the fill's own lines and joins, laid out by the neighbor rules, and the paths a join connects do not count. Owners are not asked: objects that share a
-/// footprint cannot be told apart by place. Returns how many were dropped.
+/// path, the prime tower or a path of another tool, the nozzle travels instead (the writer then moves between the two
+/// lines as between any two paths). The joins are the ones the fill made (`LayerPaths::joins`); the paths of the
+/// join's own object and tool (its walls, a narrow band's beads, gap fill, the fill's own lines and joins) and the
+/// paths a join connects do not count. Returns how many were dropped.
 pub(crate) fn drop_crossing_joins(out: &mut SliceOutput) -> usize {
     // Each layer's joins are checked against its own paths alone, so the layers are checked side by side.
     let keeps = crate::par::map(&out.layers, crossing_keep);
@@ -509,9 +509,18 @@ fn crossing_keep(l: &LayerPaths) -> Option<Vec<bool>> {
                     && o.end - o.start == 2
                     && (o.width_mm - p.width_mm).abs() < 1e-4
             };
+            // A path of the join's own object and tool prints with it, from the same nozzle: its walls, a narrow
+            // band's beads and gap fill do not stop a turn. Another object's path, the prime tower and another tool's
+            // path still do.
+            let mine = |o: &crate::output::PathInfo| {
+                o.owner == p.owner
+                    && p.owner != crate::preview::OBJECT_NONE
+                    && o.tool == p.tool
+                    && o.feature != Feature::PrimeTower
+            };
             !near.filter_map(|k| segs.get(k)).any(|&(j, c, d)| {
                 j != i
-                    && !l.paths.get(j).is_some_and(own)
+                    && !l.paths.get(j).is_some_and(|o| own(o) || mine(o))
                     && !(same(c, a) || same(c, b) || same(d, a) || same(d, b))
                     && seg_dist(a, b, c, d) < JOIN_CLEAR_MM
             })
@@ -757,6 +766,34 @@ mod tests {
         assert!(check(&two_walls(), &zone, false, 0.4, None).is_empty());
     }
 
+    #[test]
+    fn a_join_that_meets_its_own_objects_path_stays() {
+        // A narrow band's bead, a wall or gap fill of the same object and tool across the turn prints with the
+        // surface: the turn stays.
+        for (other, width) in [
+            (Feature::InternalSolid, 0.372),
+            (Feature::InnerWall, 0.45),
+            (Feature::GapFill, 0.2),
+        ] {
+            let mut out = joined_lines(other, width);
+            assert_eq!(drop_crossing_joins(&mut out), 0, "{other:?}");
+            assert_eq!(out.layers[0].paths.len(), 4);
+        }
+    }
+
+    #[test]
+    fn a_join_of_no_known_object_still_meets_every_path() {
+        // A turn whose object is not known cannot tell its own paths apart: a bead or a wall across it drops it.
+        for (other, width) in [(Feature::InternalSolid, 0.372), (Feature::InnerWall, 0.45)] {
+            let mut out = joined_lines(other, width);
+            for p in &mut out.layers[0].paths {
+                p.owner = crate::preview::OBJECT_NONE;
+            }
+            assert_eq!(drop_crossing_joins(&mut out), 1, "{other:?}");
+            assert_eq!(out.layers[0].paths.len(), 3);
+        }
+    }
+
     /// Two internal solid lines joined by a turn along the top, and one more path across the turn: `other` with its
     /// feature and width.
     fn joined_lines(other: Feature, width: f32) -> SliceOutput {
@@ -775,6 +812,16 @@ mod tests {
         .collect();
         let mut cross = path(6, 8, other);
         cross.width_mm = width;
+        // The lines, the turn and the path across it all belong to object 1 and print with tool 1.
+        let mut paths = vec![
+            path(0, 2, Feature::InternalSolid),
+            path(2, 4, Feature::InternalSolid),
+            path(4, 6, Feature::InternalSolid),
+            cross,
+        ];
+        for p in &mut paths {
+            p.owner = 1;
+        }
         SliceOutput {
             layers: vec![LayerPaths {
                 index: 3,
@@ -782,12 +829,7 @@ mod tests {
                 height: 0.2,
                 joins: vec![[Point::from_mm(0.0, 10.0), Point::from_mm(1.0, 10.0)]],
                 points: pts,
-                paths: vec![
-                    path(0, 2, Feature::InternalSolid),
-                    path(2, 4, Feature::InternalSolid),
-                    path(4, 6, Feature::InternalSolid),
-                    cross,
-                ],
+                paths,
                 ..LayerPaths::default()
             }],
             ..SliceOutput::default()
@@ -796,19 +838,35 @@ mod tests {
 
     #[test]
     fn a_join_that_meets_another_path_stays_a_travel() {
-        // A narrow band's bead (internal solid at its own width) or a wall across the turn: the turn is dropped, the
-        // lines stay.
+        // A narrow band's bead (internal solid at its own width) or a wall across the turn, of another object or
+        // another tool: the turn is dropped, the lines stay.
         for (other, width) in [(Feature::InternalSolid, 0.372), (Feature::InnerWall, 0.45)] {
-            let mut out = joined_lines(other, width);
-            assert_eq!(drop_crossing_joins(&mut out), 1, "{other:?}");
-            let l = &out.layers[0];
-            assert_eq!(l.paths.len(), 3);
-            assert!(
-                l.paths
-                    .iter()
-                    .all(|p| l.path_points(p) != [Point::from_mm(0.0, 10.0), Point::from_mm(1.0, 10.0)])
-            );
+            for (owner, tool) in [(2, 1), (1, 2)] {
+                let mut out = joined_lines(other, width);
+                if let Some(cross) = out.layers[0].paths.get_mut(3) {
+                    (cross.owner, cross.tool) = (owner, tool);
+                }
+                assert_eq!(
+                    drop_crossing_joins(&mut out),
+                    1,
+                    "{other:?}, object {owner}, tool {tool}"
+                );
+                let l = &out.layers[0];
+                assert_eq!(l.paths.len(), 3);
+                assert!(
+                    l.paths
+                        .iter()
+                        .all(|p| l.path_points(p) != [Point::from_mm(0.0, 10.0), Point::from_mm(1.0, 10.0)])
+                );
+            }
         }
+        // The prime tower across the turn: dropped.
+        let mut out = joined_lines(Feature::PrimeTower, 0.5);
+        if let Some(cross) = out.layers[0].paths.get_mut(3) {
+            cross.owner = crate::preview::OBJECT_NONE;
+        }
+        assert_eq!(drop_crossing_joins(&mut out), 1);
+        assert_eq!(out.layers[0].paths.len(), 3);
         // A line of the same fill there (same feature, tool and width) is laid out by the neighbor rules: kept.
         let mut out = joined_lines(Feature::InternalSolid, 0.42);
         assert_eq!(drop_crossing_joins(&mut out), 0);
