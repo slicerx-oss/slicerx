@@ -9,7 +9,8 @@
 //! `filament_ironing_spacing` and `filament_ironing_inset` replace the process values when set.
 //!
 //! The area is the top surfaces (plus bottom surfaces and solid layers for `solid`), kept half a
-//! nozzle (or `ironing_inset`) inside the layer's outline. Lines run at the top surface angle
+//! nozzle (or `ironing_inset`) inside the layer's outline. Under `solid`, an object whose layer has no
+//! sparse infill irons all of its outline, over the walls. Lines run at the top surface angle
 //! plus `ironing_angle`, one sweep in the order of `monotonic`, each line the other way round and joined to the next along
 //! the edge when the gap is under three spacings. Each line carries `ironing_flow` percent of a layer of the layer
 //! height over the ironing spacing: the volume per millimeter is the nozzle diameter times
@@ -159,6 +160,35 @@ fn rotate(p: Pt, a: f64) -> Pt {
     [p[0] * c - p[1] * s, p[0] * s + p[1] * c]
 }
 
+/// What ironing every solid surface irons on a layer under full density. An object whose part of the layer has no
+/// sparse infill is solid through, so all of it is ironed, over the walls too; on an object with sparse infill only
+/// its solid surfaces are, as they are filled inside the walls. A layer with no solid surface at all (walls only)
+/// irons nothing.
+fn solid_area(areas: &LayerAreas) -> Shapes {
+    let fill = perimeters::union_all(&[&areas.top, &areas.bottom, &areas.solid]);
+    if fill.is_empty() || areas.sparse.is_empty() {
+        return if fill.is_empty() {
+            fill
+        } else {
+            areas.slice.clone()
+        };
+    }
+    let whole: Vec<&Shapes> = areas
+        .objects
+        .iter()
+        .filter(|o| {
+            perimeters::intersection(o, &areas.sparse).is_empty()
+                && !perimeters::intersection(o, &fill).is_empty()
+        })
+        .collect();
+    if whole.is_empty() {
+        return fill;
+    }
+    let mut parts = whole;
+    parts.push(&fill);
+    perimeters::union_all(&parts)
+}
+
 /// The ironing area of a layer, or None when this layer is not ironed.
 fn area(
     areas: &LayerAreas,
@@ -177,7 +207,7 @@ fn area(
     } else if cfg.sparse_infill_density > 95.0 {
         areas.slice.clone()
     } else {
-        perimeters::union_all(&[&areas.top, &areas.bottom, &areas.solid])
+        solid_area(areas)
     };
     if polys.is_empty() {
         return None;
@@ -439,6 +469,7 @@ mod tests {
             top: slice,
             bottom: Vec::new(),
             solid: Vec::new(),
+            ..LayerAreas::default()
         };
         (
             LayerPaths {
@@ -584,6 +615,191 @@ mod tests {
         both.raw.insert("ironing_angle".into(), serde_json::json!(10));
         let d = line_direction(&both, 45.0);
         assert!((d - 55.0).abs() < 0.5, "{d}");
+    }
+
+    /// Solid ironing at 0.1 mm on a layer: `slice`, its solid fill `solid`, its sparse infill `sparse` and its
+    /// objects' parts `objects`. Returns the ironing points in mm (empty when nothing is ironed).
+    fn solid_points(
+        slice: Shapes,
+        solid: Shapes,
+        sparse: Shapes,
+        objects: Vec<Shapes>,
+        inset: f64,
+    ) -> Vec<Pt> {
+        solid_segments(slice, solid, sparse, objects, inset)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
+    /// [`solid_points`] as the segments of the ironing paths.
+    fn solid_segments(
+        slice: Shapes,
+        solid: Shapes,
+        sparse: Shapes,
+        objects: Vec<Shapes>,
+        inset: f64,
+    ) -> Vec<[Pt; 2]> {
+        let mut c = cfg("solid");
+        c.raw.insert("ironing_spacing".into(), serde_json::json!(0.1));
+        c.raw.insert("ironing_inset".into(), serde_json::json!(inset));
+        let areas = LayerAreas {
+            slice,
+            solid,
+            sparse,
+            objects,
+            ..LayerAreas::default()
+        };
+        let mut out = LayerPaths {
+            index: 24,
+            height: 0.2,
+            z: 5.0,
+            ..LayerPaths::default()
+        };
+        add(&mut out, &areas, &c, false, 0.0, &[]);
+        out.paths
+            .iter()
+            .flat_map(|p| {
+                out.path_points(p)
+                    .windows(2)
+                    .map(|w| [[w[0].x_mm(), w[0].y_mm()], [w[1].x_mm(), w[1].y_mm()]])
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// The extents of `pts`: `[x0, y0, x1, y1]`.
+    fn extents(pts: &[Pt]) -> [f64; 4] {
+        pts.iter().fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |e, p| {
+            [e[0].min(p[0]), e[1].min(p[1]), e[2].max(p[0]), e[3].max(p[1])]
+        })
+    }
+
+    /// Whether `pts` stay inside `want` and reach within `reach` of each of its sides.
+    fn fills(pts: &[Pt], want: [f64; 4], reach: f64) -> bool {
+        let e = extents(pts);
+        !pts.is_empty()
+            && e[0] >= want[0] - 1e-3
+            && e[1] >= want[1] - 1e-3
+            && e[2] <= want[2] + 1e-3
+            && e[3] <= want[3] + 1e-3
+            && e[0] - want[0] <= reach
+            && e[1] - want[1] <= reach
+            && want[2] - e[2] <= reach
+            && want[3] - e[3] <= reach
+    }
+
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shapes {
+        vec![vec![square(x0, y0, x1, y1)]]
+    }
+
+    #[test]
+    fn solid_ironing_irons_a_layer_with_no_sparse_infill_out_to_its_outline() {
+        // The fill stops 1 mm inside the outline, at the walls; the ironing runs over them to half a nozzle inside it.
+        let pts = solid_points(
+            rect(0.0, 0.0, 20.0, 10.0),
+            rect(1.0, 1.0, 19.0, 9.0),
+            Vec::new(),
+            Vec::new(),
+            0.0,
+        );
+        assert!(fills(&pts, [0.2, 0.2, 19.8, 9.8], 0.06), "{:?}", extents(&pts));
+    }
+
+    #[test]
+    fn solid_ironing_of_a_whole_layer_keeps_the_inset() {
+        let pts = solid_points(
+            rect(0.0, 0.0, 20.0, 10.0),
+            rect(1.0, 1.0, 19.0, 9.0),
+            Vec::new(),
+            Vec::new(),
+            0.6,
+        );
+        assert!(fills(&pts, [0.6, 0.6, 19.4, 9.4], 0.06), "{:?}", extents(&pts));
+        // An inset reaching the fill irons the same region either way.
+        let pts = solid_points(
+            rect(0.0, 0.0, 20.0, 10.0),
+            rect(1.0, 1.0, 19.0, 9.0),
+            Vec::new(),
+            Vec::new(),
+            1.0,
+        );
+        assert!(fills(&pts, [1.0, 1.0, 19.0, 9.0], 0.06), "{:?}", extents(&pts));
+    }
+
+    #[test]
+    fn solid_ironing_of_a_whole_layer_keeps_its_edge_around_a_hole() {
+        let mut hole = square(8.0, 4.0, 12.0, 6.0);
+        hole.reverse();
+        let slice: Shapes = vec![vec![square(0.0, 0.0, 20.0, 10.0), hole]];
+        let solid = perimeters::offset(&slice, -crate::geom::mm(1.0));
+        let segs = solid_segments(slice, solid, Vec::new(), Vec::new(), 0.0);
+        let pts: Vec<Pt> = segs.iter().flatten().copied().collect();
+        assert!(fills(&pts, [0.2, 0.2, 19.8, 9.8], 0.06), "{:?}", extents(&pts));
+        // Nothing inside the hole grown by the edge, and the lines reach within 0.06 of it on every side.
+        let inside =
+            |p: &Pt| p[0] > 7.8 + 1e-3 && p[0] < 12.2 - 1e-3 && p[1] > 3.8 + 1e-3 && p[1] < 6.2 - 1e-3;
+        assert!(!pts.iter().any(inside));
+        let across = |p: &Pt| p[1] > 3.8 && p[1] < 6.2;
+        assert!(
+            pts.iter()
+                .any(|p| across(p) && (7.74..=7.8 + 1e-3).contains(&p[0]))
+        );
+        assert!(
+            pts.iter()
+                .any(|p| across(p) && (12.2 - 1e-3..=12.26).contains(&p[0]))
+        );
+        // The heights of the lines that pass under or over the whole hole.
+        let ys: Vec<f64> = segs
+            .iter()
+            .filter(|[a, b]| (a[1] - b[1]).abs() < 1e-6 && a[0].min(b[0]) < 7.8 && a[0].max(b[0]) > 12.2)
+            .map(|[a, _]| a[1])
+            .collect();
+        assert!(ys.iter().any(|y| (3.74..=3.8 + 1e-3).contains(y)), "{ys:?}");
+        assert!(ys.iter().any(|y| (6.2 - 1e-3..=6.26).contains(y)), "{ys:?}");
+    }
+
+    #[test]
+    fn solid_ironing_of_a_layer_with_sparse_infill_irons_only_its_solid_fill() {
+        let pts = solid_points(
+            rect(0.0, 0.0, 20.0, 10.0),
+            rect(1.0, 1.0, 19.0, 5.0),
+            rect(1.0, 5.0, 19.0, 9.0),
+            Vec::new(),
+            0.0,
+        );
+        assert!(fills(&pts, [1.0, 1.0, 19.0, 5.0], 0.06), "{:?}", extents(&pts));
+        // Walls only, with no fill of either kind: nothing to iron.
+        let pts = solid_points(
+            rect(0.0, 0.0, 20.0, 10.0),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            0.0,
+        );
+        assert!(pts.is_empty());
+    }
+
+    #[test]
+    fn solid_ironing_decides_whole_layers_per_object() {
+        // Two islands: the left one all solid, the right one with sparse infill.
+        let left = rect(0.0, 0.0, 10.0, 10.0);
+        let right = rect(15.0, 0.0, 25.0, 10.0);
+        let slice = perimeters::union_all(&[&left, &right]);
+        let solid = rect(1.0, 1.0, 9.0, 9.0);
+        let sparse = rect(16.0, 1.0, 24.0, 9.0);
+        // As two objects, the left one irons out to its outline and the right one has no solid to iron.
+        let pts = solid_points(
+            slice.clone(),
+            solid.clone(),
+            sparse.clone(),
+            vec![left, right],
+            0.0,
+        );
+        assert!(fills(&pts, [0.2, 0.2, 9.8, 9.8], 0.06), "{:?}", extents(&pts));
+        // As one object, the layer has sparse infill, so the left island irons only its fill.
+        let pts = solid_points(slice, solid, sparse, Vec::new(), 0.0);
+        assert!(fills(&pts, [1.0, 1.0, 9.0, 9.0], 0.06), "{:?}", extents(&pts));
     }
 
     #[test]

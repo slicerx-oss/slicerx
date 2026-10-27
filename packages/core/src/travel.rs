@@ -879,6 +879,7 @@ mod tests {
             top: Vec::new(),
             bottom: Vec::new(),
             solid: Vec::new(),
+            ..LayerAreas::default()
         };
         let layer = LayerPaths {
             areas: Some(Box::new(areas)),
@@ -958,6 +959,7 @@ mod tests {
             top,
             bottom: Vec::new(),
             solid: Vec::new(),
+            ..LayerAreas::default()
         };
         let layer = LayerPaths {
             areas: Some(Box::new(areas)),

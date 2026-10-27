@@ -834,6 +834,7 @@ struct StartRest {
     dir: Dir,
     top_n: u32,
     solid_areas: Vec<Shapes>,
+    sparse_areas: Vec<Shapes>,
 }
 
 /// What one region's own settings decide about a layer: widths, shell layers and the neighbor coverage.
@@ -2433,6 +2434,30 @@ impl SliceSession {
     /// This session's index on the plate when it is one object of a plate sliced object by object.
     pub(crate) fn plate_index(&self) -> u16 {
         self.plate_index
+    }
+
+    /// The islands of `slice` (object layer `layer`) grouped by the object each belongs to, for ironing every solid
+    /// surface; empty for a session of one object. An island no object's slice holds or nears is a group of its own.
+    fn object_parts(&self, slice: &Shapes, layer: u32) -> Vec<Shapes> {
+        let mut objects = self.part_object.clone();
+        objects.sort_unstable();
+        objects.dedup();
+        if objects.len() < 2 {
+            return Vec::new();
+        }
+        let slices = self.object_slices_at(layer as usize).unwrap_or_default();
+        let mut groups: Vec<(Option<u16>, Shapes)> = Vec::new();
+        for island in slice {
+            let owner = island
+                .first()
+                .and_then(|c| c.first())
+                .and_then(|p| crate::owners::nearest(&slices, crate::geom::Point::new(p.x, p.y), 5.0));
+            match groups.iter_mut().find(|(o, _)| owner.is_some() && *o == owner) {
+                Some((_, g)) => g.push(island.clone()),
+                None => groups.push((owner, vec![island.clone()])),
+            }
+        }
+        groups.into_iter().map(|(_, g)| g).collect()
     }
 
     /// Each object's own slice on object layer `layer` (`owners.rs`), worked out once.
@@ -8189,6 +8214,7 @@ impl SliceSession {
                 top,
                 bottom,
                 solid,
+                ..crate::output::LayerAreas::default()
             }));
         }
         if crate::gcode::auto_lift(cfg) {
@@ -8485,6 +8511,7 @@ impl SliceSession {
         };
         bridges_timer.stop(&micros.bridges);
         let mut solid_areas: Vec<Shapes> = Vec::new();
+        let mut sparse_areas: Vec<Shapes> = Vec::new();
         let mut works: Vec<ToolWork> = Vec::with_capacity(here.regions.len());
         let mut events = Vec::new();
         let layer_height = self.plan.thickness(layer);
@@ -8683,11 +8710,15 @@ impl SliceSession {
                     }
                 }
             }
+            let mut over_sparse = Shapes::new();
             if let Some(b) = &bridges {
                 let cut: Shapes = b
                     .areas
                     .iter()
                     .fold(Shapes::new(), |acc, x| perimeters::union_all(&[&acc, &x.area]));
+                if !cut.is_empty() && crate::ironing::kind(cfg) == Some(crate::ironing::Kind::Solid) {
+                    over_sparse = perimeters::intersection(&cut, &inner);
+                }
                 let ens = perimeters::intersection(&b.ensure, &inner);
                 if !cut.is_empty() || !ens.is_empty() {
                     let solid = perimeters::union_all(&[&cls.shell, &ens]);
@@ -8733,6 +8764,14 @@ impl SliceSession {
             {
                 cls.shell = perimeters::union_all(&[&cls.shell, &cls.sparse]);
                 cls.sparse = Vec::new();
+            }
+            // Ironing every solid surface irons the whole of an object whose layer has no sparse infill left. A layer
+            // whose sparse infill the group's top layer prints still has it, and bridges over the sparse infill below
+            // count with it.
+            if crate::ironing::kind(cfg) == Some(crate::ironing::Kind::Solid)
+                && (!cls.sparse.is_empty() || !over_sparse.is_empty())
+            {
+                sparse_areas.push(perimeters::union_all(&[&cls.sparse, &over_sparse]));
             }
             // `infill_combination`: the shared area of the group leaves every layer's sparse infill; the group's
             // top layer prints it at the group's height.
@@ -9450,6 +9489,7 @@ impl SliceSession {
                 dir,
                 top_n: base_shell.top_n,
                 solid_areas,
+                sparse_areas,
             }),
         }
     }
@@ -9896,6 +9936,7 @@ impl SliceSession {
             dir,
             top_n,
             solid_areas,
+            sparse_areas,
         }) = rest
         else {
             return out;
@@ -10292,6 +10333,14 @@ impl SliceSession {
         {
             let refs: Vec<&Shapes> = solid_areas.iter().collect();
             a.solid = perimeters::union_all(&refs);
+            if !sparse_areas.is_empty() {
+                let refs: Vec<&Shapes> = sparse_areas.iter().collect();
+                a.sparse = perimeters::union_all(&refs);
+                // Only a layer with solid surfaces has an object to iron whole.
+                if !a.solid.is_empty() || !a.top.is_empty() || !a.bottom.is_empty() {
+                    a.objects = self.object_parts(&a.slice, layer);
+                }
+            }
         }
         if let Some(areas) = out.areas.take() {
             let model_turn = self.model_turn(cfg);
