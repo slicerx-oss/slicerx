@@ -473,11 +473,24 @@ impl Strategy for OuterInset {
 pub(crate) struct Limited {
     parent: Box<dyn Strategy>,
     max_beads: i64,
+    /// What the capped walls take up themselves past their nominal thickness before the infill area starts:
+    /// a strip narrower than this between two or more walls each side goes to the middle beads, nm. Zero
+    /// leaves every strip to the infill.
+    absorb: i64,
 }
 
 impl Limited {
     pub(crate) fn new(max_beads: i64, parent: Box<dyn Strategy>) -> Self {
-        Self { parent, max_beads }
+        Self {
+            parent,
+            max_beads,
+            absorb: 0,
+        }
+    }
+
+    /// The same cap, with the walls taking up a strip narrower than `absorb` (nm) between them.
+    pub(crate) fn absorbing(self, absorb: i64) -> Self {
+        Self { absorb, ..self }
     }
 
     /// Inserts a zero-width bead after bead `at` (0-based), at the inner edge of that bead.
@@ -509,6 +522,20 @@ impl Strategy for Limited {
             return ret;
         }
         let optimal = self.parent.optimal_thickness(max);
+        if thickness - optimal < self.absorb && max >= 4 && max % 2 == 0 {
+            // A strip too narrow for the infill: the walls widen to take it up, and the walled area's edges
+            // meet in the middle, where they mark an infill area of nothing.
+            let mut ret = self.parent.compute(thickness, max);
+            if ret.toolpath_locations.len() == usize::try_from(max).unwrap_or(0) {
+                let half = usize::try_from(max / 2).unwrap_or(0);
+                let mid = thickness / 2;
+                ret.toolpath_locations.insert(half, mid);
+                ret.bead_widths.insert(half, 0);
+                ret.toolpath_locations.insert(half, mid);
+                ret.bead_widths.insert(half, 0);
+                return ret;
+            }
+        }
         let mut ret = self.parent.compute_walled(optimal, max);
         let count = ret.toolpath_locations.len();
         ret.left_over += thickness - ret.total_thickness;
@@ -583,7 +610,16 @@ impl Strategy for Limited {
     }
 
     fn nonlinear_thicknesses(&self, lower: i64) -> Vec<i64> {
-        self.parent.nonlinear_thicknesses(lower)
+        let mut ret = self.parent.nonlinear_thicknesses(lower);
+        if self.absorb > 0 && self.max_beads >= 4 && lower >= self.max_beads {
+            // Where the walls stop taking up the strip and the infill area opens, with a node just before it, so
+            // the beads along a part that widens slowly are not blended from one side of it to the other (which
+            // left the strip neither widened into nor filled for 4 mm of a rib).
+            let open = self.parent.optimal_thickness(self.max_beads) + self.absorb;
+            ret.push(open - nm(0.01));
+            ret.push(open);
+        }
+        ret
     }
 
     fn split_middle_threshold(&self) -> f64 {
@@ -777,19 +813,15 @@ impl Strategy for Athena {
         // widen to cover it, as preFlight's center absorbing strategy does.
         // Kept at nominal width, the middle beads left a gap of up to half a spacing: a 1.4 mm bar printed 11
         // percent less than Arachne and classic walls.
-        // Only a gap is taken up: where the beads crowd, they overlap a little as before rather than thin down.
-        let left_over = (thickness - self.nominal(n)).max(0);
-        let (nominal_w, nominal_s) = (self.inner_width, self.inner_spacing);
-        let overlap = if nominal_w > 0 {
-            (nominal_w - nominal_s) as f64 / nominal_w as f64
-        } else {
-            0.0
-        };
-        let factor = 1.0 / (1.0 - overlap).max(0.05);
+        // Where the beads crowd (past the thickness where a bead is added, short of its nominal spacing), the
+        // middle ones thin down by as much. Left at nominal width there, they overlapped their neighbors by up
+        // to a spacing more than the walls do, and a wedge 0.85 to 2.3 mm across got 15 percent more material
+        // in its middle than classic walls with gap fill. The width changes by the thickness itself, not
+        // scaled by width over spacing: beads that keep the walls' overlap fill the thickness exactly.
+        let left_over = thickness - self.nominal(n);
+        let nominal_w = self.inner_width;
         let min_safe = nominal_w / 3;
-        let widen = |w: i64, by: i64| -> i64 {
-            (w + (by as f64 * factor) as i64).clamp(min_safe.max(1), 2 * nominal_w)
-        };
+        let widen = |w: i64, by: i64| -> i64 { (w + by).clamp(min_safe.max(1), 2 * nominal_w) };
         for i in 0..n {
             let mut width = if i == 0 || i == n - 1 {
                 self.outer_width
@@ -928,7 +960,11 @@ pub(crate) fn make(p: &Params) -> Box<dyn Strategy> {
     if p.outer_inset != 0 {
         s = Box::new(OuterInset::new(p.outer_inset, s));
     }
-    Box::new(Limited::new(p.max_bead_count, s))
+    // aegis walls take up a strip between them narrower than two inner beads' spacing, which the infill fills
+    // only with lines squeezed in at more than their width: 30 to 50 percent more material than the strip
+    // holds where it was 0.4 to 0.55 mm wide.
+    let absorb = p.athena.map_or(0, |(_, inner)| 2 * inner);
+    Box::new(Limited::new(p.max_bead_count, s).absorbing(absorb))
 }
 
 #[cfg(test)]
@@ -989,19 +1025,49 @@ mod tests {
         // Four beads: nominal thickness 2 * (0.2 + 0.38) + 0.36 = 1.52.
         assert_eq!(s.optimal_bead_count(nm(1.52)), 4);
         let b = s.compute(nm(1.7), 4);
-        // The outer beads keep their width and place; the middle two each take half of the 0.18 mm left over,
-        // widened by width over spacing (0.09 / 0.9 = 0.1) and moved in by a quarter of it, so no gap is left.
+        // The outer beads keep their width and place; the middle two each take half of the 0.18 mm left over
+        // and move in by a quarter of it, so they keep the walls' overlap and no gap is left.
         assert_eq!(b.bead_widths[0], nm(0.4));
         assert_eq!(b.bead_widths[3], nm(0.4));
-        assert!((b.bead_widths[1] - nm(0.5)).abs() <= 1, "{:?}", b.bead_widths);
+        assert!((b.bead_widths[1] - nm(0.49)).abs() <= 1, "{:?}", b.bead_widths);
         assert_eq!(b.bead_widths[1], b.bead_widths[2]);
         assert_eq!(b.toolpath_locations[0], nm(0.2));
         assert_eq!(b.toolpath_locations[1], nm(0.58) + nm(0.18) / 4);
         assert_eq!(b.toolpath_locations[2], nm(1.7) - (nm(0.58) + nm(0.18) / 4));
         assert_eq!(b.toolpath_locations[3], nm(1.5));
-        // Crowded (thinner than nominal), the middle beads keep their width and overlap a little.
+        // Crowded (thinner than nominal), the middle beads thin down by as much and move out by a quarter of it.
         let c = s.compute(nm(1.48), 4);
-        assert!(c.bead_widths.iter().all(|w| *w == nm(0.4)), "{:?}", c.bead_widths);
+        assert_eq!(c.bead_widths, vec![nm(0.4), nm(0.38), nm(0.38), nm(0.4)]);
+        assert_eq!(c.toolpath_locations[1], nm(0.58) - nm(0.04) / 4);
+        assert_eq!(c.toolpath_locations[2], nm(1.48) - (nm(0.58) - nm(0.04) / 4));
+    }
+
+    /// A strip between capped aegis walls narrower than two inner spacings goes to the walls: the middle beads
+    /// widen by it and the walled area's edges meet in the middle. A wider strip is left to the infill, the walls
+    /// at their nominal widths.
+    #[test]
+    fn athena_capped_walls_take_up_a_narrow_strip() {
+        let s = athena_precise(4);
+        // Four beads at their nominal spacing cover 2 * (0.377 / 2 + 0.435) + 0.407 = 1.654 mm.
+        let nominal = nm(0.377_08) + 2 * nm(0.435) + nm(0.407_08);
+        let t = nominal + nm(0.6);
+        assert_eq!(s.optimal_bead_count(t), 5);
+        let b = s.compute(t, 5);
+        assert_eq!(b.bead_widths.len(), 6, "{b:?}");
+        assert_eq!(b.bead_widths[2], 0, "{b:?}");
+        assert_eq!(b.bead_widths[3], 0, "{b:?}");
+        assert_eq!(b.toolpath_locations[2], t / 2, "{b:?}");
+        assert_eq!(b.toolpath_locations[3], t / 2, "{b:?}");
+        assert!((b.bead_widths[1] - (nm(0.407_08) + nm(0.3))).abs() <= 1, "{b:?}");
+        assert_eq!(b.bead_widths[1], b.bead_widths[4], "{b:?}");
+        assert_eq!(b.bead_widths[0], nm(0.377_08), "{b:?}");
+        // Past two inner spacings the infill area opens between walls at their nominal widths.
+        let wide = s.compute(nominal + 2 * nm(0.407_08) + nm(0.01), 5);
+        assert_eq!(wide.bead_widths[1], nm(0.407_08), "{wide:?}");
+        assert!(
+            wide.toolpath_locations[3] > wide.toolpath_locations[2] + nm(0.8),
+            "{wide:?}"
+        );
     }
 
     /// The stock 0.42 and 0.45 mm walls at 0.2 mm layers as spacings, with the precise outer wall's outer to
