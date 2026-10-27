@@ -44,6 +44,20 @@ describe('project settings', () => {
     const r = projectSettingChanges({ printer_model: 'Generic Klipper Printer', initial_layer_flow_ratio: '0.9' }, baseConfig())
     expect(r.values['bottom_solid_infill_flow_ratio']).toBe(0.9)
     expect(r.values['initial_layer_flow_ratio']).toBeUndefined()
+    // The engine prints that file's bottom surface at its initial_layer_flow_ratio, whatever its own bottom ratio says.
+    for (const file of [
+      { printer_model: 'Generic Klipper Printer', bottom_solid_infill_flow_ratio: '0.8', initial_layer_flow_ratio: '0.9' },
+      { printer_model: 'Generic Klipper Printer', initial_layer_flow_ratio: '0.9', bottom_solid_infill_flow_ratio: '0.8' },
+    ]) {
+      const both = projectSettingChanges(file, baseConfig())
+      expect(both.values['bottom_solid_infill_flow_ratio']).toBe(0.9)
+      expect(both.values['initial_layer_flow_ratio']).toBeUndefined()
+    }
+    // A value that is no number does not count, as the engine skips it too.
+    for (const initial_layer_flow_ratio of ['nil', '']) {
+      const file = { printer_model: 'Generic Klipper Printer', bottom_solid_infill_flow_ratio: '0.8', initial_layer_flow_ratio }
+      expect(projectSettingChanges(file, baseConfig()).values['bottom_solid_infill_flow_ratio']).toBe(0.8)
+    }
   })
 
   it("reads Bambu Studio's prime_tower_rib_wall as the prime tower wall type", () => {

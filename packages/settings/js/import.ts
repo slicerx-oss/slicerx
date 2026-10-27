@@ -116,6 +116,17 @@ function forBambu(merged: Record<string, unknown>): boolean {
   return text('gcode_flavor') === 'bambu' || text('printer_model').startsWith('Bambu Lab')
 }
 
+/**
+ * True when `v` reads as a number the way the engine reads one: a finite number, or text that is one once spaces and a
+ * trailing percent sign are dropped; a list by its first entry.
+ */
+function engineNumber(v: unknown): boolean {
+  const one = Array.isArray(v) ? v[0] : v
+  if (typeof one === 'number') return Number.isFinite(one)
+  if (typeof one !== 'string') return false
+  return /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(one.trim().replace(/%+$/, '').trim())
+}
+
 /** Read one flat object of Orca JSON values (a merged profile, or a project's settings file). */
 export function importFlat(merged: Record<string, unknown>): FlatImport {
   const config: PrintConfig = {} as PrintConfig
@@ -125,8 +136,12 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
   const invalidKeys: string[] = []
   const fromMode = infillRetractionFromMode(merged)
   const bambu = forBambu(merged)
+  // On other printers the older name wins over our own in the same file, as the engine reads that file: its
+  // `initial_layer_flow_ratio` is the bottom surface ratio in place of `bottom_solid_infill_flow_ratio`, when it holds a number.
+  const shadowed = new Set(bambu ? [] : [...OWN_ON_BAMBU].filter((k) => engineNumber(merged[k])).map((k) => LEGACY.rename[k]))
   for (const [rawKey, rawValue] of Object.entries(merged)) {
     if (PROFILE_META_KEYS.has(rawKey)) continue
+    if (shadowed.has(rawKey)) continue
     // The mode replaces the old switch when the file has both (see infillRetractionFromMode).
     if (fromMode !== undefined && (rawKey === 'reduce_infill_retraction_mode' || rawKey === 'reduce_infill_retraction')) continue
     // Bambu Studio's rib wall switch reads as our wall type (legacy.json); the file's own wall type wins.
@@ -148,7 +163,7 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
       continue
     }
     // Our own name in the same file wins over an older one.
-    if (renamed && key in merged) continue
+    if (renamed && key in merged && !shadowed.has(key)) continue
     const raw = mapLegacyValue(rawKey, rawValue)
     for (const k of [key, ...(renamed ? (LEGACY.rename_also[rawKey] ?? []) : [])]) {
       if (k !== key && k in merged) continue

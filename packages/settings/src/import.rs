@@ -226,6 +226,25 @@ fn for_bambu(merged: &BTreeMap<String, Json>) -> bool {
     text("gcode_flavor") == "bambu" || text("printer_model").starts_with("Bambu Lab")
 }
 
+/// True when `v` reads as a number the way the engine reads one: a finite number, or text that is one once spaces and a
+/// trailing percent sign are dropped; a list by its first entry.
+fn engine_number(v: &Json) -> bool {
+    let one = match v {
+        Json::Array(a) => a.first(),
+        other => Some(other),
+    };
+    match one {
+        Some(Json::Number(n)) => n.as_f64().is_some_and(f64::is_finite),
+        Some(Json::String(t)) => t
+            .trim()
+            .trim_end_matches('%')
+            .trim()
+            .parse::<f64>()
+            .is_ok_and(f64::is_finite),
+        _ => false,
+    }
+}
+
 /// Read one flat object of Orca JSON values (a merged profile, or a project's settings file).
 pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
     let rules = rules();
@@ -234,8 +253,19 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
         (BTreeSet::new(), BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
     let from_mode = infill_retraction_from_mode(merged);
     let bambu = for_bambu(merged);
+    // On other printers the older name wins over our own in the same file, as the engine reads that file: its
+    // `initial_layer_flow_ratio` is the bottom surface ratio in place of `bottom_solid_infill_flow_ratio`, when it holds a
+    // number.
+    let shadowed: BTreeSet<&str> = OWN_ON_BAMBU
+        .iter()
+        .filter(|k| !bambu && merged.get(**k).is_some_and(engine_number))
+        .filter_map(|k| rules.rename.get(*k).map(String::as_str))
+        .collect();
     for (raw_key, raw_value) in merged {
         if rules.meta.contains(raw_key) {
+            continue;
+        }
+        if shadowed.contains(raw_key.as_str()) {
             continue;
         }
         // The mode replaces the old switch when the file has both (see `infill_retraction_from_mode`).
@@ -268,7 +298,7 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
             continue;
         }
         // Our own name in the same file wins over an older one.
-        if renamed.is_some() && merged.contains_key(&key) {
+        if renamed.is_some() && merged.contains_key(&key) && !shadowed.contains(key.as_str()) {
             continue;
         }
         let also = renamed
