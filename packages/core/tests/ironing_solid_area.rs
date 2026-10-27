@@ -168,3 +168,53 @@ fn each_object_decides_for_itself_and_one_object_for_all_its_islands() {
     let m = margin(extents(&ironing_at(&g, 2.6), 0.0, 125.0), low);
     assert!(m > 0.6, "{m}");
 }
+
+/// Ironing length of the segments `segs`, and the part of it at x below `x`.
+fn length_left_of(segs: &[[f64; 4]], x: f64) -> (f64, f64) {
+    segs.iter().fold((0.0, 0.0), |(all, left), s| {
+        let (dx, dy) = (s[2] - s[0], s[3] - s[1]);
+        let l = (dx * dx + dy * dy).sqrt();
+        let (lo, hi) = (s[0].min(s[2]), s[0].max(s[2]));
+        let part = if hi <= x {
+            l
+        } else if lo >= x {
+            0.0
+        } else {
+            l * (x - lo) / (hi - lo)
+        };
+        (all + l, left + part)
+    })
+}
+
+/// An L block 30 x 20 mm at x 110, y 100: 6 mm tall left of x 125, 3 mm tall right of it.
+fn l_block() -> Arc<Mesh> {
+    mesh(
+        "l",
+        vec![
+            cuboid("tall", [110.0, 100.0, 0.0], [125.0, 120.0, 6.0]),
+            cuboid("low", [124.0, 100.0, 0.0], [140.0, 120.0, 3.0]),
+        ],
+    )
+}
+
+#[test]
+fn solid_ironing_at_a_step_irons_the_top_surface_as_top_ironing_does() {
+    // z 3.0 is the low half's top surface; the tall half rises off it at x 125 and its walls stand on that surface.
+    // Lines and links that end on the step face itself land a few thousandths of a millimeter short of x 125, so a
+    // strip under the walls is anything left of x 124.9.
+    for walls in [3, 5] {
+        for generator in ["classic", "aegis"] {
+            let extra =
+                |kind: &str| json!({"ironing_type": kind, "wall_loops": walls, "wall_generator": generator});
+            let top = length_left_of(&ironing_at(&run(&[("l", l_block())], &extra("top")), 3.0), 124.9);
+            let solid = length_left_of(
+                &ironing_at(&run(&[("l", l_block())], &extra("solid")), 3.0),
+                124.9,
+            );
+            let case = format!("{walls} walls, {generator}: solid {solid:?}, top {top:?}");
+            assert!(top.0 > 0.0 && top.1 < 1e-6, "{case}");
+            assert!((solid.0 - top.0).abs() <= top.0 * 0.005, "{case}");
+            assert!(solid.1 < 1e-6, "{case}");
+        }
+    }
+}
