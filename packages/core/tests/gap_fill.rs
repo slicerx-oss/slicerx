@@ -508,3 +508,135 @@ fn each_piece_of_a_tapering_gap_bead_takes_the_strip_width_at_its_middle() {
         );
     }
 }
+
+/// A lone wedge 4 mm tall like the one beside the arch: it widens from nothing at X 98 to `w` mm at X 122.
+fn wedge(w: f32) -> Mesh {
+    Mesh {
+        name: "wedge".into(),
+        parts: vec![prism(
+            "wedge",
+            &[[98.0, 118.0], [122.0, 118.0], [122.0, 118.0 + w]],
+            4.0,
+        )],
+        ..Mesh::default()
+    }
+}
+
+/// The inner wall and gap fill at a wedge's point.
+#[derive(Debug)]
+struct Tip {
+    /// The X where the inner wall loop ends at the wedge's point, if it has one.
+    wall_end: Option<f64>,
+    /// The width of the flat the inner wall loop ends in.
+    flat: f64,
+    /// The gap fill pieces between the outer walls, by X.
+    strip: Vec<Move>,
+    /// The gap fill pieces between the inner walls, by X.
+    inner_strip: Vec<Move>,
+}
+
+/// The wedge's point on the layer at 1 mm, from the moves above Y `y_min` (the plate centers a lone wedge on the
+/// bed; beside the arch it keeps its place).
+fn tip(g: &str, y_min: f64) -> Tip {
+    let layer: Vec<Move> = moves(g)
+        .into_iter()
+        .filter(|m| (m.z - 1.0).abs() < 1e-6 && m.from[1].min(m.to[1]) > y_min)
+        .collect();
+    let wall: Vec<[f64; 2]> = layer
+        .iter()
+        .filter(|m| m.feature == "Inner wall")
+        .flat_map(|m| [m.from, m.to])
+        .collect();
+    let wall_end = wall.iter().map(|p| p[0]).min_by(f64::total_cmp);
+    // The flat is the two corners nearest the point: every other corner of the loop is millimeters away.
+    let near: Vec<[f64; 2]> = wall
+        .iter()
+        .copied()
+        .filter(|p| wall_end.is_some_and(|x| p[0] - x < 0.05))
+        .collect();
+    let flat = near
+        .iter()
+        .flat_map(|a| near.iter().map(move |b| (a[0] - b[0]).hypot(a[1] - b[1])))
+        .fold(0.0, f64::max);
+    let mid = |m: &Move| f64::midpoint(m.from[0], m.to[0]);
+    let mut gap: Vec<Move> = layer
+        .into_iter()
+        .filter(|m| m.feature == "Gap infill" && m.len() >= 0.05)
+        .collect();
+    gap.sort_by(|a, b| mid(a).total_cmp(&mid(b)));
+    let (strip, inner_strip) = gap.into_iter().partition(|m| wall_end.is_none_or(|x| mid(m) < x));
+    Tip {
+        wall_end,
+        flat,
+        strip,
+        inner_strip,
+    }
+}
+
+/// The X where the last piece of `strip` ends.
+fn strip_end(strip: &[Move]) -> f64 {
+    strip
+        .iter()
+        .flat_map(|m| [m.from[0], m.to[0]])
+        .fold(f64::MIN, f64::max)
+}
+
+fn near(got: f64, want: f64, tol: f64, what: &str, t: &Tip) {
+    assert!(
+        (got - want).abs() <= tol,
+        "{what}: {got:.4}, not {want} ({tol}); {t:#?}"
+    );
+}
+
+/// Checks a wedge's point: where its inner wall ends and how wide the flat there is, then the strip between its
+/// outer walls: where it ends, its piece count and its last piece's width and middle.
+fn check_tip(t: &Tip, wall_end: f64, flat: f64, end: f64, pieces: usize, last: (f64, f64)) {
+    near(t.wall_end.unwrap(), wall_end, 0.01, "inner wall end", t);
+    near(t.flat, flat, 0.003, "flat", t);
+    near(strip_end(&t.strip), end, 0.01, "strip end", t);
+    let l = t.strip.last().unwrap();
+    near(
+        f64::midpoint(l.from[0], l.to[0]),
+        last.1,
+        0.01,
+        "last piece middle",
+        t,
+    );
+    near(l.width, last.0, 0.003, "last piece width", t);
+    assert_eq!(t.strip.len(), pieces, "pieces {t:#?}");
+}
+
+#[test]
+fn the_inner_wall_of_a_sharp_point_ends_in_a_square_cut() {
+    // 5.7 degrees: the wedge beside the arch. Its loop area's point is cut square a loop's squish margin past the
+    // shrunk corner, so the flat is 2 r (1 - sin a) / cos a wide, r = 0.1131 mm.
+    let t = tip(&gcode(arch_and_wedge(), &json!({})), 117.0);
+    check_tip(&t, 111.921, 0.215, 111.738, 10, (0.5642, 111.475));
+    // The strip between the inner walls ends before the point of the loop area past the inner wall.
+    near(strip_end(&t.inner_strip), 119.298, 0.01, "inner strip end", &t);
+}
+
+#[test]
+fn a_narrower_point_ends_in_a_wider_flat() {
+    // 4.3 degrees.
+    let t = tip(&gcode(wedge(1.8), &json!({})), f64::MIN);
+    check_tip(&t, 116.581, 0.218, 116.397, 11, (0.5796, 116.074));
+}
+
+#[test]
+fn a_wider_point_ends_in_a_narrower_flat() {
+    // 11.3 degrees: the strip widens by 0.445 mm, far from a step of the 0.05 mm piece split.
+    let t = tip(&gcode(wedge(4.8), &json!({})), f64::MIN);
+    check_tip(&t, 104.949, 0.204, 104.771, 9, (0.5133, 104.631));
+}
+
+#[test]
+fn a_point_too_narrow_for_an_inner_wall_keeps_its_strip() {
+    // 2.9 degrees: no inner wall fits, so the strip between the outer walls runs to the base.
+    let t = tip(&gcode(wedge(1.2), &json!({})), f64::MIN);
+    assert!(t.wall_end.is_none(), "{t:#?}");
+    near(strip_end(&t.strip), 121.60, 0.01, "strip end", &t);
+    let l = t.strip.last().unwrap();
+    near(l.width, 0.393, 0.003, "last piece width", &t);
+    assert_eq!(t.strip.len(), 7, "pieces {t:#?}");
+}

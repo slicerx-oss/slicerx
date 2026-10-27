@@ -180,7 +180,7 @@ fn orca_gaps(
         }
         let d = if i == 1 { spacing2 } else { spacing };
         let offsets = chain.get(i as usize).cloned().unwrap_or_else(|| {
-            perimeters::offset(
+            perimeters::grow_open(
                 &perimeters::offset(&last, -(d + min_spacing / 2 - 1)),
                 min_spacing / 2 - 1,
             )
@@ -387,7 +387,7 @@ mod tests {
                     let mut chain: Vec<Shapes> = vec![perimeters::offset(&one, -(ext / 2))];
                     for k in 1..loops {
                         let d = if k == 1 { spacing2 } else { spacing };
-                        let next = perimeters::offset(
+                        let next = perimeters::grow_open(
                             &perimeters::offset(chain.last().unwrap(), -(d + min_spacing / 2 - 1)),
                             min_spacing / 2 - 1,
                         );
