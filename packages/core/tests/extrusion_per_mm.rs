@@ -782,3 +782,59 @@ fn a_bridge_strand_states_its_bead_as_it_prints() {
         "internal",
     );
 }
+
+/// The height of a flat bead `w` wide whose cross-section is `area` (both mm).
+fn bead_height(w: f64, area: f64) -> f64 {
+    let k = 1.0 - PI / 4.0;
+    (w - (w * w - 4.0 * k * area).sqrt()) / (2.0 * k)
+}
+
+/// A slab 24 by 10 mm, 2 mm thick, on an 8 mm pillar 6 mm tall at one end, so its support layers of their own height
+/// share some heights with the part's layers.
+fn high_ledge() -> Vec<MeshPart> {
+    vec![
+        cuboid([0.0, 8.0], [0.0, 10.0], [0.0, 6.0], "pillar"),
+        cuboid([0.0, 24.0], [0.0, 10.0], [6.0, 8.0], "slab"),
+    ]
+}
+
+#[test]
+fn support_states_the_height_of_its_own_layer() {
+    // Support on layers of its own height, up to 0.35 mm, under a 0.2 mm top gap: 16 layers 0.35 mm thick from the
+    // first layer to 5.8 mm, four of which print with a 0.2 mm part layer at the same height.
+    let cfg = ender(&json!({
+        "enable_support": true,
+        "support_type": "normal(auto)",
+        "independent_support_layer_height": true,
+        "support_top_z_distance": 0.2,
+        "max_layer_height": [0.35],
+        "support_line_width": 0.42,
+    }));
+    let moves = labeled(&run(high_ledge(), &cfg).0);
+    let mut shared = 0;
+    let mut checked = 0;
+    for m in moves
+        .iter()
+        .filter(|m| m.feature == "Support" || m.feature == "Support interface")
+    {
+        let w = m.width as f64 / 1000.0;
+        let area = m.e / m.len * PI * 0.875 * 0.875 / FLOW;
+        let implied = bead_height(w, area);
+        let stated = m.height as f64 / 1000.0;
+        assert!(
+            (implied - stated).abs() < 0.0015,
+            "{} {w} stated {stated} tall on a {} layer, prints {implied:.4}",
+            m.feature,
+            m.layer
+        );
+        checked += 1;
+        if m.layer == 200 && (implied - 0.35).abs() < 0.001 {
+            shared += 1;
+        }
+    }
+    assert!(checked > 100, "{checked} support moves");
+    assert!(
+        shared > 10,
+        "{shared} support moves at 0.35 on a 0.2 mm part layer"
+    );
+}

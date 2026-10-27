@@ -49,6 +49,10 @@ struct BeadLabels {
     round_internal: Option<f64>,
     /// The `bridge_flow` above 1 of flat strands over air.
     raised: Option<f64>,
+    /// Support on layers of its own height (`independent_support_layer_height`): a support or support interface
+    /// path printed with a part layer of another thickness carries the flow of its own layer's bead, and states that
+    /// layer's thickness as its height.
+    own_support: bool,
 }
 
 impl BeadLabels {
@@ -62,6 +66,7 @@ impl BeadLabels {
                 && crate::tower::flag_or(c, "thick_internal_bridges", true))
             .then_some(internal_flow),
             raised: (other && !c.thick_bridges && c.bridge_flow > 1.0).then_some(c.bridge_flow),
+            own_support: other && c.independent_support_layer_height(),
         }
     }
 
@@ -76,6 +81,9 @@ impl BeadLabels {
                 .filter(|f| same_flow(flow, *f))
                 .and_then(|_| self.flat_bridge(w, h)),
             Feature::InternalBridge => self.round_internal.filter(|fi| round(flow / fi)).map(|_| (w, w)),
+            Feature::Support | Feature::SupportInterface if self.own_support && !same_flow(flow, 1.0) => {
+                Some((w, support_height(w, h, flow)))
+            }
             _ => None,
         }
     }
@@ -85,6 +93,23 @@ impl BeadLabels {
         self.raised
             .map(|f| crate::overhang::raised_wall_label(w, h, crate::output::RaisedWall::Flow(f)))
     }
+}
+
+/// The thickness, mm, of the support layer a bead `w` wide printed at layer height `h` with `flow` belongs to: the
+/// height whose bead has `flow` times the area at `h`, as the support flow is worked out (`session::bead_ratio`).
+fn support_height(w: f64, h: f64, flow: f64) -> f64 {
+    let k = 1.0 - std::f64::consts::FRAC_PI_4;
+    let area = |t: f64| (w - t * k).max(w * 0.5) * t;
+    let want = flow * area(h);
+    // Where the bead is wide enough to keep its rounded sides: w t - k t^2 = want.
+    let disc = w * w - 4.0 * k * want;
+    if disc >= 0.0 {
+        let t = (w - disc.sqrt()) / (2.0 * k);
+        if t * k <= w * 0.5 {
+            return t;
+        }
+    }
+    want / (w * 0.5)
 }
 
 /// Two flow ratios equal to within what a path's single-precision flow keeps.
