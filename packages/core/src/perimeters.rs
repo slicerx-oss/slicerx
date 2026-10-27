@@ -611,10 +611,16 @@ const CLOSED_HOLES_MIN: usize = 32_000;
 /// holes that provably close are left out first. The result is the same, point for point. When the proof
 /// fails, all of them go through, as before.
 fn grow_union(contours: &[Vec<IntPoint<i32>>], hole: &[bool], delta: i32) -> Shapes {
+    grow_union_with(contours, hole, delta, false)
+}
+
+/// [`grow_union`], with the corners that turn past 120 degrees cut square when `square` is set (see
+/// [`grow_open`]).
+fn grow_union_with(contours: &[Vec<IntPoint<i32>>], hole: &[bool], delta: i32, square: bool) -> Shapes {
     let d = f64::from(delta);
     let (mut raw, mut turned) = (Vec::new(), Vec::new());
     for (c, &h) in contours.iter().zip(hole).filter(|(c, _)| c.len() >= 3) {
-        let Some(r) = raw_loop(c, d, true) else {
+        let Some(r) = raw_loop_with(c, d, true, square) else {
             return clipper_offset(contours, delta);
         };
         // A hole that closes winds nowhere below zero, so its moved contour has a positive area.
@@ -891,6 +897,21 @@ pub(crate) fn offset_square(shapes: &Shapes, delta: i32) -> Shapes {
     simplified(&raw, FillRule::Positive)
 }
 
+/// Grows `shapes` by `delta` as [`offset`] does, except at a corner that turns past 120 degrees (sharper than 60):
+/// there the corner is cut square, by the line at right angles to its bisector `delta` past the vertex, between the
+/// two moved edges, where [`offset`] bevels through the ends of the moved edges, `delta` (1 - sin a) nearer the
+/// vertex (a is half the corner's angle). This is the grow that opens a loop's area in the classic loop chain and
+/// the gap walk, so the tip of a sharp wedge reaches as far as the area it was shrunk from allows. Every other
+/// corner is joined as in [`offset`]. A `delta` of zero or less is [`offset`].
+pub(crate) fn grow_open(shapes: &Shapes, delta: i32) -> Shapes {
+    if delta <= 0 {
+        return offset(shapes, delta);
+    }
+    let all: Vec<Vec<IntPoint<i32>>> = shapes.iter().flat_map(|s| s.iter().cloned()).collect();
+    let hole: Vec<bool> = shapes.iter().flat_map(|s| (0..s.len()).map(|i| i > 0)).collect();
+    grow_union_with(&all, &hole, delta, true)
+}
+
 /// Miter length limit, as a multiple of the offset distance.
 const MITER_LIMIT: f64 = 3.0;
 
@@ -905,6 +926,12 @@ const MITER_LIMIT: f64 = 3.0;
 /// whose miter would pass the limit, since its point could land outside the
 /// shape.
 fn raw_loop(c: &[IntPoint<i32>], d: f64, through: bool) -> Option<Vec<IntPoint<i32>>> {
+    raw_loop_with(c, d, through, false)
+}
+
+/// [`raw_loop`]; with `square` and a growing `d`, a corner that turns past 120 degrees is cut square at `d` past
+/// the vertex (Clipper's square join) in place of the bevel.
+fn raw_loop_with(c: &[IntPoint<i32>], d: f64, through: bool, square: bool) -> Option<Vec<IntPoint<i32>>> {
     let n = c.len();
     let normal = |i: usize| -> Option<(f64, f64)> {
         let a = c.get(i % n)?;
@@ -923,7 +950,18 @@ fn raw_loop(c: &[IntPoint<i32>], d: f64, through: bool) -> Option<Vec<IntPoint<i
         let cross = prev.0 * cur.1 - prev.1 * cur.0;
         let (px, py) = (f64::from(p.x), f64::from(p.y));
         let gap = (cross > 0.0) == (d > 0.0);
-        if gap && dot < -0.5 {
+        if gap && dot < -0.5 && square && d > 0.0 {
+            // Each moved edge runs on past the vertex by d tan(turn / 4) to the square cut.
+            let t = (cross.m_atan2(dot) / 4.0).m_tan();
+            r.push(round_pt(
+                px + d * (prev.0 - prev.1 * t),
+                py + d * (prev.1 + prev.0 * t),
+            ));
+            r.push(round_pt(
+                px + d * (cur.0 + cur.1 * t),
+                py + d * (cur.1 - cur.0 * t),
+            ));
+        } else if gap && dot < -0.5 {
             r.push(round_pt(px + prev.0 * d, py + prev.1 * d));
             r.push(round_pt(px + cur.0 * d, py + cur.1 * d));
         } else if !gap && (d > 0.0 || through) {
@@ -1658,12 +1696,13 @@ pub(crate) fn walls_gapped(
         if let Some((spacing, spacing2, _)) = gap_pitches {
             // Orca's loop chain: each loop is the previous one pulled in by a loop pitch and opened by
             // the squish tolerance, so a loop vanishes where the part is too thin for it and a
-            // narrow crescent does not keep a sliver of a wall.
+            // narrow crescent does not keep a sliver of a wall. The opening cuts a sharp point
+            // square ([`grow_open`]).
             let min_spacing = spacing * 6 / 10;
             for k in 0..wall_loops {
                 let last = if let Some(prev) = chain.last() {
                     let d = if k == 1 { spacing2 } else { spacing };
-                    offset(&offset(prev, -(d + min_spacing / 2 - 1)), min_spacing / 2 - 1)
+                    grow_open(&offset(prev, -(d + min_spacing / 2 - 1)), min_spacing / 2 - 1)
                 } else {
                     offset(&one, -(ext / 2))
                 };
@@ -1947,6 +1986,60 @@ mod tests {
             .collect();
         assert_eq!(turned, vec![false, true, false, true]);
         assert_eq!(untouched(&raw, &turned, d), vec![false, true, false, false]);
+    }
+
+    /// The two points of the only ring of `shapes` within 0.03 mm of its leftmost point, which on a wedge whose
+    /// point faces -X are the ends of its flat.
+    fn tip_flat(shapes: &Shapes) -> (IntPoint<i32>, IntPoint<i32>) {
+        let ring = match shapes.as_slice() {
+            [s] => s.first().unwrap(),
+            _ => panic!("{} shapes", shapes.len()),
+        };
+        let x0 = ring.iter().map(|p| p.x).min().unwrap();
+        let tip: Vec<IntPoint<i32>> = ring.iter().copied().filter(|p| p.x - x0 < 300).collect();
+        assert_eq!(tip.len(), 2, "{tip:?}");
+        (tip[0], tip[1])
+    }
+
+    #[test]
+    fn grow_open_cuts_a_sharp_corner_square_past_the_vertex() {
+        // A wedge 24 mm long that widens to 2.4 mm (5.7 degrees at the point), shrunk by a pitch and the margin
+        // and grown back by the margin, 0.1131 mm, as the loop chain opens it.
+        let wedge: Shapes = vec![vec![vec![
+            IntPoint::new(0, 0),
+            IntPoint::new(240_000, 0),
+            IntPoint::new(240_000, 24_000),
+        ]]];
+        let r = 1_131;
+        let shrunk = offset(&wedge, -(3_921 + r));
+        let (a, b) = tip_flat(&grow_open(&shrunk, r));
+        let flat = f64::from(a.x - b.x).m_hypot(f64::from(a.y - b.y));
+        assert!((flat - 2_152.0).abs() <= 20.0, "flat {flat}");
+        // The bevel through the ends of the moved edges sits r (1 - sin a) further back along the bisector.
+        let (c, e) = tip_flat(&offset(&shrunk, r));
+        let mid = |p: IntPoint<i32>, q: IntPoint<i32>| {
+            (
+                f64::midpoint(f64::from(p.x), f64::from(q.x)),
+                f64::midpoint(f64::from(p.y), f64::from(q.y)),
+            )
+        };
+        let (m0, m1) = (mid(a, b), mid(c, e));
+        let nearer = (m1.0 - m0.0).m_hypot(m1.1 - m0.1);
+        assert!((nearer - 1_075.0).abs() <= 30.0, "nearer {nearer}");
+        assert!(m0.0 < m1.0);
+        // Corners that turn by 120 degrees or less are joined as before.
+        let square = vec![vec![rect(0, 0, 100_000, 100_000)]];
+        let shrunk = offset(&square, -(3_921 + r));
+        assert_eq!(grow_open(&shrunk, r), offset(&shrunk, r));
+        let hexagon: Vec<IntPoint<i32>> = (0..6)
+            .map(|k| {
+                let t = f64::from(k) * std::f64::consts::FRAC_PI_3;
+                round_pt(50_000.0 * t.m_cos(), 50_000.0 * t.m_sin())
+            })
+            .collect();
+        let hexagon = vec![vec![hexagon]];
+        assert_eq!(grow_open(&hexagon, r), offset(&hexagon, r));
+        assert_eq!(grow_open(&wedge, -r), offset(&wedge, -r));
     }
 
     #[test]
