@@ -3925,7 +3925,9 @@ fn a_tower_is_skipped_when_tools_only_change_between_layers() {
         ..Mesh::default()
     });
     let run = |extra: Value| {
-        let mut cfg = json!({"brim_width": 0, "enable_prime_tower": true, "prime_volume": 5, "wipe_tower_y": 20, "prime_tower_auto_position": false});
+        // The floor (`filament_minimal_purge_on_wipe_tower`, 15 mm3 when unset) is over what this layer's infill
+        // holds, so these runs set it to 0 to test the skip itself.
+        let mut cfg = json!({"brim_width": 0, "enable_prime_tower": true, "prime_volume": 5, "wipe_tower_y": 20, "prime_tower_auto_position": false, "filament_minimal_purge_on_wipe_tower": 0});
         cfg.as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
@@ -3944,6 +3946,9 @@ fn a_tower_is_skipped_when_tools_only_change_between_layers() {
     let lean = run(json!({}));
     assert!(tower_mm(&text(&always)) > 0.0);
     assert_eq!(tower_mm(&text(&lean)), 0.0);
+    // At the default floor the change purges 15 mm3, not 5.5, and the infill cannot take that.
+    let floored = run(json!({"filament_minimal_purge_on_wipe_tower": 15}));
+    assert!(tower_mm(&text(&floored)) > 0.0);
     assert_eq!(lean.report.stats.tool_changes, 1);
     assert_eq!(always.report.stats.tool_changes, 1);
 }
@@ -3959,7 +3964,9 @@ fn a_change_between_layers_keeps_the_tower_when_the_infill_cannot_take_the_flush
         ..Mesh::default()
     });
     let run = |extra: Value| {
-        let mut cfg = json!({"brim_width": 0, "enable_prime_tower": true, "prime_volume": 5, "wipe_tower_y": 20, "prime_tower_auto_position": false});
+        // The floor (`filament_minimal_purge_on_wipe_tower`, 15 mm3 when unset) is over what this layer's infill
+        // holds, so these runs set it to 0 to test the skip itself.
+        let mut cfg = json!({"brim_width": 0, "enable_prime_tower": true, "prime_volume": 5, "wipe_tower_y": 20, "prime_tower_auto_position": false, "filament_minimal_purge_on_wipe_tower": 0});
         cfg.as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
