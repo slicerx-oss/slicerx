@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 754 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 755 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -20,7 +20,7 @@ Print settings: layers, walls, infill, speeds, supports, adhesion.
 - [Special modes](process-special.md): 24 settings
 - [Speed](process-speed.md): 23 settings
 - [Strength: walls, shells and infill](process-strength.md): 59 settings
-- [Support](process-support.md): 39 settings
+- [Support](process-support.md): 40 settings
 
 ## Filament
 
@@ -653,6 +653,7 @@ Alphabetical, each linking to its group file.
 - `supertack_plate_temp_initial_layer`: Supertack plate temp initial layer, [filament/temperature](filament-temperature.md#supertack_plate_temp_initial_layer)
 - `support_air_filtration`: Support air filtration, [printer/cooling](printer-cooling.md#support_air_filtration)
 - `support_angle`: Support angle, [process/support](process-support.md#support_angle)
+- `support_base_edge_inset`: Support base edge inset, [process/support](process-support.md#support_base_edge_inset)
 - `support_base_pattern`: Support base pattern, [process/support](process-support.md#support_base_pattern)
 - `support_base_pattern_spacing`: Support base pattern spacing, [process/support](process-support.md#support_base_pattern_spacing)
 - `support_bottom_interface_spacing`: Support bottom interface spacing, [process/support](process-support.md#support_bottom_interface_spacing)

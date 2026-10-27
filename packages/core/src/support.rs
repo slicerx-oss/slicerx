@@ -440,7 +440,7 @@ pub(crate) fn plan(
         block,
         center,
         false,
-        half_spacing(w, layer_mm),
+        reach(cfg, w, layer_mm),
         layer_mm,
     )
     .0
@@ -483,6 +483,17 @@ fn flow_spacing(w: i32, layer_mm: f64) -> f64 {
 /// `expansion_to_slice`, half the flow spacing plus 5 units).
 fn half_spacing(w: i32, layer_mm: f64) -> i32 {
     (w - units(layer_mm * (1.0 - std::f64::consts::FRAC_PI_4))) / 2 + 5
+}
+
+/// How far the printed area of grid style support reaches past its cells: half a line spacing
+/// ([`half_spacing`]), or half the line width plus the same 5 units when `support_base_edge_inset` is `half_width`,
+/// where the outer base lines sit half a width inside the area.
+fn reach(cfg: &SupportConfig, w: i32, layer_mm: f64) -> i32 {
+    if cfg.edge_half_width {
+        w / 2 + 5
+    } else {
+        half_spacing(w, layer_mm)
+    }
 }
 
 /// The islands of an overhang that get interface under them: those wider than 0.55 support lines `w`. A
@@ -977,7 +988,7 @@ pub(crate) fn stack(
         block,
         center,
         true,
-        half_spacing(w, layer_mm),
+        reach(cfg, w, layer_mm),
         layer_mm,
     );
 
@@ -1224,7 +1235,7 @@ pub(crate) fn stack(
     // The area of each layer, kept clear of the part.
     let empty: Shapes = Vec::new();
     let grid = matches!(cfg.style, SupportStyle::Default | SupportStyle::Grid);
-    let grow = half_spacing(w, layer_mm);
+    let grow = reach(cfg, w, layer_mm);
     let footprint = |ls: &[usize]| -> Shapes {
         let parts: Vec<Shapes> = ls
             .iter()

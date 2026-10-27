@@ -370,6 +370,10 @@ pub struct SupportConfig {
     /// The part's walls as the overhang detection sees them: wall loops, outer and inner wall width
     /// and the nozzle, mm. Filled from the print settings by [`PrintConfig::support_config`].
     pub walls: (u32, f64, f64, f64),
+    /// Normal support's outer base lines sit half a line width inside the support area, so their edge is
+    /// `xy_distance` from the part at any layer height (`support_base_edge_inset` `half_width`). False keeps them
+    /// half a line spacing in (`half_spacing`, also when the key is not set). Tree and organic support ignore it.
+    pub edge_half_width: bool,
 }
 
 /// The pattern of support interface layers (`support_interface_pattern`).
@@ -420,6 +424,7 @@ impl Default for SupportConfig {
             bridge_no_support: false,
             max_bridge_length: 10.0,
             walls: (2, 0.42, 0.45, 0.4),
+            edge_half_width: false,
         }
     }
 }
@@ -1118,6 +1123,13 @@ impl PrintConfig {
                     "rectilinear_interlaced" => InterfacePattern::RectilinearInterlaced,
                     "grid" => InterfacePattern::Grid,
                     _ => return Err(bad("support_interface_pattern")),
+                };
+            }
+            if let Some(Value::String(p)) = get("support_base_edge_inset") {
+                sc.edge_half_width = match p.as_str() {
+                    "half_spacing" => false,
+                    "half_width" => true,
+                    _ => return Err(bad("support_base_edge_inset")),
                 };
             }
             if let Some(Value::String(p)) = get("support_ironing_pattern") {
@@ -2429,6 +2441,7 @@ pub const READ_KEYS: &[&str] = &[
     "support_base_pattern",
     "support_base_pattern_spacing",
     "support_interface_pattern",
+    "support_base_edge_inset",
     "support_interface_spacing",
     "support_speed",
     "support_interface_speed",

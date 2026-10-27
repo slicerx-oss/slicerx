@@ -281,6 +281,7 @@ spiral_starting_flow_ratio
 staggered_inner_seams
 standby_temperature_delta
 support_angle
+support_base_edge_inset
 support_base_pattern
 support_base_pattern_spacing
 support_bottom_interface_spacing
