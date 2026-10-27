@@ -191,6 +191,7 @@ const KEYED: &[&str] = &[
     "filament_change_length_nc",
     "filament_multitool_ramming",
     "filament_multitool_ramming_volume",
+    "enable_filament_ramming",
     "wall_direction",
     "scarf_angle_threshold",
     "scarf_overhang_threshold",

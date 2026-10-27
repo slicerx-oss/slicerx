@@ -64,7 +64,6 @@ pub const SESSION_FREE_KEYS: &[&str] = &[
     "dont_slow_down_outer_wall",
     "during_print_exhaust_fan_speed",
     "emit_machine_limits_to_gcode",
-    "enable_filament_ramming",
     "enable_long_retraction_when_cut",
     "enable_mixed_color_sublayer",
     "enable_overhang_speed",

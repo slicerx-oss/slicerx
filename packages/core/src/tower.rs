@@ -176,6 +176,18 @@ pub(crate) struct ChangePurge {
     /// The old filament's rows are Bambu Studio's nozzle change rows (wider, full rows) rather than a
     /// tool changer's ramming.
     pub(crate) nozzle_change: bool,
+    /// A single nozzle's ramming lines ([`RamLine`]), from the old filament's `filament_ramming_parameters`; None
+    /// for any other ramming.
+    pub(crate) ram_line: Option<RamLine>,
+}
+
+/// The lines a single nozzle for several filaments rams the old filament out in: `width` = the first ramming token
+/// percent of the tower's wall bead, `pitch` = the width times the second token percent and
+/// `wipe_tower_extra_spacing`, mm.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RamLine {
+    pub(crate) width: f64,
+    pub(crate) pitch: f64,
 }
 
 /// The tower's share of a change from slot `from` to slot `to` (1-based):
@@ -232,6 +244,7 @@ pub(crate) fn change_purge(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> Ch
             wipe,
             ram,
             nozzle_change: true,
+            ram_line: None,
         };
     }
     let ram = if !type1(cfg)
@@ -248,14 +261,51 @@ pub(crate) fn change_purge(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> Ch
             wipe,
             ram,
             nozzle_change: false,
+            ram_line: None,
         };
     }
+    let (ram, ram_line) = match shared_ramming(cfg, from) {
+        Some((volume, line)) => (volume, Some(line)),
+        None => (ram, None),
+    };
     ChangePurge {
         wipe: purge_volume(cfg, tools, from, to),
         ram,
         nozzle_change: false,
+        ram_line,
     }
 }
+
+/// What a single nozzle for several filaments on a type 2 tower rams out of filament `from` (1-based) before a
+/// change, with `enable_filament_ramming` on: 0.25 s at each speed (mm3/s) its `filament_ramming_parameters` list
+/// after the first two tokens, mm3, and the lines it is laid in. None when ramming is off or lists no speed.
+/// `purge_in_prime_tower` does not change it.
+fn shared_ramming(cfg: &PrintConfig, from: u8) -> Option<(f64, RamLine)> {
+    if type1(cfg)
+        || !flag_or(cfg, "single_extruder_multi_material", true)
+        || !flag_or(cfg, "enable_filament_ramming", true)
+    {
+        return None;
+    }
+    let tokens = ramming_tokens(cfg, from)?;
+    let volume: f64 = tokens.speeds.iter().map(|s| RAM_STEP * s.max(0.0)).sum();
+    if volume <= 0.0 || tokens.width <= 0.0 || tokens.pitch <= 0.0 {
+        return None;
+    }
+    let wall_w = cfg.nozzle_diameter * 1.25;
+    let extra_spacing = (cfg.raw_number("wipe_tower_extra_spacing", 100.0) / 100.0).clamp(0.5, 5.0);
+    let width = tokens.width / 100.0 * wall_w;
+    Some((
+        volume,
+        RamLine {
+            width,
+            pitch: width * tokens.pitch / 100.0 * extra_spacing,
+        },
+    ))
+}
+
+/// How long a single nozzle rams at each speed its `filament_ramming_parameters` lists, s.
+pub(crate) const RAM_STEP: f64 = 0.25;
 
 /// A tool changer's type 2 tower, where each layer's first purge gives way to what finishing the layer
 /// extrudes anyway (Orca's and `PrusaSlicer`'s `save_on_last_wipe`). A single nozzle keeps its purge.
@@ -2343,6 +2393,36 @@ pub(crate) fn per_slot_raw(cfg: &PrintConfig, key: &str, slot: u8, fallback: f64
     }
 }
 
+/// A filament's `filament_ramming_parameters` up to the `|`: the line width and pitch, percent, then the ramming
+/// speeds, mm3/s.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct RamTokens {
+    pub(crate) width: f64,
+    pub(crate) pitch: f64,
+    pub(crate) speeds: Vec<f64>,
+}
+
+/// The `filament_ramming_parameters` of filament `slot` (1-based): its entry in the list (the last entry past the
+/// end), or the one value of a setting that is not a list. None when it is absent, lists no speed after the first
+/// two tokens, or has a token that is not a number before the `|`.
+pub(crate) fn ramming_tokens(cfg: &PrintConfig, slot: u8) -> Option<RamTokens> {
+    let text = match cfg.raw.get("filament_ramming_parameters")? {
+        serde_json::Value::Array(a) => a.get(usize::from(slot.max(1) - 1)).or_else(|| a.last())?,
+        v => v,
+    }
+    .as_str()?;
+    let head = text.split('|').next().unwrap_or("");
+    let numbers: Option<Vec<f64>> = head.split_whitespace().map(|t| t.parse().ok()).collect();
+    match numbers?.as_slice() {
+        [width, pitch, speeds @ ..] if !speeds.is_empty() => Some(RamTokens {
+            width: *width,
+            pitch: *pitch,
+            speeds: speeds.to_vec(),
+        }),
+        _ => None,
+    }
+}
+
 /// With `wipe_tower_no_sparse_layers` the tower prints only on its first layer and the layers with a tool change, each
 /// on top of the tower as it stands: one layer (that layer's height) above the last tower layer, never above the layer
 /// itself. `layers` gives, from the bottom up to the layer asked about, whether the tower prints on it, its top and
@@ -3036,6 +3116,84 @@ mod tests {
             ("single_extruder_multi_material", serde_json::json!(0)),
         ]);
         assert!(!flush_on_tower(&tools) && saves_first_purge(&tools));
+    }
+
+    /// A two-filament MK4 with the MMU and a type 2 tower `width` wide that takes the whole flush (280 x 0.3), both
+    /// filaments ramming with `tokens`; `extra` over it.
+    fn mmu_ram(width: f64, tokens: &str, extra: &[(&str, serde_json::Value)]) -> PrintConfig {
+        let mut pairs = vec![
+            ("printer_model", serde_json::json!("Prusa MK4")),
+            ("wipe_tower_type", serde_json::json!("type2")),
+            ("single_extruder_multi_material", serde_json::json!("1")),
+            ("prime_tower_width", serde_json::json!(width)),
+            ("flush_volumes_matrix", serde_json::json!([0, 280, 280, 0])),
+            ("flush_multiplier", serde_json::json!(0.3)),
+            ("enable_filament_ramming", serde_json::json!("1")),
+            ("filament_ramming_parameters", serde_json::json!([tokens, tokens])),
+        ];
+        pairs.extend(extra.iter().cloned());
+        tower_cfg(&pairs)
+    }
+
+    const STOCK_RAM: &str = "250 100 40 40 40 40 40 | 0.05 40 0.45 40 0.95 40 1.45 40 1.95 40";
+
+    #[test]
+    fn a_shared_nozzle_rams_a_quarter_second_at_each_listed_speed() {
+        let ram = |c: &PrintConfig| change_purge(c, 2, 1, 2).ram;
+        assert!((ram(&mmu_ram(60.0, STOCK_RAM, &[])) - 50.0).abs() < 1e-9);
+        assert!((ram(&mmu_ram(60.0, "250 100 20 20 20 20 20| 0.05 20", &[])) - 25.0).abs() < 1e-9);
+        // The first two tokens and what follows the `|` do not change the volume.
+        assert!((ram(&mmu_ram(60.0, "500 150 40 40 40 40 40", &[])) - 50.0).abs() < 1e-9);
+        assert!((ram(&mmu_ram(60.0, "250 100 10 20 30 40 50 60 | 0.05 40", &[])) - 52.5).abs() < 1e-9);
+        // The old filament's tokens: out of filament 2 rams 25, out of filament 1 rams 50.
+        let mix = mmu_ram(
+            60.0,
+            STOCK_RAM,
+            &[(
+                "filament_ramming_parameters",
+                serde_json::json!([STOCK_RAM, "250 100 20 20 20 20 20"]),
+            )],
+        );
+        assert!((change_purge(&mix, 2, 2, 1).ram - 25.0).abs() < 1e-9);
+        assert!((change_purge(&mix, 2, 1, 2).ram - 50.0).abs() < 1e-9);
+        // No speeds, an empty string or ramming off: nothing rammed.
+        for tokens in ["250 100", "", "250 100 | 0.05 40"] {
+            let c = mmu_ram(60.0, tokens, &[]);
+            assert!(
+                ram(&c).abs() < 1e-9 && change_purge(&c, 2, 1, 2).ram_line.is_none(),
+                "{tokens:?}"
+            );
+        }
+        let off = mmu_ram(
+            60.0,
+            STOCK_RAM,
+            &[("enable_filament_ramming", serde_json::json!("0"))],
+        );
+        assert!(ram(&off).abs() < 1e-9);
+        // Without the setting nothing is rammed either.
+        let mut unset = mmu_ram(60.0, STOCK_RAM, &[]);
+        unset.raw.remove("filament_ramming_parameters");
+        assert!(ram(&unset).abs() < 1e-9);
+        // With the flush off the tower it still rams.
+        let pit0 = mmu_ram(
+            60.0,
+            STOCK_RAM,
+            &[("purge_in_prime_tower", serde_json::json!("0"))],
+        );
+        assert!((ram(&pit0) - 50.0).abs() < 1e-9);
+        // A Bambu Lab printer and a tool changer do not ram by these tokens.
+        let a1 = mmu_ram(
+            60.0,
+            STOCK_RAM,
+            &[("printer_model", serde_json::json!("Bambu Lab A1"))],
+        );
+        assert!(ram(&a1).abs() < 1e-9);
+        let tools = mmu_ram(
+            60.0,
+            STOCK_RAM,
+            &[("single_extruder_multi_material", serde_json::json!("0"))],
+        );
+        assert!(ram(&tools).abs() < 1e-9 && change_purge(&tools, 2, 1, 2).ram_line.is_none());
     }
 
     #[test]
