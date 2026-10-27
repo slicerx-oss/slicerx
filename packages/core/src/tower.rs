@@ -111,8 +111,22 @@ pub(crate) fn purge_volume(cfg: &PrintConfig, tools: u8, from: u8, to: u8) -> f6
     ) {
         // A flush never purges less than the new filament's `filament_minimal_purge_on_wipe_tower`.
         Some(v) if v > 0.0 => (v * mult * PURGE_EXTRA).max(floor),
-        _ => cfg.raw_number("prime_volume", 45.0) * PURGE_EXTRA,
+        // A zero entry asks for no flush, so the change purges the floor alone.
+        Some(_) => floor,
+        _ => (cfg.raw_number("prime_volume", 45.0) * PURGE_EXTRA).max(floor),
     }
+}
+
+/// What the tower purges of a change into slot `to` (1-based) after the new filament's infill, objects or support
+/// took up `taken` mm3 of its `wipe`. With the flush on the tower the rest never drops below the new filament's
+/// `filament_minimal_purge_on_wipe_tower`: what the objects take comes on top of the floor. Elsewhere the tower
+/// purges what is left.
+pub(crate) fn tower_share(cfg: &PrintConfig, to: u8, wipe: f64, taken: f64) -> f64 {
+    if !flush_on_tower(cfg) {
+        return wipe - taken;
+    }
+    let floor = per_slot_raw(cfg, "filament_minimal_purge_on_wipe_tower", to, 15.0).max(0.0);
+    (wipe - taken).max(floor)
 }
 
 /// The prime volume a filament gets when the settings list none for it, mm3.
@@ -2828,12 +2842,15 @@ mod tests {
         // Unset, the floor is 15: 10 x 0.3 x 1.1 is 3.3.
         let unset = semm(serde_json::json!([0, 10, 10, 0]), None);
         assert!((purge_volume(&unset, 2, 1, 2) - 15.0).abs() < 1e-9);
-        // With no matrix entry the change purges `prime_volume`, floor or not.
-        let fallback = cfg(&[
-            ("prime_volume", serde_json::json!(5)),
-            ("filament_minimal_purge_on_wipe_tower", serde_json::json!(40)),
-        ]);
-        assert!((purge_volume(&fallback, 2, 1, 2) - 5.0 * PURGE_EXTRA).abs() < 1e-9);
+        // With no matrix the change purges `prime_volume`, and the floor holds there too.
+        let fallback = |pv: i32| {
+            cfg(&[
+                ("prime_volume", serde_json::json!(pv)),
+                ("filament_minimal_purge_on_wipe_tower", serde_json::json!(40)),
+            ])
+        };
+        assert!((purge_volume(&fallback(5), 2, 1, 2) - 40.0).abs() < 1e-9);
+        assert!((purge_volume(&fallback(45), 2, 1, 2) - 45.0 * PURGE_EXTRA).abs() < 1e-9);
         // A tool changer's `prime_volume` and a type 1 tower's prime volume take no floor.
         let tools = cfg(&[
             ("single_extruder_multi_material", serde_json::json!(0)),
@@ -2847,6 +2864,65 @@ mod tests {
             ("filament_minimal_purge_on_wipe_tower", serde_json::json!(40)),
         ]);
         assert!((purge_volume(&bambu, 2, 1, 2) - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_zero_flush_entry_purges_the_floor_not_the_prime_volume() {
+        let zero = |pv: i32, floor: Option<i32>| {
+            let mut pairs = vec![
+                ("flush_volumes_matrix", serde_json::json!([0, 0, 0, 0])),
+                ("flush_multiplier", serde_json::json!(0.3)),
+                ("prime_volume", serde_json::json!(pv)),
+            ];
+            pairs.extend(floor.map(|f| ("filament_minimal_purge_on_wipe_tower", serde_json::json!([f, f]))));
+            cfg(&pairs)
+        };
+        for pv in [5, 90] {
+            assert!(
+                (purge_volume(&zero(pv, Some(40)), 2, 1, 2) - 40.0).abs() < 1e-9,
+                "prime volume {pv}"
+            );
+            assert!((change_purge(&zero(pv, Some(40)), 2, 2, 1).wipe - 40.0).abs() < 1e-9);
+            assert!((purge_volume(&zero(pv, None), 2, 1, 2) - 15.0).abs() < 1e-9);
+        }
+        // The filament estimate counts the same purge.
+        assert!((change_waste(&zero(90, Some(40)), 2, 1, 2) - 40.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn what_the_objects_take_comes_on_top_of_the_floor() {
+        let semm = |matrix: i32, floor: i32| {
+            cfg(&[
+                ("flush_volumes_matrix", serde_json::json!([0, matrix, matrix, 0])),
+                ("flush_multiplier", serde_json::json!(0.3)),
+                (
+                    "filament_minimal_purge_on_wipe_tower",
+                    serde_json::json!([floor, floor]),
+                ),
+            ])
+        };
+        // 50 x 0.3 x 1.1 is under a floor of 40: infill taking 17 still leaves 40 on the tower.
+        let low = semm(50, 40);
+        let wipe = change_purge(&low, 2, 1, 2).wipe;
+        assert!((tower_share(&low, 2, wipe, 17.0) - 40.0).abs() < 1e-9);
+        // 280 x 0.3 x 1.1 is 92.4: 17 taken leaves 75.4, which a floor of 80 lifts, and a floor of 15 does not.
+        let high = semm(280, 80);
+        assert!((tower_share(&high, 2, change_purge(&high, 2, 1, 2).wipe, 17.0) - 80.0).abs() < 1e-9);
+        let stock = semm(280, 15);
+        assert!((tower_share(&stock, 2, change_purge(&stock, 2, 1, 2).wipe, 17.0) - 75.4).abs() < 1e-9);
+        // Support taking more than the purge still leaves the floor.
+        assert!((tower_share(&stock, 2, 92.4, 120.0) - 15.0).abs() < 1e-9);
+        // A tower that only primes (a tool changer, a Bambu Lab printer) purges what is left, floor or not.
+        let tools = cfg(&[
+            ("single_extruder_multi_material", serde_json::json!(0)),
+            ("filament_minimal_purge_on_wipe_tower", serde_json::json!(40)),
+        ]);
+        assert!((tower_share(&tools, 2, 49.5, 17.0) - 32.5).abs() < 1e-9);
+        let bambu = cfg(&[
+            ("printer_model", serde_json::json!("Bambu Lab A1")),
+            ("filament_minimal_purge_on_wipe_tower", serde_json::json!(40)),
+        ]);
+        assert!((tower_share(&bambu, 2, 45.0, 17.0) - 28.0).abs() < 1e-9);
     }
 
     #[test]

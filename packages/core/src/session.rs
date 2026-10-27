@@ -3434,7 +3434,7 @@ impl SliceSession {
             if current != 0 && w.tool != current {
                 let mut v = crate::tower::change_purge(cfg, self.tool_count, current, w.tool).wipe;
                 if crate::tower::flag_or(cfg, "flush_into_support", true) {
-                    v -= w.support;
+                    v = crate::tower::tower_share(cfg, w.tool, v, w.support);
                 }
                 if let (true, Some(t)) = (v > 0.5, at.tower) {
                     wipe_starts.push(t.row_start(used_rows));
@@ -3887,7 +3887,12 @@ impl SliceSession {
             if w.tool != current && self.tool_count > 1 {
                 let mut v = crate::tower::change_purge(cfg, self.tool_count, current, w.tool).wipe;
                 if crate::tower::flag_or(cfg, "flush_into_support", true) {
-                    v -= work_support_volume(w, cfg.line_width, pl.height);
+                    v = crate::tower::tower_share(
+                        cfg,
+                        w.tool,
+                        v,
+                        work_support_volume(w, cfg.line_width, pl.height),
+                    );
                 }
                 if let (true, Some(t)) = (v > 0.5 && self.plate_tools.is_none(), self.tower(cfg)) {
                     let t = self.tower_origin.map_or(t, |o| t.at(o));
@@ -9443,7 +9448,7 @@ impl SliceSession {
                         taken += work.support_volume(cfg.line_width, h);
                     }
                 }
-                v = (v - taken).max(0.0);
+                v = crate::tower::tower_share(cfg, next_tool, v, taken).max(0.0);
                 if let Some(t0) = saving.as_ref().filter(|_| first_purge) {
                     v = t0.saved_wipe(cfg, v, h, first, used_rows, work.tool());
                 }
