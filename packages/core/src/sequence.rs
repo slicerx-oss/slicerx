@@ -696,11 +696,15 @@ fn print_layer_as_plate(
             turn
         })
         .collect();
-    match &plate_layer {
+    let changes = match &plate_layer {
         Some((at, None)) => session.tower_turns(cfg, at, &mut turns),
-        Some((at, Some(walled))) => session.support_tower_turns(cfg, at, *walled, &mut turns),
-        None => {}
-    }
+        Some((at, Some(walled))) => {
+            session.support_tower_turns(cfg, at, *walled, &mut turns);
+            Vec::new()
+        }
+        None => Vec::new(),
+    };
+    l.tower_changes = changes;
     let old = std::mem::take(&mut l.paths);
     let old_speeds = l.unslowed.take().filter(|s| s.len() == old.len());
     let mut speeds: Vec<f32> = Vec::new();

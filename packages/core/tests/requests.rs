@@ -2841,10 +2841,15 @@ fn tower_mm(g: &str) -> f64 {
     // Extruded filament (relative E) on the Prime tower feature.
     let mut on = false;
     let mut total = 0.0;
+    // A single nozzle's filament swap moves filament in and out of the cooling tube; it purges nothing.
+    let mut swap = false;
     for l in g.lines() {
         if let Some(t) = l.strip_prefix(";TYPE:") {
             on = t == "Prime tower";
+        } else if l.starts_with("; FILAMENT_SWAP_") {
+            swap = l.ends_with("START");
         } else if on
+            && !swap
             && l.starts_with("G1 X")
             && let Some(e) = l.split(" E").nth(1)
         {

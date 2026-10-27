@@ -54,6 +54,9 @@ pub fn validate_gcode(gcode: &[u8], bed: [f64; 4], max_z: f64, max_retract: f64)
     // A spiral vase layer starts one layer height lower, at the top of the layer below.
     let mut layer_h = 0.0f64;
     let mut in_wipe = false;
+    // Inside a single nozzle's filament swap (`; FILAMENT_SWAP_START` to `_END`) the filament leaves the nozzle for
+    // the cooling tube and comes back: its moves are not extrusion or retraction, and it ends loaded.
+    let mut in_swap = false;
     let eps = 1e-3;
     for (ln, raw) in gcode.split(|&c| c == b'\n').enumerate() {
         let line = raw.split(|&c| c == b';').next().unwrap_or(&[]);
@@ -63,6 +66,11 @@ pub fn validate_gcode(gcode: &[u8], bed: [f64; 4], max_z: f64, max_retract: f64)
             in_wipe = true;
         } else if raw.starts_with(b";WIPE_END") || raw.starts_with(b"; WIPE_END") {
             in_wipe = false;
+        } else if raw.starts_with(b"; FILAMENT_SWAP_START") {
+            in_swap = true;
+        } else if raw.starts_with(b"; FILAMENT_SWAP_END") {
+            in_swap = false;
+            retracted = 0.0;
         } else if let Some(v) = raw
             .strip_prefix(b";Z:")
             .or_else(|| raw.strip_prefix(b"; Z_HEIGHT:"))
@@ -146,7 +154,9 @@ pub fn validate_gcode(gcode: &[u8], bed: [f64; 4], max_z: f64, max_retract: f64)
                     }
                     z = nz;
                 }
-                if let Some(e) = e {
+                if let Some(e) = e
+                    && !in_swap
+                {
                     let xy = x.is_some() || y.is_some();
                     if xy && !(in_wipe && e < 0.0) {
                         if e < 0.0 {
@@ -186,6 +196,20 @@ mod tests {
         let g = b"G90\nM83\nG1 Z0.2\nG1 X10 Y10 E0.5\nG1 X300 Y10 E0.1\nG1 Z0.1\nG1 X10 Y20 E-0.1\n";
         let r = validate_gcode(g, [0.0, 0.0, 256.0, 256.0], 250.0, 2.0);
         assert_eq!(r.error_count, 3, "{:?}", r.errors);
+    }
+
+    #[test]
+    fn takes_a_filament_swap_as_it_is() {
+        let swap = b"G90\nM83\nG1 Z0.2\nG1 X10 Y10 E0.5\n; FILAMENT_SWAP_START\nG1 E-15 F6000\nG1 E-79 F5400\n\
+            G1 X40 Y10 E5 F835\nG1 X10 Y10 E-5 F900\nG1 E2 F2000\nG1 E-2 F1800\nT1\nG1 E2 F1800\nG1 E18 F180\n\
+            G1 X40 Y10 E63 F846\nG1 X10 Y10 E9 F592\n; FILAMENT_SWAP_END\nG1 X20 Y10 E0.4\n";
+        let r = validate_gcode(swap, [0.0, 0.0, 256.0, 256.0], 250.0, 2.0);
+        assert!(r.ok(), "{:?}", r.errors);
+        // Without the marks the same moves fail.
+        let bare: Vec<u8> = String::from_utf8_lossy(swap)
+            .replace("; FILAMENT_SWAP_", "; X_")
+            .into_bytes();
+        assert!(!validate_gcode(&bare, [0.0, 0.0, 256.0, 256.0], 250.0, 2.0).ok());
     }
 
     #[test]
