@@ -549,7 +549,7 @@ pub(crate) fn offset(shapes: &Shapes, delta: i32) -> Shapes {
     let mut out = Vec::with_capacity(shapes.len());
     for shape in shapes {
         match fast_offset(shape, delta) {
-            Some(s) => out.push(s),
+            Some(s) => out.extend(s),
             None => out.extend(clipper_offset(shape, delta)),
         }
     }
@@ -1052,8 +1052,9 @@ pub(crate) fn plain_offsets(
 }
 
 /// Miter offset of one shape, or `None` when the result is not a valid shape
-/// (a contour flipped or any two edges touch).
-fn fast_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Option<Vec<Vec<IntPoint<i32>>>> {
+/// (a contour flipped or any two edges touch). A shape that comes apart
+/// where the miter loop cut a piece away comes back as the union's pieces.
+fn fast_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Option<Shapes> {
     let d = f64::from(delta);
     let mut out: Vec<Vec<IntPoint<i32>>> = Vec::with_capacity(shape.len());
     // Each contour's bounds, so the check below skips contours far from a point (a plate with dozens of holes
@@ -1064,6 +1065,7 @@ fn fast_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Option<Vec<Vec<IntPo
         Vec::new()
     };
     let mut outline_ccw = None;
+    let mut split = false;
     for c in shape {
         let n = c.len();
         if n < 3 {
@@ -1076,9 +1078,17 @@ fn fast_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Option<Vec<Vec<IntPo
         if r.first() == r.last() {
             r.pop();
         }
-        remove_swallowtails(&mut r, area_in > 0);
+        let lobes = remove_swallowtails(&mut r, area_in > 0);
         if r.len() < 3 {
             return None;
+        }
+        // A loop cut with a piece of the contour's own winding in it may have taken a piece of the shape with
+        // it: the far arm of a U whose band closed. Not when the piece lies inside what is left (covered twice).
+        if !lobes.is_empty() {
+            let left = vec![vec![r.clone()]];
+            split |= lobes
+                .iter()
+                .any(|l| inner_point(l).is_none_or(|p| winding(&left, p) == 0));
         }
         let area_out = crate::geom::area2_int(&r);
         if area_out == 0 || (area_out > 0) != (area_in > 0) {
@@ -1106,7 +1116,16 @@ fn fast_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Option<Vec<Vec<IntPo
     if any_crossing(&out) {
         return None;
     }
-    Some(out)
+    // Most pieces cut that way are corners of the miters, which the union drops too. When the union keeps more
+    // contours, the shape came apart into pieces one contour per input contour cannot hold, so the union's
+    // result is the offset.
+    if split {
+        let union = clipper_offset(shape, delta);
+        if union.iter().map(Vec::len).sum::<usize>() > out.len() {
+            return Some(union);
+        }
+    }
+    Some(vec![out])
 }
 
 /// True when the first of `rings`, a shape's outline moved in, lies inside `outer` (the outline's bounds before
@@ -1169,9 +1188,17 @@ const TINY_LOOP: i64 = 2_000_000;
 /// loops a miter offset makes where it overruns short edges.
 const TAIL_SPAN: usize = 6;
 
+/// Twice the area (internal units) of a piece of the contour's own winding that a cut loop is checked for:
+/// 0.0001 mm2.
+const LOST_PIECE: i64 = 20_000;
+
 /// Cuts out small loops whose winding is opposite to the contour's
 /// (`ccw` is the contour's winding), replacing them by the crossing point.
-fn remove_swallowtails(r: &mut Vec<IntPoint<i32>>, ccw: bool) {
+/// Returns the pieces of the loops cut that wind the contour's way and are
+/// larger than [`LOST_PIECE`], as when the band joining the two arms of a U
+/// closes and the loop around the band takes in the far arm too.
+fn remove_swallowtails(r: &mut Vec<IntPoint<i32>>, ccw: bool) -> Vec<Vec<IntPoint<i32>>> {
+    let mut lobes = Vec::new();
     let mut i = 0;
     let mut guard = 0;
     while i < r.len() && r.len() > 3 && guard < 100_000 {
@@ -1201,6 +1228,7 @@ fn remove_swallowtails(r: &mut Vec<IntPoint<i32>>, ccw: bool) {
             loop_pts.extend((1..=step).filter_map(|k| r.get((i + k) % n)).copied());
             let area = crate::geom::area2_int(&loop_pts);
             if (area != 0 && (area > 0) != ccw) || area.abs() <= TINY_LOOP {
+                own_pieces(&loop_pts, area, ccw, &mut lobes);
                 cut = Some((step, x));
             }
             break;
@@ -1226,6 +1254,53 @@ fn remove_swallowtails(r: &mut Vec<IntPoint<i32>>, ccw: bool) {
             None => i += 1,
         }
     }
+    lobes
+}
+
+/// Adds to `out` the pieces of loop `l` (twice signed area `area`) that wind the way `ccw` says and are larger
+/// than [`LOST_PIECE`]. A simple loop is one piece; one that crosses itself goes through the union.
+fn own_pieces(l: &[IntPoint<i32>], area: i64, ccw: bool, out: &mut Vec<Vec<IntPoint<i32>>>) {
+    let ring = [l.to_vec()];
+    if !any_crossing(&ring) {
+        if (area > 0) == ccw && area.abs() > LOST_PIECE {
+            out.extend(ring);
+        }
+        return;
+    }
+    let [mut ring] = ring;
+    if !ccw {
+        ring.reverse();
+    }
+    for piece in simplified(&[ring], FillRule::Positive) {
+        if piece.iter().map(|c| crate::geom::area2_int(c)).sum::<i64>().abs() > LOST_PIECE
+            && let Some(outline) = piece.into_iter().next()
+        {
+            out.push(outline);
+        }
+    }
+}
+
+/// A point inside ring `r`: halfway between the first two crossings of the line across the middle of its bounds.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "the point lies inside the ring's bounds"
+)]
+fn inner_point(r: &[IntPoint<i32>]) -> Option<IntPoint<i32>> {
+    let b = ring_bounds(r)?;
+    let y = f64::from(b[1]) + (f64::from(b[3]) - f64::from(b[1])) / 2.0 + 0.25;
+    let mut xs: Vec<f64> = ring_edges(r)
+        .filter(|(p, q)| (f64::from(p.y) <= y) != (f64::from(q.y) <= y))
+        .map(|(p, q)| {
+            let t = (y - f64::from(p.y)) / (f64::from(q.y) - f64::from(p.y));
+            f64::from(p.x) + t * (f64::from(q.x) - f64::from(p.x))
+        })
+        .collect();
+    xs.sort_by(f64::total_cmp);
+    let (&x0, &x1) = (xs.first()?, xs.get(1)?);
+    Some(IntPoint::new(
+        f64::midpoint(x0, x1).round() as i32,
+        y.round() as i32,
+    ))
 }
 
 fn proper_cross(a: IntPoint<i32>, b: IntPoint<i32>, c: IntPoint<i32>, d: IntPoint<i32>) -> bool {
@@ -2020,5 +2095,167 @@ mod tests {
             IntPoint::new(0, 20),
         ]]];
         assert!(offset(&speck, -2_000).is_empty());
+    }
+
+    /// A point in internal units from millimeters.
+    #[allow(clippy::cast_possible_truncation, reason = "test points stay on the bed")]
+    fn mm(x: f64, y: f64) -> IntPoint<i32> {
+        IntPoint::new(
+            (x * crate::geom::SCALE).round() as i32,
+            (y * crate::geom::SCALE).round() as i32,
+        )
+    }
+
+    /// The area of each piece of `shapes` in mm2 (its outline less its holes), smallest first.
+    #[allow(clippy::cast_precision_loss, reason = "test areas")]
+    fn piece_areas(shapes: &Shapes) -> Vec<f64> {
+        let mut a: Vec<f64> = shapes
+            .iter()
+            .map(|s| {
+                s.iter().map(|r| crate::geom::area2_int(r)).sum::<i64>().abs() as f64
+                    / 2.0
+                    / (crate::geom::SCALE * crate::geom::SCALE)
+            })
+            .collect();
+        a.sort_by(f64::total_cmp);
+        a
+    }
+
+    /// True when `a` and `b` have as many pieces, each pair of areas within 1% plus 0.0005 mm2.
+    fn same_pieces(a: &[f64], b: &[f64]) -> bool {
+        a.len() == b.len()
+            && a.iter()
+                .zip(b)
+                .all(|(x, y)| (x - y).abs() <= 0.01 * y.abs() + 0.000_5)
+    }
+
+    /// A 1 x 2 mm U open to the left at `x`, `y`: arms 0.5 mm thick, a 1 mm gap, a 0.2 mm band joining them.
+    fn u_shape(x: f64, y: f64) -> Vec<IntPoint<i32>> {
+        [
+            (0.0, 0.5),
+            (0.0, 0.0),
+            (1.0, 0.0),
+            (1.0, 2.0),
+            (0.0, 2.0),
+            (0.0, 1.5),
+            (0.8, 1.5),
+            (0.8, 0.5),
+        ]
+        .iter()
+        .map(|&(px, py)| mm(x + px, y + py))
+        .collect()
+    }
+
+    #[test]
+    fn an_inward_offset_keeps_both_arms_of_a_u() {
+        // Moved in by 0.2 mm the band goes, leaving two arms 0.6 x 0.1 mm (0.06 mm2 each).
+        let u: Shapes = vec![vec![u_shape(0.0, 0.0)]];
+        let out = offset(&u, -2_000);
+        let areas = piece_areas(&out);
+        assert!(same_pieces(&areas, &[0.06, 0.06]), "pieces {areas:?}");
+        assert!(same_pieces(&areas, &piece_areas(&clipper_offset(&u[0], -2_000))));
+    }
+
+    #[test]
+    fn an_inward_offset_keeps_every_arm_of_two_us() {
+        let us: Shapes = vec![vec![u_shape(0.0, 0.0)], vec![u_shape(3.0, 0.5)]];
+        let areas = piece_areas(&offset(&us, -2_000));
+        assert!(same_pieces(&areas, &[0.06; 4]), "pieces {areas:?}");
+    }
+
+    #[test]
+    fn an_inward_offset_keeps_both_posts_of_an_h() {
+        // Posts 0.5 x 2 mm, 1 mm apart, joined at mid height by a 0.2 mm bar: both ends of the bar close.
+        let h: Shapes = vec![vec![
+            [
+                (0.0, 0.0),
+                (0.5, 0.0),
+                (0.5, 0.9),
+                (1.5, 0.9),
+                (1.5, 0.0),
+                (2.0, 0.0),
+                (2.0, 2.0),
+                (1.5, 2.0),
+                (1.5, 1.1),
+                (0.5, 1.1),
+                (0.5, 2.0),
+                (0.0, 2.0),
+            ]
+            .iter()
+            .map(|&(x, y)| mm(x, y))
+            .collect(),
+        ]];
+        // Each post comes out 0.1 x 1.6 mm.
+        let areas = piece_areas(&offset(&h, -2_000));
+        assert!(same_pieces(&areas, &[0.16, 0.16]), "pieces {areas:?}");
+    }
+
+    #[test]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "small test counts and offsets"
+    )]
+    fn thin_shapes_keep_the_pieces_the_union_keeps() {
+        // Combs: two to four arms of random thickness and length, a random gap apart, joined at one end by a band
+        // of random width, turned by a random angle and moved in by a random way, so the band often closes and
+        // the arms come apart.
+        let mut seed = 0x9e37_79b9_u32;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            f64::from(seed % 10_000) / 10_000.0
+        };
+        let (mut failed, mut split) = (Vec::new(), 0);
+        for case in 0..300 {
+            let arms = 2 + (next() * 3.0) as usize;
+            let band = 0.15 + 0.35 * next();
+            // Up the band's right side, then each arm from the top: its top edge out to the left, back along its
+            // bottom edge, and down the band's left side to the next arm.
+            let mut y = 0.0;
+            let mut spans = Vec::new();
+            for _ in 0..arms {
+                let t = 0.3 + 0.5 * next();
+                spans.push((y, y + t, 0.8 + 2.0 * next()));
+                y += t + 0.2 + 0.8 * next();
+            }
+            let top = spans.last().map_or(0.0, |s| s.1);
+            let mut pts = vec![(band, 0.0), (band, top)];
+            for (k, &(y0, y1, len)) in spans.iter().enumerate().rev() {
+                pts.push((-len, y1));
+                pts.push((-len, y0));
+                if k > 0 {
+                    pts.push((0.0, y0));
+                    pts.push((0.0, spans.get(k - 1).map_or(0.0, |s| s.1)));
+                }
+            }
+            // Any corner may come first.
+            let first = (next() * pts.len() as f64) as usize;
+            let last = pts.len() - 1;
+            pts.rotate_left(first.min(last));
+            let (s, c) = (next() * std::f64::consts::TAU).m_sin_cos();
+            let ring: Vec<IntPoint<i32>> = pts
+                .iter()
+                .map(|&(x, y)| mm(x * c - y * s, x * s + y * c))
+                .collect();
+            let d = -((0.05 + 0.3 * next()) * crate::geom::SCALE) as i32;
+            let shape = vec![ring];
+            let fast = piece_areas(&offset(&vec![shape.clone()], d));
+            let union = piece_areas(&clipper_offset(&shape, d));
+            split += usize::from(union.len() > 1);
+            if !same_pieces(&fast, &union) {
+                failed.push((case, fast, union));
+            }
+        }
+        // Enough of them come apart for the check to mean something.
+        assert!(split > 50, "{split} split");
+        assert!(
+            failed.is_empty(),
+            "{} of 300 differ: {:?}",
+            failed.len(),
+            failed.first()
+        );
     }
 }
