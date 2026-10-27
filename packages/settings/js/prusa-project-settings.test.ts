@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import cases from '../fixtures/prusa-project-settings.json'
 import mapJson from '../prusa-map.json'
-import { prusaProjectConfig, takesProjectValue } from './prusa'
+import { prusaObjectOverrides, prusaProjectConfig, takesProjectValue } from './prusa'
 import { settingDef } from './schema'
 import { unzipForTest } from './testkit'
 
@@ -46,16 +46,38 @@ describe('prusaProjectConfig', () => {
 
   it('says which values it left out because they read differently here', () => {
     const r = prusaProjectConfig('; support_material_xy_spacing = 50%\n; filament_shrinkage_compensation_z = 0.5%')
-    expect(r.notApplied.map((d) => [d.key, d.target])).toEqual([
-      ['filament_shrinkage_compensation_z', 'filament_shrinkage_compensation_z'],
-      ['support_material_xy_spacing', 'support_object_xy_distance'],
-    ])
+    expect(r.notApplied.map((d) => [d.key, d.target])).toEqual([['filament_shrinkage_compensation_z', 'filament_shrinkage_compensation_z']])
+    // A support XY spacing in percent is of the outer wall's width (1.125 x the default 0.4 nozzle here), so it carries over in mm.
+    expect(r.config['support_object_xy_distance']).toBe('0.225')
   })
 
   it('keeps the filament colors apart from the settings', () => {
     const r = prusaProjectConfig('; filament_colour = #FF8000;#00AAFF\n; layer_height = 0.2')
     expect(r.colors).toEqual(['#FF8000', '#00AAFF'])
     expect(r.config).toEqual({ layer_height: '0.2' })
+  })
+})
+
+describe('prusaObjectOverrides', () => {
+  const project = ['layer_height = 0.1', 'perimeter_extrusion_width = 150%', 'external_perimeter_extrusion_width = 0.6', 'first_layer_extrusion_width = 200%'].map((l) => `; ${l}`).join('\n')
+
+  it("takes the project's width percents of an object's own layer height", () => {
+    const o = prusaObjectOverrides({ layer_height: '0.3' }, project)
+    expect(o['inner_wall_line_width']).toBe('0.45')
+    // The first layer width is the project's, and an outer wall in mm stays the project's.
+    expect(o['initial_layer_line_width']).toBeUndefined()
+    expect(o['outer_wall_line_width']).toBeUndefined()
+  })
+
+  it("takes an object's own percents of its layer height, else the project's", () => {
+    expect(prusaObjectOverrides({ perimeter_extrusion_width: '250%' }, project)['inner_wall_line_width']).toBe('0.25')
+    expect(prusaObjectOverrides({ support_material_xy_spacing: '150%' }, project)['support_object_xy_distance']).toBe('0.9')
+    expect(prusaObjectOverrides({ support_material_xy_spacing: '100%', external_perimeter_extrusion_width: '200%', layer_height: '0.3' }, project)['support_object_xy_distance']).toBe('0.6')
+  })
+
+  it('leaves an object without its own layer height or width percents as before', () => {
+    expect(prusaObjectOverrides({ perimeter_extrusion_width: '0.55' }, project)).toEqual({ inner_wall_line_width: '0.55' })
+    expect(prusaObjectOverrides({ perimeters: '3' }, project)).toEqual({ wall_loops: '3' })
   })
 })
 

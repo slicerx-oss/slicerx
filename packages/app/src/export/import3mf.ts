@@ -585,10 +585,14 @@ function plateCfgOf(name: string, index: number, m: Record<string, string>, obje
  * paint as the file has them, for Bambu Studio, Orca and PrusaSlicer alike; PrusaSlicer's settings are mapped to Orca's
  * keys here, as the app reads them everywhere else. A part type the app does not know is left out, as before.
  */
-async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; items: Assembled[] }> {
+async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<{ plateCfg: PlateCfg[]; items: Assembled[] }> {
   const plateCfg = g.plates.map((p, i) => plateCfgOf(p.name, i, Object.fromEntries(p.settings), p.objects.map(String), p.id))
   const prusaOverrides = g.layout === 'prusa' ? (await import('@slicerx/settings')).prusaOverrides : null
   const raw = (list: [string, string][]): Record<string, string> => (prusaOverrides ? prusaOverrides(Object.fromEntries(list)) : Object.fromEntries(list))
+  // An object's width percents are of its own layer height, read with the project's settings (prusaObjectOverrides).
+  const prusaObject = g.layout === 'prusa' ? (await import('@slicerx/settings')).prusaObjectOverrides : null
+  const prusaText = prusaConfig ? new TextDecoder().decode(prusaConfig) : undefined
+  const objectRaw = (list: [string, string][]): Record<string, string> => (prusaObject ? prusaObject(Object.fromEntries(list), prusaText) : raw(list))
   const items: Assembled[] = []
   for (const [itemIndex, o] of g.objects.entries()) {
     const parts: MeshPart[] = []
@@ -609,7 +613,7 @@ async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; ite
       const layers: PaintOfPart = geomPaint(p.paint)
       if (Object.keys(layers).length) paint[parts.length] = layers
       // PrusaSlicer's object settings apply to each of its parts; a part's own settings win.
-      const settings = prusaOverrides ? { ...raw(o.settings), ...own } : own
+      const settings = prusaOverrides ? { ...objectRaw(o.settings), ...own } : own
       if (Object.keys(settings).length) rawPartSettings[name] = settings
       if (p.slot == null && o.slot == null) noSlot.push(name)
       parts.push(part)
@@ -704,7 +708,9 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
   const prusaText = settingsText ? undefined : files.get('Metadata/Slic3r_PE_model.config')
   const prusa = new Map<string, { name?: string; extruder?: number; settings: Record<string, string>; volumes: PrusaVolume[] }>()
   if (prusaText) {
-    const { prusaOverrides } = await import('@slicerx/settings')
+    const { prusaObjectOverrides, prusaOverrides } = await import('@slicerx/settings')
+    const peConfig = files.get('Metadata/Slic3r_PE.config')
+    const peText = peConfig ? dec.decode(peConfig) : undefined
     const cfg = xml(dec.decode(prusaText)).documentElement
     const md = (el: Element) => Object.fromEntries(kids(el, 'metadata').map((m) => [m.getAttribute('key') ?? '', m.getAttribute('value') ?? '']))
     const settingsOf = (m: Record<string, string>) => prusaOverrides(Object.fromEntries(Object.entries(m).filter(([k]) => k !== '' && !PRUSA_META.has(k))))
@@ -720,7 +726,8 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
         return { first: Number(v.getAttribute('firstid')), last: Number(v.getAttribute('lastid')), ...(vm['name'] ? { name: vm['name'] } : {}), type: vm['volume_type'] ?? (vm['modifier'] === '1' ? 'ParameterModifier' : 'ModelPart'), ...(ext ? { extruder: ext } : {}), settings: settingsOf(vm) }
       })
       const ext = slot(om['extruder'])
-      prusa.set(o.getAttribute('id') ?? '', { ...(om['name'] ? { name: om['name'] } : {}), ...(ext ? { extruder: ext } : {}), settings: settingsOf(om), volumes })
+      const objectSettings = prusaObjectOverrides(Object.fromEntries(Object.entries(om).filter(([k]) => k !== '' && !PRUSA_META.has(k))), peText)
+      prusa.set(o.getAttribute('id') ?? '', { ...(om['name'] ? { name: om['name'] } : {}), ...(ext ? { extruder: ext } : {}), settings: objectSettings, volumes })
     }
   }
 
@@ -790,7 +797,7 @@ export async function projectOf(scanned: ScannedProject, bed: { widthMm: number;
   // The library stamps sx:Listing and sx:Creator on the root model; they apply to every object without its own.
   const marks = vaultMarksOf(files, scanned.marks)
   const rootSource = sourceOf(marks.root)
-  const { plateCfg, items } = scanned.geom ? await assembleGeom(scanned.geom) : await assembleScanned(scanned)
+  const { plateCfg, items } = scanned.geom ? await assembleGeom(scanned.geom, files.get('Metadata/Slic3r_PE.config')) : await assembleScanned(scanned)
   const plateOf = (objectId: string): number => Math.max(0, plateCfg.findIndex((p) => p.objectIds.includes(objectId)))
   const plates: ImportedPlate[] = (plateCfg.length ? plateCfg : [{ name: 'Plate 1', objectIds: [] }]).map((p) => ({ name: p.name, ...(p.sequence ? { sequence: p.sequence } : {}), ...(p.nozzleMap ? { nozzleMap: p.nozzleMap } : {}), ...(p.plateNo ? { plateNo: p.plateNo } : {}), objects: [] }))
   const ears = parseBrimEars(files.get('Metadata/brim_ear_points.txt'))

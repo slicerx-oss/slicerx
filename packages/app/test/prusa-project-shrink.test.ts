@@ -52,8 +52,8 @@ describe('a PrusaSlicer project saved with no shrinkage', () => {
     it(`${name} reads as no shrinkage and the first layer infill speed from the first layer speed`, async () => {
       const p = await readProject(fixture(name), bed)
       expect(p.settingsFrom).toBe('prusaslicer')
-      // Its support XY spacing is 50%, which has no reading here yet; the open says so.
-      expect(p.settingsNote).toBe('Not applied from its settings: support XY distance.')
+      // Its support XY spacing is 50%, which now reads as a percent of the outer wall width.
+      expect(p.settingsNote).toBeUndefined()
       const { values } = projectSettingChanges(p.settings, baseConfig())
       const effective = { ...baseConfig(), ...values } as Record<string, SettingValue>
       expect(effective['filament_shrink']).toEqual([100])
@@ -84,11 +84,11 @@ describe('a PrusaSlicer project with shrinkage set', () => {
     const bytes = await withValue('prusaslicer-2.9.6-tslab.3mf', 'filament_shrinkage_compensation_xy', '0.5%')
     const p = await readProject(bytes, bed)
     expect(p.settings['filament_shrink']).toBeUndefined()
-    expect(p.settingsNote).toBe('Not applied from its settings: shrinkage compensation XY, support XY distance.')
+    expect(p.settingsNote).toBe('Not applied from its settings: shrinkage compensation XY.')
     const { host } = engine()
     await openModelBytes(host, 'shrunk.3mf', buf(bytes), undefined, { fresh: true })
     const text = get().openNote?.text ?? ''
-    expect(text).toContain('Not applied from its settings: shrinkage compensation XY, support XY distance.')
+    expect(text).toContain('Not applied from its settings: shrinkage compensation XY.')
     expect(text).toMatch(/^Applied \d+ settings from shrunk\.3mf\. /)
     expect(text).not.toMatch(/filament_shrink|_xy/)
     expect((resolveConfig(get().easy, get().overrides) as Record<string, SettingValue>)['filament_shrink']).toEqual([100])

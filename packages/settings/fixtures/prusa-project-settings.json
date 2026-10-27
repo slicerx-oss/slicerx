@@ -73,7 +73,7 @@
         "sparse_infill_density": "20%",
         "sparse_infill_pattern": "grid",
         "initial_layer_acceleration": "0",
-        "initial_layer_line_width": "200%",
+        "initial_layer_line_width": "0.4",
         "initial_layer_print_height": "0.2",
         "nozzle_temperature_initial_layer": "235",
         "full_fan_speed_layer": "0",
@@ -157,6 +157,7 @@
         "support_interface_bottom_layers": "-1",
         "support_on_build_plate_only": "0",
         "support_top_z_distance": "0.2",
+        "support_object_xy_distance": "0.225",
         "enforce_support_layers": "0",
         "support_filament": "1",
         "support_line_width": "0",
@@ -466,23 +467,25 @@
       "unmapped": []
     },
     {
-      "name": "first layer width in percent",
+      "name": "first layer width in percent, of the default first layer height",
       "lines": [
         "first_layer_extrusion_width = 200%",
         "extrusion_width = 0.45"
       ],
       "config": {
-        "initial_layer_line_width": "200%",
+        "initial_layer_line_width": "0.7",
         "line_width": "0.45"
       },
       "unmapped": []
     },
     {
-      "name": "support XY spacing in percent is not read",
+      "name": "support XY spacing in percent, of the default outer wall width",
       "lines": [
         "support_material_xy_spacing = 50%"
       ],
-      "config": {},
+      "config": {
+        "support_object_xy_distance": "0.225"
+      },
       "unmapped": []
     },
     {
@@ -492,6 +495,310 @@
       ],
       "config": {
         "support_object_xy_distance": "0.6"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer width in percent, of the first layer height",
+      "lines": [
+        "first_layer_extrusion_width = 200%",
+        "first_layer_height = 0.2"
+      ],
+      "config": {
+        "initial_layer_line_width": "0.4",
+        "initial_layer_print_height": "0.2"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer width 150% of a 0.3 first layer",
+      "lines": [
+        "first_layer_extrusion_width = 150%",
+        "first_layer_height = 0.3"
+      ],
+      "config": {
+        "initial_layer_line_width": "0.45",
+        "initial_layer_print_height": "0.3"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer width 150% of a 0.15 first layer, not rounded",
+      "lines": [
+        "first_layer_extrusion_width = 150%",
+        "first_layer_height = 0.15"
+      ],
+      "config": {
+        "initial_layer_line_width": "0.225",
+        "initial_layer_print_height": "0.15"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer width 120% of a 0.15 first layer",
+      "lines": [
+        "first_layer_extrusion_width = 120%",
+        "first_layer_height = 0.15"
+      ],
+      "config": {
+        "initial_layer_line_width": "0.18",
+        "initial_layer_print_height": "0.15"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer width in mm",
+      "lines": [
+        "first_layer_extrusion_width = 0.5"
+      ],
+      "config": {
+        "initial_layer_line_width": "0.5"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer width 0 is auto",
+      "lines": [
+        "first_layer_extrusion_width = 0"
+      ],
+      "config": {
+        "initial_layer_line_width": "0"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support XY spacing in percent of the outer wall width",
+      "lines": [
+        "support_material_xy_spacing = 50%",
+        "external_perimeter_extrusion_width = 0.6"
+      ],
+      "config": {
+        "support_object_xy_distance": "0.3",
+        "outer_wall_line_width": "0.6"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support XY spacing 150% of the outer wall width",
+      "lines": [
+        "support_material_xy_spacing = 150%",
+        "external_perimeter_extrusion_width = 0.6"
+      ],
+      "config": {
+        "support_object_xy_distance": "0.9",
+        "outer_wall_line_width": "0.6"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support XY spacing in percent of the general width",
+      "lines": [
+        "support_material_xy_spacing = 100%",
+        "external_perimeter_extrusion_width = 0",
+        "extrusion_width = 0.5"
+      ],
+      "config": {
+        "support_object_xy_distance": "0.5",
+        "outer_wall_line_width": "0",
+        "line_width": "0.5"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support XY spacing in percent of a general width in percent",
+      "lines": [
+        "support_material_xy_spacing = 100%",
+        "external_perimeter_extrusion_width = 0",
+        "extrusion_width = 250%",
+        "layer_height = 0.2"
+      ],
+      "config": {
+        "support_object_xy_distance": "0.5",
+        "outer_wall_line_width": "0",
+        "line_width": "0.5",
+        "layer_height": "0.2"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support XY spacing in percent of an outer wall width in percent",
+      "lines": [
+        "support_material_xy_spacing = 100%",
+        "external_perimeter_extrusion_width = 150%",
+        "layer_height = 0.2"
+      ],
+      "config": {
+        "support_object_xy_distance": "0.3",
+        "outer_wall_line_width": "0.3",
+        "layer_height": "0.2"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support XY spacing in percent of the auto width on the project's nozzle",
+      "lines": [
+        "support_material_xy_spacing = 50%",
+        "external_perimeter_extrusion_width = 0",
+        "extrusion_width = 0",
+        "nozzle_diameter = 0.6"
+      ],
+      "config": {
+        "support_object_xy_distance": "0.3375",
+        "outer_wall_line_width": "0",
+        "line_width": "0"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support XY spacing in percent of the auto width on a 0.25 nozzle, not rounded",
+      "lines": [
+        "support_material_xy_spacing = 50%",
+        "external_perimeter_extrusion_width = 0",
+        "extrusion_width = 0",
+        "nozzle_diameter = 0.25"
+      ],
+      "config": {
+        "support_object_xy_distance": "0.140625",
+        "outer_wall_line_width": "0",
+        "line_width": "0"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "inner wall width in percent of the layer height",
+      "lines": [
+        "perimeter_extrusion_width = 150%",
+        "layer_height = 0.2"
+      ],
+      "config": {
+        "inner_wall_line_width": "0.3",
+        "layer_height": "0.2"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "inner wall width 250% of a 0.3 layer",
+      "lines": [
+        "perimeter_extrusion_width = 250%",
+        "layer_height = 0.3"
+      ],
+      "config": {
+        "inner_wall_line_width": "0.75",
+        "layer_height": "0.3"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "sparse infill width 150% of a 0.1 layer",
+      "lines": [
+        "infill_extrusion_width = 150%",
+        "layer_height = 0.1"
+      ],
+      "config": {
+        "sparse_infill_line_width": "0.15",
+        "layer_height": "0.1"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "sparse infill width 250% of a 0.3 layer",
+      "lines": [
+        "infill_extrusion_width = 250%",
+        "layer_height = 0.3"
+      ],
+      "config": {
+        "sparse_infill_line_width": "0.75",
+        "layer_height": "0.3"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "solid infill width 150% of a 0.3 layer",
+      "lines": [
+        "solid_infill_extrusion_width = 150%",
+        "layer_height = 0.3"
+      ],
+      "config": {
+        "internal_solid_infill_line_width": "0.45",
+        "layer_height": "0.3"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "top surface width 250% of a 0.1 layer",
+      "lines": [
+        "top_infill_extrusion_width = 250%",
+        "layer_height = 0.1"
+      ],
+      "config": {
+        "top_surface_line_width": "0.25",
+        "layer_height": "0.1"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support width 150% of a 0.3 layer",
+      "lines": [
+        "support_material_extrusion_width = 150%",
+        "layer_height = 0.3"
+      ],
+      "config": {
+        "support_line_width": "0.45",
+        "layer_height": "0.3"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "general width 250% of a 0.2 layer",
+      "lines": [
+        "extrusion_width = 250%",
+        "layer_height = 0.2"
+      ],
+      "config": {
+        "line_width": "0.5",
+        "layer_height": "0.2"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "outer wall width 150% of a 0.3 layer",
+      "lines": [
+        "external_perimeter_extrusion_width = 150%",
+        "layer_height = 0.3"
+      ],
+      "config": {
+        "outer_wall_line_width": "0.45",
+        "layer_height": "0.3"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "inner wall width in percent of the default layer height",
+      "lines": [
+        "perimeter_extrusion_width = 150%"
+      ],
+      "config": {
+        "inner_wall_line_width": "0.45"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "inner wall width in mm",
+      "lines": [
+        "perimeter_extrusion_width = 0.55"
+      ],
+      "config": {
+        "inner_wall_line_width": "0.55"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "inner wall width 0 is auto",
+      "lines": [
+        "perimeter_extrusion_width = 0"
+      ],
+      "config": {
+        "inner_wall_line_width": "0"
       },
       "unmapped": []
     },

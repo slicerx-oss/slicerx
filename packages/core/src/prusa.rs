@@ -18,6 +18,8 @@ struct PrusaMap {
     values: Vec<(String, String, String)>,
     percent_of: HashMap<String, String>,
     percent_base_defaults: HashMap<String, f64>,
+    /// Width keys a project gives as a percent of a height (`widthPercentOf`), by the key the percent is of.
+    width_percent_of: HashMap<String, String>,
     ignored_prefixes: Vec<String>,
     ignored_keys: Vec<String>,
     /// Keys that carry over only through a `values` row; any other value is left out.
@@ -115,6 +117,7 @@ fn map() -> &'static PrusaMap {
                         .collect()
                 })
                 .unwrap_or_default(),
+            width_percent_of: strings("widthPercentOf"),
             ignored_prefixes: pattern
                 .trim_start_matches("^(")
                 .trim_end_matches(')')
@@ -249,6 +252,49 @@ fn absolute(key: &str, raw: &HashMap<&str, &str>, depth: u32) -> Option<f64> {
     Some((b * p).round() / 100.0)
 }
 
+/// The mm a width percent in a project's own settings stands for (`widthPercentOf`): a percent of the first layer
+/// height for the first layer width, of the layer height for the other widths, and of the outer wall's width for the
+/// support's XY gap. Heights are the project's own, as the project sets them, else the defaults.
+fn width_mm(key: &str, p: f64, raw: &HashMap<&str, &str>) -> Option<f64> {
+    let base = match map().width_percent_of.get(key)?.as_str() {
+        "external_perimeter_width" => outer_width(raw)?,
+        height => absolute(height, raw, 0)?,
+    };
+    // Kept to a nanometer, so float noise does not show: 150% of 0.15 is 0.225.
+    Some((base * p / 100.0 * 1e9).round() / 1e9)
+}
+
+/// The outer wall's width at the layer height in a project's own settings: its own width when set (a percent of the
+/// layer height), else the general width, else 1.125 times the project's own nozzle diameter (0.4 when it has none).
+fn outer_width(raw: &HashMap<&str, &str>) -> Option<f64> {
+    let lh = absolute("layer_height", raw, 0)?;
+    for key in ["external_perimeter_extrusion_width", "extrusion_width"] {
+        let Some(v) = raw.get(key) else { continue };
+        let w = percent(v).map_or_else(|| number(v), |p| Some(p / 100.0 * lh));
+        if let Some(w) = w.filter(|w| *w != 0.0) {
+            return Some(w);
+        }
+    }
+    let nozzle = match raw.get("nozzle_diameter") {
+        Some(v) => number(v.split(',').next().unwrap_or(v))?,
+        None => *map().percent_base_defaults.get("nozzle_diameter")?,
+    };
+    Some(1.125 * nozzle)
+}
+
+/// A project's own settings with each width percent of `widthPercentOf` in mm, all read from the settings as given.
+fn project_widths(list: &[(String, String)]) -> Vec<(String, String)> {
+    let raw: HashMap<&str, &str> = list.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let mm: Vec<Option<String>> = list
+        .iter()
+        .map(|(k, v)| percent(v).and_then(|p| width_mm(k, p, &raw)).map(plain))
+        .collect();
+    list.iter()
+        .zip(mm)
+        .map(|((k, v), mm)| (k.clone(), mm.unwrap_or_else(|| v.clone())))
+        .collect()
+}
+
 /// A number as Orca writes it: no trailing zeros.
 fn plain(n: f64) -> String {
     let s = format!("{n}");
@@ -261,13 +307,44 @@ pub(crate) fn overrides(list: &[(String, String)]) -> Map<String, Value> {
     map_values(list, false).0
 }
 
+/// One object's `PrusaSlicer` settings as [`overrides`] gives them, plus each width percent that the object's own layer
+/// height decides, in mm: one the object sets, and the project's own when the object has its own `layer_height`. Both
+/// are of the object's layer height (the project's when it sets none), and the support XY spacing of the object's outer
+/// wall width. The first layer width stays the project's. `project` is the text of `Metadata/Slic3r_PE.config`.
+pub(crate) fn object_overrides(list: &[(String, String)], project: Option<&str>) -> Map<String, Value> {
+    let mut out = overrides(list);
+    let m = map();
+    let global = project.map(config_lines).unwrap_or_default();
+    let own: HashMap<&str, &str> = list.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let mut raw: HashMap<&str, &str> = global.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    raw.extend(own.iter().map(|(k, v)| (*k, *v)));
+    let own_height = own.contains_key("layer_height");
+    let mut keys: Vec<&String> = m.width_percent_of.keys().collect();
+    keys.sort();
+    for key in keys {
+        if key == "first_layer_extrusion_width" || !(own_height || own.contains_key(key.as_str())) {
+            continue;
+        }
+        let Some(mm) = raw
+            .get(key.as_str())
+            .and_then(|v| percent(v))
+            .and_then(|p| width_mm(key, p, &raw))
+        else {
+            continue;
+        };
+        let target = m.rename.get(key).map_or(key.as_str(), String::as_str);
+        out.insert(target.to_owned(), Value::String(plain(mm)));
+    }
+    out
+}
+
 /// A project's own `PrusaSlicer` settings (the text of `Metadata/Slic3r_PE.config`) as what a project may set
 /// (`projectTakes` in prusa-map.json), in the Orca-format values `project_settings.config` has: the print and filament
 /// values, with the printer's own settings, G-code and other text left to the current printer. Also the keys that have
 /// no setting of ours, sorted. The same as `prusaProjectConfig` in the settings package, which the app and the MCP
 /// server use.
 pub(crate) fn project_settings(text: &str) -> (Map<String, Value>, Vec<String>) {
-    let (mapped, unmapped) = map_values(&config_lines(text), true);
+    let (mapped, unmapped) = map_values(&project_widths(&config_lines(text)), true);
     let settings = mapped.into_iter().filter(|(k, v)| takes(k, v)).collect();
     (settings, unmapped)
 }
