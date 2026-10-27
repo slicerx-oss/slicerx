@@ -1565,10 +1565,16 @@ impl Tower {
         let mut left = true;
         let mut volume = volume;
         let mut lead_row = false;
+        let mut lead_out = false;
         if let Some((x, right)) = lead {
             let x = x.clamp(x0, x1);
-            let to = if right { x1 } else { x0 };
+            let mut to = if right { x1 } else { x0 };
             if (to - x).abs() > 1e-3 {
+                // On the box a lead row heading right runs on to the wall's inner edge.
+                if self.on_box && right {
+                    to = self.width - self.wall_w / 2.0;
+                    lead_out = true;
+                }
                 let ly = y - if self.full_lead { 1.0 } else { 0.5 } * self.spacing;
                 pts.push((x, ly));
                 pts.push((to, ly));
@@ -1578,9 +1584,13 @@ impl Tower {
             // The rows go on from the edge the leading row ended at, back the other way.
             left = !right;
         }
-        let n = (volume.max(0.0) / (row_len * area))
-            .ceil()
-            .max(if lead_row { 0.0 } else { 1.0 });
+        let n = if self.on_box {
+            semm_count(volume, row_len, area, self.wall_w, lead_row, lead_out)
+        } else {
+            (volume.max(0.0) / (row_len * area))
+                .ceil()
+                .max(if lead_row { 0.0 } else { 1.0 })
+        };
         let dense = self.type1 && (first || contact) && !lead_row && self.spacing > self.wall_w + 1e-9;
         let (printed, step) = if dense {
             (
@@ -1590,21 +1600,35 @@ impl Tower {
         } else {
             (n, self.spacing)
         };
+        let mut rows_len = 0.0;
         // The count is small (a purge is tens of rows).
         #[allow(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
             reason = "row count is small"
         )]
-        for _ in 0..(printed as usize) {
-            let (a, b) = if left { (x0, x1) } else { (x1, x0) };
+        for i in 0..(printed as usize) {
+            let (mut a, b) = if left { (x0, x1) } else { (x1, x0) };
+            // On the box a row after a diagonal turn starts at the wall's inner edge.
+            if self.on_box && semm_turns_out(i + usize::from(lead_row), lead_out) {
+                a = if left {
+                    self.wall_w / 2.0
+                } else {
+                    self.width - self.wall_w / 2.0
+                };
+            }
             pts.push((a, y));
             pts.push((b, y));
+            rows_len += (b - a).abs();
             y += step;
             left = !left;
         }
         // The last row is trimmed so the total matches the volume asked for.
-        let full = n * row_len * self.row_area(layer_h);
+        let full = if self.on_box {
+            rows_len * area
+        } else {
+            n * row_len * self.row_area(layer_h)
+        };
         if !self.whole_rows && n > 0.0 && full > volume + 1e-9 && pts.len() >= 2 {
             let short = (full - volume) / self.row_area(layer_h);
             if let (Some(a), Some(b)) = (pts.get(pts.len() - 2).copied(), pts.last().copied()) {
@@ -1650,7 +1674,8 @@ impl Tower {
             if let Some(next) = pts.get(2 * k + 2)
                 && let Some(end) = row_pts.last().copied()
             {
-                row_pts.push((end.0, next.1));
+                // On the box the turn runs straight to the next row's start, diagonally where it turns out.
+                row_pts.push((if self.on_box { next.0 } else { end.0 }, next.1));
             }
             paths.push(TowerPath {
                 points: row_pts.into_iter().map(|(x, y)| self.place_point(x, y)).collect(),
@@ -2020,6 +2045,7 @@ fn plan_rows_with(
     let extra_flow = (cfg.raw_number("wipe_tower_extra_flow", 100.0) / 100.0).clamp(0.5, 3.0);
     let row_flow = if type1(cfg) { 1.0 } else { extra_flow };
     let row_len = width.max(5.0) - 4.0 * wall_w;
+    let on_box = walls_on_box(cfg, tools);
     let mut cur = 0u8;
     // The most rows each block takes on any layer; the blocks stand side by side along the depth.
     let mut most: Vec<(i64, f64)> = Vec::new();
@@ -2045,9 +2071,14 @@ fn plan_rows_with(
                 }
                 first_change = false;
                 let mut r = (v / (row_len * row_flow * bead(wall_w, h))).ceil().max(1.0);
-                if p.ram_line.is_some() {
+                if on_box {
+                    // Rows on the box turn out to the wall's inner edge in a cycle, as the print lays them.
+                    let (len, out) = p.ram_line.map_or((0.0, false), |_| ram_lead(cfg, p, width, h));
+                    let area = row_flow * bead(wall_w, h);
+                    r = semm_count(v - len * area, row_len, area, wall_w, len > 0.0, out);
+                } else if p.ram_line.is_some() {
                     // The wipe first finishes the ramming's last row, then lays its own.
-                    let lead = ram_lead(cfg, p, width, h) * row_flow * bead(wall_w, h);
+                    let lead = ram_lead(cfg, p, width, h).0 * row_flow * bead(wall_w, h);
                     r = ((v - lead).max(0.0) / (row_len * row_flow * bead(wall_w, h)))
                         .ceil()
                         .max(if lead > 0.0 { 0.0 } else { 1.0 });
@@ -2350,10 +2381,10 @@ fn ram_rows(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> f64 {
 
 /// The row a single nozzle's ramming leaves for the wipe to finish on a type 2 tower `width` wide at height `h`, mm:
 /// from where its last line stops to the end of the wipe's rows (2 wall beads in from the side), 0 when it stops
-/// there.
-fn ram_lead(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> f64 {
+/// there. A row heading right runs on to the wall's inner edge ([`Tower::purge_lead`]); the flag says it does.
+fn ram_lead(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> (f64, bool) {
     let Some(line) = p.ram_line else {
-        return 0.0;
+        return (0.0, false);
     };
     let wall_w = cfg.nozzle_diameter * 1.25;
     let inset = 1.5 * wall_w;
@@ -2363,12 +2394,55 @@ fn ram_lead(cfg: &PrintConfig, p: ChangePurge, width: f64, h: f64) -> f64 {
     let last = (p.ram / area - (lines - 1.0) * (x1 - x0)).clamp(0.0, x1 - x0);
     let (lo, hi) = (2.0 * wall_w, width - 2.0 * wall_w);
     // Odd lines run left to right.
-    let len = if (lines - 2.0 * (lines / 2.0).floor() - 1.0).abs() < 1e-9 {
+    let right = (lines - 2.0 * (lines / 2.0).floor() - 1.0).abs() < 1e-9;
+    let len = if right {
         hi - (x0 + last).clamp(lo, hi)
     } else {
         (x1 - last).clamp(lo, hi) - lo
     };
-    if len > 1e-3 { len } else { 0.0 }
+    if len <= 1e-3 {
+        (0.0, false)
+    } else if right {
+        (len + 1.5 * wall_w, true)
+    } else {
+        (len, false)
+    }
+}
+
+/// Whether the purge row `k` of a single nozzle's wipe on the box starts at the wall's inner edge, 1.5 wall beads
+/// past the plain row's start. Row 0 is the leading row (or the first row when there is none). The turns
+/// after it repeat in fours, two diagonal and two straight, from the first; a diagonal turn out of a lead that
+/// already ends at the inner edge (`lead_out`) runs back in instead.
+fn semm_turns_out(k: usize, lead_out: bool) -> bool {
+    k >= 1 && (k - 1) % 4 < 2 && !(k == 1 && lead_out)
+}
+
+/// The rows a single nozzle's wipe on the box lays after its lead to purge `volume` mm3: the fewest whose own
+/// lengths reach it, each `row_len` mm plus 1.5 x `wall_w` where it turns out ([`semm_turns_out`]), at `area` mm2.
+fn semm_rows(volume: f64, row_len: f64, area: f64, wall_w: f64, lead_out: bool) -> f64 {
+    let (mut n, mut done) = (0usize, 0.0);
+    while done < volume - 1e-9 && n < 100_000 {
+        n += 1;
+        let out = if semm_turns_out(n, lead_out) {
+            1.5 * wall_w
+        } else {
+            0.0
+        };
+        done += (row_len + out) * area;
+    }
+    #[allow(clippy::cast_precision_loss, reason = "a row count")]
+    let rows = n as f64;
+    rows
+}
+
+/// The rows [`Tower::purge_lead`] lays on the box for `volume` mm3 after the leading row (`lead_row`, turned out when
+/// `lead_out`): [`semm_rows`] after it, or the first row and [`semm_rows`] after that when there is no lead.
+fn semm_count(volume: f64, row_len: f64, area: f64, wall_w: f64, lead_row: bool, lead_out: bool) -> f64 {
+    if lead_row {
+        semm_rows(volume.max(0.0), row_len, area, wall_w, lead_out)
+    } else {
+        1.0 + semm_rows((volume - row_len * area).max(0.0), row_len, area, wall_w, false)
+    }
 }
 
 /// Lines a single nozzle's ramming of `volume` mm3 takes at `area` mm2 a bead, `row_len` mm a line: the last one
@@ -3478,7 +3552,7 @@ mod tests {
         assert!((a.y_mm() - row_y(rows - 1.0)).abs() < 1e-6, "{}", a.y_mm());
         assert!((paths[1].points[0].y_mm() - row_y(rows)).abs() < 1e-6);
         // The plan counts the same lead row.
-        let lead_len = ram_lead(&c, change_purge(&c, 2, 1, 2), 60.0, 0.2);
+        let lead_len = ram_lead(&c, change_purge(&c, 2, 1, 2), 60.0, 0.2).0;
         assert!((lead_len - (59.25 - 31.611 - 1.0)).abs() < 0.01, "{lead_len}");
         // A tool changer's lead row stays half a row spacing before the wipe's.
         let tools = tower_cfg(&[
@@ -3489,6 +3563,69 @@ mod tests {
         let (paths, _) = t.purge_lead(70.0, 0.2, false, 10.0, Some((20.0, false)), false);
         let spacing = t.spacing;
         assert!((paths[0].points[0].y_mm() - (220.0 + 1.0 + 9.5 * spacing)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_shared_nozzles_wipe_counts_rows_by_their_own_lengths() {
+        // 60 mm at 0.2 mm: plain rows 58 mm, and rows after a diagonal turn 58.75.
+        let area = bead(0.5, 0.2);
+        assert!((semm_rows(250.1, 58.0, area, 0.5, false) - 47.0).abs() < 1e-9);
+        assert!((semm_rows(261.0, 58.0, area, 0.5, false) - 49.0).abs() < 1e-9);
+        assert!((semm_rows(258.6, 78.0, area, 0.5, false) - 37.0).abs() < 1e-9);
+        assert!(semm_rows(0.0, 58.0, area, 0.5, false).abs() < 1e-9);
+        // The turns repeat in fours from the first: two out to the inner edge, two straight.
+        let out: Vec<bool> = (0..9).map(|k| semm_turns_out(k, false)).collect();
+        assert_eq!(out, [false, true, true, false, false, true, true, false, false]);
+        assert!(!semm_turns_out(1, true) && semm_turns_out(2, true));
+        // With no lead the first row is plain and the rest follow it.
+        let one = 58.0 * area;
+        assert!((semm_count(one, 58.0, area, 0.5, false, false) - 1.0).abs() < 1e-9);
+        assert!((semm_count(one + 1.0, 58.0, area, 0.5, false, false) - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_shared_nozzles_rows_turn_out_to_the_walls_inner_edge() {
+        let c = mmu_ram(60.0, STOCK_RAM, &[]);
+        let t = Tower::new(&c, 2, 80.0).unwrap();
+        let (_, rows, lead) = t.ramming(&c, change_purge(&c, 2, 1, 2), 1, 0.2, 0.0);
+        let (paths, n) = t.purge_lead(250.0, 0.2, false, rows, lead, false);
+        let x0 = t.x;
+        let lens: Vec<f64> = paths[1..]
+            .iter()
+            .map(|p| (p.points[1].x_mm() - p.points[0].x_mm()).abs())
+            .collect();
+        #[allow(clippy::cast_precision_loss, reason = "a row count")]
+        let count = lens.len() as f64;
+        assert!((n - count).abs() < 1e-9);
+        for (k, len) in lens.iter().enumerate() {
+            let long = (k % 4) < 2;
+            let want = if long { 58.75 } else { 58.0 };
+            assert!((len - want).abs() < 1e-6, "row {} is {len}", k + 1);
+            // The step out of each row runs to the next row's start, diagonally where it turns out.
+            if let (Some(end), Some(next)) = (paths[k + 1].points.last(), paths.get(k + 2)) {
+                assert!((end.x_mm() - next.points[0].x_mm()).abs() < 1e-6);
+                let side = (next.points[0].x_mm() - x0).min(60.0 - (next.points[0].x_mm() - x0));
+                assert!((side - if (k + 1) % 4 < 2 { 0.25 } else { 1.0 }).abs() < 1e-6);
+            }
+        }
+        // The plan counts the same rows: the purge's volume is the rows', past the leading row.
+        let lead_len = ram_lead(&c, change_purge(&c, 2, 1, 2), 60.0, 0.2);
+        assert!(!lead_len.1);
+        let area = bead(0.5, 0.2);
+        let plan = semm_count(250.0 - lead_len.0 * area, 58.0, area, 0.5, true, false);
+        assert!((plan - n).abs() < 1e-9, "{plan} against {n}");
+        // At 80 mm three ramming lines leave the leading row heading right, and it runs on to the inner edge.
+        let c = mmu_ram(80.0, STOCK_RAM, &[]);
+        let t = Tower::new(&c, 2, 80.0).unwrap();
+        let (_, rows, lead) = t.ramming(&c, change_purge(&c, 2, 1, 2), 1, 0.2, 0.0);
+        let (paths, _) = t.purge_lead(250.0, 0.2, false, rows, lead, false);
+        assert!((paths[0].points[1].x_mm() - t.x - 79.75).abs() < 1e-6);
+        let (len, out) = ram_lead(&c, change_purge(&c, 2, 1, 2), 80.0, 0.2);
+        let drawn = (paths[0].points[1].x_mm() - paths[0].points[0].x_mm()).abs();
+        assert!(out && (len - drawn).abs() < 1e-3, "{len} against {drawn}");
+        // The turn out of a lead at the inner edge runs back in: the first row is plain.
+        let first = &paths[1];
+        assert!(((first.points[1].x_mm() - first.points[0].x_mm()).abs() - 78.0).abs() < 1e-6);
     }
 
     #[test]
