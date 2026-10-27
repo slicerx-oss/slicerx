@@ -234,7 +234,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     # A cold hosted macOS run needs about 60 minutes and Windows more. The limit was 45, which killed both, and a job
     # killed by its limit skips the cache save, so every later run stayed cold. The test steps below stop sooner.
-    timeout-minutes: ${{ matrix.os == 'macos-latest' && 75 || matrix.os == 'windows-latest' && 90 || 45 }}
+    timeout-minutes: ${{ matrix.os == 'macos-latest' && 85 || matrix.os == 'windows-latest' && 90 || 45 }}
     env:
       # also on Linux after a push the merge queue already tested (detect's queued): it reports passed in seconds
       DUP: >-
@@ -273,7 +273,8 @@ jobs:
       # its own limit skips it.
       - if: env.DUP != 'true' && env.FULL_TESTS == 'true' && matrix.os != 'windows-latest'
         run: cargo test --workspace --exclude slicerx-desktop
-        timeout-minutes: ${{ matrix.os == 'macos-latest' && 55 || 40 }}
+        # macOS push runs took 55 to 59 minutes in all with a 55 minute test step, too close to the limit.
+        timeout-minutes: ${{ matrix.os == 'macos-latest' && 70 || 40 }}
       - if: env.DUP != 'true' && matrix.os == 'windows-latest'
         run: node scripts/ci/windows-rust-tests.mjs main
         timeout-minutes: 65
