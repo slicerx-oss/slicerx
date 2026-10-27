@@ -67,6 +67,10 @@ pub(crate) struct ToolWork {
     pub(crate) support_interface_round: Vec<Vec<Point>>,
     pub(crate) support_round_flow: f32,
     pub(crate) bottom: Vec<[Point; 2]>,
+    /// How much wider than the bottom surface's own width (mm) each of `bottom` prints, when a piece of the first
+    /// layer's bottom spread its lines evenly across itself (they widen with their spacing); empty when every line
+    /// prints at the feature's width.
+    pub(crate) bottom_widen: Vec<f32>,
     /// Solid infill of the top shell under the visible top surface.
     pub(crate) shell: Vec<[Point; 2]>,
     /// The turns along the edge that join one solid surface line to the next (top, bottom and internal solid), so
@@ -100,6 +104,9 @@ pub(crate) struct ToolWork {
     /// `internal_bridge_width`.
     pub(crate) internal_bridge_path_widths: Vec<f32>,
     pub(crate) top: Vec<[Point; 2]>,
+    /// How much wider than the top surface's own width (mm) each of `top` prints, as `bottom_widen` is for the
+    /// bottom surface.
+    pub(crate) top_widen: Vec<f32>,
     /// Bridge strands over air, printed with round strands of `bridge_width`.
     pub(crate) bridge: Vec<[Point; 2]>,
     /// Bridge strands joined along the walls.
@@ -921,6 +928,27 @@ impl Builder<'_> {
             self.push(tool, feature, speed, l.iter().copied());
         }
     }
+}
+
+/// Surface lines at the builder's width, each wider by its share of `widen` when that holds one per line.
+fn push_widened(
+    b: &mut Builder<'_>,
+    tool: u8,
+    feature: Feature,
+    speed: f32,
+    lines: &[[Point; 2]],
+    widen: &[f32],
+) {
+    if widen.len() != lines.len() {
+        b.push_lines(tool, feature, speed, lines);
+        return;
+    }
+    let width = b.width_mm;
+    for (l, extra) in lines.iter().zip(widen) {
+        b.width_mm = width + extra;
+        b.push(tool, feature, speed, l.iter().copied());
+    }
+    b.width_mm = width;
 }
 
 /// The width at `p` on a closed ring of variable-width points: interpolated along the nearest edge.
@@ -2391,7 +2419,14 @@ pub(crate) fn plan_layer_paths(
         };
         let g = b.out.paths.len();
         b.width_mm = fw(3);
-        b.push_lines(w.tool, bottom_feature, speeds.solid, &w.bottom);
+        push_widened(
+            &mut b,
+            w.tool,
+            bottom_feature,
+            speeds.solid,
+            &w.bottom,
+            &w.bottom_widen,
+        );
         b.push_gaps(w.tool, fill_gap_speed(cfg, layer, speeds.inner), &w.gap_bottom);
         b.width_mm = base_width;
         groups.push(Group {
@@ -2592,7 +2627,14 @@ pub(crate) fn plan_layer_paths(
         });
         let g = b.out.paths.len();
         b.width_mm = fw(4);
-        b.push_lines(w.tool, Feature::TopSurface, speeds.top, &w.top);
+        push_widened(
+            &mut b,
+            w.tool,
+            Feature::TopSurface,
+            speeds.top,
+            &w.top,
+            &w.top_widen,
+        );
         b.push_gaps(w.tool, fill_gap_speed(cfg, layer, speeds.inner), &w.gap_top);
         b.width_mm = base_width;
         groups.push(Group {
