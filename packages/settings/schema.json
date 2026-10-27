@@ -778,6 +778,18 @@
    "intent": "quality"
   },
   {
+   "key": "initial_layer_flow_ratio",
+   "section": "process",
+   "type": "float",
+   "label": "Initial layer flow ratio",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
+   "group": "advanced",
+   "invalidates": "paths",
+   "intent": "quality"
+  },
+  {
    "key": "gap_fill_flow_ratio",
    "section": "process",
    "type": "float",

@@ -26,6 +26,26 @@ describe('project settings', () => {
     expect(projectSettingChanges({ reduce_infill_retraction: '1' }, baseConfig()).values['reduce_infill_retraction']).toBe(true)
   })
 
+  it("passes a Bambu Lab project's initial_layer_flow_ratio on as the engine reads the same file", () => {
+    // sx slice <project.3mf> slices with the file's own keys, so the app's request carries the same flow keys: the first
+    // layer ratio under its own name, and no bottom surface ratio the file does not set.
+    for (const printer_model of ['Bambu Lab A1', 'Bambu Lab P1S']) {
+      const file = { printer_model, initial_layer_flow_ratio: '0.9' }
+      const r = projectSettingChanges(file, baseConfig())
+      expect(r.values['initial_layer_flow_ratio']).toBe(0.9)
+      expect(r.values['bottom_solid_infill_flow_ratio']).toBeUndefined()
+      const own = projectSettingChanges({ ...file, bottom_solid_infill_flow_ratio: '0.95' }, baseConfig())
+      expect(own.values['initial_layer_flow_ratio']).toBe(0.9)
+      expect(own.values['bottom_solid_infill_flow_ratio']).toBe(0.95)
+    }
+  })
+
+  it("reads another printer's initial_layer_flow_ratio as the bottom surface ratio", () => {
+    const r = projectSettingChanges({ printer_model: 'Generic Klipper Printer', initial_layer_flow_ratio: '0.9' }, baseConfig())
+    expect(r.values['bottom_solid_infill_flow_ratio']).toBe(0.9)
+    expect(r.values['initial_layer_flow_ratio']).toBeUndefined()
+  })
+
   it("reads Bambu Studio's prime_tower_rib_wall as the prime tower wall type", () => {
     const rib = projectSettingChanges({ prime_tower_rib_wall: '1' }, { ...baseConfig(), wipe_tower_wall_type: 'rectangle' })
     expect(rib.values['wipe_tower_wall_type']).toBe('rib')

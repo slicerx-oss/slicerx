@@ -16,6 +16,7 @@
   "hot_plate_temp": "Bed temperature on the High Temp plate or smooth PEI",
   "independent_support_layer_height": "Separate support layer height",
   "infill_wall_overlap": "Overlap between infill and walls",
+  "initial_layer_flow_ratio": "Initial layer flow ratio",
   "initial_layer_infill_speed": "Infill speed on the first layer",
   "initial_layer_line_width": "Line width on the first layer",
   "inner_wall_line_width": "Line width of inner walls",
