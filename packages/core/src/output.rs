@@ -277,6 +277,9 @@ pub struct LayerPaths {
     pub(crate) turns: Vec<TurnRoom>,
     /// Where the layer's skirt was cut to the bed, when it was.
     pub(crate) skirt_cut: Option<SkirtCut>,
+    /// A single nozzle's moves around each of the layer's tool changes that lay no bead (unload, cooling, park and
+    /// load), in change order.
+    pub(crate) tower_changes: Vec<crate::tower::ChangeMoves>,
 }
 
 /// A skirt cut to the bed on one layer: a point where it was cut (mm, plate space), and whether less than one whole

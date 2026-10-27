@@ -167,8 +167,14 @@ fn rams(gcode: &str) -> (Vec<Ram>, f64) {
     let (mut layer, mut tool, mut at, mut feed, mut tower) = (0usize, 0u8, [f64::NAN; 2], 0.0, false);
     let (mut lo, mut hi) = (f64::MAX, f64::MIN);
     let mut pending_step = 0usize;
+    // A single nozzle's filament swap (unload, cooling, park and load) is no ramming.
+    let mut swap = false;
     for line in gcode.lines() {
         let s = line.trim();
+        if s.starts_with("; FILAMENT_SWAP_") {
+            swap = s.ends_with("START");
+            continue;
+        }
         if s.starts_with(";LAYER_CHANGE") {
             layer += 1;
             continue;
@@ -204,7 +210,7 @@ fn rams(gcode: &str) -> (Vec<Ram>, f64) {
             }
         }
         let len = (to[0] - at[0]).hypot(to[1] - at[1]);
-        if tower && e > 0.0 && len > 1e-9 {
+        if tower && !swap && e > 0.0 && len > 1e-9 {
             if layer > 1 {
                 lo = lo.min(at[1].min(to[1]));
                 hi = hi.max(at[1].max(to[1]));

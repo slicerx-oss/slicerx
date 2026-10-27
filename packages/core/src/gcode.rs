@@ -2596,6 +2596,8 @@ fn emit_layer(
     // `CP TOOLCHANGE START` to `END` (`WipeTower::tool_change_new`); true while a change block is open
     let bbl_tower = crate::firmware::bambu_printer(c, flavor) && out.prime_tower.is_some();
     let mut tower_block: Option<bool> = None;
+    // A single nozzle's moves around each change ([`LayerPaths::tower_changes`]): the next one to write.
+    let mut next_change = 0usize;
     for (pi, p) in l.paths.iter().enumerate() {
         let pts = l.path_points(p);
         let Some(&start) = pts.first() else { continue };
@@ -2684,7 +2686,7 @@ fn emit_layer(
         }
         // Orca's tower writer moves between the pieces of one filament's tower block (outline,
         // purge rows, the fill above them) without retracting.
-        let within_tower =
+        let mut within_tower =
             feature == Some(Feature::PrimeTower) && p.feature == Feature::PrimeTower && p.tool == tool;
         if (p.tool != tool && (tool != u8::MAX || out.tool_count > 1))
             || (first_path && out.tool_count > 1 && (tool == u8::MAX || resume_first))
@@ -2711,6 +2713,25 @@ fn emit_layer(
                     kind(p.tool.max(1)),
                 );
             }
+            // A single nozzle's change on its tower: the old filament unloads where its ramming stopped.
+            // Not on a tower printed below the layer (`wipe_tower_no_sparse_layers`).
+            let moves = if swap {
+                take_change(&l.tower_changes, &mut next_change, tool, p.tool).filter(|_| p.dz >= 0.0)
+            } else {
+                None
+            };
+            let unload_from = b.len();
+            let unload_at = cursor.map(|q| [q.x_mm(), q.y_mm()]);
+            if let Some(m) = moves {
+                // Without a ramming the old filament's last path was not the tower's: the moves are.
+                if feature != Some(Feature::PrimeTower) {
+                    b.extend_from_slice(b";TYPE:");
+                    b.extend_from_slice(Feature::PrimeTower.gcode_label().as_bytes());
+                    b.push(b'\n');
+                }
+                b.extend_from_slice(SWAP_START);
+                put_change_steps(b, off, &m.unload, &mut cursor, travel_feed);
+            }
             // A shared nozzle heats to the new filament's temperature for the layer before the change, once the moves
             // before it are done (`G4 S0`), when the nozzle was last set to another one.
             if swap && nozzle_temps {
@@ -2722,6 +2743,13 @@ fn emit_layer(
                     temperature_line(b, flavor, want as f64, false, None, "");
                 }
                 nozzle_temp = Some(want);
+            }
+            // Then it cools, parks and waits at the park point for the moves to finish.
+            if let Some(m) = moves {
+                put_change_steps(b, off, &m.cool, &mut cursor, travel_feed);
+                b.extend_from_slice(b"G4 S0\n");
+                change_time +=
+                    gcode_text_time(c, b.get(unload_from..).unwrap_or(&[]), unload_at, f64::from(l.z));
             }
             let tc = e_units(crate::tower::per_slot_raw(
                 &rc,
@@ -2739,7 +2767,11 @@ fn emit_layer(
                     b,
                     style,
                     (&rc, c),
-                    (at, last_pts, wipe_forward && last_was_loop),
+                    (
+                        at,
+                        if moves.is_some() { &[] } else { last_pts },
+                        wipe_forward && last_was_loop,
+                    ),
                     (tc, retract_feed),
                     speed_feed,
                     off,
@@ -3056,6 +3088,38 @@ fn emit_layer(
             rc = shared.filament(l.cfg, tool.max(1));
             (retract, retract_feed) = (e_units(rc.retraction_length), feed(rc.retraction_speed));
             (hop, lift_ok, restart, deretract_feed) = lift_and_restart(&rc, f64::from(l.z));
+            // A single nozzle's change on its tower: back to the park point, down, primed, and the new filament loads.
+            if let Some(m) = moves {
+                let load_from = b.len();
+                let load_at = cursor.map(|q| [q.x_mm(), q.y_mm()]);
+                b.extend_from_slice(b"G0");
+                put_xy(b, off, m.park);
+                b.extend_from_slice(b" F");
+                put_int(b, travel_feed);
+                b.push(b'\n');
+                cursor = Some(m.park);
+                if std::mem::take(&mut pending_drop) {
+                    b.extend_from_slice(b"G1 Z");
+                    put_fixed(b, z, 3);
+                    b.extend_from_slice(b" F");
+                    put_int(b, z_feed);
+                    b.push(b'\n');
+                }
+                if retracted {
+                    retract_move(b, style, retracted_by + restart, deretract_feed);
+                    retracted = false;
+                }
+                b.extend_from_slice(b"G4 S0\n");
+                put_change_steps(b, off, &m.load, &mut cursor, travel_feed);
+                b.extend_from_slice(SWAP_END);
+                // The new filament's tower block goes on from here.
+                within_tower = p.feature == Feature::PrimeTower;
+                change_time += gcode_text_time(c, b.get(load_from..).unwrap_or(&[]), load_at, f64::from(l.z));
+                // The filament the change uses up net, counted with the new filament.
+                if let Some(e) = chunk.e_units.get_mut(usize::from(p.tool.max(1) - 1)) {
+                    *e += e_units(m.net_mm);
+                }
+            }
             // no raise moves back across a tool change
             if lead_on {
                 b.extend_from_slice(crate::fanlead::WALL);
@@ -5054,6 +5118,74 @@ fn tower_reheat(c: &PrintConfig, slot: u8, layer: u32, extruder: usize) -> Optio
     Some(format!(
         "M104 T{extruder} S{temp} N0 ;Wipe tower reheat before wipe\n"
     ))
+}
+
+/// The next of a layer's change moves ([`LayerPaths::tower_changes`]) from filament `from` to `to`, from `next` on;
+/// `next` moves past it.
+fn take_change<'a>(
+    changes: &'a [crate::tower::ChangeMoves],
+    next: &mut usize,
+    from: u8,
+    to: u8,
+) -> Option<&'a crate::tower::ChangeMoves> {
+    let at = *next
+        + changes
+            .get(*next..)?
+            .iter()
+            .position(|m| m.from == from && m.to == to)?;
+    *next = at + 1;
+    changes.get(at)
+}
+
+/// The marks around a single nozzle's filament swap, from the unload to the end of the load: inside them the filament
+/// moves in and out of the nozzle's cooling tube, so the validator takes its moves as they are
+/// ([`crate::validate::validate_gcode`]).
+pub(crate) const SWAP_START: &[u8] = b"; FILAMENT_SWAP_START\n";
+pub(crate) const SWAP_END: &[u8] = b"; FILAMENT_SWAP_END\n";
+
+/// Writes a single nozzle's change moves ([`crate::tower::ChangeStep`]): filament moves as `G1` with their own feed,
+/// travels as `G1` and waits as `G4 S`. `cursor` follows the nozzle.
+fn put_change_steps(
+    b: &mut Vec<u8>,
+    off: Point,
+    steps: &[crate::tower::ChangeStep],
+    cursor: &mut Option<Point>,
+    travel_feed: i64,
+) {
+    #[allow(clippy::cast_possible_truncation, reason = "feedrates are small")]
+    let rate = |f: f64| f.round() as i64;
+    for step in steps {
+        match *step {
+            crate::tower::ChangeStep::Feed { to, e, feed } => {
+                b.extend_from_slice(b"G1");
+                if let Some(q) = to {
+                    put_xy(b, off, q);
+                    *cursor = Some(q);
+                }
+                b.extend_from_slice(b" E");
+                put_fixed(b, e_units(e), 5);
+                b.extend_from_slice(b" F");
+                put_int(b, rate(feed));
+                b.push(b'\n');
+            }
+            crate::tower::ChangeStep::Travel { to, feed } => {
+                let f = feed.map_or(travel_feed, rate);
+                if let Some(from) = *cursor {
+                    put_travel(b, off, from, to, Some(f));
+                } else {
+                    b.extend_from_slice(b"G1");
+                    put_xy(b, off, to);
+                    b.extend_from_slice(b" F");
+                    put_int(b, f);
+                    b.push(b'\n');
+                }
+                *cursor = Some(to);
+            }
+            crate::tower::ChangeStep::Dwell(s) => {
+                let _ = writeln!(b, "G4 S{s:.3}");
+            }
+        }
+    }
 }
 
 /// A `G1` travel from `from` to `to` with only the axes that change, and the feed rate when given.

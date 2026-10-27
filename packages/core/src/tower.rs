@@ -1831,6 +1831,290 @@ impl Tower {
     }
 }
 
+/// One move of a single nozzle's tool change that lays no bead: the unload, cooling, stamping, park and load
+/// around the change, written as they are, past the volumetric limit and the flow ratio.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ChangeStep {
+    /// `e` mm of filament (negative pulls it back) at `feed` mm/min, moving the nozzle to `to` when set.
+    Feed { to: Option<Point>, e: f64, feed: f64 },
+    /// A travel to `to`, at `feed` mm/min when set (else the travel speed).
+    Travel { to: Point, feed: Option<f64> },
+    /// A wait, s.
+    Dwell(f64),
+}
+
+/// What a single nozzle does around one tool change on a type 2 tower ([`unloads`]), from filament `from` to `to`
+/// (1-based): with the old filament, where its ramming stopped, the `unload`, then the cooling, stamping, delay and
+/// park (`cool`), which end at `park`; after the change the new filament's `load` there.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ChangeMoves {
+    pub(crate) from: u8,
+    pub(crate) to: u8,
+    pub(crate) unload: Vec<ChangeStep>,
+    pub(crate) cool: Vec<ChangeStep>,
+    pub(crate) park: Point,
+    pub(crate) load: Vec<ChangeStep>,
+    /// The filament the moves use up net, mm: the load less what the unload and park pulled back, which is
+    /// `extra_loading_move`.
+    pub(crate) net_mm: f64,
+}
+
+/// True where a single nozzle unloads, cools and loads the filament at each tool change on its type 2 tower:
+/// `single_extruder_multi_material` and `enable_filament_ramming` on, one extruder, no filament map. It runs with
+/// or without ramming speeds listed.
+pub(crate) fn unloads(cfg: &PrintConfig) -> bool {
+    !type1(cfg)
+        && flag_or(cfg, "single_extruder_multi_material", true)
+        && flag_or(cfg, "enable_filament_ramming", true)
+        && crate::nozzles::extruders(cfg) <= 1
+        && !crate::nozzles::shared(cfg)
+}
+
+/// The fastest a cooling or load move runs along X, mm/s; a faster one is cut short at this speed.
+const CHANGE_MAX_XY: f64 = 50.0;
+/// The first unload move's length, mm: the rest of the unload is split after it.
+const UNLOAD_FIRST: f64 = 15.0;
+/// The stamping move's length along X, mm, and the filament its way back pushes, mm.
+const STAMP_RUN: f64 = 20.0;
+const STAMP_BACK: f64 = 5.0;
+/// Feeds of the park move and the travel to the park point, mm/min.
+const PARK_FEED: f64 = 2000.0;
+const PARK_TRAVEL_FEED: f64 = 2400.0;
+
+impl Tower {
+    /// A point on the plate in the tower's own frame (from its front left corner): [`Self::place_point`] undone.
+    fn local_point(&self, p: Point) -> (f64, f64) {
+        let (s, c) = self.angle.to_radians().m_sin_cos();
+        let (ox, oy) = self.rib.map_or((0.0, 0.0), |r| r.offset);
+        let (dx, dy) = (p.x_mm() - self.x - ox, p.y_mm() - self.y - oy);
+        (dx * c + dy * s, -dx * s + dy * c)
+    }
+
+    /// The Y of the second row of a wipe that starts at row `start` after a ramming that stopped at `lead` (as
+    /// [`Self::purge_lead`] lays it): the row after the one that finishes the ramming's last line, in the tower's
+    /// frame.
+    fn wipe_second_row(&self, start: f64, lead: Option<(f64, bool)>) -> f64 {
+        let edge = if self.type1 {
+            self.wall_w
+        } else {
+            2.0 * self.wall_w
+        };
+        let (x0, x1) = (edge, self.width - edge);
+        let y = self.row_origin() + start * self.spacing;
+        let lead_row = lead.is_some_and(|(x, right)| {
+            let to = if right { x1 } else { x0 };
+            (to - x.clamp(x0, x1)).abs() > 1e-3
+        });
+        if lead_row && self.full_lead {
+            y
+        } else {
+            y + self.spacing
+        }
+    }
+
+    /// The moves of a single nozzle's change from filament `from` to `to` ([`unloads`]). `rammed` is the old
+    /// filament's ramming (empty when it lists no speed), `pitch` its line pitch, `band` the tower row its band starts
+    /// at, `start` the row the wipe starts at and `lead` where the ramming stopped (as [`Self::ramming`] returns it).
+    ///
+    /// - Unload, with no XY: 15 mm at the old filament's `filament_unloading_speed_start`, then the rest of
+    ///   `cooling_tube_retraction` + `cooling_tube_length` / 2 split 70, 20 and 10 % at 1, 0.5 and 0.3 times its
+    ///   `filament_unloading_speed`.
+    /// - Cooling, `filament_cooling_moves` pairs one ramming pitch past the last ramming line (at the band's start
+    ///   without one): `cooling_tube_length` of filament out toward the ramming limit farther from where the ramming
+    ///   stopped and back, at speeds from `filament_cooling_initial_speed` to `filament_cooling_final_speed`; a move
+    ///   faster than 50 mm/s along X runs at 50 mm/s and stops short.
+    /// - Stamping after each pair but the last (`filament_stamping_distance` and `filament_stamping_loading_speed`).
+    /// - `filament_toolchange_delay`, then the park move to `parking_pos_retraction` and a travel to the wipe's second
+    ///   row.
+    /// - Load of the new filament, `parking_pos_retraction` + `extra_loading_move` split 20, 70 and 10 %: in place at
+    ///   its `filament_loading_speed_start`, out toward the far side up to 1.25 wall beads from it and back at its
+    ///   `filament_loading_speed` and a tenth of it.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the change's filaments and the ramming's geometry"
+    )]
+    pub(crate) fn change_moves(
+        &self,
+        cfg: &PrintConfig,
+        from: u8,
+        to: u8,
+        rammed: &[TowerPath],
+        pitch: Option<f64>,
+        band: f64,
+        start: f64,
+        lead: Option<(f64, bool)>,
+    ) -> ChangeMoves {
+        let old = |key: &str, fallback: f64| per_slot_raw(cfg, key, from, fallback);
+        let new = |key: &str, fallback: f64| per_slot_raw(cfg, key, to, fallback);
+        let tube = cfg.raw_number("cooling_tube_length", 5.0);
+        let unload_mm = cfg.raw_number("cooling_tube_retraction", 91.5) + tube / 2.0;
+        let park_mm = cfg.raw_number("parking_pos_retraction", 92.0);
+        let load_mm = park_mm + cfg.raw_number("extra_loading_move", -2.0);
+        let inset = 1.5 * self.wall_w;
+        let (x0, x1) = (inset, (self.width - inset).max(inset + 1.0));
+        // Where the ramming stopped and the cooling's line, in the tower's frame.
+        let last = rammed.last().and_then(|p| p.points.last()).copied();
+        let (stop_x, cool_y) = match (last, pitch) {
+            (Some(q), Some(pitch)) => {
+                let (x, y) = self.local_point(q);
+                (x, y + pitch)
+            }
+            _ => (x0, self.row_origin() + band * self.spacing),
+        };
+        let far = if (x1 - stop_x).abs() >= (stop_x - x0).abs() {
+            x1
+        } else {
+            x0
+        };
+        let side = if far >= stop_x { 1.0 } else { -1.0 };
+        let span = (far - stop_x).abs();
+        let at = |x: f64, y: f64| self.place_point(x, y);
+
+        let unloading = old("filament_unloading_speed", 90.0);
+        let mut unload = vec![ChangeStep::Feed {
+            to: None,
+            e: -UNLOAD_FIRST,
+            feed: old("filament_unloading_speed_start", 100.0) * 60.0,
+        }];
+        let rest = unload_mm - UNLOAD_FIRST;
+        for (share, speed) in [(0.7, 1.0), (0.2, 0.5), (0.1, 0.3)] {
+            unload.push(ChangeStep::Feed {
+                to: None,
+                e: -rest * share,
+                feed: unloading * speed * 60.0,
+            });
+        }
+
+        let mut cool = Vec::new();
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a small move count"
+        )]
+        let pairs = old("filament_cooling_moves", 4.0).round().max(0.0) as usize;
+        let mut x = stop_x;
+        // Without ramming lines the nozzle is not on the tower yet.
+        if pairs > 0 || last.is_none() || pitch.is_none() {
+            cool.push(ChangeStep::Travel {
+                to: at(stop_x, cool_y),
+                feed: None,
+            });
+        }
+        let (v0, v1) = (
+            old("filament_cooling_initial_speed", 2.2),
+            old("filament_cooling_final_speed", 3.4),
+        );
+        let (stamp, stamp_speed) = (
+            old("filament_stamping_distance", 0.0),
+            old("filament_stamping_loading_speed", 0.0),
+        );
+        #[allow(clippy::cast_precision_loss, reason = "a small move count")]
+        let step = if pairs > 0 {
+            (v1 - v0) / (2 * pairs - 1) as f64
+        } else {
+            0.0
+        };
+        for pair in 0..pairs {
+            for k in 0..2 {
+                #[allow(clippy::cast_precision_loss, reason = "a small move count")]
+                let v = (v0 + (2 * pair + k) as f64 * step).max(1e-3);
+                let (mut len, mut feed) = (span, v * span / tube.max(1e-3));
+                if feed > CHANGE_MAX_XY {
+                    len = CHANGE_MAX_XY * tube / v;
+                    feed = CHANGE_MAX_XY;
+                }
+                let (dir, e) = if k == 0 { (side, tube) } else { (-side, -tube) };
+                x += dir * len;
+                cool.push(ChangeStep::Feed {
+                    to: Some(at(x, cool_y)),
+                    e,
+                    feed: feed * 60.0,
+                });
+            }
+            if pair + 1 < pairs && stamp > 0.0 && stamp_speed > 0.0 {
+                let out = stamp + tube / 2.0 - STAMP_BACK;
+                x += side * STAMP_RUN;
+                cool.push(ChangeStep::Feed {
+                    to: Some(at(x, cool_y)),
+                    e: out,
+                    feed: STAMP_RUN * stamp_speed / out.max(1e-3) * 60.0,
+                });
+                x -= side * STAMP_RUN;
+                cool.push(ChangeStep::Feed {
+                    to: Some(at(x, cool_y)),
+                    e: STAMP_BACK,
+                    feed: STAMP_RUN * stamp_speed / STAMP_BACK * 60.0,
+                });
+                cool.push(ChangeStep::Feed {
+                    to: None,
+                    e: -(stamp + tube / 2.0),
+                    feed: unloading * 60.0,
+                });
+            }
+        }
+        let delay = old("filament_toolchange_delay", 0.0);
+        if delay > 0.0 {
+            cool.push(ChangeStep::Dwell(delay));
+        }
+        cool.push(ChangeStep::Feed {
+            to: None,
+            e: unload_mm - park_mm,
+            feed: PARK_FEED,
+        });
+        let park = at(stop_x, self.wipe_second_row(start, lead));
+        cool.push(ChangeStep::Travel {
+            to: park,
+            feed: Some(PARK_TRAVEL_FEED),
+        });
+
+        let loading = new("filament_loading_speed", 28.0).max(1e-3);
+        let reach = 1.25 * self.wall_w;
+        let limit = if side > 0.0 { self.width - reach } else { reach };
+        let out_e = 0.7 * load_mm;
+        let (mut out_len, mut out_feed) = ((limit - stop_x).abs(), 0.0);
+        if out_e.abs() > 1e-9 {
+            out_feed = out_len * loading / out_e.abs();
+            if out_feed > CHANGE_MAX_XY {
+                out_feed = CHANGE_MAX_XY;
+                out_len = CHANGE_MAX_XY * out_e.abs() / loading;
+            }
+        }
+        let back_e = 0.1 * load_mm;
+        let back_feed = if back_e.abs() > 1e-9 {
+            out_len * 0.1 * loading / back_e.abs()
+        } else {
+            0.0
+        };
+        let park_y = self.wipe_second_row(start, lead);
+        let load = vec![
+            ChangeStep::Feed {
+                to: None,
+                e: 0.2 * load_mm,
+                feed: new("filament_loading_speed_start", 3.0) * 60.0,
+            },
+            ChangeStep::Feed {
+                to: Some(at(stop_x + side * out_len, park_y)),
+                e: out_e,
+                feed: out_feed * 60.0,
+            },
+            ChangeStep::Feed {
+                to: Some(park),
+                e: back_e,
+                feed: back_feed * 60.0,
+            },
+        ];
+        ChangeMoves {
+            from,
+            to,
+            unload,
+            cool,
+            park,
+            load,
+            net_mm: load_mm - park_mm,
+        }
+    }
+}
+
 impl Tower {
     /// Orca's `WipeTower2::save_on_last_wipe` for a layer's first purge of `volume` mm3 (type 2 towers):
     /// what finishing the layer on this tower extrudes anyway (its wall and the fill over the purges, from

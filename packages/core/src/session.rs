@@ -9392,11 +9392,17 @@ impl SliceSession {
     /// The prime tower's part of a layer over the filaments' turns, in print order: its outline, the purge after each
     /// change (less what the new filament's infill, objects or support take up), the old filament's ramming before
     /// the change and the fill of the depth the purges left. Without a tower (`at.tower` None) only the flush into
-    /// infill is planned.
-    pub(crate) fn tower_turns<W: TowerTurn>(&self, cfg: &PrintConfig, at: &TowerLayer, works: &mut [W]) {
+    /// infill is planned. Returns a single nozzle's moves around each change that lay no bead
+    /// ([`crate::tower::unloads`]).
+    pub(crate) fn tower_turns<W: TowerTurn>(
+        &self,
+        cfg: &PrintConfig,
+        at: &TowerLayer,
+        works: &mut [W],
+    ) -> Vec<crate::tower::ChangeMoves> {
         if let Some(t) = at.tower.as_ref().filter(|t| t.is_type1()) {
             self.type1_tower_turns(cfg, at, t, works);
-            return;
+            return Vec::new();
         }
         let TowerLayer {
             layer,
@@ -9465,6 +9471,8 @@ impl SliceSession {
         // wall opens level with them).
         let mut wall_slot: Option<(usize, usize)> = None;
         let mut wipe_starts: Vec<(f64, f64)> = Vec::new();
+        let unloads = crate::tower::unloads(cfg);
+        let mut changes = Vec::new();
         for i in 0..works.len() {
             let Some(next_tool) = works.get(i).map(TowerTurn::tool) else {
                 continue;
@@ -9473,6 +9481,8 @@ impl SliceSession {
             let purge = change.then(|| crate::tower::change_purge(cfg, self.tool_count, current, next_tool));
             // The old filament rams out before the change, printed with it at the end of its own work.
             let mut lead = None;
+            let band = used_rows;
+            let mut rammed = Vec::new();
             if let (Some(p), Some(t), Some(prev)) = (purge, tower.as_ref(), i.checked_sub(1))
                 && p.ram > 0.0
                 && let Some(w) = works.get_mut(prev)
@@ -9480,7 +9490,23 @@ impl SliceSession {
                 let (path, rows, end) = t.ramming(cfg, p, current, h, used_rows);
                 used_rows += rows;
                 lead = end;
+                if unloads {
+                    rammed.clone_from(&path);
+                }
                 w.tower_after().extend(path);
+            }
+            // A single nozzle unloads, cools and parks the old filament after its ramming and loads the new one.
+            if let (Some(p), Some(t), true) = (purge, tower.as_ref(), unloads) {
+                changes.push(t.change_moves(
+                    cfg,
+                    current,
+                    next_tool,
+                    &rammed,
+                    p.ram_line.map(|l| l.pitch),
+                    band,
+                    used_rows,
+                    lead,
+                ));
             }
             let Some(work) = works.get_mut(i) else { continue };
             if let (true, Some(tower)) = (i == wall_at && walled, tower.as_ref()) {
@@ -9558,6 +9584,7 @@ impl SliceSession {
         {
             work.tower().extend(tower.fill(cfg, used_rows, first));
         }
+        changes
     }
 
     /// [`Self::tower_turns`] on a type 1 (Bambu Lab) tower, which splits the layer's tower between its filaments:
@@ -9896,7 +9923,7 @@ impl SliceSession {
                 tower,
                 order_at: layer,
             };
-            self.tower_turns(cfg, &at, &mut works);
+            out.tower_changes = self.tower_turns(cfg, &at, &mut works);
             if self.plate_tools.is_some() {
                 out.turns = turn_rooms(&works, cfg.line_width, at.h);
             }
