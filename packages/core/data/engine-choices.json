@@ -1,5 +1,5 @@
 {
-  "comment": "Engine choices of SlicerX for an opened project. keeps: stay when a project opens, unless the person changed them in the project (its different_settings_to_system lists the key); over, when given, names the only inherited values a keep replaces, so any other value the project inherited stays its own (a project that does not set the key still gets the keep); note says what the open kept when the project's inherited value differs. defaults: apply only when the project does not set the key at all, whatever app wrote it; a value the project sets is its own (projectDefaults requests take fromApp only). fromApp: by the app that wrote the file (the model's Application metadata starts with the name), its reading of keys its project lacks: each applies only when the project does not set the key, nor any key in unlessAny. The app, the MCP server (engine-choices.ts) and sx slice <project.3mf> (sx-core, through build.rs) all read this file. value: what SlicerX prints with.",
+  "comment": "Engine choices of SlicerX for an opened project. keeps: stay when a project opens, unless the person changed them in the project (its different_settings_to_system lists the key); over, when given, names the only inherited values a keep replaces, so any other value the project inherited stays its own (a project that does not set the key still gets the keep); note says what the open kept when the project's inherited value differs. defaults: apply only when the project does not set the key at all, whatever app wrote it; a value the project sets is its own (projectDefaults requests take fromApp only). fromApp: by the app that wrote the file (the model's Application metadata starts with the name), its reading of keys its project lacks: each applies only when the project does not set the key, nor any key in unlessAny. A row with sameAs is that key's value instead (value when the project lacks that key too), whatever the project sets. The app, the MCP server (engine-choices.ts) and sx slice <project.3mf> (sx-core, through build.rs) all read this file. value: what SlicerX prints with.",
   "keeps": {
     "wall_generator": {
       "value": "aegis",
@@ -34,6 +34,11 @@
         "value": "rib",
         "unlessAny": ["prime_tower_rib_wall"],
         "note": "A project saved before the rib wall switch existed has neither key: the rib wall, that app's default."
+      },
+      "solid_infill_direction": {
+        "value": "45",
+        "sameAs": "infill_direction",
+        "note": "Bambu Studio has no solid infill direction of its own: its infill direction sets the solid and the sparse lines alike, so a value the project holds is not read."
       }
     }
   }

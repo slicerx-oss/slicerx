@@ -29,7 +29,7 @@ describe("a project open and the keys its app reads differently", () => {
   for (const c of cases.cases) {
     it(c.name, async () => {
       const s = await open(c.application, c.settings)
-      const added = Object.fromEntries(Object.keys(s).filter((k) => !(k in c.settings)).map((k) => [k, s[k]]))
+      const added = Object.fromEntries(Object.keys(s).filter((k) => !(k in c.settings) || k in c.added).map((k) => [k, s[k]]))
       expect(added).toEqual(c.added)
       expect(withBambuMissingKeys(c.settings, c.application)).toEqual({ ...c.settings, ...c.added })
     })

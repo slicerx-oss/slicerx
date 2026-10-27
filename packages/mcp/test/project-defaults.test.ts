@@ -125,7 +125,7 @@ describe.skipIf(noSx())('a bare Bambu Studio project through the MCP server and 
     expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
     const viaCli = readFileSync(join(h.dir, 'cli.gcode'), 'utf8')
     const viaMcp = readFileSync(String(data<{ gcode_path: string }>(r).gcode_path), 'utf8')
-    const keys = ['initial_layer_travel_acceleration', 'internal_bridge_speed', 'wipe_tower_wall_type']
+    const keys = ['initial_layer_travel_acceleration', 'internal_bridge_speed', 'solid_infill_direction', 'wipe_tower_wall_type']
     expect(header(viaCli, ['wipe_tower_wall_type'])).toEqual({ wipe_tower_wall_type: 'rib' })
     expect(header(viaMcp, keys)).toEqual(header(viaCli, keys))
     const [a, b] = [towerSize(viaCli), towerSize(viaMcp)]
