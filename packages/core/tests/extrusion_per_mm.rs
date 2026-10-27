@@ -413,6 +413,17 @@ fn assert_overhang_beads(cfg: &Value, want: &[((i64, i64), f64)], what: &str) {
 }
 
 #[test]
+fn an_arachne_overhang_wall_takes_the_bridge_flow_above_one() {
+    // Each loop's own width (0.42 outer, 0.45 inner) at 1.2 times its extrusion, stated 0.428584 and 0.458584 wide
+    // and 0.24 tall.
+    let extra = json!({ "wall_generator": "arachne", "bridge_flow": 1.2 });
+    for (name, cfg) in [("mk4", mk4(&extra)), ("ender", ender(&extra))] {
+        let what = format!("{name} arachne bridge_flow 1.2");
+        assert_overhang_beads(&cfg, &[flat_bead(0.42, 1.2), flat_bead(0.45, 1.2)], &what);
+    }
+}
+
+#[test]
 fn a_classic_overhang_wall_prints_the_bridge_bead_on_a_printer_with_its_own_profile() {
     // `bridge_line_width` 100% of the 0.4 nozzle on both loops: 0.4 at a flow of 1, narrowed to 0.328584 at 0.8, and
     // at 1.2 the 0.4 bead at 1.2 times its extrusion, stated 0.408584 wide and 0.24 tall.
