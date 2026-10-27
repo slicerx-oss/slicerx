@@ -263,6 +263,12 @@ pub(crate) fn saves_on_last_wipe(cfg: &PrintConfig) -> bool {
     !type1(cfg) && !flag_or(cfg, "single_extruder_multi_material", true)
 }
 
+/// A type 2 tower whose layer's first purge gives way to what finishing the layer extrudes anyway: a tool changer's
+/// ([`saves_on_last_wipe`]) and a single nozzle's whose flush goes on the tower.
+pub(crate) fn saves_first_purge(cfg: &PrintConfig) -> bool {
+    saves_on_last_wipe(cfg) || flush_on_tower(cfg)
+}
+
 /// A Prusa printer with several tool heads (the XL): its maker's slicer purges by
 /// `filament_minimal_purge_on_wipe_tower`, not by the flush matrix or `prime_volume`.
 pub(crate) fn prusa_tools(cfg: &PrintConfig) -> bool {
@@ -1656,6 +1662,61 @@ impl Tower {
     }
 }
 
+impl Tower {
+    /// The save of a layer's first purge of `volume` mm3 on a single nozzle whose flush goes on the tower
+    /// ([`flush_on_tower`]): what the new filament `to` prints on the tower anyway after that change, the wall and
+    /// the fill over the depth that none of the layer's purges uses, comes off it once, down to its
+    /// `filament_minimal_purge_on_wipe_tower`. The purges are as first planned: `rows` rows, the whole of each
+    /// purge with nothing saved. A first layer prints dense over everything a purge leaves, so there `rows` is
+    /// where the purge starts and the fill is over all but the floor's rows from it.
+    pub(crate) fn saved_first_wipe(
+        &self,
+        cfg: &PrintConfig,
+        volume: f64,
+        h: f64,
+        first: bool,
+        rows: f64,
+        to: u8,
+    ) -> f64 {
+        let floor = per_slot_raw(cfg, "filament_minimal_purge_on_wipe_tower", to, 15.0).max(0.0);
+        let wall = path_volume(&self.wall(first, 0.0), h);
+        let from = if first {
+            rows + self.purge(floor, h, first, rows).1
+        } else {
+            rows
+        };
+        let fill: f64 = self
+            .fill(cfg, from, first)
+            .iter()
+            .map(|f| path_volume(f, h))
+            .sum();
+        floor.max(volume - wall - fill)
+    }
+
+    /// The rows a layer's purges take on this tower as first planned, the whole of each with nothing saved: the
+    /// changes along `order` (the layer's filaments in print order) from filament `from`, at height `h`.
+    pub(crate) fn planned_rows(
+        &self,
+        cfg: &PrintConfig,
+        tools: u8,
+        from: u8,
+        order: &[u8],
+        h: f64,
+        first: bool,
+    ) -> f64 {
+        let (mut cur, mut rows) = (from, 0.0);
+        for &t in order {
+            if cur != 0 && t != cur {
+                rows += self
+                    .purge(change_purge(cfg, tools, cur, t).wipe, h, first, rows)
+                    .1;
+            }
+            cur = t;
+        }
+        rows
+    }
+}
+
 /// Filament a tower path extrudes at layer height `h`, mm3.
 pub(crate) fn path_volume(p: &TowerPath, h: f64) -> f64 {
     let len: f64 = p
@@ -1734,7 +1795,7 @@ pub(crate) fn plan_rows(
     top: usize,
 ) -> f64 {
     let rows = plan_rows_with(cfg, width, tools, orders, thickness, top, None);
-    if !saves_on_last_wipe(cfg) {
+    if !saves_first_purge(cfg) {
         return rows;
     }
     // Orca plans a type 2 tower again with each layer's first purge cut by what finishing the layer extrudes
@@ -1787,12 +1848,20 @@ fn plan_rows_with(
         let mut rows = 0.0;
         let mut by_block: Vec<(i64, f64)> = Vec::new();
         let mut first_change = true;
+        let planned = match saved {
+            Some(t0) if flush_on_tower(cfg) => t0.planned_rows(cfg, tools, cur, order, h, l == 0),
+            _ => 0.0,
+        };
         for &t in order {
             if cur != 0 && t != cur {
                 let p = change_purge(cfg, tools, cur, t);
                 let mut v = p.wipe;
                 if let Some(t0) = saved.filter(|_| first_change) {
-                    v = t0.saved_wipe(cfg, v, h, l == 0, rows, t);
+                    v = if flush_on_tower(cfg) {
+                        t0.saved_first_wipe(cfg, v, h, l == 0, if l == 0 { rows } else { planned }, t)
+                    } else {
+                        t0.saved_wipe(cfg, v, h, l == 0, rows, t)
+                    };
                 }
                 first_change = false;
                 let mut r = (v / (row_len * row_flow * bead(wall_w, h))).ceil().max(1.0);
@@ -2932,6 +3001,41 @@ mod tests {
             ("filament_minimal_purge_on_wipe_tower", serde_json::json!(40)),
         ]);
         assert!((tower_share(&bambu, 2, 45.0, 17.0) - 28.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_shared_nozzle_saves_the_wall_and_the_fill_no_purge_uses_once() {
+        let c = tower_cfg(&[
+            ("wipe_tower_type", serde_json::json!("type2")),
+            ("prime_tower_width", serde_json::json!(60)),
+            ("flush_volumes_matrix", serde_json::json!([0, 280, 280, 0])),
+            ("flush_multiplier", serde_json::json!(0.3)),
+        ]);
+        assert!(flush_on_tower(&c) && saves_first_purge(&c));
+        let h = 0.2;
+        // Planned for one change of 84 mm3 a layer.
+        let rows = Tower::new(&c, 2, 1.0).unwrap().purge(84.0, h, false, 0.0).1;
+        let t = Tower::new(&c, 2, rows).unwrap();
+        assert!((t.planned_rows(&c, 2, 1, &[2], h, false) - rows).abs() < 1e-9);
+        let wall = path_volume(&t.wall(false, 0.0), h);
+        // The one purge as planned leaves no depth to fill, so only the wall comes off, and only once.
+        let saved = t.saved_first_wipe(&c, 84.0, h, false, rows, 2);
+        assert!(
+            (saved - (84.0 - wall)).abs() < 1e-9,
+            "{saved} against {}",
+            84.0 - wall
+        );
+        // Depth no purge uses is filled anyway, so its fill comes off too.
+        let half = t.saved_first_wipe(&c, 84.0, h, false, rows / 2.0, 2);
+        assert!(half < saved - 1.0, "{half}");
+        // A first layer prints dense over all the purge leaves: the change purges the floor.
+        assert!((t.saved_first_wipe(&c, 84.0, h, true, 0.0, 2) - 15.0).abs() < 1e-9);
+        // A tool changer keeps the save it had.
+        let tools = tower_cfg(&[
+            ("wipe_tower_type", serde_json::json!("type2")),
+            ("single_extruder_multi_material", serde_json::json!(0)),
+        ]);
+        assert!(!flush_on_tower(&tools) && saves_first_purge(&tools));
     }
 
     #[test]

@@ -2821,7 +2821,7 @@ impl SliceSession {
         let (Some(top), Some(shape)) = (self.tower_top, self.tower_shape) else {
             return self.tower_rows;
         };
-        if !crate::tower::saves_on_last_wipe(config) {
+        if !crate::tower::saves_first_purge(config) {
             return self.tower_rows;
         }
         let plan = &self.plan;
@@ -3314,7 +3314,7 @@ impl SliceSession {
         };
         let rows = shape.map_or(1.0, |p| p.rows);
         let rows0 = match (top, shape) {
-            (Some(t), Some(p)) if crate::tower::saves_on_last_wipe(config) => {
+            (Some(t), Some(p)) if crate::tower::saves_first_purge(config) => {
                 crate::tower::plan_rows_unsaved(config, p.width, tools, &orders, &thickness, t as usize)
             }
             _ => rows,
@@ -9427,12 +9427,19 @@ impl SliceSession {
         // The save is measured on the tower as Orca first plans it, before the saves shrink it.
         let saving = tower
             .as_ref()
-            .filter(|_| crate::tower::saves_on_last_wipe(cfg))
+            .filter(|_| crate::tower::saves_first_purge(cfg))
             .and_then(|t| {
                 crate::tower::Tower::new(cfg, self.tool_count, self.tower_rows0)
                     .map(|t0| t0.shaped(t.width(), t.angle()).at(t.origin()))
             });
         let mut first_purge = true;
+        let order: Vec<u8> = works.iter().map(TowerTurn::tool).collect();
+        let planned = saving
+            .as_ref()
+            .filter(|_| crate::tower::flush_on_tower(cfg))
+            .map_or(0.0, |t0| {
+                t0.planned_rows(cfg, self.tool_count, start, &order, h, first)
+            });
         // Where the layer's wall is in its work's tower paths, and where each wipe after a change starts (the
         // wall opens level with them).
         let mut wall_slot: Option<(usize, usize)> = None;
@@ -9489,7 +9496,18 @@ impl SliceSession {
                 }
                 v = crate::tower::tower_share(cfg, next_tool, v, taken).max(0.0);
                 if let Some(t0) = saving.as_ref().filter(|_| first_purge) {
-                    v = t0.saved_wipe(cfg, v, h, first, used_rows, work.tool());
+                    v = if crate::tower::flush_on_tower(cfg) {
+                        t0.saved_first_wipe(
+                            cfg,
+                            v,
+                            h,
+                            first,
+                            if first { used_rows } else { planned },
+                            work.tool(),
+                        )
+                    } else {
+                        t0.saved_wipe(cfg, v, h, first, used_rows, work.tool())
+                    };
                 }
                 first_purge = false;
                 if let (true, Some(tower)) = (v > 0.5, tower.as_ref()) {
