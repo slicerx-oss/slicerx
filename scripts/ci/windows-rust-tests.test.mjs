@@ -260,3 +260,48 @@ test('describe prints the weight sum and items of each part', () => {
   const lines = describe(partition(sizedMetadata, 2, sized).parts)
   assert.deepEqual(lines, ['part 1 of 2: weight 160 s, 3 items', '  rest 100, c 40, e 20', 'part 2 of 2: weight 150 s, 4 items', '  a 60, b 50, d 30, f 10'])
 })
+
+test('the rest goes to part 1 even when a target outweighs it', () => {
+  const heavy = { rest: 10, targets: { huge: 500, big: 400, small: 5 } }
+  const meta = withTargets(Object.keys(heavy.targets))
+  for (const count of [1, 2, 3]) {
+    const { parts } = partition(meta, count, heavy)
+    assert.ok(parts[0].items.some((item) => item.rest), `${count} parts`)
+    assert.equal(parts.flatMap((part) => part.items).filter((item) => item.rest).length, 1)
+  }
+  assert.deepEqual(assigned(partition(meta, 2, heavy).parts), [['rest', 'big', 'small'], ['huge']])
+})
+
+test('the hosted core split has no rest, leaves firmware and requests to their own parts and covers the rest once', () => {
+  const grown = withTargets(['firmware', 'requests', ...Object.keys(sized.targets), 'brand_new'])
+  for (const count of [1, 2, 3]) {
+    const plans = Array.from({ length: count }, (_, i) => commands(grown, i + 1, { of: count, weights: sized, coreOnly: true }))
+    assert.deepEqual(plans.flatMap(selected).sort(), [...Object.keys(sized.targets), 'brand_new'].sort())
+    for (const plan of plans) {
+      assert.ok(plan.length <= 1)
+      for (const args of plan) assert.deepEqual(args.slice(0, 4), ['test', '--locked', '-p', 'sx-core'])
+      assert.ok(!plan.flat().some((arg) => ['--workspace', '--doc', '--lib'].includes(arg)))
+    }
+  }
+  const { parts } = partition(grown, 2, sized, { coreOnly: true })
+  assert.ok(!parts.flatMap((part) => part.items).some((item) => item.rest || item.name === 'firmware' || item.name === 'requests'))
+  assert.deepEqual(assigned(parts), [['a', 'd', 'e'], ['b', 'c', 'f', 'brand_new']])
+  assert.throws(() => checkPartition(['a'], [{ items: [{ name: 'rest', rest: true, weight: 1 }, { name: 'a', rest: false, weight: 1 }], load: 2 }], { coreOnly: true }), /rest in a core-only split/)
+})
+
+test('the command line takes --core-only for the hosted core split', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'sx-rust-core-'))
+  const file = join(dir, 'metadata.json')
+  try {
+    writeFileSync(file, JSON.stringify(withTargets(['firmware', 'requests', 'determinism', 'aegis'])))
+    const run = (...args) => spawnSync(process.execPath, [script, ...args, '--metadata', file], { encoding: 'utf8' })
+    const both = [1, 2].map((part) => JSON.parse(run(String(part), '--of', '2', '--core-only', '--plan').stdout))
+    assert.deepEqual(both, [[['test', '--locked', '-p', 'sx-core', '--test', 'determinism']], [['test', '--locked', '-p', 'sx-core', '--test', 'aegis']]])
+    const all = run('--of', '2', '--core-only', '--partition')
+    assert.equal(all.status, 0, all.stderr)
+    assert.doesNotMatch(all.stdout, /rest|firmware|requests/)
+  } finally {
+    assert.equal(dirname(resolve(dir)), resolve(tmpdir()))
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
