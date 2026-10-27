@@ -350,6 +350,12 @@ pub(crate) struct LayerAreas {
     pub bottom: crate::perimeters::Shapes,
     /// Solid only because of the shells: within the top or bottom shell layers of a surface.
     pub solid: crate::perimeters::Shapes,
+    /// The layer's sparse infill once the settings that print some of it solid have taken their part, with the internal
+    /// bridges over the sparse infill below (set for ironing every solid surface only).
+    pub sparse: crate::perimeters::Shapes,
+    /// Each object's part of the slice, when the layer holds more than one object and has sparse infill (set for
+    /// ironing every solid surface only; empty otherwise).
+    pub objects: Vec<crate::perimeters::Shapes>,
 }
 
 impl LayerPaths {
