@@ -8964,6 +8964,23 @@ impl SliceSession {
             let solid_deg = self.template_angle(cfg, "solid_infill_rotate_template", layer);
             let model_turn = self.model_turn(cfg);
             let solid_base = crate::motion::raw_f(cfg, "solid_infill_direction").unwrap_or(45.0);
+            // Off Bambu Lab printers the top surfaces and the first layer's bottom surface spread their lines
+            // evenly across each connected piece (`surface_edge`); the infill area overlaps the walls by
+            // `top_bottom_infill_wall_overlap` on the first and the last layer, as the walls are built.
+            let surface_stretch = if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+                None
+            } else {
+                let overlap = if layer == 0 || layer + 1 == self.plan.count() {
+                    cfg.raw_number("top_bottom_infill_wall_overlap", 25.0)
+                } else {
+                    cfg.infill_wall_overlap
+                };
+                surface_edge(cfg, layer_height, overlap / 100.0)
+            };
+            // How much wider than the surface's own width each stretched top and bottom line prints, and the
+            // widest stretched spacing, mm.
+            let mut widen: [Vec<f32>; 2] = [Vec::new(), Vec::new()];
+            let mut pitch: [f64; 2] = [0.0, 0.0];
             for (which, key, default, spans) in [
                 (0usize, "top_surface_pattern", "monotonicline", &mut top),
                 (1, "bottom_surface_pattern", "monotonic", &mut bottom),
@@ -9008,6 +9025,20 @@ impl SliceSession {
                     cfg.spacing_for(cfg.top_surface_width())
                 } else {
                     cfg.spacing_for(cfg.solid_infill_width())
+                });
+                // A single wall under the top surfaces (`only_one_wall_top`) or on the first layer moves the
+                // surface's edge where the rule was not measured, so those surfaces keep one grid.
+                let one_wall_top = crate::tower::flag(cfg, "only_one_wall_top");
+                let stretch = surface_stretch.filter(|_| {
+                    let top = which == 0 && !one_wall_top;
+                    let first = which == 1
+                        && layer == 0
+                        && self.raft.is_none()
+                        && !cfg.only_one_wall_first_layer
+                        && !(one_wall_top && self.plan.count() == 1);
+                    (top || first)
+                        && (density - 1.0).abs() < 1e-9
+                        && matches!(name, "monotonic" | "monotonicline" | "rectilinear")
                 });
                 // Monotonic, rectilinear and aligned rectilinear join each line to its neighbor along the edge of the
                 // surface however long the turn is: which ends are neighbors decides it, not a length (only ironing
@@ -9066,82 +9097,107 @@ impl SliceSession {
                     } else {
                         crate::patterns::rotate_shapes(&region, -turn)
                     };
-                    let outer = perimeters::offset(&region, -mm(0.05 * surface_mm));
-                    let inner_c = perimeters::offset(&region, -mm(0.5 * surface_mm));
-                    let family = crate::infill::Family {
-                        dir: d,
-                        spacing: surface_spacing,
+                    // One grid for the whole surface, or with `stretch` one for each connected piece: the piece's
+                    // edge moved out by it, and as many lines as the piece's extent across them holds at the
+                    // nominal spacing, spread evenly (at most 1.2 nominal spacings apart) from half a spacing in.
+                    // A stretched line is as much wider than the surface's own width as its spacing grew.
+                    let grids: Vec<(Shapes, i64, f64, i32, i32, f32)> = match stretch {
+                        None => vec![(region, surface_spacing, surface_mm, mm(0.5 * surface_mm), 0, 0.0)],
+                        Some(e) => stretch_grids(&region, d, e, surface_mm),
                     };
-                    let mut own = scan_area(family, &inner_c, &mut events);
-                    let own_out = scan_area(family, &outer, &mut events);
-                    if own.is_empty() {
-                        continue;
-                    }
-                    spans.clear();
-                    infill::trim(&mut own, 0, paths::t_units(0.05));
-                    let edge = (link_max > 0.0 && !inner_c.is_empty()).then(|| {
-                        let mut e = crate::edge::Edge::new(&inner_c);
-                        // A turn may not pass another line end.
-                        e.mark_ends(own.iter().flat_map(|iv| {
-                            let off = i64::from(iv.k) * surface_spacing;
-                            [d.point(off, iv.t0), d.point(off, iv.t1)]
-                        }));
-                        e
-                    });
-                    let links = crate::monotonic::Links {
-                        edge: edge.as_ref(),
-                        max: link_max,
-                        chord_fallback: false,
-                    };
-                    // Rectilinear and aligned rectilinear are one sweep from the left (a turn to the neighbor on
-                    // either side, the shorter when both are free, round a notch on the same line only when neither
-                    // is); monotonic and monotonic line are monotonic regions.
-                    let (spans_in, spans_out) = (
-                        crate::monotonic::orca_spans(&own, d),
-                        crate::monotonic::orca_spans(&own_out, d),
-                    );
-                    let to_point = |k: i64, t: i64| crate::monotonic::orca_point(d, k, t);
-                    let pls = if matches!(name, "rectilinear" | "alignedrectilinear") {
-                        crate::monotonic::zigzag_with(
-                            &spans_in,
-                            surface_spacing,
-                            &spans_out,
-                            links,
-                            &to_point,
-                        )
-                    } else {
-                        crate::monotonic::polylines_outer(
-                            &spans_in,
-                            &spans_out,
-                            surface_spacing,
-                            links,
-                            &to_point,
-                        )
-                    };
-                    if let Some(slot_lines) = curved.get_mut(which) {
-                        for pl in pls {
-                            // The turns: pieces between two points on different scanlines (a line keeps its own).
-                            let turns: Vec<bool> = pl
-                                .windows(2)
-                                .map(|w| match w {
-                                    // A point halves its scanline value to land on the grid, so the two ends of
-                                    // one line can read scanline values one unit apart: a turn moves further.
-                                    [a, b] => (d.st(a.x, a.y).0 - d.st(b.x, b.y).0).abs() > 1,
-                                    _ => false,
-                                })
-                                .collect();
-                            let pl = if turn == 0.0 {
-                                pl
-                            } else {
-                                crate::patterns::rotate_points(&pl, turn)
-                            };
-                            work.joins.extend(
-                                pl.windows(2)
-                                    .zip(&turns)
-                                    .filter(|(_, t)| **t)
-                                    .filter_map(|(w, _)| Some([*w.first()?, *w.get(1)?])),
-                            );
-                            slot_lines.extend(pl.windows(2).filter_map(|s| Some([*s.first()?, *s.get(1)?])));
+                    for (region, surface_spacing, surface_mm, inset, shift, wider) in grids {
+                        if let (Some(_), Some(p)) = (stretch, pitch.get_mut(which)) {
+                            *p = p.max(surface_mm);
+                        }
+                        let outer = perimeters::offset(&region, -mm(0.05 * surface_mm));
+                        let inner_c = perimeters::offset(&region, -inset);
+                        let family = crate::infill::Family {
+                            dir: d,
+                            spacing: surface_spacing,
+                        };
+                        let mut own = scan_area(family, &inner_c, &mut events);
+                        let own_out = scan_area(family, &outer, &mut events);
+                        if own.is_empty() {
+                            continue;
+                        }
+                        spans.clear();
+                        infill::trim(&mut own, 0, paths::t_units(0.05));
+                        let edge = (link_max > 0.0 && !inner_c.is_empty()).then(|| {
+                            let mut e = crate::edge::Edge::new(&inner_c);
+                            // A turn may not pass another line end.
+                            e.mark_ends(own.iter().flat_map(|iv| {
+                                let off = i64::from(iv.k) * surface_spacing;
+                                [d.point(off, iv.t0), d.point(off, iv.t1)]
+                            }));
+                            e
+                        });
+                        let links = crate::monotonic::Links {
+                            edge: edge.as_ref(),
+                            max: link_max,
+                            chord_fallback: false,
+                        };
+                        // Rectilinear and aligned rectilinear are one sweep from the left (a turn to the neighbor on
+                        // either side, the shorter when both are free, round a notch on the same line only when neither
+                        // is); monotonic and monotonic line are monotonic regions.
+                        let (spans_in, spans_out) = (
+                            crate::monotonic::orca_spans(&own, d),
+                            crate::monotonic::orca_spans(&own_out, d),
+                        );
+                        let to_point = |k: i64, t: i64| crate::monotonic::orca_point(d, k, t);
+                        let pls = if matches!(name, "rectilinear" | "alignedrectilinear") {
+                            crate::monotonic::zigzag_with(
+                                &spans_in,
+                                surface_spacing,
+                                &spans_out,
+                                links,
+                                &to_point,
+                            )
+                        } else {
+                            crate::monotonic::polylines_outer(
+                                &spans_in,
+                                &spans_out,
+                                surface_spacing,
+                                links,
+                                &to_point,
+                            )
+                        };
+                        if let Some(slot_lines) = curved.get_mut(which) {
+                            for pl in pls {
+                                // The turns: pieces between two points on different scanlines (a line keeps its own).
+                                let turns: Vec<bool> = pl
+                                    .windows(2)
+                                    .map(|w| match w {
+                                        // A point halves its scanline value to land on the grid, so the two ends of
+                                        // one line can read scanline values one unit apart: a turn moves further.
+                                        [a, b] => (d.st(a.x, a.y).0 - d.st(b.x, b.y).0).abs() > 1,
+                                        _ => false,
+                                    })
+                                    .collect();
+                                let pl = if shift == 0 {
+                                    pl
+                                } else {
+                                    pl.into_iter()
+                                        .map(|p| crate::geom::Point::new(p.x - shift, p.y))
+                                        .collect()
+                                };
+                                let pl = if turn == 0.0 {
+                                    pl
+                                } else {
+                                    crate::patterns::rotate_points(&pl, turn)
+                                };
+                                work.joins.extend(
+                                    pl.windows(2)
+                                        .zip(&turns)
+                                        .filter(|(_, t)| **t)
+                                        .filter_map(|(w, _)| Some([*w.first()?, *w.get(1)?])),
+                                );
+                                let before = slot_lines.len();
+                                slot_lines
+                                    .extend(pl.windows(2).filter_map(|s| Some([*s.first()?, *s.get(1)?])));
+                                if let (Some(_), Some(w)) = (stretch, widen.get_mut(which)) {
+                                    w.extend(std::iter::repeat_n(wider, slot_lines.len() - before));
+                                }
+                            }
                         }
                     }
                     continue;
@@ -9359,13 +9415,22 @@ impl SliceSession {
                         .map(|l| crate::fillgap::gaps(&region, l, mm_pitch, cfg))
                         .unwrap_or_default()
                 };
-                work.gap_top = gaps_of(0, cfg.spacing_for(cfg.top_surface_width()));
-                work.gap_bottom = gaps_of(1, solid_mm);
+                work.gap_top = gaps_of(0, cfg.spacing_for(cfg.top_surface_width()).max(pitch[0]));
+                work.gap_bottom = gaps_of(1, solid_mm.max(pitch[1]));
                 if gap_target == crate::fillgap::Target::Everywhere {
                     work.gap_shell = gaps_of(2, solid_mm);
                 }
             }
             let [curved_top, curved_bottom, curved_shell] = curved;
+            let [widen_top, widen_bottom] = widen;
+            if !widen_top.is_empty() {
+                work.top_widen = vec![0.0; work.top.len()];
+                work.top_widen.extend(widen_top);
+            }
+            if !widen_bottom.is_empty() {
+                work.bottom_widen = vec![0.0; work.bottom.len()];
+                work.bottom_widen.extend(widen_bottom);
+            }
             work.top.extend(curved_top);
             work.bottom.extend(curved_bottom);
             work.shell.extend(curved_shell);
@@ -10530,6 +10595,100 @@ fn stretch_of(
     })
 }
 
+/// How far a top surface's or the first layer's bottom surface's pieces move their edge out (in, when negative)
+/// before each spreads its lines evenly across itself, mm, on a layer `height` thick whose infill area overlaps
+/// the walls by `overlap` (a share of the line width). The infill area starts at the walls' widths from the
+/// outline (the outer wall's, then the inner wall's spacing per further loop with variable-width walls and its
+/// width with fixed-width walls) less that overlap. The surface starts at the innermost wall's spacing edge less
+/// `top_bottom_infill_wall_overlap` of the inner wall's spacing: past the outer wall's width with variable-width
+/// walls, past the outer wall's centerline and the mean of the two spacings with fixed-width walls. `None` where
+/// the walls are not the plain loops this reads (one fixed-width wall, or an extra wall on every other layer).
+fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> Option<f64> {
+    if cfg.wall_loops == 0 || crate::tower::flag(cfg, "alternate_extra_wall") {
+        return None;
+    }
+    let spacing = |w: f64| (w - height * (1.0 - std::f64::consts::FRAC_PI_4)).max(w * 0.5);
+    let (outer, inner) = (cfg.outer_wall_width(), cfg.inner_wall_width());
+    let loops = f64::from(cfg.wall_loops);
+    let share = cfg.raw_number("top_bottom_infill_wall_overlap", 25.0) / 100.0;
+    let (area, surface) = if cfg.arachne_walls() {
+        let walls = outer + (loops - 1.0) * spacing(inner);
+        (walls, walls)
+    } else if cfg.wall_loops < 2 {
+        return None;
+    } else {
+        (
+            outer + (loops - 1.0) * inner,
+            outer / 2.0
+                + f64::midpoint(spacing(outer), spacing(inner))
+                + (loops - 2.0) * spacing(inner)
+                + spacing(inner) / 2.0,
+        )
+    };
+    Some((area - overlap * cfg.line_width) - (surface - share * spacing(inner)))
+}
+
+/// The grids [`surface_edge`] lays over each connected piece of `region`, turned so its lines run along `d`: the
+/// piece with its edge moved out by `edge_mm` and shifted along x so its first line is the grid's line 0, the line
+/// spacing (scanline units and mm), how far in the lines' ends keep (internal units), the shift, and how much
+/// wider than the surface's own width the lines print, mm. `nominal_mm` is the surface's own spacing.
+fn stretch_grids(
+    region: &Shapes,
+    d: Dir,
+    edge_mm: f64,
+    nominal_mm: f64,
+) -> Vec<(Shapes, i64, f64, i32, i32, f32)> {
+    let mut out = Vec::new();
+    let nominal = f64::from(mm(nominal_mm)).max(1.0);
+    for piece in region {
+        let one: Shapes = vec![piece.clone()];
+        let moved = if mm(edge_mm) == 0 {
+            one
+        } else {
+            perimeters::offset(&one, mm(edge_mm))
+        };
+        for p in moved {
+            let Some(ring) = p.first() else {
+                continue;
+            };
+            let (lo, hi) = ring
+                .iter()
+                .map(|q| d.st(q.x, q.y).0)
+                .fold((i64::MAX, i64::MIN), |(a, b), s| (a.min(s), b.max(s)));
+            if hi <= lo {
+                continue;
+            }
+            // A scanline offset is the distance across the lines times the square root of 2.
+            #[allow(
+                clippy::cast_precision_loss,
+                reason = "a width across one piece, in internal units"
+            )]
+            let across = (hi - lo) as f64 / std::f64::consts::SQRT_2;
+            let pitch = crate::bridging::even_pitch(across, nominal, Some(1.2));
+            let spacing_mm = pitch / crate::geom::SCALE;
+            #[allow(clippy::cast_possible_truncation, reason = "half a cell in scanline units")]
+            let origin = lo + (pitch * std::f64::consts::FRAC_1_SQRT_2).round() as i64;
+            let Ok(shift) = i32::try_from(if d == Dir::D45 { origin } else { -origin }) else {
+                continue;
+            };
+            // The first and the last line sit exactly half a spacing in; the ends keep a hair less, so the
+            // piece's edge wandering by a few tenths of a micrometer keeps them.
+            #[allow(clippy::cast_possible_truncation, reason = "half a spacing in internal units")]
+            let half = ((pitch / 2.0).round() as i64 - crate::bridging::HAIR).max(0);
+            #[allow(clippy::cast_possible_truncation, reason = "a width in mm")]
+            out.push((
+                translate_shapes(&vec![p], shift, 0),
+                paths::t_units(spacing_mm).max(1),
+                spacing_mm,
+                i32::try_from(half).unwrap_or(i32::MAX),
+                shift,
+                (spacing_mm - nominal_mm) as f32,
+            ));
+        }
+    }
+    out
+}
+
 /// `bridge_density` and `internal_bridge_density` as a share of 1, kept within Orca's 10 to 125 percent.
 fn bridge_density(cfg: &PrintConfig, key: &str) -> f64 {
     (cfg.raw_number(key, 100.0) / 100.0).clamp(0.1, 1.25)
@@ -11078,6 +11237,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
         sparse_thick,
         flush_first,
         bottom,
+        bottom_widen,
         shell,
         shell_thick,
         floating,
@@ -11086,6 +11246,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
         internal_bridge_paths,
         internal_bridge_path_widths,
         top,
+        top_widen,
         bridge,
         bridge_paths,
         bridge_path_widths,
@@ -11114,6 +11275,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
         let k = at(&mut out, t.bottom);
         if let Some(w) = out.get_mut(k) {
             w.bottom.extend(bottom);
+            w.bottom_widen.extend(bottom_widen);
             w.region_bottom.extend(region_bottom);
             w.gap_bottom.extend(gap_bottom);
         }
@@ -11173,6 +11335,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
         let k = at(&mut out, t.top);
         if let Some(w) = out.get_mut(k) {
             w.top.extend(top);
+            w.top_widen.extend(top_widen);
             w.region_top.extend(region_top);
             w.gap_top.extend(gap_top);
         }
@@ -12464,6 +12627,46 @@ mod feature_slot_tests {
             slots(&json!({"sparse_infill_filament_id": 2})),
             [1, 1, 2, 2, 2, 2]
         );
+    }
+}
+
+#[cfg(test)]
+mod surface_edge_tests {
+    use super::surface_edge;
+    use crate::config::PrintConfig;
+    use serde_json::json;
+
+    fn edge(c: &serde_json::Value, height: f64) -> f64 {
+        let cfg = PrintConfig::from_value(c).expect("the settings read");
+        surface_edge(&cfg, height, 0.25).expect("plain walls")
+    }
+
+    #[test]
+    fn a_surface_moves_its_edge_from_the_infill_area_to_where_its_lines_start() {
+        // Two fixed-width walls of 0.42 mm: the infill area starts 0.0537 mm further in than the surface.
+        let ender = |w: f64| {
+            json!({"wall_generator": "classic", "wall_loops": 2, "line_width": w, "outer_wall_line_width": w,
+                "inner_wall_line_width": w, "precise_outer_wall": false, "top_bottom_infill_wall_overlap": 25})
+        };
+        assert!((edge(&ender(0.42), 0.2) - 0.0537).abs() < 0.0005);
+        assert!((edge(&ender(0.63), 0.3) - 0.0805).abs() < 0.0005);
+        // Three variable-width walls: the overlap is of the line width, not the inner wall's spacing.
+        let mk4 = json!({"wall_generator": "arachne", "wall_loops": 3, "nozzle_diameter": [0.4], "line_width": 0.44,
+            "outer_wall_line_width": 0.4, "inner_wall_line_width": 0.44, "top_bottom_infill_wall_overlap": 25});
+        assert!((edge(&mk4, 0.2) + 0.0107).abs() < 0.0005);
+        let voron = json!({"wall_generator": "arachne", "wall_loops": 3, "line_width": 0.4,
+            "outer_wall_line_width": 0.4, "inner_wall_line_width": 0.4, "top_bottom_infill_wall_overlap": 25});
+        assert!((edge(&voron, 0.2) + 0.0107).abs() < 0.0005);
+    }
+
+    #[test]
+    fn walls_the_rule_does_not_read_keep_the_lines_on_one_grid() {
+        let one =
+            PrintConfig::from_value(&json!({"wall_generator": "classic", "wall_loops": 1})).expect("read");
+        assert!(surface_edge(&one, 0.2, 0.25).is_none());
+        let extra =
+            PrintConfig::from_value(&json!({"wall_loops": 2, "alternate_extra_wall": true})).expect("read");
+        assert!(surface_edge(&extra, 0.2, 0.25).is_none());
     }
 }
 
