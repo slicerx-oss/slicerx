@@ -811,7 +811,7 @@ mod tests {
             slow_down_for_layer_cooling: false,
             ..crate::config::PrintConfig::default()
         };
-        crate::gcode::settle_cooling(&mut out, &config);
+        crate::gcode::settle_cooling(&mut out, &config, (None, None));
         assert!(out.layers[0].written.is_some());
         assert_eq!(drop_crossing_joins(&mut out), 1);
         assert!(out.layers[0].written.is_none());
