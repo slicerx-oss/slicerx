@@ -8370,7 +8370,11 @@ impl SliceSession {
                         let own_bottom = all(&|p| &p.cls.bottom);
                         let shell = all(&|p| &p.cls.shell);
                         let sparse = all(&|p| &p.cls.sparse);
-                        let band = all(&|p| &p.cls.band);
+                        let bands: Vec<Shapes> =
+                            parts.iter().map(|p| p.cls.band.area(&p.cls.shell)).collect();
+                        let band = crate::shells::Band::Ready(perimeters::union_all(
+                            &bands.iter().collect::<Vec<_>>(),
+                        ));
                         let external: Vec<crate::bridging::Bridged> =
                             parts.iter().flat_map(|p| p.cls.bridges.iter().cloned()).collect();
                         let bridged =
@@ -8889,14 +8893,17 @@ impl SliceSession {
                 };
                 if !narrow.is_empty() {
                     // On a Bambu Lab printer a narrow piece that rests on the sparse infill of the layer below, or
-                    // on the band its vertical shell rule alone makes solid (`vshell::open_below`), is a floating
+                    // on the band its vertical shell rule alone makes solid (`vshell::Below`), is a floating
                     // vertical shell (vshell.rs) when it is narrow enough (`vshell::floating_width`); the others
                     // stay internal solid infill.
                     let lower = lower_facts.as_deref().filter(|_| bambu);
                     let unsupported = lower.map(|f| crate::vshell::unsupported(&f.sparse));
-                    let open = lower.map(|f| crate::vshell::open_below(f, &lower_cut, cfg));
-                    let (floating, rest) = match &open {
-                        Some(o) => crate::vshell::split(&narrow, o, crate::vshell::floating_width(cfg)),
+                    let (floating, rest) = match &unsupported {
+                        Some(u) => crate::vshell::split(
+                            &narrow,
+                            &crate::vshell::Below::new(u, lower, &lower_cut, cfg),
+                            crate::vshell::floating_width(cfg),
+                        ),
                         None => (Shapes::new(), narrow),
                     };
                     if !rest.is_empty() {

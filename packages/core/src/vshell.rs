@@ -7,7 +7,7 @@
 //!
 //! - Which pieces: one that overlaps the lower layer's unsupported area (the sparse infill areas of every region
 //!   of the layer below, empty ones at 0% density included, and the band its vertical shell rule alone makes
-//!   solid where it is a sparse line wide, less its internal bridges: [`open_below`]) is a floating vertical shell
+//!   solid where it is a sparse line wide, less its internal bridges: [`Below`]) is a floating vertical shell
 //!   when no circle [`floating_width`] wide fits in it; the other narrow pieces stay internal solid infill. Each
 //!   piece is decided on its own. So the first solid layer over an internal bridge rests on it, and the layers
 //!   above that one float where they reach past the solid the surfaces below them ask for.
@@ -36,6 +36,7 @@ use crate::arachne::WallLine;
 use crate::config::PrintConfig;
 use crate::fm::Fm as _;
 use crate::geom::SCALE;
+use crate::par::Init as _;
 use crate::perimeters::{self, Shapes};
 use i_overlay::i_float::int::point::IntPoint;
 
@@ -134,48 +135,91 @@ pub(crate) fn floating_width(cfg: &PrintConfig) -> i32 {
     (mm * SCALE).round() as i32
 }
 
-/// The area of the layer below (`lower`) that leaves a narrow piece over it unsupported, for [`split`]: its sparse
-/// infill area and the band its vertical shell rule alone makes solid where that band is at least a sparse infill
-/// line wide (the strip under the walls of a part that stands on the layers above, past the solid the surfaces ask
-/// for; not the thin bands along a leaning wall), less what the layer prints there instead of sparse infill (`cut`,
-/// `bridging::printed_cut`, grown by half a sparse infill line over the ragged edge of its bridges, which falls a
-/// tenth of a millimeter or two short of the piece above in places), shrunk by a hair as [`unsupported`] is.
-pub(crate) fn open_below(lower: &crate::bridging::Facts, cut: &Shapes, cfg: &PrintConfig) -> Shapes {
-    let r = (cfg.sparse_infill_width() / 2.0 * SCALE).round() as i32;
-    let core = if lower.band.is_empty() {
-        Shapes::new()
-    } else {
-        perimeters::offset(&lower.band, -r)
-    };
-    let open = if core.is_empty() {
-        lower.sparse.clone()
-    } else {
-        let wide = perimeters::intersection(&perimeters::offset(&core, r), &lower.band);
-        perimeters::union_all(&[&lower.sparse, &wide])
-    };
-    if cut.is_empty() || open.is_empty() {
-        return unsupported(&open);
-    }
-    unsupported(&perimeters::difference(&open, &perimeters::offset(cut, r)))
+/// What a narrow piece can rest on in the layer below, for [`split`]: the lower layer's unsupported area
+/// ([`unsupported`] of its sparse infill area), and the band its vertical shell rule alone makes solid where that
+/// band is at least a sparse infill line wide (the strip under the walls of a part that stands on the layers above,
+/// past the solid the surfaces ask for; not the thin bands along a leaning wall), both less what the layer prints
+/// there instead of sparse infill (`bridging::printed_cut`, grown by half a sparse infill line over the ragged edge
+/// of its bridges, which falls a tenth of a millimeter or two short of the piece above in places).
+pub(crate) struct Below<'a> {
+    unsupported: &'a Shapes,
+    bounds: Option<[i32; 4]>,
+    /// What the layer prints instead of sparse infill, grown by `reach` and the hair the areas are shrunk by.
+    cut: Shapes,
+    /// The lower layer's band and its internal solid area.
+    band: Option<(&'a crate::shells::Band, &'a Shapes)>,
+    /// Half a sparse infill line, internal units.
+    reach: i32,
+    /// The band's part at least a sparse infill line wide, shrunk by a hair, worked out when first asked for.
+    wide: std::sync::OnceLock<Shapes>,
 }
 
-/// The narrow pieces that rest on the unsupported area and that no circle `width` (internal units) wide fits in
-/// (the floating vertical shell), and the others.
-pub(crate) fn split(narrow: &Shapes, unsupported: &Shapes, width: i32) -> (Shapes, Shapes) {
-    let (mut floating, mut rest) = (Shapes::new(), Shapes::new());
-    let ub = perimeters::bounds(unsupported);
-    for shape in narrow {
-        let one: Shapes = vec![shape.clone()];
-        let near = match (ub, perimeters::bounds(&one)) {
+impl<'a> Below<'a> {
+    pub(crate) fn new(
+        unsupported: &'a Shapes,
+        lower: Option<&'a crate::bridging::Facts>,
+        cut: &Shapes,
+        cfg: &PrintConfig,
+    ) -> Self {
+        let reach = (cfg.sparse_infill_width() / 2.0 * SCALE).round() as i32;
+        Self {
+            unsupported,
+            bounds: perimeters::bounds(unsupported),
+            cut: if cut.is_empty() {
+                Shapes::new()
+            } else {
+                perimeters::offset(cut, reach + EPS)
+            },
+            band: lower.map(|f| (&f.band, &f.shell)),
+            reach,
+            wide: std::sync::OnceLock::new(),
+        }
+    }
+
+    fn wide(&self) -> &Shapes {
+        self.wide.once(|| {
+            let Some((band, shell)) = self.band else {
+                return Shapes::new();
+            };
+            let band = band.area(shell);
+            if band.is_empty() {
+                return band;
+            }
+            let core = perimeters::offset(&band, -self.reach);
+            if core.is_empty() {
+                return core;
+            }
+            unsupported(&perimeters::intersection(
+                &perimeters::offset(&core, self.reach),
+                &band,
+            ))
+        })
+    }
+
+    /// True when the piece `one` rests on what does not hold it up below.
+    fn floats(&self, one: &Shapes) -> bool {
+        let grown = perimeters::offset(one, EPS);
+        let on = |area: &Shapes| {
+            let hit = perimeters::intersection(&grown, area);
+            !hit.is_empty() && (self.cut.is_empty() || !perimeters::difference(&hit, &self.cut).is_empty())
+        };
+        let near = match (self.bounds, perimeters::bounds(one)) {
             (Some(u), Some(b)) => {
                 b[0] - EPS <= u[2] && u[0] <= b[2] + EPS && b[1] - EPS <= u[3] && u[1] <= b[3] + EPS
             }
             _ => false,
         };
-        if near
-            && perimeters::offset(&one, -(width / 2)).is_empty()
-            && !perimeters::intersection(&perimeters::offset(&one, EPS), unsupported).is_empty()
-        {
+        (near && on(self.unsupported)) || on(self.wide())
+    }
+}
+
+/// The narrow pieces that rest on what does not hold them up below ([`Below`]) and that no circle `width`
+/// (internal units) wide fits in (the floating vertical shell), and the others.
+pub(crate) fn split(narrow: &Shapes, below: &Below<'_>, width: i32) -> (Shapes, Shapes) {
+    let (mut floating, mut rest) = (Shapes::new(), Shapes::new());
+    for shape in narrow {
+        let one: Shapes = vec![shape.clone()];
+        if perimeters::offset(&one, -(width / 2)).is_empty() && below.floats(&one) {
             floating.push(shape.clone());
         } else {
             rest.push(shape.clone());
@@ -837,7 +881,8 @@ mod tests {
         let u = unsupported(&sparse);
         let over = vec![rect(9.0, 2.0, 12.0, 8.0)];
         let beside = vec![rect(10.0, 2.0, 13.0, 8.0)];
-        let (f, r) = split(&vec![over.clone(), beside.clone()], &u, mm(4.625));
+        let below = Below::new(&u, None, &Shapes::new(), &PrintConfig::default());
+        let (f, r) = split(&vec![over.clone(), beside.clone()], &below, mm(4.625));
         assert_eq!(f, vec![over]);
         assert_eq!(r, vec![beside]);
     }
@@ -848,7 +893,8 @@ mod tests {
         let u = unsupported(&sparse);
         let thin = vec![rect(9.0, 0.0, 13.5, 10.0)];
         let wide = vec![rect(9.0, 0.0, 13.75, 10.0)];
-        let (f, r) = split(&vec![thin.clone(), wide.clone()], &u, mm(4.625));
+        let below = Below::new(&u, None, &Shapes::new(), &PrintConfig::default());
+        let (f, r) = split(&vec![thin.clone(), wide.clone()], &below, mm(4.625));
         assert_eq!(f, vec![thin]);
         assert_eq!(r, vec![wide]);
     }
