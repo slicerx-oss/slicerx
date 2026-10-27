@@ -2595,6 +2595,13 @@ fn emit_layer(
     // orca's bambu tower writer frames each tower block: `WIPE_TOWER_START` to `END`, and a change in
     // `CP TOOLCHANGE START` to `END` (`WipeTower::tool_change_new`); true while a change block is open
     let bbl_tower = crate::firmware::bambu_printer(c, flavor) && out.prime_tower.is_some();
+    // On a Bambu Lab printer the first layer's prime tower part that a filament prints after a tool change takes
+    // `initial_layer_flow_ratio` on its E and its stated width; the part before the layer's first change keeps both.
+    let tower_first_flow = if l.index == 0 {
+        c.initial_layer_flow_ratio()
+    } else {
+        1.0
+    };
     let mut tower_block: Option<bool> = None;
     for (pi, p) in l.paths.iter().enumerate() {
         let pts = l.path_points(p);
@@ -3321,7 +3328,14 @@ fn emit_layer(
                 b.extend_from_slice(lines.as_bytes());
             }
         }
-        let (width_label, height_label) = label(p.feature, p.width_mm, p.flow);
+        let tower_flow = if p.feature == Feature::PrimeTower && chunk.tool_changes > 0 {
+            tower_first_flow
+        } else {
+            1.0
+        };
+        #[allow(clippy::cast_possible_truncation, reason = "a line width is small")]
+        let (width_label, height_label) =
+            label(p.feature, (f64::from(p.width_mm) * tower_flow) as f32, p.flow);
         if feature != Some(p.feature) {
             if let Some(rc) = role_ctx.as_mut() {
                 match crate::customgcode::role_change(
@@ -3465,7 +3479,7 @@ fn emit_layer(
         // The prime tower prints the plain bead: no filament, print or role flow ratio on top.
         let plain = bead_area(f64::from(p.width_mm), h) / fil_area(p.tool);
         let e_per_mm = if p.feature == Feature::PrimeTower {
-            plain * f64::from(p.flow)
+            plain * f64::from(p.flow) * tower_flow
         } else {
             plain
                 * c.flow_ratio(p.tool)

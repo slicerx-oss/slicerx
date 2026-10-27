@@ -1538,6 +1538,7 @@ impl PrintConfig {
             "support_flow_ratio",
             "support_interface_flow_ratio",
             "first_layer_flow_ratio",
+            "initial_layer_flow_ratio",
         ] {
             range(key, self.raw_number(key, 1.0), 0.0, 2.0)?;
         }
@@ -2008,10 +2009,12 @@ impl PrintConfig {
 
     /// The extrusion multiplier Orca applies by role (`GCode::_extrude`): the print flow ratio, the top and
     /// bottom solid and brim ratios, and with `set_other_flow_ratios` the ratios of the other roles and of the
-    /// first layer.
+    /// first layer. On a Bambu Lab printer the first layer takes `initial_layer_flow_ratio` instead of
+    /// `first_layer_flow_ratio` ([`Self::initial_layer_flow`]).
     pub fn role_flow_ratio(&self, feature: crate::output::Feature, first_layer: bool) -> f64 {
         use crate::output::Feature as F;
         let r = |k: &str| self.raw_number(k, 1.0);
+        let bambu = crate::firmware::bambu_printer(self, self.gcode_flavor);
         let mut v = r("print_flow_ratio");
         v *= match feature {
             F::TopSurface => r("top_solid_infill_flow_ratio"),
@@ -2031,11 +2034,38 @@ impl PrintConfig {
                 F::SupportInterface => r("support_interface_flow_ratio"),
                 _ => 1.0,
             };
-            if first_layer && !matches!(feature, F::Brim | F::Skirt) {
+            if first_layer && !bambu && !matches!(feature, F::Brim | F::Skirt) {
                 v *= r("first_layer_flow_ratio");
             }
         }
+        if bambu {
+            v *= self.initial_layer_flow(feature, first_layer);
+        }
         v
+    }
+
+    /// The first layer's own flow multiplier on a Bambu Lab printer, `initial_layer_flow_ratio`, for `feature`: every
+    /// extrusion of the first layer (a raft's first layer when there is a raft) takes it, brim and skirt included,
+    /// except the top surface, which keeps its own ratio alone. The prime tower takes it only on the part a later
+    /// filament prints after its tool change ([`Self::initial_layer_flow_ratio`]). 1 above the first layer, on other
+    /// printers, and when the setting is unset.
+    pub fn initial_layer_flow(&self, feature: crate::output::Feature, first_layer: bool) -> f64 {
+        use crate::output::Feature as F;
+        if !first_layer || matches!(feature, F::TopSurface | F::PrimeTower) {
+            return 1.0;
+        }
+        self.initial_layer_flow_ratio()
+    }
+
+    /// `initial_layer_flow_ratio` on a Bambu Lab printer, 1 on other printers or when unset. Besides the first
+    /// layer's objects ([`Self::initial_layer_flow`]), it scales the first layer's prime tower part that a filament
+    /// prints after a tool change, its E and its stated width alike.
+    pub fn initial_layer_flow_ratio(&self) -> f64 {
+        if !crate::firmware::bambu_printer(self, self.gcode_flavor) {
+            return 1.0;
+        }
+        let v = self.raw_number("initial_layer_flow_ratio", 1.0);
+        if v.is_finite() && v >= 0.0 { v } else { 1.0 }
     }
 
     /// The flow multipliers a path's volumetric speed limit divides by on top of its bead area and its own flow,
@@ -2044,12 +2074,16 @@ impl PrintConfig {
         use crate::output::Feature as F;
         let bambu = crate::firmware::bambu_printer(self, self.gcode_flavor);
         let print = self.raw_number("print_flow_ratio", 1.0);
+        // Paths are planned per object, where an object's own first layer counts as the first even when it sits on a
+        // raft; the raft's first layer is the one whose E takes `initial_layer_flow_ratio`, so the object's keeps the
+        // plain limit.
+        let initial = first_layer && self.raw_number("raft_layers", 0.0) < 1.0;
         CapFlow {
             cfg: self,
             bambu,
             role: F::ALL.map(|f| match f {
                 F::PrimeTower => 1.0,
-                _ if bambu => print,
+                _ if bambu => print * self.initial_layer_flow(f, initial),
                 _ => self.role_flow_ratio(f, first_layer),
             }),
         }
@@ -2132,7 +2166,8 @@ impl PrintConfig {
 /// The flow multipliers a path's volumetric speed limit divides by on top of its bead area and its own flow, so
 /// the limit holds the mm3/s the path really extrudes: on a printer other than Bambu Lab, the filament's flow ratio
 /// times the role's ([`PrintConfig::role_flow_ratio`]), as its E carries them; on a Bambu Lab printer, the print
-/// flow ratio alone. The prime tower keeps its bead area and flow alone. One layer's, from
+/// flow ratio alone, times `initial_layer_flow_ratio` on the first layer ([`PrintConfig::initial_layer_flow`]). The
+/// prime tower keeps its bead area and flow alone. One layer's, from
 /// [`PrintConfig::cap_flow`].
 #[derive(Debug, Clone)]
 pub struct CapFlow<'a> {
@@ -3240,5 +3275,47 @@ mod tests {
             PrintConfig::default().cap_flow(false).ratio(1, F::InnerWall),
             1.0
         ));
+    }
+
+    #[test]
+    fn a_bambu_lab_first_layer_takes_the_initial_layer_flow_ratio() {
+        use crate::output::Feature as F;
+        let c = |v: Value| PrintConfig::from_value(&v).unwrap_or_default();
+        let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        let bambu = c(
+            serde_json::json!({ "printer_model": "Bambu Lab P1S", "print_flow_ratio": "0.95",
+            "top_solid_infill_flow_ratio": "0.8", "initial_layer_flow_ratio": "0.9",
+            "set_other_flow_ratios": "1", "first_layer_flow_ratio": "0.7" }),
+        );
+        // Every first-layer feature but the top surface, brim and skirt included; first_layer_flow_ratio is not read.
+        for f in [
+            F::OuterWall,
+            F::BottomSurface,
+            F::Brim,
+            F::Skirt,
+            F::Support,
+            F::Ironing,
+        ] {
+            assert!(near(bambu.role_flow_ratio(f, true), 0.95 * 0.9), "{f:?}");
+            assert!(near(bambu.role_flow_ratio(f, false), 0.95), "{f:?}");
+        }
+        assert!(near(bambu.role_flow_ratio(F::TopSurface, true), 0.95 * 0.8));
+        // The volumetric limit holds on the scaled flow, the filament's flow ratio left out.
+        let f = bambu.cap_flow(true);
+        assert!(near(f.ratio(1, F::OuterWall), 0.95 * 0.9));
+        assert!(near(f.ratio(1, F::TopSurface), 0.95));
+        assert!(near(f.ratio(1, F::PrimeTower), 1.0));
+        assert!(near(bambu.cap_flow(false).ratio(1, F::OuterWall), 0.95));
+        // On a raft the first layer is the raft's: an object's own first layer keeps the plain limit.
+        let raft = c(
+            serde_json::json!({ "printer_model": "Bambu Lab P1S", "initial_layer_flow_ratio": "0.9", "raft_layers": "2" }),
+        );
+        assert!(near(raft.cap_flow(true).ratio(1, F::OuterWall), 1.0));
+        assert!(near(raft.role_flow_ratio(F::Support, true), 0.9));
+        assert!(near(bambu.initial_layer_flow_ratio(), 0.9));
+        // Another printer: initial_layer_flow_ratio is no first-layer ratio there.
+        let other = c(serde_json::json!({ "initial_layer_flow_ratio": "0.9" }));
+        assert!(near(other.role_flow_ratio(F::OuterWall, true), 1.0));
+        assert!(near(other.initial_layer_flow_ratio(), 1.0));
     }
 }
