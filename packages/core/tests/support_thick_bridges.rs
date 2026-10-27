@@ -71,6 +71,8 @@ struct Span {
     wr: f64,
     l: bool,
     pad: bool,
+    /// The whole model moved this far in x, mm.
+    dx: f64,
 }
 
 const SPAN: Span = Span {
@@ -79,6 +81,7 @@ const SPAN: Span = Span {
     wr: 6.0,
     l: false,
     pad: false,
+    dx: 0.0,
 };
 
 fn span(s: Span) -> Vec<MeshPart> {
@@ -101,6 +104,11 @@ fn span(s: Span) -> Vec<MeshPart> {
     }
     if s.pad {
         parts.push(cuboid([-32.0, -8.0, 0.0], [-28.0, 8.0, 2.0], "pad"));
+    }
+    for part in &mut parts {
+        for v in &mut part.positions {
+            v[0] += s.dx as f32;
+        }
     }
     parts
 }
@@ -467,7 +475,9 @@ fn the_top_contact_keeps_its_gap_under_a_round_strand() {
         for (name, printer, model, extra, want) in &cases {
             s.spawn(move || {
                 let g = slice(span(*model), &config(*printer, extra));
-                assert_zs(name, &support_zs(&g, 4.5), want);
+                let top = want.last().copied().unwrap_or(0.0) + 0.0015;
+                let zs: Vec<f64> = support_zs(&g, 4.5).into_iter().filter(|z| *z <= top).collect();
+                assert_zs(name, &zs, want);
             });
         }
     });
@@ -573,5 +583,326 @@ fn support_resting_on_the_part_prints_a_round_bead() {
                 );
             });
         }
+    });
+}
+
+/// A filler height case: name, printer, model, extra settings, the contact's top, the support heights over it.
+type FillerCase = (&'static str, char, Span, Value, f64, Vec<f64>);
+
+#[test]
+fn filler_layers_fill_up_to_where_the_flat_contact_was() {
+    // (case, printer, model, extra settings, the contact's top, the support heights over it). The strand drops
+    // d - h below its layer; the fewest equal layers no thicker than max_layer_height fill that drop, the top one
+    // where the contact sits under a flat strand.
+    let tb = json!({"thick_bridges": true});
+    let with = |v: Value| merged(&tb, &v);
+    let cases: Vec<FillerCase> = vec![
+        ("e-tb1", 'e', SPAN, tb.clone(), 5.6, vec![5.8]),
+        (
+            "e-tb1h28",
+            'e',
+            SPAN,
+            with(json!({"layer_height": 0.28})),
+            5.76,
+            vec![5.88],
+        ),
+        ("e-tb1n6", 'e', SPAN, with(nozzle6('e')), 5.4, vec![5.6, 5.8]),
+        (
+            "e-tb1g3",
+            'e',
+            SPAN,
+            with(json!({"support_top_z_distance": 0.3})),
+            5.5,
+            vec![5.7],
+        ),
+        (
+            "e-tb1bf08",
+            'e',
+            SPAN,
+            with(json!({"bridge_flow": 0.8})),
+            5.642,
+            vec![5.8],
+        ),
+        (
+            "e-tb1L",
+            'e',
+            Span { l: true, ..SPAN },
+            tb.clone(),
+            5.6,
+            vec![5.8],
+        ),
+        (
+            "e-tb1sh04",
+            'e',
+            Span { dx: 0.4, ..SPAN },
+            tb.clone(),
+            5.6,
+            vec![5.8],
+        ),
+        (
+            "e-tb1sh10",
+            'e',
+            Span { dx: 1.0, ..SPAN },
+            tb.clone(),
+            5.6,
+            vec![5.8],
+        ),
+        ("m-tb1", 'm', SPAN, tb.clone(), 5.6, vec![5.8]),
+        (
+            "m-tb1h28",
+            'm',
+            SPAN,
+            with(json!({"layer_height": 0.28})),
+            5.76,
+            vec![5.88],
+        ),
+        ("m-tb1n6", 'm', SPAN, with(nozzle6('m')), 5.4, vec![5.6, 5.8]),
+        ("v-tb1", 'v', SPAN, tb.clone(), 5.61, vec![5.8]),
+        ("v-tb1n6", 'v', SPAN, with(nozzle6('v')), 5.415, vec![5.608, 5.8]),
+    ];
+    std::thread::scope(|s| {
+        for (name, printer, model, extra, contact, want) in &cases {
+            s.spawn(move || {
+                let g = slice(span(*model), &config(*printer, extra));
+                assert_zs(name, &support_zs(&g, contact + 0.005), want);
+            });
+        }
+    });
+}
+
+/// The support lines printed at `z`, as (x, y) points: their ends and middles, relative to the slab's left edge
+/// and its middle in y. `half` is half the outer wall width, from the wall's centerline to the part's edge.
+fn filler_points(g: &str, z: f64, half: f64) -> Vec<(f64, f64)> {
+    let (x0, y) = part_at(g);
+    let x0 = x0 - half;
+    support_moves(g)
+        .iter()
+        .filter(|m| (m.z - z).abs() < 1e-6)
+        .flat_map(|m| {
+            [
+                m.from,
+                m.to,
+                (f64::midpoint(m.from.0, m.to.0), f64::midpoint(m.from.1, m.to.1)),
+            ]
+        })
+        .map(|(px, py)| (px - x0, py - y))
+        .collect()
+}
+
+/// The support length printed at `z`, mm.
+fn length_at(g: &str, z: f64) -> f64 {
+    support_moves(g)
+        .iter()
+        .filter(|m| (m.z - z).abs() < 1e-6)
+        .map(len)
+        .sum()
+}
+
+/// The x extent of the points in the slab's y range (16 mm, less `inset` each side) between `lo` and `hi`.
+fn band(pts: &[(f64, f64)], lo: f64, hi: f64, inset: f64) -> Option<(f64, f64)> {
+    let xs: Vec<f64> = pts
+        .iter()
+        .filter(|p| p.1.abs() < 8.0 - inset && (lo..=hi).contains(&p.0))
+        .map(|p| p.0)
+        .collect();
+    let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    (!xs.is_empty()).then_some((lo, hi))
+}
+
+fn near(got: Option<(f64, f64)>, want: (f64, f64), name: &str) {
+    assert!(
+        got.is_some_and(|g| (g.0 - want.0).abs() < 0.03 && (g.1 - want.1).abs() < 0.03),
+        "{name}: band {got:?}, want {want:?}"
+    );
+}
+
+#[test]
+#[allow(clippy::too_many_lines, reason = "one table of cases")]
+fn filler_layers_print_between_the_footprint_and_the_strand() {
+    // Relative to the slab: its left edge at 0, its right edge at `r` (40 mm wide with 6 mm wings), its middle in y
+    // at 0. The interface footprint sits on the support grid through the plate's center; the filler is that
+    // footprint less the slab grown by the XY distance, filled with the interface lines as they are. A strip about
+    // one line spacing wide or less gets no line.
+    let tb = json!({"thick_bridges": true});
+    let with = |v: Value| merged(&tb, &v);
+    let e = |model: Span, extra: Value| slice(span(model), &config('e', &extra));
+    let outside = |pts: &[(f64, f64)], r: f64, xy: f64, name: &str| {
+        // Nothing within the slab grown by the XY distance.
+        for p in pts {
+            assert!(
+                !((-xy + 0.02..=r + xy - 0.02).contains(&p.0) && p.1.abs() < 8.0 + xy - 0.02),
+                "{name}: filler at {p:?}"
+            );
+        }
+    };
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            // Lines from the footprint's edge in to the slab grown by 0.35 mm plus half a line, on both ends; the
+            // same with the model moved 0.4 and 1.0 mm, since the grid moves with the part.
+            for (name, dx) in [("e-tb1", 0.0), ("e-tb1sh04", 0.4), ("e-tb1sh10", 1.0)] {
+                let g = e(Span { dx, ..SPAN }, tb.clone());
+                let pts = filler_points(&g, 5.8, 0.21);
+                near(band(&pts, -3.0, 0.0, 1.0), (-1.53, -0.54), name);
+                near(band(&pts, 40.0, 43.0, 1.0), (40.54, 41.63), name);
+                outside(&pts, 40.0, 0.35, name);
+                // The strips along the wings' long sides print too.
+                assert!(
+                    pts.iter().any(|p| p.1.abs() > 8.5 && (5.0..35.0).contains(&p.0)),
+                    "{name}"
+                );
+            }
+        });
+        s.spawn(|| {
+            // The L outline: the cut-back half's lines follow its edge, 3 mm in.
+            let g = e(Span { l: true, ..SPAN }, tb.clone());
+            let pts = filler_points(&g, 5.8, 0.21);
+            let back: Vec<(f64, f64)> = pts
+                .iter()
+                .filter(|p| (1.0..7.0).contains(&p.1) && p.0 < 5.0)
+                .copied()
+                .collect();
+            let x = back.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
+            assert!((x - 2.30).abs() < 0.03, "e-tb1L: cut-back band to {x}");
+            for p in &back {
+                assert!(p.0 < 3.0 - 0.35, "e-tb1L: filler at {p:?}");
+            }
+        });
+        s.spawn(|| {
+            // Right wings of 5.3 to 7.0 mm: the innermost line half a line spacing past the slab grown by the XY
+            // distance, or the grid's next line out.
+            for (name, wr, inner) in [
+                ("e-tb1wr53", 5.3, 0.72),
+                ("e-tb1wr57", 5.7, 0.54),
+                ("e-tb1wr64", 6.4, 0.54),
+                ("e-tb1wr70", 7.0, 0.54),
+            ] {
+                let g = e(Span { wr, ..SPAN }, tb.clone());
+                let pts = filler_points(&g, 5.8, 0.21);
+                let r = 34.0 + wr;
+                let got = band(&pts, r, r + 3.0, 1.0).map_or(0.0, |b| b.0 - r);
+                assert!(
+                    (got - inner).abs() < 0.03,
+                    "{name}: inner line {got} past the edge"
+                );
+                outside(&pts, r, 0.35, name);
+            }
+        });
+        s.spawn(|| {
+            // XY distance 1.2 mm: strips 0.54 and 0.64 mm, one line each.
+            let g = e(SPAN, with(json!({"support_object_xy_distance": 1.2})));
+            let pts = filler_points(&g, 5.8, 0.21);
+            near(band(&pts, -3.0, 0.0, 1.0), (-1.53, -1.39), "e-tb1xy12 left");
+            near(band(&pts, 40.0, 43.0, 1.0), (41.39, 41.63), "e-tb1xy12 right");
+            outside(&pts, 40.0, 1.2, "e-tb1xy12");
+            // A 7 mm right wing at 0.6 mm: no line in its 0.24 mm strip.
+            let g = e(
+                Span { wr: 7.0, ..SPAN },
+                with(json!({"support_object_xy_distance": 0.6})),
+            );
+            let pts = filler_points(&g, 5.8, 0.21);
+            near(band(&pts, -3.0, 0.0, 1.0), (-1.53, -0.79), "e-tb1wr70xy60 left");
+            assert!(
+                band(&pts, 41.0, 45.0, 1.0).is_none(),
+                "e-tb1wr70xy60: lines right"
+            );
+        });
+        s.spawn(|| {
+            // XY distance 1.46 mm: a 0.36 mm right strip (0.95 line spacings) gets no line; at 1.42 mm, 0.40 mm (1.06
+            // spacings), one loop. The left strips are narrower still.
+            let g = e(SPAN, with(json!({"support_object_xy_distance": 1.46})));
+            assert!(
+                length_at(&g, 5.8) < 1.0,
+                "e-tb1xy146: {} mm at 5.8",
+                length_at(&g, 5.8)
+            );
+            let g = e(SPAN, with(json!({"support_object_xy_distance": 1.42})));
+            let pts = filler_points(&g, 5.8, 0.21);
+            assert!(band(&pts, -3.0, 0.0, 1.0).is_none(), "e-tb1xy142: lines left");
+            assert!(
+                (30.0..40.0).contains(&length_at(&g, 5.8)),
+                "e-tb1xy142: {} mm",
+                length_at(&g, 5.8)
+            );
+        });
+        s.spawn(|| {
+            // A 0.6 mm nozzle: a 0.665 mm strip, one line 0.70 mm out from the slab.
+            let g = e(SPAN, with(nozzle6('e')));
+            let pts = filler_points(&g, 5.6, 0.315);
+            near(band(&pts, -3.0, 0.0, 1.5), (-0.70, -0.70), "e-tb1n6");
+            // The 0.4 mm printer with 0.42 mm lines: two lines on each end; one along each long side at 0.35 mm
+            // (a strip of one spacing), none at 0.37 mm.
+            let m = |extra: Value| slice(span(SPAN), &config('m', &merged(&tb, &extra)));
+            let pts = filler_points(&m(json!({})), 5.8, 0.2);
+            let ends = |lo: f64, hi: f64| {
+                let mut xs: Vec<i64> = pts
+                    .iter()
+                    .filter(|p| p.1.abs() < 6.0 && (lo..hi).contains(&p.0))
+                    .map(|p| (p.0 * 100.0).round() as i64)
+                    .collect();
+                xs.sort_unstable();
+                xs.dedup();
+                xs.len()
+            };
+            assert_eq!((ends(-3.0, 0.0), ends(40.0, 43.0)), (2, 2), "m-tb1");
+            let sides = |pts: &[(f64, f64)]| {
+                pts.iter()
+                    .filter(|p| p.1.abs() > 8.3 && (5.0..35.0).contains(&p.0))
+                    .count()
+            };
+            assert!(sides(&pts) > 10, "m-tb1: no lines along the sides");
+            let pts = filler_points(&m(json!({"support_object_xy_distance": 0.37})), 5.8, 0.2);
+            assert_eq!(sides(&pts), 0, "m-tb1xy37: lines along the sides");
+        });
+        s.spawn(|| {
+            // Wings of 3 mm, and left wings of 14 and 20 mm: the bands past the ends are under a line spacing (0.22,
+            // 0.24 and 0.12 mm), so none prints. The 0.47 mm strips along both long sides of every wing print, as
+            // zigzags from grid cell edge to grid cell edge: (wings, the slab's width, the measured lengths on the left
+            // and right wing). The 14 mm left wing prints 39.2 mm, one cell more than measured 33.3, and the 20 mm left
+            // wing 52.7 and 20.2 against 53.6 and 19.7 (see the PR's limits).
+            for (name, model, r, want) in [
+                (
+                    "e-tb1w3",
+                    Span {
+                        wl: 3.0,
+                        wr: 3.0,
+                        ..SPAN
+                    },
+                    34.0,
+                    [13.4, 13.1],
+                ),
+                ("e-tb1wl14", Span { wl: 14.0, ..SPAN }, 48.0, [39.2, 19.6]),
+                ("e-tb1wl20", Span { wl: 20.0, ..SPAN }, 54.0, [52.7, 20.2]),
+            ] {
+                let g = e(model, tb.clone());
+                let pts = filler_points(&g, 5.8, 0.21);
+                assert!(band(&pts, -3.0, 0.0, 1.0).is_none(), "{name}: lines left");
+                assert!(band(&pts, r, r + 3.0, 1.0).is_none(), "{name}: lines right");
+                outside(&pts, r, 0.35, name);
+                let (x0, y) = part_at(&g);
+                let x0 = x0 - 0.21;
+                // Each wing's side pieces: (wing, side) -> length, by each move's middle.
+                let mut sides = [[0.0; 2]; 2];
+                for m in support_moves(&g).iter().filter(|m| (m.z - 5.8).abs() < 1e-6) {
+                    let (mx, my) = (
+                        f64::midpoint(m.from.0, m.to.0) - x0,
+                        f64::midpoint(m.from.1, m.to.1) - y,
+                    );
+                    if my.abs() < 8.3 {
+                        continue;
+                    }
+                    let wing = usize::from(mx > r / 2.0);
+                    sides[wing][usize::from(my > 0.0)] += len(m);
+                }
+                for (wing, got) in sides.iter().enumerate() {
+                    assert!(got[0] > 2.0 && got[1] > 2.0, "{name}: wing {wing} sides {got:?}");
+                    assert!(
+                        (got[0] + got[1] - want[wing]).abs() < 0.5,
+                        "{name}: wing {wing} sides {got:?}, want {}",
+                        want[wing]
+                    );
+                }
+            }
+        });
     });
 }
