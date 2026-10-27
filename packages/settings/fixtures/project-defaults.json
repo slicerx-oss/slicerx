@@ -1,46 +1,46 @@
 {
-  "comment": "Cases for engine-choices.json: the settings a project file carries, the app that wrote it (the model's Application metadata), the keys a project open adds from fromApp because that app reads them its own way when the file lacks them (added), and the keys it adds from defaults, whatever app wrote it, because the file does not set them (defaults). sx-core's project_config, appMissingKeys and projectDefaults in @slicerx/settings, the MCP server's readProjectFile and the app's project open all run these cases.",
+  "comment": "Cases for engine-choices.json: the settings a project file carries, the app that wrote it (the model's Application metadata), the keys a project open adds from fromApp because that app reads them its own way when the file lacks them (added; a key it reads as another key's value is added whatever the file holds), and the keys it adds from defaults, whatever app wrote it, because the file does not set them (defaults). sx-core's project_config, appMissingKeys and projectDefaults in @slicerx/settings, the MCP server's readProjectFile and the app's project open all run these cases.",
   "cases": [
     {
       "name": "Bambu Studio project with none of the keys",
       "application": "BambuStudio-02.08.02.61",
       "settings": { "layer_height": "0.2", "enable_prime_tower": "1" },
-      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib", "solid_infill_direction": "45" },
       "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
     },
     {
       "name": "older Bambu Studio project with none of the keys",
       "application": "BambuStudio-01.10.02.73",
       "settings": { "layer_height": "0.2" },
-      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib", "solid_infill_direction": "45" },
       "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
     },
     {
       "name": "Bambu Studio project that sets all three",
       "application": "BambuStudio-02.08.02.61",
       "settings": { "layer_height": "0.2", "prime_tower_rib_wall": "0", "initial_layer_travel_acceleration": ["1000"], "internal_bridge_speed": ["60%"] },
-      "added": {},
+      "added": { "solid_infill_direction": "45" },
       "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
     },
     {
       "name": "Bambu Studio project with the rib wall switch on and nothing else",
       "application": "BambuStudio-02.08.02.61",
       "settings": { "layer_height": "0.2", "prime_tower_rib_wall": "1" },
-      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"] },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "solid_infill_direction": "45" },
       "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
     },
     {
       "name": "Bambu Studio project that names its tower wall type",
       "application": "BambuStudio-02.08.02.61",
       "settings": { "layer_height": "0.2", "wipe_tower_wall_type": "rectangle" },
-      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"] },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "solid_infill_direction": "45" },
       "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
     },
     {
       "name": "Bambu Studio project with its own first layer travel acceleration",
       "application": "BambuStudio-02.08.02.61",
       "settings": { "layer_height": "0.2", "initial_layer_travel_acceleration": ["6000"] },
-      "added": { "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib" },
+      "added": { "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib", "solid_infill_direction": "45" },
       "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
     },
     {
@@ -54,22 +54,43 @@
       "name": "Bambu Studio project with fine layers and no support gaps",
       "application": "BambuStudio-02.08.02.61",
       "settings": { "layer_height": "0.12", "enable_support": "1" },
-      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib", "solid_infill_direction": "45" },
       "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
     },
     {
       "name": "Bambu Studio project that sets both support gaps",
       "application": "BambuStudio-02.08.02.61",
       "settings": { "layer_height": "0.12", "enable_support": "1", "support_top_z_distance": "0.12", "support_bottom_z_distance": "0.12" },
-      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib", "solid_infill_direction": "45" },
       "defaults": { "precise_outer_wall": true }
     },
     {
       "name": "Bambu Studio project that sets only the top support gap",
       "application": "BambuStudio-02.08.02.61",
       "settings": { "layer_height": "0.12", "enable_support": "1", "support_top_z_distance": "0.1" },
-      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib", "solid_infill_direction": "45" },
       "defaults": { "precise_outer_wall": true, "support_bottom_z_distance": 0.2 }
+    },
+    {
+      "name": "Bambu Studio project with its own infill direction and a solid infill direction it does not read",
+      "application": "BambuStudio-02.08.02.61",
+      "settings": { "layer_height": "0.2", "infill_direction": "30", "solid_infill_direction": "0" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib", "solid_infill_direction": "30" },
+      "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
+    },
+    {
+      "name": "Bambu Studio project with an infill direction of 0",
+      "application": "BambuStudio-02.08.02.61",
+      "settings": { "layer_height": "0.2", "infill_direction": "0", "solid_infill_direction": "30" },
+      "added": { "initial_layer_travel_acceleration": ["500"], "internal_bridge_speed": ["100%"], "wipe_tower_wall_type": "rib", "solid_infill_direction": "0" },
+      "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
+    },
+    {
+      "name": "OrcaSlicer project with its own solid infill direction",
+      "application": "OrcaSlicer-2.3.0",
+      "settings": { "layer_height": "0.2", "infill_direction": "30", "solid_infill_direction": "0" },
+      "added": {},
+      "defaults": { "precise_outer_wall": true, "support_top_z_distance": 0.2, "support_bottom_z_distance": 0.2 }
     },
     {
       "name": "OrcaSlicer project with fine layers and no support gaps",

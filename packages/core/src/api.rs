@@ -653,11 +653,13 @@ fn engine_defaults() -> &'static [(String, serde_json::Value)] {
 }
 
 /// One row of `fromApp` in engine-choices.json: the key, the value the app reads a missing key as, and the keys that,
-/// when the settings have any, leave it out.
+/// when the settings have any, leave it out. With `same_as` the app reads the key as that key's value (`value` when
+/// the settings lack it too), whatever the settings hold.
 struct AppDefault {
     key: String,
     value: serde_json::Value,
     unless_any: Vec<String>,
+    same_as: Option<String>,
 }
 
 /// `fromApp` in engine-choices.json: by the name the file's app starts with, its rows.
@@ -690,6 +692,10 @@ fn app_defaults() -> &'static [(String, Vec<AppDefault>)] {
                                             .collect()
                                     })
                                     .unwrap_or_default(),
+                                same_as: v
+                                    .get("sameAs")
+                                    .and_then(serde_json::Value::as_str)
+                                    .map(str::to_owned),
                             })
                             .collect()
                     })
@@ -702,8 +708,10 @@ fn app_defaults() -> &'static [(String, Vec<AppDefault>)] {
 
 /// The keys `settings` lacks that `application`, the app that wrote the project (the model's `Application` metadata,
 /// `BambuStudio-02.08.02.61`), reads its own way, with the value it reads them as (`fromApp` in engine-choices.json):
-/// none for a key the settings have, or when they have any key the row's `unlessAny` names. Empty for another app or
-/// none. The app's project open and the MCP server's project read use the same table (`appMissingKeys`).
+/// none for a key the settings have, or when they have any key the row's `unlessAny` names. A row with `sameAs` is
+/// that key's value (else the row's) whatever the settings hold: a Bambu Studio project's solid infill direction is
+/// its infill direction. Empty for another app or none. The app's project open and the MCP server's project read use
+/// the same table (`appMissingKeys`).
 pub fn app_missing_keys(
     settings: &serde_json::Map<String, serde_json::Value>,
     application: Option<&str>,
@@ -715,17 +723,22 @@ pub fn app_missing_keys(
         .iter()
         .filter(|(app, _)| application.starts_with(app.as_str()))
         .flat_map(|(_, rows)| rows)
-        .filter(|row| {
-            !settings.contains_key(&row.key) && !row.unless_any.iter().any(|k| settings.contains_key(k))
+        .filter_map(|row| match &row.same_as {
+            Some(from) => Some((row.key.clone(), settings.get(from).unwrap_or(&row.value).clone())),
+            None if settings.contains_key(&row.key)
+                || row.unless_any.iter().any(|k| settings.contains_key(k)) =>
+            {
+                None
+            }
+            None => Some((row.key.clone(), row.value.clone())),
         })
-        .map(|row| (row.key.clone(), row.value.clone()))
         .collect()
 }
 
 /// For a request with `options.projectDefaults`: fills the keys `config` lacks that the app that wrote `project` (a
-/// 3MF the request names) reads its own way ([`app_missing_keys`]), as `sx slice <project.3mf>` reads them. A null
-/// config becomes an object of those keys; a config that is not an object is left as it is. Returns the keys added,
-/// sorted.
+/// 3MF the request names) reads its own way ([`app_missing_keys`], with the keys it reads as another key's value), as
+/// `sx slice <project.3mf>` reads them. A null config becomes an object of those keys; a config that is not an object
+/// is left as it is. Returns the keys added, sorted.
 pub fn apply_project_defaults(config: &mut serde_json::Value, project: &[u8]) -> Vec<String> {
     let application = crate::threemf::application(project);
     let empty = serde_json::Map::new();
@@ -867,7 +880,7 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
     bambu_tower_keys(&mut settings);
     // The app that wrote the file reads some keys its project lacks its own way (`fromApp` in engine-choices.json):
     // a Bambu Studio project without them gets the rib tower, 500 mm/s2 first layer travel and internal bridges at
-    // the bridge speed.
+    // the bridge speed, and its solid infill direction is always its infill direction.
     for (key, value) in app_missing_keys(&settings, app.as_deref()) {
         settings.insert(key, value);
     }

@@ -170,6 +170,6 @@ fn request_project_defaults_fill_only_the_missing_keys() {
         &serde_json::json!({ "layer_height": "0.2" }),
     );
     let mut config = Value::Null;
-    assert_eq!(sx_core::api::apply_project_defaults(&mut config, &bytes).len(), 3);
+    assert_eq!(sx_core::api::apply_project_defaults(&mut config, &bytes).len(), 4);
     assert_eq!(config["wipe_tower_wall_type"], "rib");
 }
