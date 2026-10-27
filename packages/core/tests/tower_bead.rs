@@ -197,8 +197,14 @@ fn segs(gcode: &str) -> Vec<Seg> {
     assert!(gcode.lines().any(|l| l.starts_with("M83")), "relative E");
     let (mut out, mut layer, mut tool, mut at) = (Vec::new(), 0usize, 0u8, [f64::NAN; 2]);
     let (mut feature, mut w, mut h) = (String::new(), 0.0, 0.0);
+    // A single nozzle's filament swap moves filament in and out of the cooling tube; it lays no bead.
+    let mut swap = false;
     for line in gcode.lines() {
         let s = line.trim();
+        if s.starts_with("; FILAMENT_SWAP_") {
+            swap = s.ends_with("START");
+            continue;
+        }
         if s.starts_with(";LAYER_CHANGE") || s.starts_with("; CHANGE_LAYER") {
             layer += 1;
             continue;
@@ -246,7 +252,7 @@ fn segs(gcode: &str) -> Vec<Seg> {
         }
         let (dx, dy) = (to[0] - at[0], to[1] - at[1]);
         let len = (dx * dx + dy * dy).sqrt();
-        if !arc && e > 0.0 && len > 0.0 {
+        if !arc && !swap && e > 0.0 && len > 0.0 {
             out.push(Seg {
                 layer,
                 tool,

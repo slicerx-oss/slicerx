@@ -140,8 +140,14 @@ fn changes(gcode: &str) -> Vec<Change> {
     }
     let (mut moves, mut out) = (Vec::new(), Vec::<Change>::new());
     let (mut layer, mut at, mut tower, mut open) = (0usize, [f64::NAN; 2], false, None);
+    // A single nozzle's filament swap (unload, cooling, park and load) purges nothing.
+    let mut swap = false;
     for line in gcode.lines() {
         let s = line.trim();
+        if s.starts_with("; FILAMENT_SWAP_") {
+            swap = s.ends_with("START");
+            continue;
+        }
         if s.starts_with(";LAYER_CHANGE") {
             layer += 1;
             open = None;
@@ -179,7 +185,7 @@ fn changes(gcode: &str) -> Vec<Change> {
                 _ => {}
             }
         }
-        if e > 0.0 && tower && ((to[0] - at[0]).abs() > 1e-9 || (to[1] - at[1]).abs() > 1e-9) {
+        if e > 0.0 && tower && !swap && ((to[0] - at[0]).abs() > 1e-9 || (to[1] - at[1]).abs() > 1e-9) {
             moves.push(Move {
                 layer,
                 change: open,
