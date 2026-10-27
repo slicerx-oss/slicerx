@@ -719,3 +719,67 @@ fn over_a_raft_the_parts_first_layer_keeps_one_grid() {
     widths.dedup();
     assert_eq!(widths, vec![0.48], "bottom at z {z}");
 }
+
+#[test]
+fn the_last_line_of_a_wide_piece_sits_half_a_spacing_in() {
+    // The Ender's strip 70.03 mm across and 20 mm along 45 degrees: R / s0 is 182.10, so 182 lines R / 182 =
+    // 0.37729 mm apart, the last as far from its side as the first (0.8700 mm).
+    let cfg = config(Printer::Ender, 0.4, &json!({}));
+    let rule = Rule::of(&cfg, false);
+    let w = 70.03;
+    let moves = slice(vec![strip(C, w, 20.0, 3.0, 45.0, "strip")], &cfg);
+    let got = lines(&moves, "3.00", "Top surface", C, w, 45.0);
+    let s = (w - 2.0 * rule.ins) / 182.0;
+    assert_eq!(got.at.len(), 182, "{:?}", got.at);
+    assert!(
+        (got.mean_step() - s).abs() < 0.000_01,
+        "spacing {:.6}, the rule gives {s:.6}",
+        got.mean_step()
+    );
+    let m = rule.ins + s / 2.0;
+    let (m0, m1) = (got.at[0], w - got.at[got.at.len() - 1]);
+    assert!(
+        (m0 - m).abs() < 0.001 && (m1 - m).abs() < 0.001,
+        "margins {m0:.4} and {m1:.4}, the rule gives {m:.4}"
+    );
+}
+
+#[test]
+fn a_first_layer_piece_a_whole_number_of_cells_wide_leaves_its_last_line_out() {
+    // The MK4's strip 3.717 by 30.9 mm along 135 degrees, first layer lines across it: R / s0 is 65.0001, so 65
+    // cells R / 65 = 0.43708 mm apart and 0.480 mm wide, with the 65th line left out (64 lines).
+    let cfg = config(Printer::Mk4, 0.4, &json!({}));
+    let rule = Rule::of(&cfg, true);
+    let l = 30.9;
+    let moves = slice(vec![strip(C, 3.717, l, 3.0, 135.0, "strip")], &cfg);
+    let got = lines(&moves, "0.20", "Bottom surface", C, l, 45.0);
+    let s = (l - 2.0 * rule.ins) / 65.0;
+    assert_eq!(
+        got.at.len(),
+        64,
+        "R / s0 {:.4}: {:?}",
+        (l - 2.0 * rule.ins) / rule.s0,
+        got.at
+    );
+    assert!(
+        (got.mean_step() - s).abs() < 0.0005,
+        "spacing {:.5}, the rule gives {s:.5}",
+        got.mean_step()
+    );
+    // The lines are about 1.2 mm long: their widths, not the turns'.
+    let mut widths: Vec<f64> = moves["0.20"]["Bottom surface"]
+        .iter()
+        .filter(|g| g.len() > 0.6)
+        .map(|g| g.width)
+        .collect();
+    widths.dedup();
+    assert!(
+        widths.len() == 1 && (widths[0] - (s + rule.h * K)).abs() < 0.001,
+        "widths {widths:?}"
+    );
+    let (m0, m1) = (got.at[0], l - got.at[got.at.len() - 1]);
+    assert!(
+        (m0 - (rule.ins + s / 2.0)).abs() < 0.002 && (m1 - (rule.ins + 1.5 * s)).abs() < 0.002,
+        "margins {m0:.4} and {m1:.4}"
+    );
+}

@@ -9181,11 +9181,28 @@ impl SliceSession {
                     // edge moved out by it, and as many lines as the piece's extent across them holds at the
                     // nominal spacing, spread evenly (at most 1.2 nominal spacings apart) from half a spacing in.
                     // A stretched line is as much wider than the surface's own width as its spacing grew.
-                    let grids: Vec<(Shapes, i64, f64, i32, i32, f32)> = match stretch {
-                        None => vec![(region, surface_spacing, surface_mm, mm(0.5 * surface_mm), 0, 0.0)],
+                    let grids: Vec<SurfaceGrid> = match stretch {
+                        None => vec![SurfaceGrid {
+                            region,
+                            spacing: surface_spacing,
+                            spacing_mm: surface_mm,
+                            inset: mm(0.5 * surface_mm),
+                            frame: None,
+                            wider: 0.0,
+                            skip: None,
+                        }],
                         Some(e) => stretch_grids(&region, d, e, surface_mm),
                     };
-                    for (region, surface_spacing, surface_mm, inset, shift, wider) in grids {
+                    for grid in grids {
+                        let SurfaceGrid {
+                            region,
+                            spacing: surface_spacing,
+                            spacing_mm: surface_mm,
+                            inset,
+                            frame,
+                            wider,
+                            skip,
+                        } = grid;
                         if let (Some(_), Some(p)) = (stretch, pitch.get_mut(which)) {
                             *p = p.max(surface_mm);
                         }
@@ -9196,7 +9213,11 @@ impl SliceSession {
                             spacing: surface_spacing,
                         };
                         let mut own = scan_area(family, &inner_c, &mut events);
-                        let own_out = scan_area(family, &outer, &mut events);
+                        let mut own_out = scan_area(family, &outer, &mut events);
+                        if let Some(k) = skip {
+                            own.retain(|iv| iv.k != k);
+                            own_out.retain(|iv| iv.k != k);
+                        }
                         if own.is_empty() {
                             continue;
                         }
@@ -9253,12 +9274,9 @@ impl SliceSession {
                                         _ => false,
                                     })
                                     .collect();
-                                let pl = if shift == 0 {
-                                    pl
-                                } else {
-                                    pl.into_iter()
-                                        .map(|p| crate::geom::Point::new(p.x - shift, p.y))
-                                        .collect()
+                                let pl = match frame {
+                                    None => pl,
+                                    Some(f) => pl.into_iter().map(|p| f.back(p)).collect(),
                                 };
                                 let pl = if turn == 0.0 {
                                     pl
@@ -10745,18 +10763,83 @@ fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> Option<f64> {
     Some((area - overlap * cfg.line_width) - (surface - share * spacing(inner)))
 }
 
-/// The grids [`surface_edge`] lays over each connected piece of `region`, turned so its lines run along `d`: the
-/// piece with its edge moved out by `edge_mm` and shifted along x so its first line is the grid's line 0, the line
-/// spacing (scanline units and mm), how far in the lines' ends keep (internal units), the shift, and how much
-/// wider than the surface's own width the lines print, mm. `nominal_mm` is the surface's own spacing.
-fn stretch_grids(
-    region: &Shapes,
+/// One grid of a surface's lines: the area, the line spacing (scanline units and mm), how far in the lines' ends
+/// keep (internal units), the frame a stretched piece is drawn in, how much wider than the surface's own width the
+/// lines print (mm) and the line left out, if any.
+struct SurfaceGrid {
+    region: Shapes,
+    spacing: i64,
+    spacing_mm: f64,
+    inset: i32,
+    frame: Option<PieceFrame>,
+    wider: f32,
+    skip: Option<i32>,
+}
+
+/// The frame a stretched piece is drawn in for lines along `d`: a point at scanline value s moves across the lines
+/// to `(s - origin) * scale`, and nothing moves along them. The piece's first line is the grid's line 0, and the
+/// grid's whole-unit spacing lands each line exactly the piece's own pitch from the last, so the error of rounding
+/// the pitch to a whole unit does not build up across a wide piece.
+#[derive(Clone, Copy, Debug)]
+struct PieceFrame {
     d: Dir,
-    edge_mm: f64,
-    nominal_mm: f64,
-) -> Vec<(Shapes, i64, f64, i32, i32, f32)> {
+    origin: f64,
+    scale: f64,
+}
+
+impl PieceFrame {
+    /// The plate point nearest scanline value `s` and position `t`.
+    fn at(self, s: f64, t: f64) -> (i32, i32) {
+        let (x, y) = match self.d {
+            Dir::D45 => ((t - s) / 2.0, f64::midpoint(t, s)),
+            Dir::D135 => ((s - t) / 2.0, f64::midpoint(s, t)),
+        };
+        #[allow(clippy::cast_possible_truncation, reason = "plate coordinates")]
+        (x.round() as i32, y.round() as i32)
+    }
+
+    /// `p` in the frame.
+    #[allow(clippy::cast_precision_loss, reason = "scanline values on a bed")]
+    fn to(self, p: IntPoint<i32>) -> IntPoint<i32> {
+        let (s, t) = self.d.st(p.x, p.y);
+        let (x, y) = self.at((s as f64 - self.origin) * self.scale, t as f64);
+        IntPoint::new(x, y)
+    }
+
+    /// `p` back from the frame on the plate.
+    #[allow(clippy::cast_precision_loss, reason = "scanline values on a bed")]
+    fn back(self, p: crate::geom::Point) -> crate::geom::Point {
+        let (s, t) = self.d.st(p.x, p.y);
+        let (x, y) = self.at(self.origin + s as f64 / self.scale, t as f64);
+        crate::geom::Point::new(x, y)
+    }
+}
+
+/// How close to a whole number of cells (internal units, 1.5 um) a piece's extent takes that number and leaves its
+/// last line out: wider than the few tenths of a micrometer a piece's edge strays from the walls' widths, narrower
+/// than the 3.3 um (0.01 of a cell) at which every line prints.
+const WHOLE_CELLS: f64 = 15.0;
+
+/// The pitch of the lines across a piece `across` wide for lines `nominal` apart (internal units), and the line
+/// left out, counted from the low side. As [`crate::bridging::even_pitch`] with the 1.2 cap, except that a piece
+/// within [`WHOLE_CELLS`] of a whole number n (2 or more) of cells, on either side, takes n cells at `across / n`
+/// and leaves its last line (n - 1) out.
+fn stretch_pitch(across: f64, nominal: f64) -> (f64, Option<i32>) {
+    let whole = (across / nominal).round();
+    if whole >= 2.0 && (across - whole * nominal).abs() <= WHOLE_CELLS {
+        #[allow(clippy::cast_possible_truncation, reason = "a line count on a bed")]
+        return (across / whole, Some(whole as i32 - 1));
+    }
+    (crate::bridging::even_pitch(across, nominal, Some(1.2)), None)
+}
+
+/// The grids [`surface_edge`] lays over each connected piece of `region`, turned so its lines run along `d`: the
+/// piece with its edge moved out by `edge_mm`, drawn in a [`PieceFrame`] where its first line is the grid's line 0,
+/// with the line spacing, how far in the lines' ends keep, how much wider than the surface's own width the lines
+/// print and the line [`stretch_pitch`] leaves out. `nominal_mm` is the surface's own spacing.
+fn stretch_grids(region: &Shapes, d: Dir, edge_mm: f64, nominal_mm: f64) -> Vec<SurfaceGrid> {
     let mut out = Vec::new();
-    let nominal = f64::from(mm(nominal_mm)).max(1.0);
+    let nominal = (nominal_mm * crate::geom::SCALE).max(1.0);
     for piece in region {
         let one: Shapes = vec![piece.clone()];
         let moved = if mm(edge_mm) == 0 {
@@ -10781,26 +10864,46 @@ fn stretch_grids(
                 reason = "a width across one piece, in internal units"
             )]
             let across = (hi - lo) as f64 / std::f64::consts::SQRT_2;
-            let pitch = crate::bridging::even_pitch(across, nominal, Some(1.2));
+            let (pitch, last) = stretch_pitch(across, nominal);
             let spacing_mm = pitch / crate::geom::SCALE;
-            #[allow(clippy::cast_possible_truncation, reason = "half a cell in scanline units")]
-            let origin = lo + (pitch * std::f64::consts::FRAC_1_SQRT_2).round() as i64;
-            let Ok(shift) = i32::try_from(if d == Dir::D45 { origin } else { -origin }) else {
-                continue;
+            // The pitch in scanline units, and the whole number of them the grid steps by in the piece's frame.
+            let exact = pitch * std::f64::consts::SQRT_2;
+            #[allow(clippy::cast_possible_truncation, reason = "a spacing in scanline units")]
+            let spacing = (exact.round() as i64).max(1);
+            #[allow(clippy::cast_precision_loss, reason = "scanline values on a bed")]
+            let frame = PieceFrame {
+                d,
+                origin: lo as f64 + exact / 2.0,
+                scale: spacing as f64 / exact,
             };
             // The first and the last line sit exactly half a spacing in; the ends keep a hair less, so the
             // piece's edge wandering by a few tenths of a micrometer keeps them.
-            #[allow(clippy::cast_possible_truncation, reason = "half a spacing in internal units")]
-            let half = ((pitch / 2.0).round() as i64 - crate::bridging::HAIR).max(0);
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_precision_loss,
+                reason = "half a spacing in internal units"
+            )]
+            let half = ((spacing as f64 * std::f64::consts::FRAC_1_SQRT_2 / 2.0).round() as i64
+                - crate::bridging::HAIR)
+                .max(0);
+            let drawn: Shapes = vec![
+                p.iter()
+                    .map(|r| r.iter().map(|q| frame.to(*q)).collect())
+                    .collect(),
+            ];
+            // Counted across the lines, the last line is the grid's last along 45 degrees and its first along
+            // 135 degrees, where scanline values run the other way.
+            let skip = last.map(|n| if d == Dir::D45 { n } else { 0 });
             #[allow(clippy::cast_possible_truncation, reason = "a width in mm")]
-            out.push((
-                translate_shapes(&vec![p], shift, 0),
-                paths::t_units(spacing_mm).max(1),
+            out.push(SurfaceGrid {
+                region: drawn,
+                spacing,
                 spacing_mm,
-                i32::try_from(half).unwrap_or(i32::MAX),
-                shift,
-                (spacing_mm - nominal_mm) as f32,
-            ));
+                inset: i32::try_from(half).unwrap_or(i32::MAX),
+                frame: Some(frame),
+                wider: (spacing_mm - nominal_mm) as f32,
+                skip,
+            });
         }
     }
     out
@@ -12749,7 +12852,7 @@ mod feature_slot_tests {
 
 #[cfg(test)]
 mod surface_edge_tests {
-    use super::surface_edge;
+    use super::{stretch_pitch, surface_edge};
     use crate::config::PrintConfig;
     use serde_json::json;
 
@@ -12774,6 +12877,24 @@ mod surface_edge_tests {
         let voron = json!({"wall_generator": "arachne", "wall_loops": 3, "line_width": 0.4,
             "outer_wall_line_width": 0.4, "inner_wall_line_width": 0.4, "top_bottom_infill_wall_overlap": 25});
         assert!((edge(&voron, 0.2) + 0.0107).abs() < 0.0005);
+    }
+
+    #[test]
+    fn a_piece_a_whole_number_of_cells_wide_takes_that_many_and_leaves_its_last_line_out() {
+        // 1.4 um over or under 65 cells of 0.437 mm: 65 cells, line 64 left out.
+        let nominal = 4370.8;
+        for across in [65.0 * nominal + 14.0, 65.0 * nominal - 14.0] {
+            let (pitch, last) = stretch_pitch(across, nominal);
+            assert!((pitch - across / 65.0).abs() < 1e-9, "{across}: {pitch}");
+            assert_eq!(last, Some(64), "{across}");
+        }
+        // 1.6 um off, the cells round down and every line prints.
+        let across = 65.0 * nominal + 16.0;
+        assert_eq!(stretch_pitch(across, nominal), (across / 65.0, None));
+        let across = 65.0 * nominal - 16.0;
+        assert_eq!(stretch_pitch(across, nominal), (across / 64.0, None));
+        // One cell keeps its line.
+        assert_eq!(stretch_pitch(nominal + 5.0, nominal).1, None);
     }
 
     #[test]
