@@ -837,7 +837,7 @@ pub(crate) struct Even {
 /// How much closer than half a spacing to the piece's edge the strands may end (internal units, 5 um): enough
 /// that the first and the last strand of a piece, which sit exactly half a spacing in, are kept where the
 /// piece's edge wanders by a few tenths of a micrometer.
-const HAIR: i64 = 50;
+pub(crate) const HAIR: i64 = 50;
 
 /// Strands over each piece of `area` along `angle` (radians), spread evenly across the piece: the piece's
 /// extent across the strands is cut into as many equal cells as hold `nominal_mm` (rounded down, at least one),
@@ -875,9 +875,8 @@ pub(crate) fn fill_even(area: &Shapes, angle: f64, nominal_mm: f64, edge_mm: f64
             )]
             let across = (hi - lo) as f64;
             let nominal = f64::from(mm(nominal_mm)).max(1.0);
-            let cells = (across / nominal + 1e-9).floor().max(1.0);
             // A piece narrower than one nominal cell keeps the nominal spacing (and so no strand fits).
-            let pitch = (across / cells).max(nominal);
+            let pitch = even_pitch(across, nominal, None);
             #[allow(clippy::cast_possible_truncation, reason = "a spacing in internal units")]
             let spacing = (pitch.round() as i64).max(1);
             #[allow(clippy::cast_possible_truncation, reason = "half a cell in internal units")]
@@ -901,6 +900,15 @@ pub(crate) fn fill_even(area: &Shapes, angle: f64, nominal_mm: f64, edge_mm: f64
         }
     }
     out
+}
+
+/// The pitch of lines spread evenly across a piece `across` wide for lines `nominal` apart (any one unit): the
+/// piece cut into as many equal cells as hold the nominal (rounded down, at least one), never below the nominal
+/// and, with `cap`, at most `cap` times it.
+pub(crate) fn even_pitch(across: f64, nominal: f64, cap: Option<f64>) -> f64 {
+    let cells = (across / nominal + 1e-9).floor().max(1.0);
+    let pitch = (across / cells).max(nominal);
+    cap.map_or(pitch, |c| pitch.min(c * nominal))
 }
 
 /// The frame the strands of a bridge are vertical in: the plate turned by the strand angle plus a right angle.
