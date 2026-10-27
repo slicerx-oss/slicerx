@@ -55,7 +55,7 @@ describe("readProjectFile and a PrusaSlicer project's settings", () => {
 
   it('reports the values it left out and the filaments', () => {
     const { summary } = readProjectFile(join(fixtures, 'preset-files/prusaslicer-2.9.6-tslab.3mf'))
-    expect(summary.import_report.invalid).toEqual([{ key: 'support_material_xy_spacing', value: '50%' }])
+    expect(summary.import_report.invalid).toEqual([])
     expect(summary.filaments[0]?.type).toBe('PETG')
     expect(summary.support['enable_support']).toBe(true)
   })

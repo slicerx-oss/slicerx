@@ -330,6 +330,7 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<(Vec<crate::api:
         .as_deref()
         .map(|x| parse_layer_ranges(x.as_bytes()))
         .unwrap_or_default();
+    let prusa_config = project.files.prusa_config.clone();
     let numbers = object_numbers(project.objects.iter().map(|o| o.id));
     // The plates with a printed part. One plate: the first is the lowest of them, as the plates made below are ordered.
     let printed: std::collections::BTreeSet<u32> = project
@@ -354,7 +355,13 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<(Vec<crate::api:
         }
         let brim_points = ears_of(&ears, item_no, &o.transform, scale);
         let placed_by = placement(o.id, &o.transform, scale);
-        let object = to_map(&o.settings);
+        let object = if prusa {
+            let mut out = crate::prusa::object_overrides(&o.settings, prusa_config.as_deref());
+            out.retain(|k, _| !never(k));
+            out
+        } else {
+            to_map(&o.settings)
+        };
         let mut parts: Vec<MeshPart> = Vec::new();
         let mut volumes: Vec<MeshVolume> = Vec::new();
         let mut with_settings = Vec::new();
