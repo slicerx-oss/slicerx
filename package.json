@@ -16,7 +16,7 @@
     "lint:brand": "node scripts/check-brand-strings.mjs",
     "devkit-eval": "node scripts/devkit-eval.mjs",
     "test:packed-mcp": "node --test scripts/mcp-package.test.mjs",
-    "test:scripts": "node --test scripts/test-affected.test.mjs scripts/register-project.test.mjs scripts/check-dashes.test.mjs scripts/check-brand-strings.test.mjs scripts/edition-build.test.mjs scripts/pack-integrator-kit.test.mjs scripts/export-kit-assets.test.mjs scripts/ci/playwright-results.test.mjs scripts/ci/vitest-quarantine.test.mjs scripts/ci/windows-rust-tests.test.mjs scripts/ci/rust-part-coverage.test.mjs scripts/ci/require-green.test.mjs scripts/gate/gate.test.mjs",
+    "test:scripts": "node --test scripts/test-affected.test.mjs scripts/register-project.test.mjs scripts/check-dashes.test.mjs scripts/check-brand-strings.test.mjs scripts/edition-build.test.mjs scripts/pack-integrator-kit.test.mjs scripts/export-kit-assets.test.mjs scripts/ci/playwright-results.test.mjs scripts/ci/vitest-quarantine.test.mjs scripts/ci/windows-rust-tests.test.mjs scripts/ci/rust-part-coverage.test.mjs scripts/ci/require-green.test.mjs scripts/gate/gate.test.mjs apps/desktop/release/whats-changed.test.mjs",
     "edition:build": "node scripts/edition-build.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
