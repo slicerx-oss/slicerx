@@ -119,11 +119,13 @@ fn slice(cfg: Value, bed: [f64; 2]) -> String {
 
 const MMU_BED: [f64; 2] = [250.0, 210.0];
 
-/// One tool change: the layer (1 for the first) and the purge rows the new filament wiped after it, mm3.
+/// One tool change: the layer (1 for the first), the purge rows the new filament wiped after it and all it printed
+/// on the tower after it (rows, wall and fill), mm3.
 #[derive(Debug, Clone, Copy)]
 struct Change {
     layer: usize,
     rows: f64,
+    total: f64,
 }
 
 /// Each tool change's purge rows: the tower filament after the change, up to the next feature, less the wall's (the
@@ -155,7 +157,11 @@ fn changes(gcode: &str) -> Vec<Change> {
         let body = s.split(';').next().unwrap_or("").trim();
         if body.starts_with('T') && body[1..].parse::<u8>().is_ok() {
             if layer > 0 {
-                out.push(Change { layer, rows: 0.0 });
+                out.push(Change {
+                    layer,
+                    rows: 0.0,
+                    total: 0.0,
+                });
                 open = Some(out.len() - 1);
             }
             continue;
@@ -199,10 +205,11 @@ fn changes(gcode: &str) -> Vec<Change> {
         let on =
             |axis: usize, edge: f64| (m.from[axis] - edge).abs() < 1e-3 && (m.to[axis] - edge).abs() < 1e-3;
         let wall = on(0, b[0]) || on(0, b[1]) || on(1, b[2]) || on(1, b[3]);
-        if let Some(c) = m.change
-            && !wall
-        {
-            out[c].rows += m.mm3;
+        if let Some(c) = m.change {
+            out[c].total += m.mm3;
+            if !wall {
+                out[c].rows += m.mm3;
+            }
         }
     }
     out
@@ -279,9 +286,53 @@ fn flush_into_infill_leaves_at_least_the_floor_on_the_tower() {
 
 #[test]
 fn a_change_purges_the_flush_times_the_multiplier_in_whole_rows() {
-    // 280 x 0.3 is 84 mm3, laid as the least whole rows that reach it.
-    let rows = later_rows(mmu(&[]));
-    all_in(&rows, 84.0, 91.0, "matrix 280 x 0.3");
-    let full = later_rows(mmu(&[("flush_multiplier", json!(["1"]))]));
-    all_in(&full, 280.0, 287.0, "matrix 280 x 1.0");
+    // 280 x 0.3 is 84 mm3, laid as the least whole rows that reach it once the layer's save comes off: the rows
+    // and the wall the new filament prints after the change come to 84 and less than a row over.
+    let total = |cfg: Value| -> Vec<f64> {
+        changes(&slice(cfg, MMU_BED))
+            .iter()
+            .filter(|c| c.layer > 1)
+            .map(|c| c.total)
+            .collect()
+    };
+    all_in(&total(mmu(&[])), 84.0, 90.0, "matrix 280 x 0.3");
+    all_in(
+        &total(mmu(&[("flush_multiplier", json!(["1"]))])),
+        280.0,
+        286.0,
+        "matrix 280 x 1.0",
+    );
+}
+
+#[test]
+fn a_layers_first_change_gives_way_to_the_wall_and_the_free_fill() {
+    // Each later layer has one change, so its purge gives way to the wall the new filament prints after it: the
+    // rows come to 84 mm3 less the wall, and the new filament puts down 84 in all, give or take a row.
+    for (cfg, flush) in [
+        (mmu(&[]), 84.0),
+        (mmu(&[("flush_multiplier", json!(["1"]))]), 280.0),
+    ] {
+        for c in changes(&slice(cfg, MMU_BED)).iter().filter(|c| c.layer > 1) {
+            let wall = c.total - c.rows;
+            assert!((8.0..16.0).contains(&wall), "layer {}: wall {wall:.2}", c.layer);
+            assert!(
+                c.rows < flush - 8.0,
+                "layer {}: rows {:.2} of {flush}",
+                c.layer,
+                c.rows
+            );
+            assert!(
+                (flush..flush + 8.0).contains(&c.total),
+                "layer {}: {:.2} in all for {flush}",
+                c.layer,
+                c.total
+            );
+        }
+    }
+    // The save stops at the floor.
+    let held = later_rows(mmu(&[(
+        "filament_minimal_purge_on_wipe_tower",
+        json!(["80", "80"]),
+    )]));
+    all_in(&held, 80.0, 86.0, "floor 80");
 }
