@@ -22,7 +22,7 @@
  },
  "hiddenProcess": [
   "inherits", "print_extruder_id", "print_extruder_variant", "compatible_printers", "compatible_printers_condition", "plugins", "slicing_pipeline_plugin",
-  "print_plugin_config_overrides", "wiping_volumes_extruders", "prime_volume", "initial_layer_flow_ratio"
+  "print_plugin_config_overrides", "wiping_volumes_extruders", "prime_volume", "initial_layer_flow_ratio", "support_base_edge_inset"
  ],
  "hiddenOther": [
   "compatible_prints", "compatible_prints_condition", "filament_extruder_compatibility", "filament_extruder_variant", "filament_plugin_config_overrides",

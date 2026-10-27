@@ -256,3 +256,153 @@ fn a_prusaslicer_objects_width_percents_are_of_its_own_layer_height() {
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
+
+/// `PrusaSlicer` projects of an 8 x 8 mm pillar under a 16 x 16 mm slab, with normal support around the pillar: grid
+/// support at XY spacings of 0.3, 0.8 and 1.5 mm, snug support at 0.8 mm, and grid support at 0.8 mm with the object's
+/// own layer height of 0.3 mm on a 0.2 mm project. Every width is 0 (auto).
+fn ring(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/prusa-support-gap")
+        .join(name)
+}
+
+/// Per layer from `z0` to `z1`, the gap from the outline of the 8 x 8 mm pillar to the outer edge of the nearest base
+/// support line (`;TYPE:Support`, half its `;WIDTH:` off the centerline), on the flat faces, a millimeter clear of the
+/// corners. The pillar's center is the middle of its outer walls on those layers.
+fn base_gaps(gcode: &str, z0: f64, z1: f64) -> Vec<(f64, f64)> {
+    struct Move {
+        from: (f64, f64),
+        to: (f64, f64),
+        z: f64,
+        kind: String,
+        width: f64,
+    }
+    let (mut px, mut py, mut pz, mut width) = (0.0, 0.0, 0.0, 0.0);
+    let mut kind = String::new();
+    let mut moves = Vec::new();
+    for line in gcode.lines() {
+        if let Some(t) = line.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+        } else if let Some(w) = line.strip_prefix(";WIDTH:") {
+            width = w.parse().unwrap();
+        }
+        let code = line.split(';').next().unwrap().trim();
+        if !(code.starts_with("G1 ") || code.starts_with("G0 ")) {
+            continue;
+        }
+        let (mut nx, mut ny, mut extrude) = (px, py, 0.0);
+        for word in code.split_whitespace().skip(1) {
+            let (axis, v) = word.split_at(1);
+            let v: f64 = v.parse().unwrap_or(0.0);
+            match axis {
+                "X" => nx = v,
+                "Y" => ny = v,
+                "Z" => pz = v,
+                "E" => extrude = v,
+                _ => {}
+            }
+        }
+        if extrude > 0.0
+            && ((nx - px) * (nx - px) + (ny - py) * (ny - py)).sqrt() > 0.05
+            && (z0..=z1).contains(&pz)
+        {
+            moves.push(Move {
+                from: (px, py),
+                to: (nx, ny),
+                z: pz,
+                kind: kind.clone(),
+                width,
+            });
+        }
+        (px, py) = (nx, ny);
+    }
+    let walls: Vec<(f64, f64)> = moves
+        .iter()
+        .filter(|m| m.kind == "Outer wall")
+        .map(|m| m.to)
+        .collect();
+    let mid = |f: fn(&(f64, f64)) -> f64| {
+        let lo = walls.iter().map(f).fold(f64::INFINITY, f64::min);
+        let hi = walls.iter().map(f).fold(f64::NEG_INFINITY, f64::max);
+        f64::midpoint(lo, hi)
+    };
+    let (cx, cy) = (mid(|p| p.0), mid(|p| p.1));
+    let mut gaps: Vec<(f64, f64)> = Vec::new();
+    for m in moves.iter().filter(|m| m.kind == "Support") {
+        let len = {
+            let (dx, dy) = (m.to.0 - m.from.0, m.to.1 - m.from.1);
+            (dx * dx + dy * dy).sqrt()
+        };
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a short move"
+        )]
+        let steps = ((len / 0.05) as usize).max(1);
+        for k in 0..=steps {
+            #[allow(clippy::cast_precision_loss, reason = "a small count")]
+            let t = k as f64 / steps as f64;
+            let (px, py) = (
+                m.from.0 + (m.to.0 - m.from.0) * t,
+                m.from.1 + (m.to.1 - m.from.1) * t,
+            );
+            let (dx, dy) = ((px - cx).abs(), (py - cy).abs());
+            let centerline = if dy < 3.0 {
+                dx - 4.0
+            } else if dx < 3.0 {
+                dy - 4.0
+            } else {
+                continue;
+            };
+            if !(-0.5..3.0).contains(&centerline) {
+                continue;
+            }
+            let gap = centerline - m.width / 2.0;
+            match gaps.iter_mut().find(|(lz, _)| (*lz - m.z).abs() < 1e-6) {
+                Some(slot) => slot.1 = slot.1.min(gap),
+                None => gaps.push((m.z, gap)),
+            }
+        }
+    }
+    gaps
+}
+
+#[test]
+fn a_prusaslicer_projects_base_support_keeps_its_xy_spacing_to_the_line_edge() {
+    // The outer base support line's edge sits the project's XY spacing from the part, on grid and snug support, and on
+    // an object with its own layer height. The pair of projects with the spacing as 100% of a 0.6 mm outer wall and as
+    // 0.6 mm both leave 0.6.
+    let mut wrong = Vec::new();
+    let cases = [
+        (ring("grid-n0.4-xy0.3.3mf"), 6.0, 0.3),
+        (ring("grid-n0.4-xy0.8.3mf"), 6.0, 0.8),
+        (ring("grid-n0.4-xy1.5.3mf"), 6.0, 1.5),
+        (ring("snug-n0.4-xy0.8.3mf"), 6.0, 0.8),
+        (ring("grid-n0.4-xy0.8-objlh0.3.3mf"), 6.0, 0.8),
+        (widths("xy-pct100-ext06.3mf"), 1.0, 0.6),
+        (widths("xy-mm06-ext06.3mf"), 1.0, 0.6),
+    ];
+    for (path, z0, want) in cases {
+        let gaps = base_gaps(&gcode(&path), z0, z0 + 2.8);
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if gaps.len() < 5 {
+            wrong.push(format!("{name}: {} layers measured", gaps.len()));
+        }
+        for (z, gap) in gaps {
+            if (gap - want).abs() > 0.001 + 1e-9 {
+                wrong.push(format!("{name}: gap {gap:.4} at z {z}, not {want}"));
+                break;
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn sx_project_settings_puts_the_outer_support_line_edge_on_the_gap() {
+    for name in ["grid-n0.4-xy0.8.3mf", "snug-n0.4-xy0.8.3mf"] {
+        let config = project_settings(&ring(name));
+        assert_eq!(config["support_object_xy_distance"], "0.8", "{name}");
+        assert_eq!(config["support_base_edge_inset"], "half_width", "{name}");
+    }
+}

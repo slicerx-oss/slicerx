@@ -596,6 +596,7 @@ supertack_plate_temp	filament	ints
 supertack_plate_temp_initial_layer	filament	ints
 support_air_filtration	printer	bool
 support_angle	process	float
+support_base_edge_inset	process	enum
 support_base_pattern	process	enum
 support_base_pattern_spacing	process	float
 support_bottom_interface_spacing	process	float

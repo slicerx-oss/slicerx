@@ -344,9 +344,24 @@ pub(crate) fn object_overrides(list: &[(String, String)], project: Option<&str>)
 /// no setting of ours, sorted. The same as `prusaProjectConfig` in the settings package, which the app and the MCP
 /// server use.
 pub(crate) fn project_settings(text: &str) -> (Map<String, Value>, Vec<String>) {
-    let (mapped, unmapped) = map_values(&project_widths(&config_lines(text)), true);
+    let (mut mapped, unmapped) = map_values(&project_widths(&config_lines(text)), true);
+    edge_on_gap(&mut mapped);
     let settings = mapped.into_iter().filter(|(k, v)| takes(k, v)).collect();
     (settings, unmapped)
+}
+
+/// A project with support on and its own support XY spacing keeps that much room between the part and the outer
+/// base support line's edge, so its outer lines sit half a line width in (`support_base_edge_inset` `half_width`).
+/// The same as `prusaProjectSettings` in the settings package.
+fn edge_on_gap(mapped: &mut Map<String, Value>) {
+    if mapped.get("enable_support").and_then(Value::as_str) == Some("1")
+        && mapped.contains_key("support_object_xy_distance")
+    {
+        mapped.insert(
+            "support_base_edge_inset".to_owned(),
+            Value::String("half_width".to_owned()),
+        );
+    }
 }
 
 /// The `key = value` lines of a `PrusaSlicer` config, each written after `; ` in a project, in the file's order; a key
