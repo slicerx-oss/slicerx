@@ -8272,19 +8272,12 @@ impl SliceSession {
                     } else {
                         l + self.raft_layers()
                     };
-                    let frame = turned_frame(
+                    let (d, turn) = turned_frame(
                         self.template_angle(cfg, "sparse_infill_rotate_template", l),
                         Dir::for_layer(base),
                         self.model_turn(cfg),
+                        crate::motion::raw_f(cfg, "infill_direction").unwrap_or(45.0),
                     );
-                    let turn = frame.map_or(0.0, |f| f.1);
-                    let d = match frame {
-                        Some((d, _)) => d,
-                        None if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear => {
-                            Dir::for_layer(0)
-                        }
-                        None => Dir::for_layer(l + self.raft_layers()),
-                    };
                     let turned;
                     let area = if turn == 0.0 {
                         area
@@ -8772,13 +8765,9 @@ impl SliceSession {
                     dir
                 },
                 self.model_turn(cfg),
+                crate::motion::raw_f(cfg, "infill_direction").unwrap_or(45.0),
             );
-            let sparse_turn = sparse_frame.map_or(0.0, |f| f.1);
-            let sparse_dir = match sparse_frame {
-                Some((d, _)) => d,
-                None if cfg.sparse_infill_pattern == InfillPattern::AlignedRectilinear => Dir::for_layer(0),
-                None => dir,
-            };
+            let (sparse_dir, sparse_turn) = sparse_frame;
             let sparse_area: std::borrow::Cow<'_, Shapes> = if sparse_turn == 0.0 {
                 std::borrow::Cow::Borrowed(&cls.sparse)
             } else {
@@ -8974,6 +8963,7 @@ impl SliceSession {
             // `solid_infill_rotate_template`: every solid surface of the layer at the template's angle.
             let solid_deg = self.template_angle(cfg, "solid_infill_rotate_template", layer);
             let model_turn = self.model_turn(cfg);
+            let solid_base = crate::motion::raw_f(cfg, "solid_infill_direction").unwrap_or(45.0);
             for (which, key, default, spans) in [
                 (0usize, "top_surface_pattern", "monotonicline", &mut top),
                 (1, "bottom_surface_pattern", "monotonic", &mut bottom),
@@ -9039,15 +9029,8 @@ impl SliceSession {
                             dir
                         },
                         model_turn,
-                    )
-                    .unwrap_or((
-                        if name == "alignedrectilinear" {
-                            aligned_dir
-                        } else {
-                            dir
-                        },
-                        0.0,
-                    ));
+                        solid_base,
+                    );
                     let mut region = surface_region(which);
                     let narrow_lines =
                         !crate::tower::flag_or(cfg, "detect_narrow_internal_solid_infill", true);
@@ -12269,14 +12252,12 @@ struct CombineGroup {
 }
 
 /// The frame of a scanline fill: the template's angle when there is one, else the layer's own direction, plus
-/// the model's turn; `None` when neither applies (the plain scanlines).
-fn turned_frame(template: Option<f64>, own: Dir, model_turn: f64) -> Option<(Dir, f64)> {
+/// the model's turn. The layer's own direction is `base_deg` on the 45 degree layers and 90 more on the others;
+/// the plain scanlines when that comes to 45 or 135.
+fn turned_frame(template: Option<f64>, own: Dir, model_turn: f64, base_deg: f64) -> (Dir, f64) {
     match template {
-        Some(a) => Some(template_frame(a + model_turn)),
-        None if model_turn != 0.0 => Some(template_frame(
-            if own == Dir::D45 { 45.0 } else { 135.0 } + model_turn,
-        )),
-        None => None,
+        Some(a) => template_frame(a + model_turn),
+        None => template_frame(base_deg + if own == Dir::D45 { 0.0 } else { 90.0 } + model_turn),
     }
 }
 
