@@ -5,6 +5,9 @@ import { appendFileSync, readFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { pathToFileURL } from 'node:url'
 
+// The integration targets that get a part of their own in the Linux split (ci.yml, rust-tests-part).
+const OWN_PARTS = ['firmware', 'requests']
+
 // Weight of an integration target that rust-part-weights.json does not list, in seconds.
 const DEFAULT_WEIGHT = 5
 
@@ -29,28 +32,36 @@ export function loadWeights(file = new URL('./rust-part-weights.json', import.me
 
 // Every part runs this on the same commit, so they agree on the split without talking to each other: largest item
 // first, each into the lightest part so far, ties to the lowest part number and the earliest name.
-export function partition(metadata, count, weights) {
+//
+// The rest always goes to part 1, whatever it weighs: part 1 is the one that runs fmt, clippy and the sx-cloud build
+// (ci.yml), which the rest's tests need. With coreOnly the items are the sx-core integration targets other than the
+// two that have parts of their own (firmware, requests), with no rest: the hosted core parts of rust-tests-part.
+export function partition(metadata, count, weights, { coreOnly = false } = {}) {
   if (!Number.isInteger(count) || count < 1) throw new Error('Expected a part count of 1 or more')
-  const targets = integrationTargets(metadata)
+  const targets = integrationTargets(metadata).filter((name) => !coreOnly || !OWN_PARTS.includes(name))
   const unweighted = targets.filter((name) => !Object.hasOwn(weights.targets, name))
-  const items = [{ name: 'rest', rest: true, weight: weights.rest }]
-  for (const name of targets) items.push({ name, rest: false, weight: weights.targets[name] ?? DEFAULT_WEIGHT })
-  items.sort((a, b) => b.weight - a.weight || Number(b.rest) - Number(a.rest) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  const items = targets.map((name) => ({ name, rest: false, weight: weights.targets[name] ?? DEFAULT_WEIGHT }))
+  items.sort((a, b) => b.weight - a.weight || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
   const parts = Array.from({ length: count }, () => ({ items: [], load: 0 }))
+  if (!coreOnly) {
+    parts[0].items.push({ name: 'rest', rest: true, weight: weights.rest })
+    parts[0].load += weights.rest
+  }
   for (const item of items) {
     const part = parts.reduce((lightest, p) => (p.load < lightest.load ? p : lightest))
     part.items.push(item)
     part.load += item.weight
   }
-  checkPartition(targets, parts)
+  checkPartition(targets, parts, { coreOnly })
   return { parts, unweighted }
 }
 
 // A target in no part is never tested and one in two parts is tested twice, so both refuse.
-export function checkPartition(targets, parts) {
+export function checkPartition(targets, parts, { coreOnly = false } = {}) {
   const seen = new Map()
   for (const item of parts.flatMap((part) => part.items)) seen.set(item.rest ? '' : item.name, (seen.get(item.rest ? '' : item.name) ?? 0) + 1)
-  for (const name of ['', ...targets]) {
+  if (coreOnly && seen.has('')) throw new Error('Part assignment has the rest in a core-only split')
+  for (const name of coreOnly ? targets : ['', ...targets]) {
     const label = name === '' ? 'the rest' : `integration target ${name}`
     const n = seen.get(name) ?? 0
     if (n === 0) throw new Error(`Part assignment dropped ${label}: it is in no part`)
@@ -73,12 +84,13 @@ export function describe(parts, which = parts.map((_, i) => i)) {
   ])
 }
 
-function partCommands(metadata, part, { of, weights }) {
+function partCommands(metadata, part, { of, weights, coreOnly = false }) {
   if (!Number.isInteger(of) || of < 1) throw new Error('Expected --of with a part count of 1 or more')
   if (!Number.isInteger(part) || part < 1 || part > of) throw new Error(`Expected a part from 1 to ${of}`)
-  const mine = partition(metadata, of, weights ?? loadWeights()).parts[part - 1]
+  const mine = partition(metadata, of, weights ?? loadWeights(), { coreOnly }).parts[part - 1]
   const selected = mine.items.filter((item) => !item.rest).map((item) => item.name).sort()
   const rest = mine.items.some((item) => item.rest)
+  if (coreOnly) return selected.length ? [['test', '--locked', '-p', 'sx-core', ...selected.flatMap((name) => ['--test', name])]] : []
   return [
     ...(rest ? [
       ['test', '--locked', '--workspace', '--exclude', 'slicerx-desktop', '--exclude', 'sx-core'],
@@ -170,6 +182,7 @@ function option(name) {
 }
 
 async function main() {
+  const coreOnly = process.argv.includes('--core-only')
   const of = option('--of') === undefined ? undefined : Number(option('--of'))
   const positional = process.argv.slice(2).filter((arg, i, all) => !arg.startsWith('--') && !['--of', '--metadata'].includes(all[i - 1]))[0]
   const part = /^\d+$/.test(positional ?? '') ? Number(positional) : positional
@@ -187,7 +200,7 @@ async function main() {
   }
   if (process.argv.includes('--partition')) {
     const weights = loadWeights()
-    const { parts, unweighted } = partition(metadata, of, weights)
+    const { parts, unweighted } = partition(metadata, of, weights, { coreOnly })
     const warning = unweightedWarning(unweighted)
     if (warning) console.error(warning)
     console.log(describe(parts).join('\n'))
@@ -205,8 +218,8 @@ async function main() {
     return
   }
   const weights = loadWeights()
-  const plan = commands(metadata, part, { of, weights })
-  const { parts, unweighted } = partition(metadata, of, weights)
+  const plan = commands(metadata, part, { of, weights, coreOnly })
+  const { parts, unweighted } = partition(metadata, of, weights, { coreOnly })
   const warning = unweightedWarning(unweighted)
   if (warning) console.error(warning)
   if (process.argv.includes('--plan')) {
@@ -221,7 +234,7 @@ async function main() {
     status = await runTimed(args, timer)
     if (status !== 0) break
   }
-  writeSummary(summary(timer.rows, `Rust test binaries, ${process.env.RUNNER_OS ?? process.platform} part ${part} of ${of}`, parts[part - 1].load))
+  writeSummary(summary(timer.rows, `Rust test binaries, ${process.env.RUNNER_OS ?? process.platform} ${coreOnly ? 'core ' : ''}part ${part} of ${of}`, parts[part - 1].load))
   if (status !== 0) process.exit(status)
 }
 
