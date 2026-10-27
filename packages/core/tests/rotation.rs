@@ -55,10 +55,15 @@ fn slice(config: Value) -> String {
 
 /// [`slice`] with the box turned `deg` degrees about Z.
 fn slice_turned(config: Value, deg: f64) -> String {
+    slice_box(config, deg, 4.0)
+}
+
+/// [`slice_turned`] with the box `height` mm tall.
+fn slice_box(config: Value, deg: f64, height: f32) -> String {
     let (s, c) = deg.to_radians().sin_cos();
     let cube = Arc::new(Mesh {
         name: "box".into(),
-        parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, 4.0])],
+        parts: vec![cuboid([0.0, 20.0], [0.0, 20.0], [0.0, height])],
         ..Mesh::default()
     });
     let mut cfg = json!({"brim_width": 0, "skirt_loops": 0, "sparse_infill_density": 20, "sparse_infill_pattern": "rectilinear"});
@@ -344,4 +349,80 @@ fn bambu_project_solid_follows_infill_direction() {
     assert_eq!(main_direction(&g, "Internal solid infill", 1), 120);
     // Another app's project keeps its own.
     assert_eq!(read("OrcaSlicer-2.3.0")["solid_infill_direction"], "0");
+}
+
+#[test]
+fn ironing_follows_the_set_solid_direction() {
+    // Ironing runs along the top surface's lines, which turn 90 degrees from the solid direction on odd layers.
+    for (deg, top) in [(30, 120), (0, 90)] {
+        let g = slice(json!({"solid_infill_direction": deg, "ironing_type": "top"}));
+        assert_eq!(main_direction(&g, "Top surface", 19), top, "{deg}");
+        assert_eq!(main_direction(&g, "Ironing", 19), top, "{deg}");
+    }
+}
+
+#[test]
+fn ironing_angle_turns_from_the_top_angle() {
+    let g = slice(json!({"solid_infill_direction": 30, "ironing_angle": 60, "ironing_type": "top"}));
+    assert_eq!(main_direction(&g, "Top surface", 19), 120);
+    assert_eq!(main_direction(&g, "Ironing", 19), 0);
+}
+
+#[test]
+fn ironing_on_an_even_top() {
+    // 3.8 mm tall: the top surface is layer 18.
+    let g = slice_box(
+        json!({"solid_infill_direction": 0, "ironing_angle": 0, "ironing_type": "top"}),
+        0.0,
+        3.8,
+    );
+    assert_eq!(main_direction(&g, "Top surface", 18), 0);
+    assert_eq!(main_direction(&g, "Ironing", 18), 0);
+}
+
+#[test]
+fn fixed_ironing_angle_is_bed_relative() {
+    let g = slice(json!({
+        "solid_infill_direction": 30,
+        "ironing_angle": 60,
+        "ironing_angle_fixed": true,
+        "ironing_type": "top",
+    }));
+    assert_eq!(main_direction(&g, "Top surface", 19), 120);
+    assert_eq!(main_direction(&g, "Ironing", 19), 60);
+    // Not fixed, the same turn starts from the top surface's 120.
+    let g = slice(json!({"solid_infill_direction": 30, "ironing_angle": 60, "ironing_type": "top"}));
+    assert_eq!(main_direction(&g, "Ironing", 19), 0);
+}
+
+#[test]
+fn bambu_project_irons_from_its_infill_direction() {
+    let settings = json!({"layer_height": "0.2", "infill_direction": "30", "ironing_direction": "45"});
+    let read = sx_core::api::project_config(&project("BambuStudio-02.08.02.61", &settings), "p.3mf")
+        .unwrap()
+        .unwrap()
+        .settings;
+    // The top surface prints at the project's infill direction plus 90 on the odd top layer, and the ironing turns
+    // the project's ironing direction from there.
+    let g = slice(json!({
+        "infill_direction": read["infill_direction"],
+        "solid_infill_direction": read["solid_infill_direction"],
+        "ironing_direction": read["ironing_direction"],
+        "ironing_type": "top",
+    }));
+    assert_eq!(main_direction(&g, "Top surface", 19), 120);
+    assert_eq!(main_direction(&g, "Ironing", 19), 165);
+}
+
+#[test]
+fn aligned_top_irons_on_the_layers_own_direction() {
+    // Aligned rectilinear lines keep the solid direction on every layer; the ironing turns with the layer's parity.
+    let aligned = json!({"top_surface_pattern": "alignedrectilinear", "solid_infill_direction": 30, "ironing_type": "top"});
+    let g = slice(aligned.clone());
+    assert_eq!(main_direction(&g, "Top surface", 19), 30);
+    assert_eq!(main_direction(&g, "Ironing", 19), 120);
+    // 3.8 mm tall: the even top irons along its lines.
+    let g = slice_box(aligned, 0.0, 3.8);
+    assert_eq!(main_direction(&g, "Top surface", 18), 30);
+    assert_eq!(main_direction(&g, "Ironing", 18), 30);
 }

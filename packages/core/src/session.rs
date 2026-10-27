@@ -10202,12 +10202,19 @@ impl SliceSession {
             a.solid = perimeters::union_all(&refs);
         }
         if let Some(areas) = out.areas.take() {
+            let model_turn = self.model_turn(cfg);
             // The top surface angle: the profile's, or the solid infill direction of this layer.
-            let base = crate::motion::raw_f(cfg, "top_layer_direction")
-                .filter(|a| *a >= 0.0)
-                .or_else(|| self.template_angle(cfg, "solid_infill_rotate_template", layer))
-                .unwrap_or(if dir == Dir::D45 { 45.0 } else { 135.0 })
-                + self.model_turn(cfg);
+            let base = match crate::motion::raw_f(cfg, "top_layer_direction").filter(|a| *a >= 0.0) {
+                Some(a) => a + model_turn,
+                // The top surface angle of the layer's own direction. An aligned rectilinear top irons on it too,
+                // though its lines keep the first layer's.
+                None => frame_deg(
+                    self.template_angle(cfg, "solid_infill_rotate_template", layer),
+                    dir,
+                    model_turn,
+                    crate::motion::raw_f(cfg, "solid_infill_direction").unwrap_or(45.0),
+                ),
+            };
             // What each top surface filament irons: the regions it is the top surface filament of.
             let mut owners: Vec<(u8, Shapes)> = Vec::new();
             if crate::ironing::kind(cfg).is_some() {
@@ -12255,9 +12262,15 @@ struct CombineGroup {
 /// the model's turn. The layer's own direction is `base_deg` on the 45 degree layers and 90 more on the others;
 /// the plain scanlines when that comes to 45 or 135.
 fn turned_frame(template: Option<f64>, own: Dir, model_turn: f64, base_deg: f64) -> (Dir, f64) {
+    template_frame(frame_deg(template, own, model_turn, base_deg))
+}
+
+/// The angle of a scanline fill's lines in degrees, as [`turned_frame`] takes it: the template's angle, else
+/// `base_deg` on the 45 degree layers and 90 more on the others, plus the model's turn. Ironing starts from it too.
+fn frame_deg(template: Option<f64>, own: Dir, model_turn: f64, base_deg: f64) -> f64 {
     match template {
-        Some(a) => template_frame(a + model_turn),
-        None => template_frame(base_deg + if own == Dir::D45 { 0.0 } else { 90.0 } + model_turn),
+        Some(a) => a + model_turn,
+        None => base_deg + if own == Dir::D45 { 0.0 } else { 90.0 } + model_turn,
     }
 }
 
