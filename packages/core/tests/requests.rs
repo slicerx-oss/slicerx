@@ -2714,7 +2714,7 @@ fn objects_can_carry_their_own_settings() {
     assert!(count(&mixed, true, "Sparse infill") > count(&same, true, "Sparse infill") * 2);
     // Still one print: layers hold both objects.
     assert_eq!(layer_zs(&text(&mixed)).len(), layer_zs(&text(&same)).len());
-    // By object works the same way, and layer heights may differ there but not layer by layer.
+    // By object works the same way, and layer heights may differ there and, since mixed layer heights, layer by layer too.
     let seq = boxes_with_settings(
         json!({"wall_loops": 5}),
         json!({"brim_width": 0, "wall_loops": 2, "print_sequence": "by object"}),
@@ -2729,7 +2729,10 @@ fn objects_can_carry_their_own_settings() {
     }))
     .unwrap();
     let cube = Arc::new(one_box([0.0, 20.0], [0.0, 20.0], [0.0, 6.0]));
-    assert!(common::run_request(&req, &move |_: &str| Ok(cube.clone())).is_err());
+    let run = common::run_request(&req, &move |_: &str| Ok(cube.clone())).unwrap();
+    assert_valid(&run);
+    // The right box prints its own 0.1 mm layers beside the left box's 0.2 mm ones, so the plate has more layer heights.
+    assert!(layer_zs(&text(&run)).len() * 2 >= layer_zs(&text(&same)).len() * 3);
 }
 
 #[test]

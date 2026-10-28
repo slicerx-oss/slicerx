@@ -271,6 +271,9 @@ pub struct SliceSession {
     /// top and the print layer of each object of the sequence printed in it (Orca pairs them by
     /// height). Empty when every object has the same layers.
     interleaved: Vec<(f64, Vec<Option<u32>>)>,
+    /// On a plate whose objects print layer by layer at layer heights of their own: how many of this object's
+    /// print layers lie on the plate's first `skirt_height` layers, which the skirt prints on. None otherwise.
+    plate_skirt: Option<u32>,
     /// With features on filaments of their own: the filaments each object layer prints, from a
     /// slice of the whole plate at build time (as Orca collects the filaments of a plate). Empty
     /// otherwise.
@@ -1262,6 +1265,14 @@ impl SliceSession {
             }
             None => plate,
         };
+        let shared: Plate;
+        let plate = match shared_first_layer(plate, config) {
+            Some(p) => {
+                shared = p;
+                &shared
+            }
+            None => plate,
+        };
         let printable: Vec<&crate::plate::PlateObject> = plate
             .objects
             .iter()
@@ -1423,24 +1434,14 @@ impl SliceSession {
         // gantry; here it slices, and the collision check (`collide`) reports every move that would meet a part.
         first.object_settings = sliced.iter().map(|o| o.settings.clone()).collect();
         first.interleave = !config.print_by_object();
-        if first.interleave {
-            // Layers of the objects must line up, so they need the same layer plan.
-            let (h0, i0) = (first.plan.height, first.plan.first_height);
-            for (o, f) in sliced.iter().skip(1).zip(&subs) {
-                if (f.plan.height - h0).abs() > 1e-9
-                    || (f.plan.first_height - i0).abs() > 1e-9
-                    || f.plan.custom != first.plan.custom
-                {
-                    return Err(Error::Config {
-                        key: "plate.objects.settings",
-                        reason: format!(
-                            "{} uses different layer heights; print by object to mix layer heights",
-                            o.name
-                        ),
-                    });
-                }
-            }
-        }
+        // Objects with layer heights of their own print layer by layer on the plate's layers, the union of
+        // their layer tops; only the prime tower needs one layer height across the plate.
+        let mixed = sliced
+            .iter()
+            .skip(1)
+            .zip(&subs)
+            .find(|(_, f)| !first.same_plan(f))
+            .map(|(o, _)| o.name.clone());
         first.followers = subs;
         if let Some(placed) = copies {
             first.place_copies(plate, config, tops, &placed, &own_bounds, &printable_index);
@@ -1448,6 +1449,19 @@ impl SliceSession {
         if first.interleave {
             first.plan_interleaved();
             first.plan_plate_tools(config)?;
+            if let Some(name) = mixed
+                .as_deref()
+                .filter(|_| first.plate_tools().is_some_and(|p| p.tower_top.is_some()))
+            {
+                return Err(Error::Config {
+                    key: "enable_prime_tower",
+                    reason: format!(
+                        "{name} has a layer height of its own, and a prime tower needs one layer height for every \
+                         object on the plate; give the objects the same layer height, turn the prime tower off, or \
+                         print by object"
+                    ),
+                });
+            }
             // Each object plans its support layers as one session of the plate would: on the object's layers when
             // the plate's tower prints (it now stands in each object's session). The plate's layers and filaments
             // are planned again with them.
@@ -1469,6 +1483,9 @@ impl SliceSession {
             }
             first.plan_interleaved();
             first.plan_plate_tools(config)?;
+            if mixed.is_some() {
+                first.plan_plate_skirt(config)?;
+            }
         }
         Ok(first)
     }
@@ -1927,6 +1944,7 @@ impl SliceSession {
             object_print: Vec::new(),
             stack: Vec::new(),
             interleaved: Vec::new(),
+            plate_skirt: None,
             used_tools: Vec::new(),
             object_tools: Vec::new(),
             support_tools: Vec::new(),
@@ -2587,15 +2605,20 @@ impl SliceSession {
         self.collide_meta().map(|m| m.clone().with_run(config))
     }
 
-    /// The objects of this by-object plate could print layer by layer instead: one layer plan, no spiral vase.
+    /// The objects of this by-object plate could print layer by layer instead: no spiral vase, and one layer plan
+    /// when a prime tower would print.
     pub(crate) fn could_print_by_layer(&self, config: &PrintConfig) -> bool {
-        let (h, f, c) = (self.plan.height, self.plan.first_height, &self.plan.custom);
         !crate::spiral::enabled(config)
-            && self.followers.iter().all(|s| {
-                (s.plan.height - h).abs() <= 1e-9
-                    && (s.plan.first_height - f).abs() <= 1e-9
-                    && s.plan.custom == *c
-            })
+            && (self.followers.iter().all(|s| self.same_plan(s))
+                || self.plate_slots().len() < 2
+                || !crate::tower::flag(config, "enable_prime_tower"))
+    }
+
+    /// `other` plans the same layers as this session: one layer height, first layer and list of tops.
+    fn same_plan(&self, other: &Self) -> bool {
+        (other.plan.height - self.plan.height).abs() <= 1e-9
+            && (other.plan.first_height - self.plan.first_height).abs() <= 1e-9
+            && other.plan.custom == self.plan.custom
     }
 
     /// The settings of the `k`th object of the sequence: the plate's plus its own overrides.
@@ -3188,9 +3211,9 @@ impl SliceSession {
     }
 
     /// Merges the print layers of the objects printed layer by layer, by height, when some object
-    /// has layers the others do not (support on layers of its own height).
+    /// has layers the others do not (support on layers of its own height, or a layer height of its own).
     fn plan_interleaved(&mut self) {
-        if self.sequence().all(|s| s.print.is_empty()) {
+        if self.sequence().all(|s| s.print.is_empty() && self.same_plan(s)) {
             return;
         }
         let objects = self.sequence().count();
@@ -3217,6 +3240,27 @@ impl SliceSession {
             merged.push((f64::midpoint(z0, last), of));
         }
         self.interleaved = merged;
+    }
+
+    /// The skirt of a plate whose objects have layer heights of their own counts the plate's layers: each object's
+    /// skirt prints on those of its layers that are among the plate's first `skirt_height`.
+    fn plan_plate_skirt(&mut self, config: &PrintConfig) -> Result<()> {
+        let mut counts = Vec::new();
+        for k in 0..self.sequence().count() {
+            let height = self.object_config(k, config)?.skirt_height as usize;
+            let on = self
+                .interleaved
+                .iter()
+                .take(height)
+                .filter(|l| l.1.get(k).copied().flatten().is_some());
+            counts.push(u32::try_from(on.count()).unwrap_or(u32::MAX));
+        }
+        let mut counts = counts.into_iter();
+        self.plate_skirt = counts.next();
+        for (f, n) in self.followers.iter_mut().zip(counts) {
+            f.plate_skirt = Some(n);
+        }
+        Ok(())
     }
 
     /// The layers of the plate printed layer by layer: each print layer's top and the print layer of
@@ -4032,7 +4076,7 @@ impl SliceSession {
         let tool = self.slots.first().copied().unwrap_or(1);
         // The skirt goes round the raft's first layer on the layers it is asked for.
         let skirt = if (config.skirt_loops > 0 || self.draft_hull.is_some())
-            && (p < config.skirt_height || self.draft_hull.is_some())
+            && (p < self.plate_skirt.unwrap_or(config.skirt_height) || self.draft_hull.is_some())
         {
             let columns = if raft.layers.len() > 1 {
                 self.raft_columns.clone()
@@ -10082,7 +10126,8 @@ impl SliceSession {
             cfg
         };
         let skirt_here = (cfg.skirt_loops > 0 || self.draft_hull.is_some())
-            && (layer + self.raft_layers() < cfg.skirt_height || self.draft_hull.is_some());
+            && (layer + self.raft_layers() < self.plate_skirt.unwrap_or(cfg.skirt_height)
+                || self.draft_hull.is_some());
         // What else the skirt goes round on this layer, as OrcaSlicer's skirt collects it: the support's
         // paths, and on a plate with one skirt the prime tower's first layer.
         let mut skirt_extra: Vec<IntPoint<i32>> = Vec::new();
@@ -12430,6 +12475,64 @@ fn shapes_area(shapes: &Shapes) -> f64 {
 fn z_turn(o: &crate::plate::PlateObject) -> f64 {
     let t = &o.transform;
     f64::from(t[1]).m_atan2(f64::from(t[0])).to_degrees()
+}
+
+/// `plate` without the objects' own first layer heights when it prints layer by layer and they differ between its
+/// objects: every object prints on the plate's first layer, and its own layer height above it, as if its settings
+/// (its file's and its parts') had none. None when the objects share one first layer, or the plate prints by object.
+fn shared_first_layer(plate: &Plate, config: &PrintConfig) -> Option<Plate> {
+    const KEY: &str = "initial_layer_print_height";
+    let own = |k: &str| k == KEY || crate::legacy::targets(k).iter().any(|t| t == KEY);
+    let sets = |v: &serde_json::Value| v.as_object().is_some_and(|m| m.keys().any(|k| own(k)));
+    let in_parts = |p: &[(String, serde_json::Value)]| p.iter().any(|(_, v)| sets(v));
+    // The first layer height an object prints with: its own, else the plate's.
+    let first = |o: &crate::plate::PlateObject| {
+        o.settings
+            .as_object()
+            .and_then(|m| m.iter().find(|(k, _)| own(k)))
+            .and_then(|(_, v)| {
+                v.as_f64()
+                    .or_else(|| v.as_str().and_then(|t| t.trim().parse::<f64>().ok()))
+            })
+            .unwrap_or(config.initial_layer_print_height)
+    };
+    let printable: Vec<&crate::plate::PlateObject> = plate
+        .objects
+        .iter()
+        .filter(|o| o.mesh.parts.iter().any(|p| !p.triangles.is_empty()))
+        .collect();
+    let differ = printable
+        .split_first()
+        .is_some_and(|(a, rest)| rest.iter().any(|b| (first(a) - first(b)).abs() > 1e-9));
+    if config.print_by_object() || !differ {
+        return None;
+    }
+    let drop = |v: &mut serde_json::Value| {
+        if let serde_json::Value::Object(m) = v {
+            m.retain(|k, _| !own(k));
+            if m.is_empty() {
+                *v = serde_json::Value::Null;
+            }
+        }
+    };
+    let drop_parts = |p: &mut Vec<(String, serde_json::Value)>| {
+        for (_, v) in p.iter_mut() {
+            drop(v);
+        }
+        p.retain(|(_, v)| !v.is_null());
+    };
+    let mut out = plate.clone();
+    for o in &mut out.objects {
+        drop(&mut o.settings);
+        drop_parts(&mut o.part_settings);
+        if sets(&o.mesh.settings) || in_parts(&o.mesh.part_settings) {
+            let mut mesh = (*o.mesh).clone();
+            drop(&mut mesh.settings);
+            drop_parts(&mut mesh.part_settings);
+            o.mesh = std::sync::Arc::new(mesh);
+        }
+    }
+    Some(out)
 }
 
 fn object_config(base: &PrintConfig, over: &serde_json::Value) -> Result<PrintConfig> {
