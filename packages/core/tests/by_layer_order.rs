@@ -313,8 +313,11 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// again when the strands of the bridge over the sparse infill spread evenly across it, wider where they stretch, and
 /// again when that bridge region started from the fixed-width inner wall's spacing, as with variable-width walls.
 /// Changed again when the floating ring's bead started at the inner wall's spacing edge instead of overlapping the
-/// wall: only that bead, the travel into it, the progress lines and the filament total moved.
-const BY_OBJECT_FNV: &str = "fc2b6baf6248f169";
+/// wall: only that bead, the travel into it, the progress lines and the filament total moved. Changed again when
+/// sparse infill hung off each cube's own box center instead of the plate origin: the sparse lines, the travels after
+/// them, the order of the floating ring on the layer that also prints sparse infill, the progress lines and the second
+/// filament's total (1150.05 to 1153.64 mm) moved.
+const BY_OBJECT_FNV: &str = "c2c091e31c8d6c78";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {

@@ -142,6 +142,8 @@ fn contact_fill(area: &Shapes, density: f64, angle: f64, layer: u32, z: f64, p: 
             overhang_angle_deg: 60.0,
             fixed_angle: false,
             gyroid_layer_height: None,
+            object_origin: false,
+            gyroid_margin: true,
         }),
         ContactFill::Rectilinear => rect(area, s, density, angle, p),
         ContactFill::SupportBase => crate::supportfill::support_base(area, s, density, angle, p.center),

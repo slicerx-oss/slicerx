@@ -247,6 +247,9 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     // Changed again when each object's brim printed right before the object: the near cube's brim now prints after
     // the far cube, so its loops start nearest where the far cube ends. Only brim lines moved, with the same loops
     // and lengths (689.75 against 689.77 mm), and the travels, wipes, progress lines and time.
+    // Changed again when sparse infill hung off each cube's own box center instead of the plate origin: the sparse lines,
+    // the travels after them, the bridge and the floating ring right over the sparse infill (they rest on its lines),
+    // the progress lines and the filament total moved.
     let c = config("p1s", &json!({"brim_type": "outer_only", "brim_width": 5}));
     let (out, gcode) = slice("p1s", &c, &[[18.0, 6.0], [140.0, 140.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -260,7 +263,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "5e713edbe514e184",
+        "3c49704d0e118adb",
         "the P1S plate's G-code changed"
     );
 }
