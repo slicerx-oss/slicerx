@@ -35,6 +35,11 @@ pub(crate) struct SkirtPath {
 pub(crate) struct ToolWork {
     pub(crate) tool: u8,
     pub(crate) brim: Vec<Vec<IntPoint<i32>>>,
+    /// On a first layer with brims of several objects: the object each `brim` loop goes round, as `brim_hulls`
+    /// numbers them, so each object's loops print right before its first island. Empty otherwise.
+    pub(crate) brim_of: Vec<usize>,
+    /// The hulls of the objects `brim_of` names.
+    pub(crate) brim_hulls: Vec<Vec<IntPoint<i32>>>,
     pub(crate) skirt: Vec<SkirtPath>,
     /// Prime tower wall and purge rows, printed first: the purge follows the tool change.
     pub(crate) tower: Vec<crate::tower::TowerPath>,
@@ -1985,7 +1990,30 @@ pub(crate) fn plan_layer_paths(
                 b.push_loop(w.tool, Feature::Skirt, speed, &c.points);
             }
         }
-        for c in &w.brim {
+        // On a first layer with brims of several objects, an object's brim prints right before its first island
+        // (below); the loops of objects with no island in this work print here.
+        let island_object = |isl: &IslandWalls| -> Option<usize> {
+            let p = isl
+                .loops
+                .first()
+                .and_then(|(_, c)| c.first().copied())
+                .or_else(|| isl.wide.first().and_then(|l| l.points.first().copied()))?;
+            let p = crate::session::as_f(p);
+            w.brim_hulls
+                .iter()
+                .enumerate()
+                .min_by(|a, c| {
+                    crate::session::point_to_hull(p, a.1).total_cmp(&crate::session::point_to_hull(p, c.1))
+                })
+                .map(|(k, _)| k)
+        };
+        let mut waiting: Vec<bool> = if w.brim_of.len() == w.brim.len() {
+            let printed: Vec<Option<usize>> = w.islands.iter().map(island_object).collect();
+            w.brim_of.iter().map(|o| printed.contains(&Some(*o))).collect()
+        } else {
+            vec![false; w.brim.len()]
+        };
+        for (c, _) in w.brim.iter().zip(&waiting).filter(|(_, wait)| !**wait) {
             b.push_loop(w.tool, Feature::Brim, speeds.brim, c);
         }
         let support_speed = |speed: f64| {
@@ -2252,6 +2280,15 @@ pub(crate) fn plan_layer_paths(
                 .map_or(0, |(i, _)| i);
             let (isl, _, _) = remaining.swap_remove(best);
             let island_from = b.out.paths.len();
+            if waiting.contains(&true) {
+                let object = island_object(isl);
+                for ((c, o), wait) in w.brim.iter().zip(&w.brim_of).zip(waiting.iter_mut()) {
+                    if *wait && Some(*o) == object {
+                        b.push_loop(w.tool, Feature::Brim, speeds.brim, c);
+                        *wait = false;
+                    }
+                }
+            }
             if let Some(k) = w.islands.iter().position(|i| std::ptr::eq(i, isl))
                 && extra_owner.contains(&Some(k))
             {

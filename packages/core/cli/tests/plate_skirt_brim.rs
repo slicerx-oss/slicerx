@@ -4,7 +4,8 @@
 //! its objects, also when some have settings or layer heights of their own: it keeps `skirt_distance` from each
 //! object's own brim, and prints whole on the plate's first `skirt_height` layers (every layer under a draft shield).
 //! Brims of objects close together share the room between them: the gap is filled once and no bead prints over
-//! another, so those plates slice without crossing paths.
+//! another, so those plates slice without crossing paths. On the first layer each object's brim prints right before
+//! the object.
 //!
 //! The projects in tests/fixtures/skirt-brim are 10 x 10 x 3 mm boxes in a row along X, objects 1, 2, 3 from the
 //! left, on a 0.2 mm first layer: `far` plates stand them 0.34 bed widths apart, `close` ones 3 mm apart. Skirt
@@ -591,4 +592,20 @@ fn the_first_layer_prints_the_skirt_then_each_brim_before_its_object() {
     let name = "a1--c6";
     let ps = paths(&slice(name));
     assert_brim_before_its_object(name, &first_layer_order(name, &ps));
+}
+
+#[test]
+fn a_plate_sliced_as_one_prints_each_brim_right_before_its_object() {
+    // Objects without settings of their own, far apart and close together: the skirt, then each object's brim and
+    // the object, instead of every brim first.
+    for name in ["a1--c1", "a1--c2", "mk4p--c2"] {
+        let ps = paths(&slice(name));
+        let order = first_layer_order(name, &ps);
+        assert_brim_before_its_object(name, &order);
+        assert_eq!(
+            order.iter().filter(|t| t.starts_with('B')).count(),
+            3,
+            "{name}: {order:?}"
+        );
+    }
 }
