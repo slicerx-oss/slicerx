@@ -10,6 +10,9 @@ import { LEGACY_KEYS, PROFILE_META_KEYS } from './import'
 import { importValues, type Dropped } from './report'
 import { settingDef } from './schema'
 
+/** One lift of prusa-map.json `composites.lift`: the Prusa keys it reads and the keys it sets. */
+interface LiftRow { ramp: string; height: string; straight: string; slope: string; to: string; type: string }
+
 interface PrusaMap {
   rename: Record<string, string>
   values: { key: string; from: string; to: string }[]
@@ -32,8 +35,8 @@ interface PrusaMap {
   composites: {
     /** One key's value set on each of several keys. */
     fanOut: Record<string, string[]>
-    /** Another key's value picked by this key's value, `else` for any value the table does not list. */
-    valueToKey: Record<string, { to: string; values: Record<string, string>; else: string }>
+    /** Lifts given as a ramp switch, a ramp height, a straight lift and a ramp angle, each turned into a z hop height and type. */
+    lift: LiftRow[]
   }
   /** What a project file's settings may set (see `takesProjectValue`). */
   projectTakes: {
@@ -244,6 +247,33 @@ function projectWidths(raw: Raw): Raw {
   return out
 }
 
+/**
+ * One lift row's z hop height and type for each extruder, `nil` where the row leaves it to the printer (prusa-map.json
+ * `composites.lift`). With the ramp on the lift is the ramp's height, as a slope lift (straight up at an angle of 0 or 90
+ * degrees); with it off the straight lift, straight up; with no ramp set the straight lift and no type. A list value
+ * gives one entry per extruder, its last entry for an extruder past its end; `nil` is not set. Undefined when the
+ * preset has none of the row's keys.
+ */
+function liftOf(row: LiftRow, prusa: Raw): { height: string[]; type: string[] } | undefined {
+  if (!(row.ramp in prusa || row.height in prusa || row.straight in prusa)) return undefined
+  const list = (k: string): string[] => (prusa[k] ?? '').split(',').map((s) => s.trim())
+  const [ramp, height, straight, slope] = [list(row.ramp), list(row.height), list(row.straight), list(row.slope)]
+  const at = (l: string[], i: number): string | undefined => {
+    const v = l[Math.min(i, l.length - 1)]
+    return v === undefined || v === '' || v === 'nil' ? undefined : v
+  }
+  const out = { height: [] as string[], type: [] as string[] }
+  for (let i = 0; i < Math.max(ramp.length, height.length, straight.length); i++) {
+    const on = at(ramp, i)
+    const angle = num(at(slope, i))
+    const upright = angle !== undefined && (angle <= 0 || angle >= 90)
+    const type = on === undefined ? undefined : on === '1' && !upright ? 'Slope Lift' : 'Normal Lift'
+    out.height.push((on === '1' ? at(height, i) : at(straight, i)) ?? 'nil')
+    out.type.push(type ?? 'nil')
+  }
+  return out
+}
+
 const SECTION_ORDER: SettingSection[] = ['process', 'filament', 'printer']
 
 /**
@@ -301,9 +331,16 @@ export function mapPrusaValues(given: Raw): { values: Record<string, unknown>; u
   if (prusa['ironing'] === '0') take('ironing_type')
 
   // One value set on several keys (bed temperature: one value in Prusa, one per plate in Orca; a smooth or textured PEI
-  // sheet is the common case), and a value that picks another key's (a ramping travel lift is Orca's slope lift).
+  // sheet is the common case).
   for (const [key, to] of Object.entries(MAP.composites.fanOut)) if (key in prusa) { setTemp(to, prusa[key] as string); take(key) }
-  for (const [key, row] of Object.entries(MAP.composites.valueToKey)) if (key in prusa) { put(row.to, row.values[prusa[key] as string] ?? row.else); take(key) }
+  // A travel lift: the printer's, and the filament's own, which replaces the printer's where it is set.
+  for (const row of MAP.composites.lift) {
+    const l = liftOf(row, prusa)
+    if (!l) continue
+    if (l.height.some((h) => h !== 'nil')) put(row.to, l.height.join(','))
+    if (l.type.some((h) => h !== 'nil')) put(row.type, l.type.join(','))
+    take(row.ramp, row.height, row.straight)
+  }
 
   for (const [key, rawValue] of Object.entries(prusa)) {
     if (done.has(key)) continue

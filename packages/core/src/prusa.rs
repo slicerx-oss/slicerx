@@ -35,8 +35,8 @@ struct PrusaMap {
     no_percent: Vec<String>,
     /// One key's value set on each of several keys.
     fan_out: Vec<(String, Vec<String>)>,
-    /// Keys whose value picks another key's value.
-    value_to_key: Vec<ValueToKey>,
+    /// Lifts given as a ramp switch, a ramp height, a straight lift and a ramp angle.
+    lift: Vec<LiftRow>,
     /// What a project's settings may set.
     takes: Takes,
     /// Keys that describe a profile file, not settings (`meta` in legacy.json).
@@ -45,13 +45,15 @@ struct PrusaMap {
     legacy: HashMap<String, String>,
 }
 
-/// A key whose value picks another key's (`valueToKey` in prusa-map.json): the target value for each listed value, and
-/// `otherwise` for any other.
-struct ValueToKey {
-    key: String,
+/// A lift (`composites.lift` in prusa-map.json): the `PrusaSlicer` keys it reads (the ramp switch, the ramp's height, the
+/// straight lift and the ramp's angle) and the z hop height and type it sets.
+struct LiftRow {
+    ramp: String,
+    height: String,
+    straight: String,
+    slope: String,
     to: String,
-    values: Vec<(String, String)>,
-    otherwise: String,
+    kind: String,
 }
 
 /// `projectTakes` in prusa-map.json: what a project file's settings may set.
@@ -159,27 +161,18 @@ fn map() -> &'static PrusaMap {
                         .collect()
                 })
                 .unwrap_or_default(),
-            value_to_key: composites
-                .get("valueToKey")
-                .and_then(Value::as_object)
-                .map(|o| {
-                    o.iter()
-                        .map(|(k, row)| {
-                            let values = row
-                                .get("values")
-                                .and_then(Value::as_object)
-                                .map(|m| {
-                                    m.iter()
-                                        .filter_map(|(a, b)| b.as_str().map(|b| (a.clone(), b.to_owned())))
-                                        .collect()
-                                })
-                                .unwrap_or_default();
-                            ValueToKey {
-                                key: k.clone(),
-                                to: text(row, "to"),
-                                values,
-                                otherwise: text(row, "else"),
-                            }
+            lift: composites
+                .get("lift")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .map(|row| LiftRow {
+                            ramp: text(row, "ramp"),
+                            height: text(row, "height"),
+                            straight: text(row, "straight"),
+                            slope: text(row, "slope"),
+                            to: text(row, "to"),
+                            kind: text(row, "type"),
                         })
                         .collect()
                 })
@@ -552,6 +545,58 @@ fn split_strings(s: &str) -> Vec<String> {
     out.iter().map(|s| unescape(s)).collect()
 }
 
+/// One lift row's z hop height and type for each extruder, `nil` where the row leaves it to the printer
+/// (`composites.lift` in prusa-map.json). With the ramp on the lift is the ramp's height, as a slope lift (straight up
+/// at an angle of 0 or 90 degrees); with it off the straight lift, straight up; with no ramp set the straight lift and
+/// no type. A list value gives one entry per extruder, its last entry for an extruder past its end; `nil` is not set.
+/// None when the settings have none of the row's keys. The same as `liftOf` in the settings package.
+fn lift_of(row: &LiftRow, raw: &HashMap<&str, &str>) -> Option<(Vec<String>, Vec<String>)> {
+    if ![&row.ramp, &row.height, &row.straight]
+        .iter()
+        .any(|k| raw.contains_key(k.as_str()))
+    {
+        return None;
+    }
+    let list = |k: &str| -> Vec<&str> {
+        raw.get(k)
+            .copied()
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .collect()
+    };
+    let (ramp, height, straight, slope) = (
+        list(&row.ramp),
+        list(&row.height),
+        list(&row.straight),
+        list(&row.slope),
+    );
+    let at = |l: &[&str], i: usize| -> Option<String> {
+        let v = *l.get(i.min(l.len().saturating_sub(1)))?;
+        (!v.is_empty() && v != "nil").then(|| v.to_owned())
+    };
+    let (mut heights, mut kinds) = (Vec::new(), Vec::new());
+    for i in 0..ramp.len().max(height.len()).max(straight.len()) {
+        let on = at(&ramp, i);
+        let upright = at(&slope, i)
+            .and_then(|a| number(&a))
+            .is_some_and(|a| a <= 0.0 || a >= 90.0);
+        let kind = match on.as_deref() {
+            None => "nil",
+            Some("1") if !upright => "Slope Lift",
+            Some(_) => "Normal Lift",
+        };
+        let h = if on.as_deref() == Some("1") {
+            at(&height, i)
+        } else {
+            at(&straight, i)
+        };
+        heights.push(h.unwrap_or_else(|| "nil".to_owned()));
+        kinds.push(kind.to_owned());
+    }
+    Some((heights, kinds))
+}
+
 /// `PrusaSlicer` settings as Orca keys and values: the composites, renames, percentages and value rows of prusa-map.json.
 /// For an object or a volume (`project` false) a key with no Orca name keeps its own and every value is a string. For a
 /// project's own settings (`project` true) the table's `composites` apply too; a key is ours under its rename, its own
@@ -634,16 +679,18 @@ fn map_values(list: &[(String, String)], project: bool) -> (Map<String, Value>, 
                 done.push(key);
             }
         }
-        for row in &m.value_to_key {
-            if let Some(v) = raw.get(row.key.as_str()) {
-                let pick = row
-                    .values
-                    .iter()
-                    .find(|(from, _)| from == v)
-                    .map_or(&row.otherwise, |(_, t)| t);
-                put(&mut out, &row.to, pick.clone());
-                done.push(&row.key);
+        // A travel lift: the printer's, and the filament's own, which replaces the printer's where it is set.
+        for row in &m.lift {
+            let Some((height, kind)) = lift_of(row, &raw) else {
+                continue;
+            };
+            if height.iter().any(|h| h != "nil") {
+                put(&mut out, &row.to, height.join(","));
             }
+            if kind.iter().any(|k| k != "nil") {
+                put(&mut out, &row.kind, kind.join(","));
+            }
+            done.extend([row.ramp.as_str(), row.height.as_str(), row.straight.as_str()]);
         }
     }
     for (key, value) in list {

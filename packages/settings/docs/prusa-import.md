@@ -4,7 +4,7 @@
 
 Keys PrusaSlicer shares with us by name (about 150, such as `layer_height`, `brim_width`, `nozzle_diameter`, `filament_diameter`) need no entry. The rest are mapped through `prusa-map.json` (compared with PrusaSlicer commit 30ef591), the value forms are converted where the two differ (for example `fill_density` percent, `gcode_flavor`, `ensure_vertical_shell_thickness`), and percent speeds are turned into millimeters per second from the preset's own base speed.
 
-Composite conversions: `support_material`, `support_material_auto` and the style set `enable_support` and `support_type`; `first_layer_speed` sets the first layer wall and infill speeds; `ironing` and `ironing_type` give one ironing type; `bed_temperature` sets the smooth and textured PEI plates (and their first layer values); `travel_ramping_lift` gives the z hop type.
+Composite conversions: `support_material`, `support_material_auto` and the style set `enable_support` and `support_type`; `first_layer_speed` sets the first layer wall and infill speeds; `ironing` and `ironing_type` give one ironing type; `bed_temperature` sets the smooth and textured PEI plates (and their first layer values); a travel lift (`retract_lift`, `travel_ramping_lift`, `travel_max_lift` and `travel_slope`, and the filament's own `filament_retract_lift`, `filament_travel_ramping_lift` and `filament_travel_max_lift`) gives the z hop height and type: with ramping on the ramp's height as a slope lift (straight up at a slope of 0 or 90 degrees), with it off the straight lift as a normal lift.
 
 ## Renamed keys
 
@@ -39,6 +39,7 @@ Composite conversions: `support_material`, `support_material_auto` and the style
 | `filament_retract_before_travel` | `filament_retraction_minimum_travel` |
 | `filament_retract_layer_change` | `filament_retract_when_changing_layer` |
 | `filament_retract_length` | `filament_retraction_length` |
+| `filament_retract_lift` | `filament_z_hop` |
 | `filament_retract_speed` | `filament_retraction_speed` |
 | `filament_shrinkage_compensation_xy` | `filament_shrink` |
 | `fill_angle` | `infill_direction` |
@@ -69,6 +70,7 @@ Composite conversions: `support_material`, `support_material_auto` and the style
 | `min_fan_speed` | `fan_min_speed` |
 | `min_print_speed` | `slow_down_min_speed` |
 | `only_one_perimeter_first_layer` | `only_one_wall_first_layer` |
+| `only_retract_when_crossing_perimeters` | `reduce_infill_retraction` |
 | `output_filename_format` | `filename_format` |
 | `overhangs` | `detect_overhang_wall` |
 | `pause_print_gcode` | `machine_pause_gcode` |
@@ -132,7 +134,6 @@ Composite conversions: `support_material`, `support_material_auto` and the style
 | `top_solid_infill_speed` | `top_surface_speed` |
 | `top_solid_layers` | `top_shell_layers` |
 | `top_solid_min_thickness` | `top_shell_thickness` |
-| `travel_max_lift` | `travel_slope` |
 | `wipe_into_infill` | `flush_into_infill` |
 | `wipe_into_objects` | `flush_into_objects` |
 | `wipe_tower` | `enable_prime_tower` |
@@ -152,6 +153,6 @@ Resin printer (SLA) keys, preset ids and compatibility bookkeeping, host credent
 
 ## Not mapped
 
-SlicerX has no setting with the same meaning for these 76 keys, so an imported preset loses them and reports them. For some of them the import report names the closest SlicerX setting, from `import-nearest.json`. The keys:
+SlicerX has no setting with the same meaning for these 75 keys, so an imported preset loses them and reports them. For some of them the import report names the closest SlicerX setting, from `import-nearest.json`. The keys:
 
-`autoemit_temperature_commands`, `automatic_extrusion_widths`, `automatic_infill_combination`, `automatic_infill_combination_max_layer_height`, `avoid_crossing_curled_overhangs`, `bed_temperature_extruder`, `between_objects_gcode`, `color_change_gcode`, `colorprint_heights`, `cooling_perimeter_transition_distance`, `cooling_slowdown_logic`, `custom_parameters_filament`, `custom_parameters_print`, `custom_parameters_printer`, `duplicate_distance`, `enable_dynamic_fan_speeds`, `enable_dynamic_overhang_speeds`, `enable_pressure_advance_during_ramming`, `extra_perimeters`, `extrusion_axis`, `fan_always_on`, `filament_abrasive`, `filament_change_time`, `filament_flush_speed`, `filament_flush_volume`, `filament_infill_max_crossing_speed`, `filament_infill_max_speed`, `filament_load_time`, `filament_purge_multiplier`, `filament_ramming_initial_delay`, `filament_ramming_temperature_delta`, `filament_spool_weight`, `filament_unload_time`, `first_layer_acceleration_over_raft`, `first_layer_solid_infill_speed`, `first_layer_speed_over_raft`, `gcode_substitutions`, `infill_every_layers`, `infill_first`, `infill_only_where_needed`, `initial_layer_height`, `machine_limits_usage`, `max_print_speed`, `max_volumetric_extrusion_rate_slope_negative`, `max_volumetric_speed`, `multimaterial_purging`, `nozzle_high_flow`, `only_retract_when_crossing_perimeters`, `over_bridge_speed`, `overhang_fan_speed_0`, `overhang_fan_speed_1`, `overhang_fan_speed_2`, `overhang_fan_speed_3`, `overhang_speed_0`, `overhang_speed_1`, `overhang_speed_2`, `overhang_speed_3`, `scarf_seam_max_segment_length`, `seam_preferred_direction`, `seam_preferred_direction_jitter`, `solid_infill_every_layers`, `solid_layers`, `solid_min_thickness`, `stuck_filament_detection`, `support_material_closing_radius`, `support_material_synchronize_layers`, `support_material_with_sheath`, `support_tree_branch_diameter_double_wall`, `top_one_perimeter_type`, `travel_lift_before_obstacle`, `travel_short_distance_acceleration`, `use_volumetric_e`, `variable_layer_height`, `wipe_tower_acceleration`, `wiping_volumes_matrix`, `wiping_volumes_use_custom_matrix`.
+`autoemit_temperature_commands`, `automatic_extrusion_widths`, `automatic_infill_combination`, `automatic_infill_combination_max_layer_height`, `avoid_crossing_curled_overhangs`, `bed_temperature_extruder`, `between_objects_gcode`, `color_change_gcode`, `colorprint_heights`, `cooling_perimeter_transition_distance`, `cooling_slowdown_logic`, `custom_parameters_filament`, `custom_parameters_print`, `custom_parameters_printer`, `duplicate_distance`, `enable_dynamic_fan_speeds`, `enable_dynamic_overhang_speeds`, `enable_pressure_advance_during_ramming`, `extra_perimeters`, `extrusion_axis`, `fan_always_on`, `filament_abrasive`, `filament_change_time`, `filament_flush_speed`, `filament_flush_volume`, `filament_infill_max_crossing_speed`, `filament_infill_max_speed`, `filament_load_time`, `filament_purge_multiplier`, `filament_ramming_initial_delay`, `filament_ramming_temperature_delta`, `filament_spool_weight`, `filament_unload_time`, `first_layer_acceleration_over_raft`, `first_layer_solid_infill_speed`, `first_layer_speed_over_raft`, `gcode_substitutions`, `infill_every_layers`, `infill_first`, `infill_only_where_needed`, `initial_layer_height`, `machine_limits_usage`, `max_print_speed`, `max_volumetric_extrusion_rate_slope_negative`, `max_volumetric_speed`, `multimaterial_purging`, `nozzle_high_flow`, `over_bridge_speed`, `overhang_fan_speed_0`, `overhang_fan_speed_1`, `overhang_fan_speed_2`, `overhang_fan_speed_3`, `overhang_speed_0`, `overhang_speed_1`, `overhang_speed_2`, `overhang_speed_3`, `scarf_seam_max_segment_length`, `seam_preferred_direction`, `seam_preferred_direction_jitter`, `solid_infill_every_layers`, `solid_layers`, `solid_min_thickness`, `stuck_filament_detection`, `support_material_closing_radius`, `support_material_synchronize_layers`, `support_material_with_sheath`, `support_tree_branch_diameter_double_wall`, `top_one_perimeter_type`, `travel_lift_before_obstacle`, `travel_short_distance_acceleration`, `use_volumetric_e`, `variable_layer_height`, `wipe_tower_acceleration`, `wiping_volumes_matrix`, `wiping_volumes_use_custom_matrix`.
