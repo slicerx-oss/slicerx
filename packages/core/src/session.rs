@@ -10968,9 +10968,7 @@ fn stretch_of(
         // The innermost wall's centerline from the outline, at the layer's own height as its walls are laid: the
         // outer wall's, then the first inner wall's pitch (the two widths' mean with the precise outer wall and inner
         // walls first, else the two spacings' mean), then an inner spacing for each further inner wall.
-        let precise = crate::tower::flag_or(cfg, "precise_outer_wall", true)
-            && cfg.wall_sequence == crate::config::WallSequence::InnerOuter;
-        let first = if precise {
+        let first = if crate::perimeters::precise_inner_walls(cfg) {
             f64::midpoint(outer, inner)
         } else {
             f64::midpoint(spacing(outer, height), spacing(inner, height))
@@ -10992,13 +10990,22 @@ fn stretch_pattern(name: &str) -> bool {
     matches!(name, "monotonic" | "monotonicline" | "rectilinear")
 }
 
+/// Whether the surface edge of fixed-width walls follows the precise outer wall's move of the inner walls on Bambu
+/// Lab printers too. Off: there the edge keeps the inner walls where they sit without it.
+const PRECISE_SURFACE_EDGE_ON_BAMBU: bool = false;
+
 /// How far a top surface's or the first layer's bottom surface's pieces move their edge out (in, when negative)
 /// before each spreads its lines evenly across itself, mm, on a layer `height` thick whose infill area overlaps
 /// the walls by `overlap` (a share of the line width). The infill area starts at the walls' widths from the
 /// outline (the outer wall's, then the inner wall's spacing per further loop with variable-width walls and its
-/// width with fixed-width walls) less that overlap. The surface starts at the innermost wall's spacing edge less
-/// `top_bottom_infill_wall_overlap` of the inner wall's spacing: past the outer wall's width with variable-width
-/// walls, past the outer wall's centerline and the mean of the two spacings with fixed-width walls. `None` where
+/// width with fixed-width walls) less that overlap. The surface starts half the innermost wall's spacing past that
+/// wall's centerline, less `top_bottom_infill_wall_overlap` of a spacing. With variable-width walls that centerline
+/// is half an inner spacing inside the outer wall's width plus an inner spacing per further loop, and the overlap is
+/// of the inner wall's spacing. With fixed-width walls the centerline sits where the walls are laid: the outer wall's
+/// centerline, the first inner wall's pitch (the two widths' mean with the precise outer wall and inner walls first,
+/// else the two spacings' mean), then an inner spacing per further loop; the overlap is of the mean of the inner
+/// wall's and the internal solid infill's spacings. Bambu Lab printers keep the spacings' mean for the first pitch
+/// unless [`PRECISE_SURFACE_EDGE_ON_BAMBU`] is set, and the inner wall's spacing alone for the overlap. `None` where
 /// the walls are not the plain loops this reads (one fixed-width wall, or an extra wall on every other layer).
 pub(crate) fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> Option<f64> {
     if cfg.wall_loops == 0 || crate::tower::flag(cfg, "alternate_extra_wall") {
@@ -11010,19 +11017,29 @@ pub(crate) fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> Opti
     let share = cfg.raw_number("top_bottom_infill_wall_overlap", 25.0) / 100.0;
     let (area, surface) = if cfg.arachne_walls() {
         let walls = outer + (loops - 1.0) * spacing(inner);
-        (walls, walls)
+        (walls, walls - share * spacing(inner))
     } else if cfg.wall_loops < 2 {
         return None;
     } else {
+        let bambu = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
+        let first =
+            if crate::perimeters::precise_inner_walls(cfg) && (PRECISE_SURFACE_EDGE_ON_BAMBU || !bambu) {
+                f64::midpoint(outer, inner)
+            } else {
+                f64::midpoint(spacing(outer), spacing(inner))
+            };
+        let innermost = outer / 2.0 + first + (loops - 2.0) * spacing(inner);
+        let overlap_of = if bambu {
+            spacing(inner)
+        } else {
+            f64::midpoint(spacing(inner), spacing(cfg.solid_infill_width()))
+        };
         (
             outer + (loops - 1.0) * inner,
-            outer / 2.0
-                + f64::midpoint(spacing(outer), spacing(inner))
-                + (loops - 2.0) * spacing(inner)
-                + spacing(inner) / 2.0,
+            innermost + spacing(inner) / 2.0 - share * overlap_of,
         )
     };
-    Some((area - overlap * cfg.line_width) - (surface - share * spacing(inner)))
+    Some((area - overlap * cfg.line_width) - surface)
 }
 
 /// One grid of a surface's lines: the area, the line spacing (scanline units and mm), how far in the lines' ends
@@ -13186,7 +13203,8 @@ mod surface_edge_tests {
         // Two fixed-width walls of 0.42 mm: the infill area starts 0.0537 mm further in than the surface.
         let ender = |w: f64| {
             json!({"wall_generator": "classic", "wall_loops": 2, "line_width": w, "outer_wall_line_width": w,
-                "inner_wall_line_width": w, "precise_outer_wall": false, "top_bottom_infill_wall_overlap": 25})
+                "inner_wall_line_width": w, "internal_solid_infill_line_width": w, "precise_outer_wall": false,
+                "top_bottom_infill_wall_overlap": 25})
         };
         assert!((edge(&ender(0.42), 0.2) - 0.0537).abs() < 0.0005);
         assert!((edge(&ender(0.63), 0.3) - 0.0805).abs() < 0.0005);
@@ -13215,6 +13233,61 @@ mod surface_edge_tests {
         assert_eq!(stretch_pitch(across, nominal), (across / 64.0, None));
         // One cell keeps its line.
         assert_eq!(stretch_pitch(nominal + 5.0, nominal).1, None);
+    }
+
+    #[test]
+    fn fixed_width_walls_start_the_surface_past_the_innermost_wall_as_it_is_laid() {
+        // Where the surface starts, from the outline: the infill area (the walls' widths less a quarter line) less
+        // the edge.
+        let start = |c: &serde_json::Value, height: f64| {
+            let cfg = PrintConfig::from_value(c).expect("the settings read");
+            let area = cfg.outer_wall_width() + 2.0 * cfg.inner_wall_width() - 0.25 * cfg.line_width;
+            (cfg.clone(), area - edge(c, height))
+        };
+        // Voron 2.4, three 0.4 mm walls, precise outer wall on: the first inner wall sits 0.4 mm in from the outer
+        // one, and the surface starts h (1 - pi/4) further in than with the spacings' mean. The first layer prints
+        // every line 0.5 mm wide.
+        let voron = |precise: bool| {
+            json!({"wall_generator": "classic", "wall_loops": 3, "line_width": 0.4, "outer_wall_line_width": 0.4,
+                "inner_wall_line_width": 0.4, "internal_solid_infill_line_width": 0.4, "initial_layer_line_width": 0.5,
+                "layer_height": 0.2, "precise_outer_wall": precise, "top_bottom_infill_wall_overlap": 25})
+        };
+        assert!((start(&voron(true), 0.2).1 - 1.0463).abs() < 0.0002);
+        assert!((start(&voron(false), 0.2).1 - 1.0034).abs() < 0.0002);
+        let (cfg, _) = start(&voron(true), 0.2);
+        let first = cfg.for_first_layer();
+        let area = first.outer_wall_width() + 2.0 * first.inner_wall_width() - 0.25 * first.line_width;
+        let at = surface_edge(&first, 0.2, 0.25).expect("plain walls");
+        assert!((area - at - 1.3213).abs() < 0.0002, "{}", area - at);
+        // With the outer wall first the precise outer wall moves nothing.
+        let mut outer_first = voron(true);
+        outer_first["wall_sequence"] = json!("outer wall/inner wall");
+        assert!((start(&outer_first, 0.2).1 - 1.0034).abs() < 0.0002);
+        // MK4: inner walls 0.44 mm and internal solid infill 0.48 mm, so the overlap is of the two spacings' mean.
+        let mk4 = |precise: bool| {
+            json!({"wall_generator": "classic", "wall_loops": 3, "line_width": 0.44, "outer_wall_line_width": 0.4,
+                "inner_wall_line_width": 0.44, "internal_solid_infill_line_width": 0.48, "layer_height": 0.2,
+                "precise_outer_wall": precise, "top_bottom_infill_wall_overlap": 25})
+        };
+        assert!((start(&mk4(true), 0.2).1 - 1.1113).abs() < 0.0002);
+        assert!((start(&mk4(false), 0.2).1 - 1.0684).abs() < 0.0002);
+    }
+
+    #[test]
+    fn bambu_printers_keep_the_spacings_mean_and_the_inner_wall_overlap() {
+        // A1 widths (inner wall 0.45, internal solid 0.42), precise on: the edge is the one with precise off and the
+        // overlap of the inner wall's spacing alone.
+        let a1 = |precise: bool| {
+            json!({"wall_generator": "classic", "wall_loops": 2, "line_width": 0.42, "outer_wall_line_width": 0.42,
+                "inner_wall_line_width": 0.45, "internal_solid_infill_line_width": 0.42, "layer_height": 0.2,
+                "printer_model": "Bambu Lab A1", "precise_outer_wall": precise, "top_bottom_infill_wall_overlap": 25})
+        };
+        let k = 0.2 * (1.0 - std::f64::consts::FRAC_PI_4);
+        let s = |w: f64| w - k;
+        let start = 0.21 + f64::midpoint(s(0.42), s(0.45)) + s(0.45) / 2.0 - 0.25 * s(0.45);
+        let want = (0.42 + 0.45 - 0.25 * 0.42) - start;
+        assert_eq!(edge(&a1(true), 0.2).to_bits(), edge(&a1(false), 0.2).to_bits());
+        assert!((edge(&a1(true), 0.2) - want).abs() < 1e-12);
     }
 
     #[test]
