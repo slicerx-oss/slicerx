@@ -10,7 +10,9 @@
 //!   the top layer (z 2.2), the layer below (z 2.0) and a sparse layer (z 1.2), with the top layer's lines longer
 //!   than 5 mm, their widths and their distances from the strip's side (fixtures/surface-walls/f4-targets.json).
 //!   Under arachne walls a strip whose innermost walls leave 0.31 mm between them gets nothing inside them. Under
-//!   classic walls with no sparse infill the middle of a narrow strip is infill area, not a gap fill bead.
+//!   classic walls with no sparse infill the middle of a narrow strip is infill area, not a gap fill bead, once it
+//!   holds a surface line; a narrower strip keeps its gap fill bead on every layer, where the targets have nothing
+//!   on the top and sparse layers and internal solid infill below (a slot inside the walls is worse than the bead).
 
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -249,7 +251,23 @@ fn close(a: &BTreeSet<i64>, b: &BTreeSet<i64>) -> bool {
 /// The strips of `case` in the targets file against the slice of `request` with `edits`: on the top layer the same
 /// features with the same line counts, widths and positions within 0.01 mm; on the layer below and the sparse layer
 /// the same features.
-fn check(case: &str, request: &str, mesh: &str, edits: &[(&str, Value)]) {
+/// Strips narrower than one surface line that keep a gap fill bead with fixed-width walls and no sparse infill: the
+/// strip's width and the bead's width, mm. The bead runs down the strip's middle on every layer.
+const GAP_FILL_BELOW_ONE_LINE: [(f64, f64); 2] = [(1.7, 0.192), (1.72, 0.212)];
+
+/// The fill a strip `width` mm wide keeps in place of the targets' with `keep_gap` ([`GAP_FILL_BELOW_ONE_LINE`]).
+fn bead(keep_gap: &[(f64, f64)], width: f64) -> Option<BTreeMap<String, Fill>> {
+    let &(_, bead) = keep_gap.iter().find(|(w, _)| (w - width).abs() < 1e-9)?;
+    let fill = Fill {
+        lines: 1,
+        widths: BTreeSet::from([milli(bead)]),
+        from_side: BTreeSet::from([milli(width / 2.0)]),
+        short: 0,
+    };
+    Some(BTreeMap::from([("Gap infill".to_owned(), fill)]))
+}
+
+fn check(case: &str, request: &str, mesh: &str, edits: &[(&str, Value)], keep_gap: &[(f64, f64)]) {
     let targets: Value = serde_json::from_slice(&fixture("f4-targets.json")).unwrap();
     let want = targets[case].as_array().unwrap();
     let got = strips(&slice(request, &fixture(mesh), edits));
@@ -258,7 +276,7 @@ fn check(case: &str, request: &str, mesh: &str, edits: &[(&str, Value)]) {
     for (t, layers) in want.iter().zip(&got) {
         let width = t["width_mm"].as_f64().unwrap();
         for (k, (tag, have)) in ["top", "below", "sparse_layer"].iter().zip(layers).enumerate() {
-            let need = target(&t[*tag]);
+            let need = bead(keep_gap, width).unwrap_or_else(|| target(&t[*tag]));
             let names = |m: &BTreeMap<String, Fill>| m.keys().cloned().collect::<BTreeSet<_>>();
             let same = names(&need) == names(have)
                 && (k > 0
@@ -282,6 +300,7 @@ fn arachne_strips_too_narrow_for_a_line_get_nothing_inside_the_walls() {
             "voron-f4strips.json",
             "f4-vor.stl",
             &[("sparse_infill_density", json!(density))],
+            &[],
         );
     }
 }
@@ -293,10 +312,17 @@ fn classic_strips_with_no_sparse_infill_print_infill_area_not_gap_fill() {
         "ender-f4strips.json",
         "f4-end.stl",
         &[("sparse_infill_density", json!(0))],
+        &GAP_FILL_BELOW_ONE_LINE,
     );
 }
 
 #[test]
 fn classic_strips_with_sparse_infill_keep_their_gap_fill_bead() {
-    check("ender--f4strips--s15", "ender-f4strips.json", "f4-end.stl", &[]);
+    check(
+        "ender--f4strips--s15",
+        "ender-f4strips.json",
+        "f4-end.stl",
+        &[],
+        &[],
+    );
 }
