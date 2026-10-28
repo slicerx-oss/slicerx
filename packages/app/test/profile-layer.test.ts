@@ -199,7 +199,7 @@ describe('SlicerX default wall generator on a maker preset', () => {
     { vendor: 'Creality', model: 'K1' },
   ]
 
-  for (const printer of printers) {
+  for (const printer of printers.filter((p) => p.vendor !== 'Bambu Lab')) {
     it(`${printer.model}: aegis unless the person chose, and the preset's own one click away`, async () => {
       const layer = await buildProfileLayer({ printer, tier: 'standard', slots: [{ type: 'PLA' }] })
       expect(layer, printer.model).not.toBeNull()
@@ -217,6 +217,20 @@ describe('SlicerX default wall generator on a maker preset', () => {
       } else {
         expect(presetOwnValue('wall_generator')).toBeNull()
       }
+    })
+  }
+
+  // A plain model on a Bambu Lab printer prints with its preset's classic walls; the person can still pick aegis.
+  for (const printer of [{ vendor: 'Bambu Lab', model: 'A1' }, { vendor: 'Bambu Lab', model: 'P1S' }]) {
+    it(`${printer.model}: the preset's own classic walls unless the person chose aegis`, async () => {
+      const layer = await buildProfileLayer({ printer, tier: 'standard', slots: [{ type: 'PLA' }] })
+      expect(layer, printer.model).not.toBeNull()
+      expect(layer!.values['wall_generator']).toBe('classic')
+      const easy = goalEasy('standard')
+      setProfileLayer(layer!.values, [])
+      expect(resolveConfig(easy, {})['wall_generator']).toBe('classic')
+      expect(presetOwnValue('wall_generator')).toBeNull()
+      expect(resolveConfig(easy, { wall_generator: 'aegis' })['wall_generator']).toBe('aegis')
     })
   }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // @slicerx/settings. See README.md for the public API.
-export { applyEasy, goalEasy, matchGoal, easyControlFor, EASY_MAP, layerConfig, nearestGoalBy, SLICERX_PRESET_DEFAULTS } from './easy'
+export { applyEasy, goalEasy, matchGoal, easyControlFor, EASY_MAP, layerConfig, nearestGoalBy, defaultWallGenerator, PRESET_OWN_PRINTERS, presetDefaults, SLICERX_PRESET_DEFAULTS } from './easy'
 export { SETTINGS, SETTING_NOTES, PROJECT_KEYS, ORCA_COMMIT, registerSettingText, clearSettingText, settingDef, settingsFor, invalidates, defaultConfig } from './schema'
 export { importFlat, importOrcaProfile, exportOrcaProfile, mergeConfigs, mergeLayers, ProfileError, PROFILE_META_KEYS, LEGACY_KEYS, LEGACY_GROUPS } from './import'
 export { validate, checkValues, checkConflicts, missingKeys, typeOneTower, unavailableIn } from './validate'

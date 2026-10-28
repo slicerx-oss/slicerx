@@ -126,7 +126,7 @@ test.describe('a Bambu Studio project', () => {
       await expect(report.locator('.imp-sum')).toHaveText(/Opened a1-mini\.3mf: 1 setting did not carry over/)
       await expect(report.locator('.imp-count')).toHaveText(/Project settings, 1 setting did not carry over/)
       await report.locator('summary').click()
-      await expect(report.getByText("Walls: aegis walls, kept by SlicerX; the project used its preset's default classic.")).toBeVisible()
+      await expect(report.getByText('Walls: classic walls, as the project has them.')).toBeVisible()
     } finally {
       await setState(page, { settingsOpen: false })
     }
