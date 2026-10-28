@@ -188,13 +188,21 @@ describe('a project opens with the process and filaments it was made with', () =
     expect(slice['filament_density']).toEqual([1.24, 1.24, 1.26, 1.26])
   })
 
-  it("keeps SlicerX's aegis walls over the project's inherited classic walls, and says so", async () => {
+  it("keeps a stock Bambu Lab project's inherited classic walls, with no kept note", async () => {
     const { host } = capture()
     await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, wall_generator: 'classic', precise_outer_wall: '0' }))
     const cfg = resolved()
-    expect(cfg['wall_generator']).toBe('aegis')
-    expect(get().openNote?.text).toContain("Kept SlicerX's aegis walls; the project used Bambu's default.")
+    expect(cfg['wall_generator']).toBe('classic')
+    expect(get().openNote?.text ?? '').not.toContain('Kept SlicerX')
     expect(cfg['layer_height']).toBe(0.12)
+  })
+
+  it('takes the aegis walls a Bambu Lab project chose', async () => {
+    const { host } = capture()
+    const listed = [`${(FINE_P1S['different_settings_to_system'] as string[])[0]};wall_generator`, '', '', '', '', '']
+    await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, wall_generator: 'aegis', different_settings_to_system: listed }))
+    expect(resolved()['wall_generator']).toBe('aegis')
+    expect(get().projectImport?.report.notes).toContain("Walls: aegis walls, the project's own choice.")
   })
 
   it("keeps the project's inherited arachne walls, with no note", async () => {
@@ -205,11 +213,11 @@ describe('a project opens with the process and filaments it was made with', () =
     expect(get().projectImport?.report.notes).toContain('Walls: arachne walls, as the project has them.')
   })
 
-  it('keeps aegis over inherited classic walls, and the walls note says so', async () => {
+  it("keeps a Bambu Lab project's inherited classic walls, and the walls note says so", async () => {
     const { host } = capture()
     await openModelBytes(host, 'fine.3mf', project({ ...FINE_P1S, wall_generator: 'classic' }))
-    expect(resolved()['wall_generator']).toBe('aegis')
-    expect(get().projectImport?.report.notes).toContain("Walls: aegis walls, kept by SlicerX; the project used its preset's default classic.")
+    expect(resolved()['wall_generator']).toBe('classic')
+    expect(get().projectImport?.report.notes).toContain('Walls: classic walls, as the project has them.')
   })
 
   it("keeps the project's own precise outer wall, listed as changed or not", async () => {
@@ -439,7 +447,7 @@ describe('a P1S 0.2 project on an empty plate', () => {
     expect(cfg['wall_generator']).toBe('aegis')
     expect(cfg['precise_outer_wall']).toBe(true)
     expect(cfg['wall_loops']).toBe(3)
-    expect(get().openNote?.text).toContain("Kept SlicerX's aegis walls; the project used Bambu's default.")
+    expect(get().openNote?.text).toContain("Kept SlicerX's aegis walls; the project used its preset's default.")
   })
 
   it('puts the kept engine choice back over a value the plate already had', async () => {

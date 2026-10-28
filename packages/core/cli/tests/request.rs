@@ -3183,7 +3183,7 @@ fn a_project_for_a_printer_without_a_profile_keeps_the_engine_choices() {
         "{err}"
     );
     assert!(
-        err.contains("Kept SlicerX's aegis walls; the project used Bambu's default."),
+        err.contains("Kept SlicerX's aegis walls; the project used its preset's default."),
         "{err}"
     );
     let g = std::fs::read_to_string(&gcode).unwrap();
@@ -3195,20 +3195,20 @@ fn a_project_for_a_printer_without_a_profile_keeps_the_engine_choices() {
 }
 
 #[test]
-fn a_project_keeps_inherited_arachne_walls_and_aegis_over_inherited_classic() {
+fn a_project_keeps_inherited_arachne_walls_and_bambu_classic_and_gets_aegis_over_other_classic() {
     let dir = temp_dir(format!("sx-cli-wallgen-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    // The G-code's wall generator line and the walls note of a slice of the project with `generator`, listed as
-    // changed by the person or not.
-    let slice = |generator: &str, listed: bool, name: &str| -> (String, String) {
+    // The G-code's wall generator line and the walls note of a slice of a project for `printer` with `generator`,
+    // listed as changed by the person or not.
+    let slice = |printer: &str, generator: &str, listed: bool, name: &str| -> (String, String) {
         let changed = if listed {
             "brim_type;wall_generator"
         } else {
             "brim_type"
         };
         let settings = serde_json::json!({
-            "printer_settings_id": "Bambu Lab X1 Carbon 0.4 nozzle",
-            "printer_model": "Bambu Lab X1 Carbon",
+            "printer_settings_id": format!("{printer} 0.4 nozzle"),
+            "printer_model": printer,
             "gcode_flavor": "marlin",
             "brim_type": "no_brim",
             "skirt_loops": "0",
@@ -3240,20 +3240,29 @@ fn a_project_keeps_inherited_arachne_walls_and_aegis_over_inherited_classic() {
             .to_owned();
         (line, walls)
     };
+    let bambu = "Bambu Lab X1 Carbon";
+    let acme = "Acme Printer 9000";
     // Inherited arachne walls stay arachne, with no kept note.
-    let (line, walls) = slice("arachne", false, "inherited-arachne.3mf");
+    let (line, walls) = slice(bambu, "arachne", false, "inherited-arachne.3mf");
     assert_eq!(line, "; wall_generator = arachne");
     assert_eq!(walls, "sx: walls: arachne walls, as the project has them");
-    // Inherited classic walls give way to SlicerX's aegis, as before.
-    let (line, walls) = slice("classic", false, "inherited-classic.3mf");
+    // A stock Bambu Lab project slices with the classic walls it inherited.
+    let (line, walls) = slice(bambu, "classic", false, "bambu-inherited-classic.3mf");
+    assert_eq!(line, "; wall_generator = classic");
+    assert_eq!(walls, "sx: walls: classic walls, as the project has them");
+    // Aegis walls a Bambu Lab project chose stay aegis.
+    let (line, walls) = slice(bambu, "aegis", true, "bambu-picked-aegis.3mf");
     assert_eq!(line, "; wall_generator = aegis");
+    assert_eq!(walls, "sx: walls: aegis walls, the project's own choice");
+    // On another printer, inherited classic walls give way to SlicerX's aegis, as before. A printer we have no
+    // profile for writes no config block, so the walls come from the note.
+    let (_, walls) = slice(acme, "classic", false, "inherited-classic.3mf");
     assert_eq!(
         walls,
         "sx: walls: aegis walls, kept by SlicerX; the project used Bambu's default classic"
     );
     // Classic walls the person picked stay classic.
-    let (line, walls) = slice("classic", true, "picked-classic.3mf");
-    assert_eq!(line, "; wall_generator = classic");
+    let (_, walls) = slice(acme, "classic", true, "picked-classic.3mf");
     assert_eq!(walls, "sx: walls: classic walls, the project's own choice");
 }
 

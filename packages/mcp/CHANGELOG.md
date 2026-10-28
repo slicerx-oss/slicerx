@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Changed
+
+- A Bambu Lab project that inherited classic walls from its presets reads and slices with classic walls (`readProjectFile`, `slicerx_inspect_project`, and `slicerx_slice_file` with `project_settings`); its walls note says `classic walls, as the project has them`. Before, it got aegis walls. Aegis walls the project lists as changed stay, and so do request overrides. Projects for other printers keep aegis over inherited classic walls, as before.
+
 ## [0.2.5] - 2026-10-29
 
 ### Added

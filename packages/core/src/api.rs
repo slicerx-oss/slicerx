@@ -766,15 +766,29 @@ pub fn apply_project_defaults(config: &mut serde_json::Value, project: &[u8]) ->
 }
 
 /// One of our engine choices (`keeps` in engine-choices.json): the key, the value we print with, the inherited values
-/// it goes over (`over`; every value when the file gives none) and the note.
+/// it goes over (`over`; every value when the file gives none), the printers it leaves alone (`exceptPrinters`) and
+/// the note.
 struct EngineKeep {
     key: String,
     value: serde_json::Value,
     over: Option<Vec<serde_json::Value>>,
+    except_printers: Vec<String>,
     note: String,
 }
 
 impl EngineKeep {
+    /// Whether the keep leaves a project's own value alone because of its printer: its `printer_model` starts with one
+    /// of `exceptPrinters` (for walls "Bambu Lab", so a stock Bambu Lab project keeps the classic walls it inherited).
+    fn leaves_printer(&self, settings: &serde_json::Map<String, serde_json::Value>) -> bool {
+        let Some(model) = settings.get("printer_model") else {
+            return false;
+        };
+        let model = model.as_array().and_then(|a| a.first()).unwrap_or(model);
+        model
+            .as_str()
+            .is_some_and(|m| self.except_printers.iter().any(|p| m.starts_with(p.as_str())))
+    }
+
     /// Whether the keep goes over `inherited`, the value a project took from its presets: a keep that names the values
     /// it goes over (for walls only classic) leaves any other as the project has it, so inherited arachne walls stay
     /// arachne. A project that does not set the key gets the keep.
@@ -803,6 +817,11 @@ fn engine_choices() -> &'static [EngineKeep] {
                         key: k.clone(),
                         value: v.get("value").cloned().unwrap_or_default(),
                         over: v.get("over").and_then(serde_json::Value::as_array).cloned(),
+                        except_printers: v
+                            .get("exceptPrinters")
+                            .and_then(serde_json::Value::as_array)
+                            .map(|a| a.iter().filter_map(|p| p.as_str().map(str::to_owned)).collect())
+                            .unwrap_or_default(),
                         note: v
                             .get("note")
                             .and_then(serde_json::Value::as_str)
@@ -888,8 +907,12 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
     let mut kept = Vec::new();
     if let Some(changed) = changed {
         for keep in engine_choices() {
-            // Listed as changed, or inherited with a value the keep does not go over (arachne walls): the project's.
-            if changed.contains(&keep.key) || !keep.goes_over(settings.get(&keep.key)) {
+            // Listed as changed, inherited with a value the keep does not go over (arachne walls), or on a printer the
+            // keep leaves alone (Bambu Lab walls): the project's.
+            if changed.contains(&keep.key)
+                || !keep.goes_over(settings.get(&keep.key))
+                || keep.leaves_printer(&settings)
+            {
                 continue;
             }
             if settings
@@ -981,8 +1004,8 @@ fn own_settings(
 }
 
 /// The walls a project's settings give, by the rule that keeps our engine choices: ours where the project inherited
-/// a generator our keep goes over (`different_settings_to_system` does not list it, and it is classic), else the
-/// project's own.
+/// a generator our keep goes over (`different_settings_to_system` does not list it, it is classic, and the printer is
+/// not one the keep leaves alone, such as a Bambu Lab printer), else the project's own.
 fn project_walls(
     settings: &serde_json::Map<String, serde_json::Value>,
     changed: Option<&std::collections::HashSet<String>>,
@@ -993,7 +1016,7 @@ fn project_walls(
     let ours = keep.and_then(|k| k.value.as_str().map(str::to_owned));
     let inherited = changed.is_some_and(|c| !c.contains("wall_generator"));
     if let (true, Some(ours)) = (inherited, ours)
-        && keep.is_some_and(|k| k.goes_over(settings.get("wall_generator")))
+        && keep.is_some_and(|k| k.goes_over(settings.get("wall_generator")) && !k.leaves_printer(settings))
     {
         let maker = match app {
             Some(a) if a.starts_with("BambuStudio") => "Bambu's",
@@ -1014,7 +1037,8 @@ fn project_walls(
             text,
         });
     }
-    // Inherited walls our keep does not go over (arachne) are the project's as its presets had them.
+    // Inherited walls our keep does not go over (arachne, or a Bambu Lab printer's classic) are the project's as its
+    // presets had them.
     own.map(|o| WallsNote {
         text: if inherited {
             format!("{o} walls, as the project has them")
