@@ -1820,10 +1820,10 @@ pub(crate) fn plan_layer(
 }
 
 /// How [`plan_layer_paths`] groups a layer's islands by object: the objects' hulls in list order, and the place an
-/// island's object (found by a point of the island) takes in the layer's object order.
+/// island's object (found by the island's filament and a point of the island) takes in the layer's object order.
 pub(crate) type IslandObjects<'a> = (
     &'a [Vec<IntPoint<i32>>],
-    Option<&'a dyn Fn(IntPoint<i32>) -> usize>,
+    Option<&'a dyn Fn(u8, IntPoint<i32>) -> usize>,
 );
 
 /// [`plan_layer`] up to the layer's time. `vase` is a spiral layer's, or for a solid base layer of a spiral vase
@@ -2151,7 +2151,7 @@ pub(crate) fn plan_layer_paths(
                         .first()
                         .and_then(|(_, c)| c.first().copied())
                         .or_else(|| i.wide.first().and_then(|l| l.points.first().copied()))
-                        .map_or(usize::MAX, rank)
+                        .map_or(usize::MAX, |p| rank(w.tool, p))
                 });
                 (i, start, rank)
             })

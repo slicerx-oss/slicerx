@@ -2481,11 +2481,9 @@ impl SliceSession {
     /// A session of several objects printed layer by layer, not in object list order, on object layer `layer`:
     /// each object's slice there and, by plate object, its place in the order the objects that print on the layer
     /// print in (`objorder.rs`). None for one object, or one object on the layer.
-    fn object_order_at(
-        &self,
-        cfg: &PrintConfig,
-        layer: u32,
-    ) -> Option<(std::sync::Arc<crate::owners::Slices>, Vec<usize>)> {
+    /// With islands of several filaments in `works`, each filament's objects (those its islands are on) also get
+    /// their places in that filament's own run (`objorder::run`).
+    fn object_order_at(&self, cfg: &PrintConfig, layer: u32, works: &[ToolWork]) -> Option<ObjectRanks> {
         let first = self.part_object.first();
         if self.part_object.iter().all(|o| Some(o) == first)
             || !self.object_hulls.is_empty()
@@ -2507,13 +2505,51 @@ impl SliceSession {
             })
             .collect();
         let top = slices.iter().map(|s| usize::from(s.object)).max().unwrap_or(0);
-        let mut ranks = vec![usize::MAX; top + 1];
-        for (place, i) in crate::objorder::order(&centers).into_iter().enumerate() {
-            if let Some(r) = slices.get(i).and_then(|s| ranks.get_mut(usize::from(s.object))) {
-                *r = place;
+        let places = |order: Vec<usize>| {
+            let mut ranks = vec![usize::MAX; top + 1];
+            for (place, i) in order.into_iter().enumerate() {
+                if let Some(r) = slices.get(i).and_then(|s| ranks.get_mut(usize::from(s.object))) {
+                    *r = place;
+                }
+            }
+            ranks
+        };
+        let ranks = places(crate::objorder::order(&centers));
+        let mut tools: Vec<u8> = works
+            .iter()
+            .filter(|w| w.islands.iter().any(|i| island_point(i).is_some()))
+            .map(|w| w.tool)
+            .collect();
+        tools.sort_unstable();
+        tools.dedup();
+        let mut runs: Vec<(u8, Vec<usize>)> = Vec::new();
+        if tools.len() > 1 {
+            for t in tools {
+                let mut with = vec![false; slices.len()];
+                for p in works
+                    .iter()
+                    .filter(|w| w.tool == t)
+                    .flat_map(|w| &w.islands)
+                    .filter_map(island_point)
+                {
+                    let k = object_at(&slices, p).and_then(|o| slices.iter().position(|s| s.object == o));
+                    if let Some(w) = k.and_then(|k| with.get_mut(k)) {
+                        *w = true;
+                    }
+                }
+                // A run of every object on the layer prints in the layer's order.
+                if with.iter().all(|w| *w) {
+                    continue;
+                }
+                runs.push((
+                    t,
+                    places(crate::objorder::run(&centers, |i| {
+                        with.get(i).copied().unwrap_or(false)
+                    })),
+                ));
             }
         }
-        Some((slices, ranks))
+        Some(ObjectRanks { slices, ranks, runs })
     }
 
     /// Each object's own slice on object layer `layer` (`owners.rs`), worked out once.
@@ -2942,6 +2978,11 @@ impl SliceSession {
     /// (one that survives an inset of a fifth of the first layer's line width), largest first, ties
     /// by filament.
     fn first_layer_order(&self, config: &PrintConfig) -> Vec<u8> {
+        first_layer_rank(self.first_layer_smallest(config))
+    }
+
+    /// Each first layer outer wall filament with the area of its smallest island, for [`Self::first_layer_order`].
+    fn first_layer_smallest(&self, config: &PrintConfig) -> Vec<(u8, f64)> {
         if self.plan.count() == 0 {
             return Vec::new();
         }
@@ -2975,13 +3016,7 @@ impl SliceSession {
                 }
             }
         }
-        crate::sorting::sort_by_key(&mut smallest, |a| a.0);
-        let mut order: Vec<(u8, f64)> = Vec::new();
-        for e in smallest {
-            let at = order.iter().position(|o| o.1 < e.1).unwrap_or(order.len());
-            order.insert(at, e);
-        }
-        order.into_iter().map(|e| e.0).collect()
+        smallest
     }
 
     /// The filament object layer `l` ends on: the last of its planned tools that it really prints
@@ -3357,12 +3392,16 @@ impl SliceSession {
             v.dedup();
             v
         };
-        let mut first: Vec<u8> = Vec::new();
-        for t in self.sequence().flat_map(|s| s.first_layer_order(config)) {
-            if !first.contains(&t) {
-                first.push(t);
+        // The first layer's filaments as one session of the whole plate orders them: each by its smallest island
+        // on any object.
+        let mut smallest: Vec<(u8, f64)> = Vec::new();
+        for (t, area) in self.sequence().flat_map(|s| s.first_layer_smallest(config)) {
+            match smallest.iter_mut().find(|e| e.0 == t) {
+                Some(e) => e.1 = e.1.min(area),
+                None => smallest.push((t, area)),
             }
         }
+        let first = first_layer_rank(smallest);
         let choice = crate::toolorder::Choice::of(config, self.tool_count);
         let (orders, any_top, within_top) = order_layers(layers.len(), &present, &first, &choice);
         let always = crate::tower::flag(config, "prime_tower_always");
@@ -10531,16 +10570,9 @@ impl SliceSession {
         }
         // Several objects printed layer by layer as one session: each island goes with its object, and the objects
         // print one after another in the layer's object order (`objorder.rs`).
-        let ranked = self.object_order_at(cfg, layer);
-        let rank = |p: IntPoint<i32>| {
-            ranked.as_ref().map_or(usize::MAX, |(slices, ranks)| {
-                let at = crate::geom::Point::new(p.x, p.y);
-                crate::owners::holder(slices, at)
-                    .or_else(|| crate::owners::nearest(slices, at, 5.0))
-                    .and_then(|o| ranks.get(usize::from(o)).copied())
-                    .unwrap_or(usize::MAX)
-            })
-        };
+        // With several filaments on the layer, each filament's objects print in the order of those objects alone.
+        let ranked = self.object_order_at(cfg, layer, &works);
+        let rank = |tool: u8, p: IntPoint<i32>| ranked.as_ref().map_or(usize::MAX, |r| r.rank(tool, p));
         paths::plan_layer_paths(
             &mut out,
             &works,
@@ -10555,7 +10587,7 @@ impl SliceSession {
                 &self.object_hulls,
                 ranked
                     .is_some()
-                    .then_some(&rank as &dyn Fn(IntPoint<i32>) -> usize),
+                    .then_some(&rank as &dyn Fn(u8, IntPoint<i32>) -> usize),
             ),
         );
         let fc = tags.filament(cfg, paths::first_slot(&out));
@@ -12348,6 +12380,57 @@ fn plan_tools(
         v
     };
     order_layers(n, &present, first, choice)
+}
+
+/// The filaments of [`SliceSession::first_layer_smallest`] in their first layer order: the largest smallest island
+/// first, ties by filament.
+fn first_layer_rank(mut smallest: Vec<(u8, f64)>) -> Vec<u8> {
+    crate::sorting::sort_by_key(&mut smallest, |a| a.0);
+    let mut order: Vec<(u8, f64)> = Vec::new();
+    for e in smallest {
+        let at = order.iter().position(|o| o.1 < e.1).unwrap_or(order.len());
+        order.insert(at, e);
+    }
+    order.into_iter().map(|e| e.0).collect()
+}
+
+/// The objects' slices on a layer of a session printed layer by layer and their places in the order they print in
+/// (`SliceSession::object_order_at`).
+struct ObjectRanks {
+    slices: std::sync::Arc<crate::owners::Slices>,
+    /// By plate object, its place in the layer's order.
+    ranks: Vec<usize>,
+    /// By filament, on a layer of several, where the filament's run lacks some of the layer's objects: by plate
+    /// object, its place in that run.
+    runs: Vec<(u8, Vec<usize>)>,
+}
+
+impl ObjectRanks {
+    /// The place of the object at `p` (a point of an island of filament `tool`) in the order of its run.
+    fn rank(&self, tool: u8, p: IntPoint<i32>) -> usize {
+        let ranks = self
+            .runs
+            .iter()
+            .find(|r| r.0 == tool)
+            .map_or(&self.ranks, |r| &r.1);
+        object_at(&self.slices, p)
+            .and_then(|o| ranks.get(usize::from(o)).copied())
+            .unwrap_or(usize::MAX)
+    }
+}
+
+/// The plate object whose slice holds `p`, or the nearest within 5 mm.
+fn object_at(slices: &[crate::owners::ObjectSlice], p: IntPoint<i32>) -> Option<u16> {
+    let at = crate::geom::Point::new(p.x, p.y);
+    crate::owners::holder(slices, at).or_else(|| crate::owners::nearest(slices, at, 5.0))
+}
+
+/// The point an island's object is found by: the first point of its first wall.
+fn island_point(i: &perimeters::IslandWalls) -> Option<IntPoint<i32>> {
+    i.loops
+        .first()
+        .and_then(|(_, c)| c.first().copied())
+        .or_else(|| i.wide.first().and_then(|l| l.points.first().copied()))
 }
 
 /// The order the filaments of each of `n` layers print in, from the filaments each one has (`present`): a layer
