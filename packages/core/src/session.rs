@@ -9475,17 +9475,17 @@ impl SliceSession {
                         let skeleton_area =
                             perimeters::intersection(&perimeters::offset(&zig_area, mm(lock_depth)), area);
                         let other = if d == Dir::D45 { Dir::D135 } else { Dir::D45 };
+                        // Each width reads as every line width does: a plain number is mm (projects write "0.45"),
+                        // "100%" is a percent of the nozzle and 0 is automatic; unset is the nozzle's own width.
                         let width_of = |k: &str| {
-                            let pct = match cfg.raw.get(k) {
-                                Some(serde_json::Value::String(t)) => {
-                                    t.trim().trim_end_matches('%').parse::<f64>().unwrap_or(100.0)
-                                }
-                                Some(v) => v.as_f64().unwrap_or(100.0),
-                                None => 100.0,
-                            };
+                            let w = cfg
+                                .raw
+                                .get(k)
+                                .and_then(|v| crate::config::width(v, cfg.nozzle_diameter))
+                                .unwrap_or(cfg.nozzle_diameter);
                             #[allow(clippy::cast_possible_truncation, reason = "a width in mm")]
                             {
-                                (cfg.nozzle_diameter * pct / 100.0) as f32
+                                w as f32
                             }
                         };
                         let skeleton = zig_lines(

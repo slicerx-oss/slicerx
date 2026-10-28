@@ -2614,7 +2614,7 @@ pub const AUTO_WIDTH_RATIO: f64 = 1.125;
 pub const AUTO_NOZZLE_WIDTH_RATIO: f64 = 1.0;
 
 /// A line width: millimeters, a percentage of the nozzle ("110%"), or 0 for automatic.
-fn width(v: &Value, nozzle: f64) -> Option<f64> {
+pub(crate) fn width(v: &Value, nozzle: f64) -> Option<f64> {
     width_auto(v, nozzle, AUTO_WIDTH_RATIO)
 }
 
