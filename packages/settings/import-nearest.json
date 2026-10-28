@@ -41,7 +41,6 @@
    "infill_first": "is_infill_first",
    "machine_limits_usage": "emit_machine_limits_to_gcode",
    "max_volumetric_speed": "filament_max_volumetric_speed",
-   "only_retract_when_crossing_perimeters": "reduce_infill_retraction",
    "overhang_fan_speed_0": "overhang_fan_speed",
    "overhang_fan_speed_1": "overhang_fan_speed",
    "overhang_fan_speed_2": "overhang_fan_speed",

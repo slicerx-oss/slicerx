@@ -23,15 +23,15 @@ describe('a project on a named printer', () => {
     await profiles.prepare(['machine:prusa-mk4'])
     const opened = await openProject(read, profiles, ['machine:prusa-mk4'], undefined)
     expect(opened?.printer).toBe('prusa-mk4')
-    // the maker's Standard process reduces infill retractions; the project does not say
-    expect(read.config['reduce_infill_retraction']).toBeUndefined()
-    expect(opened!.config['reduce_infill_retraction']).toBe(true)
+    // the maker's Standard process reduces infill retractions; the project turns that off, and the project wins
+    expect(read.config['reduce_infill_retraction']).toBe(false)
+    expect(opened!.config['reduce_infill_retraction']).toBe(false)
     // a project open leaves variable layer height off, and the project's own values win
     expect(opened!.config['smart_layer']).toBe('off')
     for (const k of ['sparse_infill_density', 'wall_loops']) if (read.config[k] !== undefined) expect(opened!.config[k]).toEqual(read.config[k])
     const r = resolveSliceConfig(store, profiles, ['machine:prusa-mk4'], undefined, { project: { name: 'p.3mf', config: read.config, opened } })
     expect(r.applied).toEqual(['project:p.3mf', 'machine:prusa-mk4'])
-    expect(r.explicit['reduce_infill_retraction']).toBe(true)
+    expect(r.explicit['reduce_infill_retraction']).toBe(false)
   })
 
   it('keeps to the project alone without a printer', async () => {

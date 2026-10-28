@@ -1,5 +1,5 @@
 {
- "comment": "Maps PrusaSlicer preset keys to SlicerX keys. A key that is in the schema under the same name needs no entry. A key in onlyMappedValues carries over only through a values row (PrusaSlicer writes no shrinkage as 0%, SlicerX as 100%); any other value is left out and reported as not applied. A key in zeroIsUnset with the value 0 means not set there and is read as absent. A key in noPercent carries over in mm only; a percent is left out and reported as not applied. composites: fanOut sets several keys to one value, valueToKey picks another key's value by this key's value. Support, first layer speed and ironing read several keys and stay as code in js/prusa.ts and the engine's prusa.rs, pinned by fixtures/prusa-project-settings.json. projectTakes: what a project file's settings may set, for every project the app opens and for a PrusaSlicer project in the engine and the MCP server too: plain values of the listed types in the listed sections, the text settings in text when every character is one of its class, no key in unread and no value in unsetValues. Source: PrusaSlicer print_config_def and handle_legacy (commit 30ef591), compared key by key with our schema. Percent bases are in percentOf.",
+ "comment": "Maps PrusaSlicer preset keys to SlicerX keys. A key that is in the schema under the same name needs no entry. A key in onlyMappedValues carries over only through a values row (PrusaSlicer writes no shrinkage as 0%, SlicerX as 100%); any other value is left out and reported as not applied. A key in zeroIsUnset with the value 0 means not set there and is read as absent. A key in noPercent carries over in mm only; a percent is left out and reported as not applied. composites: fanOut sets several keys to one value and each lift row turns a lift (ramp on or off, its height, the straight lift and the ramp's angle) into a z hop height and type: with ramp 1 the height and Slope Lift (Normal Lift at an angle of 0 or 90 degrees), with ramp 0 the straight lift and Normal Lift, with no ramp set the straight lift alone. A filament row reads only the filament's own keys. Support, first layer speed and ironing read several keys and stay as code in js/prusa.ts and the engine's prusa.rs, pinned by fixtures/prusa-project-settings.json. projectTakes: what a project file's settings may set, for every project the app opens and for a PrusaSlicer project in the engine and the MCP server too: plain values of the listed types in the listed sections, the text settings in text when every character is one of its class, no key in unread and no value in unsetValues. Source: PrusaSlicer print_config_def and handle_legacy (commit 30ef591), compared key by key with our schema. Percent bases are in percentOf.",
  "prusaCommit": "30ef591",
  "rename": {
   "arc_fitting": "enable_arc_fitting",
@@ -31,6 +31,7 @@
   "filament_retract_before_travel": "filament_retraction_minimum_travel",
   "filament_retract_layer_change": "filament_retract_when_changing_layer",
   "filament_retract_length": "filament_retraction_length",
+  "filament_retract_lift": "filament_z_hop",
   "filament_retract_speed": "filament_retraction_speed",
   "filament_shrinkage_compensation_xy": "filament_shrink",
   "fill_angle": "infill_direction",
@@ -61,6 +62,7 @@
   "min_fan_speed": "fan_min_speed",
   "min_print_speed": "slow_down_min_speed",
   "only_one_perimeter_first_layer": "only_one_wall_first_layer",
+  "only_retract_when_crossing_perimeters": "reduce_infill_retraction",
   "output_filename_format": "filename_format",
   "overhangs": "detect_overhang_wall",
   "pause_print_gcode": "machine_pause_gcode",
@@ -124,7 +126,6 @@
   "top_solid_infill_speed": "top_surface_speed",
   "top_solid_layers": "top_shell_layers",
   "top_solid_min_thickness": "top_shell_thickness",
-  "travel_max_lift": "travel_slope",
   "wipe_into_infill": "flush_into_infill",
   "wipe_into_objects": "flush_into_objects",
   "wipe_tower": "enable_prime_tower",
@@ -333,15 +334,24 @@
     "textured_plate_temp_initial_layer"
    ]
   },
-  "valueToKey": {
-   "travel_ramping_lift": {
-    "to": "z_hop_types",
-    "values": {
-     "1": "Slope Lift"
-    },
-    "else": "Normal Lift"
+  "lift": [
+   {
+    "ramp": "travel_ramping_lift",
+    "height": "travel_max_lift",
+    "straight": "retract_lift",
+    "slope": "travel_slope",
+    "to": "z_hop",
+    "type": "z_hop_types"
+   },
+   {
+    "ramp": "filament_travel_ramping_lift",
+    "height": "filament_travel_max_lift",
+    "straight": "filament_retract_lift",
+    "slope": "filament_travel_slope",
+    "to": "filament_z_hop",
+    "type": "filament_z_hop_types"
    }
-  }
+  ]
  },
  "percentOf": {
   "external_perimeter_speed": "perimeter_speed",
@@ -466,7 +476,6 @@
   "max_volumetric_speed",
   "multimaterial_purging",
   "nozzle_high_flow",
-  "only_retract_when_crossing_perimeters",
   "over_bridge_speed",
   "overhang_fan_speed_0",
   "overhang_fan_speed_1",
