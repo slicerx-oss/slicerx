@@ -1,0 +1,1 @@
+every panel control and box shows its focus, has a name, and no text is cut off | subydoo-ci | 2026-10-28 | 2026-10-29 | https://github.com/slicerx-oss/slicerx/issues/1624 | passed only on retry in the #1615 merge group (run 40725255450, desktop shard 4 of 12, failing at cad-sketch.spec.ts:2183); cause not known yet
