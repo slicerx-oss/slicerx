@@ -1367,15 +1367,13 @@ fn simplify_ring(ring: &mut Vec<P>, smallest_sq: i64, allowed_sq: i64) {
             let next_len2 = i128::from(dn.dot(dn));
             if next_len2 > 4 * i128::from(smallest_sq) {
                 // The next edge is long: move the point to where the two long edges meet, if that is near.
-                let inter = line_meet(previous_previous, previous, current, next);
-                let near = |a: P, b: P| {
-                    let d = a.minus(b);
-                    i128::from(d.dot(d)) <= i128::from(smallest_sq)
-                };
+                let inter = lines::line_intersection(previous_previous, previous, current, next);
                 #[allow(clippy::cast_precision_loss, reason = "distances in nm")]
                 let ok = inter.is_some_and(|ip| {
                     let e = point_line_distance(ip, previous, current);
-                    e * e <= allowed_sq as f64 && near(ip, previous) && near(ip, next)
+                    e * e <= allowed_sq as f64
+                        && ip.within(previous, smallest_sq)
+                        && ip.within(next, smallest_sq)
                 });
                 if let (true, Some(ip)) = (ok, inter) {
                     current = ip;
@@ -1412,27 +1410,6 @@ fn point_line_distance(p: P, a: P, b: P) -> f64 {
     #[allow(clippy::cast_precision_loss, reason = "coordinates in nm")]
     let c = (ab.x as f64 * (p.y - a.y) as f64 - ab.y as f64 * (p.x - a.x) as f64).abs();
     c / l
-}
-
-fn line_meet(a: P, b: P, c: P, d: P) -> Option<P> {
-    let (r, s) = (b.minus(a), d.minus(c));
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_possible_truncation,
-        reason = "coordinates in nm"
-    )]
-    {
-        let denom = r.x as f64 * s.y as f64 - r.y as f64 * s.x as f64;
-        if denom == 0.0 {
-            return None;
-        }
-        let ca = c.minus(a);
-        let t = (ca.x as f64 * s.y as f64 - ca.y as f64 * s.x as f64) / denom;
-        Some(P::new(
-            a.x + (r.x as f64 * t).round() as i64,
-            a.y + (r.y as f64 * t).round() as i64,
-        ))
-    }
 }
 
 /// Removes points where the ring turns back on itself.
@@ -2327,5 +2304,39 @@ mod tests {
             "past {open:.3} mm, nominal {inner:.3}:\n{}",
             wrong.join("\n")
         );
+    }
+
+    /// The walls of a wedge 60 mm long, 0.2 mm across at its narrow end and 3.85 mm at the other, stay on the
+    /// wedge. On it the simplifier meets a short wall segment between two long ones that are nearly parallel:
+    /// the two long ones meet about 10 m away, and the square of that distance overflowed, so a debug build
+    /// panicked and a release build could move the wall point out there.
+    #[test]
+    fn walls_of_a_wedge_to_3_85_mm_stay_on_it() {
+        let cfg = wall_cfg(
+            0.4,
+            0.2,
+            0.42,
+            0.45,
+            &serde_json::json!({"precise_outer_wall": false}),
+        );
+        let p = |x: f64, y: f64| IntPoint::new((x * 10_000.0).round() as i32, (y * 10_000.0).round() as i32);
+        let wedge: Shapes = vec![vec![vec![
+            p(0.0, -0.1),
+            p(60.0, -1.925),
+            p(60.0, 1.925),
+            p(0.0, 0.1),
+        ]]];
+        let (islands, _) = island_walls(&wedge, &cfg, 2, 0, 0.2, false, None, false);
+        let points: Vec<IntPoint<i32>> = islands
+            .iter()
+            .flat_map(|i| i.wide.iter())
+            .flat_map(|l| l.points.iter().copied())
+            .collect();
+        assert!(points.len() > 10, "{} wall points", points.len());
+        let off: Vec<&IntPoint<i32>> = points
+            .iter()
+            .filter(|q| !(0..=600_000).contains(&q.x) || q.y.abs() > 19_250)
+            .collect();
+        assert!(off.is_empty(), "wall points off the wedge: {off:?}");
     }
 }

@@ -32,6 +32,19 @@ impl P {
     pub(crate) fn dot(self, o: P) -> i64 {
         self.x * o.x + self.y * o.y
     }
+    /// Whether `o` is at most the square root of `limit_sq` away. Counted in 128 bits, so a point far
+    /// off (such as where two nearly parallel lines meet) is far, where its distance squared would
+    /// not fit in an i64.
+    pub(crate) fn within(self, o: P, limit_sq: i64) -> bool {
+        let (dx, dy) = (
+            i128::from(self.x) - i128::from(o.x),
+            i128::from(self.y) - i128::from(o.y),
+        );
+        dx.checked_mul(dx)
+            .zip(dy.checked_mul(dy))
+            .and_then(|(x, y)| x.checked_add(y))
+            .is_some_and(|d2| d2 <= i128::from(limit_sq))
+    }
     pub(crate) fn len_f(self) -> f64 {
         #[allow(clippy::cast_precision_loss, reason = "lengths in nm")]
         let (x, y) = (self.x as f64, self.y as f64);
