@@ -138,7 +138,7 @@ export interface PlateObject {
   transform: number[]
   /** Part name to filament slot, when the plate differs from the file. */
   slotOverrides?: Record<string, number>
-  /** Orca key overrides for this object. Objects may differ: each slices with its own walls, infill, shells, supports and speeds (temperatures, fans and retraction follow the plate). Layer height may differ only when the plate prints by object. */
+  /** Orca key overrides for this object. Objects may differ: each slices with its own walls, infill, shells, supports and speeds (temperatures, fans and retraction follow the plate). Layer height may differ too; layer by layer a prime tower needs one layer height for every object. */
   settings?: Partial<PrintConfig> & Record<string, SettingValue>
   /** Negative volumes, support blockers and support enforcers. */
   volumes?: PlateVolume[]
