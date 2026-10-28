@@ -244,6 +244,9 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     // travels into them, the progress lines and the filament total moved.
     // Changed again when the objects of each layer printed in one order set by position: the far cube now prints first on
     // every layer, so only the travels, wipes, progress lines and time moved, and no extruding move did.
+    // Changed again when each object's brim printed right before the object: the near cube's brim now prints after
+    // the far cube, so its loops start nearest where the far cube ends. Only brim lines moved, with the same loops
+    // and lengths (689.75 against 689.77 mm), and the travels, wipes, progress lines and time.
     let c = config("p1s", &json!({"brim_type": "outer_only", "brim_width": 5}));
     let (out, gcode) = slice("p1s", &c, &[[18.0, 6.0], [140.0, 140.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -257,7 +260,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "602affae83eca33c",
+        "5e713edbe514e184",
         "the P1S plate's G-code changed"
     );
 }
