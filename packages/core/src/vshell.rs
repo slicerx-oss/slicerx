@@ -11,6 +11,8 @@
 //!   when no circle [`floating_width`] wide fits in it; the other narrow pieces stay internal solid infill. Each
 //!   piece is decided on its own. So the first solid layer over an internal bridge rests on it, and the layers
 //!   above that one float where they reach past the solid the surfaces below them ask for.
+//! - With `ensure_vertical_shell_thickness` `partial` a piece does not reach past that solid, so it also rests on the
+//!   sparse infill along its edge, and it floats up to a wider circle ([`floating_width`]).
 //! - How: concentric variable-width beads, like the other narrow pieces. A bead that encloses another prints
 //!   first, otherwise the nearest next. The first closed bead starts where its longest supported run starts
 //!   (supported: not over the unsupported area, or on the lower layer's sparse lines); each later closed bead
@@ -45,6 +47,10 @@ type Pt = IntPoint<i32>;
 /// The hair the lower layer's sparse area shrinks by and a piece grows by before they are checked for overlap,
 /// internal units (0.001 mm): a piece that only meets the sparse area along an edge does not rest on it.
 const EPS: i32 = 10;
+
+/// How far a piece grows to meet the sparse infill along its edge under `partial`, internal units (0.005 mm): past
+/// the hair the sparse area shrinks by.
+const EDGE: i32 = 50;
 
 /// Half the width of the slivers of sparse infill along the infill area's edge that do not pull a floating band in,
 /// internal units (0.005 mm).
@@ -139,9 +145,16 @@ const FLOATING_WIDTH_MM: f64 = 4.625;
 /// [`FLOATING_WIDTH_MM`] with variable-width walls: the ring floats up to 4.75 mm wide, and not from 5.0 mm.
 const FLOATING_WIDTH_VARIABLE_MM: f64 = 4.9;
 
+/// [`FLOATING_WIDTH_MM`] with `ensure_vertical_shell_thickness` `partial`, with either walls. The piece is the
+/// neighbors' surfaces alone, narrower than the band the full rule leaves: the ring floats up to 5.5 mm wide, and not
+/// from 6.0 mm.
+const FLOATING_WIDTH_PARTIAL_MM: f64 = 5.0;
+
 /// The widest a floating piece may be with the region's walls, internal units.
 pub(crate) fn floating_width(cfg: &PrintConfig) -> i32 {
-    let mm = if cfg.arachne_walls() {
+    let mm = if crate::shells::surfaces_only(cfg) {
+        FLOATING_WIDTH_PARTIAL_MM
+    } else if cfg.arachne_walls() {
         FLOATING_WIDTH_VARIABLE_MM
     } else {
         FLOATING_WIDTH_MM
@@ -170,6 +183,10 @@ pub(crate) struct Below<'a> {
     /// ([`edge_strip`], set with [`Below::beside_walls`]; 0 when none).
     inner: Option<&'a Shapes>,
     edge: i32,
+    /// `ensure_vertical_shell_thickness` `partial`: a piece also rests on the sparse infill along its edge ([`EDGE`]).
+    partial_edge: bool,
+    /// The unsupported area's part at least a sparse infill line wide, worked out when first asked for.
+    open: std::sync::OnceLock<Shapes>,
 }
 
 impl<'a> Below<'a> {
@@ -193,6 +210,8 @@ impl<'a> Below<'a> {
             wide: std::sync::OnceLock::new(),
             inner: lower.map(|f| &f.inner),
             edge: 0,
+            partial_edge: crate::shells::surfaces_only(cfg),
+            open: std::sync::OnceLock::new(),
         }
     }
 
@@ -212,6 +231,16 @@ impl<'a> Below<'a> {
         };
         let near = perimeters::intersection(inner, &perimeters::offset(one, EPS + 2 * self.edge));
         perimeters::intersection(&hit, &perimeters::offset(&near, -self.edge))
+    }
+
+    fn open(&self) -> &Shapes {
+        self.open.once(|| {
+            let core = perimeters::offset(self.unsupported, -self.reach);
+            if core.is_empty() {
+                return core;
+            }
+            perimeters::intersection(&perimeters::offset(&core, self.reach), self.unsupported)
+        })
     }
 
     fn wide(&self) -> &Shapes {
@@ -234,21 +263,24 @@ impl<'a> Below<'a> {
         })
     }
 
-    /// True when the piece `one` rests on what does not hold it up below.
+    /// True when the piece `one` rests on what does not hold it up below. Under `partial` the solid below a piece is
+    /// the neighbors' surfaces alone, the piece's own size, so the piece also rests on the sparse infill along its
+    /// edge where that infill is at least a sparse infill line wide.
     fn floats(&self, one: &Shapes) -> bool {
-        let grown = perimeters::offset(one, EPS);
         let rests = |hit: &Shapes| {
             !hit.is_empty() && (self.cut.is_empty() || !perimeters::difference(hit, &self.cut).is_empty())
         };
-        let on = |area: &Shapes| rests(&perimeters::intersection(&grown, area));
-        let near = match (self.bounds, perimeters::bounds(one)) {
+        let on = |grown: &Shapes, area: &Shapes| rests(&perimeters::intersection(grown, area));
+        let near = |by: i32| match (self.bounds, perimeters::bounds(one)) {
             (Some(u), Some(b)) => {
-                b[0] - EPS <= u[2] && u[0] <= b[2] + EPS && b[1] - EPS <= u[3] && u[1] <= b[3] + EPS
+                b[0] - by <= u[2] && u[0] <= b[2] + by && b[1] - by <= u[3] && u[1] <= b[3] + by
             }
             _ => false,
         };
-        (near && rests(&self.off_edge(one, perimeters::intersection(&grown, self.unsupported))))
-            || on(self.wide())
+        let grown = perimeters::offset(one, EPS);
+        (near(EPS) && rests(&self.off_edge(one, perimeters::intersection(&grown, self.unsupported))))
+            || on(&grown, self.wide())
+            || (self.partial_edge && near(EDGE) && on(&perimeters::offset(one, EDGE), self.open()))
     }
 }
 
