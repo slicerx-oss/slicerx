@@ -8990,7 +8990,9 @@ impl SliceSession {
                     let (floating, rest) = match &unsupported {
                         Some(u) => crate::vshell::split(
                             &narrow,
-                            &crate::vshell::Below::new(u, lower, &lower_cut, cfg),
+                            &crate::vshell::Below::new(u, lower, &lower_cut, cfg).beside_walls(
+                                crate::vshell::edge_strip(base_cfg, self.plan.thickness(layer - 1)),
+                            ),
                             crate::vshell::floating_width(cfg),
                         ),
                         None => (Shapes::new(), narrow),

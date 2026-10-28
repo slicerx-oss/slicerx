@@ -65,6 +65,10 @@ pub(crate) fn find(island: &Shapes, wall_loops: u32, w: i32) -> Vec<Gap> {
 /// the first inner wall. The gaps keep what is between `min` and `max` wide, and each gets one bead.
 /// `chain` holds the loop areas the walls already worked out (the outer wall's first), the same ones
 /// this walk reaches, so they are not offset again.
+///
+/// With `infill` given (the infill area the walls leave, not opened: an island with no sparse infill), a strip that
+/// meets it gets no bead: the infill area fills it instead, and the strip comes back in the third list. Otherwise
+/// the third list is empty.
 #[allow(
     clippy::cast_possible_truncation,
     clippy::too_many_arguments,
@@ -79,9 +83,10 @@ pub(crate) fn find_orca(
     spacing: i32,
     spacing2: i32,
     layer_height: f64,
-) -> (Vec<crate::arachne::WallLine>, Shapes) {
+    infill: Option<&Shapes>,
+) -> (Vec<crate::arachne::WallLine>, Shapes, Shapes) {
     if no_gaps(chain, loops, spacing, spacing2, narrowest(ext_w, inner_w)) {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     }
     orca_gaps(
         island,
@@ -92,6 +97,7 @@ pub(crate) fn find_orca(
         spacing,
         spacing2,
         layer_height,
+        infill,
     )
 }
 
@@ -166,7 +172,8 @@ fn orca_gaps(
     spacing: i32,
     spacing2: i32,
     layer_height: f64,
-) -> (Vec<crate::arachne::WallLine>, Shapes) {
+    infill: Option<&Shapes>,
+) -> (Vec<crate::arachne::WallLine>, Shapes, Shapes) {
     // Loops may squish into each other by this much (Orca: INSET_OVERLAP_TOLERANCE, 0.4).
     let min_spacing = spacing * 6 / 10;
     let mut last = chain
@@ -196,7 +203,7 @@ fn orca_gaps(
         last = offsets;
     }
     if gaps.is_empty() {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     }
     let gaps = perimeters::union_all(&[&gaps]);
     let min = narrowest(ext_w, inner_w);
@@ -212,15 +219,21 @@ fn orca_gaps(
     let mut out = Vec::new();
     // The strips that got a bead; the infill keeps clear of them (Orca subtracts the beads' footprint).
     let mut covered: Shapes = Vec::new();
+    // The strips the infill area fills instead.
+    let mut given: Shapes = Vec::new();
     for shape in &thin {
         let one: Shapes = vec![shape.clone()];
+        if infill.is_some_and(|a| !perimeters::intersection(a, &one).is_empty()) {
+            given.push(shape.clone());
+            continue;
+        }
         let l = crate::arachne::medial_lines(&one, f64::from(min) / scale, f64::from(max) / scale);
         if !l.is_empty() {
             covered.push(shape.clone());
         }
         out.extend(l);
     }
-    (out, covered)
+    (out, covered, given)
 }
 
 #[allow(clippy::cast_precision_loss, reason = "areas of one layer fit f64")]
@@ -397,7 +410,7 @@ mod tests {
                             break;
                         }
                     }
-                    let got = orca_gaps(&one, &chain, loops, ext, inner, spacing, spacing2, 0.2);
+                    let got = orca_gaps(&one, &chain, loops, ext, inner, spacing, spacing2, 0.2, None);
                     let none = got.0.is_empty() && got.1.is_empty();
                     if no_gaps(&chain, loops, spacing, spacing2, narrowest(ext, inner)) {
                         certified += 1;
