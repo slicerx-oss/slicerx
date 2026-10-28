@@ -31,6 +31,7 @@ path = [
   "packages/core/tests/fixtures/precise-wall-surface/requests/*.json",
   "packages/core/tests/fixtures/surface-walls/*-f4strips.json",
   "packages/core/tests/fixtures/surface-walls/p1s-x-mark.json",
+  "packages/core/tests/fixtures/vertical-shell-partial/p1s-step.json",
   "packages/profiles/filaments/**",
   "packages/profiles/gcode.json",
   "packages/profiles/machine.json",
