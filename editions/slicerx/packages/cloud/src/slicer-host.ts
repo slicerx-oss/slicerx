@@ -15,7 +15,6 @@ import {
   type SliceResult,
   type SliceStage,
   type SliceWarning,
-  type SliceWarningCode,
   type SlicerHost,
 } from '@slicerx/contracts'
 import { type CloudClient, type CloudSliceObject, type CloudSliceOptions, type CloudSliceRequest, type PackedMesh, packedSize } from './client'
@@ -34,14 +33,6 @@ export interface CloudSlicerOptions {
   /** Job poll interval, default 1000 ms. */
   pollMs?: number
 }
-
-const WARNING_CODES: readonly SliceWarningCode[] = [
-  'open_edges',
-  'thin_wall',
-  'floating_region',
-  'outside_bed',
-  'unsupported_setting',
-]
 
 /** Encodes parts in the raw `SXMP` format `sx-core` reads (`Mesh::from_raw`). */
 export function encodeParts(parts: MeshPart[]): Uint8Array {
@@ -92,11 +83,8 @@ function toResult(job: CloudJob): SliceResult {
     const v = r.stageMicros[s]
     if (typeof v === 'number') stageMicros[s] = v
   }
-  const warnings: SliceWarning[] = r.warnings.flatMap((w) => {
-    const code = WARNING_CODES.find((c) => c === w.code)
-    if (!code) return []
-    return [w.layer === undefined ? { code, message: w.message } : { code, message: w.message, layer: w.layer }]
-  })
+  // The service's code goes through as written, a code this build does not know too, with the fields it added.
+  const warnings = r.warnings as SliceWarning[]
   return {
     id: job.id,
     engine: 'sx',

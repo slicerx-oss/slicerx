@@ -48,7 +48,7 @@ interface SliceInfo {
   stats: { timeS: number; prepareS?: number; filamentMm: number[]; filamentG: number[]; cost: number; toolChanges: number }
   stageMicros: Record<string, number>
   engineWallMs?: number
-  warnings: { code: string; message: string; layer?: number }[]
+  warnings: { code: string; message: string; layer?: number; objectId?: string }[]
   gcodeFormat?: 'bgcode'
   fileName?: string
   filamentMap?: { extruders: number[]; nozzles: number[]; auto: boolean }
@@ -71,7 +71,7 @@ function parseSliceInfo(v: unknown): SliceInfo {
     stats: { timeS: Number(st['timeS']) || 0, ...(Number(st['prepareS']) > 0 ? { prepareS: Number(st['prepareS']) } : {}), filamentMm: nums(st['filamentMm']), filamentG: nums(st['filamentG']), cost: Number(st['cost']) || 0, toolChanges: Number(st['toolChanges']) || 0 },
     stageMicros,
     ...(typeof v['wallMs'] === 'number' ? { engineWallMs: v['wallMs'] } : {}),
-    warnings: (v['warnings'] as unknown[]).flatMap((w) => (isRec(w) && typeof w['code'] === 'string' && typeof w['message'] === 'string' ? [{ code: w['code'], message: w['message'], ...(typeof w['layer'] === 'number' ? { layer: w['layer'] } : {}) }] : [])),
+    warnings: (v['warnings'] as unknown[]).flatMap((w) => (isRec(w) && typeof w['code'] === 'string' && typeof w['message'] === 'string' ? [{ code: w['code'], message: w['message'], ...(typeof w['layer'] === 'number' ? { layer: w['layer'] } : {}), ...(typeof w['objectId'] === 'string' ? { objectId: w['objectId'] } : {}) }] : [])),
     ...(v['gcodeFormat'] === 'bgcode' ? { gcodeFormat: 'bgcode' as const } : {}),
     ...(typeof v['fileName'] === 'string' && v['fileName'] ? { fileName: v['fileName'] } : {}),
     ...(isRec(v['filamentMap']) ? { filamentMap: { extruders: nums((v['filamentMap'] as Rec)['extruders']), nozzles: nums((v['filamentMap'] as Rec)['nozzles']), auto: (v['filamentMap'] as Rec)['auto'] === true } } : {}),
@@ -80,8 +80,6 @@ function parseSliceInfo(v: unknown): SliceInfo {
     ...(Array.isArray(v['collisions']) && v['collisions'].length ? { collisions: v['collisions'] as Collision[], collisionFixes: Array.isArray(v['collisionFixes']) ? (v['collisionFixes'] as CollisionFix[]) : [] } : {}),
   }
 }
-
-const WARNING_CODES = new Set<SliceWarning['code']>(['open_edges', 'thin_wall', 'floating_region', 'long_bridge', 'outside_bed', 'unsupported_setting', 'manual_step', 'collision', 'safety_limit'])
 
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   const d = await crypto.subtle.digest('SHA-256', bytes)
@@ -176,7 +174,8 @@ export function createTauriSlicer(): SlicerHost {
         stageMicros,
         wallMs: performance.now() - started,
         ...(info.engineWallMs !== undefined ? { engineWallMs: info.engineWallMs } : {}),
-        warnings: info.warnings.map((w) => ({ code: WARNING_CODES.has(w.code as SliceWarning['code']) ? (w.code as SliceWarning['code']) : 'unsupported_setting', message: w.message, ...(w.layer !== undefined ? { layer: w.layer } : {}) })),
+        // The engine's code goes through as written, a code this build does not know too (the app shows any code).
+        warnings: info.warnings as SliceWarning[],
         ...(info.gcodeFormat ? { gcodeFormat: info.gcodeFormat } : {}),
         ...(info.fileName ? { fileName: info.fileName } : {}),
         ...(info.filamentMap ? { filamentMap: info.filamentMap } : {}),

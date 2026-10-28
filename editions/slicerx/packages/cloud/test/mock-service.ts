@@ -24,6 +24,8 @@ export interface MockCloudService {
   names: string[]
   /** What `GET /v1/access` answers; tests change it. */
   access: Record<string, unknown>
+  /** The warnings a job's result carries; tests change it. */
+  warnings: Record<string, unknown>[]
 }
 
 /** A preview of one layer, 0.2 mm, with no toolpaths: enough for the app to show a finished slice. */
@@ -49,7 +51,7 @@ export function mockCloudService(): MockCloudService {
   const jobs = new Map<string, Record<string, unknown>>()
   const names: string[] = []
   const sent: MockCloudService['sent'] = []
-  const svc: MockCloudService = { fetch: undefined as never, calls, uploads, sent, requests, names, access: { invited: true, jobsPerDay: 50, jobsToday: 0, maxUploadBytes: 25 * 1024 * 1024 } }
+  const svc: MockCloudService = { fetch: undefined as never, calls, uploads, sent, requests, names, access: { invited: true, jobsPerDay: 50, jobsToday: 0, maxUploadBytes: 25 * 1024 * 1024 }, warnings: [] }
   const gcode = new TextEncoder().encode(MOCK_GCODE)
   const preview = onePreview()
   svc.fetch = (async (input: string | URL | Request, init: RequestInit = {}) => {
@@ -94,7 +96,7 @@ export function mockCloudService(): MockCloudService {
           stats: { timeS: 20, filamentMm: [100], filamentG: [0.3], cost: 0, toolChanges: 0 },
           stageMicros: {},
           wallMs: 5,
-          warnings: [],
+          warnings: svc.warnings,
           gcodeBytes: gcode.length,
           gcodeSha256: await sha256Hex(gcode),
           previewBytes: preview.length,
