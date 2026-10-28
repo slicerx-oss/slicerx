@@ -664,6 +664,68 @@ fn net_area(shapes: &Shapes) -> f64 {
         .sum()
 }
 
+/// The brim areas the objects of a first layer have claimed so far. Where the brims of two objects would meet, the
+/// object that claims first keeps the room between them and the other's brim stops at its edge: the gap is filled
+/// once, every brim line belongs to one object, and no bead prints over another. The islands of one object keep
+/// their brims as before.
+#[derive(Debug, Default)]
+pub(crate) struct Claims {
+    /// Each claim: its object, its bounds and its area.
+    taken: Vec<(usize, [i32; 4], Shapes)>,
+}
+
+/// The object of the claims made by objects of other sessions of the plate ([`Claims::after`]).
+const OTHERS: usize = usize::MAX;
+
+impl Claims {
+    /// Claims that start with `taken`, the brim areas of objects sliced in sessions of their own that claimed first.
+    pub(crate) fn after(taken: &Shapes) -> Self {
+        let mut c = Self::default();
+        if let Some(b) = perimeters::bounds(taken) {
+            c.taken.push((OTHERS, b, taken.clone()));
+        }
+        c
+    }
+
+    /// One island's brim `areas` (object `object`) less what other objects have claimed; the island's whole areas
+    /// are then claimed for `object`. Areas that meet no other object's claim come back as they are.
+    pub(crate) fn take(&mut self, object: usize, areas: Vec<Shapes>) -> Vec<Shapes> {
+        let Some(own) = areas
+            .iter()
+            .filter_map(|a| perimeters::bounds(a))
+            .reduce(|a, b| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])])
+        else {
+            return areas;
+        };
+        let theirs: Vec<&Shapes> = self
+            .taken
+            .iter()
+            .filter(|(o, b, _)| *o != object && perimeters::overlaps(Some(*b), Some(own)))
+            .map(|(_, _, s)| s)
+            .collect();
+        let clip = (!theirs.is_empty()).then(|| perimeters::union_all(&theirs));
+        let out: Vec<Shapes> = match &clip {
+            Some(clip) if areas.iter().any(|a| perimeters::overlap(a, clip)) => areas
+                .iter()
+                .map(|a| {
+                    if perimeters::overlap(a, clip) {
+                        perimeters::difference(a, clip)
+                    } else {
+                        a.clone()
+                    }
+                })
+                .collect(),
+            _ => areas.clone(),
+        };
+        for a in areas {
+            if let Some(b) = perimeters::bounds(&a) {
+                self.taken.push((object, b, a));
+            }
+        }
+        out
+    }
+}
+
 /// The brim loops of the areas of one filament: their union without the part (`no_brim_area`), keeping
 /// the pieces that touch the part or each other (Orca: a brim area must contact an island or another
 /// brim), as `tryExPolygonOffset` loops, outermost first.
