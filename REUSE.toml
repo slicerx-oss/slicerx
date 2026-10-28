@@ -166,6 +166,7 @@ path = [
   "packages/core/cli/tests/fixtures/mixed-heights/**",
   "packages/core/cli/tests/fixtures/object-order-filaments/**",
   "packages/core/cli/tests/fixtures/object-order/**",
+  "packages/core/cli/tests/fixtures/one-wall-top/**",
   "packages/core/cli/tests/fixtures/skirt-brim/**",
   "packages/core/tests/fixtures/a1-locked-zag.3mf",
   "packages/geom/tests/corpus/bambu-*.3mf",

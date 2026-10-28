@@ -1456,6 +1456,23 @@ pub(crate) struct IslandWalls {
     pub(crate) gap_lines: Vec<crate::arachne::WallLine>,
 }
 
+/// Whether top surfaces get one wall. A Bambu Studio config says so with `top_one_wall_type`: `all top` and `topmost`
+/// give one wall, `not apply` keeps every wall, and that printer's slicer does not read `only_one_wall_top` at all, so
+/// a config with one of those values goes by it whatever `only_one_wall_top` says. `topmost` reads as `all top`: the
+/// two print the same on a part with one top level, and they have not been compared on parts with more. Any other
+/// config, and a value of another name, goes by `only_one_wall_top`.
+pub(crate) fn one_wall_top(cfg: &crate::config::PrintConfig) -> bool {
+    let kind = cfg.raw.get("top_one_wall_type").and_then(|v| match v {
+        serde_json::Value::Array(a) if a.len() == 1 => a.first().and_then(serde_json::Value::as_str),
+        other => other.as_str(),
+    });
+    match kind.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        Some("all top" | "topmost") => true,
+        Some("not apply") => false,
+        _ => crate::tower::flag(cfg, "only_one_wall_top"),
+    }
+}
+
 /// What `only_one_wall_top` needs to know about the neighbor layers: the material above (the
 /// slice of the layer above) and, when there is one, the material below.
 pub(crate) struct TopCtx<'a> {

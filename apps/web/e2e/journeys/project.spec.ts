@@ -109,7 +109,7 @@ test.describe('a Bambu Studio project', () => {
   const INHERITED = {
     layer_height: '0.2',
     wall_generator: 'classic',
-    top_one_wall_type: 'all top',
+    enable_height_slowdown: '1',
     different_settings_to_system: ['layer_height', '', ''],
   }
 

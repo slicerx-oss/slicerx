@@ -202,6 +202,22 @@ pub(crate) fn infill_retraction_from_mode(merged: &BTreeMap<String, Json>) -> Op
     }
 }
 
+/// Bambu Studio sets one wall on top surfaces with `top_one_wall_type` and does not read `only_one_wall_top`: "all top"
+/// and "topmost" give one wall, "not apply" keeps every wall. The engine has the one switch, so both one-wall values
+/// turn it on ("topmost" prints like "all top" on a part with one top level; parts with more were not compared). `None`
+/// when the file has no type, or one of another name, which then imports as before.
+pub(crate) fn one_wall_top_from_type(merged: &BTreeMap<String, Json>) -> Option<bool> {
+    let kind = match merged.get("top_one_wall_type")? {
+        Json::Array(a) if a.len() == 1 => a.first()?,
+        other => other,
+    };
+    match kind.as_str()?.trim().to_ascii_lowercase().as_str() {
+        "all top" | "topmost" => Some(true),
+        "not apply" => Some(false),
+        _ => None,
+    }
+}
+
 /// The result of reading one flat object of Orca JSON values.
 pub(crate) struct Flat {
     pub config: PrintConfig,
@@ -252,6 +268,7 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
     let (mut unknown, mut ignored, mut nil, mut invalid) =
         (BTreeSet::new(), BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
     let from_mode = infill_retraction_from_mode(merged);
+    let one_wall_top = one_wall_top_from_type(merged);
     let bambu = for_bambu(merged);
     // On other printers the older name wins over our own in the same file, as the engine reads that file: its
     // `initial_layer_flow_ratio` is the bottom surface ratio in place of `bottom_solid_infill_flow_ratio`, when it holds a
@@ -272,6 +289,10 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
         if from_mode.is_some()
             && (raw_key == "reduce_infill_retraction_mode" || raw_key == "reduce_infill_retraction")
         {
+            continue;
+        }
+        // The type replaces the switch when the file has both (see `one_wall_top_from_type`).
+        if one_wall_top.is_some() && (raw_key == "top_one_wall_type" || raw_key == "only_one_wall_top") {
             continue;
         }
         // Bambu Studio's rib wall switch reads as our wall type (legacy.json); the file's own wall type wins.
@@ -322,6 +343,9 @@ pub(crate) fn import_flat(merged: &BTreeMap<String, Json>) -> Flat {
     }
     if let Some(on) = from_mode {
         config.set("reduce_infill_retraction", crate::value::Value::Bool(on));
+    }
+    if let Some(on) = one_wall_top {
+        config.set("only_one_wall_top", crate::value::Value::Bool(on));
     }
     Flat {
         config,

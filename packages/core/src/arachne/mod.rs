@@ -617,7 +617,7 @@ pub(crate) fn island_walls_or(
         is_top_or_bottom_layer: top_or_bottom,
         athena,
         // Where one-wall top surfaces apply (`one_wall_top`), these rings are built again with one wall.
-        keep_diagram: loops > 1 && crate::tower::flag(cfg, "only_one_wall_top"),
+        keep_diagram: loops > 1 && crate::perimeters::one_wall_top(cfg),
         // One wall on a part with one wall, or on a layer taken down to one: the outer bead as with more walls.
         one_wall_outer: loops == 1 && (one_wall_layer || cfg.wall_loops == 1),
     };
@@ -915,7 +915,7 @@ pub(crate) mod reference {
             resolution: cfg.raw_number("resolution", 0.012).max(1e-4),
             is_top_or_bottom_layer: top_or_bottom,
             athena,
-            keep_diagram: loops > 1 && crate::tower::flag(cfg, "only_one_wall_top"),
+            keep_diagram: loops > 1 && crate::perimeters::one_wall_top(cfg),
             one_wall_outer: loops == 1 && (one_wall_layer || cfg.wall_loops == 1),
         };
         let inset = crate::geom::mm(if precise { 2.0 * half_gap } else { half_gap });

@@ -135,6 +135,26 @@ describe('errors and legacy keys', () => {
     expect(read({ reduce_infill_retraction_mode: 'Sometimes', reduce_infill_retraction: '1' }).v).toBe(true)
     expect(read({}).v).toBeUndefined()
   })
+  it("reads Bambu Studio's top_one_wall_type as the only_one_wall_top switch", () => {
+    const read = (extra: Record<string, unknown>) => {
+      const r = importFlat(extra)
+      return { v: r.config['only_one_wall_top'], unknown: r.unknownKeys }
+    }
+    // All top and topmost give one wall, not apply keeps every wall, whatever only_one_wall_top says.
+    const all = read({ top_one_wall_type: 'all top', only_one_wall_top: '0' })
+    expect(all.v).toBe(true)
+    expect(all.unknown).toEqual([])
+    expect(read({ top_one_wall_type: 'topmost', only_one_wall_top: '0' }).v).toBe(true)
+    expect(read({ top_one_wall_type: ['not apply'], only_one_wall_top: '1' }).v).toBe(false)
+    expect(read({ top_one_wall_type: 'not apply' }).v).toBe(false)
+    // The switch alone reads as before, and a type of another name leaves it alone.
+    expect(read({ only_one_wall_top: '1' }).v).toBe(true)
+    expect(read({ only_one_wall_top: '0' }).v).toBe(false)
+    const other = read({ top_one_wall_type: 'sometimes', only_one_wall_top: '1' })
+    expect(other.v).toBe(true)
+    expect(other.unknown).toEqual(['top_one_wall_type'])
+    expect(read({}).v).toBeUndefined()
+  })
   it("reads Bambu Studio's prime_tower_rib_wall as the prime tower wall type", () => {
     const read = (extra: Record<string, unknown>) => {
       const r = importFlat(extra)
