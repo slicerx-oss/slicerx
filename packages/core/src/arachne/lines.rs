@@ -237,16 +237,13 @@ pub(crate) fn simplify(
             };
             if next_len2 > 4 * smallest_segment_sq {
                 // The next segment is long: move this point to where both lines meet, when that is
-                // close, and drop the one before it.
+                // close, and drop the one before it. Nearly parallel lines meet far away.
                 if let Some(ip) = line_intersection(previous_previous.p, previous.p, current.p, next.p) {
-                    let close = |a: P, b: P| {
-                        let d = a.minus(b);
-                        d.dot(d) <= smallest_segment_sq
-                    };
                     let err = distance_to_line(ip, previous.p, current.p);
                     #[allow(clippy::cast_precision_loss, reason = "distances in nm")]
-                    let ok =
-                        err * err <= allowed_error_sq as f64 && close(ip, previous.p) && close(ip, current.p);
+                    let ok = err * err <= allowed_error_sq as f64
+                        && ip.within(previous.p, smallest_segment_sq)
+                        && ip.within(current.p, smallest_segment_sq);
                     if ok {
                         let new = Junction {
                             p: ip,
@@ -295,7 +292,9 @@ fn distance_to_line(p: P, a: P, b: P) -> f64 {
     c / l
 }
 
-fn line_intersection(a: P, b: P, c: P, d: P) -> Option<P> {
+/// Where the line through `a` and `b` meets the line through `c` and `d`. `None` when they are
+/// parallel or meet farther out than a coordinate holds.
+pub(crate) fn line_intersection(a: P, b: P, c: P, d: P) -> Option<P> {
     let (r, s) = (b.minus(a), d.minus(c));
     #[allow(
         clippy::cast_precision_loss,
@@ -309,9 +308,14 @@ fn line_intersection(a: P, b: P, c: P, d: P) -> Option<P> {
         }
         let ca = c.minus(a);
         let t = (ca.x as f64 * s.y as f64 - ca.y as f64 * s.x as f64) / denom;
+        // `i64::MAX as f64` is 2^63, the first value past the range; NaN fails the test too.
+        let along = |v: i64| {
+            let o = (v as f64 * t).round();
+            (o.abs() < i64::MAX as f64).then_some(o as i64)
+        };
         Some(P::new(
-            a.x + (r.x as f64 * t).round() as i64,
-            a.y + (r.y as f64 * t).round() as i64,
+            a.x.checked_add(along(r.x)?)?,
+            a.y.checked_add(along(r.y)?)?,
         ))
     }
 }
@@ -364,4 +368,79 @@ pub(crate) fn separate_inner_contour(insets: Vec<Vec<Line>>) -> (Vec<Vec<Line>>,
         }
     }
     (actual, contour)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One closed inner wall from the wedge in `walls_of_a_wedge_to_3_85_mm_stay_on_it`, as the skeleton gave it
+    /// to the simplifier, nm: (x, y, width). The segment from (29537890, 299631) to (29937705, 305709) is short,
+    /// and the long ones on either side are nearly parallel, so they meet about 10 m away.
+    fn wedge_wall() -> Line {
+        let pts: [(i64, i64, i64); 17] = [
+            (19_669_277, 0, 598_460),
+            (20_064_544, 155_623, 311_391),
+            (29_537_890, 299_631, 599_540),
+            (29_937_705, 305_709, 611_701),
+            (36_429_481, 404_393, 809_160),
+            (36_587_676, 610_338, 407_080),
+            (58_094_332, 1_264_501, 407_080),
+            (59_397_880, 1_304_150, 407_080),
+            (59_397_880, 0, 407_080),
+            (59_397_880, -1_304_150, 407_080),
+            (58_094_332, -1_264_501, 407_080),
+            (36_587_676, -610_338, 407_080),
+            (36_429_481, -404_393, 809_160),
+            (29_937_705, -305_709, 611_701),
+            (29_537_890, -299_631, 599_540),
+            (20_064_544, -155_623, 311_391),
+            (19_669_277, 0, 598_460),
+        ];
+        Line {
+            inset_idx: 1,
+            is_odd: false,
+            is_closed: true,
+            junctions: pts
+                .iter()
+                .map(|&(x, y, w)| Junction {
+                    p: P::new(x, y),
+                    w,
+                    perimeter_index: 1,
+                })
+                .collect(),
+        }
+    }
+
+    /// Simplifying keeps every point of a line near the line: where the two long segments around a short one
+    /// meet far away, the point stays where it is (0.5 mm resolution, 0.01 mm deviation, as the wedge had).
+    #[test]
+    fn simplify_keeps_a_point_whose_long_neighbors_meet_far_away() {
+        let mut line = wedge_wall();
+        let before: Vec<P> = line.junctions.iter().map(|j| j.p).collect();
+        simplify(&mut line, 500_000 * 500_000, 10_000 * 10_000, 2_000_000);
+        assert!(line.junctions.len() >= 3, "{:?}", line.junctions);
+        let (x0, x1) = (19_669_277, 59_397_880);
+        for j in &line.junctions {
+            assert!(
+                (x0..=x1).contains(&j.p.x) && j.p.y.abs() <= 1_304_150,
+                "{:?} is off the line {before:?}",
+                j.p
+            );
+        }
+    }
+
+    /// Lines that meet farther out than a coordinate holds have no meeting point; others meet as before.
+    #[test]
+    fn line_intersection_gives_none_past_the_coordinate_range() {
+        let far = line_intersection(
+            P::new(5, 0),
+            P::new(1_000_000_005, 0),
+            P::new(0, -4_000_000_000),
+            P::new(4_000_000_000, -3_999_999_999),
+        );
+        assert_eq!(far, None);
+        let near = line_intersection(P::new(0, 0), P::new(20, 0), P::new(10, 5), P::new(10, 7));
+        assert_eq!(near, Some(P::new(10, 0)));
+    }
 }
