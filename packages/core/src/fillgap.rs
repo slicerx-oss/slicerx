@@ -33,6 +33,49 @@ pub(crate) fn target(cfg: &PrintConfig) -> Target {
 /// The gap beads for one filled surface. `area` is the surface without the growth that lets lines overlap
 /// the walls, `lines` the fill segments that were laid and `spacing_mm` their pitch.
 pub(crate) fn gaps(area: &Shapes, lines: &[[Point; 2]], spacing_mm: f64, cfg: &PrintConfig) -> Vec<WallLine> {
+    let filter = crate::motion::raw_f(cfg, "filter_out_gap_fill").unwrap_or(0.0);
+    // Strips between 0.2 spacings (less the squish tolerance) and 2 spacings wide.
+    let bounds = Bounds {
+        min: 0.2 * spacing_mm * (1.0 - 0.4),
+        max: 2.0 * spacing_mm,
+        filter,
+        thin: false,
+    };
+    strips_of(area, lines, spacing_mm, &bounds)
+}
+
+/// The gap beads of a surface filled with monotonic line: every sliver its own lines leave, whatever
+/// `gap_fill_target` says, and `filter_out_gap_fill` does not apply. The slivers run from 0.05 spacing up to
+/// `widest_mm` wide, and no bead is shorter than [`SHORT_MIN_MM`]. A sliver too short for a line down its middle (a
+/// corner the lines cut off) gets none.
+pub(crate) fn line_gaps(
+    area: &Shapes,
+    lines: &[[Point; 2]],
+    spacing_mm: f64,
+    widest_mm: f64,
+) -> Vec<WallLine> {
+    let bounds = Bounds {
+        min: 0.05 * spacing_mm,
+        max: widest_mm,
+        filter: SHORT_MIN_MM,
+        thin: true,
+    };
+    strips_of(area, lines, spacing_mm, &bounds)
+}
+
+/// Which strips get a bead: `min` to `max` mm wide, at least `filter` mm long, and whether close points are
+/// dropped from the beads ([`thin_out`]).
+struct Bounds {
+    min: f64,
+    max: f64,
+    filter: f64,
+    thin: bool,
+}
+
+/// The shortest monotonic line gap bead, mm.
+const SHORT_MIN_MM: f64 = 0.1;
+
+fn strips_of(area: &Shapes, lines: &[[Point; 2]], spacing_mm: f64, bounds: &Bounds) -> Vec<WallLine> {
     if area.is_empty() || lines.is_empty() {
         return Vec::new();
     }
@@ -47,13 +90,10 @@ pub(crate) fn gaps(area: &Shapes, lines: &[[Point; 2]], spacing_mm: f64, cfg: &P
     if open.is_empty() {
         return Vec::new();
     }
-    // Strips between 0.2 spacings (less the squish tolerance) and 2 spacings wide.
-    let min = 0.2 * spacing_mm * (1.0 - 0.4);
-    let max = 2.0 * spacing_mm;
+    let (min, max) = (bounds.min, bounds.max);
     let opened = perimeters::offset(&perimeters::offset(&open, -mm(min / 2.0)), mm(min / 2.0));
     let wide = perimeters::offset(&perimeters::offset(&open, -mm(max / 2.0)), mm(max / 2.0) + 10);
     let strips = perimeters::difference(&opened, &wide);
-    let filter = crate::motion::raw_f(cfg, "filter_out_gap_fill").unwrap_or(0.0);
     let mut out = Vec::new();
     for shape in &strips {
         // Orca simplifies the strip by a tenth of the resolution first.
@@ -64,7 +104,11 @@ pub(crate) fn gaps(area: &Shapes, lines: &[[Point; 2]], spacing_mm: f64, cfg: &P
                 .filter(|r| r.len() >= 3)
                 .collect(),
         ];
-        for line in crate::arachne::medial_lines(&simple, min, max) {
+        let mut beads = crate::arachne::medial_lines(&simple, min, max);
+        if bounds.thin {
+            beads.iter_mut().for_each(thin_out);
+        }
+        for line in beads {
             let len: f64 = line
                 .points
                 .windows(2)
@@ -73,13 +117,48 @@ pub(crate) fn gaps(area: &Shapes, lines: &[[Point; 2]], spacing_mm: f64, cfg: &P
                     _ => 0.0,
                 })
                 .sum();
-            if len >= filter {
+            if len >= bounds.filter {
                 out.push(line);
             }
         }
     }
     out
 }
+
+/// Drops the points of a bead closer than [`STEP_MIN_MM`] to the one kept before them (the last point stays), so no
+/// piece of it is too short to be written as a move.
+fn thin_out(line: &mut WallLine) {
+    let step = mm(STEP_MIN_MM);
+    let n = line.points.len();
+    let mut keep: Vec<usize> = Vec::with_capacity(n);
+    for (i, p) in line.points.iter().enumerate() {
+        let far = |k: &usize| {
+            line.points
+                .get(*k)
+                .is_some_and(|q| f64::from(p.x - q.x).m_hypot(f64::from(p.y - q.y)) >= f64::from(step))
+        };
+        match keep.last() {
+            None => keep.push(i),
+            Some(k) if far(k) => keep.push(i),
+            Some(_) if i + 1 == n => {
+                // The last point replaces a kept one too close to it, unless that is the first.
+                if keep.len() > 1 {
+                    keep.pop();
+                }
+                keep.push(i);
+            }
+            Some(_) => {}
+        }
+    }
+    if keep.len() == n {
+        return;
+    }
+    line.points = keep.iter().filter_map(|&k| line.points.get(k).copied()).collect();
+    line.widths = keep.iter().filter_map(|&k| line.widths.get(k).copied()).collect();
+}
+
+/// The closest two points of a monotonic line gap bead may be, mm.
+const STEP_MIN_MM: f64 = 0.02;
 
 #[cfg(test)]
 mod tests {
@@ -117,6 +196,38 @@ mod tests {
             (f64::from(widest) / crate::geom::SCALE - 0.8 * sp).abs() < 0.05,
             "{widest}"
         );
+    }
+
+    /// A corner 0.72 mm on a side whose last line runs across it: the sliver it leaves is too short for a line
+    /// down its middle, so neither the target's gap fill nor monotonic line puts a bead in it.
+    #[test]
+    fn a_corner_the_lines_cut_off_gets_no_bead() {
+        let cfg = PrintConfig::default();
+        let sp = 0.377;
+        let c = mm(0.72);
+        let area: Shapes = vec![vec![vec![
+            IntPoint::new(0, 0),
+            IntPoint::new(c, 0),
+            IntPoint::new(0, c),
+        ]]];
+        let line = [
+            Point::new(c + mm(1.0), -mm(1.0)),
+            Point::new(-mm(1.0), c + mm(1.0)),
+        ];
+        assert!(gaps(&area, &[line], sp, &cfg).is_empty());
+        assert!(line_gaps(&area, &[line], sp, sp).is_empty());
+    }
+
+    #[test]
+    fn monotonic_line_beads_are_no_wider_than_the_cap() {
+        let sp = 0.4;
+        // One line down the middle of a surface 2.6 spacings wide leaves 0.8 spacings on each side.
+        let area = rect(10.0, 2.6 * sp);
+        let y = mm(1.3 * sp);
+        let line = [Point::new(0, y), Point::new(mm(10.0), y)];
+        assert_eq!(line_gaps(&area, &[line], sp, sp).len(), 2);
+        // With a cap under the strips' width they are left open.
+        assert!(line_gaps(&area, &[line], sp, 0.25).is_empty());
     }
 
     #[test]
