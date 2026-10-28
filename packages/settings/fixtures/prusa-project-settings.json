@@ -33,6 +33,7 @@
         "chamber_minimal_temperature": "0",
         "chamber_temperature": "0",
         "print_sequence": "by layer",
+        "reduce_infill_retraction": "0",
         "slow_down_for_layer_cooling": "1",
         "default_acceleration": "0",
         "close_fan_the_first_x_layers": "3",
@@ -252,7 +253,6 @@
         "max_volumetric_speed",
         "multimaterial_purging",
         "nozzle_high_flow",
-        "only_retract_when_crossing_perimeters",
         "over_bridge_speed",
         "overhang_fan_speed_0",
         "overhang_fan_speed_1",
@@ -981,6 +981,146 @@
       "unmapped": [
         "automatic_extrusion_widths"
       ]
+    },
+    {
+      "name": "a filament's ramping lift is its own z hop height as a slope lift, and the printer's lift stays the printer's",
+      "lines": [
+        "retract_lift = 0.2",
+        "travel_ramping_lift = 1",
+        "travel_max_lift = 1.5",
+        "travel_slope = 1",
+        "filament_retract_lift = nil",
+        "filament_travel_ramping_lift = 1",
+        "filament_travel_max_lift = 0.6",
+        "filament_travel_slope = 1"
+      ],
+      "config": {
+        "filament_z_hop": "0.6",
+        "filament_z_hop_types": "Slope Lift"
+      },
+      "unmapped": [
+        "filament_travel_slope"
+      ]
+    },
+    {
+      "name": "a filament with ramping off lifts its own retract lift straight up",
+      "lines": [
+        "retract_lift = 0.2",
+        "travel_ramping_lift = 1",
+        "travel_max_lift = 1.5",
+        "travel_slope = 1",
+        "filament_retract_lift = 0.6",
+        "filament_travel_ramping_lift = 0",
+        "filament_travel_max_lift = 0.6",
+        "filament_travel_slope = 1"
+      ],
+      "config": {
+        "filament_z_hop": "0.6",
+        "filament_z_hop_types": "Normal Lift"
+      },
+      "unmapped": [
+        "filament_travel_slope"
+      ]
+    },
+    {
+      "name": "a filament with ramping off and no retract lift of its own lifts the printer's height straight up",
+      "lines": [
+        "retract_lift = 0.2",
+        "travel_ramping_lift = 1",
+        "travel_max_lift = 1.5",
+        "travel_slope = 1",
+        "filament_retract_lift = nil",
+        "filament_travel_ramping_lift = 0",
+        "filament_travel_max_lift = 0.6"
+      ],
+      "config": {
+        "filament_z_hop_types": "Normal Lift"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "a filament's ramp at 90 degrees lifts straight up",
+      "lines": [
+        "filament_travel_ramping_lift = 1",
+        "filament_travel_max_lift = 0.6",
+        "filament_travel_slope = 90"
+      ],
+      "config": {
+        "filament_z_hop": "0.6",
+        "filament_z_hop_types": "Normal Lift"
+      },
+      "unmapped": [
+        "filament_travel_slope"
+      ]
+    },
+    {
+      "name": "a filament's ramp of height 0 does not lift",
+      "lines": [
+        "filament_travel_ramping_lift = 1",
+        "filament_travel_max_lift = 0",
+        "filament_travel_slope = 1"
+      ],
+      "config": {
+        "filament_z_hop": "0",
+        "filament_z_hop_types": "Slope Lift"
+      },
+      "unmapped": [
+        "filament_travel_slope"
+      ]
+    },
+    {
+      "name": "a filament's retract lift with no ramping of its own",
+      "lines": [
+        "retract_lift = 0.2",
+        "travel_ramping_lift = 0",
+        "filament_retract_lift = 0.6",
+        "filament_travel_ramping_lift = nil",
+        "filament_travel_max_lift = nil"
+      ],
+      "config": {
+        "filament_z_hop": "0.6"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "filament lift keys left unset keep the printer's lift",
+      "lines": [
+        "retract_lift = 0.2",
+        "travel_ramping_lift = 1",
+        "travel_max_lift = 1.5",
+        "travel_slope = 1",
+        "filament_retract_lift = nil",
+        "filament_travel_ramping_lift = nil",
+        "filament_travel_max_lift = nil",
+        "filament_travel_slope = nil"
+      ],
+      "config": {},
+      "unmapped": [
+        "filament_travel_slope"
+      ]
+    },
+    {
+      "name": "two filaments' lifts, one ramping and one straight",
+      "lines": [
+        "filament_retract_lift = nil,0.4",
+        "filament_travel_ramping_lift = 1,0",
+        "filament_travel_max_lift = 0.6,0.6"
+      ],
+      "config": {
+        "filament_z_hop": "0.6,0.4",
+        "filament_z_hop_types": "Slope Lift,Normal Lift"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "retracting only when a travel crosses walls",
+      "lines": [
+        "only_retract_when_crossing_perimeters = 1"
+      ],
+      "config": {
+        "reduce_infill_retraction": "1"
+      },
+      "unmapped": []
     },
     {
       "name": "printer settings, G-code, lists of text and unset values stay the printer's",

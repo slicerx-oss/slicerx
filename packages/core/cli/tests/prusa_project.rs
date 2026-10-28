@@ -469,3 +469,159 @@ fn an_object_with_its_own_layer_height_prints_support_at_the_projects_support_wi
         "outer wall prints {walls:?}, not 0.45"
     );
 }
+
+/// Projects of one object made of two 10 mm boxes 20 mm apart, 15 layers of 0.2 mm, that differ in their filament's
+/// own lift settings: `mini--isl--FRL06` a retract lift of 0.6 and no ramping of its own, `mk4--isl--FRAMP0FRL06`
+/// ramping off and a retract lift of 0.6, `mk4--isl--stock` ramping on up to 0.6 at 1 degree, `mk4--isl--FSL90` the
+/// same ramp at 90 degrees, and `mk4--isl--FML0` a ramp of height 0.
+fn lift_project(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/prusa-lift")
+        .join(format!("{name}.3mf"))
+}
+
+/// One travel between two extruding moves: the layer heights it leaves and reaches, how far above the higher of them
+/// it goes, its length in XY, and whether every move that raises the nozzle goes straight up.
+struct Travel {
+    from_z: f64,
+    to_z: f64,
+    lift: f64,
+    xy: f64,
+    straight: bool,
+}
+
+/// The travels of a G-code file, between the first extruding move and the last.
+fn travels(gcode: &str) -> Vec<Travel> {
+    let (mut at_x, mut at_y, mut at_z, mut at_e) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+    let mut relative = false;
+    let mut out = Vec::new();
+    // The layer height of the last extruding move, and the travel since it: its moves, top, length and straightness.
+    let mut last: Option<f64> = None;
+    let (mut moves, mut top, mut xy, mut straight) = (0_usize, f64::MIN, 0.0_f64, true);
+    for line in gcode.lines() {
+        let code = line.split(';').next().unwrap_or("").trim();
+        let mut words = code.split_whitespace();
+        let Some(cmd) = words.next() else { continue };
+        match cmd {
+            "M83" => relative = true,
+            "M82" => relative = false,
+            "G0" | "G1" => {}
+            _ => continue,
+        }
+        let (mut nx, mut ny, mut nz, mut de) = (at_x, at_y, at_z, 0.0_f64);
+        for w in words {
+            let (axis, v) = w.split_at(1);
+            let Ok(v) = v.parse::<f64>() else { continue };
+            match axis {
+                "X" => nx = v,
+                "Y" => ny = v,
+                "Z" => nz = v,
+                "E" => {
+                    de = if relative { v } else { v - at_e };
+                    at_e = if relative { at_e + v } else { v };
+                }
+                _ => {}
+            }
+        }
+        let (dx, dy) = (nx - at_x, ny - at_y);
+        let run = (dx * dx + dy * dy).sqrt();
+        if de > 0.0 && run > 0.0 {
+            if let Some(from_z) = last
+                && moves > 0
+            {
+                out.push(Travel {
+                    from_z,
+                    to_z: nz,
+                    lift: top - from_z.max(nz),
+                    xy,
+                    straight,
+                });
+            }
+            last = Some(nz);
+            (moves, top, xy, straight) = (0, f64::MIN, 0.0, true);
+        } else if last.is_some() {
+            moves += 1;
+            top = top.max(nz);
+            xy += run;
+            if nz > at_z + 1e-9 && run > 0.0 {
+                straight = false;
+            }
+        }
+        (at_x, at_y, at_z) = (nx, ny, nz);
+    }
+    out
+}
+
+#[test]
+fn a_prusaslicer_projects_filament_lift_reaches_the_slice() {
+    // (project, the lift, whether it goes straight up): the filament's own lift on the default printer, which lifts
+    // nothing. Every travel between the two boxes on a layer retracts and lifts, and any travel that lifts lifts by the
+    // filament's height. A ramp is a slope lift that climbs along the travel; at 0 or 90 degrees it goes straight up.
+    let mut wrong = Vec::new();
+    for (name, height, straight) in [
+        ("mini--isl--FRL06", 0.6, None),
+        ("mk4--isl--FRAMP0FRL06", 0.6, Some(true)),
+        ("mk4--isl--stock", 0.6, Some(false)),
+        ("mk4--isl--FSL90", 0.6, Some(true)),
+    ] {
+        let all = travels(&gcode(&lift_project(name)));
+        let between: Vec<&Travel> = all
+            .iter()
+            .filter(|t| (t.from_z - t.to_z).abs() < 1e-6 && t.xy > 15.0)
+            .collect();
+        if between.len() != 15 {
+            wrong.push(format!(
+                "{name}: {} travels between the boxes, not 15",
+                between.len()
+            ));
+        }
+        for t in &between {
+            if (t.lift - height).abs() > 0.005 {
+                wrong.push(format!(
+                    "{name}: a travel between the boxes at Z {} lifts {:.3}",
+                    t.from_z, t.lift
+                ));
+            }
+        }
+        for t in all.iter().filter(|t| t.lift > 0.005) {
+            if (t.lift - height).abs() > 0.005 {
+                wrong.push(format!(
+                    "{name}: a travel at Z {} lifts {:.3}, not {height}",
+                    t.from_z, t.lift
+                ));
+            }
+            if straight.is_some_and(|s| s != t.straight) {
+                wrong.push(format!(
+                    "{name}: a travel at Z {} lifts straight: {}",
+                    t.from_z, t.straight
+                ));
+            }
+        }
+    }
+    // A ramp of height 0 does not lift, though its travels still retract.
+    if let Some(t) = travels(&gcode(&lift_project("mk4--isl--FML0")))
+        .iter()
+        .find(|t| t.lift > 0.005)
+    {
+        wrong.push(format!(
+            "mk4--isl--FML0: a travel at Z {} lifts {:.3}",
+            t.from_z, t.lift
+        ));
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn sx_project_settings_reads_a_prusaslicer_filaments_lift() {
+    // The filament's ramp height, not the printer's (1.5) and not as a slope, and the printer's lift stays the
+    // printer's.
+    let config = project_settings(&lift_project("mk4--isl--stock"));
+    assert_eq!(config["filament_z_hop"], "0.6");
+    assert_eq!(config["filament_z_hop_types"], "Slope Lift");
+    for k in ["z_hop", "z_hop_types", "travel_slope"] {
+        assert!(config.get(k).is_none(), "{k}");
+    }
+    let config = project_settings(&lift_project("mk4--isl--FRAMP0FRL06"));
+    assert_eq!(config["filament_z_hop"], "0.6");
+    assert_eq!(config["filament_z_hop_types"], "Normal Lift");
+}
