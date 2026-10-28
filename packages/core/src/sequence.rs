@@ -248,7 +248,8 @@ fn carry_flow(paths: &mut [PathInfo], own: &PrintConfig, writer: &PrintConfig, f
 }
 
 /// Objects that print layer by layer with settings of their own: every layer holds the paths of
-/// each object that has that layer, in plate order. The layer below the range is sliced too, for where
+/// each object that has that layer, in the layer's object order (`objorder.rs`; plate order with `print_order` as
+/// object list). The layer below the range is sliced too, for where
 /// it ends (`LayerPaths::enter_from`), then dropped.
 fn slice_interleaved(
     session: &SliceSession,
@@ -371,6 +372,11 @@ fn slice_interleaved_from(
             if !m.warnings.contains(&w) {
                 m.warnings.push(w);
             }
+        }
+    }
+    if let Some(m) = merged.as_mut() {
+        for (l, src) in m.layers.iter_mut().zip(sources.iter_mut()) {
+            in_object_order(session, config, l, src);
         }
     }
     let mut out = match merged {
@@ -496,6 +502,11 @@ fn slice_interleaved_by_height(
             }
         }
     }
+    for (l, src) in slots.iter_mut().zip(sources.iter_mut()) {
+        if let Some(l) = l {
+            in_object_order(session, config, l, src);
+        }
+    }
     let mut out = match merged {
         Some(m) => m,
         None => session.slice_object_range(config, 0..0, progress)?,
@@ -523,6 +534,79 @@ fn slice_interleaved_by_height(
     Ok(out)
 }
 
+/// Puts the objects of a merged layer in the order the objects on it print in (`objorder.rs`), unless the plate
+/// prints in object list order. Each object's paths stay together and in their own order, and `src` follows them.
+/// The paths of no object the layer starts with (the skirt) stay first, with the object that now prints first.
+fn in_object_order(session: &SliceSession, config: &PrintConfig, l: &mut LayerPaths, src: &mut Sources) {
+    if src.runs.len() < 2 || crate::objorder::list_order(config) {
+        return;
+    }
+    let n = l.paths.len();
+    let subs: Vec<&SliceSession> = session.sequence().collect();
+    let plate = |k: usize| subs.get(k).map_or(u16::MAX, |s| s.plate_index());
+    // Each object's paths: (object of the sequence, first path, past its last).
+    let mut runs: Vec<(usize, usize, usize)> = src
+        .runs
+        .iter()
+        .enumerate()
+        .map(|(r, &(k, at))| (k, at, src.runs.get(r + 1).map_or(n, |x| x.1)))
+        .collect();
+    let lead = runs.first().map_or(0, |r| {
+        l.paths.get(r.1..r.2).map_or(0, |p| {
+            p.iter()
+                .take_while(|p| p.owner == crate::preview::OBJECT_NONE)
+                .count()
+        }) + r.1
+    });
+    if let Some(r) = runs.first_mut() {
+        r.1 = lead;
+    }
+    // Numbered by plate object for the order's ties.
+    crate::sorting::sort_by_key(&mut runs, |r| plate(r.0));
+    let centers: Vec<[f64; 2]> = runs
+        .iter()
+        .map(|r| {
+            session
+                .footprints()
+                .get(usize::from(plate(r.0)))
+                .map_or([0.0, 0.0], |o| o.center)
+        })
+        .collect();
+    let order: Vec<(usize, usize, usize)> = crate::objorder::order(&centers)
+        .into_iter()
+        .filter_map(|i| runs.get(i).copied())
+        .collect();
+    if order.len() != runs.len() {
+        return;
+    }
+    let old = std::mem::take(&mut l.paths);
+    let old_speeds = l.unslowed.take().filter(|s| s.len() == old.len());
+    let mut speeds: Vec<f32> = Vec::with_capacity(n);
+    let mut new_runs: Vec<(usize, usize)> = Vec::with_capacity(order.len());
+    let ranges = std::iter::once((usize::MAX, 0, lead)).chain(order.iter().copied());
+    for (k, from, to) in ranges {
+        if k != usize::MAX {
+            new_runs.push((k, if new_runs.is_empty() { 0 } else { l.paths.len() }));
+        }
+        for i in from..to {
+            if let Some(p) = old.get(i) {
+                l.paths.push(*p);
+                speeds.push(
+                    old_speeds
+                        .as_ref()
+                        .and_then(|s| s.get(i))
+                        .copied()
+                        .unwrap_or(p.speed_mm_s),
+                );
+            }
+        }
+    }
+    if old_speeds.is_some() {
+        l.unslowed = Some(speeds.into_boxed_slice());
+    }
+    src.runs = new_runs;
+}
+
 /// Each object's layer was slowed for cooling on its own; the speeds before that go along with its paths into the
 /// merged layer, so the cooling slowdown is worked out again for the whole layer (`gcode::settle_cooling`).
 fn join_speeds(dst: &mut LayerPaths, l: &LayerPaths) {
@@ -540,7 +624,7 @@ fn join_speeds(dst: &mut LayerPaths, l: &LayerPaths) {
     dst.unslowed = Some(speeds.into_boxed_slice());
 }
 
-/// What a merged layer holds of each object: where the object's paths start (objects in plate order), and the first
+/// What a merged layer holds of each object: where the object's paths start (objects in print order), and the first
 /// work of each filament its layer reported (`LayerPaths::turns`).
 #[derive(Debug, Clone, Default)]
 struct Sources {
@@ -584,9 +668,9 @@ impl Sources {
 
 /// Prints the merged layers of a plate whose objects come from sessions of their own (each with its own settings) as
 /// one session of the whole plate prints them: the paths of each filament together across the objects, in the
-/// plate's tool order (`SliceSession::plate_tools`), the objects in plate order within one filament, and the prime
-/// tower once for the plate's changes. Every path keeps its own settings, flow and object. `layers` are the merged
-/// layers in order, each with its plate layer.
+/// plate's tool order (`SliceSession::plate_tools`), the objects in the layer's order within one filament, and the
+/// prime tower once for the plate's changes. Every path keeps its own settings, flow and object. `layers` are the
+/// merged layers in order, each with its plate layer.
 fn print_as_plate(
     session: &SliceSession,
     config: &PrintConfig,
@@ -643,7 +727,7 @@ fn print_layer_as_plate(
         .filter(|t| l.paths.iter().any(|p| p.tool == *t))
         .chain(extra)
         .collect();
-    // Each filament's paths, the objects in plate order.
+    // Each filament's paths, the objects in the layer's order.
     let groups: Vec<Vec<usize>> = tools
         .iter()
         .map(|&t| {

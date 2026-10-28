@@ -2611,8 +2611,8 @@ fn print_order_as_object_list_prints_the_objects_in_list_order_on_each_layer() {
     let first_outer_x = |order: &str| -> f64 {
         let req: SliceRequest = serde_json::from_value(json!({
             "plate": {"objects": [
-                {"id": "far", "mesh": "c", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 170,100,0,1]},
                 {"id": "near", "mesh": "c", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 40,100,0,1]},
+                {"id": "far", "mesh": "c", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 170,100,0,1]},
             ]},
             "config": {"brim_width": 0, "skirt_loops": 0, "print_order": order},
         }))
@@ -2626,10 +2626,11 @@ fn print_order_as_object_list_prints_the_objects_in_list_order_on_each_layer() {
             .map(|l| field(l, 'X').unwrap())
             .unwrap()
     };
-    // Nearest first starts at the object the nozzle is closest to; the list starts with the far one.
-    assert!(first_outer_x("default") < 100.0, "{}", first_outer_x("default"));
+    // The default order ends each layer at the object nearest the front left corner, so it starts at the far one;
+    // the list starts with the near one.
+    assert!(first_outer_x("default") > 150.0, "{}", first_outer_x("default"));
     assert!(
-        first_outer_x("as_obj_list") > 150.0,
+        first_outer_x("as_obj_list") < 100.0,
         "{}",
         first_outer_x("as_obj_list")
     );

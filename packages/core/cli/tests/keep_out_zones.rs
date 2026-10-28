@@ -242,6 +242,8 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     // every wipe ran at the layer's acceleration: the travel line after a wipe goes when it equals the wipe's. Changed
     // again when the floating vertical shell's beads started at the inner wall's spacing edge: only those beads, the
     // travels into them, the progress lines and the filament total moved.
+    // Changed again when the objects of each layer printed in one order set by position: the far cube now prints first on
+    // every layer, so only the travels, wipes, progress lines and time moved, and no extruding move did.
     let c = config("p1s", &json!({"brim_type": "outer_only", "brim_width": 5}));
     let (out, gcode) = slice("p1s", &c, &[[18.0, 6.0], [140.0, 140.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -255,7 +257,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "43032e3e99d2ed99",
+        "602affae83eca33c",
         "the P1S plate's G-code changed"
     );
 }
