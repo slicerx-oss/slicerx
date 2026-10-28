@@ -10755,7 +10755,11 @@ impl SliceSession {
             // is mostly made of).
             let bed = crate::brim::Bed::of(cfg);
             let mut by_slot: std::collections::BTreeMap<u8, Vec<Shapes>> = std::collections::BTreeMap::new();
+            // Each object's brim prints right before the object when the layer holds the brims of several objects
+            // apart (`combine_brims` off): the loops carry their object. Merged brims print first, as before.
+            let by_object = several && objects_of.iter().any(|&o| Some(&o) != objects_of.first());
             let mut finished: Vec<(u8, Vec<Vec<IntPoint<i32>>>)> = Vec::new();
+            let mut finished_of: Vec<usize> = Vec::new();
             for ((island, owner), object) in union.iter().zip(&owners).zip(&objects_of) {
                 let one: Shapes = vec![island.clone()];
                 let brim_mm = if auto_brim {
@@ -10802,18 +10806,30 @@ impl SliceSession {
                     by_slot.entry(slot).or_default().extend(areas);
                 } else {
                     finished.push((slot, crate::brim::finish(&areas, &bodies, spacing_mm)));
+                    finished_of.push(*object);
                 }
             }
             for (slot, areas) in by_slot {
                 finished.push((slot, crate::brim::finish(&areas, &bodies, spacing_mm)));
+                finished_of.push(0);
             }
-            for (slot, loops) in finished {
+            for ((slot, loops), object) in finished.into_iter().zip(finished_of) {
                 // Orca prints an object's brim just before its first extrusion on the layer: with the
                 // first filament in the layer's order that prints one of the island's features.
                 let f = self.feature_tools(cfg, slot);
                 let mine = [f.outer, f.inner, f.sparse, f.solid, f.top, f.bottom];
                 let at = works.iter().position(|w| mine.contains(&w.tool)).unwrap_or(0);
                 if let Some(work) = works.get_mut(at) {
+                    if by_object {
+                        if work.brim_hulls.is_empty() {
+                            work.brim_hulls = self
+                                .objects
+                                .iter()
+                                .map(|o| o.hull.iter().map(|p| IntPoint::new(mm(p[0]), mm(p[1]))).collect())
+                                .collect();
+                        }
+                        work.brim_of.extend(std::iter::repeat_n(object, loops.len()));
+                    }
                     work.brim.extend(loops);
                 }
             }
