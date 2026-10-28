@@ -166,6 +166,9 @@ pub struct SliceSession {
     warnings: Vec<SliceWarning>,
     prep_micros: u64,
     bounds: [f64; 4],
+    /// Each object's XY box on the plate as placed `[min_x, min_y, max_x, max_y]`, mm, by its index on the
+    /// session's plate (as `part_object` numbers them): sparse infill hangs off the center of its object's box.
+    object_boxes: Vec<[f64; 4]>,
     /// Cuts and support regions of the objects, sliced like parts.
     volumes: Vec<(crate::plate::VolumeRole, PreparedPart)>,
     /// The setting overrides of each volume (modifiers); `Null` for the rest.
@@ -1599,6 +1602,7 @@ impl SliceSession {
         let mut extents: Vec<(&str, [f64; 4], f64)> = Vec::with_capacity(plate.objects.len());
         // The object of each part in `raw`.
         let mut part_object: Vec<usize> = Vec::new();
+        let mut object_boxes: Vec<[f64; 4]> = Vec::with_capacity(plate.objects.len());
         for (obj_index, obj) in plate.objects.iter().enumerate() {
             let (mut lo, mut hi) = (f64::MAX, f64::MIN);
             let mut oxy = [f64::MAX, f64::MAX, f64::MIN, f64::MIN];
@@ -1655,6 +1659,7 @@ impl SliceSession {
                 part_object.push(obj_index);
             }
             object_heights.push(if hi >= lo { hi - lo.max(0.0) } else { 0.0 });
+            object_boxes.push(oxy);
             if hi >= lo {
                 let name = if obj.mesh.name.is_empty() {
                     &obj.name
@@ -1898,6 +1903,7 @@ impl SliceSession {
             warnings,
             prep_micros: timer.micros(),
             bounds: xy,
+            object_boxes,
             volumes,
             volume_settings,
             painted_supports,
@@ -5210,13 +5216,118 @@ impl SliceSession {
             .as_ref()
     }
 
-    /// The inputs of the sparse pattern of `layer` over `area`, cut at `z`.
+    /// The islands of the sparse area `area` of object layer `layer` by object, each with its object's box: sparse
+    /// infill hangs off the center of its own object's box, so objects and copies each get their own lattice. One
+    /// group in a session of one object; an island that runs across touching objects takes the box of all of them,
+    /// and one no object's slice holds or nears keeps the session's box.
+    fn sparse_groups<'a>(
+        &self,
+        area: &'a Shapes,
+        layer: u32,
+    ) -> Vec<([f64; 4], std::borrow::Cow<'a, Shapes>)> {
+        let box_of = |o: u16| {
+            self.object_boxes
+                .get(usize::from(o))
+                .copied()
+                .filter(|b| b[0] <= b[2] && b[1] <= b[3])
+                .unwrap_or(self.bounds)
+        };
+        let mut objects = self.part_object.clone();
+        objects.sort_unstable();
+        objects.dedup();
+        match objects.as_slice() {
+            [] => return vec![(self.bounds, std::borrow::Cow::Borrowed(area))],
+            [one] => return vec![(box_of(*one), std::borrow::Cow::Borrowed(area))],
+            _ => {}
+        }
+        let slices = self.object_slices_at(layer as usize).unwrap_or_default();
+        let mut groups: Vec<([f64; 4], Shapes)> = Vec::new();
+        for island in area {
+            // Objects that touch print their infill as one island across the seam: it takes the box of every object
+            // it reaches, read at up to 64 points round its outline.
+            let mut object: Option<[f64; 4]> = None;
+            let outline = island.first().map_or(&[][..], Vec::as_slice);
+            for p in outline.iter().step_by(outline.len().div_ceil(64).max(1)) {
+                if let Some(o) = crate::owners::nearest(&slices, crate::geom::Point::new(p.x, p.y), 5.0) {
+                    let b = box_of(o);
+                    object = Some(object.map_or(b, |a| {
+                        [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])]
+                    }));
+                }
+            }
+            let object = object.unwrap_or(self.bounds);
+            match groups
+                .iter_mut()
+                .find(|(b, _)| b.map(f64::to_bits) == object.map(f64::to_bits))
+            {
+                Some((_, g)) => g.push(island.clone()),
+                None => groups.push((object, vec![island.clone()])),
+            }
+        }
+        if let [(object, _)] = groups.as_slice() {
+            return vec![(*object, std::borrow::Cow::Borrowed(area))];
+        }
+        groups
+            .into_iter()
+            .map(|(b, g)| (b, std::borrow::Cow::Owned(g)))
+            .collect()
+    }
+
+    /// The sparse infill of the patterns drawn layer by layer over `area` (object layer `layer`, cut at `z`), each
+    /// object's islands from its own box; `spacing` replaces the line spacing (infill combined over layers).
+    fn sparse_lines(
+        &self,
+        cfg: &PrintConfig,
+        layer: u32,
+        area: &Shapes,
+        z: f64,
+        spacing: Option<f64>,
+    ) -> Vec<Vec<crate::geom::Point>> {
+        let mut out = Vec::new();
+        for (object, part) in self.sparse_groups(area, layer) {
+            let mut inp = self.sparse_in(cfg, layer, &part, z, object);
+            if let Some(s) = spacing {
+                inp.spacing_mm = s;
+            }
+            out.extend(crate::patterns::sparse(&inp));
+        }
+        out
+    }
+
+    /// The scanline frames of the sparse area `area` of object layer `layer`: each object's islands moved so that
+    /// its box center is on the plate origin, then turned by `-turn` about it, with that move. The rectilinear
+    /// family draws its lines there, so they pass through the object's center; [`unframe`] puts them back.
+    fn sparse_frames(&self, area: &Shapes, layer: u32, turn: f64) -> Vec<([i32; 2], Shapes)> {
+        self.sparse_groups(area, layer)
+            .into_iter()
+            .map(|(object, part)| {
+                #[allow(
+                    clippy::cast_possible_truncation,
+                    reason = "a plate position in internal units"
+                )]
+                let at = [
+                    (f64::midpoint(object[0], object[2]) * crate::geom::SCALE).round() as i32,
+                    (f64::midpoint(object[1], object[3]) * crate::geom::SCALE).round() as i32,
+                ];
+                let moved = translate_shapes(&part, -at[0], -at[1]);
+                let framed = if turn == 0.0 {
+                    moved
+                } else {
+                    crate::patterns::rotate_shapes(&moved, -turn)
+                };
+                (at, framed)
+            })
+            .collect()
+    }
+
+    /// The inputs of the sparse pattern of `layer` over `area`, cut at `z`, for the object whose box is `object`.
     fn sparse_in<'a>(
         &self,
         cfg: &PrintConfig,
         layer: u32,
         area: &'a Shapes,
         z: f64,
+        object: [f64; 4],
     ) -> crate::patterns::SparseIn<'a> {
         let template = self.template_angle(cfg, "sparse_infill_rotate_template", layer);
         crate::patterns::SparseIn {
@@ -5229,7 +5340,9 @@ impl SliceSession {
             layer: layer + self.raft_layers(),
             connect_mm: cfg.anchor_max_mm(),
             anchor_mm: crate::anchor::anchor_length(cfg, cfg.spacing_for(cfg.sparse_infill_width())),
-            object: self.bounds,
+            object,
+            object_origin: true,
+            gyroid_margin: !crate::firmware::bambu_printer(cfg, cfg.gcode_flavor),
             angle_deg: template
                 .unwrap_or_else(|| crate::motion::raw_f(cfg, "infill_direction").unwrap_or(45.0))
                 + self.model_turn(cfg),
@@ -7162,6 +7275,8 @@ impl SliceSession {
                 overhang_angle_deg: 60.0,
                 fixed_angle: false,
                 gyroid_layer_height: None,
+                object_origin: false,
+                gyroid_margin: true,
             });
         }
         if tree {
@@ -7257,6 +7372,8 @@ impl SliceSession {
                             overhang_angle_deg: 60.0,
                             fixed_angle: false,
                             gyroid_layer_height: None,
+                            object_origin: false,
+                            gyroid_margin: true,
                         }));
                 }
                 InfillPattern::Concentric => {
@@ -8788,24 +8905,16 @@ impl SliceSession {
                         self.model_turn(cfg),
                         crate::motion::raw_f(cfg, "infill_direction").unwrap_or(45.0),
                     );
-                    let turned;
-                    let area = if turn == 0.0 {
-                        area
-                    } else {
-                        turned = crate::patterns::rotate_shapes(area, -turn);
-                        &turned
-                    };
                     let mut ev = Vec::new();
-                    let spans = fam
-                        .sparse(d)
-                        .scan(area.iter().flat_map(|s| s.iter()).map(Vec::as_slice), &mut ev);
                     let mut lines: Vec<[crate::geom::Point; 2]> = Vec::new();
-                    paths::span_lines(&spans, d, fam.sparse_spacing, &mut lines);
-                    if turn != 0.0 {
-                        for seg in &mut lines {
-                            if let [a, b] = crate::patterns::rotate_points(seg, turn)[..] {
-                                *seg = [a, b];
-                            }
+                    for (at, framed) in self.sparse_frames(area, l, turn) {
+                        let spans = fam
+                            .sparse(d)
+                            .scan(framed.iter().flat_map(|s| s.iter()).map(Vec::as_slice), &mut ev);
+                        let before = lines.len();
+                        paths::span_lines(&spans, d, fam.sparse_spacing, &mut lines);
+                        for seg in lines.iter_mut().skip(before) {
+                            unframe(seg, at, turn);
                         }
                     }
                     (
@@ -8816,7 +8925,7 @@ impl SliceSession {
                     let z = self.plan.top(l);
                     let polylines = self
                         .planned_sparse(cfg, l, area)
-                        .unwrap_or_else(|| crate::patterns::sparse(&self.sparse_in(cfg, l, area, z)));
+                        .unwrap_or_else(|| self.sparse_lines(cfg, l, area, z, None));
                     (Vec::new(), polylines)
                 }
             };
@@ -9310,16 +9419,15 @@ impl SliceSession {
                 crate::motion::raw_f(cfg, "infill_direction").unwrap_or(45.0),
             );
             let (sparse_dir, sparse_turn) = sparse_frame;
-            let sparse_area: std::borrow::Cow<'_, Shapes> = if sparse_turn == 0.0 {
-                std::borrow::Cow::Borrowed(&cls.sparse)
-            } else {
-                std::borrow::Cow::Owned(crate::patterns::rotate_shapes(&cls.sparse, -sparse_turn))
-            };
-            let mut sparse_spans: Vec<(Dir, Spans)> = Vec::new();
+            // Each object's islands in its own frame (its box center on the origin, turned onto the scanlines), the
+            // spans of each and the move back.
+            let mut sparse_spans: Vec<(Shapes, Spans, [i32; 2])> = Vec::new();
             if cfg.sparse_infill_density > 0.0 && on_lines && !cls.sparse.is_empty() {
-                let mut s = scan_area(fam.sparse(sparse_dir), &sparse_area, &mut events);
-                infill::trim(&mut s, trim, min_len);
-                sparse_spans.push((sparse_dir, s));
+                for (at, framed) in self.sparse_frames(&cls.sparse, layer, sparse_turn) {
+                    let mut s = scan_area(fam.sparse(sparse_dir), &framed, &mut events);
+                    infill::trim(&mut s, trim, min_len);
+                    sparse_spans.push((framed, s, at));
+                }
             }
             if !on_lines && cfg.sparse_infill_density > 0.0 && !cls.sparse.is_empty() {
                 let z = self.plan.top(layer);
@@ -9328,7 +9436,7 @@ impl SliceSession {
                     Some(f) => f.paths.clone(),
                     None => match self.planned_sparse(cfg, layer, &cls.sparse) {
                         Some(lines) => lines,
-                        None => crate::patterns::sparse(&self.sparse_in(cfg, layer, &cls.sparse, z)),
+                        None => self.sparse_lines(cfg, layer, &cls.sparse, z, None),
                     },
                 };
             }
@@ -9843,17 +9951,17 @@ impl SliceSession {
             Micros::add(&micros.surfaces, &t);
 
             let t = Timer::start();
-            if matches!(
+            let zig = matches!(
                 cfg.sparse_infill_pattern,
                 InfillPattern::Rectilinear
                     | InfillPattern::AlignedRectilinear
                     | InfillPattern::ZigZag
                     | InfillPattern::CrossZag
                     | InfillPattern::LockedZag
-            ) && cfg.anchor_max_mm() >= 0.05
-                && let [(sd, _)] = sparse_spans.as_slice()
-            {
-                let d = *sd;
+            ) && cfg.anchor_max_mm() >= 0.05;
+            // Each object's islands on their own, in their own frame.
+            for (area, _, at) in sparse_spans.iter().filter(|_| zig) {
+                let d = sparse_dir;
                 let before = (work.sparse_paths.len(), work.sparse_alt.len());
                 let w_mm = cfg.spacing_for(cfg.sparse_infill_width());
                 let density = cfg.sparse_infill_density / 100.0;
@@ -9864,7 +9972,6 @@ impl SliceSession {
                     let n = f64::from(id / 2) * step;
                     if id.is_multiple_of(2) { -n } else { n }
                 };
-                let area: &Shapes = &sparse_area;
                 match cfg.sparse_infill_pattern {
                     InfillPattern::LockedZag => {
                         // Locked zag, as OrcaSlicer prints it: a skin of `skin_infill_depth` along the walls is cross zag at the
@@ -9934,26 +10041,20 @@ impl SliceSession {
                         ));
                     }
                 }
-                if sparse_turn != 0.0 {
-                    let back =
-                        |p: &mut Vec<crate::geom::Point>| *p = crate::patterns::rotate_points(p, sparse_turn);
-                    work.sparse_paths.iter_mut().skip(before.0).for_each(back);
-                    work.sparse_alt
-                        .iter_mut()
-                        .skip(before.1)
-                        .flat_map(|(_, ps)| ps.iter_mut())
-                        .for_each(back);
-                }
-            } else {
-                let before = work.sparse.len();
-                for (sd, s) in &sparse_spans {
-                    paths::span_lines(s, *sd, fam.sparse_spacing, &mut work.sparse);
-                }
-                if sparse_turn != 0.0 {
+                let back = |p: &mut Vec<crate::geom::Point>| unframe(p, *at, sparse_turn);
+                work.sparse_paths.iter_mut().skip(before.0).for_each(back);
+                work.sparse_alt
+                    .iter_mut()
+                    .skip(before.1)
+                    .flat_map(|(_, ps)| ps.iter_mut())
+                    .for_each(back);
+            }
+            if !zig {
+                for (_, s, at) in &sparse_spans {
+                    let before = work.sparse.len();
+                    paths::span_lines(s, sparse_dir, fam.sparse_spacing, &mut work.sparse);
                     for seg in work.sparse.iter_mut().skip(before) {
-                        if let [a, b] = crate::patterns::rotate_points(seg, sparse_turn)[..] {
-                            *seg = [a, b];
-                        }
+                        unframe(seg, *at, sparse_turn);
                     }
                 }
                 if cfg.anchor_max_mm() > 0.0 && !work.sparse.is_empty() {
@@ -9982,10 +10083,7 @@ impl SliceSession {
                 let here = self.plan.thickness(layer);
                 let spacing = (w - height * (1.0 - std::f64::consts::FRAC_PI_4)).max(0.5 * w);
                 let lines = self.planned_sparse(cfg, layer, &area).unwrap_or_else(|| {
-                    crate::patterns::sparse(&crate::patterns::SparseIn {
-                        spacing_mm: spacing,
-                        ..self.sparse_in(cfg, layer, &area, self.plan.top(layer))
-                    })
+                    self.sparse_lines(cfg, layer, &area, self.plan.top(layer), Some(spacing))
                 });
                 #[allow(clippy::cast_possible_truncation, reason = "a flow ratio")]
                 let flow =
@@ -13406,6 +13504,18 @@ fn weld(
         })
         .collect();
     (verts, tris)
+}
+
+/// Lines drawn in a frame of [`SliceSession::sparse_frames`] put back on the plate: turned by `turn` about the
+/// origin, then moved by `at`.
+fn unframe(points: &mut [crate::geom::Point], at: [i32; 2], turn: f64) {
+    if turn != 0.0 {
+        let back = crate::patterns::rotate_points(points, turn);
+        points.copy_from_slice(&back);
+    }
+    for p in points.iter_mut() {
+        *p = crate::geom::Point::new(p.x + at[0], p.y + at[1]);
+    }
 }
 
 /// `shapes` moved by (`dx`, `dy`) units.

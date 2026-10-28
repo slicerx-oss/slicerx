@@ -44,9 +44,16 @@ pub(crate) struct SparseIn<'a> {
     /// Longest boundary piece that joins two lines and the anchor hook length, mm (0 keeps lines apart).
     pub connect_mm: f64,
     pub anchor_mm: f64,
-    /// Box of the plate's objects `[min_x, min_y, max_x, max_y]`, mm: its center is the reference of the
-    /// line phases (Orca's object bounding box).
+    /// Box of the object `[min_x, min_y, max_x, max_y]`, mm: its center is the reference of the line phases
+    /// (the object's bounding box).
     pub object: [f64; 4],
+    /// The patterns drawn from a fixed point (the rectilinear family, honeycomb, 3D honeycomb, crosshatch and the
+    /// plain gyroid) put that point at the center of `object`, as sparse infill does; otherwise at the plate
+    /// origin.
+    pub object_origin: bool,
+    /// The gyroid's lattice origin sits ten spacings below and left of its fixed point, modulo its period (most
+    /// printers); on Bambu Lab printers it is the point itself.
+    pub gyroid_margin: bool,
     /// The infill direction setting, degrees.
     pub angle_deg: f64,
     /// The two lateral lattice angles, degrees from vertical.
@@ -67,6 +74,35 @@ pub(crate) struct SparseIn<'a> {
 pub(crate) fn sparse(inp: &SparseIn<'_>) -> Vec<Vec<Point>> {
     if inp.density <= 0.0 || inp.region.is_empty() {
         return Vec::new();
+    }
+    // The patterns drawn from a fixed point draw what they draw with the plate origin on the object's box center:
+    // the region moves there by whole internal units, so nothing else changes, and the lines move back.
+    if inp.object_origin && from_fixed_point(inp) {
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "a plate position in internal units"
+        )]
+        let (dx, dy) = (
+            (f64::midpoint(inp.object[0], inp.object[2]) * SCALE).round() as i32,
+            (f64::midpoint(inp.object[1], inp.object[3]) * SCALE).round() as i32,
+        );
+        let moved = translate(inp.region, -dx, -dy);
+        let (mx, my) = (f64::from(dx) / SCALE, f64::from(dy) / SCALE);
+        let lines = sparse(&SparseIn {
+            region: &moved,
+            object: [
+                inp.object[0] - mx,
+                inp.object[1] - my,
+                inp.object[2] - mx,
+                inp.object[3] - my,
+            ],
+            object_origin: false,
+            ..*inp
+        });
+        return lines
+            .into_iter()
+            .map(|l| l.into_iter().map(|p| Point::new(p.x + dx, p.y + dy)).collect())
+            .collect();
     }
     // Orca's `Fill::fill_surface` pulls the surface in half a spacing before any pattern sees it (the
     // overlap of a fill is 0), so lines, cuts and the boundary lines are joined along all use that area.
@@ -151,6 +187,30 @@ pub(crate) fn rotate_shapes(region: &Shapes, angle: f64) -> Shapes {
                         })
                         .collect()
                 })
+                .collect()
+        })
+        .collect()
+}
+
+/// The patterns whose lattice hangs off a fixed point rather than the object's box: the rectilinear family's
+/// scanlines, honeycomb, 3D honeycomb, crosshatch and the plain gyroid.
+fn from_fixed_point(inp: &SparseIn<'_>) -> bool {
+    inp.pattern.on_scanlines()
+        || matches!(
+            inp.pattern,
+            InfillPattern::Honeycomb | InfillPattern::Honeycomb3d | InfillPattern::CrossHatch
+        )
+        || (inp.pattern == InfillPattern::Gyroid && inp.gyroid_layer_height.is_none())
+}
+
+/// The region moved by `dx`, `dy` internal units.
+fn translate(region: &Shapes, dx: i32, dy: i32) -> Shapes {
+    region
+        .iter()
+        .map(|shape| {
+            shape
+                .iter()
+                .map(|ring| ring.iter().map(|q| Pt::new(q.x + dx, q.y + dy)).collect())
                 .collect()
         })
         .collect()
@@ -290,7 +350,7 @@ fn sparse_on(inp: &SparseIn<'_>) -> Vec<Vec<Point>> {
                     })
                     .collect();
             }
-            None => raw = gyroid_waves(spacing_mm, density, z_mm, bbox),
+            None => raw = gyroid_waves(spacing_mm, density, z_mm, bbox, inp.gyroid_margin),
         },
         InfillPattern::TpmsD | InfillPattern::TpmsFk => {
             let mm = [bbox[0] / SCALE, bbox[1] / SCALE, bbox[2] / SCALE, bbox[3] / SCALE];
@@ -1274,9 +1334,9 @@ fn lines(angle: f64, pitch: f64, phase: f64, bbox: [f64; 4]) -> Vec<Vec<Pt>> {
 /// the 3D field, but two families of curves `y = f(x)` (or `x = f(y)` on layers where the vertical family
 /// is the smoother one), one every pi of the parameter, each wave a period of `2 pi` in it. The parameter is
 /// the distance over `spacing / (2.44 * density)` and the height over the same, so a layer of the stack
-/// shifts the phase. The lattice is anchored at the plate's origin less ten spacings, as Orca's grid
-/// alignment and bounding box margin do, so every layer and island shares it. `bbox` in internal units.
-fn gyroid_waves(spacing_mm: f64, density: f64, z_mm: f64, bbox: [f64; 4]) -> Vec<Vec<Pt>> {
+/// shifts the phase. The lattice is anchored at the plate's origin less ten spacings (`margin`; without it at
+/// the origin itself), so every layer and island shares it. `bbox` in internal units.
+fn gyroid_waves(spacing_mm: f64, density: f64, z_mm: f64, bbox: [f64; 4], margin: bool) -> Vec<Vec<Pt>> {
     use std::f64::consts::{FRAC_PI_2, PI};
     let dens = (density * 2.44).max(1e-6);
     let scale = spacing_mm / dens; // mm per unit of the wave parameter
@@ -1364,7 +1424,7 @@ fn gyroid_waves(spacing_mm: f64, density: f64, z_mm: f64, bbox: [f64; 4]) -> Vec
     // The lattice origin and the parameter box over the bounding box.
     let g = 2.0 * PI * scale;
     let (minx, miny, maxx, maxy) = (bbox[0] / SCALE, bbox[1] / SCALE, bbox[2] / SCALE, bbox[3] / SCALE);
-    let margin = 10.0 * spacing_mm;
+    let margin = if margin { 10.0 * spacing_mm } else { 0.0 };
     let (ox, oy) = ((minx / g).floor() * g - margin, (miny / g).floor() * g - margin);
     let (mut width, mut height) = (
         ((maxx - ox) / scale).ceil() + 1.0,
@@ -1467,6 +1527,8 @@ mod tests {
             overhang_angle_deg: 60.0,
             fixed_angle: false,
             gyroid_layer_height: None,
+            object_origin: false,
+            gyroid_margin: true,
         }
     }
 
