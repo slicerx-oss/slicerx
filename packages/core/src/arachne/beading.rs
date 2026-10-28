@@ -612,12 +612,16 @@ impl Strategy for Limited {
     fn nonlinear_thicknesses(&self, lower: i64) -> Vec<i64> {
         let mut ret = self.parent.nonlinear_thicknesses(lower);
         if self.absorb > 0 && self.max_beads >= 4 && lower >= self.max_beads {
-            // Where the walls stop taking up the strip and the infill area opens, with a node just before it, so
-            // the beads along a part that widens slowly are not blended from one side of it to the other (which
-            // left the strip neither widened into nor filled for 4 mm of a rib).
+            // Where the walls stop taking up the strip and the infill area opens, with a node just before it and
+            // one just past it, so the beads along a part that widens slowly are not blended from one side of it
+            // to the other (which left the strip neither widened into nor filled for 4 mm of a rib). The node at
+            // the point itself lands a few nanometers to either side of it; under it, it kept the widened beads,
+            // blended down to the next node: on a wedge, inner walls of bead 0.814 mm (printed line 0.857 mm) at
+            // 2.5 mm across, and a printed line still 0.63 mm at 3.3.
             let open = self.parent.optimal_thickness(self.max_beads) + self.absorb;
             ret.push(open - nm(0.01));
             ret.push(open);
+            ret.push(open + nm(0.01));
         }
         ret
     }

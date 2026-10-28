@@ -2238,4 +2238,94 @@ mod tests {
             .unwrap_or(0);
         assert!(wmax >= 3000, "{wmax}");
     }
+
+    /// Inner wall widths along the long sides of a wedge 60 mm long, 0.2 mm across at its narrow end and
+    /// `wide` mm at the other, by the part width at each point: (part width, width), mm. Sampled every 0.05 mm
+    /// along each piece of line, with the width going linearly from one end's to the other's, as it prints.
+    fn wedge_inner_widths(cfg: &crate::config::PrintConfig, h: f64, wide: f64) -> Vec<(f64, f64)> {
+        let p = |x: f64, y: f64| IntPoint::new((x * 10_000.0).round() as i32, (y * 10_000.0).round() as i32);
+        let half = wide / 2.0;
+        let wedge: Shapes = vec![vec![vec![
+            p(0.0, -0.1),
+            p(60.0, -half),
+            p(60.0, half),
+            p(0.0, 0.1),
+        ]]];
+        let (islands, _) = island_walls(&wedge, cfg, 2, 0, h, false, None, false);
+        let mut out = Vec::new();
+        for line in islands.iter().flat_map(|i| i.wide.iter()) {
+            if line.is_odd || line.inset != 1 {
+                continue;
+            }
+            for (q, w) in line.points.windows(2).zip(line.widths.windows(2)) {
+                let (x0, x1) = (f64::from(q[0].x) / 10_000.0, f64::from(q[1].x) / 10_000.0);
+                let (w0, w1) = (f64::from(w[0]) / 10_000.0, f64::from(w[1]) / 10_000.0);
+                let n = ((x1 - x0).abs() / 0.05).ceil().max(1.0);
+                for k in 0..n as usize {
+                    let t = (k as f64 + 0.5) / n;
+                    let (x, b) = (x0 + (x1 - x0) * t, w0 + (w1 - w0) * t);
+                    if b > 0.0 && (2.0..58.0).contains(&x) {
+                        out.push((0.2 + (wide - 0.2) * x / 60.0, b));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// aegis walls take up a strip too narrow for the infill between them, and step back to their own width
+    /// where the strip is wide enough for it: on a wedge, past that point (about 2.43 mm across here) the inner
+    /// walls are their nominal width, not widened beads blended down to the next node of the skeleton (0.81 mm
+    /// wide at 2.5 and 0.6 at 3.3 mm across on a 4 mm wedge, about a fifth more material there than the walls
+    /// and infill hold). Below it they still widen by half of what the thickness leaves. Wedges 4.0 to 4.2 mm
+    /// at the wide end, so the skeleton's node at that point lands a few nanometers to either side of it.
+    #[test]
+    fn aegis_walls_step_back_to_their_width_past_the_strip_they_take_up() {
+        let h = 0.2;
+        let cfg = wall_cfg(
+            0.4,
+            h,
+            0.42,
+            0.45,
+            &serde_json::json!({"precise_outer_wall": false}),
+        );
+        let (outer, inner) = (cfg.spacing_for(0.42), cfg.spacing_for(0.45));
+        // The outline goes in by half the outer wall's width less its spacing on each side; the walls stop
+        // taking up the strip where it is two inner spacings wide.
+        let taken_in = 0.42 - outer;
+        let open = 2.0 * (outer / 2.0 + f64::midpoint(outer, inner) + inner / 2.0) + 2.0 * inner + taken_in;
+        let mut wrong = Vec::new();
+        for k in 0..=20 {
+            let wide = 4.0 + f64::from(k) * 0.01;
+            let samples = wedge_inner_widths(&cfg, h, wide);
+            let past: Vec<&(f64, f64)> = samples.iter().filter(|(w, _)| *w > open + 0.05).collect();
+            let under: Vec<&(f64, f64)> = samples
+                .iter()
+                .filter(|(w, _)| (2.1..open - 0.05).contains(w))
+                .collect();
+            if past.len() < 20 || under.len() < 10 {
+                wrong.push(format!(
+                    "{wide:.2}: {} samples past {open:.3}, {} under",
+                    past.len(),
+                    under.len()
+                ));
+            }
+            if let Some((w, b)) = past.iter().find(|(_, b)| *b > inner + 0.01) {
+                wrong.push(format!("{wide:.2}: inner wall {b:.3} wide at {w:.3} mm across"));
+            }
+            if let Some((w, b)) = under
+                .iter()
+                .find(|(w, b)| (b - (w - taken_in - 2.0 * outer) / 2.0).abs() > 0.02)
+            {
+                wrong.push(format!(
+                    "{wide:.2}: inner wall {b:.3} wide at {w:.3} mm across, not taking up the strip"
+                ));
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "past {open:.3} mm, nominal {inner:.3}:\n{}",
+            wrong.join("\n")
+        );
+    }
 }
