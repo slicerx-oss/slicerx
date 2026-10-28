@@ -298,7 +298,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         layerCount?: number
         gcodeSha256?: string
         stats?: { timeS?: number; filamentMm?: number[]; filamentG?: number[]; toolChanges?: number }
-        warnings?: { message?: string }[]
+        warnings?: { code?: string; message?: string; layer?: number; objectId?: string }[]
         files?: { gcode?: string; preview?: string } & Record<string, unknown>
         featureFilaments?: { object?: string; name?: string; features?: Record<string, number[]> }[]
         chamberCooling?: { mode?: number; source?: string; filaments?: string[]; text?: string }
@@ -339,6 +339,8 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         ...(!job.modelPlate && !job.plate && typeof plates?.sliced === 'number' && typeof plates.plates === 'number' ? { plate: plates.sliced, plate_count: plates.plates } : {}),
         ...(job.emitGcode && out.gcodeSha256 ? { gcode_sha256: out.gcodeSha256 } : {}),
         warnings: (out.warnings ?? []).map((w) => String(w.message ?? '')),
+        // The code goes through as the engine wrote it, so a code this server does not know reaches the app.
+        ...((out.warnings ?? []).some((w) => typeof w.code === 'string') ? { warning_details: (out.warnings ?? []).map((w) => ({ code: typeof w.code === 'string' ? w.code : 'unsupported_setting', message: String(w.message ?? ''), ...(typeof w.layer === 'number' ? { layer: w.layer } : {}), ...(typeof w.objectId === 'string' ? { object_id: w.objectId } : {}) })) } : {}),
         ...(job.emitGcode ? { gcode_path: gcodePath } : {}),
         ...(job.emitPreview ? { preview_path: previewPath } : {}),
       }

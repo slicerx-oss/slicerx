@@ -56,6 +56,18 @@ function setup(enabled = true, encode?: (parts: MeshPart[]) => Uint8Array) {
 }
 
 describe('cloud slicing through the app slicer', () => {
+  it("keeps the service's warnings as written: any code, and the fields beyond code, message and layer", async () => {
+    const { svc, slicer } = setup()
+    const body = await slicer.loadParts('Body', [part('Body')])
+    svc.warnings = [
+      { code: 'objects_overlap', message: 'A overlaps B on layer 1.', layer: 0, objectId: 'a' },
+      { code: 'long_bridge', message: 'bridge' },
+      { code: 'brand_new_note', message: 'm' },
+    ]
+    const r = await slicer.slice({ plate: plate([{ id: 'a', name: 'Body', mesh: body.id, transform: T }]), config: {} as never })
+    expect(r.warnings).toEqual(svc.warnings)
+  })
+
   it('uploads the models the app loaded, painted copy included, and returns the G-code', async () => {
     const { svc, slicer, sliced } = setup()
     // An opened project loads each object's parts; a painted object slices with a copy loaded from its bytes.
