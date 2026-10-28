@@ -77,7 +77,7 @@ describe.skipIf(noSx())('with the real sx CLI', () => {
 })
 
 /** A Bambu project with `generator` walls (arachne unless given), and the list of keys the person changed (Bambu Studio's process entry first). */
-function wallsProject(dir: string, name: string, changed: string | undefined, generator = 'arachne'): string {
+function wallsProject(dir: string, name: string, changed: string | undefined, generator = 'arachne', printer = 'Bambu Lab A1'): string {
   const path = join(dir, name)
   writeFileSync(
     path,
@@ -86,8 +86,8 @@ function wallsProject(dir: string, name: string, changed: string | undefined, ge
       {
         name: 'Metadata/project_settings.config',
         data: JSON.stringify({
-          printer_settings_id: 'Bambu Lab A1 0.4 nozzle',
-          printer_model: 'Bambu Lab A1',
+          printer_settings_id: `${printer} 0.4 nozzle`,
+          printer_model: printer,
           wall_generator: generator,
           precise_outer_wall: '1',
           ...(changed !== undefined ? { different_settings_to_system: [changed, '', ''] } : {}),
@@ -99,9 +99,9 @@ function wallsProject(dir: string, name: string, changed: string | undefined, ge
 }
 
 describe("SlicerX's engine choices in an opened project", () => {
-  it('keep aegis walls when the project inherited classic walls', async () => {
+  it('keep aegis walls when a project for another printer inherited classic walls', async () => {
     const h = await connect()
-    const read = readProjectFile(wallsProject(h.dir, 'inherited.3mf', 'sparse_infill_density', 'classic'))
+    const read = readProjectFile(wallsProject(h.dir, 'inherited.3mf', 'sparse_infill_density', 'classic', 'Acme Printer 9000'))
     // SlicerX's own values (engine-choices.json), as sx slice <project.3mf> uses them.
     expect(read.config['wall_generator']).toBe('aegis')
     expect(read.summary.import_report.walls).toEqual({ generator: 'aegis', source: 'kept', text: "aegis walls, kept by SlicerX; the project used its preset's default classic" })
@@ -109,6 +109,22 @@ describe("SlicerX's engine choices in an opened project", () => {
     expect(read.config['precise_outer_wall']).toBe(true)
     const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'inherited.3mf', config: read.config } })
     expect(r.config['wall_generator']).toBe('aegis')
+  })
+
+  it('keep the classic walls a stock Bambu Lab project inherited', async () => {
+    const h = await connect()
+    const read = readProjectFile(wallsProject(h.dir, 'bambu-inherited.3mf', 'sparse_infill_density', 'classic'))
+    expect(read.config['wall_generator']).toBe('classic')
+    expect(read.summary.import_report.walls).toEqual({ generator: 'classic', source: 'project', text: 'classic walls, as the project has them' })
+    const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'bambu-inherited.3mf', config: read.config } })
+    expect(r.config['wall_generator']).toBe('classic')
+  })
+
+  it('take aegis walls a Bambu Lab project chose', async () => {
+    const h = await connect()
+    const read = readProjectFile(wallsProject(h.dir, 'bambu-aegis.3mf', 'wall_generator;sparse_infill_density', 'aegis'))
+    expect(read.config['wall_generator']).toBe('aegis')
+    expect(read.summary.import_report.walls).toEqual({ generator: 'aegis', source: 'project', text: "aegis walls, the project's own choice" })
   })
 
   it('keep the arachne walls a project inherited', async () => {

@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Changed
+
+- `project_config` keeps the classic walls a Bambu Lab project inherited (its `printer_model` starts with "Bambu Lab" and `different_settings_to_system` does not list `wall_generator`), where it gave aegis walls before. The walls note reads `classic walls, as the project has them`, and nothing is listed in `kept`. Aegis walls the project lists as changed, and any `--config` or request value, still apply. Projects for other printers keep aegis over inherited classic walls, as before. The rule is `exceptPrinters` on the walls keep in packages/settings/engine-choices.json, which the app and the MCP server read too. On a stock A1 project of an arch and a thin wedge, the wedge now gets gap fill on each of its 20 layers, where aegis printed none.
+
 ### Fixed
 
 - A preview segment whose path was not found in its layer's G-code has no G-code line (0 in `SliceRun::preview`, `extras::LINE_UNKNOWN` from `extras::relative` for a shard), where it pointed at the layer's marker line (`; CHANGE_LAYER` in a Bambu Lab file). On the A1 with classic walls, one path of the x-mark bench plate is such a path.
