@@ -117,6 +117,20 @@ pub(crate) fn unsupported(lower_sparse: &Shapes) -> Shapes {
     perimeters::offset(lower_sparse, -EPS)
 }
 
+/// How wide a strip along the lower layer's infill edge does not hold a narrow piece up as sparse infill, internal
+/// units: [`wall_shift`] of fixed-width walls under variable-width walls, else nothing. Variable-width walls start
+/// the infill area that much closer to the wall, but the vertical shell rule's bands keep the fixed-width edge
+/// (`shells::Input::wall_offset`), so a strip of sparse infill area that thin is left between a band and the wall.
+/// No sparse line prints in it and the wall's overlap covers it: a piece above that reaches over it gets the label it
+/// gets with fixed-width walls. `height` is the lower layer's.
+pub(crate) fn edge_strip(cfg: &PrintConfig, height: f64) -> i32 {
+    if cfg.arachne_walls() {
+        fixed_wall_shift(cfg, height).max(0)
+    } else {
+        0
+    }
+}
+
 /// The widest a floating piece may be with fixed-width walls, mm: a narrow piece that a circle this wide fits in
 /// stays internal solid infill. On the stock 0.42 mm lines and two walls, the ring a box leaves around a smaller
 /// box on top floats up to 4.5 mm wide, and not from 4.75 mm.
@@ -152,6 +166,10 @@ pub(crate) struct Below<'a> {
     reach: i32,
     /// The band's part at least a sparse infill line wide, shrunk by a hair, worked out when first asked for.
     wide: std::sync::OnceLock<Shapes>,
+    /// The lower layer's infill area, and the strip along its edge left out of what a piece can rest on
+    /// ([`edge_strip`], set with [`Below::beside_walls`]; 0 when none).
+    inner: Option<&'a Shapes>,
+    edge: i32,
 }
 
 impl<'a> Below<'a> {
@@ -173,7 +191,27 @@ impl<'a> Below<'a> {
             band: lower.map(|f| (&f.band, &f.shell)),
             reach,
             wide: std::sync::OnceLock::new(),
+            inner: lower.map(|f| &f.inner),
+            edge: 0,
         }
+    }
+
+    /// The same, with the strip `edge` wide along the lower layer's infill edge ([`edge_strip`]) left out of the
+    /// unsupported area a piece can rest on.
+    pub(crate) fn beside_walls(mut self, edge: i32) -> Self {
+        self.edge = edge;
+        self
+    }
+
+    /// `hit`, a piece's overlap with the unsupported area, less the strip along the lower layer's infill edge. The
+    /// infill area is cut near the piece only, far enough out that the cut's own edges, moved in by the strip, stay
+    /// clear of the piece.
+    fn off_edge(&self, one: &Shapes, hit: Shapes) -> Shapes {
+        let Some(inner) = self.inner.filter(|_| self.edge > 0 && !hit.is_empty()) else {
+            return hit;
+        };
+        let near = perimeters::intersection(inner, &perimeters::offset(one, EPS + 2 * self.edge));
+        perimeters::intersection(&hit, &perimeters::offset(&near, -self.edge))
     }
 
     fn wide(&self) -> &Shapes {
@@ -199,17 +237,18 @@ impl<'a> Below<'a> {
     /// True when the piece `one` rests on what does not hold it up below.
     fn floats(&self, one: &Shapes) -> bool {
         let grown = perimeters::offset(one, EPS);
-        let on = |area: &Shapes| {
-            let hit = perimeters::intersection(&grown, area);
-            !hit.is_empty() && (self.cut.is_empty() || !perimeters::difference(&hit, &self.cut).is_empty())
+        let rests = |hit: &Shapes| {
+            !hit.is_empty() && (self.cut.is_empty() || !perimeters::difference(hit, &self.cut).is_empty())
         };
+        let on = |area: &Shapes| rests(&perimeters::intersection(&grown, area));
         let near = match (self.bounds, perimeters::bounds(one)) {
             (Some(u), Some(b)) => {
                 b[0] - EPS <= u[2] && u[0] <= b[2] + EPS && b[1] - EPS <= u[3] && u[1] <= b[3] + EPS
             }
             _ => false,
         };
-        (near && on(self.unsupported)) || on(self.wide())
+        (near && rests(&self.off_edge(one, perimeters::intersection(&grown, self.unsupported))))
+            || on(self.wide())
     }
 }
 
@@ -252,6 +291,11 @@ pub(crate) fn wall_shift(cfg: &PrintConfig, height: f64) -> i32 {
     if cfg.arachne_walls() {
         return 0;
     }
+    fixed_wall_shift(cfg, height)
+}
+
+/// [`wall_shift`] for fixed-width walls, whatever the region's walls are, internal units.
+fn fixed_wall_shift(cfg: &PrintConfig, height: f64) -> i32 {
     let spacing = |w: f64| (w - height * (1.0 - std::f64::consts::FRAC_PI_4)).max(w * 0.5);
     let (outer, inner) = (cfg.outer_wall_width(), cfg.inner_wall_width());
     let past = if cfg.wall_loops < 2 {

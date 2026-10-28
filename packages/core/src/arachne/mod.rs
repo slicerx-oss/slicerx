@@ -623,7 +623,7 @@ pub(crate) fn island_walls_or(
     };
     // The outline is taken in to where the outer bead's edge would be if its width were the spacing.
     let inset = crate::geom::mm(if precise { 2.0 * half_gap } else { half_gap });
-    let min_infill_spacing = crate::geom::mm(cfg.flow_spacing() * 0.6);
+    let min_infill_spacing = min_infill_spacing(cfg);
     let resolution = f64::from(crate::geom::mm(prm.resolution));
     // Each island's walls in order. With `usual` given, an island's usual walls wait: when no island has a one-wall
     // top run, the region's walls are `usual`'s.
@@ -691,6 +691,20 @@ pub(crate) fn island_walls_or(
         }
     }
     (islands, inner)
+}
+
+/// The narrowest infill area the walls leave that is kept, internal units: 0.6 of a line spacing, or a whole line
+/// spacing with arachne walls on printers other than Bambu Lab's. A strip whose innermost arachne walls leave less
+/// than a line spacing between their spacing edges gets nothing inside them on any layer, as in other slicers: a
+/// 2.585 mm strip under three 0.4 mm walls a side, 0.31 mm between the walls, prints no surface, and a 2.6 mm one
+/// prints one top line.
+fn min_infill_spacing(cfg: &crate::config::PrintConfig) -> i32 {
+    let share = if cfg.arachne_generator() && !crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+        1.0
+    } else {
+        0.6
+    };
+    crate::geom::mm(cfg.flow_spacing() * share)
 }
 
 /// One island's walls in [`island_walls_or`]: generated (`None` where the generator could not process the island), or
@@ -905,7 +919,7 @@ pub(crate) mod reference {
             one_wall_outer: loops == 1 && (one_wall_layer || cfg.wall_loops == 1),
         };
         let inset = crate::geom::mm(if precise { 2.0 * half_gap } else { half_gap });
-        let min_infill_spacing = crate::geom::mm(cfg.flow_spacing() * 0.6);
+        let min_infill_spacing = super::min_infill_spacing(cfg);
         let resolution = f64::from(crate::geom::mm(prm.resolution));
         let mut islands = Vec::with_capacity(region.len());
         let mut inner: Shapes = Vec::new();

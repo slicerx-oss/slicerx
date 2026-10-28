@@ -1,0 +1,1018 @@
+{
+ "voron--f4strips--s15": [
+  {
+   "width_mm": 2.3,
+   "top": {
+    "z": 2.2
+   },
+   "below": {
+    "z": 2.0
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.45,
+   "top": {
+    "z": 2.2
+   },
+   "below": {
+    "z": 2.0
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.585,
+   "top": {
+    "z": 2.2
+   },
+   "below": {
+    "z": 2.0
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.6,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.471
+     ],
+     "from_side": [
+      1.249
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.415
+     ],
+     "from_side": [
+      1.31
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.65,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.471
+     ],
+     "from_side": [
+      1.249
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.465
+     ],
+     "from_side": [
+      1.335
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.7,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.471
+     ],
+     "from_side": [
+      1.249
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.515
+     ],
+     "from_side": [
+      1.36
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 3.0,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 2,
+     "widths": [
+      0.471
+     ],
+     "from_side": [
+      1.249,
+      1.678
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 2,
+     "widths": [
+      0.429
+     ],
+     "from_side": [
+      1.317,
+      1.703
+     ],
+     "short": 3
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  }
+ ],
+ "voron--f4strips--s100": [
+  {
+   "width_mm": 2.3,
+   "top": {
+    "z": 2.2
+   },
+   "below": {
+    "z": 2.0
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.45,
+   "top": {
+    "z": 2.2
+   },
+   "below": {
+    "z": 2.0
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.585,
+   "top": {
+    "z": 2.2
+   },
+   "below": {
+    "z": 2.0
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.6,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.471
+     ],
+     "from_side": [
+      1.249
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.415
+     ],
+     "from_side": [
+      1.31
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.415
+     ],
+     "from_side": [
+      1.31
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 2.65,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.471
+     ],
+     "from_side": [
+      1.249
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.465
+     ],
+     "from_side": [
+      1.335
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.465
+     ],
+     "from_side": [
+      1.335
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 2.7,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.471
+     ],
+     "from_side": [
+      1.249
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.515
+     ],
+     "from_side": [
+      1.36
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.515
+     ],
+     "from_side": [
+      1.36
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 3.0,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 2,
+     "widths": [
+      0.471
+     ],
+     "from_side": [
+      1.249,
+      1.678
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 2,
+     "widths": [
+      0.429
+     ],
+     "from_side": [
+      1.317,
+      1.703
+     ],
+     "short": 3
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Internal solid infill": {
+     "lines": 2,
+     "widths": [
+      0.429
+     ],
+     "from_side": [
+      1.317,
+      1.703
+     ],
+     "short": 3
+    }
+   }
+  }
+ ],
+ "ender--f4strips--s0": [
+  {
+   "width_mm": 1.7,
+   "top": {
+    "z": 2.2
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.383
+     ],
+     "from_side": [
+      0.85
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 1.72,
+   "top": {
+    "z": 2.2
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.383
+     ],
+     "from_side": [
+      0.86
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 1.74,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.42
+     ],
+     "from_side": [
+      0.87
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.383
+     ],
+     "from_side": [
+      0.87
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 1.8,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.48
+     ],
+     "from_side": [
+      0.9
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.383
+     ],
+     "from_side": [
+      0.9
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 1.928,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.495
+     ],
+     "from_side": [
+      0.908
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.42
+     ],
+     "from_side": [
+      0.964
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.05,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 1,
+     "widths": [
+      0.495
+     ],
+     "from_side": [
+      0.908
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.542
+     ],
+     "from_side": [
+      1.025
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.14,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 2,
+     "widths": [
+      0.432
+     ],
+     "from_side": [
+      0.876,
+      1.265
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 1,
+     "widths": [
+      0.632
+     ],
+     "from_side": [
+      1.07
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.17,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 2,
+     "widths": [
+      0.447
+     ],
+     "from_side": [
+      0.884,
+      1.287
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 2,
+     "widths": [
+      0.352
+     ],
+     "from_side": [
+      0.931,
+      1.24
+     ],
+     "short": 2
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.4,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 2,
+     "widths": [
+      0.495
+     ],
+     "from_side": [
+      0.908,
+      1.361
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 2,
+     "widths": [
+      0.467
+     ],
+     "from_side": [
+      0.988,
+      1.412
+     ],
+     "short": 2
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  }
+ ],
+ "ender--f4strips--s15": [
+  {
+   "width_mm": 1.7,
+   "top": {
+    "z": 2.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.192
+     ],
+     "from_side": [
+      0.85
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.192
+     ],
+     "from_side": [
+      0.85
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.192
+     ],
+     "from_side": [
+      0.85
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 1.72,
+   "top": {
+    "z": 2.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.212
+     ],
+     "from_side": [
+      0.86
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.212
+     ],
+     "from_side": [
+      0.86
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.212
+     ],
+     "from_side": [
+      0.86
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 1.74,
+   "top": {
+    "z": 2.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.232
+     ],
+     "from_side": [
+      0.87
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.232
+     ],
+     "from_side": [
+      0.87
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.232
+     ],
+     "from_side": [
+      0.87
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 1.8,
+   "top": {
+    "z": 2.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.292
+     ],
+     "from_side": [
+      0.9
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.292
+     ],
+     "from_side": [
+      0.9
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.292
+     ],
+     "from_side": [
+      0.9
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 1.928,
+   "top": {
+    "z": 2.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.42
+     ],
+     "from_side": [
+      0.965
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.42
+     ],
+     "from_side": [
+      0.965
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.42
+     ],
+     "from_side": [
+      0.965
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 2.05,
+   "top": {
+    "z": 2.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.542
+     ],
+     "from_side": [
+      1.025
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.542
+     ],
+     "from_side": [
+      1.025
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.542
+     ],
+     "from_side": [
+      1.025
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 2.14,
+   "top": {
+    "z": 2.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.632
+     ],
+     "from_side": [
+      1.07
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.632
+     ],
+     "from_side": [
+      1.07
+     ],
+     "short": 0
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2,
+    "Gap infill": {
+     "lines": 1,
+     "widths": [
+      0.632
+     ],
+     "from_side": [
+      1.07
+     ],
+     "short": 0
+    }
+   }
+  },
+  {
+   "width_mm": 2.17,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 2,
+     "widths": [
+      0.447
+     ],
+     "from_side": [
+      0.884,
+      1.287
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 2,
+     "widths": [
+      0.352
+     ],
+     "from_side": [
+      0.931,
+      1.24
+     ],
+     "short": 2
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  },
+  {
+   "width_mm": 2.4,
+   "top": {
+    "z": 2.2,
+    "Top surface": {
+     "lines": 2,
+     "widths": [
+      0.495
+     ],
+     "from_side": [
+      0.908,
+      1.361
+     ],
+     "short": 0
+    }
+   },
+   "below": {
+    "z": 2.0,
+    "Internal solid infill": {
+     "lines": 2,
+     "widths": [
+      0.467
+     ],
+     "from_side": [
+      0.988,
+      1.412
+     ],
+     "short": 2
+    }
+   },
+   "sparse_layer": {
+    "z": 1.2
+   }
+  }
+ ]
+}

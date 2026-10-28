@@ -1578,6 +1578,7 @@ pub(crate) fn walls_for_top(
         } else {
             i32::midpoint(pitch(ext), pitch(inner))
         };
+        let thin = thin_infill(cfg);
         let normal = |shapes: &Shapes| {
             walls_gapped(
                 shapes,
@@ -1586,6 +1587,7 @@ pub(crate) fn walls_for_top(
                 inner,
                 overlap,
                 Some((pitch(inner), spacing2, layer_height)),
+                thin,
             )
         };
         let Some(top) = top.filter(|_| wall_loops > 1) else {
@@ -1609,6 +1611,7 @@ pub(crate) fn walls_for_top(
                 inner,
                 overlap,
                 Some((pitch(inner), spacing2, layer_height)),
+                thin,
             );
             let mut exposed = difference(&outer_core, top.upper);
             if let Some(lower) = top.lower {
@@ -1634,6 +1637,7 @@ pub(crate) fn walls_for_top(
                 inner,
                 overlap,
                 Some((pitch(inner), pitch(inner), layer_height)),
+                thin,
             );
             let mut joined = IslandWalls::default();
             for mut island in inside {
@@ -1671,11 +1675,25 @@ pub(crate) fn walls_with(
     inner: i32,
     overlap: i32,
 ) -> (Vec<IslandWalls>, Shapes) {
-    walls_gapped(region, wall_loops, ext, inner, overlap, None)
+    walls_gapped(region, wall_loops, ext, inner, overlap, None, false)
+}
+
+/// True when classic walls leave their thin strips to the infill area instead of gap fill: with no sparse infill,
+/// on printers other than Bambu Lab's. A strip between the walls too narrow for the infill area's usual opening,
+/// which a gap fill bead fills when there is sparse infill, is then infill area on every layer: nothing on a sparse
+/// layer, internal solid infill under a top, and a top surface line once the strip is wide enough for one, as in
+/// other slicers.
+fn thin_infill(cfg: &crate::config::PrintConfig) -> bool {
+    cfg.sparse_infill_density <= 0.0 && !crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
 }
 
 /// [`walls_with`] that finds gaps the way Orca does when given the loop pitch and the pitch between
-/// the outer and first inner wall.
+/// the outer and first inner wall. With `thin` ([`thin_infill`]) a gap strip that the infill area, not opened,
+/// reaches is infill area, with no gap fill bead.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the wall widths, pitches and the thin strip rule"
+)]
 pub(crate) fn walls_gapped(
     region: &Shapes,
     wall_loops: u32,
@@ -1683,6 +1701,7 @@ pub(crate) fn walls_gapped(
     inner: i32,
     overlap: i32,
     gap_pitches: Option<(i32, i32, f64)>,
+    thin: bool,
 ) -> (Vec<IslandWalls>, Shapes) {
     let mut islands = Vec::with_capacity(region.len());
     let mut core_all: Shapes = Vec::new();
@@ -1749,8 +1768,22 @@ pub(crate) fn walls_gapped(
             one.clone()
         };
         if let (true, Some((spacing, spacing2, height))) = (wall_loops > 0, gap_pitches) {
-            let (lines, covered) =
-                crate::gapfill::find_orca(&one, &chain, wall_loops, ext, inner, spacing, spacing2, height);
+            let unopened = (thin && inset > 0).then(|| offset(&one, -inset));
+            let (lines, covered, given) = crate::gapfill::find_orca(
+                &one,
+                &chain,
+                wall_loops,
+                ext,
+                inner,
+                spacing,
+                spacing2,
+                height,
+                unopened.as_ref(),
+            );
+            if let (Some(all), false) = (&unopened, given.is_empty()) {
+                // The strips the gap finder leaves to the infill area are infill area as the walls leave it.
+                core = union_all(&[&core, &intersection(all, &offset(&given, spacing / 2))]);
+            }
             island.gap_lines = lines;
             if !covered.is_empty() {
                 // Orca takes the filled strips out of the innermost wall's area before the infill's inset,
