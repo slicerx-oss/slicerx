@@ -469,6 +469,8 @@ export interface VolumeInput {
   local: readonly number[]
   /** A modifier's setting overrides, Orca keys. */
   settings?: Readonly<Record<string, unknown>>
+  /** The filament a modifier prints the region inside it in, when the person set one. Absent, each part keeps its own. */
+  slot?: number
 }
 
 /** One object on a plate, as the writer takes it. */
@@ -644,11 +646,14 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
         meshObjects.push(`<object id="${id}" type="model">`, () => meshXml(part, paint), '</object>')
       }
       // Negative volumes and support blockers or enforcers are parts of the object with their own subtype, as Orca writes them.
-      const volParts: { id: number; name: string; subtype: string; settings?: Readonly<Record<string, unknown>> }[] = []
+      // Other slicers print the region inside a modifier in its `extruder` when that is above 0, so 0 (no change) unless
+      // the person set the modifier's filament; on the other volumes the key prints nothing.
+      const volParts: { id: number; name: string; subtype: string; extruder: number; settings?: Readonly<Record<string, unknown>> }[] = []
       for (const v of obj.volumes ?? []) {
         const id = nextId++
         partIds.push(id)
-        volParts.push({ id, name: v.name, subtype: VOLUME_SUBTYPE[v.role], ...(v.settings ? { settings: v.settings } : {}) })
+        const extruder = v.role === 'modifier' && v.slot !== undefined && v.slot > 0 ? v.slot : 0
+        volParts.push({ id, name: v.name, subtype: VOLUME_SUBTYPE[v.role], extruder, ...(v.settings ? { settings: v.settings } : {}) })
         meshObjects.push(`<object id="${id}" type="model">`, () => meshXml(placed(v.part, v.local)), '</object>')
       }
       const objId = nextId++
@@ -678,7 +683,7 @@ export function projectFiles(input: ProjectInput, splitAt = SPLIT_BYTES): ZipInp
           (src?.creatorId ? `<metadata key="sx:Creator" value="${esc(src.creatorId)}"/>` : '') +
           Object.entries(own).map(([k, v]) => `<metadata key="${esc(k)}" value="${esc(String(v))}"/>`).join('') +
           obj.parts.map((p, i) => `<part id="${partIds[i]}" subtype="normal_part"><metadata key="name" value="${esc(p.name)}"/><metadata key="extruder" value="${obj.slotOverrides?.[p.name] ?? p.slot}"/>${modifierMeta(obj.partSettings?.[p.name])}</part>`).join('') +
-          volParts.map((v) => `<part id="${v.id}" subtype="${v.subtype}"><metadata key="name" value="${esc(v.name)}"/><metadata key="extruder" value="1"/>${modifierMeta(v.settings)}</part>`).join('') +
+          volParts.map((v) => `<part id="${v.id}" subtype="${v.subtype}"><metadata key="name" value="${esc(v.name)}"/><metadata key="extruder" value="${v.extruder}"/>${modifierMeta(v.settings)}</part>`).join('') +
           `</object>`,
       )
       const identify = obj.printable !== false ? labelIds[printing++] : undefined
