@@ -1,0 +1,1 @@
+playback through a tool change on the H2C runs clean and keeps its frame rate | subydoo-ci | 2026-10-28 | 2026-10-29 | https://github.com/slicerx-oss/slicerx/issues/1374 | passed only on retry in the #1615 merge group on 2026-10-28 (run 40758062464, desktop gpu shard) with no other load during its e2e step; same test as the first-try frame count in #1374
