@@ -118,35 +118,35 @@ export interface ProjectRead {
   /**
    * Another slicer's project (a 3MF, not an .sx3mf) with print settings: its settings as the app's project open reads
    * them (`orca` for a Bambu Studio or Orca project, `prusaslicer` for a PrusaSlicer one), for a slice on a printer the
-   * way the app opens it (project-open.ts). `slots` is the last filament slot its parts print with, and `projectKeys`
-   * the project keys of `config` (flush volumes, filament map, tower spot, filament colors).
+   * way the app opens it (project-open.ts). `slots` is the last filament slot its parts print with, `used` every slot they
+   * print with.
    */
-  opened?: { from: 'orca' | 'prusaslicer'; settings: Record<string, unknown>; slots: number; projectKeys: string[] }
+  opened?: { from: 'orca' | 'prusaslicer'; settings: Record<string, unknown>; slots: number; used: number[] }
 }
 
 /**
- * The last filament slot a project's objects and model parts print with (their `extruder`, a part's own else its
- * object's), in Metadata/model_settings.config or Metadata/Slic3r_PE_model.config; 1 when they name none.
+ * The filament slots a project's objects and model parts print with (their `extruder`, a part's own else its
+ * object's), in Metadata/model_settings.config or Metadata/Slic3r_PE_model.config, in order; [1] when they name none.
  */
-function topSlot(text: string | undefined): number {
-  if (!text) return 1
+function partSlots(text: string | undefined): number[] {
+  if (!text) return [1]
   const ext = (node: ReturnType<typeof parseXml>): number | undefined => {
     const v = node.children.find((c) => c.name === 'metadata' && c.attrs['key'] === 'extruder')?.attrs['value']
     const n = Number.parseInt(v ?? '', 10)
     return Number.isFinite(n) && n > 0 ? n : undefined
   }
-  let top = 1
+  const used = new Set<number>()
   for (const o of parseXml(text).children.flatMap((c) => c.children)) {
     if (o.name !== 'object') continue
     const own = ext(o) ?? 1
-    top = Math.max(top, own)
+    used.add(own)
     for (const part of o.children) {
       // Model parts only: modifiers, negative parts and the like print no filament of their own.
       const kind = part.attrs['subtype'] ?? part.children.find((c) => c.name === 'metadata' && c.attrs['key'] === 'volume_type')?.attrs['value']
-      if ((part.name === 'part' || part.name === 'volume') && (kind === undefined || kind === 'normal_part' || kind === 'ModelPart')) top = Math.max(top, ext(part) ?? own)
+      if ((part.name === 'part' || part.name === 'volume') && (kind === undefined || kind === 'normal_part' || kind === 'ModelPart')) used.add(ext(part) ?? own)
     }
   }
-  return top
+  return used.size ? [...used].sort((a, b) => a - b) : [1]
 }
 
 /** Keys a project or shared preset may never set: post-processing scripts and credentials (sx-core preflight::is_never_imported). */
@@ -350,8 +350,9 @@ export function readProjectFile(path: string): ProjectRead {
   // The app reads a PrusaSlicer project's settings mapped to Orca's keys, and another project's with the keys its app
   // reads its own way; our own .sx3mf projects open on the current printer as they are.
   const own = /\.sx3mf$/i.test(name)
-  const partSlots = topSlot(modelSettings ?? zip.text('Metadata/Slic3r_PE_model.config'))
-  const opened = own || !hasSettings ? undefined : prusa ? { from: 'prusaslicer' as const, settings: prusaProjectSettings(prusaText!).values, slots: partSlots, projectKeys: [] } : read.raw ? { from: 'orca' as const, settings: withBambuMissingKeys(read.raw, source), slots: partSlots, projectKeys: [...Object.keys(projectKeys), ...('filament_colour' in config ? ['filament_colour'] : [])] } : undefined
+  const used = partSlots(modelSettings ?? zip.text('Metadata/Slic3r_PE_model.config'))
+  const top = Math.max(...used)
+  const opened = own || !hasSettings ? undefined : prusa ? { from: 'prusaslicer' as const, settings: prusaProjectSettings(prusaText!).values, slots: top, used } : read.raw ? { from: 'orca' as const, settings: withBambuMissingKeys(read.raw, source), slots: top, used } : undefined
 
   return {
     ...(opened ? { opened } : {}),

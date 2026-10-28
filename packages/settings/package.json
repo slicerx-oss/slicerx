@@ -21,6 +21,9 @@
     "./box-pack": "./js/box-pack.ts",
     "./easy": "./js/easy.ts",
     "./bed-type": "./js/bed-type.ts",
+    "./flush": "./js/flush.ts",
+    "./flush-defaults": "./js/flush-defaults.ts",
+    "./slot-settings": "./js/slot-settings.ts",
     "./defaults.json": "./defaults.json"
   },
   "scripts": {
