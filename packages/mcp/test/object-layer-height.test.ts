@@ -18,10 +18,10 @@ function box(id: number, lo: number[], hi: number[]): string {
 
 const md = (k: string, v: string) => `<metadata key="${k}" value="${v}"/>`
 
-/** Two 20 mm boxes 12 mm tall, 60 mm apart: "tuned" with `own` as its settings, "plain" with none. */
-function project(dir: string, own: Record<string, string>): string {
+/** Two 20 mm boxes 12 mm tall, 60 mm apart: "tuned" with `own` as its settings, "plain" with none, on filament `plainSlot`. */
+function project(dir: string, own: Record<string, string>, plainSlot = '1'): string {
   const main = `<model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>${box(10, [-10, -10, 0], [10, 10, 12])}${box(20, [-10, -10, 0], [10, 10, 12])}</resources><build><item objectid="10" transform="1 0 0 0 1 0 0 0 1 70 100 0"/><item objectid="20" transform="1 0 0 0 1 0 0 0 1 130 100 0"/></build></model>`
-  const cfg = `<config><object id="10">${md('name', 'tuned')}${md('extruder', '1')}${Object.entries(own).map(([k, v]) => md(k, v)).join('')}</object><object id="20">${md('name', 'plain')}${md('extruder', '1')}</object><plate>${md('plater_id', '1')}<model_instance>${md('object_id', '10')}</model_instance><model_instance>${md('object_id', '20')}</model_instance></plate></config>`
+  const cfg = `<config><object id="10">${md('name', 'tuned')}${md('extruder', '1')}${Object.entries(own).map(([k, v]) => md(k, v)).join('')}</object><object id="20">${md('name', 'plain')}${md('extruder', plainSlot)}</object><plate>${md('plater_id', '1')}<model_instance>${md('object_id', '10')}</model_instance><model_instance>${md('object_id', '20')}</model_instance></plate></config>`
   const path = join(dir, 'two.3mf')
   writeFileSync(path, writeZip([{ name: '3D/3dmodel.model', data: main }, { name: 'Metadata/model_settings.config', data: cfg }]))
   return path
@@ -109,5 +109,33 @@ describe.skipIf(noSx())("a layer height past the printer profile's limits", { ti
     expect(r.isError).toBe(true)
     expect(text(r)).toContain('layer height 0.44 mm cannot exceed the 0.4 mm nozzle diameter')
     expect(text(r)).not.toContain('line is not wider')
+  })
+})
+
+describe.skipIf(noSx())('slicerx_slice_file layer by layer with objects at layer heights of their own', { timeout: sxTimeout }, () => {
+  const slice = async (own: Record<string, string>, overrides: Record<string, unknown>, plainSlot = '1') => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      return await h.call('slicerx_slice_file', { model: project(h.dir, own, plainSlot), overrides: { print_sequence: 'by layer', layer_height: 0.2, initial_layer_print_height: 0.2, smart_layer: 'off', ...overrides } })
+    } finally { await h.client.close() }
+  }
+
+  it('prints each object at its own height on the layers of the plate', async () => {
+    const r = await slice({ layer_height: '0.3' }, {})
+    expect(r.isError, text(r)).toBeFalsy()
+    // 12 mm: tuned at 0.2 then every 0.3 mm (40 tops), plain every 0.2 mm (60), 20 of them shared: 80 plate layers.
+    expect(data<{ layer_count: number }>(r).layer_count).toBe(80)
+  })
+
+  it('prints a plate whose objects differ only in first layer height at one height', async () => {
+    const r = await slice({ initial_layer_print_height: '0.3' }, {})
+    expect(r.isError, text(r)).toBeFalsy()
+    expect(data<{ layer_count: number }>(r).layer_count).toBe(60)
+  })
+
+  it('refuses a prime tower, which needs one layer height', async () => {
+    const r = await slice({ layer_height: '0.3' }, { enable_prime_tower: true }, '2')
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('prime tower needs one layer height for every object')
   })
 })
