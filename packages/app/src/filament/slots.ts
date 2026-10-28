@@ -8,6 +8,10 @@ import type { FlushSettings } from './flush-defaults'
 import { allPlates } from '../plate/plates'
 import { get, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
 import { brandAccent } from '../edition'
+import { defaultSlotColors, isHex, normalizeColor } from '@slicerx/settings/slot-settings'
+
+// How a slot color reads, shared with the MCP server's project slices.
+export { normalizeColor }
 
 export const MAX_SLOTS = 16
 
@@ -38,7 +42,7 @@ export interface ResolvedSlot extends SlotSetup {
 }
 
 // the seventh slot takes the edition's accent
-const defaultColors = () => ['#f8f8f2', '#282a36', '#ff5555', '#50fa7b', '#8be9fd', '#ffb86c', brandAccent(), '#f1fa8c']
+const defaultColors = () => defaultSlotColors(brandAccent())
 
 const TYPES = ['PLA', 'PETG', 'PET', 'ABS', 'ASA', 'PC', 'PA', 'TPU', 'PVA', 'HIPS', 'PP', 'PPS', 'PEEK', 'BVOH', 'EVA']
 
@@ -47,12 +51,6 @@ export function materialType(material: string | undefined): string {
   if (!material) return 'PLA'
   const words = material.toUpperCase().split(/[^A-Z0-9]+/)
   return words.find((w) => TYPES.includes(w)) ?? 'PLA'
-}
-
-const isHex = (c: string | undefined): c is string => Boolean(c && /^#[0-9a-f]{6}$/i.test(c.slice(0, 7)))
-
-export function normalizeColor(c: string | undefined, fallback: string): string {
-  return isHex(c) ? c.slice(0, 7).toLowerCase() : fallback
 }
 
 /** How many slots the project needs: the printer's, the highest a part uses, the highest set by hand. */
