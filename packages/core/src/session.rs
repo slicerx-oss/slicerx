@@ -241,6 +241,9 @@ pub struct SliceSession {
     draft_hull: Option<Vec<IntPoint<i32>>>,
     /// `skirt_type` per object: the hull of each group of objects whose skirts would touch; empty otherwise.
     skirt_groups: Vec<Vec<IntPoint<i32>>>,
+    /// The skirt of a plate sliced as one session, planned once for every skirt layer ([`Self::plan_one_skirt`]);
+    /// None inside when the skirt follows each layer's own outline (a raft, printing by object).
+    one_skirt: std::sync::OnceLock<Option<OneSkirt>>,
     /// `print_order` as object list: the hull of each object in the plate's list order, which the islands
     /// of a layer follow; empty for the default order.
     object_hulls: Vec<Vec<IntPoint<i32>>>,
@@ -1941,6 +1944,7 @@ impl SliceSession {
             brim_ears,
             draft_hull: None,
             skirt_groups: Vec::new(),
+            one_skirt: std::sync::OnceLock::new(),
             object_hulls: Vec::new(),
             raft: crate::raft::plan(config),
             support: std::sync::OnceLock::new(),
@@ -2054,8 +2058,9 @@ impl SliceSession {
             .flat_map(|p| p.verts.iter())
             .map(|v| IntPoint::new(mm(v[0]), mm(v[1])))
             .collect();
-        // The brim counts as occupied too: the skirt keeps its distance from the part and its brim.
-        if config.brim_width > 0.0 {
+        // The brim counts as occupied too: the skirt keeps its distance from the part and its brim. A plate sliced as
+        // one session adds the brim it prints (`plan_one_skirt`).
+        if config.brim_width > 0.0 && (self.raft.is_some() || config.print_by_object()) {
             let first = self.layer_regions(0, Families::new(config), &Micros::default());
             let all: Vec<&Shapes> = first.regions.iter().map(|(_, s)| s).collect();
             let brim = perimeters::offset_round(&perimeters::union_all(&all), mm(config.brim_width));
@@ -3428,18 +3433,7 @@ impl SliceSession {
                     let lc = if l == 0 { first } else { c };
                     if !shield {
                         let lr = s.layer_regions(l, Families::new(lc), &micros);
-                        let outline = match (&lr.lslices, &lr.raw) {
-                            (Some(o), _) | (None, Some(o)) => o.clone(),
-                            _ => perimeters::union_all(
-                                &lr.regions.iter().map(|(_, sh)| sh).collect::<Vec<_>>(),
-                            ),
-                        };
-                        pts.extend(
-                            outline
-                                .iter()
-                                .filter_map(|sh| sh.first())
-                                .flat_map(|r| r.iter().copied()),
-                        );
+                        pts.extend(outer_points(&skirt_outline(&lr)));
                     }
                     if support
                         && let Some(areas) = s.support_at(lc, l).and_then(|(sl, ..)| support_islands(sl))
@@ -3519,12 +3513,12 @@ impl SliceSession {
                 }
             }
         }
+        let first = config.for_first_layer();
         let plan = std::sync::Arc::new(PlateSkirt {
             hulls: groups.into_iter().map(|g| g.1).collect(),
-            cfg: config.clone(),
-            first: config.for_first_layer(),
             tools: usize::from(self.tool_count),
-            room: skirt_room(config),
+            room: skirt_room(&first),
+            first,
         });
         let mut turns = turns.into_iter();
         self.plate_skirt = Some((std::sync::Arc::clone(&plan), turns.next().unwrap_or_default()));
@@ -3538,7 +3532,12 @@ impl SliceSession {
     /// layer's settings. No areas over a raft or without a brim.
     fn first_brim(&self, cfg: &PrintConfig) -> (Shapes, Shapes) {
         let here = self.layer_regions(0, Families::new(cfg), &Micros::default());
-        let outline = brim_outline(cfg, &here);
+        self.first_brim_in(cfg, &here)
+    }
+
+    /// [`Self::first_brim`] from the first layer's regions `here`, cut with the families of `cfg`.
+    fn first_brim_in(&self, cfg: &PrintConfig, here: &LayerRegions) -> (Shapes, Shapes) {
+        let outline = brim_outline(cfg, here);
         let kind = crate::brim::Kind::of(cfg);
         let auto = kind == crate::brim::Kind::Auto;
         if self.raft.is_some() || kind == crate::brim::Kind::Off || !(cfg.brim_width > 0.0 || auto) {
@@ -3600,6 +3599,35 @@ impl SliceSession {
         let refs: Vec<&Shapes> = areas.iter().collect();
         let all = perimeters::union_all(&refs);
         (outline, all)
+    }
+
+    /// The skirt of a plate sliced as one session (`one_skirt`): every skirt layer prints the loops of the first,
+    /// spaced with the first layer's settings `first`. They keep `skirt_distance` from the outlines of the skirt's
+    /// layers before elephant foot compensation ([`skirt_outline`]) and from the outer edge of the brim loops the
+    /// first layer prints ([`Self::first_brim`]: `brim_object_gap` and the loops' width out from the outline before
+    /// compensation), the way the plate skirt of objects sliced in sessions of their own goes round them. None when
+    /// the skirt follows each layer's own outline: over a raft, and on a plate printed by object.
+    fn plan_one_skirt<'a>(
+        &self,
+        config: &PrintConfig,
+        first: &PrintConfig,
+        get: &(dyn Fn(u32) -> Option<&'a LayerRegions> + Sync),
+    ) -> Option<OneSkirt> {
+        if self.raft.is_some() || config.print_by_object() {
+            return None;
+        }
+        let height = config.skirt_height.min(self.plan.count()).max(1);
+        let mut points: Vec<IntPoint<i32>> = (0..height)
+            .filter_map(get)
+            .flat_map(|r| outer_points(&skirt_outline(r)).collect::<Vec<_>>())
+            .collect();
+        if let Some(here) = get(0) {
+            points.extend(outer_points(&self.first_brim_in(first, here).1));
+        }
+        Some(OneSkirt {
+            first: first.clone(),
+            points,
+        })
     }
 
     /// The layers of the plate printed layer by layer: each print layer's top and the print layer of
@@ -4433,7 +4461,7 @@ impl SliceSession {
             };
             let room = skirt_room(config);
             skirt_loops(
-                &here,
+                (outer_points_of(&here), false),
                 &[],
                 config,
                 self.draft_hull.as_deref(),
@@ -4850,6 +4878,13 @@ impl SliceSession {
                 .and_then(|i| regions.get(i as usize))
                 .or_else(|| beyond(l))
         };
+        // A plate sliced as one session prints the same skirt on every skirt layer, planned once from the layers it
+        // reaches, whichever range is sliced first.
+        if config.skirt_loops > 0 || self.draft_hull.is_some() {
+            let _ = self
+                .one_skirt
+                .once(|| self.plan_one_skirt(config, &first_cfg, &get));
+        }
         // Spiral vase mode: each layer above the first starts from where the base layer below it ended.
         let vase_exits = self.vase.filter(|_| objects.end > 1).map(|b| {
             self.vase_exits(config, b, |l, entry| {
@@ -10940,12 +10975,16 @@ impl SliceSession {
             }
         }
         if skirt_here && !works.is_empty() {
+            // A plate sliced as one session prints the loops planned for every skirt layer, spaced as on the first.
+            let one = self.one_skirt.get().and_then(Option::as_ref);
+            let skirt_cfg = one.map_or(cfg, |o| &o.first);
+            let points = one.map_or_else(|| outer_points_of(here), |o| o.points.clone());
             // A skirt near the bed's edge or a keep-out zone is cut to the bed rather than run off it, as the brim is.
-            let room = skirt_room(cfg);
+            let room = skirt_room(skirt_cfg);
             let skirt = skirt_loops(
-                here,
+                (points, one.is_some()),
                 &skirt_extra,
-                cfg,
+                skirt_cfg,
                 self.draft_hull.as_deref(),
                 &self.skirt_groups,
                 (usize::from(self.tool_count), layer),
@@ -10965,11 +11004,10 @@ impl SliceSession {
         {
             let mut skirt = Skirt::default();
             for t in turns.iter().filter(|t| t.layer == layer) {
-                let c = if t.plate == 0 { &plan.first } else { &plan.cfg };
                 if let Some(h) = plan.hulls.get(t.hull) {
                     skirt.add(skirt_around(
                         h.clone(),
-                        c,
+                        &plan.first,
                         true,
                         (plan.tools, t.plate),
                         plan.room.as_ref(),
@@ -11730,13 +11768,36 @@ impl Skirt {
     }
 }
 
+/// The outer ring points of every shape of `shapes`.
+fn outer_points(shapes: &Shapes) -> impl Iterator<Item = IntPoint<i32>> + '_ {
+    shapes
+        .iter()
+        .filter_map(|shape| shape.first())
+        .flat_map(|ring| ring.iter().copied())
+}
+
+/// The outer ring points of a layer's regions.
+fn outer_points_of(here: &LayerRegions) -> Vec<IntPoint<i32>> {
+    here.regions.iter().flat_map(|(_, s)| outer_points(s)).collect()
+}
+
+/// A layer's outline as a skirt goes round it: before elephant foot compensation (`lslices`), else before size
+/// compensation (`raw`), else its regions.
+fn skirt_outline(lr: &LayerRegions) -> Shapes {
+    match (&lr.lslices, &lr.raw) {
+        (Some(o), _) | (None, Some(o)) => o.clone(),
+        _ => perimeters::union_all(&lr.regions.iter().map(|(_, sh)| sh).collect::<Vec<_>>()),
+    }
+}
+
 /// Skirt loops around a layer: the convex hull of everything on it, grown by
 /// the brim width and `skirt_distance`, then one loop per `skirt_loops`, the
-/// innermost first, as the slicers print them. With `groups` (`skirt_type`
-/// per object) each group of objects gets the loops of its own hull. With `room`
-/// (the bed less its keep-out zones, [`skirt_room`]) each loop is cut to it ([`skirt_around`]).
+/// innermost first, as the slicers print them. `points` are what the loops go round, and `planned` says they are a
+/// plate's planned skirt ([`OneSkirt`]), which holds the brim already; otherwise they are the layer's regions and
+/// the brim width is added. With `groups` (`skirt_type` per object) each group of objects gets the loops of its own
+/// hull. With `room` (the bed less its keep-out zones, [`skirt_room`]) each loop is cut to it ([`skirt_around`]).
 fn skirt_loops(
-    here: &LayerRegions,
+    (mut points, planned): (Vec<IntPoint<i32>>, bool),
     extra: &[IntPoint<i32>],
     cfg: &PrintConfig,
     whole: Option<&[IntPoint<i32>]>,
@@ -11744,13 +11805,6 @@ fn skirt_loops(
     (tools, layer): (usize, u32),
     room: Option<&Shapes>,
 ) -> Skirt {
-    let mut points: Vec<IntPoint<i32>> = here
-        .regions
-        .iter()
-        .flat_map(|(_, s)| s.iter())
-        .filter_map(|shape| shape.first())
-        .flat_map(|ring| ring.iter().copied())
-        .collect();
     if whole.is_none() && groups.len() > 1 {
         let mut buckets: Vec<Vec<IntPoint<i32>>> = vec![Vec::new(); groups.len()];
         points.extend_from_slice(extra);
@@ -11766,13 +11820,22 @@ fn skirt_loops(
         }
         let mut all = Skirt::default();
         for b in buckets {
-            all.add(skirt_around(convex_hull(b), cfg, false, (tools, layer), room));
+            all.add(skirt_around(convex_hull(b), cfg, planned, (tools, layer), room));
         }
         return all;
     }
     match whole {
+        // A planned skirt's brim may reach past the part's hull.
+        Some(h) if planned => {
+            points.extend_from_slice(h);
+            skirt_around(convex_hull(points), cfg, true, (tools, layer), room)
+        }
         Some(h) => skirt_around(h.to_vec(), cfg, true, (tools, layer), room),
-        None if extra.is_empty() => skirt_around(convex_hull(points), cfg, false, (tools, layer), room),
+        None if extra.is_empty() => skirt_around(convex_hull(points), cfg, planned, (tools, layer), room),
+        None if planned => {
+            points.extend_from_slice(extra);
+            skirt_around(convex_hull(points), cfg, true, (tools, layer), room)
+        }
         // Orca's occupied outline: the objects with their brim, then the support and the tower as they print.
         None => {
             let objects = convex_hull(points);
@@ -12677,6 +12740,15 @@ pub(crate) struct HandOver {
     pub held: Vec<u8>,
 }
 
+/// The skirt of a plate sliced as one session, the same loops on every skirt layer ([`SliceSession::plan_one_skirt`]).
+#[derive(Debug, Clone)]
+pub(crate) struct OneSkirt {
+    /// The settings of the first layer, which space the loops on every skirt layer.
+    first: PrintConfig,
+    /// What the loops go round: the outline points of the skirt's layers and of the first layer's brim.
+    points: Vec<IntPoint<i32>>,
+}
+
 /// The one skirt of a plate whose objects print layer by layer from sessions of their own, as one session of the
 /// whole plate prints it: the loops go round every object, on the plate's first `skirt_height` layers (every layer
 /// under a draft shield), with the plate's skirt settings.
@@ -12686,8 +12758,7 @@ pub(crate) struct PlateSkirt {
     /// draft shield), their first layer brims at each object's own width and their support on those layers. One
     /// hull per group of objects with `skirt_type` per object, else one.
     hulls: Vec<Vec<IntPoint<i32>>>,
-    /// The plate's settings, and those of its first layer.
-    cfg: PrintConfig,
+    /// The settings of the plate's first layer, which space the loops on every skirt layer.
     first: PrintConfig,
     /// The plate's filaments, for `min_skirt_length` counted extruder by extruder.
     tools: usize,
