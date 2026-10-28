@@ -57,6 +57,7 @@ mod equalizer;
 mod fanlead;
 mod fm;
 mod memory;
+mod objorder;
 mod owners;
 mod smallflow;
 mod variants;

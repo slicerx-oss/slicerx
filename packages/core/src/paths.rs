@@ -1815,12 +1815,21 @@ pub(crate) fn plan_layer(
     vase: Option<&crate::spiral::VaseLayer>,
     object_hulls: &[Vec<IntPoint<i32>>],
 ) {
-    plan_layer_paths(out, works, cfg, layer, seams, (vase, None), object_hulls);
+    plan_layer_paths(out, works, cfg, layer, seams, (vase, None), (object_hulls, None));
     cool(out, cfg);
 }
 
+/// How [`plan_layer_paths`] groups a layer's islands by object: the objects' hulls in list order, and the place an
+/// island's object (found by a point of the island) takes in the layer's object order.
+pub(crate) type IslandObjects<'a> = (
+    &'a [Vec<IntPoint<i32>>],
+    Option<&'a dyn Fn(IntPoint<i32>) -> usize>,
+);
+
 /// [`plan_layer`] up to the layer's time. `vase` is a spiral layer's, or for a solid base layer of a spiral vase
 /// where the layer below ended (its walls start nearest there).
+/// `objects` groups the islands by object: the objects' hulls in list order (`print_order` as object list), or the
+/// place in the layer's object order (`objorder.rs`) of the object a point of an island belongs to.
 pub(crate) fn plan_layer_paths(
     out: &mut LayerPaths,
     works: &[ToolWork],
@@ -1828,9 +1837,10 @@ pub(crate) fn plan_layer_paths(
     layer: u32,
     seams: (&crate::seam::SeamIndex, f64, Option<&crate::seamplan::Plan>),
     vase: (Option<&crate::spiral::VaseLayer>, Option<Point>),
-    object_hulls: &[Vec<IntPoint<i32>>],
+    objects: IslandObjects<'_>,
 ) {
     let (vase, base_entry) = vase;
+    let (object_hulls, object_rank) = objects;
     // Each filament prints at its extruder's speeds where the extruders differ (a Bowden extruder, a high flow
     // nozzle): the settings as that extruder prints with them, per filament slot.
     let top_tool = works.iter().map(|w| w.tool).max().unwrap_or(0);
@@ -2123,7 +2133,7 @@ pub(crate) fn plan_layer_paths(
         let mut island_ranges: Vec<IslandRange> = Vec::new();
         // Where each island's first loop starts; the nearest setting depends on the
         // nozzle, so it is read per step, the others once.
-        let mut remaining: Vec<(&IslandWalls, Option<Point>)> = w
+        let mut remaining: Vec<(&IslandWalls, Option<Point>, Option<usize>)> = w
             .islands
             .iter()
             .filter(|i| !i.loops.is_empty() || !i.wide.is_empty())
@@ -2135,7 +2145,15 @@ pub(crate) fn plan_layer_paths(
                     .and_then(|r| r.first().copied())
                     .or_else(|| i.wide.first().and_then(|l| l.points.first().copied()))
                     .map(|p| Point::new(p.x, p.y));
-                (i, start)
+                // The island's object, by a point of its first wall: its place in the layer's object order.
+                let rank = object_rank.map(|rank| {
+                    i.loops
+                        .first()
+                        .and_then(|(_, c)| c.first().copied())
+                        .or_else(|| i.wide.first().and_then(|l| l.points.first().copied()))
+                        .map_or(usize::MAX, rank)
+                });
+                (i, start, rank)
             })
             .collect();
         let mut thin_plain: Vec<(&Vec<IntPoint<i32>>, i32)> = Vec::new();
@@ -2191,9 +2209,11 @@ pub(crate) fn plan_layer_paths(
             let best = remaining
                 .iter()
                 .enumerate()
-                .min_by_key(|(_, (isl, start))| {
+                .min_by_key(|(_, (isl, start, rank))| {
                     // `print_order` as object list: the islands of the first object, then the next.
-                    let object = if object_hulls.is_empty() {
+                    let object = if let Some(r) = rank {
+                        *r
+                    } else if object_hulls.is_empty() {
                         0
                     } else {
                         isl.loops
@@ -2230,7 +2250,7 @@ pub(crate) fn plan_layer_paths(
                     (object, dist)
                 })
                 .map_or(0, |(i, _)| i);
-            let (isl, _) = remaining.swap_remove(best);
+            let (isl, _, _) = remaining.swap_remove(best);
             let island_from = b.out.paths.len();
             if let Some(k) = w.islands.iter().position(|i| std::ptr::eq(i, isl))
                 && extra_owner.contains(&Some(k))

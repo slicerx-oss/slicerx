@@ -2478,6 +2478,44 @@ impl SliceSession {
         groups.into_iter().map(|(_, g)| g).collect()
     }
 
+    /// A session of several objects printed layer by layer, not in object list order, on object layer `layer`:
+    /// each object's slice there and, by plate object, its place in the order the objects that print on the layer
+    /// print in (`objorder.rs`). None for one object, or one object on the layer.
+    fn object_order_at(
+        &self,
+        cfg: &PrintConfig,
+        layer: u32,
+    ) -> Option<(std::sync::Arc<crate::owners::Slices>, Vec<usize>)> {
+        let first = self.part_object.first();
+        if self.part_object.iter().all(|o| Some(o) == first)
+            || !self.object_hulls.is_empty()
+            || cfg.print_by_object()
+            || crate::objorder::list_order(cfg)
+        {
+            return None;
+        }
+        let slices = self.object_slices_at(layer as usize)?;
+        if slices.len() < 2 {
+            return None;
+        }
+        let centers: Vec<[f64; 2]> = slices
+            .iter()
+            .map(|s| {
+                self.objects
+                    .get(usize::from(s.object))
+                    .map_or([0.0, 0.0], |o| o.center)
+            })
+            .collect();
+        let top = slices.iter().map(|s| usize::from(s.object)).max().unwrap_or(0);
+        let mut ranks = vec![usize::MAX; top + 1];
+        for (place, i) in crate::objorder::order(&centers).into_iter().enumerate() {
+            if let Some(r) = slices.get(i).and_then(|s| ranks.get_mut(usize::from(s.object))) {
+                *r = place;
+            }
+        }
+        Some((slices, ranks))
+    }
+
     /// Each object's own slice on object layer `layer` (`owners.rs`), worked out once.
     fn object_slices_at(&self, layer: usize) -> Option<std::sync::Arc<crate::owners::Slices>> {
         let cell = self.object_slices.get(layer)?;
@@ -10489,6 +10527,18 @@ impl SliceSession {
             all.append(&mut works);
             works = all;
         }
+        // Several objects printed layer by layer as one session: each island goes with its object, and the objects
+        // print one after another in the layer's object order (`objorder.rs`).
+        let ranked = self.object_order_at(cfg, layer);
+        let rank = |p: IntPoint<i32>| {
+            ranked.as_ref().map_or(usize::MAX, |(slices, ranks)| {
+                let at = crate::geom::Point::new(p.x, p.y);
+                crate::owners::holder(slices, at)
+                    .or_else(|| crate::owners::nearest(slices, at, 5.0))
+                    .and_then(|o| ranks.get(usize::from(o)).copied())
+                    .unwrap_or(usize::MAX)
+            })
+        };
         paths::plan_layer_paths(
             &mut out,
             &works,
@@ -10499,7 +10549,12 @@ impl SliceSession {
                 vase.as_ref(),
                 entry.filter(|_| self.vase.is_some_and(|b| layer < b)),
             ),
-            &self.object_hulls,
+            (
+                &self.object_hulls,
+                ranked
+                    .is_some()
+                    .then_some(&rank as &dyn Fn(IntPoint<i32>) -> usize),
+            ),
         );
         let fc = tags.filament(cfg, paths::first_slot(&out));
         // Without sparse tower layers a change prints on top of the tower as it stands, below the layer.

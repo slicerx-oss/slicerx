@@ -8,7 +8,6 @@
 use crate::Progress;
 use crate::config::PrintConfig;
 use crate::error::Result;
-use crate::fm::Fm;
 use crate::output::{LayerPaths, SliceOutput};
 use crate::session::SliceSession;
 use std::ops::Range;
@@ -90,35 +89,16 @@ pub(crate) fn slice(
         }
         return Ok(out);
     }
-    // Every layer prints the copies nearest first, from the bed's origin: the order is the same on each layer
-    // and in each shard.
-    let center = |b: &Option<[i32; 4]>| {
-        b.map_or([0.0, 0.0], |b| {
-            [
-                f64::midpoint(f64::from(b[0]), f64::from(b[2])),
-                f64::midpoint(f64::from(b[1]), f64::from(b[3])),
-            ]
-        })
+    // Every layer prints the copies one after another in the order of the copies on it (`objorder.rs`), by where
+    // each copy stands: the same on every layer with the same copies, and the same in each shard.
+    let centers = |c: &crate::session::Instance| {
+        session
+            .footprints()
+            .get(usize::from(c.object))
+            .map_or([0.0, 0.0], |o| o.center)
     };
-    let mut left: Vec<usize> = (0..placed.len()).collect();
-    let mut order: Vec<usize> = Vec::with_capacity(left.len());
-    let mut at = [0.0, 0.0];
-    while !left.is_empty() {
-        let d = |k: &usize| {
-            let c = placed.get(*k).map_or([0.0, 0.0], center);
-            (c[0] - at[0]).m_powi(2) + (c[1] - at[1]).m_powi(2)
-        };
-        let (pos, _) =
-            left.iter().enumerate().fold(
-                (0, f64::MAX),
-                |best, (i, k)| if d(k) < best.1 { (i, d(k)) } else { best },
-            );
-        let k = left.remove(pos);
-        at = placed.get(k).map_or([0.0, 0.0], center);
-        order.push(k);
-    }
-    let copies: Vec<&crate::session::Instance> =
-        order.iter().filter_map(|&k| session.instances().get(k)).collect();
+    let all: Vec<&crate::session::Instance> = session.instances().iter().collect();
+    let copies = in_order(&all, &centers);
     let mut info = crate::output::FirstLayerInfo::default();
     for c in &copies {
         #[allow(clippy::cast_possible_truncation, reason = "outlines are single precision")]
@@ -152,7 +132,19 @@ pub(crate) fn slice(
     let count = outs.iter().flatten().map(|o| o.layers.len()).max().unwrap_or(0);
     let merged: Vec<LayerPaths> = crate::par::map_range(0..u32::try_from(count).unwrap_or(u32::MAX), |i| {
         let mut layer: Option<LayerPaths> = None;
-        for c in &copies {
+        let here = |c: &&crate::session::Instance| {
+            outs.get(c.sub)
+                .and_then(Option::as_ref)
+                .is_some_and(|o| o.layers.get(i as usize).is_some())
+        };
+        // A layer that some copies do not reach orders the ones it has.
+        let on: Vec<&crate::session::Instance> = copies.iter().copied().filter(here).collect();
+        let on = if on.len() == copies.len() {
+            on
+        } else {
+            in_order(&on, &centers)
+        };
+        for c in &on {
             let Some(l) = outs
                 .get(c.sub)
                 .and_then(Option::as_ref)
@@ -198,6 +190,20 @@ pub(crate) fn slice(
     out.first_layer_info = info;
     out.objects = session.footprints().to_vec();
     Ok(out)
+}
+
+/// `copies` in print order on a layer (`objorder::order`), numbered for its ties by their plate objects.
+fn in_order<'a>(
+    copies: &[&'a crate::session::Instance],
+    center: &dyn Fn(&crate::session::Instance) -> [f64; 2],
+) -> Vec<&'a crate::session::Instance> {
+    let mut numbered = copies.to_vec();
+    crate::sorting::sort_by_key(&mut numbered, |c| c.object);
+    let centers: Vec<[f64; 2]> = numbered.iter().map(|c| center(c)).collect();
+    crate::objorder::order(&centers)
+        .into_iter()
+        .filter_map(|k| numbered.get(k).copied())
+        .collect()
 }
 
 /// Whether a first layer's extent (internal units) comes within a line width of the bed's edge or of an excluded

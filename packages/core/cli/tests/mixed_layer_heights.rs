@@ -246,9 +246,11 @@ fn tops(first: f64, step: f64, top: f64) -> Vec<f64> {
     v
 }
 
-/// The order of the objects with a top at each plate layer, in plate order.
+/// The objects with a top at each plate layer, in the order they print: right to left along the row, ending at the
+/// object nearest the bed's origin.
 fn present(per: &BTreeMap<usize, Vec<i64>>, z: i64) -> String {
     per.iter()
+        .rev()
         .filter(|(_, v)| v.contains(&z))
         .map(|(k, _)| char::from_digit(u32::try_from(*k).unwrap(), 10).unwrap())
         .collect()
@@ -273,17 +275,17 @@ fn expect_m1(name: &str, gcode: &str) {
     assert_eq!(
         first,
         [
-            (20, "123"),
+            (20, "321"),
             (30, "1"),
-            (40, "12"),
-            (50, "13"),
-            (60, "12"),
+            (40, "21"),
+            (50, "31"),
+            (60, "21"),
             (70, "1"),
-            (80, "123")
+            (80, "321")
         ],
         "{name}"
     );
-    // The pattern repeats every 0.6 mm: each layer prints the objects with a top there, left to right.
+    // The pattern repeats every 0.6 mm: each layer prints the objects with a top there, right to left.
     for (z, o) in &ord {
         assert_eq!(*o, present(&per, *z), "{name} at {z}");
     }
@@ -324,7 +326,7 @@ fn heights_that_meet_rarely_share_only_those_layers() {
         .map(|(z, _)| *z)
         .collect();
     assert_eq!(both, [20, 95, 170, 245]);
-    assert!(ord.values().all(|o| o == "12" || o == "1" || o == "2"), "{ord:?}");
+    assert!(ord.values().all(|o| o == "21" || o == "1" || o == "2"), "{ord:?}");
 }
 
 #[test]
