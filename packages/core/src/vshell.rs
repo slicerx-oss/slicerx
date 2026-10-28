@@ -222,14 +222,14 @@ impl<'a> Below<'a> {
         self
     }
 
-    /// `hit`, a piece's overlap with the unsupported area, less the strip along the lower layer's infill edge. The
-    /// infill area is cut near the piece only, far enough out that the cut's own edges, moved in by the strip, stay
-    /// clear of the piece.
-    fn off_edge(&self, one: &Shapes, hit: Shapes) -> Shapes {
+    /// `hit`, the overlap with the unsupported area of a piece grown by `by`, less the strip along the lower layer's
+    /// infill edge. The infill area is cut near the piece only, far enough out that the cut's own edges, moved in by
+    /// the strip, stay clear of the grown piece.
+    fn off_edge(&self, one: &Shapes, by: i32, hit: Shapes) -> Shapes {
         let Some(inner) = self.inner.filter(|_| self.edge > 0 && !hit.is_empty()) else {
             return hit;
         };
-        let near = perimeters::intersection(inner, &perimeters::offset(one, EPS + 2 * self.edge));
+        let near = perimeters::intersection(inner, &perimeters::offset(one, by + 2 * self.edge));
         perimeters::intersection(&hit, &perimeters::offset(&near, -self.edge))
     }
 
@@ -265,22 +265,32 @@ impl<'a> Below<'a> {
 
     /// True when the piece `one` rests on what does not hold it up below. Under `partial` the solid below a piece is
     /// the neighbors' surfaces alone, the piece's own size, so the piece also rests on the sparse infill along its
-    /// edge where that infill is at least a sparse infill line wide.
+    /// edge where that infill is at least a sparse infill line wide. Neither counts the strip along the lower layer's
+    /// infill edge ([`Below::beside_walls`]).
     fn floats(&self, one: &Shapes) -> bool {
         let rests = |hit: &Shapes| {
             !hit.is_empty() && (self.cut.is_empty() || !perimeters::difference(hit, &self.cut).is_empty())
         };
-        let on = |grown: &Shapes, area: &Shapes| rests(&perimeters::intersection(grown, area));
         let near = |by: i32| match (self.bounds, perimeters::bounds(one)) {
             (Some(u), Some(b)) => {
                 b[0] - by <= u[2] && u[0] <= b[2] + by && b[1] - by <= u[3] && u[1] <= b[3] + by
             }
             _ => false,
         };
-        let grown = perimeters::offset(one, EPS);
-        (near(EPS) && rests(&self.off_edge(one, perimeters::intersection(&grown, self.unsupported))))
-            || on(&grown, self.wide())
-            || (self.partial_edge && near(EDGE) && on(&perimeters::offset(one, EDGE), self.open()))
+        let touch = |by: i32, area: &Shapes| {
+            near(by)
+                && rests(&self.off_edge(
+                    one,
+                    by,
+                    perimeters::intersection(&perimeters::offset(one, by), area),
+                ))
+        };
+        touch(EPS, self.unsupported)
+            || rests(&perimeters::intersection(
+                &perimeters::offset(one, EPS),
+                self.wide(),
+            ))
+            || (self.partial_edge && touch(EDGE, self.open()))
     }
 }
 
@@ -973,6 +983,35 @@ mod tests {
         let (f, r) = split(&vec![thin.clone(), wide.clone()], &below, mm(4.625));
         assert_eq!(f, vec![thin]);
         assert_eq!(r, vec![wide]);
+    }
+
+    #[test]
+    fn under_partial_a_piece_that_reaches_only_the_strip_along_the_infill_edge_does_not_float() {
+        // Aegis walls with `partial`: the lower layer's infill area and sparse infill start at x 10, and the strip
+        // along that edge is left out of what a piece rests on, as with the full rule.
+        let mut cfg = stock_widths(15.0);
+        cfg.raw
+            .insert("wall_generator".into(), serde_json::json!("aegis"));
+        cfg.raw.insert(
+            "ensure_vertical_shell_thickness".into(),
+            serde_json::json!("partial"),
+        );
+        let edge = edge_strip(&cfg, 0.2);
+        assert!(edge > mm(0.06), "the strip is {edge} units");
+        let lower = crate::bridging::Facts {
+            inner: vec![vec![rect(10.0, 0.0, 30.0, 20.0)]],
+            sparse: vec![vec![rect(10.0, 0.0, 30.0, 20.0)]],
+            ..Default::default()
+        };
+        let u = unsupported(&lower.sparse);
+        let below = Below::new(&u, Some(&lower), &Shapes::new(), &cfg).beside_walls(edge);
+        // Grown by `EDGE`, one piece reaches 0.05 mm into the strip, the other 0.01 mm past it.
+        let ends = |at: i32| f64::from(at - EDGE) / SCALE;
+        let inside = vec![rect(8.0, 2.0, ends(mm(10.05)), 8.0)];
+        let past = vec![rect(8.0, 12.0, ends(mm(10.01) + edge), 18.0)];
+        let (f, r) = split(&vec![inside.clone(), past.clone()], &below, floating_width(&cfg));
+        assert_eq!(f, vec![past]);
+        assert_eq!(r, vec![inside]);
     }
 
     fn stock_widths(overlap_percent: f64) -> PrintConfig {
