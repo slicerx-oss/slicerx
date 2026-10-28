@@ -5,7 +5,7 @@
 // and the Easy map, about 10 KB gzip. Labels, ranges and tiers live in ./settings and load on demand (./load).
 import type { EasyGoal, EasySettings, PrintConfig, SettingValue } from '@slicerx/contracts'
 import { defaultConfig } from '@slicerx/settings/defaults'
-import { applyEasy, goalEasy, matchGoal } from '@slicerx/settings/easy'
+import { applyEasy, goalEasy, layerConfig, matchGoal, SLICERX_PRESET_DEFAULTS } from '@slicerx/settings/easy'
 import { GENERIC_BED, bedSettings } from './generic-bed'
 
 export { goalEasy, matchGoal }
@@ -39,12 +39,8 @@ export function profileLayerToken(): object | null {
   return profile
 }
 
-/**
- * SlicerX's own defaults on top of a maker's process preset. The vendor presets carry the vendor's wall generator
- * (arachne on MK4S and K1, classic on Bambu Lab), so without this the stock presets would never use aegis. The vendor
- * data stays as it is; the layer applies only while the person has not set the key themselves.
- */
-export const SLICERX_PRESET_DEFAULTS: Readonly<Record<string, SettingValue>> = { wall_generator: 'aegis' }
+// SlicerX's own defaults on top of a maker's process preset (wall_generator aegis), shared with the MCP server.
+export { SLICERX_PRESET_DEFAULTS }
 
 /**
  * What the maker's preset says for a key SlicerX takes over, when it says something else: the value "Use this
@@ -60,8 +56,7 @@ export function presetOwnValue(key: string): SettingValue | null {
 
 function computeConfig(easy: EasySettings, overrides: Record<string, SettingValue>): PrintConfig {
   // Without a printer the plate is the generic bed, not the schema's 200 mm default, so the slice and its preflight match the plate.
-  const out = profile ? applyEasy(easy, { ...baseConfig(), ...profile.values } as PrintConfig, profile.touched) : applyEasy(easy, { ...baseConfig(), ...bedSettings(GENERIC_BED) } as PrintConfig)
-  if (profile) for (const [k, v] of Object.entries(SLICERX_PRESET_DEFAULTS)) if (!(k in overrides)) out[k] = v
+  const out = profile ? (layerConfig(profile.values, easy, profile.touched) as PrintConfig) : applyEasy(easy, { ...baseConfig(), ...bedSettings(GENERIC_BED) } as PrintConfig)
   for (const [k, v] of Object.entries(overrides)) out[k] = v
   return out
 }
