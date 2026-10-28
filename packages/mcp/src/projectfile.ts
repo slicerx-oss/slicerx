@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { appMissingKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, type WallsNote } from '@slicerx/settings'
+import { appMissingKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, withBambuMissingKeys, type WallsNote } from '@slicerx/settings'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 import { readZip } from './zip'
@@ -115,6 +115,38 @@ export interface ProjectRead {
   summary: ProjectSummary
   /** The project's print settings in schema shapes, ready to use as the first settings layer. */
   config: Record<string, SettingValue>
+  /**
+   * Another slicer's project (a 3MF, not an .sx3mf) with print settings: its settings as the app's project open reads
+   * them (`orca` for a Bambu Studio or Orca project, `prusaslicer` for a PrusaSlicer one), for a slice on a printer the
+   * way the app opens it (project-open.ts). `slots` is the last filament slot its parts print with, and `projectKeys`
+   * the project keys of `config` (flush volumes, filament map, tower spot, filament colors).
+   */
+  opened?: { from: 'orca' | 'prusaslicer'; settings: Record<string, unknown>; slots: number; projectKeys: string[] }
+}
+
+/**
+ * The last filament slot a project's objects and model parts print with (their `extruder`, a part's own else its
+ * object's), in Metadata/model_settings.config or Metadata/Slic3r_PE_model.config; 1 when they name none.
+ */
+function topSlot(text: string | undefined): number {
+  if (!text) return 1
+  const ext = (node: ReturnType<typeof parseXml>): number | undefined => {
+    const v = node.children.find((c) => c.name === 'metadata' && c.attrs['key'] === 'extruder')?.attrs['value']
+    const n = Number.parseInt(v ?? '', 10)
+    return Number.isFinite(n) && n > 0 ? n : undefined
+  }
+  let top = 1
+  for (const o of parseXml(text).children.flatMap((c) => c.children)) {
+    if (o.name !== 'object') continue
+    const own = ext(o) ?? 1
+    top = Math.max(top, own)
+    for (const part of o.children) {
+      // Model parts only: modifiers, negative parts and the like print no filament of their own.
+      const kind = part.attrs['subtype'] ?? part.children.find((c) => c.name === 'metadata' && c.attrs['key'] === 'volume_type')?.attrs['value']
+      if ((part.name === 'part' || part.name === 'volume') && (kind === undefined || kind === 'normal_part' || kind === 'ModelPart')) top = Math.max(top, ext(part) ?? own)
+    }
+  }
+  return top
 }
 
 /** Keys a project or shared preset may never set: post-processing scripts and credentials (sx-core preflight::is_never_imported). */
@@ -315,7 +347,14 @@ export function readProjectFile(path: string): ProjectRead {
   const walls = hasSettings ? projectWalls(raw, source) : undefined
   if (walls) importReport.walls = walls
 
+  // The app reads a PrusaSlicer project's settings mapped to Orca's keys, and another project's with the keys its app
+  // reads its own way; our own .sx3mf projects open on the current printer as they are.
+  const own = /\.sx3mf$/i.test(name)
+  const partSlots = topSlot(modelSettings ?? zip.text('Metadata/Slic3r_PE_model.config'))
+  const opened = own || !hasSettings ? undefined : prusa ? { from: 'prusaslicer' as const, settings: prusaProjectSettings(prusaText!).values, slots: partSlots, projectKeys: [] } : read.raw ? { from: 'orca' as const, settings: withBambuMissingKeys(read.raw, source), slots: partSlots, projectKeys: [...Object.keys(projectKeys), ...('filament_colour' in config ? ['filament_colour'] : [])] } : undefined
+
   return {
+    ...(opened ? { opened } : {}),
     summary: {
       file: path,
       has_settings: hasSettings,

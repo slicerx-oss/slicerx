@@ -26,6 +26,8 @@ export interface SliceJob {
   emitGcode: boolean
   /** The custom G-code is SlicerX's shipped text, so the engine's normal G-code checks apply rather than the strict ones. */
   trustedGcode?: boolean
+  /** Line widths the engine gets as they are, percents too, as the app sends them for an opened project (sx engine only). */
+  widthsAsGiven?: readonly string[]
   /** Also write the SXPV preview buffer (sx engine only). */
   emitPreview?: boolean
   /** Slice even when paths cross or meet the toolhead (sx engine only); refused by default. */

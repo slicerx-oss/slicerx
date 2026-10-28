@@ -9,13 +9,13 @@ export default (d: ServerToolDeps) =>
   serverTool({
     name: 'slice_file',
     title: 'Slice a model file',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',
     ungated: true,
     description:
-      `Slice one model file or one plate of a 3MF or .sx3mf project to G-code with ${productName()}, without opening a project. Settings are schema defaults, then the project file's own settings (project_settings), then each profile in order, then the user's preset files (profile_files), then overrides. Returns the G-code path (and a .gcode.3mf with output "gcode.3mf"), print time, filament grams and length in total and per filament slot, layer count, and with the sx engine the filament slots each object's features printed with (feature_filaments). Each row keeps the request object id when supplied and an engine_object id unique within that slice, including separate objects expanded from one file even when names repeat. Sends progress notifications when the request carries a progress token. Use slicerx_estimate_file when you only need the numbers, and the project tools (slicerx_project_open, slicerx_arrange, slicerx_slice, slicerx_printer_queue) for plates and printers. With the stub engine the result is a rough estimate and the G-code file is not printable.`,
+      `Slice one model file or one plate of a 3MF or .sx3mf project to G-code with ${productName()}, without opening a project. Settings are schema defaults, then the project file's own settings (project_settings), then each profile in order, then the user's preset files (profile_files), then overrides. With project_settings and a machine: profile, a Bambu Studio, OrcaSlicer or PrusaSlicer 3MF opens on that printer as the app opens it: the printer's own machine, process and filament settings first, then the project's settings, so it slices as it does in the app. Returns the G-code path (and a .gcode.3mf with output "gcode.3mf"), print time, filament grams and length in total and per filament slot, layer count, and with the sx engine the filament slots each object's features printed with (feature_filaments). Each row keeps the request object id when supplied and an engine_object id unique within that slice, including separate objects expanded from one file even when names repeat. Sends progress notifications when the request carries a progress token. Use slicerx_estimate_file when you only need the numbers, and the project tools (slicerx_project_open, slicerx_arrange, slicerx_slice, slicerx_printer_queue) for plates and printers. With the stub engine the result is a rough estimate and the G-code file is not printable.`,
     input: z.object(sliceFileInput),
     outputShape: summaryShape,
     hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },

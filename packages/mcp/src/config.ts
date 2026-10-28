@@ -2,12 +2,14 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Settings for one slice: schema defaults, then the project file's own settings,
 // then each profile in order, then the user's preset files, then a filament per slot,
-// then overrides.
+// then overrides. Another slicer's project on a named printer starts from the settings
+// the app opens it with on that printer instead (project-open.ts).
 // Shared by the file tools and cloud slicing.
 import type { SettingValue, ScriptReview } from '@slicerx/contracts'
 import { GCODE_TEXT_KEYS, printerConfig, printerForProfile, printerName, printerProfile, reviewProjectGcode, scriptDeclarations, type GcodeChange, type GcodeKept } from '@slicerx/settings'
 import type { DataStore } from './data'
 import type { PresetLayer } from './presets'
+import type { OpenedProject } from './project-open'
 import { ToolInputError } from './models'
 import { SLICERX_DEFAULT_PROCESS, type ProfileCatalog } from './profiles'
 import { defaultConfig, toSchemaValue, validateConfig } from './settings'
@@ -29,6 +31,11 @@ export interface ResolvedConfig {
   noPrinter: boolean
   /** The project's G-code settings left for the printer profile's (project.gcode "profile"). */
   gcodeReplaced: string[]
+  /**
+   * The line widths of an opened project's settings, which the engine gets as the app sends them (a percent stays a
+   * percent), so the G-code is the app's to the byte.
+   */
+  widthsAsGiven: string[]
 }
 
 /** What to do with a project's G-code that is not the printer's stock text. */
@@ -58,7 +65,7 @@ export interface ExtraLayers {
    * A project file's own settings, applied first. `model` is the printer model the project was saved for (`bambu-a1`),
    * which its G-code is compared with when no printer profile names one.
    */
-  project?: { name: string; config: Record<string, SettingValue>; model?: string | undefined; gcode?: ProjectGcode | undefined } | undefined
+  project?: { name: string; config: Record<string, SettingValue>; model?: string | undefined; gcode?: ProjectGcode | undefined; opened?: OpenedProject | undefined } | undefined
   /** The user's preset files, applied after the profiles. */
   presets?: PresetLayer[] | undefined
   /** A filament per slot, applied after the preset files and before the overrides. */
@@ -105,7 +112,8 @@ const LAYER_FOLLOWING_GAPS = ['support_top_z_distance', 'support_bottom_z_distan
 export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, names: string[], overrides: Record<string, unknown> | undefined, extra: ExtraLayers = {}): ResolvedConfig {
   const explicit: Record<string, SettingValue> = {}
   const applied: string[] = []
-  const printer = slicePrinter(profiles, names, extra.presets ?? [], extra.project)
+  const opened = extra.project?.opened
+  const printer = opened ? { printerId: opened.printer, nozzle: opened.nozzle } : slicePrinter(profiles, names, extra.presets ?? [], extra.project)
   const diameter = overrides?.['nozzle_diameter']
   const nozzle = Number(Array.isArray(diameter) ? diameter[0] : diameter)
   if (printer && Number.isFinite(nozzle) && nozzle > 0) printer.nozzle = nozzle
@@ -119,7 +127,14 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
     Object.assign(explicit, fallback.config, profiles.defaultSupports(printer))
     applied.push(fallback.id)
   }
-  if (extra.project) {
+  if (opened) {
+    // Another slicer's project on a printer, as the app opens it: every setting the app sends, the printer's layer
+    // under the project's own (project-open.ts). On its own printer its G-code goes through the review below.
+    Object.assign(explicit, opened.config)
+    const own = Object.entries(extra.project!.config).filter(([k]) => k === 'print_sequence' || opened.keepProjectKeys.includes(k) || (opened.ownGcode && GCODE_TEXT_KEYS.includes(k)))
+    Object.assign(explicit, Object.fromEntries(own))
+    applied.push(`project:${extra.project!.name}`)
+  } else if (extra.project) {
     Object.assign(explicit, extra.project.config)
     applied.push(`project:${extra.project.name}`)
   }
@@ -127,6 +142,11 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   for (const name of names) {
     const p = profiles.get(name, printer)
     if (!p) throw new ToolInputError(`No profile "${name}". Use slicerx_list_profiles to find ids such as printer:bambu_x1c or filament:petg.`, 'unknown_profile')
+    // The opened project's printer layer is the printer profile's settings as the app builds them.
+    if (opened && p.id.startsWith('machine:')) {
+      applied.push(p.id)
+      continue
+    }
     Object.assign(explicit, p.config)
     applied.push(p.id)
     if (!SHIPPED_GCODE_SOURCES.has(p.source) && !p.shippedGcode && Object.keys(p.config).some(isGcodeKey)) untrustedProfile = true
@@ -162,8 +182,10 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
   const { kept, replaced } = extra.project ? projectGcode(store, profiles, names, extra.project, explicit, extra.scriptReviews) : { kept: [], replaced: [] }
   // A preset file's G-code inherited from a shipped profile is that profile's text; only its own G-code is untrusted.
   // The project's G-code that is left is stock text, which projectGcode checked.
-  const untrusted = (extra.presets ?? []).some((l) => l.customGcode) || Object.keys(typed).some(isGcodeKey) || Object.keys(extra.project?.config ?? {}).some((k) => isGcodeKey(k) && !GCODE_TEXT_KEYS.includes(k))
-  return { config: { ...defaultConfig(store), ...explicit }, explicit, applied, trustedGcode: !untrusted && !untrustedProfile && !untrustedSlot, gcodeKept: kept, gcodeReplaced: replaced, noPrinter }
+  // An opened project brings no G-code but its printer text, which projectGcode checked.
+  const untrusted = (extra.presets ?? []).some((l) => l.customGcode) || Object.keys(typed).some(isGcodeKey) || (!opened && Object.keys(extra.project?.config ?? {}).some((k) => isGcodeKey(k) && !GCODE_TEXT_KEYS.includes(k)))
+  const widthsAsGiven = opened ? Object.keys(opened.config).filter((k) => k.endsWith('line_width') && explicit[k] === opened.config[k]) : []
+  return { config: { ...defaultConfig(store), ...explicit }, explicit, applied, trustedGcode: !untrusted && !untrustedProfile && !untrustedSlot, gcodeKept: kept, gcodeReplaced: replaced, noPrinter, widthsAsGiven }
 }
 
 /**

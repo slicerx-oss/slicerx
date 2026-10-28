@@ -141,13 +141,14 @@ function scalar(v: SettingValue | undefined): number | undefined {
  * widths given as a percent of the nozzle become millimeters, since sx wants
  * millimeters; a width of 0 stays 0, which sx reads as automatic, as
  * `sx slice <project.3mf>` does. A width that is not a number is left to sx's
- * default.
+ * default. The widths in `asGiven` (an opened project's, as the app sends them)
+ * go to sx as they are.
  */
-export function sxConfig(config: Record<string, SettingValue>): Record<string, SettingValue> {
+export function sxConfig(config: Record<string, SettingValue>, asGiven: readonly string[] = []): Record<string, SettingValue> {
   const nozzle = scalar(config['nozzle_diameter']) ?? 0.4
   const out: Record<string, SettingValue> = {}
   for (const [k, v] of Object.entries(config)) {
-    if (k.endsWith('line_width') && typeof v === 'string') {
+    if (k.endsWith('line_width') && typeof v === 'string' && !asGiven.includes(k)) {
       const t = v.trim()
       const mm = t.endsWith('%') ? (Number(t.slice(0, -1)) / 100) * nozzle : Number(t)
       if (Number.isFinite(mm) && mm >= 0) out[k] = Math.round(mm * 1000) / 1000
@@ -272,7 +273,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
           ...(bed ? { bed } : {}),
           objects: requestObjects,
         },
-        config: sxConfig(job.explicitConfig),
+        config: sxConfig(job.explicitConfig, job.widthsAsGiven),
         // The config is a whole resolved profile, so the engine's list of keys it never reads would be long and say
         // nothing about the person's file (import_report does that); a refused value names its key instead.
         options: { emitGcode: job.emitGcode, emitPreview: job.emitPreview ?? false, configReport: false, ...(job.trustedGcode ? { trustedGcode: true } : {}), ...(heightRanges.length ? { heightRanges } : {}) },
