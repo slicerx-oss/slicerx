@@ -5,10 +5,9 @@
 // exports G-code and slices with the project's machine G-code. Switching to one of the person's printers takes that
 // printer's G-code wholesale and keeps the settings that suit it, so no project G-code reaches another machine.
 import type { PrinterInfo, SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, SLICERX_KEEPS, SLICERX_KEEP_VALUES, changedKeys, importFlat, keptEngineChoices, listPrinterProfiles, machineEntry, printerProfile, projectDefaults, reviewProjectGcode, sameChoice, settingDef } from '@slicerx/settings'
+import { GCODE_TEXT_KEYS, SLICERX_KEEPS, carryOver, importFlat, matchProjectPrinter, printerProfile, projectPrinterChanges, reviewProjectGcode, settingDef, type ProjectPrinterMatch } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
 import { appName } from '../edition'
-import { projectSettingChanges } from '../export/project-settings'
 import { slotConfig } from '../filament/slot-config'
 import { profileReady } from '../state/profile-sync'
 import { isExportOnly } from '../lib/hand-printers'
@@ -19,68 +18,18 @@ import { profileIdFor } from '../workspaces/prepare/printer-base'
 
 export const PROJECT_PRINTER_ID = 'project-printer'
 
-export type ProjectPrinterMatch =
-  | { kind: 'match'; profileId: string; vendor: string; model: string; nozzle: number; name: string; asked?: number; own?: { id: string; name: string } }
-  | { kind: 'unknown'; name: string; nozzle?: number }
+// The printer a project was made for, matched to our profiles, and how settings carry over to another printer, are
+// shared with the MCP server's project slices.
+export { carryOver, matchProjectPrinter, nozzleBound, type ProjectPrinterMatch } from '@slicerx/settings'
 
-const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '')
 const first = (v: unknown): string | undefined => (typeof v === 'string' ? v : Array.isArray(v) && typeof v[0] === 'string' ? v[0] : undefined)
 const sameMm = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6
 const mm = (n: number): string => `${Number(n.toFixed(2))} mm`
 const labels = (keys: readonly string[]): string => keys.map((k) => (settingDef(k)?.label ?? k).toLowerCase()).join(', ')
 
-/**
- * The printer a project was made for, in our profiles: its `printer_settings_id` against each model's Orca profile
- * names (nozzle variants included), as Bambu Studio matches by name, else `printer_model` with `nozzle_diameter`.
- * `asked` is the project's nozzle when our profile has no such variant and the model's default stands in.
- * Null when the file names no printer.
- */
-export function matchProjectPrinter(settings: Record<string, unknown>): ProjectPrinterMatch | null {
-  const name = first(settings['printer_settings_id'])?.trim()
-  const model = first(settings['printer_model'])?.trim()
-  if (!name && !model) return null
-  const label = name || model || ''
-  const n = Number(first(settings['nozzle_diameter']) ?? first(settings['printer_variant']))
-  const want = Number.isFinite(n) && n > 0 ? n : undefined
-  const profiles = listPrinterProfiles()
-  const hit = (p: (typeof profiles)[number], nozzle: number): ProjectPrinterMatch => ({ kind: 'match', profileId: p.id, vendor: p.vendor, model: p.model, nozzle, name: label })
-  if (name) {
-    for (const p of profiles) {
-      const m = machineEntry(p.id)
-      if (m?.orca?.profile === name) return hit(p, p.defaultNozzle)
-      for (const [size, v] of Object.entries(m?.nozzles ?? {})) if (v.orcaProfile === name) return hit(p, Number(size))
-    }
-  }
-  const key = norm(model ?? '')
-  const p = key ? profiles.find((x) => norm(`${x.vendor} ${x.model}`) === key || norm(x.model) === key) : undefined
-  if (!p) return { kind: 'unknown', name: label, ...(want ? { nozzle: want } : {}) }
-  if (want === undefined || p.nozzles.some((x) => sameMm(x, want))) return hit(p, want ?? p.defaultNozzle)
-  return { ...hit(p, p.defaultNozzle), asked: want } as ProjectPrinterMatch
-}
-
-/** Settings made for one nozzle size: layer heights and line widths. */
-export function nozzleBound(key: string): boolean {
-  return key === 'layer_height' || key === 'initial_layer_print_height' || key.endsWith('line_width')
-}
-
 // The engine choices kept on open and the project's list of changed keys live in @slicerx/settings, shared with the
 // MCP server's project_settings.
 export { SLICERX_KEEPS, changedKeys } from '@slicerx/settings'
-
-/** The overrides split for another printer: what carries over, and what stays with the project printer (`dropped` names the settings, not the G-code). */
-export function carryOver(overrides: Record<string, SettingValue>, gcodeKeys: readonly string[], sameNozzle: boolean): { kept: Record<string, SettingValue>; parked: Record<string, SettingValue>; dropped: string[] } {
-  const kept: Record<string, SettingValue> = {}
-  const parked: Record<string, SettingValue> = {}
-  const dropped: string[] = []
-  for (const [k, v] of Object.entries(overrides)) {
-    if (gcodeKeys.includes(k)) parked[k] = v
-    else if (!sameNozzle && nozzleBound(k)) {
-      parked[k] = v
-      dropped.push(k)
-    } else kept[k] = v
-  }
-  return { kept, parked, dropped }
-}
 
 /** The note's button: the printer list, to pick another. */
 export const CHANGE_PRINTER: ToastAction = {
@@ -125,40 +74,21 @@ export async function switchToProjectPrinter(source: string, settings: Record<st
 export function applyProjectSettings(source: string, settings: Record<string, unknown>, match: ProjectPrinterMatch | null): { keys: string[]; note: string } {
   const s = get()
   const current = resolveConfig(s.easy, s.overrides)
-  // SlicerX's defaults for the keys the project does not set at all (precise outer wall); a value it sets is its own.
-  const { values } = projectSettingChanges({ ...projectDefaults(settings), ...settings }, current)
+  const changes = projectPrinterChanges(settings, match, current, s.profile?.nozzle)
+  const { all, dropped } = changes
   if (match?.kind !== 'match') {
     const fileNozzle = match?.nozzle ?? Number(first(settings['nozzle_diameter']))
-    const sameNozzle = !Number.isFinite(fileNozzle) || !s.profile || sameMm(fileNozzle, s.profile.nozzle)
-    // The engine choices the project did not change print with SlicerX's values here too, as on its own printer and as
-    // sx slice <project.3mf> and the MCP read give them, so the same file slices the same everywhere.
-    const keeps = keptEngineChoices(settings)
-    const own = Object.fromEntries(Object.entries(values).filter(([k]) => !GCODE_TEXT_KEYS.includes(k) && !keeps.includes(k)))
-    const ours = Object.fromEntries(keeps.filter((k) => !sameChoice(current[k], SLICERX_KEEP_VALUES[k])).map((k) => [k, SLICERX_KEEP_VALUES[k] as SettingValue]))
-    const { kept, dropped } = carryOver({ ...own, ...ours }, [], sameNozzle)
+    const { keeps, values: kept } = changes
     set((st) => ({ overrides: { ...st.overrides, ...kept }, ...(Object.keys(kept).length ? { goal: 'custom' as const } : {}) }))
     const here = s.printerModel ? `the ${s.printerModel.model}` : 'the generic bed'
     const left = dropped.length ? ` Left out, made for a ${mm(fileNozzle)} nozzle: ${labels(dropped)}.` : ''
-    const keptNote = keeps.filter((k) => k in values).map((k) => ` ${SLICERX_KEEPS[k]!}`).join('')
+    const keptNote = keeps.filter((k) => k in all).map((k) => ` ${SLICERX_KEEPS[k]!}`).join('')
     const note = match ? `${source} is for a ${match.name}, which ${appName()} has no profile for, so it opened on ${here}.${left}${keptNote}` : `Applied ${Object.keys(kept).length} settings from ${source}.${left}${keptNote}`
     return { keys: Object.keys(kept), note }
   }
-  const only = changedKeys(settings)
-  // The process and the filaments are taken whole: the file holds what it was sliced with, the system presets its
-  // presets came from (inherits_group) with the person's changes on top, and Bambu Studio opens it as it is. Our
-  // profile starts from its own standard process and its own filament, so taking only the listed changes left every
-  // value of other presets behind (a "0.12mm Fine" project sliced at 0.20 mm; a Generic PLA project at Bambu PLA
-  // Basic's flow). The printer keeps to what the file lists, since its profile is that printer's system preset. A
-  // project made for another nozzle keeps to its list too.
-  // A few engine choices of ours stay unless the person changed them in the project (SLICERX_KEEPS), or the value it
-  // inherited is one the keep leaves alone (arachne walls); the note says so.
-  const keeps = new Set(keptEngineChoices(settings))
-  const whole = (k: string) => {
-    const section = settingDef(k)?.section
-    return !match.asked && (section === 'process' || section === 'filament') && !keeps.has(k)
-  }
-  const applied = only ? Object.fromEntries(Object.entries(values).filter(([k]) => only.has(k) || whole(k))) : values
-  const keptNote = only && !match.asked ? Object.keys(values).filter((k) => keeps.has(k)).map((k) => SLICERX_KEEPS[k]!).join(' ') : ''
+  const keeps = new Set(changes.keeps)
+  const applied = changes.values
+  const keptNote = changes.listed && !match.asked ? Object.keys(all).filter((k) => keeps.has(k)).map((k) => SLICERX_KEEPS[k]!).join(' ') : ''
   if (match.own) {
     // One of the person's printers: its own G-code, as on any switch to it.
     const kept = Object.fromEntries(Object.entries(applied).filter(([k]) => !GCODE_TEXT_KEYS.includes(k)))

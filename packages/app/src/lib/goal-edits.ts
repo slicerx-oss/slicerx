@@ -3,6 +3,7 @@
 // How a plate's settings differ from the goal they started from: the Goal tile stays picked with an edited mark, its
 // tip lists the settings, and pressing it goes back. A project that matches no goal starts from the nearest one.
 import type { EasyGoal, PrintConfig, SettingValue } from '@slicerx/contracts'
+import { nearestGoalBy } from '@slicerx/settings/easy'
 import { goalConfig, goalKeys } from '../adapters/config'
 import { formatValue, settingDef } from '../adapters/settings'
 
@@ -58,16 +59,5 @@ const num = (v: SettingValue | undefined): number => Number(Array.isArray(v) ? v
  * printer's own per-goal values when it has them. A tie goes to Standard, then Fine, then Draft.
  */
 export function nearestGoal(cfg: Readonly<Record<string, SettingValue>>, values?: Partial<Record<EasyGoal, Record<string, SettingValue>>>): EasyGoal {
-  const h = num(cfg['layer_height'])
-  let best: EasyGoal = 'standard'
-  if (!Number.isFinite(h)) return best
-  let gap = Number.POSITIVE_INFINITY
-  for (const g of ['standard', 'fine', 'draft', 'strong'] as const) {
-    const d = Math.abs(num(values?.[g]?.['layer_height'] ?? goalConfig(g)['layer_height']) - h)
-    if (d < gap - 1e-9) {
-      gap = d
-      best = g
-    }
-  }
-  return best
+  return nearestGoalBy(cfg, (g) => values?.[g]?.['layer_height'] ?? goalConfig(g)['layer_height'])
 }

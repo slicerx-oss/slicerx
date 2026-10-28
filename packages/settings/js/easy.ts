@@ -3,6 +3,7 @@
 // Interpreter for easy-map.json. The Rust side (src/easy.rs) implements the same ops.
 import type { EasyGoal, EasySettings, PrintConfig, SettingValue } from '@slicerx/contracts/settings'
 import easyMapJson from '../easy-map.json'
+import { defaultConfig } from './defaults'
 import { settingDef } from './schema'
 
 type Scalar = number | string | boolean
@@ -316,4 +317,43 @@ export function deriveShellLayers(config: PrintConfig): PrintConfig {
     if (typeof t === 'number' && t > 0) next[`${side}_shell_layers`] = Math.ceil(snap(t / lh) - 1e-9)
   }
   return next
+}
+
+/**
+ * SlicerX's own defaults on top of a maker's process preset. The vendor presets carry the vendor's wall generator
+ * (arachne on MK4S and K1, classic on Bambu Lab), so without this the stock presets would never use aegis. The vendor
+ * data stays as it is; the layer applies only while the person has not set the key themselves.
+ */
+export const SLICERX_PRESET_DEFAULTS: Readonly<Record<string, SettingValue>> = { wall_generator: 'aegis' }
+
+/**
+ * The settings a printer layer gives before anything the person or a project set: the defaults, the layer, the Easy
+ * controls in `touched` (the others keep the layer's values), then SlicerX's own preset defaults. The app's resolved
+ * config and the MCP server's project slices both start from it.
+ */
+export function layerConfig(values: Readonly<Record<string, SettingValue>>, easy: EasySettings, touched: ReadonlySet<string>): Record<string, SettingValue> {
+  const out = applyEasy(easy, { ...defaultConfig(), ...values } as PrintConfig, touched) as unknown as Record<string, SettingValue>
+  for (const [k, v] of Object.entries(SLICERX_PRESET_DEFAULTS)) out[k] = v
+  return out
+}
+
+/**
+ * The goal whose layer height is nearest `cfg`'s, for settings that match none (an opened project), with each goal's
+ * layer height from `heightOf`. A tie goes to Standard, then Fine, then Draft. The app's goal tiles and the MCP
+ * server's project slices pick the goal with it.
+ */
+export function nearestGoalBy(cfg: Readonly<Record<string, unknown>>, heightOf: (goal: EasyGoal) => unknown): EasyGoal {
+  const num = (v: unknown): number => Number(Array.isArray(v) ? v[0] : v)
+  const h = num(cfg['layer_height'])
+  let best: EasyGoal = 'standard'
+  if (!Number.isFinite(h)) return best
+  let gap = Number.POSITIVE_INFINITY
+  for (const g of ['standard', 'fine', 'draft', 'strong'] as const) {
+    const d = Math.abs(num(heightOf(g)) - h)
+    if (d < gap - 1e-9) {
+      gap = d
+      best = g
+    }
+  }
+  return best
 }
