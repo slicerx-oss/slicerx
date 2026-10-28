@@ -482,6 +482,9 @@ export function prusaProjectSettings(text: string): { values: Record<string, unk
   // A project with support on and its own support XY spacing keeps that much room between the part and the outer base
   // support line's edge, so its outer lines sit half a line width in. The same as the engine's project read.
   if (values['enable_support'] === '1' && 'support_object_xy_distance' in values) values['support_base_edge_inset'] = 'half_width'
+  // A project with a skirt keeps it its distance from the brim's nominal edge (brim_separation and brim_width out from
+  // the outline after elephant foot compensation), whatever the brim prints. The same as the engine's project read.
+  if (Number(values['skirt_loops']) > 0) values['skirt_brim_edge'] = 'nominal'
   const colors = raw['extruder_colour'] ?? raw['filament_colour']
   if (colors !== undefined) {
     const list = splitStrings(colors).map((c) => c.trim()).filter((c) => /^#[0-9A-Fa-f]{6}$/.test(c))

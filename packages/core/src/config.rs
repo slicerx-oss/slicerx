@@ -1212,6 +1212,12 @@ impl PrintConfig {
         if let Some(x) = get("skirt_distance") {
             c.skirt_distance = num(x).ok_or_else(|| bad("skirt_distance"))?;
         }
+        // Read where the skirt is planned (`session::skirt_brim`); checked here so a wrong value is refused.
+        if let Some(x) = get("skirt_brim_edge")
+            && !matches!(x, Value::String(e) if e == "printed" || e == "nominal")
+        {
+            return Err(bad("skirt_brim_edge"));
+        }
         if let Some(x) = get("close_fan_the_first_x_layers") {
             let n = num(x).ok_or_else(|| bad("close_fan_the_first_x_layers"))?;
             if !(0.0..=1000.0).contains(&n) {
@@ -2428,6 +2434,7 @@ pub const READ_KEYS: &[&str] = &[
     "skirt_loops",
     "skirt_distance",
     "skirt_height",
+    "skirt_brim_edge",
     "seam_position",
     "enable_support",
     "support_type",

@@ -239,6 +239,7 @@ skeleton_infill_line_width
 skin_infill_density
 skin_infill_depth
 skin_infill_line_width
+skirt_brim_edge
 skirt_distance
 skirt_height
 skirt_loops

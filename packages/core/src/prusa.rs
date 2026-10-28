@@ -392,6 +392,7 @@ pub(crate) fn object_overrides(list: &[(String, String)], project: Option<&str>)
 pub(crate) fn project_settings(text: &str) -> (Map<String, Value>, Vec<String>) {
     let (mut mapped, unmapped) = map_values(&project_widths(&config_lines(text)), true);
     edge_on_gap(&mut mapped);
+    skirt_from_nominal_brim(&mut mapped);
     let settings = mapped.into_iter().filter(|(k, v)| takes(k, v)).collect();
     (settings, unmapped)
 }
@@ -407,6 +408,19 @@ fn edge_on_gap(mapped: &mut Map<String, Value>) {
             "support_base_edge_inset".to_owned(),
             Value::String("half_width".to_owned()),
         );
+    }
+}
+
+/// A project with a skirt keeps it `skirt_distance` from the brim's nominal edge, `brim_separation` and `brim_width`
+/// out from the first layer's outline after elephant foot compensation, whatever the brim prints
+/// (`skirt_brim_edge` `nominal`). The same as `prusaProjectSettings` in the settings package.
+fn skirt_from_nominal_brim(mapped: &mut Map<String, Value>) {
+    let loops = mapped
+        .get("skirt_loops")
+        .and_then(Value::as_str)
+        .and_then(|v| v.trim().parse::<f64>().ok());
+    if loops.is_some_and(|n| n > 0.0) {
+        mapped.insert("skirt_brim_edge".to_owned(), Value::String("nominal".to_owned()));
     }
 }
 

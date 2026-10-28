@@ -3407,11 +3407,11 @@ impl SliceSession {
             .zip(&brims)
             .enumerate()
             .map(|(k, ((s, (c, first)), (_, area)))| {
-                let mut pts: Vec<IntPoint<i32>> = area
-                    .iter()
-                    .filter_map(|sh| sh.first())
-                    .flat_map(|r| r.iter().copied())
-                    .collect();
+                let brim = skirt_brim(first, area.clone(), || {
+                    let lr = s.layer_regions(0, Families::new(first), &micros);
+                    perimeters::union_all(&lr.regions.iter().map(|(_, sh)| sh).collect::<Vec<_>>())
+                });
+                let mut pts: Vec<IntPoint<i32>> = outer_points(&brim).collect();
                 if shield {
                     pts.extend(
                         s.parts
@@ -3622,7 +3622,10 @@ impl SliceSession {
             .flat_map(|r| outer_points(&skirt_outline(r)).collect::<Vec<_>>())
             .collect();
         if let Some(here) = get(0) {
-            points.extend(outer_points(&self.first_brim_in(first, here).1));
+            let brim = skirt_brim(first, self.first_brim_in(first, here).1, || {
+                perimeters::union_all(&here.regions.iter().map(|(_, s)| s).collect::<Vec<_>>())
+            });
+            points.extend(outer_points(&brim));
         }
         Some(OneSkirt {
             first: first.clone(),
@@ -11779,6 +11782,24 @@ fn outer_points(shapes: &Shapes) -> impl Iterator<Item = IntPoint<i32>> + '_ {
 /// The outer ring points of a layer's regions.
 fn outer_points_of(here: &LayerRegions) -> Vec<IntPoint<i32>> {
     here.regions.iter().flat_map(|(_, s)| outer_points(s)).collect()
+}
+
+/// What a skirt keeps `skirt_distance` from at a first layer brim: the outer edge of the brim loops printed (`area`,
+/// [`SliceSession::first_brim`]), or with `skirt_brim_edge` `nominal` the brim's nominal edge, `brim_object_gap` and
+/// `brim_width` out from the first layer's outline after elephant foot compensation (`compensated`). The read of a
+/// Prusa project sets `nominal`. Only an outer brim of a set width has a nominal edge; any other keeps its loops.
+fn skirt_brim(cfg: &PrintConfig, area: Shapes, compensated: impl FnOnce() -> Shapes) -> Shapes {
+    let nominal =
+        matches!(cfg.raw.get("skirt_brim_edge"), Some(serde_json::Value::String(e)) if e == "nominal");
+    let outer = matches!(
+        crate::brim::Kind::of(cfg),
+        crate::brim::Kind::Outer | crate::brim::Kind::Both
+    );
+    if !nominal || !outer || area.is_empty() || cfg.brim_width <= 0.0 {
+        return area;
+    }
+    let gap = cfg.raw_number("brim_object_gap", 0.0).clamp(0.0, 2.0);
+    perimeters::offset_round(&compensated(), mm(gap + cfg.brim_width))
 }
 
 /// A layer's outline as a skirt goes round it: before elephant foot compensation (`lslices`), else before size

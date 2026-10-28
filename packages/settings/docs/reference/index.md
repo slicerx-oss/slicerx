@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 755 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 756 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -8,7 +8,7 @@ How to read the fields is in the [guide](../guide.md).
 
 Print settings: layers, walls, infill, speeds, supports, adhesion.
 
-- [Adhesion: skirt, brim and raft](process-adhesion.md): 27 settings
+- [Adhesion: skirt, brim and raft](process-adhesion.md): 28 settings
 - [Advanced extrusion](process-advanced.md): 30 settings
 - [G-code](process-gcode.md): 8 settings
 - [Acceleration, jerk and machine limits](process-motion.md): 21 settings
@@ -605,6 +605,7 @@ Alphabetical, each linking to its group file.
 - `skin_infill_density`: Skin infill density, [process/strength](process-strength.md#skin_infill_density)
 - `skin_infill_depth`: Skin infill depth, [process/strength](process-strength.md#skin_infill_depth)
 - `skin_infill_line_width`: Skin infill line width, [process/strength](process-strength.md#skin_infill_line_width)
+- `skirt_brim_edge`: Skirt brim edge, [process/adhesion](process-adhesion.md#skirt_brim_edge)
 - `skirt_distance`: Skirt distance, [process/adhesion](process-adhesion.md#skirt_distance)
 - `skirt_height`: Skirt height, [process/adhesion](process-adhesion.md#skirt_height)
 - `skirt_loops`: Skirt loops, [process/adhesion](process-adhesion.md#skirt_loops)

@@ -382,3 +382,51 @@ fn the_plate_skirt_prints_the_first_layers_loop_on_every_skirt_layer() {
         );
     }
 }
+
+#[test]
+fn a_prusa_projects_skirt_keeps_its_distance_from_the_nominal_brim_edge() {
+    // S-a: the brim gap 0.5 + 3 + 2 + half a spacing 0.229, less the 0.2 compensation, on every skirt layer.
+    assert_eq!(assert_skirt("mk4p--c2", None, &[5.53], None), [20, 40, 60]);
+    let ps = paths(&slice("mk4p--c2", None));
+    let length = skirt_layers("mk4p--c2", &ps)[0].1[0].length;
+    assert!(
+        (124.0..=127.0).contains(&length),
+        "mk4p--c2: skirt {length:.1} mm"
+    );
+    // S-b
+    assert_skirt("mk4p--c1", None, &[5.53], Some(414.2));
+    assert_skirt("mk4p--k9", None, &[5.53], None);
+    assert_skirt("mk4p--k4", None, &[7.53], None);
+    // S-c: the nominal 5 mm, not the 10 loops printed (which end at 4.84).
+    assert_skirt("mk4p--k5", None, &[7.53], None);
+    // S-d and the sweep: one mm of offset per mm of brim width, of gap and of compensation; 0.7 mm lines add 0.1.
+    for (name, offset) in [
+        ("mk4p--k8", 5.73),
+        ("mk4p--k7", 5.63),
+        ("mk4p--pw1", 3.73),
+        ("mk4p--pw6", 8.73),
+        ("mk4p--pg0", 5.23),
+        ("mk4p--pe2", 4.53),
+    ] {
+        assert_skirt(name, None, &[offset], None);
+    }
+}
+
+#[test]
+fn a_prusa_projects_plate_skirt_keeps_its_distance_from_each_nominal_brim_edge() {
+    // S-h: objects with settings of their own, 3 mm brims on objects 1 and 2, 6 mm on object 3: the loop's left side
+    // is object 1's, its right side object 3's.
+    let name = "mk4p--c6";
+    let layers = skirt_layers(name, &paths(&slice(name, None)));
+    assert_eq!(layers.iter().map(|(z, _)| *z).collect::<Vec<_>>(), [20, 40, 60]);
+    for (z, loops) in &layers {
+        assert_eq!(loops.len(), 1, "{name} at {z}");
+        let sides = loops[0].sides;
+        for (side, want) in [(0, 5.53), (2, 8.53)] {
+            assert!(
+                (sides[side] - want).abs() <= OFFSET_TOL,
+                "{name} at {z}: skirt sides {sides:.3?}, not {want} on side {side}"
+            );
+        }
+    }
+}

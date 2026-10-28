@@ -17,6 +17,7 @@
   "raft_first_layer_expansion": "Makes the first raft or support layer wider than the rest, in mm, for better grip on the bed.",
   "raft_layers": "Prints the part on this many layers of disposable raft. Use it for warping materials such as ABS or for parts with a small, rough footprint; it costs filament and leaves a rougher bottom.",
   "single_loop_draft_shield": "Prints the skirt or draft shield as a single loop above the first layer to save filament. A one-loop shield is weaker and can crack or curl.",
+  "skirt_brim_edge": "Where the skirt measures its distance from a brim: the loops the brim prints, or the brim's set width out from the first layer after elephant foot compensation. Prusa projects set it when opened; the app does not list it.",
   "skirt_distance": "The gap between the skirt and the part or its brim, in mm.",
   "skirt_height": "How many layers tall the skirt is. One layer is enough to prime the nozzle; more layers start to act as a draft shield.",
   "skirt_loops": "Number of loops drawn around the parts before the print starts, which primes the nozzle and shows the first layer is level. 0 turns the skirt off.",

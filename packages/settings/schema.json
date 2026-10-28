@@ -526,6 +526,24 @@
    "intent": "adhesion"
   },
   {
+   "key": "skirt_brim_edge",
+   "section": "process",
+   "type": "enum",
+   "label": "Skirt brim edge",
+   "enumValues": [
+    "printed",
+    "nominal"
+   ],
+   "mode": "hidden",
+   "group": "adhesion",
+   "invalidates": "paths",
+   "help": "Where the skirt measures its distance from a brim: the loops the brim prints, or the brim's set width out from the first layer after elephant foot compensation. Prusa projects set it when opened; the app does not list it.",
+   "enumLabels": [
+    "The printed brim loops",
+    "The nominal brim width"
+   ]
+  },
+  {
    "key": "skirt_distance",
    "section": "process",
    "type": "float",
