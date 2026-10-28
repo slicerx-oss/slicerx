@@ -13,6 +13,7 @@ import { gcode3mf, PLATE_THUMBNAILS } from '../gcode3mf'
 import { resolveModel, ToolInputError } from '../models'
 import { readPresetFiles } from '../presets'
 import { importReportLines, objectLayerHeights, readProjectFile, sliceWalls, type WallsNote } from '../projectfile'
+import { openProject } from '../project-open'
 import { toSchemaValue } from '../settings'
 import { reviewProjectScripts } from '../project-script-review'
 import { replacementConfig } from '../script-replacement'
@@ -34,12 +35,12 @@ export const sliceInput = {
   project_settings: z
     .boolean()
     .default(false)
-    .describe("Start from the 3MF or .sx3mf project's own print settings (as saved by Bambu Studio, OrcaSlicer or this app), then apply profiles, profile_files and overrides on top"),
+    .describe("Start from the 3MF or .sx3mf project's own print settings (as saved by Bambu Studio, OrcaSlicer or this app), then apply profiles, profile_files and overrides on top. With a machine: profile in profiles, another slicer's 3MF opens on that printer the way the app opens it instead: the printer's machine, process and filament settings, then the project's settings over them, then the other profiles, profile_files and overrides."),
   project_gcode: z
     .enum(['review', 'profile'])
     .default('review')
     .describe(
-      "With project_settings: what to do with the project's printer G-code (start, end, layer change and the rest) when it is not the printer's stock text. review (the default): refuse with error code project_gcode_review, a one-line details.summary to show first and the diff and flagged lines in structuredContent.error.details, for the person to see; printer_needed when no printer profile names the printer to compare with. profile: slice with the printer profile's G-code instead. Stock text is always used as it is. Only a person can choose a project's own G-code, in the app; no tool call can.",
+      "With project_settings: what to do with the project's printer G-code (start, end, layer change and the rest) when it is not the printer's stock text. review (the default): refuse with error code project_gcode_review, a one-line details.summary to show first and the diff and flagged lines in structuredContent.error.details, for the person to see; printer_needed when no printer profile names the printer to compare with. profile: slice with the printer profile's G-code instead. Stock text is always used as it is. With a machine: profile for another printer than the project's, or for a PrusaSlicer project, the project's G-code is not used: the slice takes that printer's, as the app does. Only a person can choose a project's own G-code, in the app; no tool call can.",
     ),
   paint: z
     .record(z.string().regex(/^\d+$/), z.partialRecord(z.enum(['color', 'seam', 'support', 'fuzzy']), z.record(z.string().regex(/^\d+$/), z.string().max(4096))))
@@ -212,8 +213,10 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   if ((args.plate !== undefined || args.project_settings) && !isProject) throw new ToolInputError(`${basename(modelPath)} is not a 3MF or .sx3mf project, so it has no plates or project settings`, 'invalid_input')
   let project: ExtraLayers['project']
   let importReport: ReturnType<typeof readProjectFile>['summary']['import_report'] | undefined
+  let projectRead: ReturnType<typeof readProjectFile> | undefined
   if (isProject && (args.project_settings || args.plate !== undefined)) {
     const read = readProjectFile(modelPath)
+    projectRead = read
     if (args.project_settings) {
       importReport = read.summary.import_report
       const r = importReport
@@ -231,6 +234,13 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   }
   await progress(0.1, 'Resolving settings')
   await profiles.prepare([...args.profiles, ...(args.filaments ?? []).flatMap((s) => (s.profile ? [s.profile] : []))])
+  // Another slicer's project on a printer slices with the settings the app opens it with (project-open.ts).
+  if (project && projectRead) {
+    const asked = args.overrides?.['nozzle_diameter']
+    const mm = Number(Array.isArray(asked) ? asked[0] : asked)
+    const opened = await openProject(projectRead, profiles, args.profiles, asked !== undefined && Number.isFinite(mm) && mm > 0 ? mm : undefined)
+    if (opened) project = { ...project, opened, model: opened.printer }
+  }
   const presets = args.profile_files.length ? await readPresetFiles(d.policy, args.profile_files) : undefined
   const slots = args.filaments?.length ? await slotLayers(d, args.filaments) : undefined
   if (args.script_replacements) {
@@ -238,7 +248,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     project = { ...project, config: replacementConfig(project.config, args.script_replacements, 'candidate') }
   }
   const scriptReviews = await reviewProjectScripts(profiles, args.profiles, { project, presets, slots }, args.overrides, slicer, args.script_printer)
-  const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced, noPrinter } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots, scriptReviews })
+  const { config, explicit, applied, trustedGcode, gcodeKept, gcodeReplaced, noPrinter, widthsAsGiven } = resolveSliceConfig(store, profiles, args.profiles, args.overrides, { project, presets, slots, scriptReviews })
   const projectGcode = [
     ...gcodeKept.filter((k) => !args.script_replacements?.some((c) => c.key === k.key && c.slot === k.slot)).map((k) => ({ key: k.key, ...(k.slot !== undefined ? { slot: k.slot } : {}), use: 'project' as const, message: `The project's ${k.label} ${k.message}.` })),
     ...gcodeReplaced.map((k) => ({ key: k, use: 'profile' as const, message: `Used the printer profile's ${gcodeLabel(k)} instead of the project's.` })),
@@ -270,6 +280,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     outDir,
     emitGcode,
     trustedGcode,
+    ...(widthsAsGiven.length ? { widthsAsGiven } : {}),
     emitPreview: emitGcode && args.preview === true && slicer.kind === 'sx',
     ...(args.allow_collisions ? { allowCollisions: true } : {}),
     ...(args.paint ? { paint: args.paint } : {}),
