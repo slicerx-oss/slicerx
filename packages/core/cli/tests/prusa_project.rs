@@ -406,3 +406,47 @@ fn sx_project_settings_puts_the_outer_support_line_edge_on_the_gap() {
         assert_eq!(config["support_base_edge_inset"], "half_width", "{name}");
     }
 }
+
+#[test]
+fn a_prusaslicer_width_of_0_is_the_general_width_else_the_nozzles() {
+    // A width left at 0 prints the project's 0.5 mm general width, the same bytes as every width set to 0.5 mm. Top
+    // surface lines are fitted to the area, so they print within a few microns of it.
+    let mut wrong = Vec::new();
+    let pairs = [("t2-ew05.3mf", "t2-all05.3mf"), ("t3-auto.3mf", "t3-sup04.3mf")];
+    for (zero, mm) in pairs {
+        if gcode(&widths(zero)) != gcode(&widths(mm)) {
+            wrong.push(format!("{zero} prints other moves than {mm}"));
+        }
+    }
+    let printed = widths_above_layer_1(&gcode(&widths("t2-ew05.3mf")));
+    for kind in ["Outer wall", "Inner wall", "Support", "Support interface"] {
+        let got = printed.get(kind).cloned().unwrap_or_default();
+        if got.len() != 1 || !got.contains("0.5") {
+            wrong.push(format!("t2-ew05.3mf: {kind} prints {got:?}, not 0.5"));
+        }
+    }
+    let top = printed.get("Top surface").cloned().unwrap_or_default();
+    if top.is_empty()
+        || !top
+            .iter()
+            .all(|w| w.parse::<f64>().is_ok_and(|w| (w - 0.5).abs() <= 0.01))
+    {
+        wrong.push(format!("t2-ew05.3mf: top surface prints {top:?}, not about 0.5"));
+    }
+    // With the general width 0 too, the support prints at the project's own nozzle diameter above the first layer.
+    for (name, want) in [
+        ("t3-auto.3mf", "0.4"),
+        ("n0.25-auto-mush.3mf", "0.25"),
+        ("n0.6-auto-mush.3mf", "0.6"),
+        ("n0.8-auto-mush.3mf", "0.8"),
+    ] {
+        let printed = widths_above_layer_1(&gcode(&widths(name)));
+        for kind in ["Support", "Support interface"] {
+            let got = printed.get(kind).cloned().unwrap_or_default();
+            if got.len() != 1 || !got.contains(want) {
+                wrong.push(format!("{name}: {kind} prints {got:?}, not {want}"));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}

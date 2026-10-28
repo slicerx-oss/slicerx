@@ -20,6 +20,11 @@ struct PrusaMap {
     percent_base_defaults: HashMap<String, f64>,
     /// Width keys a project gives as a percent of a height (`widthPercentOf`), by the key the percent is of.
     width_percent_of: HashMap<String, String>,
+    /// Width keys whose 0 in a project's own settings is `extrusion_width` when that is not 0 (`zeroWidthFallback`).
+    zero_width_fallback: Vec<String>,
+    /// The width a key of `zero_width_fallback` gets when `extrusion_width` is 0 too, times the project's nozzle
+    /// diameter (`zeroWidthNozzle`).
+    zero_width_nozzle: HashMap<String, f64>,
     ignored_prefixes: Vec<String>,
     ignored_keys: Vec<String>,
     /// Keys that carry over only through a `values` row; any other value is left out.
@@ -118,6 +123,16 @@ fn map() -> &'static PrusaMap {
                 })
                 .unwrap_or_default(),
             width_percent_of: strings("widthPercentOf"),
+            zero_width_fallback: list("zeroWidthFallback"),
+            zero_width_nozzle: v
+                .get("zeroWidthNozzle")
+                .and_then(Value::as_object)
+                .map(|o| {
+                    o.iter()
+                        .filter_map(|(a, b)| b.as_f64().map(|b| (a.clone(), b)))
+                        .collect()
+                })
+                .unwrap_or_default(),
             ignored_prefixes: pattern
                 .trim_start_matches("^(")
                 .trim_end_matches(')')
@@ -275,11 +290,34 @@ fn outer_width(raw: &HashMap<&str, &str>) -> Option<f64> {
             return Some(w);
         }
     }
-    let nozzle = match raw.get("nozzle_diameter") {
-        Some(v) => number(v.split(',').next().unwrap_or(v))?,
-        None => *map().percent_base_defaults.get("nozzle_diameter")?,
-    };
-    Some(1.125 * nozzle)
+    Some(1.125 * project_nozzle(raw)?)
+}
+
+/// The project's own nozzle diameter (its first extruder's), else the default 0.4.
+fn project_nozzle(raw: &HashMap<&str, &str>) -> Option<f64> {
+    match raw.get("nozzle_diameter") {
+        Some(v) => number(v.split(',').next().unwrap_or(v)),
+        None => map().percent_base_defaults.get("nozzle_diameter").copied(),
+    }
+}
+
+/// The mm a width of 0 in a project's own settings stands for (`zeroWidthFallback`): `extrusion_width` when it is not
+/// 0 (a percent of the layer height), else the key's multiple of the project's nozzle diameter (`zeroWidthNozzle`).
+/// `None` when the value is not 0, or when our own 0 already means the same width.
+fn zero_width_mm(key: &str, v: &str, raw: &HashMap<&str, &str>) -> Option<f64> {
+    let m = map();
+    if !m.zero_width_fallback.iter().any(|k| k == key) || number(v) != Some(0.0) {
+        return None;
+    }
+    let general = raw.get("extrusion_width").and_then(|ew| match percent(ew) {
+        Some(p) => width_mm("extrusion_width", p, raw),
+        None => number(ew),
+    });
+    if let Some(w) = general.filter(|w| *w != 0.0) {
+        return Some(w);
+    }
+    let ratio = m.zero_width_nozzle.get(key)?;
+    Some((ratio * project_nozzle(raw)? * 1e9).round() / 1e9)
 }
 
 /// A project's own settings with each width percent of `widthPercentOf` in mm, all read from the settings as given.
@@ -287,7 +325,13 @@ fn project_widths(list: &[(String, String)]) -> Vec<(String, String)> {
     let raw: HashMap<&str, &str> = list.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     let mm: Vec<Option<String>> = list
         .iter()
-        .map(|(k, v)| percent(v).and_then(|p| width_mm(k, p, &raw)).map(plain))
+        .map(|(k, v)| {
+            match percent(v) {
+                Some(p) => width_mm(k, p, &raw),
+                None => zero_width_mm(k, v, &raw),
+            }
+            .map(plain)
+        })
         .collect();
     list.iter()
         .zip(mm)
@@ -319,17 +363,26 @@ pub(crate) fn object_overrides(list: &[(String, String)], project: Option<&str>)
     let mut raw: HashMap<&str, &str> = global.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     raw.extend(own.iter().map(|(k, v)| (*k, *v)));
     let own_height = own.contains_key("layer_height");
+    // A width of 0 is the object's general width when the object sets either one, or has its own layer height under a
+    // general width in percent; otherwise it is the project's, already in the project's settings.
+    let own_general = own.contains_key("extrusion_width")
+        || (own_height && raw.get("extrusion_width").is_some_and(|v| percent(v).is_some()));
     let mut keys: Vec<&String> = m.width_percent_of.keys().collect();
     keys.sort();
     for key in keys {
-        if key == "first_layer_extrusion_width" || !(own_height || own.contains_key(key.as_str())) {
+        if key == "first_layer_extrusion_width" {
             continue;
         }
-        let Some(mm) = raw
-            .get(key.as_str())
-            .and_then(|v| percent(v))
-            .and_then(|p| width_mm(key, p, &raw))
-        else {
+        let own_key = own.contains_key(key.as_str());
+        let Some(v) = raw.get(key.as_str()) else {
+            continue;
+        };
+        let mm = match percent(v) {
+            Some(p) if own_height || own_key => width_mm(key, p, &raw),
+            None if own_general || own_key => zero_width_mm(key, v, &raw),
+            _ => None,
+        };
+        let Some(mm) = mm else {
             continue;
         };
         let target = m.rename.get(key).map_or(key.as_str(), String::as_str);
@@ -700,5 +753,51 @@ mod tests {
         assert_eq!(o["initial_layer_infill_speed"], "100");
         let o = of(&[("first_layer_infill_speed", "30"), ("first_layer_speed", "50%")]);
         assert_eq!(o["initial_layer_infill_speed"], "30");
+    }
+
+    #[test]
+    fn a_width_of_0_is_the_objects_general_width() {
+        let project = [
+            "layer_height = 0.1",
+            "extrusion_width = 250%",
+            "perimeter_extrusion_width = 0",
+            "support_material_extrusion_width = 0",
+            "top_infill_extrusion_width = 0",
+            "external_perimeter_extrusion_width = 0.6",
+            "nozzle_diameter = 0.6",
+        ]
+        .map(|l| format!("; {l}"))
+        .join("\n");
+        let object = |pairs: &[(&str, &str)], project: &str| {
+            let list: Vec<(String, String)> = pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect();
+            super::object_overrides(&list, Some(project))
+        };
+        // 250% of the object's own 0.3 mm layers, for the general width and each width left at 0; an outer wall in mm
+        // stays the project's.
+        let o = object(&[("layer_height", "0.3")], &project);
+        for k in [
+            "line_width",
+            "inner_wall_line_width",
+            "support_line_width",
+            "top_surface_line_width",
+        ] {
+            assert_eq!(o[k], "0.75", "{k}");
+        }
+        assert!(!o.contains_key("outer_wall_line_width"));
+        // The object's own general width in mm, and at 0 the support at the project's 0.6 nozzle.
+        assert_eq!(
+            object(&[("extrusion_width", "0.5")], &project)["inner_wall_line_width"],
+            "0.5"
+        );
+        let o = object(&[("extrusion_width", "0")], &project);
+        assert_eq!(o.len(), 2, "{o:?}");
+        assert_eq!(o["line_width"], "0");
+        assert_eq!(o["support_line_width"], "0.6");
+        // A general width in mm with the object's own layer height is the project's, already in the project's settings.
+        let o = object(&[("layer_height", "0.3")], &project.replace("250%", "0.5"));
+        assert_eq!(o.len(), 1, "{o:?}");
     }
 }

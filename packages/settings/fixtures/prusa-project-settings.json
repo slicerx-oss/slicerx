@@ -161,7 +161,7 @@
         "support_base_edge_inset": "half_width",
         "enforce_support_layers": "0",
         "support_filament": "1",
-        "support_line_width": "0",
+        "support_line_width": "0.4",
         "support_interface_loop_pattern": "0",
         "support_interface_filament": "1",
         "support_interface_top_layers": "3",
@@ -652,7 +652,7 @@
       ],
       "config": {
         "support_object_xy_distance": "0.5",
-        "outer_wall_line_width": "0",
+        "outer_wall_line_width": "0.5",
         "line_width": "0.5"
       },
       "unmapped": []
@@ -667,7 +667,7 @@
       ],
       "config": {
         "support_object_xy_distance": "0.5",
-        "outer_wall_line_width": "0",
+        "outer_wall_line_width": "0.5",
         "line_width": "0.5",
         "layer_height": "0.2"
       },
@@ -854,6 +854,133 @@
         "inner_wall_line_width": "0"
       },
       "unmapped": []
+    },
+    {
+      "name": "support width 0 with the general width 0 is the nozzle's width",
+      "lines": [
+        "support_material_extrusion_width = 0",
+        "extrusion_width = 0"
+      ],
+      "config": {
+        "support_line_width": "0.4",
+        "line_width": "0"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support width 0 with the general width 0 is the project's 0.6 nozzle's width",
+      "lines": [
+        "support_material_extrusion_width = 0",
+        "extrusion_width = 0",
+        "nozzle_diameter = 0.6"
+      ],
+      "config": {
+        "support_line_width": "0.6",
+        "line_width": "0"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support width 0 with the general width 0 is the project's 0.25 nozzle's width",
+      "lines": [
+        "support_material_extrusion_width = 0",
+        "extrusion_width = 0",
+        "nozzle_diameter = 0.25"
+      ],
+      "config": {
+        "support_line_width": "0.25",
+        "line_width": "0"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "support width 0 is the general width in mm",
+      "lines": [
+        "support_material_extrusion_width = 0",
+        "extrusion_width = 0.5"
+      ],
+      "config": {
+        "support_line_width": "0.5",
+        "line_width": "0.5"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "inner wall width 0 is the general width in mm",
+      "lines": [
+        "perimeter_extrusion_width = 0",
+        "extrusion_width = 0.5"
+      ],
+      "config": {
+        "inner_wall_line_width": "0.5",
+        "line_width": "0.5"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "outer wall width 0 is the general width in percent of the layer height",
+      "lines": [
+        "external_perimeter_extrusion_width = 0",
+        "extrusion_width = 250%",
+        "layer_height = 0.2"
+      ],
+      "config": {
+        "outer_wall_line_width": "0.5",
+        "line_width": "0.5",
+        "layer_height": "0.2"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "top surface width 0 is the general width in mm",
+      "lines": [
+        "top_infill_extrusion_width = 0",
+        "extrusion_width = 0.5"
+      ],
+      "config": {
+        "top_surface_line_width": "0.5",
+        "line_width": "0.5"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "top surface width 0 with the general width 0 stays auto",
+      "lines": [
+        "top_infill_extrusion_width = 0",
+        "extrusion_width = 0"
+      ],
+      "config": {
+        "top_surface_line_width": "0",
+        "line_width": "0"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "infill widths 0 with the general width 0 stay auto",
+      "lines": [
+        "infill_extrusion_width = 0",
+        "solid_infill_extrusion_width = 0",
+        "extrusion_width = 0"
+      ],
+      "config": {
+        "sparse_infill_line_width": "0",
+        "internal_solid_infill_line_width": "0",
+        "line_width": "0"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "automatic extrusion widths are not read",
+      "lines": [
+        "automatic_extrusion_widths = 1",
+        "perimeter_extrusion_width = 0.55"
+      ],
+      "config": {
+        "inner_wall_line_width": "0.55"
+      },
+      "unmapped": [
+        "automatic_extrusion_widths"
+      ]
     },
     {
       "name": "printer settings, G-code, lists of text and unset values stay the printer's",
