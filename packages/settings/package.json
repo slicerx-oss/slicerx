@@ -24,6 +24,7 @@
     "./flush": "./js/flush.ts",
     "./flush-defaults": "./js/flush-defaults.ts",
     "./slot-settings": "./js/slot-settings.ts",
+    "./slot-colors": "./js/slot-colors.ts",
     "./defaults.json": "./defaults.json"
   },
   "scripts": {
