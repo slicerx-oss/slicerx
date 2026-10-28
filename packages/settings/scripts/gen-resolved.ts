@@ -10,12 +10,14 @@
 // refuses to write when the nozzle maps are missing or the output shrinks by more than 10 percent)
 // Last, the Bambu Lab output gets packages/profiles/overlays/bbl-2.8.json (Bambu Studio 2.8's values for the settings the
 // engine reads, js/overlay.ts), so a regeneration keeps them. scripts/apply-overlay.ts applies it to filaments/BBL.json.
+// The Prusa output gets packages/profiles/overlays/prusa-mk4is.json (the MK4 IS lift and retraction for the stock MK4) the
+// same way, and apply-overlay.ts also writes it to machine.json. The list is MAKER_OVERLAYS in js/overlay.ts.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { defaultConfig } from '../js/defaults'
 import { importFlat, PROFILE_META_KEYS } from '../js/import'
 import { settingDef } from '../js/schema'
 import { sameValue } from '../js/diff'
-import { applyResolvedOverlay, BBL_OVERLAY, type MakerOverlay, type ResolvedBrand } from '../js/overlay'
+import { applyResolvedOverlay, MAKER_OVERLAYS, type MakerOverlay, type ResolvedBrand } from '../js/overlay'
 import machineJson from '../../profiles/machine.json'
 import printersJson from '../profiles/printers.json'
 
@@ -104,13 +106,12 @@ for (const [model, nozzles] of [...byModel].sort()) {
   brands.set(brand, file)
   kept++
 }
-// The maker overlay, applied last.
-{
-  const bambu = brands.get('bambu-lab')
-  if (bambu) {
-    const overlay = JSON.parse(readFileSync(new URL(`../../profiles/${BBL_OVERLAY}`, import.meta.url), 'utf8')) as MakerOverlay
-    applyResolvedOverlay(bambu as unknown as ResolvedBrand, overlay, (model) => (printersJson as unknown as { printers: { id: string; defaultNozzle: number }[] }).printers.find((p) => p.id === model)?.defaultNozzle ?? 0.4)
-  }
+// The maker overlays, applied last.
+for (const o of MAKER_OVERLAYS) {
+  const data = brands.get(o.brand)
+  if (!data) continue
+  const overlay = JSON.parse(readFileSync(new URL(`../../profiles/${o.path}`, import.meta.url), 'utf8')) as MakerOverlay
+  applyResolvedOverlay(data as unknown as ResolvedBrand, overlay, (model) => (printersJson as unknown as { printers: { id: string; defaultNozzle: number }[] }).printers.find((p) => p.id === model)?.defaultNozzle ?? 0.4)
 }
 // Guards: a dump directory without the per-nozzle files (orca-<model>.<tier>.n<size>.json) silently drops the nozzle maps. Refuse
 // to write when a printer that has a nozzle map in the current files loses it, when no per-nozzle dump is present at all while

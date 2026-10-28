@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Locks the machine settings each printer profile carries. They are Orca's own numbers and choices for the
 // same model (checked by a private script against OrcaSlicer's current vendor profiles), so a change here
-// needs a new check: run the private parity script, then UPDATE_GOLDEN=1 to write the lock again.
+// needs a new check: run the private parity script, then UPDATE_GOLDEN=1 to write the lock again. The stock Prusa MK4
+// also carries the MK4 IS lift and retraction (packages/profiles/overlays/prusa-mk4is.json, scripts/apply-overlay.ts).
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'

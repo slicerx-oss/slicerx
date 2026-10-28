@@ -1,0 +1,21 @@
+{
+ "comment": "The lift and retraction of the maker's MK4 IS printer profile, written over the stock Prusa MK4 printer with the 0.4 mm nozzle, whose resolved preset carries the generic values (0.4 mm lift with no ceiling, 0.8 mm retraction, 3 degree ramps). Applied last to resolved/prusa.json and to the printer settings in machine.json by packages/settings/scripts/apply-overlay.ts, which gen-resolved.ts also runs. The other MK4 nozzles keep their own values. Values are in the profiles' own format, by printer model and nozzle size.",
+ "source": {
+  "printer": "Original Prusa MK4 Input Shaper 0.4 nozzle"
+ },
+ "filament": {},
+ "machine": {
+  "prusa-mk4": {
+   "0.4": {
+    "preset": "Prusa MK4 0.4 nozzle",
+    "values": {
+     "z_hop": ["0.2"],
+     "retraction_length": ["0.7"],
+     "retract_lift_below": ["219"],
+     "travel_slope": ["1"]
+    }
+   }
+  }
+ },
+ "process": {}
+}

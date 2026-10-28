@@ -2,11 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The Bambu Studio 2.8 overlay (packages/profiles/overlays/bbl-2.8.json) is in the shipped Bambu Lab data: applying it
 // again changes nothing, so a regeneration that dropped it fails here. Rerun scripts/apply-overlay.ts after regenerating.
+// The MK4 IS lift and retraction (packages/profiles/overlays/prusa-mk4is.json) is checked the same way, in
+// resolved/prusa.json and machine.json.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { applyFilamentOverlay, applyResolvedOverlay, BBL_OVERLAY, type MakerOverlay, type ResolvedBrand, type VendorData } from './overlay'
-import { printerProfile } from './profiles'
+import { applyFilamentOverlay, applyMachineOverlay, applyResolvedOverlay, BBL_OVERLAY, PRUSA_OVERLAY, type MachineFile, type MakerOverlay, type ResolvedBrand, type VendorData } from './overlay'
+import { printerConfig, printerProfile } from './profiles'
 import { resolvedProfile } from './resolved'
 import { loadFilamentPreset } from './filaments'
 import { defaultConfig } from './schema'
@@ -80,5 +82,46 @@ describe('Bambu Studio 2.8 overlay', () => {
         }
       }
     }
+  })
+})
+
+describe('MK4 IS lift and retraction for the stock MK4', () => {
+  const prusa = read<MakerOverlay>(PRUSA_OVERLAY)
+  const owner = { z_hop: [0.2], retraction_length: [0.7], retract_lift_below: [219], travel_slope: [1] }
+  const generic = { z_hop: [0.4], retraction_length: [0.8], retract_lift_below: [0], travel_slope: [3] }
+  const pick = (cfg: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.keys(owner).map((k) => [k, cfg[k] ?? defaultConfig()[k as never]]))
+
+  it('is applied to resolved/prusa.json and machine.json', () => {
+    for (const path of ['resolved/prusa.json', 'machine.json']) {
+      const shipped = readFileSync(profiles + path, 'utf8')
+      if (path === 'machine.json') {
+        const file = JSON.parse(shipped) as MachineFile
+        applyMachineOverlay(file, prusa, nozzle)
+        expect(JSON.stringify(file, null, 1) + '\n', path).toBe(shipped)
+      } else {
+        const data = JSON.parse(shipped) as ResolvedBrand
+        applyResolvedOverlay(data, prusa, nozzle)
+        expect(JSON.stringify(data) + '\n', path).toBe(shipped)
+      }
+    }
+  })
+
+  it('sets only the four values, on the 0.4 mm nozzle of the MK4', () => {
+    expect(Object.keys(prusa.machine)).toEqual(['prusa-mk4'])
+    expect(Object.keys(prusa.machine['prusa-mk4']!)).toEqual(['0.4'])
+    expect(Object.keys(prusa.machine['prusa-mk4']!['0.4']!.values).sort()).toEqual(Object.keys(owner).sort())
+    expect(prusa.filament).toEqual({})
+    expect(prusa.process).toEqual({})
+  })
+
+  it('gives the MK4 printer profile and its stock presets the MK4 IS values and keeps the other nozzles', async () => {
+    expect(pick(printerConfig('prusa-mk4') as unknown as Record<string, unknown>)).toEqual(owner)
+    expect(pick((await resolvedProfile('prusa-mk4', 'standard'))!.machine as unknown as Record<string, unknown>)).toEqual(owner)
+    for (const n of [0.25, 0.6, 0.8]) {
+      expect(pick(printerConfig('prusa-mk4', n) as unknown as Record<string, unknown>), `${n}`).toEqual(generic)
+      expect(pick((await resolvedProfile('prusa-mk4', 'standard', n))!.machine as unknown as Record<string, unknown>), `${n}`).toEqual(generic)
+    }
+    // The MK4S has its own values from the maker and is not overlaid.
+    expect(pick(printerConfig('prusa-mk4s') as unknown as Record<string, unknown>)).toEqual(owner)
   })
 })
