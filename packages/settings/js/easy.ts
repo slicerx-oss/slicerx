@@ -322,18 +322,45 @@ export function deriveShellLayers(config: PrintConfig): PrintConfig {
 /**
  * SlicerX's own defaults on top of a maker's process preset. The vendor presets carry the vendor's wall generator
  * (arachne on MK4S and K1, classic on Bambu Lab), so without this the stock presets would never use aegis. The vendor
- * data stays as it is; the layer applies only while the person has not set the key themselves.
+ * data stays as it is; the layer applies only while the person has not set the key themselves, and not on the printers
+ * in PRESET_OWN_PRINTERS (`presetDefaults`).
  */
 export const SLICERX_PRESET_DEFAULTS: Readonly<Record<string, SettingValue>> = { wall_generator: 'aegis' }
 
 /**
+ * Printers whose own preset values stay over SlicerX's preset defaults, by the start of their `printer_model`: Bambu Lab
+ * printers print with the classic walls of their presets. sx gives a config that names no wall generator on these
+ * printers the same classic walls.
+ */
+export const PRESET_OWN_PRINTERS: readonly string[] = ['Bambu Lab']
+
+const presetOwn = (values: Readonly<Record<string, unknown>>): boolean => {
+  const m = values['printer_model']
+  const model = typeof m === 'string' ? m : Array.isArray(m) && typeof m[0] === 'string' ? m[0] : ''
+  return PRESET_OWN_PRINTERS.some((p) => model.startsWith(p))
+}
+
+/** SlicerX's preset defaults for a printer layer's `values`: none on a printer in PRESET_OWN_PRINTERS. */
+export function presetDefaults(values: Readonly<Record<string, unknown>>): Readonly<Record<string, SettingValue>> {
+  return presetOwn(values) ? {} : SLICERX_PRESET_DEFAULTS
+}
+
+/**
+ * The wall generator a config that names none prints with, as sx gives it (`config::default_wall_generator`): classic on
+ * a Bambu Lab printer (`values`' `printer_model`), the walls of every Bambu Lab preset, else aegis.
+ */
+export function defaultWallGenerator(values: Readonly<Record<string, unknown>>): 'classic' | 'aegis' {
+  return presetOwn(values) ? 'classic' : 'aegis'
+}
+
+/**
  * The settings a printer layer gives before anything the person or a project set: the defaults, the layer, the Easy
- * controls in `touched` (the others keep the layer's values), then SlicerX's own preset defaults. The app's resolved
- * config and the MCP server's project slices both start from it.
+ * controls in `touched` (the others keep the layer's values), then SlicerX's own preset defaults (`presetDefaults`).
+ * The app's resolved config and the MCP server's project slices both start from it.
  */
 export function layerConfig(values: Readonly<Record<string, SettingValue>>, easy: EasySettings, touched: ReadonlySet<string>): Record<string, SettingValue> {
   const out = applyEasy(easy, { ...defaultConfig(), ...values } as PrintConfig, touched) as unknown as Record<string, SettingValue>
-  for (const [k, v] of Object.entries(SLICERX_PRESET_DEFAULTS)) out[k] = v
+  for (const [k, v] of Object.entries(presetDefaults(values))) out[k] = v
   return out
 }
 

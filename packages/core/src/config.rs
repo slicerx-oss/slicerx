@@ -575,6 +575,29 @@ pub struct PrintConfig {
 /// The settings schema's defaults (`packages/settings/defaults.json`: key to `[group, value]`), embedded once.
 pub(crate) const SCHEMA_DEFAULTS: &str = include_str!(concat!(env!("OUT_DIR"), "/defaults.json"));
 
+/// Whether `config` names a wall generator (`wall_generator`, or the older `perimeter_generator`).
+pub(crate) fn names_wall_generator(config: &serde_json::Map<String, Value>) -> bool {
+    ["wall_generator", "perimeter_generator"]
+        .iter()
+        .any(|k| config.contains_key(*k))
+}
+
+/// The wall generator a config that names none prints with: classic when its `printer_model` is a Bambu Lab printer
+/// (the generator every Bambu Lab preset uses), else the settings schema's default (aegis).
+pub fn default_wall_generator(config: &serde_json::Map<String, Value>) -> String {
+    let bambu = config.get("printer_model").is_some_and(|m| {
+        let m = m.as_array().and_then(|a| a.first()).unwrap_or(m);
+        m.as_str().is_some_and(|m| m.starts_with("Bambu Lab"))
+    });
+    if bambu {
+        return "classic".to_owned();
+    }
+    match process_defaults().get("wall_generator") {
+        Some(Value::String(g)) => g.clone(),
+        _ => "classic".to_owned(),
+    }
+}
+
 /// The process keys of the schema defaults as one object. Printer and filament keys come from their profiles.
 fn process_defaults() -> Value {
     let mut out = serde_json::Map::new();
@@ -726,8 +749,21 @@ impl PrintConfig {
             }
         }
         c.apply_value(v)?;
+        if !v.as_object().is_some_and(names_wall_generator) {
+            c.stock_walls();
+        }
         c.check()?;
         Ok(c)
+    }
+
+    /// The wall generator for a config whose layers name none: the one its printer's presets use, classic on a
+    /// Bambu Lab printer, else the settings schema's default ([`default_wall_generator`]).
+    pub fn stock_walls(&mut self) {
+        let generator = default_wall_generator(&self.raw);
+        if self.raw.get("wall_generator").and_then(Value::as_str) != Some(generator.as_str()) {
+            self.raw
+                .insert("wall_generator".to_owned(), Value::String(generator));
+        }
     }
 
     /// [`Self::apply_value`] and [`Self::check`], one key at a time where it has to be: a key whose value cannot be

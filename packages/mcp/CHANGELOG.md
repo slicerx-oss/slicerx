@@ -6,7 +6,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ### Changed
 
-- A Bambu Lab project that inherited classic walls from its presets reads and slices with classic walls (`readProjectFile`, `slicerx_inspect_project`, and `slicerx_slice_file` with `project_settings`); its walls note says `classic walls, as the project has them`. Before, it got aegis walls. Aegis walls the project lists as changed stay, and so do request overrides. Projects for other printers keep aegis over inherited classic walls, as before.
+- A project reads and slices with the wall generator it inherited from its presets, on every printer (`readProjectFile`, `slicerx_inspect_project`, and `slicerx_slice_file` with `project_settings`); its walls note says `classic walls, as the project has them`. Before, an inherited classic generator became aegis. Aegis walls the project lists as changed stay, and so do request overrides.
+- A slice that names no process on a Bambu Lab printer (`machine:bambu-a1` and the others) prints with the classic walls of the printer's preset, as the app does; other printers keep aegis. `slicerx_get_profile` of `process:slicerx-default` without a printer still shows aegis.
 
 ## [0.2.5] - 2026-10-29
 

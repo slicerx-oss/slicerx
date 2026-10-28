@@ -5,7 +5,7 @@
 // and the Easy map, about 10 KB gzip. Labels, ranges and tiers live in ./settings and load on demand (./load).
 import type { EasyGoal, EasySettings, PrintConfig, SettingValue } from '@slicerx/contracts'
 import { defaultConfig } from '@slicerx/settings/defaults'
-import { applyEasy, goalEasy, layerConfig, matchGoal, SLICERX_PRESET_DEFAULTS } from '@slicerx/settings/easy'
+import { applyEasy, goalEasy, layerConfig, matchGoal, presetDefaults, SLICERX_PRESET_DEFAULTS } from '@slicerx/settings/easy'
 import { GENERIC_BED, bedSettings } from './generic-bed'
 
 export { goalEasy, matchGoal }
@@ -39,7 +39,8 @@ export function profileLayerToken(): object | null {
   return profile
 }
 
-// SlicerX's own defaults on top of a maker's process preset (wall_generator aegis), shared with the MCP server.
+// SlicerX's own defaults on top of a maker's process preset (wall_generator aegis, not on Bambu Lab printers), shared
+// with the MCP server.
 export { SLICERX_PRESET_DEFAULTS }
 
 /**
@@ -47,9 +48,10 @@ export { SLICERX_PRESET_DEFAULTS }
  * preset's own" would restore. Null without a maker preset, or when it agrees with SlicerX.
  */
 export function presetOwnValue(key: string): SettingValue | null {
-  const mine = SLICERX_PRESET_DEFAULTS[key]
-  const theirs = profile?.values[key]
-  if (!profile || mine === undefined || theirs === undefined) return null
+  if (!profile) return null
+  const mine = presetDefaults(profile.values)[key]
+  const theirs = profile.values[key]
+  if (mine === undefined || theirs === undefined) return null
   const text = (v: SettingValue): string => String(Array.isArray(v) ? v[0] : v)
   return text(theirs) === text(mine) ? null : theirs
 }

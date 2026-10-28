@@ -765,30 +765,16 @@ pub fn apply_project_defaults(config: &mut serde_json::Value, project: &[u8]) ->
     keys
 }
 
-/// One of our engine choices (`keeps` in engine-choices.json): the key, the value we print with, the inherited values
-/// it goes over (`over`; every value when the file gives none), the printers it leaves alone (`exceptPrinters`) and
-/// the note.
+/// One of our engine choices (`keeps` in engine-choices.json, empty today): the key, the value we print with, the
+/// inherited values it goes over (`over`; every value when the file gives none) and the note.
 struct EngineKeep {
     key: String,
     value: serde_json::Value,
     over: Option<Vec<serde_json::Value>>,
-    except_printers: Vec<String>,
     note: String,
 }
 
 impl EngineKeep {
-    /// Whether the keep leaves a project's own value alone because of its printer: its `printer_model` starts with one
-    /// of `exceptPrinters` (for walls "Bambu Lab", so a stock Bambu Lab project keeps the classic walls it inherited).
-    fn leaves_printer(&self, settings: &serde_json::Map<String, serde_json::Value>) -> bool {
-        let Some(model) = settings.get("printer_model") else {
-            return false;
-        };
-        let model = model.as_array().and_then(|a| a.first()).unwrap_or(model);
-        model
-            .as_str()
-            .is_some_and(|m| self.except_printers.iter().any(|p| m.starts_with(p.as_str())))
-    }
-
     /// Whether the keep goes over `inherited`, the value a project took from its presets: a keep that names the values
     /// it goes over (for walls only classic) leaves any other as the project has it, so inherited arachne walls stay
     /// arachne. A project that does not set the key gets the keep.
@@ -817,11 +803,6 @@ fn engine_choices() -> &'static [EngineKeep] {
                         key: k.clone(),
                         value: v.get("value").cloned().unwrap_or_default(),
                         over: v.get("over").and_then(serde_json::Value::as_array).cloned(),
-                        except_printers: v
-                            .get("exceptPrinters")
-                            .and_then(serde_json::Value::as_array)
-                            .map(|a| a.iter().filter_map(|p| p.as_str().map(str::to_owned)).collect())
-                            .unwrap_or_default(),
                         note: v
                             .get("note")
                             .and_then(serde_json::Value::as_str)
@@ -907,12 +888,8 @@ pub fn project_config(bytes: &[u8], name: &str) -> Result<Option<ProjectConfig>>
     let mut kept = Vec::new();
     if let Some(changed) = changed {
         for keep in engine_choices() {
-            // Listed as changed, inherited with a value the keep does not go over (arachne walls), or on a printer the
-            // keep leaves alone (Bambu Lab walls): the project's.
-            if changed.contains(&keep.key)
-                || !keep.goes_over(settings.get(&keep.key))
-                || keep.leaves_printer(&settings)
-            {
+            // Listed as changed, or inherited with a value the keep does not go over: the project's.
+            if changed.contains(&keep.key) || !keep.goes_over(settings.get(&keep.key)) {
                 continue;
             }
             if settings
@@ -1003,9 +980,9 @@ fn own_settings(
     m
 }
 
-/// The walls a project's settings give, by the rule that keeps our engine choices: ours where the project inherited
-/// a generator our keep goes over (`different_settings_to_system` does not list it, it is classic, and the printer is
-/// not one the keep leaves alone, such as a Bambu Lab printer), else the project's own.
+/// The walls a project's settings give: the generator the project names, inherited from its presets or its own
+/// choice (`different_settings_to_system` lists it), unless an engine choice of ours goes over an inherited one
+/// (engine-choices.json `keeps`; none does today). `None` when the project names none.
 fn project_walls(
     settings: &serde_json::Map<String, serde_json::Value>,
     changed: Option<&std::collections::HashSet<String>>,
@@ -1016,7 +993,7 @@ fn project_walls(
     let ours = keep.and_then(|k| k.value.as_str().map(str::to_owned));
     let inherited = changed.is_some_and(|c| !c.contains("wall_generator"));
     if let (true, Some(ours)) = (inherited, ours)
-        && keep.is_some_and(|k| k.goes_over(settings.get("wall_generator")) && !k.leaves_printer(settings))
+        && keep.is_some_and(|k| k.goes_over(settings.get("wall_generator")))
     {
         let maker = match app {
             Some(a) if a.starts_with("BambuStudio") => "Bambu's",
@@ -1037,8 +1014,7 @@ fn project_walls(
             text,
         });
     }
-    // Inherited walls our keep does not go over (arachne, or a Bambu Lab printer's classic) are the project's as its
-    // presets had them.
+    // Inherited walls are the project's as its presets had them.
     own.map(|o| WallsNote {
         text: if inherited {
             format!("{o} walls, as the project has them")
@@ -1053,7 +1029,8 @@ fn project_walls(
 /// Which wall generator a slice runs, where that came from, and the sentence that says so.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WallsNote {
-    /// `aegis`, `arachne` or `classic`, as the config names it (`classic` when it names none).
+    /// `aegis`, `arachne` or `classic`, as the config names it (when it names none, the engine's default: classic on a
+    /// Bambu Lab printer, else aegis).
     pub generator: String,
     /// `request` (the config sent), `default` (the engine's, the config names none), and for a project `kept` (our
     /// engine choice over the one the project inherited), `project` (the project's own) or `config` (`--config`).
@@ -1079,11 +1056,18 @@ impl WallsNote {
                 generator: g,
                 source: "request".to_owned(),
             },
-            None => Self {
-                generator: "classic".to_owned(),
-                source: "default".to_owned(),
-                text: format!("classic walls, the engine's default ({who} names no wall_generator)"),
-            },
+            None => Self::engine_default(config, who),
+        }
+    }
+
+    /// The note for the engine's default walls, for a config whose layers name no generator: classic on a Bambu Lab
+    /// printer (`config`'s `printer_model`), else aegis ([`crate::config::default_wall_generator`]).
+    pub fn engine_default(config: &serde_json::Map<String, serde_json::Value>, who: &str) -> Self {
+        let g = crate::config::default_wall_generator(config);
+        Self {
+            text: format!("{g} walls, the engine's default ({who} names no wall_generator)"),
+            generator: g,
+            source: "default".to_owned(),
         }
     }
 }
@@ -1363,6 +1347,9 @@ pub fn request_config_report(
     if !given.is_null() {
         if listed {
             report.invalid = config.apply_value_lenient(&crate::config::plate_value(&given))?;
+            if !given.as_object().is_some_and(crate::config::names_wall_generator) {
+                config.stock_walls();
+            }
         } else {
             config = PrintConfig::from_value(&given)?;
         }

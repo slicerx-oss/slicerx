@@ -180,7 +180,7 @@ describe('report view', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(el.querySelector('.imp-sum')?.textContent).toContain('Opened dragon.3mf: 1 setting did not carry over')
     expect(el.querySelector('.imp-count')?.textContent).toContain('Project settings, 1 setting did not carry over')
-    expect(el.textContent).toContain("Walls: aegis walls, kept by SlicerX; the project used its preset's default classic.")
+    expect(el.textContent).toContain('Walls: classic walls, as the project has them.')
     root.unmount()
   })
 })

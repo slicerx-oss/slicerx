@@ -456,7 +456,7 @@ Options that need a test print before any default changes.
 | Snug supports | Toadstool or any part with a round overhang, snug style, P1S stock | The support lifts off cleanly and the columns stand as one piece; print time against the estimate (the estimate is 10 percent above Orca's for now) |
 
 
-Naming: our Athena walls are called "aegis" and are the default wall generator (choices: classic, arachne, aegis; `athena` stays a permanent alias that reads as aegis). aegis follows preFlight's Athena method (credit: preFlight, `src/luminary/walls/athena`); see the Athena walls entry above for what is matched and what is ours. Tests that check Arachne itself pin `wall_generator` to `arachne`.
+Naming: our Athena walls are called "aegis" and are the default wall generator, except on Bambu Lab printers, which print with their presets' classic walls, and in opened projects, which keep the generator their presets give them (choices: classic, arachne, aegis; `athena` stays a permanent alias that reads as aegis). aegis follows preFlight's Athena method (credit: preFlight, `src/luminary/walls/athena`); see the Athena walls entry above for what is matched and what is ours. Tests that check Arachne itself pin `wall_generator` to `arachne`.
 
 ### aegis hardening (`bench/compare/aegis_bench.py`)
 

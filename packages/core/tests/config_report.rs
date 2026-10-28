@@ -142,8 +142,11 @@ fn walls_say_which_generator_runs_and_why() {
         .and_then(|r| r.walls)
         .expect("a walls note");
     assert_eq!(walls.source, "default");
+    // With no printer_model and no wall_generator the engine prints the schema's aegis walls, and the note names
+    // the generator it really prints with (it said classic here while the slice printed aegis).
+    assert_eq!(walls.generator, "aegis");
     assert!(
-        walls.text.starts_with("classic walls, the engine's default"),
+        walls.text.starts_with("aegis walls, the engine's default"),
         "{}",
         walls.text
     );

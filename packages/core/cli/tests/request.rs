@@ -3094,16 +3094,16 @@ fn a_project_slices_with_its_own_settings() {
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
         out
     };
-    // The project's own 0.3 mm layers, and SlicerX's walls kept over the classic ones it inherited.
+    // The project's own 0.3 mm layers, and the classic walls it inherited.
     let own = slice(&project, &[]);
     assert_eq!(layers(&own.stderr), 33);
     let err = String::from_utf8_lossy(&own.stderr);
-    assert!(err.contains("Kept SlicerX's aegis walls"), "{err}");
+    assert!(!err.contains("Kept SlicerX's aegis walls"), "{err}");
     assert!(
-        err.contains("sx: walls: aegis walls, kept by SlicerX; the project used Bambu's default classic"),
+        err.contains("sx: walls: classic walls, as the project has them"),
         "{err}"
     );
-    // A white-label edition's resolved config names the app in the notes instead.
+    // A white-label edition's resolved config names no SlicerX in the notes.
     let acme =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../edition-config/fixtures/acme/acme.json");
     let branded = sx()
@@ -3115,11 +3115,7 @@ fn a_project_slices_with_its_own_settings() {
         .unwrap();
     let err = String::from_utf8_lossy(&branded.stderr);
     assert!(branded.status.success(), "{err}");
-    assert!(err.contains("Kept Acme Slicer's aegis walls"), "{err}");
-    assert!(
-        err.contains("aegis walls, kept by Acme Slicer; the project used Bambu's default classic"),
-        "{err}"
-    );
+    assert!(err.contains("classic walls, as the project has them"), "{err}");
     assert!(!err.contains("SlicerX"), "{err}");
     // --config goes over the project.
     let cfg = dir.join("cfg.json");
@@ -3135,7 +3131,7 @@ fn a_project_slices_with_its_own_settings() {
     let bare_err = String::from_utf8_lossy(&bare.stderr);
     assert!(!bare_err.contains("settings not used"), "{bare_err}");
     assert!(
-        bare_err.contains("sx: walls: classic walls, the engine's default"),
+        bare_err.contains("sx: walls: aegis walls, the engine's default"),
         "{bare_err}"
     );
     // The project's own choice when it lists the generator as changed, and --config over either.
@@ -3157,11 +3153,11 @@ fn a_project_slices_with_its_own_settings() {
 }
 
 /// A project for a printer we have no profile for (`fixtures/project-keeps-settings.json`, which the app's open test
-/// reads too) slices with its own values and our walls over the classic ones it inherited. Its G-code has no config
+/// reads too) slices with its own values and the classic walls it inherited. Its G-code has no config
 /// block, so the walls come from the note on stderr; the precise outer wall default is covered by
 /// `a_project_keeps_its_own_precise_outer_wall`.
 #[test]
-fn a_project_for_a_printer_without_a_profile_keeps_the_engine_choices() {
+fn a_project_for_a_printer_without_a_profile_keeps_its_own_values() {
     let dir = temp_dir(format!("sx-cli-keeps-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let text = std::fs::read_to_string(fixture("project-keeps-settings.json")).unwrap();
@@ -3179,13 +3175,10 @@ fn a_project_for_a_printer_without_a_profile_keeps_the_engine_choices() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "{err}");
     assert!(
-        err.contains("sx: walls: aegis walls, kept by SlicerX; the project used Bambu's default classic"),
+        err.contains("sx: walls: classic walls, as the project has them"),
         "{err}"
     );
-    assert!(
-        err.contains("Kept SlicerX's aegis walls; the project used its preset's default."),
-        "{err}"
-    );
+    assert!(!err.contains("Kept SlicerX"), "{err}");
     let g = std::fs::read_to_string(&gcode).unwrap();
     assert!(
         g.lines().any(|l| l == "; wall_loops = 3"),
@@ -3195,7 +3188,7 @@ fn a_project_for_a_printer_without_a_profile_keeps_the_engine_choices() {
 }
 
 #[test]
-fn a_project_keeps_inherited_arachne_walls_and_bambu_classic_and_gets_aegis_over_other_classic() {
+fn a_project_keeps_the_walls_it_inherited_on_every_printer() {
     let dir = temp_dir(format!("sx-cli-wallgen-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     // The G-code's wall generator line and the walls note of a slice of a project for `printer` with `generator`,
@@ -3242,6 +3235,7 @@ fn a_project_keeps_inherited_arachne_walls_and_bambu_classic_and_gets_aegis_over
     };
     let bambu = "Bambu Lab X1 Carbon";
     let acme = "Acme Printer 9000";
+    let elegoo = "Elegoo Centauri Carbon";
     // Inherited arachne walls stay arachne, with no kept note.
     let (line, walls) = slice(bambu, "arachne", false, "inherited-arachne.3mf");
     assert_eq!(line, "; wall_generator = arachne");
@@ -3254,13 +3248,15 @@ fn a_project_keeps_inherited_arachne_walls_and_bambu_classic_and_gets_aegis_over
     let (line, walls) = slice(bambu, "aegis", true, "bambu-picked-aegis.3mf");
     assert_eq!(line, "; wall_generator = aegis");
     assert_eq!(walls, "sx: walls: aegis walls, the project's own choice");
-    // On another printer, inherited classic walls give way to SlicerX's aegis, as before. A printer we have no
+    // On other printers too: a stock Elegoo project keeps the classic walls of its presets. A printer we have no
     // profile for writes no config block, so the walls come from the note.
+    let (line, walls) = slice(elegoo, "classic", false, "elegoo-inherited-classic.3mf");
+    assert!(line.is_empty() || line == "; wall_generator = classic", "{line}");
+    assert_eq!(walls, "sx: walls: classic walls, as the project has them");
     let (_, walls) = slice(acme, "classic", false, "inherited-classic.3mf");
-    assert_eq!(
-        walls,
-        "sx: walls: aegis walls, kept by SlicerX; the project used Bambu's default classic"
-    );
+    assert_eq!(walls, "sx: walls: classic walls, as the project has them");
+    let (_, walls) = slice(acme, "aegis", true, "picked-aegis.3mf");
+    assert_eq!(walls, "sx: walls: aegis walls, the project's own choice");
     // Classic walls the person picked stay classic.
     let (_, walls) = slice(acme, "classic", true, "picked-classic.3mf");
     assert_eq!(walls, "sx: walls: classic walls, the project's own choice");

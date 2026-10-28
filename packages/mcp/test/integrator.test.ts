@@ -195,11 +195,11 @@ describe('3MF projects', () => {
     }
     type Walls = { generator: string; source: string; text: string }
     const walls = async (path: string) => data<{ import_report: { walls?: Walls } }>(await h.call('slicerx_inspect_project', { file: path })).import_report.walls
-    // Inherited from its presets: SlicerX keeps its own.
+    // Inherited from its presets: the project's walls as its presets had them.
     expect(await walls(project('inherited.3mf', ['layer_height', '', '']))).toEqual({
-      generator: 'aegis',
-      source: 'kept',
-      text: "aegis walls, kept by SlicerX; the project used Bambu's default classic",
+      generator: 'classic',
+      source: 'project',
+      text: 'classic walls, as the project has them',
     })
     // Listed as changed: the project's own choice.
     expect(await walls(project('chosen.3mf', ['wall_generator;layer_height', '', '']))).toEqual({ generator: 'classic', source: 'project', text: "classic walls, the project's own choice" })

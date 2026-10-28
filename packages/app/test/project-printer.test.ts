@@ -439,22 +439,22 @@ describe('a P1S 0.2 project on an empty plate', () => {
   // gives the values sx slice <project.3mf> prints with.
   const KEEPS = JSON.parse(readFileSync(join(__dirname, '../../core/cli/tests/fixtures/project-keeps-settings.json'), 'utf8')) as Record<string, unknown>
 
-  it("a printer SlicerX has no profile for keeps SlicerX's engine choices, as sx slice does", async () => {
+  it("a printer SlicerX has no profile for keeps the project's inherited walls, as sx slice does", async () => {
     const { host } = capture()
     await openModelBytes(host, 'acme.3mf', project(KEEPS))
     expect(get().printerId).toBe(A1_MINI.id)
     const cfg = resolved()
-    expect(cfg['wall_generator']).toBe('aegis')
+    expect(cfg['wall_generator']).toBe('classic')
     expect(cfg['precise_outer_wall']).toBe(true)
     expect(cfg['wall_loops']).toBe(3)
-    expect(get().openNote?.text).toContain("Kept SlicerX's aegis walls; the project used its preset's default.")
+    expect(get().openNote?.text ?? '').not.toContain('Kept SlicerX')
   })
 
-  it('puts the kept engine choice back over a value the plate already had', async () => {
-    set({ overrides: { wall_generator: 'classic' } })
+  it("puts the project's inherited walls over a value the plate already had", async () => {
+    set({ overrides: { wall_generator: 'aegis' } })
     const { host } = capture()
     await openModelBytes(host, 'acme.3mf', project(KEEPS))
-    expect(resolved()['wall_generator']).toBe('aegis')
+    expect(resolved()['wall_generator']).toBe('classic')
   })
 
   it('takes the walls the person picked in a project for a printer SlicerX has no profile for', async () => {

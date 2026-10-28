@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { EASY_GOALS, EASY_DEFAULTS } from '@slicerx/contracts/settings'
 import type { EasySettings, PrintConfig } from '@slicerx/contracts/settings'
 import cases from '../fixtures/easy-cases.json'
-import { EASY_MAP, applyEasy, easyControlFor, goalEasy, matchGoal } from './easy'
+import { EASY_MAP, applyEasy, defaultWallGenerator, easyControlFor, goalEasy, layerConfig, matchGoal } from './easy'
 
 interface Case {
   name: string
@@ -56,5 +56,22 @@ describe('goals', () => {
     expect(easyControlFor('layer_height')).toBe('detail')
     expect(easyControlFor('outer_wall_speed')).toBe('speed')
     expect(easyControlFor('gyroid')).toBeUndefined()
+  })
+})
+
+describe("SlicerX's preset defaults on a printer layer", () => {
+  const easy = goalEasy('standard')
+  it("leave a Bambu Lab printer's classic walls as its preset has them", () => {
+    expect(layerConfig({ printer_model: 'Bambu Lab A1', wall_generator: 'classic' }, easy, new Set())['wall_generator']).toBe('classic')
+    expect(layerConfig({ printer_model: ['Bambu Lab X1 Carbon'], wall_generator: 'classic' }, easy, new Set())['wall_generator']).toBe('classic')
+  })
+  it('match the walls sx gives a config that names none', () => {
+    expect(defaultWallGenerator({ printer_model: 'Bambu Lab P1S' })).toBe('classic')
+    expect(defaultWallGenerator({ printer_model: 'Original Prusa MK4S' })).toBe('aegis')
+    expect(defaultWallGenerator({})).toBe('aegis')
+  })
+  it('give other printers aegis walls', () => {
+    expect(layerConfig({ printer_model: 'Original Prusa MK4S', wall_generator: 'arachne' }, easy, new Set())['wall_generator']).toBe('aegis')
+    expect(layerConfig({ printer_model: 'Elegoo Centauri Carbon', wall_generator: 'classic' }, easy, new Set())['wall_generator']).toBe('aegis')
   })
 })

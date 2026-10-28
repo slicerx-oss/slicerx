@@ -93,3 +93,109 @@ fn a_bambu_project_that_chose_aegis_walls_keeps_them() {
     // Aegis walls widen across the wedge's strip, so it gets no gap fill.
     assert_eq!(gap, 0);
 }
+
+/// Whether two G-code files are the same, without printing either when they are not.
+fn same(a: &str, b: &str) -> bool {
+    a == b
+}
+
+/// `sx slice <model> --config <config>` of `tests/fixtures/<model>` and its G-code and stderr.
+fn slice_with(model: &str, config: &serde_json::Value, name: &str) -> (String, String) {
+    let dir = std::env::temp_dir().join(format!("sx-bambu-walls-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let cfg = dir.join("config.json");
+    std::fs::write(&cfg, config.to_string()).unwrap();
+    let gcode = dir.join("out.gcode");
+    let out = sx()
+        .arg("slice")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/fixtures/{model}")))
+        .arg("--config")
+        .arg(&cfg)
+        .arg("-o")
+        .arg(&gcode)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr).into_owned();
+    let g = std::fs::read_to_string(&gcode).unwrap_or_default();
+    std::fs::remove_dir_all(&dir).ok();
+    assert!(out.status.success(), "{err}");
+    (g, err)
+}
+
+/// The G-code of a slice request for `tests/fixtures/wedge.stl` with `config`.
+fn request_with(config: &serde_json::Value, name: &str) -> String {
+    let dir = std::env::temp_dir().join(format!("sx-bambu-walls-req-{name}-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let wedge = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/wedge.stl");
+    let request = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": { "w": wedge },
+        "plate": {
+            "bed": { "widthMm": 256, "depthMm": 256, "heightMm": 256 },
+            "objects": [{ "id": "o1", "name": "Wedge", "mesh": "w" }]
+        },
+        "config": config,
+        "options": { "emitGcode": true }
+    });
+    let req = dir.join("request.json");
+    std::fs::write(&req, request.to_string()).unwrap();
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&req)
+        .arg("--out-dir")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let g = std::fs::read_to_string(dir.join("slice.gcode")).unwrap();
+    std::fs::remove_dir_all(&dir).ok();
+    g
+}
+
+#[test]
+fn an_stl_on_a_bambu_lab_printer_slices_with_classic_walls() {
+    let a1 = serde_json::json!({ "printer_model": "Bambu Lab A1" });
+    let classic = serde_json::json!({ "printer_model": "Bambu Lab A1", "wall_generator": "classic" });
+    let aegis = serde_json::json!({ "printer_model": "Bambu Lab A1", "wall_generator": "aegis" });
+    // A model file with settings that name no wall generator: the A1's presets' classic walls.
+    let (g, err) = slice_with("wedge.stl", &a1, "a1");
+    assert!(
+        err.contains("sx: walls: classic walls, the engine's default (the settings names no wall_generator)"),
+        "{err}"
+    );
+    assert!(
+        same(&g, &slice_with("wedge.stl", &classic, "a1-classic").0),
+        "not the classic walls"
+    );
+    assert!(!same(&g, &slice_with("wedge.stl", &aegis, "a1-aegis").0));
+    // A request the same way.
+    assert!(
+        same(&request_with(&a1, "a1"), &request_with(&classic, "a1-classic")),
+        "request: not the classic walls"
+    );
+}
+
+#[test]
+fn aegis_set_for_a_bambu_lab_printer_stays_aegis() {
+    let aegis = serde_json::json!({ "printer_model": "Bambu Lab A1", "wall_generator": "aegis" });
+    let classic = serde_json::json!({ "printer_model": "Bambu Lab A1", "wall_generator": "classic" });
+    let (g, err) = slice_with("wedge.stl", &aegis, "set-aegis");
+    assert!(err.contains("sx: walls: aegis walls, set by --config"), "{err}");
+    assert!(!same(&g, &slice_with("wedge.stl", &classic, "set-classic").0));
+    assert!(!same(
+        &request_with(&aegis, "set-aegis"),
+        &request_with(&classic, "set-classic")
+    ));
+}
+
+#[test]
+fn an_stl_on_another_printer_keeps_the_aegis_default() {
+    let mk4 = serde_json::json!({ "printer_model": "Original Prusa MK4" });
+    let aegis = serde_json::json!({ "printer_model": "Original Prusa MK4", "wall_generator": "aegis" });
+    let (g, err) = slice_with("wedge.stl", &mk4, "mk4");
+    assert!(
+        err.contains("sx: walls: aegis walls, the engine's default (the settings names no wall_generator)"),
+        "{err}"
+    );
+    assert!(same(&g, &slice_with("wedge.stl", &aegis, "mk4-aegis").0));
+}
