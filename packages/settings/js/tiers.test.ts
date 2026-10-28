@@ -22,6 +22,14 @@ describe('process tiers', () => {
       expect(keys.has('inherits')).toBe(false)
     }
   })
+  it('keeps the slice-only skirt brim edge out of every tier', () => {
+    // A Prusa project sets skirt_brim_edge when it is opened; no settings panel or search lists it.
+    expect(settingDef('skirt_brim_edge')).toMatchObject({ mode: 'hidden', section: 'process', enumValues: ['printed', 'nominal'] })
+    expect(isVisible(settingDef('skirt_brim_edge')!, { filamentCount: 1 })).toBe(false)
+    for (const tier of ['simple', 'advanced', 'expert'] as const) {
+      expect(settingsForTier('process', tier, { filamentCount: 3 }).some((d) => d.key === 'skirt_brim_edge'), tier).toBe(false)
+    }
+  })
   it('gives every user tier process key an intent', () => {
     const intents = new Set(['quality', 'strength', 'speed', 'supports', 'adhesion', 'multicolor', 'effects', 'output'])
     for (const d of process.filter((x) => ['simple', 'advanced', 'expert'].includes(x.mode))) expect(intents.has(d.intent ?? ''), d.key).toBe(true)

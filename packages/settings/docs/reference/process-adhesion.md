@@ -1,6 +1,6 @@
 # Process: Adhesion: skirt, brim and raft
 
-27 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+28 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `brim_ears_detection_length`
 
@@ -191,6 +191,19 @@
 - Type: boolean
 - Default: off
 - Tier: Expert, adhesion
+- Changing it redoes: paths
+- mimir class: read (not in the catalog: never written)
+
+### `skirt_brim_edge`
+
+**Skirt brim edge**
+
+Where the skirt measures its distance from a brim: the loops the brim prints, or the brim's set width out from the first layer after elephant foot compensation. Prusa projects set it when opened; the app does not list it.
+
+- Type: enum
+- Default: none (the slice works it out when nothing sets it)
+- Values: `printed` (The printed brim loops), `nominal` (The nominal brim width)
+- Tier: Hidden (profile key)
 - Changing it redoes: paths
 - mimir class: read (not in the catalog: never written)
 
