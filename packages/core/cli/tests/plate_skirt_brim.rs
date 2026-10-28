@@ -415,24 +415,47 @@ fn brim_loops(name: &str, ps: &[PathRun]) -> Vec<usize> {
     n
 }
 
-/// What the first layer prints, in order: `S` for the skirt, `B<k>` for a brim path nearest box `k`, `<k>` for box
-/// `k`'s own paths; repeats of one in a row are one.
+/// What the first layer prints, in order: `S` for the skirt, `B<k>` for a run of brim paths printed one after another
+/// that lies mostly nearest box `k`, `<k>` for box `k`'s own paths; repeats of one in a row are one. A brim run is
+/// read as a whole: where close boxes share a gap, the box that keeps the gap prints lines that lie nearer its
+/// neighbor, and which end of such a line comes first depends on where the nozzle arrives from.
 fn first_layer_order(name: &str, ps: &[PathRun]) -> Vec<String> {
+    fn push(out: &mut Vec<String>, t: String) {
+        if out.last() != Some(&t) {
+            out.push(t);
+        }
+    }
+    fn flush(out: &mut Vec<String>, brim: &mut [f64]) {
+        if brim.iter().any(|l| *l > 0.0) {
+            let k = (0..brim.len())
+                .max_by(|&a, &b| brim[a].total_cmp(&brim[b]))
+                .unwrap()
+                + 1;
+            push(out, format!("B{k}"));
+            brim.fill(0.0);
+        }
+    }
     let (xs, y0) = centers_in(name, ps);
     let mut out: Vec<String> = Vec::new();
+    let mut brim = vec![0.0; xs.len()];
     for p in first_layer(ps) {
         let t = match p.feature.as_str() {
             "Skirt" => "S".to_owned(),
-            "Brim" => format!("B{}", nearest_box(p.points[0], &xs, y0)),
+            "Brim" => {
+                for (s, w) in samples(p, 0.2) {
+                    brim[nearest_box(s, &xs, y0) - 1] += w;
+                }
+                continue;
+            }
             _ => match in_box(p.points[0], &xs, y0) {
                 Some(k) => k.to_string(),
                 None => continue,
             },
         };
-        if out.last() != Some(&t) {
-            out.push(t);
-        }
+        flush(&mut out, &mut brim);
+        push(&mut out, t);
     }
+    flush(&mut out, &mut brim);
     out
 }
 
@@ -598,14 +621,12 @@ fn the_first_layer_prints_the_skirt_then_each_brim_before_its_object() {
 fn a_plate_sliced_as_one_prints_each_brim_right_before_its_object() {
     // Objects without settings of their own, far apart and close together: the skirt, then each object's brim and
     // the object, instead of every brim first.
+    // The objects stand in a row along X at one Y, the same distance apart, so the path through them is 1, 2, 3; it
+    // ends at box 1, the nearest the bed's front left corner, and prints from box 3.
     for name in ["a1--c1", "a1--c2", "mk4p--c2"] {
         let ps = paths(&slice(name));
         let order = first_layer_order(name, &ps);
         assert_brim_before_its_object(name, &order);
-        assert_eq!(
-            order.iter().filter(|t| t.starts_with('B')).count(),
-            3,
-            "{name}: {order:?}"
-        );
+        assert_eq!(order, ["S", "B3", "3", "B2", "2", "B1", "1"], "{name}");
     }
 }
