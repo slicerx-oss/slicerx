@@ -7879,6 +7879,78 @@ impl SliceSession {
         }
     }
 
+    /// How narrow pieces of `layer`'s surfaces whose lines spread evenly across each piece (see the surface fill
+    /// below) print, for a region with settings `cfg` and shells `sh`: the top surfaces, uncovered by `upper` (the
+    /// layer above's outline) and resting on `below`, or all of the first layer. `None` on Bambu Lab printers and
+    /// wherever those surfaces do not spread their lines.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the layer, its settings and shells, and its neighbors"
+    )]
+    fn narrow_surface<'a>(
+        &self,
+        cfg: &PrintConfig,
+        sh: &Shell,
+        layer: u32,
+        layer_height: f64,
+        upper: Option<&'a Shapes>,
+        below: Option<&'a Shapes>,
+    ) -> Option<perimeters::NarrowSurface<'a>> {
+        if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
+            || crate::tower::flag(cfg, "only_one_wall_top")
+        {
+            return None;
+        }
+        let n = self.plan.count();
+        let pattern = |key: &str, default: &str, density_key: &str| {
+            let name = match cfg.raw.get(key) {
+                Some(serde_json::Value::String(s)) => s.as_str(),
+                _ => default,
+            };
+            (cfg.raw_number(density_key, 100.0) / 100.0 - 1.0).abs() < 1e-9 && stretch_pattern(name)
+        };
+        let (upper, lower, width) = if layer == 0 {
+            let first = self.raft.is_none()
+                && !cfg.only_one_wall_first_layer
+                && sh.bot_n > 0
+                && pattern("bottom_surface_pattern", "monotonic", "bottom_surface_density");
+            if !first {
+                return None;
+            }
+            (None, None, cfg.solid_infill_width())
+        } else {
+            if sh.top_n == 0 || !pattern("top_surface_pattern", "monotonicline", "top_surface_density") {
+                return None;
+            }
+            (upper.filter(|_| layer + 1 < n), below, cfg.top_surface_width())
+        };
+        let overlap = if layer == 0 || layer + 1 == n {
+            cfg.raw_number("top_bottom_infill_wall_overlap", 25.0)
+        } else {
+            cfg.infill_wall_overlap
+        };
+        let edge = surface_edge(cfg, layer_height, overlap / 100.0)?;
+        let spacing = cfg.spacing_for(width);
+        // The lines' direction on the plate, as the surface fill turns them.
+        let deg = frame_deg(
+            self.template_angle(cfg, "solid_infill_rotate_template", layer),
+            Dir::for_layer(layer + self.raft_layers()),
+            self.model_turn(cfg),
+            crate::motion::raw_f(cfg, "solid_infill_direction").unwrap_or(45.0),
+        )
+        .to_radians();
+        Some(perimeters::NarrowSurface {
+            upper,
+            lower,
+            spacing: mm(spacing),
+            edge: mm(edge),
+            line: (deg.m_cos(), deg.m_sin()),
+            min_line: mm(0.05),
+            no_sparse: cfg.sparse_infill_density <= 0.0 && !cfg.arachne_walls(),
+            opening: mm(0.1 * cfg.outer_wall_width()),
+        })
+    }
+
     /// The walls, infill area and surface classes of every region of `layer`, in region order (`None` for an
     /// empty region). `cfg` is the layer's settings and `base_shell` what follows from them, `below` the material
     /// of the layer below and `upper_slice` the outline of the layer above. Regions of one filament whose walls
@@ -7990,6 +8062,12 @@ impl SliceSession {
             let top_ctx = upper_slice
                 .filter(|_| crate::tower::flag(cfg, "only_one_wall_top") && loops > 1)
                 .map(|upper| perimeters::TopCtx { upper, lower: below });
+            // Narrow pieces of the layer's surfaces: with fixed-width walls at sparse infill density 0 a piece the
+            // lines run across without room for one keeps its gap fill, so the walls read the layer's surfaces.
+            let narrow = self
+                .narrow_surface(cfg, sh, layer, layer_height, upper_slice, below)
+                .filter(|n| n.no_sparse && n.touches(shapes));
+            let classic_narrow = narrow.as_ref();
             // `counterbore_hole_bridging`: the part of a counterbore's floor that bridges can span.
             let (counterbore_cut, counterbore) = match below {
                 Some(b) if layer > 0 && crate::counterbore::wanted(cfg) => crate::counterbore::mask(
@@ -8018,6 +8096,7 @@ impl SliceSession {
                             top_or_bottom,
                             top_ctx.as_ref(),
                             one_wall_layer,
+                            classic_narrow,
                         );
                         walled_group = Some(inner.clone());
                         (islands, inner)
@@ -8041,13 +8120,17 @@ impl SliceSession {
                         top_or_bottom,
                         top_ctx.as_ref(),
                         one_wall_layer,
+                        classic_narrow,
                     );
                     (islands, perimeters::union_all(&[&inner, &counterbore]))
                 }
                 _ => {
                     // The walls of the whole outline without the top context, shared with the layers around.
                     let shared = self.cache_for_walls().filter(|_| {
-                        loops == cfg.wall_loops && !top_or_bottom && *shapes == slice_shapes(here)
+                        loops == cfg.wall_loops
+                            && !top_or_bottom
+                            && classic_narrow.is_none()
+                            && *shapes == slice_shapes(here)
                     });
                     let memo = |c: &crate::shells::Cache| {
                         c.walls(i64::from(layer), tags.of(cfg), || {
@@ -8082,6 +8165,7 @@ impl SliceSession {
                             top_or_bottom,
                             top_ctx.as_ref(),
                             one_wall_layer,
+                            classic_narrow,
                         )
                     };
                     // Arachne regions whose islands get no one-wall top run share them too.
@@ -9291,9 +9375,7 @@ impl SliceSession {
                         && self.raft.is_none()
                         && !cfg.only_one_wall_first_layer
                         && !(one_wall_top && self.plan.count() == 1);
-                    (top || first)
-                        && (density - 1.0).abs() < 1e-9
-                        && matches!(name, "monotonic" | "monotonicline" | "rectilinear")
+                    (top || first) && (density - 1.0).abs() < 1e-9 && stretch_pattern(name)
                 });
                 // Monotonic, rectilinear and aligned rectilinear join each line to its neighbor along the edge of the
                 // surface however long the turn is: which ends are neighbors decides it, not a length (only ironing
@@ -10936,6 +11018,12 @@ fn stretch_of(
     })
 }
 
+/// Whether a top or bottom surface pattern spreads its lines evenly across each piece (at full density, off
+/// Bambu Lab printers): the line patterns.
+fn stretch_pattern(name: &str) -> bool {
+    matches!(name, "monotonic" | "monotonicline" | "rectilinear")
+}
+
 /// How far a top surface's or the first layer's bottom surface's pieces move their edge out (in, when negative)
 /// before each spreads its lines evenly across itself, mm, on a layer `height` thick whose infill area overlaps
 /// the walls by `overlap` (a share of the line width). The infill area starts at the walls' widths from the
@@ -10944,7 +11032,7 @@ fn stretch_of(
 /// `top_bottom_infill_wall_overlap` of the inner wall's spacing: past the outer wall's width with variable-width
 /// walls, past the outer wall's centerline and the mean of the two spacings with fixed-width walls. `None` where
 /// the walls are not the plain loops this reads (one fixed-width wall, or an extra wall on every other layer).
-fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> Option<f64> {
+pub(crate) fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> Option<f64> {
     if cfg.wall_loops == 0 || crate::tower::flag(cfg, "alternate_extra_wall") {
         return None;
     }
@@ -11030,7 +11118,7 @@ const WHOLE_CELLS: f64 = 15.0;
 /// left out, counted from the low side. As [`crate::bridging::even_pitch`] with the 1.2 cap, except that a piece
 /// within [`WHOLE_CELLS`] of a whole number n (2 or more) of cells, on either side, takes n cells at `across / n`
 /// and leaves its last line (n - 1) out.
-fn stretch_pitch(across: f64, nominal: f64) -> (f64, Option<i32>) {
+pub(crate) fn stretch_pitch(across: f64, nominal: f64) -> (f64, Option<i32>) {
     let whole = (across / nominal).round();
     if whole >= 2.0 && (across - whole * nominal).abs() <= WHOLE_CELLS {
         #[allow(clippy::cast_possible_truncation, reason = "a line count on a bed")]
