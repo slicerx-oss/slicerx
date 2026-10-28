@@ -152,6 +152,7 @@ describe('projectReport', () => {
     wall_generator: 'classic',
     precise_outer_wall: '0',
     top_one_wall_type: 'all top',
+    enable_height_slowdown: '1',
     sparse_infill_density: 'lots',
     different_settings_to_system: ['layer_height', '', ''],
   }
@@ -159,9 +160,10 @@ describe('projectReport', () => {
   it("lists what did not carry over, SlicerX's kept choices and the walls", () => {
     const r = projectReport('dragon.3mf', raw, { source: 'BambuStudio-01.10.02.73' })
     expect(r.project).toBe(true)
+    // Its one wall type on top carries over as the single wall switch, so it is not listed.
     expect(r.items.map((i) => [i.key, i.reason])).toEqual([
       ['sparse_infill_density', 'invalid'],
-      ['top_one_wall_type', 'unsupported'],
+      ['enable_height_slowdown', 'unsupported'],
     ])
     // The project's own precise outer wall is kept as it is, so only the walls get a note.
     expect(r.notes).toEqual(["Walls: aegis walls, kept by SlicerX; the project used Bambu's default classic."])

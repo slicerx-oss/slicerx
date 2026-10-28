@@ -59,9 +59,10 @@ describe('preset bundles', () => {
     // 2D lattice is Bambu Studio's; the import uses Orca's lateral lattice and says so.
     expect(process.values['sparse_infill_pattern']).toBe('lateral-lattice')
     const byKey = Object.fromEntries(process.report.items.map((i) => [i.key, i]))
-    expect(Object.keys(byKey).sort()).toEqual(['enable_height_slowdown', 'sparse_infill_pattern', 'top_one_wall_type'])
+    expect(Object.keys(byKey).sort()).toEqual(['enable_height_slowdown', 'sparse_infill_pattern'])
     expect(byKey['sparse_infill_pattern']).toMatchObject({ label: 'Infill pattern', oldValue: '2dlattice', reason: 'invalid', instead: { value: 'Lateral lattice', nearest: true } })
-    expect(byKey['top_one_wall_type']).toMatchObject({ label: 'Only one wall on top surfaces', reason: 'unsupported', instead: { key: 'only_one_wall_top', label: 'Single wall on the top surface', nearest: true } })
+    // Bambu Studio's one wall type on top reads as the single wall switch, so it carries over.
+    expect(process.values['only_one_wall_top']).toBe(true)
     expect(byKey['enable_height_slowdown']).toMatchObject({ label: 'Slow down by height', oldValue: '1', reason: 'unsupported', instead: null })
     const filament = presets.find((p) => p.name === 'My PLA Basic @BBL A1M')!
     expect(filament.report.items.map((i) => [i.key, i.reason, i.instead?.key ?? null])).toEqual([
@@ -165,9 +166,9 @@ describe('report text', () => {
     const reports = presets.map((p) => p.report)
     const text = reportText(reports)
     expect(text).toContain('Infill pattern: 2dlattice. SlicerX cannot use this value. Uses Lateral lattice, the nearest value SlicerX has.')
-    expect(text).not.toContain('top_one_wall_type')
+    expect(text).not.toContain('enable_height_slowdown')
     expect(text).not.toMatch(new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]`))
-    expect(reportText(reports, { keys: true })).toContain('[top_one_wall_type]')
+    expect(reportText(reports, { keys: true })).toContain('[enable_height_slowdown]')
   })
 
   it('makes words of a key outside the schema', () => {

@@ -165,6 +165,27 @@ function retractionProject(dir: string, name: string, mode: string, stickiness: 
   return path
 }
 
+/** A Bambu Studio project that sets one wall on top with `top_one_wall_type`, `only_one_wall_top` beside it. */
+function oneWallProject(dir: string, name: string, kind: string, flag: string): string {
+  const path = join(dir, name)
+  writeFileSync(
+    path,
+    writeZip([
+      { name: '3D/3dmodel.model', data: MODEL },
+      {
+        name: 'Metadata/project_settings.config',
+        data: JSON.stringify({
+          printer_settings_id: 'Bambu Lab A1 0.4 nozzle',
+          printer_model: 'Bambu Lab A1',
+          top_one_wall_type: kind,
+          only_one_wall_top: flag,
+        }),
+      },
+    ]),
+  )
+  return path
+}
+
 /** A Bambu project that sets `precise` as its precise outer wall, or leaves the key out when undefined. */
 function preciseProject(dir: string, name: string, precise: string | undefined): string {
   const path = join(dir, name)
@@ -213,6 +234,18 @@ describe("a project's reduce_infill_retraction_mode", () => {
     expect(readProjectFile(retractionProject(h.dir, 'petg.3mf', 'Auto', ['None', 'High'])).config['reduce_infill_retraction']).toBe(false)
     expect(readProjectFile(retractionProject(h.dir, 'off.3mf', 'Disabled', ['None'])).config['reduce_infill_retraction']).toBe(false)
     expect(readProjectFile(retractionProject(h.dir, 'on.3mf', 'Enabled', ['High'])).config['reduce_infill_retraction']).toBe(true)
+  })
+})
+
+describe("a project's top_one_wall_type", () => {
+  it('reaches the engine as only_one_wall_top, over the only_one_wall_top the file also has', async () => {
+    const h = await connect()
+    const read = readProjectFile(oneWallProject(h.dir, 'all.3mf', 'all top', '0'))
+    expect(read.config['only_one_wall_top']).toBe(true)
+    const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'all.3mf', config: read.config } })
+    expect(sxConfig(r.explicit)['only_one_wall_top']).toBe(true)
+    expect(readProjectFile(oneWallProject(h.dir, 'topmost.3mf', 'topmost', '0')).config['only_one_wall_top']).toBe(true)
+    expect(readProjectFile(oneWallProject(h.dir, 'not.3mf', 'not apply', '1')).config['only_one_wall_top']).toBe(false)
   })
 })
 

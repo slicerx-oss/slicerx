@@ -76,8 +76,12 @@ fn reads_the_bambu_bundles_and_finds_what_did_not_carry_over() {
         vec![
             ("enable_height_slowdown", DropReason::Unsupported, false),
             ("sparse_infill_pattern", DropReason::Invalid, true),
-            ("top_one_wall_type", DropReason::Unsupported, false),
         ]
+    );
+    // Bambu Studio's one wall type on top reads as the single wall switch, so it carries over.
+    assert_eq!(
+        config.get("only_one_wall_top").map(Value::to_json),
+        Some(json!(true))
     );
     assert_eq!(
         config.get("sparse_infill_pattern").map(Value::to_json),

@@ -4912,7 +4912,18 @@ fn only_one_wall_top_with_classic_thins_the_walls_under_an_exposed_top_surface()
 }
 
 fn check_one_wall_on_exposed_top(generator: &str) {
-    // A 30 mm square 2 mm tall with a 10 mm block on it: the ring around the block is a top surface.
+    let off = step_slice(json!({"wall_generator": generator, "only_one_wall_top": false}));
+    let on = step_slice(json!({"wall_generator": generator, "only_one_wall_top": true}));
+    // Layer 9 is the last of the base: its exposed ring keeps one wall, so the inner walls shrink to
+    // the block's footprint. Layers away from the top surface are untouched.
+    let (a9, b9) = (inner_wall_length(&off, 9), inner_wall_length(&on, 9));
+    assert!(b9 < a9 * 0.6, "{b9} against {a9}");
+    assert!((inner_wall_length(&off, 4) - inner_wall_length(&on, 4)).abs() < 1e-6);
+}
+
+/// A 30 mm square 2 mm tall with a 10 mm block on it, the ring around the block a top surface, sliced with three
+/// walls and `extra` over the request's settings.
+fn step_slice(extra: Value) -> String {
     let mesh = Arc::new(Mesh {
         name: "step".into(),
         parts: vec![
@@ -4921,56 +4932,102 @@ fn check_one_wall_on_exposed_top(generator: &str) {
         ],
         ..Mesh::default()
     });
-    let run = |one_wall: bool| {
-        let req: SliceRequest = serde_json::from_value(json!({
-            "plate": {"objects": [{"mesh": "s", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
-            "config": {"wall_generator": generator, "wall_loops": 3, "brim_width": 0,
-                       "only_one_wall_top": one_wall, "sparse_infill_density": 15},
-            "options": {"flavor": "marlin2"},
-        }))
-        .unwrap();
-        let m = mesh.clone();
-        let r = common::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
-        assert_valid(&r);
-        text(&r)
-    };
-    let (off, on) = (run(false), run(true));
-    // Printed length of the inner walls in one layer.
-    let length = |g: &str, layer: usize| -> f64 {
-        let (mut on, mut at, mut total) = (false, None::<(f64, f64)>, 0.0);
-        for l in g
-            .split(sx_core::extras::layer_mark(g))
-            .nth(layer + 1)
-            .unwrap_or("")
-            .lines()
-        {
-            if let Some(t) = l.strip_prefix(";TYPE:") {
-                on = t == "Inner wall";
-            }
-            if l.starts_with("G1 X") || l.starts_with("G0 X") {
-                let num = |k: char| {
-                    l.split_whitespace()
-                        .find_map(|w| w.strip_prefix(k))
-                        .and_then(|v| v.parse::<f64>().ok())
-                };
-                if let (Some(x), Some(y)) = (num('X'), num('Y')) {
-                    if let Some((px, py)) = at
-                        && on
-                        && l.contains(" E")
-                    {
-                        total += (x - px).hypot(y - py);
-                    }
-                    at = Some((x, y));
+    let mut cfg = json!({"wall_loops": 3, "brim_width": 0, "sparse_infill_density": 15});
+    cfg.as_object_mut()
+        .unwrap()
+        .extend(extra.as_object().unwrap().clone());
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [{"mesh": "s", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,100,0,1]}]},
+        "config": cfg,
+        "options": {"flavor": "marlin2"},
+    }))
+    .unwrap();
+    let r = common::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    assert_valid(&r);
+    text(&r)
+}
+
+/// Printed length of the inner walls in each layer.
+fn inner_walls(g: &str) -> Vec<f64> {
+    let layers = g.split(sx_core::extras::layer_mark(g)).count() - 1;
+    (0..layers).map(|l| inner_wall_length(g, l)).collect()
+}
+
+/// Printed length of the inner walls in one layer.
+fn inner_wall_length(g: &str, layer: usize) -> f64 {
+    let (mut on, mut at, mut total) = (false, None::<(f64, f64)>, 0.0);
+    for l in g
+        .split(sx_core::extras::layer_mark(g))
+        .nth(layer + 1)
+        .unwrap_or("")
+        .lines()
+    {
+        if let Some(t) = l.strip_prefix(";TYPE:") {
+            on = t == "Inner wall";
+        }
+        if l.starts_with("G1 X") || l.starts_with("G0 X") {
+            let num = |k: char| {
+                l.split_whitespace()
+                    .find_map(|w| w.strip_prefix(k))
+                    .and_then(|v| v.parse::<f64>().ok())
+            };
+            if let (Some(x), Some(y)) = (num('X'), num('Y')) {
+                if let Some((px, py)) = at
+                    && on
+                    && l.contains(" E")
+                {
+                    total += (x - px).hypot(y - py);
                 }
+                at = Some((x, y));
             }
         }
-        total
+    }
+    total
+}
+
+#[test]
+fn top_one_wall_type_decides_one_wall_on_top_over_only_one_wall_top() {
+    // A Bambu Studio config sets one wall on top with `top_one_wall_type` and leaves `only_one_wall_top` unread.
+    // `all top` and `topmost` give one wall where `only_one_wall_top` is off, `not apply` keeps every wall where it is
+    // on, on the step's exposed ring (layer 9) and on the topmost layer, with both wall generators.
+    for generator in ["classic", "arachne"] {
+        let cfg = |kind: &str, flag: bool| json!({"wall_generator": generator, "top_one_wall_type": kind, "only_one_wall_top": flag});
+        let off = step_slice(json!({"wall_generator": generator, "only_one_wall_top": false}));
+        let on = step_slice(json!({"wall_generator": generator, "only_one_wall_top": true}));
+        let (off, on) = (inner_walls(&off), inner_walls(&on));
+        let (last, ring) = (off.len() - 1, 9);
+        assert!(on[ring] < off[ring] * 0.6 && on[last] == 0.0 && off[last] > 0.0);
+        for kind in ["all top", "topmost"] {
+            assert_eq!(
+                inner_walls(&step_slice(cfg(kind, false))),
+                on,
+                "{generator}, {kind}"
+            );
+        }
+        assert_eq!(
+            inner_walls(&step_slice(cfg("not apply", true))),
+            off,
+            "{generator}, not apply"
+        );
+    }
+}
+
+#[test]
+fn only_one_wall_top_without_top_one_wall_type_keeps_its_behavior() {
+    // A config with no `top_one_wall_type` (every other slicer's), or with a value of another name, goes by
+    // `only_one_wall_top` as before.
+    let on = inner_walls(&step_slice(json!({"only_one_wall_top": true})));
+    let off = inner_walls(&step_slice(json!({"only_one_wall_top": false})));
+    let last = off.len() - 1;
+    assert!(on[9] < off[9] * 0.6 && on[last] == 0.0 && off[last] > 0.0);
+    assert_eq!(on[4], off[4]);
+    let other = |flag: bool, kind: &str| {
+        inner_walls(&step_slice(
+            json!({"only_one_wall_top": flag, "top_one_wall_type": kind}),
+        ))
     };
-    // Layer 9 is the last of the base: its exposed ring keeps one wall, so the inner walls shrink to
-    // the block's footprint. Layers away from the top surface are untouched.
-    let (a9, b9) = (length(&off, 9), length(&on, 9));
-    assert!(b9 < a9 * 0.6, "{b9} against {a9}");
-    assert!((length(&off, 4) - length(&on, 4)).abs() < 1e-6);
+    assert_eq!(other(true, "sometimes"), on);
+    assert_eq!(other(false, ""), off);
 }
 
 #[test]

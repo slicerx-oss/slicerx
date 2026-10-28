@@ -91,6 +91,27 @@ export function infillRetractionFromMode(merged: Record<string, unknown>): boole
   }
 }
 
+/**
+ * Bambu Studio sets one wall on top surfaces with `top_one_wall_type` and does not read `only_one_wall_top`: "all top"
+ * and "topmost" give one wall, "not apply" keeps every wall. The engine has the one switch, so both one-wall values turn
+ * it on ("topmost" prints like "all top" on a part with one top level; parts with more were not compared). Undefined
+ * when the file has no type, or one of another name, which then imports as before.
+ */
+export function oneWallTopFromType(merged: Record<string, unknown>): boolean | undefined {
+  const raw = merged['top_one_wall_type']
+  const kind = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw
+  if (typeof kind !== 'string') return undefined
+  switch (kind.trim().toLowerCase()) {
+    case 'all top':
+    case 'topmost':
+      return true
+    case 'not apply':
+      return false
+    default:
+      return undefined
+  }
+}
+
 export interface FlatImport {
   config: PrintConfig
   unknownKeys: string[]
@@ -135,6 +156,7 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
   const nilKeys: string[] = []
   const invalidKeys: string[] = []
   const fromMode = infillRetractionFromMode(merged)
+  const oneWallTop = oneWallTopFromType(merged)
   const bambu = forBambu(merged)
   // On other printers the older name wins over our own in the same file, as the engine reads that file: its
   // `initial_layer_flow_ratio` is the bottom surface ratio in place of `bottom_solid_infill_flow_ratio`, when it holds a number.
@@ -144,6 +166,8 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
     if (shadowed.has(rawKey)) continue
     // The mode replaces the old switch when the file has both (see infillRetractionFromMode).
     if (fromMode !== undefined && (rawKey === 'reduce_infill_retraction_mode' || rawKey === 'reduce_infill_retraction')) continue
+    // The type replaces the switch when the file has both (see oneWallTopFromType).
+    if (oneWallTop !== undefined && (rawKey === 'top_one_wall_type' || rawKey === 'only_one_wall_top')) continue
     // Bambu Studio's rib wall switch reads as our wall type (legacy.json); the file's own wall type wins.
     if (rawKey === 'prime_tower_rib_wall' && 'wipe_tower_wall_type' in merged) continue
     if (OBSOLETE.has(rawKey) && !settingDef(rawKey)) {
@@ -176,6 +200,7 @@ export function importFlat(merged: Record<string, unknown>): FlatImport {
     }
   }
   if (fromMode !== undefined) config['reduce_infill_retraction'] = fromMode
+  if (oneWallTop !== undefined) config['only_one_wall_top'] = oneWallTop
   return { config, unknownKeys: unknownKeys.sort(), ignoredKeys: ignoredKeys.sort(), nilKeys: nilKeys.sort(), invalidKeys: invalidKeys.sort() }
 }
 
