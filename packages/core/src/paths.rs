@@ -1987,7 +1987,8 @@ pub(crate) fn plan_layer_paths(
             } as f32;
             v
         };
-        b.width_mm = fw(5);
+        // Support is planned at the layer's support width, so a region's own line width does not reach it.
+        b.width_mm = feature_w[5];
         if w.support_flow > 0.0 {
             b.flow = w.support_flow;
         }
