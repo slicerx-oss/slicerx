@@ -13970,6 +13970,9 @@
     "retract_length_toolchange": [
      "2"
     ],
+    "retract_lift_below": [
+     "219"
+    ],
     "retract_restart_extra": [
      "0"
     ],
@@ -13980,7 +13983,7 @@
      "1"
     ],
     "retraction_length": [
-     "0.8"
+     "0.7"
     ],
     "retraction_minimum_travel": [
      "1"
@@ -13996,11 +13999,14 @@
      "480x240/QOI",
      "640x480/PNG"
     ],
+    "travel_slope": [
+     "1"
+    ],
     "wipe": [
      "1"
     ],
     "z_hop": [
-     "0.4"
+     "0.2"
     ]
    },
    "noGcodeInOrca": [
@@ -14022,6 +14028,18 @@
       ],
       "nozzle_diameter": [
        "0.25"
+      ],
+      "retract_lift_below": [
+       "0"
+      ],
+      "retraction_length": [
+       "0.8"
+      ],
+      "travel_slope": [
+       "3"
+      ],
+      "z_hop": [
+       "0.4"
       ]
      },
      "orcaProfile": "Prusa MK4 0.25 nozzle"
@@ -14036,6 +14054,18 @@
       ],
       "nozzle_diameter": [
        "0.6"
+      ],
+      "retract_lift_below": [
+       "0"
+      ],
+      "retraction_length": [
+       "0.8"
+      ],
+      "travel_slope": [
+       "3"
+      ],
+      "z_hop": [
+       "0.4"
       ]
      },
      "orcaProfile": "Prusa MK4 0.6 nozzle"
@@ -14050,6 +14080,18 @@
       ],
       "nozzle_diameter": [
        "0.8"
+      ],
+      "retract_lift_below": [
+       "0"
+      ],
+      "retraction_length": [
+       "0.8"
+      ],
+      "travel_slope": [
+       "3"
+      ],
+      "z_hop": [
+       "0.4"
       ]
      },
      "orcaProfile": "Prusa MK4 0.8 nozzle"
@@ -17340,6 +17382,20 @@
     "wrapping_detection_gcode"
    ],
    "nozzles": {
+    "1": {
+     "differs": {
+      "max_layer_height": [
+       "0.80"
+      ],
+      "min_layer_height": [
+       "0.25"
+      ],
+      "nozzle_diameter": [
+       "1.0"
+      ]
+     },
+     "orcaProfile": "Voron 0.1 1.0 nozzle"
+    },
     "0.15": {
      "differs": {
       "max_layer_height": [
@@ -17423,20 +17479,6 @@
       ]
      },
      "orcaProfile": "Voron 0.1 0.8 nozzle"
-    },
-    "1": {
-     "differs": {
-      "max_layer_height": [
-       "0.80"
-      ],
-      "min_layer_height": [
-       "0.25"
-      ],
-      "nozzle_diameter": [
-       "1.0"
-      ]
-     },
-     "orcaProfile": "Voron 0.1 1.0 nozzle"
     }
    },
    "orca": {
@@ -17593,6 +17635,20 @@
     "wrapping_detection_gcode"
    ],
    "nozzles": {
+    "1": {
+     "differs": {
+      "max_layer_height": [
+       "0.9"
+      ],
+      "min_layer_height": [
+       "0.25"
+      ],
+      "nozzle_diameter": [
+       "1.0"
+      ]
+     },
+     "orcaProfile": "Voron 2.4 250 1.0 nozzle"
+    },
     "0.15": {
      "differs": {
       "max_layer_height": [
@@ -17676,20 +17732,6 @@
       ]
      },
      "orcaProfile": "Voron 2.4 250 0.8 nozzle"
-    },
-    "1": {
-     "differs": {
-      "max_layer_height": [
-       "0.9"
-      ],
-      "min_layer_height": [
-       "0.25"
-      ],
-      "nozzle_diameter": [
-       "1.0"
-      ]
-     },
-     "orcaProfile": "Voron 2.4 250 1.0 nozzle"
     }
    },
    "orca": {
@@ -17846,6 +17888,20 @@
     "wrapping_detection_gcode"
    ],
    "nozzles": {
+    "1": {
+     "differs": {
+      "max_layer_height": [
+       "0.9"
+      ],
+      "min_layer_height": [
+       "0.25"
+      ],
+      "nozzle_diameter": [
+       "1.0"
+      ]
+     },
+     "orcaProfile": "Voron 2.4 300 1.0 nozzle"
+    },
     "0.15": {
      "differs": {
       "max_layer_height": [
@@ -17929,20 +17985,6 @@
       ]
      },
      "orcaProfile": "Voron 2.4 300 0.8 nozzle"
-    },
-    "1": {
-     "differs": {
-      "max_layer_height": [
-       "0.9"
-      ],
-      "min_layer_height": [
-       "0.25"
-      ],
-      "nozzle_diameter": [
-       "1.0"
-      ]
-     },
-     "orcaProfile": "Voron 2.4 300 1.0 nozzle"
     }
    },
    "orca": {
@@ -18099,6 +18141,20 @@
     "wrapping_detection_gcode"
    ],
    "nozzles": {
+    "1": {
+     "differs": {
+      "max_layer_height": [
+       "0.9"
+      ],
+      "min_layer_height": [
+       "0.25"
+      ],
+      "nozzle_diameter": [
+       "1.0"
+      ]
+     },
+     "orcaProfile": "Voron 2.4 350 1.0 nozzle"
+    },
     "0.15": {
      "differs": {
       "max_layer_height": [
@@ -18182,20 +18238,6 @@
       ]
      },
      "orcaProfile": "Voron 2.4 350 0.8 nozzle"
-    },
-    "1": {
-     "differs": {
-      "max_layer_height": [
-       "0.9"
-      ],
-      "min_layer_height": [
-       "0.25"
-      ],
-      "nozzle_diameter": [
-       "1.0"
-      ]
-     },
-     "orcaProfile": "Voron 2.4 350 1.0 nozzle"
     }
    },
    "orca": {
@@ -18352,6 +18394,20 @@
     "wrapping_detection_gcode"
    ],
    "nozzles": {
+    "1": {
+     "differs": {
+      "max_layer_height": [
+       "0.80"
+      ],
+      "min_layer_height": [
+       "0.25"
+      ],
+      "nozzle_diameter": [
+       "1.0"
+      ]
+     },
+     "orcaProfile": "Voron Switchwire 250 1.0 nozzle"
+    },
     "0.15": {
      "differs": {
       "max_layer_height": [
@@ -18435,20 +18491,6 @@
       ]
      },
      "orcaProfile": "Voron Switchwire 250 0.8 nozzle"
-    },
-    "1": {
-     "differs": {
-      "max_layer_height": [
-       "0.80"
-      ],
-      "min_layer_height": [
-       "0.25"
-      ],
-      "nozzle_diameter": [
-       "1.0"
-      ]
-     },
-     "orcaProfile": "Voron Switchwire 250 1.0 nozzle"
     }
    },
    "orca": {
@@ -18605,6 +18647,20 @@
     "wrapping_detection_gcode"
    ],
    "nozzles": {
+    "1": {
+     "differs": {
+      "max_layer_height": [
+       "0.80"
+      ],
+      "min_layer_height": [
+       "0.25"
+      ],
+      "nozzle_diameter": [
+       "1.0"
+      ]
+     },
+     "orcaProfile": "Voron Trident 250 1.0 nozzle"
+    },
     "0.15": {
      "differs": {
       "max_layer_height": [
@@ -18688,20 +18744,6 @@
       ]
      },
      "orcaProfile": "Voron Trident 250 0.8 nozzle"
-    },
-    "1": {
-     "differs": {
-      "max_layer_height": [
-       "0.80"
-      ],
-      "min_layer_height": [
-       "0.25"
-      ],
-      "nozzle_diameter": [
-       "1.0"
-      ]
-     },
-     "orcaProfile": "Voron Trident 250 1.0 nozzle"
     }
    },
    "orca": {
@@ -18858,6 +18900,20 @@
     "wrapping_detection_gcode"
    ],
    "nozzles": {
+    "1": {
+     "differs": {
+      "max_layer_height": [
+       "0.80"
+      ],
+      "min_layer_height": [
+       "0.25"
+      ],
+      "nozzle_diameter": [
+       "1.0"
+      ]
+     },
+     "orcaProfile": "Voron Trident 300 1.0 nozzle"
+    },
     "0.15": {
      "differs": {
       "max_layer_height": [
@@ -18941,20 +18997,6 @@
       ]
      },
      "orcaProfile": "Voron Trident 300 0.8 nozzle"
-    },
-    "1": {
-     "differs": {
-      "max_layer_height": [
-       "0.80"
-      ],
-      "min_layer_height": [
-       "0.25"
-      ],
-      "nozzle_diameter": [
-       "1.0"
-      ]
-     },
-     "orcaProfile": "Voron Trident 300 1.0 nozzle"
     }
    },
    "orca": {
@@ -19111,6 +19153,20 @@
     "wrapping_detection_gcode"
    ],
    "nozzles": {
+    "1": {
+     "differs": {
+      "max_layer_height": [
+       "0.80"
+      ],
+      "min_layer_height": [
+       "0.25"
+      ],
+      "nozzle_diameter": [
+       "1.0"
+      ]
+     },
+     "orcaProfile": "Voron Trident 350 1.0 nozzle"
+    },
     "0.15": {
      "differs": {
       "max_layer_height": [
@@ -19194,20 +19250,6 @@
       ]
      },
      "orcaProfile": "Voron Trident 350 0.8 nozzle"
-    },
-    "1": {
-     "differs": {
-      "max_layer_height": [
-       "0.80"
-      ],
-      "min_layer_height": [
-       "0.25"
-      ],
-      "nozzle_diameter": [
-       "1.0"
-      ]
-     },
-     "orcaProfile": "Voron Trident 350 1.0 nozzle"
     }
    },
    "orca": {

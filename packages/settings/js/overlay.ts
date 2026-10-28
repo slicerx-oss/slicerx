@@ -3,9 +3,10 @@
 // A maker overlay: newer values from the maker's own app for settings the engine reads, written over the generated preset
 // data as its last step. packages/profiles/overlays/bbl-2.8.json holds Bambu Studio 2.8's values for the Bambu Lab
 // presets: filament presets by name (filaments/BBL.json), and the printer, default filament and process tiers of each
-// model and nozzle (resolved/bambu-lab.json). scripts/gen-resolved.ts applies it before writing, and
-// scripts/apply-overlay.ts applies it to the shipped files, so a regeneration of either file keeps it. Applying it twice
-// changes nothing.
+// model and nozzle (resolved/bambu-lab.json). packages/profiles/overlays/prusa-mk4is.json gives the stock Prusa MK4 the
+// lift and retraction of the maker's MK4 IS profile, in resolved/prusa.json and in the printer settings of machine.json.
+// scripts/gen-resolved.ts applies them before writing, and scripts/apply-overlay.ts applies them to the shipped files, so
+// a regeneration of any of these files keeps them. Applying one twice changes nothing.
 import { sameValue } from './diff'
 import { importFlat } from './import'
 import { defaultConfig } from './schema'
@@ -37,6 +38,17 @@ export interface VendorData { families: Record<string, { base: Raw; variants: Re
 
 /** The Bambu Lab overlay, relative to packages/profiles. */
 export const BBL_OVERLAY = 'overlays/bbl-2.8.json'
+/** The MK4 IS lift and retraction for the stock Prusa MK4, relative to packages/profiles. */
+export const PRUSA_OVERLAY = 'overlays/prusa-mk4is.json'
+
+/**
+ * Every maker overlay, in the order they apply: the brand whose resolved file it writes, the vendor filament file it
+ * writes, and whether it also writes the printer settings in machine.json.
+ */
+export const MAKER_OVERLAYS: readonly { path: string; brand: string; filaments?: string; machineJson: boolean }[] = [
+  { path: BBL_OVERLAY, brand: 'bambu-lab', filaments: 'filaments/BBL.json', machineJson: false },
+  { path: PRUSA_OVERLAY, brand: 'prusa', machineJson: true },
+]
 
 const defaults = defaultConfig() as Raw
 
@@ -133,5 +145,57 @@ export function applyFilamentOverlay(file: VendorData, overlay: MakerOverlay): v
     const diff = fam?.variants[variant]
     if (!fam || diff === undefined) throw new Error(`overlay: no filament preset ${name}`)
     for (const [k, v] of Object.entries(values)) diff[k] = v
+  }
+}
+
+/** machine.json: the maker's printer settings per model, raw, for the default nozzle and the others' differences. */
+export interface MachineFile { models: Record<string, { machine: Raw; nozzles: Record<string, { differs: Raw }> }> }
+
+/** A schema default in the profiles' own format, so a nozzle can keep it when the default nozzle's value moves. */
+function rawDefault(key: string): unknown {
+  const v = defaults[key]
+  const one = (x: unknown): string => {
+    if (typeof x === 'number' || typeof x === 'string') return String(x)
+    if (typeof x === 'boolean') return x ? '1' : '0'
+    throw new Error(`overlay: no raw form for the default of ${key}`)
+  }
+  return Array.isArray(v) ? v.map(one) : one(v)
+}
+
+/** Sets a key and keeps the block's keys sorted, as machine.json has them. */
+function put(block: Raw, key: string, value: unknown): void {
+  block[key] = value
+  const sorted = Object.keys(block).sort()
+  const copy = { ...block }
+  for (const k of sorted) delete block[k]
+  for (const k of sorted) block[k] = copy[k]
+}
+
+/**
+ * Applies the overlay's printer values to machine.json, in place and raw. A value for the default nozzle goes into the
+ * model's own settings, and every other nozzle without a value of its own keeps the one it had, in its differences.
+ */
+export function applyMachineOverlay(file: MachineFile, overlay: MakerOverlay, defaultNozzle: (model: string) => number): void {
+  for (const [model, sizes] of Object.entries(overlay.machine)) {
+    const entry = file.models[model]
+    if (!entry) throw new Error(`overlay: no machine settings for ${model}`)
+    for (const [size, o] of Object.entries(sizes)) {
+      if (Number(size) !== defaultNozzle(model)) {
+        const nozzle = Object.entries(entry.nozzles).find(([n]) => Number(n) === Number(size))?.[1]
+        if (!nozzle) throw new Error(`overlay: ${model} has no ${size} mm nozzle in machine.json`)
+        for (const [k, v] of Object.entries(o.values)) put(nozzle.differs, k, v)
+        continue
+      }
+      for (const [k, v] of Object.entries(o.values)) {
+        if (!typed(k, v)) throw new Error(`overlay: ${k} is not a setting the schema knows`)
+        if (JSON.stringify(entry.machine[k]) === JSON.stringify(v)) continue
+        const before = entry.machine[k] ?? rawDefault(k)
+        for (const [n, nozzle] of Object.entries(entry.nozzles)) {
+          const own = Object.entries(sizes).find(([s]) => Number(s) === Number(n))?.[1]
+          if (!(own && k in own.values) && !(k in nozzle.differs)) put(nozzle.differs, k, before)
+        }
+        put(entry.machine, k, v)
+      }
+    }
   }
 }
