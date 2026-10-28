@@ -542,9 +542,8 @@ fn gaps_covered(name: &str, ps: &[PathRun]) -> Result<(), String> {
 
 #[test]
 fn close_brims_fill_the_gap_once_and_slice_without_crossing() {
-    // T-d. These plates slice as one session, whose skirt keeps its own offset: on the MK4 project it sits a little
-    // nearer (123.1 mm), as on a plate of objects far apart.
-    for (name, shortest) in [("a1--c2", 124.0), ("mk4p--c2", 123.0)] {
+    // T-d. These plates slice as one session, whose skirt keeps the same offset as on a plate of objects far apart.
+    for (name, shortest) in [("a1--c2", 124.0), ("mk4p--c2", 124.0)] {
         let ps = paths(&slice(name));
         assert_eq!(overlap(&ps), 0.0, "{name}");
         let first = skirts(&ps).into_iter().next().unwrap().1;

@@ -31,6 +31,7 @@
   "reduce_fan_stop_start_freq": "Avoid stopping the fan between layers",
   "retract_when_changing_layer": "Retract at each layer change",
   "retraction_minimum_travel": "Shortest travel that triggers a retraction",
+  "skirt_brim_edge": "Skirt brim edge",
   "slow_down_for_layer_cooling": "Slow printing on short layers to cool them",
   "slow_down_min_speed": "Slowest speed when cooling a layer",
   "slowdown_for_curled_perimeters": "Slow down on curling walls",

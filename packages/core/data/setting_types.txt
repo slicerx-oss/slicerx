@@ -548,6 +548,7 @@ skeleton_infill_line_width	process	floatOrPercent
 skin_infill_density	process	percent
 skin_infill_depth	process	float
 skin_infill_line_width	process	floatOrPercent
+skirt_brim_edge	process	enum
 skirt_distance	process	float
 skirt_height	process	int
 skirt_loops	process	int
