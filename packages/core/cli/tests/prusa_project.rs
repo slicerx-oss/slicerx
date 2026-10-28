@@ -450,3 +450,22 @@ fn a_prusaslicer_width_of_0_is_the_general_width_else_the_nozzles() {
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
+
+#[test]
+fn an_object_with_its_own_layer_height_prints_support_at_the_projects_support_width() {
+    // The object's own 0.3 mm layer height prints its part with settings of its own, at the 0.45 mm line width; the
+    // support around it still prints at the project's 0.4 mm support width (0 with no general width: the nozzle).
+    let printed = widths_above_layer_1(&gcode(&ring("grid-n0.4-xy0.8-objlh0.3.3mf")));
+    for kind in ["Support", "Support interface"] {
+        let got = printed.get(kind).cloned().unwrap_or_default();
+        assert!(
+            got.len() == 1 && got.contains("0.4"),
+            "{kind} prints {got:?}, not 0.4"
+        );
+    }
+    let walls = printed.get("Outer wall").cloned().unwrap_or_default();
+    assert!(
+        walls.len() == 1 && walls.contains("0.45"),
+        "outer wall prints {walls:?}, not 0.45"
+    );
+}
