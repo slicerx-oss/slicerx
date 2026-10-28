@@ -8308,12 +8308,12 @@ impl SliceSession {
                 loops = loops.min(1);
             }
             // The topmost layer is one wall, so its top surface reaches the outer wall.
-            if crate::tower::flag(cfg, "only_one_wall_top") && layer + 1 == n && loops > 0 {
+            if crate::perimeters::one_wall_top(cfg) && layer + 1 == n && loops > 0 {
                 one_wall_layer |= loops > 1;
                 loops = 1;
             }
             let top_ctx = upper_slice
-                .filter(|_| crate::tower::flag(cfg, "only_one_wall_top") && loops > 1)
+                .filter(|_| crate::perimeters::one_wall_top(cfg) && loops > 1)
                 .map(|upper| perimeters::TopCtx { upper, lower: below });
             // Narrow pieces of the layer's surfaces: with fixed-width walls at sparse infill density 0 a piece the
             // lines run across without room for one keeps its gap fill, so the walls read the layer's surfaces.
@@ -9620,7 +9620,7 @@ impl SliceSession {
                 });
                 // A single wall under the top surfaces (`only_one_wall_top`) or on the first layer moves the
                 // surface's edge where the rule was not measured, so those surfaces keep one grid.
-                let one_wall_top = crate::tower::flag(cfg, "only_one_wall_top");
+                let one_wall_top = crate::perimeters::one_wall_top(cfg);
                 let stretch = surface_stretch.filter(|_| {
                     let top = which == 0 && !one_wall_top;
                     let first = which == 1

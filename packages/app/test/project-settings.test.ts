@@ -26,6 +26,15 @@ describe('project settings', () => {
     expect(projectSettingChanges({ reduce_infill_retraction: '1' }, baseConfig()).values['reduce_infill_retraction']).toBe(true)
   })
 
+  it("reads Bambu Studio's top_one_wall_type as the single wall on top, over only_one_wall_top", () => {
+    const off = { ...baseConfig(), only_one_wall_top: false }
+    expect(projectSettingChanges({ top_one_wall_type: 'all top', only_one_wall_top: '0' }, off).values['only_one_wall_top']).toBe(true)
+    expect(projectSettingChanges({ top_one_wall_type: 'topmost', only_one_wall_top: '0' }, off).values['only_one_wall_top']).toBe(true)
+    const on = { ...baseConfig(), only_one_wall_top: true }
+    expect(projectSettingChanges({ top_one_wall_type: 'not apply', only_one_wall_top: '1' }, on).values['only_one_wall_top']).toBe(false)
+    expect(projectSettingChanges({ only_one_wall_top: '1' }, off).values['only_one_wall_top']).toBe(true)
+  })
+
   it("passes a Bambu Lab project's initial_layer_flow_ratio on as the engine reads the same file", () => {
     // sx slice <project.3mf> slices with the file's own keys, so the app's request carries the same flow keys: the first
     // layer ratio under its own name, and no bottom surface ratio the file does not set.

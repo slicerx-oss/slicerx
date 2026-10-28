@@ -232,6 +232,40 @@ fn bambu_infill_retraction_mode() {
 }
 
 #[test]
+fn bambu_top_one_wall_type() {
+    let read = |extra: serde_json::Value| {
+        let mut p = json!({"name": "p", "type": "process"});
+        if let (Some(o), Some(e)) = (p.as_object_mut(), extra.as_object()) {
+            o.extend(e.clone());
+        }
+        let r = import_orca(&p, &|_| None).unwrap();
+        (r.config.get("only_one_wall_top").cloned(), r.unknown_keys)
+    };
+    let on = Some(Value::Bool(true));
+    let off = Some(Value::Bool(false));
+    // All top and topmost give one wall, not apply keeps every wall, whatever only_one_wall_top says.
+    let (v, unknown) = read(json!({"top_one_wall_type": "all top", "only_one_wall_top": "0"}));
+    assert_eq!(v, on);
+    assert!(unknown.is_empty(), "{unknown:?}");
+    assert_eq!(
+        read(json!({"top_one_wall_type": "topmost", "only_one_wall_top": "0"})).0,
+        on
+    );
+    assert_eq!(
+        read(json!({"top_one_wall_type": ["not apply"], "only_one_wall_top": "1"})).0,
+        off
+    );
+    assert_eq!(read(json!({"top_one_wall_type": "not apply"})).0, off);
+    // The switch alone reads as before, and a type of another name leaves it alone.
+    assert_eq!(read(json!({"only_one_wall_top": "1"})).0, on);
+    assert_eq!(read(json!({"only_one_wall_top": "0"})).0, off);
+    let (v, unknown) = read(json!({"top_one_wall_type": "sometimes", "only_one_wall_top": "1"}));
+    assert_eq!(v, on);
+    assert_eq!(unknown, ["top_one_wall_type"]);
+    assert_eq!(read(json!({})).0, None);
+}
+
+#[test]
 fn bambu_prime_tower_rib_wall() {
     // Bambu Studio's switch for the prime tower's rib wall is our wall type: 1 the rib wall, 0 the plain one.
     let read = |extra: serde_json::Value| {
