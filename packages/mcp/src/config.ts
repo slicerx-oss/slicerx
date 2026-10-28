@@ -131,7 +131,7 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
     // Another slicer's project on a printer, as the app opens it: every setting the app sends, the printer's layer
     // under the project's own (project-open.ts). On its own printer its G-code goes through the review below.
     Object.assign(explicit, opened.config)
-    const own = Object.entries(extra.project!.config).filter(([k]) => k === 'print_sequence' || opened.keepProjectKeys.includes(k) || (opened.ownGcode && GCODE_TEXT_KEYS.includes(k)))
+    const own = Object.entries(extra.project!.config).filter(([k]) => k === 'print_sequence' || (opened.ownGcode && GCODE_TEXT_KEYS.includes(k)))
     Object.assign(explicit, Object.fromEntries(own))
     applied.push(`project:${extra.project!.name}`)
   } else if (extra.project) {

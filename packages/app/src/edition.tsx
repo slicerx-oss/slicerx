@@ -5,6 +5,7 @@
 import { setAssistantBrand, setProductColors, setProductName } from '@slicerx/contracts'
 import { fontStack, neutralEdition, type EditionConfig, type PrinterFamily } from '@slicerx/edition-config'
 import { subban, subbanLight, themeFromEdition, type Theme } from '@slicerx/ui'
+import { objectPaletteColors } from '@slicerx/settings/slot-settings'
 import { createContext, useContext } from 'react'
 
 export const NEUTRAL: EditionConfig = neutralEdition()
@@ -75,7 +76,7 @@ export function brandAccent(edition: EditionConfig = current, scheme: 'dark' | '
 
 /** Colors for new objects and spare filament slots, the accent first. */
 export function objectPalette(): string[] {
-  return [brandAccent(), '#8be9fd', '#50fa7b', '#ffb86c', '#ff79c6', '#f1fa8c']
+  return objectPaletteColors(brandAccent())
 }
 
 /** Printer plugin ids to the families an edition can switch off. */

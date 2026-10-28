@@ -238,7 +238,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   if (project && projectRead) {
     const asked = args.overrides?.['nozzle_diameter']
     const mm = Number(Array.isArray(asked) ? asked[0] : asked)
-    const opened = await openProject(projectRead, profiles, args.profiles, asked !== undefined && Number.isFinite(mm) && mm > 0 ? mm : undefined)
+    const opened = await openProject(projectRead, profiles, args.profiles, asked !== undefined && Number.isFinite(mm) && mm > 0 ? mm : undefined, args.plate)
     if (opened) project = { ...project, opened, model: opened.printer }
   }
   const presets = args.profile_files.length ? await readPresetFiles(d.policy, args.profile_files) : undefined

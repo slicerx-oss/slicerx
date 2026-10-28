@@ -4,8 +4,7 @@
 // flush matrix. Only a slice, an export or a check needs them, so they load apart from the startup shell.
 import type { SettingValue } from '@slicerx/contracts'
 import { resolveConfig } from '../adapters/config'
-import { extruderCount, flushInputs, flushValues, FLUSH_DEFAULTS, printerMinFlush, variantIndex } from './flush'
-import { keptFlush } from './project-kept'
+import { flushPlanFor, slotSettings } from '@slicerx/settings/slot-settings'
 import { defaultConfig } from '@slicerx/settings/defaults'
 import { tunedValues, tuneContext } from '../calibration/tuned'
 import { areaOrigin } from '../plate/bed-origin'
@@ -13,26 +12,12 @@ import { plateTower } from '../plate/tower'
 import type { AppState } from '../state/store'
 import { resolveSlots, type ResolvedSlot } from './slots'
 
-/**
- * What the flush matrix needs from the configuration the slice will use (Plater.cpp get_min_flush_volumes): per slot
- * the minimum added to its row, the printer's flush data set, and the multiplier (the person's when changed, else the printer's).
- */
+/** What the flush matrix needs from the configuration the slice will use (flushPlanFor in @slicerx/settings). */
 export function flushPlan(
   s: Pick<AppState, 'easy' | 'overrides' | 'printerNozzleVolume' | 'flush'>,
   slots: number,
 ): { mins: number[]; dataset: number; multiplier: number; nozzles: { mins: number[]; dataset: number }[] } {
-  const cfg = resolveConfig(s.easy, s.overrides) as Record<string, SettingValue>
-  // A printer without a profile layer has no nozzle volume of its own; the sidebar reads it from the printer's base settings.
-  const withVolume = printerMinFlush(cfg['nozzle_volume']) ? cfg : { ...cfg, nozzle_volume: [s.printerNozzleVolume] as SettingValue }
-  // One matrix per nozzle, each from that nozzle's own data set and minimums (Plater.cpp auto_calc_flushing_volumes loops the extruders).
-  const nozzles = Array.from({ length: extruderCount(withVolume) }, (_, e) => {
-    const r = flushInputs(withVolume, slots, variantIndex(withVolume, e))
-    return { mins: r.mins, dataset: r.printer.dataset }
-  })
-  const { mins, dataset } = nozzles[0]!
-  const own = Number(Array.isArray(cfg['flush_multiplier']) ? cfg['flush_multiplier'][0] : cfg['flush_multiplier'])
-  const multiplier = s.flush.multiplier !== FLUSH_DEFAULTS.multiplier ? s.flush.multiplier : Number.isFinite(own) && own > 0 ? own : s.flush.multiplier
-  return { mins, dataset, multiplier, nozzles }
+  return flushPlanFor(resolveConfig(s.easy, s.overrides) as Record<string, SettingValue>, slots, s.flush, s.printerNozzleVolume)
 }
 
 /**
@@ -71,23 +56,8 @@ export function slotConfig(s: AppState, plateId: string = s.activePlate): Record
   const tuned = tunedFilamentConfig(s, slots.slice(0, Math.max(1, top)))
   if (top < 2) return tuned
   const list = slots.slice(0, top)
-  const plan = flushPlan(s, top)
-  // an opened project's own matrix while its slots are as the file has them
-  const kept = s.projectFlush ? keptFlush(s.projectFlush, list.map((r) => ({ color: r.color, type: r.type })), plan.nozzles.length) : null
   // The plate's own tower: an opened project keeps one spot per plate.
   const tower = plateTower(s, plateId)
-  // A hand placed tower is a plate spot; the engine reads wipe_tower_x and wipe_tower_y on the machine.
-  const [ox, oy] = tower.auto ? [0, 0] : areaOrigin(resolveConfig(s.easy, s.overrides)['printable_area'])
-  return {
-    ...tuned,
-    filament_colour: list.map((r) => r.color),
-    filament_type: list.map((r) => r.type),
-    filament_vendor: list.map((r) => r.brand || '(Undefined)'),
-    // One n by n block per nozzle, in nozzle order (Orca's get_flush_volumes_matrix reads block extruder_id).
-    flush_volumes_matrix: kept ?? plan.nozzles.flatMap((z) => flushValues(list.map((r) => r.color), s.flush, z.mins, z.dataset)),
-    flush_multiplier: kept && s.projectFlush ? s.projectFlush.multiplier : plan.multiplier,
-    // The engine picks the tower's spot unless the person placed it.
-    prime_tower_auto_position: tower.auto,
-    ...(tower.auto ? {} : { wipe_tower_x: tower.x + ox, wipe_tower_y: tower.y + oy }),
-  }
+  const cfg = resolveConfig(s.easy, s.overrides) as Record<string, SettingValue>
+  return { ...tuned, ...slotSettings({ cfg, list, flush: s.flush, nozzleVolume: s.printerNozzleVolume, projectFlush: s.projectFlush, tower, origin: areaOrigin(cfg['printable_area']) }) }
 }
