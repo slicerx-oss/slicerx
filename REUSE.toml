@@ -14,7 +14,11 @@ SPDX-License-Identifier = "Apache-2.0"
 # The standard parts table: published sizes and formulas restated as facts, each value with its source page
 # (source_url), for attribution. No text or drawings of the sources are copied; see its README.md.
 [[annotations]]
-path = ["packages/pilot/src/parts/generated/standard-parts.json", "packages/pilot/test/fixtures/standard-parts/**", "packages/pilot/test/fixtures/standard-parts.table.json"]
+path = [
+  "packages/pilot/src/parts/generated/standard-parts.json",
+  "packages/pilot/test/fixtures/standard-parts.table.json",
+  "packages/pilot/test/fixtures/standard-parts/**",
+]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 The SlicerX contributors"
 SPDX-License-Identifier = "Apache-2.0"
@@ -22,7 +26,18 @@ SPDX-License-Identifier = "Apache-2.0"
 # The makers' stock printer, filament and process profiles, from the profile resources of
 # OrcaSlicer and Bambu Studio.
 [[annotations]]
-path = ["packages/profiles/gcode.json", "packages/profiles/machine.json", "packages/profiles/process-speeds.json", "packages/profiles/filaments/**", "packages/profiles/resolved/**", "packages/profiles/overlays/**", "packages/core/tests/fixtures/surface-walls/*-f4strips.json", "packages/core/tests/fixtures/surface-walls/p1s-x-mark.json", "packages/core/tests/fixtures/narrow-piece-surface/requests/*.json", "packages/core/tests/fixtures/precise-wall-surface/requests/*.json"]
+path = [
+  "packages/core/tests/fixtures/narrow-piece-surface/requests/*.json",
+  "packages/core/tests/fixtures/precise-wall-surface/requests/*.json",
+  "packages/core/tests/fixtures/surface-walls/*-f4strips.json",
+  "packages/core/tests/fixtures/surface-walls/p1s-x-mark.json",
+  "packages/profiles/filaments/**",
+  "packages/profiles/gcode.json",
+  "packages/profiles/machine.json",
+  "packages/profiles/overlays/**",
+  "packages/profiles/process-speeds.json",
+  "packages/profiles/resolved/**",
+]
 precedence = "aggregate"
 SPDX-FileCopyrightText = ["The OrcaSlicer and Bambu Studio contributors and the printer makers", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "AGPL-3.0-or-later"
@@ -31,7 +46,9 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 # Bambu Lab's printer certificate authorities (BBL CA, BBL CA2 RSA and BBL CA2 ECC), the trust anchors
 # for Bambu Lab printers' LAN certificates, copied unchanged from Bambu Studio's resources/cert/printer.cer.
 [[annotations]]
-path = ["packages/connect/certs/bambu-ca.pem"]
+path = [
+  "packages/connect/certs/bambu-ca.pem",
+]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Bambu Lab"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
@@ -39,7 +56,9 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 # Printer pictures for the setup's model grid: the makers' cover images from the profile resources of
 # OrcaSlicer (BBL covers come from Bambu Studio), re-encoded as webp.
 [[annotations]]
-path = ["packages/profiles/printer-images/**"]
+path = [
+  "packages/profiles/printer-images/**",
+]
 precedence = "aggregate"
 SPDX-FileCopyrightText = ["The OrcaSlicer and Bambu Studio contributors and the printer makers"]
 SPDX-License-Identifier = "AGPL-3.0-or-later"
@@ -47,7 +66,9 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 # The UltiMaker S series machine, print core, quality and G-code settings, resolved from UltiMaker Cura's
 # definitions, variants, materials and quality profiles (packages/settings/scripts/gen-ultimaker.py).
 [[annotations]]
-path = ["packages/profiles/cura/**"]
+path = [
+  "packages/profiles/cura/**",
+]
 precedence = "aggregate"
 SPDX-FileCopyrightText = ["UltiMaker B.V. and the UltiMaker Cura contributors", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "LGPL-3.0-or-later"
@@ -61,7 +82,9 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 # The tooltip demo loops and their posters: SlicerX's own animations of its procedural models.
 [[annotations]]
-path = ["packages/app/src/demos/**"]
+path = [
+  "packages/app/src/demos/**",
+]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 The SlicerX contributors"
 SPDX-License-Identifier = "Apache-2.0"
@@ -69,26 +92,34 @@ SPDX-License-Identifier = "Apache-2.0"
 # The credit kit for products built on SlicerX: badges, the support button, their copy and screenshots.
 # The SlicerX name and logo in them stay trademarks; see TRADEMARK.md.
 [[annotations]]
-path = ["docs/integrators/credit-kit/**"]
+path = [
+  "docs/integrators/credit-kit/**",
+]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 The SlicerX contributors"
 SPDX-License-Identifier = "Apache-2.0"
 
 # Vendored Rust crates, with the changes listed in each SOURCE.md under the crate's own license.
 [[annotations]]
-path = ["packages/vendor/i_overlay/**"]
+path = [
+  "packages/vendor/i_overlay/**",
+]
 precedence = "closest"
 SPDX-FileCopyrightText = ["Nail Sharipov", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "MIT OR Apache-2.0"
 
 [[annotations]]
-path = ["packages/vendor/cpp_map/**"]
+path = [
+  "packages/vendor/cpp_map/**",
+]
 precedence = "closest"
 SPDX-FileCopyrightText = ["eadf", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "MIT OR Apache-2.0"
 
 [[annotations]]
-path = ["packages/vendor/boostvoronoi/**"]
+path = [
+  "packages/vendor/boostvoronoi/**",
+]
 precedence = "closest"
 SPDX-FileCopyrightText = ["eadf", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "BSL-1.0"
@@ -96,14 +127,21 @@ SPDX-License-Identifier = "BSL-1.0"
 # occt-import-js built with Open CASCADE Technology, for reading STEP files (SOURCE.md). The build
 # scripts are ours.
 [[annotations]]
-path = ["packages/vendor/occt-import-js/lib/**", "packages/vendor/occt-import-js/patches/**", "packages/vendor/occt-import-js/OCCT_LGPL_EXCEPTION.txt"]
+path = [
+  "packages/vendor/occt-import-js/OCCT_LGPL_EXCEPTION.txt",
+  "packages/vendor/occt-import-js/lib/**",
+  "packages/vendor/occt-import-js/patches/**",
+]
 precedence = "closest"
 SPDX-FileCopyrightText = ["Viktor Kovacs", "Open CASCADE SAS"]
 SPDX-License-Identifier = "LGPL-2.1-only AND LGPL-2.1-only WITH OCCT-exception-1.0"
 
 # The outline font for text solids, a subset of Hanken Grotesk SemiBold (packages/geom/fonts/README.md).
 [[annotations]]
-path = ["packages/geom/fonts/*.ttf", "packages/geom/fonts/OFL.txt"]
+path = [
+  "packages/geom/fonts/*.ttf",
+  "packages/geom/fonts/OFL.txt",
+]
 precedence = "closest"
 SPDX-FileCopyrightText = "The Hanken Grotesk Project Authors"
 SPDX-License-Identifier = "OFL-1.1"
@@ -111,7 +149,10 @@ SPDX-License-Identifier = "OFL-1.1"
 # Printer maker logos from the makers' own press kits, unaltered, used only to name their printers and
 # with their permission (packages/brand-icons/LOGOS.md). They are not under an open license.
 [[annotations]]
-path = ["packages/brand-icons/assets/prusa-*.png", "packages/brand-icons/assets/flashforge-*.png"]
+path = [
+  "packages/brand-icons/assets/flashforge-*.png",
+  "packages/brand-icons/assets/prusa-*.png",
+]
 precedence = "closest"
 SPDX-FileCopyrightText = ["Prusa Research a.s.", "Flashforge"]
 SPDX-License-Identifier = "LicenseRef-Trademark-Permission"
@@ -119,7 +160,18 @@ SPDX-License-Identifier = "LicenseRef-Trademark-Permission"
 # Preset files and projects saved by OrcaSlicer, Bambu Studio and PrusaSlicer for the import tests, the parity
 # reference and the format corpus. The settings in them come from those apps' AGPL profiles; the meshes are ours.
 [[annotations]]
-path = ["packages/settings/fixtures/preset-files/**", "packages/core/cli/tests/fixtures/mixed-heights/**", "packages/core/cli/tests/fixtures/object-order/**", "packages/core/cli/tests/fixtures/object-order-filaments/**", "packages/core/bench/models/x-mark-2color-orca.3mf", "packages/geom/tests/corpus/orca-*.3mf", "packages/geom/tests/corpus/bambu-*.3mf", "packages/geom/tests/corpus/prusa-*.3mf", "packages/core/tests/fixtures/a1-locked-zag.3mf", "packages/core/cli/tests/fixtures/skirt-brim/**"]
+path = [
+  "packages/core/bench/models/x-mark-2color-orca.3mf",
+  "packages/core/cli/tests/fixtures/mixed-heights/**",
+  "packages/core/cli/tests/fixtures/object-order-filaments/**",
+  "packages/core/cli/tests/fixtures/object-order/**",
+  "packages/core/cli/tests/fixtures/skirt-brim/**",
+  "packages/core/tests/fixtures/a1-locked-zag.3mf",
+  "packages/geom/tests/corpus/bambu-*.3mf",
+  "packages/geom/tests/corpus/orca-*.3mf",
+  "packages/geom/tests/corpus/prusa-*.3mf",
+  "packages/settings/fixtures/preset-files/**",
+]
 precedence = "aggregate"
 SPDX-FileCopyrightText = ["The OrcaSlicer, Bambu Studio and PrusaSlicer contributors", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "AGPL-3.0-or-later"
