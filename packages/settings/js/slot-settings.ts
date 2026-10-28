@@ -72,19 +72,8 @@ export function plateTowerIndexes(plateNos: readonly (number | undefined)[]): (n
 }
 
 
-/** The colors new slots take, in order; the seventh is the edition's accent. */
-export const defaultSlotColors = (accent: string): string[] => ['#f8f8f2', '#282a36', '#ff5555', '#50fa7b', '#8be9fd', '#ffb86c', accent, '#f1fa8c']
-
-/** The colors the app gives new objects, and the parts of a project whose file names no color for their slot; the accent first. */
-export const objectPaletteColors = (accent: string): string[] => [accent, '#8be9fd', '#50fa7b', '#ffb86c', '#ff79c6', '#f1fa8c']
-
-/** A color as #rrggbb (with or without an alpha byte after it). */
-export const isHex = (c: string | undefined): c is string => Boolean(c && /^#[0-9a-f]{6}$/i.test(c.slice(0, 7)))
-
-/** `c` as lower case #rrggbb, else `fallback`. */
-export function normalizeColor(c: string | undefined, fallback: string): string {
-  return isHex(c) ? c.slice(0, 7).toLowerCase() : fallback
-}
+// The slot colors live apart (slot-colors.ts) so the startup shell can read them without this module and the flush code.
+export { defaultSlotColors, isHex, normalizeColor, objectPaletteColors } from './slot-colors'
 
 /**
  * What the flush matrix needs from the configuration the slice will use (Plater.cpp get_min_flush_volumes): per slot

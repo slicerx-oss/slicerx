@@ -8,7 +8,7 @@ import type { FlushSettings } from './flush-defaults'
 import { allPlates } from '../plate/plates'
 import { get, set, type AppState, type PlateEntry, type PlateMeta } from '../state/store'
 import { brandAccent } from '../edition'
-import { defaultSlotColors, isHex, normalizeColor } from '@slicerx/settings/slot-settings'
+import { defaultSlotColors, isHex, normalizeColor } from '@slicerx/settings/slot-colors'
 
 // How a slot color reads, shared with the MCP server's project slices.
 export { normalizeColor }

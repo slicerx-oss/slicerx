@@ -5,7 +5,7 @@
 import { setAssistantBrand, setProductColors, setProductName } from '@slicerx/contracts'
 import { fontStack, neutralEdition, type EditionConfig, type PrinterFamily } from '@slicerx/edition-config'
 import { subban, subbanLight, themeFromEdition, type Theme } from '@slicerx/ui'
-import { objectPaletteColors } from '@slicerx/settings/slot-settings'
+import { objectPaletteColors } from '@slicerx/settings/slot-colors'
 import { createContext, useContext } from 'react'
 
 export const NEUTRAL: EditionConfig = neutralEdition()
