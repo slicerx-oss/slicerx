@@ -7,7 +7,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { extname, join } from 'node:path'
-import type { GcodeExport, GcodeTarget, MeshHandle, MeshPart, PrintConfig, SettingValue, SliceRequest, SliceResult, SlicerHost } from '@slicerx/contracts'
+import type { GcodeExport, GcodeTarget, MeshHandle, MeshPart, PrintConfig, SettingValue, SliceRequest, SliceResult, SliceWarning, SlicerHost } from '@slicerx/contracts'
 import { gcode3mf } from './gcode3mf'
 import { ToolInputError } from './errors'
 import { defaultConfig, sameValue } from '@slicerx/settings'
@@ -191,7 +191,8 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
         stats: { timeS: summary.time_s, ...perFilament(summary), cost: Math.round((summary.filament_g / 1000) * costPerKg * 100) / 100, toolChanges: 0 },
         stageMicros: {},
         wallMs: performance.now() - started,
-        warnings: [...summary.warnings.map((message) => ({ code: 'unsupported_setting' as const, message })), ...(summary.note ? [{ code: 'unsupported_setting' as const, message: summary.note }] : [])],
+        // The engine's codes, layers and object ids when the summary carries them; the plain messages otherwise (the stub, an older sx).
+        warnings: [...(summary.warning_details ?? summary.warnings.map((message): NonNullable<SliceSummary['warning_details']>[number] => ({ code: 'unsupported_setting', message }))).map((w): SliceWarning => ({ code: w.code as SliceWarning['code'], message: w.message, ...(w.layer !== undefined ? { layer: w.layer } : {}), ...(w.object_id ? { objectId: w.object_id } : {}) })), ...(summary.note ? [{ code: 'unsupported_setting' as const, message: summary.note }] : [])],
         ...(summary.chamber_cooling ? { chamberCooling: summary.chamber_cooling } : {}),
         ...(summary.feature_filaments?.length ? { featureFilaments: summary.feature_filaments.map((f) => ({ object: f.object ?? f.name, ...(f.engine_object ? { engineObject: f.engine_object } : {}), name: f.name, features: f.features })) } : {}),
       }

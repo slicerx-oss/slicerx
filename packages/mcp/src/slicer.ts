@@ -87,6 +87,8 @@ export interface SliceSummary {
   gcode_3mf_path?: string
   preview_path?: string
   warnings: string[]
+  /** `warnings` with what the engine wrote beside each message: its code (passed through as written), layer (0 based) and object id. Absent from a stub slice and an engine that writes none. */
+  warning_details?: { code: string; message: string; layer?: number; object_id?: string }[]
   note?: string
 }
 

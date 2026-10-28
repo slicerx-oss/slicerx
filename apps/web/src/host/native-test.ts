@@ -13,8 +13,6 @@ type Rec = Record<string, unknown>
 const isRec = (v: unknown): v is Rec => Boolean(v) && typeof v === 'object'
 const nums = (v: unknown): number[] => (Array.isArray(v) ? v.map(Number) : [])
 
-const WARNING_CODES = new Set<SliceWarning['code']>(['open_edges', 'thin_wall', 'floating_region', 'long_bridge', 'outside_bed', 'unsupported_setting', 'manual_step', 'collision', 'safety_limit'])
-
 /** The engine's report (`sx slice --request`), as the desktop's slicer reads its own. */
 export function toResult(id: string, v: unknown, wallMs: number): SliceResult {
   if (!isRec(v) || !isRec(v['stats']) || !Array.isArray(v['warnings'])) throw new Error('The test slicer returned an unexpected slice result')
@@ -36,7 +34,7 @@ export function toResult(id: string, v: unknown, wallMs: number): SliceResult {
     ...(typeof v['wallMs'] === 'number' ? { engineWallMs: v['wallMs'] } : {}),
     warnings: (v['warnings'] as unknown[]).flatMap((w) =>
       isRec(w) && typeof w['code'] === 'string' && typeof w['message'] === 'string'
-        ? [{ code: WARNING_CODES.has(w['code'] as SliceWarning['code']) ? (w['code'] as SliceWarning['code']) : 'unsupported_setting', message: w['message'], ...(typeof w['layer'] === 'number' ? { layer: w['layer'] } : {}) }]
+        ? [{ code: w['code'] as SliceWarning['code'], message: w['message'], ...(typeof w['layer'] === 'number' ? { layer: w['layer'] } : {}), ...(typeof w['objectId'] === 'string' ? { objectId: w['objectId'] } : {}) }]
         : [],
     ),
     ...(v['gcodeFormat'] === 'bgcode' ? { gcodeFormat: 'bgcode' as const } : {}),

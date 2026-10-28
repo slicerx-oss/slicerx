@@ -136,6 +136,8 @@ export const summaryShape = {
   /** How the project's own printer G-code was used (project_settings). */
   project_gcode: z.array(z.object({ key: z.string(), slot: z.number().optional(), use: z.enum(['project', 'profile']), message: z.string() })).optional(),
   warnings: z.array(z.string()),
+  /** `warnings` with the engine's code (as written), layer (0 based) and object id for each, when the engine gives them. */
+  warning_details: z.array(z.object({ code: z.string(), message: z.string(), layer: z.number().optional(), object_id: z.string().optional() })).optional(),
   /** With project_settings: what the project's print settings carry that slicing did not use, by kind. */
   import_report: z
     .object({

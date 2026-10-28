@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_slice_file`, `slicerx_estimate_file` and the slice summary carry an optional `warning_details` list beside `warnings`: for each engine warning its `code` (as the engine wrote it, such as `objects_overlap`), `message`, `layer` (0 based) and `object_id` when it has them. `warnings` is unchanged. An app that takes slices from this server shows each warning under its own code, where it showed every one as an unsupported setting.
+
 ### Changed
 
 - `slicerx_slice_file` and `slicerx_estimate_file` 1.1.0: with `project_settings` and a `machine:` profile, a Bambu Studio, OrcaSlicer or PrusaSlicer 3MF opens on that printer the way the app opens it, so the same project on the same printer gives the same G-code here, in the app and through `sx call slice_file`. The printer's machine, process and filament settings (as the app builds them, with variable layer height off and aegis walls) go under the project's settings, and the request carries every setting as the app sends them. Before, the stock process and filament were left out, so a PrusaSlicer MK4 project printed 441 retractions where the app printed 270. A project made for another printer leaves its G-code, and the layer heights and line widths made for another nozzle size, behind, as in the app. Without a `machine:` profile a project slices with its own settings, as before and as `sx slice project.3mf` does.
