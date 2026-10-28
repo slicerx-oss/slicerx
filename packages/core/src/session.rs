@@ -9085,6 +9085,10 @@ impl SliceSession {
                 }
             };
             let mut curved: [Vec<[crate::geom::Point; 2]>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+            // Which of the three surfaces are filled with monotonic line (their own gap fill, below). Only Bambu Lab
+            // printers fill those slivers; other printers leave gap fill to `gap_fill_target` whatever the pattern.
+            let mut line_fill = [false; 3];
+            let line_fill_gaps = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
             // `solid_infill_rotate_template`: every solid surface of the layer at the template's angle.
             let solid_deg = self.template_angle(cfg, "solid_infill_rotate_template", layer);
             let model_turn = self.model_turn(cfg);
@@ -9115,6 +9119,9 @@ impl SliceSession {
                     Some(serde_json::Value::String(s)) => s.as_str(),
                     _ => default,
                 };
+                if let Some(f) = line_fill.get_mut(which) {
+                    *f = line_fill_gaps && name == "monotonicline";
+                }
                 // `top_surface_density` and `bottom_surface_density` (external surfaces that are not
                 // bridges): the lines spread out; a top density of 0 leaves the top unfilled.
                 let density = match which {
@@ -9548,21 +9555,41 @@ impl SliceSession {
             // Gap fill of the surfaces themselves (`gap_fill_target`, fillgap.rs): over the surface without the
             // growth that lets lines overlap the walls.
             let gap_target = crate::fillgap::target(cfg);
-            if gap_target != crate::fillgap::Target::Nowhere {
+            // A monotonic line surface fills the slivers its lines leave whatever the target says, on every layer
+            // but the first one printed, and without the length filter.
+            let first_printed = layer + self.raft_layers() == 0;
+            let line_gaps = line_fill.map(|f| f && !first_printed);
+            let by_target = [
+                gap_target != crate::fillgap::Target::Nowhere,
+                gap_target != crate::fillgap::Target::Nowhere,
+                gap_target == crate::fillgap::Target::Everywhere,
+            ];
+            if line_gaps.iter().chain(&by_target).any(|on| *on) {
                 let flat = perimeters::offset(&inner, -overlap);
                 let solid_mm = cfg.spacing_for(cfg.solid_infill_width());
                 let gaps_of = |which: usize, mm_pitch: f64| {
+                    let (Some(lines), Some(own), Some(target)) =
+                        (curved.get(which), line_gaps.get(which), by_target.get(which))
+                    else {
+                        return Vec::new();
+                    };
+                    if !own && !target {
+                        return Vec::new();
+                    }
                     let region = perimeters::intersection(&surface_region(which), &flat);
-                    curved
-                        .get(which)
-                        .map(|l| crate::fillgap::gaps(&region, l, mm_pitch, cfg))
-                        .unwrap_or_default()
+                    if *own {
+                        // No bead wider than a solid infill line, whatever the surface's own width.
+                        crate::fillgap::line_gaps(&region, lines, mm_pitch, mm_pitch.min(solid_mm))
+                    } else if line_fill.get(which).copied().unwrap_or(false) {
+                        // A monotonic line surface on the first layer gets none, whatever the target says.
+                        Vec::new()
+                    } else {
+                        crate::fillgap::gaps(&region, lines, mm_pitch, cfg)
+                    }
                 };
                 work.gap_top = gaps_of(0, cfg.spacing_for(cfg.top_surface_width()).max(pitch[0]));
                 work.gap_bottom = gaps_of(1, solid_mm.max(pitch[1]));
-                if gap_target == crate::fillgap::Target::Everywhere {
-                    work.gap_shell = gaps_of(2, solid_mm);
-                }
+                work.gap_shell = gaps_of(2, solid_mm);
             }
             let [curved_top, curved_bottom, curved_shell] = curved;
             let [widen_top, widen_bottom] = widen;
