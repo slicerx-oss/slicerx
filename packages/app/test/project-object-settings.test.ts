@@ -92,14 +92,16 @@ describe("a project object's own settings", () => {
     expect(byName['plain']!.partSettings).toEqual({ 'plain tab': { wall_loops: 3, sparse_infill_density: 60 } })
   })
 
-  it('keep a layer height of their own on a plate the project prints by object, and say so when it prints by layer', async () => {
+  it('keep a layer height of their own on a plate the project prints by object or by layer', async () => {
     await openModelBytes(host, 'two.3mf', project(TUNED, { print_sequence: 'by object', layer_height: '0.2' }), undefined, { fresh: true })
     const s = get()
     const meta = s.plates.find((p) => p.id === s.activePlate)
     expect(objectOverrides(s, s.plate.find((e) => e.name === 'tuned')!)['layer_height']).toBe(0.3)
     // The project's print sequence is one of its settings, so the plate prints by object and the heights may differ.
     expect(plateLayerHeightConflict(s, meta, resolveConfig(s.easy, s.overrides))).toBeNull()
-    expect(plateLayerHeightConflict(s, meta, resolveConfig(s.easy, { ...s.overrides, print_sequence: 'by layer' }))).toMatch(/^Objects on this plate have different layer heights \(0\.3 mm for tuned; 0\.2 mm for plain\)/)
+    // Layer by layer each object prints at its own height too; with one filament no prime tower prints.
+    expect(plateLayerHeightConflict(s, meta, resolveConfig(s.easy, { ...s.overrides, print_sequence: 'by layer' }))).toBeNull()
+    expect(plateLayerHeightConflict(s, meta, resolveConfig(s.easy, { ...s.overrides, print_sequence: 'by layer', enable_prime_tower: true }))).toBeNull()
   })
 
   it('never bring custom G-code, scripts or printer keys', async () => {

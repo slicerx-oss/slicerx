@@ -210,22 +210,35 @@ describe('plates', () => {
 })
 
 describe('object settings', () => {
-  it('instances share them, undo covers them, and a layer height mismatch is reported', async () => {
+  it('instances share them, undo covers them, and a layer height mismatch is reported only with a prime tower', async () => {
     const { setObjectSetting, layerHeightConflict } = await import('../src/plate/object-settings')
     const inst = { ...entry('a~1'), instanceOf: 'a' }
     set({ plate: [entry('a'), inst, entry('b')], objectSettings: {} })
     const h = createHistory(appStore)
     setObjectSetting('a~1', 'wall_loops', 4)
     expect(get().objectSettings).toEqual({ a: { wall_loops: 4 } })
-    // Other settings may differ freely; layer height only when printing by object.
+    // Other settings may differ freely, and so may layer height, unless a prime tower prints layer by layer.
     expect(layerHeightConflict(get(), 'by-layer', 0.2)).toBeNull()
     setObjectSetting('b', 'layer_height', 0.12)
-    expect(layerHeightConflict(get(), 'by-layer', 0.2)).toMatch(/different layer heights.*0\.12 mm for b/)
-    expect(layerHeightConflict(get(), 'by-object', 0.2)).toBeNull()
+    expect(layerHeightConflict(get(), 'by-layer', 0.2)).toBeNull()
+    expect(layerHeightConflict(get(), 'by-layer', 0.2, true)).toMatch(/different layer heights.*0\.12 mm for b.*prime tower/)
+    expect(layerHeightConflict(get(), 'by-object', 0.2, true)).toBeNull()
     h.undo()
     expect(get().objectSettings).toEqual({ a: { wall_loops: 4 } })
     setObjectSetting('a', 'wall_loops', undefined)
     expect(get().objectSettings).toEqual({})
     h.dispose()
+  })
+
+  it('a prime tower prints when it is on and the plate prints more than one filament', async () => {
+    const { setObjectSetting, plateLayerHeightConflict } = await import('../src/plate/object-settings')
+    set({ plate: [entry('a'), entry('b')], objectSettings: {} })
+    setObjectSetting('b', 'layer_height', 0.12)
+    const tower = { layer_height: 0.2, enable_prime_tower: true, print_sequence: 'by layer' }
+    expect(plateLayerHeightConflict(get(), undefined, tower)).toBeNull()
+    set({ plate: get().plate.map((p) => (p.id === 'b' ? { ...p, slotOverrides: { p: 2 } } : p)) })
+    expect(plateLayerHeightConflict(get(), undefined, tower)).toMatch(/different layer heights.*prime tower/)
+    expect(plateLayerHeightConflict(get(), undefined, { ...tower, enable_prime_tower: false })).toBeNull()
+    expect(plateLayerHeightConflict(get(), undefined, { ...tower, print_sequence: 'by object' })).toBeNull()
   })
 })
