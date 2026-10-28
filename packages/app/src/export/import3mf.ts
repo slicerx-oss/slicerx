@@ -18,7 +18,7 @@ import type { Mat, PaintOfPart, ScannedModel, ScannedObject } from './model-scan
 import { scanProject, type ScannedProject } from './project-scan'
 import { scanProjectInWorker } from './project-worker-client'
 import { geomMatrix, geomPaint, readWithGeom, type GeomProject } from './geom-project'
-import { appMissingKeys } from '@slicerx/settings/app-defaults'
+import { withBambuMissingKeys } from '@slicerx/settings/app-defaults'
 
 export { ProjectReadError, unzipEntries, type ZipLimits } from './unzip'
 export type { PaintOfPart } from './model-scan'
@@ -632,24 +632,8 @@ async function assembleGeom(g: GeomProject): Promise<{ plateCfg: PlateCfg[]; ite
   return { plateCfg, items }
 }
 
-/**
- * The maker's app's reading of the keys its project lacks (engine-choices.json `fromApp`, through `appMissingKeys` in
- * @slicerx/settings): a Bambu Studio project without them gets the rib tower, 500 mm/s2 first layer travel and internal
- * bridges at the bridge speed. The same table as the engine's project import (`sx slice <project.3mf>`) and the MCP
- * server's project read: the app is the model's `Application` metadata. A project that has a key keeps its value, and
- * projects from other apps are unchanged.
- */
-export function withBambuMissingKeys(settings: Record<string, unknown>, application: string | undefined): Record<string, unknown> {
-  const added = appMissingKeys(settings, application)
-  const missing = Object.keys(added)
-  if (missing.length === 0) return settings
-  const out: Record<string, unknown> = { ...settings, ...added }
-  // A project that lists what it changed from its presets (and a nozzle the app has no profile for) applies only those:
-  // these count as changed, as the maker's own reading of a missing key is not the preset's.
-  const changed = settings['different_settings_to_system']
-  if (Array.isArray(changed) && typeof changed[0] === 'string') out['different_settings_to_system'] = [`${changed[0].replace(/;\s*$/, '')}${changed[0].trim() ? ';' : ''}${missing.join(';')}`, ...changed.slice(1)]
-  return out
-}
+// The maker's app's reading of the keys its project lacks, shared with the MCP server's project slices.
+export { withBambuMissingKeys }
 
 /** The objects of a project scanned in TypeScript (project-scan.ts), for hosts without the geometry engine. */
 async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: PlateCfg[]; items: Assembled[] }> {

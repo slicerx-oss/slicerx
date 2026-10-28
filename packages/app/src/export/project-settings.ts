@@ -6,7 +6,7 @@
 // extra solid infill layers). Free text, G-code, scripts (`post_process`), network and credential keys,
 // and the printer's own settings (its bed and limits) are left for the person's own printer to decide.
 import type { PrintConfig, SettingValue } from '@slicerx/contracts'
-import { importFlat, isProjectUnread, sameValue, selectVariants, settingDef, takesProjectValue } from '@slicerx/settings'
+import { importFlat, settingDef, takesProjectValue } from '@slicerx/settings'
 import type { PlateEntry } from '../state/store'
 
 // What a file may set is one rule, shared with the engine and the MCP server (prusa-map.json `projectTakes`, read by
@@ -14,34 +14,11 @@ import type { PlateEntry } from '../state/store'
 // per extruder or filament (overhang speeds are mm/s or %), or a text setting with a grammar (infill angle templates,
 // extra solid layers).
 
-export interface ProjectSettings {
-  /** Changes against the current settings, in our keys. */
-  values: Record<string, SettingValue>
-  /** Keys left out on purpose: text, scripts, credentials, printer settings. */
-  left: string[]
-}
-
 // Bambu Studio's per-variant values down to the ones that apply (shared with the MCP server's project reading).
 export { selectVariants } from '@slicerx/settings'
 
-// Bambu Studio prints a project's own values for wall_filament, sparse_infill_filament and solid_infill_filament on
-// nothing ("1", the stock value, and every other alike), so the rule leaves a project's out (`unread`); an object's, a
-// part's or a modifier's own still count (`modifierSettings`).
-export function projectSettingChanges(raw: Record<string, unknown>, current: PrintConfig): ProjectSettings {
-  const read = Object.fromEntries(Object.entries(raw).filter(([k]) => !isProjectUnread(k)))
-  const imported = importFlat(selectVariants(read)).config as Record<string, SettingValue>
-  const now = current as unknown as Record<string, SettingValue | undefined>
-  const values: Record<string, SettingValue> = {}
-  const left: string[] = []
-  for (const [key, value] of Object.entries(imported)) {
-    if (!takesProjectValue(key, value)) {
-      left.push(key)
-      continue
-    }
-    if (!sameValue(value, now[key])) values[key] = value
-  }
-  return { values, left }
-}
+// The project's settings as changes on the current settings, shared with the MCP server's project slices.
+export { projectSettingChanges, type ProjectSettings } from '@slicerx/settings'
 
 /** A modifier's settings from a file: the same plain values only (no text, scripts, credentials or printer keys). */
 export function modifierSettings(raw: Record<string, string>): Record<string, SettingValue> {

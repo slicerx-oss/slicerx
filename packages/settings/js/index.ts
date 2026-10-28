@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // @slicerx/settings. See README.md for the public API.
-export { applyEasy, goalEasy, matchGoal, easyControlFor, EASY_MAP } from './easy'
+export { applyEasy, goalEasy, matchGoal, easyControlFor, EASY_MAP, layerConfig, nearestGoalBy, SLICERX_PRESET_DEFAULTS } from './easy'
 export { SETTINGS, SETTING_NOTES, PROJECT_KEYS, ORCA_COMMIT, registerSettingText, clearSettingText, settingDef, settingsFor, invalidates, defaultConfig } from './schema'
 export { importFlat, importOrcaProfile, exportOrcaProfile, mergeConfigs, mergeLayers, ProfileError, PROFILE_META_KEYS, LEGACY_KEYS, LEGACY_GROUPS } from './import'
 export { validate, checkValues, checkConflicts, missingKeys, typeOneTower, unavailableIn } from './validate'
@@ -23,6 +23,8 @@ export { smartLayerBounds, smartLayerLimits, smartLayerWindow, isSmartLayerOn, S
 export { searchProfiles, setProfileProvider } from './profilesearch'
 export type { PrinterProfileHit, ProfileProvider } from './profilesearch'
 export { hasResolved, resolvedNozzles, resolvedProfile } from './resolved'
+export { applyExtruders, GCODE_KEYS, perSlot, pickExtruderVariant, pickVariant, stockLayer } from './stock-layer'
+export type { SlotFilament, StockLayer, StockLayerInput } from './stock-layer'
 export type { ResolvedProfile } from './resolved'
 export { machineEntry, gcodeStatus, listPrinterProfiles, printerProfile, printerConfig, listFilamentProfiles, filamentConfig, filamentSources, listProcessPresets, processConfig, profileConfig } from './profiles'
 export type { PrinterProfile, FilamentProfile, ProcessPreset } from './profiles'
@@ -42,5 +44,10 @@ export { FILAMENT_LIBRARY_VENDOR, filamentsForPrinter, isCompatibleWithPrint, is
 export type { CompatPreset, OfferedFilament, PrinterContext } from './compat'
 export { lintGcode } from './gcode-lint'
 export type { LintFinding, LintLimits, LintSection, LintSeverity, LintTrust } from './gcode-lint'
+export { carryOver, matchProjectPrinter, nozzleBound, projectPrinterChanges, projectSettingChanges } from './project-open'
+export { withBambuMissingKeys } from './app-defaults'
+export { BED_TYPE_ENGINE, printerBedType, settingsBedType, sliceBedType } from './bed-type'
+export type { BedType } from './bed-type'
+export type { ProjectPrinterChanges, ProjectPrinterMatch, ProjectSettings } from './project-open'
 export { GCODE_TEXT_KEYS, gcodeFingerprint, gcodeLabel, gcodeSection, isStockGcode, normalizeGcode, reviewProjectGcode } from './gcode-review'
 export type { GcodeChange, GcodeDiffLine, GcodeFlag, GcodeKept, GcodeReview, GcodeReviewInput } from './gcode-review'

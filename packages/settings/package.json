@@ -20,6 +20,7 @@
     "./app-defaults": "./js/app-defaults.ts",
     "./box-pack": "./js/box-pack.ts",
     "./easy": "./js/easy.ts",
+    "./bed-type": "./js/bed-type.ts",
     "./defaults.json": "./defaults.json"
   },
   "scripts": {
