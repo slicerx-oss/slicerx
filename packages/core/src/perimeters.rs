@@ -1632,6 +1632,14 @@ pub(crate) fn classic_top_candidate(
     })
 }
 
+/// Whether fixed-width walls lay the first inner wall the mean of the two widths in from the outer wall, as
+/// `precise_outer_wall` does with the inner walls printed first, rather than the mean of the two spacings. The
+/// walls and the surface edge read this one switch, so the two never disagree.
+pub(crate) fn precise_inner_walls(cfg: &crate::config::PrintConfig) -> bool {
+    crate::tower::flag_or(cfg, "precise_outer_wall", true)
+        && cfg.wall_sequence == crate::config::WallSequence::InnerOuter
+}
+
 /// [`walls_for`] with the neighbor layers known, so `only_one_wall_top` can give top surfaces one wall.
 /// `one_wall_layer`: `only_one_wall_first_layer` or `only_one_wall_top` took the layer's walls down to one.
 /// `narrow`: the layer's surfaces, where with fixed-width walls at sparse infill density 0 a narrow piece the lines
@@ -1674,9 +1682,7 @@ pub(crate) fn walls_for_top(
         // wall sits the average width from the outer one under `precise_outer_wall`, else the
         // average pitch.
         let pitch = |width: i32| mm(cfg.spacing_for(f64::from(width) / crate::geom::SCALE));
-        let precise = crate::tower::flag_or(cfg, "precise_outer_wall", true)
-            && cfg.wall_sequence == crate::config::WallSequence::InnerOuter;
-        let spacing2 = if precise {
+        let spacing2 = if precise_inner_walls(cfg) {
             i32::midpoint(ext, inner)
         } else {
             i32::midpoint(pitch(ext), pitch(inner))

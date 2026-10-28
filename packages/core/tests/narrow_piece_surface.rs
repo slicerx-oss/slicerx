@@ -339,24 +339,25 @@ fn lines_across_a_strip_print_once_they_fit_and_it_keeps_gap_fill_before() {
     }
 }
 
-/// N-e. Voron 2.4, fixed-width walls, no sparse infill: 2.364 mm (R = s0 by the surface's own inset) prints one top
-/// line 0.400 mm wide down the middle; 2.346 mm (R = 0.95 s0) keeps its gap fill.
+/// N-e. Voron 2.4, fixed-width walls, no sparse infill, the precise outer wall on: 2.453 mm (R just over s0 by the
+/// surface's own inset, which follows the precise inner walls) prints one top line 0.403 mm wide down the middle;
+/// 2.435 mm (R = 0.95 s0) keeps its gap fill.
 #[test]
 fn voron_strips_switch_to_one_line_at_one_spacing() {
     let (top, _) = measure("voron-2.4-300--n4-cl-sp0-al-flo");
-    lines_along(strip(&top, "2.364"), 1, 0.400, Some(1.182), "top 2.364");
-    gap_only(strip(&top, "2.346"), "Top surface", "top 2.346");
+    lines_along(strip(&top, "2.453"), 1, 0.403, Some(1.2265), "top 2.453");
+    gap_only(strip(&top, "2.435"), "Top surface", "top 2.435");
 }
 
-/// N-f. MK4 first layer (its own wider lines), no sparse infill: 2.911 mm prints one bottom line 0.507 mm wide down
-/// the middle; 2.877 mm keeps its gap fill.
+/// N-f. MK4 first layer (its own wider lines), no sparse infill, the precise outer wall on: 2.977 mm prints one bottom
+/// line 0.487 mm wide down the middle; 2.944 mm keeps its gap fill.
 #[test]
 fn mk4_first_layer_strips_switch_to_one_bottom_line() {
     let (_, first) = measure("prusa-mk4--n4-cl-sp0-al");
-    let r = strip(&first, "2.911");
-    lines_along(r, 1, 0.507, None, "first 2.911");
-    assert!((r.m0 - r.m1).abs() <= 0.002, "first 2.911: {r:?}");
-    gap_only(strip(&first, "2.877"), "Bottom surface", "first 2.877");
+    let r = strip(&first, "2.977");
+    lines_along(r, 1, 0.487, None, "first 2.977");
+    assert!((r.m0 - r.m1).abs() <= 0.002, "first 2.977: {r:?}");
+    gap_only(strip(&first, "2.944"), "Bottom surface", "first 2.944");
 }
 
 /// N-g. Voron 2.4, variable-width walls: 2.585 mm (the walls leave a hair under one inner spacing) prints walls only;

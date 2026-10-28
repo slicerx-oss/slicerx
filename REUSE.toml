@@ -22,7 +22,7 @@ SPDX-License-Identifier = "Apache-2.0"
 # The makers' stock printer, filament and process profiles, from the profile resources of
 # OrcaSlicer and Bambu Studio.
 [[annotations]]
-path = ["packages/profiles/gcode.json", "packages/profiles/machine.json", "packages/profiles/process-speeds.json", "packages/profiles/filaments/**", "packages/profiles/resolved/**", "packages/profiles/overlays/**", "packages/core/tests/fixtures/surface-walls/*-f4strips.json", "packages/core/tests/fixtures/surface-walls/p1s-x-mark.json", "packages/core/tests/fixtures/narrow-piece-surface/requests/*.json"]
+path = ["packages/profiles/gcode.json", "packages/profiles/machine.json", "packages/profiles/process-speeds.json", "packages/profiles/filaments/**", "packages/profiles/resolved/**", "packages/profiles/overlays/**", "packages/core/tests/fixtures/surface-walls/*-f4strips.json", "packages/core/tests/fixtures/surface-walls/p1s-x-mark.json", "packages/core/tests/fixtures/narrow-piece-surface/requests/*.json", "packages/core/tests/fixtures/precise-wall-surface/requests/*.json"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = ["The OrcaSlicer and Bambu Studio contributors and the printer makers", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "AGPL-3.0-or-later"
