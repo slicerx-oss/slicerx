@@ -99,15 +99,26 @@ function wallsProject(dir: string, name: string, changed: string | undefined, ge
 }
 
 describe("SlicerX's engine choices in an opened project", () => {
-  it('keep aegis walls when a project for another printer inherited classic walls', async () => {
+  it('keep the classic walls a stock project for another printer inherited', async () => {
     const h = await connect()
-    const read = readProjectFile(wallsProject(h.dir, 'inherited.3mf', 'sparse_infill_density', 'classic', 'Acme Printer 9000'))
-    // SlicerX's own values (engine-choices.json), as sx slice <project.3mf> uses them.
+    for (const printer of ['Elegoo Centauri Carbon', 'Acme Printer 9000']) {
+      const read = readProjectFile(wallsProject(h.dir, 'inherited.3mf', 'sparse_infill_density', 'classic', printer))
+      expect(read.config['wall_generator'], printer).toBe('classic')
+      expect(read.summary.import_report.walls, printer).toEqual({ generator: 'classic', source: 'project', text: 'classic walls, as the project has them' })
+      // The project's own precise outer wall.
+      expect(read.config['precise_outer_wall']).toBe(true)
+      const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'inherited.3mf', config: read.config } })
+      expect(r.config['wall_generator'], printer).toBe('classic')
+    }
+  })
+
+  it('take aegis walls a project for another printer chose, and an aegis override over inherited classic', async () => {
+    const h = await connect()
+    const read = readProjectFile(wallsProject(h.dir, 'elegoo-aegis.3mf', 'wall_generator;sparse_infill_density', 'aegis', 'Elegoo Centauri Carbon'))
     expect(read.config['wall_generator']).toBe('aegis')
-    expect(read.summary.import_report.walls).toEqual({ generator: 'aegis', source: 'kept', text: "aegis walls, kept by SlicerX; the project used its preset's default classic" })
-    // The project's own precise outer wall.
-    expect(read.config['precise_outer_wall']).toBe(true)
-    const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], undefined, { project: { name: 'inherited.3mf', config: read.config } })
+    expect(read.summary.import_report.walls?.text).toBe("aegis walls, the project's own choice")
+    const stock = readProjectFile(wallsProject(h.dir, 'elegoo.3mf', 'sparse_infill_density', 'classic', 'Elegoo Centauri Carbon'))
+    const r = resolveSliceConfig(h.ctx.store, h.ctx.profiles, [], { wall_generator: 'aegis' }, { project: { name: 'elegoo.3mf', config: stock.config } })
     expect(r.config['wall_generator']).toBe('aegis')
   })
 
@@ -266,7 +277,7 @@ describe("a project's top_one_wall_type", () => {
 })
 
 describe('a project read for slicing', () => {
-  it("keeps SlicerX's engine choices at SlicerX's values and reads the painted color depths", async () => {
+  it("keeps the project's inherited walls and reads the painted color depths", async () => {
     const h = await connect()
     const path = join(h.dir, 'kept.3mf')
     writeFileSync(
@@ -289,11 +300,25 @@ describe('a project read for slicing', () => {
       ]),
     )
     const read = readProjectFile(path)
-    expect(read.config['wall_generator']).toBe('aegis')
+    expect(read.config['wall_generator']).toBe('classic')
     // The project's own precise outer wall, even though it inherited it, as sx slice <project.3mf> keeps it.
     expect(read.config['precise_outer_wall']).toBe(false)
     expect(read.config['top_color_penetration_layers']).toBe(5)
     expect(read.config['bottom_color_penetration_layers']).toBe(3)
     expect(read.summary.import_report.other_slicer).toEqual([])
+  })
+})
+
+describe('a plain model on a printer', () => {
+  it("prints with a Bambu Lab printer's classic preset walls, aegis elsewhere, and an aegis override wins", async () => {
+    const h = await connect()
+    const walls = async (names: string[], overrides?: Record<string, unknown>) => {
+      await h.ctx.profiles.prepare(names)
+      return resolveSliceConfig(h.ctx.store, h.ctx.profiles, names, overrides).explicit['wall_generator']
+    }
+    expect(await walls(['machine:bambu-a1'])).toBe('classic')
+    expect(await walls(['machine:bambu-p1s'])).toBe('classic')
+    expect(await walls(['machine:prusa-mk4'])).toBe('aegis')
+    expect(await walls(['machine:bambu-a1'], { wall_generator: 'aegis' })).toBe('aegis')
   })
 })

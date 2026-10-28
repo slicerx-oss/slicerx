@@ -63,7 +63,7 @@ Each name marks something SlicerX does its own way, or better than the slicers i
 |---|---|
 | **mimir** | The assistant. It answers questions, reads your printer's camera, and suggests fixes you approve. |
 | **huginn and muninn** | mimir's two model tiers: huginn takes a quick look, muninn thinks deep. huginn also watches the printer's camera and pauses the print when a hand reaches in. |
-| **aegis** | Variable-width walls, the default. Thin features print solid, with far fewer width changes than Arachne. |
+| **aegis** | Variable-width walls, the default on most printers (Bambu Lab printers and opened projects keep their presets' walls). Thin features print solid, with far fewer width changes than Arachne. |
 | **sleipnir** | Adaptive layer height: thin layers on curves and slopes, thick on straight walls. |
 | **atlas** | A prime tower that places and sizes itself. |
 | **norn** | Edit from Preview: click a toolpath, change the setting behind it, and see before and after. |

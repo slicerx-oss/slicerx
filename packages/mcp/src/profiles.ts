@@ -4,7 +4,7 @@
 // printer and filament presets from knowledge/, and the Easy intent presets.
 import type { EasyGoal, SettingSection, SettingValue } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
-import { applyEasy, EASY_MAP, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, printerConfig, printerProfile, processConfig, resolvedNozzles, resolvedProfile, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
+import { applyEasy, EASY_MAP, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, defaultWallGenerator, printerConfig, printerProfile, processConfig, resolvedNozzles, resolvedProfile, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore } from './data'
 import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileByName, sameValue } from './settings'
 
@@ -46,12 +46,13 @@ const STOCK_FILAMENT = 'stock-filament:'
 
 /**
  * A fresh SlicerX plate's process: the Standard preset (0.20 mm) with sleipnir (variable layer height, Quality) and
- * aegis walls. The default when a slice names no process. sx plans sleipnir's layers itself, with the planner the
+ * SlicerX's preset defaults (aegis walls; a Bambu Lab printer keeps its presets' classic walls, as in the app). The
+ * default when a slice names no process. sx plans sleipnir's layers itself, with the planner the
  * app uses, so a slice through this server gets the app's layers. It sets no supports: the slice takes them from the
  * printer (`ProfileCatalog.defaultSupports`), as the app does.
  */
 export const SLICERX_DEFAULT_PROCESS = 'process:slicerx-default'
-const DEFAULT_PROCESS_KEYS = { smart_layer: 'quality', wall_generator: 'aegis' } as const
+const DEFAULT_PROCESS_KEYS = { smart_layer: 'quality' } as const
 
 /** The keys the Easy supports control writes. */
 export const SUPPORT_KEYS: readonly string[] = [...new Set(EASY_MAP.rules.filter((r) => r.control === 'supports').flatMap((r) => (r.op === 'set' ? [r.key] : r.keys)))]
@@ -202,7 +203,9 @@ export class ProfileCatalog {
     if (summary.id === SLICERX_DEFAULT_PROCESS) {
       const config = processConfig('standard', nozzle, printer?.printerId) as unknown as Record<string, SettingValue> | undefined
       const own = config ? Object.fromEntries(Object.entries(config).filter(([k]) => !SUPPORT_KEYS.includes(k))) : undefined
-      return own ? { ...summary, config: { ...own, ...DEFAULT_PROCESS_KEYS }, chain: ['Standard', summary.name], unknown_keys: [] } : undefined
+      // The printer's model picks the walls: a Bambu Lab printer's presets' classic, else aegis (as sx and the app do).
+      const machine = printer ? (printerConfig(printer.printerId, nozzle) as unknown as Record<string, unknown> | undefined) : undefined
+      return own ? { ...summary, config: { ...own, ...DEFAULT_PROCESS_KEYS, wall_generator: defaultWallGenerator(machine ?? {}) }, chain: ['Standard', summary.name], unknown_keys: [] } : undefined
     }
     if (kind === 'process') {
       const config = processConfig(id, nozzle, printer?.printerId)

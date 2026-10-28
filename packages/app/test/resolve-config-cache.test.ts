@@ -23,7 +23,8 @@ describe('resolveConfig cache', () => {
     const preset = resolveConfig(easy, overrides)
     expect(preset).not.toEqual(kept[0])
     expect(resolveConfig(easy, overrides)).toEqual(resolveConfig({ ...easy }, { ...overrides }))
-    expect(preset['wall_generator']).toBe('aegis')
+    // The P1S preset's own classic walls: SlicerX's aegis default leaves Bambu Lab printers alone.
+    expect(preset['wall_generator']).toBe('classic')
   })
 
   it('builds again for a new easy, overrides or profile layer object', async () => {

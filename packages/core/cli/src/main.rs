@@ -1191,8 +1191,10 @@ fn layered_config(args: &[String], model: &str, bytes: &[u8], object: &Value) ->
         preset = Some(value);
     }
     if report.walls.is_none() {
-        report.walls = Some(sx_core::api::WallsNote::of_request(
-            &serde_json::Map::new(),
+        // No layer named a generator: the one the printer's presets use.
+        config.stock_walls();
+        report.walls = Some(sx_core::api::WallsNote::engine_default(
+            &config.raw,
             "the settings",
         ));
     }
