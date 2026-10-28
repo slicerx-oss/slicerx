@@ -79,6 +79,19 @@ describe('prusaObjectOverrides', () => {
     expect(prusaObjectOverrides({ perimeter_extrusion_width: '0.55' }, project)).toEqual({ inner_wall_line_width: '0.55' })
     expect(prusaObjectOverrides({ perimeters: '3' }, project)).toEqual({ wall_loops: '3' })
   })
+
+  it("takes a width of 0 as the object's general width", () => {
+    const auto = ['layer_height = 0.1', 'extrusion_width = 250%', 'perimeter_extrusion_width = 0', 'support_material_extrusion_width = 0', 'top_infill_extrusion_width = 0', 'external_perimeter_extrusion_width = 0.6', 'nozzle_diameter = 0.6'].map((l) => `; ${l}`).join('\n')
+    // 250% of the object's own 0.3 mm layers, for the general width and each width left at 0; an outer wall in mm stays the project's.
+    const o = prusaObjectOverrides({ layer_height: '0.3' }, auto)
+    for (const k of ['line_width', 'inner_wall_line_width', 'support_line_width', 'top_surface_line_width']) expect(o[k], k).toBe('0.75')
+    expect(o['outer_wall_line_width']).toBeUndefined()
+    // The object's own general width in mm, and at 0 the support at the project's 0.6 nozzle.
+    expect(prusaObjectOverrides({ extrusion_width: '0.5' }, auto)['inner_wall_line_width']).toBe('0.5')
+    expect(prusaObjectOverrides({ extrusion_width: '0' }, auto)).toEqual({ line_width: '0', support_line_width: '0.6' })
+    // A general width in mm with the object's own layer height is the project's, already in the project's settings.
+    expect(prusaObjectOverrides({ layer_height: '0.3' }, auto.replace('250%', '0.5'))).toEqual({ layer_height: '0.3' })
+  })
 })
 
 describe('takesProjectValue', () => {

@@ -371,6 +371,17 @@
   "support_material_extrusion_width": "layer_height",
   "support_material_xy_spacing": "external_perimeter_width"
  },
+ "zeroWidthFallback": [
+  "external_perimeter_extrusion_width",
+  "perimeter_extrusion_width",
+  "infill_extrusion_width",
+  "solid_infill_extrusion_width",
+  "top_infill_extrusion_width",
+  "support_material_extrusion_width"
+ ],
+ "zeroWidthNozzle": {
+  "support_material_extrusion_width": 1
+ },
  "ignoredPattern": "^(display_|exposure|initial_exposure|min_exposure|max_exposure|min_initial|max_initial|pad_|hollowing_|tilt_|material_|sla_|bottle_|faded_layers|gamma_correction|relative_correction|absolute_correction|elefant_foot_min_width|zcorrection|support_points|supports_enable|support_tree_type|support_enforcers_only|delay_|fast_tilt|slow_tilt|high_viscosity|use_tilt|tower_|area_fill|default_sla_)",
  "ignoredKeys": [
   "bed_custom_model",
