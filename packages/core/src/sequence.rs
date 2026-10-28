@@ -607,6 +607,60 @@ fn in_object_order(session: &SliceSession, config: &PrintConfig, l: &mut LayerPa
     src.runs = new_runs;
 }
 
+/// Puts each filament's paths of a merged layer (`groups`, path indexes in the layer's object order) in the order of
+/// that filament's objects alone (`objorder::run`), when the layer has several filaments: an object of several
+/// filaments takes its place among each one's objects. Each object's paths keep their order, and the paths of no
+/// object the layer starts with (the skirt) stay first.
+fn in_run_order(session: &SliceSession, l: &LayerPaths, src: &Sources, groups: &mut [Vec<usize>]) {
+    if groups.len() < 2 || src.runs.len() < 2 {
+        return;
+    }
+    let subs: Vec<&SliceSession> = session.sequence().collect();
+    let plate = |k: usize| subs.get(k).map_or(u16::MAX, |s| s.plate_index());
+    // The layer's objects, numbered by plate object for the order's ties.
+    let mut objects: Vec<usize> = src.runs.iter().map(|r| r.0).collect();
+    crate::sorting::sort_by_key(&mut objects, |&k| plate(k));
+    objects.dedup();
+    let centers: Vec<[f64; 2]> = objects
+        .iter()
+        .map(|&k| {
+            session
+                .footprints()
+                .get(usize::from(plate(k)))
+                .map_or([0.0, 0.0], |o| o.center)
+        })
+        .collect();
+    let lead = l
+        .paths
+        .iter()
+        .take_while(|p| p.owner == crate::preview::OBJECT_NONE)
+        .count();
+    for group in groups.iter_mut() {
+        let of: Vec<usize> = group.iter().map(|&i| src.object_of(i)).collect();
+        let with = |j: usize| objects.get(j).is_some_and(|k| of.contains(k));
+        // A run of every object on the layer prints in the layer's order.
+        if (0..objects.len()).all(&with) {
+            continue;
+        }
+        let mut place: Vec<(usize, usize)> = Vec::new();
+        for (n, j) in crate::objorder::run(&centers, with).into_iter().enumerate() {
+            if let Some(&k) = objects.get(j) {
+                place.push((k, n + 1));
+            }
+        }
+        let key = |(i, k): &(usize, usize)| {
+            if *i < lead {
+                0
+            } else {
+                place.iter().find(|p| p.0 == *k).map_or(usize::MAX, |p| p.1)
+            }
+        };
+        let mut keyed: Vec<(usize, usize)> = group.iter().copied().zip(of).collect();
+        crate::sorting::sort_by_key(&mut keyed, key);
+        *group = keyed.into_iter().map(|(i, _)| i).collect();
+    }
+}
+
 /// Each object's layer was slowed for cooling on its own; the speeds before that go along with its paths into the
 /// merged layer, so the cooling slowdown is worked out again for the whole layer (`gcode::settle_cooling`).
 fn join_speeds(dst: &mut LayerPaths, l: &LayerPaths) {
@@ -692,8 +746,7 @@ fn print_as_plate(
             session,
             config_of(configs, config, l.cfg),
             g,
-            start,
-            order,
+            (start, order, !crate::objorder::list_order(config)),
             &mut l,
             &src,
         );
@@ -706,12 +759,12 @@ fn print_as_plate(
 /// [`print_as_plate`] for one layer, plate layer `g`, that starts on filament `start` and prints its filaments in
 /// `order` (filaments the plan does not have follow as they come, so where the layer ends does not depend on where it
 /// starts, and a range that starts on the next layer starts as the whole plate does).
+/// With `runs` (not object list order) each filament's objects print in the order of those objects alone.
 fn print_layer_as_plate(
     session: &SliceSession,
     layer_cfg: &PrintConfig,
     g: u32,
-    start: u8,
-    order: &[u8],
+    (start, order, runs): (u8, &[u8], bool),
     l: &mut LayerPaths,
     src: &Sources,
 ) {
@@ -728,7 +781,7 @@ fn print_layer_as_plate(
         .chain(extra)
         .collect();
     // Each filament's paths, the objects in the layer's order.
-    let groups: Vec<Vec<usize>> = tools
+    let mut groups: Vec<Vec<usize>> = tools
         .iter()
         .map(|&t| {
             (0..l.paths.len())
@@ -736,6 +789,9 @@ fn print_layer_as_plate(
                 .collect()
         })
         .collect();
+    if runs {
+        in_run_order(session, l, src, &mut groups);
+    }
     // The print's first layer prints with its own line widths, the tower's too.
     let first = matches!(session.plate_tower_layer(layer_cfg, g, start), Some((at, None)) if at.first);
     let first_cfg;

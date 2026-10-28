@@ -15,6 +15,10 @@
 //! are taken in the order of their objects' numbers (the lower number of each pair first, then the higher), and of
 //! two objects equally near the origin the one with the lower number ends the path. The numbers are the objects'
 //! places in the slice `centers` the caller gives, which is plate order.
+//!
+//! A layer with several filaments prints as runs of one filament each, and each run orders only its own objects
+//! (`run`): the objects that print with that filament on the layer, so every run ends at its own object nearest the
+//! origin. An object that prints with several filaments is in each of their runs.
 
 use crate::geom::SCALE;
 
@@ -122,6 +126,18 @@ pub(crate) fn order(centers: &[[f64; 2]]) -> Vec<usize> {
     walk
 }
 
+/// The print order of one filament's run on a layer: of the layer's objects, whose centers are `centers` (in plate
+/// order), the ones `with` passes (those that print with that filament there), in the order of those objects alone.
+/// Indexes into `centers`, first printed first.
+pub(crate) fn run(centers: &[[f64; 2]], with: impl Fn(usize) -> bool) -> Vec<usize> {
+    let picked: Vec<usize> = (0..centers.len()).filter(|&i| with(i)).collect();
+    let own: Vec<[f64; 2]> = picked.iter().filter_map(|&i| centers.get(i).copied()).collect();
+    order(&own)
+        .into_iter()
+        .filter_map(|k| picked.get(k).copied())
+        .collect()
+}
+
 /// Whether the plate prints its objects in object list order on every layer (`print_order`).
 pub(crate) fn list_order(cfg: &crate::config::PrintConfig) -> bool {
     matches!(cfg.raw.get("print_order"), Some(serde_json::Value::String(t)) if t == "as_obj_list")
@@ -129,7 +145,7 @@ pub(crate) fn list_order(cfg: &crate::config::PrintConfig) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::order;
+    use super::{order, run};
 
     fn named(centers: &[(char, [f64; 2])]) -> String {
         let pts: Vec<[f64; 2]> = centers.iter().map(|c| c.1).collect();
@@ -196,5 +212,64 @@ mod tests {
         assert_eq!(named(&pts), "DCAB");
         // Two objects equally near the origin: the lower number ends the path.
         assert_eq!(order(&[[30.0, 40.0], [40.0, 30.0]]), [1, 0]);
+    }
+
+    /// The run of the objects whose filaments (in `fil`, one digit each) hold `tool`, of all the objects on a layer.
+    fn run_of(centers: &[(char, [f64; 2])], fil: &[&str], tool: char) -> String {
+        let pts: Vec<[f64; 2]> = centers.iter().map(|c| c.1).collect();
+        run(&pts, |i| fil.get(i).is_some_and(|f| f.contains(tool)))
+            .into_iter()
+            .filter_map(|i| centers.get(i).map(|c| c.0))
+            .collect()
+    }
+
+    #[test]
+    fn each_filament_run_orders_its_own_objects() {
+        // Five objects, A and B on filament 2, C, D and E on filament 1. The layer's order is E D C A B, but the
+        // filament 1 run ends at its own object nearest the origin, D.
+        let s5 = [
+            ('A', [38.4, 153.6]),
+            ('B', [89.6, 51.2]),
+            ('C', [140.8, 217.6]),
+            ('D', [179.2, 115.2]),
+            ('E', [217.6, 38.4]),
+        ];
+        let fil = ["2", "2", "1", "1", "1"];
+        assert_eq!(named(&s5), "EDCAB");
+        assert_eq!(run_of(&s5, &fil, '1'), "CED");
+        assert_eq!(run_of(&s5, &fil, '2'), "AB");
+        // A of two filaments is in both runs.
+        let both = ["12", "2", "1", "1", "1"];
+        assert_eq!(run_of(&s5, &both, '1'), "EDCA");
+        assert_eq!(run_of(&s5, &both, '2'), "AB");
+        // Seven objects, C to G on filament 1 and A and B on filament 2.
+        let bl1 = [
+            ('A', [173.31, 198.40]),
+            ('B', [131.58, 111.87]),
+            ('C', [135.17, 160.00]),
+            ('D', [188.67, 59.14]),
+            ('E', [91.39, 173.82]),
+            ('F', [69.38, 219.90]),
+            ('G', [171.52, 158.98]),
+        ];
+        let fil = ["2", "2", "1", "1", "1", "1", "1"];
+        assert_eq!(named(&bl1), "FECGADB");
+        assert_eq!(run_of(&bl1, &fil, '1'), "FDGCE");
+        assert_eq!(run_of(&bl1, &fil, '2'), "AB");
+        // Another seven, A and C on filament 2: of two objects the one nearer the origin prints last.
+        let bl2 = [
+            ('A', [176.38, 47.10]),
+            ('B', [116.48, 98.82]),
+            ('C', [184.32, 90.88]),
+            ('D', [224.77, 77.31]),
+            ('E', [177.92, 214.53]),
+            ('F', [37.89, 48.64]),
+            ('G', [180.22, 151.04]),
+        ];
+        let fil = ["2", "1", "2", "1", "1", "1", "1"];
+        assert_eq!(run_of(&bl2, &fil, '1'), "DEGBF");
+        assert_eq!(run_of(&bl2, &fil, '2'), "CA");
+        // No object of the filament: an empty run.
+        assert_eq!(run_of(&bl2, &fil, '3'), "");
     }
 }
