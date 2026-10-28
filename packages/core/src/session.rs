@@ -271,9 +271,12 @@ pub struct SliceSession {
     /// top and the print layer of each object of the sequence printed in it (Orca pairs them by
     /// height). Empty when every object has the same layers.
     interleaved: Vec<(f64, Vec<Option<u32>>)>,
-    /// On a plate whose objects print layer by layer at layer heights of their own: how many of this object's
-    /// print layers lie on the plate's first `skirt_height` layers, which the skirt prints on. None otherwise.
-    plate_skirt: Option<u32>,
+    /// On a plate whose objects print layer by layer from sessions of their own: the plate's one skirt and the
+    /// skirts this object's session prints of it (`plan_plate_skirt`). None otherwise.
+    plate_skirt: Option<(std::sync::Arc<PlateSkirt>, Vec<SkirtTurn>)>,
+    /// On a plate whose objects print layer by layer from sessions of their own: the objects next to this one,
+    /// which its brim keeps clear of. None when no other object comes near.
+    near_brims: Option<Box<NearBrims>>,
     /// With features on filaments of their own: the filaments each object layer prints, from a
     /// slice of the whole plate at build time (as Orca collects the filaments of a plate). Empty
     /// otherwise.
@@ -1483,9 +1486,7 @@ impl SliceSession {
             }
             first.plan_interleaved();
             first.plan_plate_tools(config)?;
-            if mixed.is_some() {
-                first.plan_plate_skirt(config)?;
-            }
+            first.plan_plate_skirt(config, &own_cfgs);
         }
         Ok(first)
     }
@@ -1945,6 +1946,7 @@ impl SliceSession {
             stack: Vec::new(),
             interleaved: Vec::new(),
             plate_skirt: None,
+            near_brims: None,
             used_tools: Vec::new(),
             object_tools: Vec::new(),
             support_tools: Vec::new(),
@@ -3315,25 +3317,276 @@ impl SliceSession {
         self.interleaved = merged;
     }
 
-    /// The skirt of a plate whose objects have layer heights of their own counts the plate's layers: each object's
-    /// skirt prints on those of its layers that are among the plate's first `skirt_height`.
-    fn plan_plate_skirt(&mut self, config: &PrintConfig) -> Result<()> {
-        let mut counts = Vec::new();
-        for k in 0..self.sequence().count() {
-            let height = self.object_config(k, config)?.skirt_height as usize;
-            let on = self
-                .interleaved
+    /// The skirt of a plate whose objects print layer by layer from sessions of their own (settings or layer heights of
+    /// their own), as one session of the whole plate prints it: one skirt round every object and its brim at the
+    /// object's own width, kept `skirt_distance` from them, on the plate's first `skirt_height` layers, the whole of it
+    /// on each (every plate layer under a draft shield). With `skirt_type` per object the objects whose skirts would
+    /// reach each other share one, across the plate. On each plate layer the first object of the sequence that has a
+    /// layer there prints it (of a group, the group's first such object), so it prints before the objects. The brims
+    /// keep clear of the objects next to them and of the brims of the objects before them (`NearBrims`). A plate with
+    /// a raft keeps a skirt per object round its raft.
+    fn plan_plate_skirt(&mut self, config: &PrintConfig, cfgs: &[PrintConfig]) {
+        if !self.interleave
+            || self.followers.is_empty()
+            || !self.instances.is_empty()
+            || self.sequence().any(|s| s.raft.is_some())
+        {
+            return;
+        }
+        let firsts: Vec<PrintConfig> = cfgs.iter().map(PrintConfig::for_first_layer).collect();
+        let brims: Vec<(Shapes, Shapes)> = self
+            .sequence()
+            .zip(&firsts)
+            .map(|(s, c)| s.first_brim(c))
+            .collect();
+        let gaps: Vec<i32> = firsts
+            .iter()
+            .map(|c| mm(c.raw_number("brim_object_gap", 0.0).clamp(0.0, 2.0) + brim_spacing(c)))
+            .collect();
+        let mut near: Vec<Option<Box<NearBrims>>> = (0..brims.len())
+            .map(|k| near_brims(&brims, gaps.get(k).copied().unwrap_or(0), k))
+            .collect();
+        let mut near_iter = near.iter_mut();
+        if let Some(n) = near_iter.next() {
+            self.near_brims = n.take();
+        }
+        for (f, n) in self.followers.iter_mut().zip(near_iter) {
+            f.near_brims = n.take();
+        }
+        let shield =
+            matches!(config.raw.get("draft_shield"), Some(serde_json::Value::String(t)) if t == "enabled");
+        if config.skirt_loops == 0 && !shield {
+            return;
+        }
+        // Each plate layer's object layer of every object of the sequence, None where it has none (or prints only
+        // support there).
+        let plate: Vec<Vec<Option<u32>>> = if self.interleaved.is_empty() {
+            (0..self.plan_count())
+                .map(|g| self.sequence().map(|s| s.object_layer(g)).collect())
+                .collect()
+        } else {
+            self.interleaved
                 .iter()
-                .take(height)
-                .filter(|l| l.1.get(k).copied().flatten().is_some());
-            counts.push(u32::try_from(on.count()).unwrap_or(u32::MAX));
+                .map(|(_, of)| {
+                    self.sequence()
+                        .zip(of)
+                        .map(|(s, p)| p.and_then(|p| s.object_layer(p)))
+                        .collect()
+                })
+                .collect()
+        };
+        let height = if shield {
+            plate.len()
+        } else {
+            (config.skirt_height as usize).min(plate.len())
+        };
+        // What each object's skirt goes round, as a one-session plate collects it: its outlines on the layers the
+        // skirt reaches (its whole part under a draft shield), its first layer brim and its support on those layers.
+        let micros = Micros::default();
+        let occupied: Vec<Vec<IntPoint<i32>>> = self
+            .sequence()
+            .zip(cfgs.iter().zip(&firsts))
+            .zip(&brims)
+            .enumerate()
+            .map(|(k, ((s, (c, first)), (_, area)))| {
+                let mut pts: Vec<IntPoint<i32>> = area
+                    .iter()
+                    .filter_map(|sh| sh.first())
+                    .flat_map(|r| r.iter().copied())
+                    .collect();
+                if shield {
+                    pts.extend(
+                        s.parts
+                            .iter()
+                            .flat_map(|p| p.verts.iter())
+                            .map(|v| IntPoint::new(mm(v[0]), mm(v[1]))),
+                    );
+                }
+                let support = crate::collide::rules::support_runs(
+                    c.enable_support,
+                    c.support.manual,
+                    s.has_enforcers(),
+                );
+                for l in plate
+                    .iter()
+                    .take(height)
+                    .filter_map(|g| g.get(k).copied().flatten())
+                {
+                    let lc = if l == 0 { first } else { c };
+                    if !shield {
+                        let lr = s.layer_regions(l, Families::new(lc), &micros);
+                        let outline = match (&lr.lslices, &lr.raw) {
+                            (Some(o), _) | (None, Some(o)) => o.clone(),
+                            _ => perimeters::union_all(
+                                &lr.regions.iter().map(|(_, sh)| sh).collect::<Vec<_>>(),
+                            ),
+                        };
+                        pts.extend(
+                            outline
+                                .iter()
+                                .filter_map(|sh| sh.first())
+                                .flat_map(|r| r.iter().copied()),
+                        );
+                    }
+                    if support
+                        && let Some(areas) = s.support_at(lc, l).and_then(|(sl, ..)| support_islands(sl))
+                    {
+                        pts.extend(
+                            areas
+                                .islands
+                                .iter()
+                                .filter_map(|sh| sh.first())
+                                .flat_map(|r| r.iter().copied()),
+                        );
+                    }
+                }
+                convex_hull(pts)
+            })
+            .collect();
+        // The objects of each skirt: all of them, or with `skirt_type` per object the groups whose skirts would
+        // reach each other (as `skirt_groups` merges them).
+        let per_object = !shield
+            && occupied.len() > 1
+            && matches!(config.raw.get("skirt_type"), Some(serde_json::Value::String(t)) if t == "perobject");
+        let mut groups: Vec<(Vec<usize>, Vec<IntPoint<i32>>)> = if per_object {
+            occupied
+                .iter()
+                .enumerate()
+                .filter(|(_, h)| h.len() >= 3)
+                .map(|(k, h)| (vec![k], h.clone()))
+                .collect()
+        } else {
+            // One skirt goes round the plate's prime tower too, its first layer as it prints.
+            let mut all: Vec<IntPoint<i32>> = occupied.iter().flatten().copied().collect();
+            if let Some(tools) = self.plate_tools.as_deref().filter(|t| t.tower_top.is_some())
+                && let Some(t) = self
+                    .tower_with(config, tools.tower_height)
+                    .map(|t| self.tower_origin.map_or(t, |o| t.at(o)))
+            {
+                for [x, y] in t.first_layer_corners() {
+                    let p = crate::geom::Point::from_mm(x, y);
+                    all.push(IntPoint::new(p.x, p.y));
+                }
+            }
+            vec![((0..occupied.len()).collect(), convex_hull(all))]
+        };
+        let reach = mm(config.skirt_distance + f64::from(config.skirt_loops) * skirt_spacing_mm(config));
+        loop {
+            let pair = groups.iter().enumerate().find_map(|(i, g)| {
+                groups
+                    .iter()
+                    .enumerate()
+                    .skip(i + 1)
+                    .find_map(|(j, h)| (hull_gap(&g.1, &h.1) < 2.0 * f64::from(reach)).then_some((i, j)))
+            });
+            let Some((i, j)) = pair else { break };
+            let other = groups.remove(j);
+            if let Some(g) = groups.get_mut(i) {
+                g.0.extend(other.0);
+                g.0.sort_unstable();
+                g.1 = convex_hull(g.1.iter().chain(other.1.iter()).copied().collect());
+            }
         }
-        let mut counts = counts.into_iter();
-        self.plate_skirt = counts.next();
-        for (f, n) in self.followers.iter_mut().zip(counts) {
-            f.plate_skirt = Some(n);
+        let mut turns: Vec<Vec<SkirtTurn>> = vec![Vec::new(); occupied.len()];
+        for (g, of) in plate.iter().enumerate().take(height) {
+            for (hull, (members, _)) in groups.iter().enumerate() {
+                let by = members
+                    .iter()
+                    .copied()
+                    .find(|&k| of.get(k).copied().flatten().is_some())
+                    .or_else(|| (0..of.len()).find(|&k| of.get(k).copied().flatten().is_some()));
+                if let Some(k) = by
+                    && let (Some(Some(layer)), Some(t)) = (of.get(k).copied(), turns.get_mut(k))
+                {
+                    t.push(SkirtTurn {
+                        layer,
+                        plate: u32::try_from(g).unwrap_or(u32::MAX),
+                        hull,
+                    });
+                }
+            }
         }
-        Ok(())
+        let plan = std::sync::Arc::new(PlateSkirt {
+            hulls: groups.into_iter().map(|g| g.1).collect(),
+            cfg: config.clone(),
+            first: config.for_first_layer(),
+            tools: usize::from(self.tool_count),
+            room: skirt_room(config),
+        });
+        let mut turns = turns.into_iter();
+        self.plate_skirt = Some((std::sync::Arc::clone(&plan), turns.next().unwrap_or_default()));
+        for (f, t) in self.followers.iter_mut().zip(turns) {
+            f.plate_skirt = Some((std::sync::Arc::clone(&plan), t));
+        }
+    }
+
+    /// The first layer's outline and the brim areas around it (all its islands' together), before they are cut to the
+    /// bed, the support or each other: where the brim of layer 0 can reach (`layer_finish`). `cfg` is the first
+    /// layer's settings. No areas over a raft or without a brim.
+    fn first_brim(&self, cfg: &PrintConfig) -> (Shapes, Shapes) {
+        let here = self.layer_regions(0, Families::new(cfg), &Micros::default());
+        let outline = brim_outline(cfg, &here);
+        let kind = crate::brim::Kind::of(cfg);
+        let auto = kind == crate::brim::Kind::Auto;
+        if self.raft.is_some() || kind == crate::brim::Kind::Off || !(cfg.brim_width > 0.0 || auto) {
+            return (outline, Vec::new());
+        }
+        let spacing = brim_spacing(cfg);
+        let gap = cfg.raw_number("brim_object_gap", 0.0).clamp(0.0, 2.0);
+        let height = self.plan.top(self.plan.count().saturating_sub(1));
+        let owners: Vec<usize> = if auto {
+            self.island_owners(&outline)
+        } else {
+            vec![0; outline.len()]
+        };
+        let widths = if auto {
+            self.auto_brim_widths(cfg, &outline, &owners, height)
+        } else {
+            Vec::new()
+        };
+        // Painted ears stand where the object carries them.
+        let ears: Vec<crate::brim::Ear> = self
+            .brim_ears
+            .iter()
+            .map(|(_, e)| {
+                let p = crate::geom::Point::from_mm(e[0], e[1]);
+                crate::brim::Ear {
+                    at: IntPoint::new(p.x, p.y),
+                    head_radius: e[3],
+                }
+            })
+            .collect();
+        let kind = if kind == crate::brim::Kind::Ears && !ears.is_empty() {
+            crate::brim::Kind::Painted
+        } else {
+            kind
+        };
+        let mut areas: Vec<Shapes> = Vec::new();
+        for (island, owner) in outline.iter().zip(&owners) {
+            let one: Shapes = vec![island.clone()];
+            let width = if auto {
+                let (w, h) = widths.get(*owner).copied().unwrap_or((0.0, height));
+                crate::brim::island_width(w, &one, h, spacing)
+            } else {
+                cfg.brim_width
+            };
+            let count = brim_loops(width, spacing);
+            if count > 0 {
+                areas.extend(crate::brim::island_areas(
+                    cfg,
+                    kind,
+                    &one,
+                    &outline,
+                    f64::from(count) * spacing,
+                    spacing,
+                    gap,
+                    &ears,
+                ));
+            }
+        }
+        let refs: Vec<&Shapes> = areas.iter().collect();
+        let all = perimeters::union_all(&refs);
+        (outline, all)
     }
 
     /// The layers of the plate printed layer by layer: each print layer's top and the print layer of
@@ -4153,7 +4406,7 @@ impl SliceSession {
         let tool = self.slots.first().copied().unwrap_or(1);
         // The skirt goes round the raft's first layer on the layers it is asked for.
         let skirt = if (config.skirt_loops > 0 || self.draft_hull.is_some())
-            && (p < self.plate_skirt.unwrap_or(config.skirt_height) || self.draft_hull.is_some())
+            && (p < config.skirt_height || self.draft_hull.is_some())
         {
             let columns = if raft.layers.len() > 1 {
                 self.raft_columns.clone()
@@ -10286,9 +10539,9 @@ impl SliceSession {
         } else {
             cfg
         };
-        let skirt_here = (cfg.skirt_loops > 0 || self.draft_hull.is_some())
-            && (layer + self.raft_layers() < self.plate_skirt.unwrap_or(cfg.skirt_height)
-                || self.draft_hull.is_some());
+        let skirt_here = self.plate_skirt.is_none()
+            && (cfg.skirt_loops > 0 || self.draft_hull.is_some())
+            && (layer + self.raft_layers() < cfg.skirt_height || self.draft_hull.is_some());
         // What else the skirt goes round on this layer, as OrcaSlicer's skirt collects it: the support's
         // paths, and on a plate with one skirt the prime tower's first layer.
         let mut skirt_extra: Vec<IntPoint<i32>> = Vec::new();
@@ -10433,7 +10686,30 @@ impl SliceSession {
             };
             let gap_mm = cfg.raw_number("brim_object_gap", 0.0).clamp(0.0, 2.0);
             let combine = crate::tower::flag_or(cfg, "combine_brims", true);
-            let bodies = perimeters::offset_round(&union, mm(gap_mm));
+            // On a plate whose objects come from sessions of their own, the objects next to this one are islands of
+            // the first layer too: no brim of this object runs into them (`NearBrims`).
+            let plate_islands: Shapes;
+            let islands = match self.near_brims.as_ref().filter(|n| !n.others.is_empty()) {
+                Some(n) => {
+                    plate_islands = perimeters::union_all(&[&union, &n.others]);
+                    &plate_islands
+                }
+                None => &union,
+            };
+            let bodies = perimeters::offset_round(islands, mm(gap_mm));
+            // Brims of two objects that would meet share the room between them (`brim::Claims`): with
+            // `combine_brims` off on a plate of several objects, and on a plate whose objects come from sessions of
+            // their own, where the objects before this one claim first.
+            let several = !combine && self.objects.len() > 1;
+            let objects_of: Vec<usize> = if several {
+                self.island_owners(&union)
+            } else {
+                vec![0; union.len()]
+            };
+            let mut claims = match &self.near_brims {
+                Some(n) => Some(crate::brim::Claims::after(&n.claimed)),
+                None => several.then(crate::brim::Claims::default),
+            };
             // No brim where the first support layer prints (in OrcaSlicer the support's first layer is a
             // no-brim area).
             // Trees are left out: Orca also draws a brim around their bases there, which is not built yet.
@@ -10480,7 +10756,7 @@ impl SliceSession {
             let bed = crate::brim::Bed::of(cfg);
             let mut by_slot: std::collections::BTreeMap<u8, Vec<Shapes>> = std::collections::BTreeMap::new();
             let mut finished: Vec<(u8, Vec<Vec<IntPoint<i32>>>)> = Vec::new();
-            for (island, owner) in union.iter().zip(&owners) {
+            for ((island, owner), object) in union.iter().zip(&owners).zip(&objects_of) {
                 let one: Shapes = vec![island.clone()];
                 let brim_mm = if auto_brim {
                     let (width, height) = per_object.get(*owner).copied().unwrap_or((0.0, object_height));
@@ -10504,7 +10780,11 @@ impl SliceSession {
                     _ => (brim_kind, painted_ears.as_slice()),
                 };
                 let areas =
-                    crate::brim::island_areas(cfg, kind, &one, &union, width_even, spacing_mm, gap_mm, ears);
+                    crate::brim::island_areas(cfg, kind, &one, islands, width_even, spacing_mm, gap_mm, ears);
+                let areas = match claims.as_mut() {
+                    Some(c) => c.take(*object, areas),
+                    None => areas,
+                };
                 let areas = clear(areas);
                 // As in OrcaSlicer, where each extruder reaches only part of the bed (H2D, H2C), a brim is cut to
                 // the reach of the extruder that prints it (the ring outside get_extruder_printable_polygons is a
@@ -10556,6 +10836,31 @@ impl SliceSession {
             let at = self.skirt_tool_at(cfg, &works, &skirt.paths);
             if let Some(w) = works.get_mut(at) {
                 w.skirt = skirt.paths;
+            }
+        }
+        // The plate's one skirt, on the layers this object's session prints it.
+        if let Some((plan, turns)) = &self.plate_skirt
+            && !works.is_empty()
+        {
+            let mut skirt = Skirt::default();
+            for t in turns.iter().filter(|t| t.layer == layer) {
+                let c = if t.plate == 0 { &plan.first } else { &plan.cfg };
+                if let Some(h) = plan.hulls.get(t.hull) {
+                    skirt.add(skirt_around(
+                        h.clone(),
+                        c,
+                        true,
+                        (plan.tools, t.plate),
+                        plan.room.as_ref(),
+                    ));
+                }
+            }
+            if !skirt.paths.is_empty() {
+                out.skirt_cut = skirt_cut(&skirt);
+                let at = self.skirt_tool_at(cfg, &works, &skirt.paths);
+                if let Some(w) = works.get_mut(at) {
+                    w.skirt = skirt.paths;
+                }
             }
         }
         // Painted seam pieces within reach of this layer.
@@ -11371,6 +11676,40 @@ fn skirt_loops(
 /// it. None when the settings name no printable area.
 fn skirt_room(cfg: &PrintConfig) -> Option<Shapes> {
     crate::brim::Bed::of(cfg).map(|bed| bed.room(mm(skirt_spacing_mm(cfg)) / 2))
+}
+
+/// What the brim of object `k` of a plate sliced in sessions of their own keeps clear of (`NearBrims`), from each
+/// object's first layer outline and brim areas (`SliceSession::first_brim`): the outlines of the objects within
+/// `reach` (internal units) of its brim, and the brim areas of the objects before it that meet its own. None when
+/// it has no brim or no other object comes near.
+fn near_brims(brims: &[(Shapes, Shapes)], reach: i32, k: usize) -> Option<Box<NearBrims>> {
+    let (_, area) = brims.get(k)?;
+    let own = perimeters::bounds(area)?;
+    let grown = Some([
+        own[0].saturating_sub(reach),
+        own[1].saturating_sub(reach),
+        own[2].saturating_add(reach),
+        own[3].saturating_add(reach),
+    ]);
+    let others: Vec<&Shapes> = brims
+        .iter()
+        .enumerate()
+        .filter(|(j, (o, _))| *j != k && perimeters::overlaps(perimeters::bounds(o), grown))
+        .map(|(_, (o, _))| o)
+        .collect();
+    let claimed: Vec<&Shapes> = brims
+        .iter()
+        .take(k)
+        .map(|(_, a)| a)
+        .filter(|a| perimeters::overlaps(perimeters::bounds(a), Some(own)))
+        .collect();
+    if others.is_empty() && claimed.is_empty() {
+        return None;
+    }
+    Some(Box::new(NearBrims {
+        others: perimeters::union_all(&others),
+        claimed: perimeters::union_all(&claimed),
+    }))
 }
 
 /// A layer's record of its skirt cut to the bed, when it was.
@@ -12215,6 +12554,41 @@ pub(crate) struct HandOver {
     pub changes: u32,
     /// With a filament map: what each nozzle holds at its end. Empty without a map.
     pub held: Vec<u8>,
+}
+
+/// The one skirt of a plate whose objects print layer by layer from sessions of their own, as one session of the
+/// whole plate prints it: the loops go round every object, on the plate's first `skirt_height` layers (every layer
+/// under a draft shield), with the plate's skirt settings.
+#[derive(Debug)]
+pub(crate) struct PlateSkirt {
+    /// What each skirt goes round: the objects' outlines on the layers the skirt reaches (the whole parts under a
+    /// draft shield), their first layer brims at each object's own width and their support on those layers. One
+    /// hull per group of objects with `skirt_type` per object, else one.
+    hulls: Vec<Vec<IntPoint<i32>>>,
+    /// The plate's settings, and those of its first layer.
+    cfg: PrintConfig,
+    first: PrintConfig,
+    /// The plate's filaments, for `min_skirt_length` counted extruder by extruder.
+    tools: usize,
+    /// Where the skirt may run ([`skirt_room`]).
+    room: Option<Shapes>,
+}
+
+/// One skirt an object's session prints for the plate: on its own layer `layer`, which is plate layer `plate`, round
+/// [`PlateSkirt::hulls`] `hull`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SkirtTurn {
+    layer: u32,
+    plate: u32,
+    hull: usize,
+}
+
+/// What the first layer brim of one object, sliced in a session of its own, keeps clear of: the outlines of the
+/// objects next to it, and the brim areas of the objects before it on the plate, which keep the room they claim.
+#[derive(Debug, Clone)]
+pub(crate) struct NearBrims {
+    others: Shapes,
+    claimed: Shapes,
 }
 
 /// The tool plan of a plate whose objects print layer by layer from sessions of their own (their own settings): one

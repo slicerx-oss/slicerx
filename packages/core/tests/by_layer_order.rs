@@ -439,17 +439,27 @@ fn skirt_points(g: &str) -> Vec<(f64, f64)> {
 }
 
 #[test]
-fn each_objects_skirt_stays_round_its_object() {
-    // Each object with settings of its own gets a skirt of its own; none of them wraps the shared prime tower in the
-    // back left corner, so no skirt runs across the bed past another object.
-    let run = two_cubes(
-        json!({"wall_loops": 3}),
-        &json!({"skirt_loops": 1, "skirt_distance": 2}),
-        1,
+fn an_object_with_settings_of_its_own_shares_the_plates_one_skirt() {
+    // One skirt goes round both objects and the shared prime tower in the back left corner, as on the same plate
+    // without settings of its own: the first layer's skirt reaches just as far each way.
+    let bounds = |own: Value| {
+        let run = two_cubes(own, &json!({"skirt_loops": 1, "skirt_distance": 2}), 1);
+        let points = skirt_points(&text(&run));
+        assert!(!points.is_empty());
+        points
+            .iter()
+            .fold([f64::MAX, f64::MAX, f64::MIN, f64::MIN], |b, &(x, y)| {
+                [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)]
+            })
+    };
+    let own = bounds(json!({"wall_loops": 3}));
+    let plain = bounds(Value::Null);
+    assert!(
+        own.iter().zip(&plain).all(|(a, b)| (a - b).abs() < 0.05),
+        "{own:?} against {plain:?}"
     );
-    let points = skirt_points(&text(&run));
-    assert!(!points.is_empty());
-    assert!(points.iter().all(|&(x, y)| x > 90.0 && y < 160.0), "{points:?}");
+    // The tower stands left of and behind both cubes.
+    assert!(own[0] < 90.0 && own[3] > 160.0, "{own:?}");
 }
 
 /// The feed rate of each outer wall move on layer `n`, mm/min, sorted.
