@@ -1463,6 +1463,105 @@ pub(crate) struct TopCtx<'a> {
     pub(crate) lower: Option<&'a Shapes>,
 }
 
+/// At sparse infill density 0 with fixed-width walls, a narrow top or first-layer piece too narrow for one surface
+/// line (R under the surface's line spacing) keeps its gap fill bead. With `false` it prints walls only, which
+/// leaves a slot up to about a line wide open between the walls.
+pub(crate) const SPARSE0_NARROW_GAP_FILL: bool = true;
+
+/// A layer's surfaces whose lines spread evenly across each piece (the top surfaces, or the first layer's bottom
+/// surface), as narrow pieces between fixed-width walls at sparse infill density 0 see them: such a piece prints
+/// surface lines when they fit, else gap fill.
+pub(crate) struct NarrowSurface<'a> {
+    /// The outline of the layer above, so the surfaces are what it leaves uncovered; `None` when all of the layer
+    /// is surface (the first layer, or nothing above).
+    pub(crate) upper: Option<&'a Shapes>,
+    /// The material of the layer below, above the first layer: a piece over air is a bridge, not this surface.
+    pub(crate) lower: Option<&'a Shapes>,
+    /// The surface's own line spacing, internal units.
+    pub(crate) spacing: i32,
+    /// How far the surface's lines spread past the edge of the infill area, internal units (negative: in).
+    pub(crate) edge: i32,
+    /// The direction the surface's lines run on the plate, a unit vector.
+    pub(crate) line: (f64, f64),
+    /// The shortest line that prints, internal units: a line stops half its pitch short of each end of the piece
+    /// and prints when that leaves at least this much.
+    pub(crate) min_line: i32,
+    /// Sparse infill density 0 with fixed-width walls: narrow pieces wide enough for a line print one.
+    pub(crate) no_sparse: bool,
+    /// How far an uncovered area is opened, which drops the slivers along its edge (a tenth of the outer wall's
+    /// width, as the surfaces are found), internal units.
+    pub(crate) opening: i32,
+}
+
+impl NarrowSurface<'_> {
+    /// The part of `one` that is surface.
+    fn exposed(&self, one: &Shapes) -> Shapes {
+        let free = match self.upper {
+            None => one.clone(),
+            Some(up) => {
+                let free = difference(one, up);
+                if free.is_empty() {
+                    return free;
+                }
+                offset(&offset(&free, -self.opening), self.opening)
+            }
+        };
+        match self.lower {
+            Some(below) if !free.is_empty() => intersection(&free, below),
+            _ => free,
+        }
+    }
+
+    /// Whether the surface's lines fit in `piece` of the infill area anywhere: the piece with its edge moved out as
+    /// the lines spread holds a line of its pitch plus [`Self::min_line`] somewhere. A narrow piece the lines run
+    /// across holds none.
+    fn lines_fit(&self, piece: &Shapes) -> bool {
+        let moved = if self.edge == 0 {
+            piece.clone()
+        } else {
+            offset(piece, self.edge)
+        };
+        // The piece's extent across the lines sets their pitch.
+        let (u, v) = self.line;
+        let (lo, hi) = moved
+            .iter()
+            .flat_map(|s| s.iter())
+            .flat_map(|r| r.iter())
+            .map(|p| v.mul_add(-f64::from(p.x), u * f64::from(p.y)))
+            .fold((f64::MAX, f64::MIN), |(a, b), q| (a.min(q), b.max(q)));
+        if hi <= lo {
+            return false;
+        }
+        let (pitch, _) = crate::session::stretch_pitch(hi - lo, f64::from(self.spacing.max(1)));
+        // The line's ends keep a hair less than half the pitch in; half a micrometer more, so a line that would come
+        // out a few tenths of a micrometer short does not count.
+        #[allow(clippy::cast_precision_loss, reason = "a few internal units")]
+        let hair = crate::bridging::HAIR as f64;
+        let reach = f64::midpoint(pitch - 2.0 * hair, f64::from(self.min_line)) + 5.0;
+        #[allow(
+            clippy::cast_possible_truncation,
+            reason = "a fraction of a millimeter in internal units"
+        )]
+        let (dx, dy) = ((u * reach).round() as i32, (v * reach).round() as i32);
+        let shift = |dx: i32, dy: i32| -> Shapes {
+            moved
+                .iter()
+                .map(|s| {
+                    s.iter()
+                        .map(|r| r.iter().map(|p| IntPoint::new(p.x + dx, p.y + dy)).collect())
+                        .collect()
+                })
+                .collect()
+        };
+        !intersection(&shift(dx, dy), &shift(-dx, -dy)).is_empty()
+    }
+
+    /// Whether any of `region` is surface, so its walls may differ from the walls the layers around share.
+    pub(crate) fn touches(&self, region: &Shapes) -> bool {
+        self.upper.is_none_or(|_| !self.exposed(region).is_empty())
+    }
+}
+
 /// The walls of `region` by the generator the settings ask for: fixed-width loops of width `w`, or
 /// the variable-width lines of the Arachne generator. `layer_height` and `top_or_bottom` tune the
 /// latter.
@@ -1485,6 +1584,7 @@ pub(crate) fn walls_for(
         top_or_bottom,
         None,
         false,
+        None,
     )
 }
 
@@ -1534,6 +1634,8 @@ pub(crate) fn classic_top_candidate(
 
 /// [`walls_for`] with the neighbor layers known, so `only_one_wall_top` can give top surfaces one wall.
 /// `one_wall_layer`: `only_one_wall_first_layer` or `only_one_wall_top` took the layer's walls down to one.
+/// `narrow`: the layer's surfaces, where with fixed-width walls at sparse infill density 0 a narrow piece the lines
+/// run across without room for one keeps its gap fill.
 #[allow(
     clippy::too_many_arguments,
     reason = "the walls' inputs, as in walls_for, plus the top context"
@@ -1548,6 +1650,7 @@ pub(crate) fn walls_for_top(
     top_or_bottom: bool,
     top: Option<&TopCtx>,
     one_wall_layer: bool,
+    narrow: Option<&NarrowSurface>,
 ) -> (Vec<IslandWalls>, Shapes) {
     if cfg.arachne_walls() {
         crate::arachne::island_walls(
@@ -1578,7 +1681,43 @@ pub(crate) fn walls_for_top(
         } else {
             i32::midpoint(pitch(ext), pitch(inner))
         };
-        let thin = thin_infill(cfg);
+        // With sparse infill and two walls or more, a strip of infill area whose free width inside the innermost wall
+        // (less the overlap) is under 0.15 of an inner spacing prints walls only: the infill area is opened by at least the strip
+        // width that holds. That width is the free width plus how far the infill area reaches past the free
+        // width's edge on each side.
+        let min_core = if cfg.sparse_infill_density > 0.0 && overlap > 0 && wall_loops > 1 {
+            let spacing = pitch(inner);
+            #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
+            let free_edge = ext / 2 + spacing2 + spacing * (wall_loops as i32 - 2) + spacing / 2;
+            #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
+            let inset = ext + inner * (wall_loops as i32 - 1) - overlap;
+            spacing * 3 / 20 + 2 * (free_edge - inset)
+        } else {
+            0
+        };
+        // With no sparse infill, a thin strip is infill area once it holds a surface line: the surface's own spacing
+        // and edge on the layer's surfaces, the top surface's elsewhere.
+        let surface = narrow.filter(|n| n.no_sparse);
+        let thin = thin_infill(cfg).then(|| {
+            let edge = if let Some(n) = surface {
+                Some(n.edge)
+            } else {
+                let line = f64::from(mm(cfg.line_width).max(1));
+                crate::session::surface_edge(cfg, layer_height, f64::from(overlap) / line).map(mm)
+            };
+            let spacing = surface.map_or_else(|| mm(cfg.spacing_for(cfg.top_surface_width())), |n| n.spacing);
+            ThinStrips {
+                min_width: edge.map(|e| spacing * 99 / 100 - 2 * e),
+                narrow_gap_fill: SPARSE0_NARROW_GAP_FILL,
+                surface,
+            }
+        });
+        // The one-wall top's walls leave every thin strip to the infill area.
+        let thin_all = thin.as_ref().map(|_| ThinStrips {
+            min_width: None,
+            narrow_gap_fill: true,
+            surface: None,
+        });
         let normal = |shapes: &Shapes| {
             walls_gapped(
                 shapes,
@@ -1587,7 +1726,8 @@ pub(crate) fn walls_for_top(
                 inner,
                 overlap,
                 Some((pitch(inner), spacing2, layer_height)),
-                thin,
+                thin.as_ref(),
+                min_core,
             )
         };
         let Some(top) = top.filter(|_| wall_loops > 1) else {
@@ -1611,7 +1751,8 @@ pub(crate) fn walls_for_top(
                 inner,
                 overlap,
                 Some((pitch(inner), spacing2, layer_height)),
-                thin,
+                thin_all.as_ref(),
+                0,
             );
             let mut exposed = difference(&outer_core, top.upper);
             if let Some(lower) = top.lower {
@@ -1637,7 +1778,8 @@ pub(crate) fn walls_for_top(
                 inner,
                 overlap,
                 Some((pitch(inner), pitch(inner), layer_height)),
-                thin,
+                thin_all.as_ref(),
+                0,
             );
             let mut joined = IslandWalls::default();
             for mut island in inside {
@@ -1675,24 +1817,37 @@ pub(crate) fn walls_with(
     inner: i32,
     overlap: i32,
 ) -> (Vec<IslandWalls>, Shapes) {
-    walls_gapped(region, wall_loops, ext, inner, overlap, None, false)
+    walls_gapped(region, wall_loops, ext, inner, overlap, None, None, 0)
 }
 
 /// True when classic walls leave their thin strips to the infill area instead of gap fill: with no sparse infill,
 /// on printers other than Bambu Lab's. A strip between the walls too narrow for the infill area's usual opening,
-/// which a gap fill bead fills when there is sparse infill, is then infill area on every layer: nothing on a sparse
-/// layer, internal solid infill under a top, and a top surface line once the strip is wide enough for one, as in
-/// other slicers.
+/// which a gap fill bead fills when there is sparse infill, is then infill area on every layer once it holds a
+/// surface line ([`ThinStrips`]): nothing on a sparse layer, internal solid infill under a top, and a top surface
+/// line, as in other slicers.
 fn thin_infill(cfg: &crate::config::PrintConfig) -> bool {
     cfg.sparse_infill_density <= 0.0 && !crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
 }
 
+/// Which thin strips between classic walls with no sparse infill ([`thin_infill`]) are left to the infill area.
+pub(crate) struct ThinStrips<'a> {
+    /// The narrowest infill area, as the walls leave it, that holds one surface line: the surface's spacing (a hair
+    /// under) less how far its lines spread past the infill area's edge on each side, internal units. A strip whose
+    /// infill area is narrower keeps its gap fill bead. `None`: every strip is left to the infill area.
+    pub(crate) min_width: Option<i32>,
+    /// [`SPARSE0_NARROW_GAP_FILL`]: with `false` a strip narrower than `min_width` prints walls only.
+    pub(crate) narrow_gap_fill: bool,
+    /// The layer's surfaces, where a piece the lines run across without room for one keeps its gap fill.
+    pub(crate) surface: Option<&'a NarrowSurface<'a>>,
+}
+
 /// [`walls_with`] that finds gaps the way Orca does when given the loop pitch and the pitch between
-/// the outer and first inner wall. With `thin` ([`thin_infill`]) a gap strip that the infill area, not opened,
-/// reaches is infill area, with no gap fill bead.
+/// the outer and first inner wall. With `thin` ([`thin_infill`]) a gap strip whose infill area holds a surface line
+/// is infill area, with no gap fill bead. `min_core` is the narrowest strip of infill area kept, at least the usual
+/// 0.54 of a width.
 #[allow(
     clippy::too_many_arguments,
-    reason = "the wall widths, pitches and the thin strip rule"
+    reason = "the walls' widths and pitches, and the thin strip rules"
 )]
 pub(crate) fn walls_gapped(
     region: &Shapes,
@@ -1701,7 +1856,8 @@ pub(crate) fn walls_gapped(
     inner: i32,
     overlap: i32,
     gap_pitches: Option<(i32, i32, f64)>,
-    thin: bool,
+    thin: Option<&ThinStrips>,
+    min_core: i32,
 ) -> (Vec<IslandWalls>, Shapes) {
     let mut islands = Vec::with_capacity(region.len());
     let mut core_all: Shapes = Vec::new();
@@ -1761,15 +1917,37 @@ pub(crate) fn walls_gapped(
         // Orca (`PerimeterGenerator`): the infill area is the last wall's centerline pulled in by the rest of
         // the wall, opened by the smallest infill width (0.6 of a solid spacing, about 0.54 of the width) so
         // strips too narrow to hold a line are dropped.
-        let min = w * 27 / 50;
+        let min = (w * 27 / 50).max(min_core);
         let mut core = if inset > 0 {
             offset(&offset(&one, -(inset + min / 2)), min / 2)
         } else {
             one.clone()
         };
         if let (true, Some((spacing, spacing2, height))) = (wall_loops > 0, gap_pitches) {
-            let unopened = (thin && inset > 0).then(|| offset(&one, -inset));
-            let (lines, covered, given) = crate::gapfill::find_orca(
+            // With no sparse infill ([`ThinStrips`]) a strip between the walls whose infill area holds a surface
+            // line is left to the infill area; a narrower one keeps its gap fill bead, or with
+            // `narrow_gap_fill` off prints walls only.
+            let unopened = thin.filter(|_| inset > 0).map(|_| offset(&one, -inset));
+            let masks = thin.zip(unopened.as_ref()).map(|(rule, all)| {
+                let mut wide = match rule.min_width {
+                    Some(m) if m > 0 => offset(&offset(all, -(m / 2)), m / 2),
+                    _ => all.clone(),
+                };
+                if let Some(n) = rule.surface {
+                    // On the surface, a piece the lines run across without room for one keeps its gap fill.
+                    let exposed = n.exposed(&one);
+                    if !exposed.is_empty() {
+                        wide.retain(|p| {
+                            let piece = vec![p.clone()];
+                            intersection(&piece, &exposed).is_empty() || n.lines_fit(&piece)
+                        });
+                    }
+                }
+                let flipped = !rule.narrow_gap_fill && rule.min_width.is_some();
+                let drop = if flipped { all.clone() } else { Vec::new() };
+                (wide, drop, flipped)
+            });
+            let found = crate::gapfill::find_orca(
                 &one,
                 &chain,
                 wall_loops,
@@ -1778,17 +1956,27 @@ pub(crate) fn walls_gapped(
                 spacing,
                 spacing2,
                 height,
-                unopened.as_ref(),
+                masks.as_ref().map(|(wide, drop, _)| (wide, drop)),
             );
-            if let (Some(all), false) = (&unopened, given.is_empty()) {
+            if let (Some(all), false) = (&unopened, found.given.is_empty()) {
                 // The strips the gap finder leaves to the infill area are infill area as the walls leave it.
-                core = union_all(&[&core, &intersection(all, &offset(&given, spacing / 2))]);
+                core = union_all(&[&core, &intersection(all, &offset(&found.given, spacing / 2))]);
             }
-            island.gap_lines = lines;
-            if !covered.is_empty() {
+            island.gap_lines = found.lines;
+            if !found.covered.is_empty() {
                 // Orca takes the filled strips out of the innermost wall's area before the infill's inset,
                 // so the infill keeps half a loop pitch away from a gap bead.
-                core = difference(&core, &offset(&covered, spacing / 2));
+                core = difference(&core, &offset(&found.covered, spacing / 2));
+            }
+            if !found.dropped.is_empty() {
+                core = difference(&core, &offset(&found.dropped, spacing / 2));
+            }
+            if let Some((wide, _, true)) = &masks {
+                // Infill area too narrow for a surface line prints nothing either.
+                let narrow = difference(&core, &offset(wide, 10));
+                if !narrow.is_empty() {
+                    core = difference(&core, &narrow);
+                }
             }
         } else if wall_loops > 0 && has_gaps(&one, &island, &core, wall_loops, w, overlap) {
             island.gaps = crate::gapfill::find(&one, wall_loops, w);
@@ -2081,7 +2269,8 @@ mod tests {
         let region = vec![vec![rect(0, 0, 300_000, 300_000)]];
         let empty = Vec::new();
         let narrow = vec![vec![rect(1_000, 0, 300_000, 300_000)]];
-        let run = |top: Option<&TopCtx>| walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, top, false);
+        let run =
+            |top: Option<&TopCtx>| walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, top, false, None);
         let expected = format!("{:?}", run(None));
         for context in [
             TopCtx {
@@ -2115,8 +2304,19 @@ mod tests {
             upper: &upper,
             lower: Some(&region),
         };
-        let (old, old_core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, None, false);
-        let (new, core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, Some(&context), false);
+        let (old, old_core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, None, false, None);
+        let (new, core) = walls_for_top(
+            &cfg,
+            &region,
+            3,
+            4_200,
+            630,
+            0.2,
+            false,
+            Some(&context),
+            false,
+            None,
+        );
         let outer = |walls: &[IslandWalls]| {
             walls
                 .iter()
@@ -2383,5 +2583,47 @@ mod tests {
             failed.len(),
             failed.first()
         );
+    }
+
+    /// Fixed-width walls with no sparse infill, on the Ender-3 V3's numbers (0.42 mm walls, 0.2 mm layers, a 0.3771
+    /// mm spacing, a quarter of a width of overlap and the surface's edge 0.0537 mm past the infill area): a strip
+    /// whose infill area holds one surface line (1.740 mm wide, R = s0) is infill area with no gap fill bead whatever
+    /// [`SPARSE0_NARROW_GAP_FILL`] says; a narrower one (1.721 mm, R = 0.95 s0) keeps its bead with the switch on and
+    /// prints walls only with it off.
+    #[test]
+    fn thin_strips_with_no_sparse_infill_follow_the_gap_fill_switch() {
+        let strip = |w: i32| -> Shapes {
+            shapes_from_loops(&[vec![
+                Point::new(0, 0),
+                Point::new(300_000, 0),
+                Point::new(300_000, w),
+                Point::new(0, w),
+            ]])
+        };
+        let run = |w: i32, narrow_gap_fill: bool| {
+            let rule = ThinStrips {
+                min_width: Some(3_771 * 99 / 100 - 2 * 537),
+                narrow_gap_fill,
+                surface: None,
+            };
+            walls_gapped(
+                &strip(w),
+                2,
+                4_200,
+                4_200,
+                1_050,
+                Some((3_771, 3_771, 0.2)),
+                Some(&rule),
+                0,
+            )
+        };
+        for narrow_gap_fill in [true, false] {
+            let (islands, core) = run(17_400, narrow_gap_fill);
+            assert!(islands[0].gap_lines.is_empty(), "{narrow_gap_fill}");
+            assert!(!core.is_empty(), "{narrow_gap_fill}");
+            let (islands, core) = run(17_210, narrow_gap_fill);
+            assert_eq!(!islands[0].gap_lines.is_empty(), narrow_gap_fill);
+            assert!(core.is_empty(), "{narrow_gap_fill}");
+        }
     }
 }
