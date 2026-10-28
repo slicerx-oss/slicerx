@@ -3697,13 +3697,61 @@ fn emit_layer(
                 cur_z = z_i(z0);
                 speed_feed = -1;
             }
+            // A spiral layer writes no move to its loop's start: the nozzle goes on from where the layer below
+            // ended, which is the loop's start only when both loops start at the same vertex. When the move from
+            // there to the loop's next point stays on the wall (every point of it within a line width of this loop
+            // or the loop below), it extrudes with the E of its own length, and one shorter than the loop's shortest
+            // segment (the nozzle already on that point) is left out instead of extruding in place. A move that
+            // would leave the wall (the largest outline moved to another part of the object, so the loop below was
+            // another ring) lays no plastic: the nozzle travels to the loop's start, with no retraction or lift, and
+            // the loop prints from there.
+            let entry = (spiral && !l.spiral_start && pi == 0)
+                .then_some(l.enter_from)
+                .flatten();
+            let min_seg = (2.0 * c.raw_number("resolution", 0.01)).max(1e-4);
+            let mut entering = false;
+            if let Some(at) = entry {
+                let reach = f64::from(p.width_mm);
+                // Every point of the move, sampled at least each half line width, ends included.
+                let on_wall = pts.get(1).is_some_and(|&q| {
+                    #[allow(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "a sample count of a move in mm"
+                    )]
+                    let n = ((at.dist_mm(q) / (reach / 2.0).max(1e-3)).ceil() as usize).max(1);
+                    (0..=n).all(|k| {
+                        #[allow(clippy::cast_precision_loss, reason = "a small sample index")]
+                        let t = k as f64 / n as f64;
+                        let p = Point::from_mm(
+                            at.x_mm() + t * (q.x_mm() - at.x_mm()),
+                            at.y_mm() + t * (q.y_mm() - at.y_mm()),
+                        );
+                        near_loop(p, pts, reach) || near_loop(p, &l.below_wipe.points, reach)
+                    })
+                });
+                if on_wall {
+                    prev = at;
+                    entering = true;
+                } else if at.dist_mm(start) >= min_seg {
+                    b.extend_from_slice(b"G0");
+                    put_xy(b, off, start);
+                    b.extend_from_slice(b" F");
+                    put_int(b, travel_feed);
+                    b.push(b'\n');
+                    b.extend_from_slice(b"G1 F");
+                    put_int(b, f);
+                    b.push(b'\n');
+                }
+            }
             // `G1 X Y Z E`: the flow of the first layer ramps up and the repeated last loop ramps down, so
             // a segment may carry no extrusion at all.
             for ((&q, &zq), &fq) in pts.iter().zip(zv).zip(fv).skip(1) {
                 let len = prev.dist_mm(q);
-                if len <= 0.0 {
+                if len <= 0.0 || (entering && len < min_seg) {
                     continue;
                 }
+                entering = false;
                 let e = e_units(len * e_per_mm * f64::from(fq));
                 b.extend_from_slice(b"G1");
                 put_xy(b, off, q);
@@ -5180,6 +5228,22 @@ const NOZZLE_WIPE_LEAD: f64 = 3.0;
 /// Feed rates of the nozzle wipe's travels back over the row start and forward again, mm/min.
 const NOZZLE_WIPE_BACK_FEED: i64 = 600;
 const NOZZLE_WIPE_FORWARD_FEED: i64 = 240;
+
+/// Whether `p` lies within `reach` mm of the closed loop through `pts`.
+fn near_loop(p: Point, pts: &[Point], reach: f64) -> bool {
+    let (x, y) = (p.x_mm(), p.y_mm());
+    pts.iter().zip(pts.iter().cycle().skip(1)).any(|(a, b)| {
+        let (ax, ay, bx, by) = (a.x_mm(), a.y_mm(), b.x_mm(), b.y_mm());
+        let (dx, dy) = (bx - ax, by - ay);
+        let l2 = dx * dx + dy * dy;
+        let t = if l2 > 0.0 {
+            (((x - ax) * dx + (y - ay) * dy) / l2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (x - ax - t * dx).m_hypot(y - ay - t * dy) <= reach
+    })
+}
 
 /// The loops of the flat ironing spiral for an area of `area` mm2 at bead width `w` mm: enough that the
 /// spiral's side reaches the side of a square of that area.
