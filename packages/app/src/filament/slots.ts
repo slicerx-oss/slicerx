@@ -53,18 +53,31 @@ export function materialType(material: string | undefined): string {
   return words.find((w) => TYPES.includes(w)) ?? 'PLA'
 }
 
-/** How many slots the project needs: the printer's, the highest a part uses, the highest set by hand. */
-export function slotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'>): number {
+/**
+ * The filaments a plate's tool changes print in (a project's, from the layer slider), as the engine numbers them; those
+ * kept but not sent (`skip`) print nothing.
+ */
+export function toolChangeSlots(s: Partial<Pick<AppState, 'layerMarks'>>, plateId: string): number[] {
+  return (s.layerMarks?.[plateId] ?? []).flatMap((m) => (m.kind === 'tool_change' && !m.skip && m.slot ? [m.slot] : []))
+}
+
+/** How many slots the project needs: the printer's, the highest a part or a tool change uses, the highest set by hand. */
+export function slotCount(s: Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'layerMarks'>>): number {
   let n = s.printerSlots.length
   for (const p of allPlates(s)) for (const o of p.objects) for (const part of o.handle.parts) n = Math.max(n, effectiveSlot(o, part))
+  for (const p of s.plates) for (const t of toolChangeSlots(s, p.id)) n = Math.max(n, t)
   for (const k of Object.keys(s.slotSetup)) n = Math.max(n, Number(k))
   return Math.min(MAX_SLOTS, Math.max(1, n))
 }
 
-/** The slot every part of every plate ends up in, after the plate's own color swaps. */
-export function usedSlots(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'>): Set<number> {
+/** The slot every part of every plate ends up in, after the plate's own color swaps, and the slots its tool changes print in. */
+export function usedSlots(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'> & Partial<Pick<AppState, 'layerMarks'>>): Set<number> {
   const out = new Set<number>()
-  for (const p of allPlates(s)) for (const o of p.objects) if (o.printable !== false) for (const part of o.handle.parts) out.add(mapSlot(p, effectiveSlot(o, part)))
+  for (const p of allPlates(s)) {
+    for (const o of p.objects) if (o.printable !== false) for (const part of o.handle.parts) out.add(mapSlot(p, effectiveSlot(o, part)))
+    // A tool change goes to the engine as its own filament number, without the plate's swaps.
+    if (p.objects.some((o) => o.printable !== false)) for (const t of toolChangeSlots(s, p.id)) out.add(t)
+  }
   return out
 }
 
@@ -77,7 +90,7 @@ export function mapSlot(plate: Pick<PlateMeta, 'settings'> | undefined, slot: nu
   return plate?.settings.slotMap?.[slot] ?? slot
 }
 
-type SlotInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'slotMatch' | 'fileSlotColors'>>
+type SlotInputs = Pick<AppState, 'printerSlots' | 'plates' | 'plate' | 'activePlate' | 'slotSetup'> & Partial<Pick<AppState, 'slotMatch' | 'fileSlotColors' | 'layerMarks'>>
 
 /**
  * The model's color for each slot: the project file's filament colors, then for slots the file does not name, the color

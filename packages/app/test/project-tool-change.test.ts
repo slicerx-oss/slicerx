@@ -18,6 +18,9 @@ const { openModelBytes, slicePlate } = await import('../src/state/actions')
 const { profileReady, startProfileSync } = await import('../src/state/profile-sync')
 const { startProjectPrinterSync } = await import('../src/project/project-printer')
 const { get, set } = await import('../src/state/store')
+const { resolveSlots, usedSlots } = await import('../src/filament/slots')
+const { slotUsage } = await import('../src/filament/rail')
+const { sendToPrinter } = await import('../src/state/send-actions')
 
 const fixtures = resolve(__dirname, '../../core/cli/tests/fixtures/layer-tool-change')
 const sxBin = process.env['SLICERX_TEST_SX_BIN'] ?? resolve(__dirname, '../../../target/release/sx')
@@ -39,7 +42,7 @@ async function openAndSlice(name: string): Promise<SliceRequest> {
   const fake = createFakeSlicer({ delayMs: 0, layers: 50 })
   const requests: SliceRequest[] = []
   const host = { kind: 'web', capabilities: { threads: 1 }, slicer: { ...fake, slice: (r: SliceRequest, o?: never) => (requests.push(r), fake.slice(r, o)) } } as unknown as Host
-  set((s) => ({ plate: [], plates: [{ ...s.plates[0]!, id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', layerMarks: {}, calibration: {}, resume: null, slice: { status: 'idle' }, projectSettings: null, projectPrinter: null, projectOpenAsk: null, fileSlotColors: [], printerId: 'my-a1', printerModel: { id: 'my-a1', vendor: 'Bambu Lab', model: 'A1' }, printerNozzles: {}, nozzleReported: {}, easyTouched: [], goal: 'standard', goalBase: 'standard', overrides: {}, vouchedGcode: {}, toast: null }))
+  set((s) => ({ plate: [], plates: [{ ...s.plates[0]!, id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], activePlate: 'plate-1', layerMarks: {}, printerSlots: [], slotSetup: {}, printSheet: null, calibration: {}, resume: null, slice: { status: 'idle' }, projectSettings: null, projectPrinter: null, projectOpenAsk: null, fileSlotColors: [], printerId: 'my-a1', printerModel: { id: 'my-a1', vendor: 'Bambu Lab', model: 'A1' }, printerNozzles: {}, nozzleReported: {}, easyTouched: [], goal: 'standard', goalBase: 'standard', overrides: {}, vouchedGcode: {}, toast: null }))
   startProfileSync()
   startProjectPrinterSync()
   await settled()
@@ -83,6 +86,43 @@ describe('a project tool change in the app', () => {
     const out = join(dir, 'a1-cc')
     execFileSync(sxBin, ['slice', '--request', path, '--out-dir', out], { stdio: 'pipe' })
     expect(changes(readFileSync(join(out, 'slice.gcode'), 'utf8'))).toEqual([[25, 3, 3]])
+  })
+
+  it('counts the filament it changes to among the plate\'s filaments', { timeout: 120_000 }, async () => {
+    await openAndSlice('a1-cc')
+    // The box is on filament 2 and the change goes to filament 4: the plate prints both, and filament 4 has a slot.
+    expect(resolveSlots(get()).map((r) => [r.index, r.used])).toEqual([[1, false], [2, true], [3, false], [4, true]])
+    expect([...usedSlots(get())].sort()).toEqual([2, 4])
+  })
+
+  it.skipIf(!existsSync(sxBin))('shows the use of the filament it changes to', { timeout: 120_000 }, async () => {
+    const req = await openAndSlice('a1-cc')
+    {
+      // The rail's use per slot reads the engine's grams for every slot up to the last, filament 4's too.
+      const path = join(dir, 'a1-cc-use.json')
+      writeFileSync(path, JSON.stringify({ schemaVersion: 1, meshes: { m: `${join(fixtures, 'a1-cc.3mf')}#1` }, plate: { objects: [{ id: 'm', mesh: 'm' }] }, config: req.config, options: { toolChanges: req.options?.toolChanges ?? [] } }))
+      const report = JSON.parse(execFileSync(sxBin, ['slice', '--request', path], { stdio: ['ignore', 'pipe', 'ignore'] }).toString()) as { stats: { filamentG: number[] } }
+      const g = report.stats.filamentG
+      expect(g[3]).toBeGreaterThan(0)
+      const use = slotUsage({ filamentG: g }, Math.max(...resolveSlots(get()).map((r) => r.index)))
+      expect(use).toHaveLength(4)
+      expect(use[3]!.grams).toBe(g[3])
+    }
+  })
+
+  it('asks where the filament it changes to goes when the plate is sent', { timeout: 120_000 }, async () => {
+    await openAndSlice('a1-cc')
+    // A send asks where each filament the plate prints goes, filament 4 included.
+    set({ printerSlots: [1, 2, 3, 4].map((n) => ({ id: `A${n}`, material: 'PLA', color: '#808080' })) })
+    const printer = { id: 'p1', name: 'Bay 1', vendor: 'Test', model: 'T1', plugin: 'demo', nozzleCount: 1 } as never
+    const host = { kind: 'web', printers: { status: async () => ({ state: 'idle' }) }, approvals: {}, slicer: { exportGcode: async () => ({ fileName: 'x.gcode', bytes: 1, sha256: '', blob: new Blob(['G28']) }) } } as unknown as Host
+    const sent = sendToPrinter(host, printer)
+    await vi.waitFor(() => expect(get().printSheet).not.toBeNull(), { timeout: 45_000 })
+    const sheet = get().printSheet!
+    expect(sheet.filaments.map((f) => f.index)).toEqual([2, 4])
+    expect(sheet.auto).toEqual({ 2: 'A2', 4: 'A4' })
+    sheet.resolve(null)
+    await sent
   })
 
   it('keeps one saved for a plate of several filaments, sends none and notes it', { timeout: 120_000 }, async () => {

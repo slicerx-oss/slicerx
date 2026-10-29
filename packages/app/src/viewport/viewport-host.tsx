@@ -502,7 +502,8 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (rebuilt) pushPaint(s.plate, null)
         else if (s.plate !== prev.plate && !fromViewport) pushPaint(s.plate, prev.plate)
         if ((first || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors || rebuilt) && vp.setPaintColors) vp.setPaintColors(resolveSlots(s).map((r) => r.color))
-        if (first || s.plate !== prev.plate || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors) {
+        // A tool change can add a filament the plate's parts do not use, so the marks count too.
+        if (first || s.plate !== prev.plate || s.slotSetup !== prev.slotSetup || s.printerSlots !== prev.printerSlots || s.fileSlotColors !== prev.fileSlotColors || s.layerMarks !== prev.layerMarks) {
           const slots = resolveSlots(s)
           vp.setToolColors(slots.map((r) => r.color))
           // Silk prints streak along each bead, matte ones barely shine: the toolpaths shine like the filament named.
