@@ -769,9 +769,374 @@ fn unchecked(model: &Model, objects: &[Object<'_>]) -> Vec<Unchecked> {
     out
 }
 
+/// The plates the golden file (`packages/settings/fixtures/by-object-golden.json`, written by `collide::rules`) holds
+/// the check's answers on, for the app's by-object rule to be tested against; a test here slices each for real.
+#[cfg(test)]
+pub(crate) mod golden {
+    use crate::fm::Fm as _;
+    use serde_json::{Value, json};
+
+    /// A mesh: corners in mm and triangles wound out.
+    pub(crate) type Shell = (Vec<[f64; 3]>, Vec<[u32; 3]>);
+
+    pub(crate) struct Plate {
+        pub name: &'static str,
+        pub printer_id: Option<&'static str>,
+        pub config: Value,
+        /// Each object's id, mesh and where its mesh's origin goes on the bed, in print order.
+        pub objects: Vec<(&'static str, Shell, [f64; 2])>,
+    }
+
+    pub(crate) fn cuboid(lo: [f64; 3], hi: [f64; 3]) -> Shell {
+        let mut pts = Vec::new();
+        for z in [lo[2], hi[2]] {
+            for (x, y) in [(lo[0], lo[1]), (hi[0], lo[1]), (hi[0], hi[1]), (lo[0], hi[1])] {
+                pts.push([x, y, z]);
+            }
+        }
+        let mut tris = vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7]];
+        for k in 0..4u32 {
+            let n = (k + 1) % 4;
+            tris.push([k, n, 4 + n]);
+            tris.push([k, 4 + n, 4 + k]);
+        }
+        (pts, tris)
+    }
+
+    fn joined(shells: &[Shell]) -> Shell {
+        let mut out: Shell = (Vec::new(), Vec::new());
+        for (p, t) in shells {
+            let o = u32::try_from(out.0.len()).unwrap_or(u32::MAX);
+            out.0.extend_from_slice(p);
+            out.1.extend(t.iter().map(|t| [t[0] + o, t[1] + o, t[2] + o]));
+        }
+        out
+    }
+
+    fn block(w: f64, d: f64, h: f64) -> Shell {
+        cuboid([0.0; 3], [w, d, h])
+    }
+
+    /// A cone from a base of radius `r0` mm to a top of radius `r1`, `h` tall, the box round its base at the origin.
+    fn cone(r0: f64, r1: f64, h: f64) -> Shell {
+        const N: u32 = 24;
+        let mut pts = vec![[r0, r0, 0.0], [r0, r0, h]];
+        for z in [(0.0, r0), (h, r1)] {
+            for i in 0..N {
+                let a = std::f64::consts::TAU * f64::from(i) / f64::from(N);
+                pts.push([r0 + z.1 * a.m_cos(), r0 + z.1 * a.m_sin(), z.0]);
+            }
+        }
+        let mut tris = Vec::new();
+        for i in 0..N {
+            let j = (i + 1) % N;
+            tris.push([0, 2 + j, 2 + i]);
+            tris.push([1, 2 + N + i, 2 + N + j]);
+            tris.push([2 + i, 2 + j, 2 + N + j]);
+            tris.push([2 + i, 2 + N + j, 2 + N + i]);
+        }
+        (pts, tris)
+    }
+
+    fn with(base: &Value, extra: &Value) -> Value {
+        let mut v = base.clone();
+        if let (Some(m), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+            for (k, x) in e {
+                m.insert(k.clone(), x.clone());
+            }
+        }
+        v
+    }
+
+    pub(crate) fn plates() -> Vec<Plate> {
+        let base = json!({ "print_sequence": "by object", "layer_height": 0.3, "initial_layer_print_height": 0.3, "brim_type": "no_brim", "skirt_loops": 0, "wall_loops": 2, "sparse_infill_density": "10%", "top_shell_layers": 2, "bottom_shell_layers": 2, "enable_support": false });
+        let p1s = with(
+            &base,
+            &json!({ "printer_model": "Bambu Lab P1S", "extruder_clearance_max_radius": 68, "extruder_clearance_height_to_rod": 34, "extruder_clearance_dist_to_rod": 33, "extruder_clearance_height_to_lid": 90, "nozzle_height": 4.2, "printable_area": ["0x0", "256x0", "256x256", "0x256"], "printable_height": 250 }),
+        );
+        let a1 = with(
+            &base,
+            &json!({ "printer_model": "Bambu Lab A1", "extruder_clearance_max_radius": 73, "extruder_clearance_height_to_rod": 25, "extruder_clearance_dist_to_rod": 56.5, "extruder_clearance_height_to_lid": 256, "nozzle_height": 4.76, "printer_structure": "i3", "printable_area": ["0x0", "256x0", "256x256", "0x256"], "printable_height": 256 }),
+        );
+        let x1 = with(
+            &p1s,
+            &json!({ "printer_model": "Bambu Lab X1 Carbon", "brim_type": "outer_only", "brim_width": 5 }),
+        );
+        let delta = with(
+            &base,
+            &json!({ "printer_model": "FLSun V400", "extruder_clearance_radius": 65, "extruder_clearance_height_to_rod": 36, "extruder_clearance_height_to_lid": 140, "printable_area": ["-150x-150", "150x-150", "150x150", "-150x150"], "printable_height": 410 }),
+        );
+        let tree = with(
+            &p1s,
+            &json!({ "enable_support": true, "support_type": "tree(auto)" }),
+        );
+        let small = || block(20.0, 20.0, 10.0);
+        let post = || block(20.0, 20.0, 37.0);
+        let l = joined(&[
+            cuboid([0.0, 0.0, 0.0], [80.0, 15.0, 10.0]),
+            cuboid([0.0, 15.0, 0.0], [15.0, 80.0, 10.0]),
+        ]);
+        let ring = joined(&[
+            cuboid([0.0, 0.0, 0.0], [60.0, 5.0, 8.0]),
+            cuboid([0.0, 55.0, 0.0], [60.0, 60.0, 8.0]),
+            cuboid([0.0, 5.0, 0.0], [5.0, 55.0, 8.0]),
+            cuboid([55.0, 5.0, 0.0], [60.0, 55.0, 8.0]),
+        ]);
+        let tee = joined(&[
+            cuboid([10.0, 10.0, 0.0], [20.0, 20.0, 10.0]),
+            cuboid([0.0, 0.0, 10.0], [30.0, 30.0, 13.0]),
+        ]);
+        let plate = |name, printer_id, config: &Value, objects| Plate {
+            name,
+            printer_id,
+            config: config.clone(),
+            objects,
+        };
+        vec![
+            plate(
+                "two boxes 3 mm apart, P1S",
+                Some("bambu-p1s"),
+                &p1s,
+                vec![("a", small(), [50.0, 50.0]), ("b", small(), [73.0, 50.0])],
+            ),
+            plate(
+                "two boxes 60 mm apart, P1S",
+                Some("bambu-p1s"),
+                &p1s,
+                vec![("a", small(), [50.0, 50.0]), ("b", small(), [130.0, 50.0])],
+            ),
+            plate(
+                "two boxes 66 mm apart, A1 (a head drawn from photos)",
+                Some("bambu-a1"),
+                &a1,
+                vec![("a", small(), [50.0, 50.0]), ("b", small(), [136.0, 50.0])],
+            ),
+            plate(
+                "two boxes 80 mm apart, A1",
+                Some("bambu-a1"),
+                &a1,
+                vec![("a", small(), [50.0, 50.0]), ("b", small(), [150.0, 50.0])],
+            ),
+            plate(
+                "a post over the rod, then a box in its lane, P1S",
+                Some("bambu-p1s"),
+                &p1s,
+                vec![("post", post(), [50.0, 50.0]), ("box", small(), [150.0, 80.0])],
+            ),
+            plate(
+                "a box, then a post over the rod in its lane, P1S",
+                Some("bambu-p1s"),
+                &p1s,
+                vec![("box", small(), [150.0, 80.0]), ("post", post(), [50.0, 50.0])],
+            ),
+            plate(
+                "a post over the rod, then a box out of its lane, P1S",
+                Some("bambu-p1s"),
+                &p1s,
+                vec![("post", post(), [50.0, 50.0]), ("box", small(), [150.0, 140.0])],
+            ),
+            plate(
+                "an L bracket with a part in its corner, P1S",
+                Some("bambu-p1s"),
+                &p1s,
+                vec![
+                    ("l", l, [50.0, 50.0]),
+                    ("part", block(15.0, 15.0, 8.0), [95.0, 95.0]),
+                ],
+            ),
+            plate(
+                "a ring with a part inside it, P1S",
+                Some("bambu-p1s"),
+                &p1s,
+                vec![
+                    ("ring", ring, [50.0, 50.0]),
+                    ("part", block(10.0, 10.0, 6.0), [75.0, 75.0]),
+                ],
+            ),
+            plate(
+                "a cone next to a box, P1S",
+                Some("bambu-p1s"),
+                &p1s,
+                vec![
+                    ("cone", cone(30.0, 3.0, 30.0), [50.0, 50.0]),
+                    ("box", small(), [125.0, 70.0]),
+                ],
+            ),
+            plate(
+                "a tall post, then a box, on a delta",
+                Some("flsun-v400"),
+                &delta,
+                vec![
+                    ("post", block(20.0, 20.0, 40.0), [-60.0, -60.0]),
+                    ("box", small(), [20.0, -50.0]),
+                ],
+            ),
+            plate(
+                "5 mm brims 22 mm apart, X1 Carbon",
+                Some("bambu-x1-carbon"),
+                &x1,
+                vec![("a", small(), [50.0, 50.0]), ("b", small(), [92.0, 50.0])],
+            ),
+            plate(
+                "tree support beside a box, P1S",
+                Some("bambu-p1s"),
+                &tree,
+                vec![("box", small(), [50.0, 50.0]), ("tee", tee, [140.0, 50.0])],
+            ),
+        ]
+    }
+
+    /// The plate as a request, and its meshes.
+    pub(crate) fn request(p: &Plate) -> (crate::api::SliceRequest, Vec<std::sync::Arc<crate::mesh::Mesh>>) {
+        let mut objects = Vec::new();
+        let mut meshes = Vec::new();
+        for (id, shell, at) in &p.objects {
+            objects.push(json!({ "id": id, "name": id, "mesh": id, "transform": transform(*at) }));
+            #[allow(clippy::cast_possible_truncation, reason = "small test shapes in mm")]
+            let positions = shell.0.iter().map(|q| q.map(|v| v as f32)).collect();
+            meshes.push(std::sync::Arc::new(crate::mesh::Mesh {
+                name: (*id).to_owned(),
+                parts: vec![crate::mesh::MeshPart {
+                    name: (*id).to_owned(),
+                    slot: 1,
+                    color: None,
+                    positions,
+                    triangles: shell.1.clone(),
+                    paint: Vec::new(),
+                    support_paint: Vec::new(),
+                    seam_paint: Vec::new(),
+                    fuzzy_paint: Vec::new(),
+                    paint_texts: Vec::new(),
+                }],
+                ..crate::mesh::Mesh::default()
+            }));
+        }
+        let req = json!({
+            "plate": { "objects": objects },
+            "config": p.config,
+            "options": { "printerId": p.printer_id, "emitPreview": false },
+        });
+        let req = serde_json::from_value(req).unwrap_or_else(|e| panic!("{}: {e}", p.name));
+        (req, meshes)
+    }
+
+    fn transform(at: [f64; 2]) -> [f64; 16] {
+        [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, at[0], at[1], 0.0, 1.0,
+        ]
+    }
+
+    /// The plate's meshes as the request names them.
+    pub(crate) fn loader(
+        p: &Plate,
+        meshes: Vec<std::sync::Arc<crate::mesh::Mesh>>,
+    ) -> impl Fn(&str) -> crate::error::Result<std::sync::Arc<crate::mesh::Mesh>> {
+        let ids: Vec<&'static str> = p.objects.iter().map(|o| o.0).collect();
+        move |id: &str| {
+            ids.iter()
+                .position(|i| *i == id)
+                .and_then(|k| meshes.get(k).cloned())
+                .ok_or(crate::error::Error::EmptyPlate)
+        }
+    }
+
+    /// The golden file's `plates`: each plate as the app reads it, and what the check says of it.
+    pub(crate) fn json() -> Vec<Value> {
+        let mut out = Vec::new();
+        for p in plates() {
+            let (req, meshes) = request(&p);
+            let check = crate::api::check_plate(&req, &loader(&p, meshes))
+                .unwrap_or_else(|e| panic!("{}: {e}", p.name));
+            let objects: Vec<Value> = p
+                .objects
+                .iter()
+                .map(|(id, shell, at)| {
+                    let positions: Vec<f64> = shell.0.iter().flatten().copied().collect();
+                    let indices: Vec<u32> = shell.1.iter().flatten().copied().collect();
+                    json!({ "id": id, "name": id, "mesh": { "positions": positions, "indices": indices }, "transform": transform(*at) })
+                })
+                .collect();
+            let collisions: Vec<Value> = check
+                .collisions
+                .iter()
+                .zip(&check.certainty)
+                .map(|(c, s)| {
+                    json!({ "objectId": c.object_id, "hitId": c.hit_id, "kind": c.kind, "part": c.part, "severity": c.severity, "certainty": s })
+                })
+                .collect();
+            let unchecked: Vec<Value> = check
+                .unchecked
+                .iter()
+                .map(|u| json!({ "objectId": u.object_id, "what": u.what }))
+                .collect();
+            out.push(json!({
+                "name": p.name,
+                "printerId": p.printer_id,
+                "config": p.config,
+                "objects": objects,
+                "order": check.order,
+                "collisions": collisions,
+                "unchecked": unchecked,
+            }));
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Slices every golden plate and holds the check to it: where the slice refuses a plate for the machine, the check
+    /// is not clean and finds every pair the slice does; where it is sure, the slice refuses. The plates the slice
+    /// refuses are counted, so the test has teeth.
+    #[test]
+    fn the_check_is_never_clean_where_the_slice_refuses() {
+        let mut refused = 0;
+        for p in golden::plates() {
+            let (req, meshes) = golden::request(&p);
+            let load = golden::loader(&p, meshes);
+            let check = crate::api::check_plate(&req, &load).unwrap_or_else(|e| panic!("{}: {e}", p.name));
+            let run = crate::api::run_request(&req, &load).unwrap_or_else(|e| panic!("{}: {e}", p.name));
+            let machine = |k: super::super::Kind| {
+                !matches!(k, super::super::Kind::PathConflict | super::super::Kind::KeepOut)
+            };
+            let hits: Vec<_> = run
+                .report
+                .collisions
+                .iter()
+                .filter(|c| c.severity == Severity::Hit && machine(c.kind))
+                .collect();
+            if !hits.is_empty() {
+                refused += 1;
+                assert!(
+                    !check.is_clean(),
+                    "{}: the slice refuses, the check is clean",
+                    p.name
+                );
+                for h in &hits {
+                    assert!(
+                        !check.unchecked.is_empty()
+                            || check.collisions.iter().any(|c| {
+                                c.severity == Severity::Hit
+                                    && c.object_id == h.object_id
+                                    && c.hit_id == h.hit_id
+                            }),
+                        "{}: the slice has {} meeting {}, the check does not",
+                        p.name,
+                        h.object_id,
+                        h.hit_id
+                    );
+                }
+            }
+            assert!(
+                !check.has_sure() || !hits.is_empty(),
+                "{}: the check is sure, the slice passes",
+                p.name
+            );
+        }
+        assert!(refused >= 4, "only {refused} golden plates are refused");
+    }
 
     #[test]
     fn a_hull_is_counterclockwise_and_drops_inner_and_collinear_points() {

@@ -1016,13 +1016,14 @@ mod tests {
             json!({ "name": name, "config": config, "brimMm": brim, "sideMm": side, "reachMm": round(object_room_around(&cfg, brim, &hull)) })
         }));
         json!({
-            "comment": "Written by packages/core/src/collide/rules.rs (SX_BLESS=1 cargo test -p sx-core collide::rules); read by packages/settings/js/by-object.golden.test.ts. The engine's by-object rules on a set of cases: the gantry beam on the 1 mm lattice, deltas, the clearance radius, and how far an object's own first layer prints past it; and whether an object gets support, so its support's pad counts in that reach.",
+            "comment": "Written by packages/core/src/collide/rules.rs (SX_BLESS=1 cargo test -p sx-core collide::rules); read by packages/settings/js/by-object.golden.test.ts. The engine's by-object rules on a set of cases: the gantry beam on the 1 mm lattice, deltas, the clearance radius, and how far an object's own first layer prints past it; and whether an object gets support, so its support's pad counts in that reach. Under plates, the engine's plate check (collide/check.rs) on a set of plates, which a test there also slices.",
             "cellMm": CELL,
             "gantry": gantry,
             "delta": delta,
             "radius": radius,
             "reach": reach,
             "support": support_golden(),
+            "plates": crate::collide::check::golden::json(),
         })
     }
 

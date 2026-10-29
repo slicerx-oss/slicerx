@@ -8,6 +8,17 @@ import type { SettingValue } from '@slicerx/contracts'
 import { beamCells, byObjectHead, byObjectPlan, byObjectReach, gantryMeets, getsSupport, hasOverhang, isDelta, objectGetsSupport, overhangLimitDeg, placedShape, radiusHit, shapeReach, type ByObjectShape, type Pt } from './by-object'
 
 type Span = [number, number]
+
+/** A plate of the golden file's `plates`: its objects as the app reads them, and what the engine's plate check says. */
+interface GoldenPlate {
+  name: string
+  printerId: string | null
+  config: Record<string, SettingValue>
+  objects: { id: string; name: string; mesh: { positions: number[]; indices: number[] }; transform: number[] }[]
+  order: string[]
+  collisions: { objectId: string; hitId: string; kind: string; part: string; severity: string; certainty: string }[]
+  unchecked: { objectId: string; what: string }[]
+}
 const box = (id: string, x: number, y: Span, top: number, reachMm = 0): ByObjectShape => {
   const hull: Pt[] = [[x, y[0]], [x + 20, y[0]], [x + 20, y[1]], [x, y[1]]]
   return { id, name: id, hull, top, reachMm }
@@ -70,5 +81,28 @@ describe('the by-object rules give the engine\'s answers', () => {
       const shape = { ...placedShape('o', c.name, [c.mesh.positions], m), supported, settings: c.object as Record<string, SettingValue> }
       expect(round(shapeReach(shape, plate)), c.name).toBe(c.reachMm)
     }
+  })
+
+  it('never passes what the engine\'s plate check is sure the slice refuses', () => {
+    // The rule the web app and the phone fall back on, where no engine checks the plate.
+    const plates = golden.plates as unknown as GoldenPlate[]
+    expect(plates.length).toBeGreaterThan(10)
+    let sure = 0
+    for (const p of plates) {
+      const byId = new Map(p.objects.map((o) => [o.id, placedShape(o.id, o.name, [o.mesh.positions], o.transform)]))
+      const shapes = p.order.map((id) => byId.get(id)).filter((s): s is ByObjectShape => s !== undefined)
+      expect(shapes.length, p.name).toBe(p.objects.length)
+      const plan = byObjectPlan(shapes, p.config, byObjectHead(p.config, p.printerId ?? undefined))
+      for (const c of p.collisions.filter((x) => x.severity === 'hit' && x.certainty === 'sure')) {
+        sure++
+        if (c.part === 'gantry' || c.part === 'lid') {
+          expect(plan.tall.map((t) => t.id), `${p.name}: ${c.hitId} under the ${c.part}`).toContain(c.hitId)
+        } else {
+          const pair = plan.pairs.find((q) => q.a.id === c.hitId && q.b.id === c.objectId)
+          expect(pair?.severity, `${p.name}: ${c.objectId} meeting ${c.hitId}`).toBe('block')
+        }
+      }
+    }
+    expect(sure).toBeGreaterThanOrEqual(3)
   })
 })
