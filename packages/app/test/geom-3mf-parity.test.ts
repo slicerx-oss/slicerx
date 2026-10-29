@@ -3,14 +3,15 @@
 // The project reader on the geometry engine (geom-project.ts) against the TypeScript reader, on every 3MF of the format
 // corpus (packages/geom/tests/corpus/corpus.json): the same plates, objects, parts, volumes, slots, paint and settings,
 // and the same meshes to a thousandth of a millimeter. Needs the engine built (packages/geom/wasm/scripts/build.sh, or
-// SX_GEOM_CORE_WASM); without it the test is skipped. SX_CORPUS_PRIVATE=<dir> adds the 3MF files in a folder outside
-// the repository.
+// SX_GEOM_CORE_WASM); without it the test is skipped, or fails on CI. SX_CORPUS_PRIVATE=<dir> adds the 3MF files in a
+// folder outside the repository.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { callEngine, type GeomExports } from '../src/geom/engine-call'
 import { setGeomProvider } from '../src/geom/client'
 import { projectOf, readProjectsWithGeom, scanProjectFile, type ImportedProject } from '../src/export/import3mf'
+import { wasmBuilt } from './geom-engine'
 
 const root = join(__dirname, '..', '..', '..')
 const wasm = process.env['SX_GEOM_CORE_WASM'] ?? join(root, 'packages/geom/wasm/pkg/sx_geom_core.wasm')
@@ -69,7 +70,7 @@ function compare(a: ImportedProject, b: ImportedProject): Map<string, string> {
   return out
 }
 
-describe.skipIf(!existsSync(wasm))('the geometry engine reads 3MF projects as the TypeScript reader does', async () => {
+describe.skipIf(!wasmBuilt(wasm))('the geometry engine reads 3MF projects as the TypeScript reader does', async () => {
   const instance = existsSync(wasm) ? (await WebAssembly.instantiate(readFileSync(wasm), {})).instance : null
   const x = instance?.exports as unknown as GeomExports
   afterAll(() => {
