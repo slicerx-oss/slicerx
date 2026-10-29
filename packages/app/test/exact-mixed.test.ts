@@ -1,7 +1,7 @@
 // @vitest-environment node
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { cpus, platform } from 'node:os'
 import { expect, it } from 'vitest'
@@ -10,9 +10,10 @@ import init from '../../brep/lib/sx_brep.mjs'
 import { brepModule } from '../src/geom/brep'
 import { callEngine, type GeomExports } from '../src/geom/engine-call'
 import { scanStl } from '../src/export/stl-scan'
+import { wasmBuilt } from './geom-engine'
 
 const meshPath = process.env['SX_GEOM_WASM'] ?? new URL('../../geom/wasm/pkg/sx_geom_wasm.wasm', import.meta.url)
-const available = existsSync(meshPath)
+const available = wasmBuilt(meshPath)
 if (process.env['SX_BREP_REQUIRE_MIXED'] === '1' && !available) throw new Error('mixed replay requires the real geometry WASM')
 
 function importedCube(): HistoryMesh {

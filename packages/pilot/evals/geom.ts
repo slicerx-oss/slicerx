@@ -19,5 +19,7 @@ export function evalGeom(): ToolHost['geom'] {
     { path: wasm, make: () => createGeomWasm({ wasm }) },
   ].filter((b) => existsSync(b.path))
   const newest = builds.sort((a, b) => statSync(b.path).mtimeMs - statSync(a.path).mtimeMs)[0]
+  // Tests that need geometry skip without it, except on CI, whose web job builds the module first.
+  if (!newest && process.env['CI'] === 'true') throw new Error(`CI=true but there is no geometry engine at ${wasm}: build it with packages/geom/wasm/scripts/build.sh`)
   return newest?.make()
 }

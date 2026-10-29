@@ -23,6 +23,7 @@ import { openModelBytes, slicePlate } from '../src/state/actions'
 import { profileReady } from '../src/state/profile-sync'
 import { plateObjects } from '../src/state/slice-plate'
 import { get, set, type PlateEntry } from '../src/state/store'
+import { wasmBuilt } from './geom-engine'
 
 const bed = { widthMm: 256, depthMm: 256 }
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [20, 20, 12], openEdges: 0, parts: [] })
@@ -140,7 +141,7 @@ describe("a project object's own settings", () => {
 
 const wasm = process.env['SX_GEOM_CORE_WASM'] ?? join(__dirname, '..', '..', '..', 'packages/geom/wasm/pkg/sx_geom_core.wasm')
 
-describe.skipIf(!existsSync(wasm))("a project object's own settings through the geometry engine's reader", async () => {
+describe.skipIf(!wasmBuilt(wasm))("a project object's own settings through the geometry engine's reader", async () => {
   const instance = existsSync(wasm) ? (await WebAssembly.instantiate(readFileSync(wasm), {})).instance : null
   const x = instance?.exports as unknown as GeomExports
   afterAll(() => {

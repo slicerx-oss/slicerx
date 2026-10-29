@@ -22,8 +22,20 @@ interface GeomExports {
   geom_error_len(): number
 }
 
+/**
+ * Whether the geometry engine module at `path` is built. A test that needs it skips without it, except on CI (CI=true):
+ * the web job builds both modules before the tests, so there a missing one fails the file instead of skipping it.
+ */
+export function wasmBuilt(path: string | URL): boolean {
+  if (existsSync(path)) return true
+  if (process.env['CI'] === 'true') {
+    throw new Error(`CI=true but there is no geometry engine at ${String(path)}: build it with packages/geom/wasm/scripts/build.sh`)
+  }
+  return false
+}
+
 export const wasmPath = process.env['SX_GEOM_WASM'] ?? join(__dirname, '..', '..', 'geom', 'wasm', 'pkg', 'sx_geom_wasm.wasm')
-export const liveEngine = existsSync(wasmPath)
+export const liveEngine = wasmBuilt(wasmPath)
 
 /** A provider that calls the wasm module directly, handing each reply to `record`. */
 export async function wasmGeom(record?: (r: Recorded) => void) {
