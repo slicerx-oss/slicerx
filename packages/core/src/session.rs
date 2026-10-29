@@ -8403,10 +8403,10 @@ impl SliceSession {
             spacing: mm(spacing),
             edge: mm(edge),
             line: (deg.m_cos(), deg.m_sin()),
-            min_line: mm(0.05),
             no_sparse,
             opening: mm(0.1 * cfg.outer_wall_width()),
             grid,
+            room: !bambu,
         })
     }
 
@@ -9944,6 +9944,8 @@ impl SliceSession {
                             skip: None,
                         }],
                     };
+                    // The surface's own spacing, before a stretched grid's pitch takes the name.
+                    let nominal_mm = surface_mm;
                     for grid in grids {
                         let SurfaceGrid {
                             region,
@@ -9969,17 +9971,51 @@ impl SliceSession {
                             own.retain(|iv| iv.k != k);
                             own_out.retain(|iv| iv.k != k);
                         }
+                        let min_len = paths::t_units(0.05);
+                        // A stretched piece prints a line wherever the band of its pitch round the line holds the
+                        // surface's own spacing along it (`perimeters::line_room`): the room for one, which also
+                        // takes in a piece narrower along its lines than their pitch across them. Worked out only
+                        // where the lines pulled in by half the pitch miss a line or keep one too short, and not on
+                        // Bambu Lab printers, whose narrow pieces follow rules of their own.
+                        let room = (frame.is_some()
+                            && !bambu_stretch
+                            && short_or_missing(&own, &own_out, min_len))
+                        .then(|| {
+                            let h = std::f64::consts::FRAC_1_SQRT_2;
+                            let (along, across) = match d {
+                                Dir::D45 => ((h, h), (-h, h)),
+                                Dir::D135 => ((-h, h), (h, h)),
+                            };
+                            let band = perimeters::erode_along(&region, across, f64::from(inset));
+                            perimeters::erode_along(&band, along, perimeters::line_room(nominal_mm * SCALE))
+                        })
+                        .filter(|r| !r.is_empty());
+                        let mut fits = room
+                            .as_ref()
+                            .map_or_else(Vec::new, |r| scan_area(family, r, &mut events));
+                        if let Some(k) = skip {
+                            fits.retain(|iv| iv.k != k);
+                        }
                         if anchored.is_some() {
                             // The scanlines laid over the whole surface sit on the plate's grid: none of them prints.
                             spans.clear();
                         }
-                        if own.is_empty() {
+                        if own.is_empty() && fits.is_empty() {
                             continue;
                         }
                         spans.clear();
-                        infill::trim(&mut own, 0, paths::t_units(0.05));
-                        let edge = (link_max > 0.0 && !inner_c.is_empty()).then(|| {
-                            let mut e = crate::edge::Edge::new(&inner_c);
+                        if fits.is_empty() {
+                            infill::trim(&mut own, 0, min_len);
+                        } else {
+                            keep_room(&mut own, &fits, &own_out, min_len);
+                        }
+                        // The turns follow the lines pulled in by half the pitch, or the room when that holds none.
+                        let turn_area = match &room {
+                            Some(r) if inner_c.is_empty() => r,
+                            _ => &inner_c,
+                        };
+                        let edge = (link_max > 0.0 && !turn_area.is_empty()).then(|| {
+                            let mut e = crate::edge::Edge::new(turn_area);
                             // A turn may not pass another line end.
                             e.mark_ends(own.iter().flat_map(|iv| {
                                 let off = i64::from(iv.k) * surface_spacing;
@@ -11779,6 +11815,49 @@ impl PieceFrame {
         let (s, t) = self.d.st(p.x, p.y);
         let (x, y) = self.at(self.origin + s as f64 / self.scale, t as f64);
         crate::geom::Point::new(x, y)
+    }
+}
+
+/// The spans of `spans` on line `k`.
+fn on_line(spans: &[infill::Iv], k: i32) -> &[infill::Iv] {
+    let a = spans.partition_point(|iv| iv.k < k);
+    let b = spans.partition_point(|iv| iv.k <= k);
+    spans.get(a..b).unwrap_or_default()
+}
+
+fn overlap(a: &infill::Iv, b: &infill::Iv) -> bool {
+    a.k == b.k && a.t0 <= b.t1 && b.t0 <= a.t1
+}
+
+/// Whether a stretched piece's lines pulled in by half the pitch (`own`) keep a span shorter than `min_len`, or miss
+/// one of the lines pulled in by 0.05 spacing (`outer`).
+fn short_or_missing(own: &[infill::Iv], outer: &[infill::Iv], min_len: i64) -> bool {
+    own.iter().any(|iv| iv.t1 - iv.t0 < min_len)
+        || outer
+            .iter()
+            .any(|o| !on_line(own, o.k).iter().any(|iv| overlap(iv, o)))
+}
+
+/// The lines of a stretched piece: of `own` (its lines pulled in by half the pitch) those at least `min_len` long or
+/// with room for a line ([`perimeters::line_room`], the spans `fits`), and each span of `fits` whose line pulled in by
+/// 0.05 spacing (the span of `outer` that holds it) holds none of them.
+fn keep_room(own: &mut Spans, fits: &[infill::Iv], outer: &[infill::Iv], min_len: i64) {
+    own.retain(|iv| iv.t1 - iv.t0 >= min_len || on_line(fits, iv.k).iter().any(|f| overlap(f, iv)));
+    let add: Vec<infill::Iv> = fits
+        .iter()
+        .filter(|f| {
+            let line = on_line(outer, f.k);
+            let held: Vec<&infill::Iv> = line.iter().filter(|o| overlap(o, f)).collect();
+            !held.is_empty()
+                && !on_line(own, f.k)
+                    .iter()
+                    .any(|iv| held.iter().any(|o| overlap(o, iv)))
+        })
+        .copied()
+        .collect();
+    if !add.is_empty() {
+        own.extend(add);
+        own.sort_by_key(|iv| (iv.k, iv.t0));
     }
 }
 
