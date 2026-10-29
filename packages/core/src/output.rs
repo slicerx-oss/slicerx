@@ -419,6 +419,9 @@ pub enum WarningCode {
     Collision,
     /// Two objects sliced together overlap; the overlap prints once, as part of the first.
     ObjectsOverlap,
+    /// A tool change the project or request sets at a height does not apply to this plate (it prints several
+    /// filaments, or object by object), so the slice goes on without it.
+    ToolChangeSkipped,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

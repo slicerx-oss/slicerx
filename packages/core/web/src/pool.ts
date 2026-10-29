@@ -349,10 +349,10 @@ export async function createWasmSlicer(opts: PoolOptions): Promise<SlicerHost> {
     },
     async slice(req: SliceRequest, o?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal }): Promise<SliceResult> {
       const started = performance.now()
-      // Options the engine reads: the dialect, sleipnir tops, resume, height ranges and per-layer G-code.
-      const { flavor, layerTopsMm, resumeFromLayer, resumeZ, heightRanges, machineLimits, trustedGcode, layerGcode } = (req.options ?? {}) as Record<string, unknown>
+      // Options the engine reads: the dialect, sleipnir tops, resume, height ranges, per-layer G-code and tool changes.
+      const { flavor, layerTopsMm, resumeFromLayer, resumeZ, heightRanges, machineLimits, trustedGcode, layerGcode, toolChanges } = (req.options ?? {}) as Record<string, unknown>
       const clock = sliceClock()
-      const options = { flavor, layerTopsMm, resumeFromLayer, resumeZ, heightRanges, machineLimits, trustedGcode, layerGcode, ...clock, ...pickClock(req.options) }
+      const options = { flavor, layerTopsMm, resumeFromLayer, resumeZ, heightRanges, machineLimits, trustedGcode, layerGcode, toolChanges, ...clock, ...pickClock(req.options) }
       // The thumbnail image goes to the joining step, not to every shard: { width, height, rgba } of raw RGBA bytes.
       const thumbnail = (req.options as Record<string, unknown> | undefined)?.thumbnail as
         | { width: number; height: number; rgba: Uint8Array | ArrayBuffer }

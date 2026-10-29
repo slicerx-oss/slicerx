@@ -28,7 +28,7 @@ describe('the warnings of a desktop slice', () => {
   })
 
   it('keep every code the engine writes', async () => {
-    const codes = ['open_edges', 'thin_wall', 'floating_region', 'long_bridge', 'outside_bed', 'unsupported_setting', 'manual_step', 'safety_limit', 'collision', 'objects_overlap']
+    const codes = ['open_edges', 'thin_wall', 'floating_region', 'long_bridge', 'outside_bed', 'unsupported_setting', 'manual_step', 'safety_limit', 'collision', 'objects_overlap', 'tool_change_skipped']
     tauri.report = report(codes.map((code) => ({ code, message: code })))
     expect((await createTauriSlicer().slice(req)).warnings.map((w) => w.code)).toEqual(codes)
   })
