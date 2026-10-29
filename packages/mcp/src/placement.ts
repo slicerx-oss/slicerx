@@ -282,12 +282,14 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
   const duplicate = tool({
     name: 'project.duplicate',
     description:
-      'Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows. For identical copies that always print alike, add the model with copies instead. Answers with the new ids and the project.',
+      'Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows, or around the objects already there when the rows would reach past the bed. A copy with no room on the bed goes to the last plate when it has room and the same printer and settings, else to a new plate; moved lists each one by id and plate. An object too large for an empty plate is refused, with no copy made. For identical copies that always print alike, add the model with copies instead. Answers with the new ids and the project.',
     input: z.object({ object: objectArg, count: z.number().int().min(1).max(50).default(1).describe('How many copies, 1 to 50') }),
     title: (i) => `Duplicate ${i.object}${i.count > 1 ? ` ${i.count} times` : ''}?`,
-    run(i, project) {
-      const ids = project.duplicate(i.object, i.count)
-      return done(`${i.object} duplicated as ${ids.join(', ')}`, project, { objects: ids })
+    async run(i, project) {
+      const { ids, moved } = await project.duplicate(i.object, i.count)
+      const where = [...new Set(moved.map((m) => m.to))].map((n) => `plate ${n}`)
+      const note = moved.length === 0 ? '' : `. ${moved.length === 1 ? `${moved[0]!.objectId} had` : `${moved.map((m) => m.objectId).join(', ')} had`} no room on plate ${moved[0]!.from}, so ${moved.length === 1 ? 'it' : 'they'} went to ${where.length > 1 ? `${where.slice(0, -1).join(', ')} and ${where.at(-1)}` : where[0]}.`
+      return done(`${i.object} duplicated as ${ids.join(', ')}${note}`, project, { objects: ids, moved })
     },
   })
 
