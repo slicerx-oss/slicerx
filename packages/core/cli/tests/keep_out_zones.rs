@@ -250,6 +250,12 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     // Changed again when sparse infill hung off each cube's own box center instead of the plate origin: the sparse lines,
     // the travels after them, the bridge and the floating ring right over the sparse infill (they rest on its lines),
     // the progress lines and the filament total moved.
+    // Changed again when Bambu Lab printers took the first and the last layer's wall overlap from
+    // `infill_wall_overlap` and spread the first layer's lines: only the first layer's bottom surface and the top
+    // layer's top surface moved, with the travels into the walls after them, the progress lines and the totals.
+    // Changed again when monotonic line tops on Bambu Lab printers took their lines from a grid anchored to the
+    // objects: only the top layer's top surface moved, with the travels and retractions around it, the progress lines
+    // and the totals.
     let c = config("p1s", &json!({"brim_type": "outer_only", "brim_width": 5}));
     let (out, gcode) = slice("p1s", &c, &[[18.0, 6.0], [140.0, 140.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -263,7 +269,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "3c49704d0e118adb",
+        "5da33e25858b77f1",
         "the P1S plate's G-code changed"
     );
 }

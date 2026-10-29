@@ -8323,8 +8323,9 @@ impl SliceSession {
 
     /// How narrow pieces of `layer`'s surfaces whose lines spread evenly across each piece (see the surface fill
     /// below) print, for a region with settings `cfg` and shells `sh`: the top surfaces, uncovered by `upper` (the
-    /// layer above's outline) and resting on `below`, or all of the first layer. `None` on Bambu Lab printers and
-    /// wherever those surfaces do not spread their lines.
+    /// layer above's outline) and resting on `below`, or all of the first layer. On Bambu Lab printers only the first
+    /// layer's bottom surface spreads, and with no sparse infill the monotonic line tops keep one grid
+    /// ([`perimeters::NarrowSurface::grid`]). `None` wherever those surfaces neither spread their lines nor keep that grid.
     #[allow(
         clippy::too_many_arguments,
         reason = "the layer, its settings and shells, and its neighbors"
@@ -8338,9 +8339,15 @@ impl SliceSession {
         upper: Option<&'a Shapes>,
         below: Option<&'a Shapes>,
     ) -> Option<perimeters::NarrowSurface<'a>> {
-        if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
-            || crate::tower::flag(cfg, "only_one_wall_top")
-        {
+        let bambu = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
+        if crate::tower::flag(cfg, "only_one_wall_top") {
+            return None;
+        }
+        let no_sparse = cfg.sparse_infill_density <= 0.0 && !cfg.arachne_walls();
+        // Bambu Lab printers' monotonic line tops keep one grid: with no sparse infill every narrow piece of them is
+        // top surface, with the grid's lines that fit and gap fill.
+        let grid = bambu && layer > 0;
+        if grid && !no_sparse {
             return None;
         }
         let n = self.plan.count();
@@ -8349,7 +8356,12 @@ impl SliceSession {
                 Some(serde_json::Value::String(s)) => s.as_str(),
                 _ => default,
             };
-            (cfg.raw_number(density_key, 100.0) / 100.0 - 1.0).abs() < 1e-9 && stretch_pattern(name)
+            (cfg.raw_number(density_key, 100.0) / 100.0 - 1.0).abs() < 1e-9
+                && if grid {
+                    name == "monotonicline"
+                } else {
+                    stretch_pattern(name, bambu)
+                }
         };
         let (upper, lower, width) = if layer == 0 {
             let first = self.raft.is_none()
@@ -8367,11 +8379,15 @@ impl SliceSession {
             (upper.filter(|_| layer + 1 < n), below, cfg.top_surface_width())
         };
         let overlap = if layer == 0 || layer + 1 == n {
-            cfg.raw_number("top_bottom_infill_wall_overlap", 25.0)
+            first_last_overlap(cfg)
         } else {
             cfg.infill_wall_overlap
         };
-        let edge = surface_edge(cfg, layer_height, overlap / 100.0)?;
+        let edge = if grid {
+            0.0
+        } else {
+            surface_edge(cfg, layer_height, overlap / 100.0)?
+        };
         let spacing = cfg.spacing_for(width);
         // The lines' direction on the plate, as the surface fill turns them.
         let deg = frame_deg(
@@ -8388,8 +8404,9 @@ impl SliceSession {
             edge: mm(edge),
             line: (deg.m_cos(), deg.m_sin()),
             min_line: mm(0.05),
-            no_sparse: cfg.sparse_infill_density <= 0.0 && !cfg.arachne_walls(),
+            no_sparse,
             opening: mm(0.1 * cfg.outer_wall_width()),
+            grid,
         })
     }
 
@@ -8470,14 +8487,14 @@ impl SliceSession {
             };
             let (w, overlap, top_n, bot_n) = (sh.w, sh.overlap, sh.top_n, sh.bot_n);
             // The first and the last layer's own walls use `top_bottom_infill_wall_overlap` (as OrcaSlicer's
-            // walls do with no layer above, and on layer 0). The neighbors' infill areas, which the
-            // layers around share, keep `overlap`.
+            // walls do with no layer above, and on layer 0; `infill_wall_overlap` on Bambu Lab printers,
+            // [`first_last_overlap`]). The neighbors' infill areas, which the layers around share, keep `overlap`.
             #[allow(
                 clippy::cast_possible_truncation,
                 reason = "overlap is a fraction of a line width"
             )]
             let own_overlap = if top_or_bottom {
-                (f64::from(w) * cfg.raw_number("top_bottom_infill_wall_overlap", 25.0) / 100.0).round() as i32
+                (f64::from(w) * first_last_overlap(cfg) / 100.0).round() as i32
             } else {
                 overlap
             };
@@ -9728,24 +9745,24 @@ impl SliceSession {
             // Which of the three surfaces are filled with monotonic line (their own gap fill, below). Only Bambu Lab
             // printers fill those slivers; other printers leave gap fill to `gap_fill_target` whatever the pattern.
             let mut line_fill = [false; 3];
+            // Where the gap fill of a monotonic line surface on one grid starts, mm in from the infill area's edge:
+            // the innermost wall's spacing edge, c + sc/2 ([`grid_inset`] less half a line spacing).
+            let mut grid_gap_edge: [Option<f64>; 3] = [None; 3];
             let line_fill_gaps = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
             // `solid_infill_rotate_template`: every solid surface of the layer at the template's angle.
             let solid_deg = self.template_angle(cfg, "solid_infill_rotate_template", layer);
             let model_turn = self.model_turn(cfg);
             let solid_base = crate::motion::raw_f(cfg, "solid_infill_direction").unwrap_or(45.0);
-            // Off Bambu Lab printers the top surfaces and the first layer's bottom surface spread their lines
-            // evenly across each connected piece (`surface_edge`); the infill area overlaps the walls by
-            // `top_bottom_infill_wall_overlap` on the first and the last layer, as the walls are built.
-            let surface_stretch = if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
-                None
+            // The top surfaces and the first layer's bottom surface spread their lines evenly across each connected
+            // piece (`surface_edge`) when their pattern does (`stretch_pattern`); the infill area overlaps the walls
+            // by `first_last_overlap` on the first and the last layer, as the walls are built.
+            let bambu_stretch = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
+            let stretch_overlap = if layer == 0 || layer + 1 == self.plan.count() {
+                first_last_overlap(cfg)
             } else {
-                let overlap = if layer == 0 || layer + 1 == self.plan.count() {
-                    cfg.raw_number("top_bottom_infill_wall_overlap", 25.0)
-                } else {
-                    cfg.infill_wall_overlap
-                };
-                surface_edge(cfg, layer_height, overlap / 100.0)
+                cfg.infill_wall_overlap
             };
+            let surface_stretch = surface_edge(cfg, layer_height, stretch_overlap / 100.0);
             // How much wider than the surface's own width each stretched top and bottom line prints, and the
             // widest stretched spacing, mm.
             let mut widen: [Vec<f32>; 2] = [Vec::new(), Vec::new()];
@@ -9808,7 +9825,7 @@ impl SliceSession {
                         && self.raft.is_none()
                         && !cfg.only_one_wall_first_layer
                         && !(one_wall_top && self.plan.count() == 1);
-                    (top || first) && (density - 1.0).abs() < 1e-9 && stretch_pattern(name)
+                    (top || first) && (density - 1.0).abs() < 1e-9 && stretch_pattern(name, bambu_stretch)
                 });
                 // Monotonic, rectilinear and aligned rectilinear join each line to its neighbor along the edge of the
                 // surface however long the turn is: which ends are neighbors decides it, not a length (only ironing
@@ -9871,8 +9888,53 @@ impl SliceSession {
                     // edge moved out by it, and as many lines as the piece's extent across them holds at the
                     // nominal spacing, spread evenly (at most 1.2 nominal spacings apart) from half a spacing in.
                     // A stretched line is as much wider than the surface's own width as its spacing grew.
-                    let grids: Vec<SurfaceGrid> = match stretch {
-                        None => vec![SurfaceGrid {
+                    // On Bambu Lab printers a monotonic line top or first-layer bottom keeps one grid, anchored to the
+                    // objects: lines at (j + 1/2) spacings from the center of their box (the reference the sparse
+                    // infill and the bridges use), and a line prints when its center is at least [`grid_inset`]
+                    // past the infill area's edge.
+                    let anchored = (bambu_stretch
+                        && name == "monotonicline"
+                        && (which == 0 || (which == 1 && layer == 0))
+                        && (density - 1.0).abs() < 1e-9)
+                        .then(|| {
+                            let one_wall = (which == 0 && one_wall_top)
+                                || (layer == 0 && self.raft.is_none() && cfg.only_one_wall_first_layer);
+                            let loops = if one_wall {
+                                cfg.wall_loops.min(1)
+                            } else {
+                                cfg.wall_loops
+                            };
+                            grid_inset(cfg, layer_height, stretch_overlap / 100.0, loops, surface_mm)
+                        })
+                        .flatten();
+                    let grids: Vec<SurfaceGrid> = match (stretch, anchored) {
+                        (Some(e), _) => stretch_grids(&region, d, e, surface_mm),
+                        (None, Some(inset_mm)) => {
+                            if let Some(e) = grid_gap_edge.get_mut(which) {
+                                *e = Some((inset_mm - surface_mm / 2.0).max(0.0));
+                            }
+                            let center = crate::geom::Point::new(
+                                mm(f64::midpoint(self.bounds[0], self.bounds[2])),
+                                mm(f64::midpoint(self.bounds[1], self.bounds[3])),
+                            );
+                            let anchor = if turn == 0.0 {
+                                center
+                            } else {
+                                crate::patterns::rotate_points(&[center], -turn)
+                                    .first()
+                                    .copied()
+                                    .unwrap_or(center)
+                            };
+                            vec![anchored_grid(
+                                &region,
+                                d,
+                                anchor,
+                                surface_spacing,
+                                surface_mm,
+                                inset_mm,
+                            )]
+                        }
+                        (None, None) => vec![SurfaceGrid {
                             region,
                             spacing: surface_spacing,
                             spacing_mm: surface_mm,
@@ -9881,7 +9943,6 @@ impl SliceSession {
                             wider: 0.0,
                             skip: None,
                         }],
-                        Some(e) => stretch_grids(&region, d, e, surface_mm),
                     };
                     for grid in grids {
                         let SurfaceGrid {
@@ -9907,6 +9968,10 @@ impl SliceSession {
                         if let Some(k) = skip {
                             own.retain(|iv| iv.k != k);
                             own_out.retain(|iv| iv.k != k);
+                        }
+                        if anchored.is_some() {
+                            // The scanlines laid over the whole surface sit on the plate's grid: none of them prints.
+                            spans.clear();
                         }
                         if own.is_empty() {
                             continue;
@@ -10204,7 +10269,14 @@ impl SliceSession {
                     if !own && !target {
                         return Vec::new();
                     }
-                    let region = perimeters::intersection(&surface_region(which), &flat);
+                    let region = match grid_gap_edge.get(which).copied().flatten().filter(|_| *own) {
+                        // Between the innermost wall and the lines.
+                        Some(e) => perimeters::intersection(
+                            &surface_region(which),
+                            &perimeters::offset(&inner, -mm(e)),
+                        ),
+                        None => perimeters::intersection(&surface_region(which), &flat),
+                    };
                     if *own {
                         // No bead wider than a solid infill line, whatever the surface's own width.
                         crate::fillgap::line_gaps(&region, lines, mm_pitch, mm_pitch.min(solid_mm))
@@ -11510,28 +11582,43 @@ fn stretch_of(
     })
 }
 
-/// Whether a top or bottom surface pattern spreads its lines evenly across each piece (at full density, off
-/// Bambu Lab printers): the line patterns.
-fn stretch_pattern(name: &str) -> bool {
-    matches!(name, "monotonic" | "monotonicline" | "rectilinear")
+/// Whether a top or bottom surface pattern spreads its lines evenly across each piece (at full density): the line
+/// patterns, or on Bambu Lab printers (`bambu`) monotonic alone. There monotonic line keeps its lines on one grid.
+fn stretch_pattern(name: &str, bambu: bool) -> bool {
+    if bambu {
+        name == "monotonic"
+    } else {
+        matches!(name, "monotonic" | "monotonicline" | "rectilinear")
+    }
+}
+
+/// How far the first and the last layer's infill area overlaps the walls, percent of a line width:
+/// `top_bottom_infill_wall_overlap` (25 % when unset), or on Bambu Lab printers `infill_wall_overlap`, as on every
+/// other layer. Their maker's slicer has no setting of its own for these layers.
+pub(crate) fn first_last_overlap(cfg: &PrintConfig) -> f64 {
+    if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+        cfg.infill_wall_overlap
+    } else {
+        cfg.raw_number("top_bottom_infill_wall_overlap", 25.0)
+    }
 }
 
 /// Whether the surface edge of fixed-width walls follows the precise outer wall's move of the inner walls on Bambu
 /// Lab printers too. Off: there the edge keeps the inner walls where they sit without it.
-const PRECISE_SURFACE_EDGE_ON_BAMBU: bool = false;
+const PRECISE_SURFACE_EDGE_ON_BAMBU: bool = true;
 
 /// How far a top surface's or the first layer's bottom surface's pieces move their edge out (in, when negative)
 /// before each spreads its lines evenly across itself, mm, on a layer `height` thick whose infill area overlaps
 /// the walls by `overlap` (a share of the line width). The infill area starts at the walls' widths from the
 /// outline (the outer wall's, then the inner wall's spacing per further loop with variable-width walls and its
 /// width with fixed-width walls) less that overlap. The surface starts half the innermost wall's spacing past that
-/// wall's centerline, less `top_bottom_infill_wall_overlap` of a spacing. With variable-width walls that centerline
+/// wall's centerline, less [`first_last_overlap`] of a spacing. With variable-width walls that centerline
 /// is half an inner spacing inside the outer wall's width plus an inner spacing per further loop, and the overlap is
 /// of the inner wall's spacing. With fixed-width walls the centerline sits where the walls are laid: the outer wall's
 /// centerline, the first inner wall's pitch (the two widths' mean with the precise outer wall and inner walls first,
 /// else the two spacings' mean), then an inner spacing per further loop; the overlap is of the mean of the inner
 /// wall's and the internal solid infill's spacings. Bambu Lab printers keep the spacings' mean for the first pitch
-/// unless [`PRECISE_SURFACE_EDGE_ON_BAMBU`] is set, and the inner wall's spacing alone for the overlap. `None` where
+/// unless [`PRECISE_SURFACE_EDGE_ON_BAMBU`] is set. `None` where
 /// the walls are not the plain loops this reads (one fixed-width wall, or an extra wall on every other layer).
 pub(crate) fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> Option<f64> {
     if cfg.wall_loops == 0 || crate::tower::flag(cfg, "alternate_extra_wall") {
@@ -11540,7 +11627,7 @@ pub(crate) fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> Opti
     let spacing = |w: f64| (w - height * (1.0 - std::f64::consts::FRAC_PI_4)).max(w * 0.5);
     let (outer, inner) = (cfg.outer_wall_width(), cfg.inner_wall_width());
     let loops = f64::from(cfg.wall_loops);
-    let share = cfg.raw_number("top_bottom_infill_wall_overlap", 25.0) / 100.0;
+    let share = first_last_overlap(cfg) / 100.0;
     let (area, surface) = if cfg.arachne_walls() {
         let walls = outer + (loops - 1.0) * spacing(inner);
         (walls, walls - share * spacing(inner))
@@ -11555,17 +11642,92 @@ pub(crate) fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> Opti
                 f64::midpoint(spacing(outer), spacing(inner))
             };
         let innermost = outer / 2.0 + first + (loops - 2.0) * spacing(inner);
-        let overlap_of = if bambu {
-            spacing(inner)
-        } else {
-            f64::midpoint(spacing(inner), spacing(cfg.solid_infill_width()))
-        };
+        let overlap_of = f64::midpoint(spacing(inner), spacing(cfg.solid_infill_width()));
         (
             outer + (loops - 1.0) * inner,
             innermost + spacing(inner) / 2.0 - share * overlap_of,
         )
     };
     Some((area - overlap * cfg.line_width) - surface)
+}
+
+/// How far in from the edge of the infill area the lines of a surface on a fixed grid keep their centers on Bambu
+/// Lab printers, mm: a line prints when its center is at least c + sc/2 + s/2 from the outline, with c the innermost
+/// of `loops` walls' centerline, sc its spacing and s the surface's spacing `surface_mm`, and no overlap term. The
+/// infill area, on a layer `height` thick, starts at the walls' widths from the outline (as [`surface_edge`] reads
+/// them) less `overlap` (a share of the line width). c is where the walls are laid: with variable-width walls half an inner spacing inside the outer wall's
+/// width plus an inner spacing per further loop, with fixed-width walls the outer wall's centerline, the first inner
+/// wall's pitch, then an inner spacing per further loop (one wall: the outer wall's centerline and spacing). Never
+/// less than 0, so no line reaches past the infill area. `None` with no walls or an extra wall on every other layer.
+pub(crate) fn grid_inset(
+    cfg: &PrintConfig,
+    height: f64,
+    overlap: f64,
+    loops: u32,
+    surface_mm: f64,
+) -> Option<f64> {
+    if loops == 0 || crate::tower::flag(cfg, "alternate_extra_wall") {
+        return None;
+    }
+    let spacing = |w: f64| (w - height * (1.0 - std::f64::consts::FRAC_PI_4)).max(w * 0.5);
+    let (outer, inner) = (cfg.outer_wall_width(), cfg.inner_wall_width());
+    let n = f64::from(loops);
+    let (area, edge) = if cfg.arachne_walls() {
+        let walls = outer + (n - 1.0) * spacing(inner);
+        (walls, walls)
+    } else if loops == 1 {
+        (outer, f64::midpoint(outer, spacing(outer)))
+    } else {
+        let first = if crate::perimeters::precise_inner_walls(cfg) {
+            f64::midpoint(outer, inner)
+        } else {
+            f64::midpoint(spacing(outer), spacing(inner))
+        };
+        let innermost = outer / 2.0 + first + (n - 2.0) * spacing(inner);
+        (outer + (n - 1.0) * inner, innermost + spacing(inner) / 2.0)
+    };
+    Some((edge + surface_mm / 2.0 - (area - overlap * cfg.line_width)).max(0.0))
+}
+
+/// The grid of a monotonic line surface on Bambu Lab printers: `region` (turned so its lines run along `d`) drawn in a
+/// [`PieceFrame`] whose line 0 sits half a spacing past `anchor` (a point turned with the region), so the lines lie
+/// at (j + 1/2) spacings from it across the lines, with their centers `inset_mm` in from the region's edge.
+fn anchored_grid(
+    region: &Shapes,
+    d: Dir,
+    anchor: crate::geom::Point,
+    spacing: i64,
+    spacing_mm: f64,
+    inset_mm: f64,
+) -> SurfaceGrid {
+    #[allow(clippy::cast_precision_loss, reason = "scanline values on a bed")]
+    let (origin, exact) = (
+        d.st(anchor.x, anchor.y).0 as f64,
+        spacing_mm * crate::geom::SCALE * std::f64::consts::SQRT_2,
+    );
+    #[allow(clippy::cast_precision_loss, reason = "a spacing in scanline units")]
+    let frame = PieceFrame {
+        d,
+        origin: origin + exact / 2.0,
+        scale: spacing as f64 / exact,
+    };
+    let drawn: Shapes = region
+        .iter()
+        .map(|s| {
+            s.iter()
+                .map(|r| r.iter().map(|q| frame.to(*q)).collect())
+                .collect()
+        })
+        .collect();
+    SurfaceGrid {
+        region: drawn,
+        spacing,
+        spacing_mm,
+        inset: mm(inset_mm),
+        frame: Some(frame),
+        wider: 0.0,
+        skip: None,
+    }
 }
 
 /// One grid of a surface's lines: the area, the line spacing (scanline units and mm), how far in the lines' ends
@@ -13899,7 +14061,7 @@ mod feature_slot_tests {
 
 #[cfg(test)]
 mod surface_edge_tests {
-    use super::{stretch_pitch, surface_edge};
+    use super::{Dir, IntPoint, Shapes, anchored_grid, grid_inset, mm, stretch_pitch, surface_edge};
     use crate::config::PrintConfig;
     use serde_json::json;
 
@@ -13984,20 +14146,42 @@ mod surface_edge_tests {
     }
 
     #[test]
-    fn bambu_printers_keep_the_spacings_mean_and_the_inner_wall_overlap() {
-        // A1 widths (inner wall 0.45, internal solid 0.42), precise on: the edge is the one with precise off and the
-        // overlap of the inner wall's spacing alone.
-        let a1 = |precise: bool| {
-            json!({"wall_generator": "classic", "wall_loops": 2, "line_width": 0.42, "outer_wall_line_width": 0.42,
-                "inner_wall_line_width": 0.45, "internal_solid_infill_line_width": 0.42, "layer_height": 0.2,
-                "printer_model": "Bambu Lab A1", "precise_outer_wall": precise, "top_bottom_infill_wall_overlap": 25})
+    fn bambu_printers_start_the_surface_from_the_infill_wall_overlap() {
+        // A1 widths (outer wall 0.42, inner wall 0.45, internal solid 0.42; 0.5 for everything on the first layer):
+        // where the surface starts, from the outline, is c + sc/2 - iwo (sc + s(sw))/2 with the overlap of
+        // `infill_wall_overlap`, whatever `top_bottom_infill_wall_overlap` says, and the precise outer wall moves c.
+        let a1 = |loops: u32, precise: bool, iwo: f64, tbo: Option<f64>| {
+            let mut c = json!({"wall_generator": "classic", "wall_loops": loops, "line_width": 0.42,
+                "outer_wall_line_width": 0.42, "inner_wall_line_width": 0.45, "internal_solid_infill_line_width": 0.42,
+                "initial_layer_line_width": 0.5, "layer_height": 0.2, "printer_model": "Bambu Lab A1",
+                "precise_outer_wall": precise, "infill_wall_overlap": iwo});
+            if let Some(t) = tbo {
+                c["top_bottom_infill_wall_overlap"] = json!(t);
+            }
+            PrintConfig::from_value(&c).expect("the settings read")
         };
-        let k = 0.2 * (1.0 - std::f64::consts::FRAC_PI_4);
-        let s = |w: f64| w - k;
-        let start = 0.21 + f64::midpoint(s(0.42), s(0.45)) + s(0.45) / 2.0 - 0.25 * s(0.45);
-        let want = (0.42 + 0.45 - 0.25 * 0.42) - start;
-        assert_eq!(edge(&a1(true), 0.2).to_bits(), edge(&a1(false), 0.2).to_bits());
-        assert!((edge(&a1(true), 0.2) - want).abs() < 1e-12);
+        let start = |cfg: &PrintConfig| {
+            let iwo = cfg.infill_wall_overlap / 100.0;
+            let area = cfg.outer_wall_width() + f64::from(cfg.wall_loops - 1) * cfg.inner_wall_width()
+                - iwo * cfg.line_width;
+            area - surface_edge(cfg, 0.2, iwo).expect("plain walls")
+        };
+        // The first layer (the outline already pulled in by the elephant foot compensation, 0.075 on the A1):
+        // 2 walls at 15 % start 0.8671 in; 3 walls with the precise outer wall start 1.4356 at 0 % and 1.2071 at 50 %.
+        for tbo in [None, Some(0.0), Some(50.0)] {
+            let first = a1(2, false, 15.0, tbo).for_first_layer();
+            assert!(
+                (start(&first) - 0.8671).abs() < 0.0002,
+                "{tbo:?}: {}",
+                start(&first)
+            );
+        }
+        assert!((start(&a1(3, true, 0.0, None).for_first_layer()) - 1.4356).abs() < 0.0002);
+        assert!((start(&a1(3, true, 50.0, None).for_first_layer()) - 1.2071).abs() < 0.0002);
+        // A top: inner wall and internal solid spacings differ (0.40708 and 0.37708), so the overlap is of their
+        // mean: 0.7468 at 15 % and 0.6096 at 50 %.
+        assert!((start(&a1(2, false, 15.0, Some(25.0))) - 0.7468).abs() < 0.0002);
+        assert!((start(&a1(2, false, 50.0, None)) - 0.6096).abs() < 0.0002);
     }
 
     #[test]
@@ -14008,6 +14192,68 @@ mod surface_edge_tests {
         let extra =
             PrintConfig::from_value(&json!({"wall_loops": 2, "alternate_extra_wall": true})).expect("read");
         assert!(surface_edge(&extra, 0.2, 0.25).is_none());
+    }
+
+    #[test]
+    fn bambu_grid_lines_start_half_a_spacing_past_the_innermost_walls_spacing_edge() {
+        // A1 widths (outer wall 0.42, inner wall 0.45, top 0.42; 0.5 on the first layer): a line's center keeps
+        // c + sc/2 + s/2 from the outline, with no overlap term. From the outline: 0.9942 on the top (0.3921 past the
+        // inner wall at 0.6021), 0.5871 with one wall (0.3771 past the outer wall at 0.21), 1.2393 on the first layer
+        // (0.4571 past the inner wall at 0.7822; 0.075 of that is the elephant foot compensation, which pulls the outline
+        // in first).
+        let a1 = |iwo: f64| {
+            PrintConfig::from_value(&json!({"wall_generator": "classic", "wall_loops": 2, "line_width": 0.42,
+                "outer_wall_line_width": 0.42, "inner_wall_line_width": 0.45, "internal_solid_infill_line_width": 0.42,
+                "top_surface_line_width": 0.42, "initial_layer_line_width": 0.5, "layer_height": 0.2,
+                "printer_model": "Bambu Lab A1", "infill_wall_overlap": iwo}))
+            .expect("the settings read")
+        };
+        let from_outline = |cfg: &PrintConfig, loops: u32, surface: f64| {
+            let iwo = cfg.infill_wall_overlap / 100.0;
+            let area = if loops == 1 {
+                cfg.outer_wall_width()
+            } else {
+                cfg.outer_wall_width() + f64::from(loops - 1) * cfg.inner_wall_width()
+            } - iwo * cfg.line_width;
+            area + grid_inset(cfg, 0.2, iwo, loops, surface).expect("plain walls")
+        };
+        let s = |w: f64| w - 0.2 * (1.0 - std::f64::consts::FRAC_PI_4);
+        for iwo in [0.0, 15.0, 50.0] {
+            let top = a1(iwo);
+            assert!((from_outline(&top, 2, s(0.42)) - 0.9942).abs() < 0.0002, "{iwo}");
+            assert!((from_outline(&top, 1, s(0.42)) - 0.5871).abs() < 0.0002, "{iwo}");
+            let first = top.for_first_layer();
+            assert!(
+                (from_outline(&first, 2, s(0.5)) - (1.2393 - 0.075)).abs() < 0.0002,
+                "{iwo}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bambu_grid_puts_its_lines_half_a_spacing_off_the_anchor() {
+        // A square 10 mm across, lines along 45 degrees 0.4 mm apart, anchored at (3, 2): every line lies (j + 1/2)
+        // spacings from the anchor across the lines.
+        let side = mm(10.0);
+        let square: Shapes = vec![vec![vec![
+            IntPoint::new(0, 0),
+            IntPoint::new(side, 0),
+            IntPoint::new(side, side),
+            IntPoint::new(0, side),
+        ]]];
+        let anchor = crate::geom::Point::new(mm(3.0), mm(2.0));
+        let spacing = crate::paths::t_units(0.4);
+        let grid = anchored_grid(&square, Dir::D45, anchor, spacing, 0.4, 0.2);
+        let frame = grid.frame.expect("a frame");
+        let across = |p: crate::geom::Point| {
+            (f64::from(p.y) - f64::from(p.x)) / std::f64::consts::SQRT_2 / crate::geom::SCALE
+        };
+        for k in -5_i64..5 {
+            // A point on scanline k of the frame, back on the plate.
+            let p = frame.back(Dir::D45.point(k * spacing, 0));
+            let from = (across(p) - across(anchor)) / 0.4 - 0.5;
+            assert!((from - from.round()).abs() < 1e-3, "line {k}: {from}");
+        }
     }
 }
 

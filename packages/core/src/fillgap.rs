@@ -47,7 +47,8 @@ pub(crate) fn gaps(area: &Shapes, lines: &[[Point; 2]], spacing_mm: f64, cfg: &P
 /// The gap beads of a surface filled with monotonic line: every sliver its own lines leave, whatever
 /// `gap_fill_target` says, and `filter_out_gap_fill` does not apply. The slivers run from 0.05 spacing up to
 /// `widest_mm` wide, and no bead is shorter than [`SHORT_MIN_MM`]. A sliver too short for a line down its middle (a
-/// corner the lines cut off) gets none.
+/// corner the lines cut off) gets none. A piece of `area` no line crosses (a narrow strip where no line of the grid
+/// fits) is a sliver of its own up to two spacings wide.
 pub(crate) fn line_gaps(
     area: &Shapes,
     lines: &[[Point; 2]],
@@ -60,7 +61,43 @@ pub(crate) fn line_gaps(
         filter: SHORT_MIN_MM,
         thin: true,
     };
-    strips_of(area, lines, spacing_mm, &bounds)
+    let (bare, lined): (Shapes, Shapes) = area.iter().cloned().partition(|piece| !crossed(piece, lines));
+    if bare.is_empty() {
+        return strips_of(area, lines, spacing_mm, &bounds);
+    }
+    let mut out = strips_of(&lined, lines, spacing_mm, &bounds);
+    let bare_bounds = Bounds {
+        max: widest_mm.max(2.0 * spacing_mm),
+        ..bounds
+    };
+    out.extend(beads_of(&bare, &bare_bounds));
+    out
+}
+
+/// Whether any of `lines` has its middle or an end in `piece`.
+fn crossed(piece: &[Vec<i_overlay::i_float::int::point::IntPoint<i32>>], lines: &[[Point; 2]]) -> bool {
+    let Some(ring) = piece.first() else {
+        return false;
+    };
+    let (mut lo, mut hi) = ([i32::MAX; 2], [i32::MIN; 2]);
+    for p in ring {
+        lo = [lo[0].min(p.x), lo[1].min(p.y)];
+        hi = [hi[0].max(p.x), hi[1].max(p.y)];
+    }
+    let one: Shapes = vec![piece.to_vec()];
+    lines.iter().any(|[a, b]| {
+        [
+            *a,
+            *b,
+            Point::new(i32::midpoint(a.x, b.x), i32::midpoint(a.y, b.y)),
+        ]
+        .iter()
+        .any(|p| {
+            (lo[0]..=hi[0]).contains(&p.x)
+                && (lo[1]..=hi[1]).contains(&p.y)
+                && crate::support::point_in(&one, p.x, p.y)
+        })
+    })
 }
 
 /// Which strips get a bead: `min` to `max` mm wide, at least `filter` mm long, and whether close points are
@@ -90,9 +127,17 @@ fn strips_of(area: &Shapes, lines: &[[Point; 2]], spacing_mm: f64, bounds: &Boun
     if open.is_empty() {
         return Vec::new();
     }
+    beads_of(&open, bounds)
+}
+
+/// The beads of the part `open` of a surface the lines leave: down the middle of every strip of it within `bounds`.
+fn beads_of(open: &Shapes, bounds: &Bounds) -> Vec<WallLine> {
+    if open.is_empty() {
+        return Vec::new();
+    }
     let (min, max) = (bounds.min, bounds.max);
-    let opened = perimeters::offset(&perimeters::offset(&open, -mm(min / 2.0)), mm(min / 2.0));
-    let wide = perimeters::offset(&perimeters::offset(&open, -mm(max / 2.0)), mm(max / 2.0) + 10);
+    let opened = perimeters::offset(&perimeters::offset(open, -mm(min / 2.0)), mm(min / 2.0));
+    let wide = perimeters::offset(&perimeters::offset(open, -mm(max / 2.0)), mm(max / 2.0) + 10);
     let strips = perimeters::difference(&opened, &wide);
     let mut out = Vec::new();
     for shape in &strips {

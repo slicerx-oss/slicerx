@@ -317,7 +317,13 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// sparse infill hung off each cube's own box center instead of the plate origin: the sparse lines, the travels after
 /// them, the order of the floating ring on the layer that also prints sparse infill, the progress lines and the second
 /// filament's total (1150.05 to 1153.64 mm) moved.
-const BY_OBJECT_FNV: &str = "c2c091e31c8d6c78";
+/// Changed again when the first and the last layer's infill area on Bambu Lab printers started from
+/// `infill_wall_overlap` (15 % on the A1) instead of the 25 % `top_bottom_infill_wall_overlap` fallback and the first
+/// layer's monotonic bottom spread its lines across each cube: only each cube's first-layer bottom surface and
+/// last-layer top surface, the travels between their lines, two line widths and the filament total moved.
+/// Changed again when the monotonic line tops on Bambu Lab printers took a grid anchored to the objects: only each
+/// cube's top surface lines, the travels between them and the filament total moved (one line fewer on the first cube).
+const BY_OBJECT_FNV: &str = "009348296199873e";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {

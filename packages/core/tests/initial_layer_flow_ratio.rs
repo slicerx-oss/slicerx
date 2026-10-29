@@ -587,18 +587,24 @@ fn a_capped_first_layer_feed_holds_the_limit_on_the_scaled_flow() {
             &["Outer wall", "Inner wall", "Bottom surface", "Brim"],
             first_layer(k),
         );
+        // A move is at the limit for its own width: a first-layer surface that spreads its lines prints them a
+        // little wider than 0.5 mm, each held to 21 mm3/s. The stated width has three decimals, a tenth of a percent
+        // of the bead. On the scaled flow the feed is the limit's, or the set 300 mm/s where that is lower.
         let mut capped = std::collections::BTreeSet::new();
         for (a, b) in pair.base.iter().zip(&pair.case) {
             assert_eq!(a.w, b.w, "{what}: {a:?} against {b:?}");
+            let own = 21.0 / bead(a.w, 0.2) * 60.0;
             if a.layer > 1 {
                 assert_eq!(a.feed, b.feed, "{what}: {a:?} against {b:?}");
-            } else if (a.feed - cap.round()).abs() < 0.5 {
+            } else if (a.feed - own).abs() <= 0.002 * own {
+                let want = (a.feed / k).min(18000.0);
                 assert!(
-                    (b.feed - cap / k).abs() < 1.5,
-                    "{what}: a feed at the limit {} goes to {}, not {:.0}",
+                    (b.feed - want).abs() < 1.5,
+                    "{what}: a {} mm {} feed at the limit {} goes to {}, not {want:.0}",
+                    a.w,
+                    a.feature,
                     a.feed,
-                    b.feed,
-                    cap / k
+                    b.feed
                 );
                 capped.insert(a.feature.clone());
             }
