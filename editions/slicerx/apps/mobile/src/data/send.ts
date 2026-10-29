@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { estimateOf, runCloudSlice, type Material, type PhoneModel, type SlicePhase } from '../cloud/slice-job'
+import { estimateOf, runCloudSlice, type Material, type PhoneModel, type PlateFit, type SlicePhase } from '../cloud/slice-job'
 import { boxStl } from '../cloud/stl'
 import { createCloudStub } from '../cloud/stub'
 import type { PrinterView } from '../components/printers/printer-bits'
@@ -117,25 +117,35 @@ export function useSendModels(opened?: CatalogItem | null) {
   return { models, loading: library.isPending && library.fetchStatus !== 'idle', pickFile }
 }
 
-/** Time and filament for a selection, from the local estimator (no upload). */
+/** Time and filament for a selection, and how a measured model fits the printer's bed, from the local estimator (no upload). */
 export function useEstimate() {
   const estimator = useRef(createCloudStub({ stageMs: 0, queueMs: 0 }))
   const [estimate, setEstimate] = useState<{ timeS: number; grams: number; plates: number } | null>(null)
+  const [fit, setFit] = useState<PlateFit | null>(null)
   const [estimating, setEstimating] = useState(false)
   const seq = useRef(0)
   const run = useCallback((input: { model: PhoneModel; printer: PrinterInfo; easy: EasySettings; material: Material } | null) => {
     const mine = ++seq.current
     if (!input) {
       setEstimate(null)
+      setFit(null)
       return
     }
     setEstimating(true)
     runCloudSlice(estimator.current, input, () => undefined).then(
-      (o) => mine === seq.current && setEstimate(estimateOf(o)),
-      () => mine === seq.current && setEstimate(null),
+      (o) => {
+        if (mine !== seq.current) return
+        setEstimate(estimateOf(o))
+        setFit(o.fit ?? null)
+      },
+      () => {
+        if (mine !== seq.current) return
+        setEstimate(null)
+        setFit(null)
+      },
     ).finally(() => mine === seq.current && setEstimating(false))
   }, [])
-  return { estimate, estimating, run }
+  return { estimate, estimating, fit, run }
 }
 
 export function useRefreshPrinters() {

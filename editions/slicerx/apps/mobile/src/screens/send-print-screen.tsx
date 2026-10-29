@@ -5,9 +5,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { EASY_GOALS, type EasyGoal, type EasySettings, type Fleet, type SupportMode } from '@slicerx/contracts'
+import type { PlateFit } from '../cloud/slice-job'
 import { ApproveSheet } from '../components/approve-sheet'
 import { Button, IconButton } from '../components/button'
 import { Segmented, SwitchRow } from '../components/controls'
+import { FitCard } from '../components/fit-card'
 import { haptic } from '../components/feedback'
 import { Icon } from '../components/icon'
 import { EmptyState, Row, Screen, ScreenHeader, SectionLabel } from '../components/layout'
@@ -65,6 +67,8 @@ export interface SendPrintScreenProps {
   onSelectionChange?: (sel: SendSelection | null) => void
   estimate: Estimate | null
   estimating: boolean
+  /** How the chosen model sits on the chosen printer's bed, when the phone could measure it. */
+  fit?: PlateFit | null | undefined
   /** Opens the system file picker; the parent adds the file to `library` and returns its id. */
   onPickFile: () => Promise<string | null>
   /** Called after the person confirms in the sheet. */
@@ -147,12 +151,18 @@ export function SendPrintScreen(p: SendPrintScreenProps) {
     return f ? `the first idle printer in ${f.name}` : null
   })()
 
+  // A model that runs past the bed cannot print there: the card on top says where, and Print waits.
+  const tooBig = p.fit !== undefined && p.fit !== null && !p.fit.fits && model !== null && targetName !== null
   const header = <ScreenHeader title="Print" leading={<IconButton icon="chevron-left" label="Back" onPress={p.onBack} color={t.color.fg} />} />
 
   const footer = (
     <View style={styles.footer}>
       <View style={{ flex: 1, minWidth: 0 }}>
-        {p.estimating ? (
+        {tooBig ? (
+          <Txt variant="caption" tone="dim">
+            Does not fit this printer
+          </Txt>
+        ) : p.estimating ? (
           <View style={{ gap: 6 }}>
             <Skeleton width={90} height={14} />
             <Skeleton width={120} height={11} />
@@ -170,12 +180,13 @@ export function SendPrintScreen(p: SendPrintScreenProps) {
           </Txt>
         )}
       </View>
-      <Button label="Print" icon="send-to-printer" kind="primary" size="lg" disabled={!selection || !p.sliceLocation} onPress={() => setConfirming(true)} testID="send-button" />
+      <Button label="Print" icon="send-to-printer" kind="primary" size="lg" disabled={!selection || !p.sliceLocation || tooBig} onPress={() => setConfirming(true)} testID="send-button" />
     </View>
   )
 
   return (
     <Screen header={header} footer={footer} testID="send-print-screen">
+      {tooBig && p.fit && model && targetName ? <FitCard fit={p.fit} model={model.name} printer={targetName} /> : null}
       <SectionLabel label="Model" />
       {model ? (
         <Row
