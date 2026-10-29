@@ -12,7 +12,7 @@
 //!
 //! - Fixed-width walls, no sparse infill: a strip that holds a surface line (R at least s0) prints surface lines,
 //!   spread across it, instead of a gap fill bead; a narrower one keeps its gap fill bead. A strip whose lines run
-//!   across it with no room for one keeps its gap fill too.
+//!   across it prints them from the same width, and keeps its gap fill below it too.
 //! - Fixed-width walls with sparse infill and the walls overlapping the surface by half a line: a strip whose free
 //!   width less the overlap is under 0.15 si prints walls only, not a single line squeezed between the walls.
 //! - Variable-width walls: a surface line only once the walls leave a whole inner spacing free.
@@ -315,17 +315,17 @@ fn a_strip_one_and_a_half_spacings_wide_prints_one_capped_line() {
     }
 }
 
-/// N-d. Lines across the strips (along 135 degrees on strips along 45): once a line across fits (W 1.796 mm), the
-/// top prints lines across at 0.3787 mm and the first layer its lines across joined along both sides; the
-/// narrower strips (1.740 to 1.777 mm), where no line across fits, keep their gap fill.
+/// N-d. Lines across the strips (along 135 degrees on strips along 45): once a line across fits (R at least s0, as
+/// for lines along: W 1.759 mm), the top prints lines across at 0.3787 mm and the first layer its lines across joined
+/// along both sides; the narrower strips (1.702 and 1.721 mm), where no line across fits, keep their gap fill.
 #[test]
 fn lines_across_a_strip_print_once_they_fit_and_it_keeps_gap_fill_before() {
     let (top, first) = measure("creality-ender-3-v3--n4-cl-sp0-ac-flo");
-    for w in ["1.740", "1.759", "1.777"] {
+    for w in ["1.702", "1.721"] {
         gap_only(strip(&top, w), "Top surface", &format!("top {w}"));
         gap_only(strip(&first, w), "Bottom surface", &format!("first {w}"));
     }
-    for w in ["1.796", "1.853", "2.041", "2.098"] {
+    for w in ["1.759", "1.777", "1.796", "1.853", "2.041", "2.098"] {
         let r = strip(&top, w);
         assert!(!r.along && r.lines > 70, "top {w}: {r:?}");
         assert!((r.gap.unwrap() - 0.3787).abs() <= 0.0005, "top {w}: {r:?}");

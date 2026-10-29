@@ -1485,6 +1485,35 @@ pub(crate) struct TopCtx<'a> {
 /// leaves a slot up to about a line wide open between the walls.
 pub(crate) const SPARSE0_NARROW_GAP_FILL: bool = true;
 
+/// How far a surface line's room is pulled in from each end, along the line, to test that the line prints, for lines
+/// `spacing` apart (internal units): a line prints where the free width along it is at least the surface's own
+/// spacing, the same width at which lines along a strip start, whatever pitch the lines spread to across them. Half
+/// a micrometer less, so an edge that strays a few tenths of a micrometer keeps the line.
+pub(crate) fn line_room(spacing: f64) -> f64 {
+    spacing / 2.0 - 2.5
+}
+
+/// The part of `shapes` that stays covered when moved `reach` both ways along the unit vector `dir`: the shapes
+/// pulled in by `reach` along that direction only (internal units).
+pub(crate) fn erode_along(shapes: &Shapes, dir: (f64, f64), reach: f64) -> Shapes {
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "a fraction of a millimeter in internal units"
+    )]
+    let (dx, dy) = ((dir.0 * reach).round() as i32, (dir.1 * reach).round() as i32);
+    let shift = |dx: i32, dy: i32| -> Shapes {
+        shapes
+            .iter()
+            .map(|s| {
+                s.iter()
+                    .map(|r| r.iter().map(|p| IntPoint::new(p.x + dx, p.y + dy)).collect())
+                    .collect()
+            })
+            .collect()
+    };
+    intersection(&shift(dx, dy), &shift(-dx, -dy))
+}
+
 /// A layer's surfaces whose lines spread evenly across each piece (the top surfaces, or the first layer's bottom
 /// surface), as narrow pieces between fixed-width walls at sparse infill density 0 see them: such a piece prints
 /// surface lines when they fit, else gap fill.
@@ -1500,9 +1529,6 @@ pub(crate) struct NarrowSurface<'a> {
     pub(crate) edge: i32,
     /// The direction the surface's lines run on the plate, a unit vector.
     pub(crate) line: (f64, f64),
-    /// The shortest line that prints, internal units: a line stops half its pitch short of each end of the piece
-    /// and prints when that leaves at least this much.
-    pub(crate) min_line: i32,
     /// Sparse infill density 0 with fixed-width walls: narrow pieces wide enough for a line print one.
     pub(crate) no_sparse: bool,
     /// How far an uncovered area is opened, which drops the slivers along its edge (a tenth of the outer wall's
@@ -1512,6 +1538,10 @@ pub(crate) struct NarrowSurface<'a> {
     /// surface, printing the grid's lines that fit and gap fill around them; narrow pieces elsewhere keep their gap
     /// fill.
     pub(crate) grid: bool,
+    /// Lines across a piece fit once it is one spacing wide along them ([`line_room`]), as the surface fill's room
+    /// rule prints them. Off on Bambu Lab printers, whose surface fill has no room rule: there a line fits where the
+    /// piece holds a line of its pitch plus 0.05 mm, as the fill prints it.
+    pub(crate) room: bool,
 }
 
 impl NarrowSurface<'_> {
@@ -1534,14 +1564,18 @@ impl NarrowSurface<'_> {
     }
 
     /// Whether the surface's lines fit in `piece` of the infill area anywhere: the piece with its edge moved out as
-    /// the lines spread holds a line of its pitch plus [`Self::min_line`] somewhere. A narrow piece the lines run
-    /// across holds none.
+    /// the lines spread is somewhere at least the surface's own spacing wide along the lines ([`line_room`]),
+    /// whatever pitch the lines spread to across them, or without [`Self::room`] holds a line of that pitch plus
+    /// 0.05 mm. A piece the lines run across, narrower than that along them, holds none.
     fn lines_fit(&self, piece: &Shapes) -> bool {
         let moved = if self.edge == 0 {
             piece.clone()
         } else {
             offset(piece, self.edge)
         };
+        if self.room {
+            return !erode_along(&moved, self.line, line_room(f64::from(self.spacing))).is_empty();
+        }
         // The piece's extent across the lines sets their pitch.
         let (u, v) = self.line;
         let (lo, hi) = moved
@@ -1558,23 +1592,8 @@ impl NarrowSurface<'_> {
         // out a few tenths of a micrometer short does not count.
         #[allow(clippy::cast_precision_loss, reason = "a few internal units")]
         let hair = crate::bridging::HAIR as f64;
-        let reach = f64::midpoint(pitch - 2.0 * hair, f64::from(self.min_line)) + 5.0;
-        #[allow(
-            clippy::cast_possible_truncation,
-            reason = "a fraction of a millimeter in internal units"
-        )]
-        let (dx, dy) = ((u * reach).round() as i32, (v * reach).round() as i32);
-        let shift = |dx: i32, dy: i32| -> Shapes {
-            moved
-                .iter()
-                .map(|s| {
-                    s.iter()
-                        .map(|r| r.iter().map(|p| IntPoint::new(p.x + dx, p.y + dy)).collect())
-                        .collect()
-                })
-                .collect()
-        };
-        !intersection(&shift(dx, dy), &shift(-dx, -dy)).is_empty()
+        let reach = f64::midpoint(pitch - 2.0 * hair, f64::from(crate::geom::mm(0.05))) + 5.0;
+        !erode_along(&moved, self.line, reach).is_empty()
     }
 
     /// Whether any of `region` is surface, so its walls may differ from the walls the layers around share.
@@ -2668,6 +2687,39 @@ mod tests {
             let (islands, core) = run(17_210, narrow_gap_fill);
             assert_eq!(!islands[0].gap_lines.is_empty(), narrow_gap_fill);
             assert!(core.is_empty(), "{narrow_gap_fill}");
+        }
+    }
+
+    /// A straight piece of free width R along its lines holds a line once R reaches the surface's own spacing s0,
+    /// whatever pitch the lines spread to across them (s0, 1.004 s0 on a long strip, 1.2 s0 capped on a short one).
+    #[test]
+    fn a_line_across_a_piece_fits_once_the_piece_is_one_spacing_wide_along_it() {
+        let s0 = 3_771;
+        let surface = NarrowSurface {
+            upper: None,
+            lower: None,
+            spacing: s0,
+            edge: 0,
+            line: (1.0, 0.0),
+            no_sparse: true,
+            opening: 0,
+            grid: false,
+            room: true,
+        };
+        // The piece's extent across the lines, and the pitch the lines spread to over it.
+        for (across, pitch) in [
+            (80 * s0, 1.0),
+            (78 * s0 * 1_004 / 1_000, 1.004),
+            (s0 * 3 / 2, 1.2),
+        ] {
+            let (spread, _) = crate::session::stretch_pitch(f64::from(across), f64::from(s0));
+            assert!(
+                (spread / f64::from(s0) - pitch).abs() < 1e-3,
+                "{across}: {spread}"
+            );
+            let piece = |r: i32| -> Shapes { vec![vec![rect(0, 0, r, across)]] };
+            assert!(surface.lines_fit(&piece(s0 + 10)), "{pitch} s0: R = s0 + 1 um");
+            assert!(!surface.lines_fit(&piece(s0 - 10)), "{pitch} s0: R = s0 - 1 um");
         }
     }
 }

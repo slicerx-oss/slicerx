@@ -27,6 +27,7 @@ SPDX-License-Identifier = "Apache-2.0"
 # OrcaSlicer and Bambu Studio.
 [[annotations]]
 path = [
+  "packages/core/tests/fixtures/line-across/requests/*.json",
   "packages/core/tests/fixtures/narrow-piece-surface/requests/*.json",
   "packages/core/tests/fixtures/precise-wall-surface/requests/*.json",
   "packages/core/tests/fixtures/surface-walls/*-f4strips.json",
@@ -165,6 +166,7 @@ path = [
   "packages/core/bench/models/x-mark-2color-orca.3mf",
   "packages/core/cli/tests/fixtures/bambu-surface-edge/*.3mf",
   "packages/core/cli/tests/fixtures/layer-tools/**",
+  "packages/core/cli/tests/fixtures/line-across/*.3mf",
   "packages/core/cli/tests/fixtures/mixed-heights/**",
   "packages/core/cli/tests/fixtures/object-order-filaments/**",
   "packages/core/cli/tests/fixtures/object-order/**",
