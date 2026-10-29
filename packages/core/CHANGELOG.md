@@ -4,6 +4,12 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- `RequestOptions::tool_changes` (`toolChanges`, `ToolChangeSpec`): tool changes by height or layer. From the first layer whose top reaches a change's `zMm` (or from its 0-based `layer`), every object prints in the change's 1-based `filament`, written as a normal filament change with the printer's change G-code, and with the prime tower on the tower stands up to the last change. A change applies only on a plate that prints one filament, by layer; otherwise, and for a change above the top of the print, the slice is the same as without it and has a `tool_change_skipped` warning (`WarningCode::ToolChangeSkipped`) per change. A change to the filament already printing changes nothing. `with_tool_changes` applies them to a session. The request and report schemas list the option and the code.
+- `load_3mf_marks` (`ProjectMarks`): a project plate's layer marks, as `load_3mf_layer_gcode` reads them, plus its tool changes (`Metadata/custom_gcode_per_layer.xml` type 2) when the plate's stored slider mode is the one-filament mode, and a `tool_change_skipped` note for each one saved under another mode.
+- `sx slice` on a 3MF plate and `sx slice --request` on a project plate (unless the request brings its own `toolChanges`) apply the project's tool changes. Before, they were left out and the whole plate printed in its first filament. Slices of such projects through `slicerx_slice_file` change accordingly.
+
 ## [0.2.6] - 2026-10-29
 
 ### Changed

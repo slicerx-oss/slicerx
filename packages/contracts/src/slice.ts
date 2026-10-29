@@ -170,6 +170,9 @@ export interface HeightRange {
 
 export type LayerGcode = ({ layer: number; zMm?: never } | { zMm: number; layer?: never }) & { kind: 'pause' | 'color_change' | 'custom'; gcode?: string }
 
+/** A tool change at a height: from that layer up the plate prints in `filament` (1-based). */
+export type ToolChange = ({ layer: number; zMm?: never } | { zMm: number; layer?: never }) & { filament: number }
+
 export interface SliceOptions {
   engine?: EngineId
   flavor?: GcodeFlavor
@@ -208,6 +211,13 @@ export interface SliceOptions {
    * the layers the engine plans. Of several entries by height that land on one layer, the last stays.
    */
   layerGcode?: LayerGcode[]
+  /**
+   * Tool changes by height: from the first layer whose top reaches `zMm` (or from `layer`, 0-based) the plate prints in
+   * the entry's filament, through the printer's change G-code, with the prime tower up to the last change when it is
+   * on. Only on a plate that prints one filament, by layer; otherwise the slice goes on without them and the result has
+   * a tool_change_skipped warning for each. A change to the filament already printing changes nothing.
+   */
+  toolChanges?: ToolChange[]
   /** Limits of the target printer in C. Settings above them are lowered and reported as safety_limit warnings. */
   machineLimits?: { nozzleMaxC?: number; bedMaxC?: number; chamberMaxC?: number; ptfeLined?: boolean }
   /** The custom G-code in the config is the person's own. Off by default: imported text gets the strict linter. */
@@ -252,7 +262,7 @@ export interface SliceStats {
   toolChanges: number
 }
 
-export type SliceWarningCode = 'open_edges' | 'thin_wall' | 'floating_region' | 'long_bridge' | 'outside_bed' | 'unsupported_setting' | 'manual_step' | 'collision' | 'safety_limit' | 'objects_overlap'
+export type SliceWarningCode = 'open_edges' | 'thin_wall' | 'floating_region' | 'long_bridge' | 'outside_bed' | 'unsupported_setting' | 'manual_step' | 'collision' | 'safety_limit' | 'objects_overlap' | 'tool_change_skipped'
 
 export interface SliceWarning {
   code: SliceWarningCode
