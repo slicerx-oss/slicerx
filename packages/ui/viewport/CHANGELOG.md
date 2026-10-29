@@ -4,6 +4,8 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-29
+
 ## [0.2.4] - 2026-10-26
 
 ## [0.2.3] - 2026-10-25

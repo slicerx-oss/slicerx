@@ -4,6 +4,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-10-29
+
 ### Added
 
 - `slicerx_slice_file`, `slicerx_estimate_file` and the slice summary carry an optional `warning_details` list beside `warnings`: for each engine warning its `code` (as the engine wrote it, such as `objects_overlap`), `message`, `layer` (0 based) and `object_id` when it has them. `warnings` is unchanged. An app that takes slices from this server shows each warning under its own code, where it showed every one as an unsupported setting.
