@@ -66,6 +66,12 @@ export interface PilotProject {
   arrangeCapacity?(objectId: string, bed: { x: number; y: number; round?: boolean }, spacing: number, plateIndex: number): number | Promise<number>
   /** Lays the plates `setPlates` gave out on true outlines (a host with a geometry engine), `spacing` mm apart. May say what found no room. */
   arrangePlates?(plateIndexes: readonly number[], spacing: number): Promise<PlatesLeftOff | undefined>
+  /**
+   * Arranges one object's copies, `copies` on each plate named, around the other objects there, which stay where they
+   * are; copies with no room around them go to new plates after the last. Every other object keeps its plate. The
+   * object leaves the plates not named. Says which copies moved to which plate, and what found no room on any bed.
+   */
+  arrangeObject?(objectId: string, plates: readonly ObjectPlan[], spacing: number): Promise<ArrangedObject>
   /** Project level overrides by Orca key. */
   overrides(): Record<string, SettingValue>
   setOverrides(changes: Record<string, SettingValue>): void
@@ -98,6 +104,31 @@ export interface PilotProject {
 export interface PlatesLeftOff {
   leftOff: number
   notAdded?: number
+}
+
+/** How many copies of an object go on a plate (arrangeObject), and the printer the plate goes to. */
+export interface ObjectPlan {
+  index: number
+  copies: number
+  printerId?: string
+}
+
+/** Copies that had no room on their plate and went to another one. */
+export interface MovedCopies {
+  objectId: string
+  copies: number
+  from: number
+  to: number
+}
+
+/** What arrangeObject did: the copies it moved to other plates, and what found no room on any bed. */
+export interface ArrangedObject extends PlatesLeftOff {
+  moved: MovedCopies[]
+}
+
+/** One sentence per move: `2 copies of obj-1 moved to plate 3.` */
+export function movedWords(moved: readonly MovedCopies[]): string {
+  return moved.map((m) => `${m.copies === 1 ? '1 copy' : `${m.copies} copies`} of ${m.objectId} had no room on plate ${m.from}, so ${m.copies === 1 ? 'it' : 'they'} moved to plate ${m.to}.`).join(' ')
 }
 
 /** Plain sentences for what a layout could not fit, or '' when everything fit. */
