@@ -44,6 +44,8 @@ export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH" CI=true
 # Tests that drive the real engine (sx) or the cloud service (target/debug/sx-cloud) look for them here. sx-build
 # makes both from this commit before vitest: a binary left by an earlier run answered the cloud test from older code.
 # It makes sx-geom too: sx call (packages/mcp test/sx-call.test.ts) finds it beside sx and has no design tools without it.
+# mcp-build remakes packages/mcp/dist, which git ignores, from this commit: the MCP route tests run that build, and
+# without it they ran the one an earlier run's devkit step left, from older code.
 # A machine with a shared cargo target (heavy.sh's <lock>.target-dir) builds there, so the binaries are looked up there too:
 # the checkout's own target holds whatever an earlier run left.
 target=${CARGO_TARGET_DIR:-$WORK/target}
@@ -260,6 +262,7 @@ if [ "$tier" = per-merge ]; then
     step sx-build sh -c 'cargo build -p sx-cli -p sx-geom --release && cargo build -p sx-cloud'
     # The app and pilot tests fail under CI=true without the geom module, so a JS-only run builds it when it is missing.
     [ -s packages/geom/wasm/pkg/sx_geom_core.wasm ] || step geom-wasm sh packages/geom/wasm/scripts/build.sh
+    step mcp-build pnpm --filter @slicerx/mcp --if-present build
     step vitest pnpm "${pnpm_scope[@]}" "${vitest_opts[@]}" --if-present test
     step tsc pnpm "${pnpm_scope[@]}" --no-bail --if-present typecheck
   fi
@@ -276,6 +279,7 @@ if [ "$tier" = per-merge ]; then
   step gcode-goldens cargo test -p sx-core --test reference
 else
   step sx-build sh -c 'cargo build -p sx-cli -p sx-geom --release && cargo build -p sx-cloud'
+  step mcp-build pnpm --filter @slicerx/mcp --if-present build
   step vitest pnpm -r "${vitest_opts[@]}" --if-present test
   step tsc pnpm -r --no-bail --if-present typecheck
   step cargo-workspace cargo test --workspace
