@@ -7,8 +7,10 @@
 //! sends key frames rarely (the H2D), and a still asked for while the feed runs is that key frame,
 //! with no new connection.
 //!
-//! A feed a viewer reads that gets no frame for [`STALL`], or whose viewer waits that long for a key
-//! frame that does not come, is dead: it ends the session and opens a new one through the retry path.
+//! A feed a viewer reads that gets no frame for three times its measured frame gap (at least
+//! [`STALL`], at most [`STALL_MAX`]), or whose viewer waits [`STALL`] for a key frame that does not come, is dead: it ends
+//! the session and opens a new one through the retry path. A slow camera (an A1 mini sent about one
+//! picture every 2.5 s while printing) is not taken for a stopped one.
 //!
 //! live555 on the H2D drops a new session at PLAY for a while after the last one ended. So a feed a
 //! viewer (a live view, a probe) has read stays open [`LINGER`] after its last reader leaves, for the
@@ -68,8 +70,16 @@ pub(crate) const HOLDS: [Duration; 4] = [
 ];
 /// Frames a slow reader may fall behind before it skips to the next key frame.
 const BACKLOG: usize = 64;
-/// How long a viewer's feed may go without a frame before it counts as dead.
+/// The least a viewer's feed may go without a frame before it counts as dead; a feed whose frames
+/// come further apart may go [`STALL_GAPS`] times its mean gap.
 pub(crate) const STALL: Duration = Duration::from_secs(3);
+/// A feed counts as dead after this many of its mean frame gaps with no frame.
+const STALL_GAPS: u32 = 3;
+/// The most a viewer's feed may go without a frame, however slow its camera, so a camera that
+/// goes silent is reconnected within this.
+const STALL_MAX: Duration = Duration::from_secs(15);
+/// The frame gaps the mean is taken over.
+const GAPS_KEPT: usize = 8;
 /// How long a new session may take to its first frame (the H2D takes about 2.5 s).
 const FIRST_FRAME: Duration = Duration::from_secs(8);
 /// How often an open feed logs its frame rate.
@@ -120,6 +130,19 @@ struct Rate {
     last: Option<f64>,
     /// When the last frame came.
     latest: Option<Instant>,
+    /// How long the feed may go without a frame before it counts as dead (see [`stall_after`]).
+    stall: Duration,
+}
+
+/// How long a feed may go without a frame: [`STALL_GAPS`] times the mean of its last frame gaps,
+/// at least [`STALL`] and at most [`STALL_MAX`].
+fn stall_after(gaps: &std::collections::VecDeque<Duration>) -> Duration {
+    let n = u32::try_from(gaps.len()).unwrap_or(u32::MAX);
+    if n == 0 {
+        return STALL;
+    }
+    let mean = gaps.iter().sum::<Duration>() / n;
+    (mean * STALL_GAPS).clamp(STALL, STALL_MAX)
 }
 
 /// What a feed is doing, for its readers.
@@ -239,14 +262,14 @@ impl Feeds {
         Some(reader(rx, replay, need_key, feed.want_key.clone()))
     }
 
-    /// The feed's frame rate over the last 10 s (or since it opened), and whether a frame came in
-    /// the last [`STALL`], once it has run a second: what a probe that joined it reports, since the
-    /// frames it gets first are a replay. A feed with no recent frame is not healthy, whatever
-    /// the probe got from the replay.
+    /// The feed's frame rate over the last 10 s (or since it opened), and whether a frame came
+    /// within its stall limit (see [`stall_after`]), once it has run a second: what a probe that
+    /// joined it reports, since the frames it gets first are a replay. A feed with no recent frame
+    /// is not healthy, whatever the probe got from the replay.
     pub(crate) fn health(&self, printer: &str) -> Option<(f64, bool)> {
         let live = lock(&self.live);
         let r = lock(&live.get(printer)?.rate);
-        let fresh = r.latest.is_some_and(|t| t.elapsed() < STALL);
+        let fresh = r.latest.is_some_and(|t| t.elapsed() < r.stall);
         let rate = r.last.or_else(|| {
             let secs = r.since.elapsed().as_secs_f64();
             #[allow(clippy::cast_precision_loss, reason = "a frame count")]
@@ -400,6 +423,7 @@ impl Feeds {
             keys: 0,
             last: None,
             latest: None,
+            stall: STALL,
         }));
         let want_key = Arc::new(AtomicBool::new(false));
         let lingers = Arc::new(AtomicBool::new(viewer));
@@ -583,6 +607,8 @@ impl Pump {
         let mut tick = tokio::time::interval(Duration::from_millis(250));
         let opened = Instant::now();
         let mut last_frame: Option<Instant> = None;
+        let mut gaps = std::collections::VecDeque::with_capacity(GAPS_KEPT);
+        let mut stall = STALL;
         self.want_key.store(false, Ordering::Relaxed);
         {
             let mut r = lock(&self.rate);
@@ -592,18 +618,28 @@ impl Pump {
                 keys: 0,
                 last: None,
                 latest: None,
+                stall: STALL,
             };
         }
         loop {
             tokio::select! {
                 f = src.next() => {
                     let Some(f) = f else { return Ended::Stopped };
-                    last_frame = Some(Instant::now());
+                    let now = Instant::now();
+                    if let Some(prev) = last_frame {
+                        if gaps.len() == GAPS_KEPT {
+                            gaps.pop_front();
+                        }
+                        gaps.push_back(now - prev);
+                        stall = stall_after(&gaps);
+                    }
+                    last_frame = Some(now);
                     {
                         let mut r = lock(&self.rate);
                         r.frames += 1;
                         r.keys += u64::from(f.key);
                         r.latest = last_frame;
+                        r.stall = stall;
                     }
                     // The replay buffer and the send under one lock: see `Feeds::subscribe`.
                     let mut gop = lock(&self.gop);
@@ -619,7 +655,7 @@ impl Pump {
             let watched = self.tx.receiver_count() > 0 && self.viewed.load(Ordering::Relaxed);
             if watched {
                 match last_frame {
-                    Some(t) if t.elapsed() >= STALL => {
+                    Some(t) if t.elapsed() >= stall => {
                         return Ended::Stalled(format!("no frame for {} s", t.elapsed().as_secs()));
                     }
                     None if opened.elapsed() >= FIRST_FRAME => {
@@ -666,13 +702,14 @@ impl Pump {
                 self.tx.receiver_count()
             ),
         );
-        let latest = r.latest;
+        let (latest, stall) = (r.latest, r.stall);
         *r = Rate {
             since: Instant::now(),
             frames: 0,
             keys: 0,
             last: Some(fps),
             latest,
+            stall,
         };
     }
 
@@ -1080,6 +1117,122 @@ mod tests {
         assert!(*lock(&dropped), "the stalled session was ended");
         assert_eq!(view.next().await.unwrap().data, [9], "a new session");
         assert_eq!(*status.borrow(), FeedStatus::Live);
+        assert_eq!(tries.load(Ordering::Relaxed), 1);
+    }
+
+    /// A source that sends a key frame after each of `gaps`, then `then` for good, with the
+    /// connection still open: a camera sending about one picture every 2.5 s, as an A1 mini did
+    /// while printing.
+    fn paced(gaps: Vec<Duration>, then: Option<Duration>, dropped: Arc<StdMutex<bool>>) -> FrameStream {
+        let first = futures::stream::iter(gaps.into_iter().enumerate()).then(|(n, g)| async move {
+            tokio::time::sleep(g).await;
+            frame(true, u8::try_from(n % 200).unwrap())
+        });
+        let rest = match then {
+            Some(g) => futures::stream::repeat_with(|| frame(true, 0))
+                .then(move |f| async move {
+                    tokio::time::sleep(g).await;
+                    f
+                })
+                .boxed(),
+            None => futures::stream::pending().boxed(),
+        };
+        with_mark(first.chain(rest).boxed(), dropped)
+    }
+
+    // A camera at one frame every 2.5 s, with one 3.5 s gap: the stall limit is three times the
+    // measured gap (at least 3 s), so the slow feed is not ended and reopened.
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_camera_is_not_taken_for_a_stalled_one() {
+        let feeds = Arc::new(Feeds::default());
+        let dropped = Arc::new(StdMutex::new(false));
+        let tries = Arc::new(AtomicU32::new(0));
+        let slow = Duration::from_millis(2500);
+        let mut gaps = vec![Duration::from_millis(10)];
+        gaps.extend([slow; 6]);
+        gaps.push(Duration::from_millis(3500));
+        let mut view = feeds.start(
+            "p",
+            Ok(paced(gaps, Some(slow), dropped.clone())),
+            true,
+            live_reopen(tries.clone()),
+        );
+        let status = feeds.status("p").unwrap();
+        for _ in 0..16 {
+            assert_ne!(view.next().await.unwrap().data, [9], "no new session");
+        }
+        assert_eq!(tries.load(Ordering::Relaxed), 0);
+        assert!(!*lock(&dropped), "the session stays open");
+        assert_eq!(*status.borrow(), FeedStatus::Live);
+    }
+
+    // The same slow camera when it really stops: no frame for three times its gap ends the session.
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_camera_that_stops_is_still_ended() {
+        let feeds = Arc::new(Feeds::default());
+        let dropped = Arc::new(StdMutex::new(false));
+        let tries = Arc::new(AtomicU32::new(0));
+        let mut gaps = vec![Duration::from_millis(10)];
+        gaps.extend([Duration::from_millis(2500); 4]);
+        let mut view = feeds.start(
+            "p",
+            Ok(paced(gaps, None, dropped.clone())),
+            true,
+            live_reopen(tries.clone()),
+        );
+        let mut status = feeds.status("p").unwrap();
+        for _ in 0..5 {
+            view.next().await.unwrap();
+        }
+        let last = Instant::now();
+        status.changed().await.unwrap();
+        assert!(
+            matches!(&*status.borrow(), FeedStatus::Retrying { reason, .. } if reason == "no frame for 7 s"),
+            "{:?}",
+            *status.borrow()
+        );
+        assert!(
+            last.elapsed() >= Duration::from_millis(7500),
+            "{:?}",
+            last.elapsed()
+        );
+        assert!(*lock(&dropped), "the stalled session was ended");
+        assert_eq!(view.next().await.unwrap().data, [9], "a new session");
+        assert_eq!(tries.load(Ordering::Relaxed), 1);
+    }
+
+    // A camera whose frames come further and further apart (2.5 s, 2.5 s, 7 s, 10 s, 14 s), then
+    // stop: three mean gaps would be about 21 s, the limit stops at 15 s, and the feed reconnects.
+    #[tokio::test(start_paused = true)]
+    async fn a_very_slow_camera_that_goes_silent_reconnects_within_the_cap() {
+        let feeds = Arc::new(Feeds::default());
+        let dropped = Arc::new(StdMutex::new(false));
+        let tries = Arc::new(AtomicU32::new(0));
+        let gaps = [10, 2500, 2500, 7000, 10_000, 14_000].map(Duration::from_millis);
+        let mut view = feeds.start(
+            "p",
+            Ok(paced(gaps.to_vec(), None, dropped.clone())),
+            true,
+            live_reopen(tries.clone()),
+        );
+        let mut status = feeds.status("p").unwrap();
+        for _ in 0..gaps.len() {
+            view.next().await.unwrap();
+        }
+        let last = Instant::now();
+        status.changed().await.unwrap();
+        let waited = last.elapsed();
+        assert!(
+            matches!(&*status.borrow(), FeedStatus::Retrying { reason, .. } if reason == "no frame for 15 s"),
+            "{:?}",
+            *status.borrow()
+        );
+        assert!(
+            waited >= Duration::from_secs(15) && waited < Duration::from_secs(16),
+            "{waited:?}"
+        );
+        assert!(*lock(&dropped), "the silent session was ended");
+        assert_eq!(view.next().await.unwrap().data, [9], "a new session");
         assert_eq!(tries.load(Ordering::Relaxed), 1);
     }
 

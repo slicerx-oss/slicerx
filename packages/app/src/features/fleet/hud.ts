@@ -183,6 +183,20 @@ export function layerLine(s: Pick<PrinterStatus, 'layer' | 'layerCount' | 'live'
   return { layer: `Layer ${s.layer} of ${s.layerCount}`, height: z !== undefined ? `Z ${z.toFixed(2).replace(/0$/, '')} mm` : null }
 }
 
+/** How many of the bridge's once-a-second frame counts the camera rate is averaged over. */
+export const RATE_SAMPLES = 10
+
+/**
+ * The camera's frame rate from the bridge's once-a-second counts (camera.stats), averaged over the last ten: "0.4 fps"
+ * for a camera that sends a picture every 2.5 s, "14 fps" from 10 up. Null before the first count.
+ */
+export function cameraRate(counts: readonly number[]): string | null {
+  const last = counts.slice(-RATE_SAMPLES)
+  if (!last.length) return null
+  const fps = last.reduce((a, b) => a + b, 0) / last.length
+  return `${fps < 10 ? fps.toFixed(1) : Math.round(fps)} fps`
+}
+
 /** The key the drawers are kept under in the per-user rail memory. */
 export const HUD_RAIL = 'printer-hud'
 

@@ -7,6 +7,8 @@
 .ph-cam-old { position: absolute; inset: 0; opacity: 0.55; filter: saturate(60%); }
 .ph-quiet { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--s-3); color: var(--dim); text-align: center; }
 .ph-quiet p { position: relative; margin: 0; }
+/* The camera's frame rate, quiet in the corner under the top bar. */
+.ph-rate { position: absolute; z-index: 1; top: calc(var(--ph-head, 88px) + var(--s-3)); right: var(--s-5); padding: 4px var(--s-2); border-radius: var(--r-pill); background: color-mix(in srgb, var(--ink-1) 74%, transparent); color: var(--muted); font-size: var(--fs-xs); }
 .ph-printer { width: min(240px, 40vw); opacity: 0.5; filter: grayscale(40%); }
 
 .ph-glass { position: absolute; z-index: var(--z-hud); background: color-mix(in srgb, var(--ink-1) 74%, transparent); -webkit-backdrop-filter: var(--lift-glass); backdrop-filter: var(--lift-glass); border: 1px solid rgb(255 255 255 / 8%); box-shadow: var(--shadow-pop); }
