@@ -247,12 +247,13 @@ export function ToastProvider({ children, max = 3 }: { children?: ReactNode; max
             >
               {t.tone === 'plain' ? null : <Icon name={TONE_ICON[t.tone]} />}
               <ToastText message={t.message} expanded={open.has(t.id)} onDetails={() => details(t.id)} />
-              {t.persist && !t.dismissible ? <Button size="sm" variant="ghost" icon="close" className="sx-toast-dismiss" data-testid="toast-dismiss" aria-label="Dismiss" onClick={() => drop(t.id)} /> : null}
               {t.action ? (
                 <Button size="sm" className="sx-toast-action" data-testid="toast-action" onClick={() => { t.action?.run(); drop(t.id) }}>
                   {t.action.label}
                 </Button>
               ) : null}
+              {/* last on the line, after the action, as the close mark is */}
+              {t.persist && !t.dismissible ? <Button size="sm" variant="ghost" icon="close" className="sx-toast-dismiss" data-testid="toast-dismiss" aria-label="Dismiss" onClick={() => drop(t.id)} /> : null}
               {t.dismissible ? (
                 // a small mark, with a finger-sized hit area on a touch screen that reaches no further than the gap
                 <Button size="sm" variant="ghost" icon="close" className="sx-toast-close" data-testid="toast-close" aria-label="Dismiss" onClick={() => { t.onDismiss?.(); drop(t.id) }} />

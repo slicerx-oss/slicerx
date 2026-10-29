@@ -1084,8 +1084,16 @@ test.describe('arrange with more objects than the bed holds', () => {
       expect(after.plates[1]!.name).toBe('Plate 2')
       expect(after.toast).toBe(moved === 1 ? '1 object did not fit, so it moved to Plate 2.' : `${moved} objects did not fit, so they moved to Plate 2.`)
       await expect(page.getByText(after.toast!)).toBeVisible()
-      // Plate 1 stays shown and slices with no collision, and so does Plate 2.
+      // Plate 1 stays shown. The notice stays past its reading time, until dismissed, and Show opens Plate 2.
       await expect(page.getByTestId('plate-picker-current').locator('.pp-no')).toHaveText('Plate 1')
+      const notice = page.getByTestId('toast').filter({ hasText: after.toast! })
+      await page.waitForTimeout(6_000)
+      await expect(notice).toBeVisible()
+      await notice.getByTestId('toast-action').filter({ hasText: 'Show' }).click()
+      await expect(page.getByTestId('plate-picker-current').locator('.pp-no')).toHaveText('Plate 2')
+      await expect(notice).toHaveCount(0)
+      await pickPlate(page, 1)
+      // Plate 1 slices with no collision, and so does Plate 2.
       expect(await sliceShown(page)).toEqual([])
       await pickPlate(page, 2)
       expect((await state(page)).plate).toHaveLength(moved)

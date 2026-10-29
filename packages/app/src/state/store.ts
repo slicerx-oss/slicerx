@@ -265,7 +265,7 @@ export interface AppState {
   playbackSpeed: number
   /** Preview playback keeps the camera on the nozzle. */
   followNozzle: boolean
-  toast: { id: number; text: string; tone?: 'ok' | 'info' | 'warn' | 'error'; action?: ToastAction; dismissible?: boolean; onDismiss?: () => void } | null
+  toast: { id: number; text: string; tone?: 'ok' | 'info' | 'warn' | 'error'; action?: ToastAction; dismissible?: boolean; onDismiss?: () => void; persist?: boolean } | null
   /**
    * What the last open or import says (the printer it opened on, the settings it applied, "Added cube.stl"): one line in
    * the left pane under the printer card, with its action, until dismissed or replaced. Never over the view. Not saved.
@@ -1015,8 +1015,14 @@ export interface ToastAction {
   run: () => void
 }
 
-export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', action?: ToastAction, close?: { onDismiss?: () => void }): void {
-  set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}), ...(close ? { dismissible: true, ...(close.onDismiss ? { onDismiss: close.onDismiss } : {}) } : {}) } })
+/**
+ * Posts a toast. `close` adds a close button that `onDismiss` hears. With `persist` instead, the toast stays until it
+ * is dismissed or its action runs, as a warning does: for a notice about a change out of sight that the person has to
+ * see. It gets the dismiss button a warning has.
+ */
+export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', action?: ToastAction, close?: { onDismiss?: () => void; persist?: boolean }): void {
+  const closing = !close ? {} : close.persist ? { persist: true } : { dismissible: true, ...(close.onDismiss ? { onDismiss: close.onDismiss } : {}) }
+  set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}), ...closing } })
 }
 
 /** An open or import says what it did: a note in the left pane under the printer card, not a toast over the view. */
