@@ -1670,6 +1670,49 @@ fn collide_model(
     ))
 }
 
+/// heimdall's plate check of a request ([`crate::collide::check`]): what a slice of `req` would be refused for on a
+/// by-object plate, worked out from the objects' footprints without slicing them. The collisions and fixes are the
+/// slice report's own; each comes with how sure it is, and what only the slice can check is listed. Empty where a
+/// slice has no collision model to walk either (a plate printed by layer, or with fewer than two objects).
+pub fn check_plate(
+    req: &SliceRequest,
+    meshes: &dyn Fn(&str) -> Result<Arc<Mesh>>,
+) -> Result<crate::collide::check::PlateCheck> {
+    let timer = crate::platform::Timer::start();
+    let (config, issues) = request_config_checked(req)?;
+    let plate = build_plate(req, meshes)?;
+    let lone = match plate.objects.as_slice() {
+        [o] => o.settings.clone(),
+        _ => serde_json::Value::Null,
+    };
+    let (config, _) = with_lone_settings(config, issues, &lone)?;
+    let (session, _) = plan_session(req, &plate, &config)?;
+    let zones = crate::collide::plate::zones(&config)
+        .iter()
+        .map(|z| z.0)
+        .collect();
+    let model = collide_model(
+        req.options.printer_id.as_deref(),
+        &plate,
+        &config,
+        &session,
+        zones,
+    );
+    let mut out = match model {
+        Some(model) if !session.is_interleaved() => {
+            // The settings a slice runs with: the request's, on the session's filament map.
+            let mut run = session.mapped_config(&config);
+            if !run.variant_sources.is_empty() {
+                let _ = run.to_mut().refresh_variants()?;
+            }
+            crate::collide::check::run(&session, model, &run)?
+        }
+        _ => crate::collide::check::PlateCheck::default(),
+    };
+    out.micros = timer.micros();
+    Ok(out)
+}
+
 /// The collision report of a sliced request: `hits` from its layer ranges, the layers' seconds and the start before
 /// them as the finished file reads them. Empty on a plate without a collision model.
 pub fn collision_report(
