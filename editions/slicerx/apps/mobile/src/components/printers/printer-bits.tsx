@@ -55,6 +55,20 @@ export function StatePill({ status }: { status: PrinterStatus | null }) {
   return <Pill tone={s.tone} label={`${s.label}${pct}`} pulse={status.state === 'printing' || status.state === 'preparing'} testID="printer-state" />
 }
 
+/**
+ * The step the job is on ("Calibrating flow dynamics"), as the printer reports it in `live.stage`, shown with the job
+ * as the desktop shows it. A routine step, so muted, never the orange problem line.
+ */
+export function JobStage({ status }: { status: PrinterStatus }) {
+  const stage = status.state !== 'offline' ? status.live?.stage : undefined
+  if (!stage) return null
+  return (
+    <Txt variant="caption" tone="muted" numberOfLines={1} testID="printer-job-stage">
+      {stage}
+    </Txt>
+  )
+}
+
 export function JobProgress({ status, large }: { status: PrinterStatus; large?: boolean }) {
   if (status.progress === undefined) return null
   const warn = status.state === 'paused' || status.state === 'error'
@@ -161,6 +175,7 @@ export function PrinterRow({ printer, onPress }: PrinterRowProps) {
               {status.jobName}
             </Txt>
           ) : null}
+          <JobStage status={status} />
           {status.message ? (
             <Txt variant="caption" color={status.state === 'offline' ? t.color.dim : t.color.orange} numberOfLines={2}>
               {status.message}
@@ -264,6 +279,7 @@ export function PrinterStage({ printer, video, approvalWaiting, onPress, now = D
           Ready for a print
         </Txt>
       ) : null}
+      {s ? <JobStage status={s} /> : null}
       {s?.message && !(warn && pct !== null) ? (
         <Txt variant="caption" color={t.color.orange} numberOfLines={2}>
           {s.message}
