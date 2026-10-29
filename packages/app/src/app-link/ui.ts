@@ -6,19 +6,22 @@
 // panels, which the person's next click or key acts on (edit class). Neither changes the project: showing a plate is
 // plates.show's, and the printer is read here and picked by the person. Printer ids stay in the app (a serial on some
 // printers), as do access codes and addresses. ui.get also reads the shown slice's collisions, each with the plate
-// objects it names by id, so a client can select them with ui.select as a click on the collision's row does.
+// objects it names by id, the part struck, where and the region struck, so a client can select them with ui.select,
+// or pick one with collision.show (edit class) as a click on the collision's row does.
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { OPEN_PANELS } from '../agent-bridge/ui-state'
 import { currentEdition } from '../edition'
 import { clearSelection } from '../plate/select'
-import { toolStore } from '../plate/tools'
+import { cameraBus, toolStore } from '../plate/tools'
 import { settingsSections } from '../shell/settings-sections'
 import { cadShown, hostSlices, mimirOn, modelMode } from '../state/model-mode'
 import { offeredFeatureSettings, offeredWorkspaces } from '../state/offered'
 import { get, selectedIds, set, setModelMode, setRail, setWorkspace, type AppState, type ModelMode, type PlateEntry } from '../state/store'
 import { byObjectReadback } from '@slicerx/settings/by-object'
 import { activeClearance } from '../plate/sequence-check'
-import { collisionParts, collisionsOf } from '../plate/heimdall'
+import { resolveConfig } from '../adapters/config'
+import { areaOrigin, pointToPlate } from '../plate/bed-origin'
+import { collisionParts, collisionsOf, damagedOf } from '../plate/heimdall'
 import { LinkError } from './methods-error'
 import { namesOf } from './mimir-run'
 import { PREVIEW_BUSY_TOOLS } from './preview-guard'
@@ -60,18 +63,25 @@ async function printerState(s: AppState) {
 }
 
 /**
- * The collisions of the slice on screen, null before a slice: each with its kind, severity and the piece of the machine,
- * the plate objects it names (printing first, by id and name), the zone or the prime tower it meets when that is no
- * plate object, and its layers counted from 1. `stale` when the plate changed since the slice.
+ * The collisions of the slice on screen, null before a slice: each with its index, kind, severity and the piece of the
+ * machine, the plate objects it names (printing first, by id and name), the zone or the prime tower it meets when that
+ * is no plate object, its layers counted from 1, the part it strikes (damaged, a hit only), where it goes deepest and
+ * the region struck (plate mm, from the printable area's front left corner, as the plate counts), and picked while its
+ * row is. `stale` when the plate changed since the slice.
  */
-export function collisionsReadback(s: Pick<AppState, 'slice' | 'plate'>) {
+export function collisionsReadback(s: Pick<AppState, 'slice' | 'plate'> & Partial<Pick<AppState, 'strikePick' | 'easy' | 'overrides'>>) {
   if (s.slice.status !== 'done') return null
   const named = (id: string) => ({ id, name: s.plate.find((e) => e.id === id)?.name ?? null })
+  // The engine works in the printer's coordinates; the plate counts from the printable area's corner.
+  const origin = s.easy ? areaOrigin(resolveConfig(s.easy, s.overrides ?? {})['printable_area']) : ([0, 0] as const)
+  const mm = (p: readonly [number, number, number]) => pointToPlate(p, origin).map((v) => Math.round(v * 100) / 100) as [number, number, number]
   return {
     stale: s.slice.stale === true,
-    items: collisionsOf(s).map((c) => {
+    items: collisionsOf(s).map((c, index) => {
       const objects = collisionParts(s, c)
+      const damaged = c.severity === 'hit' ? damagedOf(s, c) : null
       return {
+        index,
         kind: c.kind,
         severity: c.severity,
         part: c.part,
@@ -79,9 +89,60 @@ export function collisionsReadback(s: Pick<AppState, 'slice' | 'plate'>) {
         ...(objects.includes(c.hitId) ? {} : { zone: c.hitId }),
         firstLayer: c.layer + 1,
         lastLayer: c.lastLayer + 1,
+        damaged: damaged ? named(damaged) : null,
+        contactPoint: mm(c.worstPoint),
+        contactBox: c.contactMin && c.contactMax && c.severity === 'hit' ? { min: mm(c.contactMin), max: mm(c.contactMax) } : null,
+        picked: s.strikePick === index,
       }
     }),
   }
+}
+
+/**
+ * collision.show: `index` (from ui.get's collisions) picks that collision as a click on its row does: its parts become
+ * the selection, ringed on the bed, the part it hits outlined and the region struck filled, and the view frames them
+ * only when they are off screen. `frame: true` frames them either way; `jump: true` also plays the head to the moment
+ * and turns the camera to the strike, as Jump does. It shows Slice when another tab is up. Busy and checked as
+ * ui.select is. Answers with the collisions read back, the selection, and whether the camera moved.
+ */
+export async function showCollision(args: Record<string, unknown>) {
+  const keys = ['index', 'frame', 'jump']
+  const extra = Object.keys(args).filter((k) => !keys.includes(k))
+  if (extra.length) throw new LinkError('invalid_input', `collision.show takes ${keys.join(', ')} only, not ${extra.join(', ')}`)
+  const { index, frame, jump } = args
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) throw new LinkError('invalid_input', 'index is a collision index from ui.get, counted from 0')
+  if ((frame !== undefined && typeof frame !== 'boolean') || (jump !== undefined && typeof jump !== 'boolean')) throw new LinkError('invalid_input', 'frame and jump are true or false')
+  const s = get()
+  if (s.slice.status !== 'done') throw new LinkError('not_found', 'no slice is shown; slice the plate first')
+  const list = collisionsOf(s)
+  if (!list[index]) throw new LinkError('not_found', list.length ? `no collision ${index}; the slice has ${list.length}, counted from 0` : 'the slice has no collisions')
+  if (!hostSlices()) throw new LinkError('not_found', 'this window has no Slice tab')
+  const why = windowBusy(s)
+  if (why) throw busy(why)
+  idle(s)
+  if (s.workspace !== 'prepare' || s.modelMode !== 'slice') setModelMode('slice')
+  const { jumpTo, pickCollision } = await import('../plate/heimdall-jump')
+  // A row's click frames only when the parts are off screen; the camera says whether it moved.
+  const bus = cameraBus()
+  let moved = false
+  const show = bus?.showSelection
+  if (bus && show) bus.showSelection = (o) => (moved = show.call(bus, o) || moved)
+  try {
+    if (jump === true) {
+      jumpTo(index, { frame: frame === true })
+      moved = true
+    } else {
+      pickCollision(index)
+      if (frame === true) {
+        bus?.zoomToSelection?.({ animate: true })
+        moved = true
+      }
+    }
+  } finally {
+    if (bus && show) bus.showSelection = show
+  }
+  const after = get()
+  return { picked: index, selection: selectedIds(after).filter((id) => after.plate.some((e) => e.id === id)), cameraMoved: moved, collisions: collisionsReadback(after) }
 }
 
 export async function readUi() {

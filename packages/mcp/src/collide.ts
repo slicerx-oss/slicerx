@@ -28,6 +28,100 @@ export interface RefusedHit {
 /** The zones and the tower sx names by fixed ids; they are no objects. */
 const NOT_OBJECTS = new Set(['prime-tower', 'exclusion-area', 'wrap-check-zone'])
 
+type V3 = [number, number, number]
+
+/** One collision as sx writes it in its result and its refusal (camelCase), with the fields a client acts on. */
+export interface SxCollision extends RefusedHit {
+  part: string
+  layer: number
+  lastLayer: number
+  timeS: number
+  worstPoint: V3
+  depthMm: number
+  pushMm?: number
+  limitMm?: number
+  damagedId?: string
+  contactMin?: V3
+  contactMax?: V3
+}
+
+/**
+ * A collision as the slice tools answer it, refused or sliced with allow_collisions. Positions are plate mm, from the
+ * printable area's front left corner, as the app's plate counts them.
+ */
+export interface SliceCollision {
+  index: number
+  kind: string
+  severity: 'hit' | 'close'
+  part: string
+  /** The object printing: the plate object's own id when the request gave one, else the engine's. */
+  object_id: string
+  object_name?: string
+  /** What it meets: an object, the prime tower, or a keep-out zone (exclusion-area, wrap-check-zone). */
+  hit_id: string
+  hit_kind: 'object' | 'tower' | 'zone'
+  /** The object whose material is struck; absent from an older engine. */
+  damaged_id?: string
+  /** Layers counted from 1, and when it first happens in the print. */
+  first_layer: number
+  last_layer: number
+  time_s: number
+  /** Where it goes deepest. */
+  contact_point: V3
+  /** The region struck; absent for a close call and from an older engine. */
+  contact_box?: { min: V3; max: V3 }
+  depth_mm: number
+  push_mm?: number
+  limit_mm?: number
+}
+
+/** sx's collisions from its result or its refusal on stdout, or [] when it printed none. */
+export function sxCollisions(v: unknown): SxCollision[] {
+  const list = (v as { collisions?: unknown } | null)?.collisions
+  return Array.isArray(list) ? list.filter((h): h is SxCollision => !!h && typeof h === 'object' && typeof (h as SxCollision).objectId === 'string' && typeof (h as SxCollision).hitId === 'string' && Array.isArray((h as SxCollision).worstPoint)) : []
+}
+
+const round = (v: number) => Math.round(v * 100) / 100
+
+/**
+ * The collisions for a client: the engine's ids o0, o1 (and o0-1 for an object a project file expands to) as the plate
+ * objects' own ids where the request gave them, the names, and positions moved by `origin` (the printable area's front
+ * left corner in the machine's coordinates, where sx works) onto the plate.
+ */
+export function sliceCollisions(hits: readonly SxCollision[], objects: readonly { id?: string; name?: string }[], origin: readonly [number, number]): SliceCollision[] {
+  const own = (id: string) => {
+    const m = /^o(\d+)$/.exec(id)
+    return m ? objects[Number(m[1])]?.id : undefined
+  }
+  const named = (id: string) => {
+    const m = /^o(\d+)$/.exec(id)
+    return m ? objects[Number(m[1])]?.name : undefined
+  }
+  const plate = (p: V3): V3 => [round(p[0] - origin[0]), round(p[1] - origin[1]), round(p[2])]
+  return hits.map((h, index) => {
+    const name = named(h.objectId)
+    return {
+      index,
+      kind: h.kind,
+      severity: h.severity === 'close' ? 'close' : 'hit',
+      part: h.part,
+      object_id: own(h.objectId) ?? h.objectId,
+      ...(name ? { object_name: name } : {}),
+      hit_id: own(h.hitId) ?? h.hitId,
+      hit_kind: h.hitId === 'prime-tower' ? 'tower' : NOT_OBJECTS.has(h.hitId) ? 'zone' : 'object',
+      ...(h.damagedId ? { damaged_id: own(h.damagedId) ?? h.damagedId } : {}),
+      first_layer: h.layer + 1,
+      last_layer: h.lastLayer + 1,
+      time_s: Math.round(h.timeS),
+      contact_point: plate(h.worstPoint),
+      ...(h.contactMin && h.contactMax ? { contact_box: { min: plate(h.contactMin), max: plate(h.contactMax) } } : {}),
+      depth_mm: round(h.depthMm),
+      ...(h.pushMm ? { push_mm: round(h.pushMm) } : {}),
+      ...(h.limitMm ? { limit_mm: round(h.limitMm) } : {}),
+    }
+  })
+}
+
 const ZONES = ['the prime tower', 'the exclusion area', 'the nozzle wrap check corner']
 const LAYERS = String.raw`layers? (\d+)(?: to (\d+))?`
 
@@ -127,13 +221,15 @@ export function refusedHits(stdout: string): RefusedHit[] | undefined {
  * The error to throw for an sx collision refusal: collision for the plate's own paths, sequence_clearance when only the
  * by-object clearance fails. With sx's refused collisions (`refused`), each item names its objects by id too.
  */
-export function collisionError(why: string, objectNames: readonly string[] = [], refused?: { hits: readonly RefusedHit[]; objects: readonly { id?: string }[] }): ToolInputError | undefined {
+export function collisionError(why: string, objectNames: readonly string[] = [], refused?: { hits: readonly RefusedHit[]; objects: readonly { id?: string }[]; list?: readonly SliceCollision[] }): ToolInputError | undefined {
   const parsed = parseCollisions(why, objectNames)
   if (!parsed) return undefined
   const plate = parsed.items.some((c) => c.kind !== 'clearance')
   const items = refused ? withObjectIds(parsed.items, refused.hits, refused.objects) : parsed.items
   return new ToolInputError(collisionMessage(parsed.items, parsed.fixes), plate ? 'collision' : 'sequence_clearance', {
     collisions: items,
+    // Every collision with its part struck, place and region, as a sliced result's collisions has them.
+    ...(refused?.list?.length ? { collision_list: refused.list } : {}),
     fixes: parsed.fixes,
     allow_collisions: true,
     // In a project, slicerx_arrange spaces a by-object plate by the clearance.

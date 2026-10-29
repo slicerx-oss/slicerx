@@ -7,7 +7,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { accessSync, constants, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, delimiter, extname, join } from 'node:path'
 import type { SettingValue, ScriptReview, ScriptReviewInput, ScriptReplacement, AppliedScriptReplacement } from '@slicerx/contracts'
-import { collisionError, refusedHits } from './collide'
+import { areaOrigin } from '@slicerx/threemf/area'
+import { collisionError, refusedHits, sliceCollisions, sxCollisions } from './collide'
 import { featureFilaments } from './feature-filaments'
 import { ToolInputError } from './models'
 import type { SlicerBackend, SliceSummary } from './slicer'
@@ -285,11 +286,15 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       const stopped = sxStopped(ran, timeoutMs)
       if (stopped) throw stopped
       const { code, stdout, stderr } = ran
+      // The plate's objects by the engine's ids (o0, o1), and where the plate's 0, 0 sits on the machine sx works in.
+      const named = objects.map((o) => ({ ...('id' in o && o.id ? { id: o.id } : {}), name: o.name }))
+      const origin = areaOrigin(job.config['printable_area'])
       if (code !== 0) {
         const why = stderr.trim().split('\n').slice(-3).join(' ') || 'no error output'
         // Collisions come back as their own code, in words for a person and with the objects and layers as details.
         const hits = code === 3 ? refusedHits(stdout) : undefined
-        const collided = code === 3 ? collisionError(why, objects.map((o) => o.name), hits ? { hits, objects: objects.map((o) => ('id' in o && o.id ? { id: o.id } : {})) } : undefined) : undefined
+        const list = hits ? sliceCollisions(sxCollisions(JSON.parse(stdout.trim())), named, origin) : []
+        const collided = code === 3 ? collisionError(why, objects.map((o) => o.name), hits ? { hits, objects: objects.map((o) => ('id' in o && o.id ? { id: o.id } : {})), list } : undefined) : undefined
         if (collided) throw collided
         throw sxFailure(code, why)
       }
@@ -344,6 +349,9 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         ...(job.emitGcode ? { gcode_path: gcodePath } : {}),
         ...(job.emitPreview ? { preview_path: previewPath } : {}),
       }
+      // A slice with allow_collisions, or one with only close calls, lists them as a refusal does.
+      const found = sxCollisions(out)
+      if (found.length) summary.collisions = sliceCollisions(found, named, origin)
       return summary
     },
   }

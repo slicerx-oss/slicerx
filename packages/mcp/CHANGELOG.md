@@ -4,6 +4,11 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_slice_file` and `slicerx_estimate_file` 1.2.0 list every collision of a plate in `collisions`, sliced with `allow_collisions` or as close calls that pass, and a refusal lists the same in `details.collision_list`: `index`, `kind`, `severity`, `part`, `object_id` and `object_name` (the plate object's own id where the request gave one), `hit_id` and `hit_kind` (`object`, `tower` or `zone`), `damaged_id` (the object whose material is struck), `first_layer` and `last_layer` from 1, `time_s`, `contact_point` and `contact_box` (where it goes deepest and the region struck, plate mm from the printable area's front left corner), `depth_mm`, `push_mm` and `limit_mm`. Before, a slice with `allow_collisions` dropped them.
+- `slicerx_app_ui` 1.1.0 reads each collision of the shown slice back with its `index`, the plate object a hit strikes (`damaged`), `contactPoint`, `contactBox` and `picked`. The new `slicerx_app_collision_show` picks one by `index` as a click on its row does: its objects selected, the struck one outlined and the region struck filled, the view framed when they are off screen (`frame: true` frames either way, `jump: true` plays the head to the moment). It needs an edit grant and answers busy as `slicerx_app_ui_select` does.
+
 ### Changed
 
 - A project reads and slices with the wall generator it inherited from its presets, on every printer (`readProjectFile`, `slicerx_inspect_project`, and `slicerx_slice_file` with `project_settings`); its walls note says `classic walls, as the project has them`. Before, an inherited classic generator became aegis. Aegis walls the project lists as changed stay, and so do request overrides.

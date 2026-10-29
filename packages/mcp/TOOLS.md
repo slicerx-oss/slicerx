@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-247 tools.
+248 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -11,6 +11,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_ams_mapping` |  |  | read | Map the filaments a job needs (material and color per part) onto the slots loaded on one printer. |
 | `slicerx_app_assistant` |  |  | read | Read the assistant identity of the edition open in SlicerX: its display name, icon image or builtin:mimir, optional accent (one color or light/dark colors), and whether the edition enables the assistant. |
 | `slicerx_app_brim_ears` |  |  | read | Read brim ears on the shown plate in SlicerX, optionally for one object: zero-based indices, local and bed coordinates in mm, world diameter, connectivity to the first layer, effective brim type, linked copies, generation defaults and a revision for edits. |
+| `slicerx_app_collision_show` |  |  | slice | Pick a collision of the slice SlicerX shows, the way a click on its row in the Collisions list does: index (from slicerx_app_ui collisions, counted from 0). |
 | `slicerx_app_dimension_keep` |  |  | slice | Keep a reference dimension on the model, as Keep this dimension in Measure does. |
 | `slicerx_app_dimension_remove` |  |  | slice | Remove one kept reference dimension by its ID from app_dimensions. |
 | `slicerx_app_dimensions` |  |  | read | Read every kept reference dimension on the shown plate, evaluated against the current geometry. |

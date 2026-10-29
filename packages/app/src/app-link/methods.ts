@@ -92,6 +92,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'ui.get': 'read',
   'ui.set': 'read',
   'ui.select': 'edit',
+  // A collision of the shown slice picked as a click on its row does: an edit, as the selection is.
+  'collision.show': 'edit',
   // The open sketch's dimension boxes: read them, and type a value into one (it drives the shape, or frees it).
   'sketch.boxes': 'read',
   'sketch.box_set': 'edit',
@@ -432,6 +434,7 @@ const HANDLERS: Record<string, Handler> = {
   'ui.get': async () => (await import('./ui')).readUi(),
   'ui.set': async (args) => (await import('./ui')).setUi(args),
   'ui.select': async (args) => (await import('./ui')).selectUi(args),
+  'collision.show': async (args) => (await import('./ui')).showCollision(args),
   'sketch.boxes': async () => (await import('./sketch-boxes')).readBoxes(),
   'sketch.box_set': async (args) => (await import('./sketch-boxes')).setBox(args),
   'model.push': async () => (await import('./model-push')).readPush(),

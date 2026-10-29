@@ -222,16 +222,49 @@ describe('Show me and the summary pane', () => {
 })
 
 describe('the read-back', () => {
-  it('names each collision\'s plate objects by id and name, a zone apart, layers from 1', () => {
+  it('names each collision\'s plate objects by id and name, a zone apart, layers from 1, the part struck and where', () => {
     expect(collisionsReadback(get())).toEqual({
       stale: false,
       items: [
-        { kind: 'hotend', severity: 'hit', part: 'toolhead', objects: [{ id: 'b', name: 'Housing' }, { id: 'a', name: 'Bracket' }], firstLayer: 3, lastLayer: 4 },
-        { kind: 'keep_out', severity: 'hit', part: 'nozzle', objects: [{ id: 'c', name: 'Clip' }], zone: 'exclusion-area', firstLayer: 1, lastLayer: 5 },
-        { kind: 'path_conflict', severity: 'hit', part: 'nozzle', objects: [], zone: 'gone', firstLayer: 3, lastLayer: 4 },
+        { index: 0, kind: 'hotend', severity: 'hit', part: 'toolhead', objects: [{ id: 'b', name: 'Housing' }, { id: 'a', name: 'Bracket' }], firstLayer: 3, lastLayer: 4, damaged: { id: 'a', name: 'Bracket' }, contactPoint: [21, 41, 4], contactBox: null, picked: false },
+        { index: 1, kind: 'keep_out', severity: 'hit', part: 'nozzle', objects: [{ id: 'c', name: 'Clip' }], zone: 'exclusion-area', firstLayer: 1, lastLayer: 5, damaged: { id: 'c', name: 'Clip' }, contactPoint: [21, 41, 4], contactBox: null, picked: false },
+        { index: 2, kind: 'path_conflict', severity: 'hit', part: 'nozzle', objects: [], zone: 'gone', firstLayer: 3, lastLayer: 4, damaged: null, contactPoint: [21, 41, 4], contactBox: null, picked: false },
       ],
     })
     set({ slice: { status: 'idle' } as never })
     expect(collisionsReadback(get())).toBeNull()
+  })
+
+  it('gives the region struck on the plate, from a printable area that starts away from 0, and the row picked', () => {
+    const boxed: Collision = { ...strike, damagedId: 'a', contactMin: [-100, -110, 2], contactMax: [-96, -90, 20] }
+    set({ slice: { status: 'done', result: result([boxed]), stale: false }, strikePick: 0, overrides: { printable_area: ['-128x-128', '128x-128', '128x128', '-128x128'] } as never })
+    expect(collisionsReadback(get())?.items[0]).toMatchObject({ damaged: { id: 'a' }, contactPoint: [149, 169, 4], contactBox: { min: [28, 18, 2], max: [32, 38, 20] }, picked: true })
+  })
+})
+
+describe('collision.show over the app link', () => {
+  // No first-run setup or agreement over the window, as on a set up desktop.
+  beforeEach(() => set({ setup: null, agreementOpen: false }))
+
+  it('picks the collision as its row does and answers the selection and the read-back', async () => {
+    const { showCollision } = await import('../src/app-link/ui')
+    const out = await showCollision({ index: 0 })
+    expect(out).toMatchObject({ picked: 0, selection: ['b', 'a'], cameraMoved: true })
+    expect(get()).toMatchObject({ strikePick: 0, selectedIds: ['b', 'a'], pickRing: ['b', 'a'] })
+    expect(out.collisions?.items[0]).toMatchObject({ picked: true })
+    // Jump plays the head there and turns the camera to the strike.
+    const jumped = await showCollision({ index: 0, jump: true })
+    expect(jumped.cameraMoved).toBe(true)
+    expect(camera.focusBedPoint).toHaveBeenCalledWith(21, 41, 4, { animate: true })
+  })
+
+  it('checks its arguments and the slice before anything changes', async () => {
+    const { showCollision } = await import('../src/app-link/ui')
+    await expect(showCollision({ index: 9 })).rejects.toMatchObject({ code: 'not_found' })
+    await expect(showCollision({ index: -1 })).rejects.toMatchObject({ code: 'invalid_input' })
+    await expect(showCollision({ index: 0, zoom: true })).rejects.toMatchObject({ code: 'invalid_input' })
+    set({ slice: { status: 'idle' } as never })
+    await expect(showCollision({ index: 0 })).rejects.toMatchObject({ code: 'not_found' })
+    expect(get().strikePick).toBeNull()
   })
 })

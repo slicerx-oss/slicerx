@@ -55,7 +55,7 @@ export const sliceInput = {
   allow_collisions: z
     .boolean()
     .default(false)
-    .describe('Slice even when paths cross, enter a keep-out zone or would meet the toolhead. Leave it off unless the person asked: by default such a plate is refused with error code collision (or sequence_clearance when printing by object), the objects and layers in structuredContent.error.details.'),
+    .describe('Slice even when paths cross, enter a keep-out zone or would meet the toolhead. Leave it off unless the person asked: by default such a plate is refused with error code collision (or sequence_clearance when printing by object), the objects and layers in structuredContent.error.details, and each collision with its part struck and place in details.collision_list. Sliced anyway, the result lists them in collisions.'),
   profiles: z
     .array(z.string())
     .max(8)
@@ -87,7 +87,31 @@ export const sliceFileInput = {
   preview: z.boolean().default(false).describe('Also write the toolpath preview (SXPV) that the @slicerx/embed viewport shows. sx engine only.'),
 }
 
+const v3 = z.tuple([z.number(), z.number(), z.number()])
+
+/** A collision as the slice tools answer it (collide.ts SliceCollision): plate mm, layers from 1. */
+export const collisionShape = z.object({
+  index: z.number().describe('Its place in the list, for slicerx_app_collision_show'),
+  kind: z.string().describe('gantry, hotend, nozzle_travel_through_part, tool_change, dock, path_conflict or keep_out'),
+  severity: z.enum(['hit', 'close']).describe('hit blocks the print; close is only inside the clearance radius of the profile'),
+  part: z.string().describe('The piece of the machine: nozzle, toolhead, gantry, lid or clearance'),
+  object_id: z.string().describe('The object printing: the id the request gave the plate object, when it gave one'),
+  object_name: z.string().optional(),
+  hit_id: z.string().describe('What it meets: an object id, prime-tower, exclusion-area or wrap-check-zone'),
+  hit_kind: z.enum(['object', 'tower', 'zone']),
+  damaged_id: z.string().optional().describe('The object whose material is struck'),
+  first_layer: z.number(),
+  last_layer: z.number(),
+  time_s: z.number().describe('When it first happens in the print'),
+  contact_point: v3.describe('Where it goes deepest, plate mm from the front left corner of the printable area'),
+  contact_box: z.object({ min: v3, max: v3 }).optional().describe('The region struck, plate mm; move the struck object or the one printing out of it'),
+  depth_mm: z.number(),
+  push_mm: z.number().optional().describe('The extra spacing that clears a toolhead strike sideways'),
+  limit_mm: z.number().optional().describe('The clearance it breaks: rod or lid height, or the clearance radius'),
+})
+
 export const summaryShape = {
+  collisions: z.array(collisionShape).optional().describe('sx engine: every collision of the plate, sliced with allow_collisions or as close calls that pass'),
   script_replacements: z.array(z.object({
     schemaVersion: z.literal(1), decision: z.literal('applied'), reason: z.string(),
     key: z.string(), slot: z.number().nullable(), original: z.string(), replacement: z.string(),
