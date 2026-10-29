@@ -395,6 +395,8 @@ export interface AppState {
   multiBodyPrompt: { name: string; bodies: number } | null
   /** Auto slice held the plate's slice (a big plate, an opened project, the example at launch): it waits for Slice, with a note. Not saved. */
   sliceHeld: boolean
+  /** With sliceHeld: the hold comes from an opened project, not from the plate's size (the footer names the reason). Not saved. */
+  heldByOpenedProject: boolean
   cadTools: boolean
   /** What a kWh costs the person and the currency symbol in front of it, for the electricity estimate. */
   electricity: { pricePerKwh: number; symbol: string }
@@ -787,6 +789,7 @@ export const appStore = createStore<AppState>()(() => ({
   multiBodyImport: prefs.multiBodyImport ?? MULTI_BODY_DEFAULT,
   multiBodyPrompt: null,
   sliceHeld: false,
+  heldByOpenedProject: false,
   cadTools: prefs.cadTools ?? true,
   electricity: prefs.electricity ?? DEFAULT_ELECTRICITY,
   units: prefs.units ?? DEFAULT_UNITS,

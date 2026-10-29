@@ -19,7 +19,7 @@ const roots: Root[] = []
 // The roots go before the store is put back, so no render lands after the test's DOM is gone.
 afterEach(() => {
   for (const r of roots.splice(0)) flushSync(() => r.unmount())
-  set({ slice: before.slice, plate: before.plate, autoSlice: before.autoSlice, sliceHeld: false })
+  set({ slice: before.slice, plate: before.plate, autoSlice: before.autoSlice, autoSliceBySize: before.autoSliceBySize, sliceHeld: false, heldByOpenedProject: false })
 })
 
 function footer(compact: boolean): HTMLElement {
@@ -51,6 +51,32 @@ describe('slice footer', () => {
     expect(el.querySelector('[data-testid="slice-estimate-held"]')?.textContent).toBe('A big plate: it slices when you press Slice.')
     expect(el.querySelector('[data-testid="slice-estimate-slice"]')).not.toBeNull()
     expect(el.querySelector('[data-testid="danger-slice-print"]')).toBeNull()
+    el.remove()
+  })
+
+  it('with a project just opened (held by the open, Auto slice on Always), the line names the open, whatever the size', () => {
+    const box = { id: 'b', name: 'Box', parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
+    set({ plate: [box] as never, autoSlice: true, autoSliceBySize: false, sliceHeld: true, heldByOpenedProject: true, slice: { status: 'idle' } })
+    const el = footer(true)
+    expect(el.querySelector('[data-testid="slice-estimate-held"]')?.textContent).toBe('Opened project: it slices when you press Slice.')
+    expect(el.querySelector('[data-testid="slice-estimate-slice"]')).not.toBeNull()
+    el.remove()
+  })
+
+  it('with a big project just opened, the line names the open, not the size', () => {
+    const box = { id: 'b', name: 'Box', parts: [{ indices: new Uint32Array(700_000 * 3), positions: new Float32Array(9) }], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
+    set({ plate: [box] as never, autoSlice: true, sliceHeld: true, heldByOpenedProject: true, slice: { status: 'idle' } })
+    const el = footer(true)
+    expect(el.querySelector('[data-testid="slice-estimate-held"]')?.textContent).toBe('Opened project: it slices when you press Slice.')
+    el.remove()
+  })
+
+  it('with a project just opened (held by the open, Auto slice on Always), the line names the open, whatever the size', () => {
+    const box = { id: 'b', name: 'Box', parts: [], colors: [], transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }
+    set({ plate: [box] as never, autoSlice: true, autoSliceBySize: false, sliceHeld: true, heldByOpenedProject: true, slice: { status: 'idle' } })
+    const el = footer(true)
+    expect(el.querySelector('[data-testid="slice-estimate-held"]')?.textContent).toBe('Opened project: it slices when you press Slice.')
+    expect(el.querySelector('[data-testid="slice-estimate-slice"]')).not.toBeNull()
     el.remove()
   })
 

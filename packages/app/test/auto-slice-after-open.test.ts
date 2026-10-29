@@ -31,7 +31,7 @@ function host() {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  set({ plate: [], ...autoSliceFields('auto'), sliceHeld: false, liveEdit: false, historyEdit: null, plateLoading: false, revealHold: false, sliceDuringOpen: false, slice: { status: 'idle' }, resume: null, calibration: {}, layerMarks: {}, workspace: 'prepare', modelMode: 'slice', preview: null })
+  set({ plate: [], ...autoSliceFields('auto'), sliceHeld: false, heldByOpenedProject: false, liveEdit: false, historyEdit: null, plateLoading: false, revealHold: false, sliceDuringOpen: false, slice: { status: 'idle' }, resume: null, calibration: {}, layerMarks: {}, workspace: 'prepare', modelMode: 'slice', preview: null })
 })
 afterEach(() => void vi.useRealTimers())
 
@@ -64,6 +64,8 @@ describe('auto slice after an opened project', () => {
       expect(get().slice.status).toBe('idle')
       // Slice is the action until the person presses it (the footer's Slice plate)
       expect(get().sliceHeld).toBe(true)
+      // the footer names the open as the reason, not the plate's size
+      expect(get().heldByOpenedProject).toBe(true)
       expect({ workspace: get().workspace, modelMode: get().modelMode, preview: get().preview }).toEqual({ workspace: 'prepare', modelMode: 'slice', preview: null })
       expect(get().rails).toBe(rails)
       stop()

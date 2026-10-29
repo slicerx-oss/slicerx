@@ -50,7 +50,7 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     // Auto by size: a big slice waits for Slice, and the footer says so.
     const big = isBigSlice(s.plate, sliceTimingsOf(s.activePlate))
     if (s.autoSliceBySize && big) {
-      if (!s.sliceHeld) appStore.setState({ sliceHeld: true })
+      if (!s.sliceHeld || s.heldByOpenedProject) appStore.setState({ sliceHeld: true, heldByOpenedProject: false })
       return
     }
     if (s.sliceHeld) appStore.setState({ sliceHeld: false })
@@ -83,7 +83,7 @@ export function startAutoSlice(host: Host, delayMs = AUTO_SLICE_DELAY_MS, fitWai
     // The example plate a session starts with ends the same way.
     if ((prev.revealHold && !s.revealHold) || (prev.exampleSeeding && !s.exampleSeeding)) {
       clear()
-      if (s.plate.length > 0 && !s.sliceHeld) appStore.setState({ sliceHeld: true })
+      if (s.plate.length > 0 && !s.sliceHeld) appStore.setState({ sliceHeld: true, heldByOpenedProject: prev.revealHold })
       return
     }
     // Turning it on, or from Auto to Always, slices what is there now.

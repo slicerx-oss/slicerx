@@ -48,6 +48,7 @@ export function clearProject(): void {
     parked: null,
     slice: { status: 'idle' },
     sliceHeld: false,
+    heldByOpenedProject: false,
     preview: null,
     projectFile: null,
     // A project's G-code waiting for a choice goes with the project; G-code already chosen is a print setting and stays.
