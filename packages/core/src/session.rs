@@ -3199,14 +3199,21 @@ impl SliceSession {
         }
     }
 
-    /// The filament print layer `p` starts on: the one the print layer under it ended on.
+    /// The filament print layer `p` starts on: the one the print layer under it ended on. A session of one
+    /// filament plans no tool order: once its first layer has printed it holds that filament, so every later layer
+    /// starts on it and the writer selects no tool there.
     fn print_start<'a>(
         &self,
         cfg: &PrintConfig,
         p: u32,
         get: &(dyn Fn(u32) -> Option<&'a LayerRegions> + Sync),
     ) -> u8 {
-        p.checked_sub(1).map_or(0, |b| self.print_end(cfg, b, get))
+        p.checked_sub(1).map_or(0, |b| {
+            match (self.print_end(cfg, b, get), self.slots.as_slice()) {
+                (0, [one]) => *one,
+                (t, _) => t,
+            }
+        })
     }
 
     /// Features on filaments of their own (`*_filament_id`): the plate is sliced once here to learn
