@@ -190,11 +190,10 @@ fn incoming(session: &SliceSession, k: usize) -> HandOver {
     came
 }
 
-/// An object's own session starts as if nothing printed before it, and one of a single filament plans no
-/// tool order, so its layers start on no known filament: the writer then selects the filament with a bare
-/// `T` instead of the profile's change G-code, at the object's first layer and at every layer after. Its
-/// layers start on what the objects before it ended on (`came`), and later on the filament the object
-/// itself holds, and count the tools and changes before them.
+/// An object's own session starts as if nothing printed before it, so its first layer starts on no known
+/// filament: the writer would then select the filament with a bare `T` instead of the profile's change
+/// G-code. Its first layer starts on what the objects before it ended on (`came`), later ones on the filament
+/// the object itself holds, and its layers count the tools and changes before them.
 fn take_over(came: &HandOver, sub: &SliceSession, layers: &mut [LayerPaths]) {
     let own = sub.hand_over();
     let switch = u32::from(came.last != 0 && own.first != 0 && own.first != came.last);
