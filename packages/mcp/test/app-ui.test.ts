@@ -124,3 +124,37 @@ describe('app ui tools', () => {
     }
   })
 })
+
+describe('the collision tool', () => {
+  const items = [
+    { index: 0, kind: 'gantry', severity: 'hit' as const, part: 'gantry', objects: [{ id: 'base', name: 'Base' }, { id: 'tower', name: 'Tower' }], firstLayer: 31, lastLayer: 41, damaged: { id: 'tower', name: 'Tower' }, contactPoint: [70, 128, 25] as [number, number, number], contactBox: { min: [60, 118, 25] as [number, number, number], max: [80, 138, 30] as [number, number, number] }, picked: true },
+  ]
+  const shown = { picked: 0, selection: ['base', 'tower'], cameraMoved: true, collisions: { stale: false, items } }
+
+  it('picks a collision as its row does, edit class, and says which part is hit', async () => {
+    const call = vi.fn(async () => shown)
+    const tools = appUiTools({ call } as unknown as AppLinkCaller, 'SlicerX')
+    const show = tools.find((t) => t.name === 'app.collision_show')!
+    expect(show.permission).toBe('slice')
+    const out = await show.run(show.input.parse({ index: 0, jump: true }) as never, {} as never)
+    expect(call).toHaveBeenLastCalledWith('collision.show', { index: 0, jump: true })
+    expect(out.output).toEqual(shown)
+    expect(out.summary).toBe('Picked collision 0: Base and Tower (hit), the view framed it.')
+    // checked before anything leaves
+    expect(() => show.input.parse({ index: -1 })).toThrow()
+    expect(() => show.input.parse({})).toThrow()
+  })
+
+  it('passes the app refusing it on, a missing collision as not found', async () => {
+    const tools = appUiTools({ call: refuse('not_found', 'no collision 4; the slice has 1, counted from 0') } as AppLinkCaller, 'SlicerX')
+    const show = tools.find((t) => t.name === 'app.collision_show')!
+    await expect(show.run({ index: 4 } as never, {} as never)).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('reads the struck part, the place and the region back in the window', async () => {
+    const [get] = appUiTools({ call: async () => ({ ...UI, tab: 'slice', collisions: { stale: false, items } }) } as unknown as AppLinkCaller, 'SlicerX')
+    const read = await get!.run({} as never, {} as never)
+    expect((read.output as AppUi).collisions?.items[0]).toMatchObject({ damaged: { id: 'tower' }, contactBox: { min: [60, 118, 25] }, picked: true })
+    expect(get!.description).toMatch(/slicerx_app_collision_show/)
+  })
+})

@@ -164,6 +164,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("ui.get", LinkClass::Read),
     ("ui.set", LinkClass::Read),
     ("ui.select", LinkClass::Edit),
+    // A collision of the shown slice picked as a click on its row does: an edit, as the selection is.
+    ("collision.show", LinkClass::Edit),
     // The open sketch's dimension boxes: read them, and type a value into one, as the person does on the shape.
     ("sketch.boxes", LinkClass::Read),
     ("sketch.box_set", LinkClass::Edit),
@@ -483,6 +485,7 @@ mod tests {
         ("ui.get", LinkClass::Read),
         ("ui.set", LinkClass::Read),
         ("ui.select", LinkClass::Edit),
+        ("collision.show", LinkClass::Edit),
         ("sketch.boxes", LinkClass::Read),
         ("sketch.box_set", LinkClass::Edit),
         ("model.push", LinkClass::Read),

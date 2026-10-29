@@ -33,6 +33,8 @@ export interface AppCollisions {
   /** The plate changed since the slice. */
   stale: boolean
   items: {
+    /** Its place in the list, for slicerx_app_collision_show. Older apps leave it out. */
+    index?: number
     kind: string
     severity: 'hit' | 'close'
     part: string
@@ -42,7 +44,22 @@ export interface AppCollisions {
     zone?: string
     firstLayer: number
     lastLayer: number
+    /** The plate object a hit strikes; null for a close call or when it names none. Older apps leave it out. */
+    damaged?: { id: string; name: string | null } | null
+    /** Where it goes deepest, and the region struck (null for a close call or an older engine), plate mm. */
+    contactPoint?: [number, number, number]
+    contactBox?: { min: [number, number, number]; max: [number, number, number] } | null
+    /** Its row is the one picked. */
+    picked?: boolean
   }[]
+}
+
+/** What collision.show answers (packages/app app-link/ui.ts, showCollision). */
+export interface AppCollisionShown {
+  picked: number
+  selection: string[]
+  cameraMoved: boolean
+  collisions: AppCollisions | null
 }
 
 export const UI_PANELS = ['settings', 'command', 'about', 'shortcuts', 'expert', 'printerChooser', 'printerSettings'] as const
@@ -50,10 +67,10 @@ export const UI_PANELS = ['settings', 'command', 'about', 'shortcuts', 'expert',
 const CODES: Record<string, ErrorCode> = { invalid_input: 'invalid_input', bad_request: 'invalid_input', not_found: 'not_found', busy: 'busy', read_only: 'not_supported', denied: 'not_supported' }
 const OFF = ['app_link_off', 'app_closed', 'forbidden', 'unauthorized']
 
-async function call(link: AppLinkCaller | undefined, appName: string, method: string, args: Record<string, unknown>): Promise<AppUi> {
+async function call<T = AppUi>(link: AppLinkCaller | undefined, appName: string, method: string, args: Record<string, unknown>): Promise<T> {
   if (!link) throw new ToolInputError(`Needs ${appName} open with the app link on (start this server with --printers link).`, 'not_configured')
   try {
-    return await link.call<AppUi>(method, args)
+    return await link.call<T>(method, args)
   } catch (e) {
     const code = String((e as { code?: unknown }).code ?? '')
     const message = e instanceof Error ? e.message : String(e)
@@ -94,10 +111,10 @@ const defined = (i: Record<string, unknown>) => Object.fromEntries(Object.entrie
 export function appUiTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   const get = defineTool({
     name: 'app.ui',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: `Read ${appName}'s window as the person sees it: workspace (with workspaces, the ids and labels the top bar offers), tab (the first workspace's mode: slice, design for Model, or mimir; tabs lists the ones shown), selection (primary and objects on the shown plate, primary first, each with id and name), plate (the plate shown: number from 1, id, name and count), printer (the one the project slices for: name, vendor, model, nozzleMm and fromProject for an opened project's own printer; null when none is chosen; never an id, serial, access code or address) and panels (open: the dialogs and panels up, such as settings, command, about, shortcuts, expert, printerChooser, printerSettings or setup; settingsSection, the Settings section shown; settable, the panels slicerx_app_ui_select opens). Reads through the app link; the app must be open with the link on. byObject, when the shown plate prints by object: needMm (the clearance), pairs closer than it (a and b with id and name, gapMm, severity: block when sx refuses the slice for it, soft when sx slices it as a close call), tall objects the gantry or lid would hit (id, name, topMm, what, limitMm), the gantry (rodMm, reachMm) and outlines (per object its footprint and its clearance zone, bed mm; zones that overlap are objects too close); null by layer. collisions, once the shown plate is sliced: each collision in the slice (kind, severity hit or close, part, objects it names with id and name, the one printing first, zone when it meets a keep-out zone or the prime tower, firstLayer and lastLayer counted from 1) and stale when the plate changed since; slicerx_app_ui_select with those ids selects them, as a click on the collision's row does; null before a slice.`,
+    description: `Read ${appName}'s window as the person sees it: workspace (with workspaces, the ids and labels the top bar offers), tab (the first workspace's mode: slice, design for Model, or mimir; tabs lists the ones shown), selection (primary and objects on the shown plate, primary first, each with id and name), plate (the plate shown: number from 1, id, name and count), printer (the one the project slices for: name, vendor, model, nozzleMm and fromProject for an opened project's own printer; null when none is chosen; never an id, serial, access code or address) and panels (open: the dialogs and panels up, such as settings, command, about, shortcuts, expert, printerChooser, printerSettings or setup; settingsSection, the Settings section shown; settable, the panels slicerx_app_ui_select opens). Reads through the app link; the app must be open with the link on. byObject, when the shown plate prints by object: needMm (the clearance), pairs closer than it (a and b with id and name, gapMm, severity: block when sx refuses the slice for it, soft when sx slices it as a close call), tall objects the gantry or lid would hit (id, name, topMm, what, limitMm), the gantry (rodMm, reachMm) and outlines (per object its footprint and its clearance zone, bed mm; zones that overlap are objects too close); null by layer. collisions, once the shown plate is sliced: each collision in the slice (kind, severity hit or close, part, objects it names with id and name, the one printing first, zone when it meets a keep-out zone or the prime tower, firstLayer and lastLayer counted from 1, index, damaged: the plate object a hit strikes, contactPoint and contactBox: where it goes deepest and the region struck in plate mm from the printable area's front left corner, picked while its row is) and stale when the plate changed since; slicerx_app_collision_show with the index picks one as a click on its row does, and slicerx_app_ui_select with the ids selects them; null before a slice.`,
     input: z.object({}),
     async run() {
       const out = await call(link, appName, 'ui.get', {})
@@ -141,5 +158,23 @@ export function appUiTools(link: AppLinkCaller | undefined, appName: string): Pi
       return { summary: summary(out), output: out }
     },
   })
-  return [get, setUi, select] as PilotTool<never>[]
+  const show = defineTool({
+    name: 'app.collision_show',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'slice',
+    description: `Pick a collision of the slice ${appName} shows, the way a click on its row in the Collisions list does: index (from slicerx_app_ui collisions, counted from 0). Its plate objects become the selection, ringed on the bed; the object a hit strikes is outlined in the hit color and the region struck is filled; the view frames them only when they are off screen. frame: true frames them either way; jump: true also moves the sliders to the moment and plays the head up to it, the camera turned to the strike. It shows the Slice tab when another one is up. The person's next click or key acts on the selection, so this needs an edit grant, and it answers busy and changes nothing as slicerx_app_ui_select does. It never changes the project or the slice. Returns picked, the selection, cameraMoved and the collisions read back.`,
+    input: z.object({
+      index: z.number().int().min(0).describe('The collision to pick, from slicerx_app_ui collisions'),
+      frame: z.boolean().optional().describe('Frame its parts even when they are on screen'),
+      jump: z.boolean().optional().describe('Also play the head to the moment and turn the camera to the strike, as Jump does'),
+    }),
+    async run(i) {
+      const out = await call<AppCollisionShown>(link, appName, 'collision.show', defined(i))
+      const item = out.collisions?.items.find((c) => c.index === out.picked) ?? out.collisions?.items[out.picked]
+      const names = item?.objects.map((o) => `${o.name ?? o.id}${item.damaged?.id === o.id ? ' (hit)' : ''}`).join(' and ')
+      return { summary: `Picked collision ${out.picked}${names ? `: ${names}` : ''}${out.cameraMoved ? ', the view framed it' : ''}.`, output: out }
+    },
+  })
+  return [get, setUi, select, show] as PilotTool<never>[]
 }
