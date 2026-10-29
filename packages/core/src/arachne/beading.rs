@@ -29,6 +29,11 @@ pub(crate) trait Strategy {
     fn transition_anchor_pos(&self, lower_bead_count: i64) -> f64;
     /// Thicknesses inside one bead count where the widths bend.
     fn nonlinear_thicknesses(&self, lower_bead_count: i64) -> Vec<i64>;
+    /// The thicknesses of [`Strategy::nonlinear_thicknesses`] that get a node on every central edge they fall
+    /// on, also one shorter than the discretization step.
+    fn exact_thicknesses(&self, _lower_bead_count: i64) -> Vec<i64> {
+        Vec::new()
+    }
     fn split_middle_threshold(&self) -> f64;
     fn transitioning_angle(&self) -> f64;
     /// The beads of `bead_count` at `thickness` where they border the infill area of a thicker part (the
@@ -611,6 +616,12 @@ impl Strategy for Limited {
 
     fn nonlinear_thicknesses(&self, lower: i64) -> Vec<i64> {
         let mut ret = self.parent.nonlinear_thicknesses(lower);
+        ret.extend(self.exact_thicknesses(lower));
+        ret
+    }
+
+    fn exact_thicknesses(&self, lower: i64) -> Vec<i64> {
+        let mut ret = Vec::new();
         if self.absorb > 0 && self.max_beads >= 4 && lower >= self.max_beads {
             // Where the walls stop taking up the strip and the infill area opens, with a node just before it and
             // one just past it, so the beads along a part that widens slowly are not blended from one side of it

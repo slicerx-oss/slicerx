@@ -2320,6 +2320,124 @@ mod tests {
         );
     }
 
+    /// Inner wall widths of `shape` by the part width at each point: (part width, width), mm, sampled every
+    /// 0.05 mm along each piece of line as in [`wedge_inner_widths`]. `across` gives the part width at a point,
+    /// mm.
+    fn curved_inner_widths(
+        cfg: &crate::config::PrintConfig,
+        h: f64,
+        shape: &Shapes,
+        across: &dyn Fn(f64, f64) -> f64,
+    ) -> Vec<(f64, f64)> {
+        let (islands, _) = island_walls(shape, cfg, 2, 0, h, false, None, false);
+        let mut out = Vec::new();
+        for line in islands.iter().flat_map(|i| i.wide.iter()) {
+            if line.is_odd || line.inset != 1 {
+                continue;
+            }
+            for (q, w) in line.points.windows(2).zip(line.widths.windows(2)) {
+                let (x0, y0) = (f64::from(q[0].x) / 10_000.0, f64::from(q[0].y) / 10_000.0);
+                let (x1, y1) = (f64::from(q[1].x) / 10_000.0, f64::from(q[1].y) / 10_000.0);
+                let (w0, w1) = (f64::from(w[0]) / 10_000.0, f64::from(w[1]) / 10_000.0);
+                let n = ((x1 - x0).m_hypot(y1 - y0) / 0.05).ceil().max(1.0);
+                for k in 0..n as usize {
+                    let t = (k as f64 + 0.5) / n;
+                    let b = w0 + (w1 - w0) * t;
+                    if b > 0.0 {
+                        out.push((across(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t), b));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The same step back to their own width on curved parts, which cross that point on skeleton edges shorter
+    /// than its discretization step: those got no node there, and the widened beads blended down over the
+    /// whole edge (on a crescent still 0.18 mm wider than nominal 0.02 mm past it, and 0.06 at 0.05). Past
+    /// 0.02 mm, twice the margin of the node that steps them back, the inner walls are their nominal width. A ring 1.6 to 4.0 mm across (R 20
+    /// with a hole of R 17.2 off center by 1.2) and a crescent 0 to 4.0 mm across (R 20 less a disk of R 19 off
+    /// center by 3), 720 sides per circle turned by up to a fifth of a side and 600 to 605 sides per arc, with
+    /// the X1C's and A1's widths and their first layer's.
+    #[test]
+    fn aegis_walls_step_back_to_their_width_on_curved_parts() {
+        let p = |x: f64, y: f64| IntPoint::new((x * 10_000.0).round() as i32, (y * 10_000.0).round() as i32);
+        let circle = |cx: f64, cy: f64, r: f64, from: f64, to: f64, n: usize| -> Vec<(f64, f64)> {
+            (0..=n)
+                .map(|i| {
+                    let a = from + (to - from) * i as f64 / n as f64;
+                    (cx + r * a.m_cos(), cy + r * a.m_sin())
+                })
+                .collect()
+        };
+        let h = 0.2;
+        let mut wrong = Vec::new();
+        let mut checked = 0;
+        for (widths, outer_w, inner_w) in [("0.42/0.45", 0.42, 0.45), ("first layer 0.5", 0.5, 0.5)] {
+            let cfg = wall_cfg(
+                0.4,
+                h,
+                outer_w,
+                inner_w,
+                &serde_json::json!({"precise_outer_wall": false}),
+            );
+            let (outer, inner) = (cfg.spacing_for(outer_w), cfg.spacing_for(inner_w));
+            let taken_in = outer_w - outer;
+            let open =
+                2.0 * (outer / 2.0 + f64::midpoint(outer, inner) + inner / 2.0) + 2.0 * inner + taken_in;
+            for k in 0..6_usize {
+                let ring_turn = std::f64::consts::PI / 720.0 * k as f64 / 5.0;
+                let tau = 2.0 * std::f64::consts::PI;
+                let mut out = circle(0.0, 0.0, 20.0, ring_turn, ring_turn + tau, 720);
+                let mut hole = circle(1.2, 0.0, 17.2, ring_turn + tau, ring_turn, 720);
+                out.pop();
+                hole.pop();
+                let ring: Shapes = vec![vec![
+                    out.iter().map(|&(x, y)| p(x, y)).collect(),
+                    hole.iter().map(|&(x, y)| p(x, y)).collect(),
+                ]];
+                let ring_across = |x: f64, y: f64| (20.0 - x.m_hypot(y)) + ((x - 1.2).m_hypot(y) - 17.2);
+                // The crescent's tips are where the two circles meet.
+                let (xt, yt) = (8.0_f64, 336.0_f64.sqrt());
+                let (ao, ai) = (yt.m_atan2(xt), yt.m_atan2(xt - 3.0));
+                let sides = 600 + k;
+                let mut crescent_pts = circle(0.0, 0.0, 20.0, ao, tau - ao, sides);
+                let back = circle(3.0, 0.0, 19.0, tau - ai, ai, sides);
+                crescent_pts.extend(back.iter().skip(1).take(sides - 1).copied());
+                let crescent: Shapes = vec![vec![crescent_pts.iter().map(|&(x, y)| p(x, y)).collect()]];
+                let crescent_across = |x: f64, y: f64| (20.0 - x.m_hypot(y)) + ((x - 3.0).m_hypot(y) - 19.0);
+                for (name, shape, across) in [
+                    ("ring", &ring, &ring_across as &dyn Fn(f64, f64) -> f64),
+                    (
+                        "crescent",
+                        &crescent,
+                        &crescent_across as &dyn Fn(f64, f64) -> f64,
+                    ),
+                ] {
+                    let samples = curved_inner_widths(&cfg, h, shape, across);
+                    let past: Vec<&(f64, f64)> = samples.iter().filter(|(w, _)| *w > open + 0.02).collect();
+                    checked += past.len();
+                    if past.len() < 100 {
+                        wrong.push(format!(
+                            "{widths} {name} {k}: {} samples past {open:.3}",
+                            past.len()
+                        ));
+                    }
+                    if let Some((w, b)) = past
+                        .iter()
+                        .filter(|(_, b)| *b > inner + 0.01)
+                        .max_by(|a, b| a.1.total_cmp(&b.1))
+                    {
+                        wrong.push(format!(
+                            "{widths} {name} {k}: inner wall {b:.3} wide at {w:.3} mm across, nominal {inner:.3}, open {open:.3}"
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(wrong.is_empty(), "{checked} samples:\n{}", wrong.join("\n"));
+    }
+
     /// The walls of a wedge 60 mm long, 0.2 mm across at its narrow end and 3.85 mm at the other, stay on the
     /// wedge. On it the simplifier meets a short wall segment between two long ones that are nearly parallel:
     /// the two long ones meet about 10 m away, and the square of that distance overflowed, so a debug build
