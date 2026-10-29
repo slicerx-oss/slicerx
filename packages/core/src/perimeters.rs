@@ -1508,6 +1508,10 @@ pub(crate) struct NarrowSurface<'a> {
     /// How far an uncovered area is opened, which drops the slivers along its edge (a tenth of the outer wall's
     /// width, as the surfaces are found), internal units.
     pub(crate) opening: i32,
+    /// A monotonic line top on a Bambu Lab printer, whose lines keep one grid: every narrow piece of the surface is
+    /// surface, printing the grid's lines that fit and gap fill around them; narrow pieces elsewhere keep their gap
+    /// fill.
+    pub(crate) grid: bool,
 }
 
 impl NarrowSurface<'_> {
@@ -1719,9 +1723,10 @@ pub(crate) fn walls_for_top(
             0
         };
         // With no sparse infill, a thin strip is infill area once it holds a surface line: the surface's own spacing
-        // and edge on the layer's surfaces, the top surface's elsewhere.
+        // and edge on the layer's surfaces, the top surface's elsewhere. On Bambu Lab printers only the layer's
+        // surfaces that spread their lines ([`NarrowSurface`], the first layer) do this.
         let surface = narrow.filter(|n| n.no_sparse);
-        let thin = thin_infill(cfg).then(|| {
+        let thin = (thin_infill(cfg) || surface.is_some()).then(|| {
             let edge = if let Some(n) = surface {
                 Some(n.edge)
             } else {
@@ -1729,8 +1734,19 @@ pub(crate) fn walls_for_top(
                 crate::session::surface_edge(cfg, layer_height, f64::from(overlap) / line).map(mm)
             };
             let spacing = surface.map_or_else(|| mm(cfg.spacing_for(cfg.top_surface_width())), |n| n.spacing);
+            // A hair under the spacing: a hundredth, or on Bambu Lab printers a thousandth, where a strip 0.3 % too
+            // narrow for a line keeps its gap fill.
+            let fits = if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+                spacing * 999 / 1000
+            } else {
+                spacing * 99 / 100
+            };
             ThinStrips {
-                min_width: edge.map(|e| spacing * 99 / 100 - 2 * e),
+                min_width: if surface.is_some_and(|n| n.grid) {
+                    None
+                } else {
+                    edge.map(|e| fits - 2 * e)
+                },
                 narrow_gap_fill: SPARSE0_NARROW_GAP_FILL,
                 surface,
             }
@@ -1843,11 +1859,11 @@ pub(crate) fn walls_with(
     walls_gapped(region, wall_loops, ext, inner, overlap, None, None, 0)
 }
 
-/// True when classic walls leave their thin strips to the infill area instead of gap fill: with no sparse infill,
-/// on printers other than Bambu Lab's. A strip between the walls too narrow for the infill area's usual opening,
-/// which a gap fill bead fills when there is sparse infill, is then infill area on every layer once it holds a
-/// surface line ([`ThinStrips`]): nothing on a sparse layer, internal solid infill under a top, and a top surface
-/// line, as in other slicers.
+/// True when classic walls leave their thin strips to the infill area instead of gap fill on every layer: with no
+/// sparse infill, on printers other than Bambu Lab's (there only on the first layer, through its [`NarrowSurface`]).
+/// A strip between the walls too narrow for the infill area's usual opening, which a gap fill bead fills when there
+/// is sparse infill, is then infill area on every layer once it holds a surface line ([`ThinStrips`]): nothing on a
+/// sparse layer, internal solid infill under a top, and a top surface line, as in other slicers.
 fn thin_infill(cfg: &crate::config::PrintConfig) -> bool {
     cfg.sparse_infill_density <= 0.0 && !crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
 }
@@ -1959,7 +1975,12 @@ pub(crate) fn walls_gapped(
                 if let Some(n) = rule.surface {
                     // On the surface, a piece the lines run across without room for one keeps its gap fill.
                     let exposed = n.exposed(&one);
-                    if !exposed.is_empty() {
+                    if n.grid {
+                        // Only the surface's own narrow pieces.
+                        wide.retain(|p| {
+                            !exposed.is_empty() && !intersection(&vec![p.clone()], &exposed).is_empty()
+                        });
+                    } else if !exposed.is_empty() {
                         wide.retain(|p| {
                             let piece = vec![p.clone()];
                             intersection(&piece, &exposed).is_empty() || n.lines_fit(&piece)

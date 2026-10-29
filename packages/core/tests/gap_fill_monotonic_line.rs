@@ -6,10 +6,12 @@
 //! the lines cut off, too short for a line down its middle, gets none. Other printers leave surface gap fill to
 //! `gap_fill_target`, whatever the pattern.
 //!
-//! Each case is a stock printer as the app sets it up with one setting changed; the Bambu Lab ones have aegis walls,
-//! which print no wall gap fill. The amounts are the measured targets on the layers where our surfaces match the
-//! measured ones (the other layers are left out): the layers with gap fill must be the target's, and the amount on
-//! them within 25 percent of the target or 0.3 mm.
+//! Each case is a stock printer as the app sets it up with one setting changed. The cases that check for no surface
+//! gap fill give the Bambu Lab printers aegis walls, which print no wall gap fill. The amounts are the measured
+//! targets on the layers where our surfaces match the measured ones (the other layers are left out), measured with
+//! the classic walls those printers' projects carry, so the cases that check them print classic walls too (aegis
+//! walls widen across narrow pieces of the top and leave other slivers): the layers with gap fill must be the
+//! target's, and the amount on them within 25 percent of the target or 0.3 mm.
 
 #![allow(
     clippy::disallowed_methods,
@@ -56,6 +58,15 @@ fn stock(vendor: &str, model: &str, edits: &[(&str, Value)]) -> Map<String, Valu
 /// A shipped Bambu Lab printer with aegis walls, then `edits`.
 fn printer(model: &str, edits: &[(&str, Value)]) -> Map<String, Value> {
     let mut out = stock("bambu-lab", model, &[("wall_generator", json!("aegis"))]);
+    for (k, v) in edits {
+        out.insert((*k).to_owned(), v.clone());
+    }
+    out
+}
+
+/// A shipped Bambu Lab printer with the classic walls the measured targets were printed with, then `edits`.
+fn measured(model: &str, edits: &[(&str, Value)]) -> Map<String, Value> {
+    let mut out = printer(model, &[("wall_generator", json!("classic"))]);
     for (k, v) in edits {
         out.insert((*k).to_owned(), v.clone());
     }
@@ -245,10 +256,14 @@ fn a1(edits: &[(&str, Value)]) -> Map<String, Value> {
     printer("bambu-a1", edits)
 }
 
+fn a1_measured(edits: &[(&str, Value)]) -> Map<String, Value> {
+    measured("bambu-a1", edits)
+}
+
 #[test]
 fn monotonic_line_top_surfaces_get_gap_fill() {
     for model in ["bambu-a1", "bambu-p1s"] {
-        let g = gaps(&slice(&xmark(), printer(model, &[])));
+        let g = gaps(&slice(&xmark(), measured(model, &[])));
         check(model, &g, &XMARK, &XMARK_SKIPPED);
         // Every stated width between 0.06 and 0.43 mm.
         for w in &g.widths {
@@ -280,7 +295,7 @@ fn a_corner_the_lines_cut_off_gets_none() {
 #[test]
 fn the_first_layer_gets_none() {
     let bottom = [("bottom_surface_pattern", json!("monotonicline"))];
-    let g = gaps(&slice(&xmark(), a1(&bottom)));
+    let g = gaps(&slice(&xmark(), a1_measured(&bottom)));
     check("x-mark", &g, &XMARK, &XMARK_SKIPPED);
     assert!(!g.by_z.contains_key(&20), "{:?}", g.by_z);
 }
@@ -311,7 +326,10 @@ fn monotonic_line_internal_solid_gets_it_from_the_second_layer() {
 
 #[test]
 fn filter_out_gap_fill_does_not_apply() {
-    let g = gaps(&slice(&xmark(), a1(&[("filter_out_gap_fill", json!(3))])));
+    let g = gaps(&slice(
+        &xmark(),
+        a1_measured(&[("filter_out_gap_fill", json!(3))]),
+    ));
     check("x-mark", &g, &XMARK, &XMARK_SKIPPED);
 }
 
@@ -322,14 +340,14 @@ fn ironing_and_top_shell_count_change_nothing() {
         ("top_shell_layers", json!(1)),
         ("top_shell_layers", json!(3)),
     ] {
-        let g = gaps(&slice(&xmark(), a1(std::slice::from_ref(&edits))));
+        let g = gaps(&slice(&xmark(), a1_measured(std::slice::from_ref(&edits))));
         check(&format!("{edits:?}"), &g, &XMARK, &XMARK_SKIPPED);
     }
 }
 
 #[test]
 fn the_amount_follows_the_layer_height() {
-    let g = gaps(&slice(&xmark(), a1(&[("layer_height", json!(0.12))])));
+    let g = gaps(&slice(&xmark(), a1_measured(&[("layer_height", json!(0.12))])));
     let targets = [
         (5.96, 3.07),
         (6.08, 12.91),
