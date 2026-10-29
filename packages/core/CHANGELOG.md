@@ -4,6 +4,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-10-29
+
 ### Changed
 
 - `project_config` keeps the wall generator a project inherited from its presets, on every printer, where it gave aegis walls over an inherited classic generator before. The walls note reads `classic walls, as the project has them`, and `kept` stays empty: engine-choices.json `keeps` is empty. Aegis walls the project lists as changed in `different_settings_to_system`, and any `--config` or request value, still apply. On a stock A1 project of an arch and a thin wedge, the wedge now gets gap fill on each of its 20 layers, where aegis printed none.
