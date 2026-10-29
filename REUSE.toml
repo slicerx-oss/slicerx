@@ -44,6 +44,15 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = ["The OrcaSlicer and Bambu Studio contributors and the printer makers", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
+# The one classic wall strip requests, with the same stock profile settings.
+[[annotations]]
+path = [
+  "packages/core/cli/tests/fixtures/one-classic-wall/requests/*.json",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = ["The OrcaSlicer and Bambu Studio contributors and the printer makers", "2026 The SlicerX contributors"]
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
 
 # Bambu Lab's printer certificate authorities (BBL CA, BBL CA2 RSA and BBL CA2 ECC), the trust anchors
 # for Bambu Lab printers' LAN certificates, copied unchanged from Bambu Studio's resources/cert/printer.cer.
@@ -186,6 +195,15 @@ path = [
   "packages/geom/tests/corpus/orca-*.3mf",
   "packages/geom/tests/corpus/prusa-*.3mf",
   "packages/settings/fixtures/preset-files/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = ["The OrcaSlicer, Bambu Studio and PrusaSlicer contributors", "2026 The SlicerX contributors"]
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# The one classic wall A1 projects, from the same stock project settings.
+[[annotations]]
+path = [
+  "packages/core/cli/tests/fixtures/one-classic-wall/*.3mf",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = ["The OrcaSlicer, Bambu Studio and PrusaSlicer contributors", "2026 The SlicerX contributors"]
