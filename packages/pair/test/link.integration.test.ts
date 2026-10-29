@@ -55,6 +55,58 @@ afterAll(async () => {
 
 const GCODE = new TextEncoder().encode('; phone slice\nG28\nG1 X10 Y10 F3000\n')
 
+// What a frame shows the bridge: its keys and short fields in the clear, its sealed payloads (base64url
+// ciphertext) as bytes. A secret must not be in the clear. The sealed bytes must not hold any 8 bytes in a
+// row of the G-code body (a line, or a piece across lines), nor the longer names; random ciphertext matches
+// 8 given bytes too rarely to matter, while a three letter piece like "G28" turns up in random base64 now
+// and then, which once failed this test with nothing leaked.
+function expectNothingLeaked(frames: string[], secrets: string[], body: Uint8Array): void {
+  const clear: string[] = []
+  const sealed: Buffer[] = []
+  const walk = (v: unknown): void => {
+    if (typeof v === 'string') {
+      if (/^[A-Za-z0-9_-]{16,}={0,2}$/.test(v)) sealed.push(Buffer.from(v, 'base64url'))
+      else clear.push(v)
+    } else if (Array.isArray(v)) v.forEach(walk)
+    else if (v && typeof v === 'object')
+      for (const [k, x] of Object.entries(v)) {
+        clear.push(k)
+        walk(x)
+      }
+    else clear.push(String(v))
+  }
+  for (const f of frames) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(f)
+    } catch {
+      clear.push(f)
+      continue
+    }
+    walk(parsed)
+  }
+  const text = clear.join('\n')
+  for (const secret of secrets) expect(text).not.toContain(secret)
+  const bytes = Buffer.concat(sealed)
+  const pieces = Array.from({ length: Math.max(0, body.length - 7) }, (_, i) => Buffer.from(body.subarray(i, i + 8)))
+  for (const piece of [...pieces, ...secrets.filter((x) => x.length > 4).map((x) => Buffer.from(x))]) expect(bytes.includes(piece)).toBe(false)
+}
+
+describe('the bridge leak check', () => {
+  it('does not count three letters of random ciphertext as a leak', () => {
+    const sealed = `AbCdEfGhIjKl${'G28'}MnOpQrStUvWx`
+    expect(() => expectNothingLeaked([JSON.stringify({ k: 'hello', v: 1, o: sealed })], ['Pocket', 'G28'], GCODE)).not.toThrow()
+  })
+  it('still finds a secret in the clear, or the G-code inside a payload', () => {
+    expect(() => expectNothingLeaked([JSON.stringify({ k: 'hello', v: 1, name: 'Pocket' })], ['Pocket'], GCODE)).toThrow()
+    expect(() => expectNothingLeaked([JSON.stringify({ k: 'job', o: Buffer.from(GCODE).toString('base64url') })], ['G28'], GCODE)).toThrow()
+  })
+  it('finds one G-code line spliced into an otherwise sealed payload', () => {
+    const payload = Buffer.concat([Buffer.alloc(24, 0xa5), Buffer.from('G1 X10 Y10 F3000'), Buffer.alloc(24, 0x5a)])
+    expect(() => expectNothingLeaked([JSON.stringify({ k: 'job', o: payload.toString('base64url') })], ['G28'], GCODE)).toThrow()
+  })
+})
+
 async function setup(seed: string): Promise<{ w: World; link: LinkHost; conn: HostConnection; jobs: JobUpdate[]; approvals: ApprovalView[] }> {
   const link = await connectLink({ url, code })
   await link.addPrinter({ id: 'bay-4', name: 'Bay 4', plugin: 'moonraker', host: '127.0.0.1', port: mocks?.ports['moonraker'] ?? 0, pollMs: 50 })
@@ -147,9 +199,8 @@ describe.skipIf(!built)('phone jobs through sx-link', () => {
       await conn.approve(v)
       await until(() => jobs.some((j) => j.state === 'queued' || j.state === 'failed'))
       expect(jobs.at(-1)).toMatchObject({ state: 'queued', remoteName: 'lan.gcode' })
-      const bridged = seenByBridge.join('\n')
-      expect(bridged.length).toBeGreaterThan(0)
-      for (const secret of ['Pocket', 'Bay 4', 'lan.gcode', 'G28']) expect(bridged).not.toContain(secret)
+      expect(seenByBridge.join('').length).toBeGreaterThan(0)
+      expectNothingLeaked(seenByBridge, ['Pocket', 'Bay 4', 'lan.gcode', 'G28'], GCODE)
       conn.close()
     } finally {
       await lan.stop()
