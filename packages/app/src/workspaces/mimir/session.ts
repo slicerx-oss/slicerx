@@ -76,13 +76,14 @@ export function tabModel(): TabModel | null {
 /**
  * `mimir.tab` over the app link: what answers in the tab (none before it first opens, scripted, or model), the model
  * and Auto's pair, whether it is a local model, where the model's server is (this computer, the person's network, or
- * elsewhere; null without a model), and the tools the model is offered there (a local model gets a shorter list). No
- * key or token.
+ * elsewhere; null without a model), and the tools the model is offered there (a local model gets a shorter list). A
+ * local model gets one set of those tools per message, picked from what it asks (build, shape, edit, app or print): `turns`
+ * lists each set's tools, null where every message gets them all. No key or token.
  */
-export function tabState(): { link: MimirLink; provider: string | null; model: string | null; auto: { huginn: string; muninn: string } | null; local: boolean; where: NotesWhere | null; tools: string[] } {
-  if (!current) return { link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [] }
+export function tabState(): { link: MimirLink; provider: string | null; model: string | null; auto: { huginn: string; muninn: string } | null; local: boolean; where: NotesWhere | null; tools: string[]; turns: Record<string, string[]> | null } {
+  if (!current) return { link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [], turns: null }
   const m = current.model
-  return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, where: m.where ?? null, tools: current.pilot.tools().map((t) => t.name) }
+  return { link: m.link, provider: m.provider, model: m.model, auto: m.auto ?? null, local: m.local === true, where: m.where ?? null, tools: current.pilot.tools().map((t) => t.name), turns: current.pilot.turnSets?.() ?? null }
 }
 
 /** The tab's tools: the questions, lookups and sheets, then the design tools on the plate. Made once per window. */

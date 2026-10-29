@@ -296,7 +296,7 @@ describe('the mimir tab on a model', () => {
   })
 
   it('reports none before the tab first opens', async () => {
-    expect(await runCall('mimir.tab', {})).toEqual({ link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [] })
+    expect(await runCall('mimir.tab', {})).toEqual({ link: 'none', provider: null, model: null, auto: null, local: false, where: null, tools: [], turns: null })
   })
 
   it('logs the model conversation for the read-back', async () => {
