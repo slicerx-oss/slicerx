@@ -452,7 +452,7 @@ jobs:
           # no incremental cache: a test build never edits and rebuilds in place, and debug/incremental grew to 43 GB
           # per runner (scripts/ci/README.md, "Disk")
           echo "CARGO_INCREMENTAL=0" >> "$GITHUB_ENV"
-          # engine test suites: a GPU lane run starts beside one of them at most (heavy.sh --class engine)
+          # engine test suites: none runs beside a GPU lane run, and each waits at most about 8 minutes for one (heavy.sh --class engine)
           echo "HEAVY=bash $GITHUB_WORKSPACE/scripts/ci/heavy.sh --class engine timeout 1500" >> "$GITHUB_ENV"
       - if: matrix.part == 'firmware' || matrix.part == 'requests'
         run: cargo test -p sx-core --test ${{ matrix.part }}
