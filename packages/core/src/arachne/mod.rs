@@ -642,7 +642,9 @@ pub(crate) fn island_walls_or(
         } else if let Some(t) = top.filter(|_| loops > 1) {
             match top_run(&outline, &prm, t) {
                 Some(TopRun::Usual) => Built::Usual,
-                Some(TopRun::Split(one_wall, top)) => Built::Done(one_wall_top(&prm, cfg, t, one_wall, top)),
+                Some(TopRun::Split(one_wall, top)) => {
+                    Built::Done(one_wall_top(&prm, cfg, t, one_wall, top, overlap))
+                }
                 None => Built::Done(None),
             }
         } else {
@@ -801,6 +803,7 @@ fn one_wall_top(
     t: &perimeters::TopCtx,
     one: Walls,
     mut top: Shapes,
+    overlap: i32,
 ) -> Option<Walls> {
     let contour = one.inner.clone();
     let spacing_0 = crate::geom::mm(prm.bead_width_0);
@@ -824,6 +827,7 @@ fn one_wall_top(
     top = perimeters::offset(&perimeters::offset(&top, -min_width), grow);
     let not_top = perimeters::difference(&contour, &top);
     top = perimeters::intersection(&top, &contour);
+    top = clear_of_inner_walls(cfg, prm, top, &not_top, overlap);
     let inner_prm = Params {
         bead_width_0: prm.bead_width_x,
         inset_count: prm.inset_count.saturating_sub(1),
@@ -846,6 +850,26 @@ fn one_wall_top(
         lines,
         inner: perimeters::union_all(&[&top, &inner_walls.inner]),
     })
+}
+
+/// The one-wall part `top` of a one-wall top kept clear of `not_top`, where the inner walls go, on Bambu Lab printers:
+/// once the infill area grows by `overlap` it ends half the inner wall's width past that wall's centerline, as a
+/// one-wall top beside classic walls does, instead of an overlap inside its spacing edge.
+fn clear_of_inner_walls(
+    cfg: &crate::config::PrintConfig,
+    prm: &Params,
+    top: Shapes,
+    not_top: &Shapes,
+    overlap: i32,
+) -> Shapes {
+    if !crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) || top.is_empty() || not_top.is_empty() {
+        return top;
+    }
+    let clear = (crate::geom::mm(cfg.inner_wall_width()) - crate::geom::mm(prm.bead_width_x)) / 2 + overlap;
+    if clear <= 0 {
+        return top;
+    }
+    perimeters::difference(&top, &perimeters::offset(not_top, clear))
 }
 
 /// The island walls as they were built before [`island_walls_or`] could take the usual walls from the layers around,
@@ -933,7 +957,7 @@ pub(crate) mod reference {
             let generated = if loops == 0 {
                 None
             } else if let Some(t) = top.filter(|_| loops > 1) {
-                one_wall_top(&outline, &prm, cfg, t)
+                one_wall_top(&outline, &prm, cfg, t, overlap)
             } else {
                 walls(&outline, &prm)
             };
@@ -960,6 +984,7 @@ pub(crate) mod reference {
         prm: &Params,
         cfg: &crate::config::PrintConfig,
         t: &perimeters::TopCtx,
+        overlap: i32,
     ) -> Option<Walls> {
         let reach = crate::geom::mm(prm.wall_deviation()) + 2;
         if perimeters::difference(&perimeters::offset(outline, reach), t.upper).is_empty() {
@@ -995,6 +1020,7 @@ pub(crate) mod reference {
         top = perimeters::offset(&perimeters::offset(&top, -min_width), grow);
         let not_top = perimeters::difference(&contour, &top);
         top = perimeters::intersection(&top, &contour);
+        top = super::clear_of_inner_walls(cfg, prm, top, &not_top, overlap);
         let inner_prm = Params {
             bead_width_0: prm.bead_width_x,
             inset_count: prm.inset_count.saturating_sub(1),

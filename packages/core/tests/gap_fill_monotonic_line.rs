@@ -9,9 +9,8 @@
 //! Each case is a stock printer as the app sets it up with one setting changed. The cases that check for no surface
 //! gap fill give the Bambu Lab printers aegis walls, which print no wall gap fill. The amounts are the measured
 //! targets on the layers where our surfaces match the measured ones (the other layers are left out), measured with
-//! the classic walls those printers' projects carry, so the cases that check them print classic walls, and the
-//! layer height case aegis walls as well: the layers with gap fill must be the target's, and the amount on them within
-//! 25 percent of the target or 0.3 mm.
+//! the classic walls those printers' projects carry; the cases that check them print both classic and aegis walls:
+//! the layers with gap fill must be the target's, and the amount on them within 25 percent of the target or 0.3 mm.
 
 #![allow(
     clippy::disallowed_methods,
@@ -256,10 +255,6 @@ fn a1(edits: &[(&str, Value)]) -> Map<String, Value> {
     printer("bambu-a1", edits)
 }
 
-fn a1_measured(edits: &[(&str, Value)]) -> Map<String, Value> {
-    measured("bambu-a1", edits)
-}
-
 /// A shipped Bambu Lab printer with the classic walls the targets were measured with and with aegis walls, each
 /// named, then `edits`.
 fn both_walls(model: &str, edits: &[(&str, Value)]) -> [(String, Map<String, Value>); 2] {
@@ -272,11 +267,13 @@ fn both_walls(model: &str, edits: &[(&str, Value)]) -> [(String, Map<String, Val
 #[test]
 fn monotonic_line_top_surfaces_get_gap_fill() {
     for model in ["bambu-a1", "bambu-p1s"] {
-        let g = gaps(&slice(&xmark(), measured(model, &[])));
-        check(model, &g, &XMARK, &XMARK_SKIPPED);
-        // Every stated width between 0.06 and 0.43 mm.
-        for w in &g.widths {
-            assert!((0.06..=0.43).contains(w), "{model}: a bead {w} mm wide");
+        for (name, config) in both_walls(model, &[]) {
+            let g = gaps(&slice(&xmark(), config));
+            check(&name, &g, &XMARK, &XMARK_SKIPPED);
+            // Every stated width between 0.06 and 0.43 mm.
+            for w in &g.widths {
+                assert!((0.06..=0.43).contains(w), "{name}: a bead {w} mm wide");
+            }
         }
     }
 }
@@ -304,9 +301,11 @@ fn a_corner_the_lines_cut_off_gets_none() {
 #[test]
 fn the_first_layer_gets_none() {
     let bottom = [("bottom_surface_pattern", json!("monotonicline"))];
-    let g = gaps(&slice(&xmark(), a1_measured(&bottom)));
-    check("x-mark", &g, &XMARK, &XMARK_SKIPPED);
-    assert!(!g.by_z.contains_key(&20), "{:?}", g.by_z);
+    for (name, config) in both_walls("bambu-a1", &bottom) {
+        let g = gaps(&slice(&xmark(), config));
+        check(&name, &g, &XMARK, &XMARK_SKIPPED);
+        assert!(!g.by_z.contains_key(&20), "{name}: {:?}", g.by_z);
+    }
 }
 
 #[test]
@@ -335,11 +334,10 @@ fn monotonic_line_internal_solid_gets_it_from_the_second_layer() {
 
 #[test]
 fn filter_out_gap_fill_does_not_apply() {
-    let g = gaps(&slice(
-        &xmark(),
-        a1_measured(&[("filter_out_gap_fill", json!(3))]),
-    ));
-    check("x-mark", &g, &XMARK, &XMARK_SKIPPED);
+    for (name, config) in both_walls("bambu-a1", &[("filter_out_gap_fill", json!(3))]) {
+        let g = gaps(&slice(&xmark(), config));
+        check(&name, &g, &XMARK, &XMARK_SKIPPED);
+    }
 }
 
 #[test]
@@ -349,8 +347,10 @@ fn ironing_and_top_shell_count_change_nothing() {
         ("top_shell_layers", json!(1)),
         ("top_shell_layers", json!(3)),
     ] {
-        let g = gaps(&slice(&xmark(), a1_measured(std::slice::from_ref(&edits))));
-        check(&format!("{edits:?}"), &g, &XMARK, &XMARK_SKIPPED);
+        for (name, config) in both_walls("bambu-a1", std::slice::from_ref(&edits)) {
+            let g = gaps(&slice(&xmark(), config));
+            check(&format!("{name} {edits:?}"), &g, &XMARK, &XMARK_SKIPPED);
+        }
     }
 }
 
