@@ -9,9 +9,9 @@
 //! Each case is a stock printer as the app sets it up with one setting changed. The cases that check for no surface
 //! gap fill give the Bambu Lab printers aegis walls, which print no wall gap fill. The amounts are the measured
 //! targets on the layers where our surfaces match the measured ones (the other layers are left out), measured with
-//! the classic walls those printers' projects carry, so the cases that check them print classic walls too (aegis
-//! walls widen across narrow pieces of the top and leave other slivers): the layers with gap fill must be the
-//! target's, and the amount on them within 25 percent of the target or 0.3 mm.
+//! the classic walls those printers' projects carry, so the cases that check them print classic walls, and the
+//! layer height case aegis walls as well: the layers with gap fill must be the target's, and the amount on them within
+//! 25 percent of the target or 0.3 mm.
 
 #![allow(
     clippy::disallowed_methods,
@@ -260,6 +260,15 @@ fn a1_measured(edits: &[(&str, Value)]) -> Map<String, Value> {
     measured("bambu-a1", edits)
 }
 
+/// A shipped Bambu Lab printer with the classic walls the targets were measured with and with aegis walls, each
+/// named, then `edits`.
+fn both_walls(model: &str, edits: &[(&str, Value)]) -> [(String, Map<String, Value>); 2] {
+    [
+        (format!("{model} classic"), measured(model, edits)),
+        (format!("{model} aegis"), printer(model, edits)),
+    ]
+}
+
 #[test]
 fn monotonic_line_top_surfaces_get_gap_fill() {
     for model in ["bambu-a1", "bambu-p1s"] {
@@ -347,7 +356,6 @@ fn ironing_and_top_shell_count_change_nothing() {
 
 #[test]
 fn the_amount_follows_the_layer_height() {
-    let g = gaps(&slice(&xmark(), a1_measured(&[("layer_height", json!(0.12))])));
     let targets = [
         (5.96, 3.07),
         (6.08, 12.91),
@@ -355,7 +363,10 @@ fn the_amount_follows_the_layer_height() {
         (85.4, 1.7),
         (85.52, 1.68),
     ];
-    check("0.12 mm layers", &g, &targets, &[6.08, 85.4]);
+    for (name, config) in both_walls("bambu-a1", &[("layer_height", json!(0.12))]) {
+        let g = gaps(&slice(&xmark(), config));
+        check(&format!("{name}, 0.12 mm layers"), &g, &targets, &[6.08, 85.4]);
+    }
 }
 
 #[test]
