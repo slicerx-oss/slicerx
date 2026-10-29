@@ -13,6 +13,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { Host, MeshHandle } from '@slicerx/contracts'
 import { createContext, serverTools } from '@slicerx/mcp'
+import { binBuilt, SX_BUILD } from './binaries'
 
 const { openModelBytes } = await import('../src/state/actions')
 const { profileReady, startProfileSync } = await import('../src/state/profile-sync')
@@ -171,7 +172,7 @@ const CASES: { name: string; file: () => Promise<string> | string; printer: keyo
   { name: 'a 4-filament PrusaSlicer project on the MK4 with a multi-material unit', file: () => prusaProject(4), printer: 'prusa-mk4', profiles: ['machine:prusa-mk4'], slots: 4 },
 ]
 
-describe.skipIf(!existsSync(sxBin))('one project, one printer: the same G-code from the app, the MCP server and the command line', () => {
+describe.skipIf(!binBuilt(sxBin, SX_BUILD))('one project, one printer: the same G-code from the app, the MCP server and the command line', () => {
   beforeAll(async () => {
     const entries = await unzipEntries(readFileSync(join(repo, 'packages/settings/fixtures/preset-files/prusaslicer-2.9.6.3mf')))
     prusaConfig = new TextDecoder().decode(entries.get('Metadata/Slic3r_PE.config'))

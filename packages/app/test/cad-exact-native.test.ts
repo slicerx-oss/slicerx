@@ -12,8 +12,10 @@ import { applyHistory } from '../src/cad/history/ops'
 import { cutSelected } from '../src/plate/geom-ops'
 import { applyHole, applyShell } from '../src/cad/holes'
 import { bounds } from '../src/plate/transform'
+import { binBuilt } from './binaries'
 
 const bin = process.env['SLICERX_SX_GEOM_BIN']
+const exact = binBuilt(bin, 'build sx-geom with the exact kernel (cargo build -p sx-geom --features brep) and name it in SLICERX_SX_GEOM_BIN')
 let undo: ReturnType<typeof createHistory> | undefined
 afterEach(() => {
   undo?.dispose()
@@ -25,7 +27,7 @@ afterEach(() => {
   set({ plate: [], selection: null, selectedIds: [], settingsMode: 'simple' })
 })
 
-it.skipIf(!bin)('creates and cuts a native exact body through the ordinary extrusion command', async () => {
+it.skipIf(!exact)('creates and cuts a native exact body through the ordinary extrusion command', async () => {
   set({ plate: [], selection: null, selectedIds: [], settingsMode: 'developer' })
   localStorage.setItem('sx.exactSolids', '1')
   vi.stubEnv('SX_BREP_DEV', '1')

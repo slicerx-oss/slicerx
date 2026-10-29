@@ -7,9 +7,10 @@ import { recognizedScript, reviewImportedScripts } from '../src/project/script-r
 import { runCall } from '../src/app-link/methods'
 import { get, set } from '../src/state/store'
 import { returnToProjectPrinter } from '../src/project/project-printer'
+import { binBuilt, SX_BUILD } from './binaries'
 
 const sx = process.env['SLICERX_TEST_SX_BIN']
-if (!sx && process.env['SLICERX_TEST_REQUIRE_SX'] === '1') throw new Error('SLICERX_TEST_SX_BIN is required')
+const hasSx = binBuilt(sx, SX_BUILD)
 const selected = { model: 'bambu-p1s', firmware: 'marlin' }
 const text = '  M400 U1 ; pause\r\n'
 const settings = { printer_model: 'Bambu Lab P1S', gcode_flavor: 'marlin', machine_pause_gcode: text }
@@ -17,7 +18,7 @@ const reviewScripts = async (inputs: ScriptReviewInput[]) => JSON.parse(execFile
   input: JSON.stringify(inputs), encoding: 'utf8', timeout: 30000, windowsHide: true,
 }))
 
-describe.skipIf(!sx)('imported script read-back from the native engine', () => {
+describe.skipIf(!hasSx)('imported script read-back from the native engine', () => {
   afterEach(() => set({ projectScriptReviews: null }))
   it('preserves original text and the complete engine review', async () => {
     const result = await reviewImportedScripts({ reviewScripts } as SlicerHost, settings, selected)
