@@ -46,6 +46,7 @@ import { createTransportClient, errorText, type CloudShare } from './provider/cl
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
 import { capLine, capTools, localTurnTools, turnNeeds, type ToolCapReport } from './toolsets'
+import { inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
@@ -359,6 +360,19 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   // one in the desktop app (full scope) and in the browser build (cad scope).
   if (memory) for (const t of memoryTools(memory, now, opts.memory?.ask, opts.memory?.where)) if (opts.memory?.remember !== false || t.name !== 'memory.remember') add(t as AnyTool)
 
+  // A local model in the tab gets one set of tools per turn (turnsets.ts), and pilot.tools to load another
+  const local = isLocalModel(opts.config)
+  const turnSets = local && designs
+  /** The set pilot.tools asked for during a run, per chat, taken by the next step. */
+  const picked = new Map<string, TurnSet>()
+  /** The set each chat's last turn ended on, which a request with no words for a set keeps. */
+  const lastSet = new Map<string, TurnSet>()
+  if (turnSets) {
+    const t = turnSetTool((sessionId, set) => picked.set(sessionId, set)) as AnyTool
+    add(t)
+    own.add(t)
+  }
+
   let pluginTools: AnyTool[] | null = null
   async function loadPluginTools(): Promise<{ loads: PluginLoad[]; tools: AnyTool[] }> {
     // A toolset without the built-ins has no printer plugins either, and a host that only models has no printers.
@@ -401,7 +415,6 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
 
   // A local model gets only its surface's tools; a cloud model gets them all.
   const surface: ToolSurface = opts.surface ?? 'tab'
-  const local = isLocalModel(opts.config)
   /** The tools the model is offered. */
   function allTools(): AnyTool[] {
     return applyToolGroups(surfaceTools(surface, local, [...tools.values(), ...(pluginTools ?? [])]), opts.toolGroups)
@@ -653,7 +666,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     return { message: toolMessage(out), stop: false, ...(out.images?.length ? { images: out.images } : {}) }
   }
 
-  async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set()): Promise<PilotEvent & { type: 'done' }> {
+  async function loop(sessionId: string, messages: LlmMessage[], context: PilotContext, emit: (e: PilotEvent) => void, signal: AbortSignal, restrict?: (t: AnyTool) => boolean, startTier: Tier = HUGINN, needs: ReadonlySet<Toolset> = new Set(), startSet?: TurnSet): Promise<PilotEvent & { type: 'done' }> {
     const t0 = now()
     const citations: Citation[] = []
     const cards = new Set<string>()
@@ -694,6 +707,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let looked = false
     // the last left-out set this run logged, so a run logs a change once and not every step
     let loggedCap = ''
+    // a local model's set of tools this step (turnsets.ts); unset sends every tool
+    let set = turnSets ? startSet : undefined
+    picked.delete(sessionId)
     for (let step = 0; step <= opts.config.maxSteps; step++) {
       // a held run waits here, before its next model request
       await whileHeld(sessionId, signal)
@@ -711,7 +727,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       // a local model gets the surface's every-turn tools and the ones this turn calls for (toolsets.ts)
       const turn = local ? localTurnTools(surface, offered, { needs, called }) : offered
       // over the provider's tool limit, the turn sends core, the tools the chat called and the toolsets it needs
-      const capped = capTools(turn, { cap: client.maxTools, needs, called })
+      const capped = capTools(turn.filter((t) => (set ? inTurnSet(t, set) : true)), { cap: client.maxTools, needs, called })
       const visible = capped.tools
       const specs = visible.map((t) => toolSpec(t))
       const toolDefs = specs.map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))
@@ -875,6 +891,18 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         if (res.images) dropOldImages(messages, MAX_IMAGES_IN_HISTORY - res.images.length)
         messages.push({ role: 'tool', callId: call.id, content: res.message, ...(res.images ? { images: res.images } : {}) })
         if (res.stop) stopped = true
+        // a call to a tool of another set brings that set for the next step
+        if (set) {
+          const tool = findTool(call.name)
+          const sets = tool ? turnSetsOf(tool) : 'every'
+          if (sets !== 'every' && !sets.has(set)) set = [...sets][0]!
+        }
+      }
+      // pilot.tools picked a set: the next step sends it
+      const want = picked.get(sessionId)
+      if (set && want) {
+        set = want
+        picked.delete(sessionId)
       }
       if (signal.aborted) {
         stopReason = 'canceled'
@@ -890,6 +918,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     }
     const cited = citedSources(citations, reply, looked)
     if (cited.length) emit({ type: 'citations', items: cited })
+    if (set) lastSet.set(sessionId, set)
     void usageIn
     void usageOut
     return { type: 'done', stopReason, ms: now() - t0 }
@@ -899,6 +928,15 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     /** The tools the model is offered, as the read-backs list them. */
     tools(): ToolSpec[] {
       return allTools().map((t) => toolSpec(t))
+    },
+    /**
+     * The tools each turn set sends a local model in the tab (turnsets.ts), by set, in order; null where every turn
+     * sends every tool (a cloud model, or a chat without the design tools).
+     */
+    turnSets(): Record<TurnSet, string[]> | null {
+      if (!turnSets) return null
+      const all = allTools()
+      return Object.fromEntries(TURN_SETS.map((s) => [s, turnSetTools(all, s).map((t) => t.name)])) as Record<TurnSet, string[]>
     },
     /** Every registered tool, offered to the model or not. */
     registry(): AnyTool[] {
@@ -1015,7 +1053,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         })
         let done: PilotEvent & { type: 'done' }
         try {
-          done = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context }))
+          const startSet = turnSets ? turnSet(message, runOpts.attachments ?? [], lastSet.get(sessionId)) : undefined
+          done = await loop(sessionId, messages, context, emit, signal, undefined, startTier, turnNeeds(message, { designs, context }), startSet)
         } catch (e) {
           emit({ type: 'error', message: errorText(e), retryable: false })
           done = { type: 'done', stopReason: signal.aborted ? 'canceled' : 'error', ms: 0 }
@@ -1073,7 +1112,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
             role: 'user',
             content: `The user switched from ${from.material} on ${from.printer} with a ${from.nozzle} mm nozzle to ${to.material} on ${to.printer} with a ${to.nozzle} mm nozzle. ${productName()} already applied and showed this settings diff:\n${rows}\nExplain the two or three changes that matter most in at most three sentences. Do not call tools unless something in the diff looks wrong.`,
           })
-          const done = await loop(sessionId, messages, { machine: to }, emit, signal, (t) => t.permission === 'read', HUGINN, new Set<Toolset>(['settings', 'kb']))
+          const done = await loop(sessionId, messages, { machine: to }, emit, signal, (t) => t.permission === 'read', HUGINN, new Set<Toolset>(['settings', 'kb']), 'app')
           emit({ ...done, ms: now() - t0 })
           return
         }

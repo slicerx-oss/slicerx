@@ -519,6 +519,11 @@ export interface Pilot {
    * and cancel still works. Letting go continues the same run. Runtimes without holds leave it out.
    */
   hold?(sessionId: string, on: boolean): void
+  /**
+   * The tools each turn set sends a local model, by set (build, shape, edit, app, print), when turns pick a set; null when
+   * every turn sends every tool. Runtimes without turn sets leave it out.
+   */
+  turnSets?(): Record<string, string[]> | null
 }
 
 // ---------------------------------------------------------------------------
