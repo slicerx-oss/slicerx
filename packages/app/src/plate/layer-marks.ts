@@ -3,9 +3,11 @@
 // Pause, color change and custom G-code at a layer, set on the Preview layer slider as in Orca and Bambu Studio
 // (slic3r/GUI/IMSlider.cpp: "Add Pause", "Add Custom G-code", "Change Filament"; the code goes in at the start
 // of the layer). A mark is kept by the layer's height, not its number, so it stays put when the layer plan changes.
+import type { SliceWarning } from '@slicerx/contracts'
 import { get, markStale, set } from '../state/store'
 
-export type MarkKind = 'pause' | 'color_change' | 'custom'
+/** `tool_change` comes only from a project file: a filament change set on the layer slider of a plate of one filament. */
+export type MarkKind = 'pause' | 'color_change' | 'custom' | 'tool_change'
 
 export interface LayerMark {
   id: string
@@ -14,11 +16,13 @@ export interface LayerMark {
   kind: MarkKind
   /** The text of a custom mark. */
   gcode?: string
-  /** The filament slot (1-based) a color change goes to, when there is more than one to pick from. */
+  /** The filament slot (1-based) a color change goes to, when there is more than one to pick from; the one a tool change prints in. */
   slot?: number
+  /** Why a tool change from a project does not apply (it was saved for a plate of several filaments); it is kept for the file. */
+  skip?: string
 }
 
-export const MARK_LABEL: Record<MarkKind, string> = { pause: 'Pause', color_change: 'Color change', custom: 'Custom G-code' }
+export const MARK_LABEL: Record<MarkKind, string> = { pause: 'Pause', color_change: 'Color change', custom: 'Custom G-code', tool_change: 'Tool change' }
 
 /**
  * How far below a layer top a mark's height may sit and still be on that layer. The engine places a mark by height
@@ -92,10 +96,26 @@ export function removeMark(id: string, plateId: string = get().activePlate): voi
   write(plateId, marksFor(plateId).filter((m) => m.id !== id))
 }
 
-/** The marks as engine layer G-code by height: the engine puts each on the first of its own layers that reaches it. */
-export function layerGcodeByHeight(marks: readonly LayerMark[]): { zMm: number; kind: MarkKind; gcode?: string }[] {
+/** The marks as engine layer G-code by height: the engine puts each on the first of its own layers that reaches it. Tool changes go as `toolChanges` ([`toolChangesByHeight`]). */
+export function layerGcodeByHeight(marks: readonly LayerMark[]): { zMm: number; kind: Exclude<MarkKind, 'tool_change'>; gcode?: string }[] {
   return marks
     .slice()
     .sort((a, b) => a.z - b.z)
-    .map((m) => ({ zMm: m.z, kind: m.kind, ...(m.kind === 'custom' ? { gcode: m.gcode ?? '' } : {}) }))
+    .flatMap((m) => (m.kind === 'tool_change' ? [] : [{ zMm: m.z, kind: m.kind, ...(m.kind === 'custom' ? { gcode: m.gcode ?? '' } : {}) }]))
+}
+
+/** The tool changes that apply, as the engine's `toolChanges` by height: from the first layer reaching each, the plate prints in its filament. */
+export function toolChangesByHeight(marks: readonly LayerMark[]): { zMm: number; filament: number }[] {
+  return marks
+    .filter((m) => m.kind === 'tool_change' && !m.skip && m.slot)
+    .sort((a, b) => a.z - b.z)
+    .map((m) => ({ zMm: m.z, filament: m.slot! }))
+}
+
+/** A note for each tool change kept but not sent (`skip`), worded and coded as the engine words the ones it skips. */
+export function skippedToolChanges(marks: readonly LayerMark[]): SliceWarning[] {
+  return marks
+    .filter((m) => m.kind === 'tool_change' && m.skip)
+    .sort((a, b) => a.z - b.z)
+    .map((m) => ({ code: 'tool_change_skipped', message: `Tool change at ${Math.round(m.z * 1000) / 1000} mm to filament ${m.slot ?? 1} skipped: ${m.skip}.` }))
 }

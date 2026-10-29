@@ -156,11 +156,12 @@ function useSpan(ref: RefObject<HTMLElement | null>): number {
   }, [ref])
   return w
 }
-const ICON: Record<MarkKind, IconName> = { pause: 'pause-marker', color_change: 'color-change-marker', custom: 'terminal' }
+const ICON: Record<MarkKind, IconName> = { pause: 'pause-marker', color_change: 'color-change-marker', custom: 'terminal', tool_change: 'color-change-marker' }
 const HINT: Record<MarkKind, string> = {
   pause: 'Insert a pause command at the beginning of this layer.',
   color_change: 'Stop at the beginning of this layer so you can change the filament.',
   custom: 'Insert custom G-code at the beginning of this layer.',
+  tool_change: 'Change to another filament at the beginning of this layer.',
 }
 /** What a slot on a color change means today, said wherever the slot is picked. */
 const SLOT_NOTE = 'The slot is a note saved with the project. The print still pauses here for you to swap the filament by hand.'
@@ -249,7 +250,7 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
         if (p.into >= 0) return null
         const group = held[i]!
         const { m, layer } = e
-        const slot = m.kind === 'color_change' && m.slot ? slots.find((r) => r.index === m.slot) : undefined
+        const slot = (m.kind === 'color_change' || m.kind === 'tool_change') && m.slot ? slots.find((r) => r.index === m.slot) : undefined
         const color = group.length === 1 ? slot?.color : undefined
         const name = markName(m, layer, layerZ)
         const last = group[group.length - 1]!.layer
@@ -260,6 +261,10 @@ function LayerPins({ x, layerZ, track, selected, onPick }: { x: (layer: number) 
             ? `${group.map((g) => `${MARK_LABEL[g.m.kind]} at ${g.layer}`).join(', ')}. Click to pick one.`
             : m.kind === 'custom'
               ? (m.gcode ?? '').split('\n')[0]!.slice(0, 60)
+              : m.kind === 'tool_change'
+                ? m.skip
+                  ? `Filament ${m.slot ?? 1}, skipped: ${m.skip}. Click to remove it.`
+                  : `The plate prints in filament ${m.slot ?? 1} from this layer. Click to remove it.`
               : m.kind === 'color_change' && m.slot
                 ? `${slot ? `Slot ${m.slot}` : `Slot ${m.slot}, not loaded now`}, noted. The print pauses for a manual swap. Click to change or remove it.`
                 : m.kind === 'color_change' && slots.length > 1
@@ -387,7 +392,7 @@ function LayerMarksMenu({ top, layerZ, menu, setMenu, onJump }: { top: number; l
                 </MenuItem>
               ) : null}
               <MenuItem icon="delete" onClick={() => { removeMark(here.id); close() }}>
-                {here.kind === 'pause' ? 'Remove pause' : here.kind === 'color_change' ? 'Remove color change' : 'Remove custom G-code'}
+                {here.kind === 'pause' ? 'Remove pause' : here.kind === 'color_change' ? 'Remove color change' : here.kind === 'tool_change' ? 'Remove tool change' : 'Remove custom G-code'}
               </MenuItem>
             </>
           ) : (

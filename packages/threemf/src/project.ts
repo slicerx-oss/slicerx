@@ -526,8 +526,12 @@ export interface ProjectInput {
   objectSettings?: Readonly<Record<string, Readonly<Record<string, unknown>>>>
   /** The app that wrote the file, for the model's Application metadata: the edition's product name. */
   application: string
-  /** Pause, color change and custom G-code marks per plate index (0-based), written as Orca's custom_gcode_per_layer.xml. */
-  layerMarks?: Readonly<Record<number, readonly { z: number; kind: 'pause' | 'color_change' | 'custom'; gcode?: string; slot?: number }[]>>
+  /**
+   * Pause, color change, tool change and custom G-code marks per plate index (0-based), written as
+   * Metadata/custom_gcode_per_layer.xml. A tool change prints in `slot`; `skipped` keeps one that was read under another mode
+   * than the one-filament mode, so the plate is written under that mode again.
+   */
+  layerMarks?: Readonly<Record<number, readonly { z: number; kind: 'pause' | 'color_change' | 'custom' | 'tool_change'; gcode?: string; slot?: number; skipped?: boolean }[]>>
   /** Sliced G-code per plate index (0-based), for a .gcode.3mf. */
   gcode?: Readonly<Record<number, string>>
   /**
@@ -566,8 +570,8 @@ function meshBytes(input: ProjectInput): number {
 const SPLIT_BYTES = 32 * 1024 * 1024
 const MODEL_OPEN = '<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/2015/06" requiredextensions="p">'
 
-/** The mark type numbers in custom_gcode_per_layer.xml: color change 0, pause 1, custom 4. */
-const MARK_TYPE = { color_change: 0, pause: 1, custom: 4 } as const
+/** The mark type numbers in custom_gcode_per_layer.xml: color change 0, pause 1, tool change 2, custom 4. */
+const MARK_TYPE = { color_change: 0, pause: 1, tool_change: 2, custom: 4 } as const
 
 /** Metadata/custom_gcode_per_layer.xml in the form Orca's files carry, or '' without marks. */
 function marksXml(marks: ProjectInput['layerMarks']): string {
@@ -578,10 +582,14 @@ function marksXml(marks: ProjectInput['layerMarks']): string {
       const layers = list
         .map((m) => {
           const extra = m.kind === 'custom' ? (m.gcode ?? '') : ''
-          return `<layer top_z="${m.z}" type="${MARK_TYPE[m.kind]}" extruder="${m.kind === 'color_change' && m.slot ? m.slot : 1}" color="" extra="${esc(extra)}" gcode="${esc(extra)}"/>`
+          const gcode = m.kind === 'tool_change' ? 'tool_change' : extra
+          return `<layer top_z="${m.z}" type="${MARK_TYPE[m.kind]}" extruder="${(m.kind === 'color_change' || m.kind === 'tool_change') && m.slot ? m.slot : 1}" color="" extra="${esc(extra)}" gcode="${esc(gcode)}"/>`
         })
         .join('\n')
-      return `<plate>\n<plate_info id="${Number(i) + 1}"/>\n${layers}\n<mode value="SingleExtruder"/>\n</plate>`
+      // A tool change applies under the one-filament mode only, so the mode keeps whether the plate's tool changes apply.
+      const tools = list.filter((m) => m.kind === 'tool_change')
+      const mode = tools.some((m) => m.skipped) ? 'MultiExtruder' : tools.length ? 'MultiAsSingle' : 'SingleExtruder'
+      return `<plate>\n<plate_info id="${Number(i) + 1}"/>\n${layers}\n<mode value="${mode}"/>\n</plate>`
     })
     .join('\n')
   return `<?xml version="1.0" encoding="utf-8"?>\n<custom_gcodes_per_layer>\n${body}\n</custom_gcodes_per_layer>`

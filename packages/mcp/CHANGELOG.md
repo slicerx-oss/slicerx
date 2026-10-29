@@ -15,6 +15,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 - A project reads and slices with the wall generator it inherited from its presets, on every printer (`readProjectFile`, `slicerx_inspect_project`, and `slicerx_slice_file` with `project_settings`); its walls note says `classic walls, as the project has them`. Before, an inherited classic generator became aegis. Aegis walls the project lists as changed stay, and so do request overrides.
 - A slice that names no process on a Bambu Lab printer (`machine:bambu-a1` and the others) prints with the classic walls of the printer's preset, as the app does; other printers keep aegis. `slicerx_get_profile` of `process:slicerx-default` without a printer still shows aegis.
+- `slicerx_slice_file` on a project whose plate has a tool change at a height (`Metadata/custom_gcode_per_layer.xml` type 2) prints the change on that layer, inside the printer's change G-code. One that does not apply (a plate of several filaments, printed by object, or saved for a plate of several filaments) leaves the slice as it was and comes back in `warning_details` with the code `tool_change_skipped`. Before, the change was left out without a word.
 
 ## [0.2.5] - 2026-10-29
 
