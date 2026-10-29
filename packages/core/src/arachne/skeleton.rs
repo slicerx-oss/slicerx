@@ -804,16 +804,21 @@ impl Skeleton<'_> {
                 continue;
             }
             let (from, to) = (self.g.edges[e].from, self.g.edges[e].to);
-            if !self.g.is_central(e)
-                || short(
-                    self.g.nodes[to].p.minus(self.g.nodes[from].p),
-                    self.st.discretization_step,
-                )
-                || self.g.nodes[from].dist >= self.g.nodes[to].dist
-            {
+            if !self.g.is_central(e) || self.g.nodes[from].dist >= self.g.nodes[to].dist {
                 continue;
             }
-            let thicknesses = self.strat.nonlinear_thicknesses(self.g.nodes[from].bead_count);
+            // A curved part crosses the thicknesses where the walls stop taking up the strip on edges shorter
+            // than the step; without a node there, the widened beads blended down over the whole edge.
+            let bead_count = self.g.nodes[from].bead_count;
+            let exact = self.strat.exact_thicknesses(bead_count);
+            let thicknesses = if short(
+                self.g.nodes[to].p.minus(self.g.nodes[from].p),
+                self.st.discretization_step,
+            ) {
+                exact.clone()
+            } else {
+                self.strat.nonlinear_thicknesses(bead_count)
+            };
             if thicknesses.is_empty() {
                 continue;
             }
@@ -838,6 +843,12 @@ impl Skeleton<'_> {
                 }
                 let mid = a.plus(normal(ab, end_pos));
                 last = self.g.insert_node(last, mid, new_bc);
+                if exact.contains(&t) {
+                    // Its distance from the outline, taken from where it landed, is a few nanometers off; the
+                    // beads there are the ones of the thickness it is for.
+                    let node = self.g.edges[last].from;
+                    self.g.nodes[node].dist = t / 2;
+                }
             }
         }
     }
