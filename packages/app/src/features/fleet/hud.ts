@@ -35,9 +35,13 @@ export function doneAt(timeLeftS: number, now: number): string {
   return new Date(now).toDateString() === end.toDateString() ? time : `${end.toLocaleDateString('en-US', { weekday: 'short' })} ${time}`
 }
 
-/** The job line of the top bar: layer, time left and when it is done. Parts the printer does not report are left out. */
-export function jobLine(s: Pick<PrinterStatus, 'layer' | 'layerCount' | 'timeLeftS' | 'state'>, now: number): string {
+/**
+ * The job line of the top bar: the step the job is on ("Calibrating flow dynamics"), layer, time left and when it is
+ * done. Parts the printer does not report are left out.
+ */
+export function jobLine(s: Pick<PrinterStatus, 'layer' | 'layerCount' | 'timeLeftS' | 'state' | 'live'>, now: number): string {
   const parts: string[] = []
+  if (s.live?.stage && s.state !== 'offline') parts.push(s.live.stage)
   if (s.layer !== undefined && s.layerCount) parts.push(`Layer ${s.layer} of ${s.layerCount}`)
   if (running(s.state) && s.timeLeftS !== undefined && s.timeLeftS > 0) parts.push(`${recordDuration(s.timeLeftS)} left`, `done ${doneAt(s.timeLeftS, now)}`)
   return parts.join(' · ')

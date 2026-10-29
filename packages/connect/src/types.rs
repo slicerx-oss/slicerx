@@ -128,6 +128,11 @@ pub struct PrinterLive {
     /// while its status kept coming. Absent otherwise.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_developer_mode: Option<bool>,
+    /// The step a job is on while it prepares or prints, in plain words ("Calibrating flow
+    /// dynamics"), shown with the job. A routine step, never a problem: problems and pause reasons
+    /// are the status `message`. Absent when the printer names no step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
 }
 
 /// Fan speeds in percent.
