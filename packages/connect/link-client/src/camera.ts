@@ -82,7 +82,9 @@ export function createCanvasRenderer(): Renderer {
   const drawn = () => {
     if (shown) return
     shown = true
-    say('')
+    // Told even when nothing was said before: the live view waits for this to drop its "no picture" line.
+    said = ''
+    for (const cb of problems) cb('')
   }
 
   // JPEG: decode the newest frame only. A frame that arrives while one is decoding replaces the queued one.
