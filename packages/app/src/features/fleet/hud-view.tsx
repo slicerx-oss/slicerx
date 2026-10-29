@@ -23,7 +23,7 @@ import { printerAction } from '../../state/actions'
 import { set, useApp } from '../../state/store'
 import { deviceHub, messageTone, splitIssues, type PrinterIssue } from './device'
 import {
-  dial, drawersOf, fans, gauges, hasUnits, HUD_RAIL, jobLine, jobTitle, layerLine, printingSlot, running, slotGroups, slotName, speedChoices, speedProfile, statePill,
+  cameraRate, dial, drawersOf, fans, RATE_SAMPLES, gauges, hasUnits, HUD_RAIL, jobLine, jobTitle, layerLine, printingSlot, running, slotGroups, slotName, speedChoices, speedProfile, statePill,
   type Gauge, type SpeedLimits,
 } from './hud'
 import { adjustHub, setLight, setSpeed } from './hud-actions'
@@ -107,6 +107,14 @@ function Backdrop({ row }: { row: FleetRow }) {
     setLast(url)
     return () => URL.revokeObjectURL(url)
   }, [on, row.id])
+  // The bridge's frame counts, so a slow picture reads as the camera's own rate.
+  const [counts, setCounts] = useState<number[]>([])
+  useEffect(() => {
+    setCounts([])
+    if (!session || session.mode !== 'live') return
+    return session.onStats((s) => setCounts((c) => [...c, s.fps].slice(-RATE_SAMPLES)))
+  }, [session])
+  const rate = on && session?.mode === 'live' ? cameraRate(counts) : null
   const look = useFirstLook(session?.mode === 'live' || Boolean(still), row.id, on, `hud:${row.id}`)
   const problem = Boolean(error) || status.state === 'retrying' || status.state === 'failed'
   const now = useClock(30_000)
@@ -115,6 +123,11 @@ function Backdrop({ row }: { row: FleetRow }) {
     return (
       <>
         <video ref={video} className="ph-cam cam-reveal" data-held={held} autoPlay muted playsInline aria-label={`Live view of ${row.name}`} />
+        {rate ? (
+          <span className="ph-rate ph-num" data-testid="ph-camera-rate" {...tipAttrs({ title: 'Camera frame rate', body: "Pictures a second reaching this view from the printer's camera, over the last 10 seconds." })}>
+            Camera {rate}
+          </span>
+        ) : null}
         {problem ? <CameraProblem status={status} error={error} /> : <FirstLookCover look={look} size="lg" />}
       </>
     )
