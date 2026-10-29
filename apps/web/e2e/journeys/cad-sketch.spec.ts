@@ -2213,11 +2213,14 @@ test.describe('sketch-panel-behavior', () => {
     })
   }
 
-  // Nightly: one primary in every painted frame while a rectangle closes (a rAF watcher over every frame).
+  // Nightly: one primary in every painted frame while a rectangle closes (a rAF watcher over every frame). A busy
+  // machine drawing in software can go seconds without painting a frame, so the watch waits for painted frames, not a
+  // set time: one before the rectangle starts, and two more once the profile has closed.
   test('Finish sketch and Extrude: exactly one primary in every painted frame as the profile closes', { tag: '@nightly' }, async ({ page }) => {
     await sketchOnTop(page)
     const panel = toolPanel(page)
     const extrude = panel.getByTestId('model-tool-apply')
+    const painted = () => page.evaluate(() => (window as unknown as { __frames: number }).__frames)
     await page.evaluate(() => {
       const w = window as unknown as { __off: number; __frames: number; __watch: boolean }
       w.__off = 0
@@ -2231,12 +2234,15 @@ test.describe('sketch-panel-behavior', () => {
       }
       requestAnimationFrame(tick)
     })
+    await expect.poll(painted).toBeGreaterThan(0)
     await page.locator('body').press('r')
     await sketchAt(page, 'click', [-3, -3])
     await sketchAt(page, 'click', [3, 3])
     await expect(extrude).toBeEnabled()
     await expect(extrude).toHaveAttribute('data-variant', 'primary')
+    const closed = await painted()
     await page.waitForTimeout(300)
+    await expect.poll(painted).toBeGreaterThan(closed + 1)
     const frames = await page.evaluate(() => {
       const w = window as unknown as { __off: number; __frames: number; __watch: boolean }
       w.__watch = false
