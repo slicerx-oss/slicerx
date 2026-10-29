@@ -258,6 +258,8 @@ if [ "$tier" = per-merge ]; then
     skip vitest "no JS or TS change since ${base:0:8}"; skip tsc "no JS or TS change since ${base:0:8}"
   else
     step sx-build sh -c 'cargo build -p sx-cli -p sx-geom --release && cargo build -p sx-cloud'
+    # The app and pilot tests fail under CI=true without the geom module, so a JS-only run builds it when it is missing.
+    [ -s packages/geom/wasm/pkg/sx_geom_core.wasm ] || step geom-wasm sh packages/geom/wasm/scripts/build.sh
     step vitest pnpm "${pnpm_scope[@]}" "${vitest_opts[@]}" --if-present test
     step tsc pnpm "${pnpm_scope[@]}" --no-bail --if-present typecheck
   fi
