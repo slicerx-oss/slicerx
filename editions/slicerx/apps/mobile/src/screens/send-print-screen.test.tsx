@@ -86,3 +86,18 @@ it('prompts to sign in instead of failing when cloud slicing has no token', asyn
   await fireEvent.press(screen.getByTestId('slice-sign-in'))
   expect(onSignInForCloud).toHaveBeenCalled()
 })
+
+it('puts a card on top and holds Print back while the model does not fit the printer', async () => {
+  const fit = { fits: false, bed: [256, 256, 256] as [number, number, number], size: [300, 200, 5] as [number, number, number], footprint: { min: [-22, 28] as [number, number], max: [278, 228] as [number, number] }, over: [44, 0, 0] as [number, number, number] }
+  await render(<SendPrintScreen {...props({ initialModelId: 'm1', initialTarget: { kind: 'printer', printerId: 'bay-2' }, fit })} />)
+  expect(screen.getByTestId('fit-card')).toBeTruthy()
+  expect(screen.getByTestId('send-button')).toBeDisabled()
+  expect(screen.getByText('Does not fit this printer')).toBeTruthy()
+})
+
+it('shows no card when the model fits', async () => {
+  const fit = { fits: true, bed: [256, 256, 256] as [number, number, number], size: [20, 20, 20] as [number, number, number], footprint: { min: [118, 118] as [number, number], max: [138, 138] as [number, number] }, over: [0, 0, 0] as [number, number, number] }
+  await render(<SendPrintScreen {...props({ initialModelId: 'm1', initialTarget: { kind: 'printer', printerId: 'bay-2' }, fit })} />)
+  expect(screen.queryByTestId('fit-card')).toBeNull()
+  expect(screen.getByTestId('send-button')).toBeEnabled()
+})
