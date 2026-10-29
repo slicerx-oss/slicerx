@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Fixed
+
+- A preview segment whose path was not found in its layer's G-code has no G-code line (0 in `SliceRun::preview`, `extras::LINE_UNKNOWN` from `extras::relative` for a shard), where it pointed at the layer's marker line (`; CHANGE_LAYER` in a Bambu Lab file). On the A1 with classic walls, one path of the x-mark bench plate is such a path.
+
 ## [0.2.5] - 2026-10-29
 
 ### Changed
