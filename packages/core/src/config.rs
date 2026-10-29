@@ -795,6 +795,7 @@ impl PrintConfig {
                         key: key.to_owned(),
                         value,
                         reason,
+                        object: None,
                     });
                 }
                 Err(e) => return Err(e),
@@ -2260,6 +2261,9 @@ pub struct ConfigIssue {
     pub key: String,
     pub value: Value,
     pub reason: String,
+    /// The object whose own settings carry the value, on a plate whose objects have settings of their own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<String>,
 }
 
 /// Keys that describe a preset or project rather than set how it prints: names, ids, versions, the links between
