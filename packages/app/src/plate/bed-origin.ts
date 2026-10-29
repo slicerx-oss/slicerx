@@ -42,6 +42,11 @@ export function towerToPlate(t: PrimeTowerPlacement, origin: Origin): PrimeTower
   return isZero(origin) ? t : { ...t, x: t.x - origin[0], y: t.y - origin[1] }
 }
 
+/** A machine point (a collision's strike, mm) on the plate. */
+export function pointToPlate(p: readonly [number, number, number], origin: Origin): [number, number, number] {
+  return [p[0] - origin[0], p[1] - origin[1], p[2]]
+}
+
 /** Machine polygons (no-print areas) on the plate. */
 export function polygonsToPlate<P extends readonly (readonly [number, number])[]>(polys: readonly P[], origin: Origin): [number, number][][] {
   return polys.map((p) => p.map(([x, y]) => [x - origin[0], y - origin[1]] as [number, number]))

@@ -32,8 +32,12 @@ import {
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js'
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js'
 import { gpuDone } from './gpudone'
+import { CONTACT_STYLE } from './contact'
 import { SCENE, hexToRgb, type SceneColors } from './palette'
 import type { Quality } from './types'
+
+/** The outline of a part a collision hits: the contact box's two tones, a light line over a dark halo. */
+export const DANGER_EDGE = { line: CONTACT_STYLE.line, halo: CONTACT_STYLE.halo } as const
 
 const QUAD_VS = /* glsl */ `
 varying vec2 vUv;
@@ -133,10 +137,11 @@ void main() {
 const MASK_FS = /* glsl */ `
 uniform sampler2D tDepth;
 uniform vec2 invSize;
+uniform float danger;
 void main() {
   float sd = texture2D(tDepth, gl_FragCoord.xy * invSize).x;
   float vis = gl_FragCoord.z <= sd + 0.00035 ? 1.0 : 0.0;
-  gl_FragColor = vec4(1.0, vis, 0.0, 1.0);
+  gl_FragColor = vec4(1.0, vis, danger, 1.0);
 }
 `
 
@@ -156,6 +161,8 @@ uniform vec3 bgBot;
 uniform vec3 bgGlow;
 uniform vec3 edgeVis;
 uniform vec3 edgeHid;
+uniform vec3 edgeDanger;
+uniform vec3 edgeDangerHalo;
 uniform float silOn;
 uniform vec3 silColor;
 uniform float silK;
@@ -227,16 +234,24 @@ void main() {
   vec3 lin = col + pow(bg, vec3(2.2)) * (1.0 - a);
   if (silOn > 0.5) lin = mix(lin, silColor, silhouette(tuv) * silK);
   if (outlineOn > 0.5) {
-    float cov = texture2D(tMask, tuv).r;
-    float mx = 0.0, vis = 0.0;
+    vec3 c0 = texture2D(tMask, tuv).rgb;
+    float cov = c0.r;
+    float mx = 0.0, vis = 0.0, dz = 0.0, far = 0.0;
     for (int i = 0; i < 8; i++) {
       float an = float(i) * 0.7853982;
       vec2 d = vec2(cos(an), sin(an)) * texel * edgePx;
-      vec2 m = max(texture2D(tMask, tuv + d).rg, texture2D(tMask, tuv + d * 0.5).rg);
-      mx = max(mx, m.r); vis = max(vis, m.g);
+      vec3 m = max(texture2D(tMask, tuv + d).rgb, texture2D(tMask, tuv + d * 0.5).rgb);
+      mx = max(mx, m.r); vis = max(vis, m.g); dz = max(dz, m.b);
+      far = max(far, max(texture2D(tMask, tuv + d * 2.0).b, texture2D(tMask, tuv + d * 1.5).b));
     }
     float e = smoothstep(0.05, 0.55, mx - cov);
-    lin = mix(lin, vis > 0.5 ? edgeVis : edgeHid, e);
+    lin = mix(lin, vis > 0.5 ? edgeVis : edgeHid, e * (1.0 - step(0.5, dz)));
+    // A part a collision hits, seen or behind the toolpaths: a light line right at its edge over a dark halo outside
+    // it, so the edge holds against any toolpath color and either theme.
+    float dIn = smoothstep(0.05, 0.55, dz - c0.b);
+    float dOut = smoothstep(0.05, 0.55, far - c0.b);
+    lin = mix(lin, edgeDangerHalo, max(dIn, dOut));
+    lin = mix(lin, edgeDanger, dIn);
   }
   vec3 o = toSRGB(lin);
   vec2 v = vUv - 0.5;
@@ -281,6 +296,11 @@ export interface FrameOptions {
   /** Draw without MSAA (the camera is moving; FXAA still runs). Still frames use MSAA 4x. */
   fast: boolean
   outline: readonly Object3D[]
+  /**
+   * Outlined in the hit color whether they are drawn or not (a part the toolpaths stand in for): the part a picked
+   * collision hits.
+   */
+  danger?: readonly Object3D[]
   /** Model's CAD look: a near-black silhouette where solid models meet what is behind them. */
   silhouette?: boolean
   /** Increments per frame so AO noise rotates; still frames average it away. */
@@ -344,7 +364,7 @@ export class Pipeline {
     if (u.bgGlow) u.bgGlow.value = srgb01(center ?? scene.bgGlow)
   }
 
-  /** Background gradient and selection outline colors. */
+
   /** The silhouette's color, a CSS hex (linear in the shader). */
   setSilhouetteColor(hex: string): void {
     const u = this.gradeMat.uniforms.silColor
@@ -408,7 +428,7 @@ export class Pipeline {
       blending: NoBlending,
     })
     this.maskMat = new ShaderMaterial({
-      uniforms: { tDepth: { value: depthTexture }, invSize: { value: new Vector2() } },
+      uniforms: { tDepth: { value: depthTexture }, invSize: { value: new Vector2() }, danger: { value: 0 } },
       vertexShader: MASK_VS,
       fragmentShader: MASK_FS,
       depthTest: false,
@@ -438,6 +458,8 @@ export class Pipeline {
         bgGlow: { value: [gr, gg, gb] },
         edgeVis: { value: linearColor(SCENE.selection) },
         edgeHid: { value: linearColor(SCENE.selectionHidden) },
+        edgeDanger: { value: linearColor(DANGER_EDGE.line) },
+        edgeDangerHalo: { value: linearColor(DANGER_EDGE.halo) },
         silOn: { value: 0 },
         silColor: { value: new Color(0, 0, 0) },
         silK: { value: 0.95 },
@@ -585,8 +607,9 @@ export class Pipeline {
     if (g.aoStrength) g.aoStrength.value = this.aoStrength * opts.aoMix
     if (g.exposure) g.exposure.value = this.exposure
 
-    const outline = opts.outline.length > 0
-    if (outline) this.renderMask(opts.outline, camera)
+    const danger = opts.danger ?? []
+    const outline = opts.outline.length > 0 || danger.length > 0
+    if (outline) this.renderMask(opts.outline, camera, danger)
     if (g.outlineOn) g.outlineOn.value = outline ? 1 : 0
 
     // the grade samples at the size this frame was drawn
@@ -628,18 +651,26 @@ export class Pipeline {
     this.quad.render(this.renderer)
   }
 
-  private renderMask(objects: readonly Object3D[], camera: Camera): void {
+  private renderMask(objects: readonly Object3D[], camera: Camera, danger: readonly Object3D[] = []): void {
     const r = this.renderer
     r.setRenderTarget(this.mask)
     r.setClearColor(0x000000, 0)
     r.clear(true, false, false)
     const swapped: { mesh: Mesh; mat: Material | Material[] }[] = []
     const hidden: Object3D[] = []
-    for (const root of objects) {
+    // A part the toolpaths stand in for is hidden; its outline draws all the same.
+    const shown: Object3D[] = []
+    for (const root of danger) {
+      if (!root.visible) {
+        root.visible = true
+        shown.push(root)
+      }
+    }
+    for (const root of [...objects, ...danger]) {
       root.traverse((o) => {
         // wide edge quads (LineSegments2) are meshes to three.js but lines here: hidden from the mask like the thin ones
         const wide = (o as { isLineSegments2?: boolean }).isLineSegments2 === true
-        if ((o as Mesh).isMesh && o.visible && !wide) {
+        if ((o as Mesh).isMesh && o.visible && !wide && (o as Mesh).material !== this.maskMat) {
           const m = o as Mesh
           swapped.push({ mesh: m, mat: m.material })
           m.material = this.maskMat
@@ -651,10 +682,15 @@ export class Pipeline {
     }
     const prevAuto = r.shadowMap.autoUpdate
     r.shadowMap.autoUpdate = false
+    const flag = this.maskMat.uniforms.danger
     for (const root of objects) r.render(root, camera)
+    if (flag) flag.value = 1
+    for (const root of danger) r.render(root, camera)
+    if (flag) flag.value = 0
     r.shadowMap.autoUpdate = prevAuto
     for (const s of swapped) s.mesh.material = s.mat
     for (const h of hidden) h.visible = true
+    for (const o of shown) o.visible = false
   }
 
   dispose(): void {

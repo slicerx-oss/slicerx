@@ -91,7 +91,12 @@ in uvec4 aSegA;
 in uvec4 aSegB;
 in float aLayer;
 in vec2 aExtra;
+in float aObj;
 uniform uint uFeatureMask;
+uniform float uFocus;
+uniform float uFocusObj;
+uniform vec2 uFocusZ;
+uniform float uHasObj;
 uniform vec2 uWidthRange;
 uniform vec2 uHeightRange;
 uniform vec2 uFanRange;
@@ -116,6 +121,7 @@ varying vec3 vSegColor;
 varying float vLive;
 varying vec4 vFinish;
 varying float vSurf;
+varying float vDim;
 // Across and along the bead in plate space, and how far the normals keep their round shape (1) or turn to face the camera
 // (level of detail): sxBead sets them for the per-pixel shading.
 vec2 sxSide;
@@ -194,8 +200,21 @@ const BEAD_COLOR = /* glsl */ `
   vSurf = feat <= 2u || feat == 13u ? 1.0 : feat == 3u || feat == 4u || feat == 5u || feat == 7u || feat == 11u ? 2.0 : 0.0;
   // Only the walls of the live layer glow, so it reads as a lit ring at the nozzle height rather than a plane.
   vLive = abs(aLayer - uCurLayer) < 0.5 && feat <= 2u ? 1.0 : 0.0;
+  // A picked collision: every bead but the struck object's, in the layers struck, fades back so that part reads first.
+  // Beads of no object (skirt, shared brim, prime tower) fade with the rest.
+  vDim = 0.0;
+  if (uFocus > 0.5) {
+    float zt = uintBitsToFloat(aSegB.x);
+    float zb = zt - float(aSegB.y >> 16u) * 0.001;
+    bool other = uHasObj > 0.5 && abs(aObj - uFocusObj) > 0.5;
+    bool outside = zt < uFocusZ.x - 1e-3 || zb > uFocusZ.y + 1e-3;
+    vDim = other || outside ? 1.0 : 0.0;
+  }
 }
 `
+
+/** How much of a bead's own color stays while a picked collision fades it: the rest is the backdrop's. */
+export const FOCUS_KEEP = 0.35
 
 /** Declarations for per-vertex bead lighting; three.js supplies the light and shadow uniforms. */
 const BEAD_LIGHT_DECL = /* glsl */ `
@@ -288,10 +307,12 @@ uniform vec3 uLiveColor;
 uniform float uGlow;
 uniform float uCrease;
 uniform float uStale;
+uniform vec3 uDimTo;
 varying vec3 vSegColor;
 varying float vLive;
 varying vec4 vFinish;
 varying float vSurf;
+varying float vDim;
 ${BEAD_PIXEL_DECL}
 `
 
@@ -357,6 +378,8 @@ if ( uColorMode != 1 ) {
   if ( sxPeak > 0.8 ) outgoingLight *= ( 0.8 + 0.2 * ( 1.0 - exp( ( 0.8 - sxPeak ) / 0.2 ) ) ) / sxPeak;
 }
 outgoingLight = mix( outgoingLight, vec3( dot( outgoingLight, vec3( 0.299, 0.587, 0.114 ) ) ), 0.5 * uStale ) * ( 1.0 - 0.35 * uStale );
+// Faded by a picked collision: about a third of the bead over the backdrop.
+outgoingLight = mix( outgoingLight, uDimTo, ${1 - FOCUS_KEEP} * vDim );
 `
 
 /** The groove's occlusion, the silk streak along the bead, and the live layer's glow. */
@@ -549,6 +572,14 @@ interface Chunk {
   layer: InstancedInterleavedBuffer
   drawn: [number, number]
   extra?: InstancedInterleavedBuffer | undefined
+  /** Each segment's object index (the request's order), when the buffers carry them. */
+  obj?: InstancedInterleavedBuffer | undefined
+}
+
+/** The beads a picked collision keeps: one object (null: every object) over a z range, mm (null: every layer). */
+export interface ToolpathFocus {
+  object: number | null
+  z: readonly [number, number] | null
 }
 
 export class Toolpaths {
@@ -574,6 +605,11 @@ export class Toolpaths {
     uTempRange: { value: [180, 260] as [number, number] },
     uHasExtras: { value: 0 },
     uStale: { value: 0 },
+    uFocus: { value: 0 },
+    uFocusObj: { value: -1 },
+    uFocusZ: { value: [-1e9, 1e9] as [number, number] },
+    uHasObj: { value: 0 },
+    uDimTo: { value: new Color(SCENE.bgBottom).convertSRGBToLinear() },
     uFeatureMask: { value: 0x7fff },
     uLiveColor: { value: new Color(SCENE.liveLayer) },
     uGlow: { value: 3 },
@@ -687,6 +723,30 @@ export class Toolpaths {
     return v < 0 ? null : v
   }
 
+  /**
+   * A picked collision's focus: every bead outside the object and the layers given fades to about a third over the
+   * backdrop; null brings them all back. Only uniforms change. Returns whether that changed.
+   */
+  setFocus(f: ToolpathFocus | null): boolean {
+    const u = this.uniforms
+    const on = f ? 1 : 0
+    const obj = f?.object ?? -1
+    const z: [number, number] = f?.z ? [f.z[0], f.z[1]] : [-1e9, 1e9]
+    if (u.uFocus.value === on && u.uFocusObj.value === obj && u.uFocusZ.value[0] === z[0] && u.uFocusZ.value[1] === z[1]) return false
+    u.uFocus.value = on
+    u.uFocusObj.value = obj
+    u.uFocusZ.value = z
+    return true
+  }
+
+  /** The focus set by setFocus, or null. */
+  get focus(): ToolpathFocus | null {
+    const u = this.uniforms
+    if (u.uFocus.value === 0) return null
+    const z = u.uFocusZ.value
+    return { object: u.uFocusObj.value < 0 ? null : u.uFocusObj.value, z: z[0] <= -1e9 && z[1] >= 1e9 ? null : [z[0], z[1]] }
+  }
+
   /** Draws the paths dimmed while they are stale. Returns whether that changed. */
   setStale(stale: boolean): boolean {
     const v = stale ? 1 : 0
@@ -723,6 +783,9 @@ export class Toolpaths {
     const words = new Uint32Array(buffers.raw, buffers.segmentsOffset, S * (SXPV_SEGMENT_BYTES / 4))
     const layer = N < 65536 ? new Uint16Array(S) : new Float32Array(S)
     for (let k = 0; k < N; k++) layer.fill(k, buffers.layerStart[k] ?? 0, buffers.layerStart[k + 1] ?? S)
+    // Read in place from the buffers: a picked collision fades the beads of every other object.
+    const objs = buffers.objectsOffset >= 0 ? new Uint16Array(buffers.raw, buffers.objectsOffset, S) : null
+    this.uniforms.uHasObj.value = objs ? 1 : 0
     for (let start = 0; start < S; start += CHUNK) {
       const end = Math.min(S, start + CHUNK)
       const seg = new InstancedInterleavedBuffer(words.subarray(start * 8, end * 8), 8, 1)
@@ -737,7 +800,7 @@ export class Toolpaths {
       mesh.castShadow = !this.ghost
       mesh.receiveShadow = !this.ghost
       if (this.ghost) mesh.renderOrder = 3
-      const c: Chunk = { start, end, mesh, geo, seg, layer: lb, drawn: [-1, -1] }
+      const c: Chunk = { start, end, mesh, geo, seg, layer: lb, drawn: [-1, -1], obj: objs ? new InstancedInterleavedBuffer(objs.subarray(start, end), 1, 1) : undefined }
       this.bind(c, 0, end - start)
       this.chunks.push(c)
       this.root.add(mesh)
@@ -761,6 +824,7 @@ export class Toolpaths {
     c.geo.setAttribute('aSegB', new InterleavedBufferAttribute(c.seg, 4, from * 8 + 4))
     c.geo.setAttribute('aLayer', new InterleavedBufferAttribute(c.layer, 1, from))
     if (c.extra) c.geo.setAttribute('aExtra', new InterleavedBufferAttribute(c.extra, 2, from * 2))
+    if (c.obj) c.geo.setAttribute('aObj', new InterleavedBufferAttribute(c.obj, 1, from))
     c.geo.instanceCount = to - from
     c.drawn = [from, to]
   }
@@ -1012,6 +1076,7 @@ export class Toolpaths {
     u.uRamp.value = rampTexture(t.heatRamp)
     for (const o of old) o.dispose()
     u.uLiveColor.value.set(t.scene.liveLayer)
+    u.uDimTo.value.set(t.scene.bgBottom).convertSRGBToLinear()
     this.travelColor = t.scene.travel
     if (this.travels) (this.travels.material as LineBasicMaterial).color.set(t.scene.travel)
     this.themeToolColors = t.toolColors

@@ -17,6 +17,7 @@ import { SidePane, type PaneSection } from '../shell/pane'
 import { seedExamplePlate } from '../state/actions'
 import { sizeText, type UnitPrefs } from '../cad/units'
 import { get, isCadTool, railOpen, setRail, showsLayers, useApp, type PlateEntry } from '../state/store'
+import { collisionsOf } from '../plate/heimdall'
 import { bounds, sizeOf } from '../plate/transform'
 import { usePrinter } from '../lib/use-printer'
 import { printResultKey, useRightAttention } from '../lib/right-attention'
@@ -96,6 +97,8 @@ const MimirSheet = lazy(() => import('./mimir/sheet-view').then((m) => ({ defaul
 const NornLayer = lazy(() => import('../norn/norn-layer').then((m) => ({ default: m.NornLayer })))
 // The G-code line view loads when it is first opened.
 const GcodePanel = lazy(() => import('./preview/gcode-panel').then((m) => ({ default: m.GcodePanel })))
+// Loaded with the jump to a strike, once a slice has one.
+const CollisionChip = lazy(() => import('./preview/collision-chip').then((m) => ({ default: m.CollisionChip })))
 
 
 /**
@@ -122,6 +125,7 @@ function ModelSize({ model }: { model: boolean }) {
 export function Studio() {
   const host = useHost()
   const hasPreview = useApp((s) => s.preview !== null)
+  const struck = useApp((s) => collisionsOf(s).some((c) => c.severity === 'hit'))
   const nornOn = useApp((s) => s.norn.pick !== null || s.norn.before !== null)
   const gcodeOn = useGcodeView((s) => s.panel)
   const plate = useApp((s) => s.plate)
@@ -300,10 +304,15 @@ export function Studio() {
             ) : null}
             {/* The view switch and the legend chip, one row in the top left corner under the look button, clear of
                 the plate toolbar; the legend's list opens below its chip. Nothing about the slice floats on its own. */}
-            {!cad && hasPreview && (layers || !phone) ? (
+            {!cad && hasPreview && (layers || !phone || struck) ? (
               <div className="hud-row legend-row" data-testid="legend-row">
                 {phone ? null : <SliceLookSwitch />}
                 {layers ? <Legend /> : null}
+                {struck ? (
+                  <Suspense fallback={null}>
+                    <CollisionChip />
+                  </Suspense>
+                ) : null}
               </div>
             ) : null}
           </div>

@@ -308,6 +308,17 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .vp:has(> .plate-tools-group) .legend-row > .slice-look .sx-seg > button { height: 30px; padding: 0 16px; }
 .vp:has(> .plate-tools-group) .legend-chip .sx-btn[data-size="sm"] { height: 30px; }
 .vp:has(> .plate-tools-group) .legend-chip .sx-btn[data-icon-only][data-size="sm"] { width: 30px; }
+/* The collisions chip: one lifted button after the legend chip, the strike in the hit color, a 28 px target (44 px on
+   touch). Its two labels share one cell, so stepping from the count to "Collision 1 of 2" never resizes it. */
+.collision-chip { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 4px 12px 4px 8px; border-radius: var(--r-md); color: var(--fg); font: var(--fw-medium) calc(13px * var(--text-scale)) var(--f-body); font-variant-numeric: tabular-nums; white-space: nowrap; cursor: pointer; }
+.collision-chip > .sx-ic { color: var(--red); flex: none; }
+.collision-chip:hover { background: var(--ink-3); }
+.collision-chip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.collision-chip-text { display: grid; }
+.collision-chip-text > span { grid-area: 1 / 1; visibility: hidden; }
+.collision-chip-text > span[data-on] { visibility: visible; }
+.vp:has(> .plate-tools-group) .legend-row > .collision-chip { min-height: 38px; }
+@media (pointer: coarse) { .collision-chip { min-height: 44px; } }
 /* Names in the body face and numbers in tabular figures (the number fields rule). Slots and markers share one set of
    columns: the color key, the name, then the value; a marker's switch ends the row. */
 .legend li { display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center; font: var(--fw-medium) calc(11.5px * var(--text-scale)) var(--f-body); font-variant-numeric: tabular-nums; color: var(--muted); }
@@ -1154,6 +1165,9 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .strikes b { font: var(--fw-semibold) calc(13px * var(--text-scale)) var(--f-body); color: inherit; display: block; }
 .strike-detail { display: block; margin: 2px 0 4px; font-size: calc(12px * var(--text-scale)); color: var(--muted); line-height: 1.45; }
 .strike-when { font-size: calc(11.5px * var(--text-scale)); color: var(--dim); font-variant-numeric: tabular-nums; }
+/* The part a hit strikes, in words, so the outline's color is never the only sign of it. */
+.strike-struck { display: block; margin: 0 0 4px; font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-body); color: var(--red); }
+.strike-pick[aria-pressed="true"] .strike-struck { color: inherit; }
 .strike-fixes-h { margin: 12px 0 6px; font: var(--fw-semibold) calc(11px * var(--text-scale)) var(--f-body); color: var(--dim); text-transform: none; }
 .strike-fixes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .strike-fixes li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }

@@ -804,6 +804,11 @@ export interface Viewport {
   setGcodeMarkers(data: Partial<Record<'wipes' | 'toolChanges' | 'pauses', Float32Array | null>>): void
   /** heimdall's strikes: where the machine would meet a printed part (bed frame, mm), drawn over everything. Null clears them. */
   setStrikes?(marks: readonly StrikeMark[] | null): void
+  /**
+   * heimdall's highlight of a picked strike: the plate objects it hits outlined in the hit color, drawn solid or as
+   * toolpaths, and the region struck (the strike marks' frame, mm) filled over everything. Null clears it.
+   */
+  setCollisionHighlight?(h: { outline: readonly string[]; box: { min: readonly [number, number, number]; max: readonly [number, number, number] } | null; focus?: { object: number | null; z: readonly [number, number] | null } | null } | null): void
   /** Show me's mark on the plate (bed frame, mm) with an optional area outlined, for a slice the safety check refused. Null clears it. */
   setSpot?(mark: StrikeMark | null, area?: readonly (readonly [number, number])[] | null): void
   /** heimdall's gantry: the beam over the moving head (null for none), and the strikes it runs through a part on. */

@@ -212,6 +212,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-clearance-warning` | The footer's by-object warning: objects closer than the clearance, or a tall one printing first, before a current slice |
 | `slice-clearance-select` | The warning's row: selects the closest pair (or the tall object) on the plate |
 | `collision-select` | A strike's row in the Collisions list: selects the parts it names, rings them on the bed and frames them when they are off screen; pressed while they are the selection |
+| `collision-said` | The Collisions list's polite live region: says which parts a picked strike selected, the one hit marked |
+| `collision-chip` | The collisions chip in the view's top row: counts the strikes and picks the next one, as its row does |
 | `slice-clearance-arrange` | Arrange on the warning: lays the plate out with the clearance between objects |
 | `slice-estimate-held` | The footer's quiet line when Auto slice holds a big plate's slice for Slice |
 | `danger-slice-print` | Print, the footer's main action (opens the Print sheet; the bridge refuses it) |
