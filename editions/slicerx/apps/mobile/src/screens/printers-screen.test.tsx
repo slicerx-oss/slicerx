@@ -69,3 +69,9 @@ it('shows skeleton rows while loading and a pairing prompt when empty', async ()
   await rerender(<PrintersScreen {...props({ printers: [], fleets: [] })} />)
   expect(screen.getByText('Pair a computer')).toBeTruthy()
 })
+
+it('shows the job stage on the tile', async () => {
+  const printers = PRINTERS.map((p) => (p.info.id === 'bay-1' ? { ...p, status: { ...p.status!, live: { stage: 'Heating the nozzle' } } } : p))
+  await render(<PrintersScreen {...props({ printers, now: NOW })} />)
+  expect(within(screen.getByTestId('printer-bay-1')).getByTestId('printer-job-stage')).toHaveTextContent('Heating the nozzle')
+})

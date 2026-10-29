@@ -13,7 +13,7 @@ import { Button, IconButton } from '../components/button'
 import { Hairline, Row, Screen, ScreenHeader, SectionLabel, Stat } from '../components/layout'
 import { ApprovalCard } from '../components/pilot/approval-card'
 import { LiveView } from '../components/printers/live-view'
-import { fmtEta, fmtLeft, Slots, StatePill, type PrinterView } from '../components/printers/printer-bits'
+import { fmtEta, fmtLeft, JobStage, Slots, StatePill, type PrinterView } from '../components/printers/printer-bits'
 import { ProgressBar } from '../components/status'
 import { Txt } from '../components/text'
 import { useApproval } from '../components/use-approval'
@@ -154,6 +154,7 @@ export function PrinterDetailScreen(p: PrinterDetailScreenProps) {
                 Ready for a print
               </Txt>
             ) : null}
+            <JobStage status={status} />
             {status.message ? (
               <Txt variant="caption" color={state === 'offline' ? t.color.dim : t.color.orange} testID="printer-message">
                 {status.message}
