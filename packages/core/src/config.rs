@@ -874,6 +874,10 @@ impl PrintConfig {
         } else {
             map
         };
+        // Per-extruder values ("50,nil" or ["50", "nil"]): a `nil` slot is unset and keeps what the settings had for
+        // that slot ([`fill_nil_slots`]).
+        let filled = fill_nil_slots(map, &self.raw);
+        let map = filled.as_ref().unwrap_or(map);
         let c = self;
         for (k, v) in map {
             // Never kept from a file: it runs programs or carries a credential.
@@ -881,7 +885,8 @@ impl PrintConfig {
                 c.raw.insert(k.clone(), v.clone());
             }
         }
-        let get = |k: &str| map.get(k);
+        // A value whose first slot is still `nil` leaves its setting as it was.
+        let get = |k: &str| map.get(k).filter(|v| !nil_first(v));
         macro_rules! float {
             ($key:ident) => {
                 if let Some(x) = get(stringify!($key)) {
@@ -935,14 +940,10 @@ impl PrintConfig {
         float!(gap_infill_speed);
         // Orca's `internal_bridge_speed` is a speed or a percent of `bridge_speed`, 150 percent by default.
         // Read from everything applied so far, so an override of either key keeps the rule.
-        c.internal_bridge_speed = match c.raw.get("internal_bridge_speed") {
+        c.internal_bridge_speed = match c.raw.get("internal_bridge_speed").filter(|v| !nil_first(v)) {
             Some(x) => {
                 let v = num(x).ok_or_else(|| bad("internal_bridge_speed"))?;
-                let percent = x.as_str().is_some_and(|t| t.trim().ends_with('%'))
-                    || x.as_array()
-                        .and_then(|a| a.first())
-                        .and_then(Value::as_str)
-                        .is_some_and(|t| t.trim().ends_with('%'));
+                let percent = first_text(x).is_some_and(|t| t.ends_with('%'));
                 if percent { c.bridge_speed * v / 100.0 } else { v }
             }
             None => c.bridge_speed * 1.5,
@@ -2198,16 +2199,8 @@ impl PrintConfig {
 
     /// A numeric setting from the raw map (a number or a numeric string, or the first entry of a list).
     pub fn raw_number(&self, key: &str, default: f64) -> f64 {
-        let v = match self.raw.get(key) {
-            Some(Value::Array(a)) => a.first(),
-            other => other,
-        };
-        match v {
-            Some(Value::Number(n)) => n.as_f64().unwrap_or(default),
-            // A percent ("80%") reads as its number.
-            Some(Value::String(t)) => t.trim().trim_end_matches('%').trim().parse().unwrap_or(default),
-            _ => default,
-        }
+        // A percent ("80%") reads as its number; a per-extruder value as its first slot (`nil` there is unset).
+        self.raw.get(key).and_then(num).unwrap_or(default)
     }
 
     /// Axis-aligned bed rectangle `(min_x, min_y, max_x, max_y)` in mm.
@@ -2663,14 +2656,7 @@ pub(crate) fn width(v: &Value, nozzle: f64) -> Option<f64> {
 
 /// [`width`] with the factor of the nozzle that a 0 stands for.
 fn width_auto(v: &Value, nozzle: f64, auto: f64) -> Option<f64> {
-    let percent = match v {
-        Value::String(s) => s.trim().ends_with('%'),
-        Value::Array(a) => a
-            .first()
-            .and_then(Value::as_str)
-            .is_some_and(|s| s.trim().ends_with('%')),
-        _ => false,
-    };
+    let percent = first_text(v).is_some_and(|s| s.ends_with('%'));
     let n = num(v)?;
     Some(if n == 0.0 {
         nozzle * auto
@@ -2686,8 +2672,8 @@ fn width_auto(v: &Value, nozzle: f64, auto: f64) -> Option<f64> {
 pub(crate) fn float_or_percent(v: &Value, base: f64) -> Option<f64> {
     match v {
         Value::Number(n) => n.as_f64(),
-        Value::String(s) => {
-            let t = s.trim();
+        Value::String(_) => {
+            let t = first_text(v)?;
             match t.strip_suffix('%') {
                 Some(p) => p.trim().parse::<f64>().ok().map(|p| p * 0.01 * base),
                 None => t.parse().ok(),
@@ -2698,22 +2684,110 @@ pub(crate) fn float_or_percent(v: &Value, base: f64) -> Option<f64> {
     }
 }
 
+/// A number, a numeric or percent string, or the first slot of a per-extruder value: a list, or the comma-separated
+/// string a project's object settings carry ("50,nil"). `nil` in that slot is no number.
 fn num(v: &Value) -> Option<f64> {
     match v {
         Value::Number(n) => n.as_f64(),
-        Value::String(s) => s.trim().trim_end_matches('%').trim().parse().ok(),
+        Value::String(_) => {
+            let t = first_text(v)?;
+            if t == "nil" {
+                return None;
+            }
+            t.trim_end_matches('%').trim().parse().ok()
+        }
         Value::Array(a) => a.first().and_then(num),
         _ => None,
     }
 }
 
-/// A list of numbers, a single number, or Orca's comma-separated string.
+/// A list of numbers, a single number, or Orca's comma-separated string. A `nil` entry after the first repeats the
+/// one before it.
 fn nums(v: &Value) -> Option<Vec<f64>> {
-    match v {
-        Value::Array(a) => a.iter().map(num).collect(),
-        Value::String(s) if s.contains(',') => s.split(',').map(|p| p.trim().parse().ok()).collect(),
-        other => num(other).map(|n| vec![n]),
+    let entries: Vec<Value> = match v {
+        Value::Array(a) => a.clone(),
+        Value::String(s) if s.contains(',') => s.split(',').map(|p| Value::String(p.to_owned())).collect(),
+        other => return num(other).map(|n| vec![n]),
+    };
+    let mut out: Vec<f64> = Vec::with_capacity(entries.len());
+    for e in &entries {
+        let n = match (num(e), out.last()) {
+            (Some(n), _) => n,
+            (None, Some(&prev)) if is_nil(e) => prev,
+            _ => return None,
+        };
+        out.push(n);
     }
+    Some(out)
+}
+
+/// The text of a value's first slot, trimmed: a string's part before its first comma, or a list's first entry.
+fn first_text(v: &Value) -> Option<&str> {
+    match v {
+        Value::String(s) => s.split(',').next().map(str::trim),
+        Value::Array(a) => a.first().and_then(Value::as_str).map(str::trim),
+        _ => None,
+    }
+}
+
+/// `nil`: a per-extruder slot that is not set.
+fn is_nil(v: &Value) -> bool {
+    v.as_str().is_some_and(|s| s.trim() == "nil")
+}
+
+/// The value's first slot is `nil` ("nil", "nil,60" or `["nil", ...]`): it sets nothing for a one-extruder printer.
+fn nil_first(v: &Value) -> bool {
+    first_text(v) == Some("nil")
+}
+
+/// The slots of a per-extruder number value that leaves some unset: a list, or a comma-separated string, whose
+/// entries are each a number (a percent too) or `nil`, with at least one `nil`. None for any other value.
+fn nil_slots(v: &Value) -> Option<Vec<Value>> {
+    let slots: Vec<Value> = match v {
+        Value::Array(a) => a.clone(),
+        Value::String(s) => s.split(',').map(|p| Value::String(p.trim().to_owned())).collect(),
+        _ => return None,
+    };
+    let numeric = |x: &Value| x.is_number() || num(x).is_some();
+    (slots.iter().any(is_nil) && slots.iter().all(|x| is_nil(x) || numeric(x))).then_some(slots)
+}
+
+/// `map` with each per-extruder value's `nil` slots filled from `before` (the settings it applies over): an object's
+/// "50,nil" over a profile's `["300", "300"]` reads `["50", "300"]`, as Bambu Studio's per-extruder overrides mean.
+/// A slot `before` has no value for stays `nil`. Such a value comes back as a list (a lone "nil" as the slot it
+/// takes). None when no value has a `nil` slot.
+fn fill_nil_slots(
+    map: &serde_json::Map<String, Value>,
+    before: &serde_json::Map<String, Value>,
+) -> Option<serde_json::Map<String, Value>> {
+    let mut out: Option<serde_json::Map<String, Value>> = None;
+    for (k, v) in map {
+        let Some(mut slots) = nil_slots(v) else { continue };
+        let prior: Vec<Value> = match before.get(k) {
+            Some(Value::Array(a)) => a.clone(),
+            Some(Value::String(s)) if s.contains(',') => {
+                s.split(',').map(|p| Value::String(p.trim().to_owned())).collect()
+            }
+            Some(other) => vec![other.clone()],
+            None => Vec::new(),
+        };
+        for (i, slot) in slots.iter_mut().enumerate() {
+            if let Some(p) = prior
+                .get(i)
+                .filter(|p| is_nil(slot) && !is_nil(p) && !p.is_null())
+            {
+                *slot = p.clone();
+            }
+        }
+        let value = match (v, slots.as_slice()) {
+            (Value::String(s), [one]) if !s.contains(',') => one.clone(),
+            _ => Value::Array(slots),
+        };
+        if &value != v {
+            out.get_or_insert_with(|| map.clone()).insert(k.clone(), value);
+        }
+    }
+    out
 }
 
 /// The points of a printable area as a config or a project's settings carry it: Orca's `"XxY"` texts or `[x, y]`
@@ -2803,6 +2877,72 @@ pub(crate) fn athena_spacing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn per_extruder_values_read_their_first_slot() {
+        use serde_json::json;
+        // A bare value, a list, and the comma-separated form of a project's object settings.
+        assert_eq!(num(&json!(50)), Some(50.0));
+        assert_eq!(num(&json!("50")), Some(50.0));
+        assert_eq!(num(&json!("50,nil")), Some(50.0));
+        assert_eq!(num(&json!("50, 60")), Some(50.0));
+        assert_eq!(num(&json!(["50", "nil"])), Some(50.0));
+        assert_eq!(num(&json!([50, 60])), Some(50.0));
+        assert_eq!(num(&json!("80%,nil")), Some(80.0));
+        // `nil` in the first slot is no number; it sets nothing.
+        assert_eq!(num(&json!("nil,60")), None);
+        assert_eq!(num(&json!("nil")), None);
+        assert!(nil_first(&json!("nil,60")) && nil_first(&json!(["nil", "60"])));
+        assert!(!nil_first(&json!("50,nil")) && !nil_first(&json!(50)));
+        assert_eq!(nums(&json!("220,nil")), Some(vec![220.0, 220.0]));
+        assert_eq!(nums(&json!(["0.8", "nil"])), Some(vec![0.8, 0.8]));
+        assert!((float_or_percent(&json!("50%,nil"), 4.0).unwrap_or(0.0) - 2.0).abs() < 1e-9);
+        assert!((width(&json!("110%,nil"), 0.4).unwrap_or(0.0) - 0.44).abs() < 1e-9);
+        // Any other text is still no number.
+        assert_eq!(num(&json!("fast,nil")), None);
+    }
+
+    #[test]
+    fn per_extruder_settings_apply_their_slot_and_nil_keeps_the_setting() {
+        use serde_json::json;
+        let mut c = PrintConfig::from_value(&json!({
+            "inner_wall_speed": ["300", "300"],
+            "support_speed": "150",
+            "outer_wall_line_width": "0.42"
+        }))
+        .unwrap();
+        c.apply_value(&json!({
+            "inner_wall_speed": "50,nil",
+            "sparse_infill_speed": "60,nil",
+            "internal_solid_infill_speed": ["70", "nil"],
+            "top_surface_speed": "80,nil",
+            "gap_infill_speed": "90,nil",
+            "support_speed": "40,nil",
+            "wall_loops": "3,nil",
+            "outer_wall_line_width": "110%,nil"
+        }))
+        .unwrap();
+        assert!((c.inner_wall_speed - 50.0).abs() < 1e-9);
+        assert!((c.sparse_infill_speed - 60.0).abs() < 1e-9);
+        assert!((c.internal_solid_infill_speed - 70.0).abs() < 1e-9);
+        assert!((c.top_surface_speed - 80.0).abs() < 1e-9);
+        assert!((c.gap_infill_speed - 90.0).abs() < 1e-9);
+        assert!((c.support.speed - 40.0).abs() < 1e-9);
+        assert_eq!(c.wall_loops, 3);
+        assert!((c.raw_number("support_speed", 0.0) - 40.0).abs() < 1e-9);
+        // The second slot that was nil takes the profile's second value.
+        assert_eq!(c.raw["inner_wall_speed"], json!(["50", "300"]));
+        // A nil first slot keeps what the settings had, here and in the raw map.
+        c.apply_value(&json!({ "inner_wall_speed": "nil,60", "support_speed": "nil" }))
+            .unwrap();
+        assert!((c.inner_wall_speed - 50.0).abs() < 1e-9);
+        assert!((c.support.speed - 40.0).abs() < 1e-9);
+        assert_eq!(c.raw["inner_wall_speed"], json!(["50", "60"]));
+        assert!((c.raw_number("support_speed", 0.0) - 40.0).abs() < 1e-9);
+        // With nothing under it a nil first slot leaves the default.
+        let d = PrintConfig::from_value(&json!({ "travel_speed": "nil,400" })).unwrap();
+        assert!((d.travel_speed - PrintConfig::default().travel_speed).abs() < 1e-9);
+    }
 
     #[test]
     fn bambu_auto_sentinels_parse() {

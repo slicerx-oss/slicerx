@@ -1119,14 +1119,10 @@ impl ConfigReport {
                 .map(|i| format!("{} ({}: {})", i.key, i.value, i.reason))
                 .collect();
             out.push(format!(
-                "{} setting{} had a value this engine cannot use, so {} the default: {}",
+                "{} setting{} had a value this engine cannot use and {} skipped: {}",
                 self.invalid.len(),
                 if self.invalid.len() == 1 { "" } else { "s" },
-                if self.invalid.len() == 1 {
-                    "it keeps"
-                } else {
-                    "they keep"
-                },
+                if self.invalid.len() == 1 { "was" } else { "were" },
                 names_capped(&named)
             ));
         }
@@ -1364,15 +1360,19 @@ pub fn request_config_report(
             .collect();
         report.not_applied.sort();
     }
+    // The objects' own settings go over the config the same way: a value the engine cannot use leaves that setting
+    // as the config has it and is listed, so a host never loses a slice to one object value.
+    if let Some(over) = object_settings(req) {
+        let invalid = config.apply_value_lenient(&over)?;
+        if listed {
+            report.invalid.extend(invalid);
+        }
+    }
     if strict && !report.is_empty() {
         return Err(Error::Config {
             key: "options.strict",
             reason: report.lines().join("; "),
         });
-    }
-    if let Some(over) = object_settings(req) {
-        config.apply_value(&over)?;
-        config.check()?;
     }
     if let Some(f) = &req.options.flavor {
         config.gcode_flavor = GcodeFlavor::parse(f).ok_or_else(|| Error::Config {
@@ -1912,8 +1912,8 @@ fn with_lone_settings(
     lone_settings: &serde_json::Value,
 ) -> Result<(PrintConfig, Vec<crate::preflight::Issue>)> {
     if !lone_settings.is_null() {
-        config.apply_value(lone_settings)?;
-        config.check()?;
+        // As the request's own settings go in: a value the engine cannot use leaves that setting as the config has it.
+        config.apply_value_lenient(lone_settings)?;
         let limits = config.limits;
         let issues = crate::preflight::clamp_config(&mut config, &limits);
         if crate::preflight::blocks(&issues) {

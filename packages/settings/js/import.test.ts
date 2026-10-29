@@ -224,3 +224,17 @@ describe("Bambu Studio's -1 for auto", () => {
     expect(r.invalidKeys).toEqual([])
   })
 })
+
+describe('per-extruder values of a number setting', () => {
+  it("read as the first extruder's value, and a nil there leaves the setting unset", () => {
+    const r = importFlat({ inner_wall_speed: '50,nil', top_surface_speed: ['60', 'nil'], sparse_infill_speed: 'nil,70', sparse_infill_density: '20%,nil', wall_loops: '3,nil' })
+    // Speeds are per-extruder lists here: the unset second entry reads as the first.
+    expect(r.config['inner_wall_speed']).toEqual([50, 50])
+    expect(r.config['top_surface_speed']).toEqual([60, 60])
+    expect(r.config['sparse_infill_density']).toBe(20)
+    expect(r.config['wall_loops']).toBe(3)
+    expect('sparse_infill_speed' in r.config).toBe(false)
+    expect(r.nilKeys).toEqual(['sparse_infill_speed'])
+    expect(r.invalidKeys).toEqual([])
+  })
+})
