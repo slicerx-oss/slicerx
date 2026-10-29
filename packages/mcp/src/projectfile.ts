@@ -149,6 +149,23 @@ function partSlots(text: string | undefined): number[] {
   return used.size ? [...used].sort((a, b) => a - b) : [1]
 }
 
+/**
+ * The filaments a project's tool changes print in (Metadata/custom_gcode_per_layer.xml type 2 under the one-filament
+ * mode, the only one they apply in), as the app counts them among the plate's filaments (slots.ts toolChangeSlots).
+ */
+function toolChangeSlots(text: string | undefined): number[] {
+  if (!text) return []
+  const out: number[] = []
+  for (const plate of parseXml(text).children.flatMap((c) => (c.name === 'plate' ? [c] : c.children.filter((p) => p.name === 'plate')))) {
+    if (plate.children.find((c) => c.name === 'mode')?.attrs['value']?.trim() !== 'MultiAsSingle') continue
+    for (const l of plate.children) {
+      const n = Number(l.attrs['extruder'])
+      if (l.name === 'layer' && l.attrs['type']?.trim() === '2' && Number.isInteger(n) && n >= 1 && n <= 64) out.push(n)
+    }
+  }
+  return out
+}
+
 /** Keys a project or shared preset may never set: post-processing scripts and credentials (sx-core preflight::is_never_imported). */
 export function isNeverImported(key: string): boolean {
   const k = key.toLowerCase()
@@ -350,7 +367,7 @@ export function readProjectFile(path: string): ProjectRead {
   // The app reads a PrusaSlicer project's settings mapped to Orca's keys, and another project's with the keys its app
   // reads its own way; our own .sx3mf projects open on the current printer as they are.
   const own = /\.sx3mf$/i.test(name)
-  const used = partSlots(modelSettings ?? zip.text('Metadata/Slic3r_PE_model.config'))
+  const used = [...new Set([...partSlots(modelSettings ?? zip.text('Metadata/Slic3r_PE_model.config')), ...toolChangeSlots(zip.text('Metadata/custom_gcode_per_layer.xml'))])].sort((a, b) => a - b)
   const top = Math.max(...used)
   const opened = own || !hasSettings ? undefined : prusa ? { from: 'prusaslicer' as const, settings: prusaProjectSettings(prusaText!).values, slots: top, used } : read.raw ? { from: 'orca' as const, settings: withBambuMissingKeys(read.raw, source), slots: top, used } : undefined
 

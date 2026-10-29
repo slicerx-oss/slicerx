@@ -3,7 +3,7 @@
 // What a project paints or marks on its own, the brim ears, the pause and the tool change at a height, comes through a
 // slice of the file.
 import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { writeZip } from '../src/zip'
 import { connect, data, noSx, sxBin, sxTimeout } from './helpers'
@@ -61,5 +61,19 @@ describe('a project with a tool change at a height', () => {
       tools: [],
       notes: ['Tool change at 5 mm to filament 2 skipped: the project saved it for a plate that prints several filaments.'],
     })
+  })
+})
+
+describe('a Bambu Lab project with a tool change to a filament its parts do not use', () => {
+  it.skipIf(noSx())('slices with that filament\'s settings, as the app opens it', { timeout: sxTimeout }, async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    // The box prints on filament 2 and the change at 5 mm goes to filament 4 (packages/core/cli/tests/fixtures).
+    const model = join(h.dir, 'a1-cc.3mf')
+    writeFileSync(model, readFileSync(resolve(__dirname, '../../core/cli/tests/fixtures/layer-tool-change/a1-cc.3mf')))
+    const r = await h.call('slicerx_slice_file', { model, plate: 1, profiles: ['machine:bambu-a1'], project_settings: true })
+    expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+    const out = data<{ gcode_path: string }>(r).gcode_path
+    const request = JSON.parse(readFileSync(join(dirname(out), 'request.json'), 'utf8')) as { config: Record<string, unknown> }
+    expect((request.config['filament_colour'] as unknown[]).length).toBe(4)
   })
 })
