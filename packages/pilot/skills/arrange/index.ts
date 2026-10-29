@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Packs copies onto plates by bed size, one plate per chosen printer.
 import { z } from 'zod'
-import { leftOffWords, type ProjectPlate } from '../../src/project'
+import { leftOffWords, movedWords, type ProjectPlate } from '../../src/project'
 import type { ToolShared } from '../../src/shared'
 import { defineSkill } from '../../src/tool'
 import { buildVolume, printerVolume, pickObject, round, type BuildVolume } from '../common'
@@ -52,10 +52,10 @@ function bedArea(v: BuildVolume): number {
 export function createArrange(shared: ToolShared) {
   return defineSkill({
     name: 'arrange',
-    version: '1.8.0',
+    version: '1.9.0',
     permission: 'slice',
     description:
-      'Pack copies of an object onto plates. It keeps room for brims and skirts, clear of excluded areas and the prime tower. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. Changes only the project.',
+      'Pack copies of an object onto plates, around the other objects, which keep their places. It keeps room for brims and skirts, clear of excluded areas and the prime tower. Copies with no room around the others go to new plates, and moved lists them by object id and plate; no object is taken off its plate. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. Changes only the project.',
     input: z.object({
       objectId: z.string().optional().describe('Object id or name; defaults to the first object'),
       count: z.number().int().min(1).max(500).optional().describe('Total copies'),
@@ -127,6 +127,30 @@ export function createArrange(shared: ToolShared) {
         plates.push(plate)
       }
       if (left > 0) return { ok: false, summary: `Only ${count - left} of ${count} fit on ${targets.length} plates. Add plates or printers.`, output: { placed: count - left, count } }
+      if (ctx.project?.arrangeObject) {
+        // The other objects stay where they are; copies with no room around them go to new plates.
+        const r = await ctx.project.arrangeObject(obj.id, plates.map((p) => ({ index: p.index, copies: p.items[0]?.copies ?? 0, ...(p.printerId ? { printerId: p.printerId } : {}) })), spacing)
+        // Old slices describe plates that no longer exist.
+        shared.slices.clear()
+        const on = ctx.project.plates().flatMap((p) => p.items.filter((it) => it.objectId === obj.id).map((it) => ({ plate: p.index, printerId: p.printerId, copies: it.copies })))
+        const moved = r.moved.map((m) => ({ objectId: m.objectId, copies: m.copies, fromPlate: m.from, toPlate: m.to }))
+        const missed = leftOffWords(r)
+        const said = movedWords(r.moved)
+        if (missed) return { ok: false, summary: `${said ? `${said} ` : ''}${missed} The parts that fit are on the plates. To fit the rest, scale them down, cut them, or add a larger printer or more plates.`, output: { leftOff: r.leftOff, notAdded: r.notAdded ?? 0, moved } }
+        const label = (index: number): string => targets[index - 1]?.label ?? targets[0]?.label ?? ''
+        const vol = (index: number): BuildVolume | undefined => (targets[index - 1] ?? targets[0])?.vol
+        const rows = on.map((p) => {
+          const v = vol(p.plate)
+          return [String(p.plate), label(p.plate), String(p.copies), v ? `${Math.round(((p.copies * ox * oy) / bedArea(v)) * 100)}%` : '']
+        })
+        const per = on.map((p) => p.copies)
+        const head = per.every((n) => n === per[0]) ? `${per[0]} per plate on ${on.length} plate${on.length === 1 ? '' : 's'}` : `${count} copies on ${on.length} plates (${per.join(', ')})`
+        return {
+          summary: said ? `${head}. ${said}` : head,
+          output: { plates: on.map((p, k) => ({ plate: p.plate, printerId: p.printerId, copies: p.copies, bedUse: rows[k]?.[3] })), moved },
+          display: [{ kind: 'table', head: ['plate', 'printer', 'copies', 'bed use'], rows }],
+        }
+      }
       const laid = ctx.project?.setPlates(plates)
       const nested = await ctx.project?.arrangePlates?.(plates.map((p) => p.index), spacing)
       const set = laid || nested ? { leftOff: (laid ? laid.leftOff : 0) + (nested?.leftOff ?? 0), notAdded: (laid ? laid.notAdded ?? 0 : 0) + (nested?.notAdded ?? 0) } : undefined

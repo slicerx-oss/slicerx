@@ -4,7 +4,7 @@
 // memory by the server. mimir's skills (orient, arrange, cut, slice,
 // estimate) read and change it through the PilotProject interface.
 import type { HeightRange, MeshPart, PilotMachine, Plate, PlateObject, PrintConfig, SettingValue, VolumeRole } from '@slicerx/contracts'
-import { rotationMatrix, type PilotProject, type PlatesLeftOff, type ProjectObject, type ProjectPlate, type ProjectVolume as PilotVolume, type VolumeShape, type VolumeSpec } from '@slicerx/pilot'
+import { rotationMatrix, type ArrangedObject, type MovedCopies, type ObjectPlan, type PilotProject, type PlatesLeftOff, type ProjectObject, type ProjectPlate, type ProjectVolume as PilotVolume, type VolumeShape, type VolumeSpec } from '@slicerx/pilot'
 import type { EngineCall } from '@slicerx/cad-history'
 import type { DataStore } from './data'
 import type { ProfileCatalog } from './profiles'
@@ -59,6 +59,15 @@ interface Entry {
   /** Left out of the print, as in the app: it keeps its place on the plate, and the slice leaves it out. */
   printable?: false
 }
+
+/** Where a copy sits now: its move in X and Y, and whether its footprint is on the bed. */
+interface Sitting {
+  at: [number, number]
+  onBed: boolean
+}
+
+/** The gap a copy that duplicate places around others keeps, mm: the same as slicerx_arrange's default. */
+const DUPLICATE_GAP_MM = 6
 
 /** Where one copy sits on its plate. */
 export interface Placement {
@@ -345,72 +354,360 @@ export class McpProject implements PilotProject {
    * objects' boxes (boxPlate), as the app's arrange does then; the rows never stand in for an arranged plate.
    */
   async arrangePlates(plateIndexes: readonly number[], spacing: number): Promise<PlatesLeftOff | undefined> {
-    const geom = this.geom
     let leftOff = 0
     for (const index of plateIndexes) {
       this.nested.delete(index)
-      const plate = this.layout.find((p) => p.index === index)
-      if (!plate) continue
-      const cfg = this.config(index)
-      const moving: NestObject[] = []
-      const fixed: NestObject[] = []
-      const entries: Entry[] = []
-      for (const item of plate.items) {
-        const e = this.entries.get(item.objectId)
-        if (!e?.meshId) continue
-        entries.push(e)
-        const o = this.nestObject(e as Entry & { meshId: string }, cfg, item.copies)
-        if (!e.position) {
-          moving.push(o)
-          continue
-        }
-        const [w, d] = o.size
-        for (let c = 0; c < item.copies; c++) fixed.push({ ...o, id: `${item.objectId}-${c + 1}`, copies: 1, at: [e.position[0] - w / 2 + c * (w + GAP_MM) - o.min[0], e.position[1] - d / 2 - o.min[1]] })
-      }
-      const wanted = moving.reduce((n, o) => n + o.copies, 0)
-      if (wanted === 0) continue
-      const request = { bed: this.bed(index), config: cfg, tools: this.toolsOf(cfg, entries), gapMm: spacing, moving, fixed, center: fixed.length === 0 }
-      // Copies by number: each object's placements in the order of their copy.
-      const layout = (r: { placements: { id: string; copy: number; offset: [number, number] }[] }) => {
-        const at = new Map<string, [number, number]>()
-        for (const o of moving) {
-          const mine = r.placements.filter((p) => p.id === o.id).sort((a, b) => a.copy - b.copy)
-          mine.forEach((p, k) => at.set(`${o.id}-${k + 1}`, p.offset))
-        }
-        return at
-      }
-      // The nest on true outlines, or the boxes when there is no engine or it fails.
-      let boxes = !geom
-      let at: Map<string, [number, number]> | undefined
-      if (geom) {
-        try {
-          at = layout(await nestPlate(geom, request, this.feet))
-        } catch {
-          boxes = true
-        }
-      }
-      at ??= layout(boxPlate(request))
-      if (at.size < wanted) {
-        leftOff += wanted - at.size
-        continue
-      }
-      this.nested.set(index, { key: this.nestKey(index), at })
-      // By object, copies taller than the gantry rod need lanes of their own when the nest left one under the gantry.
-      const tall = [...moving, ...fixed].filter((o) => overRod(o.size[2], cfg)).reduce((n, o) => n + o.copies, 0)
-      const problems = (b: ByObjectReadback | null) => (b ? b.pairs.length + b.tall.length : 0)
-      const before = this.byObject(index)
-      if (tall < 2 || !before || before.tall.length === 0) continue
-      try {
-        const laned = boxes || !geom ? boxInLanes(request) : await nestInLanes(geom, request, this.feet)
-        const lanes = laned ? layout(laned) : undefined
-        if (!lanes || lanes.size < wanted) continue
-        this.nested.set(index, { key: this.nestKey(index), at: lanes })
-        if (problems(this.byObject(index)) >= problems(before)) this.nested.set(index, { key: this.nestKey(index), at })
-      } catch {
-        // The plain layout stays.
-      }
+      const r = await this.nestPlan(index, spacing, new Map())
+      for (const n of r?.left.values() ?? []) leftOff += n
     }
     return leftOff > 0 ? { leftOff } : undefined
+  }
+
+  /**
+   * Arranges one object's copies around the other objects (slicerx_arrange): `copies` on each plate of the plan, the
+   * other objects there staying where they are, as fixed obstacles. An object of theirs that hangs past the bed's edge
+   * is placed too, unless it is locked or no empty bed holds it. Copies with no room go to new plates after the last,
+   * with the plate's printer and settings, as the app's Arrange moves them. The object leaves the plates the plan does
+   * not name, and a plate that leaves empty goes; every other object keeps its plate and its place.
+   */
+  async arrangeObject(objectId: string, plan: readonly ObjectPlan[], spacing: number): Promise<ArrangedObject> {
+    const e = unlocked(this.entry(objectId))
+    const id = e.obj.id
+    const before = new Map(this.layout.map((p) => [p.index, this.sitting(p.index)]))
+    const held = new Set(this.layout.filter((p) => p.items.some((i) => i.objectId === id)).map((p) => p.index))
+    for (const p of this.layout) p.items = p.items.filter((i) => i.objectId !== id)
+    const targets = new Set(plan.map((t) => t.index))
+    // The other objects on a plate the object left keep their places, and a plate it leaves empty goes. The plan's
+    // plates are the first ones, so their numbers stay.
+    for (const index of held) if (!targets.has(index)) this.keepPlaces(index, before.get(index))
+    for (const index of [...held].sort((a, b) => b - a)) {
+      const plate = this.layout.find((p) => p.index === index)
+      if (plate && !targets.has(index) && plate.items.length === 0) this.dropPlate(index)
+    }
+    for (const t of [...plan].sort((a, b) => a.index - b.index)) {
+      let plate = this.layout.find((p) => p.index === t.index)
+      if (!plate) {
+        plate = { index: t.index, items: [] }
+        this.layout.push(plate)
+        this.layout.sort((a, b) => a.index - b.index)
+      }
+      if (t.printerId) plate.printerId = t.printerId
+      plate.items.unshift({ objectId: id, copies: t.copies })
+    }
+    const moved: MovedCopies[] = []
+    let leftOff = 0
+    for (const t of [...plan].sort((a, b) => a.index - b.index)) {
+      const plate = this.layout.find((p) => p.index === t.index)
+      if (!plate) continue
+      const sits = before.get(t.index) ?? new Map<string, Sitting>()
+      const pins = new Map<string, [number, number]>()
+      for (const item of plate.items) {
+        if (item.objectId === id) continue
+        const other = this.entries.get(item.objectId)
+        if (!other?.meshId || other.position) continue
+        const copies = Array.from({ length: item.copies }, (_, c) => [`${item.objectId}-${c + 1}`, sits.get(`${item.objectId}-${c + 1}`)] as const)
+        // A copy past the edge moves, unless it is locked or too large for any bed: then it stays where it was.
+        const stays = other.locked || (copies.some(([, x]) => x && !x.onBed) && !(await this.fitsEmpty(other as Entry & { meshId: string }, t.index, spacing)))
+        for (const [copyId, x] of copies) if (x && (x.onBed || stays)) pins.set(copyId, x.at)
+      }
+      const r = await this.nestPlan(t.index, spacing, pins)
+      if (!r || r.left.size === 0) continue
+      this.commitNest(t.index, r.at, r.left)
+      const o = await this.toNewPlates(t.index, r.left, spacing)
+      moved.push(...o.moved)
+      leftOff += o.stuck
+    }
+    return { leftOff, moved }
+  }
+
+  /**
+   * Duplicates an object (slicerx_project_duplicate): each copy a new object, on the plates the object is on, in the
+   * rows while they fit the bed, else around what is there. A copy with no room goes to the last plate when it comes
+   * after, has the same printer and settings and has room, else to a new plate; it never goes past the bed's edge. An
+   * object no empty plate holds is refused before any copy is made.
+   */
+  async duplicate(objectId: string, count: number, spacing = DUPLICATE_GAP_MM): Promise<{ ids: string[]; moved: { objectId: string; from: number; to: number }[] }> {
+    const e = this.entry(objectId)
+    const homes = this.layout.filter((p) => p.items.some((i) => i.objectId === e.obj.id)).map((p) => p.index)
+    for (const h of homes) {
+      if (await this.fitsEmpty(e, h, spacing)) continue
+      const bed = this.bed(h)
+      throw new ToolInputError(`${e.obj.name} has no room even on an empty plate (${round2(e.obj.bboxMm[0])} x ${round2(e.obj.bboxMm[1])} mm with its brim and skirt, on a ${round2(bed.widthMm)} x ${round2(bed.depthMm)} mm bed), so no copy was added. Scale it down or cut it first.`, 'invalid_input', { reason: 'no_room', object: e.obj.id })
+    }
+    const ids: string[] = []
+    const moved: { objectId: string; from: number; to: number }[] = []
+    for (let k = 0; k < count; k++) {
+      const id = `obj-${this.nextId++}`
+      const copy: Entry = { obj: { ...e.obj, id }, meshId: e.meshId }
+      if (e.parts !== undefined) copy.parts = e.parts
+      if (e.rotate) copy.rotate = [...e.rotate]
+      if (e.scale) copy.scale = [...e.scale]
+      if (e.settings) copy.settings = { ...e.settings }
+      if (e.volumes) copy.volumes = e.volumes.map((v) => ({ ...v, id: `vol-${this.nextVolume++}`, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
+      this.entries.set(id, copy)
+      for (const h of homes) {
+        if (await this.placeOn(h, id, spacing)) continue
+        moved.push({ objectId: id, from: h, to: await this.overflowOne(h, id, spacing) })
+      }
+      ids.push(id)
+    }
+    this.ranges = this.ranges.map((r) => (r.objects?.includes(e.obj.id) ? { ...r, objects: [...r.objects, ...ids] } : r))
+    return { ids, moved }
+  }
+
+  /** Where each copy of a plate sits now, by plate object id: its move in X and Y, and whether its footprint is on the bed. */
+  private sitting(plateIndex: number): Map<string, Sitting> {
+    const out = new Map<string, Sitting>()
+    let laid: { objects: PlateObject[]; placements: Placement[] }
+    try {
+      laid = this.layoutPlate(plateIndex)
+    } catch {
+      return out
+    }
+    const bed = this.bed(plateIndex)
+    const tol = 0.02
+    laid.objects.forEach((o, k) => {
+      const p = laid.placements[k]
+      if (!p) return
+      const [w, d] = p.sizeMm
+      const [cx, cy] = p.centerMm
+      const onBed = !p.offBed && cx - w / 2 >= bed.x0 - tol && cy - d / 2 >= bed.y0 - tol && cx + w / 2 <= bed.x0 + bed.widthMm + tol && cy + d / 2 <= bed.y0 + bed.depthMm + tol
+      out.set(o.id, { at: [o.transform[12] ?? 0, o.transform[13] ?? 0], onBed })
+    })
+    return out
+  }
+
+  /** Keeps the copies in the rows of a plate where they sat (`was`), when every one of them has a place there. */
+  private keepPlaces(plateIndex: number, was: ReadonlyMap<string, Sitting> | undefined): void {
+    const plate = this.layout.find((p) => p.index === plateIndex)
+    if (!plate || !was) return
+    const at = new Map<string, [number, number]>()
+    for (const item of plate.items) {
+      const e = this.entries.get(item.objectId)
+      if (!e?.meshId || e.position) continue
+      for (let c = 1; c <= item.copies; c++) {
+        const s = was.get(`${item.objectId}-${c}`)
+        if (!s) return
+        at.set(`${item.objectId}-${c}`, s.at)
+      }
+    }
+    if (at.size > 0) this.nested.set(plateIndex, { key: this.nestKey(plateIndex), at })
+  }
+
+  /** Takes an empty plate out; the plates after it move up one, with their layouts. */
+  private dropPlate(index: number): void {
+    this.layout = this.layout.filter((p) => p.index !== index).map((p) => (p.index > index ? { ...p, index: p.index - 1 } : p))
+    const shifted = [...this.nested].filter(([i]) => i !== index).map(([i, n]) => [i > index ? i - 1 : i, n] as const)
+    this.nested.clear()
+    for (const [i, n] of shifted) this.nested.set(i, n)
+  }
+
+  /** Whether one copy of the object has room on the plate when it is empty: its outline, brim and skirt inside the bed. */
+  private async fitsEmpty(e: Entry & { meshId: string }, plateIndex: number, spacing: number): Promise<boolean> {
+    const cfg = this.config(plateIndex)
+    const plate = { bed: this.bed(plateIndex), config: cfg, tools: this.toolsOf(cfg, [e]), gapMm: spacing, fixed: [] }
+    const o = this.nestObject(e, cfg, 1)
+    if (this.geom) {
+      try {
+        return (await fillCount(this.geom, plate, o, 1, this.feet)) >= 1
+      } catch {
+        // The engine failed: the box, as arrange then places it.
+      }
+    }
+    return boxFillCount(plate, o, 1) >= 1
+  }
+
+  /**
+   * Puts one copy of a new object on a plate, clear of the bed's edge: in the rows when the plate is in rows and they
+   * still fit the bed, else around the copies already there, which stay where they are. False, with the plate as it
+   * was, when there is no room.
+   */
+  private async placeOn(plateIndex: number, objectId: string, spacing: number): Promise<boolean> {
+    const plate = this.layout.find((p) => p.index === plateIndex)
+    if (!plate) return false
+    const nest = this.nested.get(plateIndex)
+    const arranged = nest !== undefined && nest.key === this.nestKey(plateIndex)
+    const now = this.sitting(plateIndex)
+    plate.items.push({ objectId, copies: 1 })
+    if (!arranged && [...this.sitting(plateIndex).values()].every((x) => x.onBed)) return true
+    const pins = new Map([...now].map(([id, x]) => [id, x.at] as [string, [number, number]]))
+    const r = await this.nestPlan(plateIndex, spacing, pins)
+    if (r && r.left.size === 0) return true
+    plate.items = plate.items.filter((i) => i.objectId !== objectId)
+    return false
+  }
+
+  /**
+   * Where a copy with no room on plate `from` goes: the last plate when it comes after `from`, has the same printer and
+   * settings and has room, else a new plate after the last with `from`'s printer and settings. Returns its number.
+   */
+  private async overflowOne(from: number, objectId: string, spacing: number): Promise<number> {
+    const src = this.layout.find((p) => p.index === from)
+    const last = this.layout[this.layout.length - 1]
+    if (last && src && last.index > from && last.printerId === src.printerId && JSON.stringify(last.overrides ?? {}) === JSON.stringify(src.overrides ?? {})) {
+      if (await this.placeOn(last.index, objectId, spacing)) return last.index
+    }
+    const index = this.newPlateLike(from)
+    // An empty plate holds it (duplicate checked); the rows set it in the middle.
+    if (!(await this.placeOn(index, objectId, spacing))) this.layout.find((p) => p.index === index)?.items.push({ objectId, copies: 1 })
+    return index
+  }
+
+  /** A new plate after the last, with plate `from`'s printer and settings. Returns its number. */
+  private newPlateLike(from: number): number {
+    const src = this.layout.find((p) => p.index === from)
+    const index = this.addPlate()
+    const plate = this.layout.find((p) => p.index === index)
+    if (plate && src?.printerId) plate.printerId = src.printerId
+    if (plate && src?.overrides) plate.overrides = { ...src.overrides }
+    return index
+  }
+
+  /**
+   * Copies with no room on plate `from` (count by object) go to new plates after the last, as many on each as fit,
+   * as the app's Arrange moves them. Copies no empty plate holds stay on the last new plate, and count as stuck.
+   */
+  private async toNewPlates(from: number, left: ReadonlyMap<string, number>, spacing: number): Promise<{ moved: MovedCopies[]; stuck: number }> {
+    const moved: MovedCopies[] = []
+    let rest = new Map(left)
+    while (rest.size > 0) {
+      const index = this.newPlateLike(from)
+      const plate = this.layout.find((p) => p.index === index)!
+      for (const [objectId, copies] of rest) plate.items.push({ objectId, copies })
+      const r = await this.nestPlan(index, spacing, new Map())
+      const now = r?.left ?? new Map<string, number>()
+      const placed = [...rest].map(([objectId, n]) => [objectId, n - (now.get(objectId) ?? 0)] as const).filter(([, n]) => n > 0)
+      if (placed.length === 0) {
+        // Nothing fits even an empty bed: they stay here, in the rows, and the result says so.
+        for (const [objectId, copies] of rest) moved.push({ objectId, copies, from, to: index })
+        return { moved, stuck: [...rest.values()].reduce((a, b) => a + b, 0) }
+      }
+      if (r && now.size > 0) this.commitNest(index, r.at, now)
+      for (const [objectId, copies] of placed) moved.push({ objectId, copies, from, to: index })
+      rest = new Map(now)
+    }
+    return { moved, stuck: 0 }
+  }
+
+  /**
+   * Keeps a nest that left copies over: they come off the plate (their object keeps the copies placed, renumbered in
+   * order), and the plate holds the layout of the rest.
+   */
+  private commitNest(plateIndex: number, at: ReadonlyMap<string, [number, number]>, left: ReadonlyMap<string, number>): void {
+    const plate = this.layout.find((p) => p.index === plateIndex)
+    if (!plate) return
+    const kept = new Map<string, [number, number]>()
+    for (const item of plate.items) {
+      let n = 0
+      for (let c = 1; c <= item.copies; c++) {
+        const to = at.get(`${item.objectId}-${c}`)
+        if (!to) continue
+        n++
+        kept.set(`${item.objectId}-${n}`, to)
+      }
+      item.copies -= left.get(item.objectId) ?? 0
+    }
+    plate.items = plate.items.filter((i) => i.copies > 0)
+    this.nested.set(plateIndex, { key: this.nestKey(plateIndex), at: kept })
+  }
+
+  /**
+   * Nests one plate: every copy in the rows that `pins` does not hold moves, around the copies a client placed and the
+   * ones `pins` holds where they are (their move in X and Y). When every copy finds room the plate keeps the layout
+   * (by object, with lanes for copies taller than the gantry rod when that clears more); otherwise the plate is left
+   * as it was. Returns every copy's move by plate object id and how many copies of each moving object found no room;
+   * undefined when nothing moves.
+   */
+  private async nestPlan(index: number, spacing: number, pins: ReadonlyMap<string, readonly [number, number]>): Promise<{ at: Map<string, [number, number]>; left: Map<string, number> } | undefined> {
+    const geom = this.geom
+    const plate = this.layout.find((p) => p.index === index)
+    if (!plate) return undefined
+    const cfg = this.config(index)
+    const moving: NestObject[] = []
+    const fixed: NestObject[] = []
+    const entries: Entry[] = []
+    // The copy numbers of each moving object, in order, and the copies pins hold.
+    const free = new Map<string, number[]>()
+    const pinned = new Map<string, [number, number]>()
+    for (const item of plate.items) {
+      const e = this.entries.get(item.objectId)
+      if (!e?.meshId) continue
+      entries.push(e)
+      const o = this.nestObject(e as Entry & { meshId: string }, cfg, item.copies)
+      if (e.position) {
+        const [w, d] = o.size
+        for (let c = 0; c < item.copies; c++) fixed.push({ ...o, id: `${item.objectId}-${c + 1}`, copies: 1, at: [e.position[0] - w / 2 + c * (w + GAP_MM) - o.min[0], e.position[1] - d / 2 - o.min[1]] })
+        continue
+      }
+      const mine: number[] = []
+      for (let c = 1; c <= item.copies; c++) {
+        const id = `${item.objectId}-${c}`
+        const at = pins.get(id)
+        if (!at) {
+          mine.push(c)
+          continue
+        }
+        pinned.set(id, [at[0], at[1]])
+        fixed.push({ ...o, id, copies: 1, at: [at[0], at[1]] })
+      }
+      if (mine.length) {
+        moving.push({ ...o, copies: mine.length })
+        free.set(item.objectId, mine)
+      }
+    }
+    const wanted = moving.reduce((n, o) => n + o.copies, 0)
+    if (wanted === 0) return undefined
+    const request = { bed: this.bed(index), config: cfg, tools: this.toolsOf(cfg, entries), gapMm: spacing, moving, fixed, center: fixed.length === 0 }
+    // Copies by number: each object's placements in the order of their copy, on the copy numbers that move.
+    const layout = (r: { placements: { id: string; copy: number; offset: [number, number] }[] }) => {
+      const at = new Map(pinned)
+      for (const o of moving) {
+        const slots = free.get(o.id) ?? []
+        r.placements
+          .filter((p) => p.id === o.id)
+          .sort((a, b) => a.copy - b.copy)
+          .forEach((p, k) => {
+            const c = slots[k]
+            if (c !== undefined) at.set(`${o.id}-${c}`, p.offset)
+          })
+      }
+      return at
+    }
+    // The nest on true outlines, or the boxes when there is no engine or it fails.
+    let boxes = !geom
+    let at: Map<string, [number, number]> | undefined
+    if (geom) {
+      try {
+        at = layout(await nestPlate(geom, request, this.feet))
+      } catch {
+        boxes = true
+      }
+    }
+    at ??= layout(boxPlate(request))
+    const left = new Map<string, number>()
+    for (const o of moving) {
+      const slots = free.get(o.id) ?? []
+      const n = slots.filter((c) => !at.has(`${o.id}-${c}`)).length
+      if (n > 0) left.set(o.id, n)
+    }
+    if (left.size > 0) return { at, left }
+    this.nested.set(index, { key: this.nestKey(index), at })
+    // By object, copies taller than the gantry rod need lanes of their own when the nest left one under the gantry.
+    const tall = [...moving, ...fixed].filter((o) => overRod(o.size[2], cfg)).reduce((n, o) => n + o.copies, 0)
+    const problems = (b: ByObjectReadback | null) => (b ? b.pairs.length + b.tall.length : 0)
+    const before = this.byObject(index)
+    if (tall < 2 || !before || before.tall.length === 0) return { at, left }
+    try {
+      const laned = boxes || !geom ? boxInLanes(request) : await nestInLanes(geom, request, this.feet)
+      const lanes = laned ? layout(laned) : undefined
+      if (!lanes || lanes.size < at.size) return { at, left }
+      this.nested.set(index, { key: this.nestKey(index), at: lanes })
+      if (problems(this.byObject(index)) >= problems(before)) this.nested.set(index, { key: this.nestKey(index), at })
+      else return { at: lanes, left }
+    } catch {
+      // The plain layout stays.
+    }
+    return { at, left }
   }
 
   /** An object as the nest takes it: its mesh as placed, without the move, and its settings over the plate's. */
@@ -749,29 +1046,6 @@ export class McpProject implements PilotProject {
     if (/^obj-\d+$/.test(clean)) throw new ToolInputError(`${clean} reads as an object id; pick another name.`)
     e.obj = { ...e.obj, name: clean }
     return e.obj.id
-  }
-
-  /**
-   * Copies an object as new objects of their own, as Duplicate does in the app: the same mesh, rotation, scale,
-   * settings and volumes, on the same plates, in the automatic rows. Height ranges for the object cover the copies.
-   */
-  duplicate(objectId: string, count: number): string[] {
-    const e = this.entry(objectId)
-    const ids: string[] = []
-    for (let k = 0; k < count; k++) {
-      const id = `obj-${this.nextId++}`
-      const copy: Entry = { obj: { ...e.obj, id }, meshId: e.meshId }
-      if (e.parts !== undefined) copy.parts = e.parts
-      if (e.rotate) copy.rotate = [...e.rotate]
-      if (e.scale) copy.scale = [...e.scale]
-      if (e.settings) copy.settings = { ...e.settings }
-      if (e.volumes) copy.volumes = e.volumes.map((v) => ({ ...v, id: `vol-${this.nextVolume++}`, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
-      this.entries.set(id, copy)
-      for (const p of this.layout) if (p.items.some((i) => i.objectId === e.obj.id)) p.items.push({ objectId: id, copies: 1 })
-      ids.push(id)
-    }
-    this.ranges = this.ranges.map((r) => (r.objects?.includes(e.obj.id) ? { ...r, objects: [...r.objects, ...ids] } : r))
-    return ids
   }
 
   /** Locks or unlocks an object, as Lock on the ring does. */
