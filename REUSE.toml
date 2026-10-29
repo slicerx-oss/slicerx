@@ -163,6 +163,7 @@ SPDX-License-Identifier = "LicenseRef-Trademark-Permission"
 [[annotations]]
 path = [
   "packages/core/bench/models/x-mark-2color-orca.3mf",
+  "packages/core/cli/tests/fixtures/layer-tools/**",
   "packages/core/cli/tests/fixtures/mixed-heights/**",
   "packages/core/cli/tests/fixtures/object-order-filaments/**",
   "packages/core/cli/tests/fixtures/object-order/**",

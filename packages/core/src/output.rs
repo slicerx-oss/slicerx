@@ -216,7 +216,8 @@ pub struct LayerPaths {
     /// Top of the layer, mm.
     pub z: f32,
     pub height: f32,
-    /// Tool active when the layer starts (0 before the first tool change).
+    /// Tool active when the layer starts (0 when none is known, as on the print's first layer, which starts on
+    /// whatever the start G-code loads).
     pub start_tool: u8,
     /// The tools (bit per 0-based tool, the 64th standing for the rest) the plan prints with in the layers
     /// before this one, so an output that starts mid print knows them (an Ultimaker primes a print core the
