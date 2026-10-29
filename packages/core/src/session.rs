@@ -2244,6 +2244,23 @@ impl SliceSession {
         all
     }
 
+    /// Where layer `p` (as [`Self::layer_tops`] counts the layers) starts, in the heights a height range takes (the
+    /// part's own, under any raft): the top of the layer below it, 0 for the first. None past the last layer.
+    pub(crate) fn layer_floor(&self, p: u32) -> Option<f64> {
+        let tops = self.layer_tops();
+        if p as usize >= tops.len() {
+            return None;
+        }
+        let Some(below) = p.checked_sub(1) else {
+            return Some(0.0);
+        };
+        let lift = match &self.raft {
+            Some(r) if !self.print_lifted => r.offset,
+            _ => 0.0,
+        };
+        tops.get(below as usize).map(|&t| (f64::from(t) - lift).max(0.0))
+    }
+
     /// The filament slots the whole plate prints, ascending: each object's planned tool order, or its own slots
     /// when it prints with one filament.
     pub(crate) fn plate_slots(&self) -> Vec<u8> {
@@ -12409,7 +12426,7 @@ struct FeatureTools {
 
 /// Per-feature filament keys. Older and other slicers' names for them are set under these names when the settings
 /// are read (`crate::legacy`).
-const FEATURE_KEYS: [&str; 6] = [
+pub(crate) const FEATURE_KEYS: [&str; 6] = [
     "outer_wall_filament_id",
     "inner_wall_filament_id",
     "sparse_infill_filament_id",

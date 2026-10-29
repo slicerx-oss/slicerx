@@ -174,6 +174,138 @@ pub fn load_3mf_layer_gcode(bytes: &[u8], plate: u32) -> Vec<LayerGcodeSpec> {
     crate::threemf::project_layer_marks(bytes, plate)
 }
 
+/// What a project file sets on the layers of plate `plate` (1-based): its pause, color change and custom G-code marks
+/// ([`load_3mf_layer_gcode`]), its tool changes by height, as the `toolChanges` option takes them, and a
+/// [`WarningCode::ToolChangeSkipped`] note for each tool change the project keeps for a plate of several filaments,
+/// which does not apply.
+pub fn load_3mf_marks(bytes: &[u8], plate: u32) -> ProjectMarks {
+    crate::threemf::project_marks(bytes, plate)
+}
+
+/// What [`load_3mf_marks`] reads.
+#[derive(Debug, Clone, Default)]
+pub struct ProjectMarks {
+    /// The pause, color change and custom G-code marks, as `layerGcode` takes them.
+    pub gcode: Vec<LayerGcodeSpec>,
+    /// The tool changes, as `toolChanges` takes them.
+    pub tool_changes: Vec<ToolChangeSpec>,
+    /// A note for each tool change left out.
+    pub skipped: Vec<SliceWarning>,
+}
+
+/// The note for a tool change that does not apply, and why.
+pub(crate) fn tool_change_skipped(c: &ToolChangeSpec, why: &str) -> SliceWarning {
+    let at = match (c.z_mm, c.layer) {
+        (Some(z), _) => format!(" at {} mm", (z * 1000.0).round() / 1000.0),
+        (None, Some(l)) => format!(" on layer {}", u64::from(l) + 1),
+        (None, None) => String::new(),
+    };
+    SliceWarning {
+        code: WarningCode::ToolChangeSkipped,
+        message: format!("Tool change{at} to filament {} skipped: {why}.", c.filament),
+        layer: None,
+    }
+}
+
+/// The plate printed with the tool changes `changes` (a project's tool changes by height, or a request's
+/// `toolChanges`): from the first layer whose top reaches a change's height, every object prints in the change's
+/// filament instead of the one below, as a normal tool change with the printer's change G-code and, with the prime
+/// tower on, a tower up to the last change. A change applies only where the plate prints one filament, by layer;
+/// otherwise, and for a change above the top of the print, the slice goes on without it and says so with a
+/// [`WarningCode::ToolChangeSkipped`] note. A change to the filament already printing changes nothing. Several
+/// apply in height order, and of several on one layer the last one stays.
+///
+/// `session` is the plate without them, and `rebuild` builds it again with height ranges added (the changes become
+/// the per-feature filaments of every feature from their layers up).
+///
+/// # Errors
+/// [`Error::Config`] for a change without exactly one of a layer and a height, with a negative height, or with a
+/// filament outside 1 to 64; else what `rebuild` gives.
+pub fn with_tool_changes(
+    mut session: SliceSession,
+    config: &PrintConfig,
+    changes: &[ToolChangeSpec],
+    rebuild: impl FnOnce(&[HeightRange]) -> Result<SliceSession>,
+) -> Result<SliceSession> {
+    let bad = |i: usize, reason: &str| Error::Config {
+        key: "options.toolChanges",
+        reason: format!("entry {i} {reason}"),
+    };
+    let tops = session.layer_tops();
+    // (layer, filament) by layer, the last change of a layer kept.
+    let mut at: BTreeMap<u32, (u8, usize)> = BTreeMap::new();
+    let mut notes: Vec<SliceWarning> = Vec::new();
+    for (i, c) in changes.iter().enumerate() {
+        let filament = u8::try_from(c.filament)
+            .ok()
+            .filter(|f| (1..=64).contains(f))
+            .ok_or_else(|| bad(i, "needs a filament from 1 to 64"))?;
+        let layer = match (c.layer, c.z_mm) {
+            (Some(l), None) => ((l as usize) < tops.len()).then_some(l),
+            (None, Some(z)) if z.is_finite() && z >= 0.0 => tops
+                .iter()
+                .position(|&t| f64::from(t) >= z - 1e-4)
+                .and_then(|p| u32::try_from(p).ok()),
+            (None, Some(_)) => return Err(bad(i, "needs a zMm of 0 or more")),
+            _ => return Err(bad(i, "needs one of layer and zMm")),
+        };
+        match layer {
+            Some(l) => {
+                at.insert(l, (filament, i));
+            }
+            None => notes.push(tool_change_skipped(c, "it is above the top of the print")),
+        }
+    }
+    let slots = session.plate_slots();
+    let whole = if config.print_by_object() {
+        Some("the plate prints object by object".to_owned())
+    } else {
+        (slots.len() > 1).then(|| format!("the plate already prints {} filaments", slots.len()))
+    };
+    if let Some(why) = whole {
+        for (_, i) in at.values() {
+            if let Some(c) = changes.get(*i) {
+                notes.push(tool_change_skipped(c, &why));
+            }
+        }
+        for n in notes {
+            session.push_warning(n);
+        }
+        return Ok(session);
+    }
+    let top = tops.last().map_or(0.0, |&t| f64::from(t)) + 1.0;
+    let mut current = slots.first().copied().unwrap_or(1);
+    let mut ranges: Vec<HeightRange> = Vec::new();
+    for (&l, &(filament, _)) in &at {
+        if filament == current {
+            continue;
+        }
+        let Some(floor) = session.layer_floor(l) else {
+            continue;
+        };
+        let settings: serde_json::Map<String, serde_json::Value> = crate::session::FEATURE_KEYS
+            .iter()
+            .map(|k| ((*k).to_owned(), serde_json::Value::from(filament)))
+            .collect();
+        ranges.push(HeightRange {
+            z_from_mm: floor,
+            z_to_mm: top,
+            settings: serde_json::Value::Object(settings),
+            objects: Vec::new(),
+        });
+        current = filament;
+    }
+    let mut out = if ranges.is_empty() {
+        session
+    } else {
+        rebuild(&ranges)?
+    };
+    for n in notes {
+        out.push_warning(n);
+    }
+    Ok(out)
+}
+
 /// [`load_3mf_plate_objects`] with the engine's own 3MF reader, for the format corpus while the readers are
 /// compared.
 #[doc(hidden)]
@@ -282,6 +414,20 @@ pub struct LayerGcodeSpec {
     pub gcode: Option<String>,
 }
 
+/// A tool change at a height: from there up the plate prints in another filament ([`with_tool_changes`]).
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolChangeSpec {
+    /// 0-based layer. Give this or `zMm`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer: Option<u32>,
+    /// A height in mm: the change happens at the start of the first layer whose top reaches it. Give this or `layer`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z_mm: Option<f64>,
+    /// The filament the print changes to, 1-based.
+    pub filament: u32,
+}
+
 /// `{ "mode": "declare", "zMm": 12.4 }`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -372,6 +518,11 @@ pub struct RequestOptions {
     /// commands. `kind` is `pause`, `color_change` or `custom` (then `gcode`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer_gcode: Option<Vec<LayerGcodeSpec>>,
+    /// Tool changes at heights: from each one's layer up, the plate prints in its filament, through the printer's
+    /// change G-code. Only for a plate that prints one filament, by layer; otherwise the result notes each one skipped
+    /// (`tool_change_skipped`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_changes: Option<Vec<ToolChangeSpec>>,
     /// The moment of slicing as Unix seconds, for the date variables (`year`, `month`, `day`, `hour`, `minute`,
     /// `second`) of custom G-code; with `nowOffsetMinutes`, local time's offset from UTC. Without it native
     /// builds read the clock (UTC) and WASM builds read 1970, so the host should send it.
@@ -1487,8 +1638,8 @@ fn build_session_with(
 }
 
 /// The session of `plate` with its layers planned as a slice of `req` plans them: the request's layer tops, else
-/// sleipnir's when its config asks for smart layer heights, else the height ranges'. True with it when sleipnir
-/// planned them.
+/// sleipnir's when its config asks for smart layer heights, else the height ranges', with the request's tool changes
+/// on top ([`with_tool_changes`]). True with it when sleipnir planned them.
 fn plan_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) -> Result<(SliceSession, bool)> {
     let ranges: Vec<HeightRange> = req
         .options
@@ -1513,7 +1664,13 @@ fn plan_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) -> Resu
     let (smart, planned): (Option<()>, Option<Vec<f64>>) = (None, None);
     let tops = req.options.layer_tops_mm.as_deref().or(planned.as_deref());
     // With sleipnir on, a plan that fails keeps `layer_height`; the ranges' layer heights plan only with it off.
-    let session = SliceSession::with_plan(plate, config, tops, &ranges, smart.is_none())?;
+    let mut session = SliceSession::with_plan(plate, config, tops, &ranges, smart.is_none())?;
+    if let Some(changes) = req.options.tool_changes.as_deref().filter(|c| !c.is_empty()) {
+        session = with_tool_changes(session, config, changes, |extra| {
+            let all: Vec<HeightRange> = ranges.iter().cloned().chain(extra.iter().cloned()).collect();
+            SliceSession::with_plan(plate, config, tops, &all, smart.is_none())
+        })?;
+    }
     Ok((session, planned.is_some()))
 }
 
@@ -2413,6 +2570,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
         "emitGcode": { "type": "boolean" },
         "emitPreview": { "type": "boolean" },
         "layerGcode": { "type": "array", "items": { "type": "object", "required": ["kind"], "oneOf": [{ "required": ["layer"] }, { "required": ["zMm"] }], "properties": { "layer": { "type": "integer", "minimum": 0 }, "zMm": { "type": "number", "minimum": 0, "description": "Placed on the first layer whose top reaches this height" }, "kind": { "enum": ["pause", "color_change", "custom"] }, "gcode": { "type": "string" } } }, "description": "G-code at the start of layers; pause and color_change use the profile's pause and color change G-code" },
+        "toolChanges": { "type": "array", "items": { "type": "object", "required": ["filament"], "oneOf": [{ "required": ["layer"] }, { "required": ["zMm"] }], "properties": { "layer": { "type": "integer", "minimum": 0 }, "zMm": { "type": "number", "minimum": 0, "description": "The change happens at the start of the first layer whose top reaches this height" }, "filament": { "type": "integer", "minimum": 1, "maximum": 64 } } }, "description": "Tool changes at heights through the printer's change G-code, on a plate that prints one filament by layer; skipped with a tool_change_skipped warning otherwise" },
         "resumeZ": { "type": "object", "required": ["mode", "zMm"], "properties": { "mode": { "const": "declare" }, "zMm": { "type": "number", "minimum": 0 } }, "description": "With resumeFromLayer: write G92 Z after homing X and Y; the nozzle must be at zMm by hand" },
         "resumeFromLayer": { "type": "integer", "minimum": 0, "description": "Write G-code only from this layer (0-based), after a resume start: heat, home X and Y not Z, no purge" },
         "heightRanges": {
@@ -2495,7 +2653,7 @@ pub const RESULT_SCHEMA: &str = r#"{
         "type": "object",
         "required": ["code", "message"],
         "properties": {
-          "code": { "enum": ["open_edges", "thin_wall", "floating_region", "long_bridge", "outside_bed", "unsupported_setting", "manual_step", "safety_limit", "objects_overlap"] },
+          "code": { "enum": ["open_edges", "thin_wall", "floating_region", "long_bridge", "outside_bed", "unsupported_setting", "manual_step", "safety_limit", "objects_overlap", "tool_change_skipped"] },
           "message": { "type": "string" },
           "layer": { "type": "integer" }
         }
@@ -2649,6 +2807,39 @@ mod tests {
         assert_eq!(over["wipe_tower_wall_type"], "rib");
         assert_eq!(over["wipe_tower_rib_width"], 4);
         assert_eq!(over["wipe_tower_fillet_wall"], 0);
+    }
+
+    /// A request's tool changes are part of the session [`plan_session`] plans, so the plate check plans the session
+    /// the slice prints: a cube on filament 2 with a change at 5 mm to filament 4 holds filament 4 (T3) once its first
+    /// 25 layers are printed, and filament 2 before that.
+    #[test]
+    fn the_planned_session_has_the_requests_tool_changes() {
+        let req: SliceRequest = serde_json::from_value(serde_json::json!({
+            "plate": {"objects": [{"id": "c", "mesh": "c"}]},
+            "config": {
+                "filament_colour": ["#FFFFFF", "#FF0000", "#00A0FF", "#202020", "#F0C000"],
+                "layer_height": "0.2",
+                "initial_layer_print_height": "0.2",
+            },
+            "options": {"toolChanges": [{"zMm": 5.0, "filament": 4}]},
+        }))
+        .unwrap();
+        let mut mesh = (*cube()).clone();
+        mesh.parts[0].slot = 2;
+        let mesh = Arc::new(mesh);
+        let (config, issues) = request_config_checked(&req).unwrap();
+        let plate = build_plate(&req, &|_| Ok(mesh.clone())).unwrap();
+        let lone = plate.objects[0].settings.clone();
+        let (config, _) = with_lone_settings(config, issues, &lone).unwrap();
+        let (session, _) = plan_session(&req, &plate, &config).unwrap();
+        assert_eq!(session.layer_tops().len(), 50);
+        assert_eq!((session.tool_after(24), session.tool_after(25)), (2, 4));
+        assert!(
+            check_plate(&req, &|_| Ok(mesh.clone()))
+                .unwrap()
+                .collisions
+                .is_empty()
+        );
     }
 
     fn cube() -> Arc<Mesh> {

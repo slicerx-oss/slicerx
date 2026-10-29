@@ -851,21 +851,32 @@ fn object_numbers(build_objects: impl Iterator<Item = u32>) -> HashMap<u32, u32>
 /// (`Metadata/custom_gcode_per_layer.xml`), by height. Types follow Orca's slider: 0 color change, 1 pause, 4 custom;
 /// others are left out, as are marks with no usable height. At most 200. A damaged file gives none.
 pub(crate) fn project_layer_marks(bytes: &[u8], plate: u32) -> Vec<crate::api::LayerGcodeSpec> {
+    project_marks(bytes, plate).gcode
+}
+
+/// What `Metadata/custom_gcode_per_layer.xml` sets on one plate's layers: the pause, color change and custom G-code
+/// marks ([`project_layer_marks`]) and the tool changes (type 2, to the 1-based filament in `extruder`). A tool change
+/// counts only where the plate's stored slider mode is `MultiAsSingle` (a plate printed in one filament); under another
+/// mode each one is left out with a note saying so.
+pub(crate) fn project_marks(bytes: &[u8], plate: u32) -> crate::api::ProjectMarks {
+    let mut out = crate::api::ProjectMarks::default();
     let Ok(zip) = Zip::open(bytes) else {
-        return Vec::new();
+        return out;
     };
     let Ok(xml) = zip.read("Metadata/custom_gcode_per_layer.xml") else {
-        return Vec::new();
+        return out;
     };
     let mut current: Option<u32> = None;
-    let mut out = Vec::new();
+    let mut mode: Option<&str> = None;
+    let mut changes: Vec<crate::api::ToolChangeSpec> = Vec::new();
     for t in tags(&xml) {
         if t.closing {
             continue;
         }
         match t.name {
             "plate_info" => current = t.attr("id").and_then(|v| v.trim().parse().ok()),
-            "layer" if current == Some(plate) => {
+            "mode" if current == Some(plate) => mode = t.attr("value").map(str::trim),
+            "layer" if current == Some(plate) && out.gcode.len() + changes.len() < 200 => {
                 let Some(z) = t
                     .attr("top_z")
                     .and_then(|v| v.trim().parse::<f64>().ok())
@@ -877,22 +888,46 @@ pub(crate) fn project_layer_marks(bytes: &[u8], plate: u32) -> Vec<crate::api::L
                     Some("0") => "color_change",
                     Some("1") => "pause",
                     Some("4") => "custom",
+                    Some("2") => {
+                        if let Some(filament) = t
+                            .attr("extruder")
+                            .and_then(|v| v.trim().parse::<u32>().ok())
+                            .filter(|f| (1..=64).contains(f))
+                        {
+                            changes.push(crate::api::ToolChangeSpec {
+                                layer: None,
+                                z_mm: Some(z),
+                                filament,
+                            });
+                        }
+                        continue;
+                    }
                     _ => continue,
                 };
                 let gcode = (kind == "custom")
                     .then(|| unescape(t.attr("extra").or_else(|| t.attr("gcode")).unwrap_or_default()));
-                out.push(crate::api::LayerGcodeSpec {
+                out.gcode.push(crate::api::LayerGcodeSpec {
                     layer: None,
                     z_mm: Some(z),
                     kind: kind.to_owned(),
                     gcode,
                 });
-                if out.len() >= 200 {
-                    break;
-                }
             }
             _ => {}
         }
+    }
+    if mode == Some("MultiAsSingle") {
+        out.tool_changes = changes;
+    } else {
+        out.skipped = changes
+            .iter()
+            .map(|c| {
+                crate::api::tool_change_skipped(
+                    c,
+                    "the project saved it for a plate that prints several filaments",
+                )
+            })
+            .collect();
     }
     out
 }
@@ -3209,6 +3244,55 @@ mod tests {
         assert_eq!(project_layer_marks(&bytes, 2).len(), 1);
         assert!(project_layer_marks(&bytes, 3).is_empty());
         assert!(project_layer_marks(&two_items_with(&[]), 1).is_empty());
+    }
+
+    #[test]
+    fn project_tool_changes_are_read_under_the_one_filament_mode_only() {
+        let xml = |mode: &str| {
+            format!(
+                r##"<?xml version="1.0"?><custom_gcodes_per_layer>
+<plate><plate_info id="1"/>
+<layer top_z="5.0" type="2" extruder="4" color="#202020" extra="" gcode="tool_change"/>
+<layer top_z="6.0" type="1" extruder="1" color="" extra="" gcode="M601"/>
+<layer top_z="7.0" type="2" extruder="0" color="" extra="" gcode="tool_change"/>
+<layer top_z="8.0" type="2" extruder="1" color="" extra="" gcode="tool_change"/>
+<mode value="{mode}"/></plate>
+<plate><plate_info id="2"/><layer top_z="9.0" type="2" extruder="3" color="" extra="" gcode=""/><mode value="MultiAsSingle"/></plate>
+</custom_gcodes_per_layer>"##
+            )
+        };
+        let one = xml("MultiAsSingle");
+        let bytes = two_items_with(&[("Metadata/custom_gcode_per_layer.xml", one.as_str())]);
+        let m = project_marks(&bytes, 1);
+        let got: Vec<(Option<f64>, u32)> = m.tool_changes.iter().map(|c| (c.z_mm, c.filament)).collect();
+        // A tool change with no filament (0) is left out; the pause stays a mark of its own.
+        assert_eq!(got, vec![(Some(5.0), 4), (Some(8.0), 1)]);
+        assert!(m.skipped.is_empty());
+        assert_eq!(m.gcode.len(), 1);
+        assert_eq!(m.gcode[0].kind, "pause");
+        assert_eq!(project_marks(&bytes, 2).tool_changes.len(), 1);
+        for mode in ["MultiExtruder", "SingleExtruder"] {
+            let several = xml(mode);
+            let bytes = two_items_with(&[("Metadata/custom_gcode_per_layer.xml", several.as_str())]);
+            let m = project_marks(&bytes, 1);
+            assert!(m.tool_changes.is_empty(), "{mode}");
+            let notes: Vec<&str> = m.skipped.iter().map(|w| w.message.as_str()).collect();
+            assert_eq!(
+                notes,
+                vec![
+                    "Tool change at 5 mm to filament 4 skipped: the project saved it for a plate that prints \
+                     several filaments.",
+                    "Tool change at 8 mm to filament 1 skipped: the project saved it for a plate that prints \
+                     several filaments."
+                ],
+                "{mode}"
+            );
+            assert!(
+                m.skipped
+                    .iter()
+                    .all(|w| w.code == crate::output::WarningCode::ToolChangeSkipped)
+            );
+        }
     }
 
     #[test]

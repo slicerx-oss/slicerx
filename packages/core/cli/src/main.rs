@@ -351,6 +351,26 @@ fn project_defaults(
     Ok(())
 }
 
+/// The marks and tool changes project `bytes` sets on the layers of plate `plate_no` go into `req` unless it brings its
+/// own; returns a note for each of the project's tool changes that does not apply, unless the request brings its own.
+fn take_project_marks(
+    req: &mut sx_core::api::SliceRequest,
+    bytes: &[u8],
+    plate_no: u32,
+) -> Vec<sx_core::SliceWarning> {
+    let marks = sx_core::api::load_3mf_marks(bytes, plate_no);
+    if req.options.layer_gcode.is_none() && !marks.gcode.is_empty() {
+        req.options.layer_gcode = Some(marks.gcode);
+    }
+    if req.options.tool_changes.is_some() {
+        return Vec::new();
+    }
+    if !marks.tool_changes.is_empty() {
+        req.options.tool_changes = Some(marks.tool_changes);
+    }
+    marks.skipped
+}
+
 /// Meshes loaded while splitting a request's projects, by key.
 type SplitMeshes = std::collections::HashMap<String, std::sync::Arc<Mesh>>;
 
@@ -359,17 +379,19 @@ type SplitMeshes = std::collections::HashMap<String, std::sync::Arc<Mesh>>;
 /// project's items stay where the file puts them (on the machine of the request's `printable_area`), any other 3MF's
 /// where the file puts them with the plate centered on the bed ([`sx_core::api::load_3mf_placement`]), as the app and
 /// `sx slice <file.3mf>` place them. Returns their meshes under the new keys (a plate of one item keeps its key, with
-/// the item's mesh), and a note for each project named without `#N` that has more plates than the one sliced (the
-/// result's `projectPlates`), each also on stderr.
+/// the item's mesh), a note for each project named without `#N` that has more plates than the one sliced (the
+/// result's `projectPlates`), each also on stderr, and a warning for each tool change a project keeps that does not
+/// apply ([`sx_core::api::load_3mf_marks`]).
 fn split_projects(
     req: &mut sx_core::api::SliceRequest,
     base: &Path,
     paths: &std::collections::HashMap<String, String>,
     painted: &std::collections::HashMap<String, Value>,
-) -> sx_core::Result<(SplitMeshes, Vec<Value>)> {
+) -> sx_core::Result<(SplitMeshes, Vec<Value>, Vec<sx_core::SliceWarning>)> {
     use sx_core::api;
     let mut cache = std::collections::HashMap::new();
     let mut plate_notes: Vec<Value> = Vec::new();
+    let mut skipped: Vec<sx_core::SliceWarning> = Vec::new();
     // The project plates the request names: the file, the plate's number and its entry in per-plate lists.
     let mut projects: Vec<(String, u32, Option<usize>)> = Vec::new();
     let bed = req.plate.bed.map_or_else(api::Bed::default, |b| api::Bed {
@@ -407,13 +429,7 @@ fn split_projects(
             eprintln!("sx: plates: {text}");
             plate_notes.push(json!({"file": rel, "plates": plates, "sliced": plate_no, "text": text}));
         }
-        // The marks the project sets on this plate's layers go in unless the request brings its own.
-        if req.options.layer_gcode.is_none() {
-            let marks = api::load_3mf_layer_gcode(&bytes, plate_no);
-            if !marks.is_empty() {
-                req.options.layer_gcode = Some(marks);
-            }
-        }
+        skipped.extend(take_project_marks(req, &bytes, plate_no));
         let placement = match api::load_3mf_placement(&bytes, rel, plate_no, [bed.width_mm, bed.depth_mm])? {
             sx_core::plate::ItemsPlacement::Kept([x, y]) => {
                 let [ox, oy] = sx_core::plate::area_origin(&req.config);
@@ -471,7 +487,7 @@ fn split_projects(
             );
         }
     }
-    Ok((cache, plate_notes))
+    Ok((cache, plate_notes, skipped))
 }
 
 /// The meshes of a request as the engine asks for them. A mesh is let go once the last object or volume naming it
@@ -728,7 +744,7 @@ fn cmd_request(args: &[String]) -> ExitCode {
     if let Err(e) = project_defaults(&mut req, &base, &paths) {
         return fail(EXIT_INPUT, e.to_string());
     }
-    let (cache, plate_notes) = match split_projects(&mut req, &base, &paths, &painted) {
+    let (cache, plate_notes, skipped) = match split_projects(&mut req, &base, &paths, &painted) {
         Ok(split) => split,
         Err(e) => return fail(EXIT_INPUT, e.to_string()),
     };
@@ -740,7 +756,7 @@ fn cmd_request(args: &[String]) -> ExitCode {
         painted: &painted,
     };
     let resolve = |id: &str| meshes.get(id);
-    let run = match api::run_request(&req, &resolve) {
+    let mut run = match api::run_request(&req, &resolve) {
         Ok(r) => r,
         Err(
             e @ (sx_core::Error::Mesh { .. }
@@ -754,6 +770,12 @@ fn cmd_request(args: &[String]) -> ExitCode {
     };
     if let Some(why) = request_collision_refusal(&run.report, &req.plate.objects, args) {
         return fail(EXIT_INPUT, why);
+    }
+    for w in skipped {
+        eprintln!("warning: {}", w.message);
+        if !run.report.warnings.contains(&w) {
+            run.report.warnings.push(w);
+        }
     }
     print_chamber(run.report.chamber_cooling.as_ref(), None);
     // The settings the slice did not use, as one block on stderr (stdout carries only the result).
@@ -835,7 +857,7 @@ fn cmd_check(args: &[String]) -> ExitCode {
     if let Err(e) = project_defaults(&mut req, &base, &paths) {
         return fail(EXIT_INPUT, e.to_string());
     }
-    let (cache, _) = match split_projects(&mut req, &base, &paths, &painted) {
+    let (cache, _, _) = match split_projects(&mut req, &base, &paths, &painted) {
         Ok(split) => split,
         Err(e) => return fail(EXIT_INPUT, e.to_string()),
     };
@@ -1307,14 +1329,22 @@ type Checked = (
     Vec<sx_core::gcode::LayerGcode>,
 );
 
-/// The slice a request makes of `plate`, with its collision check and the layer marks `marks` placed on its layers as
-/// a request's are.
+/// The slice a request makes of `plate`, with its collision check, the project's tool changes applied
+/// ([`sx_core::api::with_tool_changes`]) and its layer marks placed on its layers as a request's are.
 fn slice_checked(
     plate: &Plate,
     config: &PrintConfig,
-    marks: &[sx_core::api::LayerGcodeSpec],
+    marks: &sx_core::api::ProjectMarks,
 ) -> Result<Checked, sx_core::Error> {
     let mut session = SliceSession::new(plate, config)?;
+    if !marks.tool_changes.is_empty() {
+        session = sx_core::api::with_tool_changes(session, config, &marks.tool_changes, |extra| {
+            SliceSession::with_options(plate, config, None, extra)
+        })?;
+    }
+    for w in &marks.skipped {
+        session.push_warning(w.clone());
+    }
     sx_core::api::set_collision_check(&mut session, plate, config, None);
     let mut out = session.slice_range_with(config, 0..session.layer_count(), &sx_core::NoProgress)?;
     sx_core::api::check_paths(&session, config, &mut out);
@@ -1322,7 +1352,7 @@ fn slice_checked(
         .extend(sx_core::api::overlap_notes(&out.overlaps, &out.objects));
     let meta = session.collide_meta().cloned();
     let hits = std::mem::take(&mut out.collisions);
-    let layer_gcode = sx_core::api::layer_gcode(marks, &session)?;
+    let layer_gcode = sx_core::api::layer_gcode(&marks.gcode, &session)?;
     Ok((out, meta, hits, layer_gcode))
 }
 
@@ -1378,9 +1408,9 @@ fn plate_tower(
 
 /// What `sx slice <model>` slices: a 3MF plate's build items, or one mesh of any other format.
 enum Model {
-    /// The build items of a 3MF plate, the pause, color change and custom G-code marks the project sets on the
-    /// plate's layers, and the plate's number.
-    Items(Vec<Mesh>, Vec<sx_core::api::LayerGcodeSpec>, u32),
+    /// The build items of a 3MF plate, the marks and tool changes the project sets on the plate's layers, and the
+    /// plate's number.
+    Items(Vec<Mesh>, sx_core::api::ProjectMarks, u32),
     One(Box<Mesh>),
 }
 
@@ -1401,7 +1431,7 @@ impl Model {
         }
         Ok(Model::Items(
             items,
-            sx_core::api::load_3mf_layer_gcode(bytes, plate),
+            sx_core::api::load_3mf_marks(bytes, plate),
             plate,
         ))
     }
@@ -1421,12 +1451,12 @@ impl Model {
         }
     }
 
-    /// The marks the project sets on the plate's layers, which a request slicing the same plate takes too unless it
-    /// brings its own (see [`split_projects`]). None for other files.
-    fn layer_marks(&self) -> &[sx_core::api::LayerGcodeSpec] {
+    /// The marks and tool changes the project sets on the plate's layers, which a request slicing the same plate takes
+    /// too unless it brings its own (see [`split_projects`]). None for other files.
+    fn layer_marks(&self) -> sx_core::api::ProjectMarks {
         match self {
-            Model::Items(_, marks, _) => marks,
-            Model::One(_) => &[],
+            Model::Items(_, marks, _) => marks.clone(),
+            Model::One(_) => sx_core::api::ProjectMarks::default(),
         }
     }
 
@@ -1531,7 +1561,7 @@ fn cmd_slice(args: &[String]) -> Res<ExitCode> {
     model_file.keep_tower(&mut config.raw, model, &bytes, project_tower, preset.as_ref())?;
     // A slicer project stays where the file puts it; any other model goes to the middle of the profile's bed, as the
     // desktop slicers do.
-    let marks = model_file.layer_marks().to_vec();
+    let marks = model_file.layer_marks();
     let plate = model_file.plate(model, &bytes, &config, preset.as_ref())?;
     // The meshes, the layer marks, the project settings and the plate's placement are read; the file is not needed for
     // the slice.
