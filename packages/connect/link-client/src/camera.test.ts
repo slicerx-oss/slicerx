@@ -11,6 +11,7 @@ import type { Readable } from 'node:stream'
 import { after, before, test } from 'node:test'
 import { startMocks, type RunningMocks } from '@slicerx/mock-printers'
 import { avcCodecString, connectLink, LinkError, linkCameraStreams, type CameraFrame, type LinkHost, type Renderer } from './index.ts'
+import { createCanvasRenderer, FIRST_PICTURE_MS } from './camera.ts'
 
 // Runs only when SX_LINK_BIN names a built sx-link (cargo build -p sx-link), with a throwaway state
 // directory and file secrets, so a test never touches the real hub state or the keychain.
@@ -294,6 +295,95 @@ test('a live view says in one line why there is no picture', async () => {
   // The reason a view gives for closing reaches the bridge, for its connection log.
   s.close('the view closed or the app navigated away')
   assert.equal(closedWith, 'the view closed or the app navigated away')
+})
+
+// The canvas renderer outside a browser: a canvas that keeps nothing and a JPEG decoder that only gives a size.
+function fakeCanvas(): () => void {
+  const g = globalThis as Record<string, unknown>
+  const saved = { document: g['document'], createImageBitmap: g['createImageBitmap'] }
+  g['document'] = { createElement: () => ({ width: 0, height: 0, captureStream: () => ({ getTracks: () => [] }), getContext: () => ({ drawImage: () => undefined }) }) }
+  g['createImageBitmap'] = async () => ({ width: 1280, height: 720, close: () => undefined })
+  return () => {
+    g['document'] = saved.document
+    g['createImageBitmap'] = saved.createImageBitmap
+  }
+}
+const settle = () => new Promise((resolve) => setImmediate(resolve))
+const jpeg = (): CameraFrame => ({ kind: 'jpeg', key: true, stream: 1, capturedAt: Date.now(), data: new Uint8Array([0xff, 0xd8, 0xff, 0xd9]) })
+
+// The first drawn picture is news even when nothing went wrong before it: the live view listens for it to know a
+// picture is up.
+test('the canvas renderer tells its listeners once that a picture is drawn', async () => {
+  const restore = fakeCanvas()
+  try {
+    const r = createCanvasRenderer()
+    const heard: string[] = []
+    r.onProblem?.((t) => heard.push(t))
+    r.draw(jpeg())
+    await settle()
+    r.draw(jpeg())
+    await settle()
+    assert.deepEqual(heard, [''])
+    r.close()
+  } finally {
+    restore()
+  }
+})
+
+// A camera whose frames are drawn never gets the "no picture" line, however long the view stays open (an A1 mini
+// showed it over a moving picture).
+test('a live view with a drawn frame does not say there is no picture', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const restore = fakeCanvas()
+  try {
+    let frame: ((f: CameraFrame) => void) | undefined
+    const handle = {
+      stream: 1,
+      quality: 'high' as const,
+      onFrame: (cb: (f: CameraFrame) => void) => {
+        frame = cb
+        return () => undefined
+      },
+      onStats: () => () => undefined,
+      onEnded: () => () => undefined,
+      onStatus: () => () => undefined,
+      setQuality: async () => undefined,
+      close: async () => undefined,
+    }
+    const camera = {
+      probe: async () => ({ ok: true, kind: 'jpeg', firstFrameMs: 300, fps: 4, kbps: 600, recommended: 'high' as const }),
+      open: async () => handle,
+    } as unknown as LinkHost['camera']
+    const s = await linkCameraStreams({ camera }, { webrtc: false }).open({ id: 'a1', name: 'A1 mini' }, { quality: 'high' })
+    const said: string[] = []
+    s.onProblem?.((x) => said.push(x))
+    frame?.(jpeg())
+    await settle()
+    t.mock.timers.tick(FIRST_PICTURE_MS)
+    assert.deepEqual(said, [])
+    s.close()
+  } finally {
+    restore()
+  }
+})
+
+// The same through the bridge: a camera streaming JPEG frames into the canvas renderer is past the "no picture"
+// wait with nothing said.
+test('a live view on a streaming camera says nothing once its wait for a first picture is over', { skip }, async () => {
+  const restore = fakeCanvas()
+  try {
+    const s = await linkCameraStreams(host, { webrtc: false }).open({ id: 'voron', name: 'Voron' }, { quality: 'high' })
+    const said: string[] = []
+    s.onProblem?.((x) => said.push(x))
+    let fps = 0
+    s.onStats((st) => (fps = st.fps))
+    await until(() => fps > 0)
+    await new Promise((r) => setTimeout(r, FIRST_PICTURE_MS + 500))
+    assert.deepEqual(said, [])
+    s.close()
+  } finally {
+    restore()
+  }
 })
 
 // A probe that answers busy (another probe or a view has the camera) caps nothing: the stream opens at
