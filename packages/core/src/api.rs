@@ -1424,37 +1424,12 @@ fn build_session_with(
     config: &PrintConfig,
     progress: &dyn Progress,
 ) -> Result<SliceSession> {
-    let ranges: Vec<HeightRange> = req
-        .options
-        .height_ranges
-        .iter()
-        .flatten()
-        .map(|r| HeightRange {
-            z_from_mm: r.z_from_mm,
-            z_to_mm: r.z_to_mm,
-            settings: r.settings.clone(),
-            objects: r.objects.clone(),
-        })
-        .collect();
-    #[cfg(feature = "sleipnir")]
-    let smart = crate::sleipnir::requested(&req.config);
-    #[cfg(feature = "sleipnir")]
-    let planned = match (&req.options.layer_tops_mm, smart) {
-        (None, Some(mode)) => crate::sleipnir::plan(plate, config, mode),
-        _ => None,
-    };
-    #[cfg(not(feature = "sleipnir"))]
-    let (smart, planned): (Option<()>, Option<Vec<f64>>) = (None, None);
-    let tops = req.options.layer_tops_mm.as_deref().or(planned.as_deref());
-    // With sleipnir on, a plan that fails keeps `layer_height`; the ranges' layer heights plan only with it off.
-    let mut session = SliceSession::with_plan(plate, config, tops, &ranges, smart.is_none())?;
+    let (mut session, planned) = plan_session(req, plate, config)?;
     if progress.cancelled() {
         return Err(Error::Cancelled);
     }
     progress.report(Stage::Layers, LAYERS_OBJECTS);
-    if planned.is_some()
-        && let Some(w) = smart_layer_warning(plate)
-    {
+    if planned && let Some(w) = smart_layer_warning(plate) {
         session.push_warning(w);
     }
     set_collision_check(&mut session, plate, config, req.options.printer_id.as_deref());
@@ -1509,6 +1484,37 @@ fn build_session_with(
         });
     }
     Ok(session)
+}
+
+/// The session of `plate` with its layers planned as a slice of `req` plans them: the request's layer tops, else
+/// sleipnir's when its config asks for smart layer heights, else the height ranges'. True with it when sleipnir
+/// planned them.
+fn plan_session(req: &SliceRequest, plate: &Plate, config: &PrintConfig) -> Result<(SliceSession, bool)> {
+    let ranges: Vec<HeightRange> = req
+        .options
+        .height_ranges
+        .iter()
+        .flatten()
+        .map(|r| HeightRange {
+            z_from_mm: r.z_from_mm,
+            z_to_mm: r.z_to_mm,
+            settings: r.settings.clone(),
+            objects: r.objects.clone(),
+        })
+        .collect();
+    #[cfg(feature = "sleipnir")]
+    let smart = crate::sleipnir::requested(&req.config);
+    #[cfg(feature = "sleipnir")]
+    let planned = match (&req.options.layer_tops_mm, smart) {
+        (None, Some(mode)) => crate::sleipnir::plan(plate, config, mode),
+        _ => None,
+    };
+    #[cfg(not(feature = "sleipnir"))]
+    let (smart, planned): (Option<()>, Option<Vec<f64>>) = (None, None);
+    let tops = req.options.layer_tops_mm.as_deref().or(planned.as_deref());
+    // With sleipnir on, a plan that fails keeps `layer_height`; the ranges' layer heights plan only with it off.
+    let session = SliceSession::with_plan(plate, config, tops, &ranges, smart.is_none())?;
+    Ok((session, planned.is_some()))
 }
 
 /// The warning for smart layer heights over layer heights objects set for themselves: the plan is one for the whole
