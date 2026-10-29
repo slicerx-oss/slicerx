@@ -6423,7 +6423,8 @@ fn vase_cooling(extra: Value) -> Vec<(Vec<i64>, f64, Vec<i64>)> {
 #[test]
 fn spiral_layers_hold_the_minimum_layer_time() {
     // The block's 80 mm loop takes 0.4 s at 200 mm/s. Every spiral layer slows to the 8 s minimum: the layers
-    // after the first, which go on from the layer below with no move to their start, as much as the first.
+    // after the first, which go on from the layer below with no move to their start, as much as the first. The first
+    // also lays the 0.9 mm from where the base's last top line ends to the loop's start, so it runs up to 2 % faster.
     let stats = vase_cooling(json!({}));
     let first = stats[2].0.clone();
     assert_eq!(first.len(), 1, "{first:?}");
@@ -6432,7 +6433,7 @@ fn spiral_layers_hold_the_minimum_layer_time() {
         if i < 19 {
             assert_eq!(feeds.len(), 1, "layer {i}: {feeds:?}");
             assert!(
-                (feeds[0] - first[0]).abs() * 100 <= first[0],
+                (feeds[0] - first[0]).abs() * 50 <= first[0],
                 "layer {i} runs at F{} after F{}",
                 feeds[0],
                 first[0]
