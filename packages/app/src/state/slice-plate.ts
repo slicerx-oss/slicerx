@@ -109,7 +109,12 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     // layers, so a plate whose layer plan only the engine knows (sleipnir color bands) slices once.
     const marks = get().layerMarks[s.activePlate] ?? []
     const calibGcode = s.calibration[s.activePlate]?.layerGcode ?? []
-    const layerGcode: LayerGcode[] = [...calibGcode, ...(marks.length ? (await import('../plate/layer-marks')).layerGcodeByHeight(marks) : [])]
+    const markTools = marks.length ? await import('../plate/layer-marks') : null
+    const layerGcode: LayerGcode[] = [...calibGcode, ...(markTools ? markTools.layerGcodeByHeight(marks) : [])]
+    // A project's tool changes by height go to the engine, which notes those that do not apply to the plate; those the
+    // file saved for a plate of several filaments are noted here in the same words.
+    const toolChanges = markTools ? markTools.toolChangesByHeight(marks) : []
+    const skippedTools = markTools ? markTools.skippedToolChanges(marks) : []
     const sliceWith = async () =>
       host.slicer.slice(
         {
@@ -118,7 +123,7 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
             objects,
           },
           config,
-          options: { emitGcode: true, emitPreview: true, shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
+          options: { emitGcode: true, emitPreview: true, shards: sliceShards(host, toPrint), ...trustOptions(s), ...nameOptions(s), ...(s.profile?.printerId ? { printerId: s.profile.printerId } : {}), ...(layerTopsMm ? { layerTopsMm } : {}), ...(heightRanges.length ? { heightRanges } : {}), ...(layerGcode.length ? { layerGcode } : {}), ...(toolChanges.length ? { toolChanges } : {}), ...(s.resume ? resumeSliceOptions(s.resume.plan, s.resume.declareZ) : {}) },
         },
         {
           signal: abort.signal,
@@ -139,7 +144,8 @@ export async function slicePlate(host: Host, opts: { auto?: boolean } = {}): Pro
     sliceStage(timed, 'result', { ...(sliced.engineWallMs !== undefined ? { engineMs: sliced.engineWallMs } : {}), engineCpuMs: Object.values(sliced.stageMicros ?? {}).reduce((n: number, us) => n + (us ?? 0), 0) / 1000 })
     // The tower comes back in machine coordinates; the plate counts from its corner.
     const placed = sliced.primeTower ? { ...sliced, primeTower: towerToPlate(sliced.primeTower, areaOrigin(config['printable_area'])) } : sliced
-    const result = replaces && !placed.warnings.some((w) => w.message === replaces.message) ? { ...placed, warnings: [...placed.warnings, replaces] } : placed
+    const notes = [...(replaces ? [replaces] : []), ...skippedTools].filter((n) => !placed.warnings.some((w) => w.message === n.message))
+    const result = notes.length ? { ...placed, warnings: [...placed.warnings, ...notes] } : placed
     const raw = await host.slicer.getPreview(result.id)
     if (abort.signal.aborted) throw new DOMException('Slice canceled', 'AbortError')
     sliceStage(timed, 'preview', { previewBytes: raw.byteLength })

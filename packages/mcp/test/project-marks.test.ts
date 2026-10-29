@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// What a project paints or marks on its own, the brim ears and the pause at a height, comes through a slice of the file.
+// What a project paints or marks on its own, the brim ears, the pause and the tool change at a height, comes through a
+// slice of the file.
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -31,5 +32,34 @@ describe('a project with painted brim ears and a layer mark', () => {
     ])
     expect(marked).toContain(';TYPE:Brim')
     expect(marked.match(/M601/g)).toHaveLength(1)
+  })
+})
+
+const TOOL = (mode: string) => `<?xml version="1.0"?><custom_gcodes_per_layer><plate><plate_info id="1"/><layer top_z="5.0" type="2" extruder="2" color="" extra="" gcode="tool_change"/><mode value="${mode}"/></plate></custom_gcodes_per_layer>`
+
+describe('a project with a tool change at a height', () => {
+  it.skipIf(noSx())('changes filament on that layer, or notes why it does not', { timeout: sxTimeout }, async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    const slice = async (name: string, mode: string) => {
+      const path = join(h.dir, name)
+      writeFileSync(path, writeZip([{ name: '3D/3dmodel.model', data: BOX }, { name: 'Metadata/custom_gcode_per_layer.xml', data: TOOL(mode) }]))
+      const r = await h.call('slicerx_slice_file', { model: path, profiles: ['filament:pla'], overrides: { layer_height: 0.2, initial_layer_print_height: 0.2, skirt_loops: 0 } })
+      expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+      const d = data<{ gcode_path: string; warning_details?: { code: string; message: string }[] }>(r)
+      // The tool commands after the first layer's own selection, by layer (1-based).
+      const lines = readFileSync(d.gcode_path, 'utf8').split('\n')
+      let layer = 0
+      const tools: string[] = []
+      for (const l of lines) {
+        if (/^;\s?(LAYER_CHANGE|CHANGE_LAYER)/.test(l)) layer++
+        else if (layer > 1 && /^T\d+\s*$/.test(l)) tools.push(`${layer}:${l.trim()}`)
+      }
+      return { tools, notes: (d.warning_details ?? []).filter((w) => w.code === 'tool_change_skipped').map((w) => w.message) }
+    }
+    expect(await slice('change.3mf', 'MultiAsSingle')).toEqual({ tools: ['25:T1'], notes: [] })
+    expect(await slice('several.3mf', 'MultiExtruder')).toEqual({
+      tools: [],
+      notes: ['Tool change at 5 mm to filament 2 skipped: the project saved it for a plate that prints several filaments.'],
+    })
   })
 })
