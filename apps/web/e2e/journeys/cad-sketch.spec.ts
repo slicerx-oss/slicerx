@@ -2137,26 +2137,31 @@ test.describe('sketch-panel-behavior', () => {
       await sketchAt(page, 'click', [-3, -3])
       await sketchAt(page, 'click', [3, 3])
       await expect(apply).toBeEnabled()
-      // the focus mark on each control the keyboard reaches: there, and at least 3:1 against the panel (a non-text contrast)
+      // the focus mark on each control the keyboard reaches: there, and at least 3:1 against the panel (a non-text contrast).
+      // It is read once the control's own transitions have run (a field's border eases to the accent), and its colors go
+      // through a canvas: a color mid-transition or mixed computes as oklab() or color(), which no rgb() parse reads.
       const focusMark = () =>
-        page.evaluate(() => {
+        page.evaluate(async () => {
+          const a = document.activeElement as HTMLElement
+          await Promise.all(a.getAnimations().filter((x) => x instanceof CSSTransition).map((x) => x.finished.catch(() => undefined)))
+          const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!
+          const rgba = (c: string) => {
+            ctx.clearRect(0, 0, 1, 1)
+            ctx.fillStyle = c
+            ctx.fillRect(0, 0, 1, 1)
+            return [...ctx.getImageData(0, 0, 1, 1).data]
+          }
           const lum = (c: string) => {
-            const m = c.match(/[\d.]+/g)!.map(Number)
-            const [r, g, b] = (c.startsWith('color(') ? m.slice(0, 3).map((v) => v * 255) : m.slice(0, 3)).map((v) => {
+            const [r, g, b] = rgba(c).slice(0, 3).map((v) => {
               const x = v / 255
               return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4
             })
             return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
           }
-          const alpha = (c: string) => {
-            const m = c.match(/[\d.]+/g)!.map(Number)
-            return c.startsWith('color(') ? (m[3] ?? 1) : c.startsWith('rgba') ? m[3]! : 1
-          }
-          const a = document.activeElement as HTMLElement
           let bg = 'rgb(0, 0, 0)'
           for (let e: HTMLElement | null = a.parentElement; e; e = e.parentElement) {
             const c = getComputedStyle(e).backgroundColor
-            if (alpha(c) > 0.9) {
+            if (rgba(c)[3]! / 255 > 0.9) {
               bg = c
               break
             }
@@ -2179,8 +2184,7 @@ test.describe('sketch-panel-behavior', () => {
         if (!f.inPanel) break
         seen.add(f.name ?? '')
         expect(f.visible, `${f.name} in ${scheme}`).toBe(true)
-        // read once the field's border has eased to the accent
-        await expect.poll(async () => (await focusMark()).ratio, { message: `${f.name} in ${scheme}`, timeout: 2000 }).toBeGreaterThanOrEqual(3)
+        expect(f.ratio, `${f.name} in ${scheme}`).toBeGreaterThanOrEqual(3)
       }
       expect(seen.size).toBeGreaterThan(8)
       // names, values and states: every control has a name, every radio says whether it is on
