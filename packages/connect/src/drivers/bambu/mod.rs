@@ -823,6 +823,8 @@ struct Shared {
     /// when a start goes through. A send that only failed or went unanswered does not set it: that
     /// is a guess, said as one in the error, and the status keeps to what the printer said.
     refused_send: AtomicBool,
+    /// What this session's reports said about the auxiliary and chamber fans.
+    fans_seen: Mutex<FanSeen>,
     /// The commands this session sent, as command and sequence id, newest last, so the connection
     /// log can say whether a reply answers one of ours.
     sent: Mutex<std::collections::VecDeque<(String, String)>>,
@@ -1090,8 +1092,9 @@ impl Shared {
         let mut st = parse_status(&self.cfg.id, &v);
         let model = model_from_report(&v)
             .or_else(|| self.model.lock().unwrap_or_else(PoisonError::into_inner).clone());
-        if model.is_some_and(|m| !shows_chamber_temperature(&m)) {
-            st.chamber = None;
+        if let Some(m) = model {
+            let seen = *self.fans_seen.lock().unwrap_or_else(PoisonError::into_inner);
+            fit_to_model(&mut st, &m, seen);
         }
         if needs_developer_mode(&v, self.refused_send.load(Ordering::Relaxed)) {
             st.live.get_or_insert_with(Box::default).needs_developer_mode = Some(true);
@@ -1140,6 +1143,7 @@ impl Shared {
             firmware: Mutex::new(None),
             nozzle: Mutex::new(None),
             refused_send: AtomicBool::new(false),
+            fans_seen: Mutex::new(FanSeen::default()),
             sent: Mutex::new(std::collections::VecDeque::new()),
             logged: Mutex::new(None),
         }
@@ -1266,6 +1270,10 @@ impl Shared {
         {
             *self.nozzle.lock().unwrap_or_else(PoisonError::into_inner) = Some(n.clone());
         }
+        self.fans_seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .note(print);
         {
             let mut st = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             if !st.is_object() {
@@ -1571,6 +1579,94 @@ pub(crate) fn stage_words(code: i64) -> Option<&'static str> {
 /// a `chamber_temper` from them is not a reading. Unknown models keep what they report.
 pub(crate) fn shows_chamber_temperature(model: &str) -> bool {
     !matches!(model, "P1P" | "P1S" | "A1" | "A1 mini" | "A2L")
+}
+
+/// The fan keys of a model's printer profile, as the profile sets them: `None` where it leaves a
+/// key out, which says nothing about the fan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ModelFans {
+    /// `auxiliary_fan`: the auxiliary (side) fan, `big_fan1_speed`.
+    pub auxiliary_fan: Option<bool>,
+    /// `support_air_filtration`: the exhaust fan the air filtration settings drive, which is the
+    /// chamber fan, `big_fan2_speed`.
+    pub air_filtration: Option<bool>,
+}
+
+/// The fan keys of each model's profile in `packages/profiles/resolved/bambu-lab.json` (a test
+/// checks the table against it). Unknown models keep what they report.
+pub(crate) fn model_fans(model: &str) -> Option<ModelFans> {
+    let (auxiliary_fan, air_filtration) = match model {
+        "A1" | "A1 mini" | "P1P" => (None, Some(false)),
+        "P1S" | "X1 Carbon" | "X1E" | "X2D" | "H2D" | "H2D Pro" | "H2S" => (Some(true), None),
+        "X1" | "P2S" => (None, None),
+        _ => return None,
+    };
+    Some(ModelFans {
+        auxiliary_fan,
+        air_filtration,
+    })
+}
+
+/// What this session's reports said about the auxiliary and chamber fans.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FanSeen {
+    /// Whether any report had the auxiliary fan above 0.
+    aux_on: bool,
+    /// Whether any report had the chamber fan above 0.
+    chamber_on: bool,
+}
+
+impl FanSeen {
+    /// Notes whether one report had the auxiliary or chamber fan above 0.
+    pub(crate) fn note(&mut self, report: &serde_json::Map<String, Value>) {
+        let keys = [
+            "fan_gear",
+            "cooling_fan_speed",
+            "big_fan1_speed",
+            "big_fan2_speed",
+        ];
+        let only: serde_json::Map<String, Value> = keys
+            .iter()
+            .filter_map(|k| report.get(*k).map(|v| ((*k).to_owned(), v.clone())))
+            .collect();
+        let Some(f) = fans_of(&Value::Object(only)) else {
+            return;
+        };
+        self.aux_on |= f.aux.is_some_and(|a| a > 0);
+        self.chamber_on |= f.chamber.is_some_and(|c| c > 0);
+    }
+}
+
+/// Leaves out of a status what the printer's model does not have: a chamber reading, and the
+/// auxiliary and chamber fans. Every Bambu Lab report sends all three fan gears, 0 for a fan the
+/// printer lacks, so a 0 alone never hides a row, a profile key left out hides nothing, and a fan
+/// seen above 0 this session always shows.
+///
+/// - Chamber fan: hidden when the profile sets `support_air_filtration` false.
+/// - Auxiliary fan: no profile sets `auxiliary_fan` false, so this uses a proxy. Explicit
+///   no-filtration models also have no auxiliary fan: a profile that leaves `auxiliary_fan` out
+///   and sets `support_air_filtration` false (the A1, A1 mini and P1P, all open frame) starts
+///   with the row hidden and shows it once the printer reports the fan above 0.
+pub(crate) fn fit_to_model(st: &mut PrinterStatus, model: &str, seen: FanSeen) {
+    if !shows_chamber_temperature(model) {
+        st.chamber = None;
+    }
+    let (Some(has), Some(live)) = (model_fans(model), st.live.as_mut()) else {
+        return;
+    };
+    if let Some(f) = live.fans.as_mut() {
+        let no_filtration = has.air_filtration == Some(false);
+        if no_filtration && !seen.chamber_on {
+            f.chamber = None;
+        }
+        let no_aux = has.auxiliary_fan.is_none() && no_filtration;
+        if no_aux && !seen.aux_on {
+            f.aux = None;
+        }
+        if *f == Fans::default() {
+            live.fans = None;
+        }
+    }
 }
 
 /// A slot id from an AMS id and a slot number as the printer gives them (`snow`, `tray_now`). The
@@ -4525,6 +4621,77 @@ mod tests {
         ] {
             assert!(shows_chamber_temperature(m), "{m}");
         }
+    }
+
+    /// The fan rows a model shows after `reports` copies of `report` this session.
+    fn fan_rows(model: &str, report: &Value, reports: usize) -> (Option<u8>, Option<u8>) {
+        let mut seen = FanSeen::default();
+        for _ in 0..reports {
+            seen.note(report.as_object().unwrap());
+        }
+        let mut st = parse_status("p", report);
+        fit_to_model(&mut st, model, seen);
+        let fans = st.live.and_then(|l| l.fans).unwrap();
+        assert_eq!(fans.part, Some(100), "{model}");
+        (fans.aux, fans.chamber)
+    }
+
+    // Every Bambu Lab report sends all three fan gears, as the A1 mini's did (its printer view
+    // listed Auxiliary 0% and Chamber 0%). A fan at 0 for a whole print is not a missing fan: on an
+    // X1, P1S or P2S both rows stay. A profile with `support_air_filtration` set false (the A1, A1
+    // mini and P1P) has no chamber fan, and no auxiliary fan either: both rows stay hidden from the
+    // first report until the printer reports that fan above 0.
+    #[test]
+    fn each_model_shows_the_fans_it_may_have() {
+        let off = json!({ "gcode_state": "RUNNING", "cooling_fan_speed": "15",
+            "big_fan1_speed": "0", "big_fan2_speed": "0" });
+        for model in ["X1", "P2S", "P1S", "X1 Carbon", "H2D"] {
+            assert_eq!(fan_rows(model, &off, 2000), (Some(0), Some(0)), "{model}");
+        }
+        // A fan the printer reports turning means it has one, whatever the profile says.
+        let on = json!({ "gcode_state": "RUNNING", "cooling_fan_speed": "15",
+            "big_fan1_speed": "10", "big_fan2_speed": "5" });
+        for model in ["A1", "A1 mini", "P1P"] {
+            assert_eq!(fan_rows(model, &off, 1), (None, None), "{model}, report 1");
+            assert_eq!(fan_rows(model, &off, 2000), (None, None), "{model}");
+            let (aux, chamber) = fan_rows(model, &on, 1);
+            assert!(aux.is_some_and(|a| a > 0), "{model} auxiliary fan on");
+            assert!(chamber.is_some_and(|c| c > 0), "{model} chamber fan on");
+        }
+        let mut seen = FanSeen::default();
+        for _ in 0..10 {
+            seen.note(off.as_object().unwrap());
+        }
+        seen.note(on.as_object().unwrap());
+        let mut st = parse_status("p", &off);
+        fit_to_model(&mut st, "A1 mini", seen);
+        let fans = st.live.and_then(|l| l.fans).unwrap();
+        assert_eq!((fans.aux, fans.chamber), (Some(0), Some(0)));
+        // A model the table does not know keeps what it reports.
+        assert_eq!(fan_rows("Z9", &off, 2000), (Some(0), Some(0)));
+    }
+
+    // The fan table holds the profile keys as they are: a key a profile leaves out is unknown, not
+    // its settings default.
+    #[test]
+    fn the_fan_table_matches_the_printer_profiles() {
+        let profiles: Value =
+            serde_json::from_str(include_str!("../../../../profiles/resolved/bambu-lab.json")).unwrap();
+        let mut seen = 0;
+        for m in profiles["models"].as_object().unwrap().values() {
+            let machine = &m["machine"];
+            let name = machine["printer_model"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches("Bambu Lab ");
+            let want = ModelFans {
+                auxiliary_fan: machine["auxiliary_fan"].as_bool(),
+                air_filtration: machine["support_air_filtration"].as_bool(),
+            };
+            assert_eq!(model_fans(name), Some(want), "{name}");
+            seen += 1;
+        }
+        assert!(seen >= 12, "{seen} models");
     }
 
     // AMS lite (module 12) and AMS HT (module 18) problems name their unit kind.
