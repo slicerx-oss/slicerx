@@ -1163,9 +1163,9 @@ async fn bambu_h2d_prints_from_its_ams_ht() {
     assert!(line.contains("\"use_ams\":true"), "{line}");
 }
 
-// A printer job's step and the chamber target reach the status: the X1 Carbon fake while
-// preparing on step 2 (bed heating) with a chamber target in `ctt`, then an H2D with its chamber
-// packed in `device.ctc`.
+// A printer job's step (as the job's stage, not the message) and the chamber target reach the
+// status: the X1 Carbon fake while preparing on step 2 (bed heating) with a chamber target in
+// `ctt`, then an H2D with its chamber packed in `device.ctc`.
 #[tokio::test]
 async fn bambu_status_names_the_step_and_the_chamber_target() {
     for (spec, target) in [
@@ -1186,7 +1186,11 @@ async fn bambu_status_names_the_step_and_the_chamber_target() {
         let session = BambuConnector::new(gate).connect(&cfg, &sec).await.unwrap();
         wait_state(session.as_ref(), PrinterState::Preparing).await;
         let st = session.status().await.unwrap();
-        assert_eq!(st.message.as_deref(), Some("Heating the bed"));
+        assert_eq!(
+            st.live.as_ref().and_then(|l| l.stage.as_deref()),
+            Some("Heating the bed")
+        );
+        assert_eq!(st.message, None, "a routine step is not a problem");
         assert_eq!(st.chamber.map(|c| c.target), Some(target));
     }
 }

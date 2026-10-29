@@ -352,6 +352,18 @@ describe('device view of a printer with less', () => {
     expect(q('.ph-alert')).toBeNull()
   })
 
+  // An A1 mini calibrating flow dynamics as a print starts: the Bambu driver reports the step as the job's stage, and
+  // the view shows it with the job, not as a problem in the alert strip.
+  it('shows the job stage in the top bar and no alert for it', async () => {
+    const { host } = fakeHost(false)
+    const stage: PrinterStatus = { ...MK4S.status, state: 'preparing', jobName: 'Assembly_PLA_58m32s.gcode.3mf', layer: 0, layerCount: 329, live: { stage: 'Calibrating flow dynamics' } }
+    await show({ ...MK4S, vendor: 'Bambu Lab', model: 'A1 mini', plugin: 'bambu-lan', status: stage }, host)
+    expect(q('.ph-alert')).toBeNull()
+    expect(q('.ph-top')?.textContent).toContain('Calibrating flow dynamics')
+    expect(q('.ph-job-row .ph-muted')?.textContent).toBe('Calibrating flow dynamics · Layer 0 of 329')
+    expect(jobLine({ ...stage, state: 'printing' }, 0)).toBe('Calibrating flow dynamics · Layer 0 of 329 · 1 h 45 min left · done ' + doneAt(6300, 0))
+  })
+
   it('has no temperature tab while the printer is offline', async () => {
     const { host } = fakeHost(false)
     await show({ ...MK4S, status: { ...MK4S.status, state: 'offline', nozzles: [], bed: undefined as never } }, host)

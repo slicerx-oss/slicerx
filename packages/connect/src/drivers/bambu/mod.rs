@@ -1369,6 +1369,23 @@ pub(crate) fn parse_status(id: &str, p: &Value) -> PrinterStatus {
     let slots = parse_slots(p);
     let slot_ids: Vec<String> = slots.iter().map(|s| s.id.clone()).collect();
 
+    // The step a job under way is on (leveling, heating, a pause and why), as the printer's screen
+    // shows it. A pause reason, or any step while paused, is the message; a routine step is the
+    // job's stage, never a problem.
+    let step = p
+        .get("stg_cur")
+        .and_then(Value::as_i64)
+        .filter(|_| {
+            matches!(
+                state,
+                PrinterState::Printing | PrinterState::Paused | PrinterState::Preparing
+            )
+        })
+        .and_then(stage_words);
+    let (pause_step, job_step) = match step {
+        Some(w) if state == PrinterState::Paused || stage_is_pause(w) => (Some(w), None),
+        s => (None, s),
+    };
     // Only a current issue is the card's message; one left over from a finished job is history. A
     // failed job also says why when the reason is not an issue (a cancel).
     let message = parse_issues(p)
@@ -1385,20 +1402,11 @@ pub(crate) fn parse_status(id: &str, p: &Value) -> PrinterStatus {
                     })
                 })
         })
-        .or_else(|| {
-            // With nothing wrong, a job under way says which step it is on (leveling, heating,
-            // a pause and why), as the printer's screen does.
-            p.get("stg_cur")
-                .and_then(Value::as_i64)
-                .filter(|_| {
-                    matches!(
-                        state,
-                        PrinterState::Printing | PrinterState::Paused | PrinterState::Preparing
-                    )
-                })
-                .and_then(stage_words)
-                .map(str::to_owned)
-        });
+        .or_else(|| pause_step.map(str::to_owned));
+    let mut live = parse_live(p, &slot_ids);
+    if let Some(s) = job_step {
+        live.get_or_insert_with(Box::default).stage = Some(s.to_owned());
+    }
     PrinterStatus {
         printer_id: id.to_owned(),
         state,
@@ -1431,8 +1439,14 @@ pub(crate) fn parse_status(id: &str, p: &Value) -> PrinterStatus {
             == Some("1"),
         message,
         updated_at: now_iso(),
-        live: parse_live(p, &slot_ids),
+        live,
     }
+}
+
+/// Whether a step's words are a pause reason ("Paused: the filament ran out"), which the status
+/// shows as its message rather than as the job's stage.
+fn stage_is_pause(words: &str) -> bool {
+    words.starts_with("Paused")
 }
 
 /// The chamber as Bambu Studio reads it: `chamber_temper` with its target in `ctt`, and on printers
@@ -1702,6 +1716,7 @@ fn parse_live(p: &Value, slots: &[String]) -> Option<Box<PrinterLive>> {
         // Status keeps coming with Developer Mode off; commands need Bambu Connect then.
         monitor_only: (developer_mode(p) == Some(false)).then_some(true),
         needs_developer_mode: (developer_mode(p) == Some(false)).then_some(true),
+        stage: None,
     };
     (live != PrinterLive::default()).then(|| Box::new(live))
 }
@@ -4386,19 +4401,27 @@ mod tests {
         );
     }
 
-    // A job under way names its step from `stg_cur`; plain printing (0), no step (-1, 255) and
-    // an idle or finished printer say nothing, and a current problem comes first.
+    // A job under way names its step from `stg_cur`: a routine step as the stage, a pause reason
+    // as the message. Plain printing (0), no step (-1, 255) and an idle or finished printer say
+    // nothing, and a current problem comes first.
     #[test]
     fn a_preparing_job_names_its_step() {
         let st = |v: Value| parse_status("p", &v).message;
+        let stage = |v: Value| parse_status("p", &v).live.and_then(|l| l.stage);
         assert_eq!(
-            st(json!({ "gcode_state": "PREPARE", "stg_cur": 1 })).as_deref(),
+            stage(json!({ "gcode_state": "PREPARE", "stg_cur": 1 })).as_deref(),
             Some("Leveling the bed")
         );
+        assert_eq!(st(json!({ "gcode_state": "PREPARE", "stg_cur": 1 })), None);
         assert_eq!(
-            st(json!({ "gcode_state": "RUNNING", "stg_cur": 7 })).as_deref(),
+            stage(json!({ "gcode_state": "RUNNING", "stg_cur": 7 })).as_deref(),
             Some("Heating the nozzle")
         );
+        assert_eq!(
+            st(json!({ "gcode_state": "RUNNING", "stg_cur": 32 })).as_deref(),
+            Some("Paused: filament is clumping on the nozzle")
+        );
+        assert_eq!(stage(json!({ "gcode_state": "IDLE", "stg_cur": 1 })), None);
         assert_eq!(
             st(json!({ "gcode_state": "PAUSE", "stg_cur": 6 })).as_deref(),
             Some("Paused: the filament ran out")
@@ -4415,6 +4438,43 @@ mod tests {
         // Every code Bambu Studio names from 1 to 77 has our words.
         assert!((1..=77).all(|c| stage_words(c).is_some()));
         assert_eq!(stage_words(78), None);
+    }
+
+    // A routine step (calibrating flow dynamics on an A1 mini as it starts a print) is the job's
+    // stage, shown with the job, and not the status message, which the device view shows as a
+    // problem. A step that is a pause reason stays the message, and so does a current HMS issue.
+    #[test]
+    fn a_routine_step_is_the_stage_and_not_the_message() {
+        let start = parse_status(
+            "p",
+            &json!({ "gcode_state": "PREPARE", "stg_cur": 8, "subtask_name": "Assembly_PLA" }),
+        );
+        assert_eq!(start.message, None);
+        assert_eq!(
+            start.live.as_ref().and_then(|l| l.stage.as_deref()),
+            Some("Calibrating flow dynamics")
+        );
+        let heating = parse_status("p", &json!({ "gcode_state": "RUNNING", "stg_cur": 7 }));
+        assert_eq!(heating.message, None);
+        assert_eq!(
+            heating.live.and_then(|l| l.stage).as_deref(),
+            Some("Heating the nozzle")
+        );
+        let door = parse_status(
+            "p",
+            &json!({ "gcode_state": "RUNNING", "stg_cur": 8,
+                "hms": [ { "attr": 0x0300_9600_u64, "code": 0x0003_0001_u64 } ] }),
+        );
+        assert!(door.message.is_some(), "the HMS issue is the message");
+        assert_eq!(
+            door.live.and_then(|l| l.stage).as_deref(),
+            Some("Calibrating flow dynamics")
+        );
+        let runout = parse_status("p", &json!({ "gcode_state": "PAUSE", "stg_cur": 6 }));
+        assert_eq!(runout.message.as_deref(), Some("Paused: the filament ran out"));
+        assert_eq!(runout.live.and_then(|l| l.stage), None);
+        let printing = parse_status("p", &json!({ "gcode_state": "RUNNING", "stg_cur": 0 }));
+        assert_eq!(printing.live.and_then(|l| l.stage), None);
     }
 
     // The chamber target comes from `ctt`, and a heated chamber's packed `device.ctc` wins.
