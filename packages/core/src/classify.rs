@@ -87,7 +87,9 @@ fn meet_near(a: &Shapes, b: &Shapes) -> Shapes {
 }
 
 /// `src` grown by `d` mm into the pieces of `zone` it touches (Orca's wave propagation, here the
-/// offset cut by the zone), as the part of the zone the surface now covers.
+/// offset cut by the zone), as the part of the zone the surface now covers. A wave enters a piece only where the
+/// surface touches it, so the part of the offset farther than `d` from that contact, which the offset reaches
+/// across a wall from another part of the surface, is left out.
 fn grown_into(src: &Shapes, zone: &Shapes, d: f64, tiny: f64) -> Shapes {
     if src.is_empty() || zone.is_empty() || d <= 0.0 {
         return Vec::new();
@@ -113,7 +115,23 @@ fn grown_into(src: &Shapes, zone: &Shapes, d: f64, tiny: f64) -> Shapes {
         })
         .cloned()
         .collect();
-    meet(&reach, &touched)
+    let grown = meet(&reach, &touched);
+    // Each piece within `d` of where the surface touches it. Rounding leaves slivers along the offsets' edges, so
+    // only a part more than twice `tiny` thick counts as reached across a wall.
+    let kept: Vec<Shapes> = touched
+        .iter()
+        .map(|piece| {
+            let one = vec![piece.clone()];
+            meet(&perimeters::offset_round(&meet(&seed, &one), mm(d + tiny)), &one)
+        })
+        .collect();
+    let across = kept.iter().fold(grown.clone(), |rest, near| sub(&rest, near));
+    if perimeters::offset(&across, -mm(tiny)).is_empty() {
+        grown
+    } else {
+        let near: Vec<&Shapes> = kept.iter().collect();
+        meet(&grown, &perimeters::union_all(&near))
+    }
 }
 
 /// The classification of one region of one layer.
