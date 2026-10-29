@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Keeping a conversation inside a local model's context: the 16,689 token transcript the
-// benchmark saw Ollama cut, the order things go in, and the runtime only trimming local models.
+// benchmark saw Ollama cut, the order things go in, and the runtime only trimming local models. What the mimir tab
+// sends a local model with its design tools and the app's commands, which this package does not have, is measured
+// where the tab is made: packages/app/test/mimir-local-context.test.ts.
 import { DEFAULT_PRODUCT_NAME, setAssistantBrand, setProductName, type PilotMachine } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'

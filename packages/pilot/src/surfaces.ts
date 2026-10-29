@@ -4,7 +4,8 @@
 // a small context (see context.ts) where the tool schemas are most of the request, so it gets only the tools its
 // surface uses: the mimir tab keeps its chat tools and its way into a design (the design tools, or text_to_part where a
 // host has no design tools), without make_model. Of those, each turn sends only the ones on the surface's every-turn
-// list and the ones the turn calls for (localTurnTools in toolsets.ts).
+// list and the ones the turn calls for (localTurnTools in toolsets.ts), and with the design tools only one set of
+// them (turnsets.ts).
 // An edition can also switch whole tool groups off (ai.brain.tools); a switch only ever takes tools away.
 import type { PilotConfig } from '@slicerx/contracts'
 import type { PilotTool } from './tool'
@@ -31,8 +32,10 @@ const LOCAL_LEAVE_OUT: Record<ToolSurface, ReadonlySet<string>> = {
  */
 const LOCAL_EVERY_TURN: Record<ToolSurface, ReadonlySet<string>> = {
   tab: new Set([
-    // asking, showing a looked up part, the dimension sheet and the person's notes
+    // asking, loading another set of tools (turnsets.ts), showing a looked up part, the dimension sheet and the
+    // person's notes
     'pilot.ask',
+    'pilot.tools',
     'pilot.report',
     'pilot.sheet',
     'pilot.sheet_bind',
