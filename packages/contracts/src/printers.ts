@@ -205,6 +205,11 @@ export interface PrinterLive {
    * unsigned-command refusal. A send that only failed or went unanswered does not set it.
    */
   needsDeveloperMode?: boolean
+  /**
+   * The step a job is on while it prepares or prints, in plain words ("Calibrating flow dynamics"), shown with the job.
+   * A routine step, never a problem: problems and pause reasons are the status `message`. Absent when the printer names no step.
+   */
+  stage?: string
 }
 
 export type PrinterEvent =
