@@ -499,8 +499,29 @@ jobs:
           eval "$SX_GROUP_CHECK"
           ${HEAVY:-} cargo build -p sx-cloud
           ${HEAVY:-} cargo test --workspace --exclude slicerx-desktop --exclude sx-core --test '*'
-      # The MCP server's tests that slice with the real core, on the sx that sx-cli's tests above built. They skip
-      # where there is no sx (the web job); here SLICERX_TEST_REQUIRE_SX makes a missing one fail them.
+      # The tests above leave sx, sx-geom, sx-link, sx-relay and sx-cloud in target/debug for the app, MCP, pair and
+      # cloud tests below. The native exact tests also need sx-geom with the exact kernel, built here from the SMLib
+      # source the brep job fetches and caches. That build has a target of its own, so the workspace builds above keep
+      # the kernel's stand-in and are not rebuilt. (A cargo build -p of the binaries here would relink sx-geom with
+      # other features, about 12 s for nothing.)
+      - if: matrix.part == 'crates'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/smlib
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
+      - if: matrix.part == 'crates'
+        name: sx-geom with the exact kernel
+        run: |
+          eval "$SX_GROUP_CHECK"
+          SX_SMLIB_DIR=$(sh packages/brep/scripts/fetch-smlib.sh)
+          export SX_SMLIB_DIR
+          ${HEAVY:-} cargo build -p sx-geom --features brep --target-dir target/brep
+        env:
+          SX_SMLIB_CACHE: ${{ runner.temp }}/smlib
+          SX_BREP_REQUIRE: '1'
+      # The MCP server's tests that run the real core and geometry engine, on the binaries built above. They skip
+      # where there are none (the web job); here SLICERX_TEST_REQUIRE_SX makes a missing one fail them. The exact
+      # sx-geom runs every MCP test: without SX_BREP_DEV it answers as the default build does.
       - if: matrix.part == 'crates'
         uses: pnpm/action-setup@v4
       - if: matrix.part == 'crates'
@@ -511,9 +532,27 @@ jobs:
       - if: matrix.part == 'crates'
         run: |
           pnpm install --frozen-lockfile
+          # the tool runtime that sx call runs (test/sx-call.test.ts, and the app's route parity test below)
+          pnpm --filter @slicerx/mcp build
           eval "$SX_GROUP_CHECK"
           export SLICERX_TEST_SX_BIN="$GITHUB_WORKSPACE/target/debug/sx"
+          export SLICERX_SX_GEOM_BIN="$GITHUB_WORKSPACE/target/brep/debug/sx-geom"
           cd packages/mcp && ${HEAVY:-} bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
+        env:
+          SLICERX_TEST_REQUIRE_SX: '1'
+          SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
+      # The app, pair and cloud tests that run those binaries, which skip in the web job. A new test file that needs
+      # one goes on this list.
+      - if: matrix.part == 'crates'
+        run: |
+          eval "$SX_GROUP_CHECK"
+          export SLICERX_TEST_SX_BIN="$GITHUB_WORKSPACE/target/debug/sx"
+          export SLICERX_SX_GEOM_BIN="$GITHUB_WORKSPACE/target/brep/debug/sx-geom"
+          export SX_LINK_BIN="$GITHUB_WORKSPACE/target/debug/sx-link"
+          test="bash $GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
+          (cd packages/app && ${HEAVY:-} $test test/cad-exact-native.test.ts test/calibration-engine.test.ts test/phone-e2e.test.ts test/project-gcode.test.ts test/project-route-parity.test.ts test/script-review.test.ts)
+          (cd packages/pair && ${HEAVY:-} $test test/hosted-relay.test.ts)
+          (cd editions/slicerx/packages/cloud && ${HEAVY:-} $test test/service.integration.test.ts)
         env:
           SLICERX_TEST_REQUIRE_SX: '1'
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
