@@ -17,7 +17,7 @@ vi.mock('../src/lib/use-printer', () => ({ usePrinter: () => ({ rows: [], printe
 
 const { HostContext } = await import('../src/host')
 const { PrinterHud } = await import('../src/features/fleet/hud-view')
-const { gauges, jobLine, slotGroups, speedChoices, doneAt } = await import('../src/features/fleet/hud')
+const { cameraRate, gauges, jobLine, slotGroups, speedChoices, doneAt } = await import('../src/features/fleet/hud')
 const { get, set } = await import('../src/state/store')
 const { loadPrefs } = await import('../src/state/prefs')
 const { BATTLE_MIN_MS, forgetFirstLooks } = await import('../src/camera/idle')
@@ -300,6 +300,24 @@ describe('device view of a printing H2D', () => {
     await show(H2D, host)
     await click(button('Edit slots'))
     expect(get().slotDialog).toBe(1)
+  })
+
+  // The bridge counts the frames it sends each second (camera.stats). A camera at about one picture every 2.5 s, as an
+  // A1 mini sent while printing, reads as its own rate on the view, averaged over the last 10 s.
+  it('shows the camera frame rate the bridge measures', async () => {
+    const { host } = fakeHost()
+    const streams = (host as unknown as { printers: { streams: { open: () => Promise<unknown> } } }).printers.streams
+    streams.open = async () => ({
+      media: null, mode: 'live', route: 'lan', supported: ['medium'], quality: 'medium', setQuality: async () => undefined, close() {},
+      onStats: (cb: (s: { fps: number; latencyMs: number; kbps: number }) => void) => {
+        for (const fps of [1, 0, 0, 1, 0, 1, 0, 0, 1, 0]) cb({ fps, latencyMs: 40, kbps: 80 })
+        return () => undefined
+      },
+    })
+    await show(H2D, host)
+    expect(q('[data-testid=ph-camera-rate]')?.textContent).toBe('Camera 0.4 fps')
+    expect(cameraRate([12, 15, 15])).toBe('14 fps')
+    expect(cameraRate([])).toBeNull()
   })
 })
 
