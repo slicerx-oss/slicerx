@@ -302,8 +302,10 @@ impl Walker<'_> {
                     });
                     let part = if tip { Part::Nozzle } else { Part::Toolhead };
                     let rect = [x + c.x[0], x + c.x[1], y + c.y[0], y + c.y[1]];
+                    // The part's material inside the piece: from its underside up to the tallest the part stands there.
+                    let region = o.struck(rect, z + c.z0, z + c.z0 + d);
                     #[allow(clippy::cast_possible_truncation, reason = "mm")]
-                    self.record(pr, kind, Severity::Hit, part, n.j, d as f32, |o| {
+                    self.record(pr, kind, Severity::Hit, part, n.j, d as f32, region, |o| {
                         meeting(o, rect, z + c.z0, [x, y], true)
                     });
                 }
@@ -315,10 +317,19 @@ impl Walker<'_> {
                 if d > f64::from(EPS) {
                     let rect = [o.bounds[0], o.bounds[2], y - m.to_rod, y + m.to_rod];
                     let kind = pr.leg.unwrap_or(Kind::Gantry);
+                    // The part inside the beam's band, from the beam's underside to the part's height under it.
+                    let region = o.struck(rect, z + m.rod, f64::from(b.at(y)));
                     #[allow(clippy::cast_possible_truncation, reason = "mm")]
-                    self.record(pr, kind, Severity::Hit, Part::Gantry, n.j, d as f32, |o| {
-                        meeting(o, rect, z + m.rod, [x, y], false)
-                    });
+                    self.record(
+                        pr,
+                        kind,
+                        Severity::Hit,
+                        Part::Gantry,
+                        n.j,
+                        d as f32,
+                        region,
+                        |o| meeting(o, rect, z + m.rod, [x, y], false),
+                    );
                 }
             }
             if n.lid && top > z + m.lid {
@@ -332,6 +343,7 @@ impl Walker<'_> {
                     Part::Lid,
                     n.j,
                     (top - z - m.lid) as f32,
+                    o.struck(rect, z + m.lid, top),
                     |o| meeting(o, rect, z + m.lid, [x, y], false),
                 );
             }
@@ -340,8 +352,13 @@ impl Walker<'_> {
                 // A head that is not measured cannot clear it by its own shape: the radius blocks, as in Bambu Studio.
                 if let Some((severity, part)) = super::rules::radius_hit(d, m.radius, m.estimated) {
                     let short = m.radius - d;
+                    // Where the radius holds as a hit, the part inside it above the nozzle; a close call has no region.
+                    let r = m.radius;
+                    let region = (severity == Severity::Hit)
+                        .then(|| o.struck([x - r, x + r, y - r, y + r], z + m.nozzle_height, top))
+                        .flatten();
                     #[allow(clippy::cast_possible_truncation, reason = "mm")]
-                    self.record(pr, Kind::Hotend, severity, part, n.j, short as f32, |o| {
+                    self.record(pr, Kind::Hotend, severity, part, n.j, short as f32, region, |o| {
                         let q = nearest_on_hull(&o.hull, [x, y]);
                         Some((
                             [q[0], q[1], (z + m.nozzle_height).min(f64::from(o.top))],
@@ -363,6 +380,7 @@ impl Walker<'_> {
         part: Part,
         j: usize,
         depth: f32,
+        region: Option<[[f32; 3]; 2]>,
         contact: impl FnOnce(&super::Obstacle) -> Option<([f64; 3], f32)>,
     ) {
         let mover = u32::try_from(self.k).unwrap_or(u32::MAX);
@@ -410,6 +428,7 @@ impl Walker<'_> {
             last_layer: pr.layer,
             moves: 1,
             near,
+            contact: region,
         });
     }
 

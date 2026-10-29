@@ -59,6 +59,17 @@ fn cross(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
     d1 * d2 < -1e-9 && d3 * d4 < -1e-9
 }
 
+/// Where the segments `a`-`b` and `c`-`d` meet, for two that [`cross`].
+fn crossing(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> [f64; 2] {
+    let (r, q) = ([b[0] - a[0], b[1] - a[1]], [d[0] - c[0], d[1] - c[1]]);
+    let den = r[0] * q[1] - r[1] * q[0];
+    if den.abs() < 1e-12 {
+        return [f64::midpoint(a[0], b[0]), f64::midpoint(a[1], b[1])];
+    }
+    let t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den;
+    [a[0] + t * r[0], a[1] + t * r[1]]
+}
+
 /// One drawn segment: its owner, whether it is support, its ends and its index in the layer.
 #[derive(Clone, Copy)]
 struct Seg {
@@ -150,7 +161,7 @@ pub(crate) fn check(
                 change: None,
             }
         };
-        let mut add = |kind: Kind, mover: u32, obstacle: u32, m: Moment| {
+        let mut add = |kind: Kind, mover: u32, obstacle: u32, m: Moment, spot: Option<[f32; 3]>| {
             hits.add(Hit {
                 kind,
                 severity: Severity::Hit,
@@ -164,6 +175,8 @@ pub(crate) fn check(
                 last_layer: m.layer,
                 moves: 1,
                 near: f32::MAX,
+                // Where they meet; the pair's hits grow it into the box round every crossing.
+                contact: Some([spot.unwrap_or(m.point); 2]),
             });
         };
         // Print paths in a keep-out zone: any move that runs more than the contact tolerance inside it, though its ends
@@ -188,6 +201,7 @@ pub(crate) fn check(
                         s.owner,
                         n + 1 + u32::try_from(k).unwrap_or(0),
                         at(s, p),
+                        None,
                     );
                 }
             }
@@ -222,6 +236,7 @@ pub(crate) fn check(
                             s.owner,
                             n + 1 + u32::try_from(k).unwrap_or(0),
                             at(s, p),
+                            None,
                         );
                     }
                 }
@@ -285,7 +300,10 @@ pub(crate) fn check(
                     if o.owner != s.owner && !(o.support && s.support) && cross(s.a, s.b, o.a, o.b) {
                         let (mover, obstacle) = (s.owner.max(o.owner), s.owner.min(o.owner));
                         let p = [f64::midpoint(s.a[0], s.b[0]), f64::midpoint(s.a[1], s.b[1])];
-                        add(Kind::PathConflict, mover, obstacle, at(s, p));
+                        let q = crossing(s.a, s.b, o.a, o.b);
+                        #[allow(clippy::cast_possible_truncation, reason = "preview data is f32")]
+                        let spot = [q[0] as f32, q[1] as f32, l.z];
+                        add(Kind::PathConflict, mover, obstacle, at(s, p), Some(spot));
                     }
                 }
                 cell.push(i);
@@ -327,14 +345,27 @@ pub(crate) fn overlaps(
                     (f64::midpoint(f64::from(c[1]), f64::from(c[3])) / SCALE) as f32,
                     l.z,
                 ];
-                pairs.push((a.object.max(b.object), a.object.min(b.object), at));
+                #[allow(clippy::cast_possible_truncation, reason = "preview data is f32")]
+                let region = [
+                    [
+                        (f64::from(c[0]) / SCALE) as f32,
+                        (f64::from(c[1]) / SCALE) as f32,
+                        l.z,
+                    ],
+                    [
+                        (f64::from(c[2]) / SCALE) as f32,
+                        (f64::from(c[3]) / SCALE) as f32,
+                        l.z,
+                    ],
+                ];
+                pairs.push((a.object.max(b.object), a.object.min(b.object), at, region));
             }
         }
         pairs
     });
     let mut hits = Hits::default();
     for (l, pairs) in out.layers.iter().zip(found) {
-        for (mover, obstacle, at) in pairs {
+        for (mover, obstacle, at, region) in pairs {
             let m = Moment {
                 layer: l.index,
                 segment: 0,
@@ -356,6 +387,7 @@ pub(crate) fn overlaps(
                 last_layer: l.index,
                 moves: 1,
                 near: f32::MAX,
+                contact: Some(region),
             });
         }
     }
