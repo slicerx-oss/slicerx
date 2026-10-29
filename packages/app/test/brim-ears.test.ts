@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import type { MeshHandle } from '@slicerx/contracts'
@@ -13,6 +13,7 @@ import { addEar, autoGenerateEars, clearEars, defaultHeadDiameter, moveEar, remo
 import { boxMesh } from '../src/plate/mesh-ops'
 import { apply, bounds, compose, type Mat4 } from '../src/plate/transform'
 import { get, set, type PlateEntry } from '../src/state/store'
+import { wasmBuilt } from './geom-engine'
 
 const bed = { widthMm: 256, depthMm: 256 }
 const handle = (id: string): MeshHandle => ({ id, hash: id, name: id, triangles: 12, bboxMm: [1, 1, 1], openEdges: 0, parts: [] })
@@ -168,7 +169,7 @@ function turnedProjectFiles(ears: string) {
 }
 
 const wasm = join(__dirname, '..', '..', 'geom', 'wasm', 'pkg', 'sx_geom_core.wasm')
-const engine = existsSync(wasm) ? ((await WebAssembly.instantiate(readFileSync(wasm), {})).instance.exports as unknown as GeomExports) : null
+const engine = wasmBuilt(wasm) ? ((await WebAssembly.instantiate(readFileSync(wasm), {})).instance.exports as unknown as GeomExports) : null
 
 for (const reader of ['typescript', 'engine'] as const) {
   describe.skipIf(reader === 'engine' && !engine)(`a turned object with moved parts and format 1 ears, read by the ${reader} reader`, () => {

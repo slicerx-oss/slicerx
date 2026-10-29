@@ -5,16 +5,17 @@
 // and through a nested component, all come in (findings CAD-006, CAD-007 and CAD-008 of the October 2026 review). Each
 // case runs through the TypeScript reader, and through the geometry engine's reader when the engine is built
 // (packages/geom/wasm/scripts/build.sh). Placement on the bed moves objects, so the checks are on sizes and distances.
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { projectOf, readProjectsWithGeom, scanProjectFile } from '../src/export/import3mf'
 import { setGeomProvider } from '../src/geom/client'
 import { callEngine, type GeomExports } from '../src/geom/engine-call'
 import { zip } from '../src/export/zip'
+import { wasmBuilt } from './geom-engine'
 
 const wasm = join(__dirname, '..', '..', 'geom', 'wasm', 'pkg', 'sx_geom_core.wasm')
-const engine = existsSync(wasm) ? ((await WebAssembly.instantiate(readFileSync(wasm), {})).instance.exports as unknown as GeomExports) : null
+const engine = wasmBuilt(wasm) ? ((await WebAssembly.instantiate(readFileSync(wasm), {})).instance.exports as unknown as GeomExports) : null
 
 const vertices = '<vertex x="0" y="0" z="0"/><vertex x="1" y="0" z="0"/><vertex x="0" y="1" z="0"/><vertex x="0" y="0" z="1"/>'
 const triangles = '<triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="1" v3="3"/><triangle v1="0" v2="3" v3="2"/><triangle v1="1" v2="2" v3="3"/>'
