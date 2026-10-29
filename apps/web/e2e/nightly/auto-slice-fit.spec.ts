@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A big plate's auto slice waits for the plate's fit check (state/auto-slice.ts), so the fit check runs whatever is on
-// screen: with Slice's right pane shut, as people get it, where the objects list is not drawn. After the open and after
-// a preset edit the slice starts soon, not after the fit check's longest wait.
+// screen: with Slice's right pane shut, as people get it, where the objects list is not drawn. An opened project waits
+// for Slice plate, whatever its size; after a preset edit the slice starts soon, not after the fit check's longest wait.
 import { expect, test } from '@playwright/test'
 import { viewSized } from '../fixtures'
 import { zip } from '../project-zip'
@@ -28,7 +28,7 @@ function tube(rings: number, around: number): string {
   return `<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" name="Tube" type="model"><mesh><vertices>${v.join('')}</vertices><triangles>${t.join('')}</triangles></mesh></object></resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 120 120 0"/></build></model>`
 }
 
-test('a big plate slices soon after it opens and after a preset edit, with the right pane shut', { tag: '@nightly' }, async ({ page, isMobile }) => {
+test('a big opened plate waits for Slice plate, then slices soon after a preset edit, with the right pane shut', { tag: '@nightly' }, async ({ page, isMobile }) => {
   test.skip(isMobile, 'Desktop width: on a phone the objects list is in the settings sheet')
   test.slow()
   await page.addInitScript(() => {
@@ -74,20 +74,19 @@ test('a big plate slices soon after it opens and after a preset edit, with the r
     await expect.poll(() => chosen, { timeout: 10_000 }).toBeGreaterThan(0)
   }).toPass({ timeout: 60_000 })
   await expect.poll(async () => { const s = await state(); return !s.loading && s.names.includes('Tube') }, { timeout: 120_000 }).toBe(true)
-  // Well inside the fit check's longest wait (FIT_WAIT_MS, 15 s): the check ran and said it was done.
-  const soon = 7_500
-  let from = Date.now()
-  await expect.poll(() => started(before), { timeout: soon, intervals: [50] }).toBe(true)
-  const opened = Date.now() - from
-  // A preset edit (the Fine goal) once that slice is done: the next one starts as soon.
-  await expect.poll(async () => (await state()).status, { timeout: 120_000 }).not.toBe('running')
-  // The tube is a new project, and its finished slice left the right pane shut too. Start the clock once the view has
-  // settled, not while the canvas is being resized.
+  // The open slices nothing, big plate or not: Slice plate is the action until it is pressed or the plate is edited.
+  await expect(page.getByTestId('slice-estimate-held')).toBeVisible()
+  await page.waitForTimeout(1_000)
+  expect(await started(before)).toBe(false)
+  // A preset edit (the Fine goal) slices well inside the fit check's longest wait (FIT_WAIT_MS, 15 s): the check ran
+  // and said it was done. The tube is a new project, and its open left the right pane shut. Start the clock once the
+  // view has settled, not while the canvas is being resized.
   await expect(tab).toHaveAttribute('aria-expanded', 'false')
   await viewSized(page)
+  const soon = 7_500
   const first = { startedAt: (await state()).startedAt, slices: await slices() }
-  from = Date.now()
+  const from = Date.now()
   await page.getByTestId('slice-goal-fine').click()
   await expect.poll(() => started(first), { timeout: soon, intervals: [50] }).toBe(true)
-  test.info().annotations.push({ type: 'auto slice', description: `started ${opened} ms after the open and ${Date.now() - from} ms after the edit` })
+  test.info().annotations.push({ type: 'auto slice', description: `started ${Date.now() - from} ms after the edit` })
 })
