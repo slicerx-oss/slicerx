@@ -349,12 +349,22 @@ export interface Collision {
   /** The plate object printing, and the one it meets. */
   objectId: string
   hitId: string
+  /**
+   * The plate object whose material is struck: the one the gantry, the head or a tool change meets; of two objects whose
+   * paths cross, the later in print order; the object itself against the prime tower or a keep-out zone. Absent from
+   * older engines.
+   */
+  damagedId?: string
   /** When it first happens: plate layer (0-based), the layer's extrusion segment as the preview counts them, print time. */
   layer: number
   segment: number
   timeS: number
   lastLayer: number
-  /** The nozzle tip, and where the machine meets the part, at that moment, mm. */
+  /**
+   * The nozzle tip, and where the machine meets the part, at that moment, mm. Every position here is in the machine's
+   * coordinates, where the request placed the objects; a plate that counts from the printable area's front left corner
+   * subtracts that corner.
+   */
   at: [number, number, number]
   point: [number, number, number]
   /** The layer and the spot where it goes deepest. */
@@ -369,6 +379,12 @@ export interface Collision {
   pushMm?: number
   /** During a tool change: the tools (0-based) and how far along the trip, 0 to 1. */
   change?: [number, number, number]
+  /**
+   * The region struck, mm: the struck part's material inside the piece of the machine at the deepest moment, or the box
+   * round every crossing of two paths or of a path and a zone. Absent for a close call and from older engines.
+   */
+  contactMin?: [number, number, number]
+  contactMax?: [number, number, number]
 }
 
 export type CollisionFixKind = 'reorder' | 'by_layer' | 'spread' | 'raise_lift' | 'move_object' | 'arrange'

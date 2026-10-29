@@ -16,6 +16,10 @@ pub struct Collision {
     /// The object printing, and the one it meets.
     pub object_id: String,
     pub hit_id: String,
+    /// The object whose material is struck: the one met by the gantry, the head or a tool change; of two objects whose
+    /// paths cross, the later in print order; the object printing into a keep-out zone or across the prime tower.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub damaged_id: String,
     /// When it first happens: the plate layer (0-based), the move in it as the preview counts them, the print time.
     pub layer: u32,
     pub segment: u32,
@@ -41,6 +45,13 @@ pub struct Collision {
     /// During a tool change: the tools (0-based) and how far along the trip, 0 to 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub change: Option<(u8, u8, f32)>,
+    /// The region struck, mm, as `at` and `point` give positions (the machine's coordinates, where the request placed
+    /// the objects): the struck part's material inside the piece of the machine at the deepest moment, or the box round
+    /// every crossing of two paths or of a path and a zone. Absent for a close call.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_min: Option<[f32; 3]>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_max: Option<[f32; 3]>,
 }
 
 #[allow(
@@ -163,7 +174,19 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
         }
     }
     let mut collisions = Vec::with_capacity(kept.len());
+    let n = u32::try_from(meta.objects.len()).unwrap_or(u32::MAX);
     for &(time_s, h) in &kept {
+        // The struck part: what the machine meets; the later of two objects whose paths cross; the object itself
+        // against the prime tower or a keep-out zone, which are no parts.
+        let damaged = match h.kind {
+            Kind::KeepOut => h.mover,
+            Kind::PathConflict => match (h.mover < n, h.obstacle < n) {
+                (true, true) => h.mover.max(h.obstacle),
+                (true, false) => h.mover,
+                _ => h.obstacle,
+            },
+            _ => h.obstacle,
+        };
         let limit = match (h.severity, h.part) {
             (Severity::Close, _) | (_, Part::Clearance) => meta.radius,
             (_, Part::Gantry) => meta.rod,
@@ -176,6 +199,11 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
             part: h.part,
             object_id: meta.id(h.mover),
             hit_id: meta.id(h.obstacle),
+            damaged_id: if damaged < n {
+                meta.id(damaged)
+            } else {
+                String::new()
+            },
             layer: h.first.layer,
             segment: h.first.segment,
             time_s,
@@ -189,6 +217,8 @@ pub fn report(meta: &Meta, hits: &[Hit], layer_s: &[f64], prepare_s: f64) -> Rep
             limit_mm: limit,
             push_mm: h.push,
             change: h.first.change,
+            contact_min: h.contact.map(|c| c[0]),
+            contact_max: h.contact.map(|c| c[1]),
         });
     }
     let mut hits_kept = Vec::with_capacity(kept.len());
@@ -490,6 +520,7 @@ mod tests {
             last_layer: layer + 10,
             moves: 20,
             near: f32::MAX,
+            contact: None,
         }
     }
 
@@ -578,6 +609,41 @@ mod tests {
         let r = report(&m, &[close, hit(Kind::Hotend, Part::Toolhead, 1, 0, 0)], &[], 0.0);
         assert_eq!(r.collisions.len(), 1);
         assert_eq!(r.collisions[0].severity, Severity::Hit);
+    }
+
+    #[test]
+    fn each_collision_names_the_object_whose_material_is_struck() {
+        let mut m = meta(vec![obj("a", 30.0, 50.0), obj("b", 30.0, 80.0)]);
+        m.zones = vec![1];
+        let hits = vec![
+            // b's toolhead meets a: a is struck
+            hit(Kind::Hotend, Part::Toolhead, 1, 0, 5),
+            // a's and b's paths cross: b, the later in print order, is struck, whichever side moves
+            hit(Kind::PathConflict, Part::Nozzle, 0, 1, 6),
+            // a's paths cross the prime tower (obstacle 2): a is the part
+            hit(Kind::PathConflict, Part::Nozzle, 0, 2, 7),
+            // b prints into the wrap check corner (obstacle 3): b is the part
+            hit(Kind::KeepOut, Part::Nozzle, 1, 3, 8),
+        ];
+        let r = report(&m, &hits, &[], 0.0);
+        let mut damaged: Vec<(String, String, String)> = r
+            .collisions
+            .iter()
+            .map(|c| {
+                let v = serde_json::to_value(c).unwrap();
+                let damaged = v["damagedId"].as_str().unwrap_or("").to_owned();
+                (c.object_id.clone(), c.hit_id.clone(), damaged)
+            })
+            .collect();
+        damaged.sort();
+        let want = [
+            ("a", "b", "b"),
+            ("a", "prime-tower", "a"),
+            ("b", "a", "a"),
+            ("b", "wrap-check-zone", "b"),
+        ]
+        .map(|(o, h, d)| (o.to_owned(), h.to_owned(), d.to_owned()));
+        assert_eq!(damaged, want);
     }
 
     #[test]

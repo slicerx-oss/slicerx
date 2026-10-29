@@ -1233,3 +1233,171 @@ fn a_print_in_the_a1_wrap_check_corner_is_a_keep_out_hit() {
     let away = run(&[("box", block(15.0, 15.0, 4.0), 100.0, 100.0)], zone, json!({}));
     assert!(away.report.collisions.is_empty());
 }
+
+/// A collision as the result JSON writes it, for the fields a reader picks the struck part and its region by.
+fn written(c: &sx_core::collide::Collision) -> Value {
+    serde_json::to_value(c).unwrap()
+}
+
+/// The struck region a collision writes, `[min, max]` mm, or a message naming what is missing.
+fn contact(c: &sx_core::collide::Collision) -> [[f64; 3]; 2] {
+    let v = written(c);
+    let corner = |key: &str| -> [f64; 3] {
+        let p = v[key].as_array().unwrap_or_else(|| panic!("no {key}: {v}"));
+        [0, 1, 2].map(|i| p[i].as_f64().unwrap())
+    };
+    [corner("contactMin"), corner("contactMax")]
+}
+
+#[test]
+fn the_gantry_contact_box_spans_the_part_above_the_rod() {
+    let rod = json!({"extruder_clearance_height_to_rod": 10, "extruder_clearance_dist_to_rod": 40});
+    let r = run(
+        &[
+            ("tall", block(20.0, 20.0, 20.0), 60.0, 100.0),
+            ("low", block(20.0, 20.0, 6.0), 140.0, 100.0),
+        ],
+        rod,
+        json!({}),
+    );
+    let c = r
+        .report
+        .collisions
+        .iter()
+        .find(|c| c.kind == Kind::Gantry)
+        .expect("the gantry strike");
+    // The beam meets the tall box, which printed first: that box is the part struck.
+    assert_eq!(written(c)["damagedId"], "tall", "{}", written(c));
+    let [lo, hi] = contact(c);
+    // Across the tall box's footprint (the beam's band holds all of it), from the beam's underside over the low box's
+    // first layer up to the tall box's top.
+    assert!(
+        (lo[0] - 60.0).abs() < 0.01 && (hi[0] - 80.0).abs() < 0.01,
+        "{lo:?} {hi:?}"
+    );
+    assert!(
+        (lo[1] - 100.0).abs() < 0.01 && (hi[1] - 120.0).abs() < 0.01,
+        "{lo:?} {hi:?}"
+    );
+    assert!(lo[2] > 10.0 && lo[2] < 10.6, "{lo:?}");
+    assert!((hi[2] - 20.0).abs() < 0.1, "{hi:?}");
+    // The deepest moment lies inside it.
+    for i in 0..3 {
+        let p = f64::from(c.worst_point[i]);
+        assert!(
+            p >= lo[i] - 0.01 && p <= hi[i] + 0.01,
+            "{:?} outside {lo:?} {hi:?}",
+            c.worst_point
+        );
+    }
+}
+
+#[test]
+fn a_toolhead_hit_names_the_damaged_object() {
+    let objects = [
+        ("tall", block(20.0, 20.0, 30.0), 60.0, 100.0),
+        ("low", block(20.0, 20.0, 5.0), 88.0, 100.0),
+    ];
+    let r = run(&objects, json!({}), json!({}));
+    let hit = r
+        .report
+        .collisions
+        .iter()
+        .find(|c| c.kind == Kind::Hotend && c.severity == Severity::Hit)
+        .expect("a toolhead hit");
+    assert_eq!(hit.object_id, "low");
+    assert_eq!(written(hit)["damagedId"], "tall", "{}", written(hit));
+    // The region of the tall box inside the head's body at the deepest moment: on its side facing the low box, above
+    // the body's underside and no higher than its top.
+    let [lo, hi] = contact(hit);
+    assert!(
+        lo[0] >= 60.0 - 0.01 && (hi[0] - 80.0).abs() < 0.01,
+        "{lo:?} {hi:?}"
+    );
+    assert!(
+        lo[1] >= 100.0 - 0.01 && hi[1] <= 120.0 + 0.01 && hi[1] > lo[1],
+        "{lo:?} {hi:?}"
+    );
+    assert!(
+        lo[2] > 5.0 && hi[2] <= 30.0 + 0.01 && hi[2] > lo[2],
+        "{lo:?} {hi:?}"
+    );
+}
+
+#[test]
+fn crossing_paths_strike_the_later_object_and_box_every_crossing() {
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [
+            {"id": "a", "name": "a", "mesh": "a", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 60,100,0,1]},
+            {"id": "b", "name": "b", "mesh": "a", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 70,105,0,1], "settings": {"wall_loops": 3}},
+        ]},
+        "config": {"brim_width": 0, "skirt_loops": 0},
+    }))
+    .unwrap();
+    let cube = block(20.0, 20.0, 4.0);
+    let r = common::run_request(&req, &move |_: &str| Ok(cube.clone())).unwrap();
+    let c = r
+        .report
+        .collisions
+        .iter()
+        .find(|c| c.kind == Kind::PathConflict)
+        .expect("crossing paths");
+    assert_eq!(written(c)["damagedId"], "b", "{}", written(c));
+    // The crossings lie where the two cubes overlap (x 70 to 80, y 105 to 120), from the first layer they cross on to
+    // the last.
+    let [lo, hi] = contact(c);
+    assert!(lo[0] >= 69.0 && hi[0] <= 81.0 && hi[0] > lo[0], "{lo:?} {hi:?}");
+    assert!(lo[1] >= 104.0 && hi[1] <= 121.0 && hi[1] > lo[1], "{lo:?} {hi:?}");
+    assert!(hi[2] > lo[2] + 1.0, "{lo:?} {hi:?}");
+}
+
+#[test]
+fn a_keep_out_hit_strikes_the_object_printing_in_the_zone() {
+    let zone = json!({"head_wrap_detect_zone": ["226x224", "256x224", "256x256", "226x256"], "printable_area": ["0x0", "256x0", "256x256", "0x256"]});
+    let r = run(&[("box", block(15.0, 15.0, 4.0), 235.0, 235.0)], zone, json!({}));
+    let c = &r.report.collisions[0];
+    assert_eq!(written(c)["damagedId"], "box", "{}", written(c));
+    let [lo, hi] = contact(c);
+    // Inside the corner and the box both.
+    assert!(lo[0] >= 226.0 - 0.5 && hi[0] <= 250.0 + 0.5, "{lo:?} {hi:?}");
+    assert!(lo[1] >= 224.0 - 0.5 && hi[1] <= 250.0 + 0.5, "{lo:?} {hi:?}");
+}
+
+#[test]
+fn collision_positions_are_machine_coordinates_on_a_bed_that_does_not_start_at_zero() {
+    // A bed whose printable area is centered on 0, 0: the plate's 0, 0 is the machine's -128, -128. The objects go out
+    // in machine coordinates, as the app sends them, and every position comes back in them.
+    let bed = json!({
+        "printable_area": ["-128x-128", "128x-128", "128x128", "-128x128"],
+        "extruder_clearance_height_to_rod": 10, "extruder_clearance_dist_to_rod": 40,
+    });
+    let r = run(
+        &[
+            ("tall", block(20.0, 20.0, 20.0), -60.0, -10.0),
+            ("low", block(20.0, 20.0, 6.0), 20.0, -10.0),
+        ],
+        bed,
+        json!({}),
+    );
+    let c = r
+        .report
+        .collisions
+        .iter()
+        .find(|c| c.kind == Kind::Gantry)
+        .expect("the gantry strike");
+    for p in [c.point, c.worst_point] {
+        assert!(
+            p[0] >= -60.01 && p[0] <= -39.99 && p[1] >= -10.01 && p[1] <= 10.01,
+            "{p:?}"
+        );
+    }
+    let [lo, hi] = contact(c);
+    assert!(
+        (lo[0] + 60.0).abs() < 0.01 && (hi[0] + 40.0).abs() < 0.01,
+        "{lo:?} {hi:?}"
+    );
+    assert!(
+        (lo[1] + 10.0).abs() < 0.01 && (hi[1] - 10.0).abs() < 0.01,
+        "{lo:?} {hi:?}"
+    );
+}

@@ -118,6 +118,18 @@ pub struct Hit {
     pub moves: u32,
     /// While walking a layer range: the nozzle's nearest approach to the part, mm.
     pub near: f32,
+    /// The region struck, `[min, max]` mm in the machine's coordinates as `at` and `point` are: for the machine, the
+    /// struck part's material inside the piece that meets it at the deepest moment; for crossing paths and keep-out
+    /// zones, the box round every crossing. None for a close call.
+    pub contact: Option<[[f32; 3]; 2]>,
+}
+
+/// The box holding both boxes.
+fn union(a: [[f32; 3]; 2], b: [[f32; 3]; 2]) -> [[f32; 3]; 2] {
+    [
+        [a[0][0].min(b[0][0]), a[0][1].min(b[0][1]), a[0][2].min(b[0][2])],
+        [a[1][0].max(b[1][0]), a[1][1].max(b[1][1]), a[1][2].max(b[1][2])],
+    ]
 }
 
 impl Hit {
@@ -137,6 +149,15 @@ impl Hits {
             let earlier = (h.first.layer, h.first.segment) < (e.first.layer, e.first.segment);
             if earlier {
                 e.first = h.first;
+            }
+            // Crossings and zones box every place they meet; the machine's region goes with its deepest moment.
+            if matches!(h.kind, Kind::PathConflict | Kind::KeepOut) {
+                e.contact = match (e.contact, h.contact) {
+                    (Some(a), Some(b)) => Some(union(a, b)),
+                    (a, b) => a.or(b),
+                };
+            } else if h.depth > e.depth {
+                e.contact = h.contact;
             }
             if h.depth > e.depth {
                 e.depth = h.depth;
@@ -186,6 +207,15 @@ impl Hits {
             ]);
             moment(&h.first, &mut out);
             moment(&h.worst, &mut out);
+            // A flag, then the region's corners.
+            out.push(if h.contact.is_some() { 1.0 } else { 0.0 });
+            out.extend(
+                h.contact
+                    .unwrap_or_default()
+                    .iter()
+                    .flatten()
+                    .map(|&v| f64::from(v)),
+            );
         }
         out
     }
@@ -231,10 +261,17 @@ impl Hits {
             ) = (
                 r.get(..9),
                 r.get(9..21).and_then(moment),
-                r.get(21..).and_then(moment),
+                r.get(21..33).and_then(moment),
             )
             else {
                 break;
+            };
+            let contact = match r.get(33..) {
+                Some(&[flag, x0, y0, z0, x1, y1, z1]) if flag > 0.5 => Some([
+                    [x0 as f32, y0 as f32, z0 as f32],
+                    [x1 as f32, y1 as f32, z1 as f32],
+                ]),
+                _ => None,
             };
             let kind = match kind as u8 {
                 0 => Kind::Gantry,
@@ -270,6 +307,7 @@ impl Hits {
                 last_layer: last_layer as u32,
                 moves: moves as u32,
                 near: f32::MAX,
+                contact,
             });
         }
         out
@@ -277,7 +315,7 @@ impl Hits {
 }
 
 /// Numbers per hit in [`Hits::to_numbers`].
-const HIT_NUMBERS: usize = 33;
+const HIT_NUMBERS: usize = 40;
 
 /// An object of the plate as the report needs it.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -398,12 +436,25 @@ struct Obstacle {
     top: f32,
     bounds: [f64; 4],
     hull: Vec<[f64; 2]>,
+    /// The footprint's own extent, `[min x, min y, max x, max y]` mm, for the region a strike reports.
+    extent: [f64; 4],
     /// Per head, the grid grown by each of its columns, made on first use.
     fields: Vec<OnceLock<Vec<Grid>>>,
     beam: OnceLock<Profile>,
 }
 
 impl Obstacle {
+    /// The part's material inside the box `rect` (`[x0, x1, y0, y1]`) from `z0` to `z1`, mm: the box clipped to the
+    /// part's footprint and height. None when nothing is left.
+    #[allow(clippy::cast_possible_truncation, reason = "plate positions in mm fit f32")]
+    fn struck(&self, rect: [f64; 4], z0: f64, z1: f64) -> Option<[[f32; 3]; 2]> {
+        let e = self.extent;
+        let lo = [rect[0].max(e[0]), rect[2].max(e[1]), z0.max(0.0)];
+        let hi = [rect[1].min(e[2]), rect[3].min(e[3]), z1.min(f64::from(self.top))];
+        (lo[0] <= hi[0] && lo[1] <= hi[1] && lo[2] <= hi[2])
+            .then(|| [lo.map(|v| v as f32), hi.map(|v| v as f32)])
+    }
+
     fn grid(&self) -> &Grid {
         crate::par::Init::once(&self.grid, || Grid::of_surface(self.surface()))
     }
@@ -525,6 +576,10 @@ impl Model {
                     hi[1].floor() + 1.0,
                 ],
                 hull: f.hull.clone(),
+                extent: f.hull.iter().fold(
+                    [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY],
+                    |b, p| [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])],
+                ),
                 fields,
                 beam: OnceLock::new(),
             });
@@ -628,6 +683,7 @@ mod tests {
             last_layer: layer,
             moves: 1,
             near: f32::MAX,
+            contact: None,
         }
     }
 
@@ -635,6 +691,7 @@ mod tests {
     fn hits_and_facts_go_through_their_json_and_back() {
         let mut h = hit(4, 2.5);
         h.first.change = Some((1, 3, 0.25));
+        h.contact = Some([[1.0, 2.0, 3.0], [4.5, 5.5, 6.5]]);
         h.kind = Kind::Dock;
         h.part = Part::Lid;
         h.severity = Severity::Close;
@@ -684,5 +741,24 @@ mod tests {
             (3, 9, 9, 3)
         );
         assert!((h.depth - 4.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_machine_keeps_the_deepest_region_and_crossings_box_them_all() {
+        let boxed = |layer: u32, depth: f32, kind: Kind, x: f32| {
+            let mut h = hit(layer, depth);
+            h.kind = kind;
+            h.contact = Some([[x, 0.0, 0.0], [x + 1.0, 1.0, 1.0]]);
+            h
+        };
+        let mut a = Hits::default();
+        a.add(boxed(3, 1.0, Kind::Gantry, 10.0));
+        a.add(boxed(5, 4.0, Kind::Gantry, 20.0));
+        a.add(boxed(7, 2.0, Kind::Gantry, 30.0));
+        assert_eq!(a.0[0].contact, Some([[20.0, 0.0, 0.0], [21.0, 1.0, 1.0]]));
+        let mut b = Hits::default();
+        b.add(boxed(3, 0.0, Kind::PathConflict, 10.0));
+        b.add(boxed(5, 0.0, Kind::PathConflict, 30.0));
+        assert_eq!(b.0[0].contact, Some([[10.0, 0.0, 0.0], [31.0, 1.0, 1.0]]));
     }
 }
