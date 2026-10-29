@@ -10,6 +10,7 @@ import { readProject } from '../src/export/import3mf'
 import { zip } from '../src/export/zip'
 import { slicePlate, trustOptions } from '../src/state/actions'
 import { profileReady } from '../src/state/profile-sync'
+import { binBuilt, SX_BUILD } from './binaries'
 import { answerProjectGcode, reviewOpenedGcode } from '../src/state/project-gcode'
 import { get, set } from '../src/state/store'
 import { reviewImportedScripts } from '../src/project/script-review'
@@ -53,7 +54,7 @@ beforeEach(async () => {
 })
 
 describe("a project's own printer G-code", () => {
-  it.skipIf(!process.env['SLICERX_TEST_SX_BIN'])('carries a real engine cosmetic match into the slice without person approval', async () => {
+  it.skipIf(!binBuilt(process.env['SLICERX_TEST_SX_BIN'], SX_BUILD))('carries a real engine cosmetic match into the slice without person approval', async () => {
     const selected = { model: 'bambu-a1', firmware: 'marlin' }
     const text = '  M400 U1 ; pause\r\n'
     const settings = { printer_model: 'Bambu Lab A1', gcode_flavor: 'marlin', machine_pause_gcode: text }

@@ -7,7 +7,7 @@
 // Skipped unless SX_LINK_BIN names a built sx-link and sx-relay is built (cargo build -p sx-link -p sx-relay).
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { createHmac } from 'node:crypto'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
@@ -22,10 +22,12 @@ import { setPhoneAccess } from '../src/lib/phone'
 import { createRemoteAccess, setRemoteAccess } from '../src/features/phone/remote'
 import { sealedPairStores, type DocStore } from '../src/features/phone/sealed'
 import { pairSourceFor, phoneAccessFor } from '../src/features/phone/wire'
+import { binBuilt } from './binaries'
 
 const linkBin = process.env['SX_LINK_BIN'] ?? ''
 const relayBin = process.env['SX_RELAY_BIN'] ?? new URL('../../../target/debug/sx-relay', import.meta.url).pathname
-const built = linkBin !== '' && existsSync(linkBin) && existsSync(relayBin)
+const built = binBuilt(linkBin || undefined, 'build sx-link (cargo build -p sx-link) and name it in SX_LINK_BIN')
+  && binBuilt(relayBin, 'build sx-relay (cargo build -p sx-relay)')
 // A phone only accepts a wss relay in a pairing, and sx-relay here listens on plain ws at loopback (the hub allows that for loopback only).
 // So pairings advertise a wss address and every phone connection is routed to the local relay.
 const ADVERTISED = 'wss://relay.example.test/v1'

@@ -4,10 +4,11 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { clearReplayCache, historiesOf, historyFiles, parseHistories, parseTimeline, timelineFiles, timelineOf, type History } from '@slicerx/cad-history'
 import { geomEngine } from '../src/geom'
-import { connect, data, noSx, sxBin, text } from './helpers'
+import { BREP_BUILD, built, connect, data, noSx, sxBin, text } from './helpers'
 import { readZip } from '../src/zip'
 
 const bin = process.env['SLICERX_SX_GEOM_BIN']
+const exact = built(bin, BREP_BUILD)
 afterEach(() => { vi.unstubAllEnvs(); clearReplayCache() })
 
 it('refuses an exact design before creation when the developer opt-in is off', async () => {
@@ -47,7 +48,7 @@ it('checks a persistent exact engine without allocating a probe body', async () 
   expect(bodies).toBe(0)
 })
 
-it.skipIf(!bin)('selects the real native exact path and reads back its representation', async () => {
+it.skipIf(!exact)('selects the real native exact path and reads back its representation', async () => {
   vi.stubEnv('SX_BREP_DEV', '1')
   const calls: string[] = []
   const native = geomEngine(bin!, 20000)
@@ -87,7 +88,7 @@ it('refuses damaged required exact histories instead of opening their saved mesh
   expect(() => parseHistories(future, ids)).toThrow(/required exact history/)
 })
 
-it.skipIf(!bin)('keeps exact history and redo intact when an edit or redo fails', async () => {
+it.skipIf(!exact)('keeps exact history and redo intact when an edit or redo fails', async () => {
   vi.stubEnv('SX_BREP_DEV', '1')
   let refuse = false
   const native = geomEngine(bin!, 20000)
@@ -123,7 +124,7 @@ it.skipIf(!bin)('keeps exact history and redo intact when an edit or redo fails'
   expect((await ok('slicerx_design_steps', { design: d })).steps).toHaveLength(1)
 }, 40000)
 
-it.skipIf(!bin || noSx())('replays an exact bracket hole edit through a later cut, project reopen and real slicing', async () => {
+it.skipIf(!exact || noSx())('replays an exact bracket hole edit through a later cut, project reopen and real slicing', async () => {
   vi.stubEnv('SX_BREP_DEV', '1')
   const calls: string[] = []
   const native = geomEngine(bin!, 20000)

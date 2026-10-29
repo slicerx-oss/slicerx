@@ -2,15 +2,16 @@
 // Copyright (C) 2026 The SlicerX contributors
 // the native entry point runs the built tool runtime and reads the resulting design back.
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
+import { built } from './helpers'
 
 const run = promisify(execFile)
 const pkg = resolve(__dirname, '..')
-const sx = process.env['SLICERX_SX_BIN'] ?? resolve(pkg, '../../target/release', process.platform === 'win32' ? 'sx.exe' : 'sx')
+const sx = process.env['SLICERX_TEST_SX_BIN'] ?? resolve(pkg, '../../target/release', process.platform === 'win32' ? 'sx.exe' : 'sx')
 const runtime = resolve(pkg, 'dist/cli.js')
 const dirs: string[] = []
 const temporary = () => {
@@ -28,7 +29,9 @@ const lines = (stdout: string) => stdout.trim().split('\n').map((line) => JSON.p
 
 afterAll(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }) })
 
-describe.skipIf(!existsSync(sx) || !existsSync(runtime))('sx call with the built tool runtime', () => {
+const ready = built(sx, 'build sx (cargo build -p sx-cli) and name it in SLICERX_TEST_SX_BIN')
+  && built(runtime, 'build the tool runtime (node packages/mcp/scripts/build.mjs)')
+describe.skipIf(!ready)('sx call with the built tool runtime', () => {
   it('models through native geometry and reads back the same history and solid', async () => {
     const dir = temporary()
     const name = 'Bracket "A" & $(literal)'

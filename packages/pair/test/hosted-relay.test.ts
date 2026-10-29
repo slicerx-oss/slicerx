@@ -4,7 +4,7 @@
 // pairing plus a session through it. The rule suite runs on both relays; the hosted half is skipped
 // unless target/debug/sx-relay is built (cargo build -p sx-relay).
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Readable } from 'node:stream'
@@ -16,13 +16,13 @@ import { toB64url, utf8 } from '../src/bytes'
 import type { HostPairingAttempt } from '../src/host'
 import { createMemoryRelay, RELAY_LIMITS } from '../src/relay'
 import { connectRelay, type RelayConnection, type SocketLike } from '../src/transport'
-import { world, type OpenRelay } from './helpers'
+import { binBuilt, world, type OpenRelay } from './helpers'
 
 const bin = new URL('../../../target/debug/sx-relay', import.meta.url).pathname
-const built = existsSync(bin)
+const built = binBuilt(bin, 'build sx-relay (cargo build -p sx-relay)')
 // The hub half runs only when SX_LINK_BIN names a built sx-link (cargo build -p sx-link).
 const linkBin = process.env['SX_LINK_BIN'] ?? ''
-const linkBuilt = built && linkBin !== '' && existsSync(linkBin)
+const linkBuilt = built && binBuilt(linkBin || undefined, 'build sx-link (cargo build -p sx-link) and name it in SX_LINK_BIN')
 const SECRET = 'hosted relay test secret'
 
 let proc: ChildProcessByStdio<null, Readable, Readable> | undefined
