@@ -2247,20 +2247,21 @@ impl SliceSession {
     /// The filament slots the whole plate prints, ascending: each object's planned tool order, or its own slots
     /// when it prints with one filament.
     pub(crate) fn plate_slots(&self) -> Vec<u8> {
-        let mut slots: Vec<u8> = self
-            .sequence()
-            .flat_map(|s| {
-                if s.tool_order.iter().any(|l| !l.is_empty()) {
-                    s.tool_order.iter().flatten().copied().collect::<Vec<u8>>()
-                } else {
-                    s.slots.clone()
-                }
-            })
-            .filter(|&t| t > 0)
-            .collect();
+        let mut slots: Vec<u8> = self.sequence().flat_map(Self::own_slots).collect();
         slots.sort_unstable();
         slots.dedup();
         slots
+    }
+
+    /// The filament slots this object alone prints (not its followers'), in plan order, repeats kept: its planned
+    /// tool order, or its own slots when it prints with one filament.
+    pub(crate) fn own_slots(&self) -> Vec<u8> {
+        let all = if self.tool_order.iter().any(|l| !l.is_empty()) {
+            self.tool_order.iter().flatten().copied().collect::<Vec<u8>>()
+        } else {
+            self.slots.clone()
+        };
+        all.into_iter().filter(|&t| t > 0).collect()
     }
 
     /// Highest filament slot on the plate.
@@ -2699,6 +2700,32 @@ impl SliceSession {
             && (self.followers.iter().all(|s| self.same_plan(s))
                 || self.plate_slots().len() < 2
                 || !crate::tower::flag(config, "enable_prime_tower"))
+    }
+
+    /// The top of each of this object's own print layers, mm (raft and support layers included, its followers' not),
+    /// for the plate check (`collide::check`).
+    pub(crate) fn print_tops(&self) -> Vec<f64> {
+        (0..self.plan_count()).map(|p| self.print_top(p)).collect()
+    }
+
+    /// How far this object's automatic brim reaches past its first layer, mm, as its first layer prints it with
+    /// `config` (its own settings): the widest of its islands. None when the brim is not automatic or a raft takes its
+    /// place. For the plate check (`collide::check`).
+    pub(crate) fn auto_brim_room(&self, config: &PrintConfig) -> Option<f64> {
+        let rooms = self.auto_brim_rooms(config);
+        // On the first object's session the plate's other footprints are listed too; its own islands may be
+        // counted to any of them, so the widest is its own.
+        rooms.into_iter().reduce(f64::max)
+    }
+
+    /// Whether this object prints on a raft.
+    pub(crate) fn has_raft(&self) -> bool {
+        self.raft_layers() > 0
+    }
+
+    /// Whether an enforcer (a volume or painted triangles) asks for support on this object.
+    pub(crate) fn enforced(&self) -> bool {
+        self.has_enforcers()
     }
 
     /// `other` plans the same layers as this session: one layer height, first layer and list of tops.
@@ -11929,7 +11956,6 @@ fn skirt_cut(skirt: &Skirt) -> Option<crate::output::SkirtCut> {
 /// The loops around one hull (a whole-part hull already includes the brim), outermost first.
 /// As in Orca: `skirt_loops` of them, and with `min_skirt_length` more until the filament
 /// of the loops, counted extruder by extruder, reaches that many mm for the extruder in turn.
-#[cfg(test)]
 pub(crate) fn loops_around(
     hull: Vec<IntPoint<i32>>,
     cfg: &PrintConfig,

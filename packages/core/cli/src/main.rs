@@ -6,6 +6,7 @@
 //!          [--allow-collisions] [--strict]
 //! sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]
 //! sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]
+//! sx check --request <req.json | ->
 //! sx schema [request | result]
 //! script recognition: --script-printer <model-id> --script-firmware <flavor>
 //! sx --version
@@ -42,6 +43,11 @@
 //! a printed part, and any plate where two objects' paths cross or a path enters an exclusion area (the result's
 //! `collisions`), is refused with exit code 3, unless `--allow-collisions` asks for it anyway; close calls inside the
 //! profile's clearance radius pass with the result listing them.
+//!
+//! `sx check --request` reads the same request and, without slicing it, prints what a by-object slice of it would be
+//! refused for: the result's `collisions` and `collisionFixes` as the slice gives them, with `certainty` (one per
+//! collision, `sure` or `slice_decides`), `unchecked` (what only the slice checks, per object), `order` and `micros`.
+//! It exits with code 3 when a collision is sure.
 //!
 //! Exit codes: 0 success, 1 slicing failed, 2 usage error, 3 invalid input
 //! (unreadable request or mesh, bad JSON or config).
@@ -86,6 +92,7 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("slice") if has(&args, "--request") => return cmd_request(&args[1..]),
         Some("slice") => cmd_slice(&args[1..]),
+        Some("check") => return cmd_check(&args[1..]),
         Some("schema") => return cmd_schema(&args[1..]),
         Some("metadata") => cmd_metadata(&args[1..]),
         Some("project-settings") => return cmd_project_settings(&args[1..]),
@@ -102,7 +109,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx project-settings <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
+                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx project-settings <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx check --request <req.json | ->\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
             );
             return ExitCode::from(2);
         }
@@ -799,6 +806,65 @@ fn cmd_request(args: &[String]) -> ExitCode {
     }
     println!("{out}");
     ExitCode::SUCCESS
+}
+
+/// `sx check --request`: heimdall's plate check of a request, without slicing it. Exit code 3 when a collision is
+/// sure (as a slice refused for it), 0 otherwise.
+fn cmd_check(args: &[String]) -> ExitCode {
+    use sx_core::api;
+    let fail = |code: u8, msg: String| {
+        eprintln!("sx check: {msg}");
+        ExitCode::from(code)
+    };
+    let Some(src) = flag(args, "--request") else {
+        return fail(EXIT_USAGE, "--request needs a path or -".into());
+    };
+    let (text, base) = match read_request(src) {
+        Ok(r) => r,
+        Err(e) => return fail(EXIT_INPUT, e),
+    };
+    let raw: Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => return fail(EXIT_INPUT, format!("request JSON: {e}")),
+    };
+    let mut req: api::SliceRequest = match serde_json::from_value(raw.clone()) {
+        Ok(r) => r,
+        Err(e) => return fail(EXIT_INPUT, format!("request: {e}")),
+    };
+    let (paths, painted) = (mesh_paths(&raw), mesh_paint(&raw));
+    if let Err(e) = project_defaults(&mut req, &base, &paths) {
+        return fail(EXIT_INPUT, e.to_string());
+    }
+    let (cache, _) = match split_projects(&mut req, &base, &paths, &painted) {
+        Ok(split) => split,
+        Err(e) => return fail(EXIT_INPUT, e.to_string()),
+    };
+    let meshes = Meshes {
+        cache: std::sync::Mutex::new(cache),
+        uses: std::sync::Mutex::new(mesh_uses(&req)),
+        base: &base,
+        paths: &paths,
+        painted: &painted,
+    };
+    let check = match api::check_plate(&req, &|id: &str| meshes.get(id)) {
+        Ok(c) => c,
+        Err(
+            e @ (sx_core::Error::Mesh { .. }
+            | sx_core::Error::Config { .. }
+            | sx_core::Error::EmptyPlate
+            | sx_core::Error::Clearance(_)),
+        ) => return fail(EXIT_INPUT, e.to_string()),
+        Err(e) => return fail(EXIT_SLICE, e.to_string()),
+    };
+    match serde_json::to_string(&check) {
+        Ok(out) => println!("{out}"),
+        Err(e) => return fail(EXIT_SLICE, e.to_string()),
+    }
+    if check.has_sure() {
+        ExitCode::from(EXIT_INPUT)
+    } else {
+        ExitCode::SUCCESS
+    }
 }
 
 /// The config report as one block on stderr: a line per kind, then every key, so a script can read the whole list.

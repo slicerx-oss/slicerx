@@ -19,9 +19,25 @@ pub(crate) fn object_layers(
     travel_speed: f64,
     lift_over_print: bool,
 ) -> Hits {
+    object_layers_with(model, k, layers, travel_speed, lift_over_print, 0, None)
+}
+
+/// [`object_layers`] with the heads `heads` on from the machine's own (0 for them, the offset
+/// [`super::Model::stretch`] returns for its stretched copies), against only the objects `only` lists when it is given.
+pub(crate) fn object_layers_with(
+    model: &Model,
+    k: usize,
+    layers: &[LayerPaths],
+    travel_speed: f64,
+    lift_over_print: bool,
+    heads: usize,
+    only: Option<&[usize]>,
+) -> Hits {
     let mut w = Walker {
         m: model,
         k,
+        heads,
+        only,
         reach: model.reach(),
         travel_speed: travel_speed.max(1.0),
         lift_over_print,
@@ -65,6 +81,10 @@ struct Probe {
 struct Walker<'a> {
     m: &'a Model,
     k: usize,
+    /// Added to the head a tool prints with: which of the model's sets of heads this walk moves.
+    heads: usize,
+    /// The only objects the walk looks at, when given.
+    only: Option<&'a [usize]>,
     reach: f64,
     travel_speed: f64,
     /// The change G-code lifts over the highest layer printed so far.
@@ -206,7 +226,7 @@ impl Walker<'_> {
         ];
         let mut out = Vec::new();
         for (j, o) in m.objects.iter().enumerate() {
-            if j == self.k {
+            if j == self.k || self.only.is_some_and(|o| !o.contains(&j)) {
                 continue;
             }
             let top = f64::from(o.top);
@@ -253,7 +273,7 @@ impl Walker<'_> {
     fn probe(&mut self, pr: Probe) {
         let m = self.m;
         let [x, y, z] = pr.p;
-        let head = m.head(pr.tool);
+        let head = m.head(pr.tool) + self.heads;
         for idx in 0..self.near.len() {
             let Some(n) = self.near.get(idx).copied() else {
                 continue;
