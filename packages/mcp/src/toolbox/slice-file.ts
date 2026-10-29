@@ -9,7 +9,7 @@ export default (d: ServerToolDeps) =>
   serverTool({
     name: 'slice_file',
     title: 'Slice a model file',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',

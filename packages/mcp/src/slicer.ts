@@ -6,6 +6,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import type { HeightRange, SettingValue, VolumeRole, ScriptReviewInput, ScriptReview, ScriptReplacementInput, ScriptReplacement, ScriptIdentity, ScriptReplacementChoice, AppliedScriptReplacement } from '@slicerx/contracts'
+import type { SliceCollision } from './collide'
 import { readStl } from './mesh'
 import { ToolInputError } from './models'
 
@@ -54,6 +55,11 @@ export interface SliceJobObject {
 
 export interface SliceSummary {
   script_replacements?: AppliedScriptReplacement[]
+  /**
+   * Every collision of the plate (sx engine), with the part struck, where and the region: a slice with
+   * allow_collisions lists what a refusal would have, and close calls that pass. Plate mm.
+   */
+  collisions?: SliceCollision[]
   engine: 'sx' | 'stub'
   model: { name: string; triangles?: number; bbox_mm?: [number, number, number] }
   layer_count: number

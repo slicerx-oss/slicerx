@@ -308,6 +308,36 @@ describe.skipIf(noSx())('print by object with the real sx CLI', { timeout: sxTim
     }
   })
 
+  it('lists each collision with the part struck, refused or sliced anyway, and slices clean once fixed', async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    // 30 mm tall Tower printed first, the A1's gantry rod at 25 mm over Base's nozzle
+    const file = project(join(h.dir, 'gantry.3mf'), [{ name: 'Tower', x: 60, y: 128, w: 20, d: 20, h: 30 }, { name: 'Base', x: 140, y: 128, w: 20, d: 20, h: 6 }])
+    const overrides = { print_sequence: 'by object' }
+    type Listed = { kind: string; severity: string; hit_id: string; hit_kind: string; damaged_id?: string; first_layer: number; contact_point: number[]; contact_box?: { min: number[]; max: number[] } }
+    const r = await h.call('slicerx_slice_file', { model: file, profiles: A1, overrides })
+    expect(r.isError).toBe(true)
+    const e = data<Err & { error: { details: { collision_list?: Listed[] } } }>(r).error
+    expect(e.code).toBe('sequence_clearance')
+    const hit = e.details.collision_list?.find((c) => c.kind === 'gantry')
+    expect(hit, JSON.stringify(e.details)).toMatchObject({ severity: 'hit', hit_kind: 'object' })
+    // The part struck is the one the gantry meets: Tower, its region in Tower's footprint (x 50 to 70 on the plate)
+    // from the rod's underside up to its 30 mm top.
+    expect(hit!.damaged_id).toBe(hit!.hit_id)
+    const box = hit!.contact_box!
+    expect(box.min[0]).toBeGreaterThanOrEqual(49.9)
+    expect(box.max[0]).toBeLessThanOrEqual(70.1)
+    expect(box.min[2]).toBeGreaterThanOrEqual(25)
+    expect(box.max[2]).toBeCloseTo(30, 0)
+    // Sliced anyway, the result lists the same collisions.
+    const ok = await h.call('slicerx_slice_file', { model: file, profiles: A1, overrides, allow_collisions: true })
+    expect(ok.isError, text(ok)).toBeFalsy()
+    expect(data<{ collisions?: Listed[] }>(ok).collisions).toEqual(e.details.collision_list)
+    // The fix the refusal offers, printing by layer: the plate slices with none.
+    const clean = await h.call('slicerx_slice_file', { model: file, profiles: A1 })
+    expect(clean.isError, text(clean)).toBeFalsy()
+    expect(data<{ collisions?: Listed[] }>(clean).collisions).toBeUndefined()
+  })
+
   it('refuses a path into a keep-out zone with collision, in words for a person, and slices it with allow_collisions', async () => {
     const h = await connect({ engine: 'sx', sxBin })
     const file = project(join(h.dir, 'keep-out.3mf'), [{ name: 'Cube A', x: 128, y: 128, w: 20, d: 20, h: 8 }])
