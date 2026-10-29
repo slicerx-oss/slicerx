@@ -77,6 +77,7 @@ import { CompileClock, emptyStartup, markSpan } from './startup'
 import { MeshBuildPool } from './mesh-pool'
 import { Toolpaths, warmupBuffers } from './toolpaths'
 import { Strikes, type StrikeMark } from './strikes'
+import { ContactBox } from './contact'
 import type { GantryHit, GantrySpec } from './gantry'
 import type {
   CameraState,
@@ -265,6 +266,9 @@ class ViewportImpl implements Viewport {
   private readonly rig: CameraRig
   private readonly toolpaths = new Toolpaths()
   private readonly strikes = new Strikes()
+  /** The region a picked strike hits, with the strike marks, and the parts it hits, outlined in the hit color. */
+  private readonly contact = new ContactBox()
+  private dangerIds: readonly string[] = []
   /** Show me's mark for a refused slice, on the plate: there are no toolpaths then, so `strikes` is hidden with them. */
   private readonly spot = new Strikes()
   private readonly mats = new MaterialCache()
@@ -562,6 +566,7 @@ class ViewportImpl implements Viewport {
     this.stage.scene.add(this.gizmo.group)
     this.stage.previewRoot.add(this.toolpaths.root)
     this.toolpaths.root.add(this.strikes.root)
+    this.toolpaths.root.add(this.contact.root)
     this.stage.objectsRoot.add(this.spot.root)
     this.stage.objectsRoot.add(this.brim.group)
     this.stage.objectsRoot.add(this.gaps.group)
@@ -982,6 +987,14 @@ class ViewportImpl implements Viewport {
         if (o) outline.push(o.group)
       }
     }
+    // The parts a picked collision hits, outlined in the hit color, in Slice whether they are drawn solid or as toolpaths.
+    const danger: Object3D[] = []
+    if (!veilFrame) {
+      for (const id of this.dangerIds) {
+        const o = this.objects.get(id)
+        if (o) danger.push(o.group)
+      }
+    }
     if (this.pathsShown()) {
       const camBed = this.camera.position.clone().applyMatrix4(this.stage.bedRoot.matrixWorld.clone().invert())
       this.toolpaths.setView(camBed, this.pipeline.size.height)
@@ -1004,7 +1017,7 @@ class ViewportImpl implements Viewport {
     this.stage.bakePendingContact()
     this.stage.placeViewLights(this.camera)
     // the handles draw over the finished picture, so their contrast colors reach the screen untouched by the grade
-    this.pipeline.render(veilFrame ? this.veilScene : this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++, overlay: veilFrame ? [] : this.handleGroups })
+    this.pipeline.render(veilFrame ? this.veilScene : this.stage.scene, this.camera, { ao, aoMix, fast: moving, outline, danger, silhouette: this.renderMode === 'cad' && this.mode === 'prepare', frameIndex: this.frameIdx++, overlay: veilFrame ? [] : this.handleGroups })
     // the new decor holds its programs now, so what it replaced can go without them being compiled again
     this.stage.releaseRetired()
     // the bare backdrop is in the drawing buffer now: it stays over the view as a still, and the scene draws beneath
@@ -1086,6 +1099,7 @@ class ViewportImpl implements Viewport {
     this.pipeline.setSize(w, h, this.pr)
     setEdgeResolution(w * this.pr, h * this.pr)
     setSketchResolution(w * this.pr, h * this.pr)
+    this.contact.setResolution(w * this.pr, h * this.pr, this.pr)
     this.camera.aspect = w / h
     this.applyInset()
     shared.gmin.value = this.pr >= 1.5 ? 6.5 : 4
@@ -3193,6 +3207,10 @@ class ViewportImpl implements Viewport {
     this.clearance.setColors(lightStudio(t.scene.bgTop) ? CLEARANCE_RED_LIGHT : t.scene.overhangRed, lightStudio(t.scene.bgTop) ? '#4a4e63' : '#c9cfe2', t.scene.selection)
     this.pickRings.setColor(t.scene.selection, lightStudio(t.scene.bgTop))
     this.spot.setColors(t.scene.overhangRed, t.scene.overhangAmber)
+    // The contact box's stripes take the clearance zones' red: 3:1 on the light bed too (ui spec 5). Its edge and the
+    // struck part's outline are two-tone, the same in both themes.
+    const hitRed = lightStudio(t.scene.bgTop) ? CLEARANCE_RED_LIGHT : t.scene.overhangRed
+    this.contact.setColor(hitRed)
     this.toolpaths.setGantryColor(t.scene.overhangRed)
     if (this.lookSet) this.applyLook(this.lookSet)
     this.applyMaterials()
@@ -4346,6 +4364,18 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
+  /**
+   * heimdall's highlight of a picked strike: the parts it hits outlined (a light line on a dark halo, drawn solid or
+   * not), the region struck hatched, in the strike marks' frame, and every toolpath but the focus's object in its
+   * layers faded back; null clears all three and brings the paths back.
+   */
+  setCollisionHighlight(h: { outline: readonly string[]; box: { min: readonly [number, number, number]; max: readonly [number, number, number] } | null; focus?: { object: number | null; z: readonly [number, number] | null } | null } | null): void {
+    this.dangerIds = h?.outline ?? []
+    this.contact.set(h?.box ?? null)
+    this.toolpaths.setFocus(h?.focus ?? null)
+    this.invalidate()
+  }
+
   setSpot(mark: StrikeMark | null, area?: readonly (readonly [number, number])[] | null): void {
     this.spot.set(mark ? [mark] : null)
     this.spot.setArea(mark ? (area ?? null) : null)
@@ -4480,6 +4510,7 @@ class ViewportImpl implements Viewport {
     this.parked.clear()
     this.meshPool?.dispose()
     this.strikes.dispose()
+    this.contact.dispose()
     this.clearance.dispose()
     this.pickRings.dispose()
     this.spot.dispose()

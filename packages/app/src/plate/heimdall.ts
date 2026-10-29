@@ -26,6 +26,51 @@ export function collisionParts(s: Pick<AppState, 'plate'>, c: Pick<Collision, 'o
   return [...new Set([c.objectId, c.hitId])].filter((id) => s.plate.some((p) => p.id === id))
 }
 
+/**
+ * The plate object a collision strikes, or null when it names none on the plate: the engine's `damagedId`, and for an
+ * older engine the part the machine meets, the later of two whose paths cross (the one printing), or the one printing
+ * into a keep-out zone.
+ */
+export function damagedOf(s: Pick<AppState, 'plate'>, c: Pick<Collision, 'kind' | 'objectId' | 'hitId' | 'damagedId'>): string | null {
+  const on = (id: string | undefined) => (id && s.plate.some((p) => p.id === id) ? id : null)
+  if (c.damagedId !== undefined) return on(c.damagedId)
+  if (c.kind === 'keep_out') return on(c.objectId)
+  if (c.kind === 'path_conflict') return on(c.objectId) ?? on(c.hitId)
+  return on(c.hitId)
+}
+
+/**
+ * What the view draws for a picked strike: an outline round the part it hits, the region struck, mm, and the paths it
+ * keeps in full: the struck object's (its index in the slice request, which is the plate's printable entries in order)
+ * over the region's layers. Every other path fades back. Without a current slice nothing fades.
+ */
+export interface CollisionHighlight {
+  outline: string[]
+  box: { min: [number, number, number]; max: [number, number, number] } | null
+  focus: { object: number; z: [number, number] | null } | null
+}
+
+/**
+ * The picked strike's highlight while its parts are the selection, in Slice: the part it hits outlined, and the region
+ * struck filled (in the engine's coordinates, as the strike marks are). A close call is not a hit, so it has none. The
+ * outline rides with a part moved since the slice; the region, from before it moved, goes.
+ */
+export function collisionHighlight(s: Pick<AppState, 'slice' | 'strikePick' | 'plate' | 'selection' | 'selectedIds' | 'workspace' | 'modelMode'>): CollisionHighlight | null {
+  if (s.strikePick === null || s.workspace !== 'prepare' || s.modelMode !== 'slice' || s.slice.status !== 'done') return null
+  const c = collisionsOf(s)[s.strikePick]
+  if (!c || c.severity !== 'hit') return null
+  const parts = collisionParts(s, c)
+  const selected = new Set(s.selectedIds)
+  if (s.selection !== null) selected.add(s.selection)
+  if (parts.length === 0 || selected.size !== parts.length || !parts.every((id) => selected.has(id))) return null
+  const damaged = damagedOf(s, c)
+  if (!damaged) return null
+  const box = !s.slice.stale && c.contactMin && c.contactMax ? { min: c.contactMin, max: c.contactMax } : null
+  const object = s.plate.filter((p) => p.printable !== false).findIndex((p) => p.id === damaged)
+  const focus = !s.slice.stale && object >= 0 ? { object, z: box ? ([box.min[2], box.max[2]] as [number, number]) : null } : null
+  return { outline: [damaged], box, focus }
+}
+
 export function fixesOf(s: Pick<AppState, 'slice'>): CollisionFix[] {
   return s.slice.status === 'done' ? (s.slice.result.collisionFixes ?? NO_FIXES) : NO_FIXES
 }
