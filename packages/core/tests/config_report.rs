@@ -242,7 +242,7 @@ const PER_EXTRUDER: [&str; 6] = [
     "support_speed",
 ];
 
-/// A request of `objects` (id and own settings) on the cube, 40 mm apart, with no cooling slowdown so the G-code
+/// A request of `objects` (id, also the name, and own settings) on the cube, 40 mm apart, with no cooling slowdown so the G-code
 /// speeds are the settings'.
 fn run_objects(objects: &[(&str, Value)], options: Value) -> sx_core::Result<SliceRun> {
     let objects: Vec<Value> = objects
@@ -250,7 +250,7 @@ fn run_objects(objects: &[(&str, Value)], options: Value) -> sx_core::Result<Sli
         .enumerate()
         .map(|(i, (id, settings))| {
             let x = 60 + 40 * i;
-            json!({ "id": id, "mesh": "c", "settings": settings,
+            json!({ "id": id, "name": id, "mesh": "c", "settings": settings,
                 "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 100, 0, 1] })
         })
         .collect();
@@ -350,4 +350,46 @@ fn an_unusable_object_value_is_listed_and_the_slice_goes_on() {
     assert_eq!(bad, ["inner_wall_speed"]);
     let feeds = feature_feeds(&run, "Inner wall");
     assert!(feeds.iter().all(|f| (f - 18000.0).abs() < 1e-6), "{feeds:?}");
+    // Without the report the value refuses the request, naming its key, as one in the config does.
+    let err = run_objects(&[("a", json!({ "inner_wall_speed": "fast" }))], json!({}))
+        .expect_err("refused")
+        .to_string();
+    assert!(err.contains("inner_wall_speed"), "{err}");
+}
+
+/// On a plate where objects have different settings, each object slices with its own. A value of one that the engine
+/// cannot use is listed with the object's name under the report, and refuses the slice, naming the object and the key,
+/// under strict or without the report, as a value in the request's config does.
+#[test]
+fn an_unusable_value_of_one_of_several_objects_is_named_with_its_object() {
+    let objects = [
+        ("plain", json!({ "wall_loops": 2 })),
+        ("slow", json!({ "inner_wall_speed": "fast", "wall_loops": 3 })),
+    ];
+    let run = run_objects(&objects, json!({ "configReport": true })).expect("slices with the usable values");
+    let report = run.report.config_report.as_ref().expect("a report");
+    let invalid = serde_json::to_value(&report.invalid).expect("json");
+    assert_eq!(
+        invalid,
+        json!([{ "key": "inner_wall_speed", "value": "fast", "reason": "unexpected value", "object": "slow" }])
+    );
+    assert!(
+        warnings(&run)
+            .iter()
+            .any(|w| w.contains("object 'slow': inner_wall_speed")),
+        "{:?}",
+        warnings(&run)
+    );
+    // The other object's walls are untouched and the named one keeps the config's speed.
+    let feeds = feature_feeds(&run, "Inner wall");
+    assert!(feeds.iter().all(|f| (f - 18000.0).abs() < 1e-6), "{feeds:?}");
+    for options in [json!({ "strict": true }), json!({})] {
+        let err = run_objects(&objects, options.clone())
+            .expect_err("refused")
+            .to_string();
+        assert!(
+            err.contains("inner_wall_speed") && err.contains("slow"),
+            "{options}: {err}"
+        );
+    }
 }

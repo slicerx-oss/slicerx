@@ -1116,7 +1116,10 @@ impl ConfigReport {
             let named: Vec<String> = self
                 .invalid
                 .iter()
-                .map(|i| format!("{} ({}: {})", i.key, i.value, i.reason))
+                .map(|i| match &i.object {
+                    Some(o) => format!("object '{o}': {} ({}: {})", i.key, i.value, i.reason),
+                    None => format!("{} ({}: {})", i.key, i.value, i.reason),
+                })
                 .collect();
             out.push(format!(
                 "{} setting{} had a value this engine cannot use and {} skipped: {}",
@@ -1360,12 +1363,14 @@ pub fn request_config_report(
             .collect();
         report.not_applied.sort();
     }
-    // The objects' own settings go over the config the same way: a value the engine cannot use leaves that setting
-    // as the config has it and is listed, so a host never loses a slice to one object value.
+    // The objects' shared settings go over the config the same way: with the report a value the engine cannot use
+    // leaves that setting as the config has it and is listed; without it the value refuses the config, naming its key.
     if let Some(over) = object_settings(req) {
-        let invalid = config.apply_value_lenient(&over)?;
         if listed {
-            report.invalid.extend(invalid);
+            report.invalid.extend(config.apply_value_lenient(&over)?);
+        } else {
+            config.apply_value(&over)?;
+            config.check()?;
         }
     }
     if strict && !report.is_empty() {
@@ -1849,6 +1854,8 @@ pub struct Prepared {
     session: SliceSession,
     /// A lone object's own settings, which are the plate's (see [`with_lone_settings`]); null otherwise.
     lone_settings: serde_json::Value,
+    /// Each object's own settings from its file and the request, by name ([`object_setting_issues`]).
+    object_settings: Vec<(String, serde_json::Value)>,
 }
 
 impl Prepared {
@@ -1897,9 +1904,16 @@ pub fn prepare_with(
         return Err(Error::Cancelled);
     }
     progress.report(Stage::Layers, LAYERS_SESSION);
+    let object_settings = plate
+        .objects
+        .iter()
+        .filter(|o| !o.settings.is_null())
+        .map(|o| (o.name.clone(), o.settings.clone()))
+        .collect();
     Ok(Prepared {
         session,
         lone_settings,
+        object_settings,
     })
 }
 
@@ -1924,6 +1938,35 @@ fn with_lone_settings(
     Ok((config, config_issues))
 }
 
+/// The values in objects' own settings (`(name, settings)` each) that the engine cannot use over `config`, each with
+/// its object's name; each object then slices with the rest of its settings. With `listed` false the first refuses the
+/// slice instead, naming the key and the object, as a value in the request's config does ([`request_config_report`]).
+pub fn object_setting_issues(
+    config: &PrintConfig,
+    objects: &[(String, serde_json::Value)],
+    listed: bool,
+) -> Result<Vec<crate::config::ConfigIssue>> {
+    let mut out = Vec::new();
+    for (name, settings) in objects {
+        let mut c = config.clone();
+        if listed {
+            for mut issue in c.apply_value_lenient(settings)? {
+                issue.object = Some(name.clone());
+                out.push(issue);
+            }
+        } else if let Err(e) = c.apply_value(settings).and_then(|()| c.check()) {
+            return Err(match e {
+                Error::Config { key, reason } => Error::Config {
+                    key,
+                    reason: format!("{reason} (object '{name}')"),
+                },
+                other => other,
+            });
+        }
+    }
+    Ok(out)
+}
+
 /// [`run_request_with`] on a session prepared before ([`prepare`]), for a request with the same [`session_key`]:
 /// the same bytes as a fresh run. The session keeps what slicing works out (shells, bridges, support and the
 /// other plans), so a second run on it does less.
@@ -1937,7 +1980,26 @@ fn run_prepared_timed(
     progress: &dyn Progress,
     timer: &Timer,
 ) -> Result<SliceRun> {
-    let (config, config_issues, config_report) = request_config_report(req)?;
+    let (config, config_issues, mut config_report) = request_config_report(req)?;
+    // Objects that slice with their own settings: a value the engine cannot use is named with its object.
+    let strict = req.options.strict.unwrap_or(false);
+    let listed = cfg!(not(target_arch = "wasm32")) && (strict || req.options.config_report.unwrap_or(false));
+    for issue in object_setting_issues(&config, &held.get().object_settings, listed)? {
+        // A lone object's request settings are listed once, with the config's.
+        if !config_report
+            .invalid
+            .iter()
+            .any(|i| i.key == issue.key && i.value == issue.value)
+        {
+            config_report.invalid.push(issue);
+        }
+    }
+    if strict && !config_report.is_empty() {
+        return Err(Error::Config {
+            key: "options.strict",
+            reason: config_report.lines().join("; "),
+        });
+    }
     let (mut config, mut config_issues) =
         with_lone_settings(config, config_issues, &held.get().lone_settings)?;
     let session = &held.get().session;
@@ -2401,7 +2463,7 @@ pub const RESULT_SCHEMA: &str = r#"{
           "items": {
             "type": "object",
             "required": ["key", "value", "reason"],
-            "properties": { "key": { "type": "string" }, "value": {}, "reason": { "type": "string" } }
+            "properties": { "key": { "type": "string" }, "value": {}, "reason": { "type": "string" }, "object": { "type": "string", "description": "The object whose own settings carry the value, on a plate whose objects have settings of their own" } }
           }
         }
       }
