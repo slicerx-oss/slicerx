@@ -198,29 +198,39 @@ export type Box = { x: number; y: number; width: number; height: number }
 /**
  * Posts a toast the way the app does and returns its box once its entry animation has settled. Both happen in the
  * page, since a toast leaves after 2.6 s and a busy test machine can take that long between two steps.
+ *
+ * The toast's time runs from its first frame, and a busy machine drawing in software can go seconds without another
+ * frame while timers still fire, so the toast can leave before the frame this waits for. Its box would then be all
+ * zeros, the box of a toast no longer on the page, so that post counts for nothing and a new toast is posted.
  */
 export async function postToast(page: Page, label: string): Promise<Box> {
-  // Each toast reads differently: one with the same words as a toast still on its way out can be taken for it and never
-  // drawn, which leaves nothing to measure. Zero-width spaces tell them apart without making the toast any wider, since
-  // the checks below are about a few pixels of room.
-  const text = `${label}${'\u200b'.repeat(++posted)}`
-  return page.evaluate(async (t) => {
-    const id = Date.now()
-    ;(window as unknown as { __sx: Sx }).__sx.setState({ toast: { id, text: t, tone: 'info' } })
-    const find = () => [...document.querySelectorAll<HTMLElement>('[data-testid="toast"]')].filter((n) => n.textContent?.includes(t)).pop()
-    let el = find()
-    for (let i = 0; !el && i < 100; i++) {
+  for (let attempt = 1; ; attempt++) {
+    // Each toast reads differently: one with the same words as a toast still on its way out can be taken for it and
+    // never drawn, which leaves nothing to measure. Zero-width spaces tell them apart without making the toast any
+    // wider, since the checks below are about a few pixels of room.
+    const text = `${label}${'\u200b'.repeat(++posted)}`
+    const box = await page.evaluate(async (t) => {
+      const id = Date.now()
+      ;(window as unknown as { __sx: Sx }).__sx.setState({ toast: { id, text: t, tone: 'info' } })
+      const find = () => [...document.querySelectorAll<HTMLElement>('[data-testid="toast"]')].filter((n) => n.textContent?.includes(t)).pop()
+      let el = find()
+      for (let i = 0; !el && i < 100; i++) {
+        await new Promise((r) => requestAnimationFrame(r))
+        el = find()
+      }
+      if (!el) throw new Error(`no toast reading ${t}`)
+      await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined)))
+      // The offset follows the overlays a frame later.
       await new Promise((r) => requestAnimationFrame(r))
-      el = find()
-    }
-    if (!el) throw new Error(`no toast reading ${t}`)
-    await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined)))
-    // The offset follows the overlays a frame later.
-    await new Promise((r) => requestAnimationFrame(r))
-    // The toasts up at once share one card, and the card is what sits on the page.
-    const r = (el.closest<HTMLElement>('[data-testid="toasts"]') ?? el).getBoundingClientRect()
-    return { x: r.x, y: r.y, width: r.width, height: r.height }
-  }, text)
+      // The toasts up at once share one card, and the card is what sits on the page.
+      const card = el.closest<HTMLElement>('[data-testid="toasts"]')
+      if (!el.isConnected || !card) return null
+      const r = card.getBoundingClientRect()
+      return { x: r.x, y: r.y, width: r.width, height: r.height }
+    }, text)
+    if (box) return box
+    if (attempt >= 5) throw new Error(`each of ${attempt} toasts reading "${label}" left the page before its box could be read`)
+  }
 }
 let posted = 0
 
