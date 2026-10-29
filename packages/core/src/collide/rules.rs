@@ -9,6 +9,7 @@
 
 use super::grid::CELL;
 use super::{Part, Severity};
+use crate::config::PrintConfig;
 
 /// The lattice cell holding `v` mm.
 #[allow(
@@ -58,6 +59,35 @@ pub(crate) fn radius_hit(d: f64, radius: f64, estimated: bool) -> Option<(Severi
 /// enforcer (a volume or painted triangles) asks for some. Every support gate of the session calls this.
 pub(crate) fn support_runs(enabled: bool, manual: bool, enforcers: bool) -> bool {
     enabled && (!manual || enforcers)
+}
+
+/// How far an object's own first layer prints past its footprint printing by object, mm: [`crate::tower::room_with`]
+/// with the skirt counted round the object. By object each object prints a skirt of its own on its first layers,
+/// whatever `skirt_type` says, so a combined skirt reaches as far as a skirt of its own.
+pub(crate) fn object_room(cfg: &PrintConfig, brim: f64) -> f64 {
+    let mut own = cfg.clone();
+    own.raw.insert(
+        "skirt_type".to_owned(),
+        serde_json::Value::String("perobject".to_owned()),
+    );
+    crate::tower::room_with(&own, brim)
+}
+
+/// [`object_room`] for an object whose footprint is `hull` (mm): by object the skirt round it has the loops the
+/// slice prints there, so `min_skirt_length` counts, which adds loops round a small object until they hold that
+/// much filament (one extruder).
+pub(crate) fn object_room_around(cfg: &PrintConfig, brim: f64, hull: &[[f64; 2]]) -> f64 {
+    if cfg.skirt_loops == 0 {
+        return object_room(cfg, brim);
+    }
+    let ring = hull
+        .iter()
+        .map(|p| i_overlay::i_float::int::point::IntPoint::new(crate::geom::mm(p[0]), crate::geom::mm(p[1])))
+        .collect();
+    let loops = crate::session::loops_around(ring, cfg, false, (1, 0)).len();
+    let mut own = cfg.clone();
+    own.skirt_loops = u32::try_from(loops).unwrap_or(u32::MAX).max(cfg.skirt_loops);
+    object_room(&own, brim)
 }
 
 /// Whether an object gets support at all, read from its triangles where there are no layers yet: the rule the app's
@@ -225,36 +255,7 @@ pub(crate) mod support {
             && (enforcers || (!cfg.support.manual && overhang))
     }
 
-    /// How far an object's own first layer prints past its footprint printing by object, mm: [`crate::tower::room_with`]
-    /// with the skirt counted round the object. By object each object prints a skirt of its own on its first layers,
-    /// whatever `skirt_type` says, so a combined skirt reaches as far as a skirt of its own.
-    pub(crate) fn object_room(cfg: &PrintConfig, brim: f64) -> f64 {
-        let mut own = cfg.clone();
-        own.raw.insert(
-            "skirt_type".to_owned(),
-            serde_json::Value::String("perobject".to_owned()),
-        );
-        crate::tower::room_with(&own, brim)
-    }
-
-    /// [`object_room`] for an object whose footprint is `hull` (mm): by object the skirt round it has the loops the
-    /// slice prints there, so `min_skirt_length` counts, which adds loops round a small object until they hold that
-    /// much filament (one extruder).
-    pub(crate) fn object_room_around(cfg: &PrintConfig, brim: f64, hull: &[[f64; 2]]) -> f64 {
-        if cfg.skirt_loops == 0 {
-            return object_room(cfg, brim);
-        }
-        let ring = hull
-            .iter()
-            .map(|p| {
-                i_overlay::i_float::int::point::IntPoint::new(crate::geom::mm(p[0]), crate::geom::mm(p[1]))
-            })
-            .collect();
-        let loops = crate::session::loops_around(ring, cfg, false, (1, 0)).len();
-        let mut own = cfg.clone();
-        own.skirt_loops = u32::try_from(loops).unwrap_or(u32::MAX).max(cfg.skirt_loops);
-        object_room(&own, brim)
-    }
+    pub(crate) use super::{object_room, object_room_around};
 
     /// How far an object's own first layer prints past its footprint by object, mm ([`object_room`]), with its
     /// support's pad counted only when it gets support ([`gets_support`]).

@@ -13,6 +13,7 @@
 //! shows, with fixes and what they cost. The profile's clearance radius stays as a softer check: a plate inside
 //! it whose head shape clears is reported as close, not as a hit.
 
+pub mod check;
 pub(crate) mod grid;
 pub(crate) mod plate;
 pub mod report;
@@ -489,6 +490,8 @@ pub(crate) struct Model {
     pub meta: Meta,
     objects: Vec<Obstacle>,
     heads: Vec<Vec<Column>>,
+    /// How many of `heads` are the machine's own; the plate check adds copies of them after ([`Self::stretch`]).
+    own: usize,
     /// The extruder of each filament slot, 0-based.
     extruder_of: Vec<usize>,
     changer: Option<Changer>,
@@ -603,10 +606,12 @@ impl Model {
         }
         .with_run(config);
         let lift_mm = changer.as_ref().map_or(3.0, |c| c.lift_mm);
+        let own = heads.len();
         Self {
             meta,
             objects: built,
             heads,
+            own,
             extruder_of,
             changer,
             lift_mm,
@@ -629,7 +634,29 @@ impl Model {
             .get(usize::from(tool.max(1) - 1))
             .copied()
             .unwrap_or(0);
-        e.min(self.heads.len().saturating_sub(1))
+        e.min(self.own.saturating_sub(1))
+    }
+
+    /// Adds a copy of every head whose columns are stretched to cover the nozzle, for the plate check, which walks
+    /// only each object's outline: a column off to the side of the nozzle (a fan duct) can reach ground from an inner
+    /// move that no outline move reaches, and the stretched one covers it. Returns how far the copies are from the
+    /// heads they copy, the offset a walk adds to pick them ([`walk::object_layers_with`]).
+    pub(crate) fn stretch(&mut self) -> usize {
+        let n = self.own;
+        for h in 0..n {
+            let mut cols = self.heads.get(h).cloned().unwrap_or_default();
+            for c in &mut cols {
+                c.x = [c.x[0].min(0.0), c.x[1].max(0.0)];
+                c.y = [c.y[0].min(0.0), c.y[1].max(0.0)];
+            }
+            self.heads.push(cols);
+        }
+        for o in &mut self.objects {
+            for _ in 0..n {
+                o.fields.push(OnceLock::new());
+            }
+        }
+        n
     }
 
     fn fields(&self, j: usize, head: usize) -> &[Grid] {
