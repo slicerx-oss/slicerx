@@ -211,6 +211,14 @@ jobs:
       # One retry per failing test; one that passes only on the retry is flaky (scripts/ci/README.md, "Flaky tests"):
       # the reporter annotates it, and the next step fails the job unless scripts/ci/flaky.d lists it.
       - run: bash scripts/ci/flaky-check.sh lint
+      # Both geometry engine modules (git-ignored) for the app and pilot tests that run the real engine. On CI a missing
+      # module fails those tests instead of skipping them (wasmBuilt in packages/app/test/geom-engine.ts). Built here,
+      # not downloaded from the wasm job, so this job does not wait for that one.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: geom
+      - run: sh packages/geom/wasm/scripts/build.sh
       - run: pnpm -r exec bash "$GITHUB_WORKSPACE/scripts/ci/pr-test.sh"
         env:
           SX_FLAKY_OUT: ${{ runner.temp }}/retried.txt
