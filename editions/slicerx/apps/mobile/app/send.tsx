@@ -112,6 +112,7 @@ export default function SendRoute() {
         onSelectionChange={setSelection}
         estimate={estimate.estimate}
         estimating={estimate.estimating}
+        fit={estimate.fit}
         onPickFile={async () => (await pickFile())?.id ?? null}
         onSend={async (sel) => {
           const input = resolve(sel)

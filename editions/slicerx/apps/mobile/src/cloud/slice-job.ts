@@ -55,7 +55,30 @@ export interface CloudSliceOutcome {
   layerHeight: number
   /** Only for a file the phone could measure (an STL). */
   sizeMm?: [number, number, number]
+  /** How the measured model sits on the printer's bed, for the send screen's card; only with `sizeMm`. */
+  fit?: PlateFit
   warnings: string[]
+}
+
+/**
+ * A measured model on the printer's bed as the cloud slicer places it: centered and set down. Plate mm from the bed's
+ * front left corner; `over` is how far it runs past the bed in x, y and z (0 where it fits).
+ */
+export interface PlateFit {
+  fits: boolean
+  bed: [number, number, number]
+  size: [number, number, number]
+  footprint: { min: [number, number]; max: [number, number] }
+  over: [number, number, number]
+}
+
+/** Where a model of `size` lands on `bed`, centered as the cloud slicer sets it, and how far it runs past. */
+export function plateFit(size: [number, number, number], bed: [number, number, number]): PlateFit {
+  const r = (v: number) => Math.round(v * 10) / 10
+  const over = [0, 1, 2].map((i) => r(Math.max(0, size[i]! - bed[i]!))) as [number, number, number]
+  const lo = (i: number) => r((bed[i]! - size[i]!) / 2)
+  const hi = (i: number) => r((bed[i]! + size[i]!) / 2)
+  return { fits: over.every((v) => v === 0), bed, size, footprint: { min: [lo(0), lo(1)], max: [hi(0), hi(1)] }, over }
 }
 
 interface MachineShape {
@@ -151,7 +174,7 @@ export async function runCloudSlice(
       timeS: result.stats.timeS,
       grams: result.stats.filamentG.reduce((a, b) => a + b, 0),
       layerHeight: config.layer_height,
-      ...(bounds.measured ? { sizeMm: bounds.sizeMm } : {}),
+      ...(bounds.measured ? { sizeMm: bounds.sizeMm, fit: plateFit(bounds.sizeMm, shape.bed) } : {}),
       warnings,
     }
   } finally {

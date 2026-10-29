@@ -94,3 +94,28 @@ describe('the send screen estimate', () => {
     expect(e?.grams).toBeGreaterThan(0)
   })
 })
+
+describe('the fit on the bed', () => {
+  it('says where a measured model runs past the bed, the part centered as the cloud slicer places it', async () => {
+    const { cloud } = recording()
+    const out = await runCloudSlice(cloud, { model: model('Bracket.stl', boxStl([300, 200, 5])), printer: A1, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(out.fit).toEqual({
+      fits: false,
+      bed: [256, 256, 256],
+      size: [300, 200, 5],
+      // centered on the 256 mm bed: 22 mm past each side in x, inside in y
+      footprint: { min: [-22, 28], max: [278, 228] },
+      over: [44, 0, 0],
+    })
+  })
+
+  it('fits a part that stands inside, and says nothing of a file it cannot measure', async () => {
+    const { cloud } = recording()
+    const cube = await runCloudSlice(cloud, { model: model('Cube.stl', boxStl([20, 20, 20])), printer: A1, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(cube.fit).toMatchObject({ fits: true, over: [0, 0, 0] })
+    const tall = await runCloudSlice(cloud, { model: model('Tall.stl', boxStl([40, 40, 300])), printer: A1, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(tall.fit).toMatchObject({ fits: false, over: [0, 0, 44] })
+    const project = await runCloudSlice(cloud, { model: model('Project.3mf', zipBytes(4096)), printer: A1, easy: EASY_GOALS.standard, material: 'pla' }, () => undefined)
+    expect(project.fit).toBeUndefined()
+  })
+})

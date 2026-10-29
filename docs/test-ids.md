@@ -513,6 +513,16 @@ The bridge refuses everything inside the Print sheet; these ids are for reading 
 | `developer-mode-steps-list` | The LAN Only Mode and Developer Mode steps for the printer's model in that box, with what LAN Only Mode changes (shown while the toggle is open) |
 | `storage-full-needed` | The box shown after the printer's storage had no room for the file (`printer_storage_full`): why, and the steps to free space |
 
+## Phone app: Print
+
+`testID` values in the native phone app (editions/slicerx/apps/mobile), for its jest tests and device flows.
+
+| Test id | Control |
+| --- | --- |
+| `fit-card` | The card on top of the Print screen when the chosen model does not fit the chosen printer |
+| `fit-card-drawing` | Its top view of the bed with the part where the cloud slicer places it |
+| `fit-card-over` | A strip of the part past the bed's edge in that view, one per edge |
+
 ## Exceptions to the danger- rule
 
 These ids carry one of the rule's words but name no destructive act, so they keep their names and the bridge may use
