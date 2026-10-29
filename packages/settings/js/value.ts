@@ -19,6 +19,12 @@ const VECTOR_BASE: Partial<Record<SettingType, SettingType>> = {
   pointsGroups: 'points',
 }
 
+/** The number list types a project may store with an extruder's value unset. */
+const PER_EXTRUDER_LIST: ReadonlySet<SettingType> = new Set<SettingType>(['floats', 'ints', 'percents', 'floatsOrPercents'])
+
+/** The scalar number types a project may store one value per extruder. */
+const PER_EXTRUDER_SCALAR: ReadonlySet<SettingType> = new Set<SettingType>(['float', 'int', 'percent', 'floatOrPercent'])
+
 export function isVectorType(t: SettingType): boolean {
   return t in VECTOR_BASE
 }
@@ -88,18 +94,21 @@ function scalar(base: SettingType, raw: unknown): SettingValue | undefined {
 /** Read one Orca JSON value as the schema type. `nil` on a nullable key means "not set". */
 export function coerce(def: SettingDef, raw: unknown): Coerced {
   const vec = VECTOR_BASE[def.type]
-  // A list with any `nil` entry means "take this from the other profile" for that extruder; the whole key is left out.
-  if (raw === NIL || (Array.isArray(raw) && raw.includes(NIL))) return { ok: 'nil' }
+  if (raw === NIL) return { ok: 'nil' }
   if (vec === undefined) {
-    // A scalar key stored as a one-element list by newer profiles: take the first entry.
-    const src = Array.isArray(raw) ? raw[0] : raw
+    // A scalar key stored as a one-element list by newer profiles: take the first entry. A number key stored per
+    // extruder, as a list or as the comma-separated text of a project's object settings ("50,nil"), reads as the first
+    // extruder's value; `nil` there leaves it unset.
+    const first = typeof raw === 'string' && PER_EXTRUDER_SCALAR.has(def.type) && raw.includes(',') ? raw.split(',')[0]!.trim() : raw
+    const src = Array.isArray(first) ? first[0] : first
+    if (typeof src === 'string' && src.trim() === NIL) return { ok: 'nil' }
     const v = scalar(def.type, src)
     return v === undefined ? { ok: false } : { ok: true, value: v }
   }
   // Older files store lists as one comma separated string, such as "0,0".
   // A polygon may be one string of points, such as "0x0,220x0,220x220,0x220".
   const oneString = def.type === 'points' && typeof raw === 'string' && /x/i.test(raw)
-  const list: unknown[] = Array.isArray(raw) ? raw : oneString ? (raw as string).split(',').map((x) => x.trim()) : typeof raw === 'string' && vec !== 'point' && vec !== 'string' && vec !== 'enum' && raw.includes(',') ? raw.split(',').map((x) => x.trim()) : [raw]
+  const list: unknown[] = Array.isArray(raw) ? [...raw] : oneString ? (raw as string).split(',').map((x) => x.trim()) : typeof raw === 'string' && vec !== 'point' && vec !== 'string' && vec !== 'enum' && raw.includes(',') ? raw.split(',').map((x) => x.trim()) : [raw]
   if (def.type === 'pointsGroups') {
     const groups: [number, number][][] = []
     for (const g of list) {
@@ -115,6 +124,13 @@ export function coerce(def: SettingDef, raw: unknown): Coerced {
       groups.push(pts)
     }
     return { ok: true, value: groups }
+  }
+  if (list.includes(NIL)) {
+    // A `nil` entry is an extruder's value left unset. A number list whose first entry is set (a project's object
+    // settings for a printer with two extruders, "50,nil") reads with each unset entry as the one before it, as the
+    // engine reads it; any other list with a `nil` entry is left out whole, to be taken from the other profile.
+    if (!PER_EXTRUDER_LIST.has(def.type) || list[0] === NIL) return { ok: 'nil' }
+    for (let i = 1; i < list.length; i++) if (list[i] === NIL) list[i] = list[i - 1]
   }
   const out: unknown[] = []
   for (const item of list) {

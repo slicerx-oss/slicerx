@@ -230,3 +230,124 @@ fn strict_refuses_with_the_list() {
         .is_ok()
     );
 }
+
+/// The six per-object speeds a Bambu Studio project for a two-extruder printer writes for an object on the first
+/// extruder: that extruder's value, then `nil` for the second, which the object leaves to the profile.
+const PER_EXTRUDER: [&str; 6] = [
+    "inner_wall_speed",
+    "top_surface_speed",
+    "sparse_infill_speed",
+    "internal_solid_infill_speed",
+    "gap_infill_speed",
+    "support_speed",
+];
+
+/// A request of `objects` (id and own settings) on the cube, 40 mm apart, with no cooling slowdown so the G-code
+/// speeds are the settings'.
+fn run_objects(objects: &[(&str, Value)], options: Value) -> sx_core::Result<SliceRun> {
+    let objects: Vec<Value> = objects
+        .iter()
+        .enumerate()
+        .map(|(i, (id, settings))| {
+            let x = 60 + 40 * i;
+            json!({ "id": id, "mesh": "c", "settings": settings,
+                "transform": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 100, 0, 1] })
+        })
+        .collect();
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": { "objects": objects },
+        "config": { "brim_width": 0, "slow_down_for_layer_cooling": false },
+        "options": options
+    }))
+    .expect("request");
+    let mesh = cube();
+    common::run_request(&req, &move |_: &str| Ok(mesh.clone()))
+}
+
+/// The feed rates (mm/min) of the extrusions of `feature` above the first layer.
+fn feature_feeds(run: &SliceRun, feature: &str) -> Vec<f64> {
+    let gcode = String::from_utf8_lossy(&run.gcode);
+    let (mut here, mut layer, mut feed, mut out) = (false, 0, 0.0, Vec::new());
+    for l in gcode.lines() {
+        if l.starts_with(";LAYER_CHANGE") || l.starts_with("; CHANGE_LAYER") {
+            layer += 1;
+        } else if let Some(f) = l.strip_prefix("; FEATURE: ").or_else(|| l.strip_prefix(";TYPE:")) {
+            here = f.trim() == feature;
+        } else if l.starts_with("G1 ") || l.starts_with("G2 ") || l.starts_with("G3 ") {
+            if let Some(f) = l.split_whitespace().find_map(|w| w.strip_prefix('F')) {
+                feed = f.parse().unwrap_or(feed);
+            }
+            if here && layer > 1 && l.contains(" E") && (l.contains(" X") || l.contains(" Y")) {
+                out.push(feed);
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn an_objects_per_extruder_values_print_with_the_first_extruders() {
+    let own: serde_json::Map<String, Value> = PER_EXTRUDER
+        .iter()
+        .map(|k| ((*k).to_owned(), json!("50,nil")))
+        .collect();
+    // Without the report: the object's values used to refuse the request ("inner_wall_speed: unexpected value").
+    let run = run_objects(&[("a", Value::Object(own.clone()))], json!({})).expect("slices");
+    let feeds = feature_feeds(&run, "Inner wall");
+    assert!(!feeds.is_empty(), "inner walls above the first layer");
+    assert!(
+        feeds.iter().all(|f| (f - 3000.0).abs() < 1e-6),
+        "50 mm/s inner walls: {feeds:?}"
+    );
+    // With it, nothing is listed as unusable.
+    let run = run_objects(
+        &[("a", Value::Object(own.clone()))],
+        json!({ "configReport": true }),
+    )
+    .expect("slices");
+    let report = run.report.config_report.as_ref().expect("a report");
+    assert!(report.invalid.is_empty(), "{:?}", report.invalid);
+    assert!(
+        !warnings(&run).iter().any(|w| w.contains("cannot use")),
+        "{:?}",
+        warnings(&run)
+    );
+    // Objects with different settings slice each with its own: the other cube keeps the profile's 300 mm/s.
+    let run = run_objects(
+        &[("a", Value::Object(own)), ("b", json!({ "wall_loops": 3 }))],
+        json!({}),
+    )
+    .expect("slices");
+    let feeds = feature_feeds(&run, "Inner wall");
+    assert!(feeds.iter().any(|f| (f - 3000.0).abs() < 1e-6), "{feeds:?}");
+    assert!(feeds.iter().any(|f| (f - 18000.0).abs() < 1e-6), "{feeds:?}");
+}
+
+#[test]
+fn a_nil_slot_keeps_the_profiles_value() {
+    // The second extruder's value only: the first extruder keeps the profile's 300 mm/s.
+    let own = json!({ "inner_wall_speed": "nil,60", "sparse_infill_speed": ["nil", "70"] });
+    let run = run_objects(&[("a", own)], json!({ "configReport": true })).expect("slices");
+    let report = run.report.config_report.as_ref().expect("a report");
+    assert!(report.invalid.is_empty(), "{:?}", report.invalid);
+    let feeds = feature_feeds(&run, "Inner wall");
+    assert!(!feeds.is_empty());
+    assert!(
+        feeds.iter().all(|f| (f - 18000.0).abs() < 1e-6),
+        "300 mm/s inner walls: {feeds:?}"
+    );
+}
+
+#[test]
+fn an_unusable_object_value_is_listed_and_the_slice_goes_on() {
+    let run = run_objects(
+        &[("a", json!({ "inner_wall_speed": "fast", "wall_loops": 3 }))],
+        json!({ "configReport": true }),
+    )
+    .expect("slices");
+    let report = run.report.config_report.as_ref().expect("a report");
+    let bad: Vec<&str> = report.invalid.iter().map(|i| i.key.as_str()).collect();
+    assert_eq!(bad, ["inner_wall_speed"]);
+    let feeds = feature_feeds(&run, "Inner wall");
+    assert!(feeds.iter().all(|f| (f - 18000.0).abs() < 1e-6), "{feeds:?}");
+}

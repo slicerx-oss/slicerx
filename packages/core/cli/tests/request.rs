@@ -4787,3 +4787,181 @@ fn the_request_schema_has_project_defaults() {
         "boolean"
     );
 }
+
+/// The six per-object speeds a Bambu Studio project for a two-extruder printer writes for an object on the first
+/// extruder: that extruder's value, then `nil` for the second, which the object leaves to the profile.
+const PER_EXTRUDER: [&str; 6] = [
+    "inner_wall_speed",
+    "top_surface_speed",
+    "sparse_infill_speed",
+    "internal_solid_infill_speed",
+    "gap_infill_speed",
+    "support_speed",
+];
+
+/// The feed rates (mm/min) of the inner wall extrusions above the first layer.
+fn inner_wall_feeds(gcode: &str) -> Vec<f64> {
+    let (mut here, mut layer, mut feed, mut out) = (false, 0, 0.0, Vec::new());
+    for l in gcode.lines() {
+        if l.starts_with(";LAYER_CHANGE") || l.starts_with("; CHANGE_LAYER") {
+            layer += 1;
+        } else if let Some(f) = l.strip_prefix("; FEATURE: ").or_else(|| l.strip_prefix(";TYPE:")) {
+            here = f.trim() == "Inner wall";
+        } else if l.starts_with("G1 ") || l.starts_with("G2 ") || l.starts_with("G3 ") {
+            if let Some(f) = l.split_whitespace().find_map(|w| w.strip_prefix('F')) {
+                feed = f.parse().unwrap_or(feed);
+            }
+            if here && layer > 1 && l.contains(" E") && (l.contains(" X") || l.contains(" Y")) {
+                out.push(feed);
+            }
+        }
+    }
+    out
+}
+
+/// A Bambu Studio project of two plates: a 20 mm cube with no settings of its own on plate 1, and one on plate 2 whose
+/// object settings carry [`PER_EXTRUDER`] as "50,nil", as a project for a two-extruder printer does.
+fn per_extruder_3mf() -> Vec<u8> {
+    use std::fmt::Write as _;
+    let cube = |id: u32| {
+        format!(
+            r#"<object id="{id}" type="model"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="20" y="0" z="0"/><vertex x="20" y="20" z="0"/><vertex x="0" y="20" z="0"/><vertex x="0" y="0" z="20"/><vertex x="20" y="0" z="20"/><vertex x="20" y="20" z="20"/><vertex x="0" y="20" z="20"/></vertices><triangles><triangle v1="0" v2="2" v3="1"/><triangle v1="0" v2="3" v3="2"/><triangle v1="4" v2="5" v3="6"/><triangle v1="4" v2="6" v3="7"/><triangle v1="0" v2="1" v3="5"/><triangle v1="0" v2="5" v3="4"/><triangle v1="1" v2="2" v3="6"/><triangle v1="1" v2="6" v3="5"/><triangle v1="2" v2="3" v3="7"/><triangle v1="2" v2="7" v3="6"/><triangle v1="3" v2="0" v3="4"/><triangle v1="3" v2="4" v3="7"/></triangles></mesh></object>"#
+        )
+    };
+    let model = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><metadata name="Application">BambuStudio-02.08.02.61</metadata><resources>{}{}</resources><build><item objectid="1" transform="1 0 0 0 1 0 0 0 1 100 100 0"/><item objectid="2" transform="1 0 0 0 1 0 0 0 1 400 100 0"/></build></model>"#,
+        cube(1),
+        cube(2)
+    );
+    let own = PER_EXTRUDER.iter().fold(String::new(), |mut acc, k| {
+        let _ = write!(acc, r#"<metadata key="{k}" value="50,nil"/>"#);
+        acc
+    });
+    let plate = |n: u32| {
+        format!(
+            r#"<plate><metadata key="plater_id" value="{n}"/><model_instance><metadata key="object_id" value="{n}"/></model_instance></plate>"#
+        )
+    };
+    let objects = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><config><object id="1"><metadata key="name" value="plain"/><metadata key="extruder" value="1"/></object><object id="2"><metadata key="name" value="slow"/><metadata key="extruder" value="1"/>{own}</object>{}{}</config>"#,
+        plate(1),
+        plate(2)
+    );
+    // The project's own speeds, per extruder, and no cooling slowdown so the G-code feeds are the settings'.
+    let settings = serde_json::json!({
+        "printer_model": "Bambu Lab P1S", "brim_width": "0", "brim_type": "no_brim",
+        "inner_wall_speed": ["300", "300"], "sparse_infill_speed": ["270", "270"],
+        "internal_solid_infill_speed": ["250", "250"], "top_surface_speed": ["200", "200"],
+        "gap_infill_speed": ["250", "250"], "support_speed": ["150", "150"],
+        "slow_down_for_layer_cooling": ["0"]
+    })
+    .to_string();
+    zip(&[
+        ("3D/3dmodel.model", model.as_bytes()),
+        ("Metadata/project_settings.config", settings.as_bytes()),
+        ("Metadata/model_settings.config", objects.as_bytes()),
+    ])
+}
+
+/// `sx slice project.3mf --plate 2` on a plate whose object carries per-extruder values ("50,nil") prints them at the
+/// first extruder's 50 mm/s. It used to warn that the values kept the default and then stop with exit code 1
+/// (`config key inner_wall_speed: unexpected value`).
+#[test]
+fn a_project_plates_per_extruder_object_values_slice() {
+    let dir = temp_dir(format!("sx-cli-per-extruder-plate-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("project.3mf");
+    std::fs::write(&path, per_extruder_3mf()).unwrap();
+    let out = sx()
+        .arg("slice")
+        .arg(&path)
+        .args(["--plate", "2", "-o", "-"])
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(!stderr.contains("cannot use"), "{stderr}");
+    let feeds = inner_wall_feeds(&String::from_utf8_lossy(&out.stdout));
+    assert!(!feeds.is_empty(), "inner walls above the first layer");
+    assert!(
+        feeds.iter().all(|f| (f - 3000.0).abs() < 1e-6),
+        "50 mm/s inner walls: {feeds:?}"
+    );
+    // Plate 1's cube keeps the project's 300 mm/s.
+    let out = sx()
+        .arg("slice")
+        .arg(&path)
+        .args(["--plate", "1", "-o", "-"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let feeds = inner_wall_feeds(&String::from_utf8_lossy(&out.stdout));
+    assert!(
+        !feeds.is_empty() && feeds.iter().all(|f| (f - 18000.0).abs() < 1e-6),
+        "{feeds:?}"
+    );
+    // A request naming the plate reads the same.
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": { "p": "project.3mf#2" },
+        "plate": { "objects": [{ "id": "o1", "mesh": "p" }] },
+        "config": { "brim_width": 0, "slow_down_for_layer_cooling": false, "inner_wall_speed": 300 },
+        "options": {}
+    });
+    let request = dir.join("request.json");
+    std::fs::write(&request, req.to_string()).unwrap();
+    let out_dir = dir.join("out");
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&request)
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let gcode = std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap();
+    let feeds = inner_wall_feeds(&gcode);
+    assert!(
+        !feeds.is_empty() && feeds.iter().all(|f| (f - 3000.0).abs() < 1e-6),
+        "{feeds:?}"
+    );
+}
+
+/// A request whose object carries per-extruder values ("50,nil") in `objects[].settings` slices with the first
+/// extruder's value; it used to stop with exit code 3 (`config key inner_wall_speed: unexpected value`).
+#[test]
+fn a_requests_per_extruder_object_values_slice() {
+    let dir = temp_dir(format!("sx-cli-per-extruder-request-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let own: serde_json::Map<String, serde_json::Value> = PER_EXTRUDER
+        .iter()
+        .map(|k| ((*k).to_owned(), serde_json::json!("50,nil")))
+        .collect();
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": { "cube": fixture("cube.stl") },
+        "plate": { "objects": [{ "id": "o1", "mesh": "cube", "settings": own }] },
+        "config": { "brim_width": 0, "slow_down_for_layer_cooling": false, "inner_wall_speed": 300 },
+        "options": {}
+    });
+    let request = dir.join("request.json");
+    std::fs::write(&request, req.to_string()).unwrap();
+    let out_dir = dir.join("out");
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&request)
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "{stderr}");
+    assert!(!stderr.contains("cannot use"), "{stderr}");
+    let gcode = std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap();
+    let feeds = inner_wall_feeds(&gcode);
+    assert!(!feeds.is_empty(), "inner walls above the first layer");
+    assert!(
+        feeds.iter().all(|f| (f - 3000.0).abs() < 1e-6),
+        "50 mm/s inner walls: {feeds:?}"
+    );
+}

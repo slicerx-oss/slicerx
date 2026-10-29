@@ -13367,11 +13367,13 @@ fn shared_first_layer(plate: &Plate, config: &PrintConfig) -> Option<Plate> {
     Some(out)
 }
 
+/// `base` with an object's own settings over it. A value the engine cannot use leaves that setting as `base` has it, as
+/// the request's and a project's settings go in ([`PrintConfig::apply_value_lenient`]); the hosts that list such
+/// values read them from the shared settings.
 fn object_config(base: &PrintConfig, over: &serde_json::Value) -> Result<PrintConfig> {
     let mut c = base.clone();
     if !over.is_null() {
-        c.apply_value(over)?;
-        c.check()?;
+        c.apply_value_lenient(over)?;
         crate::preflight::hold_temperatures(&mut c);
     }
     Ok(c)
