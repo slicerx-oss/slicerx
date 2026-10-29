@@ -7,9 +7,26 @@ import type { Collision, CollisionFix } from '@slicerx/contracts'
 /** The plate's object names by id. */
 export type Names = (id: string) => string
 
-/** Object names and the tool changer's station of the app's plate and printer. */
+/**
+ * Object names and the tool changer's station of the app's plate and printer. Copies of one name are told apart by their
+ * place among them on the plate: Cube 1, Cube 2.
+ */
 export function wordsOf(s: { plate: readonly { id: string; name: string }[]; profile: { printerId: string } | null }): { name: Names; station: string } {
-  return { name: namesOf(s.plate), station: stationOf(s.profile?.printerId) }
+  const count = new Map<string, number>()
+  for (const p of s.plate) count.set(p.name, (count.get(p.name) ?? 0) + 1)
+  const seen = new Map<string, number>()
+  const plate = s.plate.map((p) => {
+    if ((count.get(p.name) ?? 0) < 2) return p
+    const k = (seen.get(p.name) ?? 0) + 1
+    seen.set(p.name, k)
+    return { id: p.id, name: `${p.name} ${k}` }
+  })
+  return { name: namesOf(plate), station: stationOf(s.profile?.printerId) }
+}
+
+/** The plain label of the part a collision strikes, for its row: "Part hit: Bracket", or for a keep-out zone the part in it. */
+export function struckLabel(c: Pick<Collision, 'kind'>, part: string): string {
+  return c.kind === 'keep_out' ? `Part in the zone: ${part}` : `Part hit: ${part}`
 }
 
 /** What the engine names besides the plate's objects. */

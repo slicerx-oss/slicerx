@@ -539,6 +539,16 @@ test('heimdall strikes a plate too close to print by object, and printing by lay
     await first.getByTestId('collision-select').click()
     await expect(first.getByTestId('collision-select')).toHaveAttribute('aria-pressed', 'true')
     expect((await state(page)).selectedIds).toHaveLength(2)
+    // The row names the part hit, a screen reader hears the pick, and the view's chip steps through the strikes as
+    // their rows do.
+    await expect(first.locator('.strike-struck')).toHaveText(/^Part hit: /)
+    await expect(list.getByTestId('collision-said')).toContainText('(hit)')
+    const chip = page.getByTestId('collision-chip')
+    const hits = (await sx()).collisions.flatMap((c, i) => (c.severity === 'hit' ? [i] : []))
+    await expect(chip.locator('[data-on]')).toHaveText(`Collision 1 of ${hits.length}`)
+    await chip.click()
+    await expect.poll(async () => (await sx()).pick).toBe(hits[1 % hits.length])
+    await expect(chip.locator('[data-on]')).toHaveText(`Collision ${hits.length > 1 ? 2 : 1} of ${hits.length}`)
     await first.getByRole('button', { name: /^Jump to:/ }).click()
     const { collisions } = await sx()
     await expect.poll(async () => (await sx()).pick).toBe(0)

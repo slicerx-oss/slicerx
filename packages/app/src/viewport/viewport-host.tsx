@@ -48,7 +48,7 @@ import { areaOrigin, polygonsToPlate } from '../plate/bed-origin'
 import { toolChangerFor } from '../lib/toolchanger'
 import { buildTimeline, fitOf, type Timeline } from '../lib/preview-timeline'
 import { headFor } from '@slicerx/viewport'
-import { strikeMarks } from '../plate/heimdall'
+import { collisionHighlight, strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
 import { activeClearance } from '../plate/sequence-check'
 import { pickRingsOf } from '../plate/pick-parts'
@@ -417,6 +417,7 @@ export function ViewportHost({ layers }: { layers: boolean }) {
       // Paint the viewport already holds (a stroke it just made) is not pushed back.
       let fromViewport = false
       let excludedKey: string | null = null
+      let highlightKey = ''
       let towerBefore: ShownTower | null = null
       let keyBefore = ''
       // Test hook: with localStorage 'slicerx.debug' and 'slicerx.warmupWaitsForOpen' set, the toolpath shader warm-up
@@ -536,6 +537,15 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         if (vp.setToolChange && (first || s.toolChange !== prev.toolChange || s.preview !== prev.preview)) vp.setToolChange(s.toolChange)
         // heimdall's strikes where the machine would meet a printed part.
         if (first || s.slice !== prev.slice || s.strikePick !== prev.strikePick || s.strikeHover !== prev.strikeHover || s.layerHi !== prev.layerHi || s.pickRing !== prev.pickRing || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.plate !== prev.plate) (vp as unknown as Viewport).setStrikes?.(strikeMarks(s))
+        // A picked strike's part outlined in the hit color and the region struck, while its parts are the selection.
+        if (first || s.slice !== prev.slice || s.strikePick !== prev.strikePick || s.selection !== prev.selection || s.selectedIds !== prev.selectedIds || s.plate !== prev.plate || s.workspace !== prev.workspace || s.modelMode !== prev.modelMode) {
+          const h = collisionHighlight(s)
+          const key = h ? JSON.stringify(h) : ''
+          if (first || key !== highlightKey) {
+            highlightKey = key
+            ;(vp as unknown as Viewport).setCollisionHighlight?.(h)
+          }
+        }
         // Show me on a refused slice marks its spot (and the excluded area it enters) while that refusal is on screen.
         if (first || s.slice !== prev.slice || s.refusalSpot !== prev.refusalSpot) {
           const r = s.refusalSpot

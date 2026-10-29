@@ -3,12 +3,14 @@
 // The jump to a strike: its moment on Preview's own timeline, the sliders and the playback stop there.
 import type { Collision } from '@slicerx/contracts'
 import { buildTimeline, changeBefore, fitOf, timeAt } from '../lib/preview-timeline'
+import { resolveConfig } from '../adapters/config'
 import { toolChangerFor } from '../lib/toolchanger'
 import { get, set, type AppState } from '../state/store'
 import { collisionParts, collisionsOf } from './heimdall'
 import { currentEdition } from '../edition'
 import { presetFor } from '../first-run/look'
 import { isPhoneLayout } from '../lib/phone-layout'
+import { areaOrigin, pointToPlate } from './bed-origin'
 import { pickParts } from './pick-parts'
 import { cameraBus } from './tools'
 
@@ -41,8 +43,22 @@ export function openCollisionList(): void {
   const side = presetFor(s.lookAndFeel ?? { id: currentEdition().firstRun.defaultLook }).layout.sidebar.side === 'left' ? 'right' : 'left'
   set({ rails: { ...s.rails, preview: { ...s.rails['preview'], [side]: true } }, rightShut: null })
   if (typeof requestAnimationFrame !== 'function' || typeof document === 'undefined') return
-  // The list draws with the pane: bring it into view once it is there.
-  requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector('[data-section="collisions"]')?.scrollIntoView({ block: 'start' })))
+  // The list draws with the pane: bring it into view once it is there, scrolling the pane only. scrollIntoView would
+  // also scroll the window's clipped frame and push the top bar out of sight.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const list = document.querySelector<HTMLElement>('[data-section="collisions"]')
+    const pane = paneOf(list)
+    if (list && pane) pane.scrollTop += list.getBoundingClientRect().top - pane.getBoundingClientRect().top
+  }))
+}
+
+/** The nearest ancestor of `el` that scrolls: the pane it sits in. */
+function paneOf(el: HTMLElement | null): HTMLElement | null {
+  for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY
+    if (y === 'auto' || y === 'scroll') return p
+  }
+  return null
 }
 
 /**
@@ -80,6 +96,10 @@ export function jumpTo(i: number, opts: { frame?: boolean } = {}): void {
     toolChange: null,
     ...(t !== null ? { strikeJump: { timeS: t, seq: ++jumps } } : {}),
   })
-  if (!opts.frame) cameraBus()?.focusBedPoint?.(c.worstPoint[0], c.worstPoint[1], c.worstPoint[2], { animate: true })
+  // The strike is in the printer's coordinates; the camera turns to it on the plate, which counts from the printable
+  // area's front left corner.
+  if (opts.frame) return
+  const [x, y, z] = pointToPlate(c.worstPoint, areaOrigin(resolveConfig(s.easy, s.overrides)['printable_area']))
+  cameraBus()?.focusBedPoint?.(x, y, z, { animate: true })
 }
 
