@@ -13,14 +13,15 @@
 #                                              (<lock>.gpu.1 and on), never beside a --e2e or --all holder
 #   scripts/ci/heavy.sh --class engine <command...>
 #                                              a plain hold for an engine test suite (cargo test of the Rust crates):
-#                                              only these count against SX_HEAVY_GPU_ENGINE beside a --gpu run
+#                                              it never runs beside a --gpu run; a plain hold whose command runs cargo
+#                                              is one without the flag
 #   SX_HEAVY_GPU_SLOTS=<n>                     how many --gpu holders may run at once (default: the number in
 #                                              <lock>.gpu-slots, or 1 when there is none)
 #   SX_HEAVY_GPU_ENGINE=<n>                    how many --class engine holds may run beside a --gpu run (default:
-#                                              the number in <lock>.gpu-engine, or 1 when there is none)
-#   SX_HEAVY_GPU_HOLDBACK=<seconds>            how long a CI --gpu waiter that waits for the engine holds keeps the
-#                                              engine waiters behind it out (default: the number in
-#                                              <lock>.gpu-holdback, or 300 when there is none)
+#                                              the number in <lock>.gpu-engine, or 0 when there is none)
+#   SX_HEAVY_ENGINE_STARVE=<seconds>           how long an engine waiter waits for the GPU lane before it takes the
+#                                              next turn (default: the number in <lock>.engine-starve, or 240 when
+#                                              there is none); at twice that it starts beside a --gpu run
 #   SX_HEAVY_RESERVE_AFTER=<seconds>          how long a manual --e2e waiter that cannot run yet waits before it holds
 #                                              the others back for its turn (default: the number in
 #                                              <lock>.reserve-after, or 900 when there is none)
@@ -88,14 +89,16 @@
 # that queued behind it. An --e2e or --all waiter behind a --gpu ticket that is handed a GPU slot waits for it: no
 # --e2e or --all run ever starts beside a --gpu run.
 #
-# A --gpu run also slices on the CPU in several browsers at once, and stalls beside more than one engine test suite
-# (two beside it held its slices for over a minute). A hold made with --class engine is one (its record says "class
-# engine"; CI's Rust test steps and a manual cargo test of the engine set it). So a --gpu run starts only while at most
-# SX_HEAVY_GPU_ENGINE engine holds run, and while one holds or is handed a GPU slot, engine waiters take slots only up
-# to that many; other plain jobs are not limited. A CI --gpu ticket that waits for the engine holds to drop to that
-# many keeps the engine waiters behind it out for its first SX_HEAVY_GPU_HOLDBACK seconds (default 300), so it gets
-# its quiet window; after that, they pass it. Tickets ahead of it in the queue are served first (up to the same limit
-# while another --gpu run holds). A manual --gpu waiter never keeps anyone out.
+# A --gpu run also slices on the CPU in several browsers at once, and fails beside an engine test suite (spawn errors,
+# closed browsers and test timeouts while cargo held the other slots). A hold made with --class engine is one (its
+# record says "class engine"; CI's Rust test steps set it), and so is a plain hold whose command runs cargo, whoever
+# runs it. So a --gpu run gets the machine to itself: it starts only while at most SX_HEAVY_GPU_ENGINE (default 0)
+# engine holds run, and while one holds or is handed a GPU slot, engine waiters take slots only up to that many. A
+# --gpu ticket anywhere in the queue that only the engine holds keep out is about to be handed a GPU slot, and the
+# engine waiters, ahead of it or behind it, wait for it as well. Other plain jobs are not limited. No engine waiter
+# starves: once its ticket is SX_HEAVY_ENGINE_STARVE seconds old (default 240) it takes the next turn. While it waits
+# with a plain slot free for it, no --gpu ticket is handed a GPU slot, and it starts as soon as the --gpu runs end, or
+# at twice that age beside a --gpu run that still holds, so the GPU lane costs an engine hold at most that long.
 #
 # A manual (class 1) --e2e waiter that cannot run yet (a --gpu run or another --e2e run blocks it) gives its turn back:
 # it keeps its place in the queue but holds nobody back, so the waiters behind it use what is free meanwhile. Once its
@@ -164,12 +167,12 @@ for ((i = 2; i <= slots; i++)); do slot_dirs+=("$lock.$i"); done
 gslots=${SX_HEAVY_GPU_SLOTS:-$(head -n 1 "$lock.gpu-slots" 2> /dev/null | tr -dc 0-9)}
 case $gslots in '' | *[!0-9]* | 0) gslots=1 ;; esac
 [ "$gslots" -le 8 ] || gslots=8
-# How many engine holds may run beside a --gpu run (0 is allowed: none).
+# How many engine holds may run beside a --gpu run (default 0: none, so a --gpu run has the machine to itself).
 geng=${SX_HEAVY_GPU_ENGINE:-$(head -n 1 "$lock.gpu-engine" 2> /dev/null | tr -dc 0-9)}
-case $geng in '' | *[!0-9]*) geng=1 ;; esac
+case $geng in '' | *[!0-9]*) geng=0 ;; esac
 # How old a manual --e2e or --gpu waiter's ticket must be before it holds the others back for its turn. The machine
 # setting is read again at every decision (with read, no fork), so a change to it reaches the waiters already queued.
-# The same for how long a CI --gpu waiter keeps the engine waiters behind it out.
+# The same for how long an engine waiter waits for the GPU lane before it takes the next turn.
 setting() {
   local v=$2
   [ -n "$v" ] || { read -r v < "$lock.$3"; } 2> /dev/null
@@ -179,7 +182,7 @@ setting() {
 }
 reserve_read() {
   setting reserve_after "${SX_HEAVY_RESERVE_AFTER:-}" reserve-after 900
-  setting gpu_holdback "${SX_HEAVY_GPU_HOLDBACK:-}" gpu-holdback 300
+  setting engine_starve "${SX_HEAVY_ENGINE_STARVE:-}" engine-starve 240
   setting promote_after "${SX_HEAVY_PROMOTE_AFTER:-}" promote-after 1800
 }
 reserve_read
@@ -527,15 +530,15 @@ old_warned=
 
 # Helpers for decide, with no subshells (a fork is slow in Git Bash): wn, a holder's short name from read_rec; add, a
 # name appended to the comma list in variable $1; tt, ticket $1's queue time; keeps_turn, whether --e2e ticket $1 keeps
-# its turn while it cannot run: a CI ticket always, a manual one once it is $reserve_after s old; holds_back, whether
-# --gpu ticket $1 keeps engine waiters out while it waits for the engine holds: a CI one for its first $gpu_holdback s.
+# its turn while it cannot run: a CI ticket always, a manual one once it is $reserve_after s old; starved, whether
+# engine ticket $1 has waited $engine_starve s or more, and so takes the next turn.
 who() { local p=${r_head#pid }; p=${p%% *}; wn="pid $p${r_label:+ [$r_label]}"; }
 add() { local cur=${!1}; printf -v "$1" '%s' "$cur${cur:+, }$2"; }
 ticket_time() { tt=${1##*/}; tt=${tt#[01]-}; tt=${tt%%-*}; case $tt in '' | *[!0-9]*) tt=$tnow ;; esac; }
-holds_back() {
-  case ${1##*/} in 0-*) ;; *) return 1 ;; esac
+starved() {
+  case ${1##*/} in *-engine) ;; *) return 1 ;; esac
   ticket_time "$1"
-  [ $((tnow - tt)) -lt "$gpu_holdback" ]
+  [ $((tnow - tt)) -ge "$engine_starve" ]
 }
 keeps_turn() {
   case ${1##*/} in 0-*) return 0 ;; esac
@@ -549,6 +552,7 @@ last_why=
 decide() {
   local d t p F=0 GF=0 PE=0 e2e_blk= gpu_blk= excl_blk= excl_ahead= all_ahead= ci_ahead= ahead=0 gahead=0
   local e2e_by= gpu_by= excl_by= ahead_by= engine_by= all_by= tnow tt wn why key
+  local est= est_by= gwant= gwant_by= gx= gf gb age=0 left
   admitted= front= tnow=$(now)
   reserve_read
   # F: free plain slots. e2e_blk: an --e2e run holds or is handed a plain slot, so no other --e2e may take one.
@@ -571,10 +575,31 @@ decide() {
     esac
     [ "$r_class" = engine ] && { PE=$((PE + 1)); add engine_by "$wn"; }
   done
-  # GF: free GPU slots. gpu_blk: a --gpu run holds a GPU slot or is handed one (or waits ahead for the engine holds to
-  # drop to $geng), so no --e2e or --all may start, and engine waiters keep to $geng slots.
+  # GF: free GPU slots. gpu_blk: a --gpu run holds a GPU slot or is handed one, so no --e2e or --all may start, and
+  # engine waiters keep to $geng slots.
   for d in "${gpu_dirs[@]}"; do
     if [ -e "$d" ]; then mine "$d" || { gpu_blk=1; read_rec "$d"; who; add gpu_by "$wn"; }; else GF=$((GF + 1)); fi
+  done
+  # est: an engine waiter that has waited $engine_starve s takes the next turn, so while one waits with a plain slot
+  # free for it, no --gpu ticket is handed a GPU slot.
+  if [ "$F" -gt 0 ]; then
+    for t in "$q"/*-engine; do [ -e "$t" ] && starved "$t" && { est=1; add est_by "ticket ${t##*/}"; }; done
+  fi
+  # gwant: a --gpu ticket anywhere in the queue that would be handed a GPU slot but for the engine holds (and est), in
+  # queue order as the walk below would hand them out. The engine waiters that have not yet waited $engine_starve s,
+  # ahead of it or behind it, wait for it.
+  gf=$GF gb=$gpu_blk
+  for t in "$q"/*; do
+    [ -e "$t" ] || continue
+    case ${t##*/} in
+      *-gpu)
+        if [ -z "$excl_blk" ] && [ -z "$gx" ] && [ "$gf" -gt 0 ]; then
+          gf=$((gf - 1)) gwant=1; add gwant_by "ticket ${t##*/}"
+          [ "$PE" -gt "$geng" ] || [ -n "$est" ] || gb=1
+        fi ;;
+      *-e2e) if { [ -z "$e2e_blk" ] && [ -z "$gb" ]; } || keeps_turn "$t"; then gx=1; fi ;;
+      *-all) gx=1 ;;
+    esac
   done
   for t in "$q"/*; do
     [ -e "$t" ] || continue
@@ -583,11 +608,11 @@ decide() {
     case ${t##*/} in 0-*) ci_ahead=1 ;; esac
     case ${t##*/} in
       *-gpu)
-        # Handed a GPU slot. One that waits for the engine holds to drop keeps it, and keeps the engine waiters behind
-        # it out, only while it holds them back (a CI one, for a while).
+        # First in line for a free GPU slot; handed it unless the engine holds or an engine waiter's turn keep it out.
         gahead=$((gahead + 1))
-        if [ -z "$excl_blk" ] && [ -z "$excl_ahead" ] && [ "$GF" -gt 0 ] && { [ "$PE" -le "$geng" ] || holds_back "$t"; }; then
-          GF=$((GF - 1)) gpu_blk=1; add gpu_by "ticket ${t##*/}"
+        if [ -z "$excl_blk" ] && [ -z "$excl_ahead" ] && [ "$GF" -gt 0 ]; then
+          GF=$((GF - 1))
+          if [ "$PE" -le "$geng" ] && [ -z "$est" ]; then gpu_blk=1; add gpu_by "ticket ${t##*/}"; fi
         fi ;;
       *-e2e)
         # Handed a slot to run in, or, while it keeps its turn, a slot kept free while the --gpu runs end, with the
@@ -599,8 +624,10 @@ decide() {
         fi ;;
       *-all) ahead=$((ahead + 1)) excl_ahead=1 all_ahead=1 F=0; add ahead_by "ticket ${t##*/}" ;;
       *-engine)
+        # Handed a slot while no --gpu run holds or is about to get one, or, once it has waited $engine_starve s, a
+        # slot kept for its turn while the --gpu runs end.
         ahead=$((ahead + 1))
-        if [ "$F" -gt 0 ] && { [ -z "$gpu_blk" ] || [ "$PE" -lt "$geng" ]; }; then
+        if [ "$F" -gt 0 ] && { starved "$t" || { [ -z "$gpu_blk" ] && [ -z "$gwant" ]; } || [ "$PE" -lt "$geng" ]; }; then
           F=$((F - 1)) PE=$((PE + 1)); add engine_by "ticket ${t##*/}"
         fi ;;
       *)
@@ -610,12 +637,21 @@ decide() {
   done
   if [ -n "$gpu" ]; then [ "$gahead" -lt "$gslots" ] && front=1; else [ "$ahead" -lt "$slots" ] && front=1; fi
   # What blocks this waiter, said in one line each time it changes.
-  why=
+  why= key=
+  # An engine waiter's age: past $engine_starve s it has the next turn, past twice that it starts beside a --gpu run.
+  if [ -n "$engine" ] && [ -n "$ticket" ]; then ticket_time "$ticket"; age=$((tnow - tt)); fi
   case $mode in
     plain)
       if [ "$F" = 0 ]; then why="every slot is held or handed to a ticket ahead (${all_by:-queue ahead})"
-      elif [ -n "$engine" ] && [ -n "$gpu_blk" ] && [ "$PE" -ge "$geng" ]; then
-        why="a --gpu run holds or waits ($gpu_by), with $PE engine holds running or handed a slot beside it, at most $geng"
+      elif [ -z "$engine" ] || [ "$PE" -lt "$geng" ] || [ "$age" -ge $((2 * engine_starve)) ]; then :
+      elif [ "$age" -ge "$engine_starve" ]; then
+        left=$((2 * engine_starve - age))
+        [ -z "$gpu_blk" ] || { why="a --gpu run holds ($gpu_by); it has the next turn, and starts beside it in $left s"; key="gpu next"; }
+      elif [ -n "$gpu_blk" ] || [ -n "$gwant" ]; then
+        left=$((engine_starve - age))
+        if [ -n "$gpu_blk" ]; then why="a --gpu run holds or is handed a GPU slot ($gpu_by)"
+        else why="a --gpu waiter is about to be handed a GPU slot ($gwant_by)"; fi
+        key=$why why="$why; it takes the next turn in $left s"
       fi ;;
     e2e)
       if [ "$F" = 0 ]; then why="every slot is held or handed to a ticket ahead (${all_by:-queue ahead})"
@@ -625,28 +661,31 @@ decide() {
       if [ -n "$excl_blk" ]; then why="an --e2e or --all run holds a slot ($excl_by)"
       elif [ -n "$excl_ahead" ]; then why="an --e2e or --all ticket is ahead in the queue ($ahead_by)"
       elif [ "$GF" = 0 ]; then why="every GPU slot is held or handed to a ticket ahead (${gpu_by:-queue ahead})"
+      elif [ -n "$est" ]; then why="an engine waiter has waited past $engine_starve s and takes the next turn ($est_by)"
+      elif [ "$PE" -gt "$geng" ] && [ "$geng" = 0 ]; then
+        why="engine holds run or are handed a slot ($engine_by), and a --gpu run starts only once none does"
       elif [ "$PE" -gt "$geng" ]; then why="$PE engine holds run or are handed a slot, at most $geng beside a --gpu run ($engine_by)"; fi ;;
   esac
-  key=$why
+  [ -n "$key" ] || key=$why
   if [ -n "$why" ] && [ -n "$ticket" ] && [ "$mode" = e2e ]; then
     if keeps_turn "$ticket"; then why="$why; it keeps its turn"; key="$key keeps"
     else ticket_time "$ticket"; why="$why; it gives its turn back for $((reserve_after - (tnow - tt))) s more"; fi
   fi
-  case $why in
-    *' engine holds run or are handed a slot, '*)
-      if holds_back "$ticket"; then why="$why; it keeps engine waiters out for $((gpu_holdback - (tnow - tt))) s more"; key="$key back"
-      else why="$why; engine waiters pass it"; fi ;;
-  esac
   [ -z "$why" ] || [ "$key" = "$last_why" ] || echo "heavy.sh: waiting: $why" >&2
   last_why=$key
   case $mode in
     plain | e2e)
       [ "$F" -gt 0 ] || return 0
-      [ -z "$engine" ] || [ -z "$gpu_blk" ] || [ "$PE" -lt "$geng" ] || return 0
+      # An engine waiter: no --gpu run holds or is about to get a GPU slot; past $engine_starve s, only the --gpu runs
+      # that hold count; past twice that, none.
+      if [ -n "$engine" ] && [ "$PE" -ge "$geng" ] && [ "$age" -lt $((2 * engine_starve)) ]; then
+        [ -z "$gpu_blk" ] || return 0
+        [ "$age" -ge "$engine_starve" ] || [ -z "$gwant" ] || return 0
+      fi
       [ "$mode" = plain ] || { [ -z "$e2e_blk" ] && [ -z "$gpu_blk" ]; } || return 0
       for d in "${slot_dirs[@]}"; do take "$d" && { admitted=1; return 0; }; done ;;
     gpu)
-      [ -z "$excl_blk" ] && [ -z "$excl_ahead" ] && [ "$GF" -gt 0 ] && [ "$PE" -le "$geng" ] || return 0
+      [ -z "$excl_blk" ] && [ -z "$excl_ahead" ] && [ "$GF" -gt 0 ] && [ "$PE" -le "$geng" ] && [ -z "$est" ] || return 0
       for d in "${gpu_dirs[@]}"; do take "$d" && { admitted=1; return 0; }; done ;;
     all)
       if [ -n "$all_ahead" ] || { [ "$prio" = 1 ] && [ -n "$ci_ahead" ]; }; then
@@ -689,6 +728,13 @@ redact() {
     -e "s/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/[redacted]/g"
 }
 cmd=$(redact "$@")
+# A plain hold whose command runs cargo (a word of it that is cargo, alone or at the end of a path, also inside a
+# sh -c script) is an engine hold, whoever runs it, so a cargo test or build never runs beside a --gpu run.
+if [ -z "$all$e2e$gpu$engine" ]; then
+  for sx_arg in "$@"; do
+    case " $sx_arg " in *[[:space:]/]cargo[[:space:]]* | *[[:space:]/]cargo.exe[[:space:]]*) engine=1; break ;; esac
+  done
+fi
 
 # Renames this waiter's ticket from class 1 to class 0 once it is $promote_after s old, under the gate: it then sorts
 # with the CI tickets by its time, ahead of every CI job that queued after it. A --all waiter is never promoted (it
