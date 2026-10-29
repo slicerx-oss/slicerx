@@ -3,7 +3,8 @@
 // What answers in the mimir tab of the open app, read over the app link: a model (which one, the pair Auto moves
 // between, whether it is a local model and where its server is) or the scripted replies the tab plays until a model is
 // set up, and the tools the model is offered there. A local model gets a shorter list, so the list is what the model
-// really sees. Where the server is goes by its address, the way the memory chip says where notes go: a local model may
+// really sees, and since a local model's context is small, it gets one set of those tools per message (building a part,
+// shaping one, editing one, the app or the printers), listed set by set. Where the server is goes by its address, the way the memory chip says where notes go: a local model may
 // run on another computer on the person's network, or on a server elsewhere.
 // Carries no key or token. Changing the model stays with the person, in Settings > mimir.
 import { defineTool, type PilotTool } from '@slicerx/pilot'
@@ -22,6 +23,22 @@ interface TabState {
   local?: boolean
   where?: 'computer' | 'network' | 'remote' | null
   tools: string[]
+  turns?: Record<string, unknown> | null
+}
+
+/** The sets a local model's message picks from, in order (packages/pilot turnsets.ts). */
+const SETS = ['build', 'shape', 'edit', 'app', 'print'] as const
+
+/** Each set's tools as the app lists them; null when every message gets every tool, or the app sent none. */
+function turnsOf(turns: TabState['turns']): Record<(typeof SETS)[number], string[]> | null {
+  if (!turns || typeof turns !== 'object') return null
+  const out = {} as Record<(typeof SETS)[number], string[]>
+  for (const s of SETS) {
+    const list = turns[s]
+    if (!Array.isArray(list)) return null
+    out[s] = list.filter((n): n is string => typeof n === 'string')
+  }
+  return out
 }
 
 const WHERE = new Set(['computer', 'network', 'remote'])
@@ -32,10 +49,10 @@ const WHERE_WORDS: Record<string, string> = { computer: ' on this computer', net
 export function mimirTabTools(link: AppLinkCaller | undefined, appName: string): PilotTool<never>[] {
   const tab = defineTool({
     name: 'mimir.tab',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
-    description: `Read what answers in the mimir tab of the open ${appName} app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens; whether it is a local model (a server the person runs, through the OpenAI-compatible provider); and where the model's server is, by its address: "computer" (this computer), "network" (another computer on the person's network) or "remote" (anywhere else, mimir cloud and API keys included), null without a model. Also lists the tools the model is offered in the tab: the design tools (so each step lands in the timeline), the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands. A local model gets a shorter list that fits its context. Carries no key or token.`,
+    description: `Read what answers in the mimir tab of the open ${appName} app: "model" when a model is set up (its provider and model, and with Auto the small model it starts on and the larger one it moves to for a picture, a PDF, a part of many steps or one that needs a size only the person knows), "scripted" when no model is set up and the tab plays scripted replies, or "none" before the tab first opens; whether it is a local model (a server the person runs, through the OpenAI-compatible provider); and where the model's server is, by its address: "computer" (this computer), "network" (another computer on the person's network) or "remote" (anywhere else, mimir cloud and API keys included), null without a model. Also lists the tools the model is offered in the tab: the design tools (so each step lands in the timeline), the sheet, questions and lookups, and where the app slices the slicing, printer, settings and project tools and the app commands. A local model gets a shorter list that fits its context, and one set of it per message, picked from the request: "build" (a new part), "shape" (shaping a part further), "edit" (changing a part already built), "app" (slicing, settings, the project, the knowledge base, the app commands and sending a sliced plate) or "print" (the printers, their prints, spools and fleets); turns lists each set's tools (the ones every message gets are in each), null where every message gets every tool. Carries no key or token.`,
     input: z.object({}),
     async run() {
       if (!link) throw new ToolInputError(`reading the mimir tab needs the open ${appName} app: start the server with --printers link and turn on the app link`, 'not_configured')
@@ -52,7 +69,7 @@ export function mimirTabTools(link: AppLinkCaller | undefined, appName: string):
       }
       // only the fields a client needs; anything else the app adds stays out
       const where = out.link === 'model' && typeof out.where === 'string' && WHERE.has(out.where) ? out.where : null
-      const output = { link: out.link, provider: out.provider, model: out.model, auto: out.auto ? { huginn: out.auto.huginn, muninn: out.auto.muninn } : null, local: out.local === true, where, tools: [...out.tools] }
+      const output = { link: out.link, provider: out.provider, model: out.model, auto: out.auto ? { huginn: out.auto.huginn, muninn: out.auto.muninn } : null, local: out.local === true, where, tools: [...out.tools], turns: out.link === 'model' ? turnsOf(out.turns) : null }
       const summary =
         out.link === 'none'
           ? `The mimir tab has not been opened in ${appName} yet.`
@@ -60,7 +77,7 @@ export function mimirTabTools(link: AppLinkCaller | undefined, appName: string):
             ? 'The mimir tab plays scripted replies: no model is set up in Settings > mimir.'
             : out.auto
               ? `The mimir tab runs ${out.provider} on Auto: ${out.auto.huginn}, and ${out.auto.muninn} for a picture, a PDF, a part of many steps or one that needs a size only the person knows.`
-              : `The mimir tab runs ${out.provider} with ${out.model}${where ? WHERE_WORDS[where] : ''}${output.local ? ', a local model' : ''}, offering ${out.tools.length} tools.`
+              : `The mimir tab runs ${out.provider} with ${out.model}${where ? WHERE_WORDS[where] : ''}${output.local ? ', a local model' : ''}, offering ${out.tools.length} tools${output.turns ? `, one set of them per message (${SETS.map((s) => `${s} ${output.turns![s].length}`).join(', ')})` : ''}.`
       return { summary, output }
     },
   })
