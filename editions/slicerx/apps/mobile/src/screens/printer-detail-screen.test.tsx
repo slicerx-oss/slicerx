@@ -93,3 +93,12 @@ it('asks a question that fits the printer state', async () => {
   expect(pilotPrompt(PRINTERS[3]!)).toBe('Bay 5 is offline. How do I get it back?')
   expect(pilotPrompt(idle)).toBe('How is Bay 2 doing?')
 })
+
+// A Bambu Lab printer names the step its job is on as the stage: shown with the job, as the desktop shows it, and
+// not as the orange problem line.
+it('shows the job stage with the job, not as a problem', async () => {
+  const preparing = { ...printing, status: { ...printing.status!, state: 'preparing' as const, layer: 0, live: { stage: 'Calibrating flow dynamics' } } }
+  await render(<PrinterDetailScreen {...props({ printer: preparing })} />)
+  expect(screen.getByTestId('printer-job-stage')).toHaveTextContent('Calibrating flow dynamics')
+  expect(screen.queryByTestId('printer-message')).toBeNull()
+})
