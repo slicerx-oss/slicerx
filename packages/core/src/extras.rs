@@ -24,7 +24,8 @@ pub struct SegExtra {
     pub fan: u8,
     pub flags: u8,
     pub temp_c: u16,
-    /// G-code line: an offset from the layer's `;LAYER_CHANGE` line until [`finish`] makes it absolute.
+    /// G-code line: an offset from the layer's `;LAYER_CHANGE` line until [`finish`] makes it absolute. 0 when
+    /// the path's moves were not found in the layer's G-code (offset 0 is the marker itself).
     pub line: u32,
 }
 
@@ -357,14 +358,18 @@ pub fn file_line(base: u32, rel: u32, progress: &[u32]) -> u32 {
 pub const LINE_UNKNOWN: u32 = u32::MAX;
 
 /// The extras of some layers as two tables, the lines left as offsets from each layer's `;LAYER_CHANGE`
-/// ([`LINE_UNKNOWN`] when the layer did not match). A shard sliced on its own cannot know where its layers
+/// ([`LINE_UNKNOWN`] when the layer did not match, or the segment's path was not found in it). A shard sliced on its own cannot know where its layers
 /// land in the finished file; the stitch makes the lines absolute (`preview::stitch_lines`).
 pub fn relative(layers: &[(u32, LayerExtras)]) -> (Vec<SegExtra>, Vec<u8>) {
     let mut segs = Vec::new();
     let mut travels = Vec::new();
     for (_, extras) in layers {
         segs.extend(extras.segs.iter().map(|s| SegExtra {
-            line: if extras.matched { s.line } else { LINE_UNKNOWN },
+            line: if extras.matched && s.line != 0 {
+                s.line
+            } else {
+                LINE_UNKNOWN
+            },
             ..*s
         }));
         travels.extend_from_slice(&extras.travels);
@@ -387,7 +392,8 @@ pub fn finish(layers: Vec<(u32, LayerExtras)>, first_emitted: u32, gcode: &str) 
             .copied();
         segs.extend(extras.segs.into_iter().map(|mut s| {
             s.line = match base {
-                Some(b) if extras.matched => file_line(b, s.line, &progress),
+                // Offset 0 is the marker, never a move: the path was not found.
+                Some(b) if extras.matched && s.line != 0 => file_line(b, s.line, &progress),
                 _ => 0,
             };
             s
@@ -410,6 +416,28 @@ mod tests {
         assert_eq!((m[0].fan, m[2].fan), (128, 255));
         // Line offsets count from the marker line, which is line 0.
         assert_eq!(m[0].line, 3);
+    }
+
+    /// A path whose moves were not found in a matched layer has no line, in the finished tables and in a
+    /// shard's: offset 0 is the layer's marker, never a move.
+    #[test]
+    fn a_path_not_found_in_its_layer_has_no_line() {
+        let g = "G28\n;LAYER_CHANGE\nG1 X1 E1\nG1 X2 E1\n";
+        let seg = |line| SegExtra {
+            line,
+            ..SegExtra::default()
+        };
+        let layer = LayerExtras {
+            segs: vec![seg(1), seg(2), seg(0)],
+            travels: vec![0],
+            matched: true,
+        };
+        let (rel, _) = relative(&[(0, layer.clone())]);
+        let rel: Vec<u32> = rel.iter().map(|s| s.line).collect();
+        assert_eq!(rel, [1, 2, LINE_UNKNOWN]);
+        let (segs, _) = finish(vec![(0, layer)], 0, g);
+        let lines: Vec<u32> = segs.iter().map(|s| s.line).collect();
+        assert_eq!(lines, [3, 4, 0]);
     }
 
     #[test]

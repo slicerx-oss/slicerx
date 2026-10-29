@@ -130,12 +130,33 @@ fn shards_keep_the_extras_and_lines_of_one_run() {
 #[test]
 fn bambu_shards_point_at_the_finished_files_lines() {
     let (req, mesh) = request_on("bambu", Some("Bambu Lab A1"));
+    bambu_lines_are_moves(&req, &mesh);
+}
+
+/// With classic walls one path of the x-marks finds no move in its layer's G-code. Its segments have no line,
+/// where they pointed at the layer's `; CHANGE_LAYER` before.
+#[test]
+fn bambu_classic_walls_shards_point_at_the_finished_files_lines() {
+    let (mut req, mesh) = request_on("bambu", Some("Bambu Lab A1"));
+    req.config["wall_generator"] = json!("classic");
+    bambu_lines_are_moves(&req, &mesh);
+}
+
+/// Every segment line the preview knows is a move of the finished file, in one run and sharded.
+fn bambu_lines_are_moves(req: &SliceRequest, mesh: &Arc<Mesh>) {
     let m = mesh.clone();
-    let one = api::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+    let one = api::run_request(req, &move |_: &str| Ok(m.clone())).unwrap();
     let text = String::from_utf8_lossy(&one.gcode).into_owned();
     assert!(text.contains("\n; CHANGE_LAYER\n") && !text.contains("\n;LAYER_CHANGE"));
+    let file: Vec<&str> = text.lines().collect();
+    for l in segment_lines(&one.preview) {
+        if l > 0 && l != u32::MAX {
+            let line = file.get(l as usize - 1).copied().unwrap_or("");
+            assert!(line.starts_with('G'), "one run: line {l} is {line:?}");
+        }
+    }
     for shards in [1, 3] {
-        let (stitched, finished) = sharded_with_file(&req, &mesh, shards);
+        let (stitched, finished) = sharded_with_file(req, mesh, shards);
         let finished = String::from_utf8_lossy(&finished).into_owned();
         let file: Vec<&str> = finished.lines().collect();
         let lines = segment_lines(&stitched);
