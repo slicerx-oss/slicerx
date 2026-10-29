@@ -19,7 +19,7 @@
 //! - On the first layer every width is `initial_layer_line_width` when it is set, else each feature's own.
 //! - Variable-width walls keep their own edge.
 //!
-//! One fixed-width wall keeps its lines on one grid here; spreading them is a separate change.
+//! One fixed-width wall is the same rule with the outer wall innermost (the CLI's `one_classic_wall` tests).
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,

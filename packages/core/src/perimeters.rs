@@ -1738,6 +1738,15 @@ pub(crate) fn walls_for_top(
             #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
             let inset = ext + inner * (wall_loops as i32 - 1) - overlap;
             spacing * 3 / 20 + 2 * (free_edge - inset)
+        } else if cfg.sparse_infill_density > 0.0
+            && overlap > 0
+            && wall_loops == 1
+            && !crate::firmware::bambu_printer(cfg, cfg.gcode_flavor)
+        {
+            // One wall: the same, inside the outer wall's spacing edge. It only bites at overlaps above about a
+            // quarter of a line, where the usual opening would keep a strip that prints walls only.
+            let spacing = pitch(ext);
+            spacing * 3 / 20 + 2 * (ext / 2 + spacing / 2 - (ext - overlap))
         } else {
             0
         };
@@ -1750,12 +1759,12 @@ pub(crate) fn walls_for_top(
                 Some(n.edge)
             } else {
                 let line = f64::from(mm(cfg.line_width).max(1));
-                crate::session::surface_edge(cfg, layer_height, f64::from(overlap) / line).map(mm)
+                crate::session::surface_edge(cfg, layer_height, f64::from(overlap) / line, wall_loops).map(mm)
             };
             let spacing = surface.map_or_else(|| mm(cfg.spacing_for(cfg.top_surface_width())), |n| n.spacing);
-            // A hair under the spacing: a hundredth, or on Bambu Lab printers a thousandth, where a strip 0.3 % too
-            // narrow for a line keeps its gap fill.
-            let fits = if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+            // A hair under the spacing: a hundredth, or on Bambu Lab printers and inside one wall a thousandth, where
+            // a strip 0.3 % too narrow for a line keeps its gap fill.
+            let fits = if wall_loops == 1 || crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
                 spacing * 999 / 1000
             } else {
                 spacing * 99 / 100
