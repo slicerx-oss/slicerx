@@ -30,7 +30,7 @@ export function ToastBridge() {
   const t = useApp((s) => s.toast)
   const toast = useToast()
   useEffect(() => {
-    if (t) toast(t.text, { ...(t.tone ? { tone: t.tone } : {}), ...(t.action ? { action: t.action, duration: 8000 } : {}), ...(t.dismissible ? { dismissible: true } : {}), ...(t.onDismiss ? { onDismiss: t.onDismiss } : {}) })
+    if (t) toast(t.text, { ...(t.tone ? { tone: t.tone } : {}), ...(t.action ? { action: t.action, duration: 8000 } : {}), ...(t.dismissible ? { dismissible: true } : {}), ...(t.onDismiss ? { onDismiss: t.onDismiss } : {}), ...(t.persist ? { persist: true } : {}) })
   }, [t, toast])
   return null
 }

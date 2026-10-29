@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Arrange with more objects than the bed holds: the ones it cannot place move to a new plate, arranged there, in the
-// same undo step as the arrange, and a toast says how many moved and where. Before, they stayed where they were and
-// overlapped the placed ones or stood inside their clearance, so the slice failed or merged them. Runs the box packer
-// (no geometry engine here), as the app does when the engine cannot run; the e2e runs the nest.
+// same undo step as the arrange, and a toast says how many moved and where; it stays until dismissed, and Show opens
+// the first new plate. Before, they stayed where they were and overlapped the placed ones or stood inside their
+// clearance, so the slice failed or merged them. Runs the box packer (no geometry engine here), as the app does when
+// the engine cannot run; the e2e runs the nest.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { arrangePlate, movedToPlatesNotice } from '../src/plate/edit'
 import { installPrintMargins } from '../src/plate/footprint'
@@ -108,6 +109,20 @@ describe('arrange with more objects than the bed holds', () => {
     expect(get().plates[2]!.objects.map((e) => e.id)).toEqual(['x'])
     expect(get().toast?.text).toBe('1 object did not fit, so it moved to Plate 3.')
     expectClean(20, true)
+  })
+
+  it('keeps the notice until it is dismissed, and Show opens the first new plate', async () => {
+    start(grid(10, 20, 5, 30, 63, 103), 'by-object')
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    const t = get().toast
+    // Information that would otherwise fade: it stays until dismissed or shown, with the dismiss button a warning has.
+    expect(t).toMatchObject({ tone: 'info', persist: true, action: { label: 'Show' } })
+    expect(t?.dismissible).toBeUndefined()
+    expect(get().activePlate).toBe('p1')
+    t!.action!.run()
+    expect(get().activePlate).toBe(get().plates[1]!.id)
+    expect(get().plate).toHaveLength(platesNow()[1]!.length)
+    expect(get().plate.length).toBeGreaterThan(0)
   })
 
   it('says how many moved and where, one plate or several', () => {

@@ -10,7 +10,7 @@ import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { arrangeByObject, type Place } from './by-object-arrange'
 import { byObjectConfig } from './sequence-check'
 import { inStep, quietly } from './history'
-import { moveToNewPlates } from './plates'
+import { moveToNewPlates, switchPlate } from './plates'
 import { selectedEntry } from './select'
 import { bounds, centerOnBed, compose, dropToBed, identity, layOnFace, mirror, modelOrigin, scaleToSize, setScale, withTrs, type Box, type Mat4, type Trs, type Vec3 } from './transform'
 import { brandAccent, objectPalette } from '../edition'
@@ -188,7 +188,9 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   const tooLarge = tooLargeNotice(r, plate)
   const rest = moved.left.length
   if (tooLarge) toast(tooLarge, 'warn')
-  if (moved.plates.length > 0) toast(movedToPlatesNotice(moved.plates), 'info')
+  // The moved objects are out of sight on other plates, so the notice stays until dismissed, and Show opens the first.
+  const first = moved.plates[0]
+  if (first) toast(movedToPlatesNotice(moved.plates), 'info', { label: 'Show', run: () => switchPlate(first.id) }, { persist: true })
   if (rest > 0) toast(`${rest} ${rest === 1 ? 'object does' : 'objects do'} not fit on the bed and stayed where ${rest === 1 ? 'it was' : 'they were'}.`, 'warn')
   return r.leftOver.length
 }
