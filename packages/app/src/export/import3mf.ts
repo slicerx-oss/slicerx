@@ -626,7 +626,7 @@ async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<{
       paint,
       volumes,
       rawPartSettings,
-      rawObjectSettings: raw(o.settings),
+      rawObjectSettings: objectRaw(o.settings),
       noSlot,
       transform: geomMatrix(o.transform, g.unitScale),
       printable: o.printable,
