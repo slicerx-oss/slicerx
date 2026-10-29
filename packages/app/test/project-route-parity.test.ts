@@ -4,8 +4,9 @@
 // side is its real project open (the printer's layer, then the project's settings) and the config it slices with; the
 // MCP server's is slicerx_slice_file with the printer's machine profile; the command line's is sx call slice_file. The
 // app's config goes to sx in the MCP server's own request, so only the settings differ between them, and the G-code
-// must match to the byte. Runs where sx (cargo build -p sx-cli --release) is built; the command line route also needs
-// the MCP server's runtime (node packages/mcp/scripts/build.mjs).
+// must match to the byte. Runs where sx (cargo build -p sx-cli --release) is built. The command line route runs the MCP
+// server's source through tsx, as the in-process route does: its build in packages/mcp/dist is git-ignored and nothing
+// in a test run rebuilds it, so a checkout that reuses one compares today's settings with an older day's.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -25,7 +26,8 @@ const { zip } = await import('../src/export/zip')
 const { loadFlushData } = await import('../src/filament/flush')
 
 const sxBin = process.env['SLICERX_TEST_SX_BIN'] ?? resolve(__dirname, '../../../target/release/sx')
-const runtime = resolve(__dirname, '../../mcp/dist/cli.js')
+const mcpDir = resolve(__dirname, '../../mcp')
+const runtime = join(mcpDir, 'src/cli.ts')
 const repo = resolve(__dirname, '../../..')
 const dir = mkdtempSync(join(tmpdir(), 'project-route-parity-'))
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -83,11 +85,11 @@ function appSlice(request: Record<string, unknown>, config: Record<string, unkno
   return readFileSync(join(out, 'slice.gcode'))
 }
 
-/** sx call slice_file: the command line's route to the same tool. */
+/** sx call slice_file: the command line's route to the same tool, run in the MCP package, where tsx resolves. */
 function cliSlice(file: string, profiles: string[], out: string): Buffer {
-  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v !== undefined && !k.startsWith('SLICERX_'))), HOME: out, USERPROFILE: out, SLICERX_NODE_BIN: process.execPath, SLICERX_MCP_CLI: runtime } as Record<string, string>
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v !== undefined && !k.startsWith('SLICERX_'))), HOME: out, USERPROFILE: out, NODE_OPTIONS: `${process.env['NODE_OPTIONS'] ?? ''} --import tsx`, SLICERX_NODE_BIN: process.execPath, SLICERX_MCP_CLI: runtime } as Record<string, string>
   const args = ['call', '--no-app', '--printers', 'off', '--out-dir', join(out, 'out'), '--allow-dir', dirname(file), 'slice_file', JSON.stringify({ model: file, plate: 1, profiles, project_settings: true })]
-  const line = JSON.parse(execFileSync(sxBin, args, { env, cwd: out, stdio: 'pipe' }).toString().trim().split('\n').pop()!) as { ok: boolean; output: { gcode_path?: string } }
+  const line = JSON.parse(execFileSync(sxBin, args, { env, cwd: mcpDir, stdio: 'pipe' }).toString().trim().split('\n').pop()!) as { ok: boolean; output: { gcode_path?: string } }
   expect(line.ok).toBe(true)
   return readFileSync(line.output.gcode_path!)
 }
@@ -189,7 +191,7 @@ describe.skipIf(!existsSync(sxBin))('one project, one printer: the same G-code f
         for (let t = 1; t < c.slots; t++) expect(mcp.gcode.toString()).toMatch(new RegExp(`^T${t}\\b`, 'm'))
       }
       expect(firstDifference(appSlice(mcp.request, app, join(out, 'app')), mcp.gcode)).toBeNull()
-      if (existsSync(runtime)) expect(firstDifference(cliSlice(file, c.profiles, out), mcp.gcode)).toBeNull()
+      expect(firstDifference(cliSlice(file, c.profiles, out), mcp.gcode)).toBeNull()
     }, 120_000)
   }
 })
