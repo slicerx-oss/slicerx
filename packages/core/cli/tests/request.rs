@@ -340,7 +340,17 @@ fn a_3mf_plate_slices_as_its_objects() {
         err.contains("To slice it anyway, add --allow-collisions."),
         "{err}"
     );
-    assert!(run(40, 3, true).status.success());
+    // sliced anyway, the result still lists the hits, each naming the part struck and the region struck
+    let out = run(40, 3, true);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let hit = &v["collisions"][0];
+    assert_eq!(hit["kind"], "gantry", "{v}");
+    assert_eq!(hit["damagedId"], hit["hitId"], "{hit}");
+    assert!(
+        hit["contactMin"].is_array() && hit["contactMax"].is_array(),
+        "{hit}"
+    );
 }
 
 /// Paths into a zone the printer keeps clear are the plate's own, in any print order: refused in their own words,
