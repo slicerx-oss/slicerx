@@ -4,9 +4,9 @@
 // The new spool plate through the real engine: sx-geom builds the three models, sx slices the plate by object,
 // and the G-code shows each object with its own flow, the tower with its own pressure advance and the
 // temperature tower with its own temperatures, with the engine's by-object clearance check passing.
-// Skipped unless SX_BIN and SX_GEOM_BIN name built binaries (cargo build -p sx-cli -p sx-geom).
+// Skipped unless SLICERX_TEST_SX_BIN and SLICERX_SX_GEOM_BIN name built binaries (cargo build -p sx-cli -p sx-geom).
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
@@ -15,10 +15,11 @@ import { defaultValues } from '../src/calibration/actions'
 import { addCombinedPlate, combinedValues } from '../src/calibration/combined'
 import { setGeomProvider } from '../src/geom/client'
 import { get, set } from '../src/state/store'
+import { binBuilt, GEOM_BUILD, SX_BUILD } from './binaries'
 
-const sx = process.env['SX_BIN'] ?? ''
-const geomBin = process.env['SX_GEOM_BIN'] ?? ''
-const built = sx !== '' && geomBin !== '' && existsSync(sx) && existsSync(geomBin)
+const sx = process.env['SLICERX_TEST_SX_BIN'] ?? ''
+const geomBin = process.env['SLICERX_SX_GEOM_BIN'] ?? ''
+const built = binBuilt(sx || undefined, SX_BUILD) && binBuilt(geomBin || undefined, GEOM_BUILD)
 const dir = built ? mkdtempSync(join(tmpdir(), 'app6-calib-')) : ''
 afterAll(() => dir && rmSync(dir, { recursive: true, force: true }))
 

@@ -2,10 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A client paints a design over MCP the way an agent would: a preview of a target, the person's yes, the paint
 // applied as a history step, read back, undone and painted again. Runs where sx-geom has been built.
-import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { connect, data, noSx, sxBin, sxTimeout } from './helpers'
+import { built, connect, data, GEOM_BUILD, noSx, sxBin, sxTimeout } from './helpers'
 
 const geomBin = process.env['SLICERX_SX_GEOM_BIN'] ?? resolve(__dirname, '../../../target/release/sx-geom')
 
@@ -21,7 +20,7 @@ interface ReadBack {
   parts: { part: number; states: { state: number; areaMm2: number; regionCount: number }[] }[]
 }
 
-describe.skipIf(!existsSync(geomBin))('painting a design', () => {
+describe.skipIf(!built(geomBin, GEOM_BUILD))('painting a design', () => {
   it('previews, applies, reads back, undoes and paints again', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)

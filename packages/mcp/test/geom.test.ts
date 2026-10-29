@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { resolveModel } from '../src/models'
-import { connect, data } from './helpers'
+import { built, connect, data, GEOM_BUILD } from './helpers'
 
 describe('sample:x-mark', () => {
   it('is the showcase X, not the benchmark model', async () => {
@@ -31,7 +31,7 @@ describe('printer setup', () => {
 
 // Runs where sx-geom has been built (cargo build -p sx-geom --release), or SLICERX_SX_GEOM_BIN names one.
 const geomBin = process.env['SLICERX_SX_GEOM_BIN'] ?? resolve(__dirname, '../../../target/release/sx-geom')
-describe.skipIf(!existsSync(geomBin))('mesh tools with the real sx-geom', () => {
+describe.skipIf(!built(geomBin, GEOM_BUILD))('mesh tools with the real sx-geom', () => {
   it('lists the tools', async () => {
     const h = await connect({ sxGeomBin: geomBin })
     const names = (await h.client.listTools()).tools.map((t) => t.name)

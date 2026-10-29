@@ -3,11 +3,12 @@
 // `slicerx-mcp call geom_hole`, run the way a client runs it: its own process, a design built by the calls before it,
 // the hole read back by the tool and then by the design's steps and a measure.
 import { execFile } from 'node:child_process'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
+import { built, GEOM_BUILD } from './helpers'
 
 const run = promisify(execFile)
 const bin = process.env['SLICERX_SX_GEOM_BIN'] ?? resolve(__dirname, '../../../target/release', process.platform === 'win32' ? 'sx-geom.exe' : 'sx-geom')
@@ -19,7 +20,7 @@ interface Line {
   output: { ok: boolean; summary: string; output: Record<string, unknown> }
 }
 
-describe.skipIf(!existsSync(bin))('slicerx-mcp call geom_hole', () => {
+describe.skipIf(!built(bin, GEOM_BUILD))('slicerx-mcp call geom_hole', () => {
   it('makes a plate hole an M3 counterbore as a design step, and reads it back', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'slicerx-mcp-hole-'))
     const calls = [

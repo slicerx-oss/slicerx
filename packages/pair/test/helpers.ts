@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import type { ApprovalDecision, ApprovalRequest, DemoFleet } from '@slicerx/contracts'
 import { createFleetSim, type FleetSim } from '@slicerx/fleet-sim'
 import { createApprovalBroker } from '@slicerx/pilot'
@@ -11,6 +11,19 @@ import { createPairHost, type ApprovalFeed, type HostOffer, type HostServices, t
 import { createIdentity, memoryPairingStore, type DeviceIdentity, type PairingStore } from '../src/identity'
 import { createMemoryRelay, type MemoryRelay } from '../src/relay'
 import { memoryPipePair, type Pipe, type RelayConnection, type SocketFactory, type SocketLike } from '../src/transport'
+
+/**
+ * Whether a native binary a test needs (sx-relay, sx-link) is built at `path`. Without one the test skips, except in
+ * CI's rust tests crates part, which builds them first and sets SLICERX_TEST_REQUIRE_SX=1: there a missing one fails
+ * the file instead. `build` says how to make it.
+ */
+export function binBuilt(path: string | undefined, build: string): boolean {
+  if (path && existsSync(path)) return true
+  if (process.env['SLICERX_TEST_REQUIRE_SX'] === '1') {
+    throw new Error(`SLICERX_TEST_REQUIRE_SX=1 but ${path ? `there is nothing at ${path}` : 'no binary is named'}: ${build}`)
+  }
+  return false
+}
 
 export const RELAY = 'wss://relay.example.test/v1'
 export const LAN = 'ws://192.168.1.20:47616/pair'

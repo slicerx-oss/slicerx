@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { existsSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { flatFaces, frameFor, triangleAt } from '../src/cad'
 import { readStlPositions } from '../src/mesh'
-import { boxStl, connect, data } from './helpers'
+import { boxStl, built, connect, data, GEOM_BUILD } from './helpers'
 
 type V3 = [number, number, number]
 interface MeshOut {
@@ -66,7 +66,7 @@ describe('face lookup without the engine', () => {
 
 // Runs where sx-geom has been built (cargo build -p sx-geom --release), or SLICERX_SX_GEOM_BIN names one.
 const geomBin = process.env['SLICERX_SX_GEOM_BIN'] ?? resolve(__dirname, '../../../target/release/sx-geom')
-describe.skipIf(!existsSync(geomBin))('CAD tools with the real sx-geom', () => {
+describe.skipIf(!built(geomBin, GEOM_BUILD))('CAD tools with the real sx-geom', () => {
   const rect = { type: 'rectangle', widthMm: 30, heightMm: 20 }
   const place = { center: [15, 10] }
 

@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
+import { built, GEOM_BUILD } from './helpers'
 
 const run = promisify(execFile)
 const cli = (args: string[], env: Record<string, string> = {}) =>
@@ -42,7 +43,7 @@ describe('slicerx-mcp call --app', () => {
 describe('slicerx-mcp call design_timeline and design_roll', () => {
   // the design tools need the geometry engine binary (SLICERX_SX_GEOM_BIN); without it they are not listed
   const bin = process.env['SLICERX_SX_GEOM_BIN']
-  it.skipIf(!bin)('reads the timeline here, and says rolling back needs the app', async () => {
+  it.skipIf(!built(bin, GEOM_BUILD))('reads the timeline here, and says rolling back needs the app', async () => {
     const env = { SLICERX_SX_GEOM_BIN: bin ?? '' }
     const out = await run(process.execPath, ['--import', 'tsx', 'src/cli.ts', '--engine', 'stub', '--no-app', 'call', 'design_timeline'], { cwd: resolve(__dirname, '..'), env: { ...process.env, ...env } })
     const line = JSON.parse(out.stdout.trim().split('\n').at(-1)!) as { ok: boolean; output: { output: { marker: number; end: number } } }
@@ -55,7 +56,7 @@ describe('slicerx-mcp call design_timeline and design_roll', () => {
 
 describe('slicerx-mcp call design_sketch', () => {
   const bin = process.env['SLICERX_SX_GEOM_BIN']
-  it.skipIf(!bin)('says a finished sketch needs the app', async () => {
+  it.skipIf(!built(bin, GEOM_BUILD))('says a finished sketch needs the app', async () => {
     const env = { SLICERX_SX_GEOM_BIN: bin ?? '' }
     const e = await cli(['--no-app', 'call', 'design_sketch', '{"loops":[{"type":"circle","center":[0,0],"diameterMm":10}]}'], env)
     expect(e?.code).toBe(1)

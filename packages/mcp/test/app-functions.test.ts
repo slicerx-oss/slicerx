@@ -3,7 +3,7 @@
 // The checks and project operations the app runs from its panels (gcode_inspect, risk_report, supports,
 // mesh_repair and the rest), driven the way a client drives them: the server over stdio, a tool call,
 // then a read-back of the project or the check.
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -11,10 +11,10 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { APP_FUNCTIONS } from '@slicerx/pilot/functions'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { boxStl, connect, data, noSx, sxBin, sxTimeout } from './helpers'
+import { boxStl, built, connect, data, GEOM_BUILD, noSx, sxBin, sxTimeout } from './helpers'
 
 const geomBin = process.env['SLICERX_SX_GEOM_BIN'] ?? resolve(__dirname, '../../../target/release', process.platform === 'win32' ? 'sx-geom.exe' : 'sx-geom')
-const hasGeom = existsSync(geomBin)
+const hasGeom = built(geomBin, GEOM_BUILD)
 
 /** structuredContent: the tool's output as is (the text content wraps printer and file data as untrusted). */
 type Out<T = Record<string, unknown>> = { ok: boolean; summary: string; output: T }

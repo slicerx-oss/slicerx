@@ -99,6 +99,23 @@ export function noSx(): boolean {
 /** sx-geom beside sx, as the server finds it (CI's Rust tests build both into one folder). */
 export const sxGeomBin = join(dirname(sxBin), process.platform === 'win32' ? 'sx-geom.exe' : 'sx-geom')
 
+/**
+ * Whether a binary a test needs is built at `path`. Without one the test skips, except in CI's rust tests crates part,
+ * which builds the binaries first and sets SLICERX_TEST_REQUIRE_SX=1: there a missing one fails the file instead.
+ * `build` says how to make it.
+ */
+export function built(path: string | undefined, build: string): boolean {
+  if (path && existsSync(path)) return true
+  if (process.env['SLICERX_TEST_REQUIRE_SX'] === '1') {
+    throw new Error(`SLICERX_TEST_REQUIRE_SX=1 but ${path ? `there is nothing at ${path}` : 'no binary is named'}: ${build}`)
+  }
+  return false
+}
+
+export const GEOM_BUILD = 'build sx-geom (cargo build -p sx-geom) and name it in SLICERX_SX_GEOM_BIN'
+/** The native exact tests need the B-rep kernel in sx-geom; a default build answers "brep.* is not in this build". */
+export const BREP_BUILD = 'build sx-geom with the exact kernel (cargo build -p sx-geom --features brep) and name it in SLICERX_SX_GEOM_BIN'
+
 /** True when there is no sx-geom beside sx; with SLICERX_TEST_REQUIRE_SX=1 a missing one fails instead. */
 export function noSxGeom(): boolean {
   if (existsSync(sxGeomBin)) return false

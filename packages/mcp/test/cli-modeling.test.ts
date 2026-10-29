@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { execFile } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
+import { built, GEOM_BUILD } from './helpers'
 
 const bin = process.env['SLICERX_SX_GEOM_BIN'] ?? resolve(__dirname, '../../../target/release', process.platform === 'win32' ? 'sx-geom.exe' : 'sx-geom')
-describe.skipIf(!existsSync(bin))('modeling through the CLI with the real geometry engine', () => {
+describe.skipIf(!built(bin, GEOM_BUILD))('modeling through the CLI with the real geometry engine', () => {
   it('runs every shared command and reads its undoable result in one process', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sx-modeling-cli-'))
     const calls: [string, Record<string, unknown>][] = [
@@ -29,7 +30,7 @@ describe.skipIf(!existsSync(bin))('modeling through the CLI with the real geomet
     }
     try {
       const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('SLICERX_')))
-      const { stdout } = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'src/cli.ts', '--engine', 'sx', '--no-app', '--printers', 'off', '--sx-geom-bin', bin, '--out-dir', dir, '--profiles-dir', join(dir, 'profiles'), 'call', ...calls.flatMap(([name, args]) => [name, JSON.stringify(args)])], { cwd: resolve(__dirname, '..'), env: { ...env, HOME: dir, USERPROFILE: dir, SLICERX_MCP_SX_BIN: process.env['SLICERX_SX_BIN'] }, timeout: 90_000, maxBuffer: 2_000_000 })
+      const { stdout } = await promisify(execFile)(process.execPath, ['--import', 'tsx', 'src/cli.ts', '--engine', 'sx', '--no-app', '--printers', 'off', '--sx-geom-bin', bin, '--out-dir', dir, '--profiles-dir', join(dir, 'profiles'), 'call', ...calls.flatMap(([name, args]) => [name, JSON.stringify(args)])], { cwd: resolve(__dirname, '..'), env: { ...env, HOME: dir, USERPROFILE: dir, SLICERX_MCP_SX_BIN: process.env['SLICERX_TEST_SX_BIN'] }, timeout: 90_000, maxBuffer: 2_000_000 })
       const lines = stdout.trim().split('\n').map((line) => JSON.parse(line) as { tool: string; ok: boolean; output: { output: { steps: number | { state: string }[]; volumeMm3: number; sizeMm: number[] } } })
       expect(lines.map((line) => [line.tool, line.ok])).toEqual(calls.map(([name]) => ['slicerx_' + name, true]))
       expect(lines[1]!.output.output).toMatchObject({ steps: 1, volumeMm3: 1600, sizeMm: [20, 10, 8] })

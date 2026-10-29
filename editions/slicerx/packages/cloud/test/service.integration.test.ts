@@ -14,6 +14,10 @@ import type { ApprovalRequest } from '@slicerx/contracts'
 
 const repo = fileURLToPath(new URL('../../../../../', import.meta.url))
 const bin = join(resolve(repo, process.env['CARGO_TARGET_DIR'] ?? 'target'), 'debug', 'sx-cloud')
+// CI's rust tests crates part builds sx-cloud first and sets SLICERX_TEST_REQUIRE_SX=1: there a missing one fails the file.
+if (!existsSync(bin) && process.env['SLICERX_TEST_REQUIRE_SX'] === '1') {
+  throw new Error(`SLICERX_TEST_REQUIRE_SX=1 but there is nothing at ${bin}: build sx-cloud (cargo build -p sx-cloud)`)
+}
 // Any resolved edition config with cloudSlicing on; the memory backend ignores its Supabase URL.
 const config = fileURLToPath(
   new URL('../../../../../packages/edition-config/fixtures/fork-harbor.resolved.json', import.meta.url),
