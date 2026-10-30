@@ -56,6 +56,15 @@ def flatten_any(vendor, kind, name):
         raise
 
 
+def _exists(vendor, kind, name):
+    """True when the preset and every preset it inherits are found."""
+    try:
+        _flatten_file(vendor, kind, name)
+        return True
+    except FileNotFoundError:
+        return False
+
+
 TIER_WORDS = {"draft": ["Draft"], "extra_fine": ["Extra Fine", "SuperDetail"], "fine": ["Fine", "High Quality"], "standard": ["Standard", "SPEED"], "strong": ["Strength"]}
 
 
@@ -161,6 +170,10 @@ def main():
     ap.add_argument("--tiers", help="comma separated tiers to dump with --settings (default: all)")
     ap.add_argument("--nozzle", help="with --settings: dump the machine, process and filament presets of this nozzle size (0.2, 0.6, 0.8): the preset names of the 0.4 mm ones with the nozzle swapped")
     a = ap.parse_args()
+    # A portable build keeps its profiles in resources/ next to the executable.
+    beside = os.path.join(os.path.dirname(os.path.abspath(a.orca)), "resources", "profiles")
+    if os.path.isdir(beside) and beside not in pp.PROFILE_DIRS:
+        pp.PROFILE_DIRS.insert(0, beside)
     os.makedirs(a.out, exist_ok=True)
     jobs = []
     if a.settings:
@@ -187,6 +200,15 @@ def main():
                 if a.tiers and tier not in a.tiers.split(","):
                     continue
                 proc = path.split("/", 2)[-1]
+                # process-speeds.json names each preset as the profile commit it was read from has it. A preset renamed in
+                # the profiles the dump reads (the K1C's Draft, Standard and Fine gained " 0.4 nozzle") is taken from the
+                # presets compatible with the machine, as for the other nozzles, so its tier is not left out of the dump.
+                if not (a.nozzle and a.nozzle != "0.4") and not _exists(vendor, "process", proc):
+                    alt = process_for(vendor, machine, tier)
+                    print(model, tier, "no process preset", repr(proc), "; compatible preset", repr(alt))
+                    if not alt:
+                        continue
+                    proc = alt
                 m2, p2, f2 = machine, proc, fil
                 if a.nozzle and a.nozzle != "0.4":
                     m2 = swap_nozzle(machine, a.nozzle)
