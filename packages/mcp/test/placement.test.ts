@@ -39,7 +39,7 @@ describe('placing objects', () => {
     const h = await project()
     const moved = await call(h, 'slicerx_project_move', { object: 'obj-1', x: 60, y: 70 })
     expect(moved.ok).toBe(true)
-    expect(moved.output.project.plates[0]?.placements).toEqual([{ id: 'obj-1-1', objectId: 'obj-1', copy: 1, centerMm: [60, 70], sizeMm: [20, 20, 20], manual: true }])
+    expect(moved.output.project.plates[0]?.placements).toEqual([{ id: 'obj-1-1', objectId: 'obj-1', copy: 1, centerMm: [60, 70], sizeMm: [20, 20, 20], manual: true, turnDeg: 0 }])
 
     const scaled = await call(h, 'slicerx_project_scale', { object: 'cube.stl', scale: [2, 1, 0.5] })
     expect(scaled.output.project.objects[0]).toMatchObject({ bbox_mm: [40, 20, 10], scale: [2, 1, 0.5], position: [60, 70], model_bounds: { min: [0, 0, 0], max: [20, 20, 20] } })

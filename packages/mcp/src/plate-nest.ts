@@ -48,6 +48,43 @@ export interface NestPlate {
   zones?: readonly Rect[]
   /** False leaves out the rule that keeps a whole-print skirt off the zones, which a lane between copies breaks. */
   skirt?: false
+  /** Turn each moving copy about Z where that packs better, as the app's arrange and fill the bed do; placing a copy around others does not. */
+  turn?: boolean
+}
+
+/** A turn about Z by `deg` applied after the column-major 4x4 `m` (exact at quarter turns), with no move. */
+export function turnedLinear(m: readonly number[], deg: number): number[] {
+  const d = ((deg % 360) + 360) % 360
+  const [s, c] = d === 0 ? [0, 1] : d === 90 ? [1, 0] : d === 180 ? [0, -1] : d === 270 ? [-1, 0] : [Math.sin((d * Math.PI) / 180), Math.cos((d * Math.PI) / 180)]
+  const out = [...m]
+  for (let col = 0; col < 4; col++) {
+    const x = m[col * 4] ?? 0
+    const y = m[col * 4 + 1] ?? 0
+    out[col * 4] = c * x - s * y
+    out[col * 4 + 1] = s * x + c * y
+  }
+  return out
+}
+
+/** The object as placed with a turn about Z by `deg` after its rotation and scale: its outline, size and lowest corner follow. */
+export function turnedObject(o: NestObject, deg: number): NestObject {
+  if (!deg) return o
+  const linear = turnedLinear(o.linear, deg)
+  const lo = [Infinity, Infinity, Infinity]
+  const hi = [-Infinity, -Infinity, -Infinity]
+  for (const part of o.parts()) {
+    const p = part.positions
+    for (let k = 0; k + 2 < p.length; k += 3) {
+      const [x, y, z] = [p[k]!, p[k + 1]!, p[k + 2]!]
+      for (let r = 0; r < 3; r++) {
+        const v = (linear[r] ?? 0) * x + (linear[4 + r] ?? 0) * y + (linear[8 + r] ?? 0) * z
+        if (v < lo[r]!) lo[r] = v
+        if (v > hi[r]!) hi[r] = v
+      }
+    }
+  }
+  if (!Number.isFinite(lo[0]!)) return { ...o, linear }
+  return { ...o, linear, min: [lo[0]!, lo[1]!, lo[2]!], size: [hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!] }
 }
 
 /** Footprints by mesh, rotation and scale and first layer cut; a move only shifts one. */
@@ -122,7 +159,7 @@ export async function nestPlate(engine: EngineCall, p: NestPlate, cache: Footpri
   const modes = margins.apart ? byObjectSpacingModes([...items, ...fixed].map((i) => i.apartReach ?? i.reach)) : [undefined]
   let r: NestReply | undefined
   for (const spacing of modes) {
-    const problem = nestProblem({ bed: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm, ...(p.bed.circle ? { round: true } : {}) }, items, fixed, avoid: [...keepOut, ...(p.zones ?? []).map((q) => ({ ...q, x: q.x - origin[0], y: q.y - origin[1] }))], keepOut: keepOut.length, towers, margins, gapMm: p.gapMm, rotate: false, center: p.center, spacing })
+    const problem = nestProblem({ bed: { widthMm: p.bed.widthMm, depthMm: p.bed.depthMm, ...(p.bed.circle ? { round: true } : {}) }, items, fixed, avoid: [...keepOut, ...(p.zones ?? []).map((q) => ({ ...q, x: q.x - origin[0], y: q.y - origin[1] }))], keepOut: keepOut.length, towers, margins, gapMm: p.gapMm, rotate: p.turn === true, center: p.center, spacing })
     let next = (await engine('nest.arrange', problem)) as NestReply
     if ('keepOutZones' in problem.options && next.leftOver.length > 0) next = placesMore(next, (await engine('nest.arrange', withoutKeepOut(problem))) as NestReply)
     r = r ? betterNest(r, next) : next
@@ -161,8 +198,9 @@ export async function nestInLanes(engine: EngineCall, p: NestPlate, cache: Footp
       const q = r.placements.find((x) => x.id === o.id)
       if (!q) return null
       placements.push({ ...q, copy: c })
-      fixed.push({ ...o, id: `${o.id}~${c}`, copies: 1, at: q.offset })
-      hulls.push(await hullAt(o, q.offset))
+      const placed = turnedObject(o, q.angleDeg)
+      fixed.push({ ...placed, id: `${o.id}~${c}`, copies: 1, at: q.offset })
+      hulls.push(await hullAt(placed, q.offset))
     }
   }
   const low = p.moving.filter((o) => !tall(o))
@@ -173,8 +211,10 @@ export async function nestInLanes(engine: EngineCall, p: NestPlate, cache: Footp
   if (!p.center || p.fixed.length > 0 || p.bed.circle) return { ...rest, placements: all }
   const byId = new Map(p.moving.map((o) => [o.id, o]))
   const placed = all.flatMap((q) => {
-    const o = byId.get(q.id)
-    if (!o) return []
+    const base = byId.get(q.id)
+    if (!base) return []
+    // its box as the nest turned it
+    const o = turnedObject(base, q.angleDeg)
     const size = { w: o.size[0], h: o.size[1], height: o.size[2] }
     const margins = objectPrintMargins(o.config)
     // as far from a zone as the nest keeps a part from the printer's keep-out areas, its skirt by object counted
