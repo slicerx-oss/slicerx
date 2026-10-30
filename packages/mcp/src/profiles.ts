@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Profile catalog: SlicerX's own printer profiles and process presets (packages/settings), the process a printer's
-// maker ships for each tier where there is one (as the app takes it), printer and filament presets from knowledge/, and
-// the Easy intent presets.
-import type { EasyGoal, SettingSection, SettingValue } from '@slicerx/contracts'
+// Profile catalog: SlicerX's own printer profiles and process presets (packages/settings), the machine, default
+// filament and process for each tier a printer's maker ships where there are some (as the app takes them), printer and
+// filament presets from knowledge/, and the Easy intent presets.
+import type { EasyGoal, PrintConfig, SettingSection, SettingValue, SmartLayerMode } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
-import { applyEasy, EASY_MAP, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, presetDefaults, printerConfig, printerProfile, processConfig, resolvedNozzles, resolveFilamentPreset, stockProcess, type VendorFile } from '@slicerx/settings'
+import { applyEasy, EASY_MAP, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, presetDefaults, printerConfig, printerProfile, processConfig, resolvedNozzles, resolveFilamentPreset, stockPrinter, stockProcess, type StockPrinter, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore } from './data'
 import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileByName, sameValue } from './settings'
 
@@ -77,6 +77,25 @@ async function loadMakerProcesses(): Promise<Map<string, Record<string, SettingV
   return out
 }
 
+/**
+ * Each printer's machine and default filament for each nozzle the app offers for it, by `<printer id>@<nozzle>`, as the
+ * app's printer layer takes them (stockPrinter): the maker's resolved machine and default filament where there are
+ * some, else SlicerX's printer profile and the generic PLA.
+ */
+async function loadStockPrinters(): Promise<Map<string, StockPrinter>> {
+  const out = new Map<string, StockPrinter>()
+  for (const p of listPrinterProfiles()) {
+    for (const nozzle of p.nozzles) {
+      const stock = await stockPrinter(p.id, nozzle)
+      if (stock) out.set(`${p.id}@${nozzle}`, stock)
+    }
+  }
+  return out
+}
+
+/** The sleipnir bounds keys, which the app works out over the whole layer. */
+const SLEIPNIR_BOUNDS = ['smart_layer_min_height', 'smart_layer_max_height'] as const
+
 /** `stock-filament:BBL/Bambu PLA Basic @BBL A1` into its vendor folder, product and printer variant. */
 function stockParts(id: string): { vendor: string; family: string; variant?: string } | undefined {
   const rest = id.slice(STOCK_FILAMENT.length)
@@ -95,6 +114,9 @@ export class ProfileCatalog {
   /** The makers' process presets by printer, nozzle and tier (`loadMakerProcesses`), loaded on first use (`prepare`). */
   private makerLoad: Promise<Map<string, Record<string, SettingValue>>> | undefined
   private maker: Map<string, Record<string, SettingValue>> | undefined
+  /** Each printer's machine and default filament by printer and nozzle (`loadStockPrinters`), loaded on first use (`prepare`). */
+  private printersLoad: Promise<Map<string, StockPrinter>> | undefined
+  private printers: Map<string, StockPrinter> | undefined
 
   constructor(store: DataStore) {
     this.store = store
@@ -102,7 +124,8 @@ export class ProfileCatalog {
 
   /**
    * Loads what `get` needs for these profiles, the vendor files of stock filament presets, and what `defaultSupports`
-   * needs, the makers' process presets. Call before either.
+   * and `defaultFilament` need, the makers' process presets and each printer's machine and default filament. Call
+   * before any of them.
    */
   async prepare(queries: readonly string[]): Promise<void> {
     for (const q of queries) {
@@ -114,7 +137,26 @@ export class ProfileCatalog {
       }
     }
     this.makerLoad ??= loadMakerProcesses()
+    this.printersLoad ??= loadStockPrinters()
     this.maker = await this.makerLoad
+    this.printers = await this.printersLoad
+  }
+
+  /**
+   * The filament a slice that names none gets, as the app gives a fresh plate's slot on this printer: the maker's default
+   * filament for the printer where there is one, else the generic PLA. None without a printer, or on a nozzle the app
+   * does not offer for it, which keep the schema's filament.
+   */
+  defaultFilament(printer: { printerId: string; nozzle?: number | undefined } | undefined): { name: string; config: Record<string, SettingValue> } | undefined {
+    if (!this.printers) throw new Error('ProfileCatalog.prepare must run before defaultFilament')
+    const stock = printer ? this.stockPrinter(printer.printerId, printer.nozzle) : undefined
+    return stock ? { name: stock.filamentName, config: { ...stock.filament } } : undefined
+  }
+
+  /** The app's machine and default filament for a printer on a nozzle it offers (its default when none is given), from `prepare`. */
+  private stockPrinter(printerId: string, nozzle: number | undefined): StockPrinter | undefined {
+    const mm = nozzle ?? printerProfile(printerId)?.defaultNozzle
+    return this.printers?.get(`${printerId}@${mm}`)
   }
 
   /**
@@ -197,8 +239,11 @@ export class ProfileCatalog {
       return { ...summary, config, chain: [summary.name], unknown_keys: [] }
     }
     if (kind === 'machine') {
-      const config = printerConfig(id)
-      return config && printerProfile(id) ? { ...summary, config: config as unknown as Record<string, SettingValue>, chain: [summary.name], unknown_keys: [] } : undefined
+      // The app's machine for the printer and nozzle (the maker's where there is one), from `prepare`. A nozzle the app
+      // does not offer has no app answer, so it keeps SlicerX's printer profile, as before.
+      const stock = this.stockPrinter(id, printer?.printerId === id ? printer.nozzle : undefined)
+      const config = stock?.machine ?? (printerConfig(id) as unknown as Record<string, SettingValue> | undefined)
+      return config && printerProfile(id) ? { ...summary, config: { ...config }, chain: [summary.name], unknown_keys: [] } : undefined
     }
     if (summary.source === 'stock') {
       const parts = stockParts(summary.id)
@@ -213,7 +258,7 @@ export class ProfileCatalog {
       // SlicerX's own preset defaults go over the process, as the app's layer puts them (layerConfig): aegis walls, a
       // Bambu Lab printer keeping its process's own (its presets' classic ones).
       const machine = printer ? (printerConfig(printer.printerId, nozzle) as unknown as Record<string, unknown> | undefined) : undefined
-      return own ? { ...summary, config: { ...own, ...DEFAULT_PROCESS_KEYS, ...presetDefaults(machine ?? {}) }, chain: ['Standard', summary.name], unknown_keys: [] } : undefined
+      return own ? { ...summary, config: this.onPrinter({ ...own, ...DEFAULT_PROCESS_KEYS, ...presetDefaults(machine ?? {}) }, printer, nozzle), chain: ['Standard', summary.name], unknown_keys: [] } : undefined
     }
     if (kind === 'process') {
       const config = this.tierConfig(id, nozzle, printer)
@@ -221,9 +266,30 @@ export class ProfileCatalog {
       // On a printer, SlicerX's own preset defaults go over the maker's process, as the app's layer puts them
       // (layerConfig): aegis walls, a Bambu Lab printer's presets keeping their classic ones.
       const machine = printer ? (printerConfig(printer.printerId, nozzle) as unknown as Record<string, unknown> | undefined) : undefined
-      return { ...summary, config: printer ? { ...config, ...presetDefaults(machine ?? {}) } : config, chain: [summary.name], unknown_keys: [] }
+      return { ...summary, config: printer ? this.onPrinter({ ...config, ...presetDefaults(machine ?? {}) }, printer, nozzle) : config, chain: [summary.name], unknown_keys: [] }
     }
     return undefined
+  }
+
+  /**
+   * A process under a printer's machine, as the app's layer has it: the machine's own settings stay the machine's (the app
+   * puts the machine over the process, so `process:<tier>` named after `machine:<id>` no longer sets a dual nozzle
+   * printer's `nozzle_diameter` back to one nozzle), and sleipnir's bounds come from the Easy rule over the whole layer,
+   * the printer's nozzle with the process's layer height. Only on a nozzle the app offers for the printer.
+   */
+  private onPrinter(config: Record<string, SettingValue>, printer: { printerId: string } | undefined, nozzle: number): Record<string, SettingValue> {
+    const stock = printer ? this.stockPrinter(printer.printerId, nozzle) : undefined
+    if (!stock || stock.nozzle !== nozzle) return config
+    const own = Object.fromEntries(Object.entries(config).filter(([k]) => !(k in stock.machine)))
+    const defaults = defaultConfig(this.store)
+    const mode = [own['smart_layer'] ?? defaults['smart_layer']].flat()[0]
+    if (typeof mode !== 'string' || mode === 'off') return own
+    // The Easy rule for the bounds in the process's own sleipnir mode (a mode with no Vary switch keeps that mode).
+    const { detail, strength, speed, supports, brim } = goalEasy('standard')
+    const base = { ...defaults, ...stock.machine, ...own } as unknown as PrintConfig
+    const layer = applyEasy({ detail, strength, speed, supports, brim, smartLayer: mode as SmartLayerMode }, base, new Set(['varyLayerHeight'])) as unknown as Record<string, SettingValue>
+    for (const k of SLEIPNIR_BOUNDS) if (layer[k] !== undefined) own[k] = layer[k]
+    return own
   }
 
   /**

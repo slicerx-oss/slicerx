@@ -184,26 +184,101 @@ export async function stockLayer(input: StockLayerInput): Promise<StockLayer | n
   const printerId = input.printerId
   const profile = printerProfile(printerId)
   if (!profile) return null
-  const wanted = input.extruders?.[0]?.mm ?? input.nozzle
-  const nozzle = wanted && profile.nozzles.includes(wanted) ? wanted : profile.defaultNozzle
+  const nozzle = layerNozzle(profile, input.extruders?.[0]?.mm ?? input.nozzle)
+  const { exact, resolved, base, machine } = await layerMachine(printerId, input.tier, nozzle)
+  const process = await tierProcess(printerId, input.tier, nozzle, exact)
+  applyExtruders(machine, input.extruders)
+  // Filament: the maker's default for the printer where the slot's material matches it, else the slot's own product or the generic one of its type.
+  // The filament type is stored only when it is not the schema default (PLA).
+  const defaultType = resolved ? String(first(resolved.filament['filament_type']) ?? 'PLA') : ''
+  const slots = input.slots.length ? input.slots : [{ type: defaultType || 'PLA' }]
+  const { filaments, filamentIds } = await slotFilaments(slots, resolved, defaultType, machine)
+  // The G-code is the text written for SlicerX for this model, not the maker's.
+  const gcode = shippedGcode(printerId, base)
+  const values: Record<string, SettingValue> = { ...process, ...perSlot(filaments), ...machine, ...gcode }
+  // What every goal gives on this printer and nozzle, for the Goal tiles: the tier in use from its own process.
+  const goalValues = {} as Record<EasyGoal, Record<string, SettingValue>>
+  for (const g of GOALS) {
+    const p = g === input.tier ? process : await tierProcess(printerId, g, nozzle)
+    goalValues[g] = Object.fromEntries(GOAL_KEYS.map((k) => [k, p[k] ?? defaultConfig()[k]!]))
+  }
+  return {
+    printerId,
+    nozzle,
+    nozzles: [...profile.nozzles],
+    tier: input.tier,
+    source: exact || (resolved && nozzle === profile.defaultNozzle) ? 'orca' : 'slicerx',
+    values,
+    limits: { ...(profile.limits.hotendMaxTemp ? { nozzleMaxC: profile.limits.hotendMaxTemp } : {}), ...(profile.limits.bedMaxTemp ? { bedMaxC: profile.limits.bedMaxTemp } : {}) },
+    shippedGcode: gcodeStatus(printerId) === 'written',
+    gcodeKeys: Object.keys(gcode),
+    filamentIds,
+    materialType: defaultType,
+    goalValues,
+  }
+}
+
+export interface StockPrinter {
+  /** The nozzle the settings are for: the size asked for when the printer offers it, else its default. */
+  nozzle: number
+  /** The printer's machine settings, with the G-code SlicerX writes for the model. */
+  machine: Record<string, SettingValue>
+  /** The filament a fresh plate's slot gets: the maker's default for the printer, else the generic one of its type. */
+  filament: Record<string, SettingValue>
+  /** That filament's preset id (`filament_id`, such as `GFA00`), empty where no shipped preset applies. */
+  filamentId: string
+  /** That filament's name: the maker's preset's where the data names it, else `Bambu Lab default PLA` or `Generic PLA`. */
+  filamentName: string
+}
+
+/**
+ * The machine and the default filament of a printer and nozzle, as `stockLayer` puts them in the app's printer layer for
+ * a plate whose slots name no filament. Neither depends on the tier. The MCP server builds `machine:<id>`, and the
+ * filament of a slice that names none, from it, so a slice through the server starts from the printer the app does.
+ * Null for a printer that matches none of our profiles.
+ */
+export async function stockPrinter(printerId: string, nozzle?: number): Promise<StockPrinter | null> {
+  const profile = printerProfile(printerId)
+  if (!profile) return null
+  const mm = layerNozzle(profile, nozzle)
+  const { resolved, base, machine } = await layerMachine(printerId, 'standard', mm)
+  const type = resolved ? String(first(resolved.filament['filament_type']) ?? 'PLA') : ''
+  const { filaments, filamentIds } = await slotFilaments([{ type: type || 'PLA' }], resolved, type, machine)
+  const name = resolved ? resolved.orca?.filament || `${profile.vendor} default ${(type || 'PLA').toUpperCase()}` : 'Generic PLA'
+  return { nozzle: mm, machine: { ...machine, ...shippedGcode(printerId, base) }, filament: perSlot(filaments), filamentId: filamentIds[0] ?? '', filamentName: name }
+}
+
+/** The nozzle a layer is for: the size asked for when the printer offers it, else the printer's default. */
+function layerNozzle(profile: { nozzles: readonly number[]; defaultNozzle: number }, wanted: number | undefined): number {
+  return wanted && profile.nozzles.includes(wanted) ? wanted : profile.defaultNozzle
+}
+
+type Resolved = Awaited<ReturnType<typeof resolvedProfile>>
+
+/**
+ * A printer's machine settings for a nozzle and the resolved presets they come from: the maker's resolved machine where
+ * there is one, else our own profile's. The machine is the same for every tier; only `exact`, the tier's preset for the
+ * nozzle, depends on it.
+ */
+async function layerMachine(printerId: string, tier: EasyGoal, nozzle: number): Promise<{ exact: Resolved; resolved: Resolved; base: Record<string, SettingValue>; machine: Record<string, SettingValue> }> {
+  const defaultNozzle = printerProfile(printerId)?.defaultNozzle
   // The presets Orca has for this nozzle; a size it has none for keeps the default nozzle's machine with our own process for the size.
-  const exact = await resolvedProfile(printerId, input.tier, nozzle)
-  const resolved = exact ?? (nozzle !== profile.defaultNozzle ? await resolvedProfile(printerId, input.tier) : undefined)
+  const exact = await resolvedProfile(printerId, tier, nozzle)
+  const resolved = exact ?? (nozzle !== defaultNozzle ? await resolvedProfile(printerId, tier) : undefined)
   const base = printerConfig(printerId, nozzle) as Record<string, SettingValue>
   // Orca's Bambu Lab presets leave out Bambu Studio's clearance keys (extruder_clearance_max_radius and
   // extruder_clearance_dist_to_rod: 73 and 56.5 mm on the A1); heimdall needs them, so they come from the maker's own
   // machine settings where the preset has none.
   const clearance = Object.fromEntries(Object.entries(base).filter(([k]) => k.startsWith('extruder_clearance_')))
   const machine = (resolved ? { ...clearance, ...resolved.machine } : { ...base }) as Record<string, SettingValue>
-  const process = await tierProcess(printerId, input.tier, nozzle, exact)
   if (resolved && !exact) {
     for (const k of ['nozzle_diameter', 'min_layer_height', 'max_layer_height'] as const) if (base[k] !== undefined) machine[k] = base[k]!
   }
-  applyExtruders(machine, input.extruders)
-  // Filament: the maker's default for the printer where the slot's material matches it, else the slot's own product or the generic one of its type.
-  // The filament type is stored only when it is not the schema default (PLA).
-  const defaultType = resolved ? String(first(resolved.filament['filament_type']) ?? 'PLA') : ''
-  const slots = input.slots.length ? input.slots : [{ type: defaultType || 'PLA' }]
+  return { exact, resolved, base, machine }
+}
+
+/** Each slot's filament settings and preset id, in slot order. */
+async function slotFilaments(slots: readonly SlotFilament[], resolved: Resolved, defaultType: string, machine: Record<string, SettingValue>): Promise<{ filaments: Record<string, SettingValue>[]; filamentIds: string[] }> {
   const filaments: Record<string, SettingValue>[] = []
   // Orca writes each filament preset's `filament_id` into the project (`filament_ids`); empty where there is none.
   const filamentIds: string[] = []
@@ -226,38 +301,13 @@ export async function stockLayer(input: StockLayerInput): Promise<StockLayer | n
       filamentIds.push(generic?.id ?? '')
     }
   }
-  const values: Record<string, SettingValue> = { ...process, ...perSlot(filaments), ...machine }
-  // The G-code is the text written for SlicerX for this model, not the maker's.
-  const shipped = gcodeStatus(printerId) === 'written'
-  const gcodeKeys: string[] = []
-  if (shipped) {
-    for (const k of GCODE_KEYS) {
-      if (typeof base[k] === 'string') {
-        values[k] = base[k]!
-        gcodeKeys.push(k)
-      }
-    }
-  }
-  // What every goal gives on this printer and nozzle, for the Goal tiles: the tier in use from its own process.
-  const goalValues = {} as Record<EasyGoal, Record<string, SettingValue>>
-  for (const g of GOALS) {
-    const p = g === input.tier ? process : await tierProcess(printerId, g, nozzle)
-    goalValues[g] = Object.fromEntries(GOAL_KEYS.map((k) => [k, p[k] ?? defaultConfig()[k]!]))
-  }
-  return {
-    printerId,
-    nozzle,
-    nozzles: [...profile.nozzles],
-    tier: input.tier,
-    source: exact || (resolved && nozzle === profile.defaultNozzle) ? 'orca' : 'slicerx',
-    values,
-    limits: { ...(profile.limits.hotendMaxTemp ? { nozzleMaxC: profile.limits.hotendMaxTemp } : {}), ...(profile.limits.bedMaxTemp ? { bedMaxC: profile.limits.bedMaxTemp } : {}) },
-    shippedGcode: shipped,
-    gcodeKeys,
-    filamentIds,
-    materialType: defaultType,
-    goalValues,
-  }
+  return { filaments, filamentIds }
+}
+
+/** The G-code text written for SlicerX for the model, by key, once it is written (gcodeStatus); else none. */
+function shippedGcode(printerId: string, base: Record<string, SettingValue>): Record<string, SettingValue> {
+  if (gcodeStatus(printerId) !== 'written') return {}
+  return Object.fromEntries(GCODE_KEYS.flatMap((k) => (typeof base[k] === 'string' ? [[k, base[k]!] as const] : [])))
 }
 
 /**

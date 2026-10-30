@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Settings for one slice: schema defaults, then the project file's own settings,
-// then each profile in order, then the user's preset files, then a filament per slot,
-// then overrides. Another slicer's project on a named printer starts from the settings
+// Settings for one slice: schema defaults, then the printer's default filament when nothing
+// names a filament, then the project file's own settings, then each profile in order, then the
+// user's preset files, then a filament per slot, then overrides. Another slicer's project on a named printer starts from the settings
 // the app opens it with on that printer instead (project-open.ts).
 // Shared by the file tools and cloud slicing.
 import type { SettingValue, ScriptReview } from '@slicerx/contracts'
@@ -108,7 +108,7 @@ export function slicePrinter(profiles: ProfileCatalog, names: string[], presets:
 /** The support gaps the engine reads as one layer height when a request leaves them out (sx-core `PrintConfig::from_value`). */
 const LAYER_FOLLOWING_GAPS = ['support_top_z_distance', 'support_bottom_z_distance'] as const
 
-/** Profiles must be loaded with `profiles.prepare(names)` first, for stock filament presets and the makers' supports. */
+/** Profiles must be loaded with `profiles.prepare(names)` first, for stock filament presets, the makers' supports and each printer's default filament. */
 export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, names: string[], overrides: Record<string, unknown> | undefined, extra: ExtraLayers = {}): ResolvedConfig {
   const explicit: Record<string, SettingValue> = {}
   const applied: string[] = []
@@ -126,6 +126,14 @@ export function resolveSliceConfig(store: DataStore, profiles: ProfileCatalog, n
     // Its supports are what the app gives this printer on a fresh plate: the maker's preset's where it has one
     Object.assign(explicit, fallback.config, profiles.defaultSupports(printer))
     applied.push(fallback.id)
+  }
+  // A slice that names no filament anywhere gets the one the app gives a fresh plate's slot on this printer: the
+  // maker's default filament, else the generic PLA. It goes over the process and under the printer, as in the app.
+  const choosesFilament = extra.project || extra.slots?.length || names.some((n) => profiles.get(n)?.section === 'filament') || (extra.presets ?? []).some((l) => l.section === 'filament')
+  const filament = choosesFilament ? undefined : profiles.defaultFilament(printer)
+  if (filament) {
+    Object.assign(explicit, filament.config)
+    applied.push(`default filament: ${filament.name}`)
   }
   if (opened) {
     // Another slicer's project on a printer, as the app opens it: every setting the app sends, the printer's layer
