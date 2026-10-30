@@ -1,6 +1,6 @@
 {
   "name": "@slicerx/step-reader",
-  "version": "0.1.0",
+  "version": "0.2.6",
   "private": false,
   "description": "STEP files (AP203, AP214, AP242) to meshes in millimeters for browsers, workers and Node, on Open CASCADE Technology",
   "license": "Apache-2.0 AND LGPL-2.1-only AND LGPL-2.1-only WITH OCCT-exception-1.0 AND MIT AND Apache-2.0 WITH LLVM-exception",
