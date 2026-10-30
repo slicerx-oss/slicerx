@@ -8,6 +8,7 @@ import { fullPlate, get, markStale, selectedIds, set, type AppState, type PlateE
 import { arrange } from './arrange'
 import { quietly } from './history'
 import { plateTower } from './tower'
+import type { Mat4 } from './transform'
 
 /** The plates with the active one's objects filled in. */
 export function allPlates(s: Pick<AppState, 'plates' | 'plate' | 'activePlate'> & Partial<Pick<AppState, 'historyEdit'>> = get()): PlateMeta[] {
@@ -154,26 +155,40 @@ export function moveObjectsToPlate(targetId: string, objectIds: readonly string[
   return moving.length
 }
 
+/** One new plate's layout from arrange: where each of its objects goes, and with `order` (ids) the order they print in. */
+export interface NewPlateLayout {
+  transforms: Record<string, Mat4>
+  order?: readonly string[]
+}
+
 /**
- * Moves objects of the shown plate that arrange found no room for to new plates after the others, each with the shown
- * plate's settings, as many on each as fit there (moveObjectsToPlate arranges them), until all are placed. The shown
- * plate stays shown. Returns the plates made with how many went to each, and the ids no empty bed holds, which stay.
+ * Moves objects of the shown plate that arrange found no room for to new plates after the others, one plate for each
+ * layout, each with the shown plate's settings and its objects where the layout puts them (arrange lays them out with
+ * the same nest as the shown plate, turns included). The shown plate stays shown. An object a layout names that is no
+ * longer on the shown plate is skipped, and a layout left with none makes no plate. Returns the plates made with how
+ * many went to each.
  */
-export function moveToNewPlates(objectIds: readonly string[]): { plates: { id: string; name: string; count: number }[]; left: string[] } {
+export function moveToNewPlates(layouts: readonly NewPlateLayout[]): { id: string; name: string; count: number }[] {
   const made: { id: string; name: string; count: number }[] = []
-  let left = [...objectIds]
-  while (left.length > 0) {
+  for (const layout of layouts) {
     const s = get()
-    const moving = s.plate.filter((p) => left.includes(p.id))
-    const r = arrange(moving, [], s.bed)
-    const fit = moving.filter((m) => r.transforms[m.id]).map((m) => m.id)
-    if (fit.length === 0) break
+    const ids = new Set(Object.keys(layout.transforms))
+    const rank = new Map((layout.order ?? []).map((id, i) => [id, i]))
+    const moving = s.plate.filter((p) => ids.has(p.id))
+    if (moving.length === 0) continue
+    const at = (p: PlateEntry) => rank.get(p.id) ?? rank.size + moving.indexOf(p)
+    const placed = [...moving].sort((a, b) => at(a) - at(b)).map((m) => ({ ...m, transform: layout.transforms[m.id]! }))
     const id = addPlate(activeMeta()?.settings ?? {}, false)
-    moveObjectsToPlate(id, fit)
-    made.push({ id, name: get().plates.find((p) => p.id === id)?.name ?? '', count: fit.length })
-    left = left.filter((x) => !fit.includes(x))
+    set({
+      plate: get().plate.filter((p) => !ids.has(p.id)),
+      plates: get().plates.map((p) => (p.id === id ? { ...p, objects: placed } : p)),
+      selection: null,
+      selectedIds: [],
+    })
+    markStale()
+    made.push({ id, name: get().plates.find((p) => p.id === id)?.name ?? '', count: placed.length })
   }
-  return { plates: made, left }
+  return made
 }
 
 /** The project's name for file names: its first object, without extension or odd characters. */
