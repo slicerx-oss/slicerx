@@ -68,6 +68,7 @@ A Moonraker or OctoPrint printer can be reached through Obico's cloud tunnel ins
 - Status is read at most every 15 to 30 seconds, by what is left of the month's tunnel data, whoever asks. `/_tsd_/tunnelusage/` is read before every upload, and a file that does not fit in what is left is refused before it is sent.
 - Obico's 401, 481, 482 and 483 come back as `Error::Tunnel` with a plain message (access removed, monthly data used up, plugin not connected, no answer within 30 seconds), with codes `auth`, `tunnel_data_limit`, `unreachable` and `timeout`.
 - The printer's camera is off through a tunnel for now.
+- In the app, the person picks Through Obico for a Klipper (Moonraker) or OctoPrint printer and pastes the address Obico shows. The paste box reads it with the same rules as `TunnelEndpoint::parse` (`parseTunnelEndpoint` in `packages/contracts`, both tested on `fixtures/tunnel-endpoints.json`), shows only the host, and stores the user name and password in the keychain. Clients read a tunnel printer with `printers.tunnel` (`slicerx_printer_tunnel` over MCP); none can add one or store its access.
 
 ## Dependencies
 

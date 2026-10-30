@@ -56,7 +56,12 @@ import {
   pickBrand,
   pickConnection,
   pickModel,
+  pickVia,
   profileIdOf,
+  readTunnelPaste,
+  throughObico,
+  TUNNEL_CONNECTIONS,
+  tunnelError,
   searchSetup,
   setFirmware,
   skipForm,
@@ -66,6 +71,7 @@ import {
   unlocked,
   withHardware,
   type Blocker,
+  type CheckKey,
   type FilamentKind,
   type Firmware,
   type NozzleType,
@@ -74,6 +80,7 @@ import {
 } from './printer-form'
 import { displayCause, TEST_STEPS, type AppSetupHost, type FoundPrinter, type TestOutcome, type TestStep } from './setup-host'
 import { useConnectedApps } from '../connected-apps/state'
+import { parseTunnelEndpoint } from '@slicerx/contracts'
 
 // ---------------------------------------------------------------------------
 type Inbound = 'allowed' | 'blocked' | 'none' | 'unsupported'
@@ -173,13 +180,13 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
     // A new connection or model invalidates the typed secrets and any earlier test. Otherwise the counts follow
     // what is typed: a change that rebuilt the form (picking the printer again, a reported model) must not
     // forget a code that is still in its field.
-    if (next.connection !== prev.connection || next.modelId !== prev.modelId) secrets.current.clear()
+    if (next.connection !== prev.connection || next.modelId !== prev.modelId || next.via !== prev.via) secrets.current.clear()
     else {
       const typed = Object.fromEntries([...secrets.current].map(([k, v]) => [k, v.length])) as PrinterForm['secretLengths']
       if (JSON.stringify(typed) !== JSON.stringify(next.secretLengths)) next = { ...next, secretLengths: typed }
     }
     formRef.current = next
-    if (next.connection !== prev.connection || next.fields !== prev.fields || JSON.stringify(next.secretLengths) !== JSON.stringify(prev.secretLengths) || next.modelId !== prev.modelId) {
+    if (next.connection !== prev.connection || next.fields !== prev.fields || JSON.stringify(next.secretLengths) !== JSON.stringify(prev.secretLengths) || next.modelId !== prev.modelId || next.via !== prev.via) {
       abort.current?.abort()
       setTest({ status: 'idle' })
     }
@@ -193,7 +200,14 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
       const value = normalizeSecret(key, raw)
       if (value) secrets.current.set(key, value)
       else secrets.current.delete(key)
-      setForm((f) => ({ ...f, secretLengths: { ...f.secretLengths, [key]: value.length } }))
+      // The paste box keeps only what it read (the host, or why it is refused) in the form; the address stays here.
+      const tunnel = key === 'tunnel' ? readTunnelPaste(value) : undefined
+      setForm((f) => {
+        const next = { ...f, secretLengths: { ...f.secretLengths, [key]: value.length } }
+        if (key !== 'tunnel') return next
+        const { tunnel: _old, ...rest } = next
+        return tunnel ? { ...rest, tunnel } : rest
+      })
     },
     [setForm],
   )
@@ -201,6 +215,11 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
   // Only a secret the form still counts goes out: Skip leaves out one that was not finished.
   const secretFor = (m: ConnectionMethod | null, form: PrinterForm): string | undefined => {
     if (!m) return undefined
+    // Through Obico, the tunnel's `user:password` from the pasted address.
+    if (throughObico(form)) {
+      const r = parseTunnelEndpoint(secrets.current.get('tunnel') ?? '')
+      return r.ok ? r.credential : undefined
+    }
     for (const k of ['accessCode', 'apiKey', 'password', 'pairing'] as const) {
       if (m.fields.some((f) => f.key === k) && (form.secretLengths[k] ?? 0) > 0 && secrets.current.get(k)) return secrets.current.get(k)
     }
@@ -210,6 +229,7 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
   const connectionInput = (f: PrinterForm, credential: string | undefined) => ({
     family: f.connection as ConnectionId,
     address: addressOf(f),
+    ...(throughObico(f) ? { tunnel: 'obico' as const } : {}),
     ...(f.fields.serial.trim() ? { serial: f.fields.serial.trim() } : {}),
     ...(f.fields.username.trim() ? { username: f.fields.username.trim() } : {}),
     ...(credential ? { credential } : {}),
@@ -275,7 +295,7 @@ export function usePrinterController(host: AppSetupHost): PrinterController {
       set((s) => ({ printerNozzles: { ...s.printerNozzles, [printerId]: nozzle }, ...(extruders ? { printerExtruders: { ...s.printerExtruders, [printerId]: extruders } } : {}) }))
       secrets.current.clear()
       if (credentialKept === 'session') toast(`${appName()} could not store the access code in your system keychain, so it is kept only until ${appName()} closes. You will be asked for it again next time.`, 'warn')
-      return { printerId, brand, model, nozzle: nozzleText(f), connection: m?.name ?? 'Save G-code', state: !connected ? 'none' : verified ? 'verified' : 'unverified', filamentSystem: filamentText(f) }
+      return { printerId, brand, model, nozzle: nozzleText(f), connection: m ? (throughObico(f) ? `${m.name} through Obico` : m.name) : 'Save G-code', state: !connected ? 'none' : verified ? 'verified' : 'unverified', filamentSystem: filamentText(f) }
     },
     [host],
   )
@@ -653,8 +673,69 @@ function SecretInput({ id, fieldKey, label, required, placeholder, ctl, keychain
   )
 }
 
+/** Obico's page for authorizing an app on one printer, from Obico's tunnel integration guide. It shows the tunnel address to copy. */
+export function obicoAuthorizeUrl(app: string, connection: ConnectionId | null): string {
+  const platform = connection === 'octoprint' ? 'OctoPrint' : 'Klipper'
+  return `https://app.obico.io/tunnels/new/?app=${encodeURIComponent(app)}&platform=${platform}`
+}
+
+/**
+ * The Obico paste box: the whole tunnel address goes in a masked field, like a password, and stays out of React state.
+ * Below it, only what was read: the tunnel host, or why the address is refused.
+ */
+export function ObicoPaste({ ctl, keychain }: { ctl: PrinterController; keychain: boolean }) {
+  const { form, setSecret } = ctl
+  const id = 'fr-f-tunnel'
+  const pasted = (form.secretLengths.tunnel ?? 0) > 0
+  const error = pasted ? tunnelError(form) : undefined
+  const host = form.tunnel && 'host' in form.tunnel && !error ? form.tunnel.host : null
+  const sync = useCallback((value: string) => setSecret('tunnel', value), [setSecret])
+  useEffect(() => {
+    const el = document.getElementById(id) as HTMLInputElement | null
+    if (el?.value) sync(el.value)
+  }, [sync])
+  return (
+    <div className="fr-obico" data-testid="setup-obico">
+      <p className="fr-note">Authorize {appName()} in Obico, then paste the address it shows. The camera stays off through Obico for now.</p>
+      <Field
+        htmlFor={id}
+        label="Obico tunnel address"
+        aside={
+          <button type="button" className="fr-textbtn" onClick={() => openLink(obicoAuthorizeUrl(appName(), form.connection))}>
+            Open Obico
+          </button>
+        }
+        error={error}
+        hint={keychain ? 'The user name and password in it go to your system keychain.' : `This browser has no system keychain, so the address is used for the test only and not saved.`}
+      >
+        <Input
+          id={id}
+          type="password"
+          autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          placeholder="https://...tunnels.app.obico.io"
+          onChange={(e) => sync(e.target.value)}
+          onInput={(e) => sync(e.currentTarget.value)}
+          onBlur={(e) => sync(e.currentTarget.value)}
+          data-testid="setup-obico-paste"
+          data-secret="true"
+        />
+      </Field>
+      <p className="fr-obico-read" role="status" aria-live="polite" data-testid="setup-obico-host" hidden={!host}>
+        {host ? (
+          <>
+            <Icon name="check" size={16} /> Connects to <span className="sx-mono">{host}</span>
+          </>
+        ) : null}
+      </p>
+    </div>
+  )
+}
+
 /** Focuses the input of a connection field. */
-function focusField(key: FieldKey) {
+function focusField(key: CheckKey) {
   document.getElementById(`fr-f-${key}`)?.focus()
 }
 
@@ -688,6 +769,7 @@ export function WhyNotReady({ blockers }: { blockers: Blocker[] }) {
 /** Blockers for fields the person has typed in. An untouched empty field is not an error yet. */
 export function typedBlockers(blockers: Blocker[], form: PrinterForm): Blocker[] {
   return blockers.filter((b) => {
+    if (b.field === 'tunnel') return (form.secretLengths.tunnel ?? 0) > 0
     if (b.field === 'host' || b.field === 'serial' || b.field === 'username' || b.field === 'port') return form.fields[b.field].trim() !== ''
     return (form.secretLengths[b.field as SecretKey] ?? 0) > 0
   })
@@ -700,6 +782,7 @@ function ConnectionSection({ ctl, keychain, onWhere, fieldsOnly, known, quiet }:
   const choices = connectionChoices(form, new Set(apps.map((a) => a.id)))
   const appUrlFor = (id: ConnectionId) => apps.find((a) => a.id === connectionMethod(id).requiresApp)?.baseUrl
   const check = method ? checkConnection(form, method) : null
+  const obico = throughObico(form)
   const setField = (k: 'host' | 'port' | 'serial' | 'username', v: string) => setForm((f) => ({ ...f, fields: { ...f.fields, [k]: v } }))
   const where = (f: HelpField) => (
     <button type="button" className="fr-textbtn" onClick={() => onWhere(f)}>
@@ -729,9 +812,23 @@ function ConnectionSection({ ctl, keychain, onWhere, fieldsOnly, known, quiet }:
       </div>
       )}
       {method?.id === 'bambu-lan' && !fieldsOnly ? <BambuLanCard family={bambuFamily(currentModel(form)?.name)} /> : null}
+      {method && TUNNEL_CONNECTIONS.has(method.id) && !fieldsOnly ? (
+        <div className="fr-via">
+          <Seg
+            label="Where the printer is"
+            value={obico ? 'obico' : 'lan'}
+            onChange={(v) => setForm((f) => pickVia(f, v))}
+            options={[
+              { value: 'lan', label: 'On my network', testId: 'setup-via-lan' },
+              { value: 'obico', label: 'Through Obico', testId: 'setup-via-obico' },
+            ]}
+          />
+        </div>
+      ) : null}
       {method && method.id !== 'export' ? (
         <div className="fr-fields">
-          {method.fields.map((f) => {
+          {obico ? <ObicoPaste ctl={ctl} keychain={keychain} /> : null}
+          {obico ? null : method.fields.map((f) => {
             const id = `fr-f-${f.key}`
             // What the printer announced (address, serial number) is not asked again.
             if ((f.key === 'host' || f.key === 'serial') && known?.[f.key] && !check?.errors[f.key]) return null
@@ -776,12 +873,12 @@ function ConnectionSection({ ctl, keychain, onWhere, fieldsOnly, known, quiet }:
               </div>
             )
           })}
-          {scan.status === 'scanning' && !fieldsOnly ? (
+          {scan.status === 'scanning' && !fieldsOnly && !obico ? (
             <p className="fr-scan" role="status">
               <span className="fr-spin" aria-hidden="true" /> Looking on {ctl.host.scanRange}. This lists printers only; nothing connects.
             </p>
           ) : null}
-          {scan.status === 'done' && !fieldsOnly ? (
+          {scan.status === 'done' && !fieldsOnly && !obico ? (
             scan.found.length ? (
               <ul className="fr-found" aria-label="Printers found">
                 {scan.found.map((p) => (
@@ -803,7 +900,7 @@ function ConnectionSection({ ctl, keychain, onWhere, fieldsOnly, known, quiet }:
               <p className="fr-note">No printers answered. Enter the IP address shown on the printer.</p>
             )
           ) : null}
-          {scan.status === 'error' && !fieldsOnly ? <p className="app-err">{scan.message}</p> : null}
+          {scan.status === 'error' && !fieldsOnly && !obico ? <p className="app-err">{scan.message}</p> : null}
           {check && !check.ready ? <WhyNotReady blockers={quiet ? typedBlockers(testBlockers(form, method), form) : testBlockers(form, method)} /> : null}
           {check?.warnings.map((w) => (
             <p key={w} className="fr-warn" role="status">

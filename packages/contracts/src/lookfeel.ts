@@ -116,6 +116,11 @@ export interface PrinterConnection {
   username?: string
   /** Access code, API key or password. Goes to the OS keychain, never into config, logs, tool results or return values. */
   credential?: string
+  /**
+   * Reached through this remote tunnel: `address` is then the tunnel host and `credential` the tunnel's `user:password`.
+   * Only the app's paste box sets it; an agent's setup tools cannot.
+   */
+  tunnel?: import('./tunnel').TunnelKind
 }
 
 export interface PrinterSetupHost {

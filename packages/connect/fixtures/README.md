@@ -7,3 +7,5 @@
 `bambu-h2d-finished-hms.json`: a Bambu Lab H2D `push_status` report after a finished job (Bracket, layer 937 of 937) that still lists main board HMS code 0500_0500_0001_0007 from that job. It is rebuilt from what the printer showed, with no serial, address or access code. The Bambu driver's tests read it: the leftover code must not read as a stopped print.
 
 The JSON shapes the Rust crate and the TS contracts must agree on are in `packages/contracts/fixtures/printers-*.json`.
+
+`tunnel-endpoints.json`: Obico tunnel addresses (made-up ids, user names and passwords) and how each one parses: the host when it is accepted, and the reason (scheme, path, port, host or user name and password) when it is not. The Rust tunnel tests and the app's paste box tests both run every case, so the two parsers stay the same.

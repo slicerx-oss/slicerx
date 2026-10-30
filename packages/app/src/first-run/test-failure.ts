@@ -6,6 +6,7 @@
 import { bambuFamily, bambuGuide } from './bambu-lan'
 import type { AuthNeed, TestOutcome } from './setup-registry'
 import { appName } from '../edition'
+import { TUNNEL_PROBLEM_TEXT, type TunnelProblem } from '@slicerx/contracts'
 
 export type FailureKind = 'tls' | 'auth' | 'no-answer' | 'other'
 
@@ -66,9 +67,17 @@ const NEED_COPY: Record<AuthNeed, { title: string; body: string; tips: string[] 
   },
 }
 
+/** A tunnel problem's two sentences, as a title and what to do. */
+export function tunnelCopy(problem: TunnelProblem): { title: string; body: string } {
+  const [title = '', ...rest] = TUNNEL_PROBLEM_TEXT[problem].split(/(?<=\.)\s+/)
+  return { title, body: rest.join(' ') }
+}
+
 /** The panel's words for a failed test of the printer at `address`. */
 export function failureCopy(o: TestOutcome, ctx: { address: string; family: string | null; model?: string | undefined }): FailureCopy {
   const kind = failureKind(o)
+  // Through Obico, the tunnel says what went wrong; its words replace the ones for a printer on the network.
+  if (o.tunnelProblem) return { kind, ...tunnelCopy(o.tunnelProblem), tips: [], actions: ['retry'] }
   const bambu = ctx.family === 'bambu-lan'
   const fam = bambu ? bambuFamily(ctx.model) : null
   switch (kind) {

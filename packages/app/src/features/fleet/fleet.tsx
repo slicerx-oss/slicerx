@@ -6,7 +6,7 @@ import { openResume } from '../../plate/resume-state'
 import { tempText } from '../../lib/temp'
 import { isDue, removeFromQueue, startable } from '../../queue/queue'
 import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { Fleet } from '@slicerx/contracts'
+import type { Fleet, TunnelReport } from '@slicerx/contracts'
 import { Button, Chip, Dialog, Field, Icon, Input, LinkButton, Menu, MenuAnchor, MenuHeading, MenuItem, Pill, Seg, tipAttrs } from '@slicerx/ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useHost } from '../../host'
@@ -24,7 +24,7 @@ import { CameraIdle, FirstLookCover, useFirstLook } from '../../camera/idle'
 import { CodeNeeded, OfflineIdle } from './offline'
 import { openSetup, useTabLabel } from '../../first-run/look'
 import { gauges, printingSlot, slotName } from './hud'
-import { bayGroups, progressOf, statusLine, timeLeftText, wallCounts, wallKind, wallOrder, wallPill, type WallCount } from './wall'
+import { bayGroups, progressOf, statusLine, timeLeftText, tunnelLine, tunnelTip, wallCounts, wallKind, wallOrder, wallPill, type WallCount } from './wall'
 import { moveToBay, newBay } from './bays'
 import { askToNotify, guardHub, notePlate, useGuard } from './guard'
 import { GuardCard } from './guard-card'
@@ -248,6 +248,8 @@ function TileCamera({ r, now }: { r: FleetRow; now: number }) {
   // the first connect shows the ravens for one clash; a tile that opens on a remembered still does not
   const look = useFirstLook(Boolean(url), r.id, on && !lastStillOf(r.id))
   if (!exportOnly && st.state === 'offline' && st.needsCode && st.codeRef) return <CodeNeeded codeRef={st.codeRef} name={r.name} />
+  // Obico's tunnel carries no camera picture yet: said once, on the tile.
+  if (r.tunnel && !url) return <CameraIdle text="Camera off through Obico" detail="The camera guard can't watch this printer." showDetail />
   if (!exportOnly && st.state === 'offline') return <OfflineIdle printerId={r.id} now={now} />
   if (url)
     return (
@@ -263,6 +265,34 @@ function TileCamera({ r, now }: { r: FleetRow; now: number }) {
     ? ['No connection', 'This printer takes exported files only, so there is no camera to show.']
     : ['No picture', 'The camera did not send a picture.']
   return <CameraIdle text={text} detail={detail} />
+}
+
+/** How often a card reads its tunnel's report. The hub reuses a usage reading for two minutes, so this costs no tunnel data. */
+const TUNNEL_READ_MS = 60_000
+
+/** The tunnel report of a printer reached through Obico, read when the card shows and once a minute after. */
+function useTunnelReport(printerId: string, on: boolean): TunnelReport | null {
+  const printers = usePrinters()
+  const [report, setReport] = useState<TunnelReport | null>(null)
+  useEffect(() => {
+    const read = printers?.tunnel
+    if (!on || !read) return
+    let stop = false
+    const tick = () =>
+      read(printerId).then(
+        (r) => {
+          if (!stop) setReport(r)
+        },
+        () => undefined,
+      )
+    void tick()
+    const timer = window.setInterval(() => void tick(), TUNNEL_READ_MS)
+    return () => {
+      stop = true
+      window.clearInterval(timer)
+    }
+  }, [on, printerId, printers])
+  return report
 }
 
 /** When a printer was last heard, as a clock time: "12:04". */
@@ -285,6 +315,7 @@ function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: numb
   const heatTip = heat.map((g) => `${g.label} ${tempText(g.temp)}`).join(', ')
   const active = printingSlot(st)
   const slots = st.slots.filter((x) => x.color || x.material)
+  const tunnel = useTunnelReport(r.id, Boolean(r.tunnel) && !away)
   return (
     <article className="pcard" data-kind={kind} data-away={away || undefined} data-testid="printer-card" data-printer={r.id} inert={away || undefined} aria-label={`${r.name}, ${away ? 'reconnecting' : pill.label}`}>
       <div className="wall-cam">
@@ -310,9 +341,14 @@ function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: numb
           <span className="wall-model">{r.model}</span>
           <TileMenu r={r} groups={groups} disabled={away} onView={onView} />
         </div>
-        <p className="wall-line" id={lineId}>
+        <p className="wall-line" id={lineId} data-problem={st.tunnelProblem ? true : undefined}>
           {statusLine(r, now)}
         </p>
+        {r.tunnel ? (
+          <p className="wall-tunnel" data-testid="printer-card-tunnel" {...tipAttrs({ title: tunnelTip(tunnel) })}>
+            {tunnelLine(tunnel)}
+          </p>
+        ) : null}
         {heat.length || slots.length ? (
           <div className="wall-meta">
             {heat.length ? (

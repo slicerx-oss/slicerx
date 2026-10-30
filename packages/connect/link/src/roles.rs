@@ -693,6 +693,22 @@ mod tests {
     }
 
     #[test]
+    fn agents_read_a_tunnel_and_never_connect_one() {
+        assert!(allowed(Role::Agent, "printers.tunnel"));
+        assert!(allowed(Role::App, "printers.tunnel"));
+        for m in [
+            "printers.add",
+            "printers.test",
+            "printers.authorize",
+            "secrets.set",
+            "secrets.delete",
+        ] {
+            assert!(!allowed(Role::Agent, m), "{m}");
+        }
+        assert!(!partner_allowed("printers.tunnel"));
+    }
+
+    #[test]
     fn partners_call_only_their_list_and_grant_only_pause_and_cancel() {
         for m in [
             "list",

@@ -3,7 +3,9 @@
 // First-run printer setup on top of sx-link: the `discover` and `addPrinter` halves of
 // PrinterSetupHost (packages/contracts/src/lookfeel.ts), plus a connection test. Credentials go to
 // the keychain through the link and never appear in a return value.
-import type { DiscoveredPrinter, PrinterConfig, PrinterSetupHost } from '@slicerx/contracts'
+import type { DiscoveredPrinter, PrinterConfig, PrinterSetupHost, TunnelKind } from '@slicerx/contracts'
+// The tunnel module on its own: Node runs these tests with type stripping, which needs the module's own file.
+import { tunnelHost } from '@slicerx/contracts/tunnel'
 import type { LinkHost, PrinterTestResult } from '@slicerx/link-client'
 import { CONNECTION_METHODS, PRINTER_MODELS, brandById, connectionMethod, type ConnectionId, type PrinterModel } from '@slicerx/printer-catalog'
 
@@ -35,6 +37,8 @@ export interface SetupConnection {
   credential?: string
   /** PrusaLink digest login. */
   username?: string
+  /** Reached through this tunnel: `address` is the tunnel host and `credential` the tunnel's `user:password`. */
+  tunnel?: TunnelKind
 }
 
 export interface SetupAddInput {
@@ -71,7 +75,7 @@ export interface PrinterSetup extends Omit<PrinterSetupHost, 'searchProfiles'> {
   /** `credentialKept: 'session'`: the keychain refused the code, so it is kept until the bridge quits. */
   addPrinter(input: SetupAddInput): Promise<{ printerId: string; credentialKept?: 'session' }>
   /** Tries a connection before saving it. Nothing is registered or changed on the printer. */
-  testConnection(input: { family: string; address: string; serial?: string; credential?: string; username?: string }): Promise<PrinterTestResult>
+  testConnection(input: { family: string; address: string; serial?: string; credential?: string; username?: string; tunnel?: TunnelKind }): Promise<PrinterTestResult>
   /** Printers added without a connection ("save G-code"). The host persists them. */
   localPrinters(): readonly LocalPrinter[]
 }
@@ -114,9 +118,22 @@ function slug(text: string): string {
 
 const secretName = (printerId: string) => `printer-${printerId}`
 
+/** Connections an Obico tunnel carries. */
+const TUNNEL_PLUGINS = new Set(['moonraker', 'octoprint'])
+
+/** A printer reached through an Obico tunnel: the tunnel host, its access under `ref`, https on 443. */
+function tunnelConfig(id: string, name: string, plugin: string, c: SetupConnection, ref: string | undefined): PrinterConfig {
+  if (!TUNNEL_PLUGINS.has(plugin)) throw new SetupError('not_supported', 'Obico reaches Klipper (Moonraker) and OctoPrint printers only.')
+  const host = tunnelHost(c.address.trim())
+  if (!host) throw new SetupError('bad_request', 'This is not an Obico tunnel address.')
+  if (!ref || !c.credential?.includes(':')) throw new SetupError('bad_request', 'Paste the whole address Obico gave you, with its user name and password.')
+  return { id, name, plugin, host, tunnel: 'obico', credentialRef: ref }
+}
+
 function buildConfig(id: string, name: string, family: ConnectionId, c: SetupConnection, ref?: string): PrinterConfig {
   const method = connectionMethod(family)
   if (!method.plugin) throw new SetupError('not_supported', 'That connection type has nothing to connect to.')
+  if (c.tunnel) return tunnelConfig(id, name, method.plugin, c, ref)
   const { host, port } = parseAddress(c.address)
   return {
     id,
