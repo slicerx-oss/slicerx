@@ -802,6 +802,10 @@ struct Reader {
     measure_g29: bool,
     filaments: usize,
     filament_map: Vec<usize>,
+    /// The tools of a printer with one tool per filament (its nozzles, or its filaments when the settings list
+    /// one nozzle for all), 0 on any other: with no `filament_map`, filament `n` prints on tool `n`, so a change
+    /// between filaments is a tool switch.
+    tools: usize,
     extruder: Option<usize>,
     filament_of: Vec<Option<usize>>,
     last_filament_of: Vec<Option<usize>>,
@@ -973,6 +977,11 @@ impl Reader {
             measure_g29: false,
             filaments,
             filament_map,
+            tools: if crate::nozzles::tool_per_filament(cfg) {
+                crate::nozzles::extruders(cfg).max(filaments)
+            } else {
+                0
+            },
             extruder: None,
             filament_of: vec![None; 64],
             last_filament_of: vec![None; 64],
@@ -1562,7 +1571,11 @@ impl Reader {
             self.bbl_filament_change(id);
             return;
         }
-        let next_extruder = self.filament_map.get(id).copied().unwrap_or(0);
+        let next_extruder = match self.filament_map.get(id) {
+            Some(&e) => e,
+            None if self.filament_map.is_empty() && self.tools > 1 => id.min(self.tools - 1),
+            None => 0,
+        };
         let prev_extruder = self.extruder;
         let prev_filament = prev_extruder.and_then(|e| self.filament_of.get(e).copied().flatten());
         if prev_filament == Some(id) {
@@ -2243,6 +2256,62 @@ mod tests {
             e.total,
             base + 11.2
         );
+    }
+
+    #[test]
+    fn a_tool_changer_without_a_filament_map_takes_its_tool_change_time() {
+        // Four heads, one filament each, and no map (the Snapmaker U1): each change parks one head and picks up
+        // another, `machine_tool_change_time` each.
+        let mut c = marlin();
+        c.raw.insert(
+            "filament_diameter".into(),
+            serde_json::json!([1.75, 1.75, 1.75, 1.75]),
+        );
+        c.raw
+            .insert("nozzle_diameter".into(), serde_json::json!([0.4, 0.4, 0.4, 0.4]));
+        c.raw
+            .insert("single_extruder_multi_material".into(), serde_json::json!("0"));
+        let text = b"T0\nG1 X10 F600\nT1\nG1 X20\nT2\nG1 X30\nT3\nG1 X40\nT0\nG1 X50\n";
+        let base = estimate(text, &c, false).total;
+        // The same with one nozzle listed for all four heads, as the printer's settings give it.
+        let mut one = c.clone();
+        one.raw.insert("nozzle_diameter".into(), serde_json::json!([0.4]));
+        one.raw
+            .insert("machine_tool_change_time".into(), serde_json::json!(5));
+        assert!((estimate(text, &one, false).total - base - 20.0).abs() < 1e-6);
+        c.raw
+            .insert("machine_tool_change_time".into(), serde_json::json!("5"));
+        let e = estimate(text, &c, false).total;
+        assert!((e - base - 20.0).abs() < 1e-6, "{e} vs {}", base + 20.0);
+        // The same with the map written out: a printer that has a map keeps it.
+        c.raw
+            .insert("filament_map".into(), serde_json::json!([1, 2, 3, 4]));
+        assert!((estimate(text, &c, false).total - e).abs() < 1e-9);
+        c.raw
+            .insert("filament_map".into(), serde_json::json!([1, 1, 2, 2]));
+        assert!((estimate(text, &c, false).total - base - 10.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn filaments_sharing_one_nozzle_take_no_tool_change_time() {
+        // One nozzle per filament listed, but one extruder fed by several filaments (a multi-material unit):
+        // every change unloads and loads, and there is no head to switch.
+        let mut c = marlin();
+        c.raw
+            .insert("filament_diameter".into(), serde_json::json!([1.75, 1.75]));
+        c.raw
+            .insert("nozzle_diameter".into(), serde_json::json!([0.4, 0.4]));
+        c.raw
+            .insert("single_extruder_multi_material".into(), serde_json::json!("1"));
+        c.raw
+            .insert("machine_load_filament_time".into(), serde_json::json!(20));
+        c.raw
+            .insert("machine_unload_filament_time".into(), serde_json::json!(10));
+        let text = b"T0\nG1 X10 F600\nT1\nG1 X20\nT0\nG1 X30\n";
+        let base = estimate(text, &c, false).total;
+        c.raw
+            .insert("machine_tool_change_time".into(), serde_json::json!(5));
+        assert!((estimate(text, &c, false).total - base).abs() < 1e-9);
     }
 
     #[test]
