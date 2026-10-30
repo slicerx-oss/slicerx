@@ -69,7 +69,7 @@ import { GuideLines, type Guides } from './guides'
 import { applyInsets, CameraRig, freeNdc, NO_INSETS, PoseWatch, reducedMotion, type Insets } from './camera'
 import { BASELINE_LOOK, lookProblems, type ViewportLook } from './look'
 import { cadLook, edgeLook, MaterialCache, setEdgeResolution, setMaterialLook, setSharedBandColors, setSharedLayerTops, setSharedSceneColors, shared, sharedMaterials } from './materials'
-import { buildObject, disposeObject, wideEdges, type AsyncPartBuild, type ObjectEntry, type PartEntry } from './model'
+import { buildObject, disposeObject, sharedFinal, wideEdges, type AsyncPartBuild, type ObjectEntry, type PartEntry, type SharedParts } from './model'
 import { Pipeline } from './post'
 import { Stage } from './stage'
 import { FrameProbe, probeRequested, type ProbeStats } from './probe'
@@ -367,6 +367,8 @@ class ViewportImpl implements Viewport {
   private constructedAt = 0
   /** The part arrays each object was built from, by object id: the same arrays again keep the built object. */
   private readonly builtFrom = new Map<string, [Float32Array, Uint32Array | Uint16Array][]>()
+  /** Part geometry shared by the copies of one object (built from the same arrays), freed with the last copy. */
+  private readonly sharedParts: SharedParts = new Map()
   /** Objects built (not kept) by setPlate since the viewport started. */
   private objectBuilds = 0
   /** The last setPlate, until the frame that draws it. */
@@ -1428,7 +1430,7 @@ class ViewportImpl implements Viewport {
         kept++
         continue
       }
-      const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : this.renderMode === 'cad' ? sh.edgeCad : sh.edgeDark, this.asyncBuild(obj))
+      const entry = buildObject(obj, (p) => this.mats.get(this.renderMode, { color: p.color, finish: p.finish ?? 'basic' }), this.renderMode === 'xray' ? sh.edgeXray : this.renderMode === 'cad' ? sh.edgeCad : sh.edgeDark, this.asyncBuild(obj), this.sharedParts)
       this.builtFrom.set(obj.id, obj.parts.map((p) => [p.positions, p.indices]))
       this.objects.set(obj.id, entry)
       this.stage.objectsRoot.add(entry.group)
@@ -1475,7 +1477,8 @@ class ViewportImpl implements Viewport {
   private asyncBuild(obj: ViewportObject): AsyncPartBuild | undefined {
     const pool = this.meshPool
     if (!pool) return undefined
-    const big = obj.parts.filter((p) => p.indices.length / 3 >= ASYNC_BUILD_TRIANGLES).length
+    // a copy of a part that already has its final geometry shares it and waits for nothing
+    const big = obj.parts.filter((p) => p.indices.length / 3 >= ASYNC_BUILD_TRIANGLES && !sharedFinal(this.sharedParts, p.positions, p.indices)).length
     if (big === 0) return undefined
     if (this.refining === 0) this.refineStart = performance.now()
     this.refining += big

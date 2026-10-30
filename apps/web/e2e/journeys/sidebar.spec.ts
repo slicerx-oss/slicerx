@@ -737,6 +737,31 @@ test.describe('the selection', () => {
     await expect(rows(page)).toHaveCount(3)
   }
 
+  test('copies of one object draw its one geometry, and removing a copy keeps the others drawn', async ({ page }) => {
+    type Vp = { drawnObjects(): string[]; stats(): { refiningParts: number }; renderer: { info: { memory: { geometries: number } } } }
+    const drawn = () =>
+      page.evaluate(() => {
+        const vp = (window as unknown as { __vp: Vp }).__vp
+        return { ids: vp.drawnObjects().length, refining: vp.stats().refiningParts, geometries: vp.renderer.info.memory.geometries }
+      })
+    await sidebarAs(page, { mode: 'simple' })
+    await expect.poll(async () => (await drawn()).refining).toBe(0)
+    await page.waitForTimeout(300)
+    const one = await drawn()
+    await three(page)
+    await expect.poll(async () => { const d = await drawn(); return [d.ids, d.refining] }).toEqual([one.ids + 2, 0])
+    await page.waitForTimeout(300)
+    // two copies add no geometry: they draw the source's mesh and edges in their own places
+    expect((await drawn()).geometries).toBe(one.geometries)
+    await select(page, 1)
+    await page.keyboard.press('Delete')
+    await expect(rows(page)).toHaveCount(2)
+    await page.waitForTimeout(300)
+    const after = await drawn()
+    expect(after.ids).toBe(one.ids + 1)
+    expect(after.geometries).toBe(one.geometries)
+  })
+
   test('Shift selects a range, Mod toggles, and Esc clears the selection and hides the bar', async ({ page }) => {
     await sidebarAs(page, { mode: 'simple' })
     await three(page)
