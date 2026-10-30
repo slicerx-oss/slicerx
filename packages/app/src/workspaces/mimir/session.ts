@@ -49,7 +49,7 @@ export interface TabModel {
   link: Exclude<MimirLink, 'none'>
   provider: string
   model: string
-  /** Auto's two models when the person chose Auto: huginn to start, muninn for pictures, many-step parts and sizes only the person knows. */
+  /** Auto's two models when the person chose Auto: huginn to start, muninn for many-step parts, parts that work with another part and sizes only the person knows. */
   auto?: { huginn: string; muninn: string }
   /** Whether it is a local model (a server the person runs, such as Ollama or LM Studio), which gets the shorter tool list. */
   local?: boolean
@@ -187,7 +187,8 @@ const NO_LLM = {} as LlmTransport
  * report tools and the app's commands: its printer calls go through the same preflight and bed-clear card as the Print
  * button, approvals stay with the person, and mimir never starts a print on its own. The browser build only models,
  * so there it has the design, knowledge and project tools and says the desktop app slices. Auto starts a build on
- * huginn and moves to muninn for deep work, a picture or PDF, a part of many steps, or a size only the person knows.
+ * huginn and moves to muninn for deep work, a part of many steps, a part that works with another part, a size only the
+ * person knows, or a design check the part fails.
  */
 export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: PilotConfig; kb: KnowledgeBase; tools: readonly PilotTool<never>[]; client?: LlmClient; share?: CreatePilotOptions['share']; commands?: readonly CommandSpec[]; memory?: CreatePilotOptions['memory']; toolGroups?: CreatePilotOptions['toolGroups'] }): CreatePilotOptions {
   const slices = hostSlices()

@@ -662,8 +662,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     let usageIn = 0
     let usageOut = 0
     let stopped = false
-    // huginn unless the request asks for deep thinking; reaching a muninn tool moves the run up, and so does failing
-    // on huginn's model (Auto on a key). A move to another model is shown in the chat.
+    // huginn unless the request asks for deep thinking; reaching a muninn tool moves the run up, and so do a failed
+    // design check and failing on huginn's model (Auto on a key). A move to another model is shown in the chat.
     let tier: Tier = startTier
     let why: 'request' | 'tool' | 'struggle' = 'request'
     let shown = modelFor(opts.config, HUGINN)
@@ -858,8 +858,9 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
           stopped = true
           continue
         }
-        // a build with the design tools keeps the tier its request set: building is many tool calls, none of them a reason to move up
-        const deep = MUNINN_TOOLS.has(call.name) || (!designs && opts.config.deepDesign === true && BUILD_CALL.test(call.name))
+        // a build keeps the tier its request set, with the design tools or a part generator: building is many tool calls,
+        // none of them a reason to move up, unless the key's huginn is weak at building parts (deepDesign)
+        const deep = MUNINN_TOOLS.has(call.name) || (!designs && opts.config.deepDesign === true && (BUILD_CALL.test(call.name) || PART_GENERATORS.has(call.name)))
         if (deep && tier !== MUNINN) {
           tier = MUNINN
           why = 'tool'

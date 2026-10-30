@@ -17,7 +17,12 @@ export const MODEL_AUTOMATIC_LABEL = `Automatic (${HUGINN} for quick looks, ${MU
 /** Requests that need deep thinking from the start: diagnosis, tuning a profile, planning. */
 const DEEP = /\b(why\b|diagnos|fail(ed|ure|s)?\b|went wrong|what happened|tune|fix (the|my|this)|profile|plan\b|planning|schedule|optimi[sz]e|compare|calibrat|by (tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|settings for)/i
 
-/** Tools whose work needs muninn; a run that reaches one moves to muninn for the rest. */
+/**
+ * Tools whose work needs muninn; a run that reaches one moves to muninn for the rest. The part generators
+ * (text_to_part, make_model) are not here: huginn builds most parts as well as muninn does on the bench, so a build
+ * moves up only for its request (designRoute), a failed design check, real tool failures, or a key weak at building
+ * parts (`deepDesign`; runtime.ts).
+ */
 export const MUNINN_TOOLS: ReadonlySet<string> = new Set([
   'diagnose',
   'kb.troubleshoot',
@@ -28,8 +33,6 @@ export const MUNINN_TOOLS: ReadonlySet<string> = new Set([
   'schedule',
   'calibrate',
   'resume_from_layer',
-  'make_model',
-  'text_to_part',
   'cut',
 ])
 
@@ -215,8 +218,8 @@ export function tabRoute(prompt: string, files: readonly DesignRequestFiles[] = 
 /**
  * Where a request starts in a chat without the design tools, and why: muninn for deep work (see tierForPrompt), and
  * for a request to make a part, as designRoute decides (many steps, a part that works with another, a size only the
- * person knows). A picture or PDF alone does not move it. Any other request starts on huginn; a part tool or failures can
- * still move the run up later.
+ * person knows). A picture or PDF alone does not move it. Any other request starts on huginn; a muninn tool, a failed
+ * design check or failures can still move the run up later. A part tool alone does not.
  */
 export function chatRoute(prompt: string, files: readonly DesignRequestFiles[] = []): Route {
   if (tierForPrompt(prompt) === MUNINN) return { tier: MUNINN, reason: 'deep' }
