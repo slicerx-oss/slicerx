@@ -183,11 +183,20 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
     version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: 'Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides. Each placement gives the copy\'s turnDeg, how far the last arrange turned it about Z after its object\'s rotation.',
-    input: z.object({}),
-    async run() {
+    description:
+      'Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides. Each placement gives the copy\'s turnDeg, how far the last arrange turned it about Z after its object\'s rotation. A plate printed by object has byObject, its clearance plan by the footprint rule. With check: true (sx engine), each such plate also gets byObject.engine, heimdall\'s plate check before a slice: clean, collisions as a slice lists them, each with certainty (sure: a slice of the plate is refused for it; slice_decides: only the slice can tell), leftSure (the pairs with a sure strike, a and b with id and name), fixes, unchecked (what only the slice checks: tree_support, tool_change_trips, raft or painted_brim, per object with the objects near it), order and micros. The check slices nothing; it is off by default.',
+    input: z.object({ check: z.boolean().optional().describe("Also run heimdall's plate check on each by-object plate (sx engine). Default false.") }),
+    async run(i) {
       const project = need()
-      return { summary: `Project "${project.name}", ${project.objects().length} objects, ${project.plates().length} plates`, output: project.describe() }
+      const described = project.describe() as { plates: { index: number; byObject?: Record<string, unknown> }[] } & Record<string, unknown>
+      if (i.check) {
+        for (const plate of described.plates) {
+          if (!plate.byObject) continue
+          const engine = await project.plateCheck(plate.index)
+          if (engine) plate.byObject = { ...plate.byObject, engine }
+        }
+      }
+      return { summary: `Project "${project.name}", ${project.objects().length} objects, ${project.plates().length} plates`, output: described }
     },
   })
 

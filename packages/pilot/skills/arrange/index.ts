@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Packs copies onto plates by bed size, one plate per chosen printer.
 import { z } from 'zod'
-import { leftOffWords, movedWords, type ProjectPlate } from '../../src/project'
+import { leftOffWords, movedWords, type PilotProject, type PlateCheckSummary, type ProjectPlate } from '../../src/project'
 import type { ToolShared } from '../../src/shared'
 import { defineSkill } from '../../src/tool'
 import { buildVolume, printerVolume, pickObject, round, type BuildVolume } from '../common'
@@ -44,6 +44,24 @@ export function circleCells(diameter: number, a: number, b: number, spacing: num
   return best
 }
 
+/**
+ * heimdall's plate check of each plate the arrange laid out, where the project has one (by object, an engine that
+ * checks): the arrange stops there, and says which pairs a slice would still be refused for, with the fixes.
+ */
+async function checkAfter(project: PilotProject | undefined, plates: readonly number[]): Promise<{ check: ({ plate: number } & PlateCheckSummary)[]; leftSure: { plate: number; a: { id: string; name: string }; b: { id: string; name: string } }[]; said: string }> {
+  const check: ({ plate: number } & PlateCheckSummary)[] = []
+  if (project?.plateCheck) {
+    for (const plate of [...new Set(plates)]) {
+      // A check that fails leaves the layout as it is; the slice still decides.
+      const c = await project.plateCheck(plate).catch(() => null)
+      if (c) check.push({ plate, ...c })
+    }
+  }
+  const leftSure = check.flatMap((c) => c.leftSure.map((p) => ({ plate: c.plate, a: p.a, b: p.b })))
+  const said = leftSure.length ? `Printed by object, ${leftSure.map((p) => `${p.a.name} and ${p.b.name} on plate ${p.plate}`).join(', ')} would still be refused: see leftSure and the plate's fixes in check.` : ''
+  return { check, leftSure, said }
+}
+
 /** The bed area copies can use, mm2: the circle on a round bed. */
 function bedArea(v: BuildVolume): number {
   return v.round ? (Math.PI * Math.min(v.x, v.y) ** 2) / 4 : v.x * v.y
@@ -55,7 +73,7 @@ export function createArrange(shared: ToolShared) {
     version: '1.10.0',
     permission: 'slice',
     description:
-      'Pack copies of an object onto plates, around the other objects, which keep their places. It keeps room for brims and skirts, clear of excluded areas and the prime tower. Each copy may turn about Z where that fits more, as Arrange in the app turns them, and turns gives the turn of each copy by plate object id and plate. Copies with no room around the others go to new plates, and moved lists them by object id and plate; no object is taken off its plate. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. Changes only the project.',
+      "Pack copies of an object onto plates, around the other objects, which keep their places. It keeps room for brims and skirts, clear of excluded areas and the prime tower. Each copy may turn about Z where that fits more, as Arrange in the app turns them, and turns gives the turn of each copy by plate object id and plate. Copies with no room around the others go to new plates, and moved lists them by object id and plate; no object is taken off its plate. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. On a plate printed by object (sx engine), the new layout gets heimdall's plate check: check lists each plate's result (clean, collisions with certainty, leftSure, fixes, unchecked), and leftSure the pairs a slice would still be refused for; arrange stops there and does not try another layout. Changes only the project.",
     input: z.object({
       objectId: z.string().optional().describe('Object id or name; defaults to the first object'),
       count: z.number().int().min(1).max(500).optional().describe('Total copies'),
@@ -144,9 +162,10 @@ export function createArrange(shared: ToolShared) {
         })
         const per = on.map((p) => p.copies)
         const head = per.every((n) => n === per[0]) ? `${per[0]} per plate on ${on.length} plate${on.length === 1 ? '' : 's'}` : `${count} copies on ${on.length} plates (${per.join(', ')})`
+        const after = await checkAfter(ctx.project, ctx.project.plates().map((p) => p.index))
         return {
-          summary: said ? `${head}. ${said}` : head,
-          output: { plates: on.map((p, k) => ({ plate: p.plate, printerId: p.printerId, copies: p.copies, bedUse: rows[k]?.[3] })), moved, turns: r.turns ?? [] },
+          summary: [said ? `${head}. ${said}` : head, after.said].filter(Boolean).join(' '),
+          output: { plates: on.map((p, k) => ({ plate: p.plate, printerId: p.printerId, copies: p.copies, bedUse: rows[k]?.[3] })), moved, turns: r.turns ?? [], ...(after.check.length ? { check: after.check, leftSure: after.leftSure } : {}) },
           display: [{ kind: 'table', head: ['plate', 'printer', 'copies', 'bed use'], rows }],
         }
       }
@@ -164,9 +183,11 @@ export function createArrange(shared: ToolShared) {
         return [String(p.index), t?.label ?? '', String(copies), `${use}%`]
       })
       const per = plates.map((p) => p.items[0]?.copies ?? 0)
+      const after = await checkAfter(ctx.project, plates.map((p) => p.index))
+      const head = per.every((n) => n === per[0]) ? `${per[0]} per plate on ${plates.length} plate${plates.length === 1 ? '' : 's'}` : `${count} copies on ${plates.length} plates (${per.join(', ')})`
       return {
-        summary: per.every((n) => n === per[0]) ? `${per[0]} per plate on ${plates.length} plate${plates.length === 1 ? '' : 's'}` : `${count} copies on ${plates.length} plates (${per.join(', ')})`,
-        output: { plates: plates.map((p, k) => ({ plate: p.index, printerId: p.printerId, copies: p.items[0]?.copies, bedUse: rows[k]?.[3] })) },
+        summary: after.said ? `${head}. ${after.said}` : head,
+        output: { plates: plates.map((p, k) => ({ plate: p.index, printerId: p.printerId, copies: p.items[0]?.copies, bedUse: rows[k]?.[3] })), ...(after.check.length ? { check: after.check, leftSure: after.leftSure } : {}) },
         display: [{ kind: 'table', head: ['plate', 'printer', 'copies', 'bed use'], rows }],
       }
     },

@@ -23,9 +23,24 @@ export interface AppUi {
   printer: { name: string | null; vendor: string | null; model: string | null; nozzleMm: number | null; fromProject: boolean } | null
   panels: { open: string[]; settingsSection: string | null; settable: string[] }
   /** Printing by object, the shown plate's clearance plan (the app's warning and zones); null by layer. Older apps leave it out. */
-  byObject?: ByObjectReadback | null
+  byObject?: (ByObjectReadback & { engine?: AppPlateCheck | null }) | null
   /** The shown slice's collisions, each naming its plate objects by id; null before a slice. Older apps leave it out. */
   collisions?: AppCollisions | null
+}
+
+/**
+ * heimdall's plate check the window holds (packages/app app-link/ui.ts, plateCheckReadback): null where the app has
+ * none (the web) or before it ran. Older apps leave it out.
+ */
+export interface AppPlateCheck {
+  requestId: number
+  status: 'running' | 'done' | 'error'
+  /** Its answer is for the plate as it sits: the warning shows it in place of the footprint rule. */
+  current: boolean
+  micros: number | null
+  collisions: { index: number; kind: string; severity: 'hit' | 'close'; part: string; certainty: 'sure' | 'slice_decides'; objects: { id: string; name: string | null }[] }[]
+  fixes: unknown[]
+  unchecked: { object: { id: string; name: string | null }; what: string; near: { id: string; name: string | null }[] }[]
 }
 
 /** The collisions of the slice the app shows (packages/app app-link/ui.ts, collisionsReadback). */
@@ -92,8 +107,17 @@ function summary(u: AppUi): string {
   const close = u.byObject ? u.byObject.pairs.filter((p) => p.severity === 'block').length + u.byObject.tall.length : 0
   const calls = u.byObject ? u.byObject.pairs.filter((p) => p.severity === 'soft').length : 0
   const soft = calls ? `${calls} close ${calls === 1 ? 'call' : 'calls'} sx slices` : ''
-  const byObject = u.byObject ? `; by object, ${close ? `${close} clearance ${close === 1 ? 'problem' : 'problems'}${soft ? ` and ${soft}` : ''} (slicerx_arrange spaces the objects)` : soft ? `${soft} (slicerx_arrange spaces the objects)` : 'clear'}` : ''
+  const byObject = u.byObject ? `; by object, ${close ? `${close} clearance ${close === 1 ? 'problem' : 'problems'}${soft ? ` and ${soft}` : ''} (slicerx_arrange spaces the objects)` : soft ? `${soft} (slicerx_arrange spaces the objects)` : 'clear'}${engineWords(u.byObject.engine)}` : ''
   return `${where}; ${picked}; ${plate}; ${printer}; ${panels}${byObject}${collided(u.collisions)}.`
+}
+
+/** The app's plate check in a few words, once it has answered for the plate as it sits. */
+function engineWords(e: AppPlateCheck | null | undefined): string {
+  if (!e?.current) return ''
+  const sure = e.collisions.filter((c) => c.severity === 'hit' && c.certainty === 'sure').length
+  const decides = e.collisions.filter((c) => c.severity === 'hit' && c.certainty === 'slice_decides').length
+  if (!sure && !decides) return ', and the plate check finds nothing sx would refuse'
+  return `; the plate check finds ${sure ? `${sure} sure ${sure === 1 ? 'strike' : 'strikes'}` : ''}${sure && decides ? ' and ' : ''}${decides ? `${decides} the slice decides` : ''}`
 }
 
 /** The slice's collisions in a few words: the first strike's objects, so a client knows what to select. */
@@ -114,7 +138,7 @@ export function appUiTools(link: AppLinkCaller | undefined, appName: string): Pi
     version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: `Read ${appName}'s window as the person sees it: workspace (with workspaces, the ids and labels the top bar offers), tab (the first workspace's mode: slice, design for Model, or mimir; tabs lists the ones shown), selection (primary and objects on the shown plate, primary first, each with id and name), plate (the plate shown: number from 1, id, name and count), printer (the one the project slices for: name, vendor, model, nozzleMm and fromProject for an opened project's own printer; null when none is chosen; never an id, serial, access code or address) and panels (open: the dialogs and panels up, such as settings, command, about, shortcuts, expert, printerChooser, printerSettings or setup; settingsSection, the Settings section shown; settable, the panels slicerx_app_ui_select opens). Reads through the app link; the app must be open with the link on. byObject, when the shown plate prints by object: needMm (the clearance), pairs closer than it (a and b with id and name, gapMm, severity: block when sx refuses the slice for it, soft when sx slices it as a close call), tall objects the gantry or lid would hit (id, name, topMm, what, limitMm), the gantry (rodMm, reachMm) and outlines (per object its footprint and its clearance zone, bed mm; zones that overlap are objects too close); null by layer. collisions, once the shown plate is sliced: each collision in the slice (kind, severity hit or close, part, objects it names with id and name, the one printing first, zone when it meets a keep-out zone or the prime tower, firstLayer and lastLayer counted from 1, index, damaged: the plate object a hit strikes, contactPoint and contactBox: where it goes deepest and the region struck in plate mm from the printable area's front left corner, picked while its row is) and stale when the plate changed since; slicerx_app_collision_show with the index picks one as a click on its row does, and slicerx_app_ui_select with the ids selects them; null before a slice.`,
+    description: `Read ${appName}'s window as the person sees it: workspace (with workspaces, the ids and labels the top bar offers), tab (the first workspace's mode: slice, design for Model, or mimir; tabs lists the ones shown), selection (primary and objects on the shown plate, primary first, each with id and name), plate (the plate shown: number from 1, id, name and count), printer (the one the project slices for: name, vendor, model, nozzleMm and fromProject for an opened project's own printer; null when none is chosen; never an id, serial, access code or address) and panels (open: the dialogs and panels up, such as settings, command, about, shortcuts, expert, printerChooser, printerSettings or setup; settingsSection, the Settings section shown; settable, the panels slicerx_app_ui_select opens). Reads through the app link; the app must be open with the link on. byObject, when the shown plate prints by object: needMm (the clearance), pairs closer than it (a and b with id and name, gapMm, severity: block when sx refuses the slice for it, soft when sx slices it as a close call), tall objects the gantry or lid would hit (id, name, topMm, what, limitMm), the gantry (rodMm, reachMm) and outlines (per object its footprint and its clearance zone, bed mm; zones that overlap are objects too close); null by layer. byObject.engine, on the desktop: heimdall's plate check the window holds (requestId, status running, done or error, current when it is for the plate as it sits and the warning shows it in place of the footprint rule, micros, collisions each with certainty sure or slice_decides and the objects it names, fixes, unchecked with the objects near); null where the app has none or before it ran. collisions, once the shown plate is sliced: each collision in the slice (kind, severity hit or close, part, objects it names with id and name, the one printing first, zone when it meets a keep-out zone or the prime tower, firstLayer and lastLayer counted from 1, index, damaged: the plate object a hit strikes, contactPoint and contactBox: where it goes deepest and the region struck in plate mm from the printable area's front left corner, picked while its row is) and stale when the plate changed since; slicerx_app_collision_show with the index picks one as a click on its row does, and slicerx_app_ui_select with the ids selects them; null before a slice.`,
     input: z.object({}),
     async run() {
       const out = await call(link, appName, 'ui.get', {})

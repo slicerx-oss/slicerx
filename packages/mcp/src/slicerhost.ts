@@ -115,7 +115,60 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
     return handle
   }
 
+  /** The plate's objects as an engine job takes them: one file per mesh in `dir`, so each keeps its own transform. */
+  const jobObjects = (req: SliceRequest, dir: string): SliceJobObject[] => {
+    const file = (meshId: string): string => {
+      const m = meshes.get(meshId)
+      if (!m) throw new Error(`Mesh ${meshId} is not loaded`)
+      const path = join(dir, `${meshId}.stl`)
+      if (!existsSync(path)) writeFileSync(path, writeBinaryStl(m.positions))
+      return path
+    }
+    return req.plate.objects.map((obj): SliceJobObject => ({
+      path: file(obj.mesh),
+      name: obj.name,
+      id: obj.id,
+      transform: obj.transform,
+      ...(obj.settings && Object.keys(obj.settings).length ? { settings: obj.settings as Record<string, SettingValue> } : {}),
+      ...(obj.volumes?.length
+        ? { volumes: obj.volumes.map((v) => ({ path: file(v.mesh), role: v.role, ...(v.name ? { name: v.name } : {}), ...(v.transform ? { transform: v.transform } : {}), ...(v.settings ? { settings: v.settings } : {}) })) }
+        : {}),
+    }))
+  }
+
   return {
+    /**
+     * heimdall's plate check of the request (sx engine), with the plate's own object ids in it: the engine names them
+     * o0, o1 as the request listed them.
+     */
+    async checkPlate(req: SliceRequest, opts) {
+      if (!backend.check) throw new ToolInputError('The plate check needs the sx engine (docs/install.md).', 'engine_unavailable')
+      if (opts?.signal?.aborted) throw new DOMException('Plate check canceled', 'AbortError')
+      const dir = join(outDir, 'checks', `check-${randomUUID().slice(0, 8)}`)
+      mkdirSync(dir, { recursive: true })
+      const found = await backend.check({
+        plate: { bed: req.plate.bed, objects: jobObjects(req, dir) },
+        modelPath: join(dir, 'plate.stl'),
+        config: req.config,
+        explicitConfig: explicitKeys(req.config),
+        profileNames: [],
+        overrides: {},
+        outDir: dir,
+        emitGcode: false,
+        emitPreview: false,
+        trustedGcode: trustGcode?.(req.config as unknown as Record<string, SettingValue>) ?? false,
+        ...(req.options?.heightRanges?.length ? { heightRanges: req.options.heightRanges } : {}),
+      })
+      const ids = req.plate.objects.map((o) => o.id)
+      const id = (x: string): string => (/^o\d+$/.test(x) ? (ids[Number(x.slice(1))] ?? x) : x)
+      return {
+        ...found,
+        collisions: found.collisions.map((c) => ({ ...c, objectId: id(c.objectId), hitId: id(c.hitId), ...(c.damagedId !== undefined ? { damagedId: id(c.damagedId) } : {}) })),
+        collisionFixes: found.collisionFixes.map((f) => ({ ...f, ...(f.order ? { order: f.order.map(id) } : {}), ...(f.objectId !== undefined ? { objectId: id(f.objectId) } : {}) })),
+        unchecked: found.unchecked.map((u) => ({ ...u, objectId: id(u.objectId), near: u.near.map(id) })),
+        order: found.order.map(id),
+      }
+    },
     async loadModel(data, fileName) {
       if (extname(fileName).toLowerCase() !== '.stl') {
         throw new ToolInputError(`${fileName}: only STL models (.stl) can be added to a project. To slice a 3MF, .sx3mf or OBJ file, use slicerx_slice_file.`, 'unsupported_format')
@@ -146,24 +199,7 @@ export function createNodeSlicerHost(backend: SlicerBackend, outDir: string, tru
       mkdirSync(dir, { recursive: true })
       const modelPath = join(dir, 'plate.stl')
       writeFileSync(modelPath, writeBinaryStl(total))
-      // One file per mesh, so an engine that takes a plate keeps each object's own transform.
-      const file = (meshId: string): string => {
-        const m = meshes.get(meshId)
-        if (!m) throw new Error(`Mesh ${meshId} is not loaded`)
-        const path = join(dir, `${meshId}.stl`)
-        if (!existsSync(path)) writeFileSync(path, writeBinaryStl(m.positions))
-        return path
-      }
-      const objects = req.plate.objects.map((obj): SliceJobObject => ({
-        path: file(obj.mesh),
-        name: obj.name,
-        id: obj.id,
-        transform: obj.transform,
-        ...(obj.settings && Object.keys(obj.settings).length ? { settings: obj.settings as Record<string, SettingValue> } : {}),
-        ...(obj.volumes?.length
-          ? { volumes: obj.volumes.map((v) => ({ path: file(v.mesh), role: v.role, ...(v.name ? { name: v.name } : {}), ...(v.transform ? { transform: v.transform } : {}), ...(v.settings ? { settings: v.settings } : {}) })) }
-          : {}),
-      }))
+      const objects = jobObjects(req, dir)
       const summary = await backend.slice({
         plate: { bed: req.plate.bed, objects },
         modelPath,
