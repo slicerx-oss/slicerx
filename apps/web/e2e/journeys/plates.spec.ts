@@ -497,7 +497,7 @@ function byObjectProject(): Buffer {
 }
 
 test.describe('a plate printed by object', () => {
-  test('names the objects too close, selects them from the warning, and Arrange clears the warning and the red zones, the tall one printed last', async ({ page }) => {
+  test('names the objects too close, says what the plate check is sure of, selects them from the warning, and Arrange clears the warning and the red zones, the tall one printed last', async ({ page }) => {
     interceptFileDialogs(page)
     await page.addInitScript(() => {
       localStorage.setItem('slicerx.debug', '1')
@@ -513,16 +513,26 @@ test.describe('a plate printed by object', () => {
     type Zones = { __vp: { clearance: { conflicts: Set<string> } } }
     await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.length), { timeout: 60_000 }).toBe(3)
     const warning = page.getByTestId('slice-clearance-warning')
-    await expect(warning).toContainText('Too close to print by object')
     const row = page.getByTestId('slice-clearance-select')
     await expect(row).toContainText('Bracket and Housing')
+    // heimdall's plate check answers for the plate as it sits and takes the warning over: a strike the slice is sure to
+    // refuse, in the engine's words, with Arrange and the one-click fixes. It holds nothing back: Slice stays enabled.
+    await expect(warning).toHaveAttribute('data-verdict', 'sure', { timeout: 30_000 })
+    await expect(warning.locator('.seq-card-title')).toHaveText(/hits Bracket$/)
+    await expect(row).toContainText('Bracket and Housing')
+    await expect(page.getByTestId('slice-clearance-fix-by-layer')).toBeVisible()
+    await expect(page.getByTestId('slice-estimate-slice')).toBeEnabled()
+    type Check = { getState(): { plateCheck: { status: string; result: { certainty: string[] } | null } } }
+    expect(await page.evaluate(() => (window as unknown as { __sx: Check }).__sx.getState().plateCheck.result?.certainty)).toContain('sure')
     // the zones of the two draw red; Clip's does not
     await expect.poll(() => page.evaluate(() => [...(window as unknown as Zones).__vp.clearance.conflicts].length)).toBe(2)
     await row.click()
     const ids = await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.filter((e) => e.name !== 'Clip').map((e) => e.id))
     await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().selectedIds)).toEqual(ids)
     await page.getByTestId('slice-clearance-arrange').click()
+    // Arrange checks its layout at once: the engine finds nothing it is sure of, so the warning goes.
     await expect(warning).toBeHidden({ timeout: 60_000 })
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __sx: Check }).__sx.getState().plateCheck.result?.certainty.includes('sure') ?? false)).toBe(false)
     await expect.poll(() => page.evaluate(() => (window as unknown as Zones).__vp.clearance.conflicts.size)).toBe(0)
     // Arrange printed Bracket last, so the gantry never passes over it
     expect(await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.getState().plate.map((e) => e.name).at(-1))).toBe('Bracket')
