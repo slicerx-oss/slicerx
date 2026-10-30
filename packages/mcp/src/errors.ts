@@ -41,8 +41,8 @@ export const ERROR_CODES = [
   'busy',
   'internal_error',
 ] as const
-/** Locked-project refusals keep the format's own reason after `sxlock_`, such as `sxlock_wrong_account`. */
-export type ErrorCode = (typeof ERROR_CODES)[number] | `sxlock_${string}`
+/** Locked-project refusals keep the format's own reason after `sxlock_`, such as `sxlock_wrong_account`; STEP reads keep the reader's code after `step_`, such as `step_no_solids`. */
+export type ErrorCode = (typeof ERROR_CODES)[number] | `sxlock_${string}` | `step_${string}`
 
 export class ToolInputError extends Error {
   override readonly name = 'ToolInputError'

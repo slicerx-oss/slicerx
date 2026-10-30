@@ -29,10 +29,11 @@ import removeFromFleet from './remove-from-fleet'
 import renameFleet from './rename-fleet'
 import reviewScript from './review-script'
 import sliceFile from './slice-file'
+import stepRead from './step-read'
 import themeCreate from './theme-create'
 import themeGet from './theme-get'
 import updateFleet from './update-fleet'
 import validateConfig from './validate-config'
 
 /** Every server tool, one file each. */
-export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, pendingApprovals, planSettings, prepareScriptReplacement, printerList, printerSnapshot, printerStatus, removeFromFleet, renameFleet, reviewScript, sliceFile, themeCreate, themeGet, updateFleet, validateConfig]
+export const SERVER_TOOLS: ServerToolFactory[] = [actionLog, addToFleet, approve, createFleet, deleteFleet, estimateFile, explainSetting, findSettings, getPolicy, getProfile, inspectProject, integrationsList, knowledgeLookup, listFleets, listProfiles, listSettingDefaults, openInApp, pendingApprovals, planSettings, prepareScriptReplacement, printerList, printerSnapshot, printerStatus, removeFromFleet, renameFleet, reviewScript, sliceFile, stepRead, themeCreate, themeGet, updateFleet, validateConfig]
