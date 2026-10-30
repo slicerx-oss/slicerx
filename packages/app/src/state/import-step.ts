@@ -58,6 +58,12 @@ interface Pending {
 }
 
 let worker: Worker | null = null
+/**
+ * Where the worker fetches the STEP reader's wasm, when the host keeps it outside the page's build (the desktop app
+ * ships one copy, beside its MCP server, and serves it over the asset protocol). Unset: the file the build bundles.
+ */
+let wasmSource: (() => Promise<string>) | null = null
+let wasmUrl: string | undefined
 let idle: ReturnType<typeof setTimeout> | null = null
 let seq = 0
 const pending = new Map<number, Pending>()
@@ -116,6 +122,12 @@ function start(): Worker {
   return w
 }
 
+/** The host names where the STEP reader's wasm is, once, before the first STEP file (registerStepWasm). */
+export function registerStepWasm(source: () => Promise<string>): void {
+  wasmSource = source
+  wasmUrl = undefined
+}
+
 /** Meshes a STEP file in the worker. Errors are plain reasons meant to follow the file name. */
 export const convertStep: StepConverter = ({ name, data, quality = 'normal' }) =>
   new Promise((resolve, reject) => {
@@ -127,11 +139,24 @@ export const convertStep: StepConverter = ({ name, data, quality = 'normal' }) =
     showReading()
     // The bytes are copied so the caller keeps its buffer.
     const copy = data.slice(0)
-    try {
-      start().postMessage({ id, name, data: copy, quality }, [copy])
-    } catch {
-      settle(id)
-      stop()
-      reject(new Error('could not be read: the STEP reader did not start.'))
+    const send = (wasm: string | undefined) => {
+      try {
+        start().postMessage({ id, name, data: copy, quality, ...(wasm === undefined ? {} : { wasm }) }, [copy])
+      } catch {
+        settle(id)
+        stop()
+        reject(new Error('could not be read: the STEP reader did not start.'))
+      }
     }
+    if (!wasmSource || wasmUrl !== undefined) return send(wasmUrl)
+    wasmSource().then(
+      (url) => {
+        wasmUrl = url
+        // Canceled or timed out while the host answered.
+        if (pending.has(id)) send(url)
+      },
+      () => {
+        if (settle(id)) reject(new Error('could not be read: the STEP reader did not start.'))
+      },
+    )
   })

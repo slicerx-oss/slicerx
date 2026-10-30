@@ -2,11 +2,15 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Release build step: puts the MCP server and the print watch where the Tauri bundle expects them.
 //   node apps/desktop/release/prepare-sidecars.mjs --target <rust triple | universal-apple-darwin> [--config <edition.conf.json>]
-// - the MCP server, standalone, into src-tauri/resources/mcp (bundled as Resources/mcp/slicerx-mcp.mjs)
+//     [--resources <dir>]
+// - the MCP server, standalone, into src-tauri/resources/mcp (bundled as Resources/mcp/slicerx-mcp.mjs), with the
+//   STEP reader beside it in mcp/step-reader (its wasm checked against packages/step-reader/SOURCE.md, with the
+//   NOTICE, license texts and SOURCE.md), so slicerx_step_read works with no node_modules
 // - sx-watch, built release, into src-tauri/binaries/sx-watch-<triple> (the Tauri sidecar naming)
 // - the SigLIP2 model, when SX_WATCH_MODEL_URL is set (a release asset, never in git; SX_WATCH_MODEL_SHA256 is checked)
 // With --config the edition's Tauri config gets bundle.externalBin and the model as a resource. The model is
 // optional: without it the watch is left out of the bundle, since a watch with no model reports nothing.
+// --resources writes the server and the model somewhere else than src-tauri/resources (the tests use it).
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -24,10 +28,11 @@ const target = arg('--target')
 if (!target) throw new Error('--target is required')
 const configPath = arg('--config')
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: repo, stdio: 'inherit', ...opts })
+const resources = resolve(arg('--resources') ?? join(tauri, 'resources'))
 
-run('node', [join(repo, 'packages', 'mcp', 'scripts', 'build.mjs'), '--standalone', join(tauri, 'resources', 'mcp')])
+run('node', [join(repo, 'packages', 'mcp', 'scripts', 'build.mjs'), '--standalone', join(resources, 'mcp'), '--step-reader'])
 
-const model = join(tauri, 'resources', 'sx-watch-siglip2.onnx')
+const model = join(resources, 'sx-watch-siglip2.onnx')
 const url = process.env.SX_WATCH_MODEL_URL
 const want = process.env.SX_WATCH_MODEL_SHA256?.toLowerCase()
 const sha = () => createHash('sha256').update(readFileSync(model)).digest('hex')
