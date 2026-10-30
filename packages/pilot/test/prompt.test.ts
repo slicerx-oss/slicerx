@@ -5,6 +5,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
 import { SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import type { KbSkill } from '../src/kb/kb'
+import { playbooks } from '../skills/catalog'
 
 afterEach(() => setAssistantBrand())
 
@@ -154,5 +156,24 @@ describe('the scope rule for parts', () => {
     expect(SCOPE_LINE).not.toMatch(/\d/)
     const capitals = SCOPE_LINE.slice(2).split(/(?<=[.:])\s+/).flatMap((s) => s.split(' ').slice(1)).filter((w) => /[A-Z]/.test(w) && w !== 'Model.')
     expect(capitals).toEqual([])
+  })
+})
+
+describe('the skill playbooks in the prompt', () => {
+  const skill = (id: string, approval: string): KbSkill => ({ id, name: id, priority: 1, purpose: `Purpose of ${id}.`, inputs: [], outputs: [], tools: [], approval, example: '' })
+
+  it('lists a skill with its tools, and its approval unless it only reads', () => {
+    const p = playbooks([skill('calibrate', 'profile'), skill('diagnose', 'read')])
+    expect(p).toContain('- calibrate: Purpose of calibrate. Tools: calibrate, kb.workflow, printer.queue, settings.apply. Approval: profile.')
+    expect(p.endsWith('\n- diagnose: Purpose of diagnose. Tools: diagnose, kb.troubleshoot, printer.status.')).toBe(true)
+    expect(p).not.toContain('Approval: read')
+  })
+
+  it('leaves out a skill whose only tool is itself, since that tool describes itself', () => {
+    const p = playbooks([skill('text_to_part', 'slice'), skill('compare_setups', 'slice'), skill('queue_control', 'start')])
+    expect(p).not.toContain('text_to_part')
+    expect(p).not.toContain('compare_setups')
+    expect(p).toContain('- queue_control:')
+    expect(playbooks([skill('text_to_part', 'slice')])).toBe('')
   })
 })
