@@ -4,7 +4,8 @@
 // middle out on a round bed), keeping the room what prints around it takes from the bed edge, the other objects, the
 // keep-out areas and the prime tower. The app's arrange packs with it when the geometry engine cannot run (app
 // src/plate/arrange.ts), and so does the MCP server's arrange (mcp src/plate-nest.ts). Pure and deterministic.
-import { MARGIN_SAFETY_MM, type Rect } from './arrange-room'
+import type { Rect } from './arrange-room'
+import { MARGIN_SAFETY_MM } from './margin-safety'
 
 /** The bed as the packer takes it: its size, mm, and whether it is round (a delta printer's circle). */
 export interface PackBed {
