@@ -128,6 +128,27 @@ describe.each(ENGINES)('arrange and duplicate keep every object %s', (_name, eng
     expect(problems(s)).toEqual([])
   })
 
+  // The new plates are laid out by the same arrange as the plan's plates, so the copies an empty bed holds all go to one.
+  it.skipIf(skip)('copies with no room around the other objects go to one new plate packed as full as an empty bed', { timeout: 120_000 }, async () => {
+    // How many bars an empty bed holds.
+    const empty = await p1s(engine, [['bar', 200, 8, 4]])
+    const most = await send<{ placed: number }>(empty, 'slicerx_arrange', { objectId: 'obj-1', count: 500 })
+    const full = most.output.placed
+    expect(full).toBeGreaterThan(4)
+    // A slab over half the bed on plate 1, the bar on plate 2; a full bed of bars arranged onto plate 1.
+    const h = await p1s(engine, [['slab', 250, 120, 4], ['bar', 200, 8, 4]])
+    await call(h, 'slicerx_project_plate_add')
+    await call(h, 'slicerx_project_move_to_plate', { object: 'obj-2', plate: 2 })
+    const r = await call<{ moved: Moved[] }>(h, 'slicerx_arrange', { objectId: 'obj-2', count: full })
+    const s = await show(h)
+    const bars = s.plates.map((p) => p.items.filter((i) => i.objectId === 'obj-2').reduce((n, i) => n + i.copies, 0))
+    expect(bars).toHaveLength(2)
+    expect(bars[0]).toBeGreaterThan(0)
+    expect(bars[0]! + bars[1]!).toBe(full)
+    expect(r.output.moved).toEqual([{ objectId: 'obj-2', copies: bars[1], fromPlate: 1, toPlate: 2 }])
+    expect(problems(s)).toEqual([])
+  })
+
   it.skipIf(skip)('a copy with no room on the bed goes to the next plate, then a new one', { timeout: 60_000 }, async () => {
     const h = await p1s(engine, [['block', 150, 150, 10]])
     const dup = await call<{ objects: string[]; moved: { objectId: string; from: number; to: number }[] }>(h, 'slicerx_project_duplicate', { object: 'obj-1', count: 2 })
