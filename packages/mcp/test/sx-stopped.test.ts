@@ -37,10 +37,13 @@ function alive(pid: number): boolean {
   }
 }
 
-/** A fake engine: Node.js running `body` first, which records its pid. It sleeps without spinning the CPU. */
+/**
+ * A fake engine: Node.js running `body` first, which records its pid and then says so with one line on stdout, so a
+ * test can wait for the pid before it stops the fake. It sleeps without spinning the CPU.
+ */
 function fake(body: string): string {
   const file = join(dir, 'fake-sx.cjs')
-  writeFileSync(file, `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nconst sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);\n${body}\n`)
+  writeFileSync(file, `require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nrequire('node:fs').writeSync(1, 'started\\n');\nconst sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);\n${body}\n`)
   return file
 }
 
@@ -82,7 +85,8 @@ describe('an sx run that ends without an exit code', () => {
   it('names the signal when something else stops it', async () => {
     const sleeper = fake('sleep(60_000)')
     for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
-      const ran = await runSx(process.execPath, [sleeper], 30_000, undefined, (child) => child.on('spawn', () => setTimeout(() => child.kill(signal), 200)))
+      // Stop it once it has recorded its pid: a timer from spawn can fire before a slow Node.js start gets that far.
+      const ran = await runSx(process.execPath, [sleeper], 30_000, undefined, (child) => child.stdout?.once('data', () => child.kill(signal)))
       expect(ran).toMatchObject({ code: null, signal, timedOut: false })
       const e = sxStopped(ran, 30_000)
       expect(e).toMatchObject({ code: 'slice_failed', message: `sx was stopped (${signal}) before it finished`, details: { signal } })
