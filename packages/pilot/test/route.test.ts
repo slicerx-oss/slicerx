@@ -196,6 +196,48 @@ describe('a design run that misses its plan', () => {
   })
 })
 
+/** A part generator that builds (or fails to build) a whole part in one call, for a chat without the design tools. */
+const partTool = (name: 'text_to_part' | 'make_model', ok = true) => defineTool({ name, version: '1.0.0', source: 'command', permission: 'read', description: `${name} for the test`, input: z.object({}), async run() { return ok ? { summary: 'built the part', output: { objectId: 'p1' } } : { ok: false, summary: 'could not build it' } } }) as PilotTool<never>
+
+/** A run in a chat without the design tools, where a part comes from text_to_part or make_model. */
+async function runChat(message: string, script: Parameters<typeof createScriptedClient>[0], tools: PilotTool<never>[], config: Partial<typeof AUTO> & { deepDesign?: boolean } = {}): Promise<{ models: string[]; switches: string[] }> {
+  const client = createScriptedClient(script, { chunk: false })
+  const pilot = createPilot({ host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport }, config: { ...AUTO, ...config }, policy: DEFAULT_POLICY, client, builtins: false, tools })
+  const ev: PilotEvent[] = []
+  for await (const e of pilot.run('s', message)) ev.push(e)
+  return { models: client.requests.filter((r) => !r.webSearch).map((r) => r.model), switches: ev.filter((e) => e.type === 'model_switch').map((e) => (e as { reason: string }).reason) }
+}
+
+describe('a design run that builds with a part generator', () => {
+  it('stays on huginn after text_to_part or make_model', async () => {
+    for (const name of ['text_to_part', 'make_model'] as const) {
+      const r = await runChat('Make me a 30 mm cube', [{ calls: [{ name, args: {} }] }, { text: 'Built it.' }], [partTool(name)])
+      expect(r.models, name).toEqual(['claude-haiku-5-5', 'claude-haiku-5-5'])
+      expect(r.switches, name).toEqual([])
+    }
+  })
+
+  it('still steps up after a failed design check that follows one', async () => {
+    for (const name of ['text_to_part', 'make_model'] as const) {
+      const r = await runChat('Make me a 30 mm cube', [{ calls: [{ name, args: {} }] }, { calls: [{ name: 'design.check', args: {} }] }, { text: 'It is off.' }], [partTool(name), checkTool(false)])
+      expect(r.models, name).toEqual(['claude-haiku-5-5', 'claude-haiku-5-5', 'claude-sonnet-5-5'])
+      expect(r.switches, name).toEqual(['struggle'])
+    }
+  })
+
+  it('still steps up when the part generator really fails', async () => {
+    const r = await runChat('Make me a 30 mm cube', [{ calls: [{ name: 'text_to_part', args: {} }] }, { calls: [{ name: 'text_to_part', args: {} }] }, { text: 'Could not.' }], [partTool('text_to_part', false)])
+    expect(r.models).toEqual(['claude-haiku-5-5', 'claude-haiku-5-5', 'claude-sonnet-5-5'])
+    expect(r.switches).toEqual(['struggle'])
+  })
+
+  it('moves to muninn on a part generator when Auto runs on a key weak at building parts', async () => {
+    const r = await runChat('Make me a 30 mm cube', [{ calls: [{ name: 'text_to_part', args: {} }] }, { text: 'Built it.' }], [partTool('text_to_part')], { deepDesign: true })
+    expect(r.models).toEqual(['claude-haiku-5-5', 'claude-sonnet-5-5'])
+    expect(r.switches).toEqual(['tool'])
+  })
+})
+
 describe('the run on Auto', () => {
   it('asks its first question on muninn for a person-size build and says why at the start', async () => {
     for (const designs of [false, true]) {
