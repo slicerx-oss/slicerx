@@ -19,7 +19,7 @@ const ALL_TOOLS: HasTool = () => true
 export const buildsWithDesignTools = (has: HasTool): boolean => has('design.new')
 
 // without the design tools a part comes from the part generator in one call
-const generatorLine = (has: HasTool): string => `- A request to make, model or design a part goes straight to text_to_part${has('make_model') ? ' (make_model for a multi-color model)' : ''}, not to the knowledge base. Build it in one call from the main dimensions, a few solids at a time. If it needs a feature the tools cannot make (rectangular cutouts in a wall, threads, curved shells), build the rest and say plainly what is left for the person to add in Model. An existing part's walls or floor get thicker or thinner with walls, not a rebuild. If a size that matters is missing, ask one short question instead of guessing.`
+const generatorLine = (has: HasTool): string => `- A request to make, model or design a part goes straight to text_to_part${has('make_model') ? ' (make_model for a multi-color model)' : ''}, not to the knowledge base. Build it in one call from the main dimensions, a few solids at a time. An existing part's walls or floor get thicker or thinner with walls, not a rebuild. If a size that matters is missing, ask one short question instead of guessing.`
 
 // with them every part is built from features, so each step is one the person can open and change. Every new part
 // shows its sizes on the sheet first; with design.plan a part of two or more features is then planned on the card, and
@@ -32,13 +32,20 @@ const STEPS_LINE = `- Build in several small steps, each named for what it is ("
 const BIND_LINE = `- After a sheet is confirmed and the part is built, tie the sheet's sizes to the steps they set with pilot.sheet_bind.`
 const CHECK_LINE = `- After the last feature of a planned part, call design.check with the plan's planId (and the design id when it asks which). If items fail, fix those items in one round and call design.check again. If any item still fails, never say the part is done: stop building, list each failed item plainly, with what the plan wants and what the part has, and ask the person how to go on (design.check says so too, and checks that plan no more). A part with no plan: read it back with geom.info or geom.measure and check the main sizes and holes against the request; fix what is off once before replying.`
 const READ_BACK_LINE = `- After the last feature, read the part back with geom.info or geom.measure and check the main sizes and holes against the request; fix what is off once before replying.`
-const CANNOT_LINE = `- If a feature cannot be made with these tools, build the rest and say plainly what is left for the person to add in Model.`
 
 /** The design tool lines, with the plan only when design.plan is offered and the check only when both it and design.check are. */
 const buildLines = (has: HasTool): string =>
-  [BUILD_FIRST, SIZES_LINE, has('design.plan') ? PLAN_LINE : STEPS_LINE, BIND_LINE, has('design.check') && has('design.plan') ? CHECK_LINE : READ_BACK_LINE, CANNOT_LINE].join('\n')
+  [BUILD_FIRST, SIZES_LINE, has('design.plan') ? PLAN_LINE : STEPS_LINE, BIND_LINE, has('design.check') && has('design.plan') ? CHECK_LINE : READ_BACK_LINE].join('\n')
 
-const partLines = (has: HasTool): string => (buildsWithDesignTools(has) ? buildLines(has) : generatorLine(has))
+// What the part tools make, in general terms, and what they do not, for both ways of building. A request whose shape is
+// out of scope, even in one part of it, is turned down before any build call or size question, and the closest version
+// the tools can make is offered and built only on a yes. Building the rest and naming what is missing stays for a small
+// feature; before, that was the only rule, and mimir applied it to whole shapes too, building a rough stand-in unasked.
+// Revisit the out of scope list as freeform tools (lofts, sweeps, sculpting) land. Kept short: a local model's window
+// holds this prompt and the tab's tools (test/context.test.ts).
+export const SCOPE_LINE = `- Build only shapes the tools can make: outlines of lines, arcs and circles, extruded or turned around one axis, plus holes, fillets, patterns and text on them. Out of scope, even in one portion of a request: living things, people, characters, body parts or a likeness of a real one; sculpted or organic forms curving freely in two directions; shapes made to fit the curves of a body; a cross-section that varies in shape, size or angle along the part (a loft), unless round about one axis; shapes swept along a curved path in space. For those, before any build call or size question, name the shape the tools cannot make, offer the closest version they can (a flat plaque, a turned outline, stacked flat sections, or the rest without the sculpted detail) and build it only after the person says yes. If only a small feature is missing (a thread, a side cutout), build the rest and say what is left to add in Model.`
+
+const partLines = (has: HasTool): string => `${SCOPE_LINE}\n${buildsWithDesignTools(has) ? buildLines(has) : generatorLine(has)}`
 
 // one rule for every scope: a named part's sizes come from the parts table with their source, never from memory
 export const PARTS_LINE = `- For a named part or product (608 bearing, NEMA 17), call parts.lookup before building and cite each size's source; if not found, ask or look it up.`
