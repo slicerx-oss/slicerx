@@ -77,3 +77,29 @@ describe('a Bambu Lab project with a tool change to a filament its parts do not 
     expect((request.config['filament_colour'] as unknown[]).length).toBe(4)
   })
 })
+
+describe('a Bambu Lab project with a color change at a height', () => {
+  it.skipIf(noSx())('pauses the print there for a filament swap by hand, with no M600', { timeout: sxTimeout }, async () => {
+    const h = await connect({ engine: 'sx', sxBin })
+    // One box on filament 4 of five on an A1, with and without a color change at 5 mm (packages/core/cli/tests/fixtures).
+    const slice = async (dir: string, name: string) => {
+      const model = join(h.dir, `${name}.3mf`)
+      writeFileSync(model, readFileSync(resolve(__dirname, `../../core/cli/tests/fixtures/${dir}/${name}.3mf`)))
+      const r = await h.call('slicerx_slice_file', { model, plate: 1, profiles: ['machine:bambu-a1'], project_settings: true })
+      expect(r.isError, JSON.stringify(r.content)).toBeFalsy()
+      return readFileSync(data<{ gcode_path: string }>(r).gcode_path, 'utf8').split('\n')
+    }
+    const marked = await slice('color-change', 'a1-f5cc')
+    const plain = await slice('layer-tools', 'a1-s4')
+    let layer = 0
+    const pauses: number[] = []
+    for (const l of marked) {
+      if (l.startsWith('; CHANGE_LAYER')) layer++
+      else if (l.trim() === 'M400 U1') pauses.push(layer)
+    }
+    expect(pauses).toEqual([25])
+    expect(marked.filter((l) => /^M600\b/.test(l))).toEqual([])
+    const fans = (lines: string[]) => lines.filter((l) => l.startsWith('M106')).length
+    expect(fans(marked)).toBe(fans(plain))
+  })
+})

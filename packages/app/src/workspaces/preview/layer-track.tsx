@@ -159,7 +159,7 @@ function useSpan(ref: RefObject<HTMLElement | null>): number {
 const ICON: Record<MarkKind, IconName> = { pause: 'pause-marker', color_change: 'color-change-marker', custom: 'terminal', tool_change: 'color-change-marker' }
 const HINT: Record<MarkKind, string> = {
   pause: 'Insert a pause command at the beginning of this layer.',
-  color_change: 'Stop at the beginning of this layer so you can change the filament.',
+  color_change: 'Pause at the beginning of this layer so you can swap the filament by hand.',
   custom: 'Insert custom G-code at the beginning of this layer.',
   tool_change: 'Change to another filament at the beginning of this layer.',
 }
