@@ -109,7 +109,8 @@ Invalid edition config:
 pnpm edition:build harbor.config.ts --target web
 
 # desktop app: writes the Tauri overlay (name, window title, publisher, copyright, file types,
-# link scheme, identifiers), makes the app icons from brand.logo.appIcon, then builds
+# link scheme, identifiers), makes the app icons from brand.logo.appIcon, then builds; the build
+# packs the MCP server and the STEP reader into the app (apps/desktop/scripts/pack-mcp.mjs)
 pnpm edition:build harbor.config.ts --target desktop
 
 # the phone app and the site read the config from the environment
