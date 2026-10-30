@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Keeping a conversation inside a local model's context: the 16,689 token transcript the
 // benchmark saw Ollama cut, the order things go in, and the runtime only trimming local models.
-import type { PilotMachine } from '@slicerx/contracts'
+import { DEFAULT_PRODUCT_NAME, setAssistantBrand, setProductName, type PilotMachine } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { createEvalEnv } from '../evals/harness'
@@ -132,6 +132,21 @@ describe('the runtime and the context', () => {
   it.each(['full', 'cad'] as const)('leaves a local model in the tab (%s) at least 1,500 tokens for the conversation', async (scope) => {
     const [first] = await requests('openai-compatible', scope)
     expect(requestCost(first!) + REPLY_RESERVE + CONVERSATION_ROOM).toBeLessThanOrEqual(MIMIR_CONTEXT)
+  })
+
+  // room for an edition to rename the app and the assistant (40 characters each, the longest an assistant name may be)
+  // or a tool to grow a little, without the tab's prompt and tools crowding out the conversation. When this trips, trim
+  // the prompt or move tools out of the full tab into a per-turn set; never lower the 250.
+  it('keeps at least 250 tokens to spare in the full tab with 40-character names', async () => {
+    setProductName('P'.repeat(40))
+    setAssistantBrand({ name: 'A'.repeat(40) })
+    try {
+      const [first] = await requests('openai-compatible', 'full')
+      expect(MIMIR_CONTEXT - (requestCost(first!) + REPLY_RESERVE + CONVERSATION_ROOM)).toBeGreaterThanOrEqual(250)
+    } finally {
+      setProductName(DEFAULT_PRODUCT_NAME)
+      setAssistantBrand()
+    }
   })
 
   it('trims what it sends to a local model, and sends a cloud model everything', async () => {
