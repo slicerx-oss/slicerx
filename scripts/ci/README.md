@@ -45,6 +45,14 @@ but `full-ci`, or `full-ci` already on the pull request when it opened) skips ev
 and skips its steps, so its required matrix name `rust (ubuntu-latest)` still reports, as passed, and the gate
 `rust (windows-latest)`, which passes at once.
 
+The B-rep kernel build (`packages/brep`, with SMLib) runs only when a change touches what it reads (`brep_paths` in the
+detect job). On Linux it is the job `brep-linux`, and the gate `brep (ubuntu-latest)` gathers it: the gate is a
+required check, so the merge queue waits for it, and it passes at once when the path filter skipped the build. It fails
+when detect failed or when the build was wanted and did not pass. The macOS and Windows builds (the job `brep`) are
+advisory: no required check waits on them, so the Windows build (up to an hour on a cold cache) stays out of the queue,
+and a failure there adds a warning to the run saying so. `scripts/ci/brep-gate.test.mjs` checks this graph and runs
+the gate's script.
+
 ## Rust test parts
 
 A push to main runs the whole Rust test suite on macOS and Windows, and a pull request labeled `full-ci` runs it on

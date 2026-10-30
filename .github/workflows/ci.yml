@@ -143,10 +143,11 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && [ "$e2e" = false ] && printf '%s\n' "$changed" | grep -qE "$browser"; then smoke=true; fi
           echo "smoke=$smoke" >> "$GITHUB_OUTPUT"
           # The B-rep kernel compiles from source on every run (the Rust cache keeps no workspace crate's build output,
-          # so about 40 minutes on Windows), and no release or required check waits on it. A pull request builds it
-          # only when it changes what the kernel build and its tests read; so does the merge queue, against the
-          # group's base (every pull request in the group). A run by hand and a push always do: a push the queue
-          # already tested skips the job instead (its if), and any other push builds it.
+          # so about 40 minutes on Windows). Its Linux run is required through the gate "brep (ubuntu-latest)", which
+          # passes when this filter skips it; macOS and Windows are advisory. A pull request builds it only when it
+          # changes what the kernel build and its tests read; so does the merge queue, against the group's base
+          # (every pull request in the group). A run by hand and a push always do: a push the queue already tested
+          # skips the job instead (its if), and any other push builds it.
           brep_paths='^(packages/brep/|packages/geom/|packages/vendor/i_overlay/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.cargo/|\.nvmrc$|\.github/workflows/ci\.yml$)'
           brep=true
           case $GITHUB_EVENT_NAME in
@@ -166,10 +167,10 @@ jobs:
       # Windows, devkit, and the jobs no queue run has. A skipped check counts as green for releases
       # (scripts/ci/require-green.sh). Any other push (an earlier commit of a group, or one made outside the queue), or
       # a lookup that fails, runs everything.
-      # The queue merges as soon as the required checks pass, while jobs it does not wait for (brep) may still be
-      # running, so the merge_group run is often not finished yet when this push starts. Asking for a finished,
-      # successful run missed most queued commits and ran the whole Linux set again; this asks whether the jobs this
-      # push would skip passed in that run (latest attempt), finished or not.
+      # The queue merges as soon as the required checks pass, while jobs it does not wait for (brep on macOS and
+      # Windows) may still be running, so the merge_group run is often not finished yet when this push starts. Asking
+      # for a finished, successful run missed most queued commits and ran the whole Linux set again; this asks whether
+      # the jobs this push would skip passed in that run (latest attempt), finished or not.
       - id: q
         if: github.event_name == 'push'
         env:
@@ -182,7 +183,7 @@ jobs:
             jobs=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?filter=latest&per_page=100" \
               --jq '.jobs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null) || continue
             ok=true
-            for name in web wasm licenses 'rust (ubuntu-latest)'; do
+            for name in web wasm licenses 'rust (ubuntu-latest)' 'brep (ubuntu-latest)'; do
               row=$(awk -F'\t' -v n="$name" '$1 == n { print $2 " " $3 }' <<< "$jobs")
               case $row in "completed success" | "completed skipped") ;; *) ok=false ;; esac
             done
@@ -190,7 +191,7 @@ jobs:
           done
           echo "queued=$queued" >> "$GITHUB_OUTPUT"
           if [ "$queued" = true ]; then
-            echo "::notice title=Tested in the merge queue::${GITHUB_SHA:0:8} passed web, wasm, licenses and rust (ubuntu-latest) in merge_group run $id; those jobs and brep skip"
+            echo "::notice title=Tested in the merge queue::${GITHUB_SHA:0:8} passed web, wasm, licenses, rust (ubuntu-latest) and brep (ubuntu-latest) in merge_group run $id; those jobs and brep skip"
           fi
 
   web:
@@ -501,7 +502,7 @@ jobs:
           ${HEAVY:-} cargo test --workspace --exclude slicerx-desktop --exclude sx-core --test '*'
       # The tests above leave sx, sx-geom, sx-link, sx-relay and sx-cloud in target/debug for the app, MCP, pair and
       # cloud tests below. The native exact tests also need sx-geom with the exact kernel, built here from the SMLib
-      # source the brep job fetches and caches. That build has a target of its own, so the workspace builds above keep
+      # source the brep jobs fetch and cache. That build has a target of its own, so the workspace builds above keep
       # the kernel's stand-in and are not rebuilt. (A cargo build -p of the binaries here would relink sx-geom with
       # other features, about 12 s for nothing.)
       - if: matrix.part == 'crates'
@@ -687,13 +688,75 @@ jobs:
   # sx-brep with the SMLib kernel (packages/brep): the kernel's source fetched at its pinned commit and checked against
   # its SHA-256, our routines swapped in, then built and tested, the swapped routines against the originals' values
   # (tests/routines.rs). Every other Rust job builds the crate without it.
+  # Linux is required: the gate "brep (ubuntu-latest)" below gathers this job, and the merge queue waits for it. The
+  # macOS and Windows runs (the job "brep") are advisory, so the Windows build, up to an hour, stays out of the queue.
+  # Keep the steps of the two jobs in step.
+  brep-linux:
+    needs: detect
+    if: needs.detect.outputs.brep == 'true' && needs.detect.outputs.queued != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      SX_BREP_REQUIRE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: node --test packages/brep/tests/solids-wasm.mjs
+      - run: sh packages/brep/tests/wasm-cache.sh
+      - run: rustup toolchain install
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/slicerx/smlib
+          key: smlib-${{ hashFiles('packages/brep/scripts/fetch-smlib.sh', 'packages/brep/scripts/swap-routines.sh') }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: brep-${{ runner.os }}
+      - name: Locate the required kernel
+        run: |
+          kernel=$(sh packages/brep/scripts/fetch-smlib.sh)
+          echo "SX_SMLIB_DIR=$kernel" >> "$GITHUB_ENV"
+      - run: cargo clippy -p sx-brep --release --all-targets --features routine-probe -- -D warnings
+      - run: cargo test -p sx-brep --release --features routine-probe
+      # the exact solid ops through sx-geom's JSON and CLI, against exact values and the mesh path
+      - run: cargo clippy -p sx-geom --release --features brep --tests -- -D warnings
+      - run: cargo test -p sx-geom --release --features brep --test brep_parity --test brep_input
+
+  # The required result for the B-rep build on Linux, under the name branch protection and scripts/ci/required-checks.txt
+  # list. Passes when the path filter in detect skipped the build (nothing it reads changed) or a push the queue already
+  # tested skipped it; fails when detect did not pass, or when the build was wanted and did not pass (a failure, a time
+  # out, which GitHub reports as cancelled, or a skip). Skipped in a duplicate run (the concurrency comment at the top),
+  # which counts as passed. scripts/ci/brep-gate.test.mjs runs this script.
+  brep-gate:
+    name: brep (ubuntu-latest)
+    needs: [detect, brep-linux]
+    if: ${{ !cancelled() && !((github.event.action == 'opened' && contains(github.event.pull_request.labels.*.name, 'full-ci')) || (github.event.action == 'labeled' && github.event.label.name != 'full-ci')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          DETECT: ${{ needs.detect.result }}
+          WANTED: ${{ needs.detect.outputs.brep == 'true' && needs.detect.outputs.queued != 'true' }}
+          LINUX: ${{ needs.brep-linux.result }}
+        run: |
+          echo "detect: $DETECT, brep wanted: $WANTED, Linux build: $LINUX"
+          [ "$DETECT" = success ] || exit 1
+          [ "$WANTED" = true ] || exit 0
+          [ "$LINUX" = success ]
+
+  # The same build on macOS and Windows, advisory: no required check or release waits on it. A failure adds a warning
+  # to the run and the job summary saying so.
   brep:
     needs: detect
     if: needs.detect.outputs.brep == 'true' && needs.detect.outputs.queued != 'true'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     # the first Windows build compiles the kernel from scratch (about 35 minutes with a cold cache)
     timeout-minutes: ${{ matrix.os == 'windows-latest' && 90 || 45 }}
@@ -741,6 +804,11 @@ jobs:
           cargo test -p sx-brep -p sx-geom --release --features sx-brep/routine-probe,sx-geom/brep
           --test face_identity --test input_limits --test kernel --test kernel_detection --test routines --test solids
           --test brep_parity --test brep_input
+      - if: failure()
+        run: |
+          msg="The B-rep build or tests failed on $RUNNER_OS. This run is advisory and does not block merging; the required B-rep check is brep (ubuntu-latest)."
+          echo "::warning title=B-rep failed on $RUNNER_OS (advisory)::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
 
   # The native slicer (sx) the browser suite slices with (apps/web/e2e/native-host): the engine the desktop app links,
   # so the specs test what the desktop slices, and no spec needs the WebAssembly slicer. Built once per run beside the
