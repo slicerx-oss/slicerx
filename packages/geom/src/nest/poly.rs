@@ -224,7 +224,7 @@ pub fn offset(r: &Region, d: f64, arc_tol: f64) -> Region {
     normalized(r.outline(&style), 1e-9)
 }
 
-fn dist_to_segment(p: Pt, a: Pt, b: Pt) -> f64 {
+pub fn dist_to_segment(p: Pt, a: Pt, b: Pt) -> f64 {
     let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
     let len2 = dx * dx + dy * dy;
     let t = if len2 > 0.0 {
