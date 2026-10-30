@@ -4,7 +4,7 @@
 // Plate edge drag from a host's side, with no app around it: a stand-in view and two parts, four plates, and a host
 // that records each move. The stand-in plays the view's part of a drag (start, moves, release, Esc) the way the real
 // view calls the hook. Covers each edge's destination, a short release, Esc, a group, the idle cost, labels and theme.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import type { EdgeDragHook, EdgeDragInfo } from '../src/types'
 import { DEFAULT_EDGE_DRAG_LABELS, EDGE_DRAG_PROPERTIES, enableEdgeDrag, loadEdgeDrag, overlaysMounted, resetHint, type EdgeDragDestination, type EdgeDragOptions } from '../src/edge-drag/index'
 
@@ -41,6 +41,9 @@ function standInView() {
     setDragZoom: vi.fn(),
     placeReadout: vi.fn(),
     setSelection: vi.fn(),
+    // the camera is held through what runs inside
+    keepCamera: vi.fn((change: () => unknown) => change()) as Mock<(change: () => unknown) => unknown> & (<T>(change: () => T) => T),
+    showSelection: vi.fn(() => false),
   }
   return { stage, canvas, view, hook: () => hook }
 }
@@ -147,7 +150,7 @@ describe('a stand-in host', () => {
   for (const [side, past, dest, said] of edges) {
     it(`a release past the ${side} line moves the part, says so first, and shows where it went`, async () => {
       const { stage, view, hook } = standInView()
-      const h = host()
+      const h = host({ dropTarget: () => new DOMRect(400, 760, 160, 32) })
       enableEdgeDrag(view, h.options)
       await begin(hook()!)
       hook()!.move(past)
@@ -162,11 +165,72 @@ describe('a stand-in host', () => {
       const went = dest === 'new' ? 'plate-5' : dest.plate
       expect(h.switches).toEqual([{ plate: went, ids: ['a'] }])
       expect(view.setSelection).toHaveBeenCalledWith(['a'])
-      // reduced motion: dropped at once, nothing left
+      // reduced motion: dropped at once, nothing left; a plate bar marks the plate, so no note and the view reframes
       expect(overlaysMounted()).toBe(0)
       expect(q(stage, 'edge-drag')).toBeNull()
+      expect(view.keepCamera).not.toHaveBeenCalled()
     })
   }
+
+  it('with no plate bar to fly to, the plate shows at once in the same framing, and the host says where it went', async () => {
+    const { stage, view, hook } = standInView()
+    const said: [string, string][] = []
+    let held = 0
+    view.keepCamera.mockImplementation((change: () => unknown) => {
+      held++
+      try {
+        return change()
+      } finally {
+        held--
+      }
+    })
+    const h = host({ dropTarget: () => null, notify: (text, plate) => said.push([text, plate]) })
+    const moveHeld: number[] = []
+    const switchHeld: number[] = []
+    const move = h.options.move
+    h.options.move = (ids, dest) => {
+      moveHeld.push(held)
+      return move(ids, dest)
+    }
+    const onSwitch = h.options.onSwitch!
+    h.options.onSwitch = (plate, ids) => {
+      switchHeld.push(held)
+      onSwitch(plate, ids)
+    }
+    enableEdgeDrag(view, h.options)
+    await begin(hook()!)
+    const past = info(189, 30, 209, 50)
+    hook()!.move(past)
+    await frame()
+    expect(hook()!.end({ ...past, onBed: false })).toBe('commit')
+    await tick()
+    expect(h.switches).toEqual([{ plate: 'plate-4', ids: ['a'] }])
+    // the move and the switch run with the camera held, then the view only slides to the part if it is out of sight
+    expect(moveHeld).toEqual([1])
+    expect(switchHeld).toEqual([1])
+    expect(view.showSelection).toHaveBeenCalledWith(expect.objectContaining({ keepZoom: true }))
+    expect(said).toEqual([['Moved to Plate 4', 'plate-4']])
+    expect(overlaysMounted()).toBe(0)
+    expect(q(stage, 'edge-drag')).toBeNull()
+  })
+
+  it('with no plate bar and no notify, the overlay says where it went for a moment, then goes', async () => {
+    const { stage, view, hook } = standInView()
+    const h = host()
+    enableEdgeDrag(view, h.options)
+    await begin(hook()!)
+    const past = info(30, -29, 50, -9)
+    hook()!.move(past)
+    await frame()
+    expect(hook()!.end({ ...past, onBed: false })).toBe('commit')
+    await tick()
+    expect(h.switches).toEqual([{ plate: 'plate-5', ids: ['a'] }])
+    const note = q(stage, 'edge-drag-note')!
+    expect(note.textContent).toBe('Moved to Plate 5')
+    expect(note.getAttribute('role')).toBe('status')
+    await vi.waitFor(() => expect(overlaysMounted()).toBe(0), { timeout: 3_000 })
+    expect(q(stage, 'edge-drag')).toBeNull()
+  })
 
   it('a release short of the line moves nothing, the part goes back, and a hint shows once', async () => {
     const { stage, view, hook } = standInView()
@@ -245,6 +309,9 @@ describe('a stand-in host', () => {
     expect(h.moves).toEqual([{ ids: ['a', 'b'], dest: { plate: 'plate-4' } }])
     await tick()
     expect(h.switches).toEqual([{ plate: 'plate-4', ids: ['a', 'b'] }])
+    // no plate bar here: the note says where the group went, and then the overlay goes
+    expect(q(stage, 'edge-drag-note')!.textContent).toBe('Moved to Plate 4')
+    await vi.waitFor(() => expect(overlaysMounted()).toBe(0), { timeout: 3_000 })
   })
 
   it('canMove false keeps the move on the bed', async () => {
@@ -265,6 +332,40 @@ describe('a stand-in host', () => {
     expect(scale).toBeLessThanOrEqual(0.72)
     hook()!.cancel()
     expect(view.setDragZoom).toHaveBeenLastCalledWith(null, expect.any(Number))
+  })
+
+  it('a finger heading for a side with too little room slides the view away from it, a drag still short of the line', async () => {
+    const { stage, view, hook } = standInView()
+    // a phone-sized view: the bed's right edge at 740 px is past it, so the right has no room at all
+    stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 800, width: 700, height: 800, x: 0, y: 0, toJSON: () => ({}) })
+    enableEdgeDrag(view, host().options)
+    await begin(hook()!, info(30, 80, 50, 100, ['a'], 'touch'))
+    // the part on its way right, by its arrow
+    const going = info(40, 80, 60, 100, ['a'], 'touch')
+    hook()!.move(going)
+    const slid = () => view.setDragZoom.mock.calls.filter((c) => Array.isArray(c[2]) && (c[2] as number[])[0] !== 0)
+    await vi.waitFor(() => expect(slid().length).toBeGreaterThan(0), { timeout: 2_000 })
+    const [, , shift] = slid()[0]!
+    expect((shift as [number, number])[0]).toBeLessThan(0)
+    expect((shift as [number, number])[1]).toBe(0)
+    expect(q(stage, 'edge-drag')!.dataset['shift']).toMatch(/^-\d+,0$/)
+    // the slide leaves the drag to the line: nothing is armed yet
+    await frame()
+    expect(q(stage, 'edge-drag-right')!.hasAttribute('data-armed')).toBe(false)
+    hook()!.cancel()
+    expect(view.setDragZoom).toHaveBeenLastCalledWith(null, expect.any(Number))
+  })
+
+  it('a mouse drag never slides the view', async () => {
+    const { stage, view, hook } = standInView()
+    stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 700, bottom: 800, width: 700, height: 800, x: 0, y: 0, toJSON: () => ({}) })
+    enableEdgeDrag(view, host().options)
+    await begin(hook()!)
+    hook()!.move(info(40, 80, 60, 100))
+    await new Promise((r) => setTimeout(r, 450))
+    await frame()
+    for (const call of view.setDragZoom.mock.calls) expect(call.length).toBeLessThanOrEqual(2)
+    hook()!.cancel()
   })
 
   it('past three other plates the top opens a list of the rest after a short wait', async () => {
@@ -313,6 +414,7 @@ describe('labels', () => {
     expect(DEFAULT_EDGE_DRAG_LABELS.releaseToNewPlate).toBe('Release to add to a new plate')
     expect(DEFAULT_EDGE_DRAG_LABELS.pickFromList).toBe('Move onto a plate in the list')
     expect(DEFAULT_EDGE_DRAG_LABELS.holdForMore).toBe('Hold to see more plates')
+    expect(DEFAULT_EDGE_DRAG_LABELS.movedToPlate('Plate 4')).toBe('Moved to Plate 4')
   })
 
   it('every label can be replaced, on the edges, the live region, the list and the hint', async () => {

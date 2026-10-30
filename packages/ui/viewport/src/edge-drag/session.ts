@@ -3,7 +3,9 @@
 // Plate edge drag while a part moves: each plate edge shows a band in the space off the bed, with a chevron and the
 // plate it adds to, and the band glows stronger the further the part goes out. Once the whole part (or group) is past
 // the commit line the line turns solid and the label underlined; a release there drops it into the plate bar and the
-// view follows it to its new plate. A release short of the line, Esc or a lost pointer puts it back. Loaded on the
+// view follows it to its new plate (with no plate bar on screen, as on a phone, the plate shows at once in the same
+// framing and a short note says where it went). A finger's drag also slides the view toward the side it heads for, so
+// the line arms in sight. A release short of the line, Esc or a lost pointer puts it back. Loaded on the
 // first part drag (index.ts); the overlay exists only while a part moves and is gone again after the drop. The host
 // owns the plates: it lists them, moves the parts and shows the plate after (EdgeDragOptions).
 import type { EdgeDragInfo } from '../types'
@@ -27,6 +29,14 @@ export const TOUCH_ZOOM = 0.72
 export const TOUCH_ZOOM_MS = 240
 /** The furthest a drag eases the view out to give every edge its room. */
 export const MIN_DRAG_ZOOM = 0.45
+/** How far a finger's part goes (mm) before the side it heads for is known, and the view slides to give it the room. */
+export const HEADING_MM = 2
+/** Room a finger's armed part keeps from the edges of what a person can see, px. */
+const PART_ROOM_PX = 24
+/** How far inside the screen the finger stays when the part arms: the outer strip is the screen's own edge swipes. */
+const FINGER_CLEAR_PX = 40
+/** The least drag a finger still makes to the line after the view slides, so the line never arms by itself. */
+const MIN_TRAVEL_PX = 48
 /** How long a part waits past the More plates line before the list opens, ms. */
 export const MORE_DWELL_MS = 300
 const DROP_MS = 460
@@ -263,10 +273,121 @@ export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLEle
     const edges = offered(g).map((e) => ({ mid: g[e].mid, n: g[e].n, need: roomNeeded(edgeReach(info.box, bed, e).size, reach, g[e].k, 24) }))
     return fitScale(visible(), [c[0] - r.left, c[1] - r.top], edges, MIN_DRAG_ZOOM)
   }
+  /** The slide a finger's drag adds to the zoom (setDragZoom's shift), px, and until when the view is still easing. */
+  let shift: P = [0, 0]
+  let easing = 0
+  const ease = (): void => {
+    easing = performance.now() + TOUCH_ZOOM_MS + 48
+    root.dataset['zoom'] = zoom.toFixed(3)
+    root.dataset['shift'] = `${Math.round(shift[0])},${Math.round(shift[1])}`
+  }
   const zoomTo = (scale: number): void => {
     if (!(scale < 0.995) || Math.abs(scale - zoom) < 0.005) return
     zoom = scale
-    view.setDragZoom?.(scale, TOUCH_ZOOM_MS)
+    if (touch) view.setDragZoom?.(scale, TOUCH_ZOOM_MS, shift)
+    else view.setDragZoom?.(scale, TOUCH_ZOOM_MS)
+    ease()
+  }
+  const center = (b: Box2): P => [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2]
+  /** The offered edge a part is heading out over, from its way since the drag started; null until it has gone a little. */
+  const heading = (g: Record<BedEdge, EdgeGeo>): BedEdge | null => {
+    const a = center(o.first.box)
+    const b = center(info.box)
+    const v: P = [b[0] - a[0], b[1] - a[1]]
+    const len = Math.hypot(v[0], v[1])
+    if (len < HEADING_MM) return null
+    let best: BedEdge | null = null
+    let most = Math.SQRT1_2
+    for (const e of offered(g)) {
+      const c = (v[0] * OUT[e][0] + v[1] * OUT[e][1]) / len
+      if (c > most) {
+        most = c
+        best = e
+      }
+    }
+    return best
+  }
+  /** A part moved out over edge `e` until its near side is `trail` mm past it, on screen. */
+  const outTo = (e: BedEdge, trail: number): { x0: number; y0: number; x1: number; y1: number } | null => {
+    const d = OUT[e]
+    const m = trail - edgeReach(info.box, bed, e).trail
+    return screenBox({ min: [info.box.min[0] + d[0] * m, info.box.min[1] + d[1] * m], max: [info.box.max[0] + d[0] * m, info.box.max[1] + d[1] * m] })
+  }
+  /** The finger less the middle of its part on screen, from the last move with the view at rest. */
+  let grab: P | null = null
+  const grabOf = (): void => {
+    const b = screenBox(info.box)
+    const r = stage.getBoundingClientRect()
+    if (b) grab = [info.client[0] - r.left - (b.x0 + b.x1) / 2, info.client[1] - r.top - (b.y0 + b.y1) / 2]
+  }
+  /** How far a finger's drag may take the part past the edge it heads for, mm, or null for the usual reach. */
+  let touchReach: number | null = null
+  /**
+   * A phone's view, eased out as far as the bed stays readable, can still leave a side too little room: the line arms
+   * with the part half off screen, or only with the finger in the screen's edge strip. So once a finger's part heads for
+   * a side, the view slides away from that side until the part, armed, is all in what a person can see with 24 px to
+   * spare (in the view less the host's bars, as the desktop's room is measured) and the finger, where it will be when it
+   * arms, is a thumb's width inside the screen. The slide always leaves a deliberate stretch of drag before the line.
+   * Past the line the drag then goes only as far as stays in sight. It measures the view as it is, once it has stopped
+   * easing, and slides again until it fits.
+   */
+  const slide = (g: Record<BedEdge, EdgeGeo>, now: number): void => {
+    if (!touch || now < easing) return
+    const e = heading(g)
+    if (!e) {
+      touchReach = null
+      return
+    }
+    const eg = g[e]
+    const r = stage.getBoundingClientRect()
+    const vis = visible()
+    const seen = { left: Math.max(0, -r.left), top: Math.max(0, -r.top), right: Math.min(r.width, window.innerWidth - r.left), bottom: Math.min(r.height, window.innerHeight - r.top) }
+    const armed = outTo(e, eg.margin)
+    if (!grab || !armed) return
+    // the part keeps to the finger: where the finger will be when the part reaches the line, and how far that is
+    const finger: P = [(armed.x0 + armed.x1) / 2 + grab[0], (armed.y0 + armed.y1) / 2 + grab[1]]
+    const toLine = (finger[0] - (info.client[0] - r.left)) * eg.n[0] + (finger[1] - (info.client[1] - r.top)) * eg.n[1]
+    const over = (lo: number, hi: number, a: number, b: number, pad: number): number => (hi + pad > b ? hi + pad - b : lo - pad < a ? lo - pad - a : 0)
+    const larger = (p: number, q: number): number => (Math.abs(p) >= Math.abs(q) ? p : q)
+    const ox = larger(over(armed.x0, armed.x1, vis.left, vis.right, PART_ROOM_PX), over(finger[0], finger[0], seen.left, seen.right, FINGER_CLEAR_PX))
+    const oy = larger(over(armed.y0, armed.y1, vis.top, vis.bottom, PART_ROOM_PX), over(finger[1], finger[1], seen.top, seen.bottom, FINGER_CLEAR_PX))
+    if (view.setDragZoom && (Math.abs(ox) >= 4 || Math.abs(oy) >= 4)) {
+      let dx = -ox
+      let dy = -oy
+      // a slide takes its length off the drag to the line (the part keeps to the finger, so the bed comes to it)
+      const along = -(dx * eg.n[0] + dy * eg.n[1])
+      const allowed = Math.max(0, toLine - MIN_TRAVEL_PX)
+      if (along > allowed) {
+        dx *= allowed / along
+        dy *= allowed / along
+      }
+      // never more than half the view: the bed stays in sight on the other side
+      const next: P = [clamp(shift[0] + dx, -(vis.right - vis.left) / 2, (vis.right - vis.left) / 2), clamp(shift[1] + dy, -(vis.bottom - vis.top) / 2, (vis.bottom - vis.top) / 2)]
+      if (Math.abs(next[0] - shift[0]) >= 4 || Math.abs(next[1] - shift[1]) >= 4) {
+        shift = next
+        if (zoom >= 0.995) zoom = 1
+        view.setDragZoom(zoom, TOUCH_ZOOM_MS, shift)
+        ease()
+        return
+      }
+    }
+    // past the line, only as far as the part stays in sight (and never short of the line); the footprint leaves out
+    // the part's height on screen, so it keeps half the armed part's room
+    const full = Math.max(...BED_EDGES.map((x) => g[x].margin + g[x].reachPast))
+    const pad = PART_ROOM_PX / 2
+    const fits = (t: number): boolean => {
+      const b = outTo(e, t)
+      return !!b && b.x0 - pad >= vis.left && b.x1 + pad <= vis.right && b.y0 - pad >= vis.top && b.y1 + pad <= vis.bottom
+    }
+    let lo = eg.margin
+    let hi = full
+    if (fits(hi)) lo = hi
+    else for (let i = 0; i < 12; i++) {
+      const mid = (lo + hi) / 2
+      if (fits(mid)) lo = mid
+      else hi = mid
+    }
+    touchReach = lo
   }
   let readoutAt = ''
   /** Keeps the view's move readout on the far side of the part from the edge it goes out over, clear of the labels. */
@@ -310,6 +431,7 @@ export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLEle
     if (!geo) return
     const g = geo
     read = readEdges(info.box, bed, offered(g), margins(g))
+    slide(g, now)
     const part = screenBox(info.box)
     const view = stage.getBoundingClientRect()
     // the part of the stage that is on screen: the stage can run past the window's edge on a phone
@@ -505,6 +627,7 @@ export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLEle
   }
   window.addEventListener('keydown', onKey, true)
   draw(t0)
+  if (touch) grabOf()
   // Room for every offered edge: ease the view out until each has the part, its line and its label past it in what a
   // person can see (a touch drag always gets at least the phone's 72 percent), then check once more where it landed.
   zoomTo(Math.min(touch ? TOUCH_ZOOM : 1, fit()))
@@ -529,8 +652,9 @@ export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLEle
     raf = 0
     closeMore()
     window.removeEventListener('keydown', onKey, true)
-    if (zoom < 1) view.setDragZoom?.(null, TOUCH_ZOOM_MS)
+    if (zoom < 1 || shift[0] || shift[1]) view.setDragZoom?.(null, TOUCH_ZOOM_MS)
     zoom = 1
+    shift = [0, 0]
   }
   let gone = false
   /** Takes the overlay away; nothing of the move is left. */
@@ -547,17 +671,15 @@ export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLEle
     say('')
   }
 
-  /** The part flies into the plate bar (or fades where it is), the bar marks the plate, and then the view follows. */
-  const drop = (from: { x0: number; y0: number; x1: number; y1: number } | null, count: number, then: () => void): void => {
-    const pill = host.dropTarget?.() ?? null
+  /** The part flies into the plate bar, the bar marks the plate, and then the view follows. */
+  const drop = (pill: DOMRect, from: { x0: number; y0: number; x1: number; y1: number } | null, count: number, then: () => void): void => {
     const r = stage.getBoundingClientRect()
     if (reduced || !from || typeof Element.prototype.animate !== 'function') {
       then()
       remove()
       return
     }
-    const start0: P = [(from.x0 + from.x1) / 2, (from.y0 + from.y1) / 2]
-    const to: P = pill ? [pill.left - r.left + 28, pill.top - r.top + pill.height / 2] : start0
+    const to: P = [pill.left - r.left + 28, pill.top - r.top + pill.height / 2]
     const fly = htmlEl('div', 'sx-edge-fly')
     const w = Math.max(16, from.x1 - from.x0)
     const h = Math.max(16, from.y1 - from.y0)
@@ -571,24 +693,46 @@ export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLEle
       const t = i / 10
       const x = (1 - t) * (1 - t) * start[0] + 2 * (1 - t) * t * ctrl[0] + t * t * to[0]
       const y = (1 - t) * (1 - t) * start[1] + 2 * (1 - t) * t * ctrl[1] + t * t * to[1]
-      // into the bar it shrinks to a thumbnail; with no bar it stays where it is and fades
-      const sc = pill ? 1 + (26 / Math.max(w, h) - 1) * (1 - Math.pow(1 - t, 3)) : 1 - 0.2 * t
-      frames.push({ transform: `translate(${(x - w / 2).toFixed(1)}px, ${(y - h / 2).toFixed(1)}px) scale(${sc.toFixed(3)})`, opacity: pill ? (t > 0.82 ? 1 - (t - 0.82) / 0.18 : 1) : 1 - t, offset: t })
+      // into the bar it shrinks to a thumbnail
+      const sc = 1 + (26 / Math.max(w, h) - 1) * (1 - Math.pow(1 - t, 3))
+      frames.push({ transform: `translate(${(x - w / 2).toFixed(1)}px, ${(y - h / 2).toFixed(1)}px) scale(${sc.toFixed(3)})`, opacity: t > 0.82 ? 1 - (t - 0.82) / 0.18 : 1, offset: t })
     }
     fly.animate(frames, { duration: DROP_MS, easing: 'cubic-bezier(.45,.05,.55,.95)', fill: 'forwards' })
-    if (pill) {
-      const ring = htmlEl('div', 'sx-edge-ring')
-      ring.style.transform = `translate(${(pill.left - r.left - 3).toFixed(0)}px, ${(pill.top - r.top - 3).toFixed(0)}px)`
-      ring.style.width = `${pill.width + 6}px`
-      ring.style.height = `${pill.height + 6}px`
-      const badge = htmlEl('div', 'sx-edge-badge', `+${count}`)
-      badge.style.transform = `translate(${(pill.left - r.left + 40).toFixed(0)}px, ${(pill.top - r.top - 6).toFixed(0)}px)`
-      root.append(ring, badge)
-      ring.animate([{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: DROP_MS + RING_MS, easing: 'ease-out', fill: 'forwards' })
-      badge.animate([{ opacity: 0, transform: `${badge.style.transform} scale(.6)` }, { opacity: 0, offset: 0.45 }, { opacity: 1, transform: `${badge.style.transform} scale(1)`, offset: 0.6 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], { duration: DROP_MS + RING_MS, fill: 'forwards' })
-    }
+    const ring = htmlEl('div', 'sx-edge-ring')
+    ring.style.transform = `translate(${(pill.left - r.left - 3).toFixed(0)}px, ${(pill.top - r.top - 3).toFixed(0)}px)`
+    ring.style.width = `${pill.width + 6}px`
+    ring.style.height = `${pill.height + 6}px`
+    const badge = htmlEl('div', 'sx-edge-badge', `+${count}`)
+    badge.style.transform = `translate(${(pill.left - r.left + 40).toFixed(0)}px, ${(pill.top - r.top - 6).toFixed(0)}px)`
+    root.append(ring, badge)
+    ring.animate([{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 1, offset: 0.75 }, { opacity: 0 }], { duration: DROP_MS + RING_MS, easing: 'ease-out', fill: 'forwards' })
+    badge.animate([{ opacity: 0, transform: `${badge.style.transform} scale(.6)` }, { opacity: 0, offset: 0.45 }, { opacity: 1, transform: `${badge.style.transform} scale(1)`, offset: 0.6 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], { duration: DROP_MS + RING_MS, fill: 'forwards' })
     later(DROP_MS, then)
     later(DROP_MS + RING_MS, remove)
+  }
+
+  /**
+   * Where a drop with no plate bar to fly to went ("Moved to Plate 4"): the host's own toast (notify), else a short
+   * note low in the view, the way the release hint shows.
+   */
+  const note = (text: string, plateId: string): void => {
+    if (host.notify) {
+      host.notify(text, plateId)
+      return remove()
+    }
+    const el = htmlEl('div', 'sx-edge-hint', text)
+    el.setAttribute('role', 'status')
+    el.setAttribute('data-testid', 'edge-drag-note')
+    root.appendChild(el)
+    const r = stage.getBoundingClientRect()
+    const vis = visible()
+    const w = el.offsetWidth || 160
+    const h = el.offsetHeight || 32
+    const x = clamp((vis.left + vis.right) / 2 - w / 2, 12, Math.max(12, r.width - w - 12))
+    const y = clamp(vis.bottom - h - 16, 12, Math.max(12, r.height - h - 12))
+    el.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px)`
+    if (!reduced && typeof el.animate === 'function') el.animate([{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1, offset: 0.85 }, { opacity: 0 }], { duration: HINT_MS, fill: 'forwards' })
+    later(HINT_MS, remove)
   }
 
   /** The short release hint, once a session, by where the part was let go. */
@@ -610,6 +754,7 @@ export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLEle
 
   const session: EdgeSession = {
     reachMm() {
+      if (touchReach !== null) return touchReach
       const g = geo ?? measure()
       if (!g) return commitMarginMm(0) + reachPastLineMm(0)
       return Math.max(...BED_EDGES.map((e) => g[e].margin + g[e].reachPast))
@@ -617,6 +762,7 @@ export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLEle
     move(e) {
       if (!live) return
       info = e
+      if (touch && performance.now() >= easing) grabOf()
       // the frame loop draws it; reading the footprint now keeps a release right after a move exact
       if (geo) read = readEdges(info.box, bed, offered(geo), margins(geo))
     },
@@ -643,30 +789,50 @@ export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLEle
         bands.style.display = 'none'
         const ids = [...e.ids]
         const to = dest
+        // the plate bar to fly to; a phone shows none, and the plate then shows at once
+        const pill = host.dropTarget?.() ?? null
+        // with nothing to fly to, the view keeps its framing through the move too (a plate left empty would reframe it)
+        const hold = <T,>(run: () => T): T => (!pill && view.keepCamera ? view.keepCamera(run) : run())
         let moved: Promise<string | null>
         try {
-          moved = Promise.resolve(host.move(ids, to)).then((id) => (typeof id === 'string' ? id : to !== 'new' ? to.plate : (host.plates().find((p) => !platesBefore.some((b) => b.id === p.id))?.id ?? null)))
+          const done = hold(() => host.move(ids, to))
+          moved = Promise.resolve(done).then((id) => (typeof id === 'string' ? id : to !== 'new' ? to.plate : (host.plates().find((p) => !platesBefore.some((b) => b.id === p.id))?.id ?? null)))
         } catch (err) {
           moved = Promise.reject(err)
         }
-        let landed = false
+        let landed = !pill
         let plateId: string | null = null
         const show = (): void => {
           if (!landed || !plateId) return
-          host.onSwitch?.(plateId, ids)
-          if (host.onSwitch) view.setSelection?.(ids)
+          const id = plateId
+          const go = (): void => {
+            host.onSwitch?.(id, ids)
+            if (host.onSwitch) view.setSelection?.(ids)
+          }
+          if (pill) return go()
+          // nothing marks the plate it went to, so the view keeps its framing (no zoom onto the part), moves sideways
+          // to the part if it landed out of sight, and a note says where it went
+          hold(go)
+          if (host.onSwitch) view.showSelection?.({ animate: !reduced, keepZoom: true })
+          const label = host.plates().find((p) => p.id === id)?.label
+          if (label) note(labels.movedToPlate(label), id)
+          else remove()
         }
         moved.then(
           (id) => {
             plateId = id
+            if (!id && !pill) remove()
             show()
           },
-          () => undefined,
+          () => {
+            if (!pill) remove()
+          },
         )
-        drop(from, ids.length, () => {
-          landed = true
-          show()
-        })
+        if (pill)
+          drop(pill, from, ids.length, () => {
+            landed = true
+            show()
+          })
         return 'commit'
       }
       // on More plates without a pick the line was reached, so the hint would be wrong

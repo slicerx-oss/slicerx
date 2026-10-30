@@ -32,6 +32,8 @@ export type EdgeDragViewport = Pick<Viewport, 'canvas' | 'setSelection'> & {
   cancelDrag?: Viewport['cancelDrag']
   setDragZoom?: Viewport['setDragZoom']
   placeReadout?: Viewport['placeReadout']
+  keepCamera?: Viewport['keepCamera']
+  showSelection?: Viewport['showSelection']
 }
 
 /** What the host supplies, and how the gesture looks and reads. */
@@ -48,8 +50,17 @@ export interface EdgeDragOptions {
   move(objectIds: readonly string[], dest: EdgeDragDestination): void | string | Promise<void | string>
   /** The host's own bars and panels over the view, in client pixels: the room fit keeps every edge clear of them. Default none. */
   obstacles?(): readonly DOMRect[]
-  /** The plate bar or picker the part flies to on a drop, in client pixels; null (or no function) fades it out in place. */
+  /**
+   * The plate bar or picker the part flies to on a drop, in client pixels. With null (or no function), as on a phone
+   * with no plate bar, there is no flight: the plate shows at once, framed as the view was, and a short note says where
+   * the part went (`notify`).
+   */
   dropTarget?(): DOMRect | null
+  /**
+   * Says where a drop with no drop target went ("Moved to Plate 4"), as the host's own toast. Without it the overlay
+   * shows the note itself for a moment.
+   */
+  notify?(message: string, plateId: string): void
   /** After a drop: show the plate the objects went to and select them. Without it the view stays on its plate. */
   onSwitch?(plateId: string, objectIds: readonly string[]): void
   /** Whether these objects may leave the plate this way; false keeps the move on the bed. Default true. */

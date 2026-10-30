@@ -20,6 +20,8 @@ export interface EdgeDragLabels {
   pickFromList: string
   /** What the live region says while the part waits on More plates before its list opens. */
   holdForMore: string
+  /** The short note after a drop with no plate bar on screen to fly to, from the label of the plate it went to. */
+  movedToPlate(plateLabel: string): string
 }
 
 export const DEFAULT_EDGE_DRAG_LABELS: EdgeDragLabels = {
@@ -31,4 +33,5 @@ export const DEFAULT_EDGE_DRAG_LABELS: EdgeDragLabels = {
   releaseToNewPlate: 'Release to add to a new plate',
   pickFromList: 'Move onto a plate in the list',
   holdForMore: 'Hold to see more plates',
+  movedToPlate: (plate) => `Moved to ${plate}`,
 }
