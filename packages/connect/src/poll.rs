@@ -10,10 +10,13 @@ use futures::stream::{self, BoxStream, StreamExt};
 use crate::error::Result;
 use crate::types::{PrinterEvent, PrinterState, PrinterStatus};
 
+/// How long to wait between readings, asked again before each one.
+pub(crate) type Every = Arc<dyn Fn() -> Duration + Send + Sync>;
+
 struct PollState<F> {
     fetch: Arc<F>,
     printer: String,
-    interval: Duration,
+    interval: Every,
     prev: Option<PrinterStatus>,
     queue: Vec<PrinterEvent>,
     first: bool,
@@ -24,6 +27,20 @@ struct PollState<F> {
 pub(crate) fn poll_events<F, Fut>(
     printer: String,
     interval: Duration,
+    fetch: Arc<F>,
+) -> BoxStream<'static, PrinterEvent>
+where
+    F: Fn() -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<PrinterStatus>> + Send + 'static,
+{
+    poll_events_every(printer, Arc::new(move || interval), fetch)
+}
+
+/// [`poll_events`] with an interval that can change between readings (a tunnel slows down as its
+/// monthly data runs low).
+pub(crate) fn poll_events_every<F, Fut>(
+    printer: String,
+    interval: Every,
     fetch: Arc<F>,
 ) -> BoxStream<'static, PrinterEvent>
 where
@@ -44,7 +61,7 @@ where
                 return Some((e, st));
             }
             if !st.first {
-                tokio::time::sleep(st.interval).await;
+                tokio::time::sleep((st.interval)()).await;
             }
             st.first = false;
             let next = match (st.fetch)().await {

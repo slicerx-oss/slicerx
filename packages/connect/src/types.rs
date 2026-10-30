@@ -361,6 +361,10 @@ pub struct PrinterConfig {
     /// Bambu Lab RTSPS port override (default 322). Tests point it at the mock.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rtsp_port: Option<u16>,
+    /// The remote tunnel the printer is reached through, instead of the local network. `host` is then
+    /// the tunnel's host and `credential_ref` names the tunnel's own credential (see `src/tunnel.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tunnel: Option<crate::tunnel::TunnelKind>,
 }
 
 impl PrinterConfig {

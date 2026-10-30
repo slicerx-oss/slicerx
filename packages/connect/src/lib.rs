@@ -28,6 +28,7 @@ mod rtsp;
 mod secrets;
 mod tls;
 mod trace;
+pub mod tunnel;
 mod types;
 mod wslink;
 
@@ -56,7 +57,7 @@ pub fn app_name() -> &'static str {
     APP_NAME.get().map_or("SlicerX", String::as_str)
 }
 
-pub use error::{Error, ErrorCode, LoginNeed, Result};
+pub use error::{Error, ErrorCode, LoginNeed, Result, TunnelProblem};
 pub use gate::{Action, ApprovalGate, ApprovalToken, MAX_GCODE_LINE, MemoryGate, gcode_line_problem, params};
 pub use manifest::{PermissionClass, PluginKind, PluginManifest, ToolSpec, all_manifests, manifest};
 pub use secrets::{

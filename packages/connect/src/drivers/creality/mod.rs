@@ -163,5 +163,6 @@ fn probe_config(host: &str) -> PrinterConfig {
         camera_url: None,
         camera_credential_ref: None,
         rtsp_port: None,
+        tunnel: None,
     }
 }
