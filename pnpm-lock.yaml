@@ -925,6 +925,9 @@ importers:
       '@types/three':
         specifier: 0.186.0
         version: 0.186.0
+      jsdom:
+        specifier: 30.1.1
+        version: 30.1.1(@noble/hashes@2.4.0)
       playwright-core:
         specifier: 1.63.0
         version: 1.63.0

@@ -4,22 +4,14 @@
 // plate it adds to, and the band glows stronger the further the part goes out. Once the whole part (or group) is past
 // the commit line the line turns solid and the label underlined; a release there drops it into the plate bar and the
 // view follows it to its new plate. A release short of the line, Esc or a lost pointer puts it back. Loaded on the
-// first part drag (hook.ts); the overlay exists only while a part moves and is gone again after the drop.
-import type { EdgeDragInfo } from '@slicerx/viewport'
-import { get } from '../../state/store'
-import { follow, sendToPlate, type Destination } from './commit'
-import { FRAMED_OVERLAYS, overlayInsets } from '../../viewport/overlay-insets'
+// first part drag (index.ts); the overlay exists only while a part moves and is gone again after the drop. The host
+// owns the plates: it lists them, moves the parts and shows the plate after (EdgeDragOptions).
+import type { EdgeDragInfo } from '../types'
+import { countOverlay, hintShown, type EdgeDragDestination, type EdgeDragOptions, type EdgeDragViewport } from './index'
+import { overlayInsets } from './insets'
+import { DEFAULT_EDGE_DRAG_LABELS, type EdgeDragLabels } from './labels'
+import { applyEdgeDragTheme, injectEdgeDragStyle } from './style'
 import { armedMessage, BED_EDGES, commitMarginMm, edgeReach, fitScale, glow, pulse, readEdges, reachPastLineMm, roomNeeded, sidesOf, sideTargets, targetLabel, visibleArea, type BedEdge, type Box2, type EdgeRead, type EdgeTarget, type PlateRef, type ScreenRect, type Side } from './geometry'
-import './edge-drag.css'
-
-/** The view calls the session makes: where a bed point is on screen, and the drag zoom and cancel. */
-export interface EdgeView {
-  screenOf(p: [number, number, number]): [number, number] | null
-  setDragZoom?(scale: number | null, durationMs?: number): void
-  cancelDrag?(): boolean
-  /** Moves the view's move readout to a client point. */
-  placeReadout?(x: number, y: number): void
-}
 
 export interface EdgeSession {
   reachMm(): number
@@ -52,16 +44,6 @@ export function motionReduced(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
-/** The short-release hint shows once a session. */
-let hinted = false
-/** For tests: show the hint again. */
-export function resetHint(): void {
-  hinted = false
-}
-
-/** How many overlays are up: none while no part moves (the idle check in the tests reads it). */
-let mounted = 0
-export const overlaysMounted = (): number => mounted
 
 interface EdgeGeo {
   edge: BedEdge
@@ -133,10 +115,14 @@ function room(p: P, n: P, w: number, h: number): number {
   return Number.isFinite(t) ? Math.max(0, t) : 0
 }
 
-export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: { widthMm: number; depthMm: number }; first: EdgeDragInfo }): EdgeSession {
-  const { view, stage, bed } = o
-  const s0 = get()
-  const targets = sideTargets(s0.plates, s0.activePlate)
+export function startEdgeSession(o: { viewport: EdgeDragViewport; stage: HTMLElement; options: EdgeDragOptions; first: EdgeDragInfo }): EdgeSession {
+  const { stage, options: host } = o
+  const view = o.viewport
+  const screenOf = (p: [number, number, number]): [number, number] | null => view.screenOf?.(p) ?? null
+  const bed = o.first.bed
+  const labels: EdgeDragLabels = { ...DEFAULT_EDGE_DRAG_LABELS, ...host.labels }
+  const platesBefore = host.plates()
+  const targets = sideTargets(platesBefore, host.activePlate())
   const reduced = motionReduced()
   const touch = o.first.pointerType === 'touch'
   let info = o.first
@@ -183,7 +169,7 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
     const label = htmlEl('div', 'sx-edge-label')
     label.dataset['side'] = side
     label.setAttribute('data-testid', `edge-drag-${side}`)
-    const text = htmlEl('span', 'sx-edge-text', targetLabel(t))
+    const text = htmlEl('span', 'sx-edge-text', targetLabel(t, labels))
     const chev = chevron(SIDE_ANGLE[side])
     // the chevron sits on the outward end: after the text on the right, before it elsewhere
     if (side === 'right') label.append(text, chev)
@@ -191,15 +177,18 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
     bands.appendChild(label)
     els[side] = { band, stop: grad, edgeLine, commit, edgeHalo, commitHalo, label, text, chev: chev.querySelector('path')! }
   }
+  applyEdgeDragTheme(root, host.theme)
+  if (stage.getBoundingClientRect().width < 600) root.setAttribute('data-compact', '')
+  injectEdgeDragStyle(stage.ownerDocument)
   stage.appendChild(root)
-  mounted++
+  countOverlay(1)
 
   // ---------- geometry ----------
   const measure = (): Record<BedEdge, EdgeGeo> | null => {
     const r = stage.getBoundingClientRect()
     if (!r.width || !r.height) return null
     const at = (x: number, y: number): P => {
-      const c = view.screenOf([x, y, 0]) ?? [Number.NaN, Number.NaN]
+      const c = screenOf([x, y, 0]) ?? [Number.NaN, Number.NaN]
       return [c[0] - r.left, c[1] - r.top]
     }
     const W = bed.widthMm
@@ -244,7 +233,7 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
       [box.max[0], box.max[1]],
       [box.min[0], box.max[1]],
     ].map(([x, y]) => {
-      const c = view.screenOf([x!, y!, 0]) ?? [Number.NaN, Number.NaN]
+      const c = screenOf([x!, y!, 0]) ?? [Number.NaN, Number.NaN]
       return [c[0] - r.left, c[1] - r.top]
     })
     if (cs.some((c) => !Number.isFinite(c[0]) || !Number.isFinite(c[1]))) return null
@@ -258,7 +247,7 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
   /** What a person can see of the view, in the overlay's own pixels: the view in the window, less the bars over it. */
   const visible = (): ScreenRect => {
     const r = stage.getBoundingClientRect()
-    const bars = [...document.querySelectorAll(FRAMED_OVERLAYS)].filter((el) => !root.contains(el)).map((el) => el.getBoundingClientRect())
+    const bars = host.obstacles?.() ?? []
     const v = visibleArea(r, { width: window.innerWidth, height: window.innerHeight }, overlayInsets(r, bars))
     return { left: v.left - r.left, top: v.top - r.top, right: v.right - r.left, bottom: v.bottom - r.top }
   }
@@ -267,7 +256,7 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
     const g = measure()
     if (!g) return 1
     const r = stage.getBoundingClientRect()
-    const c = view.screenOf([bed.widthMm / 2, bed.depthMm / 2, 0])
+    const c = screenOf([bed.widthMm / 2, bed.depthMm / 2, 0])
     if (!c) return 1
     // a drag may take the part as far past any edge as the furthest edge allows (the view gets one reach for all)
     const reach = Math.max(...BED_EDGES.map((e) => g[e].margin + g[e].reachPast))
@@ -412,9 +401,9 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
     drawMore(now)
     const hot = more?.hot
     const target = activeTarget()
-    if (hot) say(armedMessage(hot))
-    else if (read.armed && target && target.kind !== 'more') say(armedMessage(target))
-    else if (read.armed && target?.kind === 'more') say(more ? 'Move onto a plate in the list' : armedMessage(target))
+    if (hot) say(armedMessage(hot, labels))
+    else if (read.armed && target && target.kind !== 'more') say(armedMessage(target, labels))
+    else if (read.armed && target?.kind === 'more') say(more ? labels.pickFromList : armedMessage(target, labels))
     else say('')
   }
 
@@ -429,13 +418,13 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
     if (more || !geo) return
     const el = htmlEl('div', 'sx-edge-more')
     el.setAttribute('role', 'list')
-    el.setAttribute('aria-label', 'More plates')
+    el.setAttribute('aria-label', labels.morePlates.replace(/^\+\s*/, ''))
     el.setAttribute('data-testid', 'edge-drag-more')
     const rows = list.map((plate) => {
       const row = htmlEl('div', 'sx-edge-more-row')
       row.setAttribute('role', 'listitem')
-      row.dataset['plate'] = String(plate.number)
-      row.append(htmlEl('span', 'sx-edge-more-thumb'), htmlEl('span', 'sx-edge-more-name', `Plate ${plate.number}`))
+      row.dataset['plate'] = plate.id
+      row.append(htmlEl('span', 'sx-edge-more-thumb'), htmlEl('span', 'sx-edge-more-name', plate.label))
       el.appendChild(row)
       return { el: row, plate }
     })
@@ -551,23 +540,24 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
     for (const t of timers) clearTimeout(t)
     timers.clear()
     root.remove()
-    mounted--
+    countOverlay(-1)
   }
   const fadeBands = (): void => {
     bands.setAttribute('data-out', '')
     say('')
   }
 
-  /** The part flies into the plate bar, the bar marks the plate, and then the view follows. */
+  /** The part flies into the plate bar (or fades where it is), the bar marks the plate, and then the view follows. */
   const drop = (from: { x0: number; y0: number; x1: number; y1: number } | null, count: number, then: () => void): void => {
-    const pill = document.querySelector('[data-testid="plate-picker-current"]')?.getBoundingClientRect()
+    const pill = host.dropTarget?.() ?? null
     const r = stage.getBoundingClientRect()
     if (reduced || !from || typeof Element.prototype.animate !== 'function') {
       then()
       remove()
       return
     }
-    const to: P = pill ? [pill.left - r.left + 28, pill.top - r.top + pill.height / 2] : [r.width / 2, r.height - 40]
+    const start0: P = [(from.x0 + from.x1) / 2, (from.y0 + from.y1) / 2]
+    const to: P = pill ? [pill.left - r.left + 28, pill.top - r.top + pill.height / 2] : start0
     const fly = htmlEl('div', 'sx-edge-fly')
     const w = Math.max(16, from.x1 - from.x0)
     const h = Math.max(16, from.y1 - from.y0)
@@ -581,8 +571,9 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
       const t = i / 10
       const x = (1 - t) * (1 - t) * start[0] + 2 * (1 - t) * t * ctrl[0] + t * t * to[0]
       const y = (1 - t) * (1 - t) * start[1] + 2 * (1 - t) * t * ctrl[1] + t * t * to[1]
-      const sc = 1 + (26 / Math.max(w, h) - 1) * (1 - Math.pow(1 - t, 3))
-      frames.push({ transform: `translate(${(x - w / 2).toFixed(1)}px, ${(y - h / 2).toFixed(1)}px) scale(${sc.toFixed(3)})`, opacity: t > 0.82 ? 1 - (t - 0.82) / 0.18 : 1, offset: t })
+      // into the bar it shrinks to a thumbnail; with no bar it stays where it is and fades
+      const sc = pill ? 1 + (26 / Math.max(w, h) - 1) * (1 - Math.pow(1 - t, 3)) : 1 - 0.2 * t
+      frames.push({ transform: `translate(${(x - w / 2).toFixed(1)}px, ${(y - h / 2).toFixed(1)}px) scale(${sc.toFixed(3)})`, opacity: pill ? (t > 0.82 ? 1 - (t - 0.82) / 0.18 : 1) : 1 - t, offset: t })
     }
     fly.animate(frames, { duration: DROP_MS, easing: 'cubic-bezier(.45,.05,.55,.95)', fill: 'forwards' })
     if (pill) {
@@ -602,10 +593,10 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
 
   /** The short release hint, once a session, by where the part was let go. */
   const hint = (at: P): void => {
-    if (hinted) return remove()
-    hinted = true
+    if (hintShown()) return remove()
+    hintShown(true)
     const r = stage.getBoundingClientRect()
-    const el = htmlEl('div', 'sx-edge-hint', 'Drag past the line to move it')
+    const el = htmlEl('div', 'sx-edge-hint', labels.hint)
     el.setAttribute('role', 'status')
     el.setAttribute('data-testid', 'edge-drag-hint')
     root.appendChild(el)
@@ -642,17 +633,40 @@ export function startEdgeSession(o: { view: EdgeView; stage: HTMLElement; bed: {
         remove()
         return 'back'
       }
-      let dest: Destination | null = null
-      if (hot) dest = { plateId: hot.id }
-      else if (armed && target?.kind === 'plate') dest = { plateId: target.plate.id }
+      let dest: EdgeDragDestination | null = null
+      if (hot) dest = { plate: hot.id }
+      else if (armed && target?.kind === 'plate') dest = { plate: target.plate.id }
       else if (armed && target?.kind === 'new') dest = 'new'
       const from = screenBox(e.box)
-      const to = dest ? sendToPlate(e.ids, dest) : null
-      if (to) {
+      if (dest) {
         // the view changes plates under the bands, so they go at once; the part's flight is the motion now
         bands.style.display = 'none'
         const ids = [...e.ids]
-        drop(from, ids.length, () => follow(to, ids))
+        const to = dest
+        let moved: Promise<string | null>
+        try {
+          moved = Promise.resolve(host.move(ids, to)).then((id) => (typeof id === 'string' ? id : to !== 'new' ? to.plate : (host.plates().find((p) => !platesBefore.some((b) => b.id === p.id))?.id ?? null)))
+        } catch (err) {
+          moved = Promise.reject(err)
+        }
+        let landed = false
+        let plateId: string | null = null
+        const show = (): void => {
+          if (!landed || !plateId) return
+          host.onSwitch?.(plateId, ids)
+          if (host.onSwitch) view.setSelection?.(ids)
+        }
+        moved.then(
+          (id) => {
+            plateId = id
+            show()
+          },
+          () => undefined,
+        )
+        drop(from, ids.length, () => {
+          landed = true
+          show()
+        })
         return 'commit'
       }
       // on More plates without a pick the line was reached, so the hint would be wrong

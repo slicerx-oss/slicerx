@@ -2,10 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Plate edge drag, the numbers only: which bed edge a moving footprint is past, whether it is past the commit line,
 // which screen side each bed edge shows on, and which plate each side offers. No DOM and no store, so it is tested
-// on its own and the overlay (session.ts) only draws what this decides.
+// on its own and the overlay (session.ts) only draws what this decides. Part of @slicerx/viewport/edge-drag.
 import { COMMIT_MM } from './reach'
+import { DEFAULT_EDGE_DRAG_LABELS, type EdgeDragLabels } from './labels'
 
 export { COMMIT_MM, COMMIT_PX, commitMarginMm, reachPastLineMm } from './reach'
+export { DEFAULT_EDGE_DRAG_LABELS, type EdgeDragLabels } from './labels'
 
 /** A bed edge in bed coordinates: x- is x = 0, x+ is x = width, y- is the front (y = 0), y+ the back. */
 export type BedEdge = 'x-' | 'x+' | 'y-' | 'y+'
@@ -152,10 +154,11 @@ export function sidesOf(outward: Readonly<Record<BedEdge, readonly [number, numb
   return { 'x-': best[0]!, 'x+': best[1]!, 'y-': best[2]!, 'y+': best[3]! }
 }
 
+/** A plate the host offers: its id, the name a label shows ("Plate 2", or the host's own) and its place in plate order. */
 export interface PlateRef {
   id: string
-  /** The plate's number, from 1, in plate order. */
-  number: number
+  label: string
+  order: number
 }
 
 /** What an edge offers: another plate, a new plate, or (past three other plates) a short list of the rest. */
@@ -166,11 +169,8 @@ export type EdgeTarget = { kind: 'plate'; plate: PlateRef } | { kind: 'new' } | 
  * order, take the left, then the top, then the right. With more than three other plates the left and right take the
  * first two and the top becomes More plates, with the rest in its list. With one plate only the bottom shows.
  */
-export function sideTargets(plates: readonly { id: string }[], active: string): Partial<Record<Side, EdgeTarget>> {
-  const others: PlateRef[] = []
-  plates.forEach((p, i) => {
-    if (p.id !== active) others.push({ id: p.id, number: i + 1 })
-  })
+export function sideTargets(plates: readonly PlateRef[], active: string): Partial<Record<Side, EdgeTarget>> {
+  const others = [...plates].sort((a, b) => a.order - b.order).filter((p) => p.id !== active)
   const out: Partial<Record<Side, EdgeTarget>> = { bottom: { kind: 'new' } }
   const plate = (p: PlateRef | undefined): EdgeTarget | undefined => (p ? { kind: 'plate', plate: p } : undefined)
   if (others.length <= 3) {
@@ -187,18 +187,18 @@ export function sideTargets(plates: readonly { id: string }[], active: string): 
 }
 
 /** The label inside an edge's band. */
-export function targetLabel(t: EdgeTarget): string {
-  if (t.kind === 'plate') return `+ Add to Plate ${t.plate.number}`
-  if (t.kind === 'new') return '+ Add to new plate'
-  return '+ More plates'
+export function targetLabel(t: EdgeTarget, labels: EdgeDragLabels = DEFAULT_EDGE_DRAG_LABELS): string {
+  if (t.kind === 'plate') return labels.addToPlate(t.plate.label)
+  if (t.kind === 'new') return labels.addToNewPlate
+  return labels.morePlates
 }
 
 /** What the live region says while armed. */
-export function armedMessage(t: EdgeTarget | PlateRef): string {
-  if ('id' in t) return `Release to add to Plate ${t.number}`
-  if (t.kind === 'plate') return `Release to add to Plate ${t.plate.number}`
-  if (t.kind === 'new') return 'Release to add to a new plate'
-  return 'Hold to see more plates'
+export function armedMessage(t: EdgeTarget | PlateRef, labels: EdgeDragLabels = DEFAULT_EDGE_DRAG_LABELS): string {
+  if ('id' in t) return labels.releaseToPlate(t.label)
+  if (t.kind === 'plate') return labels.releaseToPlate(t.plate.label)
+  if (t.kind === 'new') return labels.releaseToNewPlate
+  return labels.holdForMore
 }
 
 /** A rectangle on screen, px. */
