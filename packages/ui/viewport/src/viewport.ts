@@ -3242,7 +3242,7 @@ class ViewportImpl implements Viewport {
 
   /** The edge hook's payload for a move it follows. */
   private edgeInfo(t: EdgeTrack): EdgeDragInfo {
-    return { ids: t.ids, box: { min: [...t.box.min], max: [...t.box.max] }, client: [...t.client], pointerType: t.pointerType }
+    return { ids: t.ids, box: { min: [...t.box.min], max: [...t.box.max] }, client: [...t.client], pointerType: t.pointerType, bed: { widthMm: this.stage.bed.widthMm, depthMm: this.stage.bed.depthMm } }
   }
 
   /** Starts the edge hook on a move drag once the pointer has gone a few pixels; null when there is no hook or it declined. */

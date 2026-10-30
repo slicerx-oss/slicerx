@@ -553,6 +553,8 @@ export interface EdgeDragInfo {
   client: [number, number]
   /** 'mouse', 'pen' or 'touch'. */
   pointerType: string
+  /** The bed's size, mm: its edges are x = 0, x = width, y = 0 (the front) and y = depth. */
+  bed: { widthMm: number; depthMm: number }
 }
 
 /**
