@@ -275,8 +275,9 @@ describe('profiles', () => {
     const tier = { enable_support: true, support_type: 'tree(auto)' }
     expect(await supports([])).toEqual(tier)
     expect(await supports(['machine:ultimaker-s5'])).toEqual(tier)
-    // Supports asked for still turn them on
-    expect((await supports(['machine:bambu-a1', 'process:standard'])).enable_support).toBe(true)
+    // The A1's Standard process is the maker's preset, as the app's Standard goal on the A1: no supports
+    expect(await supports(['machine:bambu-a1', 'process:standard'])).toEqual(preset)
+    // Supports asked for still turn them on: the Easy goal, an override, a process file
     expect((await supports(['machine:bambu-a1', 'intent:standard'])).enable_support).toBe(true)
     expect(await supports(['machine:bambu-a1'], {}, { enable_support: true, support_type: 'tree(auto)' })).toEqual(tier)
     const processFile: PresetLayer = { name: 'Supported', section: 'process', values: { enable_support: true }, customGcode: false }
@@ -550,7 +551,8 @@ describe.skipIf(noSx())('with the real sx CLI', { timeout: sxTimeout }, () => {
       return on
     }
     expect(await supported({ profiles: ['machine:bambu-a1'] })).toBe(false)
-    expect(await supported({ profiles: ['machine:bambu-a1', 'process:standard'] })).toBe(true)
+    expect(await supported({ profiles: ['machine:bambu-a1', 'process:standard'] })).toBe(false)
+    expect(await supported({ profiles: ['machine:bambu-a1', 'intent:standard'] })).toBe(true)
     expect(await supported({ profiles: ['machine:bambu-a1'], overrides: { enable_support: true } })).toBe(true)
   })
 
