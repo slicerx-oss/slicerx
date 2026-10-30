@@ -6,7 +6,7 @@
 // first toolsets in that order that did not fit, tool by tool. The toolsets left out are reported. Under the cap every
 // tool goes, in the same order, exactly as before.
 import type { PilotContext } from '@slicerx/contracts'
-import { toolGroupOf } from './surfaces'
+import { onEveryLocalTurn, toolGroupOf, type ToolSurface } from './surfaces'
 import type { PilotTool, Toolset } from './tool'
 
 /**
@@ -85,9 +85,9 @@ export function toolsetOf(tool: SetTool): Toolset {
 const NEEDS: readonly [Toolset, RegExp][] = [
   ['cad', /\b(design|model|part|sketch|extrude|fillet|chamfer|hole|bracket|hook|box|lid|gear|thread|build|make|draw|cad)\w*/i],
   ['settings', /\b(slice|slicing|setting|profile|layer|infill|support|wall|brim|raft|speed|temperature|temp|nozzle|orient|arrange|estimate|strength|strong|quality|filament)\w*/i],
-  ['printers', /\b(print|printer|send|queue|job|spool|ams|camera|pause|resume|cancel|bed|plug)\w*/i],
+  ['printers', /\b(print|printer|send|queue|job|spool|ams|camera|pause|resume|cancel|bed|plug|g-?code)\w*/i],
   ['project', /\b(project|plate|open|file|export|save|stl|3mf|step)\w*/i],
-  ['kb', /\b(why|how|which|recommend|best|troubleshoot|problem|issue|string|warp|clog|look up|source)\w*/i],
+  ['kb', /\b(why|how|which|recommend|best|troubleshoot|problem|issue|string|warp|clog|look up|source|material)\w*/i],
   ['mesh', /\b(mesh|repair|hollow|emboss|cut|split|paint|color|colour)\w*/i],
   ['calibration', /\bcalibrat\w*/i],
   ['fleets', /\b(fleet|farm|schedule|overnight|tonight)\w*/i],
@@ -169,4 +169,18 @@ export function capTools<T extends SetTool>(tools: readonly T[], opts: { cap: nu
   })
   const sent = tools.filter((t) => keep.has(t))
   return { tools: sent, report: { cap, offered: tools.length, sent: sent.length, toolsets: whole, leftOut, partial } }
+}
+
+/**
+ * The tools a local model's turn sends on `surface`, of the `tools` it is offered, in their own order: the surface's
+ * every-turn list (surfaces.ts), the app's own commands, every tool the chat already called, and the tools of each
+ * toolset the turn needs (turnNeeds: its words, the plate's printer, the host's design tools). A core tool that is not
+ * on the list joins no toolset, so a new one stays out until it is named there. A cloud model does not use this.
+ */
+export function localTurnTools<T extends SetTool>(surface: ToolSurface, tools: readonly T[], opts: { needs: ReadonlySet<Toolset>; called: ReadonlySet<string> }): T[] {
+  return tools.filter((t) => {
+    if (onEveryLocalTurn(surface, t.name) || t.command || opts.called.has(t.name)) return true
+    const set = toolsetOf(t)
+    return set !== 'core' && opts.needs.has(set)
+  })
 }

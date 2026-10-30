@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // The tools a model is offered by where mimir runs: a local model gets its surface's own set, a cloud model every
-// tool, and the system prompt never names a tool the model was not given.
+// tool, and the system prompt never names a tool the model was not given. Which of a local model's tools each turn
+// sends is in local-tab.test.ts.
 import type { PilotMachine } from '@slicerx/contracts'
 import { describe, expect, it } from 'vitest'
 import { createEvalEnv } from '../evals/harness'
@@ -21,14 +22,14 @@ const PATHS = [
   { path: 'cloud', provider: 'anthropic' },
 ] as const
 
-async function firstRequest(provider: string, scope: 'full' | 'cad', steps: ScriptStep[] = [{ text: 'ok' }]): Promise<{ req: LlmRequest; registry: string[]; events: { type: string; summary?: string }[] }> {
+async function firstRequest(provider: string, scope: 'full' | 'cad', steps: ScriptStep[] = [{ text: 'ok' }]): Promise<{ req: LlmRequest; registry: string[]; offered: string[]; events: { type: string; summary?: string }[] }> {
   const client = createScriptedClient(steps, { provider })
   const env = createEvalEnv({ client, machine: MACHINE, objects: [], scope })
   const events: { type: string; summary?: string }[] = []
   for await (const e of env.pilot.run('t', 'make a 40 mm cube', { context: { machine: MACHINE } })) events.push(e as { type: string; summary?: string })
   const req = client.requests[0]
   if (!req) throw new Error('no request')
-  return { req, registry: env.pilot.registry().map((t) => t.name), events }
+  return { req, registry: env.pilot.registry().map((t) => t.name), offered: env.pilot.tools().map((t) => t.name), events }
 }
 
 describe('picking the tools by surface', () => {
@@ -52,20 +53,25 @@ describe.each(SURFACES)('the $surface surface ($scope)', ({ scope }) => {
   it('offers a local model everything but make_model, and a cloud model everything', async () => {
     const local = await firstRequest('openai-compatible', scope)
     const cloud = await firstRequest('anthropic', scope)
-    const localNames = local.req.tools.map((t) => t.name)
     const cloudNames = cloud.req.tools.map((t) => t.name)
     expect(cloudNames).toContain('make_model')
     expect(cloudNames).toEqual(cloud.registry)
-    expect(localNames).toContain('text_to_part')
-    expect(localNames).not.toContain('make_model')
-    expect(localNames).toEqual(cloudNames.filter((n) => n !== 'make_model'))
+    expect(cloud.offered).toEqual(cloudNames)
+    expect(local.offered).toContain('text_to_part')
+    expect(local.offered).not.toContain('make_model')
+    expect(local.offered).toEqual(cloudNames.filter((n) => n !== 'make_model'))
+    // a turn sends some of what it is offered (local-tab.test.ts), never make_model
+    const sent = local.req.tools.map((t) => t.name)
+    expect(sent).toContain('text_to_part')
+    expect(sent.filter((n) => !local.offered.includes(n))).toEqual([])
   })
 
   it.each(PATHS)('names in its $path prompt only tools that session has', async ({ provider }) => {
-    const { req, registry } = await firstRequest(provider, scope)
+    const { req, registry, offered: tools } = await firstRequest(provider, scope)
     // every tool any mimir has, so a name the prompt mentions is caught whichever list it was left out of
     const known = new Set([...registry, ...(await firstRequest('anthropic', 'full')).registry])
-    const offered = new Set(req.tools.map((t) => t.name))
+    // the tools the session offers: a local turn may send fewer, and one it names but did not send still runs
+    const offered = new Set(tools)
     const system = req.messages[0]?.content ?? ''
     // only names that cannot be ordinary words ("slice" and "orient" are also prose)
     const named = [...known].filter((n) => /[._]/.test(n) && new RegExp(`(^|[^\\w.])${n.replace(/\./g, '\\.')}(?![\\w])`).test(system))

@@ -117,22 +117,30 @@ describe('the tool cap on OpenAI-style providers', () => {
     expect(sentTools(llm.sent[0]!).length).toBeLessThanOrEqual(OPENAI_MAX_TOOLS)
   })
 
-  for (const kind of ['openai', 'openai-compatible'] as const) {
-    it(`${kind}: sends at most 128 tools, every core tool among them`, async () => {
-      const { pilot, llm } = setup(kind)
-      const events = await say(pilot, 'hello')
-      expect(events.filter((e) => e.type === 'error')).toEqual([])
-      const sent = sentTools(llm.sent[0]!)
-      expect(sent.length).toBeLessThanOrEqual(128)
-      for (let i = 0; i < 10; i++) expect(sent).toContain(`core.t${i}`)
-      // whole toolsets in priority order: core, cad, settings, printers fill 120; fleets and theme do not fit whole,
-      // and the 8 left go to fleets, the first of them
-      expect(sent).toHaveLength(128)
-      expect(sent.filter((n) => n.startsWith('fleet.'))).toEqual(['fleet.t0', 'fleet.t1', 'fleet.t2', 'fleet.t3', 'fleet.t4', 'fleet.t5', 'fleet.t6', 'fleet.t7'])
-      expect(sent.some((n) => n.startsWith('theme.'))).toBe(false)
-      expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'printers'], leftOut: ['fleets', 'theme'], partial: [{ toolset: 'fleets', sent: 8, of: 15 }] })
-    })
-  }
+  it('openai-compatible: a local turn that calls for every toolset still sends at most 128 tools', async () => {
+    const { pilot, llm } = setup('openai-compatible')
+    const events = await say(pilot, 'Design a part, slice it and print it on the farm in dark mode')
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    const sent = sentTools(llm.sent[0]!)
+    expect(sent).toHaveLength(128)
+    // a local model gets a core tool only when the surface lists it for every turn (surfaces.ts); these are not listed
+    expect(sent.some((n) => n.startsWith('core.'))).toBe(false)
+  })
+
+  it('openai: sends at most 128 tools, every core tool among them', async () => {
+    const { pilot, llm } = setup('openai')
+    const events = await say(pilot, 'hello')
+    expect(events.filter((e) => e.type === 'error')).toEqual([])
+    const sent = sentTools(llm.sent[0]!)
+    expect(sent.length).toBeLessThanOrEqual(128)
+    for (let i = 0; i < 10; i++) expect(sent).toContain(`core.t${i}`)
+    // whole toolsets in priority order: core, cad, settings, printers fill 120; fleets and theme do not fit whole,
+    // and the 8 left go to fleets, the first of them
+    expect(sent).toHaveLength(128)
+    expect(sent.filter((n) => n.startsWith('fleet.'))).toEqual(['fleet.t0', 'fleet.t1', 'fleet.t2', 'fleet.t3', 'fleet.t4', 'fleet.t5', 'fleet.t6', 'fleet.t7'])
+    expect(sent.some((n) => n.startsWith('theme.'))).toBe(false)
+    expect(pilot.toolCap('s1')).toEqual({ cap: 128, offered: 150, sent: 128, toolsets: ['core', 'cad', 'settings', 'printers'], leftOut: ['fleets', 'theme'], partial: [{ toolset: 'fleets', sent: 8, of: 15 }] })
+  })
 
   it('keeps a tool the chat already called, even from a toolset that is left out', async () => {
     const { pilot, llm } = setup('openai', [{ call: 'theme.t3' }, { text: 'Set.' }, { text: 'Done.' }])
