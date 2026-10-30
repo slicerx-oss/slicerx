@@ -5,6 +5,7 @@
 // its first layer and its print reach past it (print-margins.ts). Pure, so either host runs it next to its own engine
 // call: the app's geometry worker, the server's sx-geom.
 import type { SettingValue } from '@slicerx/contracts'
+import { MARGIN_SAFETY_MM } from './margin-safety'
 import { marginFlag as flag, marginNumber as num, marginText as text, objectPrintMargins, settingNumber, skirtSettings, type FirstLayerShape, type PrintSize } from './print-margins'
 
 type Pt = [number, number]
@@ -16,8 +17,7 @@ export interface Rect {
   h: number
 }
 
-/** Room kept between two printed things beyond what is computed, mm: the engine rounds a brim up to whole lines. */
-export const MARGIN_SAFETY_MM = 1
+export { MARGIN_SAFETY_MM }
 
 // The printer's `bed_exclude_area` as polygons. Profiles store it as a list of points, either as number pairs
 // (resolved profiles) or as "XxY" text (the profile files' own form, and what a person types in printer settings). Up
