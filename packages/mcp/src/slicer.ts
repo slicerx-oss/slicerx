@@ -104,6 +104,34 @@ export interface SlicerBackend {
   reviewScript?(input: ScriptReviewInput): Promise<ScriptReview>
   reviewScripts?(inputs: ScriptReviewInput[]): Promise<ScriptReview[]>
   prepareScriptReplacement?(input: ScriptReplacementInput): Promise<ScriptReplacement>
+  remapToolheads?(input: ToolheadRemapInput): Promise<ToolheadRemap>
+}
+
+/** A sliced U1 file to remap offline: logical tool to physical toolhead, as `sx remap-toolheads --map` takes it. */
+export interface ToolheadRemapInput {
+  input: string
+  output: string
+  map: Record<number, number>
+}
+
+/** What `sx remap-toolheads --json` wrote: the copy, its SHA-256 and how many references changed. */
+export interface ToolheadRemap {
+  version: 1
+  output: string
+  sha256: string
+  sourceSha256: string
+  bytes: number
+  map: Record<string, number>
+  toolsUsed: number[]
+  unusedMapTools: number[]
+  counts: {
+    changedLines: number
+    toolChanges: number
+    temperatures: number
+    preextrudeIndexes: number
+    flowCalibrateIndexes: number
+    extruderNames: number
+  }
 }
 
 export function formatDuration(s: number): string {

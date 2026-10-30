@@ -22,6 +22,7 @@ export const ERROR_CODES = [
   'preflight_blocked',
   'project_gcode_review',
   'script_replacement_stale',
+  'remap_refused',
   'printer_needed',
   'project_settings_unused',
   'sequence_clearance',
