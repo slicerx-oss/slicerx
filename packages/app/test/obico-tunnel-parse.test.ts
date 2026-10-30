@@ -55,7 +55,7 @@ describe('parseTunnelEndpoint', () => {
     for (const [problem, text] of Object.entries(TUNNEL_PASTE_TEXT)) {
       expect(text, problem).toMatch(/^[A-Z].*\.$/)
       expect(text.length, problem).toBeLessThanOrEqual(120)
-      expect(text, problem).not.toMatch(/[–—]/)
+      expect(text, problem).not.toMatch(/[\u2013\u2014]/)
     }
   })
 })

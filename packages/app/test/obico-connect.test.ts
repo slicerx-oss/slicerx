@@ -148,7 +148,7 @@ describe('tunnel problems in plain words', () => {
       expect(sentences.length, p).toBeGreaterThanOrEqual(1)
       expect(sentences.length, p).toBeLessThanOrEqual(2)
       expect(text.length, p).toBeLessThanOrEqual(110)
-      expect(text, p).not.toMatch(/[–—_]|\b48[123]\b|401/)
+      expect(text, p).not.toMatch(/[\u2013\u2014_]|\b48[123]\b|401/)
     }
   })
 
