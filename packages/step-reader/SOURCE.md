@@ -43,8 +43,9 @@ replacement needs; `loadStepReader({ wasm })` also takes another file's URL.
 
 ## Source offer (LGPL-2.1, sections 4 and 6)
 
-Everything that ships this reader in object code (the npm package, the SlicerX desktop app and the hosted
-web app) offers its complete corresponding source from the same place:
+Everything that ships this reader in object code (the npm package, the SlicerX desktop app, whose one
+copy sits in the `mcp/step-reader` folder beside its bundled MCP server and also serves its window, and the
+hosted web app) offers its complete corresponding source from the same place:
 
 - `occt-import-js-source-0.0.23.tar.gz`: occt-import-js and OCCT at the commits above, the patch in
   `patches/`, `build.sh`, `source-archive.sh`, this file and the license texts, without git metadata.
