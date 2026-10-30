@@ -1427,7 +1427,7 @@ class ViewportImpl implements Viewport {
     const bedWas = new Vector3().setFromMatrixPosition(this.stage.bedMatrix())
     this.stage.setBed(plate.bed, plate.surfaceLabel)
     // a kept camera stays on the same spot of a bed of another size (another printer), so the parts stay in view
-    if (opts.keepCamera) this.rig.followBed(new Vector3().setFromMatrixPosition(this.stage.bedMatrix()).sub(bedWas))
+    if (opts.keepCamera || this.cameraHeld) this.rig.followBed(new Vector3().setFromMatrixPosition(this.stage.bedMatrix()).sub(bedWas))
     this.stage.setNozzleZones(plate.zones ?? [])
     if (plate.excluded) this.stage.setExcludedAreas(plate.excluded)
     this.hoverFace(null)
@@ -3123,6 +3123,7 @@ class ViewportImpl implements Viewport {
   }
 
   view(preset: ViewPreset, opts: { animate?: boolean; durationMs?: number } = {}): void {
+    if (this.cameraHeld) return
     const bed = this.stage.bed
     const pose = this.rig.presetPose(preset, this.framingBox(), Math.max(bed.widthMm, bed.depthMm))
     this.rig.preset = preset
@@ -3141,6 +3142,7 @@ class ViewportImpl implements Viewport {
 
   /** Frames the selection (every object with none) from the current angle, with room around it. */
   frameSelection(opts: { animate?: boolean } = {}): void {
+    if (this.cameraHeld) return
     const box = this.selectionBox()
     if (box.isEmpty()) return
     this.rig.preset = null
@@ -3152,12 +3154,41 @@ class ViewportImpl implements Viewport {
    * Frames the selection as frameSelection does, but only when some of it is off screen or under an overlay; a
    * selection already in view leaves the camera where it is. Answers whether the camera moved.
    */
-  showSelection(opts: { animate?: boolean } = {}): boolean {
-    if (this.selection.length === 0) return false
+  showSelection(opts: { animate?: boolean; keepZoom?: boolean } = {}): boolean {
+    if (this.selection.length === 0 || this.cameraHeld) return false
     const box = this.selectionBox()
-    if (box.isEmpty() || this.rig.inView(box)) return false
-    this.frameSelection(opts)
+    if (box.isEmpty()) return false
+    // with keepZoom, judged where the camera is going when it is on its way somewhere
+    const m = opts.keepZoom ? this.rig.move : null
+    const pos = (m?.toPos ?? this.camera.position).clone()
+    const target = (m?.toTarget ?? this.controls.target).clone()
+    if (this.inViewFrom(pos, target, box)) return false
+    if (!opts.keepZoom) {
+      this.frameSelection(opts)
+      return true
+    }
+    // the same distance and angle, moved sideways to look at the selection
+    const d = box.getCenter(new Vector3()).sub(target)
+    this.rig.preset = null
+    this.rig.go({ pos: pos.add(d), target: target.add(d) }, opts.animate ?? true, performance.now())
+    this.invalidate()
     return true
+  }
+
+  /** Whether `box` would be in view with the camera at `pos` looking at `target`. */
+  private inViewFrom(pos: Vector3, target: Vector3, box: Box3): boolean {
+    const cam = this.camera
+    const was = { pos: cam.position.clone(), q: cam.quaternion.clone() }
+    cam.position.copy(pos)
+    cam.lookAt(target)
+    cam.updateMatrixWorld(true)
+    try {
+      return this.rig.inView(box)
+    } finally {
+      cam.position.copy(was.pos)
+      cam.quaternion.copy(was.q)
+      cam.updateMatrixWorld(true)
+    }
   }
 
   /** The world box of the selected objects, of every object with none selected. */
@@ -3190,22 +3221,45 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
-  setDragZoom(scale: number | null, durationMs = 240): void {
+  setDragZoom(scale: number | null, durationMs = 240, shift?: readonly [number, number]): void {
     const now = performance.now()
     if (scale === null) {
       const from = this.dragZoomFrom
       this.dragZoomFrom = null
       if (from) this.rig.go(from, true, now, durationMs)
     } else {
-      if (!(scale > 0) || scale >= 1) return
+      if (!(scale > 0) || scale > 1 || (scale === 1 && !shift)) return
       // the view the drag left: where the camera is going if it was on its way somewhere, else where it is
       const m = this.rig.move
       this.dragZoomFrom ??= m ? { pos: m.toPos.clone(), target: m.toTarget.clone() } : { pos: this.camera.position.clone(), target: this.controls.target.clone() }
       const t = this.dragZoomFrom.target
-      const off = this.dragZoomFrom.pos.clone().sub(t)
-      this.rig.go({ pos: t.clone().add(off.multiplyScalar(1 / scale)), target: t.clone() }, true, now, durationMs)
+      const off = this.dragZoomFrom.pos.clone().sub(t).multiplyScalar(1 / scale)
+      const pose = { pos: t.clone().add(off), target: t.clone() }
+      const [sx, sy] = shift ?? [0, 0]
+      if (sx || sy) {
+        // a slide of the view by a screen distance at the eased out scale, as a pan by that much would (rig.panBy)
+        const perPx = (2 * off.length() * Math.tan((this.camera.fov * Math.PI) / 360)) / Math.max(1, this.canvas.clientHeight)
+        const right = new Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0)
+        const up = new Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1)
+        const d = right.multiplyScalar(-sx * perPx).addScaledVector(up, sy * perPx)
+        pose.pos.add(d)
+        pose.target.add(d)
+      }
+      this.rig.go(pose, true, now, durationMs)
     }
     this.invalidate()
+  }
+
+  /** Reframes the camera would make while held (keepCamera): a fresh plate or a selection keeps the framing. */
+  private cameraHeld = 0
+
+  keepCamera<T>(change: () => T): T {
+    this.cameraHeld++
+    try {
+      return change()
+    } finally {
+      this.cameraHeld--
+    }
   }
 
   setEdgeDrag(hook: EdgeDragHook | null): void {

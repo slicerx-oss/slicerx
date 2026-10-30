@@ -30,7 +30,8 @@ What to map:
 
 - `plates()` and `activePlate()`: your plate list in plate order, with the name each edge should show, and the plate on screen.
 - `move(ids, dest)`: your own move to plate action. It places the parts, keeps the move as one undo step, and for `'new'` adds the plate first. Return the plate id (or a promise of it).
-- `dropTarget()`: the rect of your plate bar or plate picker, so the part flies there on a drop. Leave it out and the part fades in place.
+- `dropTarget()`: the rect of your plate bar or plate picker, so the part flies there on a drop. Return null where no plate bar shows (a phone layout): the plate then shows at once in the same framing, and a short note says where the part went.
+- `notify(message, plateId)`: show that note ("Moved to Plate 4") as your own toast. Leave it out and the overlay shows it.
 - `obstacles()`: your toolbars and panels over the view, so the view zooms out far enough to give each edge room clear of them.
 - `onSwitch(plateId, ids)`: show that plate. The view then selects the parts.
 - `canMove(ids)`: return false for anything that must stay, such as a prime tower.

@@ -334,10 +334,11 @@ describe('the overlay while idle and while a part moves', () => {
     expect(live.textContent).toBe('Release to add to Plate 2')
     expect(hook().end({ ...info(-29, 30, -9, 50), onBed: false })).toBe('commit')
     expect(moves).toEqual([[['a'], { plate: 'plate-2' }]])
-    // reduced motion: dropped at once, then the host shows Plate 2 with the part selected
+    // dropped at once, then the host shows Plate 2 with the part selected; with no plate bar a note says where it went
     await new Promise((r) => setTimeout(r, 0))
     expect(switched).toEqual([['plate-2', ['a']]])
-    expect(stage.querySelector('.sx-edge-drag')).toBeNull()
+    expect(stage.querySelector('[data-testid="edge-drag-note"]')!.textContent).toBe('Moved to Plate 2')
+    expect(stage.querySelector('.sx-edge-bands')!.getAttribute('style')).toContain('display: none')
   })
 
   it('a release short of the line goes back with a one-time hint; Esc calls the drag off', async () => {

@@ -79,7 +79,8 @@ The host owns the plates. The gesture never changes them; it asks.
 | `plates()` | The plates in plate order, each `{ id, label, order }`. `label` is what the edge shows, for example "Plate 2". |
 | `activePlate()` | The id of the plate the view shows now. |
 | `move(objectIds, dest)` | Moves the objects off the shown plate. `dest` is `{ plate: id }` or `'new'`, for a new plate the host adds after the others. The host places them, makes the move one undo step (a new plate and the move into it undo together) and may return the id of the plate they went to. It may return a promise. |
-| `dropTarget()` | Optional. The rect of the plate bar or plate picker, in client pixels. On a drop the part flies there and the bar gets a ring and a `+N` badge. `null` or no function fades the part in place. |
+| `dropTarget()` | Optional. The rect of the plate bar or plate picker, in client pixels. On a drop the part flies there and the bar gets a ring and a `+N` badge. With `null` or no function (a phone layout with no plate bar, say) there is no flight: the plate shows at once, the view keeps its zoom and angle (sliding sideways only if the part landed out of sight), and a short note says where the part went. |
+| `notify(message, plateId)` | Optional. Shows that note ("Moved to Plate 4") as the host's own toast. Without it the overlay shows the note for a moment. |
 | `obstacles()` | Optional. Rects of the host's toolbars and panels over the view. When a drag starts the view eases out until every offered edge has room for the part inside what is left. |
 | `onSwitch(plateId, objectIds)` | Optional. Called after a drop to show the plate the objects went to; the view then selects them. Without it the view stays on its plate. |
 | `canMove(objectIds)` | Optional. `false` keeps that move on the bed, for example for a prime tower. |
@@ -87,7 +88,9 @@ The host owns the plates. The gesture never changes them; it asks.
 | `theme` | Optional. Colors by key, below. |
 | `labels` | Optional. Any of the strings, below. |
 
-The view needs `setEdgeDrag`, `screenOf`, `cancelDrag`, `setDragZoom` and `placeReadout`, which `createViewport` returns. `enableEdgeDrag` does nothing on a view without `setEdgeDrag` and `screenOf`.
+On a touch drag the view eases out, and once the part heads for a side that still lacks room (a phone's narrow view), it slides away from that side, so the part arms fully in sight with the finger clear of the screen's edge, and the drag past the line stops where the part would leave the view.
+
+The view needs `setEdgeDrag`, `screenOf`, `cancelDrag`, `setDragZoom` and `placeReadout`, plus `keepCamera` and `showSelection` for a drop with no drop target, all of which `createViewport` returns. `enableEdgeDrag` does nothing on a view without `setEdgeDrag` and `screenOf`.
 
 ### Theming
 
@@ -109,7 +112,7 @@ Every color is a CSS custom property. Set them on `:root` or any element around 
 | `badgeText` | `--sx-edge-badge-text` | The badge text | `--ink-0` |
 | `menu` | `--sx-edge-menu` | The More plates list | `--surface-menu` |
 | `menuText` | `--sx-edge-menu-text` | The list text | `--fg` |
-| `hint` | `--sx-edge-hint` | The short release hint | `--surface-float` |
+| `hint` | `--sx-edge-hint` | The short release hint and the drop note | `--surface-float` |
 | `hintText` | `--sx-edge-hint-text` | The hint text | `--fg` |
 
 `EDGE_DRAG_PROPERTIES` maps each key to its property.
@@ -136,6 +139,7 @@ Pass any of these in `labels`; the rest stay English. `DEFAULT_EDGE_DRAG_LABELS`
 | `releaseToNewPlate` | `Release to add to a new plate` | Live region, armed on the new plate edge |
 | `pickFromList` | `Move onto a plate in the list` | Live region, More plates list open |
 | `holdForMore` | `Hold to see more plates` | Live region, waiting on More plates |
+| `movedToPlate(plate)` | `Moved to Plate 4` | The note after a drop with no drop target |
 
 ### Accessibility
 

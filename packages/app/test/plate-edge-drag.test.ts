@@ -118,6 +118,10 @@ describe('the app as the edge drag host', () => {
     // a plate that is gone moves nothing, and the view is told to put the part back
     expect(host.move(['b'], { plate: 'nope' })).toBeUndefined()
     expect(putBack).toBe(1)
+    // no plate picker on screen (Model on a phone): no drop target, and a toast says where the part went
+    expect(host.dropTarget?.()).toBeNull()
+    host.notify?.('Moved to Plate 2', 'plate-2')
+    expect(get().toast).toMatchObject({ text: 'Moved to Plate 2', tone: 'ok' })
     h.dispose()
   })
 })
