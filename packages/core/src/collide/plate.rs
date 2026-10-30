@@ -80,6 +80,61 @@ struct Seg {
     index: u32,
 }
 
+/// A travel the G-code writer wrote into keep-out zone `zone` (its place in [`zones`]): on plate layer `layer`, before
+/// the layer's extrusion segment `segment` (as the preview counts them), `share` of the way through the layer, by the
+/// object (or the prime tower, after the objects) `owner`, with the nozzle at `at` (mm) inside the zone.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct WrittenTravel {
+    pub layer: u32,
+    pub segment: u32,
+    pub share: f32,
+    pub owner: u32,
+    pub zone: u32,
+    pub at: [f32; 3],
+}
+
+/// Adds the travels the G-code writer wrote into a keep-out zone to `hits`, as [`Kind::KeepOut`] hits of the object and
+/// zone, for each pair [`check`] did not already report. [`check`] reads the paths before they are written and takes a
+/// travel the router can take round a zone as clear; this reads what was written, so a travel written straight
+/// through a zone anyway is still reported. `objects` is the plate's object count.
+pub(crate) fn add_written_travels(hits: &mut Hits, objects: u32, travels: &[WrittenTravel]) {
+    let reported: Vec<(u32, u32)> = hits
+        .0
+        .iter()
+        .filter(|h| h.kind == Kind::KeepOut && h.part == Part::Nozzle && h.severity == Severity::Hit)
+        .map(|h| (h.mover, h.obstacle))
+        .collect();
+    for t in travels {
+        let obstacle = objects.saturating_add(1).saturating_add(t.zone);
+        if reported.contains(&(t.owner, obstacle)) {
+            continue;
+        }
+        let m = Moment {
+            layer: t.layer,
+            segment: t.segment,
+            share: t.share,
+            at: t.at,
+            point: t.at,
+            change: None,
+        };
+        hits.add(Hit {
+            kind: Kind::KeepOut,
+            severity: Severity::Hit,
+            part: Part::Nozzle,
+            mover: t.owner,
+            obstacle,
+            first: m,
+            worst: m,
+            depth: 0.0,
+            push: 0.0,
+            last_layer: t.layer,
+            moves: 1,
+            near: f32::MAX,
+            contact: Some([t.at; 2]),
+        });
+    }
+}
+
 /// The crossings and keep-out moves of `out`'s layers. Owners are the plate's objects (`out.objects`), then the prime
 /// tower; zone `k` is obstacle `objects + 1 + k`. `crossings` is off for a plate printed by object, whose objects do not
 /// share layers. A travel meets a zone when it runs into it or passes within `clearance` of it (the nozzle's width),
@@ -851,6 +906,45 @@ mod tests {
         let zone = zone_box([70.0, 80.0], [35.0, 45.0]);
         assert!(check(&two_walls(), &zone, false, 0.4, Some(&router)).is_empty());
         assert_eq!(check(&two_walls(), &zone, false, 0.4, None).0.len(), 1);
+    }
+
+    #[test]
+    fn a_travel_written_through_a_zone_the_router_goes_round_is_reported() {
+        let cfg = crate::config::PrintConfig::from_value(&serde_json::json!({
+            "bed_exclude_area": [[70, 35], [80, 35], [80, 45], [70, 45]],
+            "printable_area": [[0, 0], [256, 0], [256, 256], [0, 256]],
+            "nozzle_diameter": [0.4],
+        }))
+        .unwrap();
+        let router = crate::zoneroute::Router::of(&cfg).unwrap();
+        let zone = zone_box([70.0, 80.0], [35.0, 45.0]);
+        // The paths' check takes the travel from a to b as routed round the zone: no hit.
+        let mut hits = check(&two_walls(), &zone, false, 0.4, Some(&router));
+        assert!(hits.is_empty(), "{hits:?}");
+        // Written straight through it anyway, it is reported, for the object it leaves and the zone (obstacle 3).
+        let through = WrittenTravel {
+            layer: 0,
+            segment: 4,
+            share: 0.5,
+            owner: 0,
+            zone: 0,
+            at: [75.0, 40.0, 0.2],
+        };
+        add_written_travels(&mut hits, 2, std::slice::from_ref(&through));
+        assert_eq!(
+            hits.0
+                .iter()
+                .map(|h| (h.kind, h.severity, h.mover, h.obstacle, h.moves))
+                .collect::<Vec<_>>(),
+            [(Kind::KeepOut, Severity::Hit, 0, 3, 1)]
+        );
+        let p = hits.0[0].first.point;
+        assert!((p[0] - 75.0).abs() < 1e-6 && (p[1] - 40.0).abs() < 1e-6, "{p:?}");
+        // A pair the paths' check already reported keeps its record as it was.
+        let mut reported = check(&two_walls(), &zone, false, 0.4, None);
+        let before = reported.clone();
+        add_written_travels(&mut reported, 2, &[through]);
+        assert_eq!(reported, before);
     }
 
     #[test]
