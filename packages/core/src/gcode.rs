@@ -991,6 +991,9 @@ pub(crate) struct ChangeClock {
     map: Vec<usize>,
     extruder: Option<usize>,
     filament_of: Vec<Option<usize>>,
+    /// No map on a printer with one tool per filament: filament `n` is tool `n`, also when the settings list one
+    /// nozzle for every tool.
+    per_filament: bool,
     unloaded: bool,
     switch: f64,
     load: f64,
@@ -1030,6 +1033,7 @@ impl ChangeClock {
             None => c.raw_number("machine_switch_extruder_time", 0.0),
         };
         Self {
+            per_filament: map.is_empty() && crate::nozzles::tool_per_filament(c),
             map,
             extruder: None,
             filament_of: vec![None; nozzles.max(1)],
@@ -1053,6 +1057,7 @@ impl ChangeClock {
             }
         }
         let e = self.extruder_of(f);
+        self.hold(e);
         if let Some(s) = self.filament_of.get_mut(e) {
             *s = Some(f);
         }
@@ -1060,9 +1065,19 @@ impl ChangeClock {
         self.unloaded = false;
     }
 
+    /// Room for tool `e` (0-based) in the state, on a printer with one tool per filament.
+    fn hold(&mut self, e: usize) {
+        if self.filament_of.len() <= e {
+            self.filament_of.resize(e + 1, None);
+        }
+    }
+
     /// The extruder (0-based) that prints filament `f` (0-based): its `filament_map` entry, else
     /// one extruder per filament on a tool changer, else the one nozzle.
     fn extruder_of(&self, f: usize) -> usize {
+        if self.per_filament {
+            return f;
+        }
         let n = self.filament_of.len();
         self.map
             .get(f)
@@ -1074,6 +1089,7 @@ impl ChangeClock {
     /// Seconds the firmware spends switching to filament `next` (0-based), and the new state.
     pub(crate) fn change(&mut self, next: usize) -> f64 {
         let e = self.extruder_of(next);
+        self.hold(e);
         let prev = self.extruder;
         let held = prev.and_then(|p| self.filament_of.get(p).copied().flatten());
         if held == Some(next) {
@@ -1157,7 +1173,7 @@ fn tool_change_time(
 ) -> f64 {
     let fixed = fixed.unwrap_or_else(|| {
         let mut clock = ChangeClock::new(c);
-        if clock.filament_of.len() > 1 {
+        if clock.filament_of.len() > 1 || clock.per_filament {
             clock.switch
         } else {
             clock.change(0);
@@ -6341,6 +6357,16 @@ mod tests {
             near(tool_change_time(&c, None, b"", None, 0.0), 5.0),
             "the stateless fallback is the switch"
         );
+        // The same U1 with one nozzle listed for all four tools, as its settings give it.
+        c.raw.insert("nozzle_diameter".into(), serde_json::json!([0.4]));
+        c.raw
+            .insert("single_extruder_multi_material".into(), serde_json::json!(false));
+        let mut k = ChangeClock::new(&c);
+        assert!(near(k.change(0), 0.0));
+        assert!(near(k.change(3), 5.0));
+        assert!(near(k.change(1), 5.0));
+        assert!(near(k.change(1), 0.0), "already there");
+        assert!(near(tool_change_time(&c, None, b"", None, 0.0), 5.0));
         // One nozzle with an AMS: unload and load, the first unload free.
         let mut c = PrintConfig::default();
         c.raw

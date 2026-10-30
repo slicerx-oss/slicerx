@@ -52,6 +52,13 @@ pub(crate) fn shared(cfg: &PrintConfig) -> bool {
         && crate::tower::flag_or(cfg, "single_extruder_multi_material", true)
 }
 
+/// A printer with one tool per filament, no extruder shared by filaments (`single_extruder_multi_material`
+/// off: the Snapmaker U1, the Prusa XL, the Snapmaker J1 and Artisan): without a `filament_map`, filament `n`
+/// prints on tool `n`, whether the settings list one nozzle for every tool or one per tool.
+pub(crate) fn tool_per_filament(cfg: &PrintConfig) -> bool {
+    !crate::tower::flag_or(cfg, "single_extruder_multi_material", true)
+}
+
 /// The printer's extruders (`nozzle_diameter` entries).
 pub(crate) fn extruders(cfg: &PrintConfig) -> usize {
     match cfg.raw.get("nozzle_diameter") {
