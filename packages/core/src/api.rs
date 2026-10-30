@@ -517,7 +517,8 @@ pub struct RequestOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_z: Option<ResumeZ>,
     /// G-code at the start of layers: a pause, a color change or the person's own
-    /// commands. `kind` is `pause`, `color_change` or `custom` (then `gcode`).
+    /// commands. `kind` is `pause`, `color_change` or `custom` (then `gcode`). A color
+    /// change writes the printer's pause, so the filament is swapped by hand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layer_gcode: Option<Vec<LayerGcodeSpec>>,
     /// Tool changes at heights: from each one's layer up, the plate prints in its filament, through the printer's
@@ -1957,7 +1958,8 @@ fn emit_shard(
 /// Layer G-code (a request's `layerGcode`, or the marks [`load_3mf_layer_gcode`] reads from a project) on the
 /// session's layers, as [`crate::EmitOptions::layer_gcode`] takes it. An entry by height goes on the first layer whose
 /// top reaches it (the last layer when none does), and of several by height on one layer the last one stays, as a
-/// layer holds one mark; entries by layer index are kept as given and come first.
+/// layer holds one mark; entries by layer index are kept as given and come first. On a plate printed by object, a
+/// pause or color change by height goes on each object's first layer that reaches it, so every object stops there.
 ///
 /// # Errors
 /// [`Error::Config`] for an entry with neither a layer nor a height, or with a negative height.
@@ -1974,6 +1976,14 @@ pub fn layer_gcode(
     } else {
         Vec::new()
     };
+    // Where each object's layers start on a plate printed by object: the next object starts from the bottom again.
+    let objects: Vec<usize> = std::iter::once(0)
+        .chain(tops.windows(2).enumerate().filter_map(|(i, w)| match w {
+            [below, top] if top < below => Some(i + 1),
+            _ => None,
+        }))
+        .chain(std::iter::once(tops.len()))
+        .collect();
     let mut out = Vec::with_capacity(specs.len());
     let mut by_height: BTreeMap<u32, crate::gcode::LayerGcode> = BTreeMap::new();
     for (i, g) in specs.iter().enumerate() {
@@ -1986,14 +1996,25 @@ pub fn layer_gcode(
             (Some(l), None) => out.push(make(l)),
             (None, Some(z)) if z.is_finite() && z >= 0.0 => {
                 #[allow(clippy::cast_possible_truncation, reason = "layer tops are f32")]
-                let at = tops
-                    .iter()
-                    .position(|&t| t >= (z - 1e-4) as f32)
-                    .unwrap_or(tops.len().saturating_sub(1));
-                by_height.insert(
-                    u32::try_from(at).unwrap_or(u32::MAX),
-                    make(u32::try_from(at).unwrap_or(u32::MAX)),
-                );
+                let reaches = |&t: &f32| t >= (z - 1e-4) as f32;
+                let mut at: Vec<usize> = if matches!(g.kind.as_str(), "pause" | "color_change") {
+                    objects
+                        .windows(2)
+                        .filter_map(|w| match w {
+                            [from, to] => tops.get(*from..*to)?.iter().position(reaches).map(|i| from + i),
+                            _ => None,
+                        })
+                        .collect()
+                } else {
+                    tops.iter().position(reaches).into_iter().collect()
+                };
+                if at.is_empty() {
+                    at.push(tops.len().saturating_sub(1));
+                }
+                for at in at {
+                    let at = u32::try_from(at).unwrap_or(u32::MAX);
+                    by_height.insert(at, make(at));
+                }
             }
             (None, Some(_)) => return Err(bad(i, "needs a zMm of 0 or more")),
             _ => return Err(bad(i, "needs one of layer and zMm")),
@@ -2573,7 +2594,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
         "shards": { "type": "integer", "minimum": 1 },
         "emitGcode": { "type": "boolean" },
         "emitPreview": { "type": "boolean" },
-        "layerGcode": { "type": "array", "items": { "type": "object", "required": ["kind"], "oneOf": [{ "required": ["layer"] }, { "required": ["zMm"] }], "properties": { "layer": { "type": "integer", "minimum": 0 }, "zMm": { "type": "number", "minimum": 0, "description": "Placed on the first layer whose top reaches this height" }, "kind": { "enum": ["pause", "color_change", "custom"] }, "gcode": { "type": "string" } } }, "description": "G-code at the start of layers; pause and color_change use the profile's pause and color change G-code" },
+        "layerGcode": { "type": "array", "items": { "type": "object", "required": ["kind"], "oneOf": [{ "required": ["layer"] }, { "required": ["zMm"] }], "properties": { "layer": { "type": "integer", "minimum": 0 }, "zMm": { "type": "number", "minimum": 0, "description": "Placed on the first layer whose top reaches this height" }, "kind": { "enum": ["pause", "color_change", "custom"] }, "gcode": { "type": "string" } } }, "description": "G-code at the start of layers; pause and color_change both write the profile's pause G-code (a color change is a filament swap by hand), on each object at that height when printed by object" },
         "toolChanges": { "type": "array", "items": { "type": "object", "required": ["filament"], "oneOf": [{ "required": ["layer"] }, { "required": ["zMm"] }], "properties": { "layer": { "type": "integer", "minimum": 0 }, "zMm": { "type": "number", "minimum": 0, "description": "The change happens at the start of the first layer whose top reaches this height" }, "filament": { "type": "integer", "minimum": 1, "maximum": 64 } } }, "description": "Tool changes at heights through the printer's change G-code, on a plate that prints one filament by layer; skipped with a tool_change_skipped warning otherwise" },
         "resumeZ": { "type": "object", "required": ["mode", "zMm"], "properties": { "mode": { "const": "declare" }, "zMm": { "type": "number", "minimum": 0 } }, "description": "With resumeFromLayer: write G92 Z after homing X and Y; the nozzle must be at zMm by hand" },
         "resumeFromLayer": { "type": "integer", "minimum": 0, "description": "Write G-code only from this layer (0-based), after a resume start: heat, home X and Y not Z, no purge" },

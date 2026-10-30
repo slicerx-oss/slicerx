@@ -15,6 +15,7 @@ Keep a Changelog format; semver.
 
 ### Changed
 
+- A color change layer mark writes the printer's pause G-code (`M400 U1` on a Bambu Lab printer) instead of `M600`, so the print stops for a filament swap by hand, and on a plate printed by object a pause or color change by height stops each object.
 - The worker pool starts one worker and adds the rest (up to `workers`) when a slice has shards for them. A new worker loads the meshes already in the pool before it takes a shard, and the slice starts on the workers already running, so page load no longer starts about ten WASM instances. G-code is identical at every shard count.
 
 ### Fixed

@@ -166,8 +166,8 @@ fn custom_error(reason: String) -> crate::error::Error {
 pub struct LayerGcode {
     /// The layer it is written at the start of, 0-based.
     pub layer: u32,
-    /// `pause` (the profile's pause G-code), `color_change` (its color change G-code)
-    /// or `custom` (the text in `gcode`).
+    /// `pause` (the profile's pause G-code), `color_change` (the same pause, so the
+    /// filament is swapped by hand) or `custom` (the text in `gcode`).
     pub kind: String,
     pub gcode: Option<String>,
 }
@@ -2371,7 +2371,9 @@ fn emit_layer(
         && lift_ok
         && lift_allowed(&rc, l.index == 0, last_fill)
         && l.lift_z <= 0.0
-        && !layer_gcode.iter().any(|g| g.layer == l.index))
+        && !layer_gcode
+            .iter()
+            .any(|g| g.layer == l.index && g.kind == "custom"))
     .then(|| Lift::of_layer_change(&rc));
     // A lift made before custom G-code that the next travel keeps and comes down from.
     let mut pending_drop = false;
@@ -2393,13 +2395,11 @@ fn emit_layer(
                     None
                 })
                 .unwrap_or_default(),
-            ("pause", _) => match crate::customgcode::text(base, "machine_pause_gcode") {
+            // A color change stops the print with the printer's pause for a filament swap by hand. It leaves the
+            // layer's lift as it is, as a pause does: the print resumes where it stopped.
+            ("pause" | "color_change", _) => match crate::customgcode::text(base, "machine_pause_gcode") {
                 Some(_) => custom(base, "machine_pause_gcode", ctx.as_ref(), &mut error),
                 None => "M601".to_owned(),
-            },
-            ("color_change", _) => match crate::customgcode::text(base, "color_change_gcode") {
-                Some(_) => custom(base, "color_change_gcode", ctx.as_ref(), &mut error),
-                None => "M600".to_owned(),
             },
             _ => String::new(),
         };

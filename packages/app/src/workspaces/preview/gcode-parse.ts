@@ -437,7 +437,7 @@ export interface GcodeMarks {
 
 /**
  * The wipes (`;WIPE_START`), tool changes (a `T` that picks another tool after the first, and `M600` filament
- * changes) and pauses (`M601`, `M0`, `M1`, `M25`, `PAUSE`, `@pause`), with the nozzle position at each. Moves are
+ * changes) and pauses (`M601`, `M0`, `M1`, `M25`, `M400 U1`, `PAUSE`, `@pause`), with the nozzle position at each. Moves are
  * followed in G90 and G91 and through G92, so a marker sits where the printer is when the command runs. Walked
  * in slices like the parse.
  */
@@ -496,6 +496,12 @@ export async function scanMarks(text: LineIndex | LineSource, opts: { signal?: A
         if (!(after === SPACE || after === TAB || after === SEMI || after === NL || after === CR || next >= end)) continue
         if (m === 600) out.toolChanges.push({ line: n, x, y, z })
         else if (m === 601 || m === 0 || m === 1 || m === 25) out.pauses.push({ line: n, x, y, z })
+        else if (m === 400) {
+          // `M400 U1`: a Bambu Lab printer's pause, which a color change writes too.
+          let k = next
+          while (k < end && (b[k] === SPACE || b[k] === TAB)) k++
+          if (UPPER(b[k] ?? 0) === 85 && num(b, k + 1, end) === 1) out.pauses.push({ line: n, x, y, z })
+        }
       } else if (c === 80 || c === 64) {
         if (startsWith(b, i, end, 'PAUSE') || startsWith(b, i, end, '@pause')) out.pauses.push({ line: n, x, y, z })
       }

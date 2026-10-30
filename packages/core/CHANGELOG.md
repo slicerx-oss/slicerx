@@ -10,6 +10,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 - `load_3mf_marks` (`ProjectMarks`): a project plate's layer marks, as `load_3mf_layer_gcode` reads them, plus its tool changes (`Metadata/custom_gcode_per_layer.xml` type 2) when the plate's stored slider mode is the one-filament mode, and a `tool_change_skipped` note for each one saved under another mode.
 - `sx slice` on a 3MF plate and `sx slice --request` on a project plate (unless the request brings its own `toolChanges`) apply the project's tool changes. Before, they were left out and the whole plate printed in its first filament. Slices of such projects through `slicerx_slice_file` change accordingly.
 
+### Changed
+
+- A `color_change` layer mark (a request's `layerGcode`, or a project's color change, `Metadata/custom_gcode_per_layer.xml` type 0) writes the printer's pause G-code, `machine_pause_gcode` (`M400 U1` on a Bambu Lab printer, `M601` when the profile has none), so the print stops for a filament swap by hand. Before, it wrote `color_change_gcode` or `M600`; the stock A1 and P1S profiles have no color change G-code, and `M600` also brought a fan line after it. A pause or color change keeps the layer's usual lift, where the mark's layer used to move straight to its height, so the file differs from the same plate without the mark only by the pause and the progress lines. On a plate printed by object, a pause or color change by height (`zMm`) goes on each object's first layer that reaches it, where it went on the first object's only.
+
 ### Fixed
 
 - A request's object without a transform, and a 3MF plate that is no slicer's project, go to the middle of the printable area where it does not start at 0, 0: the request's bed starts at the area's front left corner (`plate::bed_middle`). On the Snapmaker U1 (area from 0.5, 1) a 270 mm bed's middle is 135.5, 136, as `sx slice <file>` and the app place them. Before, `sx slice --request` used half the bed's size, 135, 135, so a request and a plain slice of the same file put it 0.5 mm apart in X and 1 mm in Y. `plate::centered_transform` takes the center to use.

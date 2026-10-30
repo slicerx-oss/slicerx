@@ -2703,8 +2703,9 @@ fn layers_with(gcode: &str, text: &str) -> Vec<usize> {
 }
 
 /// `sx slice project.3mf` writes the pause and the color change a project marks on its plate's layers on the layers
-/// `sx slice --request` writes them with the same project as its mesh, on a Bambu Lab A1 and on Klipper. A request's
-/// own `layerGcode` goes in instead of the project's marks.
+/// `sx slice --request` writes them with the same project as its mesh, on a Bambu Lab A1 and on Klipper. Both are the
+/// printer's pause, so the filament is swapped by hand at a color change. A request's own `layerGcode` goes in instead
+/// of the project's marks.
 #[test]
 fn a_project_slice_writes_its_layer_marks_where_a_request_does() {
     let dir = temp_dir(format!("sx-cli-plain-marks-{}", std::process::id()));
@@ -2745,10 +2746,7 @@ fn a_project_slice_writes_its_layer_marks_where_a_request_does() {
     // The A1 with its own pause text; Klipper with none, so the pause is M601.
     let mut a1 = bambu_a1();
     a1["machine_pause_gcode"] = "M400 U1".into();
-    for (name, printer, pause, change) in [
-        ("a1", a1, "M400 U1", "M600"),
-        ("klipper", klipper(), "M601", "M600"),
-    ] {
+    for (name, printer, pause) in [("a1", a1, "M400 U1"), ("klipper", klipper(), "M601")] {
         let mut config = printer;
         for (k, v) in [
             ("layer_height", 0.2),
@@ -2759,27 +2757,26 @@ fn a_project_slice_writes_its_layer_marks_where_a_request_does() {
         }
         let plain = plain_slice(&dir, &project, &config, &[]);
         let request = by_request(&config, serde_json::json!({"emitGcode": true}), name);
-        assert_eq!(layers_with(&plain, pause), [9], "{name}: pause");
-        assert_eq!(layers_with(&plain, change), [29], "{name}: color change");
+        assert_eq!(
+            layers_with(&plain, pause),
+            [9, 29],
+            "{name}: pause and color change"
+        );
+        assert!(layers_with(&plain, "M600").is_empty(), "{name}: M600");
         assert_eq!(
             layers_with(&request, pause),
             layers_with(&plain, pause),
-            "{name}: pause"
-        );
-        assert_eq!(
-            layers_with(&request, change),
-            layers_with(&plain, change),
-            "{name}: color change"
+            "{name}: pause and color change"
         );
         let own = by_request(
             &config,
             serde_json::json!({"emitGcode": true, "layerGcode": [{"zMm": 4.0, "kind": "pause"}]}),
             &format!("{name}-own"),
         );
-        assert_eq!(layers_with(&own, pause), [19], "{name}: the request's own pause");
-        assert!(
-            layers_with(&own, change).is_empty(),
-            "{name}: the project's color change went in with the request's own marks"
+        assert_eq!(
+            layers_with(&own, pause),
+            [19],
+            "{name}: the request's own pause, without the project's marks"
         );
     }
 }

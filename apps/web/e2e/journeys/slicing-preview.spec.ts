@@ -1647,7 +1647,9 @@ test.describe('layer pins', () => {
         return fs.readFileSync(await download.path(), 'utf8')
       }
       const before = await exportGcode()
-      expect(before).toMatch(/\nM600/)
+      // a color change is the printer's pause, for a filament swap by hand
+      expect(before).toMatch(/\n(M601|M400 U1)/)
+      expect(before).not.toMatch(/\nM600/)
       const slice = (await state(page)).slice.result!.id
       // the note changes to slot 2: the slice stays current, nothing slices again, and the same G-code goes out
       await expect(async () => {
@@ -2095,13 +2097,15 @@ test.describe('the G-code a slice writes', () => {
       await sliceDone(page)
       const text = await exportedGcode(page)
       expect(text).toContain('M117 Swap the lid')
-      // The pause is the printer profile's own pause G-code: M601 by default, M400 U1 on a Bambu Lab printer.
-      const pause = /\n(M601|M400 U1)/
-      expect(text).toMatch(pause)
-      expect(text).toMatch(/\nM600/)
-      const at = (needle: RegExp) => text.slice(0, text.search(needle)).split(/;LAYER_CHANGE|; CHANGE_LAYER/).length - 1
-      expect(at(pause)).toBeLessThan(at(/\nM600/))
-      expect(at(/\nM600/)).toBeLessThan(at(/M117 Swap the lid/))
+      // The pause is the printer profile's own pause G-code: M601 by default, M400 U1 on a Bambu Lab printer. The
+      // color change writes the same pause, for a filament swap by hand.
+      const layers = text.split(/;LAYER_CHANGE|; CHANGE_LAYER/)
+      const pauses = layers.flatMap((l, i) => (/\n(M601|M400 U1)\b/.test(l) ? [i] : []))
+      expect(pauses).toHaveLength(2)
+      expect(text).not.toMatch(/\nM600/)
+      const custom = layers.findIndex((l) => l.includes('M117 Swap the lid'))
+      expect(pauses[0]!).toBeLessThan(pauses[1]!)
+      expect(pauses[1]!).toBeLessThan(custom)
       // A mark is removed from its own menu.
       await page.locator('.layer-mark').first().click()
       await page.getByRole('menuitem', { name: 'Remove pause' }).click()

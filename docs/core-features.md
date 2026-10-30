@@ -69,7 +69,7 @@ Plates and objects
 
 Multi-material and color
 - Tool changes for AMS and MMU style units, purge volume matrix, prime tower (wipe tower), flush into infill, object or support.
-- Per-object and per-part filament; painted color regions from 3MF; color change at a layer height (M600 or firmware equivalent) and pause at height.
+- Per-object and per-part filament; painted color regions from 3MF; color change at a layer height (the printer's pause, for a filament swap by hand) and pause at height; on a plate printed by object, each object stops at that height.
 
 Quality details
 - Elephant foot compensation, XY hole and contour compensation, slice closing radius, resolution, precise Z height.
