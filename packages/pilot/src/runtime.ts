@@ -675,9 +675,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       if (label) emit({ type: 'model_switch', model, label, reason: why })
     }
     let fails = 0
+    // a design check that found the part off its plan: building takes tries, but a part that misses its plan needs the larger model
+    let checkMissed = false
     const called = new Map<string, string>()
     const watch = (e: PilotEvent) => {
       if (e.type === 'tool_call') called.set(e.callId, e.tool)
+      if (e.type === 'tool_result' && e.ok && called.get(e.callId) === 'design.check' && (e.output as { pass?: unknown } | undefined)?.pass === false) checkMissed = true
       // building takes tries; only other failures count toward moving up
       if (e.type === 'tool_result' && !e.ok && !(designs && BUILD_CALL.test(called.get(e.callId) ?? ''))) fails++
       emit(e)
@@ -863,7 +866,7 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         }
         if (call.name.startsWith('kb.') || call.name === 'parts.lookup' || call.name === 'web.lookup' || call.name === 'material_recommend') looked = true
         const res = await execute(call, sessionId, context, watch, signal, citations, cards)
-        if (tier !== MUNINN && fails >= STRUGGLE_FAILS) {
+        if (tier !== MUNINN && (fails >= STRUGGLE_FAILS || checkMissed)) {
           tier = MUNINN
           why = 'struggle'
         }

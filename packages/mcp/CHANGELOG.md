@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Changed
+
+- The mimir session read-back (`mimir_session`) lists `mechanism` among the reasons a turn can start on the larger model, and a turn no longer starts there only because a picture or PDF came with it.
+
 ## [0.2.6] - 2026-10-29
 
 ### Added

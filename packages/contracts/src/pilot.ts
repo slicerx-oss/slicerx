@@ -305,7 +305,7 @@ export interface PilotChoice {
 /** Where Auto started a run and why. */
 export interface PilotRoute {
   tier: 'huginn' | 'muninn'
-  reason: 'deep' | 'attachment' | 'many_steps' | 'person_sizes' | 'default'
+  reason: 'deep' | 'attachment' | 'many_steps' | 'mechanism' | 'person_sizes' | 'default'
 }
 
 /** The last slice of a chat's plate. `stale` is worked out on every read: the plate, printer or slots changed after it. */
