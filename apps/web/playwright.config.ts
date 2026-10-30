@@ -61,7 +61,11 @@ export default defineConfig({
     launchOptions: {
       args: gpu
         ? ['--ignore-gpu-blocklist', '--disable-domain-blocking-for-3d-apis', '--disable-gpu-process-crash-limit']
-        : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+        : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--disable-gpu-rasterization'],
+      // With software WebGL the page itself is drawn on the CPU, as Chrome does on a computer without a usable GPU.
+      // --ignore-gpu-blocklist alone also turned on GPU drawing of the page, on SwiftShader, in the GPU process's one
+      // thread: drawing the side panes took over 2 s there, and every WebGL call that waits for an answer queued behind
+      // it, so the 3D view's start showed a 3 s main-thread task that no real computer has.
       // Software WebGL runs on SwiftShader's Vulkan, and the Vulkan loader also loads Mesa's device select layer when a
       // machine has one. That layer asks the Wayland display (WSLg on Windows) for its devices and waits on it with no
       // limit, so a fresh browser's first WebGL context could take from 12 s to over 100 s. NODEVICE_SELECT turns the
