@@ -94,7 +94,7 @@ describe('the mimir tab on a model', () => {
     expect(mimirLink.getState().link).toBe('scripted')
   })
 
-  it('runs a key on Auto: Haiku for a short request, Sonnet for a picture, over the design tools and prompt', async () => {
+  it('runs a key on Auto: Haiku for a short request or a picture, Sonnet for a many-step part, over the design tools and prompt', async () => {
     const llm = transport(['anthropic'])
     set({ pilot: { mode: 'on', provider: 'anthropic' } })
     const host = hostWith(llm)
@@ -121,8 +121,8 @@ describe('the mimir tab on a model', () => {
 
     llm.sent.length = 0
     const pic = await ask(host, 'Build this', [{ name: 'sketch.png', type: 'image/png' }])
-    expect(body(llm.sent[0]!).model).toBe('claude-sonnet-5-5')
-    expect(pic.filter((e) => e.type === 'model_switch')).toMatchObject([{ label: 'Sonnet 5.5' }])
+    expect(body(llm.sent[0]!).model).toBe('claude-haiku-5-5')
+    expect(pic.filter((e) => e.type === 'model_switch')).toEqual([])
 
     llm.sent.length = 0
     await ask(host, 'A spur gear, 20 teeth, module 1')
