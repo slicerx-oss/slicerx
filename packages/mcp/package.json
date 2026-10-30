@@ -76,6 +76,14 @@
     "yaml": "2.9.1",
     "zod": "4.6.5"
   },
+  "peerDependencies": {
+    "@slicerx/step-reader": "^0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@slicerx/step-reader": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@slicerx/cad-history": "workspace:*",
     "@slicerx/connect": "workspace:*",
@@ -87,6 +95,7 @@
     "@slicerx/pilot": "workspace:*",
     "@slicerx/printer-catalog": "workspace:*",
     "@slicerx/settings": "workspace:*",
+    "@slicerx/step-reader": "workspace:*",
     "@slicerx/threemf": "workspace:*",
     "@slicerx/ui": "workspace:*",
     "@types/node": "24.19.0",

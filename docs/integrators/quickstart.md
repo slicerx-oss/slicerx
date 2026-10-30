@@ -125,6 +125,7 @@ An app written in Node can also host the server in its own process with `createC
 | `slicerx_inspect_project` | A 3MF or `.sx3mf` project's plates, the presets it was saved with, its filament slots (type and color), whether it carries print settings, and `project_config`: the settings a slice with `project_settings: true` and no `machine:` profile takes from it, as one object. |
 | `slicerx_list_profiles`, `slicerx_get_profile` | Printer, process and filament profiles to pass as `profiles`. Filter by `section`, `source`, `vendor` or `query`. |
 | `slicerx_printer_profile_search` | Finds a printer model by vendor or model text, with its nozzle sizes. |
+| `slicerx_step_read` | Reads a `.step` or `.stp` file: objects, bodies with names and colors, triangle counts, boxes in mm. With `output: "stl"` or `"obj"` it also writes the meshes for the other tools. Needs the optional `@slicerx/step-reader` package. |
 | `slicerx_sxlock_inspect`, `slicerx_sxlock_open`, `slicerx_sxlock_export` | Locked projects: read the owner offline, open one to an `.sx3mf`, lock an `.sx3mf` for the account. |
 | `slicerx_cloud_slice`, `slicerx_cloud_jobs` | Slice in a SlicerX cloud instead of on the user's machine, when one is configured. |
 | `slicerx_local_ai_check`, `slicerx_local_ai_setup`, `slicerx_local_ai_status` | Set up local AI: what this computer can run and why, a download through Ollama after the user approves it, then a tool call and speed check; and what is installed. |
@@ -348,8 +349,9 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 | `busy` | The open SlicerX app is in use: the person is changing that object, a question is up for them, or the agent already has a call running. Call again in a moment |
 | `internal_error` | Anything else; please report it |
 | `sxlock_<reason>` | A locked project could not be opened or made: `sxlock_wrong_account`, `sxlock_offline`, `sxlock_signed_out`, `sxlock_revoked`, `sxlock_unknown_key`, `sxlock_missing_scope`, `sxlock_rate_limited`, `sxlock_banned`, `sxlock_invalid`, `sxlock_not_sxlock`, `sxlock_unsupported`, `sxlock_damaged` |
+| `step_<code>` | `slicerx_step_read` could not read a STEP file: `step_empty`, `step_not_step`, `step_step_xml` (STEP XML, not a regular STEP file), `step_too_large` (over 100 MB), `step_no_solids`, `step_too_detailed` (over 2,000,000 triangles at 0.05 mm), `step_unreadable` (damaged or using entities the reader does not support), `step_out_of_memory`, `step_timeout`. The message follows the file name |
 
-`@slicerx/embed/sxlock` throws `SxlockError` with the same reasons as `code`, without the prefix, and `SXLOCK_MESSAGES` has a plain sentence for each.
+`@slicerx/step-reader` throws `StepError` with the same codes as `code`, without the prefix. `@slicerx/embed/sxlock` throws `SxlockError` with the same reasons as `code`, without the prefix, and `SXLOCK_MESSAGES` has a plain sentence for each.
 
 ## Project G-code with the engine directly
 

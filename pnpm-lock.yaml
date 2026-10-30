@@ -702,6 +702,9 @@ importers:
       '@slicerx/settings':
         specifier: workspace:*
         version: link:../settings
+      '@slicerx/step-reader':
+        specifier: workspace:*
+        version: link:../step-reader
       '@slicerx/threemf':
         specifier: workspace:*
         version: link:../threemf

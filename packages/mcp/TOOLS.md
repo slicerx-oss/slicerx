@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-248 tools.
+249 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -241,6 +241,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_spoolman_get_spool` |  |  | read | Read one spool. |
 | `slicerx_spoolman_list_spools` |  |  | read | List spools with material, color and remaining weight. |
 | `slicerx_spoolman_record_usage` |  |  | profile | Subtract used filament from a spool. |
+| `slicerx_step_read` | Read a STEP file | core | read, ungated | Read a STEP file (.step or .stp; AP203, AP214 or AP242) as SlicerX reads it: the objects it becomes (touching bodies stay together), each body's name, color (#rrggbb, or null) and triangle count, boxes in mm, the unit the file declares and notes. |
 | `slicerx_supports` |  |  | slice | Decide supports for a part as it sits on the bed: whether to enable them, normal or tree type and style (from how flat and how spread out the overhangs are), the threshold angle for the layer height, and support on build plate only. |
 | `slicerx_sxlock_export` |  |  | slice | Lock an .sx3mf project for the account whose API token this server holds (scope sxlock_seal): writes a .sxlock to the server's output folder that only that account can open, online. |
 | `slicerx_sxlock_inspect` |  |  | read | Read the header of a locked SlicerX project (.sxlock) without the network: format version, the owner account id and the key id. |
