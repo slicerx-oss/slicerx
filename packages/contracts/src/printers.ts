@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Printer and service plugins as the UI and Pilot see them.
 import type { ApprovalToken, PermissionClass } from './pilot'
+import type { TunnelKind, TunnelProblem, TunnelReport } from './tunnel'
 
 export type PluginKind = 'printer' | 'inventory' | 'home'
 
@@ -92,6 +93,8 @@ export interface PrinterInfo {
   host?: string
   nozzleCount: number
   filamentSystem?: 'ams' | 'mmu' | 'toolchanger'
+  /** Reached through this remote tunnel instead of the local network; `host` is then the tunnel host. */
+  tunnel?: TunnelKind
 }
 
 export type PrinterState = 'idle' | 'preparing' | 'printing' | 'paused' | 'finished' | 'error' | 'offline'
@@ -132,6 +135,8 @@ export interface PrinterStatus {
   needsCode?: boolean
   /** The name the printer's code is stored under, when `needsCode`. A name, never a secret. */
   codeRef?: string
+  /** For a printer reached through a tunnel: what the tunnel refused on this reading (see TUNNEL_PROBLEM_TEXT). */
+  tunnelProblem?: TunnelProblem
   jobName?: string
   progress?: number
   layer?: number
@@ -351,6 +356,12 @@ export interface PrinterHost {
   resume(printerId: string, token: ApprovalToken): Promise<void>
   cancel(printerId: string, token: ApprovalToken): Promise<void>
   snapshot(printerId: string): Promise<Blob | null>
+  /**
+   * How a printer reached through a remote tunnel is doing: its last problem, this month's data and the running
+   * print's failure score. Rejects with `not_supported` (details `{ reason: 'no_tunnel' }`) for a printer on the local
+   * network. Absent on a host with no tunnels.
+   */
+  tunnel?(printerId: string): Promise<TunnelReport>
   /** Service plugins (Spoolman, Home Assistant) and plugin tools without a printer target. */
   callTool(pluginId: string, tool: string, input: unknown, token?: ApprovalToken): Promise<unknown>
 }
@@ -391,7 +402,7 @@ export interface PrinterConfig {
    * The remote tunnel the printer is reached through instead of the local network. `host` is then the tunnel host
    * (`<id>.tunnels.app.obico.io`, https only) and `credentialRef` names the tunnel's own credential.
    */
-  tunnel?: 'obico'
+  tunnel?: TunnelKind
 }
 
 export interface DiscoveredPrinter {

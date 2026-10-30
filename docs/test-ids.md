@@ -136,6 +136,7 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `bridge-error` | The note on Printers when the app's own printer bridge did not start (its port is taken), with Try again |
 | `printer-card` | A printer's card on Printers (`data-printer` is its id; `data-away` while the bridge reconnects) |
 | `printer-card-open`, `printer-card-options` | A card's open area and its options button; both are off while the bridge reconnects |
+| `printer-card-tunnel` | A card's line for a printer reached through Obico: the mark and this month's tunnel data |
 | `setup` | The setup window; `data-step` is welcome, look, printer, mimir and so on |
 | `setup-skip-all` | Skip, use defaults |
 | `setup-back`, `setup-skip`, `setup-secondary`, `setup-next` | The footer: Back, Skip, the second action, and the main one (Next, Save printer, Open the plate) |
@@ -146,6 +147,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `setup-brand-<brand>` | A brand tile |
 | `setup-model-<model>` | A model card; `setup-model-custom` is Not listed, set it up by hand |
 | `setup-connection-<method>` | A connection choice; `setup-connection-export` is No connection (export files) |
+| `setup-via-lan`, `setup-via-obico` | Where a Klipper (Moonraker) or OctoPrint printer is: On my network or Through Obico |
+| `setup-obico`, `setup-obico-paste`, `setup-obico-host` | The Obico paste box: its section, the masked field for the tunnel address, and the line with the host it read (empty until an address is accepted) |
 | `setup-printer-step-<step>` | A step in the printer form's step list |
 | `setup-printer-error` | The printer was not saved |
 | `setup-mode-<mode>` | The settings mode in setup's slicer step: `setup-mode-simple`, `setup-mode-advanced`, `setup-mode-expert` |

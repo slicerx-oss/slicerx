@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The printer setup host registry, kept apart from setup-host.ts so the shell (link/bridge.ts)
 // does not carry the setup screens' form and the printer catalog before anyone opens them.
-import type { Host, PrinterConnection, PrinterHardware, PrinterSetupHost, PrinterState } from '@slicerx/contracts'
+import { tunnelProblemOf, type Host, type PrinterConnection, type PrinterHardware, type PrinterSetupHost, type PrinterState, type TunnelProblem } from '@slicerx/contracts'
 
 export type TestStepId = 'reach' | 'sign_in' | 'read_state' | 'read_temperatures'
 export const TEST_STEPS: readonly { id: TestStepId; label: string }[] = [
@@ -40,6 +40,8 @@ export interface TestOutcome {
   certificate?: { verified: boolean; detail: string }
   /** Why a sign-in was refused, when the printer said (Moonraker, Snapmaker 2.0, UltiMaker, Anycubic). */
   authNeed?: AuthNeed
+  /** What an Obico tunnel refused, for a printer tested through one. */
+  tunnelProblem?: TunnelProblem
   /** A finer cause when the host can tell (a bridge reports these as unreachable or auth). */
   detail?: 'lan-mode-off' | 'wrong-port' | 'certificate'
   message?: string
@@ -111,13 +113,15 @@ export function registeredPrinterSetup(): SetupFactory | null {
 }
 
 /** Maps a bridge test result (link-client PrinterTestResult) onto the setup card's outcome. */
-export function fromLinkResult(r: { ok: boolean; state?: PrinterState; cause?: string; kind?: string; message?: string; details?: string; certificate?: { verified: boolean; detail: string }; authNeed?: string; steps: { id: TestStepId; ok: boolean | null }[]; nozzleC?: number; bedC?: number; hardware?: PrinterHardware }): TestOutcome {
+export function fromLinkResult(r: { ok: boolean; state?: PrinterState; cause?: string; kind?: string; message?: string; details?: string; certificate?: { verified: boolean; detail: string }; authNeed?: string; tunnelProblem?: string; steps: { id: TestStepId; ok: boolean | null }[]; nozzleC?: number; bedC?: number; hardware?: PrinterHardware }): TestOutcome {
   const cause = r.cause && ['unreachable', 'auth', 'timeout', 'protocol', 'not_supported', 'bad_request'].includes(r.cause) ? (r.cause as SetupCause) : undefined
   const hw = r.ok ? r.hardware : undefined
   const nozzle = hw?.extruders?.find((e) => e.nozzleDiameterMm)?.nozzleDiameterMm
   const units = (hw?.filamentUnits ?? []).filter((u) => u.kind !== 'external')
   const system: 'ams' | 'mmu' | undefined = units.length === 0 ? undefined : units.some((u) => u.kind === 'mmu') ? 'mmu' : 'ams'
+  const tunnel = r.ok ? null : tunnelProblemOf(r.tunnelProblem)
   return {
+    ...(tunnel ? { tunnelProblem: tunnel } : {}),
     ok: r.ok,
     steps: TEST_STEPS.map(({ id }) => ({ id, ok: r.steps.find((s) => s.id === id)?.ok ?? null })),
     ...(cause ? { cause } : {}),

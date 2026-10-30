@@ -4175,3 +4175,81 @@ async fn mock_state(mocks: &common::Mocks) -> String {
         .unwrap_or_default()
         .to_owned()
 }
+
+/// A printer reached through an Obico tunnel, as the app adds it after the paste box: the tunnel host only,
+/// the tunnel's access under credentialRef. Nothing here reaches Obico: no credential is stored, so the hub
+/// never opens the tunnel.
+#[tokio::test]
+async fn a_tunnel_printer_reads_its_tunnel_and_agents_read_but_never_connect_one() {
+    let link = hub(None).await;
+    let mut ws = paired(&link).await;
+    let cfg = json!({ "id": "far", "name": "Far", "plugin": "octoprint", "host": "abc123.tunnels.app.obico.io", "tunnel": "obico", "credentialRef": "printer-far" });
+    let r = call(&mut ws, 2, "printers.add", json!({ "config": cfg })).await;
+    assert_eq!(r["result"]["tunnel"], "obico", "{r}");
+    let lan = json!({ "id": "near", "name": "Near", "plugin": "octoprint", "host": "192.168.1.20" });
+    let r = call(&mut ws, 3, "printers.add", json!({ "config": lan })).await;
+    assert_eq!(r["result"]["id"], "near", "{r}");
+
+    let r = call(&mut ws, 4, "list", json!({})).await;
+    let list = r["result"].as_array().unwrap();
+    let far = list.iter().find(|p| p["id"] == "far").unwrap();
+    assert_eq!(far["tunnel"], "obico");
+    assert_eq!(far["host"], "abc123.tunnels.app.obico.io");
+    assert!(
+        list.iter()
+            .find(|p| p["id"] == "near")
+            .unwrap()
+            .get("tunnel")
+            .is_none()
+    );
+
+    // No access stored: offline with the tunnel's reason, never a request for a printer access code.
+    let st = call(&mut ws, 5, "status", json!({ "printerId": "far" })).await;
+    assert_eq!(st["result"]["state"], "offline", "{st}");
+    assert_eq!(st["result"]["tunnelProblem"], "no_access", "{st}");
+    assert!(st["result"].get("needsCode").is_none(), "{st}");
+
+    let t = call(&mut ws, 6, "printers.tunnel", json!({ "printerId": "far" })).await;
+    let t = &t["result"];
+    assert_eq!(t["printerId"], "far", "{t}");
+    assert_eq!(t["tunnel"], "obico");
+    assert_eq!(t["host"], "abc123.tunnels.app.obico.io");
+    assert_eq!(t["problem"], "no_access");
+    assert_eq!(t["connected"], false);
+    assert_eq!(t["camera"], false);
+    assert!(t["usage"].is_null() && t["prediction"].is_null(), "{t}");
+
+    let r = call(&mut ws, 7, "printers.tunnel", json!({ "printerId": "near" })).await;
+    assert_eq!(r["error"]["code"], "not_supported", "{r}");
+    assert_eq!(r["error"]["details"]["reason"], "no_tunnel", "{r}");
+    let r = call(&mut ws, 8, "printers.tunnel", json!({ "printerId": "nobody" })).await;
+    assert_eq!(r["error"]["code"], "not_found", "{r}");
+
+    // The camera is off through a tunnel: a still is refused with its reason.
+    let r = call(&mut ws, 9, "snapshot", json!({ "printerId": "far" })).await;
+    assert_eq!(r["error"]["code"], "not_supported", "{r}");
+    assert_eq!(r["error"]["details"]["reason"], "camera_off_tunnel", "{r}");
+
+    // An agent reads the tunnel, and may neither add a tunnel printer nor store its access.
+    let mut ag = agent(&link).await;
+    let t = call(&mut ag, 2, "printers.tunnel", json!({ "printerId": "far" })).await;
+    assert_eq!(t["result"]["problem"], "no_access", "{t}");
+    let cfg2 = json!({ "id": "far2", "name": "Far 2", "plugin": "moonraker", "host": "def456.tunnels.app.obico.io", "tunnel": "obico", "credentialRef": "printer-far2" });
+    for (i, (method, params)) in [
+        ("printers.add", json!({ "config": cfg2 })),
+        ("printers.test", json!({ "config": cfg2 })),
+        ("secrets.set", json!({ "name": "printer-far", "value": "u:p" })),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let r = call(&mut ag, 3 + i as u64, method, params).await;
+        assert!(r["error"].is_object(), "{method}: {r}");
+        assert!(r.get("result").is_none_or(Value::is_null), "{method}: {r}");
+    }
+    let r = call(&mut ws, 20, "list", json!({})).await;
+    assert!(
+        !r["result"].as_array().unwrap().iter().any(|p| p["id"] == "far2"),
+        "{r}"
+    );
+}

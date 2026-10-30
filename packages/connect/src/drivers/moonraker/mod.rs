@@ -1011,6 +1011,13 @@ impl PrinterSession for MoonrakerSession {
         self.inner.status().await
     }
 
+    async fn tunnel(&self) -> Option<crate::tunnel::TunnelReport> {
+        match (&self.inner.tunnel, self.inner.cfg.tunnel) {
+            (Some(t), Some(kind)) => Some(t.report(kind).await),
+            _ => None,
+        }
+    }
+
     async fn plan_toolheads(
         &self,
         needs: &[crate::toolhead_map::ToolheadNeed],

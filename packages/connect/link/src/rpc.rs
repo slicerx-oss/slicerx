@@ -319,11 +319,20 @@ impl From<ConnectError> for RpcError {
             .ok()
             .and_then(|v| v.as_str().map(str::to_owned))
             .unwrap_or_else(|| "protocol".to_owned());
+        // A tunnel's refusal keeps its reason, so the app and clients say which one in plain words.
+        let details = e.tunnel_problem().map(|t| json!({ "tunnelProblem": t }));
         Self {
             code,
             message: e.to_string(),
-            details: None,
+            details,
         }
+    }
+}
+
+impl RpcError {
+    /// The remote tunnel's reason, when this error is one of its refusals (`{ tunnelProblem }` in the details).
+    pub(crate) fn tunnel_problem(&self) -> Option<Value> {
+        self.details.as_ref()?.get("tunnelProblem").cloned()
     }
 }
 
@@ -1010,9 +1019,10 @@ async fn dispatch(
         }
         "printers.test" => test_printer(b, &p).await,
         "list" => Ok(Value::Array(
-            b.printers.lock().await.values().map(|r| r.info.clone()).collect(),
+            b.printers.lock().await.values().map(listed).collect(),
         )),
         "status" => printer_status(b, &str_arg(&p, "printerId")?).await,
+        "printers.tunnel" => tunnel_report(b, &str_arg(&p, "printerId")?).await,
         "subscribe" => {
             let id = str_arg(&p, "printerId")?;
             let s = session(b, &id).await?;
@@ -1102,7 +1112,13 @@ async fn dispatch(
             session(b, &id).await?.send_gcode(&line, &token).await?;
             Ok(json!({ "ok": true }))
         }
-        "snapshot" => crate::watch::snapshot_call(b, &p).await,
+        "snapshot" => {
+            let id = str_arg(&p, "printerId")?;
+            if let Some(e) = camera_off_through_tunnel(b, &id).await {
+                return Err(e);
+            }
+            crate::watch::snapshot_call(b, &p).await
+        }
         "services.configure" => {
             let plugin = str_arg(&p, "pluginId")?;
             let base_url = str_arg(&p, "baseUrl")?;
@@ -1376,8 +1392,25 @@ pub(crate) async fn printer_status(b: &Arc<Bridge>, id: &str) -> Rpc<Value> {
                 }
                 Ok(v)
             }
-            Err(e) => to_json(&offline(id, &e)),
+            Err(e) => {
+                let problem = e.tunnel_problem();
+                let mut v = to_json(&offline(id, &e))?;
+                if let (Some(t), Some(o)) = (problem, v.as_object_mut()) {
+                    o.insert("tunnelProblem".into(), json!(t));
+                }
+                Ok(v)
+            }
         },
+        // A tunnel that refused the connection (access removed, data used up, plugin offline): offline, with
+        // the tunnel's reason for the card.
+        Err(e) if e.tunnel_problem().is_some() => {
+            let mut v = to_json(&PrinterStatus::offline(id))?;
+            if let Some(o) = v.as_object_mut() {
+                o.insert("message".into(), json!(e.message));
+                o.insert("tunnelProblem".into(), e.tunnel_problem().unwrap_or(Value::Null));
+            }
+            Ok(v)
+        }
         // A printer that is off is a normal state for the printers list, not an error.
         Err(e) if matches!(e.code.as_str(), "unreachable" | "tls" | "timeout") => {
             to_json(&PrinterStatus::offline(id))
@@ -1790,6 +1823,7 @@ async fn add_printer(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         "host": config.host,
         "nozzleCount": info_in.get("nozzleCount").cloned().unwrap_or_else(|| json!(1)),
         "filamentSystem": info_in.get("filamentSystem"),
+        "tunnel": config.tunnel,
     });
     let id = config.id.clone();
     b.sessions.lock().await.remove(&id);
@@ -1801,6 +1835,88 @@ async fn add_printer(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
         },
     );
     Ok(strip_nulls(info))
+}
+
+/// A registered printer as `list` shows it: its info, with the tunnel it is reached through taken from its config
+/// (a printer saved before the info carried it still says so).
+fn listed(r: &Registered) -> Value {
+    let mut v = r.info.clone();
+    if let (Some(t), Some(o)) = (r.config.tunnel, v.as_object_mut()) {
+        o.insert("tunnel".into(), json!(t));
+    }
+    v
+}
+
+/// `printers.tunnel {printerId}`: how a printer reached through a remote tunnel is doing, for the app and
+/// clients: the tunnel's host (never its user name or password), the problem it gave last, whether the last
+/// reading came through, this month's data and the running print's failure score. The camera is off through
+/// a tunnel. A printer on the local network is refused with `not_supported` and `{ reason: "no_tunnel" }`.
+pub(crate) async fn tunnel_report(b: &Arc<Bridge>, id: &str) -> Rpc<Value> {
+    let config = b
+        .printers
+        .lock()
+        .await
+        .get(id)
+        .map(|r| r.config.clone())
+        .ok_or_else(|| RpcError::new("not_found", format!("no printer {id}")))?;
+    let Some(kind) = config.tunnel else {
+        return Err(RpcError::new(
+            "not_supported",
+            format!("printer {id} is on the local network, not reached through a tunnel"),
+        )
+        .with_details(json!({ "reason": "no_tunnel" })));
+    };
+    let mut out = json!({
+        "printerId": id,
+        "tunnel": kind,
+        "host": sx_connect::tunnel::redact_userinfo(&config.host),
+        "camera": false,
+        "problem": null,
+        "connected": null,
+        "usage": null,
+        "prediction": null,
+    });
+    let o = out
+        .as_object_mut()
+        .ok_or_else(|| RpcError::new("protocol", "could not encode reply"))?;
+    match session(b, id).await {
+        Ok(s) => {
+            if let Some(Value::Object(r)) = s.tunnel().await.map(|r| to_value(&r)) {
+                for k in ["problem", "connected", "usage", "prediction"] {
+                    if let Some(v) = r.get(k) {
+                        o.insert(k.into(), v.clone());
+                    }
+                }
+            }
+        }
+        // The tunnel refused the connection, or nothing answered: no reading, and the reason when the tunnel gave one.
+        Err(e) => {
+            o.insert("connected".into(), json!(false));
+            if let Some(t) = e.tunnel_problem() {
+                o.insert("problem".into(), t);
+            } else if !matches!(e.code.as_str(), "unreachable" | "timeout" | "tls") {
+                return Err(e);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// The refusal for a still from a printer reached through a tunnel, whose camera is off there for now.
+async fn camera_off_through_tunnel(b: &Bridge, id: &str) -> Option<RpcError> {
+    let through = b
+        .printers
+        .lock()
+        .await
+        .get(id)
+        .is_some_and(|r| r.config.tunnel.is_some());
+    through.then(|| {
+        RpcError::new(
+            "not_supported",
+            format!("the camera of printer {id} is off while it is reached through Obico"),
+        )
+        .with_details(json!({ "reason": "camera_off_tunnel" }))
+    })
 }
 
 fn strip_nulls(v: Value) -> Value {
@@ -1853,6 +1969,21 @@ pub(crate) async fn session(b: &Arc<Bridge>, id: &str) -> Rpc<Arc<dyn PrinterSes
     // The printer names a typed credential the store does not have: one the keychain kept only for an
     // earlier session, or one removed by hand. Nothing was refused, so the printer is not asked. (A
     // pairing printer has none until it pairs; that stays an auth error for the pairing flow.)
+    // A tunnel printer's stored credential is its tunnel access: without it, the person connects it through
+    // the tunnel again rather than typing a printer code.
+    if config.tunnel.is_some()
+        && config
+            .credential_ref
+            .as_deref()
+            .is_none_or(|r| sx_connect::Secrets::get(b.secrets.as_ref(), r).is_none())
+    {
+        let e = RpcError::from(ConnectError::Tunnel {
+            printer: id.to_owned(),
+            problem: sx_connect::TunnelProblem::NoAccess,
+        });
+        *last = Some((Instant::now(), e.clone()));
+        return Err(e);
+    }
     if !connector.pairs()
         && let Some(r) = config.credential_ref.as_deref()
         && sx_connect::Secrets::get(b.secrets.as_ref(), r).is_none()
@@ -2056,6 +2187,9 @@ fn failed_test(rpc: &RpcError, certificate: Option<Value>) -> Value {
     let mut out = json!({ "ok": false, "cause": cause, "kind": kind, "message": rpc.message, "details": rpc.message, "steps": st });
     if let (Some(c), Some(o)) = (certificate, out.as_object_mut()) {
         o.insert("certificate".into(), c);
+    }
+    if let (Some(t), Some(o)) = (rpc.tunnel_problem(), out.as_object_mut()) {
+        o.insert("tunnelProblem".into(), t);
     }
     out
 }

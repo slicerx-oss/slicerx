@@ -194,3 +194,49 @@ test('a code the keychain refuses still saves the printer, and the result says i
   const plain = createPrinterSetup({ ...link, setSecret: async () => ({ kept: 'stored' as const }) })
   assert.equal((await plain.addPrinter({ profileId: 'bambu-p1s', nozzleMm: 0.4, connection: bambu })).credentialKept, undefined)
 })
+
+test('a printer through Obico keeps the tunnel host in its config and the tunnel access in the secret store', async () => {
+  const secrets = new Map<string, string>()
+  const calls: unknown[] = []
+  const link = {
+    discover: async () => [],
+    setSecret: async (n: string, v: string) => void secrets.set(n, v),
+    deleteSecret: async (n: string) => void secrets.delete(n),
+    removePrinter: async () => undefined,
+    authorizePrinter: async () => ({ stored: true }),
+    testPrinter: async (config: unknown) => {
+      calls.push(config)
+      return { ok: true, steps: [] }
+    },
+    addPrinter: async (config: unknown) => {
+      calls.push(config)
+      return {} as never
+    },
+  } as unknown as Parameters<typeof createPrinterSetup>[0]
+  const setup = createPrinterSetup(link)
+  const far = { family: 'moonraker', address: 'ABC123.tunnels.app.obico.io', tunnel: 'obico' as const, credential: 'u1:s3cretpw' }
+  const { printerId } = await setup.addPrinter({ profileId: 'generic-klipper', nozzleMm: 0.4, connection: far })
+  const config = calls[0] as Record<string, unknown>
+  assert.deepEqual(
+    { plugin: config.plugin, host: config.host, port: config.port, tunnel: config.tunnel, credentialRef: config.credentialRef },
+    { plugin: 'moonraker', host: 'abc123.tunnels.app.obico.io', port: undefined, tunnel: 'obico', credentialRef: `printer-${printerId}` },
+  )
+  assert.equal(secrets.get(`printer-${printerId}`), 'u1:s3cretpw')
+  assert.equal(JSON.stringify(config).includes('s3cretpw'), false, 'the password is only in the secret store')
+
+  await setup.testConnection(far)
+  assert.equal((calls.at(-1) as Record<string, unknown>).tunnel, 'obico')
+  assert.equal(secrets.size, 1, 'a test uses a temporary secret and removes it')
+
+  // Anything but an Obico tunnel host, a port, a printer the tunnel does not carry or no access is refused before anything is stored.
+  for (const bad of [
+    { ...far, address: 'abc.tunnels.app.obico.io.evil.example' },
+    { ...far, address: '192.168.1.20' },
+    { ...far, address: 'abc.tunnels.app.obico.io:8443' },
+    { ...far, family: 'bambu' },
+    { family: 'moonraker', address: 'abc.tunnels.app.obico.io', tunnel: 'obico' as const },
+  ]) {
+    await assert.rejects(setup.addPrinter({ profileId: 'generic-klipper', nozzleMm: 0.4, connection: bad }), SetupError, JSON.stringify(bad))
+  }
+  assert.equal(secrets.size, 1, 'a refused tunnel printer left no secret behind')
+})

@@ -733,3 +733,197 @@ fn error_text_never_carries_a_tunnel_credential() {
         assert!(text.contains("abc.tunnels.app.obico.io"), "{text}");
     }
 }
+
+// ---------------------------------------------------------------- the paste box's rules
+
+/// The words of each refusal in [`TunnelEndpoint::parse`], by the reason the shared fixture names.
+fn reason_of(message: &str) -> &'static str {
+    for (needle, reason) in [
+        ("must start with https://", "scheme"),
+        ("path, query or fragment", "path"),
+        ("a port or an IP address", "port"),
+        ("the host is not", "host"),
+        ("user name", "userinfo"),
+        ("password", "userinfo"),
+    ] {
+        if message.contains(needle) {
+            return reason;
+        }
+    }
+    "unknown"
+}
+
+/// The app's paste box (`parseTunnelEndpoint` in packages/contracts) runs the same cases, so the two
+/// parsers accept and refuse exactly the same addresses, for the same reason.
+#[test]
+fn every_shared_paste_box_case_parses_the_same_here() {
+    let doc: serde_json::Value =
+        serde_json::from_str(include_str!("../../fixtures/tunnel-endpoints.json")).unwrap();
+    let cases = doc["cases"].as_array().unwrap();
+    assert!(cases.len() >= 40, "the fixture lost its cases");
+    for c in cases {
+        let input = c["input"].as_str().unwrap();
+        match (
+            TunnelEndpoint::parse(TunnelKind::Obico, input),
+            c["problem"].as_str(),
+        ) {
+            (Ok(ep), None) => {
+                assert_eq!(Some(ep.host.as_str()), c["host"].as_str(), "{input:?}");
+                assert_eq!(
+                    ep.credential().is_some(),
+                    c["credential"].as_bool().unwrap(),
+                    "{input:?}"
+                );
+            }
+            (Err(e), Some(want)) => {
+                let text = e.to_string();
+                assert_eq!(reason_of(&text), want, "{input:?}: {text}");
+                // An error never repeats the address, so a password in it never reaches a log.
+                if input.contains("u:p") {
+                    assert!(!text.contains("u:p"), "{text}");
+                }
+            }
+            (got, want) => panic!("{input:?}: parsed {got:?}, the fixture says {want:?}"),
+        }
+    }
+}
+
+// ---------------------------------------------------------------- the tunnel report
+
+/// An OctoPrint mock behind a tunnel, `printing` or idle, with this month's usage and a failure score.
+fn report_mock(printing: bool, usage: &'static str) -> impl Fn(&Seen) -> Reply + Send + Sync + 'static {
+    move |r| match r.path.as_str() {
+        "/api/version" => json_reply(r#"{"api": "0.1", "server": "1.10.0"}"#),
+        "/api/printer" => json_reply(if printing {
+            r#"{"state": {"flags": {"operational": true, "printing": true}}, "temperature": {"tool0": {"actual": 210.0, "target": 210.0}}}"#
+        } else {
+            r#"{"state": {"flags": {"operational": true}}, "temperature": {"tool0": {"actual": 21.0, "target": 0.0}}}"#
+        }),
+        "/api/job" => json_reply(if printing {
+            r#"{"job": {"file": {"name": "cube.gcode"}}, "progress": {"completion": 40.0, "printTimeLeft": 600}}"#
+        } else {
+            r#"{"job": {"file": {"name": null}}, "progress": {"completion": null}}"#
+        }),
+        "/_tsd_/tunnelusage/" => json_reply(usage),
+        "/_tsd_/prediction/" => json_reply(r#"{"normalized_p": 0.12}"#),
+        _ => (404, vec![], String::new()),
+    }
+}
+
+async fn octo_session(id: &str, mock: &Mock) -> Box<dyn crate::PrinterSession> {
+    let (cfg, secrets) = routed(id, "octoprint", mock);
+    crate::drivers::OctoPrintConnector::new(Arc::new(MemoryGate::new()))
+        .connect(&cfg, &secrets)
+        .await
+        .unwrap()
+}
+
+fn reads(mock: &Mock, path: &str) -> usize {
+    mock.seen().iter().filter(|s| s.path == path).count()
+}
+
+#[tokio::test]
+async fn the_report_has_the_month_s_data_and_no_score_while_idle() {
+    let mock = Mock::start(report_mock(
+        false,
+        r#"{"total": 120000000, "monthly_cap": 300000000, "reset_in_seconds": 86400}"#,
+    ))
+    .await;
+    let s = octo_session("rep1", &mock).await;
+    s.status().await.unwrap();
+    let r = s.tunnel().await.expect("a tunnel printer reports its tunnel");
+    assert_eq!(r.kind, TunnelKind::Obico);
+    assert_eq!(r.problem, None);
+    assert_eq!(r.connected, Some(true));
+    let u = r.usage.unwrap();
+    assert_eq!(
+        (u.used_bytes, u.cap_bytes, u.left_bytes, u.unlimited),
+        (120_000_000, Some(300_000_000), Some(180_000_000), false)
+    );
+    assert_eq!(u.reset_in_seconds, Some(86_400));
+    assert_eq!(r.prediction, None, "nothing prints, so no failure score is read");
+    assert_eq!(reads(&mock, "/_tsd_/prediction/"), 0);
+    // Shape the app and clients read.
+    let v = serde_json::to_value(&r).unwrap();
+    assert_eq!(v["kind"], "obico");
+    assert_eq!(v["usage"]["usedBytes"], 120_000_000);
+    assert_eq!(v["usage"]["leftBytes"], 180_000_000);
+    assert_eq!(v["usage"]["resetInSeconds"], 86_400);
+    assert!(v["prediction"].is_null());
+
+    // Asked again at once, the report reuses what it read: a card that refreshes costs no tunnel data.
+    let before = reads(&mock, "/_tsd_/tunnelusage/");
+    s.tunnel().await.unwrap();
+    assert_eq!(reads(&mock, "/_tsd_/tunnelusage/"), before);
+}
+
+#[tokio::test]
+async fn while_printing_the_report_reads_the_failure_score_once_a_minute() {
+    let mock = Mock::start(report_mock(true, r#"{"total": 5, "monthly_cap": -1}"#)).await;
+    let s = octo_session("rep2", &mock).await;
+    s.status().await.unwrap();
+    let r = s.tunnel().await.unwrap();
+    let u = r.usage.unwrap();
+    assert!(u.unlimited);
+    assert_eq!((u.cap_bytes, u.left_bytes), (None, None));
+    let p = r.prediction.expect("a printing printer has a score");
+    assert!((p.score - 0.12).abs() < 1e-9);
+    s.tunnel().await.unwrap();
+    assert_eq!(
+        reads(&mock, "/_tsd_/prediction/"),
+        1,
+        "the score is kept for a minute"
+    );
+    for r in mock.seen() {
+        assert_eq!(r.header("authorization"), Some(BASIC), "{}", r.path);
+    }
+}
+
+#[test]
+fn a_failure_score_outside_0_to_1_or_missing_is_no_score() {
+    for (body, want) in [
+        (r#"{"normalized_p": 0.5}"#, Some(0.5)),
+        (r#"{"normalized_p": 0}"#, Some(0.0)),
+        (r#"{"normalized_p": 1}"#, Some(1.0)),
+        (r#"{"normalized_p": 1.5}"#, None),
+        (r#"{"normalized_p": -0.1}"#, None),
+        (r#"{"normalized_p": "0.5"}"#, None),
+        (r#"{"p": 0.5}"#, None),
+        ("null", None),
+    ] {
+        let v: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(Prediction::from_json(&v).map(|p| p.score), want, "{body}");
+    }
+}
+
+#[tokio::test]
+async fn the_report_names_the_tunnel_s_problem_from_the_last_reading() {
+    let mock = Mock::start(|r| match r.path.as_str() {
+        "/api/version" => json_reply(r#"{"api": "0.1"}"#),
+        "/_tsd_/tunnelusage/" => json_reply(r#"{"total": 300000000, "monthly_cap": 300000000}"#),
+        _ => (481, vec![], String::new()),
+    })
+    .await;
+    let s = octo_session("rep3", &mock).await;
+    let e = s.status().await.unwrap_err();
+    assert_eq!(e.tunnel_problem(), Some(TunnelProblem::DataLimit));
+    let r = s.tunnel().await.unwrap();
+    assert_eq!(r.problem, Some(TunnelProblem::DataLimit));
+    assert_eq!(r.connected, Some(false));
+    assert_eq!(r.usage.unwrap().left_bytes, Some(0));
+    assert_eq!(serde_json::to_value(&r).unwrap()["problem"], "data_limit");
+}
+
+#[tokio::test]
+async fn a_lan_printer_has_no_tunnel_report() {
+    let mock = Mock::start(octoprint_mock()).await;
+    let cfg: PrinterConfig = serde_json::from_value(serde_json::json!({
+        "id": "lan1", "name": "lan1", "plugin": "octoprint", "host": "127.0.0.1", "port": mock.addr.port(),
+    }))
+    .unwrap();
+    let s = crate::drivers::OctoPrintConnector::new(Arc::new(MemoryGate::new()))
+        .connect(&cfg, &MemorySecrets::new())
+        .await
+        .unwrap();
+    assert!(s.tunnel().await.is_none());
+}

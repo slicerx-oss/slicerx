@@ -2,7 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Printer setup form state and validation. Pure data: secrets never enter this state; the form
 // only records whether a secret field holds something and how long it is.
-import type { Bed, PrinterHardware } from '@slicerx/contracts'
+import { parseTunnelEndpoint, TUNNEL_PASTE_TEXT, type Bed, type PrinterHardware, type TunnelPasteProblem } from '@slicerx/contracts'
 import { brandById, CONNECTION_METHODS, connectionMethod, modelById, modelsForBrand, type ConnectionId, type ConnectionMethod, type FieldKey, type Kinematics, type PrinterModel } from '@slicerx/printer-catalog'
 import { appHostPort, offeredConnections } from '../connected-apps/gate'
 
@@ -121,7 +121,14 @@ export interface PlainFields {
   username: string
 }
 
-export type SecretKey = Extract<FieldKey, 'accessCode' | 'apiKey' | 'password' | 'pairing'>
+/** `tunnel` is the Obico paste box: the whole address with its user name and password, held like any secret. */
+export type SecretKey = Extract<FieldKey, 'accessCode' | 'apiKey' | 'password' | 'pairing'> | 'tunnel'
+
+/** A field a check can name: the connection's own, or the Obico paste box. */
+export type CheckKey = FieldKey | 'tunnel'
+
+/** What the Obico paste box read: the tunnel host and whether a user name and password came with it, or why it was refused. Never the credential. */
+export type TunnelPaste = { host: string; credential: boolean } | { problem: TunnelPasteProblem }
 
 export interface PrinterForm {
   brand: string | null
@@ -139,6 +146,10 @@ export interface PrinterForm {
   secretLengths: Partial<Record<SecretKey, number>>
   /** The name the printer announced ("Workshop H2D"), saved as the printer's name. */
   name?: string
+  /** Reached through an Obico tunnel instead of the local network (Moonraker and OctoPrint only). */
+  via?: 'obico'
+  /** What the Obico paste box holds, when something is pasted. */
+  tunnel?: TunnelPaste
 }
 
 export const EMPTY_FORM: PrinterForm = {
@@ -238,7 +249,41 @@ export function setFirmware(form: PrinterForm, firmware: Firmware): PrinterForm 
 export function pickConnection(form: PrinterForm, id: ConnectionId, appBaseUrl?: string): PrinterForm {
   if (form.connection === id) return form
   const viaApp = connectionMethod(id).requiresApp !== undefined
-  return { ...form, connection: id, fields: { ...form.fields, port: '', ...(viaApp ? { host: appBaseUrl ? appHostPort(appBaseUrl) : '' } : {}) }, secretLengths: {} }
+  const { via: _via, tunnel: _tunnel, ...rest } = form
+  return { ...rest, connection: id, fields: { ...form.fields, port: '', ...(viaApp ? { host: appBaseUrl ? appHostPort(appBaseUrl) : '' } : {}) }, secretLengths: {} }
+}
+
+/** Connections an Obico tunnel carries. */
+export const TUNNEL_CONNECTIONS: ReadonlySet<ConnectionId> = new Set<ConnectionId>(['moonraker', 'octoprint'])
+
+/** Whether the form reaches its printer through Obico. */
+export function throughObico(form: PrinterForm): boolean {
+  return form.via === 'obico' && form.connection !== null && TUNNEL_CONNECTIONS.has(form.connection)
+}
+
+/** On the local network or through Obico. A new choice drops what was typed or pasted for the other. */
+export function pickVia(form: PrinterForm, via: 'lan' | 'obico'): PrinterForm {
+  if ((form.via ?? 'lan') === via) return form
+  const { via: _via, tunnel: _tunnel, ...rest } = form
+  return { ...rest, ...(via === 'obico' ? { via } : {}), secretLengths: {} }
+}
+
+/** What the paste box shows for a pasted address: its host, or why it is refused. Undefined for an empty box. */
+export function readTunnelPaste(raw: string): TunnelPaste | undefined {
+  if (!raw.trim()) return undefined
+  const r = parseTunnelEndpoint(raw)
+  return r.ok ? { host: r.host, credential: r.credential !== undefined } : { problem: r.problem }
+}
+
+export const TUNNEL_EMPTY_TEXT = 'Paste the address Obico gave you.'
+export const TUNNEL_NO_CREDENTIAL_TEXT = 'This address has no user name and password. Copy the whole address from Obico.'
+
+/** Why the paste box cannot be used yet, in plain words, or undefined when it can. */
+export function tunnelError(form: PrinterForm): string | undefined {
+  const t = form.tunnel
+  if (!t) return TUNNEL_EMPTY_TEXT
+  if ('problem' in t) return TUNNEL_PASTE_TEXT[t.problem]
+  return t.credential ? undefined : TUNNEL_NO_CREDENTIAL_TEXT
 }
 
 export function nozzleMm(n: NozzleSpec): number | null {
@@ -315,7 +360,7 @@ export function validPort(text: string): boolean {
 }
 
 export interface ConnectionCheck {
-  errors: Partial<Record<FieldKey, string>>
+  errors: Partial<Record<CheckKey, string>>
   warnings: string[]
   /** True when Test may run. */
   ready: boolean
@@ -324,6 +369,10 @@ export interface ConnectionCheck {
 export const PUBLIC_WARNING = 'This looks like a public address. Printers are normally on your home network.'
 
 export function checkConnection(form: PrinterForm, method: ConnectionMethod): ConnectionCheck {
+  if (form.via === 'obico' && TUNNEL_CONNECTIONS.has(method.id)) {
+    const e = tunnelError(form)
+    return { errors: e ? { tunnel: e } : {}, warnings: [], ready: !e }
+  }
   const errors: Partial<Record<FieldKey, string>> = {}
   const warnings: string[] = []
   for (const f of method.fields) {
@@ -360,7 +409,7 @@ export function checkConnection(form: PrinterForm, method: ConnectionMethod): Co
 
 /** One thing that keeps Test connection off, in plain words, with the field to fix. */
 export interface Blocker {
-  field: FieldKey
+  field: CheckKey
   text: string
 }
 
@@ -370,6 +419,7 @@ export interface Blocker {
  */
 export function testBlockers(form: PrinterForm, method: ConnectionMethod): Blocker[] {
   const { errors } = checkConnection(form, method)
+  if (errors.tunnel) return [{ field: 'tunnel', text: errors.tunnel }]
   const out: Blocker[] = []
   for (const f of method.fields) {
     const e = errors[f.key]
@@ -518,6 +568,8 @@ export function formView(form: PrinterForm): Record<string, string> {
 
 /** Address with the port the person typed, for the connection. */
 export function addressOf(form: PrinterForm): string {
+  // Through Obico, only the tunnel host: never the pasted address, which carries the password.
+  if (throughObico(form)) return form.tunnel && 'host' in form.tunnel ? form.tunnel.host : ''
   const a = parseAddress(form.fields.host)
   if (!a) return form.fields.host.trim()
   const host = a.host.includes(':') ? `[${a.host}]` : a.host
@@ -574,5 +626,6 @@ export function extruderNozzles(form: PrinterForm): { mm: number; type?: string;
  * compares it as the MQTT password. Other secrets stay as typed.
  */
 export function normalizeSecret(key: SecretKey, raw: string): string {
+  if (key === 'tunnel') return raw.trim()
   return key === 'accessCode' ? raw.replace(/\s+/g, '') : raw
 }
