@@ -5,7 +5,7 @@
 // before the core ships.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
-import type { HeightRange, SettingValue, VolumeRole, ScriptReviewInput, ScriptReview, ScriptReplacementInput, ScriptReplacement, ScriptIdentity, ScriptReplacementChoice, AppliedScriptReplacement } from '@slicerx/contracts'
+import type { HeightRange, PlateCheck, SettingValue, VolumeRole, ScriptReviewInput, ScriptReview, ScriptReplacementInput, ScriptReplacement, ScriptIdentity, ScriptReplacementChoice, AppliedScriptReplacement } from '@slicerx/contracts'
 import type { SliceCollision } from './collide'
 import { readStl } from './mesh'
 import { ToolInputError } from './models'
@@ -101,6 +101,11 @@ export interface SliceSummary {
 export interface SlicerBackend {
   readonly kind: 'sx' | 'stub'
   slice(job: SliceJob): Promise<SliceSummary>
+  /**
+   * heimdall's plate check of a by-object plate (`sx check`), with the objects by the engine's ids (o0, o1) as the
+   * request names them. The sx engine only; the stub has none.
+   */
+  check?(job: SliceJob): Promise<PlateCheck>
   reviewScript?(input: ScriptReviewInput): Promise<ScriptReview>
   reviewScripts?(inputs: ScriptReviewInput[]): Promise<ScriptReview[]>
   prepareScriptReplacement?(input: ScriptReplacementInput): Promise<ScriptReplacement>

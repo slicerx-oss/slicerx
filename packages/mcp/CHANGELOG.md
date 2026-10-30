@@ -4,6 +4,12 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_project_show` 1.1.0 takes `check: true` (default false): each plate printed by object also gets `byObject.engine`, heimdall's plate check before a slice (`sx check`). It has `clean`, `collisions` as a slice lists them, each with `certainty` (`sure`: a slice of the plate is refused for it; `slice_decides`: only the slice can tell), `leftSure` (the pairs with a sure strike, `a` and `b` with `id` and `name`), `fixes` with the plate's object ids, `unchecked` (`objectId`, `what`: `tree_support`, `tool_change_trips`, `raft` or `painted_brim`, and `near`), `order` and `micros`. It slices nothing.
+- `slicerx_arrange` 1.10.0 checks the layout it made on each plate printed by object (sx engine): `check` lists each plate's result as above, and `leftSure` the pairs a slice would still be refused for, with the plate number. Arrange stops there and does not try another layout; the summary names the pairs.
+- `slicerx_app_ui` reads the desktop app's plate check back in `byObject.engine`: `requestId`, `status`, `current` (its answer is for the plate as it sits, and the warning shows it), `micros`, each collision with its `certainty` and objects, the `fixes` and `unchecked` with the objects near. Null where the app has none.
+
 ### Changed
 
 - `slicerx_arrange` 1.10.0 turns each copy about Z where that fits more, as the app's Arrange does, on the plates it lays out and on the new plates copies with no room go to. The new `turns` lists every copy of the arranged object as `id` (the plate object id), `plate` and `turnDeg`. Before, every copy kept its object's rotation, so long parts standing at an angle took more plates than in the app: 24 bars of 80 x 6 mm at 30 degrees need two 100 mm plates in both now. A copy placed around others (`slicerx_project_duplicate`) gets no turn of its own from the nest, as in the app. A turn belongs to the arranged layout, as the move does: rotating or scaling the object, changing its copies or changing the bed puts the plate back in rows, unturned.
