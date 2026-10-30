@@ -45,9 +45,12 @@ fn saved_body_limit_precedes_the_kernel_reader_and_valid_bodies_round_trip() {
     let loaded = call("load", &json!({"body":{"smb":saved}}))["body"]
         .as_u64()
         .unwrap();
-    assert_eq!(
-        call("info", &json!({"body":loaded}))["volumeMm3"],
-        call("info", &json!({"body":body}))["volumeMm3"]
+    // a kernel round trip may move the volume by an ulp on some targets
+    let volume = |id: u64| call("info", &json!({"body":id}))["volumeMm3"].as_f64().unwrap();
+    let (before, after) = (volume(body), volume(loaded));
+    assert!(
+        (after - before).abs() <= before.abs() * 1e-9,
+        "{after} vs {before}"
     );
     for id in [body, loaded] {
         call("free", &json!({"body":id}));
