@@ -8,6 +8,7 @@ import { FirstFrameGate } from './firstframe'
 import { markRevealPlayed, PlateReveal, REVEAL_HIDDEN, revealPlayed } from './reveal'
 import { crossfadeFrom, fadeOut, stillOver } from './crossfade'
 import { SceneHold, type Held } from './scene-hold'
+import { HostSelection } from './host-selection'
 import { LoadingWisp, lightStudio } from './wisp'
 import { gpuProfile } from './gpu'
 import { DegradeGuard, MotionTuner } from './frame-budget'
@@ -293,6 +294,8 @@ class ViewportImpl implements Viewport {
   /** The filament slot picked out by setHighlightSlot, or null. */
   private highlightSlot: number | null = null
   private selection: string[] = []
+  /** The host's selection while some of its objects are not built yet. */
+  private readonly hostSelection = new HostSelection()
   private controlsMap: ControlsMap = CONTROL_PRESETS.slicerx
   private spaceDown = false
   private projection: Projection = 'perspective'
@@ -1375,6 +1378,10 @@ class ViewportImpl implements Viewport {
     return [...this.objects.keys()]
   }
 
+  selectedObjects(): string[] {
+    return [...this.selection]
+  }
+
   setPlate(plate: ViewportPlate, opts: { keepCamera?: boolean } = {}): void {
     if (!this.swapping) {
       const at = this.hold.plate(plate, opts)
@@ -1452,7 +1459,7 @@ class ViewportImpl implements Viewport {
       this.park(id, o, from)
     }
     this.objectBuilds += built
-    this.selection = this.selection.filter((id) => this.objects.has(id))
+    this.selection = this.hostSelection.rebuilt(this.selection, (id) => this.objects.has(id))
     // The cut follows its model into the new plate by id, or ends when the model is gone.
     if (this.cut) {
       const e = this.objects.get(this.cut.entry.id)
@@ -1614,7 +1621,8 @@ class ViewportImpl implements Viewport {
   }
 
   setSelection(ids: string[]): void {
-    this.selection = ids.filter((id) => this.objects.has(id))
+    // ids without an object yet (a plate held while a project opens) show once it is built
+    this.selection = this.hostSelection.set(ids, (id) => this.objects.has(id))
     this.invalidate()
   }
 
@@ -4048,6 +4056,7 @@ class ViewportImpl implements Viewport {
 
   private selectIds(ids: string[]): void {
     const same = ids.length === this.selection.length && ids.every((id, i) => id === this.selection[i])
+    this.hostSelection.pick()
     this.selection = ids
     this.invalidate()
     if (!same) this.emit('select', { ids: [...ids] })

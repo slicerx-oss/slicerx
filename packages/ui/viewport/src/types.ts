@@ -560,6 +560,8 @@ export interface Viewport {
    * still the objects on screen, so a caller can check that what is drawn is the plate it asked for.
    */
   drawnObjects(): string[]
+  /** The ids of the objects drawn as selected now, in the order they were selected. */
+  selectedObjects?(): string[]
   /** Move objects without rebuilding geometry. */
   setTransforms(transforms: Record<string, number[]>): void
   setPartStyle(objectId: string, partIndex: number, style: PartStyle): void
@@ -586,6 +588,10 @@ export interface Viewport {
   setPrintLook(on: boolean, layerHeightMm?: number): void
   /** The plate view draws the sliced toolpaths in place of the models; the hovered model turns solid. `stale` keeps the models solid until the next slice lands. */
   setToolpathLook(on: boolean, stale?: boolean): void
+  /**
+   * The objects drawn as selected. Ids the view has not built yet (a plate held while a project opens) are selected
+   * once they are; the next selection, set here or picked in the view, lets go of any that never came.
+   */
   setSelection(ids: string[]): void
   setTool(tool: PlateTool): void
   /** Brim ears per object, in bed coordinates (mm). `error` draws the ear in the alert color. */
