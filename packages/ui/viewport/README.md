@@ -52,6 +52,104 @@ Apache-2.0 (`LICENSE-APACHE`, `NOTICE`; keep the "Made possible by SlicerX" cred
 
 - Modeling tools: with `setTool('probe')` a click only reports what is under the cursor. `pick` carries the object, the part, the bed point, the `triangle` (index into the part's index buffer) and `bed` (where the click meets the bed plane); nothing is selected or dragged. `setProbeFaces(true)` highlights the flat face under the cursor. `setGuides({ lines, loops, points })` draws measured end points, face outlines and shape profiles in bed coordinates; `{}` clears them.
 
+## Drag to another plate
+
+`@slicerx/viewport/edge-drag` lets people send parts to another plate by dragging them past a bed edge. While a part moves, each bed edge shows a band in the space off the bed with a chevron and a label. The left, top and right edges add the part to the other plates in plate order, and the bottom adds it to a new plate. With more than three other plates the top edge reads "+ More plates", and a short wait past its line opens a list of the rest. A release moves the part once the whole footprint (or the whole selection's) is past the edge by 8 mm or 24 screen pixels, whichever is more at the view's scale. A release short of that line eases the part back and shows a one-time hint, and Esc calls the move off.
+
+The entry is small and only sets the view's hook. The gesture code and its overlay load on the first part drag, and the overlay exists only while a part moves: no elements, frames or listeners while idle.
+
+```ts
+import { enableEdgeDrag } from '@slicerx/viewport/edge-drag'
+
+const off = enableEdgeDrag(vp, {
+  plates: () => myPlates.map((p, i) => ({ id: p.id, label: p.name, order: i })),
+  activePlate: () => currentPlateId,
+  move: (ids, dest) => (dest === 'new' ? moveToNewPlate(ids) : moveToPlate(ids, dest.plate)),
+  dropTarget: () => plateBar.getBoundingClientRect(),
+  obstacles: () => [toolbar.getBoundingClientRect()],
+  onSwitch: (plateId) => showPlate(plateId),
+})
+// off() turns it off again
+```
+
+The host owns the plates. The gesture never changes them; it asks.
+
+| Option | What it does |
+|---|---|
+| `plates()` | The plates in plate order, each `{ id, label, order }`. `label` is what the edge shows, for example "Plate 2". |
+| `activePlate()` | The id of the plate the view shows now. |
+| `move(objectIds, dest)` | Moves the objects off the shown plate. `dest` is `{ plate: id }` or `'new'`, for a new plate the host adds after the others. The host places them, makes the move one undo step (a new plate and the move into it undo together) and may return the id of the plate they went to. It may return a promise. |
+| `dropTarget()` | Optional. The rect of the plate bar or plate picker, in client pixels. On a drop the part flies there and the bar gets a ring and a `+N` badge. `null` or no function fades the part in place. |
+| `obstacles()` | Optional. Rects of the host's toolbars and panels over the view. When a drag starts the view eases out until every offered edge has room for the part inside what is left. |
+| `onSwitch(plateId, objectIds)` | Optional. Called after a drop to show the plate the objects went to; the view then selects them. Without it the view stays on its plate. |
+| `canMove(objectIds)` | Optional. `false` keeps that move on the bed, for example for a prime tower. |
+| `stage` | Optional. The element the overlay goes into. Default the canvas's parent, which should be positioned. |
+| `theme` | Optional. Colors by key, below. |
+| `labels` | Optional. Any of the strings, below. |
+
+The view needs `setEdgeDrag`, `screenOf`, `cancelDrag`, `setDragZoom` and `placeReadout`, which `createViewport` returns. `enableEdgeDrag` does nothing on a view without `setEdgeDrag` and `screenOf`.
+
+### Theming
+
+Every color is a CSS custom property. Set them on `:root` or any element around the canvas, or pass `theme`, which sets them on the overlay over whatever the page sets. Unset, each follows the app tokens the viewport already reads (`--accent`, `--fg`, `--ink-0`, `--purple-text`, `--accent-ring`), then SlicerX's dark values, so a page that themes the viewport gets a matching gesture with no extra work.
+
+| `theme` key | Property | Colors | Default |
+|---|---|---|---|
+| `band` | `--sx-edge-band` | The band's glow | `--accent` |
+| `line` | `--sx-edge-line` | The line along the bed edge | `--sx-edge-band` |
+| `commit` | `--sx-edge-commit` | The commit line (dashed, solid once armed) and the armed label's underline | `--sx-edge-band` |
+| `halo` | `--sx-edge-halo` | The halo under the lines and around the label text | `--ink-0` at 82 percent |
+| `label` | `--sx-edge-label` | The label text | `--fg` |
+| `labelArmed` | `--sx-edge-label-armed` | The label text once armed, and the picked row in the list | `--purple-text` mixed 45 percent into `--fg` |
+| `chevron` | `--sx-edge-chevron` | The label's chevron | `--sx-edge-label-armed` |
+| `drop` | `--sx-edge-drop` | The part's stand-in that flies to the plate bar | `--sx-edge-band` |
+| `ring` | `--sx-edge-ring` | The ring around the plate bar as the part lands | `--sx-edge-band` |
+| `ringGlow` | `--sx-edge-ring-glow` | The soft glow outside that ring | `--accent-ring` |
+| `badge` | `--sx-edge-badge` | The `+N` badge on the plate bar | `--sx-edge-band` |
+| `badgeText` | `--sx-edge-badge-text` | The badge text | `--ink-0` |
+| `menu` | `--sx-edge-menu` | The More plates list | `--surface-menu` |
+| `menuText` | `--sx-edge-menu-text` | The list text | `--fg` |
+| `hint` | `--sx-edge-hint` | The short release hint | `--surface-float` |
+| `hintText` | `--sx-edge-hint-text` | The hint text | `--fg` |
+
+`EDGE_DRAG_PROPERTIES` maps each key to its property.
+
+```ts
+enableEdgeDrag(vp, { ...host, theme: { band: '#2ec4b6', label: '#f4f4f4' } })
+```
+
+```css
+.my-viewer { --sx-edge-band: #2ec4b6; --sx-edge-label: #f4f4f4; }
+```
+
+### Labels
+
+Pass any of these in `labels`; the rest stay English. `DEFAULT_EDGE_DRAG_LABELS` has the defaults.
+
+| Key | Default | Shown |
+|---|---|---|
+| `addToPlate(label)` | `+ Add to ${label}` | On an edge that adds to another plate |
+| `addToNewPlate` | `+ Add to new plate` | On the bottom edge |
+| `morePlates` | `+ More plates` | On the top edge past three other plates |
+| `hint` | `Drag past the line to move it` | After a release short of the line, once |
+| `releaseToPlate(label)` | `Release to add to ${label}` | Live region, armed on a plate |
+| `releaseToNewPlate` | `Release to add to a new plate` | Live region, armed on the new plate edge |
+| `pickFromList` | `Move onto a plate in the list` | Live region, More plates list open |
+| `holdForMore` | `Hold to see more plates` | Live region, waiting on More plates |
+
+### Accessibility
+
+- A polite live region (`role="status"`) says where a release adds the part as soon as it is past the line, and clears when it is not.
+- The armed state never rests on color alone: the commit line turns solid and the label is underlined.
+- Esc calls the move off while a part moves, and the part goes back. The listener exists only during the move.
+- Under reduced motion (`prefers-reduced-motion: reduce`, or `data-motion="reduced"` on the root element) the zoom is instant, the band does not pulse and the drop is instant.
+- The gesture is pointer only. Keep a menu command or a keyboard path that moves the selection to another plate.
+- Contrast is the host's job once it overrides colors. The lines and label text sit on a halo (`halo`) so they read over the band, the bed and the view behind. Check overridden colors against your own background and bed: at least 3:1 for the marks (lines, chevron, ring, badge) and 4.5:1 for label, list and hint text.
+
+### Test hooks
+
+`overlaysMounted()` counts the overlays up now (0 whenever no part moves), `resetHint()` shows the one-time hint again, and `loadEdgeDrag()` loads the gesture code ahead of a drag. Test ids: `edge-drag` (the overlay), `edge-drag-left`, `edge-drag-top`, `edge-drag-right` and `edge-drag-bottom` (the labels, with `data-armed` once past the line), `edge-drag-live`, `edge-drag-more` and `edge-drag-hint`.
+
 ## Painting
 
 `setTool('paint')` turns on the paint tools; `setPaintSettings({ layer, tool, shape, radiusMm, state, erase, splitTriangles, detailMm, angleDeg, heightRangeMm })` configures them.
