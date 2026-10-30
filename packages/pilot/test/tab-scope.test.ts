@@ -44,10 +44,10 @@ describe('the design tab routing rule', () => {
     expect(designTier('a plate with a pattern of 12 holes')).toBe(MUNINN)
   })
 
-  it('moves to muninn for a picture or a PDF, never for other files', () => {
-    expect(designTier('build this', [file('a.png', 'image/png')])).toBe(MUNINN)
-    expect(designTier('build this', [file('a.jpg', 'image/jpeg')])).toBe(MUNINN)
-    expect(designTier('build this', [file('drawing.pdf', 'application/pdf')])).toBe(MUNINN)
+  it('stays on huginn for a picture or a PDF alone, and for other files', () => {
+    expect(designTier('build this', [file('a.png', 'image/png')])).toBe(HUGINN)
+    expect(designTier('build this', [file('a.jpg', 'image/jpeg')])).toBe(HUGINN)
+    expect(designTier('build this', [file('drawing.pdf', 'application/pdf')])).toBe(HUGINN)
     expect(designTier('build this', [file('notes.txt', 'text/plain')])).toBe(HUGINN)
     expect(designTier('build this', [])).toBe(HUGINN)
   })
@@ -270,11 +270,22 @@ describe('the tab runtime', () => {
     expect(new Set(models(client))).toEqual(new Set(['claude-haiku-5-5']))
   })
 
-  it('builds on muninn from the first step for a picture, a PDF or many steps, and says so once', async () => {
+  it('builds on huginn for a picture or a PDF alone', async () => {
     for (const [message, files] of [
       ['Build this', [file('sketch.jpg', 'image/jpeg')]],
       ['Build the part on this drawing', [file('drawing.pdf', 'application/pdf')]],
+    ] as const) {
+      const { pilot, client } = tabPilot(BUILD)
+      const ev = await run(pilot, message, [...files])
+      expect(new Set(models(client)), message).toEqual(new Set(['claude-haiku-5-5']))
+      expect(switches(ev), message).toEqual([])
+    }
+  })
+
+  it('builds on muninn from the first step for many steps, and says so once', async () => {
+    for (const [message, files] of [
       ['A box with a lid, a lip, rounded corners and vents', undefined],
+      ['A print-in-place joint with a pin', undefined],
     ] as const) {
       const { pilot, client } = tabPilot(BUILD)
       const ev = await run(pilot, message, files ? [...files] : undefined)
@@ -284,9 +295,9 @@ describe('the tab runtime', () => {
     }
   })
 
-  it('routes each message on its own: a follow-up without a picture goes back to huginn', async () => {
+  it('routes each message on its own: a plain follow-up goes back to huginn', async () => {
     const { pilot, client } = tabPilot([{ text: 'Read it.' }, { text: 'Made it thicker.' }])
-    await run(pilot, 'What is on this drawing?', [file('drawing.png', 'image/png')])
+    await run(pilot, 'A box with a lid, a lip, rounded corners and vents')
     await run(pilot, 'Make the base 4 mm thick')
     expect(models(client)).toEqual(['claude-sonnet-5-5', 'claude-haiku-5-5'])
   })

@@ -122,7 +122,7 @@ export function designSteps(prompt: string): number {
 
 /** The tier a request starts on and why, for the run's start event and the read-back. */
 export type Route = PilotRoute & { tier: Tier }
-/** Why Auto started a run on its tier: deep work, a picture or PDF to build from, many steps, sizes only the person knows, or none. */
+/** Why Auto started a run on its tier: deep work, many steps, a part that works with another, sizes only the person knows, or none. (`attachment` is no longer given; saved sessions still carry it.) */
 export type RouteReason = PilotRoute['reason']
 
 /**
@@ -175,17 +175,24 @@ export function personSizes(prompt: string): boolean {
 /** Words that ask for a part to be made, in a chat without the design tools. */
 const BUILD = /\b(?:make|design|model|build|create|draw|cad|print me|3d print)\b/i
 
-const reads = (files: readonly DesignRequestFiles[]): boolean => files.some((f) => f.type.startsWith('image/') || f.type === 'application/pdf')
+/**
+ * Parts that work with another part: they mate with it, turn or slide against it, or mesh with it. Described in general
+ * words (a joint, a pivot, a part that slides in a rail, a matching carriage), not by the name of one kind of part.
+ */
+const MECHANISM =
+  /\b(?:print[- ]in[- ]place|mesh(?:es|ing)?|interlock(?:s|ing)?|pivot(?:s|ing)?|moving parts?|moves? (?:along|against|relative)|slides? (?:in|on|along|over|into|inside)|slide rail|matching \w+|mating|snap(?:s|ped)? together|fit(?:s)? together|(?:two|2) (?:parts|pieces|halves|leaves)|assembly|assembled)\b/
 
 /**
- * Where a design request starts, and why. Auto stays on huginn unless the message carries a picture
- * or a PDF drawing to read, the part takes many steps (a gear, thread or pattern, or `MANY_STEPS` distinct features
- * named), or it needs a size only the person knows (see personSizes). Tool calls never move a design run, and neither
- * do failed ones: the build stays on the tier it started on.
+ * Where a design request starts, and why. Auto stays on huginn unless the part takes many steps (a gear, thread or
+ * pattern, or `MANY_STEPS` distinct features named), works with another part (see MECHANISM), or needs a size only
+ * the person knows (see personSizes). A picture or PDF alone does not move it: huginn reads a drawing as well as
+ * muninn does on the bench, at a tenth of the cost. A run that fails a design check moves up while it runs (runtime.ts).
  */
 export function designRoute(prompt: string, files: readonly DesignRequestFiles[] = []): Route {
-  if (reads(files)) return { tier: MUNINN, reason: 'attachment' }
-  if (MANY_FEATURES.test(prompt.toLowerCase()) || designSteps(prompt) >= MANY_STEPS) return { tier: MUNINN, reason: 'many_steps' }
+  void files
+  const text = prompt.toLowerCase()
+  if (MANY_FEATURES.test(text) || designSteps(prompt) >= MANY_STEPS) return { tier: MUNINN, reason: 'many_steps' }
+  if (MECHANISM.test(text)) return { tier: MUNINN, reason: 'mechanism' }
   if (personSizes(prompt)) return { tier: MUNINN, reason: 'person_sizes' }
   return { tier: HUGINN, reason: 'default' }
 }
@@ -206,15 +213,13 @@ export function tabRoute(prompt: string, files: readonly DesignRequestFiles[] = 
 }
 
 /**
- * Where a request starts in a chat without the design tools, and why: muninn for deep work (see tierForPrompt), and for a build from a
- * picture or PDF or one that needs a size only the person knows, so the model that decides what to ask is the larger
- * one. Any other request starts on huginn; a part tool or failures can still move the run up later.
+ * Where a request starts in a chat without the design tools, and why: muninn for deep work (see tierForPrompt), and
+ * for a request to make a part, as designRoute decides (many steps, a part that works with another, a size only the
+ * person knows). A picture or PDF alone does not move it. Any other request starts on huginn; a part tool or failures can
+ * still move the run up later.
  */
 export function chatRoute(prompt: string, files: readonly DesignRequestFiles[] = []): Route {
   if (tierForPrompt(prompt) === MUNINN) return { tier: MUNINN, reason: 'deep' }
-  if (BUILD.test(prompt)) {
-    if (reads(files)) return { tier: MUNINN, reason: 'attachment' }
-    if (personSizes(prompt)) return { tier: MUNINN, reason: 'person_sizes' }
-  }
+  if (BUILD.test(prompt)) return designRoute(prompt, files)
   return { tier: HUGINN, reason: 'default' }
 }

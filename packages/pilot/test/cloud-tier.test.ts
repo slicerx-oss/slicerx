@@ -99,9 +99,15 @@ describe('the tier header', () => {
 })
 
 describe('mimir cloud asks for the stronger model on hard turns', () => {
-  it('a picture turn sends step', async () => {
+  it('a picture turn sends base: a drawing alone does not ask for the stronger model', async () => {
     const { t, sent } = proxy([{ text: 'How thick is the plate?' }])
     await run(t, 'Model this part from the drawing I attached.', { attachments: [drawing] })
+    expect(tiers(sent)).toEqual(['base'])
+  })
+
+  it('a part that works with another sends step', async () => {
+    const { t, sent } = proxy([{ text: 'Building it.' }])
+    await run(t, 'A print-in-place joint with a pin, about 40 mm wide', { design: true })
     expect(tiers(sent)).toEqual(['step'])
   })
 
