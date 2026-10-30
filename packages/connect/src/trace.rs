@@ -21,7 +21,8 @@ pub(crate) fn fingerprint(secret: &str) -> String {
     )
 }
 
-/// Appends `line` under the printer `id` when the log is on.
+/// Appends `line` under the printer `id` when the log is on, with user names and passwords taken out
+/// of any URL in it.
 pub fn trace(id: &str, line: impl std::fmt::Display) {
     let file = FILE.get_or_init(|| {
         let path = std::env::var_os("SX_CONNECT_LOG")?;
@@ -37,6 +38,8 @@ pub fn trace(id: &str, line: impl std::fmt::Display) {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis());
     let mut f = f.lock().unwrap_or_else(PoisonError::into_inner);
+    // A URL with a user name and password in it never reaches the file (tunnel addresses carry one).
+    let line = crate::tunnel::redact_userinfo(&line.to_string());
     let _ = writeln!(f, "{ms} {id} {line}");
 }
 

@@ -12,6 +12,12 @@ use crate::types::{Image, PrinterConfig};
 /// Builds the client for one printer. LAN printers with `tls` on use self-signed
 /// certificates, so verification is off for those, and only for those.
 pub(crate) fn client(cfg: &PrinterConfig) -> Result<Client> {
+    // A tunnel printer is reached only through its tunnel's client (src/tunnel.rs), never directly.
+    if cfg.tunnel.is_some() {
+        return Err(Error::Config(
+            "this printer connects through its tunnel, which its plugin does not support".to_owned(),
+        ));
+    }
     let tls = if cfg.tls.unwrap_or(false) {
         crate::tls::lan_client_config()?
     } else {
@@ -127,6 +133,15 @@ pub(crate) fn check(printer: &str, resp: Response) -> Result<Response> {
     let status = resp.status();
     if status.is_success() {
         return Ok(resp);
+    }
+    if let Some(e) = crate::tunnel::refusal(printer, &resp) {
+        return Err(e);
+    }
+    if status.is_redirection() && resp.url().host_str().is_some_and(crate::tunnel::is_tunnel_host) {
+        return Err(Error::protocol(
+            printer,
+            "the tunnel answered with a redirect, which is never followed",
+        ));
     }
     match status {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(Error::Auth {
