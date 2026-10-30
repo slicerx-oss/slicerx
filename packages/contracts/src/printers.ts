@@ -215,6 +215,12 @@ export interface PrinterLive {
    * A routine step, never a problem: problems and pause reasons are the status `message`. Absent when the printer names no step.
    */
   stage?: string
+  /**
+   * The slots whose runout sensor reports no filament during a job, as slot ids of `slots`: a Snapmaker U1 toolhead's
+   * filament motion sensor. A print paused for it names the toolhead in `message` ("Paused: filament runout on T2").
+   * Absent when no sensor reports one or the printer has none.
+   */
+  runoutSlots?: string[]
 }
 
 export type PrinterEvent =
