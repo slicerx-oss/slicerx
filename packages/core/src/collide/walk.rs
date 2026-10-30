@@ -281,6 +281,7 @@ impl Walker<'_> {
             let Some(o) = m.objects.get(n.j) else {
                 continue;
             };
+            let mut gap = Gap::new(&o.rim, [x, y]);
             let top = f64::from(o.top);
             if n.head {
                 let fields = m.fields(n.j, head);
@@ -325,9 +326,17 @@ impl Walker<'_> {
                     // The part's material inside the piece: from its underside up to the tallest the part stands there.
                     let region = o.struck(rect, z + c.z0, z + c.z0 + d);
                     #[allow(clippy::cast_possible_truncation, reason = "mm")]
-                    self.record(pr, kind, Severity::Hit, part, n.j, d as f32, region, |o| {
-                        meeting(o, rect, z + c.z0, [x, y], true)
-                    });
+                    self.record(
+                        pr,
+                        kind,
+                        Severity::Hit,
+                        part,
+                        n.j,
+                        d as f32,
+                        region,
+                        &mut gap,
+                        |o| meeting(o, rect, z + c.z0, [x, y], true),
+                    );
                 }
             }
             if n.beam
@@ -348,6 +357,7 @@ impl Walker<'_> {
                         n.j,
                         d as f32,
                         region,
+                        &mut gap,
                         |o| meeting(o, rect, z + m.rod, [x, y], false),
                     );
                 }
@@ -364,11 +374,12 @@ impl Walker<'_> {
                     n.j,
                     (top - z - m.lid) as f32,
                     o.struck(rect, z + m.lid, top),
+                    &mut gap,
                     |o| meeting(o, rect, z + m.lid, [x, y], false),
                 );
             }
             if n.close && pr.leg.is_none() && top > z + m.nozzle_height {
-                let d = hull_distance(&o.hull, [x, y]);
+                let d = gap.get();
                 // A head that is not measured cannot clear it by its own shape: the radius blocks, as in Bambu Studio.
                 if let Some((severity, part)) = super::rules::radius_hit(d, m.radius, m.estimated) {
                     let short = m.radius - d;
@@ -378,13 +389,23 @@ impl Walker<'_> {
                         .then(|| o.struck([x - r, x + r, y - r, y + r], z + m.nozzle_height, top))
                         .flatten();
                     #[allow(clippy::cast_possible_truncation, reason = "mm")]
-                    self.record(pr, Kind::Hotend, severity, part, n.j, short as f32, region, |o| {
-                        let q = nearest_on_hull(&o.hull, [x, y]);
-                        Some((
-                            [q[0], q[1], (z + m.nozzle_height).min(f64::from(o.top))],
-                            short as f32,
-                        ))
-                    });
+                    self.record(
+                        pr,
+                        Kind::Hotend,
+                        severity,
+                        part,
+                        n.j,
+                        short as f32,
+                        region,
+                        &mut gap,
+                        |o| {
+                            let q = nearest_on_hull(&o.hull, [x, y]);
+                            Some((
+                                [q[0], q[1], (z + m.nozzle_height).min(f64::from(o.top))],
+                                short as f32,
+                            ))
+                        },
+                    );
                 }
             }
         }
@@ -401,6 +422,7 @@ impl Walker<'_> {
         j: usize,
         depth: f32,
         region: Option<[[f32; 3]; 2]>,
+        gap: &mut Gap<'_>,
         contact: impl FnOnce(&super::Obstacle) -> Option<([f64; 3], f32)>,
     ) {
         let mover = u32::try_from(self.k).unwrap_or(u32::MAX);
@@ -412,7 +434,7 @@ impl Walker<'_> {
         // The toolhead goes furthest in sideways where the nozzle is nearest the part.
         #[allow(clippy::cast_possible_truncation, reason = "mm")]
         let near = if part == Part::Toolhead {
-            hull_distance(&o.hull, [pr.p[0], pr.p[1]]) as f32
+            gap.get() as f32
         } else {
             f32::MAX
         };
@@ -563,6 +585,163 @@ fn meeting(
     .map(|q| (q, shift))
 }
 
+/// A probe's distance to one obstacle's hull, worked out the first time it is asked for.
+struct Gap<'h> {
+    rim: &'h Rim,
+    p: [f64; 2],
+    d: Option<f64>,
+}
+
+impl<'h> Gap<'h> {
+    fn new(rim: &'h Rim, p: [f64; 2]) -> Self {
+        Self { rim, p, d: None }
+    }
+
+    fn get(&mut self) -> f64 {
+        *self.d.get_or_insert_with(|| self.rim.distance(self.p))
+    }
+}
+
+/// Edges per run of a [`Rim`].
+const RUN: usize = 8;
+
+/// A hull with its edges in runs of [`RUN`] and each run's box, so a probe's distance to it measures only the edges
+/// near the probe. [`Rim::distance`] is [`hull_distance`] to the last bit.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Rim {
+    hull: Vec<[f64; 2]>,
+    /// Per run, the box `[min x, min y, max x, max y]` of its edges.
+    runs: Vec<[f64; 4]>,
+}
+
+impl Rim {
+    pub(crate) fn of(hull: &[[f64; 2]]) -> Self {
+        let mut rim = Self {
+            hull: hull.to_vec(),
+            runs: Vec::new(),
+        };
+        // A hull with a corner that is not a number keeps no runs, so its distance is measured edge by edge.
+        if hull.len() >= 3 && hull.iter().flatten().all(|v| v.is_finite()) {
+            for start in (0..hull.len()).step_by(RUN) {
+                let b = rim.edges(start).fold(
+                    [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY],
+                    |b, (p, q)| span_with(span_with(b, p), q),
+                );
+                rim.runs.push(b);
+            }
+        }
+        rim
+    }
+
+    /// The edges of the run that starts at edge `start`.
+    fn edges(&self, start: usize) -> impl Iterator<Item = ([f64; 2], [f64; 2])> + '_ {
+        let n = self.hull.len();
+        (start..(start + RUN).min(n))
+            .filter_map(move |i| Some((*self.hull.get(i)?, *self.hull.get((i + 1) % n)?)))
+    }
+
+    /// The distance from `p` to the hull, 0 inside it.
+    pub(crate) fn distance(&self, p: [f64; 2]) -> f64 {
+        let n = self.hull.len();
+        if self.runs.is_empty() || !(p[0].is_finite() && p[1].is_finite()) {
+            return hull_distance(&self.hull, p);
+        }
+        if self.runs.len() == 1 {
+            return few(&self.hull, p);
+        }
+        // Squared, an edge is no nearer than any box round it, which takes no division to measure.
+        let floor = |b: [f64; 4]| {
+            let dx = (b[0] - p[0]).max(p[0] - b[2]).max(0.0);
+            let dy = (b[1] - p[1]).max(p[1] - b[3]).max(0.0);
+            dx * dx + dy * dy
+        };
+        let square = |a: [f64; 2], b: [f64; 2]| {
+            let q = nearest_on_segment(a, b, p);
+            let (dx, dy) = (q[0] - p[0], q[1] - p[1]);
+            (dx * dx + dy * dy, q)
+        };
+        let cross = |a: [f64; 2], b: [f64; 2]| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+        // The run with the nearest box, and in it the nearest edge: a first bound.
+        let Some(first) = (0..self.runs.len()).min_by(|&i, &j| {
+            let (a, b) = (self.runs.get(i), self.runs.get(j));
+            floor(a.copied().unwrap_or_default()).total_cmp(&floor(b.copied().unwrap_or_default()))
+        }) else {
+            return hull_distance(&self.hull, p);
+        };
+        let mut bound: Option<(f64, [f64; 2], [f64; 2])> = None;
+        for (a, b) in self.edges(first * RUN) {
+            let s = square(a, b).0;
+            if bound.is_none_or(|(t, _, _)| s < t) {
+                bound = Some((s, a, b));
+            }
+        }
+        let Some((bound, a, b)) = bound.filter(|(s, _, _)| s.is_finite()) else {
+            return hull_distance(&self.hull, p);
+        };
+        // Inside is every edge seeing `p` on its left; the nearest edge seeing it on its right settles it at once.
+        if cross(a, b) >= 0.0
+            && (0..n)
+                .step_by(RUN)
+                .flat_map(|r| self.edges(r))
+                .all(|(a, b)| cross(a, b) >= 0.0)
+        {
+            return 0.0;
+        }
+        // An edge whose box lies past the bound, with a nanometer and a millionth to spare for rounding, can't be
+        // nearest. Of the rest, the nearest by squared length, then the exact distance only to the edges within
+        // rounding of it: the least distance over every edge.
+        let reach = bound.sqrt() + 1e-6;
+        let cap = reach * reach * (1.0 + 1e-6);
+        let near = || {
+            self.runs
+                .iter()
+                .enumerate()
+                .filter(move |(_, b)| floor(**b) <= cap)
+                .flat_map(move |(r, _)| self.edges(r * RUN))
+                .filter(move |&(a, b)| floor(span_with(span_with([a[0], a[1], a[0], a[1]], a), b)) <= cap)
+        };
+        let least = near().map(|(a, b)| square(a, b).0).fold(f64::INFINITY, f64::min);
+        let within = least * (1.0 + 1e-9) + 1e-300;
+        near()
+            .filter_map(|(a, b)| {
+                let (s, q) = square(a, b);
+                (s <= within).then(|| dist(p, q))
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+}
+
+/// [`hull_distance`] for a hull of a few corners, at least three: the nearest edge by squared length, then the exact
+/// distance only to the edges within rounding of it, the same least distance as measuring every edge.
+fn few(hull: &[[f64; 2]], p: [f64; 2]) -> f64 {
+    let n = hull.len();
+    let edges = || (0..n).filter_map(move |i| Some((*hull.get(i)?, *hull.get((i + 1) % n)?)));
+    if edges().all(|(a, b)| (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= 0.0) {
+        return 0.0;
+    }
+    let square = |a: [f64; 2], b: [f64; 2]| {
+        let q = nearest_on_segment(a, b, p);
+        let (dx, dy) = (q[0] - p[0], q[1] - p[1]);
+        (dx * dx + dy * dy, q)
+    };
+    let least = edges().map(|(a, b)| square(a, b).0).fold(f64::INFINITY, f64::min);
+    if !least.is_finite() {
+        return hull_distance(hull, p);
+    }
+    let within = least * (1.0 + 1e-9) + 1e-300;
+    edges()
+        .filter_map(|(a, b)| {
+            let (s, q) = square(a, b);
+            (s <= within).then(|| dist(p, q))
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// The box `b` (`[min x, min y, max x, max y]`) grown to take in `p`.
+fn span_with(b: [f64; 4], p: [f64; 2]) -> [f64; 4] {
+    [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])]
+}
+
 /// Distance from `p` to a convex hull, 0 inside it.
 pub(crate) fn hull_distance(hull: &[[f64; 2]], p: [f64; 2]) -> f64 {
     if hull.len() < 3 {
@@ -611,5 +790,108 @@ mod tests {
         assert!(hull_distance(&sq, [5.0, 5.0]).abs() < 1e-12);
         assert!((hull_distance(&sq, [13.0, 5.0]) - 3.0).abs() < 1e-12);
         assert!((hull_distance(&sq, [13.0, 14.0]) - 5.0).abs() < 1e-12);
+    }
+
+    /// A small repeatable source of numbers for the tests below.
+    struct Draw(u64);
+
+    impl Draw {
+        #[allow(clippy::cast_precision_loss, reason = "53 random bits")]
+        fn next(&mut self) -> f64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 11) as f64 / (1u64 << 53) as f64
+        }
+
+        fn range(&mut self, lo: f64, hi: f64) -> f64 {
+            lo + (hi - lo) * self.next()
+        }
+    }
+
+    /// Convex hulls of every kind the walk meets: round ones of many corners, squares, slivers, and ones with
+    /// corners in a line or repeated.
+    fn hulls(d: &mut Draw) -> Vec<Vec<[f64; 2]>> {
+        let mut out = vec![
+            vec![[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
+            vec![
+                [0.0, 0.0],
+                [5.0, 0.0],
+                [10.0, 0.0],
+                [10.0, 10.0],
+                [10.0, 10.0],
+                [0.0, 10.0],
+            ],
+            vec![[0.0, 0.0], [40.0, 0.1], [0.0, 0.2]],
+        ];
+        for _ in 0..60 {
+            #[allow(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "a few corners"
+            )]
+            let n = 3 + (d.next() * 70.0) as usize;
+            let (cx, cy, r) = (d.range(-50.0, 250.0), d.range(-50.0, 250.0), d.range(0.5, 40.0));
+            let mut a: Vec<f64> = (0..n).map(|_| d.range(0.0, std::f64::consts::TAU)).collect();
+            a.sort_by(f64::total_cmp);
+            let even = d.next() < 0.5;
+            let hull: Vec<[f64; 2]> = (0..n)
+                .map(|i| {
+                    #[allow(clippy::cast_precision_loss, reason = "a few corners")]
+                    let t = if even {
+                        std::f64::consts::TAU * i as f64 / n as f64
+                    } else {
+                        a[i]
+                    };
+                    [cx + r * t.m_cos(), cy + r * t.m_sin()]
+                })
+                .collect();
+            out.push(hull);
+        }
+        out
+    }
+
+    #[test]
+    fn a_rim_measures_a_hull_to_the_last_bit() {
+        let mut d = Draw(11);
+        let mut inside = 0;
+        for hull in hulls(&mut d) {
+            for h in [hull.clone(), hull.iter().rev().copied().collect()] {
+                let rim = Rim::of(&h);
+                let n = h.len();
+                let (lo, hi) = h.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), p| {
+                    (
+                        [lo[0].min(p[0]), lo[1].min(p[1])],
+                        [hi[0].max(p[0]), hi[1].max(p[1])],
+                    )
+                });
+                for k in 0..600 {
+                    let p = match k % 4 {
+                        // a corner, or a point on an edge
+                        0 => h[k % n],
+                        1 => {
+                            let (a, b, t) = (h[k % n], h[(k + 1) % n], d.next());
+                            [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])]
+                        }
+                        2 => [d.range(lo[0], hi[0]), d.range(lo[1], hi[1])],
+                        _ => [
+                            d.range(lo[0] - 120.0, hi[0] + 120.0),
+                            d.range(lo[1] - 120.0, hi[1] + 120.0),
+                        ],
+                    };
+                    let want = hull_distance(&h, p);
+                    assert_eq!(rim.distance(p).to_bits(), want.to_bits(), "{h:?} {p:?}");
+                    inside += usize::from(want == 0.0);
+                }
+            }
+        }
+        assert!(inside > 1000, "{inside}");
+        // Fewer than three corners: as before.
+        for h in [vec![], vec![[1.0, 2.0]], vec![[1.0, 2.0], [5.0, 2.0]]] {
+            for p in [[0.0, 0.0], [3.0, 2.0]] {
+                assert_eq!(Rim::of(&h).distance(p).to_bits(), hull_distance(&h, p).to_bits());
+            }
+        }
     }
 }

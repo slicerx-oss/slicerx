@@ -437,6 +437,8 @@ struct Obstacle {
     top: f32,
     bounds: [f64; 4],
     hull: Vec<[f64; 2]>,
+    /// The hull ready for measuring a move's distance to it.
+    rim: walk::Rim,
     /// The footprint's own extent, `[min x, min y, max x, max y]` mm, for the region a strike reports.
     extent: [f64; 4],
     /// Per head, the grid grown by each of its columns, made on first use.
@@ -579,6 +581,7 @@ impl Model {
                     hi[1].floor() + 1.0,
                 ],
                 hull: f.hull.clone(),
+                rim: walk::Rim::of(&f.hull),
                 extent: f.hull.iter().fold(
                     [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY],
                     |b, p| [b[0].min(p[0]), b[1].min(p[1]), b[2].max(p[0]), b[3].max(p[1])],
