@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// The full prompt asks mimir to say its steps before a request that needs three or more tools.
+// The full prompt asks mimir to say its steps before a request that needs three or more tools, and every prompt that
+// builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
 
 afterEach(() => setAssistantBrand())
 
@@ -92,5 +93,66 @@ describe('the print run in the full prompt', () => {
     expect(line).toContain('offer to save the file')
     // the cad prompt has no print run at all
     expect(systemPrompt('cad')).not.toContain('make and print')
+  })
+})
+
+describe('the scope rule for parts', () => {
+  // the design tools (mimir tab), the part generator (chat without them), and both app scopes
+  const design = (n: string) => n !== 'text_to_part' && n !== 'make_model'
+  const generator = (n: string) => !n.startsWith('design.') && !n.startsWith('geom.')
+  const prompts = (): [string, string][] => [
+    ['full, design tools', systemPrompt('full', design)],
+    ['full, part generator', systemPrompt('full', generator)],
+    ['cad, design tools', systemPrompt('cad', design)],
+    ['cad, part generator', systemPrompt('cad', generator)],
+  ]
+  /** The prompt line that holds the scope rule. */
+  const scopeLine = (p: string): string => p.split('\n').find((l) => l.startsWith('- Build only shapes the tools can make')) ?? ''
+
+  it('every prompt that builds parts carries it once', () => {
+    for (const [name, p] of prompts()) {
+      expect(scopeLine(p), name).not.toBe('')
+      expect(p.split('\n').filter((l) => l === scopeLine(p)), name).toHaveLength(1)
+      expect(scopeLine(p), name).toBe(SCOPE_LINE)
+    }
+  })
+
+  it('comes before the first build instruction', () => {
+    for (const [name, p] of prompts()) {
+      const build = Math.min(...['goes straight to text_to_part', 'goes straight to the design tools'].map((s) => p.indexOf(s)).filter((i) => i >= 0))
+      expect(p.indexOf(SCOPE_LINE), name).toBeGreaterThan(-1)
+      expect(p.indexOf(SCOPE_LINE), name).toBeLessThan(build)
+    }
+  })
+
+  it('names what is in scope in general terms', () => {
+    for (const s of ['outlines of lines, arcs and circles', 'extruded or turned around one axis', 'plus holes, fillets, patterns and text on them']) expect(SCOPE_LINE).toContain(s)
+  })
+
+  it('names the kinds of shape that are out of scope in general terms', () => {
+    for (const s of ['living things', 'characters', 'body parts', 'likeness', 'sculpted or organic', 'curving freely in two directions', 'fit the curves of a body', 'varies in shape, size or angle along the part', 'loft', 'swept along a curved path', 'even in one portion of a request']) expect(SCOPE_LINE).toContain(s)
+  })
+
+  it('turns such a request down before any build or size question, with a buildable version offered', () => {
+    expect(SCOPE_LINE).toContain('before any build call or size question')
+    expect(SCOPE_LINE).toContain('offer the closest version they can')
+    expect(SCOPE_LINE).toContain('only after the person says yes')
+  })
+
+  it('keeps build the rest for a small missing feature only, after the out of scope shapes', () => {
+    expect(SCOPE_LINE).toContain('If only a small feature is missing')
+    expect(SCOPE_LINE.indexOf('build the rest')).toBeGreaterThan(SCOPE_LINE.indexOf('Out of scope'))
+    for (const [name, p] of prompts()) {
+      expect(p, name).not.toContain('curved shells')
+      // the scope line is the only one that says to build the rest
+      expect(p.split('\n').filter((l) => l.includes('build the rest')), name).toEqual([SCOPE_LINE])
+    }
+  })
+
+  it('is general: no sizes, part numbers or brand names', () => {
+    // no digits, and no capital letter except at the start of a sentence and the app's own Model tab
+    expect(SCOPE_LINE).not.toMatch(/\d/)
+    const capitals = SCOPE_LINE.slice(2).split(/(?<=[.:])\s+/).flatMap((s) => s.split(' ').slice(1)).filter((w) => /[A-Z]/.test(w) && w !== 'Model.')
+    expect(capitals).toEqual([])
   })
 })
