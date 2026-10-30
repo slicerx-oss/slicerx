@@ -81,14 +81,8 @@ pub fn prepare_toolhead_file(
     if selected.len() != needs.len() || !plan.ready {
         return Err("Choose a loaded toolhead for every job filament before preparing the file".to_owned());
     }
-    let mut used = BTreeSet::new();
-    let mut body = String::with_capacity(text.len());
-    for (line_no, line) in text.split_inclusive('\n').enumerate() {
-        let rewritten = rewrite_line(line, selected, &mut used)
-            .map_err(|reason| format!("Line {}: {reason}", line_no + 1))?;
-        plan.changed_lines += usize::from(rewritten != line);
-        body.push_str(&rewritten);
-    }
+    let (body, counts, used) = rewrite_text(text, selected).map_err(|refusal| refusal.to_string())?;
+    plan.changed_lines = counts.changed_lines;
     let declared: BTreeSet<_> = needs.iter().map(|need| need.tool).collect();
     if used != declared {
         return Err("The declared job filaments do not match the G-code tool selections".to_owned());
@@ -108,6 +102,127 @@ pub fn prepare_toolhead_file(
     file.data = format!("{MAP_HEADER}{header}\n{body}").into_bytes();
     file.sha256 = crate::types::hex(&Sha256::digest(&file.data));
     Ok((file, plan))
+}
+
+/// How many references an offline remap changed, by kind. A reference already naming its target is not counted.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemapCounts {
+    /// Lines whose text changed.
+    pub changed_lines: usize,
+    /// Tool selections (`T<n>`).
+    pub tool_changes: usize,
+    /// Indexed temperature and pressure advance parameters (`T<n>` on M104, M109, M116 and M900).
+    pub temperatures: usize,
+    /// `INDEX=` on `SM_PRINT_PREEXTRUDE_FILAMENT`.
+    pub preextrude_indexes: usize,
+    /// `INDEX=` on `SM_PRINT_FLOW_CALIBRATE`.
+    pub flow_calibrate_indexes: usize,
+    /// `EXTRUDER=extruder<n>` names.
+    pub extruder_names: usize,
+}
+
+/// Why a remap was refused, with the 1-based line when one line caused it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RemapRefusal {
+    pub line: Option<usize>,
+    pub reason: String,
+}
+
+impl RemapCounts {
+    /// The count a rewritten word adds to, by the word's own kind.
+    fn of(&mut self, command: &str, word_index: usize, word: &str) -> &mut usize {
+        if word.starts_with("EXTRUDER=") {
+            &mut self.extruder_names
+        } else if word.starts_with("INDEX=") && command == "SM_PRINT_PREEXTRUDE_FILAMENT" {
+            &mut self.preextrude_indexes
+        } else if word.starts_with("INDEX=") {
+            &mut self.flow_calibrate_indexes
+        } else if word_index == 0 {
+            &mut self.tool_changes
+        } else {
+            &mut self.temperatures
+        }
+    }
+}
+
+impl std::fmt::Display for RemapRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.line {
+            Some(line) => write!(f, "Line {line}: {}", self.reason),
+            None => f.write_str(&self.reason),
+        }
+    }
+}
+
+impl std::error::Error for RemapRefusal {}
+
+impl From<String> for RemapRefusal {
+    fn from(reason: String) -> Self {
+        Self { line: None, reason }
+    }
+}
+
+/// A G-code file with its logical tools moved to other physical toolheads.
+#[derive(Debug, Clone)]
+pub struct Remapped {
+    pub data: Vec<u8>,
+    pub source_sha256: String,
+    pub sha256: String,
+    pub counts: RemapCounts,
+    /// The logical tools the file selects.
+    pub used: BTreeSet<u8>,
+}
+
+/// Rewrites a sliced U1 file for a map of logical tool to physical toolhead, with the same rewrite and refusals as a
+/// prepared send, and without a printer: no spool data, no mapping header, nothing uploaded. A map that sends every
+/// tool to itself returns the bytes unchanged.
+pub fn remap_gcode(data: &[u8], selected: &BTreeMap<u8, u8>) -> Result<Remapped, RemapRefusal> {
+    if selected.is_empty() {
+        return Err("Map at least one tool".to_owned().into());
+    }
+    if selected.iter().any(|(tool, head)| *tool >= 32 || *head > 3) {
+        return Err("Map tools 0 to 31 onto toolheads 0 to 3".to_owned().into());
+    }
+    if data.len() > 512 * 1024 * 1024 {
+        return Err("The G-code file is too large to prepare".to_owned().into());
+    }
+    let text = std::str::from_utf8(data).map_err(|_| "Toolhead mapping requires UTF-8 G-code".to_owned())?;
+    if text.contains(MAP_HEADER) {
+        return Err(
+            "This file is already mapped; prepare again from the original file"
+                .to_owned()
+                .into(),
+        );
+    }
+    let (body, counts, used) = rewrite_text(text, selected)?;
+    let data = body.into_bytes();
+    Ok(Remapped {
+        source_sha256: crate::types::hex(&Sha256::digest(text.as_bytes())),
+        sha256: crate::types::hex(&Sha256::digest(&data)),
+        data,
+        counts,
+        used,
+    })
+}
+
+fn rewrite_text(
+    text: &str,
+    selected: &BTreeMap<u8, u8>,
+) -> Result<(String, RemapCounts, BTreeSet<u8>), RemapRefusal> {
+    let mut used = BTreeSet::new();
+    let mut counts = RemapCounts::default();
+    let mut body = String::with_capacity(text.len());
+    for (line_no, line) in text.split_inclusive('\n').enumerate() {
+        let rewritten =
+            rewrite_line(line, selected, &mut used, &mut counts).map_err(|reason| RemapRefusal {
+                line: Some(line_no + 1),
+                reason,
+            })?;
+        counts.changed_lines += usize::from(rewritten != line);
+        body.push_str(&rewritten);
+    }
+    Ok((body, counts, used))
 }
 
 fn mapped(index: &str, selected: &BTreeMap<u8, u8>) -> Result<u8, String> {
@@ -195,7 +310,12 @@ fn lowercase_tool_parameter(word: &str, command: &str, tool_command: bool) -> bo
         && word.starts_with(['t', 'a']))
 }
 
-fn rewrite_line(line: &str, selected: &BTreeMap<u8, u8>, used: &mut BTreeSet<u8>) -> Result<String, String> {
+fn rewrite_line(
+    line: &str,
+    selected: &BTreeMap<u8, u8>,
+    used: &mut BTreeSet<u8>,
+    counts: &mut RemapCounts,
+) -> Result<String, String> {
     let code = line.split_once(';').map_or(line, |(code, _)| code);
     let words: Vec<_> = code.split_whitespace().collect();
     let Some(command) = words.first().copied() else {
@@ -277,7 +397,8 @@ fn rewrite_line(line: &str, selected: &BTreeMap<u8, u8>, used: &mut BTreeSet<u8>
             }
             None
         };
-        if let Some(replacement) = replacement {
+        if let Some(replacement) = replacement.filter(|r| r != word) {
+            *counts.of(command, word_index, word) += 1;
             replacements.push((start, cursor, replacement));
         }
     }
@@ -722,6 +843,89 @@ mod tests {
         wrong.sha256 = "0".repeat(64);
         assert!(prepare_toolhead_file(wrong, &needs, &heads(), &selected).is_err());
     }
+    #[test]
+    fn offline_remap_moves_each_preextrude_index_with_its_tool_and_keeps_comments() {
+        let source = include_str!("../tests/fixtures/u1-four-filament.gcode");
+        let map = BTreeMap::from([(0, 2), (1, 3), (2, 0), (3, 1)]);
+        let out = remap_gcode(source.as_bytes(), &map).unwrap();
+        let text = std::str::from_utf8(&out.data).unwrap();
+        assert!(!text.contains(MAP_HEADER));
+        assert_eq!(out.sha256, crate::types::hex(&Sha256::digest(&out.data)));
+        assert_eq!(
+            out.source_sha256,
+            crate::types::hex(&Sha256::digest(source.as_bytes()))
+        );
+        assert_eq!(out.used, BTreeSet::from([0, 1, 2, 3]));
+        let mut tool = None;
+        let mut preextrude = 0;
+        for (old, new) in source.lines().zip(text.lines()) {
+            assert_eq!(old.split_once(';').map(|c| c.1), new.split_once(';').map(|c| c.1));
+            let words: Vec<_> = new.split(';').next().unwrap().split_whitespace().collect();
+            match words.as_slice() {
+                [t] if t.starts_with('T') => tool = t[1..].parse::<u8>().ok(),
+                ["SM_PRINT_PREEXTRUDE_FILAMENT", index] => {
+                    assert_eq!(
+                        index.strip_prefix("INDEX=").unwrap().parse::<u8>().ok(),
+                        tool,
+                        "{new}"
+                    );
+                    preextrude += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(preextrude >= 3);
+        assert_eq!(out.counts.preextrude_indexes, preextrude);
+        assert!(out.counts.tool_changes >= 4 && out.counts.temperatures >= 4);
+        assert_eq!(out.counts.extruder_names, 0);
+        // The physical setup at the start stays as sliced.
+        assert!(text.contains("M104 S0 T0 A0\nM104 S0 T1 A0\n"));
+        assert!(text.contains("SM_PRINT_AUTO_FEED EXTRUDER=0\n"));
+
+        let same = remap_gcode(
+            source.as_bytes(),
+            &BTreeMap::from([(0, 0), (1, 1), (2, 2), (3, 3)]),
+        )
+        .unwrap();
+        assert_eq!(same.data, source.as_bytes());
+        assert_eq!(same.counts, RemapCounts::default());
+        assert_eq!(same.sha256, same.source_sha256);
+    }
+
+    #[test]
+    fn offline_remap_refuses_what_a_prepared_send_refuses() {
+        let selected = BTreeMap::from([(0, 1)]);
+        for (text, line) in [
+            ("T0\nT1\n", 2),
+            ("T0\nCUSTOM TOOL=0\n", 2),
+            ("T0\nM104S220T0\n", 2),
+            ("T0\nSET_PRINT_EXTRUDER_MAP CONFIG_EXTRUDER=0 MAP_EXTRUDER=1\n", 2),
+            ("T0\nset_print_used_extruders EXTRUDERS=1\n", 2),
+            ("T0\nM104 S220T0\n", 2),
+            ("t0\n", 1),
+            ("T0\nSM_PRINT_PREEXTRUDE_FILAMENT InDeX=0\n", 2),
+            ("T0 A00\n", 1),
+            ("T0 A0 A1\n", 1),
+            ("T0\nCUSTOM T0\n", 2),
+            ("T0\nM104 T{tool}\n", 2),
+        ] {
+            let refusal = remap_gcode(text.as_bytes(), &selected).unwrap_err();
+            assert_eq!(refusal.line, Some(line), "{text}");
+            let prepared =
+                prepare_toolhead_file(file(text), &[need(0, "PLA", "ff0000")], &heads(), &selected);
+            assert_eq!(prepared.unwrap_err(), refusal.to_string(), "{text}");
+        }
+        for (data, map) in [
+            (&b"T0\n"[..], BTreeMap::new()),
+            (b"T0\n", BTreeMap::from([(0, 4)])),
+            (b"T0\n", BTreeMap::from([(32, 0)])),
+            (b"T0 \xff\n", BTreeMap::from([(0, 1)])),
+            (b"; slicerx_toolhead_map = {}\nT0\n", BTreeMap::from([(0, 1)])),
+        ] {
+            assert_eq!(remap_gcode(data, &map).unwrap_err().line, None);
+        }
+    }
+
     #[test]
     fn proposes_swapped_colors_without_changing_slot_numbers() {
         let plan = plan_toolheads(
