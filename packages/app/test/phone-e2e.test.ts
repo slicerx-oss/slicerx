@@ -149,8 +149,13 @@ describe.skipIf(!built)('Phone access and Remote access against a real hub and r
     expect(remote.getState().error).toBeUndefined()
     await remote.setEnabled(true)
     expect(remote.getState().error).toBeUndefined()
-    // The relay connection comes up first; the account sign-in on it follows.
-    for (let i = 0; i < 100 && !(remote.getState().status?.connected && remote.getState().status?.signedIn); i++) {
+    // The relay connection comes up first; the account sign-in on it follows, and the hub asks for the account
+    // tier's quota only once the sign-in is answered.
+    const ready = () => {
+      const s = remote.getState().status
+      return s?.connected && s.signedIn && s.quota?.tier === 'account'
+    }
+    for (let i = 0; i < 100 && !ready(); i++) {
       await new Promise((r) => setTimeout(r, 100))
       await remote.refresh()
     }
