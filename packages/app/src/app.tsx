@@ -5,6 +5,7 @@ import { assistantBrand, onAssistantBrand } from '@slicerx/contracts'
 import type { EditionConfig } from '@slicerx/edition-config'
 import { AppTooltips } from './lib/tip-host'
 import { startAutoSlice } from './state/auto-slice'
+import { startEngineCheck } from './plate/engine-check'
 import { ProfileFollow } from './shell/profile-follow'
 import { Frame, keepPressedControlsInPlace, keymapFor, setMotionPreference, ThemeProvider, ToastProvider, type Theme } from '@slicerx/ui'
 import { applyType, DEFAULT_THEMES, themeForScheme, themeFromFile } from '@slicerx/ui/theme'
@@ -187,6 +188,8 @@ function Shell() {
   useAskForPrinter()
   // Background slicing after edits (Settings > Auto slice).
   useEffect(() => (hostSlices() ? startAutoSlice(host) : undefined), [host])
+  // heimdall's plate check after edits to a by-object plate, where the host has one (the desktop).
+  useEffect(() => (hostSlices() ? startEngineCheck(host) : undefined), [host])
   // The page says when it is ready, so scripts wait on that and not on a fixed time.
   useEffect(() => startReadySignal(), [])
   // Code that failed to download (a dropped connection while the app starts) is fetched again by a reload.
