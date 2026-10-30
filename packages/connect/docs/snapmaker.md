@@ -70,6 +70,8 @@ slicerx-mcp call toolhead_mapping '{"printerId":"u1","needs":[{"tool":0,"materia
 slicerx-mcp call toolhead_mapping '{"printerId":"u1","needs":[{"tool":0,"material":"PLA","color":"#ff0000"}],"selected":{"0":3},"preparePlate":1}'
 ```
 
+For a file and no printer, `sx remap-toolheads <in.gcode> --map 0=2,1=3 -o <out.gcode> [--json]` and the MCP tool `slicerx_remap_toolheads` run the same rewrite and refusals on a sliced file with an explicit map. They add no verification header and keep no spool check, so a map that sends each tool to itself returns the file byte for byte.
+
 `preparePlate` retains a mapped copy of an already sliced plate for that printer. Its read-back includes the original and prepared hashes and `changedLines` (body lines, excluding the verification header). A later `printer.queue` requires that copy for a U1, except a single-filament job without spool data, and still requires the person's approval. Reslicing discards the prepared copy.
 
 Preparation rewrites tool changes, M104/M109/M116 tool parameters and `EXTRUDER=extruderN`, preserving comments and the saved slice. Supported U1 startup INDEX macros and M900 tool parameters also follow the choice; A0 references already address physical heads and remain unchanged. Unsupported templates or embedded mapping changes are refused rather than partially rewritten.

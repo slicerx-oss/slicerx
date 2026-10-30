@@ -11,7 +11,7 @@ import { areaOrigin } from '@slicerx/threemf/area'
 import { collisionError, refusedHits, sliceCollisions, sxCollisions } from './collide'
 import { featureFilaments } from './feature-filaments'
 import { ToolInputError } from './models'
-import type { SlicerBackend, SliceSummary } from './slicer'
+import type { SlicerBackend, SliceSummary, ToolheadRemap } from './slicer'
 import { formatDuration } from './slicer'
 
 /** Finds a binary by name: an explicit path, other candidates in order, then PATH. */
@@ -235,6 +235,24 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
       try { record = JSON.parse(result.stdout) } catch { throw new ToolInputError('The engine returned an unreadable replacement record', 'engine_unavailable') }
       if (!record || record.schemaVersion !== 1 || !['prepared', 'review'].includes(record.decision) || typeof record.reason !== 'string' || record.key !== input.key || record.original !== input.original || record.replacement !== input.replacement || !Array.isArray(record.diff)) throw new ToolInputError('The engine returned an unsupported replacement record', 'engine_unavailable')
       return record
+    },
+    async remapToolheads(input) {
+      const map = Object.entries(input.map).map(([logical, physical]) => `${logical}=${physical}`).join(',')
+      const result = await runSx(bin, ['remap-toolheads', input.input, '--map', map, '-o', input.output, '--json'], Math.min(timeoutMs, 60_000))
+      const stopped = sxStopped(result, Math.min(timeoutMs, 60_000))
+      if (stopped) throw stopped
+      let out: unknown
+      try { out = JSON.parse(result.stdout) } catch { out = undefined }
+      const o = (out ?? {}) as Record<string, unknown>
+      // A file the rewrite cannot read safely: the engine's reason, and the line when one line caused it.
+      if (result.code === 3 && o['error'] === 'remap_refused' && typeof o['reason'] === 'string') {
+        const line = typeof o['line'] === 'number' ? o['line'] : undefined
+        throw new ToolInputError(line === undefined ? o['reason'] : `Line ${line}: ${o['reason']}`, 'remap_refused', { reason: o['reason'], ...(line === undefined ? {} : { line }) })
+      }
+      if (result.code !== 0 || o['version'] !== 1 || typeof o['sha256'] !== 'string' || typeof o['counts'] !== 'object') {
+        throw new ToolInputError(`This sx cannot remap toolheads (exit ${result.code}): ${result.stderr.trim().split('\n').slice(-1)[0] ?? ''}. Update sx to a version with remap-toolheads.`, 'engine_unavailable')
+      }
+      return o as unknown as ToolheadRemap
     },
     kind: 'sx',
     async slice(job) {

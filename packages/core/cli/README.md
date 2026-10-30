@@ -11,6 +11,7 @@ sx schema [request | result]
 sx metadata <project.3mf>
 sx project-settings <project.3mf>
 sx call [server options] <tool> [json] [<tool> [json] ...]
+sx remap-toolheads <in.gcode> --map <logical=physical,...> -o <out.gcode> [--json]
 sx bench --config <bench.json> [--runs 15] [--warmup 3] [--threads N] [--json] [--no-shards]
          [--append results.jsonl] [--change "..."] [--write-baseline]
 sx bench --config <bench.json> --ab <baseline sx> [--runs 15] [--threads N]
@@ -22,6 +23,8 @@ sx bench --config <bench.json> --incremental sparse_infill_density [--runs 15]
 `sx metadata` prints the settings a Bambu or Orca project carries (`projectSettings`, `modelSettings`, `layerRanges`, each only when present) as one JSON line, ready to pass to the settings crate's `import_project_json`.
 
 `sx project-settings` prints the settings `sx slice <project.3mf>` takes from a project as one JSON object on stdout, ready to pass as a request's `config`: the project's own values, the engine choices it did not change, our defaults for keys it does not set, and the reading of keys it lacks by the app that wrote it (a Bambu Studio project without them gets `wipe_tower_wall_type` rib, `initial_layer_travel_acceleration` 500 and `internal_bridge_speed` 100%). A 3MF without settings prints `{}`. The walls and the engine choices kept go to stderr.
+
+`sx remap-toolheads` moves the logical tools of a sliced Snapmaker U1 file onto other physical toolheads (0 to 3) with the printer bridge's toolhead rewrite: `T`, the `T` of M104, M109, M116 and M900, `INDEX=` on `SM_PRINT_PREEXTRUDE_FILAMENT` and `SM_PRINT_FLOW_CALIBRATE`, and `EXTRUDER=extruderN`. Comments, `A0` references and the input file stay as they are, and every tool the file selects must be in the map. It prints the map, the changed lines by kind and the output's SHA-256; with `--json`, one object with `output`, `sha256`, `sourceSha256`, `bytes`, `map`, `toolsUsed`, `unusedMapTools` and `counts` (`changedLines`, `toolChanges`, `temperatures`, `preextrudeIndexes`, `flowCalibrateIndexes`, `extruderNames`). A file the rewrite refuses exits 3 and writes nothing; with `--json` stdout carries `{"version":1,"error":"remap_refused","line":N,"reason":"..."}` (`line` is null when the whole file or the map is refused). A bad `--map` or a missing `-o` exits 2.
 
 `--plate` picks a plate of a Bambu or Orca 3MF project (the first plate by default).
 
@@ -52,6 +55,7 @@ Unless explicitly configured, tool calls use this `sx` executable for slicing an
 
 - `rayon` 1.12.0: sets the thread count for `--threads`.
 - `serde_json` 1.0.151: the request, result and bench JSON.
+- `sx-connect` (this workspace): the toolhead rewrite of the printer bridge, for `sx remap-toolheads`.
 
 ## Status
 

@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_remap_toolheads` 1.0.0: moves the logical tools of a sliced Snapmaker U1 G-code file onto other physical toolheads with no printer connected (`gcode`, `map` of tool to toolhead 0 to 3), through `sx remap-toolheads`. Every `T`, M104/M109/M116/M900 `T`, `INDEX=` on `SM_PRINT_PREEXTRUDE_FILAMENT` and `SM_PRINT_FLOW_CALIBRATE`, and `EXTRUDER=extruderN` follows the map together. Writes a new file in the output folder and returns `gcode_path`, `sha256`, `source_sha256`, `tools_used`, `unused_map_tools` and `counts`. A file the rewrite cannot read safely is refused with the new error code `remap_refused`, with `details.line` and `details.reason`.
+
 ## [0.2.6] - 2026-10-29
 
 ### Added
