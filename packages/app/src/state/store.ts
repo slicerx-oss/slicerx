@@ -16,6 +16,7 @@ import type {
   HeightRange,
   MeshHandle,
   MeshPart,
+  PlateCheck,
   PreviewBuffers,
   SettingValue,
   SliceProgress,
@@ -227,6 +228,19 @@ export type SliceState =
   | { status: 'done'; result: SliceResult; stale: boolean }
   | { status: 'error'; message: string }
 
+/**
+ * heimdall's plate check (plate/engine-check.ts): the run or the answer for request `id`, and the slice inputs it is
+ * for (by reference), so an answer counts only while the plate is still as it was asked about. `slow` is a run that has
+ * taken long enough for the warning to say so.
+ */
+export interface PlateCheckState {
+  status: 'idle' | 'running' | 'done' | 'error'
+  id: number
+  inputs: Readonly<Record<string, unknown>> | null
+  result: PlateCheck | null
+  slow: boolean
+}
+
 export interface PendingApproval {
   requests: ApprovalRequest[]
   /** Preflight results: errors block Approve, warnings are shown for the person to weigh. */
@@ -300,6 +314,8 @@ export interface AppState {
   sliceDuringOpen: boolean
   /** A long arrange or fill the bed in progress: layouts tried and planned. */
   arranging: { done: number; total: number } | null
+  /** heimdall's plate check before a slice, on a host with an engine (plate/engine-check.ts). Not saved. */
+  plateCheck: PlateCheckState
   selection: string | null
   /** Every selected object, primary included. Stale when it does not contain `selection`; use selectedIds(). */
   selectedIds: string[]
@@ -735,6 +751,7 @@ export const appStore = createStore<AppState>()(() => ({
   exampleSeeding: false,
   sliceDuringOpen: false,
   arranging: null,
+  plateCheck: { status: 'idle', id: 0, inputs: null, result: null, slow: false },
   selection: null,
   selectedIds: [],
   printerId: prefs.printerId,

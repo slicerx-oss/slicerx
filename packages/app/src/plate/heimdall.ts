@@ -6,7 +6,7 @@
 import type { Collision, CollisionFix } from '@slicerx/contracts'
 import type { StrikeMark } from '@slicerx/viewport'
 import type { AppState } from '../state/store'
-import { sequenceProblem } from './sequence-check'
+import { preflightProblem } from './engine-check'
 
 const NONE: Collision[] = []
 
@@ -78,14 +78,15 @@ export function fixesOf(s: Pick<AppState, 'slice'>): CollisionFix[] {
 /**
  * Why Print and Export are held back, or null. A strike with the head's own shape blocks; a close call only inside the
  * profile's radius goes to the Print sheet as a warning. A slice from before the objects moved is checked against the
- * plate as it sits now.
+ * plate as it sits now, by the footprint rule; once the engine's plate check has answered for the plate as it sits,
+ * its answer replaces the rule's, and that answer holds nothing back (the slice decides).
  */
-export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides' | 'profile'>): string | null {
+export function printBlock(s: Pick<AppState, 'slice' | 'plate' | 'plates' | 'activePlate' | 'easy' | 'overrides' | 'profile'> & Partial<Pick<AppState, 'plateCheck'>>): string | null {
   const hits = collisionsOf(s).filter((c) => c.severity === 'hit')
   if (hits.length) {
     return `heimdall found ${hits.length === 1 ? 'a collision' : `${hits.length} collisions`} on this plate. See ${hits.length === 1 ? 'it' : 'them'} in Slice, apply a fix or change the plate, and slice again.`
   }
-  if (s.slice.status === 'done' && s.slice.stale) return sequenceProblem(s)
+  if (s.slice.status === 'done' && s.slice.stale) return preflightProblem(s)
   return null
 }
 

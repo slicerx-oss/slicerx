@@ -19,6 +19,7 @@ import { offeredFeatureSettings, offeredWorkspaces } from '../state/offered'
 import { get, selectedIds, set, setModelMode, setRail, setWorkspace, type AppState, type ModelMode, type PlateEntry } from '../state/store'
 import { byObjectReadback } from '@slicerx/settings/by-object'
 import { activeClearance } from '../plate/sequence-check'
+import { engineVerdict } from '../plate/engine-check'
 import { resolveConfig } from '../adapters/config'
 import { areaOrigin, pointToPlate } from '../plate/bed-origin'
 import { collisionParts, collisionsOf, damagedOf } from '../plate/heimdall'
@@ -99,6 +100,29 @@ export function collisionsReadback(s: Pick<AppState, 'slice' | 'plate'> & Partia
 }
 
 /**
+ * heimdall's plate check the window holds for the shown plate, null where the host has none (the web) or before it
+ * first ran: the request's number, its status (running, done or error), current when its answer is for the plate as it
+ * sits (the warning then shows it in place of the footprint rule), how long the engine took, each collision with its
+ * certainty (sure: the slice refuses it; slice_decides: only the slice can tell) and the objects it names, the fixes,
+ * and what it leaves to the slice with the objects near enough for it to matter.
+ */
+export function plateCheckReadback(s: AppState) {
+  const c = s.plateCheck
+  if (c.status === 'idle') return null
+  const named = (id: string) => ({ id, name: s.plate.find((e) => e.id === id)?.name ?? null })
+  const r = c.result
+  return {
+    requestId: c.id,
+    status: c.status,
+    current: engineVerdict(s) !== null,
+    micros: r?.micros ?? null,
+    collisions: (r?.collisions ?? []).map((x, index) => ({ index, kind: x.kind, severity: x.severity, part: x.part, certainty: r!.certainty[index]!, objects: [named(x.hitId), named(x.objectId)] })),
+    fixes: r?.collisionFixes ?? [],
+    unchecked: (r?.unchecked ?? []).map((u) => ({ object: named(u.objectId), what: u.what, near: u.near.map(named) })),
+  }
+}
+
+/**
  * collision.show: `index` (from ui.get's collisions) picks that collision as a click on its row does: its parts become
  * the selection, ringed on the bed, the part it hits outlined and the region struck filled, and the view frames them
  * only when they are off screen. `frame: true` frames them either way; `jump: true` also plays the head to the moment
@@ -164,7 +188,7 @@ export async function readUi() {
     printer: await printerState(s),
     panels: { open, settingsSection: settingsSection(s), settable: [...SETTABLE] },
     // Printing by object: the shown plate's clearance plan, the warning's pairs and the zones on the bed; null by layer.
-    byObject: ((plan) => (plan ? byObjectReadback(plan) : null))(activeClearance(s)),
+    byObject: ((plan) => (plan ? { ...byObjectReadback(plan), engine: plateCheckReadback(s) } : null))(activeClearance(s)),
     collisions: collisionsReadback(s),
   }
 }

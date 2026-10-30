@@ -15,8 +15,9 @@ import { printTarget, usePrinter } from '../../lib/use-printer'
 import { useWaited } from '../../lib/waited'
 import { printBlock } from '../../plate/heimdall'
 import { firstHit, refusalSpot, showRefusal, showSpot } from '../../plate/preflight-show'
-import { clearanceTrouble, sequenceProblem } from '../../plate/sequence-check'
-import { ClearanceWarning } from './seq-warning'
+import { checkingSlowly, engineVerdict, preflightProblem } from '../../plate/engine-check'
+import { clearanceTrouble } from '../../plate/sequence-check'
+import { PreflightWarning } from './seq-warning'
 import { rolledBackNote } from '../../plate/timeline'
 import { cancelSlice, exportGcode, sendToPrinter, slicePlate } from '../../state/actions'
 import { get, showSliced, shownSlice, toast, useApp } from '../../state/store'
@@ -50,9 +51,12 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
   // A strike in the slice holds Print and Export back. Before a slice, objects closer or taller than the printer
   // profile allows by object are a heads-up: heimdall checks every move when the plate slices.
   const unsafe = useApp(printBlock)
-  const heads = useApp(sequenceProblem)
-  // The same plate's by-object plan: the short warning with the pair it names and Arrange.
+  const heads = useApp(preflightProblem)
+  // The same plate's by-object plan: the short warning with the pair it names and Arrange. On the desktop the
+  // engine's plate check takes its place once it has answered for the plate as it sits.
   const trouble = useApp(clearanceTrouble)
+  const check = useApp(engineVerdict)
+  const checking = useApp(checkingSlowly)
   // Show me on a block: the first strike in the sliced plate, or the spot a refused slice names.
   const hit = useApp(firstHit)
   const refused = slice.status === 'error' ? refusalSpot(slice.message) : null
@@ -156,8 +160,8 @@ export function SliceBlock({ label = 'Slice plate' }: { label?: string; compact?
             </button>
           ) : null}
         </p>
-      ) : trouble !== null && (!done || done.stale) ? (
-        <ClearanceWarning plan={trouble} />
+      ) : (trouble !== null || check !== null) && (!done || done.stale) ? (
+        <PreflightWarning plan={trouble} check={check} checking={checking} />
       ) : null}
       {slice.status === 'error' ? (
         <p className="app-err est-error" role="alert" data-testid="slice-estimate-error">

@@ -214,12 +214,17 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `slice-estimate-error` | The engine's message when a slice fails |
 | `slice-error-show` | Show me on a slice the safety check refused, when its message names a spot: turns the view there and picks the object |
 | `slice-block-show` | Show me on the footer's heimdall block: opens the toolpaths at the first strike |
-| `slice-clearance-warning` | The footer's by-object warning: objects closer than the clearance, or a tall one printing first, before a current slice |
-| `slice-clearance-select` | The warning's row: selects the closest pair (or the tall object) on the plate |
+| `slice-clearance-warning` | The footer's by-object warning: objects closer than the clearance, or a tall one printing first, before a current slice. On the desktop, heimdall's plate check replaces it once it answers for the plate as it sits; `data-verdict` is then `sure` or `slice-decides` |
+| `slice-clearance-select` | The warning's flat row under the headline (no border): selects the closest pair (or the tall object) on the plate |
+| `slice-clearance-decides` | The plate check's muted line under a pair only the slice can tell: "May clash. Slice to check." |
+| `slice-clearance-unchecked` | The plate check's quiet line for what only the slice checks (tool changes, tree supports, a raft, brim ears), shown when another object is near |
+| `slice-clearance-fix-reorder` | The plate check's one-click new print order under a sure strike, a button beside Arrange |
+| `slice-clearance-fix-by-layer` | The plate check's Print by layer under a sure strike, a button beside Arrange, when it clears every one |
+| `slice-clearance-checking` | The warning's muted Checking line while the plate check takes a moment |
 | `collision-select` | A strike's row in the Collisions list: selects the parts it names, rings them on the bed and frames them when they are off screen; pressed while they are the selection |
 | `collision-said` | The Collisions list's polite live region: says which parts a picked strike selected, the one hit marked |
 | `collision-chip` | The collisions chip in the view's top row: counts the strikes and picks the next one, as its row does |
-| `slice-clearance-arrange` | Arrange on the warning: lays the plate out with the clearance between objects |
+| `slice-clearance-arrange` | Arrange on the warning, the first of its buttons under the row: lays the plate out with the clearance between objects |
 | `slice-estimate-held` | The footer's quiet line when Auto slice holds a big plate's slice for Slice |
 | `danger-slice-print` | Print, the footer's main action (opens the Print sheet; the bridge refuses it) |
 | `check-show` | Show me on a Print sheet check that blocks the print and has a place in the slice: closes the sheet and opens the toolpaths there |

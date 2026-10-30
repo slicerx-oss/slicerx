@@ -9,6 +9,8 @@ import { arrange, ARRANGE_DEFAULTS, fillCount, placeOnPlate, type ArrangeOptions
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { arrangeByObject, type Place } from './by-object-arrange'
 import { byObjectConfig } from './sequence-check'
+import { checkNow, checkRows } from './engine-check'
+import { wordsOf } from './heimdall-words'
 import { inStep, quietly } from './history'
 import { moveToNewPlates, switchPlate, type NewPlateLayout } from './plates'
 import { selectedEntry } from './select'
@@ -203,7 +205,19 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   const first = movedPlates[0]
   if (first) toast(movedToPlatesNotice(movedPlates), 'info', { label: 'Show', run: () => switchPlate(first.id) }, { persist: true })
   if (rest > 0) toast(`${rest} ${rest === 1 ? 'object does' : 'objects do'} not fit on the bed and stayed where ${rest === 1 ? 'it was' : 'they were'}.`, 'warn')
+  // By object, where the host has heimdall's plate check, the layout is checked at once. Arrange stops there: a strike
+  // the slice is sure to refuse is said, and the warning keeps the pair with its fixes.
+  if (cfg && !tooLarge && !first && rest === 0) await sayStillClashing()
   return r.leftOver.length
+}
+
+/** After an arrange: a toast naming a pair the plate check is sure still clashes, if any. */
+async function sayStillClashing(): Promise<void> {
+  const check = await checkNow()
+  const pair = check ? checkRows(check).sure[0] : undefined
+  if (!pair) return
+  const { name } = wordsOf(get())
+  toast(`Arranged, but ${name(pair.a)} and ${name(pair.b)} still clash by object. The warning shows the fixes.`, 'warn')
 }
 
 interface Overflow {

@@ -18,6 +18,20 @@ function reorder(order: readonly string[]): boolean {
   return true
 }
 
+/**
+ * Applies a one-click fix the plate check offers before a slice (a new print order, or print by layer). It is an edit
+ * like any other: the plate check runs again on it, and Auto slice slices it.
+ */
+export function applyPlateCheckFix(fix: CollisionFix): void {
+  if (!fix.oneClick) return
+  if (fix.kind === 'reorder' && fix.order) {
+    if (reorder(fix.order)) toast('The objects print in the new order.', 'info')
+  } else if (fix.kind === 'by_layer') {
+    setPlateSettings(get().activePlate, { sequence: 'by-layer' })
+    toast('This plate prints by layer now.', 'info')
+  }
+}
+
 /** Applies a one-click fix and slices again. */
 export async function applyCollisionFix(host: Host, fix: CollisionFix): Promise<void> {
   if (!fix.oneClick) return
