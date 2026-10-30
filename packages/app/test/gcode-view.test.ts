@@ -291,6 +291,9 @@ describe('G-code file to toolpaths', () => {
     const two = await scanMarks(await indexLines(enc.encode('T0\nG91\nG1 X5 Y2 E1\nG1 X1\nT1\nT1\nM1\nM104 S200\nM10\n'), { pause: noWait }), { pause: noWait })
     expect(two.toolChanges).toEqual([{ line: 5, x: 6, y: 2, z: 0 }])
     expect(two.pauses.map((m) => m.line)).toEqual([7])
+    // A Bambu Lab printer's pause, which its color changes write as well; a plain M400 only waits for the moves.
+    const bambu = await scanMarks(await indexLines(enc.encode('G1 Z0.4\nM400\nM400 U1\nM400 U1 ; pause\nM4000 U1\nM400 U2\n'), { pause: noWait }), { pause: noWait })
+    expect(bambu.pauses).toEqual([{ line: 3, x: 0, y: 0, z: 0.4 }, { line: 4, x: 0, y: 0, z: 0.4 }])
   })
 
   it('puts each marker on its layer: a wipe after its move, a pause before the next', async () => {

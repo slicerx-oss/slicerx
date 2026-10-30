@@ -1849,9 +1849,50 @@ fn layer_gcode_pause_color_change_and_custom() {
             .to_owned()
     };
     assert!(at(5).contains("M0 ; pause at 1.2\n"));
-    assert!(at(9).contains("M600\n"));
+    // A color change stops the print with the pause G-code, for a filament swap by hand.
+    assert!(at(9).contains("M0 ; pause at 2\n"), "{}", at(9));
+    assert!(!g.contains("M600"));
     assert!(at(12).contains("M117 layer 13\nM300 S440 P200\n"));
-    assert!(!at(6).contains("M0 ;") && !at(10).contains("M600"));
+    assert!(!at(6).contains("M0 ;") && !at(10).contains("M0 ;"));
+}
+
+/// A color change writes the printer's pause at the start of its layer (`M601` when the profile has no pause G-code),
+/// never `M600`, even when the profile has color change G-code, and the rest of the file is the same as without it.
+/// After `M601` the fan speed is not known, so the part fan line is written again, as after any pause.
+#[test]
+fn a_color_change_writes_only_the_pause() {
+    for (pause, expected, fan_again) in [(json!("M400 U1"), "M400 U1", 0), (json!(""), "M601", 1)] {
+        let config = json!({"brim_width": 0, "machine_pause_gcode": pause, "color_change_gcode": "M600"});
+        let plain = block_run(config.clone(), json!({})).unwrap();
+        let marked = block_run(
+            config,
+            json!({"layerGcode": [{"zMm": 2.0, "kind": "color_change"}]}),
+        )
+        .unwrap();
+        assert_valid(&marked);
+        let g = text(&marked);
+        assert!(!g.contains("M600"), "{expected}");
+        let pauses: Vec<usize> = g
+            .split(sx_core::extras::layer_mark(&g))
+            .enumerate()
+            .filter(|(_, l)| l.lines().any(|x| x == expected))
+            .map(|(i, _)| i - 1)
+            .collect();
+        assert_eq!(pauses, [9], "{expected}");
+        let marked_lines = without_totals(&g);
+        let plain_lines = without_totals(&text(&plain));
+        let fans = |t: &str| t.lines().filter(|l| l.starts_with("M106")).count();
+        assert_eq!(fans(&marked_lines), fans(&plain_lines) + fan_again, "{expected}");
+        let kept: Vec<&str> = marked_lines
+            .lines()
+            .filter(|l| *l != expected && (fan_again == 0 || !l.starts_with("M106")))
+            .collect();
+        let plain_kept: Vec<&str> = plain_lines
+            .lines()
+            .filter(|l| fan_again == 0 || !l.starts_with("M106"))
+            .collect();
+        assert_eq!(kept, plain_kept, "{expected}");
+    }
 }
 
 #[test]

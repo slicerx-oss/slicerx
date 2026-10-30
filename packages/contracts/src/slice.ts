@@ -207,8 +207,10 @@ export interface SliceOptions {
   heightRanges?: HeightRange[]
   /**
    * G-code written at the start of layers: a pause, a color change, or custom text such as a firmware setting for a
-   * calibration band. Each entry gives `layer` (0-based) or `zMm`: the first layer whose top reaches that height, on
-   * the layers the engine plans. Of several entries by height that land on one layer, the last stays.
+   * calibration band. A color change writes the printer's pause G-code, for a filament swap by hand. Each entry gives
+   * `layer` (0-based) or `zMm`: the first layer whose top reaches that height, on the layers the engine plans (with
+   * a pause or color change on each object's own layer when the plate prints by object). Of several entries by
+   * height that land on one layer, the last stays.
    */
   layerGcode?: LayerGcode[]
   /**
