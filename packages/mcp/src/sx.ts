@@ -161,8 +161,10 @@ export function sxConfig(config: Record<string, SettingValue>, asGiven: readonly
 }
 
 /**
- * The bed the printer settings describe, for placing a file on it: `printable_area` with its corner at the origin
- * and `printable_height`. Undefined when the area is missing or starts elsewhere, so the engine's default bed holds.
+ * The bed the printer settings describe, for placing a file on it: the size of `printable_area` and
+ * `printable_height`. The engine puts the bed's front left corner where the area starts, so a file lands in the
+ * middle of an area that does not start at 0, 0 (the Snapmaker U1's, from 0.5, 1) as well. Undefined when the area
+ * is missing, so the engine's default bed holds.
  */
 export function bedOf(config: Record<string, SettingValue>): { widthMm: number; depthMm: number; heightMm: number } | undefined {
   const area = config['printable_area']
@@ -175,9 +177,11 @@ export function bedOf(config: Record<string, SettingValue>): { widthMm: number; 
   if (pts.length < 3) return undefined
   const xs = pts.map((p) => p[0])
   const ys = pts.map((p) => p[1])
-  if (Math.min(...xs) !== 0 || Math.min(...ys) !== 0) return undefined
+  const widthMm = Math.max(...xs) - Math.min(...xs)
+  const depthMm = Math.max(...ys) - Math.min(...ys)
+  if (!(widthMm > 0 && depthMm > 0)) return undefined
   const height = scalar(config['printable_height'])
-  return { widthMm: Math.max(...xs), depthMm: Math.max(...ys), heightMm: height && height > 0 ? height : 250 }
+  return { widthMm, depthMm, heightMm: height && height > 0 ? height : 250 }
 }
 
 interface Parsed {

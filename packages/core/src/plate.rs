@@ -219,9 +219,17 @@ pub fn file_volumes(mesh: &Mesh) -> Vec<PlateVolume> {
         .collect()
 }
 
-/// A translation that centers the mesh on the bed and drops it to z = 0.
-pub fn centered_transform(mesh: &Mesh, bed: Bed) -> [f32; 16] {
-    placed(mesh.bounds(), bed, None)
+/// A translation that centers the mesh on the bed (on `center` when given) and drops it to z = 0.
+pub fn centered_transform(mesh: &Mesh, bed: Bed, center: Option<[f32; 2]>) -> [f32; 16] {
+    placed(mesh.bounds(), bed, center)
+}
+
+/// The middle of a request's bed on the machine: the bed's own middle moved by the front left corner of the printable
+/// area `config` sets ([`area_origin`]), since a request's transforms are machine coordinates. On a printer whose area
+/// starts at 0, 0 that is the bed's middle; on the Snapmaker U1 (area from 0.5, 1) a 270 mm bed's middle is 135.5, 136.
+pub fn bed_middle(bed: Bed, config: &serde_json::Value) -> [f32; 2] {
+    let [ox, oy] = area_origin(config);
+    [ox + bed.width_mm / 2.0, oy + bed.depth_mm / 2.0]
 }
 
 /// The one translation every build item of a 3MF plate takes: the items as a whole centered on the bed (on `center`
