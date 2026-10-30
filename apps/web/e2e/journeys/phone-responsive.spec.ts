@@ -633,6 +633,64 @@ test('at 390 and 360 px, after a slice every view chip is inside the view and no
   }
 })
 
+// ---- The plate toolbar in a narrow window ----------------------------------------------------------------------------------
+
+// A desktop window (a mouse) as narrow as a phone shows the plate toolbar: before a slice, and after one in Layer lines.
+// Every button of the bar, the grip too, is whole inside the view and the window, and none sits over the view chips
+// (the view switch and the legend chip) or the corner buttons. With the brim ears tool the bar has one more button.
+test.describe('the plate toolbar in a narrow window', () => {
+  test.skip(({ isMobile }) => isMobile, 'A mouse window; a phone has no plate toolbar')
+
+  /** The toolbar's buttons that leave the view or the window, or meet another control of the view's top. */
+  async function barClashes(page: Page): Promise<string[]> {
+    return page.locator('.vp').evaluate((vp) => {
+      const r = (el: Element) => el.getBoundingClientRect()
+      const v = r(vp)
+      const lo = Math.max(0, v.left)
+      const hi = Math.min(innerWidth, v.right)
+      const others = [...vp.querySelectorAll('.slice-look, [data-testid="legend-chip"], .hud-top .hud-col > .hud-row:first-child > *, .hud-top .hud-col.end > *')]
+        .map((el) => ({ name: el.getAttribute('aria-label') ?? el.getAttribute('data-testid') ?? el.className, box: r(el) }))
+        .filter(({ box }) => box.width > 0 && box.height > 0)
+      const meet = (a: DOMRect, b: DOMRect) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
+      return [...vp.querySelectorAll('.plate-tools-group .plate-tools button')].flatMap((el) => {
+        const b = r(el)
+        const name = el.getAttribute('aria-label') ?? 'button'
+        const out = b.left < lo - 0.5 || b.right > hi + 0.5 ? [`${name} runs ${Math.round(Math.max(lo - b.left, b.right - hi))} px out of the view`] : []
+        return [...out, ...others.filter((o) => meet(b, o.box)).map((o) => `${name} over ${o.name}`)]
+      })
+    })
+  }
+
+  async function barFits(page: Page, what: string): Promise<void> {
+    for (const width of [390, 360]) {
+      await sized(page, { width, height: 844 }, async () => {
+        await panesStill(page)
+        await expect(page.getByRole('toolbar', { name: 'Plate tools' })).toBeVisible()
+        expect(await barClashes(page), `${what} at ${width} px`).toEqual([])
+      })
+    }
+  }
+
+  test('at 390 and 360 px every plate toolbar button is inside the view and clear of the view chips', async ({ page }) => {
+    test.slow()
+    await boot(page, 'window', { fresh: true })
+    await page.keyboard.press('Escape')
+    await barFits(page, 'before a slice')
+    // The brim ears tool joins the bar while the brim prints placed ears.
+    await setState(page, { overrides: { brim_type: 'painted' } })
+    await expect(page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Brim ears' })).toBeVisible()
+    await barFits(page, 'with the brim ears tool')
+    await setState(page, { overrides: {} })
+    await expect(page.getByRole('toolbar', { name: 'Plate tools' }).getByRole('button', { name: 'Brim ears' })).toHaveCount(0)
+    const n = await sliceCount(page)
+    await page.keyboard.press('ControlOrMeta+Enter')
+    await expect(sliced(page, n)).toBeVisible({ timeout: 120_000 })
+    await page.locator('.slice-look').getByRole('radio', { name: 'Layer lines' }).click()
+    await barFits(page, 'in Layer lines')
+    await page.locator('.slice-look').getByRole('radio', { name: 'Toolpaths' }).click()
+  })
+})
+
 // ---- Helpers the slice and long-name tests share ---------------------------------------------------------------------------
 
 type Box = { name: string; x: number; y: number; w: number; h: number }

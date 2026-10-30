@@ -77,18 +77,24 @@ export function PlateToolbar({ layout, grip }: { layout: LayoutSpec; grip?: Reac
   }, [ears, tool])
   return (
     <div className="plate-tools sx-overlay" role="toolbar" aria-label="Plate tools" data-placement={layout.toolbar} aria-orientation={layout.toolbar === 'left-of-viewport' ? 'vertical' : 'horizontal'}>
-      {(ears ? [...PLATE_TOOLS, BRIM_TOOL] : PLATE_TOOLS).map((t) => (
-        <Button key={t.tool} variant="ghost" size="sm" icon={t.icon} aria-label={t.label} tip={t.tip} pressed={tool === t.tool} onClick={() => (tool === t.tool && t.tool !== 'move' ? setTool('move') : setTool(t.tool, true))} />
-      ))}
+      {/* Two sets: the tools, then the plate actions with undo and the grip. They read as one row; a narrow view stacks
+          them in two rows (app.css). */}
+      <span className="plate-tools-set">
+        {(ears ? [...PLATE_TOOLS, BRIM_TOOL] : PLATE_TOOLS).map((t) => (
+          <Button key={t.tool} variant="ghost" size="sm" icon={t.icon} aria-label={t.label} tip={t.tip} pressed={tool === t.tool} onClick={() => (tool === t.tool && t.tool !== 'move' ? setTool('move') : setTool(t.tool, true))} />
+        ))}
+      </span>
       <span className="plate-tools-sep" aria-hidden="true" />
-      {/* always in its place, so selecting a model never shifts the toolbar */}
-      <Button variant="ghost" size="sm" icon="arrow-down" aria-label="Drop to bed" tip="plate.drop" disabled={!hasSel} onClick={() => dropSelectedToBed()} />
-      <Button variant="ghost" size="sm" icon="arrange" aria-label="Arrange all" tip="plate.arrange" disabled={count === 0} onClick={() => void arrangePlate('all')} />
-      <ArrangeOptionsButton />
-      <span className="plate-tools-sep" aria-hidden="true" />
-      <Button variant="ghost" size="sm" icon="undo" aria-label="Undo" tip="edit.undo" disabled={undo === 0} onClick={() => history().undo()} />
-      <Button variant="ghost" size="sm" icon="redo" aria-label="Redo" tip="edit.redo" disabled={redo === 0} onClick={() => history().redo()} />
-      {grip}
+      <span className="plate-tools-set">
+        {/* always in its place, so selecting a model never shifts the toolbar */}
+        <Button variant="ghost" size="sm" icon="arrow-down" aria-label="Drop to bed" tip="plate.drop" disabled={!hasSel} onClick={() => dropSelectedToBed()} />
+        <Button variant="ghost" size="sm" icon="arrange" aria-label="Arrange all" tip="plate.arrange" disabled={count === 0} onClick={() => void arrangePlate('all')} />
+        <ArrangeOptionsButton />
+        <span className="plate-tools-sep" aria-hidden="true" />
+        <Button variant="ghost" size="sm" icon="undo" aria-label="Undo" tip="edit.undo" disabled={undo === 0} onClick={() => history().undo()} />
+        <Button variant="ghost" size="sm" icon="redo" aria-label="Redo" tip="edit.redo" disabled={redo === 0} onClick={() => history().redo()} />
+        {grip}
+      </span>
     </div>
   )
 }
