@@ -310,6 +310,8 @@ struct Builder<'a> {
     /// A solid base layer of a spiral vase: an aligned seam on a ring with no corner, where every point scores the
     /// same, goes to the point nearest the nozzle, which the layer starts at where the layer below ended.
     round_nearest: bool,
+    /// A spiral vase layer: its loop starts at the point nearest the nozzle, which may be on an edge.
+    spiral: bool,
 }
 
 impl Builder<'_> {
@@ -428,6 +430,15 @@ impl Builder<'_> {
         } else {
             self.seam
         };
+        // A spiral loop has no seam to hide: it starts at its point nearest the nozzle, on an edge when that is
+        // nearer than any vertex, so the move from the ring below is the shortest one.
+        if self.spiral
+            && supported.is_none()
+            && let Some(mut ring) = crate::seamplan::start_at(c, [self.cursor.x_mm(), self.cursor.y_mm()])
+        {
+            self.orient(&mut ring);
+            return Some(ring);
+        }
         let seam = seam_index(c, mode, self.cursor, key, supported.as_deref())?;
         let n = c.len();
         let mut ring: Vec<IntPoint<i32>> = (0..n).filter_map(|i| c.get((seam + i) % n).copied()).collect();
@@ -1890,15 +1901,17 @@ pub(crate) fn plan_layer_paths(
         unsupported: std::cell::Cell::new(f32::MIN),
         pz: Vec::new(),
         round_nearest: false,
+        spiral: false,
         vol_caps: (1..=works.iter().map(|w| w.tool).max().unwrap_or(1))
             .map(|s| crate::tower::per_slot_raw(cfg, "filament_max_volumetric_speed", s, 0.0))
             .collect(),
         cap_flow: cfg.cap_flow(first_layer),
     };
-    // A spiral loop starts at the vertex nearest a fixed point and always turns the same way (clockwise,
-    // unless `wall_direction` is `ccw`), so a layer does not depend on the one below.
+    // A spiral loop starts at the point nearest its anchor, where the layer below ended, and always turns the
+    // same way (clockwise, unless `wall_direction` is `ccw`).
     if let Some(v) = vase {
         b.seam = SeamPosition::Nearest;
+        b.spiral = true;
         b.plan = None;
         b.scarf = None;
         b.gap = 0.0;
@@ -3516,6 +3529,7 @@ mod tests {
             unsupported: std::cell::Cell::new(f32::MIN),
             pz: Vec::new(),
             round_nearest: false,
+            spiral: false,
         };
         b.capped(1, feature, 300.0)
     }
