@@ -10,7 +10,7 @@ import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { arrangeByObject, type Place } from './by-object-arrange'
 import { byObjectConfig } from './sequence-check'
 import { inStep, quietly } from './history'
-import { moveToNewPlates, switchPlate } from './plates'
+import { moveToNewPlates, switchPlate, type NewPlateLayout } from './plates'
 import { selectedEntry } from './select'
 import { bounds, centerOnBed, compose, dropToBed, identity, layOnFace, mirror, modelOrigin, scaleToSize, setScale, withTrs, type Box, type Mat4, type Trs, type Vec3 } from './transform'
 import { brandAccent, objectPalette } from '../edition'
@@ -146,7 +146,8 @@ export function setArrangeOptions(o: Partial<ArrangeOptions>): void {
 /**
  * Arrange every object, or only the selected ones around the rest, on their true outlines (nest.ts), or
  * on their bounds when the geometry engine cannot run. The objects it finds no room for move to new plates
- * (moveToNewPlates), in the same undo step. Returns how many did not fit on the shown plate.
+ * (moveToNewPlates), laid out there the same way, turns included, in the same undo step. Returns how many did not
+ * fit on the shown plate.
  */
 export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: ArrangeOptions = arrangeOptions): Promise<number> {
   const { plate, bed } = get()
@@ -166,9 +167,17 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   }
   // By object, tall objects print last, each in a gantry lane of its own when there are more of them.
   const cfg = byObjectConfig(get())
+  const objectSettings = get().objectSettings
+  const layOut = (plateNow: readonly PlateEntry[], mv: readonly PlateEntry[], fx: readonly PlateEntry[]) =>
+    cfg ? arrangeByObject(plateNow, mv, fx, bed, opts, cfg, place, hooks.stop, objectSettings) : place(mv, fx, opts)
   let r: ArrangeResult & { order?: string[] }
+  let overflow: Overflow = { layouts: [], left: [] }
   try {
-    r = cfg ? await arrangeByObject(plate, moving, fixed, bed, opts, cfg, place, hooks.stop, get().objectSettings) : await place(moving, fixed, opts)
+    r = await layOut(plate, moving, fixed)
+    // The objects with no room go to new plates, so none is left on or beside a placed one, laid out there as here.
+    const large = new Set(r.tooLarge.map((t) => t.id))
+    const rest = moving.filter((p) => r.leftOver.includes(p.id) && !large.has(p.id))
+    if (rest.length > 0 && !hooks.stop()) overflow = await newPlateLayouts(rest, (mv) => layOut(mv, mv, []), hooks.stop)
   } finally {
     endRun(hooks.token)
   }
@@ -176,23 +185,49 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
   // Objects moved by hand while the arrange ran keep the new place.
   const now = new Map(get().plate.map((p) => [p.id, p.transform]))
   const was = new Map(moving.map((p) => [p.id, p.transform]))
-  const transforms = Object.fromEntries(Object.entries(r.transforms).filter(([id]) => now.get(id) === was.get(id)))
-  // The objects with no room go to new plates, so none is left on or beside a placed one: one undo step with the arrange.
-  const large = new Set(r.tooLarge.map((t) => t.id))
-  const unplaced = r.leftOver.filter((id) => !large.has(id) && now.get(id) === was.get(id))
-  let moved: ReturnType<typeof moveToNewPlates> = { plates: [], left: unplaced }
+  const still = (id: string) => now.get(id) === was.get(id)
+  const transforms = Object.fromEntries(Object.entries(r.transforms).filter(([id]) => still(id)))
+  const layouts = overflow.layouts.map((l) => ({ ...l, transforms: Object.fromEntries(Object.entries(l.transforms).filter(([id]) => still(id))) }))
+  // One undo step with the arrange.
+  let movedPlates: ReturnType<typeof moveToNewPlates> = []
   inStep({}, () => {
     commitTransforms(transforms, r.order)
-    if (unplaced.length > 0) moved = moveToNewPlates(unplaced)
+    if (layouts.length > 0) movedPlates = moveToNewPlates(layouts)
   })
   const tooLarge = tooLargeNotice(r, plate)
-  const rest = moved.left.length
+  const rest = overflow.left.filter(still).length
   if (tooLarge) toast(tooLarge, 'warn')
   // The moved objects are out of sight on other plates, so the notice stays until dismissed, and Show opens the first.
-  const first = moved.plates[0]
-  if (first) toast(movedToPlatesNotice(moved.plates), 'info', { label: 'Show', run: () => switchPlate(first.id) }, { persist: true })
+  const first = movedPlates[0]
+  if (first) toast(movedToPlatesNotice(movedPlates), 'info', { label: 'Show', run: () => switchPlate(first.id) }, { persist: true })
   if (rest > 0) toast(`${rest} ${rest === 1 ? 'object does' : 'objects do'} not fit on the bed and stayed where ${rest === 1 ? 'it was' : 'they were'}.`, 'warn')
   return r.leftOver.length
+}
+
+interface Overflow {
+  /** One layout for each new plate, in order. */
+  layouts: NewPlateLayout[]
+  /** The objects no empty bed holds. */
+  left: string[]
+}
+
+/**
+ * Lays out `rest` on as many empty beds as it takes with `layOut`, the arrange of the shown plate (the nest with its
+ * turns, by object when the plate prints that way), each bed holding as many as fit there. Stops at objects no empty
+ * bed holds, or when `stop` says so.
+ */
+async function newPlateLayouts(rest: readonly PlateEntry[], layOut: (moving: readonly PlateEntry[]) => Promise<ArrangeResult & { order?: string[] }>, stop: () => boolean): Promise<Overflow> {
+  const layouts: NewPlateLayout[] = []
+  let left = [...rest]
+  while (left.length > 0 && !stop()) {
+    const r = await layOut(left)
+    const fit = left.filter((p) => r.transforms[p.id])
+    if (fit.length === 0) break
+    const ids = new Set(fit.map((p) => p.id))
+    layouts.push({ transforms: Object.fromEntries(fit.map((p) => [p.id, r.transforms[p.id]!])), ...(r.order ? { order: r.order.filter((id) => ids.has(id)) } : {}) })
+    left = left.filter((p) => !ids.has(p.id))
+  }
+  return { layouts, left: left.map((p) => p.id) }
 }
 
 /** One sentence for objects arrange moved to new plates: how many, and which plates. */
