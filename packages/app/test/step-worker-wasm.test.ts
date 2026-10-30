@@ -52,7 +52,8 @@ describe('the STEP worker with the wasm the host names', () => {
     const data = readFileSync(join(reader, 'test', 'fixtures', 'bracket-inch.stp'))
     const a = await post({ id: 2, name: 'bracket-inch.stp', data: data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength), quality: 'normal', wasm: pathToFileURL(join(resources, 'missing.wasm')).href })
     expect(a.result).toBeUndefined()
-    expect(a.error).toBeTruthy()
+    // Refused for the missing file itself, not for some other failure on the way.
+    expect(a.error).toMatch(/missing\.wasm/)
   })
 })
 
