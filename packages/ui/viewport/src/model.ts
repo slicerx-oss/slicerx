@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Turns plate objects into scene meshes: creased normals so flat faces and
 // pixel steps stay crisp, thin feature edges, and per-part polygon offset so
-// coplanar faces between stacked color parts resolve the same way every frame.
+// coplanar faces between stacked color parts resolve the same way every frame. Copies of one object share all of that
+// but their place: every part built from the very same arrays draws the one geometry, freed with its last copy.
 import {
   BufferAttribute,
   BufferGeometry,
@@ -27,6 +28,8 @@ const EDGE_DEG = 38
 export interface PartEntry {
   mesh: Mesh
   edges: LineSegments
+  /** The geometry this part draws, shared with the copies built from the same arrays. */
+  shared?: SharedPart
   /** The same edges as screen-space quads for the CAD look, made the first time it shows them. */
   wide?: LineSegments2
   color: string
@@ -43,6 +46,62 @@ export interface ObjectEntry {
   parts: PartEntry[]
   /** Set by disposeObject: a part geometry that arrives later is dropped. */
   disposed?: boolean
+}
+
+/**
+ * One part's geometry for every part built from the very same position and index arrays: copies of an object (Duplicate,
+ * paste, fill bed) keep their source's arrays, so they draw one creased mesh and one set of edges and differ only by
+ * their group's transform. A copy whose arrays differ (scaled into new positions, split by paint) gets its own.
+ */
+export interface SharedPart {
+  positions: Float32Array
+  indices: Uint32Array | Uint16Array
+  mesh: BufferGeometry
+  edges: BufferGeometry
+  /** The CAD look's wide edges, made the first time a copy shows them. */
+  wide: LineSegmentsGeometry | null
+  /** The parts drawing it; the geometry is freed when the last one goes. */
+  users: Set<PartEntry>
+  /** While it shows its stand-in: the parts to tell when the final geometry comes (AsyncPartBuild.done). */
+  waiting: Map<PartEntry, () => void> | null
+  /** Freed: a final geometry that arrives later is dropped. */
+  gone: boolean
+  store: SharedParts
+}
+
+/** Shared part geometry by position array, then index array (identity: comparing contents would cost what sharing saves). */
+export type SharedParts = Map<Float32Array, Map<Uint32Array | Uint16Array, SharedPart>>
+
+function findShared(store: SharedParts, P: Float32Array, I: Uint32Array | Uint16Array): SharedPart | undefined {
+  return store.get(P)?.get(I)
+}
+
+/** Whether these arrays already have their final geometry in the store, so a part built from them waits for nothing. */
+export function sharedFinal(store: SharedParts, P: Float32Array, I: Uint32Array | Uint16Array): boolean {
+  const s = findShared(store, P, I)
+  return !!s && s.waiting === null
+}
+
+/** Lets go of a part's share; the last part to go frees the geometry. */
+function release(part: PartEntry): void {
+  const s = part.shared
+  if (!s) return
+  delete part.shared
+  s.users.delete(part)
+  const tell = s.waiting?.get(part)
+  if (tell) {
+    s.waiting!.delete(part)
+    // after the caller's own work (setPlate disposing what left the plate), as the worker's answer would come
+    queueMicrotask(tell)
+  }
+  if (s.users.size > 0) return
+  s.gone = true
+  s.mesh.dispose()
+  s.edges.dispose()
+  s.wide?.dispose()
+  const byIndex = s.store.get(s.positions)
+  byIndex?.delete(s.indices)
+  if (byIndex?.size === 0) s.store.delete(s.positions)
 }
 
 /**
@@ -91,7 +150,8 @@ function standInGeometry(P: Float32Array, I: Uint32Array | Uint16Array): BufferG
 /**
  * Building big parts off the main thread: a part of at least `minTriangles` triangles shows its stand-in geometry and
  * no edges at first; its creased geometry and feature edges come from the pool and replace them in place. `done` is
- * called once per such part, when it has its final geometry (made here instead if the pool failed), or was disposed.
+ * called once per such part, when it has its final geometry (made here instead if the pool failed), or was disposed. A
+ * copy of a part that already has its final geometry takes it at once and gets no call (sharedFinal tells which).
  */
 export interface AsyncPartBuild {
   pool: Pick<MeshBuildPool, 'crease' | 'edges'>
@@ -124,17 +184,34 @@ export function overlayOffset(i: number): Mesh['onBeforeRender'] {
   }
 }
 
-export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => Material, edgeMaterial: Material, async?: AsyncPartBuild): ObjectEntry {
+export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => Material, edgeMaterial: Material, async?: AsyncPartBuild, store: SharedParts = new Map()): ObjectEntry {
   const group = new Group()
   group.name = obj.name
   group.userData.objectId = obj.id
   group.matrixAutoUpdate = false
   group.matrix.copy(new Matrix4().fromArray(obj.transform))
-  const later: [ViewportPart, number][] = []
-  const parts: PartEntry[] = obj.parts.map((p, i) => {
-    const big = async !== undefined && p.indices.length / 3 >= async.minTriangles
-    if (big) later.push([p, i])
-    const mesh = new Mesh(big ? standInGeometry(p.positions, p.indices) : creasedGeometry(p.positions, p.indices), material(p))
+  const entry: ObjectEntry = { id: obj.id, name: obj.name, group, parts: [] }
+  entry.parts = obj.parts.map((p, i) => {
+    let s = findShared(store, p.positions, p.indices)
+    const fresh = !s
+    if (!s) {
+      const big = async !== undefined && p.indices.length / 3 >= async.minTriangles
+      s = {
+        positions: p.positions,
+        indices: p.indices,
+        mesh: big ? standInGeometry(p.positions, p.indices) : creasedGeometry(p.positions, p.indices),
+        edges: big ? edgeLines(new Float32Array(0)) : edgeGeometry(p),
+        wide: null,
+        users: new Set(),
+        waiting: big ? new Map() : null,
+        gone: false,
+        store,
+      }
+      let byIndex = store.get(p.positions)
+      if (!byIndex) store.set(p.positions, (byIndex = new Map()))
+      byIndex.set(p.indices, s)
+    }
+    const mesh = new Mesh(s.mesh, material(p))
     mesh.castShadow = true
     mesh.receiveShadow = true
     mesh.userData.objectId = obj.id
@@ -142,14 +219,17 @@ export function buildObject(obj: ViewportObject, material: (p: ViewportPart) => 
     // Kept for the lay-on-face tool: triangle t of the creased geometry is triangle t of these.
     mesh.userData.source = { positions: p.positions, indices: p.indices }
     mesh.onBeforeRender = partOffset(i)
-    const edges = new LineSegments(big ? edgeLines(new Float32Array(0)) : edgeGeometry(p), edgeMaterial)
+    const edges = new LineSegments(s.edges, edgeMaterial)
     edges.raycast = () => {}
     mesh.add(edges)
     group.add(mesh)
-    return { mesh, edges, color: p.color, finish: p.finish ?? 'basic', index: i, ...(p.slot !== undefined ? { slot: p.slot } : {}) }
+    const part: PartEntry = { mesh, edges, shared: s, color: p.color, finish: p.finish ?? 'basic', index: i, ...(p.slot !== undefined ? { slot: p.slot } : {}) }
+    s.users.add(part)
+    // Still on its stand-in: this part takes the final geometry with the others, and says so when it comes.
+    if (s.waiting && async) s.waiting.set(part, () => async.done(entry, part))
+    if (fresh && s.waiting) void refineShared(s, p, async!)
+    return part
   })
-  const entry: ObjectEntry = { id: obj.id, name: obj.name, group, parts }
-  for (const [p, i] of later) void refinePart(entry, parts[i]!, p, async!)
   return entry
 }
 
@@ -169,13 +249,13 @@ function afterNextFrame(): Promise<void> {
   })
 }
 
-/** Gives a part built with its stand-in the creased geometry and feature edges from the pool (or made here). */
-async function refinePart(entry: ObjectEntry, part: PartEntry, p: ViewportPart, async: AsyncPartBuild): Promise<void> {
+/** Gives the parts drawing a stand-in the creased geometry and feature edges from the pool (or made here). */
+async function refineShared(s: SharedPart, p: ViewportPart, async: AsyncPartBuild): Promise<void> {
   let mesh: BufferGeometry | null = null
   let edges: Float32Array | null = null
   await afterNextFrame()
-  // gone before its turn came: nothing to make
-  if (entry.disposed) return async.done(entry, part)
+  // every copy gone before its turn came: nothing to make (release told each one)
+  if (s.gone) return
   try {
     const [c, e] = await Promise.all([async.pool.crease(p.positions, p.indices, CREASE_DEG), async.pool.edges(p.positions, p.indices, EDGE_DEG)])
     mesh = creasedMesh(c)
@@ -183,31 +263,42 @@ async function refinePart(entry: ObjectEntry, part: PartEntry, p: ViewportPart, 
   } catch {
     // No worker, or it failed: made here, as without a pool.
   }
-  if (entry.disposed) {
+  if (s.gone) {
     mesh?.dispose()
-    return async.done(entry, part)
+    return
   }
   mesh ??= creasedGeometry(p.positions, p.indices)
   edges ??= featureEdges(p.positions, p.indices, EDGE_DEG)
-  part.mesh.geometry.dispose()
-  part.mesh.geometry = mesh
-  part.edges.geometry.dispose()
-  part.edges.geometry = edgeLines(edges)
+  s.mesh.dispose()
+  s.mesh = mesh
+  s.edges.dispose()
+  s.edges = edgeLines(edges)
   // the CAD look's wide edges, made from the stand-in's (no) edges while it showed
-  if (part.wide) {
-    const g = new LineSegmentsGeometry()
-    g.setPositions(edges)
-    part.wide.geometry.dispose()
-    part.wide.geometry = g
+  if (s.wide) {
+    s.wide.dispose()
+    s.wide = new LineSegmentsGeometry()
+    s.wide.setPositions(edges)
   }
-  async.done(entry, part)
+  for (const part of s.users) {
+    part.mesh.geometry = s.mesh
+    part.edges.geometry = s.edges
+    if (part.wide && s.wide) part.wide.geometry = s.wide
+  }
+  const waiting = s.waiting
+  s.waiting = null
+  for (const tell of waiting?.values() ?? []) tell()
 }
 
-/** The part's wide edges, built from its feature edges once and kept on the part. */
+/** The part's wide edges, built from its feature edges once and shared with its copies. */
 export function wideEdges(p: PartEntry, material: LineMaterial): LineSegments2 {
   if (p.wide) return p.wide
-  const g = new LineSegmentsGeometry()
-  g.setPositions(p.edges.geometry.getAttribute('position').array as Float32Array)
+  const s = p.shared
+  let g = s?.wide
+  if (!g) {
+    g = new LineSegmentsGeometry()
+    g.setPositions(p.edges.geometry.getAttribute('position').array as Float32Array)
+    if (s) s.wide = g
+  }
   const w = new LineSegments2(g, material)
   w.raycast = () => {}
   p.mesh.add(w)
@@ -217,10 +308,6 @@ export function wideEdges(p: PartEntry, material: LineMaterial): LineSegments2 {
 
 export function disposeObject(o: ObjectEntry): void {
   o.disposed = true
-  for (const p of o.parts) {
-    p.mesh.geometry.dispose()
-    p.edges.geometry.dispose()
-    p.wide?.geometry.dispose()
-  }
+  for (const p of o.parts) release(p)
   o.group.removeFromParent()
 }

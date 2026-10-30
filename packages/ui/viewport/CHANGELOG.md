@@ -4,6 +4,10 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+### Changed
+
+- Copies of one object share their geometry. Every part built from the same position and index arrays draws one creased mesh and one set of feature edges, and copies differ only by their transform, material and selection. A big part's worker build runs once for all its copies. The geometry is freed when its last copy goes, and a copy whose arrays differ (scaled or painted) still gets its own.
+
 ## [0.2.6] - 2026-10-29
 
 ## [0.2.5] - 2026-10-29
