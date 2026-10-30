@@ -3,13 +3,14 @@
 // Reads STEP files off the main thread. OpenCASCADE (about 7 MB of wasm, from @slicerx/step-reader) loads here on the
 // first STEP file and never in the app shell. Answers with the OBJ text for the engine's import, base64 encoded.
 // Body colors stay out of the OBJ: the engine's import would turn them into filament slots, and that is not decided.
-import { loadOcct, readStep, StepError, toObj, type Occt, type StepQuality } from '@slicerx/step-reader'
+import { loadOcct, readStep, STEP_MAX_MEMORY_MB, StepError, toObj, type Occt, type StepQuality } from '@slicerx/step-reader'
 import { appName } from '../edition'
 
 let occt: Promise<Occt> | null = null
 
 function load(): Promise<Occt> {
-  return (occt ??= loadOcct())
+  // The same cap the Node path uses: a file that needs more fails with out_of_memory instead of growing the tab.
+  return (occt ??= loadOcct({ maxMemoryMb: STEP_MAX_MEMORY_MB }))
 }
 
 function base64(text: string): string {
