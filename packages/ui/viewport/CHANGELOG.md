@@ -10,6 +10,7 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 - `cancelDrag()` calls off a running move or move arrow drag and puts the parts back, for Esc.
 - `setDragZoom(scale)` eases the camera out by `scale` from where it is, and `setDragZoom(null)` eases it back, so a drag has room to leave the bed.
 - `placeReadout(x, y)` moves the distance readout beside the pointer during a move, so a host can keep it clear of its own marks.
+- `@slicerx/viewport/edge-drag`: drag a part past a bed edge to send it to another plate, turned on with `enableEdgeDrag(viewport, options)`. The host lists its plates, says which one shows, and does the move (and its undo) for `{ plate }` or `'new'`; optional `dropTarget`, `obstacles`, `onSwitch` and `canMove` fit it to the host's plate bar and toolbars. Colors are the `--sx-edge-*` custom properties (or the `theme` option), which default to the viewport's own tokens, and every string can be replaced through `labels`. The gesture code loads on the first part drag, and nothing runs, listens or draws while no part moves. See "Drag to another plate" in the README.
 
 ### Changed
 
