@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // A printer's live view read the way a client reads it: slicerx_printer_status through the real
-// sx-link binary and the Elegoo, Snapmaker 2.0 and Bambu Lab mock printers. Skipped when sx-link is not built.
+// sx-link binary and the Elegoo, Snapmaker 2.0, Snapmaker U1 and Bambu Lab mock printers. Skipped when sx-link is not built.
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -24,7 +24,7 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
   let code = ''
 
   beforeAll(async () => {
-    mocks = await startMocks({ only: ['elegoo', 'snapmaker-luban', 'bambu'], state: 'idle' })
+    mocks = await startMocks({ only: ['elegoo', 'snapmaker-luban', 'snapmaker-u1', 'bambu'], state: 'idle' })
     proc = spawn(bin, ['--port', '0', '--state-dir', dir, '--secrets', 'file', '--no-mdns', '--loopback'], { stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
     await new Promise<void>((done, fail) => {
@@ -48,6 +48,7 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
     await setup.authorizePrinter('bay-8', 30)
     await setup.setSecret('bay-9-code', MOCK_ACCESS_CODE)
     await setup.addPrinter({ id: 'bay-9', name: 'Bay 9', plugin: 'bambu-lan', host: '127.0.0.1', port: mocks.ports['bambu'] ?? 0, serial: MOCK_SERIAL, credentialRef: 'bay-9-code', ftpPort: mocks.ports['bambu-ftp'] ?? 0, cameraPort: mocks.ports['bambu-camera'] ?? 0, pollMs: 200 }, { vendor: 'Bambu Lab', model: 'P1S' })
+    await setup.addPrinter({ id: 'bay-10', name: 'Bay 10', plugin: 'moonraker', host: '127.0.0.1', port: mocks.ports['snapmaker-u1'] ?? 0, pollMs: 100 }, { vendor: 'Snapmaker', model: 'U1' })
     setup.close()
   }, 30_000)
 
@@ -113,5 +114,26 @@ describe.skipIf(!bin || !existsSync(bin))('live view through sx-link', () => {
     expect(slots.find((s) => s.id === 'A3')?.remainingG).toBe(95)
     // A slot without an exact reading keeps only the percentage estimate.
     expect(slots.find((s) => s.id === 'A2')?.remainingG).toBeUndefined()
+  })
+
+  it("names the Snapmaker U1 toolhead that ran out, and clears it once filament is back in", async () => {
+    const post = (path: string, body: unknown) => fetch(`http://127.0.0.1:${mocks.control}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    await post('/u1', { runoutToolhead: 2, loadedToolheads: [true, true, true, true] })
+    await post('/set', { mock: 'snapmaker-u1', state: 'printing' })
+    const h = await connect({ printers: 'link', linkUrl: url, linkCode: code })
+    type Status = { output: { state: string; message?: string; slots: { id: string; material?: string }[]; live?: { runoutSlots?: string[] } } }
+    const read = async () => data<Status>(await h.call('slicerx_printer_status', { printerId: 'bay-10' })).output
+    await expect.poll(async () => (await read()).state, { timeout: 10_000 }).toBe('printing')
+    expect((await read()).live?.runoutSlots).toBeUndefined()
+    await post('/fault', { mock: 'snapmaker-u1', kind: 'runout' })
+    await expect.poll(async () => (await read()).state, { timeout: 10_000 }).toBe('paused')
+    const out = await read()
+    expect(out.message).toBe('Paused: filament runout on T2')
+    expect(out.live?.runoutSlots).toEqual(['3'])
+    await post('/fault', { mock: 'snapmaker-u1', kind: 'clear' })
+    await expect.poll(async () => (await read()).live?.runoutSlots, { timeout: 10_000 }).toBeUndefined()
+    const back = await read()
+    expect([back.state, back.message, back.slots.find((s) => s.id === '3')?.material]).toEqual(['paused', undefined, 'TPU'])
+    await post('/set', { mock: 'snapmaker-u1', state: 'idle' })
   })
 })
