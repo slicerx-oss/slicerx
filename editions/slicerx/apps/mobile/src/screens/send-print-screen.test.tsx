@@ -79,6 +79,16 @@ it('adds a model from files', async () => {
   expect(screen.getByText('Harbor lantern')).toBeTruthy()
 })
 
+it('says to open a picked STEP file on desktop or web, and keeps the sheet open', async () => {
+  const message = "STEP files can't be opened on the phone. Open this file on desktop or web."
+  const p = props({ onPickFile: jest.fn(() => Promise.reject(new Error(message))) })
+  await render(<SendPrintScreen {...p} />)
+  await fireEvent.press(screen.getByTestId('model-choose'))
+  await fireEvent.press(screen.getByTestId('pick-file'))
+  expect(await screen.findByText(message)).toBeTruthy()
+  expect(screen.getByTestId('pick-file')).toBeTruthy()
+})
+
 it('prompts to sign in instead of failing when cloud slicing has no token', async () => {
   const onSignInForCloud = jest.fn()
   await render(<SendPrintScreen {...props({ sliceLocation: null, onSignInForCloud })} />)
