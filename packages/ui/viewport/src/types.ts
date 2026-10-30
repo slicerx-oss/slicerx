@@ -729,16 +729,28 @@ export interface Viewport {
   zoomToSelection(opts?: { animate?: boolean }): void
   /** Frames the selection (every object with none) from the current angle, with room around it. */
   frameSelection(opts?: { animate?: boolean }): void
-  /** Frames the selection as frameSelection does, only when some of it is off screen or under an overlay. Answers whether the camera moved. */
-  showSelection?(opts?: { animate?: boolean }): boolean
+  /**
+   * Frames the selection as frameSelection does, only when some of it is off screen or under an overlay. With
+   * `keepZoom` it moves the view sideways to the selection instead, keeping the distance and the angle, and judges the
+   * view the camera is easing to when it is on its way. Answers whether the camera moved.
+   */
+  showSelection?(opts?: { animate?: boolean; keepZoom?: boolean }): boolean
   zoomToBed(opts?: { animate?: boolean }): void
   /** Moves the camera toward its target by `factor` (below 1 moves away), keeping the angle, within the zoom limits. */
   zoomBy(factor: number, opts?: { animate?: boolean }): void
   /**
    * Room for a move that may leave the bed (setEdgeDrag): `scale` below 1 eases the camera out by that much from where
    * it is (0.72 shows the bed at 72 percent), and null eases it back to the view it left. At once under reduced motion.
+   * `shift` also slides what the view shows by that many pixels at the eased out scale (x right, y down), toward one
+   * side when only that side needs the room.
    */
-  setDragZoom?(scale: number | null, durationMs?: number): void
+  setDragZoom?(scale: number | null, durationMs?: number, shift?: readonly [number, number]): void
+  /**
+   * Runs `change` with the camera held where it is (or where it is easing to): a plate swapped in, a selection or a
+   * view preset asked for during it keeps the framing instead of framing the new plate, the model or the selection.
+   * Returns what `change` returns.
+   */
+  keepCamera?<T>(change: () => T): T
   /** The app's hook for moves that may leave the bed, or null for none (the default): moves stay on the bed. */
   setEdgeDrag?(hook: EdgeDragHook | null): void
   /** Calls off a running move (a drag or a move arrow), the objects back where it started. False when none runs. */
