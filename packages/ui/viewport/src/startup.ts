@@ -42,6 +42,15 @@ export class CompileClock {
   }
 }
 
+/**
+ * Whether the bead warm-up waits: it holds while a file opens, while a plate set is not drawn yet, and while big parts
+ * still wait for their final geometry. Its compiles kept the GPU busy, and on software GL the frame that swapped the
+ * final geometry in waited for them, about a second.
+ */
+export function warmupWaits(s: { held: boolean; plateUndrawn: boolean; opening: boolean; refiningParts: number }): boolean {
+  return s.held || s.plateUndrawn || s.opening || s.refiningParts > 0
+}
+
 /** A fresh record, before anything is measured. */
 export function emptyStartup(): ViewportStartup {
   return { rendererMs: 0, stageMs: 0, envMs: null, pipelineMs: 0, constructMs: 0, constructPrograms: 0, constructCompileMs: 0, waitMs: null, firstFrameMs: null, firstFramePrograms: null, firstFrameCompileMs: null, warmMs: null, warmPrograms: null, warmCompileMs: null }
