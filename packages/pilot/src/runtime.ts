@@ -45,7 +45,7 @@ import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type Tool
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
 import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
-import { capLine, capTools, turnNeeds, type ToolCapReport } from './toolsets'
+import { capLine, capTools, localTurnTools, turnNeeds, type ToolCapReport } from './toolsets'
 import { availableSkills, playbooks } from '../skills/catalog'
 import { builtinTools } from './tools'
 import { memoryTools } from './tools/memory'
@@ -706,11 +706,12 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
         wrap = true
         messages.push({ role: 'user', content: WRAP_NOTE })
       }
+      const called = calledTools(messages)
+      const offered = allTools().filter((t) => (restrict ? restrict(t) : true))
+      // a local model gets the surface's every-turn tools and the ones this turn calls for (toolsets.ts)
+      const turn = local ? localTurnTools(surface, offered, { needs, called }) : offered
       // over the provider's tool limit, the turn sends core, the tools the chat called and the toolsets it needs
-      const capped = capTools(
-        allTools().filter((t) => (restrict ? restrict(t) : true)),
-        { cap: client.maxTools, needs, called: calledTools(messages) },
-      )
+      const capped = capTools(turn, { cap: client.maxTools, needs, called })
       const visible = capped.tools
       const specs = visible.map((t) => toolSpec(t))
       const toolDefs = specs.map((s) => ({ name: s.name, description: s.description, parameters: s.inputSchema }))

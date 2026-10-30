@@ -112,11 +112,11 @@ describe('the runtime and the context', () => {
     },
   }) as PilotTool<never>
 
-  async function requests(provider: string, scope: 'full' | 'cad' = 'full') {
+  async function requests(provider: string, scope: 'full' | 'cad' = 'full', message = 'read the reports') {
     const steps = [...Array.from({ length: 6 }, () => ({ calls: [{ name: 'test.big_read', args: {} }] })), { text: 'done' }]
     const client = createScriptedClient(steps, { provider })
     const env = createEvalEnv({ client, machine: MACHINE, objects: [], tools: [bigRead], scope })
-    for await (const _ of env.pilot.run('t', 'read the reports', { context: { machine: MACHINE } })) void _
+    for await (const _ of env.pilot.run('t', message, { context: { machine: MACHINE } })) void _
     if (client.requests.length === 0) throw new Error('no request')
     return client.requests
   }
@@ -147,6 +147,17 @@ describe('the runtime and the context', () => {
       setProductName(DEFAULT_PRODUCT_NAME)
       setAssistantBrand()
     }
+  })
+
+  // A local turn sends the tab's every-turn tools and the toolsets it calls for (toolsets.ts), so the heaviest turn is
+  // one that calls for all of them: it still leaves the conversation its room.
+  it('leaves a local model in the tab room for the conversation on a turn that calls for every toolset', async () => {
+    const all = 'Why did my print fail? Design a part, repair the mesh, calibrate, slice and send it to the printer, schedule the farm after 6 pm, and save the project in dark mode'
+    const [first] = await requests('openai-compatible', 'full', all)
+    // every tool a cloud model gets but make_model and the unlisted test tool goes, so this measures the whole local tab
+    const [cloud] = await requests('anthropic', 'full', all)
+    expect(first!.tools.map((t) => t.name)).toEqual(cloud!.tools.map((t) => t.name).filter((n) => n !== 'make_model' && n !== 'test.big_read'))
+    expect(requestCost(first!) + REPLY_RESERVE + CONVERSATION_ROOM).toBeLessThanOrEqual(MIMIR_CONTEXT)
   })
 
   it('trims what it sends to a local model, and sends a cloud model everything', async () => {
