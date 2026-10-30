@@ -8,6 +8,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 - `slicerx_arrange` 1.10.0 turns each copy about Z where that fits more, as the app's Arrange does, on the plates it lays out and on the new plates copies with no room go to. The new `turns` lists every copy of the arranged object as `id` (the plate object id), `plate` and `turnDeg`. Before, every copy kept its object's rotation, so long parts standing at an angle took more plates than in the app: 24 bars of 80 x 6 mm at 30 degrees need two 100 mm plates in both now. Placing a copy around others (`slicerx_project_duplicate`) still does not turn it, as in the app. A turn belongs to the arranged layout, as the move does: rotating or scaling the object, changing its copies or changing the bed puts the plate back in rows, unturned.
 - `slicerx_project_show` 1.1.0 gives each placement's `turnDeg`, 0 when the copy is not turned, and its `centerMm` and `sizeMm` follow the turn. The slice gets each copy's turned transform.
+- `slicerx_arrange` places as many copies of one object on a plate as rows of their boxes hold, around the objects that stay. Before, the nest could fall one short of the rows on plain boxes: of eight 10 x 50 mm bars 2 mm apart on a 100 x 60 mm bed it placed seven and refused the eighth.
 - The mimir session read-back (`mimir_session`) lists `mechanism` among the reasons a turn can start on the larger model, and a turn no longer starts there only because a picture or PDF came with it.
 
 ## [0.2.6] - 2026-10-29

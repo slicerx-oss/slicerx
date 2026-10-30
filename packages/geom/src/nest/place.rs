@@ -308,6 +308,8 @@ pub struct Nester {
     close: f64,
     next: usize,
     best: Option<Layout>,
+    /// copies of one part in rows of their boxes: the nest keeps it when it places more
+    rows: Option<Layout>,
     work: f64,
     budget: f64,
     too_large: Vec<TooLarge>,
@@ -440,6 +442,7 @@ impl Nester {
             close: 0.0,
             next: 0,
             best: None,
+            rows: None,
             work: 0.0,
             budget: if opts.budget > 0.0 {
                 opts.budget
@@ -535,6 +538,7 @@ impl Nester {
         me.zones = regions.into_iter().map(|(r, _, _)| r).collect();
         me.items = items;
         me.plan = me.make_plan();
+        me.rows = me.rows();
         Ok(me)
     }
 
@@ -743,6 +747,104 @@ impl Nester {
                 let v = poly::rotate_pt(*q, sc);
                 (v[0] + p.pos[0] + shift[0] - c[0]).m_hypot(v[1] + p.pos[1] + shift[1] - c[1]) <= lim
             })
+        })
+    }
+
+    /// copies of one part in rows of their boxes at the quarter turn that holds the most, around anything fixed: a
+    /// greedy pass can fall a part short of these on plain boxes
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
+        reason = "counts of parts across a bed"
+    )]
+    fn rows(&self) -> Option<Layout> {
+        let s = self.slots.first()?.2;
+        if self.bed.round
+            || (self.opts.skirt && !self.zone_hulls.is_empty())
+            || self.slots.iter().any(|x| x.2 != s)
+        {
+            return None;
+        }
+        let (edge, gap) = (self.shapes[s].edge, 2.0 * self.shapes[s].half);
+        let fit = |room: f64, size: f64| {
+            ((room - 2.0 * edge + gap) / (size + gap) + 1e-9).floor().max(0.0) as usize
+        };
+        let mut best: Option<Layout> = None;
+        for t in self.shapes[s].turns.clone() {
+            if t % (90 * MDEG) != 0 {
+                continue;
+            }
+            let b = self.shapes[s].bounds[&t];
+            let (nx, ny) = (fit(self.bed.width_mm, b.w()), fit(self.bed.depth_mm, b.h()));
+            let mut layout = Layout {
+                puts: vec![None; self.slots.len()],
+                placed: 0,
+                area: 0.0,
+                envelope: Bbox::EMPTY,
+                pass: u32::try_from(self.plan.len()).unwrap_or(u32::MAX),
+            };
+            let mut k = 0;
+            for j in 0..ny {
+                for i in 0..nx {
+                    if k >= self.slots.len() {
+                        break;
+                    }
+                    let pos = [
+                        edge + i as f64 * (b.w() + gap) - b.min[0],
+                        edge + j as f64 * (b.h() + gap) - b.min[1],
+                    ];
+                    if self.taken(s, t, pos) {
+                        continue;
+                    }
+                    layout.puts[k] = Some(Put {
+                        shape: s,
+                        turn: t,
+                        pos,
+                    });
+                    layout.placed += 1;
+                    layout.area += self.shapes[s].area;
+                    layout.envelope = layout.envelope.merge(&b.shifted(pos));
+                    k += 1;
+                }
+            }
+            if best.as_ref().is_none_or(|o| layout.placed > o.placed) {
+                best = Some(layout);
+            }
+        }
+        best.filter(|l| l.placed > 0)
+    }
+
+    /// true when part `b` turned by `turn` with its origin at `pos` comes nearer a fixed part or a zone than the nest
+    /// keeps it, by their exact hulls
+    fn taken(&self, b: usize, turn: i64, pos: Pt) -> bool {
+        let sh = &self.shapes[b];
+        let sc = poly::turn(turn as f64 / MDEG as f64);
+        let me: Ring = sh
+            .hull
+            .iter()
+            .map(|p| {
+                let q = poly::rotate_pt(*p, sc);
+                [q[0] + pos[0], q[1] + pos[1]]
+            })
+            .collect();
+        let near = self.fixed.iter().any(|f| {
+            let o = &self.shapes[f.shape];
+            let them: Ring = o
+                .hull
+                .iter()
+                .map(|p| [p[0] + f.pos[0], p[1] + f.pos[1]])
+                .collect();
+            hull_gap(&me, &them) < sh.half + o.half - 1e-6
+        });
+        near || self.zones.iter().enumerate().any(|(z, r)| {
+            let keep = if self.keep_out[z] {
+                sh.edge.max(NestOptions::default().gap_mm)
+            } else {
+                sh.edge.max(sh.half)
+            };
+            let pts: Vec<Pt> = r.iter().flatten().flatten().copied().collect();
+            hull_gap(&me, &poly::hull(&pts)) < keep - 1e-6
         })
     }
 
@@ -1224,7 +1326,11 @@ impl Nester {
     }
 
     pub fn result(&mut self) -> NestResult {
-        let Some(best) = self.best.clone() else {
+        let rows = self
+            .rows
+            .as_ref()
+            .filter(|r| self.best.as_ref().is_none_or(|b| r.placed > b.placed));
+        let Some(best) = rows.or(self.best.as_ref()).cloned() else {
             let mut left: BTreeMap<String, u32> = BTreeMap::new();
             for (ii, _, _) in &self.slots {
                 *left.entry(self.items[*ii].id.clone()).or_default() += 1;
@@ -1342,6 +1448,22 @@ fn convex_overlap(a: &[Pt], b: &[Pt]) -> bool {
         })
     };
     !(apart(a, b) || apart(b, a))
+}
+
+/// the gap between two convex counterclockwise rings, 0 when they overlap
+fn hull_gap(a: &[Pt], b: &[Pt]) -> f64 {
+    if convex_overlap(a, b) {
+        return 0.0;
+    }
+    let mut best = f64::INFINITY;
+    for (p, q) in [(a, b), (b, a)] {
+        for v in p {
+            for i in 0..q.len() {
+                best = best.min(poly::dist_to_segment(*v, q[i], q[(i + 1) % q.len()]));
+            }
+        }
+    }
+    best
 }
 
 /// places everything in one go

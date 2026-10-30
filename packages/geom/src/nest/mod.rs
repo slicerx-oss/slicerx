@@ -246,6 +246,78 @@ mod tests {
     }
 
     #[test]
+    fn copies_of_a_box_fill_the_rows_their_boxes_hold() {
+        // 50 x 10 bars on a 100 x 60 bed 2 mm apart: eight stand side by side a quarter turned,
+        // 8 x 10 + 7 x 2 = 94 mm of the 96 inside the edge gap. the greedy passes placed seven
+        let items: Vec<NestItem> = (0..8)
+            .map(|i| item(&format!("b{i}"), vec![rect(0.0, 0.0, 50.0, 10.0)]))
+            .collect();
+        let out = nest(NestProblem {
+            bed: bed(100.0, 60.0),
+            items: items.clone(),
+            fixed: vec![],
+            zones: vec![],
+            options: opts(2.0),
+        })
+        .unwrap();
+        assert_eq!(out.placements.len(), 8, "{:?}", out.left_over);
+        check_spacing(&items, &out, 2.0, 100.0, 60.0);
+        // as fill the bed sends it: copies of a box's footprint, around the box standing at the left edge
+        let block = crate::mesh::TriMesh::from_flat(
+            &[
+                0.0, 0.0, 0.0, 50.0, 0.0, 0.0, 50.0, 10.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 5.0, 50.0, 0.0,
+                5.0, 50.0, 10.0, 5.0, 0.0, 10.0, 5.0,
+            ],
+            &[
+                0, 2, 1, 0, 3, 2, 4, 5, 6, 4, 6, 7, 0, 1, 5, 0, 5, 4, 2, 3, 7, 2, 7, 6, 1, 2, 6, 1, 6, 5, 3,
+                0, 4, 3, 4, 7,
+            ],
+        )
+        .unwrap();
+        let s = silhouette(&[block], None, &SilhouetteOptions::default());
+        let mut bar = item(
+            "bar",
+            s.outline
+                .iter()
+                .map(|p| Polygon {
+                    outer: p[0].clone(),
+                    holes: p[1..].to_vec(),
+                })
+                .collect(),
+        );
+        bar.hull = s.hull;
+        bar.copies = 9;
+        let run = |fixed: Vec<NestFixed>| {
+            nest(NestProblem {
+                bed: bed(100.0, 60.0),
+                items: vec![bar.clone()],
+                fixed,
+                zones: vec![],
+                options: opts(2.0),
+            })
+            .unwrap()
+        };
+        assert_eq!(run(vec![]).placements.len(), 8);
+        let standing = rect(2.0, 5.0, 10.0, 50.0);
+        let out = run(vec![NestFixed {
+            id: "s".into(),
+            polygons: vec![standing.clone()],
+            grow: 0.0,
+            reach: 0.0,
+            apart_extra: 0.0,
+            hull: vec![],
+        }]);
+        assert_eq!(out.placements.len(), 7, "{:?}", out.left_over);
+        // measured on the box itself: its footprint lies a little outside
+        let exact = [item("bar", vec![rect(0.0, 0.0, 50.0, 10.0)])];
+        check_spacing(&exact, &out, 2.0, 100.0, 60.0);
+        let f: Region = vec![vec![standing.outer]];
+        for p in &out.placements {
+            assert!(distance(&placed(&exact, p), &f) >= 2.0 - 0.01);
+        }
+    }
+
+    #[test]
     fn parts_printed_by_object_keep_the_clearance_apart_but_not_from_the_edge() {
         let items: Vec<NestItem> = (0..2)
             .map(|i| item(&format!("b{i}"), vec![rect(0.0, 0.0, 20.0, 20.0)]))

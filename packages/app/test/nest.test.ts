@@ -204,6 +204,20 @@ describe('arrange and fill the bed in the app', () => {
     }
   })
 
+  it('arrange and fill the bed fit as many bars as rows of them hold', async () => {
+    // 50 x 10 mm bars on a 100 x 60 mm bed 2 mm apart: eight side by side, a quarter turned, take 94 of the
+    // 96 mm inside the edge gap. The nest's own passes placed seven.
+    set({ bed: { widthMm: 100, depthMm: 60, heightMm: 50 }, plate: Array.from({ length: 8 }, (_, i) => plateEntry(`b${i}`, boxes([[0, 0, 50, 10]]), at(0, 7 * i))) })
+    expect(await arrangePlate('all')).toBe(0)
+    const bars = get().plate.map((p) => placedBoxes(p.parts[0]!, p.transform)[0]!)
+    expect(bars).toHaveLength(8)
+    for (let i = 0; i < bars.length; i++) for (let j = i + 1; j < bars.length; j++) expect(gapOf(bars[i]!, bars[j]!)).toBeGreaterThanOrEqual(2 - 1e-3)
+    for (const b of bars) expect([b.x0, b.y0, 100 - b.x1, 60 - b.y1].every((d) => d >= 2 - 1e-3)).toBe(true)
+    // one bar standing at the left edge, the rest of the row filled
+    set({ plate: [plateEntry('s', boxes([[0, 0, 50, 10]]), at(12, 5, 90))], selection: 's', selectedIds: ['s'] })
+    expect(await fillBed('s')).toBe(7)
+  })
+
   it('fill the bed adds copies as instances, clear of each other', async () => {
     set({ bed: { widthMm: 120, depthMm: 120, heightMm: 50 }, plate: [plateEntry('s', ell(40, 10), at(10, 10))], selection: 's', selectedIds: ['s'] })
     const n = await fillBed('s')
