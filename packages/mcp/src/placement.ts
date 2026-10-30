@@ -91,10 +91,10 @@ export function downRotation(normal: [number, number, number], scale: [number, n
 
 export function placementTools(deps: LocalToolDeps, need: () => McpProject): PilotTool<never>[] {
   const done = (summary: string, project: McpProject, extra: Record<string, unknown> = {}) => ({ summary, output: { ...extra, project: project.describe() } })
-  const tool = <I>(spec: { name: string; description: string; input: z.ZodType<I>; title(i: I): string; run(i: I, project: McpProject): Promise<{ summary: string; output: unknown }> | { summary: string; output: unknown } }): PilotTool<I> =>
+  const tool = <I>(spec: { name: string; version?: string; description: string; input: z.ZodType<I>; title(i: I): string; run(i: I, project: McpProject): Promise<{ summary: string; output: unknown }> | { summary: string; output: unknown } }): PilotTool<I> =>
     defineTool<I>({
       name: spec.name,
-      version: '1.0.0',
+      version: spec.version ?? '1.0.0',
       source: 'command',
       permission: 'slice',
       description: spec.description,
@@ -281,8 +281,9 @@ export function placementTools(deps: LocalToolDeps, need: () => McpProject): Pil
 
   const duplicate = tool({
     name: 'project.duplicate',
+    version: '1.1.0',
     description:
-      'Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows, or around the objects already there when the rows would reach past the bed. A copy with no room on the bed goes to the last plate when it has room and the same printer and settings, else to a new plate; moved lists each one by id and plate. An object too large for an empty plate is refused, with no copy made. For identical copies that always print alike, add the model with copies instead. Answers with the new ids and the project.',
+      'Duplicate an object, as Duplicate does in the app: each copy is a new object of its own (its own id, to move, turn or give settings separately) with the same model, rotation, scale, settings and volumes, on the same plates, in the automatic rows, or around the objects already there when the rows would reach past the bed. On a plate slicerx_arrange laid out, the copy keeps the turnDeg of the object\'s first copy there. A copy with no room on the bed goes to the last plate when it has room and the same printer and settings, else to a new plate; moved lists each one by id and plate. An object too large for an empty plate is refused, with no copy made. For identical copies that always print alike, add the model with copies instead. Answers with the new ids and the project.',
     input: z.object({ object: objectArg, count: z.number().int().min(1).max(50).default(1).describe('How many copies, 1 to 50') }),
     title: (i) => `Duplicate ${i.object}${i.count > 1 ? ` ${i.count} times` : ''}?`,
     async run(i, project) {

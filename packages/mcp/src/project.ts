@@ -431,7 +431,9 @@ export class McpProject implements PilotProject {
    * Duplicates an object (slicerx_project_duplicate): each copy a new object, on the plates the object is on, in the
    * rows while they fit the bed, else around what is there. A copy with no room goes to the last plate when it comes
    * after, has the same printer and settings and has room, else to a new plate; it never goes past the bed's edge. An
-   * object no empty plate holds is refused before any copy is made.
+   * object no empty plate holds is refused before any copy is made. On a plate the last arrange laid out, a copy keeps
+   * the turn of the object's first copy there, as Duplicate in the app keeps the copy's turn; on a plate in the rows it
+   * is not turned, as nothing in the rows is.
    */
   async duplicate(objectId: string, count: number, spacing = DUPLICATE_GAP_MM): Promise<{ ids: string[]; moved: { objectId: string; from: number; to: number }[] }> {
     const e = this.entry(objectId)
@@ -453,8 +455,9 @@ export class McpProject implements PilotProject {
       if (e.volumes) copy.volumes = e.volumes.map((v) => ({ ...v, id: `vol-${this.nextVolume++}`, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
       this.entries.set(id, copy)
       for (const h of homes) {
-        if (await this.placeOn(h, id, spacing)) continue
-        moved.push({ objectId: id, from: h, to: await this.overflowOne(h, id, spacing) })
+        const turn = this.sitting(h).get(`${e.obj.id}-1`)?.at[2] ?? 0
+        if (await this.placeOn(h, id, spacing, turn)) continue
+        moved.push({ objectId: id, from: h, to: await this.overflowOne(h, id, spacing, turn) })
       }
       ids.push(id)
     }
@@ -529,10 +532,11 @@ export class McpProject implements PilotProject {
 
   /**
    * Puts one copy of a new object on a plate, clear of the bed's edge: in the rows when the plate is in rows and they
-   * still fit the bed, else around the copies already there, which stay where they are. False, with the plate as it
+   * still fit the bed, else around the copies already there, which stay where they are, turned `turn` degrees about Z
+   * after its rotation when the plate keeps an arranged layout (the rows turn nothing). False, with the plate as it
    * was, when there is no room.
    */
-  private async placeOn(plateIndex: number, objectId: string, spacing: number): Promise<boolean> {
+  private async placeOn(plateIndex: number, objectId: string, spacing: number, turn = 0): Promise<boolean> {
     const plate = this.layout.find((p) => p.index === plateIndex)
     if (!plate) return false
     const nest = this.nested.get(plateIndex)
@@ -541,7 +545,7 @@ export class McpProject implements PilotProject {
     plate.items.push({ objectId, copies: 1 })
     if (!arranged && [...this.sitting(plateIndex).values()].every((x) => x.onBed)) return true
     const pins = new Map([...now].map(([id, x]) => [id, x.at] as [string, Spot]))
-    const r = await this.nestPlan(plateIndex, spacing, pins)
+    const r = await this.nestPlan(plateIndex, spacing, pins, false, arranged && turn ? new Map([[objectId, turn]]) : undefined)
     if (r && r.left.size === 0) return true
     plate.items = plate.items.filter((i) => i.objectId !== objectId)
     return false
@@ -549,13 +553,14 @@ export class McpProject implements PilotProject {
 
   /**
    * Where a copy with no room on plate `from` goes: the last plate when it comes after `from`, has the same printer and
-   * settings and has room, else a new plate after the last with `from`'s printer and settings. Returns its number.
+   * settings and has room, else a new plate after the last with `from`'s printer and settings. Returns its number. The
+   * copy keeps `turn` on an arranged plate, as placeOn does.
    */
-  private async overflowOne(from: number, objectId: string, spacing: number): Promise<number> {
+  private async overflowOne(from: number, objectId: string, spacing: number, turn = 0): Promise<number> {
     const src = this.layout.find((p) => p.index === from)
     const last = this.layout[this.layout.length - 1]
     if (last && src && last.index > from && last.printerId === src.printerId && JSON.stringify(last.overrides ?? {}) === JSON.stringify(src.overrides ?? {})) {
-      if (await this.placeOn(last.index, objectId, spacing)) return last.index
+      if (await this.placeOn(last.index, objectId, spacing, turn)) return last.index
     }
     const index = this.newPlateLike(from)
     // An empty plate holds it (duplicate checked); the rows set it in the middle.
@@ -626,10 +631,11 @@ export class McpProject implements PilotProject {
    * ones `pins` holds where they are (their move in X and Y). When every copy finds room the plate keeps the layout
    * (by object, with lanes for copies taller than the gantry rod when that clears more); otherwise the plate is left
    * as it was. With `turn` each moving copy may turn about Z where that packs better, as the app's Arrange turns them;
-   * held copies keep the turn they have. Returns every copy's move and turn by plate object id and how many copies of
-   * each moving object found no room; undefined when nothing moves.
+   * held copies keep the turn they have. `start` gives the moving copies of an object a turn to start from (a duplicate
+   * keeps its source copy's turn); a turn the nest adds goes on top of it. Returns every copy's move and turn by plate
+   * object id and how many copies of each moving object found no room; undefined when nothing moves.
    */
-  private async nestPlan(index: number, spacing: number, pins: ReadonlyMap<string, Spot>, turn = false): Promise<{ at: Map<string, Spot>; left: Map<string, number> } | undefined> {
+  private async nestPlan(index: number, spacing: number, pins: ReadonlyMap<string, Spot>, turn = false, start?: ReadonlyMap<string, number>): Promise<{ at: Map<string, Spot>; left: Map<string, number> } | undefined> {
     const geom = this.geom
     const plate = this.layout.find((p) => p.index === index)
     if (!plate) return undefined
@@ -662,7 +668,7 @@ export class McpProject implements PilotProject {
         fixed.push({ ...turnedObject(o, at[2]), id, copies: 1, at: [at[0], at[1]] })
       }
       if (mine.length) {
-        moving.push({ ...o, copies: mine.length })
+        moving.push({ ...turnedObject(o, start?.get(item.objectId) ?? 0), copies: mine.length })
         free.set(item.objectId, mine)
       }
     }
@@ -679,7 +685,7 @@ export class McpProject implements PilotProject {
           .sort((a, b) => a.copy - b.copy)
           .forEach((p, k) => {
             const c = slots[k]
-            if (c !== undefined) at.set(`${o.id}-${c}`, [p.offset[0], p.offset[1], turnOf(p.angleDeg)])
+            if (c !== undefined) at.set(`${o.id}-${c}`, [p.offset[0], p.offset[1], turnOf((start?.get(o.id) ?? 0) + p.angleDeg)])
           })
       }
       return at
