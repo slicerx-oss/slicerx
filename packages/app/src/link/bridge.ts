@@ -102,6 +102,8 @@ export interface BridgeSetup {
   probe?(host: string, opts?: { timeoutMs?: number; signal?: AbortSignal }): Promise<FoundPrinter[]>
   testConnection(input: PrinterConnection): Promise<Parameters<typeof fromLinkResult>[0]>
   addPrinter(input: { profileId: string; nozzleMm: number; connection?: PrinterConnection; name?: string }): Promise<{ printerId: string }>
+  /** A new Obico address for a printer already reached through Obico. Absent on an older bridge. */
+  setTunnel?(printerId: string, connection: { address: string; credential: string }): Promise<{ printerId: string; host: string; credentialKept?: 'session' }>
 }
 
 let live: { bridge: ConnectedBridge; before: Pick<Host, 'printers' | 'approvals' | 'secrets'>; caps: Pick<Host['capabilities'], 'printers' | 'secureStorage'> } | null = null
@@ -126,6 +128,7 @@ function setupFor(_host: Host, setup: BridgeSetup): AppSetupHost {
       return outcome
     },
     addPrinter: (input) => setup.addPrinter(input),
+    ...(setup.setTunnel ? { setTunnel: (printerId: string, connection: { address: string; credential: string }) => setup.setTunnel!(printerId, connection) } : {}),
   }
 }
 

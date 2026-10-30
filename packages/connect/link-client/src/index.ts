@@ -809,6 +809,12 @@ export interface LinkHost extends PrinterHost {
    * `credentialRef` and never returns it.
    */
   authorizePrinter(printerId: string, timeoutSeconds?: number): Promise<{ stored: boolean }>
+  /**
+   * App only: a new tunnel address for a printer already reached through a tunnel (`printers.setTunnel`). The bridge
+   * checks `host` and stores `credential` (`user:password`) under the printer's `credentialRef`, and keeps the
+   * printer's id, name, fleets and jobs. A refused call changes nothing; the reply never carries the credential.
+   */
+  setPrinterTunnel(printerId: string, host: string, credential: string): Promise<{ printerId: string; host: string; kept?: 'stored' | 'session' }>
   /** Point a service plugin (Spoolman, Home Assistant) at a server on the local network. */
   configureService(pluginId: 'spoolman' | 'home-assistant' | 'bambuddy', baseUrl: string, secretRef?: string): Promise<void>
   /** The configured services: address and whether a keychain secret is named. Never the secret. */
@@ -1202,6 +1208,8 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
     testPrinter: (config) => call<PrinterTestResult>('printers.test', { config }),
     discover: async (timeoutMs) => (await call<{ printers: DiscoveredPrinter[] }>('discover', timeoutMs === undefined ? {} : { timeoutMs })).printers,
     probe: async (host, timeoutMs) => (await call<{ printers: DiscoveredPrinter[] }>('probe', timeoutMs === undefined ? { host } : { host, timeoutMs })).printers,
+    setPrinterTunnel: (printerId, host, credential) => call<{ printerId: string; host: string; kept?: 'stored' | 'session' }>('printers.setTunnel', { printerId, host, credential }),
+
     authorizePrinter: (printerId, timeoutSeconds) => call<{ stored: boolean }>('printers.authorize', { printerId, ...(timeoutSeconds ? { timeoutSeconds } : {}) }),
     configureService: async (pluginId, baseUrl, secretRef) => void (await call('services.configure', { pluginId, baseUrl, ...(secretRef ? { secretRef } : {}) })),
     listServices: () => call<ServiceEntry[]>('services.list'),

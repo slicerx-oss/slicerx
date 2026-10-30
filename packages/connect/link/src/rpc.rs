@@ -1023,6 +1023,11 @@ async fn dispatch(
         )),
         "status" => printer_status(b, &str_arg(&p, "printerId")?).await,
         "printers.tunnel" => tunnel_report(b, &str_arg(&p, "printerId")?).await,
+        "printers.setTunnel" => {
+            let out = set_tunnel(b, &p).await?;
+            hub_rpc::save(b).await;
+            Ok(out)
+        }
         "subscribe" => {
             let id = str_arg(&p, "printerId")?;
             let s = session(b, &id).await?;
@@ -1900,6 +1905,77 @@ pub(crate) async fn tunnel_report(b: &Arc<Bridge>, id: &str) -> Rpc<Value> {
         }
     }
     Ok(out)
+}
+
+/// `printers.setTunnel {printerId, host, credential}`: a new address for a printer already reached through a
+/// tunnel, as the person pastes it after the tunnel's access was removed. Only the host and the access stored
+/// under the printer's `credentialRef` change: the id, name, info, fleets and queued jobs stay. The host and the
+/// credential are checked before anything is written, so a refused call changes nothing, and neither the reply
+/// nor a refusal carries the credential. App only (roles.rs): agents and partner apps never set a printer's access.
+async fn set_tunnel(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
+    let id = str_arg(p, "printerId")?;
+    let host = str_arg(p, "host")?;
+    let credential = str_arg(p, "credential")?;
+    let kept = {
+        let mut printers = b.printers.lock().await;
+        let r = printers
+            .get_mut(&id)
+            .ok_or_else(|| RpcError::new("not_found", format!("no printer {id}")))?;
+        let Some(kind) = r.config.tunnel else {
+            return Err(RpcError::new(
+                "not_supported",
+                format!("printer {id} is on the local network, not reached through a tunnel"),
+            )
+            .with_details(json!({ "reason": "no_tunnel" })));
+        };
+        let bad_host = || {
+            RpcError::new(
+                "bad_request",
+                "the address is not an Obico tunnel address (<id>.tunnels.app.obico.io)",
+            )
+        };
+        let host = sx_connect::tunnel::tunnel_host(kind, host.trim()).ok_or_else(bad_host)?;
+        let mut next = r.config.clone();
+        next.host = host;
+        sx_connect::tunnel::check_config(&next).map_err(|e| RpcError::new("bad_request", e.to_string()))?;
+        if !tunnel_credential_ok(&credential) {
+            return Err(RpcError::new(
+                "bad_request",
+                "the tunnel access must be a user name and a password",
+            ));
+        }
+        let reference = next
+            .credential_ref
+            .get_or_insert_with(|| format!("printer-{id}"))
+            .clone();
+        let kept = match b.secrets.set_kept(&reference, &credential)? {
+            sx_connect::Kept::Stored => "stored",
+            sx_connect::Kept::Session => "session",
+        };
+        if let Some(o) = r.info.as_object_mut() {
+            o.insert("host".into(), json!(next.host));
+        }
+        r.config = next;
+        kept
+    };
+    // The next reading opens the tunnel again with the new host and access.
+    b.sessions.lock().await.remove(&id);
+    let host = b
+        .printers
+        .lock()
+        .await
+        .get(&id)
+        .map(|r| r.config.host.clone())
+        .unwrap_or_default();
+    Ok(json!({ "printerId": id, "host": host, "kept": kept }))
+}
+
+/// `user:password` as a tunnel takes it: both parts present, one colon between them, no control characters.
+fn tunnel_credential_ok(credential: &str) -> bool {
+    credential
+        .split_once(':')
+        .is_some_and(|(user, pass)| !user.is_empty() && !pass.is_empty())
+        && !credential.chars().any(char::is_control)
 }
 
 /// The refusal for a still from a printer reached through a tunnel, whose camera is off there for now.

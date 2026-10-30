@@ -2,9 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Printer setup form state and validation. Pure data: secrets never enter this state; the form
 // only records whether a secret field holds something and how long it is.
-import { parseTunnelEndpoint, TUNNEL_PASTE_TEXT, type Bed, type PrinterHardware, type TunnelPasteProblem } from '@slicerx/contracts'
+import type { Bed, PrinterHardware } from '@slicerx/contracts'
 import { brandById, CONNECTION_METHODS, connectionMethod, modelById, modelsForBrand, type ConnectionId, type ConnectionMethod, type FieldKey, type Kinematics, type PrinterModel } from '@slicerx/printer-catalog'
 import { appHostPort, offeredConnections } from '../connected-apps/gate'
+import { tunnelPasteError, type TunnelPaste } from './tunnel-paste'
+
+export { readTunnelPaste, TUNNEL_EMPTY_TEXT, TUNNEL_NO_CREDENTIAL_TEXT, type TunnelPaste } from './tunnel-paste'
 
 // ---------------------------------------------------------------------------
 // Brands
@@ -126,9 +129,6 @@ export type SecretKey = Extract<FieldKey, 'accessCode' | 'apiKey' | 'password' |
 
 /** A field a check can name: the connection's own, or the Obico paste box. */
 export type CheckKey = FieldKey | 'tunnel'
-
-/** What the Obico paste box read: the tunnel host and whether a user name and password came with it, or why it was refused. Never the credential. */
-export type TunnelPaste = { host: string; credential: boolean } | { problem: TunnelPasteProblem }
 
 export interface PrinterForm {
   brand: string | null
@@ -268,22 +268,9 @@ export function pickVia(form: PrinterForm, via: 'lan' | 'obico'): PrinterForm {
   return { ...rest, ...(via === 'obico' ? { via } : {}), secretLengths: {} }
 }
 
-/** What the paste box shows for a pasted address: its host, or why it is refused. Undefined for an empty box. */
-export function readTunnelPaste(raw: string): TunnelPaste | undefined {
-  if (!raw.trim()) return undefined
-  const r = parseTunnelEndpoint(raw)
-  return r.ok ? { host: r.host, credential: r.credential !== undefined } : { problem: r.problem }
-}
-
-export const TUNNEL_EMPTY_TEXT = 'Paste the address Obico gave you.'
-export const TUNNEL_NO_CREDENTIAL_TEXT = 'This address has no user name and password. Copy the whole address from Obico.'
-
 /** Why the paste box cannot be used yet, in plain words, or undefined when it can. */
 export function tunnelError(form: PrinterForm): string | undefined {
-  const t = form.tunnel
-  if (!t) return TUNNEL_EMPTY_TEXT
-  if ('problem' in t) return TUNNEL_PASTE_TEXT[t.problem]
-  return t.credential ? undefined : TUNNEL_NO_CREDENTIAL_TEXT
+  return tunnelPasteError(form.tunnel)
 }
 
 export function nozzleMm(n: NozzleSpec): number | null {

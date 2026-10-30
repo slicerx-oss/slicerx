@@ -26,6 +26,7 @@ export function wrapLink(link: LinkHost, relay?: string | null, opts: { appLink?
       probe: (host, opts) => setup.probe(host, opts),
       testConnection: (c) => setup.testConnection(c),
       addPrinter: (input) => setup.addPrinter(input),
+      setTunnel: (printerId, connection) => setup.setTunnel(printerId, connection),
     },
     // The hub's remote access methods ride along when this link client has them.
     // The edition names its relay as an https URL; the hub dials it as a WebSocket.

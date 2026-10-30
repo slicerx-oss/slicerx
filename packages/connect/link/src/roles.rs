@@ -59,6 +59,8 @@ const APP_ONLY: &[&str] = &[
     // It pairs a stored credential with an address the caller chooses, so the hub would send a
     // printer's key to whoever listens there.
     "printers.test",
+    // A new tunnel address and its access for a printer: a person pastes it in the app, as when adding one.
+    "printers.setTunnel",
     "watch.autoPause",
     "watch.huginn",
     "watch.mask",
@@ -700,11 +702,14 @@ mod tests {
             "printers.add",
             "printers.test",
             "printers.authorize",
+            "printers.setTunnel",
             "secrets.set",
             "secrets.delete",
         ] {
             assert!(!allowed(Role::Agent, m), "{m}");
+            assert!(!partner_allowed(m), "{m}");
         }
+        assert!(allowed(Role::App, "printers.setTunnel"));
         assert!(!partner_allowed("printers.tunnel"));
     }
 

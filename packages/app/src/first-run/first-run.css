@@ -153,12 +153,7 @@
 .fr-fields { display: flex; flex-direction: column; gap: var(--s-3); margin-top: var(--s-4); }
 .fr-hostrow { display: flex; align-items: flex-end; gap: var(--s-2); }
 .fr-via { margin-top: var(--s-3); }
-.fr-obico { display: flex; flex-direction: column; gap: var(--s-3); }
-.fr-obico > .fr-note { margin: 0; }
-/* what the paste box read: the tunnel host only */
-.fr-obico-read { display: flex; align-items: center; gap: 4px; margin: 0; font-size: var(--fs-md); color: var(--green-text); overflow-wrap: anywhere; }
-.fr-obico-read .sx-mono { color: var(--fg); }
-.fr-obico-read[hidden] { display: none; }
+/* the Obico paste box: obico-paste.css */
 .fr-hostrow > :first-child { flex: 1; min-width: 0; }
 .fr-scan { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: var(--fs-md); margin: 0; }
 .fr-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--cyan); animation: fr-spin 0.9s linear infinite; }

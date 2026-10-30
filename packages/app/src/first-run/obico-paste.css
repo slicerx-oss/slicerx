@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright (C) 2026 The SlicerX contributors */
+/* The Obico paste box, in setup and in a printer card's dialog (which does not load first-run.css). */
+.fr-obico { display: flex; flex-direction: column; gap: var(--s-3); }
+.fr-obico > .fr-note { color: var(--muted); font-size: var(--fs-md); margin: 0; }
+.fr-obico .fr-textbtn { border: 0; background: none; padding: 2px 4px; color: var(--accent); font: var(--fw-medium) var(--fs-md) var(--f-body); cursor: pointer; border-radius: var(--r-xs); display: inline-flex; align-items: center; gap: 6px; text-decoration: underline 1px color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.fr-obico .fr-textbtn:hover { text-decoration-color: currentColor; }
+/* what the paste box read: the tunnel host only */
+.fr-obico-read { display: flex; align-items: center; gap: 4px; margin: 0; font-size: var(--fs-md); color: var(--green-text); overflow-wrap: anywhere; }
+.fr-obico-read .sx-mono { color: var(--fg); }
+.fr-obico-read[hidden] { display: none; }

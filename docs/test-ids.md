@@ -137,6 +137,8 @@ Ids written with `<...>` stand for a family: `tab-<workspace>` is `tab-prepare`,
 | `printer-card` | A printer's card on Printers (`data-printer` is its id; `data-away` while the bridge reconnects) |
 | `printer-card-open`, `printer-card-options` | A card's open area and its options button; both are off while the bridge reconnects |
 | `printer-card-tunnel` | A card's line for a printer reached through Obico: the mark and this month's tunnel data |
+| `printer-card-repaste`, `printer-card-repaste-menu` | Paste a new Obico address: the line on the card of a printer whose Obico access is gone, and the item in a tunnel printer's options menu |
+| `printer-repaste`, `printer-repaste-box`, `printer-repaste-save` | The Paste a new Obico address dialog, its paste box (the field and host line keep the `setup-obico-paste` and `setup-obico-host` ids) and its Save address button |
 | `setup` | The setup window; `data-step` is welcome, look, printer, mimir and so on |
 | `setup-skip-all` | Skip, use defaults |
 | `setup-back`, `setup-skip`, `setup-secondary`, `setup-next` | The footer: Back, Skip, the second action, and the main one (Next, Save printer, Open the plate) |

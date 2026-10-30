@@ -80,6 +80,7 @@ import {
 } from './printer-form'
 import { displayCause, TEST_STEPS, type AppSetupHost, type FoundPrinter, type TestOutcome, type TestStep } from './setup-host'
 import { useConnectedApps } from '../connected-apps/state'
+import { ObicoPasteBox } from './obico-paste'
 import { parseTunnelEndpoint } from '@slicerx/contracts'
 
 // ---------------------------------------------------------------------------
@@ -673,64 +674,25 @@ function SecretInput({ id, fieldKey, label, required, placeholder, ctl, keychain
   )
 }
 
-/** Obico's page for authorizing an app on one printer, from Obico's tunnel integration guide. It shows the tunnel address to copy. */
-export function obicoAuthorizeUrl(app: string, connection: ConnectionId | null): string {
-  const platform = connection === 'octoprint' ? 'OctoPrint' : 'Klipper'
-  return `https://app.obico.io/tunnels/new/?app=${encodeURIComponent(app)}&platform=${platform}`
-}
+export { obicoAuthorizeUrl } from './obico-paste'
 
-/**
- * The Obico paste box: the whole tunnel address goes in a masked field, like a password, and stays out of React state.
- * Below it, only what was read: the tunnel host, or why the address is refused.
- */
+/** The Obico paste box in setup: the address stays in the controller's secrets, the form keeps only what was read. */
 export function ObicoPaste({ ctl, keychain }: { ctl: PrinterController; keychain: boolean }) {
   const { form, setSecret } = ctl
-  const id = 'fr-f-tunnel'
   const pasted = (form.secretLengths.tunnel ?? 0) > 0
   const error = pasted ? tunnelError(form) : undefined
   const host = form.tunnel && 'host' in form.tunnel && !error ? form.tunnel.host : null
   const sync = useCallback((value: string) => setSecret('tunnel', value), [setSecret])
-  useEffect(() => {
-    const el = document.getElementById(id) as HTMLInputElement | null
-    if (el?.value) sync(el.value)
-  }, [sync])
   return (
-    <div className="fr-obico" data-testid="setup-obico">
-      <p className="fr-note">Authorize {appName()} in Obico, then paste the address it shows. The camera stays off through Obico for now.</p>
-      <Field
-        htmlFor={id}
-        label="Obico tunnel address"
-        aside={
-          <button type="button" className="fr-textbtn" onClick={() => openLink(obicoAuthorizeUrl(appName(), form.connection))}>
-            Open Obico
-          </button>
-        }
-        error={error}
-        hint={keychain ? 'The user name and password in it go to your system keychain.' : `This browser has no system keychain, so the address is used for the test only and not saved.`}
-      >
-        <Input
-          id={id}
-          type="password"
-          autoComplete="off"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          placeholder="https://...tunnels.app.obico.io"
-          onChange={(e) => sync(e.target.value)}
-          onInput={(e) => sync(e.currentTarget.value)}
-          onBlur={(e) => sync(e.currentTarget.value)}
-          data-testid="setup-obico-paste"
-          data-secret="true"
-        />
-      </Field>
-      <p className="fr-obico-read" role="status" aria-live="polite" data-testid="setup-obico-host" hidden={!host}>
-        {host ? (
-          <>
-            <Icon name="check" size={16} /> Connects to <span className="sx-mono">{host}</span>
-          </>
-        ) : null}
-      </p>
-    </div>
+    <ObicoPasteBox
+      id="fr-f-tunnel"
+      connection={form.connection}
+      keychain={keychain}
+      note={`Authorize ${appName()} in Obico, then paste the address it shows. The camera stays off through Obico for now.`}
+      error={error}
+      host={host}
+      onValue={sync}
+    />
   )
 }
 

@@ -240,3 +240,30 @@ test('a printer through Obico keeps the tunnel host in its config and the tunnel
   }
   assert.equal(secrets.size, 1, 'a refused tunnel printer left no secret behind')
 })
+
+test('a new Obico address on a tunnel printer goes to the bridge as the host and its access, and a bad one goes nowhere', async () => {
+  const sent: unknown[] = []
+  const link = {
+    setPrinterTunnel: async (printerId: string, host: string, credential: string) => {
+      sent.push({ printerId, host, credential })
+      return { printerId, host }
+    },
+  } as unknown as Parameters<typeof createPrinterSetup>[0]
+  const setup = createPrinterSetup(link)
+  assert.deepEqual(await setup.setTunnel('far', { address: 'DEF456.tunnels.app.obico.io', credential: 'u2:n3wpass' }), { printerId: 'far', host: 'def456.tunnels.app.obico.io' })
+  assert.deepEqual(sent, [{ printerId: 'far', host: 'def456.tunnels.app.obico.io', credential: 'u2:n3wpass' }])
+
+  for (const bad of [
+    { address: 'def456.tunnels.app.obico.io.evil.example', credential: 'u2:n3wpass' },
+    { address: '192.168.1.20', credential: 'u2:n3wpass' },
+    { address: 'def456.tunnels.app.obico.io', credential: 'n3wpass' },
+    { address: 'def456.tunnels.app.obico.io', credential: 'u2:' },
+    { address: 'def456.tunnels.app.obico.io', credential: '' },
+  ]) {
+    await assert.rejects(setup.setTunnel('far', bad), (e: unknown) => e instanceof SetupError && !e.message.includes('n3wpass'), JSON.stringify(bad))
+  }
+  assert.equal(sent.length, 1, 'a refused address never reached the bridge')
+
+  // A bridge too old to take a new address says so instead of half doing it.
+  await assert.rejects(createPrinterSetup({} as never).setTunnel('far', { address: 'def456.tunnels.app.obico.io', credential: 'u2:n3wpass' }), SetupError)
+})
