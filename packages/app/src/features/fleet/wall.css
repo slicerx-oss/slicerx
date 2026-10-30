@@ -71,6 +71,14 @@
 .wall-line[data-problem] { color: var(--orange-text); }
 /* the tunnel mark and this month's data: one quiet line, numbers in tabular figures */
 .wall-tunnel { margin: 0; font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a printer whose Obico access is gone: one line pointing to a new address, above the card's open button */
+.wall-fix { position: relative; z-index: 2; margin: 0; }
+.wall-fix button { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0; border: 0; background: none; color: var(--accent); font: var(--fw-medium) var(--fs-md) var(--f-body); cursor: pointer; border-radius: var(--r-xs); text-decoration: underline 1px color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.wall-fix button:hover { text-decoration-color: currentColor; }
+.wall-fix button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (pointer: coarse) { .wall-fix button { min-height: 44px; } }
+.wall-repaste { display: flex; flex-direction: column; gap: var(--s-3); }
+.wall-repaste .app-err { margin: 0; }
 .wall-meta { display: flex; align-items: center; gap: 14px; margin-top: auto; padding-right: 4px; font-size: var(--fs-md); color: var(--muted); }
 .wall-heat { position: relative; z-index: 2; display: inline-flex; gap: 14px; font-variant-numeric: tabular-nums; }
 .wall-heat b { font-weight: var(--fw-semibold); color: var(--fg); }

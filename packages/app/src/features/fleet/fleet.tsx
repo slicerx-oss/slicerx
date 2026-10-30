@@ -28,6 +28,7 @@ import { bayGroups, progressOf, statusLine, timeLeftText, tunnelLine, tunnelTip,
 import { moveToBay, newBay } from './bays'
 import { askToNotify, guardHub, notePlate, useGuard } from './guard'
 import { GuardCard } from './guard-card'
+import { ObicoRepaste, offersRepaste, REPASTE_LABEL, repasteCardText } from './obico-repaste'
 import { spoolLeft } from '../../filament/left'
 import './wall.css'
 
@@ -270,8 +271,11 @@ function TileCamera({ r, now }: { r: FleetRow; now: number }) {
 /** How often a card reads its tunnel's report. The hub reuses a usage reading for two minutes, so this costs no tunnel data. */
 const TUNNEL_READ_MS = 60_000
 
-/** The tunnel report of a printer reached through Obico, read when the card shows and once a minute after. */
-function useTunnelReport(printerId: string, on: boolean): TunnelReport | null {
+/**
+ * The tunnel report of a printer reached through Obico, read when the card shows and once a minute after. A new host
+ * or tunnel problem (a new address was pasted, access came back) reads it again at once.
+ */
+function useTunnelReport(printerId: string, on: boolean, again: string): TunnelReport | null {
   const printers = usePrinters()
   const [report, setReport] = useState<TunnelReport | null>(null)
   useEffect(() => {
@@ -291,7 +295,7 @@ function useTunnelReport(printerId: string, on: boolean): TunnelReport | null {
       stop = true
       window.clearInterval(timer)
     }
-  }, [on, printerId, printers])
+  }, [on, printerId, printers, again])
   return report
 }
 
@@ -315,7 +319,9 @@ function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: numb
   const heatTip = heat.map((g) => `${g.label} ${tempText(g.temp)}`).join(', ')
   const active = printingSlot(st)
   const slots = st.slots.filter((x) => x.color || x.material)
-  const tunnel = useTunnelReport(r.id, Boolean(r.tunnel) && !away)
+  const tunnel = useTunnelReport(r.id, Boolean(r.tunnel) && !away, `${r.host ?? ''} ${st.tunnelProblem ?? ''}`)
+  const repaste = offersRepaste(r)
+  const [repasting, setRepasting] = useState(false)
   return (
     <article className="pcard" data-kind={kind} data-away={away || undefined} data-testid="printer-card" data-printer={r.id} inert={away || undefined} aria-label={`${r.name}, ${away ? 'reconnecting' : pill.label}`}>
       <div className="wall-cam">
@@ -339,11 +345,19 @@ function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: numb
           </span>
           <b>{r.name}</b>
           <span className="wall-model">{r.model}</span>
-          <TileMenu r={r} groups={groups} disabled={away} onView={onView} />
+          <TileMenu r={r} groups={groups} disabled={away} onView={onView} {...(repaste.menu ? { onRepaste: () => setRepasting(true) } : {})} />
         </div>
         <p className="wall-line" id={lineId} data-problem={st.tunnelProblem ? true : undefined}>
-          {statusLine(r, now)}
+          {repaste.pointer && (st.tunnelProblem === 'no_access' || st.tunnelProblem === 'access_removed') ? repasteCardText(st.tunnelProblem) : statusLine(r, now)}
         </p>
+        {repaste.pointer && !away ? (
+          <p className="wall-fix">
+            <button type="button" data-testid="printer-card-repaste" onClick={() => setRepasting(true)}>
+              <Icon name="paste" size={16} />
+              {REPASTE_LABEL}
+            </button>
+          </p>
+        ) : null}
         {r.tunnel ? (
           <p className="wall-tunnel" data-testid="printer-card-tunnel" {...tipAttrs({ title: tunnelTip(tunnel) })}>
             {tunnelLine(tunnel)}
@@ -378,11 +392,12 @@ function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: numb
         ) : null}
       </div>
       {exportOnly ? null : <button type="button" className="wall-open" data-testid="printer-card-open" aria-label={r.name} aria-describedby={lineId} disabled={away} onClick={onView} />}
+      {repaste.menu ? <ObicoRepaste printer={r} open={repasting} onClose={() => setRepasting(false)} /> : null}
     </article>
   )
 }
 
-function TileMenu({ r, groups, disabled = false, onView }: { r: FleetRow; groups: readonly Fleet[]; disabled?: boolean; onView: () => void }) {
+function TileMenu({ r, groups, disabled = false, onView, onRepaste }: { r: FleetRow; groups: readonly Fleet[]; disabled?: boolean; onView: () => void; onRepaste?: () => void }) {
   const host = useHost()
   const qc = useQueryClient()
   const [menu, setMenu] = useState(false)
@@ -461,6 +476,11 @@ function TileMenu({ r, groups, disabled = false, onView }: { r: FleetRow; groups
             {kind === 'off' || st.state === 'error' ? (
               <MenuItem icon="refresh" onClick={close(() => void qc.invalidateQueries({ queryKey: ['fleet'] }))}>
                 Check again
+              </MenuItem>
+            ) : null}
+            {onRepaste ? (
+              <MenuItem icon="paste" onClick={close(onRepaste)} data-testid="printer-card-repaste-menu">
+                {REPASTE_LABEL}
               </MenuItem>
             ) : null}
             {guard && st.cameraAvailable && (st.state === 'idle' || st.state === 'finished') ? (

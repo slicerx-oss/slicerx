@@ -22,7 +22,7 @@ use base64::Engine as _;
 use futures::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sx_connect::MemorySecrets;
+use sx_connect::{MemorySecrets, Secrets as _};
 use sx_link::{BrokerGate, Link, LinkConfig, serve_with_approvals};
 use sx_permit::{ApprovalBroker, hash_params};
 use tokio::net::TcpStream;
@@ -4252,4 +4252,171 @@ async fn a_tunnel_printer_reads_its_tunnel_and_agents_read_but_never_connect_one
         !r["result"].as_array().unwrap().iter().any(|p| p["id"] == "far2"),
         "{r}"
     );
+}
+
+/// A hub whose secret store the test can read, for checking what a call stored.
+async fn hub_with_secrets(state_dir: Option<PathBuf>, secrets: Arc<MemorySecrets>) -> Link {
+    let broker = Arc::new(ApprovalBroker::new().unwrap());
+    let cfg = LinkConfig {
+        port: 0,
+        fixed_code: Some(CODE.to_owned()),
+        fixed_agent_code: Some(AGENT_CODE.to_owned()),
+        fixed_watch_code: Some(WATCH_CODE.to_owned()),
+        state_dir,
+        watch_every: Duration::from_millis(100),
+        ..LinkConfig::loopback()
+    };
+    serve_with_approvals(cfg, Arc::new(BrokerGate(broker.clone())), secrets, Some(broker))
+        .await
+        .unwrap()
+}
+
+/// A new Obico address pasted on a printer already reached through Obico (after its access was removed): the hub
+/// keeps the printer's id, name, model, fleet and queued jobs, and swaps only the tunnel host and the access stored
+/// under its credentialRef. A refused address changes nothing, and no agent or partner app may make the call.
+/// Nothing here reaches Obico: the new access is never used to open the tunnel.
+#[tokio::test]
+async fn a_new_tunnel_address_keeps_the_printer_and_swaps_only_its_host_and_access() {
+    let dir = temp_dir("set-tunnel");
+    let secrets = Arc::new(MemorySecrets::new());
+    let link = hub_with_secrets(Some(dir.clone()), secrets.clone()).await;
+    let mut ws = paired(&link).await;
+    let cfg = json!({ "id": "far", "name": "Workshop Voron", "plugin": "moonraker", "host": "abc123.tunnels.app.obico.io", "tunnel": "obico", "credentialRef": "printer-far" });
+    let info = json!({ "vendor": "Voron Design", "model": "Voron 2.4 300", "nozzleCount": 1 });
+    let r = call(&mut ws, 2, "printers.add", json!({ "config": cfg, "info": info })).await;
+    assert_eq!(r["result"]["id"], "far", "{r}");
+    let r = call(
+        &mut ws,
+        3,
+        "secrets.set",
+        json!({ "name": "printer-far", "value": "u1:old-pass" }),
+    )
+    .await;
+    assert_eq!(r["result"]["ok"], true, "{r}");
+    let r = call(
+        &mut ws,
+        4,
+        "fleets.create",
+        json!({ "name": "Shop", "printerIds": ["far"] }),
+    )
+    .await;
+    let fleet = r["result"]["id"].as_str().unwrap().to_owned();
+    let (f, _) = file("night.gcode", 41);
+    let r = call(
+        &mut ws,
+        5,
+        "queue.add",
+        json!({ "printerId": "far", "file": f, "startAfterMs": now_ms() + 600_000 }),
+    )
+    .await;
+    let job = r["result"]["item"]["id"].as_str().unwrap().to_owned();
+    let lan = json!({ "id": "near", "name": "Near", "plugin": "octoprint", "host": "192.168.1.20" });
+    let r = call(&mut ws, 6, "printers.add", json!({ "config": lan })).await;
+    assert_eq!(r["result"]["id"], "near", "{r}");
+
+    let listed = |r: &Value, id: &str| {
+        r["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == id)
+            .cloned()
+            .unwrap()
+    };
+    let before = listed(&call(&mut ws, 7, "list", json!({})).await, "far");
+
+    // Refused addresses and credentials change nothing, and no refusal repeats the access.
+    for (i, (params, code)) in [
+        (json!({ "printerId": "far", "host": "abc123.tunnels.app.obico.io.evil.example", "credential": "u2:new-pass" }), "bad_request"),
+        (json!({ "printerId": "far", "host": "192.168.1.30", "credential": "u2:new-pass" }), "bad_request"),
+        (json!({ "printerId": "far", "host": "def456.tunnels.app.obico.io", "credential": "new-pass" }), "bad_request"),
+        (json!({ "printerId": "far", "host": "def456.tunnels.app.obico.io", "credential": ":new-pass" }), "bad_request"),
+        (json!({ "printerId": "far", "host": "def456.tunnels.app.obico.io" }), "bad_request"),
+        (json!({ "printerId": "near", "host": "def456.tunnels.app.obico.io", "credential": "u2:new-pass" }), "not_supported"),
+        (json!({ "printerId": "nobody", "host": "def456.tunnels.app.obico.io", "credential": "u2:new-pass" }), "not_found"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let r = call(&mut ws, 10 + i as u64, "printers.setTunnel", params.clone()).await;
+        assert_eq!(r["error"]["code"], code, "{params}: {r}");
+        assert!(!r.to_string().contains("new-pass"), "{r}");
+    }
+    let r = call(
+        &mut ws,
+        17,
+        "printers.setTunnel",
+        json!({ "printerId": "near", "host": "def456.tunnels.app.obico.io", "credential": "u2:new-pass" }),
+    )
+    .await;
+    assert_eq!(r["error"]["details"]["reason"], "no_tunnel", "{r}");
+    assert_eq!(listed(&call(&mut ws, 18, "list", json!({})).await, "far"), before);
+    assert_eq!(secrets.get("printer-far").as_deref(), Some("u1:old-pass"));
+
+    // An agent and a partner app are refused, and nothing changes.
+    let mut ag = agent(&link).await;
+    let (mut partner_ws, _, _) = partner(&link, &mut ws, "LayerMate").await;
+    for conn in [&mut ag, &mut partner_ws] {
+        let r = call(
+            conn,
+            30,
+            "printers.setTunnel",
+            json!({ "printerId": "far", "host": "def456.tunnels.app.obico.io", "credential": "u2:new-pass" }),
+        )
+        .await;
+        assert_eq!(r["error"]["code"], "forbidden", "{r}");
+    }
+    assert_eq!(listed(&call(&mut ws, 31, "list", json!({})).await, "far"), before);
+    assert_eq!(secrets.get("printer-far").as_deref(), Some("u1:old-pass"));
+
+    // The app pastes the new address: same printer, new host, new access under the same name.
+    let r = call(
+        &mut ws,
+        40,
+        "printers.setTunnel",
+        json!({ "printerId": "far", "host": "DEF456.tunnels.app.obico.io", "credential": "u2:new-pass" }),
+    )
+    .await;
+    assert_eq!(r["result"]["printerId"], "far", "{r}");
+    assert_eq!(r["result"]["host"], "def456.tunnels.app.obico.io", "{r}");
+    assert!(
+        !r.to_string().contains("new-pass"),
+        "the access is never sent back: {r}"
+    );
+    assert_eq!(secrets.get("printer-far").as_deref(), Some("u2:new-pass"));
+    let after = listed(&call(&mut ws, 41, "list", json!({})).await, "far");
+    let mut expected = before.clone();
+    expected["host"] = json!("def456.tunnels.app.obico.io");
+    assert_eq!(after, expected, "only the host changed");
+    let r = call(&mut ws, 42, "fleets.list", json!({})).await;
+    let shop = r["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|g| g["id"] == fleet.as_str())
+        .cloned()
+        .unwrap();
+    assert_eq!(shop["printerIds"], json!(["far"]), "{shop}");
+    let r = call(&mut ws, 43, "queue.list", json!({})).await;
+    assert!(
+        r["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|it| it["id"] == job.as_str() && it["printerId"] == "far"),
+        "the queued job stays with the printer: {r}"
+    );
+    let t = call(&mut ws, 44, "printers.tunnel", json!({ "printerId": "far" })).await;
+    assert_eq!(t["result"]["host"], "def456.tunnels.app.obico.io", "{t}");
+    drop(ws);
+    drop(ag);
+    drop(partner_ws);
+    drop(link);
+
+    // Saved: a restarted hub has the new host.
+    let link = hub_with_secrets(Some(dir.clone()), secrets.clone()).await;
+    let mut ws = paired(&link).await;
+    let far = listed(&call(&mut ws, 2, "list", json!({})).await, "far");
+    assert_eq!(far["host"], "def456.tunnels.app.obico.io", "{far}");
+    assert_eq!(far["name"], "Workshop Voron", "{far}");
 }
