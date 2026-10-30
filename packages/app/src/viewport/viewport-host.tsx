@@ -52,7 +52,8 @@ import { collisionHighlight, strikeMarks } from '../plate/heimdall'
 import { gantryHits, gantrySpec } from '../plate/heimdall-gantry'
 import { activeClearance } from '../plate/sequence-check'
 import { pickRingsOf } from '../plate/pick-parts'
-import { edgeDragHook } from '../plate/edge-drag/hook'
+import { enableEdgeDrag } from '@slicerx/viewport/edge-drag'
+import { appEdgeDrag } from '../plate/edge-drag/adapter'
 import { markOpenStage, markViewDrawn, onOpenStage, openStagesPassed } from '../lib/open-mark'
 import { drawnFrom } from './drawn'
 import { viewportStatsFrom } from './stats'
@@ -896,17 +897,12 @@ export function ViewportHost({ layers }: { layers: boolean }) {
         brimVp.setBrimHoverRadius?.(t === 'brim' ? headDiameter() / 2 : null)
       }
       offs.push(onHeadDiameter(applyTool))
-      // Plate edge drag: a part moved out past a bed edge goes to another plate, or a new one. Only the hook loads with
-      // the view; the gesture code and its overlay load on the first part drag and exist only while a part moves.
+      // Plate edge drag (@slicerx/viewport/edge-drag): a part moved out past a bed edge goes to another plate, or a new
+      // one. Only its small entry loads with the view; the gesture code and its overlay load on the first part drag and
+      // exist only while a part moves.
       if (vp.setEdgeDrag && vp.screenOf) {
-        const screenOf = vp.screenOf.bind(vp)
-        vp.setEdgeDrag(edgeDragHook({
-          view: { screenOf, ...(vp.setDragZoom ? { setDragZoom: vp.setDragZoom.bind(vp) } : {}), ...(vp.cancelDrag ? { cancelDrag: vp.cancelDrag.bind(vp) } : {}), ...(vp.placeReadout ? { placeReadout: vp.placeReadout.bind(vp) } : {}) },
-          stage,
-          bed: () => appStore.getState().bed,
-          accepts: (ids) => !ids.includes(TOWER_ID) && !appStore.getState().historyEdit,
-        }))
-        offs.push(() => vp.setEdgeDrag?.(null))
+        const putBack = () => vp.setTransforms(Object.fromEntries(appStore.getState().plate.map((p) => [p.id, p.transform])))
+        offs.push(enableEdgeDrag(vp as unknown as Parameters<typeof enableEdgeDrag>[0], appEdgeDrag(stage, putBack)))
       }
       offs.push(brimVp.on('brimadd', (e) => void addEar(e.objectId, e.point[0], e.point[1])))
       offs.push(brimVp.on('brimremove', (e) => void removeEar(e.objectId, e.index)))
