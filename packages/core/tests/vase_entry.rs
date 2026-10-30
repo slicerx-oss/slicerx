@@ -561,3 +561,31 @@ fn the_chords_whose_middle_lands_on_a_wall_are_travels() {
         }
     }
 }
+
+#[test]
+fn a_spiral_layer_on_another_ring_starts_where_the_link_from_the_layer_below_is_shortest() {
+    // On the x-mark the largest outline goes from one block to the other between layers. A spiral layer ends where it
+    // started, and the next layer's loop starts at its point nearest there, so the travel to a loop on the other
+    // block is the shortest link from the nozzle to that loop, within a millimeter, and not a move to some other
+    // point of it.
+    for (what, g) in [
+        ("A1", slice_on("bambu-a1", &x_mark(), true, 1)),
+        ("fixture", x_mark_fixture()),
+    ] {
+        let starts = spiral_starts(&g);
+        let mut travels = 0;
+        for (k, d, m, here, _) in &starts {
+            if !m.code.starts_with("G0") {
+                continue;
+            }
+            travels += 1;
+            let shortest = to_loop([m.from[0], m.from[1]], here);
+            assert!(
+                *d <= shortest + 1.0,
+                "{what} layer {k}: line {} travels {d:.2} mm to its loop, {shortest:.2} mm away at its nearest",
+                m.line
+            );
+        }
+        assert!(travels >= 2, "{what}: {travels} layers travel to their loop");
+    }
+}
