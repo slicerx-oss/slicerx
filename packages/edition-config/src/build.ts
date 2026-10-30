@@ -44,7 +44,11 @@ export function geomFeatures(config: EditionConfig): string[] | null {
   return config.features.cad ? null : GEOM_FEATURES.filter((f) => f !== 'cad' && f !== 'holes' && f !== 'threads' && f !== 'shell')
 }
 
-export const DESKTOP_CONNECT_SRC = "'self' ipc: http://ipc.localhost ws://127.0.0.1:47615"
+/**
+ * The desktop webview's own connect-src (tauri.conf.json). The asset protocol origins are there for one file: the STEP
+ * worker fetches the reader's wasm from the app's resources, and the protocol's scope allows only that file.
+ */
+export const DESKTOP_CONNECT_SRC = "'self' ipc: http://ipc.localhost ws://127.0.0.1:47615 asset: http://asset.localhost"
 
 /** The desktop webview's own img-src (tauri.conf.json); the backend's public storage is added to it. */
 export const DESKTOP_IMG_SRC = "'self' data: blob:"

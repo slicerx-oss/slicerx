@@ -39,7 +39,7 @@ sx-permit = { workspace = true, optional = true }
 sx-link = { path = "../../../packages/connect/link", optional = true }
 tokio = { version = "=1.53.3", features = ["sync", "time"], optional = true }
 tokio-tungstenite = { version = "=0.30.0", optional = true }
-tauri = { version = "=2.12.0", features = [] }
+tauri = { version = "=2.12.0", features = ["protocol-asset"] }
 tauri-plugin-dialog = "=2.8.0"
 tauri-plugin-opener = "=2.7.0"
 tauri-plugin-deep-link = "=2.6.1"

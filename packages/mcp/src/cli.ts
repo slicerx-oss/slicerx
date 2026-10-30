@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { chmodSync, closeSync, lstatSync, mkdirSync, openSync, unlinkSync, writeSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -21,6 +22,7 @@ import { plainSdkText } from './sdk-errors'
 import { sxlockFromEnv } from './sxlock'
 import { linkCodeFrom, linkKeyFrom, readHubKey, readKeychainKey } from './link-code'
 import { hubUrlFromEnv } from '@slicerx/link-client'
+import { setBundledStepReader } from './toolbox/step-read'
 
 const HELP = `slicerx-mcp ${SERVER_VERSION}: SlicerX tools for MCP clients
 
@@ -99,6 +101,11 @@ Edition
   make_model takes its brand.colors, and the sx engine this server runs reads the
   same file.
 
+STEP files
+  slicerx_step_read loads the reader from the folder SLICERX_STEP_READER_DIR names,
+  else a step-reader folder beside this server (the desktop app ships one there),
+  else the installed @slicerx/step-reader package.
+
 Every option also reads an environment variable: SLICERX_MCP_<OPTION> in upper
 snake case, such as SLICERX_MCP_ALLOW_DIR (colon separated) or SLICERX_MCP_ENGINE.
 `
@@ -114,6 +121,8 @@ const flag = (name: string): boolean => ['1', 'true', 'yes'].includes((env(name)
 let jsonErrors = false
 
 async function main(): Promise<void> {
+  // The self-contained build ships the STEP reader beside this file (scripts/build.mjs --step-reader).
+  setBundledStepReader(fileURLToPath(new URL('./step-reader/', import.meta.url)))
   if (process.argv[2] === 'register') return registerProject(process.argv.slice(3), process.argv[1]!)
   const { values, positionals } = parseArgs({
     allowPositionals: true,

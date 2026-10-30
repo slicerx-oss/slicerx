@@ -8,9 +8,10 @@ import { appName } from '../edition'
 
 let occt: Promise<Occt> | null = null
 
-function load(): Promise<Occt> {
+/** `wasm`: where the host keeps the reader's wasm (registerStepWasm), else the file this build bundles. */
+function load(wasm?: string): Promise<Occt> {
   // The same cap the Node path uses: a file that needs more fails with out_of_memory instead of growing the tab.
-  return (occt ??= loadOcct({ maxMemoryMb: STEP_MAX_MEMORY_MB }))
+  return (occt ??= loadOcct(wasm === undefined ? { maxMemoryMb: STEP_MAX_MEMORY_MB } : { wasm, maxMemoryMb: STEP_MAX_MEMORY_MB }))
 }
 
 function base64(text: string): string {
@@ -20,10 +21,10 @@ function base64(text: string): string {
   return btoa(out)
 }
 
-self.onmessage = async (e: MessageEvent<{ id: number; name: string; data: ArrayBuffer; quality: StepQuality }>) => {
-  const { id, name, data, quality } = e.data
+self.onmessage = async (e: MessageEvent<{ id: number; name: string; data: ArrayBuffer; quality: StepQuality; wasm?: string }>) => {
+  const { id, name, data, quality, wasm } = e.data
   try {
-    const x = await load()
+    const x = await load(wasm)
     const read = readStep(x, new Uint8Array(data), name, quality, { appName: appName() })
     self.postMessage({ id, result: { base64: base64(toObj(read, { colors: false })), notes: read.notes, triangles: read.triangles, toleranceMm: read.toleranceMm, unit: read.unit } })
   } catch (err) {
