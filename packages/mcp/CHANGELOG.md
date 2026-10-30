@@ -4,6 +4,8 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-30
+
 ### Added
 
 - `slicerx_printer_status` returns `live.runoutSlots` on a Snapmaker U1: the slot ids of the toolheads whose filament motion sensor reports no filament during a job, absent when none does. A print paused for it has `message` "Paused: filament runout on T2", with the toolhead's tool number T0 to T3.

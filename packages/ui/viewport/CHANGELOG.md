@@ -4,6 +4,8 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-30
+
 ### Added
 
 - `setEdgeDrag(hook)` lets a host take parts past the bed's edges while they move, for sending them to another plate. With a hook set, a move drag (and a touch drag on an X or Y move arrow) may take the footprint past each edge as far as the hook's `reachMm()`, and the hook hears the start, each move and the release. A footprint released all on the bed is a normal move. Past an edge the hook answers `'commit'` (the host took the parts away) or `'back'`, and the parts ease back to where the move started with no transform reported. Without a hook, moves stay on the bed as before.

@@ -4,6 +4,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-30
+
 ### Added
 
 - `RequestOptions::tool_changes` (`toolChanges`, `ToolChangeSpec`): tool changes by height or layer. From the first layer whose top reaches a change's `zMm` (or from its 0-based `layer`), every object prints in the change's 1-based `filament`, written as a normal filament change with the printer's change G-code, and with the prime tower on the tower stands up to the last change. A change applies only on a plate that prints one filament, by layer; otherwise, and for a change above the top of the print, the slice is the same as without it and has a `tool_change_skipped` warning (`WarningCode::ToolChangeSkipped`) per change. A change to the filament already printing changes nothing. `with_tool_changes` applies them to a session. The request and report schemas list the option and the code.
