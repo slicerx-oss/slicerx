@@ -20,6 +20,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 ### Fixed
 
 - `slicerx_step_read` reads a STEP file saved with a UTF-8 byte order mark like the same file without one, once the @slicerx/step-reader installed beside it is a release after 0.1.0. Before, it was refused with `step_not_step`.
+- `slicerx_slice_file` and `slicerx_estimate_file` on a printer whose printable area does not start at 0, 0 (the Snapmaker U1's runs from 0.5, 1 to 270.5, 271) place a mesh, and a 3MF that is no slicer's project, in the middle of that area, 135.5, 136 on the U1, as the app does. Before, the engine got no bed for such a printer and centered the file on its default 256 mm bed, at 128, 128. A project's build items stay where the project puts them, as before.
 
 ## [0.2.6] - 2026-10-29
 

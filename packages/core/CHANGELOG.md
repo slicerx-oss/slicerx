@@ -10,6 +10,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 - `load_3mf_marks` (`ProjectMarks`): a project plate's layer marks, as `load_3mf_layer_gcode` reads them, plus its tool changes (`Metadata/custom_gcode_per_layer.xml` type 2) when the plate's stored slider mode is the one-filament mode, and a `tool_change_skipped` note for each one saved under another mode.
 - `sx slice` on a 3MF plate and `sx slice --request` on a project plate (unless the request brings its own `toolChanges`) apply the project's tool changes. Before, they were left out and the whole plate printed in its first filament. Slices of such projects through `slicerx_slice_file` change accordingly.
 
+### Fixed
+
+- A request's object without a transform, and a 3MF plate that is no slicer's project, go to the middle of the printable area where it does not start at 0, 0: the request's bed starts at the area's front left corner (`plate::bed_middle`). On the Snapmaker U1 (area from 0.5, 1) a 270 mm bed's middle is 135.5, 136, as `sx slice <file>` and the app place them. Before, `sx slice --request` used half the bed's size, 135, 135, so a request and a plain slice of the same file put it 0.5 mm apart in X and 1 mm in Y. `plate::centered_transform` takes the center to use.
+
 ## [0.2.6] - 2026-10-29
 
 ### Changed

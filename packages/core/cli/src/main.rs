@@ -446,7 +446,9 @@ fn split_projects(
                 api::load_3mf_plate_index(&bytes, rel, plate_no)?,
             ));
         }
-        let at = sx_core::plate::items_transforms(&items, bed, None, placement);
+        // A plate that is no project is centered on the bed, which starts where the printable area does.
+        let middle = sx_core::plate::bed_middle(bed, &req.config);
+        let at = sx_core::plate::items_transforms(&items, bed, Some(middle), placement);
         if items.len() < 2 {
             // One object keeps its key, centered as the plate or where the project puts it; the ears the file paints
             // on it go with it, and its mesh is named after its object, not the file.

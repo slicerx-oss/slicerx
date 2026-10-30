@@ -77,7 +77,7 @@ A request slice reads a `SliceRequest`:
 }
 ```
 
-It prints a result JSON with `schemaVersion`, `layerCount`, `stats` (`timeS`, and `filamentMm` and `filamentG` per slot), `warnings`, and, with `--out-dir`, the paths of `slice.gcode` and `slice.sxpv` under `files`. An object without a transform is centered on the bed. A `mesh` value is a key of `meshes` or a path relative to the request file, and `project.3mf#2` picks plate 2 of a project; a project of more than one plate named without `#N` slices its first and is listed in `projectPlates`. Use `--request -` to pass the request on stdin. For an estimate only, set `"emitGcode": false` and `"emitPreview": false` and read `stats` from the result. Exit codes: 0 success, 1 slicing failed, 2 usage error, 3 invalid input.
+It prints a result JSON with `schemaVersion`, `layerCount`, `stats` (`timeS`, and `filamentMm` and `filamentG` per slot), `warnings`, and, with `--out-dir`, the paths of `slice.gcode` and `slice.sxpv` under `files`. An object without a transform is centered on the bed, which starts at the front left corner of the config's `printable_area` (the Snapmaker U1's area starts at 0.5, 1). A `mesh` value is a key of `meshes` or a path relative to the request file, and `project.3mf#2` picks plate 2 of a project; a project of more than one plate named without `#N` slices its first and is listed in `projectPlates`. Use `--request -` to pass the request on stdin. For an estimate only, set `"emitGcode": false` and `"emitPreview": false` and read `stats` from the result. Exit codes: 0 success, 1 slicing failed, 2 usage error, 3 invalid input.
 
 ### Project G-code
 

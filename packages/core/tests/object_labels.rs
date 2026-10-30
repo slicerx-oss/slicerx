@@ -453,7 +453,7 @@ fn stacked_objects_with_one_footprint_keep_their_own_labels() {
         parts: items.iter().flat_map(|m| m.parts.iter().cloned()).collect(),
         ..Mesh::default()
     };
-    let at = sx_core::plate::centered_transform(&merged, sx_core::api::Bed::default());
+    let at = sx_core::plate::centered_transform(&merged, sx_core::api::Bed::default(), None);
     let objects: Vec<Value> = items
         .iter()
         .enumerate()
