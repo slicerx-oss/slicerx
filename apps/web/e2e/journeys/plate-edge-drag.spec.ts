@@ -62,8 +62,10 @@ const state = (page: Page) => page.evaluate(() => {
 })
 
 /**
- * Opens the project and waits until its plates are in with the first plate's parts drawn. Slicing stays off here: a
- * slice landing mid-test brings up the toolpath overlays and frames the view again under a press.
+ * Opens the project and waits until its plates are in with the first plate's parts drawn: in the store and in the view
+ * too, which builds them a moment later. A selection set before the view has a part drops that part, and a press before
+ * then turns the view. Slicing stays off here: a slice landing mid-test brings up the toolpath overlays and frames the
+ * view again under a press.
  */
 async function open(page: Page, plates: number, spots: readonly [number, number][]): Promise<void> {
   await page.evaluate(() => (window as unknown as { __sx: Sx }).__sx.setState({ autoSlice: false }))
@@ -72,7 +74,8 @@ async function open(page: Page, plates: number, spots: readonly [number, number]
   await settleOpen(page, () =>
     page.evaluate(([n, k, before]) => {
       const s = (window as unknown as { __sx: Sx }).__sx.getState()
-      return !s.plateLoading && s.plates.length === n && s.plates[0]!.id === s.activePlate && s.plate.length === k && !s.plate.some((o) => (before as string[]).includes(o.id))
+      const drawn = new Set((window as unknown as { __vp: { drawnObjects(): string[] } }).__vp.drawnObjects())
+      return !s.plateLoading && s.plates.length === n && s.plates[0]!.id === s.activePlate && s.plate.length === k && !s.plate.some((o) => (before as string[]).includes(o.id)) && s.plate.every((o) => drawn.has(o.id))
     }, [plates, spots.length, before] as const),
   )
 }
@@ -99,15 +102,30 @@ const centerOf = (page: Page, name: string) =>
     return [(x0 + x1) / 2, (y0 + y1) / 2] as const
   }, name)
 
-/** Presses on a part and drags it so its center would follow to bed point `to`, in steps. Leaves the button down. */
+const screenAt = (page: Page, to: readonly [number, number]) =>
+  page.evaluate(([x, y, z]) => (window as unknown as { __vp: { screenOf(p: number[]): [number, number] } }).__vp.screenOf([x!, y!, z!]), [to[0], to[1], SIZE / 2] as const)
+
+/**
+ * Presses on a part and drags it so its center follows to bed point `to`, in steps. Leaves the button down. Once the
+ * part is on its way the view eases out to make room past the edges, and a screen point then lands further out on the
+ * bed than before: so the drag starts, waits for the view to stop, and only then aims at `to` with the view as it is.
+ */
 async function dragOut(page: Page, name: string, to: readonly [number, number]): Promise<void> {
   const [cx, cy] = await centerOf(page, name)
   const from = await pressable(page, await steady(page, cx, cy, SIZE / 2))
-  const target = await page.evaluate(([x, y, z]) => (window as unknown as { __vp: { screenOf(p: number[]): [number, number] } }).__vp.screenOf([x!, y!, z!]), [to[0], to[1], SIZE / 2] as const)
+  const first = await screenAt(page, to)
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
-  const steps = 16
-  for (let i = 1; i <= steps; i++) await page.mouse.move(from.x + ((target[0] - from.x) * i) / steps, from.y + ((target[1] - from.y) * i) / steps)
+  // a few steps toward the spot start the move (and the view's room) without taking the part off the bed
+  const start = 4
+  const towards = (a: { x: number; y: number }, b: readonly [number, number], i: number, n: number) => [a.x + ((b[0] - a.x) * i) / n, a.y + ((b[1] - a.y) * i) / n] as const
+  for (let i = 1; i <= start; i++) await page.mouse.move(...towards(from, first, i, 16))
+  await expect(overlay(page)).toHaveCount(1)
+  await settledView(page)
+  const target = await screenAt(page, to)
+  const at = towards(from, first, start, 16)
+  const steps = 12
+  for (let i = 1; i <= steps; i++) await page.mouse.move(...towards({ x: at[0], y: at[1] }, target, i, steps))
   // a few more at the end, so the frame loop draws the last spot
   await page.mouse.move(target[0] + 1, target[1])
   await page.mouse.move(target[0], target[1])
