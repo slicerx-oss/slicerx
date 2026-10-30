@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `loadOcct` with `maxMemoryMb` and a `file:` URL in `wasm` reads the wasm from disk in Node. Before, it fetched the URL, and Node's `fetch` does not read `file:` URLs, so the load failed with `fetch failed`. Without a cap the Emscripten glue already read the file itself. Browsers and workers still fetch every URL.
+
 ## 0.2.7
 
 - The integrator kit ships the reader as its own optional tarball, `slicerx-step-reader.tgz`, listed in `kit-manifest.json` (with `optional: true`) and `SHA256SUMS.txt`, with the license texts, NOTICE, SOURCE.md and the wasm. The version moves to the kit's line, 0.2.7, so `@slicerx/mcp` 0.2.7 takes it as its optional peer.
