@@ -6,6 +6,7 @@ Changes to the `sx` command's JSON input and output. Keep a Changelog format; se
 
 ### Added
 
+- `sx check --request <file | ->`: heimdall's plate check of a request, without slicing it. It prints `collisions` and `collisionFixes` as `sx slice` gives them, `certainty` (`sure` or `slice_decides`, one per collision), `unchecked` (`objectId`, `what`, `near`), `order` and `micros`, and exits with code 3 when a collision is sure.
 - `sx project-settings`, `sx metadata` and `sx slice <project.3mf>` read a PrusaSlicer project's settings from its `Metadata/Slic3r_PE.config`: the print and filament values, on the default printer or the one `--config` names. They printed `{}` and sliced with the defaults before, so a project with support on printed none.
 - `sx project-settings <project.3mf>`: the settings `sx slice <project.3mf>` takes from a project, as one JSON object on stdout to pass as a request's `config`. A 3MF without settings prints `{}`.
 - Request option `projectDefaults` (boolean, default false): fills the keys `config` lacks that the app that wrote the first project file the plate names reads its own way, as `sx slice <project.3mf>` does. A Bambu Studio project gets `wipe_tower_wall_type` rib (unless the config sets `prime_tower_rib_wall`), `initial_layer_travel_acceleration` 500 and `internal_bridge_speed` 100%. stderr names the keys added. Without it a request is unchanged. `sx schema request` lists it.
