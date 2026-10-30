@@ -27,6 +27,8 @@ import type {
   FilamentSlot,
   StartOptions,
   ToolheadPlan,
+  TunnelProblem,
+  TunnelReport,
 } from '@slicerx/contracts'
 
 export type LinkErrorCode = PrinterErrorCode | 'bad_request' | 'unauthorized' | 'locked' | 'closed' | 'hub_identity' | 'forbidden'
@@ -112,6 +114,8 @@ export interface PrinterTestResult {
   certificate?: { verified: boolean; detail: string }
   /** A refused sign-in, when the printer said why (Moonraker): no key and not trusted, a wrong key, or a user login required. */
   authNeed?: AuthNeed
+  /** Through an Obico tunnel: what the tunnel refused (`no_access`, `access_removed`, `data_limit`, ...). */
+  tunnelProblem?: TunnelProblem
   steps: PrinterTestStep[]
   /** First nozzle and bed temperature, rounded, after a passing test. */
   nozzleC?: number
@@ -1188,6 +1192,8 @@ export async function connectLink(opts: ConnectOptions): Promise<LinkHost> {
       const r = await call<{ contentType: string; dataBase64: string } | null>('snapshot', { printerId })
       return r ? new Blob([base64ToBytes(r.dataBase64)], { type: r.contentType }) : null
     },
+
+    tunnel: (printerId) => call<TunnelReport>('printers.tunnel', { printerId }),
 
     callTool: (pluginId, tool, input, token) => call('callTool', { pluginId, tool, input, ...(token ? { token } : {}) }),
 

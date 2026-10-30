@@ -45,7 +45,8 @@ Text frames of JSON. Request `{"id", "method", "params"}`, reply `{"id", "result
 | `fleets.create` | `name`, `color?`, `icon?`, `printerIds?` | `Fleet` |
 | `fleets.rename`, `fleets.update`, `fleets.delete` | `fleetId`, `name` or `{color?, icon?}` (null clears) | `Fleet`, or `{deleted}` |
 | `fleets.add`, `fleets.remove` | `fleetId`, `printerId` | `Fleet` |
-| `status` | `printerId` | `PrinterStatus` (an unreachable printer reads as offline) |
+| `status` | `printerId` | `PrinterStatus` (an unreachable printer reads as offline; a printer behind a tunnel that refused adds `tunnelProblem`) |
+| `printers.tunnel` | `printerId` | `{printerId, tunnel, host, camera: false, problem, connected, usage, prediction}` for a printer reached through a tunnel: the tunnel host (never its user name or password), what the tunnel refused last (`no_access`, `access_removed`, `data_limit`, `file_over_data_limit`, `not_connected`, `timed_out`), this month's data (`usedBytes`, `capBytes`, `leftBytes`, `unlimited`, `resetInSeconds`) and the running print's failure score (`{score}`, 0 to 1). It reuses a usage reading for two minutes and a score for one. A printer on the local network gives `not_supported` with `details.reason` `no_tunnel`. Agents may call it. |
 | `subscribe` / `unsubscribe` | `printerId` / `subscription` | `{subscription}` |
 | `upload` | `printerId`, `file:{name,kind,sha256,dataBase64}`, `token` | `RemoteFile` |
 | `start` | `file: RemoteFile`, `opts?`, `token` | |
@@ -54,7 +55,7 @@ Text frames of JSON. Request `{"id", "method", "params"}`, reply `{"id", "result
 | `approvals.register` | `request: ApprovalRequest` | `{registered}` |
 | `approvals.grant` | `requestId` | `ApprovalToken` |
 | `approvals.deny` | `requestId` | `{denied}` |
-| `snapshot` | `printerId` | `{contentType,dataBase64}` or null |
+| `snapshot` | `printerId` | `{contentType,dataBase64}` or null. A printer reached through a tunnel gives `not_supported` with `details.reason` `camera_off_tunnel`. |
 | `services.configure` | `pluginId`, `baseUrl`, `secretRef?` | |
 | `services.list` | | `{pluginId, baseUrl, hasSecret}[]` |
 | `services.remove` | `pluginId` | `{removed}` |

@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_printer_tunnel` reads a printer reached through an Obico tunnel: `tunnel`, `host` (never its user name or password), `connected`, `problem` (`no_access`, `access_removed`, `data_limit`, `file_over_data_limit`, `not_connected` or `timed_out`) with `message` in plain words, this month's data in `usage` (`usedBytes`, `capBytes`, `leftBytes`, `unlimited`, `resetInSeconds`) and Obico's failure score for the running print in `prediction.score`, 0 to 1. A printer on the local network is refused with `not_supported` and `details.reason` `no_tunnel`. No tool connects a printer through Obico; the person does that in the app.
+
 ### Changed
 
 - `slicerx_arrange` 1.10.0 turns each copy about Z where that fits more, as the app's Arrange does, on the plates it lays out and on the new plates copies with no room go to. The new `turns` lists every copy of the arranged object as `id` (the plate object id), `plate` and `turnDeg`. Before, every copy kept its object's rotation, so long parts standing at an angle took more plates than in the app: 24 bars of 80 x 6 mm at 30 degrees need two 100 mm plates in both now. A copy placed around others (`slicerx_project_duplicate`) gets no turn of its own from the nest, as in the app. A turn belongs to the arranged layout, as the move does: rotating or scaling the object, changing its copies or changing the bed puts the plate back in rows, unturned.
@@ -11,6 +15,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 - `slicerx_project_show` 1.1.0 gives each placement's `turnDeg`, 0 when the copy is not turned, and its `centerMm` and `sizeMm` follow the turn. The slice gets each copy's turned transform.
 - `slicerx_arrange` places as many copies of one object on a plate as rows of their boxes hold, around the objects that stay. Before, the nest could fall one short of the rows on plain boxes: of eight 10 x 50 mm bars 2 mm apart on a 100 x 60 mm bed it placed seven and refused the eighth.
 - The mimir session read-back (`mimir_session`) lists `mechanism` among the reasons a turn can start on the larger model, and a turn no longer starts there only because a picture or PDF came with it.
+- `slicerx_printer_snapshot` refuses a printer reached through Obico with `not_supported` and `details.reason` `camera_off_tunnel`, since its camera is off through the tunnel.
 
 ### Fixed
 

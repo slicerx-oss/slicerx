@@ -3,7 +3,7 @@
 // Sending a sliced plate to a printer, queued starts, printer actions and G-code export: the parts of actions.ts the
 // startup shell does not need. actions.ts loads this on first use.
 import type { ApprovalHost, Host, JobFile, PrinterHost, PrinterInfo, PrinterStatus, SettingValue, ToolheadPlan } from '@slicerx/contracts'
-import { developerModeSure, followsSlotMap, grantApproval, pluginHas, slotMapLine } from '@slicerx/contracts'
+import { developerModeSure, followsSlotMap, grantApproval, pluginHas, slotMapLine, TUNNEL_PROBLEM_TEXT, tunnelProblemOf } from '@slicerx/contracts'
 import { formatDuration } from '../lib/preview-stats'
 import { resolveSlots, usedSlots } from '../filament/slots'
 import type { QueueItem } from '../queue/queue'
@@ -345,6 +345,12 @@ async function sendNow(host: Host, printer: PrinterInfo): Promise<void> {
       // The card is full: nothing to retry until the person frees space, so the sheet says so and keeps the plate.
       const full = storageFullReason(e)
       if (full !== null) return { refused: full, storageFull: true }
+      // Through Obico: the tunnel's own reason (this month's data used up, the file too big for what is left, ...).
+      const tunnel = tunnelProblemOf((e as { details?: { tunnelProblem?: unknown } } | null)?.details?.tunnelProblem)
+      if (tunnel) {
+        toast(TUNNEL_PROBLEM_TEXT[tunnel], 'error')
+        return 'done'
+      }
       const refused = refusalReason(e)
       if (refused !== null && !plain && start) return { refused }
       toast(e instanceof Error ? e.message : `Could not reach ${printer.name}`, 'error')
