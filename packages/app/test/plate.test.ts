@@ -183,7 +183,8 @@ describe('arrange, fill bed and instances', () => {
 
 describe('plates', () => {
   it('adds, switches, moves objects between plates, and undo skips plate switches', async () => {
-    const { addPlate, switchPlate, moveSelectedToPlate, allPlates, removePlate, setPlateSettings } = await import('../src/plate/plates')
+    const { addPlate, switchPlate, allPlates, removePlate, setPlateSettings } = await import('../src/plate/plates')
+    const { moveSelectedToPlate } = await import('../src/plate/move-to-plate')
     set({ plate: [entry('a', compose({ position: [40, 40, 2.5], rotation: [0, 0, 0], scale: [1, 1, 1] })), entry('b')], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: { sequence: 'by-layer' } }], activePlate: 'plate-1', selection: 'b', selectedIds: ['b'] })
     const h = createHistory(appStore)
     const second = addPlate()

@@ -5,7 +5,6 @@
 // rest of the app keeps working on one plate; the others wait in `plates`.
 import { nozzleMapConfig } from '../filament/nozzle-map'
 import { fullPlate, get, markStale, selectedIds, set, type AppState, type PlateEntry, type PlateMeta, type PlateSettings } from '../state/store'
-import { arrange } from './arrange'
 import { quietly } from './history'
 import { plateTower } from './tower'
 import type { Mat4 } from './transform'
@@ -127,32 +126,6 @@ export function renamePlate(id: string, name: string): void {
 export function setPlateSettings(id: string, patch: Partial<PlateSettings>, replace = false): void {
   set((s) => ({ plates: s.plates.map((p) => (p.id === id ? { ...p, settings: replace ? { ...patch } : { ...p.settings, ...patch } } : p)) }))
   if (id === get().activePlate) markStale()
-}
-
-/** Moves the selected objects to another plate and arranges them into its free space. */
-export function moveSelectedToPlate(targetId: string): number {
-  return moveObjectsToPlate(targetId, selectedIds(get()))
-}
-
-/** Moves only the named concrete objects, using the same placement as the plate menu. */
-export function moveObjectsToPlate(targetId: string, objectIds: readonly string[], requireFit = false): number {
-  const s = get()
-  if (targetId === s.activePlate) return 0
-  const target = s.plates.find((p) => p.id === targetId)
-  const ids = new Set(objectIds)
-  if (!target || ids.size === 0) return 0
-  const moving: PlateEntry[] = s.plate.filter((p) => ids.has(p.id))
-  const r = arrange(moving, target.objects, s.bed)
-  if (requireFit && (r.leftOver.length || moving.some((o) => !r.transforms[o.id]))) return 0
-  const placed = moving.map((m) => (r.transforms[m.id] ? { ...m, transform: r.transforms[m.id]! } : m))
-  set({
-    plate: s.plate.filter((p) => !ids.has(p.id)),
-    plates: s.plates.map((p) => (p.id === targetId ? { ...p, objects: [...p.objects, ...placed] } : p)),
-    selection: null,
-    selectedIds: [],
-  })
-  markStale()
-  return moving.length
 }
 
 /** One new plate's layout from arrange: where each of its objects goes, and with `order` (ids) the order they print in. */
