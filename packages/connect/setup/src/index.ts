@@ -10,7 +10,7 @@ import type { LinkHost, PrinterTestResult } from '@slicerx/link-client'
 import { CONNECTION_METHODS, PRINTER_MODELS, brandById, connectionMethod, type ConnectionId, type PrinterModel } from '@slicerx/printer-catalog'
 
 /** What the setup functions need from the bridge. `LinkHost` satisfies it. */
-export type SetupLink = Pick<LinkHost, 'discover' | 'addPrinter' | 'removePrinter' | 'setSecret' | 'deleteSecret' | 'testPrinter' | 'authorizePrinter'> & Partial<Pick<LinkHost, 'probe'>>
+export type SetupLink = Pick<LinkHost, 'discover' | 'addPrinter' | 'removePrinter' | 'setSecret' | 'deleteSecret' | 'testPrinter' | 'authorizePrinter'> & Partial<Pick<LinkHost, 'probe' | 'setPrinterTunnel'>>
 
 /** A printer a scan or a probe found: what it announced, without signing in. */
 export interface FoundSetupPrinter {
@@ -78,6 +78,12 @@ export interface PrinterSetup extends Omit<PrinterSetupHost, 'searchProfiles'> {
   testConnection(input: { family: string; address: string; serial?: string; credential?: string; username?: string; tunnel?: TunnelKind }): Promise<PrinterTestResult>
   /** Printers added without a connection ("save G-code"). The host persists them. */
   localPrinters(): readonly LocalPrinter[]
+  /**
+   * A new tunnel address for a printer already reached through one: `address` is the tunnel host and `credential` the
+   * tunnel's `user:password`. Checked here, then the bridge stores the access under the printer's own credentialRef and
+   * keeps everything else about the printer. A refused address never reaches the bridge.
+   */
+  setTunnel(printerId: string, connection: { address: string; credential: string }): Promise<{ printerId: string; host: string; credentialKept?: 'session' }>
 }
 
 export interface LocalPrinter {
@@ -234,5 +240,15 @@ export function createPrinterSetup(link: SetupLink): PrinterSetup {
     },
 
     localPrinters: () => local,
+
+    async setTunnel(printerId, connection) {
+      const host = tunnelHost(connection.address.trim())
+      if (!host) throw new SetupError('bad_request', 'This is not an Obico tunnel address.')
+      const [user = '', ...rest] = connection.credential.split(':')
+      if (!user || !rest.join(':')) throw new SetupError('bad_request', 'Paste the whole address Obico gave you, with its user name and password.')
+      if (!link.setPrinterTunnel) throw new SetupError('not_supported', 'This printer bridge is too old to take a new Obico address. Update the app.')
+      const r = await link.setPrinterTunnel(printerId, host, connection.credential)
+      return { printerId: r.printerId, host: r.host, ...(r.kept === 'session' ? { credentialKept: 'session' as const } : {}) }
+    },
   }
 }

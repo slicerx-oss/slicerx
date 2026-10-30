@@ -2,6 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // A client reads a printer reached through Obico the way it reads any printer, and cannot connect one: no tool takes a
 // tunnel address or its password. The hub is replaced by a fake that answers as sx-link's printers.tunnel does.
+import { readdirSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type { PrinterHost, TunnelReport } from '@slicerx/contracts'
 import { connect, data } from './helpers'
@@ -103,6 +106,18 @@ describe('no client connects a printer through Obico', () => {
       const schema = JSON.stringify(t.inputSchema)
       expect(schema, t.name).not.toMatch(/"(tunnel|tunnelUrl|tunnel_url|credential|password)"\s*:/)
       if (t.name !== 'slicerx_printer_tunnel' && t.name !== 'slicerx_printer_snapshot') expect(`${t.description ?? ''} ${schema}`, t.name).not.toMatch(/obico/i)
+      // A tunnel printer's address and access change only in the app: no tool offers a new one.
+      expect(`${t.name} ${t.description ?? ''}`, t.name).not.toMatch(/new (obico|tunnel) address|repaste|set_?tunnel/i)
+    }
+  })
+
+  it('no server code asks the hub to change a tunnel printer\'s address or access', () => {
+    const src = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
+    const files = readdirSync(src, { recursive: true, encoding: 'utf8' }).filter((f) => /\.(ts|tsx|mjs|js)$/.test(f))
+    expect(files.length).toBeGreaterThan(10)
+    for (const f of files) {
+      const text = readFileSync(join(src, f), 'utf8')
+      expect(text, f).not.toMatch(/printers\.setTunnel|setPrinterTunnel|setTunnel\(/)
     }
   })
 })
