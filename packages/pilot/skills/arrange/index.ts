@@ -52,10 +52,10 @@ function bedArea(v: BuildVolume): number {
 export function createArrange(shared: ToolShared) {
   return defineSkill({
     name: 'arrange',
-    version: '1.9.0',
+    version: '1.10.0',
     permission: 'slice',
     description:
-      'Pack copies of an object onto plates, around the other objects, which keep their places. It keeps room for brims and skirts, clear of excluded areas and the prime tower. Copies with no room around the others go to new plates, and moved lists them by object id and plate; no object is taken off its plate. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. Changes only the project.',
+      'Pack copies of an object onto plates, around the other objects, which keep their places. It keeps room for brims and skirts, clear of excluded areas and the prime tower. Each copy may turn about Z where that fits more, as Arrange in the app turns them, and turns gives the turn of each copy by plate object id and plate. Copies with no room around the others go to new plates, and moved lists them by object id and plate; no object is taken off its plate. Give printer ids to put one plate on each, or a printer model for a fit check. With checkFit it only reports whether the object fits the build volume. Changes only the project.',
     input: z.object({
       objectId: z.string().optional().describe('Object id or name; defaults to the first object'),
       count: z.number().int().min(1).max(500).optional().describe('Total copies'),
@@ -147,7 +147,7 @@ export function createArrange(shared: ToolShared) {
         const head = per.every((n) => n === per[0]) ? `${per[0]} per plate on ${on.length} plate${on.length === 1 ? '' : 's'}` : `${count} copies on ${on.length} plates (${per.join(', ')})`
         return {
           summary: said ? `${head}. ${said}` : head,
-          output: { plates: on.map((p, k) => ({ plate: p.plate, printerId: p.printerId, copies: p.copies, bedUse: rows[k]?.[3] })), moved },
+          output: { plates: on.map((p, k) => ({ plate: p.plate, printerId: p.printerId, copies: p.copies, bedUse: rows[k]?.[3] })), moved, turns: r.turns ?? [] },
           display: [{ kind: 'table', head: ['plate', 'printer', 'copies', 'bed use'], rows }],
         }
       }

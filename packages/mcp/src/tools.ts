@@ -180,10 +180,10 @@ export function localTools(deps: LocalToolDeps): PilotTool<never>[] {
 
   const show = defineTool({
     name: 'project.show',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
-    description: 'Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides.',
+    description: 'Show the open project: printer, filament profile, the bed (shape "round" with diameterMm for a delta, else "rectangle" with widthMm and depthMm, and heightMm), its filaments (number, type, color), objects, plates and setting overrides. Each placement gives the copy\'s turnDeg, how far the last arrange turned it about Z after its object\'s rotation.',
     input: z.object({}),
     async run() {
       const project = need()

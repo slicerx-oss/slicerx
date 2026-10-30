@@ -121,9 +121,19 @@ export interface MovedCopies {
   to: number
 }
 
+/** One copy an arrange placed: its plate object id (`obj-1-3`), its plate, and how far it turned about Z. */
+export interface CopyTurn {
+  id: string
+  plate: number
+  /** Degrees about Z after the object's rotation, from 0 up to 360; 0 when it is not turned. */
+  turnDeg: number
+}
+
 /** What arrangeObject did: the copies it moved to other plates, and what found no room on any bed. */
 export interface ArrangedObject extends PlatesLeftOff {
   moved: MovedCopies[]
+  /** Every copy of the object where the arrange left it, with its turn. */
+  turns?: CopyTurn[]
 }
 
 /** One sentence per move: `2 copies of obj-1 moved to plate 3.` */

@@ -14,7 +14,7 @@ export { createKnowledgeBase, EMPTY_KB_INDEX, keptEditionDocs, type KbIndex, typ
 export { createKbPlanner } from './kb/planner'
 export { createCombinedPlanner } from './kb/combined-planner'
 export { parseIntent, type Intent } from './intent'
-export type { ArrangedObject, MovedCopies, ObjectPlan, PilotProject, ProjectObject, ProjectPlate, ProjectVolume, VolumeShape, VolumeSpec } from './project'
+export type { ArrangedObject, CopyTurn, MovedCopies, ObjectPlan, PilotProject, ProjectObject, ProjectPlate, ProjectVolume, VolumeShape, VolumeSpec } from './project'
 export { leftOffWords, movedWords, type PlatesLeftOff } from './project'
 export type { PlanResult, PlannedChange, SettingsPlanner } from './planner'
 export { createAnthropicAdapter } from './provider/anthropic'
