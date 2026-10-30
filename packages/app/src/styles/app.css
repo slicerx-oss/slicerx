@@ -296,12 +296,13 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .legend-chip [data-testid="legend-toggle"][aria-expanded="true"] { background: var(--control-selected); box-shadow: inset 0 0 0 1px var(--control-selected-line); }
 .legend { position: absolute; top: calc(100% + 8px); left: 0; z-index: 1; min-width: 200px; max-height: min(60vh, 560px); overflow-y: auto; overscroll-behavior: contain; list-style: none; margin: 0; padding: 8px 12px; border-radius: var(--r-md); display: grid; gap: 3px; }
 /* On a desktop the row sits a step below the plate toolbar, which spans the middle of the top edge; a narrow view puts
-   the toolbar under the corner buttons, and the row under the toolbar. A narrow view has no room for the switch and the
+   the toolbar under the corner buttons in two rows, and the row under it. The row keeps that place while the toolpaths
+   hide the toolbar, so pressing a look never moves the switch. A narrow view has no room for the switch and the
    chip side by side (they ran off the right edge at phone widths), so there the chip goes under the switch, whatever
    the color choice: a longer color name never moves the switch or folds the row. */
 .vp:has(> .plate-tools-group) > .hud-top .legend-row { margin-top: 12px; }
 @container vp (max-width: 600px) {
-  .vp:has(> .plate-tools-group) > .hud-top .legend-row { margin-top: 56px; }
+  .vp:has(> .plate-tools-group) > .hud-top .legend-row { margin-top: 100px; }
   .hud-top .legend-row { flex-direction: column; align-items: flex-start; }
 }
 .vp:has(> .plate-tools-group) .legend-row > .slice-look, .vp:has(> .plate-tools-group) .legend-chip { padding: 4px; }
@@ -781,8 +782,17 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .plate-tools-grip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
 .plate-tools-group[data-dragging], .plate-tools-group[data-dragging] .plate-tools-grip { cursor: grabbing; }
 .plate-tools-group[data-dragging] { user-select: none; }
-/* A narrow view has no room beside the corner buttons: the group starts under them. */
-@container vp (max-width: 600px) { .plate-tools-group:not([data-moved]) { top: 56px; } }
+/* The bar's two sets (the tools; the plate actions, undo and the grip) read as one row. */
+.plate-tools-set { display: contents; }
+/* A narrow view has no room beside the corner buttons: the group starts under them, and the bar stacks its two sets in
+   two rows split by a hairline, so it fits between the corner columns (a 414 px row ran off both edges at 390 px and sat
+   over the corner buttons). */
+@container vp (max-width: 600px) {
+  .plate-tools-group:not([data-moved]) { top: 56px; }
+  .plate-tools-group > .plate-tools:not([data-placement="left-of-viewport"]) { flex-direction: column; align-items: stretch; }
+  .plate-tools-group > .plate-tools:not([data-placement="left-of-viewport"]) > .plate-tools-set { display: flex; align-items: center; justify-content: center; gap: 3px; }
+  .plate-tools-group > .plate-tools:not([data-placement="left-of-viewport"]) > .plate-tools-sep { width: auto; height: 1px; margin: 4px 0; }
+}
 .tf-row.tf-inst { grid-template-columns: 84px minmax(0, 1fr) auto; }
 .tf-stepper { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .tf-stepper .sx-scrub { flex: 0 1 56px; min-width: 36px; }
