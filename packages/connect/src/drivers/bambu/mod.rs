@@ -1813,6 +1813,7 @@ fn parse_live(p: &Value, slots: &[String]) -> Option<Box<PrinterLive>> {
         monitor_only: (developer_mode(p) == Some(false)).then_some(true),
         needs_developer_mode: (developer_mode(p) == Some(false)).then_some(true),
         stage: None,
+        runout_slots: None,
     };
     (live != PrinterLive::default()).then(|| Box::new(live))
 }

@@ -366,6 +366,134 @@ async fn a_snapmaker_u1_reads_its_toolheads() {
     assert_eq!(st.slots[0].color.as_deref(), Some("#ff0000"));
 }
 
+/// A Moonraker session to the U1 fake, which takes faults (`/fault`), printing with every toolhead loaded.
+async fn printing_u1() -> (Mocks, Box<dyn PrinterSession>) {
+    let mocks = Mocks::start("snapmaker-u1", &[]).await;
+    mocks
+        .control(
+            "/u1",
+            serde_json::json!({ "loadedToolheads": [true, true, true, true] }),
+        )
+        .await;
+    mocks
+        .control(
+            "/set",
+            serde_json::json!({ "mock": "snapmaker-u1", "state": "printing" }),
+        )
+        .await;
+    let cfg = config("u1", "moonraker", mocks.port("snapmaker-u1"));
+    let s = MoonrakerConnector::new(Arc::new(MemoryGate::new()))
+        .connect(&cfg, &secrets(&[]))
+        .await
+        .unwrap();
+    (mocks, s)
+}
+
+/// The status as a client reads it on the wire.
+async fn wire_status(s: &dyn PrinterSession) -> serde_json::Value {
+    serde_json::to_value(s.status().await.unwrap()).unwrap()
+}
+
+// A U1 printing with all four toolheads loaded: every motion sensor sees filament, so nothing ran out.
+#[tokio::test]
+async fn a_u1_printing_with_every_head_loaded_has_no_runout() {
+    let (_mocks, s) = printing_u1().await;
+    let st = wire_status(s.as_ref()).await;
+    assert_eq!(st["state"], "printing");
+    assert_eq!(st["slots"].as_array().unwrap().len(), 4);
+    assert!(
+        st["slots"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|x| x["material"].is_string()),
+        "{st}"
+    );
+    assert_eq!(st["live"]["runoutSlots"], serde_json::Value::Null, "{st}");
+    assert_eq!(st["message"], serde_json::Value::Null, "{st}");
+}
+
+// The third toolhead (T2) runs out: its motion sensor stops seeing filament and the print pauses. The
+// status names the toolhead in its message and lists its slot as run out; once filament is back in,
+// the runout clears and the print waits paused for a resume.
+#[tokio::test]
+async fn a_u1_runout_on_t2_pauses_names_the_head_and_clears_when_reloaded() {
+    let (mocks, s) = printing_u1().await;
+    mocks
+        .control("/u1", serde_json::json!({ "runoutToolhead": 2 }))
+        .await;
+    mocks
+        .control(
+            "/fault",
+            serde_json::json!({ "mock": "snapmaker-u1", "kind": "runout" }),
+        )
+        .await;
+    let st = wire_status(s.as_ref()).await;
+    assert_eq!(st["state"], "paused", "{st}");
+    assert_eq!(st["message"], "Paused: filament runout on T2", "{st}");
+    assert_eq!(st["live"]["runoutSlots"], serde_json::json!(["3"]), "{st}");
+    // Its slot is empty now; the other three keep their filament.
+    let materials: Vec<bool> = st["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["material"].is_string())
+        .collect();
+    assert_eq!(materials, [true, true, false, true]);
+    mocks
+        .control(
+            "/fault",
+            serde_json::json!({ "mock": "snapmaker-u1", "kind": "clear" }),
+        )
+        .await;
+    let st = wire_status(s.as_ref()).await;
+    assert_eq!(st["state"], "paused", "{st}");
+    assert_eq!(st["message"], serde_json::Value::Null, "{st}");
+    assert_eq!(st["live"]["runoutSlots"], serde_json::Value::Null, "{st}");
+    assert!(st["slots"][2]["material"].is_string(), "{st}");
+}
+
+// A Moonraker printer that is not a U1 reads as before while it prints: no runout list, no message.
+#[tokio::test]
+async fn a_generic_moonraker_printer_has_no_runout_reading() {
+    let (mocks, s) = moonraker(&[], serde_json::json!({})).await;
+    mocks
+        .control(
+            "/set",
+            serde_json::json!({ "mock": "moonraker", "state": "printing" }),
+        )
+        .await;
+    let st = wire_status(s.as_ref()).await;
+    assert_eq!(st["state"], "printing");
+    assert_eq!(st["live"]["runoutSlots"], serde_json::Value::Null, "{st}");
+    assert_eq!(st["message"], serde_json::Value::Null, "{st}");
+}
+
+// A QIDI Box keeps reading its runout buttons as loaded and empty slots: an empty slot is not a runout,
+// so a printing QIDI printer lists none and its message stays empty.
+#[tokio::test]
+async fn a_qidi_box_empty_slot_is_not_a_runout() {
+    let (mocks, s) = moonraker(&[], serde_json::json!({ "variant": "qidi" })).await;
+    mocks
+        .control(
+            "/set",
+            serde_json::json!({ "mock": "moonraker", "state": "printing" }),
+        )
+        .await;
+    let st = wire_status(s.as_ref()).await;
+    assert_eq!(st["state"], "printing");
+    let ids: Vec<&str> = st["slots"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(ids, ["A1", "A2", "A3", "A4"]);
+    assert!(st["slots"][2]["material"].is_null() && st["slots"][3]["material"].is_null());
+    assert_eq!(st["live"]["runoutSlots"], serde_json::Value::Null, "{st}");
+    assert_eq!(st["message"], serde_json::Value::Null, "{st}");
+}
+
 // Klipper down while Moonraker answers: an error with Klipper's own words, not a lost connection.
 #[tokio::test]
 async fn a_klipper_shutdown_says_why() {

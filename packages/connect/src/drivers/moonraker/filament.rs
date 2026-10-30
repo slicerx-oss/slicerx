@@ -185,6 +185,58 @@ pub(crate) fn u1_unit(status: &Value) -> Option<FilamentUnit> {
     })
 }
 
+/// The U1's toolheads, each with a filament motion sensor.
+pub(crate) const U1_HEADS: usize = 4;
+
+/// The Klipper object of a U1 toolhead's filament motion sensor, 0 to 3.
+pub(crate) fn u1_sensor(head: usize) -> String {
+    format!("filament_motion_sensor e{head}_filament")
+}
+
+/// The U1 toolheads (0 to 3) whose filament motion sensor reports a runout: Klipper's
+/// `filament_detected` false on a sensor that is not turned off (`enabled`). Read only while a job
+/// prints or is paused: a Klipper motion sensor reads no filament from start up until a print first
+/// moves it, so a false reading outside a job says nothing.
+pub(crate) fn u1_runouts(status: &Value, in_job: bool) -> Vec<usize> {
+    if !in_job {
+        return Vec::new();
+    }
+    (0..U1_HEADS)
+        .filter(|&h| {
+            status.get(u1_sensor(h)).is_some_and(|s| {
+                s.get("filament_detected").and_then(Value::as_bool) == Some(false)
+                    && s.get("enabled").and_then(Value::as_bool) != Some(false)
+            })
+        })
+        .collect()
+}
+
+/// The pause reason for U1 toolheads that ran out, by their tool numbers ("T2", "T1 and T3").
+pub(crate) fn runout_words(heads: &[usize]) -> Option<String> {
+    let names: Vec<String> = heads.iter().map(|h| format!("T{h}")).collect();
+    let list = match names.as_slice() {
+        [] => return None,
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    };
+    Some(format!("Paused: filament runout on {list}"))
+}
+
+/// A U1 runout in a status: the slot ids of the toolheads that ran out during the job, and the
+/// pause reason naming them when the print is `paused`.
+pub(crate) fn u1_runout(status: &Value, in_job: bool, paused: bool) -> (Vec<String>, Option<String>) {
+    let heads = u1_runouts(status, in_job);
+    let slots = u1_unit(status)
+        .map(|u| {
+            heads
+                .iter()
+                .filter_map(|&h| u.slots.get(h).map(|s| s.id.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    (slots, paused.then(|| runout_words(&heads)).flatten())
+}
+
 /// A U1 material and its sub type as one name, the way OrcaSlicer's `combine_filament_type` joins
 /// them: CF and GF as suffixes, SnapSpeed as high speed, other brand words dropped.
 fn combine_type(base: &str, sub: &str) -> String {
@@ -291,6 +343,30 @@ mod tests {
         assert!(unit.slots[..3].iter().all(|slot| slot.material.is_none()));
         assert_eq!(unit.slots[0].color.as_deref(), Some("#ff0000"));
         assert_eq!(unit.slots[3].material.as_deref(), Some("PETG-CF"));
+    }
+
+    #[test]
+    fn u1_runouts_come_from_the_motion_sensors_during_a_job() {
+        let status = json!({
+            "filament_motion_sensor e0_filament": { "filament_detected": true, "enabled": true },
+            "filament_motion_sensor e1_filament": { "filament_detected": false, "enabled": false },
+            "filament_motion_sensor e2_filament": { "filament_detected": false, "enabled": true },
+            "filament_motion_sensor e3_filament": { "filament_detected": true, "enabled": true }
+        });
+        // A sensor turned off never pauses a print, so it is no runout.
+        assert_eq!(u1_runouts(&status, true), [2]);
+        // Outside a job a false reading is the sensor's start up state.
+        assert!(u1_runouts(&status, false).is_empty());
+        assert!(u1_runouts(&json!({ "print_task_config": {} }), true).is_empty());
+        assert_eq!(
+            runout_words(&[2]).as_deref(),
+            Some("Paused: filament runout on T2")
+        );
+        assert_eq!(
+            runout_words(&[0, 1, 3]).as_deref(),
+            Some("Paused: filament runout on T0, T1 and T3")
+        );
+        assert_eq!(runout_words(&[]), None);
     }
 
     #[test]

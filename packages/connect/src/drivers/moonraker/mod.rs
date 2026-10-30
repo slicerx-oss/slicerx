@@ -422,6 +422,13 @@ fn status_query(objects: &[String]) -> Vec<(String, String)> {
             "print_task_config".to_owned(),
             "filament_exist,filament_type,filament_sub_type,filament_color_rgba,filament_vendor".to_owned(),
         ));
+        // The U1's runout sensor on each toolhead it lists, in Klipper's sensor fields.
+        q.extend(
+            (0..filament::U1_HEADS)
+                .map(filament::u1_sensor)
+                .filter(|s| has(s))
+                .map(|s| (s, "filament_detected,enabled".to_owned())),
+        );
     }
     q
 }
@@ -912,7 +919,10 @@ fn parse_status_with(id: &str, v: &Value, camera: bool, qidi: &QidiDict) -> Prin
             .and_then(Value::as_u64)
             .and_then(|n| u32::try_from(n).ok())
     };
-    let message = problem.or_else(|| {
+    // A U1 toolhead whose motion sensor lost the filament during the job: its slot is listed, and a
+    // paused print names the toolhead as the reason, after any Klipper problem.
+    let (runout_slots, runout_reason) = filament::u1_runout(&st, active, state == PrinterState::Paused);
+    let message = problem.or(runout_reason).or_else(|| {
         str_at(&st, &["print_stats", "message"])
             .filter(|s| !s.is_empty())
             .map(str::to_owned)
@@ -934,6 +944,7 @@ fn parse_status_with(id: &str, v: &Value, camera: bool, qidi: &QidiDict) -> Prin
             .and_then(Value::as_f64)
             .filter(|_| active)
             .map(|z| (z * 100.0).round() / 100.0),
+        runout_slots: (!runout_slots.is_empty()).then_some(runout_slots),
         ..PrinterLive::default()
     };
     // Every extruder the reply holds, in tool order; a gap ends the list.
@@ -1681,6 +1692,33 @@ mod device_tests {
     }
 
     #[test]
+    fn a_u1_runout_is_read_only_during_a_job() {
+        let reply = |state: &str| {
+            json!({"result": {"status": {
+                "print_stats": {"state": state, "filename": "a.gcode", "message": "Paused by the user"},
+                "print_task_config": {"filament_exist": [true, true, true, true]},
+                "filament_motion_sensor e0_filament": {"filament_detected": true, "enabled": true},
+                "filament_motion_sensor e1_filament": {"filament_detected": false, "enabled": true},
+                "filament_motion_sensor e2_filament": {"filament_detected": true, "enabled": true},
+                "filament_motion_sensor e3_filament": {"filament_detected": true, "enabled": true}
+            }}})
+        };
+        let paused = parse_status("p", &reply("paused"), false);
+        assert_eq!(paused.message.as_deref(), Some("Paused: filament runout on T1"));
+        assert_eq!(
+            paused.live.and_then(|l| l.runout_slots),
+            Some(vec!["2".to_owned()])
+        );
+        // Still printing: the slot is listed, and the message stays the printer's own.
+        let printing = parse_status("p", &reply("printing"), false);
+        assert_eq!(printing.message.as_deref(), Some("Paused by the user"));
+        assert!(printing.live.and_then(|l| l.runout_slots).is_some());
+        // Idle, a Klipper motion sensor reads false until a print moves the filament.
+        let idle = parse_status("p", &reply("standby"), false);
+        assert_eq!(idle.live.and_then(|l| l.runout_slots), None);
+    }
+
+    #[test]
     fn the_status_asks_for_the_objects_the_printer_has() {
         let objects: Vec<String> = [
             "extruder",
@@ -1698,6 +1736,35 @@ mod device_tests {
         assert!(!keys.contains(&"extruder_stepper belt"));
         assert!(keys.contains(&"print_task_config") && !keys.contains(&"mmu"));
         let unknown = status_query(&[]);
+        // A U1 adds the runout sensors it lists; another printer's sensor of the same name is not asked for.
+        let names = |l: &[&str]| l.iter().map(|s| (*s).to_owned()).collect::<Vec<String>>();
+        let sensors = |q: &[(String, String)]| {
+            q.iter()
+                .filter(|(k, _)| k.starts_with("filament_motion_sensor"))
+                .map(|(k, v)| format!("{k}?{v}"))
+                .collect::<Vec<_>>()
+        };
+        let u1 = status_query(&names(&[
+            "print_task_config",
+            "filament_detect",
+            "filament_motion_sensor e0_filament",
+            "filament_motion_sensor e2_filament",
+        ]));
+        assert_eq!(
+            sensors(&u1),
+            [
+                "filament_motion_sensor e0_filament?filament_detected,enabled",
+                "filament_motion_sensor e2_filament?filament_detected,enabled"
+            ]
+        );
+        assert!(!u1.iter().any(|(k, _)| k == "filament_detect"));
+        assert!(
+            sensors(&status_query(&names(&[
+                "extruder",
+                "filament_motion_sensor e0_filament"
+            ])))
+            .is_empty()
+        );
         assert!(unknown.iter().any(|(k, _)| k == "extruder5"));
     }
 
