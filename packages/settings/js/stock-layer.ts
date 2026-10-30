@@ -260,6 +260,15 @@ export async function stockLayer(input: StockLayerInput): Promise<StockLayer | n
   }
 }
 
+/**
+ * The process a printer prints a goal with, as the app's printer layer (stockLayer) takes it: the maker's own preset for
+ * the tier and nozzle where there is one, else SlicerX's tier for the printer. The MCP server builds `process:<tier>` on
+ * a printer from it, so a slice through the server and one in the app start from the same process.
+ */
+export function stockProcess(printerId: string, tier: EasyGoal, nozzle: number): Promise<Record<string, SettingValue>> {
+  return tierProcess(printerId, tier, nozzle)
+}
+
 /** The settings the Goal tiles read from each goal's process. */
 const GOAL_KEYS = ['layer_height', 'wall_loops'] as const
 
