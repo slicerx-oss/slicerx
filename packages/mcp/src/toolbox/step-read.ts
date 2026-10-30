@@ -12,7 +12,8 @@ import { resolveModel, ToolInputError } from '../models'
 import { serverTool, type ServerToolDeps } from './deps'
 
 export const STEP_EXTENSIONS = ['.step', '.stp'] as const
-const INSTALL = 'npm install @slicerx/step-reader'
+// The reader ships in the integrator kit as its own tarball, beside slicerx-mcp.tgz; ./kit is the kit folder.
+const INSTALL = 'npm install ./kit/slicerx-step-reader.tgz'
 
 type StepModule = typeof StepNode
 
@@ -25,7 +26,7 @@ async function reader(): Promise<StepModule> {
   } catch (e) {
     const code = (e as { code?: unknown }).code
     if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND' || /Cannot find (module|package) '@slicerx\/step-reader/.test(String((e as Error).message))) {
-      throw new ToolInputError(`Reading STEP files needs the optional @slicerx/step-reader package, which is not installed next to this server. Install it beside @slicerx/mcp (${INSTALL}) and start the server again.`, 'not_supported', { install: INSTALL })
+      throw new ToolInputError(`Reading STEP files needs the optional @slicerx/step-reader package, which is not installed next to this server. Install the kit's slicerx-step-reader.tgz beside @slicerx/mcp (${INSTALL}, with ./kit your kit folder) and start the server again.`, 'not_supported', { install: INSTALL })
     }
     throw e
   }
@@ -61,7 +62,7 @@ export default (d: ServerToolDeps) =>
     toolset: 'core',
     ungated: true,
     description:
-      `Read a STEP file (.step or .stp; AP203, AP214 or AP242) as ${productName()} reads it: the objects it becomes (touching bodies stay together), each body's name, color (#rrggbb, or null) and triangle count, boxes in mm, the unit the file declares and notes. With output "stl" or "obj" it also writes the meshes, in mm, to a new file in the server's output folder and returns its path, which the mesh tools and slicerx_slice_file take; colored bodies keep their color as OBJ vertex colors or STL facet colors. The file is read in a worker with a deadline (a minute plus 2 s per MB), a 100 MB size limit and a memory limit. A refusal has a step_ code: step_empty, step_not_step, step_step_xml, step_too_large, step_no_solids, step_too_detailed, step_unreadable, step_out_of_memory or step_timeout. Needs the optional @slicerx/step-reader package (${INSTALL}); without it the call is refused with not_supported. To open a STEP file in the app instead, use slicerx_open_in_app.`,
+      `Read a STEP file (.step or .stp; AP203, AP214 or AP242) as ${productName()} reads it: the objects it becomes (touching bodies stay together), each body's name, color (#rrggbb, or null) and triangle count, boxes in mm, the unit the file declares and notes. With output "stl" or "obj" it also writes the meshes, in mm, to a new file in the server's output folder and returns its path, which the mesh tools and slicerx_slice_file take; colored bodies keep their color as OBJ vertex colors or STL facet colors. The file is read in a worker with a deadline (a minute plus 2 s per MB), a 100 MB size limit and a memory limit. A refusal has a step_ code: step_empty, step_not_step, step_step_xml, step_too_large, step_no_solids, step_too_detailed, step_unreadable, step_out_of_memory or step_timeout. Needs the optional @slicerx/step-reader package, the kit's slicerx-step-reader.tgz (${INSTALL}); without it the call is refused with not_supported. To open a STEP file in the app instead, use slicerx_open_in_app.`,
     input: z.object({
       model: z.string().min(1).describe('Absolute path or http(s) URL of a .step or .stp file'),
       quality: z.enum(['normal', 'coarser', 'finer']).default('normal').describe('Chord tolerance: coarser 0.05 mm, normal 0.01 mm, finer 0.003 mm'),

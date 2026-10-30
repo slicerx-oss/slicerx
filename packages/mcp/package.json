@@ -77,7 +77,7 @@
     "zod": "4.6.5"
   },
   "peerDependencies": {
-    "@slicerx/step-reader": "^0.1.0"
+    "@slicerx/step-reader": "^0.2.6"
   },
   "peerDependenciesMeta": {
     "@slicerx/step-reader": {
