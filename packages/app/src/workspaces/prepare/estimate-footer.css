@@ -32,18 +32,18 @@
 .rolled-back { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .rolled-back p { margin: 0; }
 
-/* The by-object clearance warning: a title line with Arrange, and the closest pair as one row that selects it. */
+/* The by-object clearance warning: a title line, the closest pair as one flat row that selects it, then its buttons. */
 .seq-card { --clearance-red: var(--red-text); margin: 8px 0 0; display: grid; gap: 4px; }
 .seq-card-head { display: flex; align-items: center; gap: 8px; min-height: 28px; }
 .seq-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--clearance-red); }
 .seq-card-title { flex: 1; min-width: 0; color: var(--clearance-red); font: var(--fw-semibold) var(--fs-md) var(--f-body); }
-.seq-card-line { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 28px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: none; color: var(--fg); cursor: pointer; font: var(--fw-medium) var(--fs-sm) var(--f-body); text-align: left; }
-.seq-card-line:hover { background: var(--ink-3); }
-/* Its objects selected: the selected fill and line of a segmented control, the size kept. */
-.seq-card-line[aria-pressed="true"] { background: var(--control-selected); border-color: var(--control-selected-line); color: var(--control-selected-fg); --muted: var(--control-selected-muted); }
+.seq-card-row { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 28px; padding: 0 8px; border: none; border-radius: var(--r-sm); background: none; color: var(--fg); cursor: pointer; font: var(--fw-medium) var(--fs-sm) var(--f-body); text-align: left; }
+.seq-card-row:hover { background: var(--ink-3); }
+/* Its objects selected: the selected fill of a segmented control, the size kept. No border, so it never reads as a field. */
+.seq-card-row[aria-pressed="true"] { background: var(--control-selected); color: var(--control-selected-fg); --muted: var(--control-selected-muted); }
 /* A touch screen gets the 44 px target. */
-@media (pointer: coarse) { .seq-card-line { min-height: 44px; } }
-.seq-card-line:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+@media (pointer: coarse) { .seq-card-row { min-height: 44px; } }
+.seq-card-row:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 .seq-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .seq-card-fig { flex: none; margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .seq-card-more { flex: none; color: var(--muted); font-size: var(--fs-xs); }
@@ -52,3 +52,8 @@
 .seq-card-note { flex: 1; min-height: 28px; padding: 4px 8px; }
 .seq-card-note .seq-card-name { white-space: normal; }
 @media (pointer: coarse) { .seq-card-note { min-height: 44px; } }
+/* The plate check's quiet lines: a strike only the slice can tell, what only the slice checks, Checking. Body text in
+   the muted color, set in from the row's edge as the row's own text is. */
+.seq-card-muted { margin: 0; padding: 0 8px; color: var(--muted); font: var(--fs-sm) var(--f-body); }
+/* Arrange and the one-click fixes: same-size buttons side by side, 8 px apart, wrapping on a narrow pane. */
+.seq-card-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 8px 0; }

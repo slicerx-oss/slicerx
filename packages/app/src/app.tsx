@@ -187,6 +187,20 @@ function Shell() {
   useAskForPrinter()
   // Background slicing after edits (Settings > Auto slice).
   useEffect(() => (hostSlices() ? startAutoSlice(host) : undefined), [host])
+  // heimdall's plate check after edits to a by-object plate, where the host has one (the desktop). It loads with the
+  // app but outside the shell's startup code, as the footprint rule it uses does (apps/web bundle-size budget).
+  useEffect(() => {
+    if (!hostSlices()) return undefined
+    let stop: (() => void) | undefined
+    let gone = false
+    void import('./plate/engine-check').then((m) => {
+      if (!gone) stop = m.startEngineCheck(host)
+    })
+    return () => {
+      gone = true
+      stop?.()
+    }
+  }, [host])
   // The page says when it is ready, so scripts wait on that and not on a fixed time.
   useEffect(() => startReadySignal(), [])
   // Code that failed to download (a dropped connection while the app starts) is fetched again by a reload.
