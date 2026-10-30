@@ -4,11 +4,12 @@
 // triangle counts, boxes), write it as STL or OBJ into the output folder and feed that file to another tool, and get
 // typed step_ refusals for files the reader refuses. Without @slicerx/step-reader installed the call says how to
 // install it.
-import { copyFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js'
 import { afterEach, describe, expect, it } from 'vitest'
-import { stepModule } from '../src/toolbox/step-read'
+import { stepModule, stepReaderSource } from '../src/toolbox/step-read'
 import { connect, data, text } from './helpers'
 
 const fixtures = join(import.meta.dirname, '..', '..', 'step-reader', 'test', 'fixtures')
@@ -125,5 +126,19 @@ describe('slicerx_step_read', () => {
       expect(data(r)).toMatchObject({ error: { code: 'not_supported', details: { install: 'npm install @slicerx/step-reader' } } })
       expect(text(r)).toMatch(/needs the optional @slicerx\/step-reader package/)
     })
+  })
+
+  it('finds the reader in the named folder first, then beside the server, then as the package', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sx-step-source-'))
+    const beside = join(dir, 'step-reader')
+    expect(stepReaderSource({}, undefined)).toEqual({ kind: 'package' })
+    // A step-reader folder without the reader in it is passed over.
+    mkdirSync(beside)
+    expect(stepReaderSource({}, beside)).toEqual({ kind: 'package' })
+    writeFileSync(join(beside, 'node.js'), '')
+    expect(stepReaderSource({}, beside)).toEqual({ kind: 'bundled', dir: beside })
+    expect(stepReaderSource({ SLICERX_STEP_READER_DIR: dir }, beside)).toEqual({ kind: 'env', dir })
+    expect(stepReaderSource({ SLICERX_STEP_READER_DIR: '  ' }, beside)).toEqual({ kind: 'bundled', dir: beside })
+    rmSync(dir, { recursive: true, force: true })
   })
 })
