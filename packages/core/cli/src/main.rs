@@ -58,6 +58,7 @@
 
 #[cfg(feature = "stock-gcode")]
 mod fingerprint;
+mod remap;
 #[cfg(feature = "stock-gcode")]
 mod stock;
 mod tool_call;
@@ -102,6 +103,7 @@ fn main() -> ExitCode {
         Some("canonical-script") => cmd_canonical_script(&args[1..]),
         Some("review-script") => cmd_review_script(&args[1..]),
         Some("prepare-script-replacement") => cmd_prepare_script_replacement(&args[1..]),
+        Some("remap-toolheads") => return remap::run(&args[1..]),
         // Which engine this is, for a host checking the binary it ships or finds.
         Some("--version" | "-V") => {
             println!("sx {}", env!("CARGO_PKG_VERSION"));
@@ -109,7 +111,7 @@ fn main() -> ExitCode {
         }
         _ => {
             eprintln!(
-                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx project-settings <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx check --request <req.json | ->\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
+                "usage: sx --version\n       sx call [server options] <tool> [json] [<tool> [json] ...]\n       sx metadata <project.3mf>\n       sx project-settings <project.3mf>\n       sx canonical-script <file | -> [--batch]\n       sx review-script <request.json | -> [--batch]\n       sx prepare-script-replacement <request.json | -> [--batch]\n       sx remap-toolheads <in.gcode> --map <logical=physical,...> -o <out.gcode> [--json]\n       sx slice <model> [--plate N] [--config <json>] [--no-project-settings] [-o out.gcode] [--preview out.sxpv] [--allow-collisions] [--strict]\n       sx slice --request <req.json | -> [--out-dir <dir>] [--allow-collisions] [--strict]\n       sx check --request <req.json | ->\n       sx schema [request | result]\n       sx bench --config <bench.json> [--runs N] [--warmup N] [--threads N] [--append file] [--change text] [--ab <baseline sx>] [--write-baseline] [--json]\n       sx time <file.gcode> --config <json> [--trace [--at <line prefix>] | --json]\n       script recognition: --script-printer <model-id> --script-firmware <flavor>"
             );
             return ExitCode::from(2);
         }

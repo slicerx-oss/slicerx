@@ -7,6 +7,7 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 ### Added
 
 - `slicerx_printer_tunnel` reads a printer reached through an Obico tunnel: `tunnel`, `host` (never its user name or password), `connected`, `problem` (`no_access`, `access_removed`, `data_limit`, `file_over_data_limit`, `not_connected` or `timed_out`) with `message` in plain words, this month's data in `usage` (`usedBytes`, `capBytes`, `leftBytes`, `unlimited`, `resetInSeconds`) and Obico's failure score for the running print in `prediction.score`, 0 to 1. A printer on the local network is refused with `not_supported` and `details.reason` `no_tunnel`. No tool connects a printer through Obico; the person does that in the app.
+- `slicerx_remap_toolheads` 1.0.0: moves the logical tools of a sliced Snapmaker U1 G-code file onto other physical toolheads with no printer connected (`gcode`, `map` of tool to toolhead 0 to 3), through `sx remap-toolheads`. Every `T`, M104/M109/M116/M900 `T`, `INDEX=` on `SM_PRINT_PREEXTRUDE_FILAMENT` and `SM_PRINT_FLOW_CALIBRATE`, and `EXTRUDER=extruderN` follows the map together. Writes a new file in the output folder and returns `gcode_path`, `sha256`, `source_sha256`, `tools_used`, `unused_map_tools` and `counts`. A file the rewrite cannot read safely is refused with the new error code `remap_refused`, with `details.line` and `details.reason`.
 
 ### Changed
 
