@@ -113,6 +113,8 @@ import type {
   ToolpathFinish,
   PlateStyle,
   BedOutline,
+  EdgeDragHook,
+  EdgeDragInfo,
 } from './types'
 
 /** How long the camera takes to reach a newly opened model from the old one's framing. */
@@ -179,6 +181,24 @@ function gpuName(r: WebGLRenderer): string {
 
 type Listener = (payload: never) => void
 
+/** A move the app's edge hook follows (setEdgeDrag): what moves, where each object started, and the footprint now. */
+interface EdgeTrack {
+  ids: string[]
+  starts: Map<string, number[]>
+  pointerType: string
+  box: { min: [number, number]; max: [number, number] }
+  client: [number, number]
+}
+
+/** How far, in screen pixels, a press moves before a move becomes one the edge hook hears about. */
+const EDGE_START_PX = 4
+
+/** The ease of a part settling back: a small overshoot, as a released spring. */
+const easeBack = (t: number): number => {
+  const c = 1.4
+  return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2)
+}
+
 interface Drag {
   entry: ObjectEntry
   /** A multi-selection dragged as one: each object's transform at the start, by id. */
@@ -190,6 +210,11 @@ interface Drag {
   startX: number
   center: [number, number]
   startYaw: number
+  /** Where the press was, client pixels, and its pointer type. */
+  press: [number, number]
+  pointerType: string
+  /** The edge hook's view of this move: not asked yet (undefined), declined or not a move (null), or following. */
+  edge?: EdgeTrack | null
 }
 
 export function createViewport(canvas: HTMLCanvasElement, opts: ViewportOptions = {}): Viewport {
@@ -376,6 +401,12 @@ class ViewportImpl implements Viewport {
   /** Objects off the plate, still built, by id, until PARK_MS passes without them coming back. */
   private readonly parked = new Map<string, { entry: ObjectEntry; from: [Float32Array, Uint32Array | Uint16Array][]; timer: ReturnType<typeof setTimeout> }>()
   private arrangeAnim: ((now: number) => boolean) | null = null
+  /** The app's hook for moves that may leave the bed (setEdgeDrag). */
+  private edgeHook: EdgeDragHook | null = null
+  /** Lands a settle-back still easing (settleBack) at once. */
+  private settleNow: (() => void) | null = null
+  /** The view a drag zoomed out from (setDragZoom), to ease back to. */
+  private dragZoomFrom: { pos: Vector3; target: Vector3 } | null = null
   private dragState: Drag | null = null
   private get drag(): Drag | null {
     return this.dragState
@@ -423,7 +454,7 @@ class ViewportImpl implements Viewport {
   private rotDrag: (RingDrag & { entry: ObjectEntry; group: Map<string, number[]> | null; axis: RingAxis; start: number[]; shown: number; snapped: boolean }) | null = null
   private readonly moveArrows = new MoveArrows()
   private moveHandles = false
-  private arrowDrag: { entry: ObjectEntry; group: Map<string, number[]> | null; axis: ArrowAxis; start: number[]; origin: [number, number, number]; t0: number; minDelta: number; delta: number } | null = null
+  private arrowDrag: { entry: ObjectEntry; group: Map<string, number[]> | null; axis: ArrowAxis; start: number[]; origin: [number, number, number]; t0: number; minDelta: number; delta: number; box0: { min: [number, number]; max: [number, number] }; press: [number, number]; pointerType: string; edge?: EdgeTrack | null } | null = null
   private readonly cutGizmo = new CutGizmo()
   private readonly cutRings = new RingSet<'u' | 'v'>(['u', 'v'], { u: '#ff79c6', v: '#bd93f9' })
   /** The move, rotate and scale handles and the cut plane's tilt rings, drawn over the graded frame. */
@@ -2192,6 +2223,7 @@ class ViewportImpl implements Viewport {
     const t = this.moveTarget()
     const axis = t ? this.arrowUnder(ray, handleReach(e)) : null
     if (!t || !axis) return false
+    this.settleNow?.()
     const { o, d } = this.bedRay(ray)
     const { origin } = this.arrowLayout(t)
     const t0 = alongAxis(o, d, origin, arrowDir(axis))
@@ -2199,7 +2231,8 @@ class ViewportImpl implements Viewport {
     // z stops where the lowest point of the model, or of the whole selection, meets the bed
     const minZ = this.groupMinZ(t)
     const first = t[0]!
-    this.arrowDrag = { entry: first, group: t.length > 1 ? this.startsOf(t) : null, axis, start: first.group.matrix.toArray(), origin, t0, minDelta: axis === 'z' ? -Math.max(0, minZ) : -Infinity, delta: 0 }
+    const gb = this.groupBedBox(t)
+    this.arrowDrag = { entry: first, group: t.length > 1 ? this.startsOf(t) : null, axis, start: first.group.matrix.toArray(), origin, t0, minDelta: axis === 'z' ? -Math.max(0, minZ) : -Infinity, delta: 0, box0: { min: [gb.min.x, gb.min.y], max: [gb.max.x, gb.max.y] }, press: [e.clientX, e.clientY], pointerType: e.pointerType }
     this.moveArrows.setActive(axis)
     this.controls.enabled = false
     this.showGizmoLabel(e.clientX, e.clientY, this.arrowText(0))
@@ -2212,7 +2245,7 @@ class ViewportImpl implements Viewport {
     return `${a} ${delta >= 0 ? '+' : ''}${delta.toFixed(1)} mm`
   }
 
-  private arrowMove(ray: Raycaster): void {
+  private arrowMove(ray: Raycaster, e?: { clientX: number; clientY: number }): void {
     const g = this.arrowDrag
     if (!g) return
     const { o, d } = this.bedRay(ray)
@@ -2220,7 +2253,21 @@ class ViewportImpl implements Viewport {
     const t = alongAxis(o, d, g.origin, dir)
     if (t === null) return
     g.delta = Math.max(g.minDelta, t - g.t0)
+    // A finger on the X or Y arrow can take the part past an edge for the app's edge hook, as far as the hook allows.
+    const edge = e ? this.arrowEdge(g, e) : (g.edge ?? null)
+    if (edge && this.edgeHook && g.axis !== 'z') {
+      const reach = this.edgeHook.reachMm()
+      const bed = this.stage.bed
+      const i = g.axis === 'x' ? 0 : 1
+      const size = i === 0 ? bed.widthMm : bed.depthMm
+      g.delta = Math.max(-g.box0.max[i]! - reach, Math.min(size - g.box0.min[i]! + reach, g.delta))
+      const dx = i === 0 ? g.delta : 0
+      const dy = i === 1 ? g.delta : 0
+      edge.box = { min: [g.box0.min[0] + dx, g.box0.min[1] + dy], max: [g.box0.max[0] + dx, g.box0.max[1] + dy] }
+      if (e) edge.client = [e.clientX, e.clientY]
+    }
     this.setGizmoLabel(this.arrowText(g.delta))
+    if (edge && this.edgeHook) this.edgeHook.move(this.edgeInfo(edge))
     if (g.group) {
       this.placeGroup(applyToAll(g.group, new Matrix4().makeTranslation(dir[0] * g.delta, dir[1] * g.delta, dir[2] * g.delta).toArray()), false)
       return this.invalidate()
@@ -2242,6 +2289,10 @@ class ViewportImpl implements Viewport {
     this.moveArrows.setActive(null)
     this.controls.enabled = true
     this.hideGizmoLabel()
+    if (g.edge) {
+      if (cancel) this.edgeHook?.cancel()
+      else if (this.edgeRelease(g.edge)) return this.objectsMoved()
+    }
     if (g.group) this.endGroup(g.group, cancel)
     else if (cancel) {
       g.entry.group.matrix.fromArray(g.start)
@@ -3131,6 +3182,160 @@ class ViewportImpl implements Viewport {
     this.invalidate()
   }
 
+  setDragZoom(scale: number | null, durationMs = 240): void {
+    const now = performance.now()
+    if (scale === null) {
+      const from = this.dragZoomFrom
+      this.dragZoomFrom = null
+      if (from) this.rig.go(from, true, now, durationMs)
+    } else {
+      if (!(scale > 0) || scale >= 1) return
+      // the view the drag left: where the camera is going if it was on its way somewhere, else where it is
+      const m = this.rig.move
+      this.dragZoomFrom ??= m ? { pos: m.toPos.clone(), target: m.toTarget.clone() } : { pos: this.camera.position.clone(), target: this.controls.target.clone() }
+      const t = this.dragZoomFrom.target
+      const off = this.dragZoomFrom.pos.clone().sub(t)
+      this.rig.go({ pos: t.clone().add(off.multiplyScalar(1 / scale)), target: t.clone() }, true, now, durationMs)
+    }
+    this.invalidate()
+  }
+
+  setEdgeDrag(hook: EdgeDragHook | null): void {
+    this.edgeHook = hook
+  }
+
+  cancelDrag(): boolean {
+    const d = this.drag
+    const a = this.arrowDrag
+    if (!d && !a) return false
+    if (d) {
+      this.drag = null
+      if (d.edge) this.edgeHook?.cancel()
+      this.settleBack(d.group ?? new Map([[d.entry.id, d.start]]), true)
+    }
+    if (a) {
+      // the arrow's own cancel puts the objects back; the hook hears once
+      const followed = a.edge
+      a.edge = null
+      this.arrowEnd(true)
+      if (followed) this.edgeHook?.cancel()
+    }
+    this.controls.enabled = true
+    this.invalidate()
+    return true
+  }
+
+  placeReadout(x: number, y: number): void {
+    const el = this.gizmoLabel
+    if (!el || el.style.display === 'none') return
+    el.style.left = `${Math.round(x)}px`
+    el.style.top = `${Math.round(y)}px`
+  }
+
+  /** The edge hook's payload for a move it follows. */
+  private edgeInfo(t: EdgeTrack): EdgeDragInfo {
+    return { ids: t.ids, box: { min: [...t.box.min], max: [...t.box.max] }, client: [...t.client], pointerType: t.pointerType }
+  }
+
+  /** Starts the edge hook on a move drag once the pointer has gone a few pixels; null when there is no hook or it declined. */
+  private moveEdge(d: Drag, e: { clientX: number; clientY: number }): EdgeTrack | null {
+    if (d.edge !== undefined) return d.edge
+    if (!this.edgeHook || d.kind !== 'move' || this.mode !== 'prepare') return (d.edge = null)
+    if (Math.hypot(e.clientX - d.press[0], e.clientY - d.press[1]) < EDGE_START_PX) return null
+    const tx = d.start[12] ?? 0
+    const ty = d.start[13] ?? 0
+    const track: EdgeTrack = {
+      ids: d.group ? [...d.group.keys()] : [d.entry.id],
+      starts: d.group ? new Map(d.group) : new Map([[d.entry.id, d.start.slice()]]),
+      pointerType: d.pointerType,
+      box: { min: [tx + d.rel.min[0], ty + d.rel.min[1]], max: [tx + d.rel.max[0], ty + d.rel.max[1]] },
+      client: [e.clientX, e.clientY],
+    }
+    return (d.edge = this.edgeHook.start(this.edgeInfo(track)) ? track : null)
+  }
+
+  /** The same for a move arrow: only a finger on the X or Y arrow, as a phone moves a part only by its arrows. */
+  private arrowEdge(g: NonNullable<ViewportImpl['arrowDrag']>, e: { clientX: number; clientY: number }): EdgeTrack | null {
+    if (g.edge !== undefined) return g.edge
+    if (!this.edgeHook || g.axis === 'z' || g.pointerType !== 'touch' || this.mode !== 'prepare') return (g.edge = null)
+    if (Math.hypot(e.clientX - g.press[0], e.clientY - g.press[1]) < EDGE_START_PX) return null
+    const ids = g.group ? [...g.group.keys()] : [g.entry.id]
+    const track: EdgeTrack = {
+      ids,
+      starts: g.group ? new Map(g.group) : new Map([[g.entry.id, g.start.slice()]]),
+      pointerType: g.pointerType,
+      box: { min: [...g.box0.min], max: [...g.box0.max] },
+      client: [e.clientX, e.clientY],
+    }
+    return (g.edge = this.edgeHook.start(this.edgeInfo(track)) ? track : null)
+  }
+
+  /**
+   * A release the edge hook follows. A footprint all on the bed is a normal move (false: the caller reports it). Past
+   * an edge the hook decides: the app took the objects to another plate, or they ease back to where they started.
+   */
+  private edgeRelease(t: EdgeTrack): boolean {
+    const hook = this.edgeHook
+    if (!hook) return false
+    const bed = this.stage.bed
+    const eps = 1e-6
+    const onBed = t.box.min[0] >= -eps && t.box.min[1] >= -eps && t.box.max[0] <= bed.widthMm + eps && t.box.max[1] <= bed.depthMm + eps
+    let verdict: 'commit' | 'back' = 'back'
+    try {
+      verdict = hook.end({ ...this.edgeInfo(t), onBed })
+    } catch {
+      verdict = 'back'
+    }
+    if (onBed) return false
+    if (verdict === 'back') this.settleBack(t.starts, true)
+    this.invalidate()
+    return true
+  }
+
+  /** Puts objects back where a move started: eased with a small overshoot, or at once under reduced motion. */
+  private settleBack(starts: ReadonlyMap<string, number[]>, animate: boolean): void {
+    const moves: { o: ObjectEntry; from: number[]; to: number[] }[] = []
+    for (const [id, to] of starts) {
+      const o = this.objects.get(id)
+      if (o) moves.push({ o, from: o.group.matrix.toArray(), to })
+    }
+    const put = (k: number): void => {
+      for (const mv of moves) {
+        const m = mv.to.slice()
+        for (const i of [12, 13, 14]) m[i] = (mv.from[i] ?? 0) + ((mv.to[i] ?? 0) - (mv.from[i] ?? 0)) * k
+        mv.o.group.matrix.fromArray(m)
+        mv.o.group.matrixWorldNeedsUpdate = true
+      }
+    }
+    if (!animate || reducedMotion() || !moves.length) {
+      put(1)
+      this.objectsMoved()
+      return
+    }
+    let t0 = -1
+    const anim = (now: number): boolean => {
+      if (t0 < 0) t0 = now
+      const k = Math.min(1, (now - t0) / 320)
+      put(easeBack(k))
+      if (k >= 1) {
+        this.settleNow = null
+        if (this.arrangeAnim === anim) this.arrangeAnim = null
+        this.objectsMoved()
+        return false
+      }
+      return true
+    }
+    this.arrangeAnim = anim
+    // a press before it ends lands the objects first, so the next move starts from where they belong
+    this.settleNow = () => {
+      this.settleNow = null
+      if (this.arrangeAnim === anim) this.arrangeAnim = null
+      put(1)
+      this.objectsMoved()
+    }
+    this.invalidate()
+  }
+
   setProjection(projection: Projection): void {
     if (projection === this.projection) return
     const cam = this.camera
@@ -3644,6 +3849,7 @@ class ViewportImpl implements Viewport {
       const sel = this.selectedEntries()
       const together = sel.length > 1 && sel.some((o) => o.id === p.entry.id)
       if (!together) this.selectIds([p.entry.id])
+      this.settleNow?.()
       const bh = bedHit(e)
       if (!bh) return
       const m = p.entry.group.matrix.toArray()
@@ -3661,6 +3867,8 @@ class ViewportImpl implements Viewport {
         startX: e.clientX,
         center: [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2],
         startYaw: Math.atan2(m[1] ?? 0, m[0] ?? 1),
+        press: [e.clientX, e.clientY],
+        pointerType: e.pointerType,
       }
       this.controls.enabled = false
       el.setPointerCapture(e.pointerId)
@@ -3702,7 +3910,7 @@ class ViewportImpl implements Viewport {
       }
       if (this.arrowDrag) {
         setRay(e)
-        this.arrowMove(ray)
+        this.arrowMove(ray, e)
         return
       }
       if (this.cutDrag) {
@@ -3779,8 +3987,18 @@ class ViewportImpl implements Viewport {
           x = Math.round(x / mv.snapStepMm) * mv.snapStepMm
           y = Math.round(y / mv.snapStepMm) * mv.snapStepMm
         }
-        x = Math.max(-d.rel.min[0], Math.min(bed.widthMm - d.rel.max[0], x))
-        y = Math.max(-d.rel.min[1], Math.min(bed.depthMm - d.rel.max[1], y))
+        const edge = this.moveEdge(d, e)
+        if (edge && this.edgeHook) {
+          // The app's edge hook lets the footprint go past the bed's edges, as far as it says.
+          const reach = this.edgeHook.reachMm()
+          x = Math.max(-d.rel.max[0] - reach, Math.min(bed.widthMm - d.rel.min[0] + reach, x))
+          y = Math.max(-d.rel.max[1] - reach, Math.min(bed.depthMm - d.rel.min[1] + reach, y))
+          edge.box = { min: [x + d.rel.min[0], y + d.rel.min[1]], max: [x + d.rel.max[0], y + d.rel.max[1]] }
+          edge.client = [e.clientX, e.clientY]
+        } else {
+          x = Math.max(-d.rel.min[0], Math.min(bed.widthMm - d.rel.max[0], x))
+          y = Math.max(-d.rel.min[1], Math.min(bed.depthMm - d.rel.max[1], y))
+        }
         m.elements[12] = x
         m.elements[13] = y
       } else {
@@ -3791,6 +4009,7 @@ class ViewportImpl implements Viewport {
         const r = new Matrix4().makeTranslation(cx, cy, 0).multiply(new Matrix4().makeRotationZ(yaw - d.startYaw)).multiply(new Matrix4().makeTranslation(-cx, -cy, 0))
         m.premultiply(r)
       }
+      if (d.edge && this.edgeHook) this.edgeHook.move(this.edgeInfo(d.edge))
       if (d.group) {
         // the pressed object's change, start to now, applied to every object of the selection
         const change = m.clone().multiply(new Matrix4().fromArray(d.start).invert())
@@ -3881,6 +4100,7 @@ class ViewportImpl implements Viewport {
         // Model with faces or edges in the pick filter: a press that never moved is a click, and picks what is under it.
         const click = (this.pickFaces || this.pickEdges) && e.button === 0 && down !== null && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 5
         if (click) {
+          if (d.edge) this.edgeHook?.cancel()
           // put back any sub-click nudge the drag made
           if (d.group) this.endGroup(d.group, true)
           else {
@@ -3888,6 +4108,11 @@ class ViewportImpl implements Viewport {
             d.entry.group.matrixWorldNeedsUpdate = true
           }
         } else {
+          if (d.edge && this.edgeRelease(d.edge)) {
+            this.objectsMoved()
+            down = null
+            return
+          }
           if (d.group) this.endGroup(d.group, false)
           else this.emit('transform', { id: d.entry.id, transform: d.entry.group.matrix.toArray(), final: true })
           this.objectsMoved()
@@ -3972,9 +4197,15 @@ class ViewportImpl implements Viewport {
         this.painter.end()
       }
       if (this.drag) {
-        this.drag.entry.group.matrix.fromArray(this.drag.start)
-        this.drag.entry.group.matrixWorldNeedsUpdate = true
+        const d = this.drag
         this.drag = null
+        if (d.edge) this.edgeHook?.cancel()
+        // a group's drag puts every object of it back, not only the pressed one
+        if (d.group) this.endGroup(d.group, true)
+        else {
+          d.entry.group.matrix.fromArray(d.start)
+          d.entry.group.matrixWorldNeedsUpdate = true
+        }
         this.invalidate()
       }
       this.controls.enabled = true
