@@ -1,0 +1,78 @@
+{
+  "name": "@slicerx/step-reader",
+  "version": "0.1.0",
+  "private": false,
+  "description": "STEP files (AP203, AP214, AP242) to meshes in millimeters for browsers, workers and Node, on Open CASCADE Technology",
+  "license": "Apache-2.0 AND LGPL-2.1-only AND LGPL-2.1-only WITH OCCT-exception-1.0 AND MIT AND Apache-2.0 WITH LLVM-exception",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/slicerx-oss/slicerx.git",
+    "directory": "packages/step-reader"
+  },
+  "homepage": "https://github.com/slicerx-oss/slicerx/tree/main/packages/step-reader#readme",
+  "keywords": [
+    "step",
+    "stp",
+    "cad",
+    "mesh",
+    "3d-printing",
+    "wasm"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./node": "./src/node.ts",
+    "./occt-import-js.wasm": "./src/occt-import-js.wasm",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "NOTICE",
+    "SOURCE.md",
+    "LICENSE-APACHE",
+    "LICENSE-occt-import-js.txt",
+    "LICENSE-occt.txt",
+    "OCCT_LGPL_EXCEPTION.txt",
+    "LICENSE-emscripten.txt",
+    "LICENSE-musl.txt",
+    "LICENSE-libcxx.txt",
+    "build.sh",
+    "source-archive.sh",
+    "patches"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      },
+      "./node": {
+        "types": "./dist/node.d.ts",
+        "import": "./dist/node.js"
+      },
+      "./occt-import-js.wasm": "./dist/occt-import-js.wasm",
+      "./package.json": "./package.json"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "prepack": "node scripts/build.mjs",
+    "prepublishOnly": "node ../../scripts/publish-guard.mjs && node scripts/check-source-release.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.0",
+    "esbuild": "0.28.2",
+    "typescript": "5.9.3",
+    "vite": "8.3.1",
+    "vitest": "5.0.2"
+  }
+}

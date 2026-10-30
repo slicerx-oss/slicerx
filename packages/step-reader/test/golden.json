@@ -1,0 +1,161 @@
+{
+ "assembly.step:normal": {
+  "objSha256": "ba7cb70505e937d66bf7f37cb1492fe2e632d5f2ced5b769b6b361110eaf3c59",
+  "objBytes": 12782,
+  "triangles": 328,
+  "toleranceMm": 0.01,
+  "unit": "millimeter",
+  "notes": [],
+  "objects": [
+   {
+    "name": "assembly",
+    "bodies": [
+     [
+      "base",
+      12
+     ],
+     [
+      "post",
+      304
+     ]
+    ]
+   },
+   {
+    "name": "cube",
+    "bodies": [
+     [
+      "cube",
+      12
+     ]
+    ]
+   }
+  ]
+ },
+ "assembly.step:coarser": {
+  "objSha256": "33c31f0059544bba7a1ec17dff80a107cff0bc1c3adb856a2a5b0692e2439c2f",
+  "objBytes": 6225,
+  "triangles": 160,
+  "toleranceMm": 0.05,
+  "unit": "millimeter",
+  "notes": [],
+  "objects": [
+   {
+    "name": "assembly",
+    "bodies": [
+     [
+      "base",
+      12
+     ],
+     [
+      "post",
+      136
+     ]
+    ]
+   },
+   {
+    "name": "cube",
+    "bodies": [
+     [
+      "cube",
+      12
+     ]
+    ]
+   }
+  ]
+ },
+ "assembly.step:finer": {
+  "objSha256": "197f5ba46e43b9e2a9535379d581621869ba3017b171fcac9fc6a8ff2a275e7d",
+  "objBytes": 22709,
+  "triangles": 584,
+  "toleranceMm": 0.003,
+  "unit": "millimeter",
+  "notes": [],
+  "objects": [
+   {
+    "name": "assembly",
+    "bodies": [
+     [
+      "base",
+      12
+     ],
+     [
+      "post",
+      560
+     ]
+    ]
+   },
+   {
+    "name": "cube",
+    "bodies": [
+     [
+      "cube",
+      12
+     ]
+    ]
+   }
+  ]
+ },
+ "bracket-inch.stp:normal": {
+  "objSha256": "cb444307a055637dd9c5ca18d6ff7b9ac872a3e53658feba965285445cf628b7",
+  "objBytes": 18411,
+  "triangles": 464,
+  "toleranceMm": 0.01,
+  "unit": "inch",
+  "notes": [
+   "Converted from inches to millimeters."
+  ],
+  "objects": [
+   {
+    "name": "bracket-inch",
+    "bodies": [
+     [
+      "bracket",
+      464
+     ]
+    ]
+   }
+  ]
+ },
+ "bracket-inch.stp:coarser": {
+  "objSha256": "5876289d1fda4e9691d594c28bd5ae80bfc8a5d404158b704000984db5bbebe5",
+  "objBytes": 9168,
+  "triangles": 232,
+  "toleranceMm": 0.05,
+  "unit": "inch",
+  "notes": [
+   "Converted from inches to millimeters."
+  ],
+  "objects": [
+   {
+    "name": "bracket-inch",
+    "bodies": [
+     [
+      "bracket",
+      232
+     ]
+    ]
+   }
+  ]
+ },
+ "bracket-inch.stp:finer": {
+  "objSha256": "9e284c0ec93c0f1ee1cb5e51f4ff228ef581f385535981e261f8bb434102430e",
+  "objBytes": 33857,
+  "triangles": 844,
+  "toleranceMm": 0.003,
+  "unit": "inch",
+  "notes": [
+   "Converted from inches to millimeters."
+  ],
+  "objects": [
+   {
+    "name": "bracket-inch",
+    "bodies": [
+     [
+      "bracket",
+      844
+     ]
+    ]
+   }
+  ]
+ }
+}
