@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineConfig } from '@playwright/test'
 
@@ -19,6 +19,11 @@ process.env['SX_TEST_HUB_PORT'] = hubPort
 // build), on a free loopback port picked here and shared with the workers through the environment.
 const sxBin = process.env['SX_CLI_BIN'] || resolve(import.meta.dirname, '../../target/release/sx')
 if (!existsSync(sxBin)) throw new Error(`The browser suite slices with the native sx (${sxBin}); build it with cargo build --release -p sx-cli, or set SX_CLI_BIN`)
+// The app loads the geometry engine from packages/geom/wasm/pkg (git-ignored). CI's wasm job builds it and the e2e jobs
+// download it; a checkout without it logs a 404 for the module and shows the fit check warning toast, which CI never sees.
+const geomPkg = resolve(import.meta.dirname, '../../packages/geom/wasm/pkg')
+const geomMissing = ['sx_geom_core.wasm', 'sx_geom_wasm.wasm'].filter((f) => !(existsSync(resolve(geomPkg, f)) && statSync(resolve(geomPkg, f)).size > 0))
+if (geomMissing.length) throw new Error(`The browser suite needs the geometry engine, and ${geomPkg} lacks ${geomMissing.join(' and ')}; build it with sh packages/geom/wasm/scripts/build.sh, or copy packages/geom/wasm/pkg from a checkout that has it`)
 const nativePort = process.env['SX_E2E_NATIVE_PORT'] || freePort()
 process.env['SX_E2E_NATIVE_PORT'] = nativePort
 const nativeUrl = `http://127.0.0.1:${nativePort}`
