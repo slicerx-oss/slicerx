@@ -70,9 +70,10 @@ pub(crate) fn apply(gcode: &[u8], cfg: &PrintConfig) -> Vec<u8> {
             .iter()
             .any(|s| c.eq_ignore_ascii_case(s))
     };
-    // The output so far, each line with its time.
-    let mut out: Vec<(String, f64)> = Vec::with_capacity(lines.len() + 64);
+    // The output so far, each line with its time and, on a tool change, the tool it parks.
+    let mut out: Vec<(String, f64, Option<usize>)> = Vec::with_capacity(lines.len() + 64);
     let mut layer = 0u32;
+    let mut active: Option<usize> = None;
     for (i, line) in lines.iter().enumerate() {
         if line.starts_with(";LAYER_CHANGE") {
             layer += 1;
@@ -81,6 +82,10 @@ pub(crate) fn apply(gcode: &[u8], cfg: &PrintConfig) -> Vec<u8> {
         let tool = (cmd.len() >= 2 && cmd.starts_with('T'))
             .then(|| cmd[1..].parse::<usize>().ok())
             .flatten();
+        let parks = tool.and_then(|n| active.filter(|&a| a != n));
+        if tool.is_some() {
+            active = tool;
+        }
         if let Some(tool) = tool {
             let slot = u8::try_from(tool + 1).unwrap_or(1);
             let temp = if layer > 1 {
@@ -103,11 +108,20 @@ pub(crate) fn apply(gcode: &[u8], cfg: &PrintConfig) -> Vec<u8> {
                 let started = back;
                 let mut idx = out.len().checked_sub(1 + back);
                 let mut stop = false;
+                let mut parked = false;
                 while let Some(j) = idx {
-                    let Some((l, t)) = out.get_mut(j) else { break };
+                    let Some((l, t, parks)) = out.get_mut(j) else {
+                        break;
+                    };
                     let c = command(l);
                     if *t <= threshold || c == cmd || start_like(c) {
                         stop = c == cmd || start_like(c);
+                        break;
+                    }
+                    // The change that parked this tool: before it the tool was printing, so a window that reaches
+                    // back past it starts there, after the tool's standby cooldown.
+                    if *parks == Some(tool) {
+                        parked = true;
                         break;
                     }
                     // A standby cooldown of this tool inside the window is not needed any more.
@@ -129,6 +143,9 @@ pub(crate) fn apply(gcode: &[u8], cfg: &PrintConfig) -> Vec<u8> {
                 let t = out.get(j).map_or(0.0, |l| l.1);
                 // Two steps never put their lines at the same time.
                 if back == started || (t - last_insert).abs() < f64::EPSILON {
+                    if parked {
+                        break;
+                    }
                     continue;
                 }
                 last_insert = t;
@@ -137,13 +154,16 @@ pub(crate) fn apply(gcode: &[u8], cfg: &PrintConfig) -> Vec<u8> {
                 let comment = format!("preheat T{tool} time: {secs}s");
                 let mut l = Vec::new();
                 crate::gcode::orca_temperature_line(&mut l, flavor, tool, temp, &comment);
-                out.insert(j + 1, (String::from_utf8_lossy(&l).into_owned(), t));
+                out.insert(j + 1, (String::from_utf8_lossy(&l).into_owned(), t, None));
                 back += 1;
+                if parked {
+                    break;
+                }
             }
         }
-        out.push(((*line).to_owned(), times.get(i).copied().unwrap_or(0.0)));
+        out.push(((*line).to_owned(), times.get(i).copied().unwrap_or(0.0), parks));
     }
-    out.into_iter().flat_map(|(l, _)| l.into_bytes()).collect()
+    out.into_iter().flat_map(|(l, _, _)| l.into_bytes()).collect()
 }
 
 #[cfg(test)]
@@ -175,6 +195,49 @@ mod tests {
                 assert_eq!(output.matches(motion).count(), 1);
             }
         }
+    }
+    #[test]
+    fn a_short_park_preheats_from_the_change_that_parked_the_tool() {
+        // T0 prints for 30 s, is parked with its standby cooldown, and comes back after 10 s on T1: the 30 s
+        // window reaches back into T0's own printing. The cooldown stays, and the preheat goes where T0 was
+        // parked, never while T0 is still printing.
+        let mut cfg = PrintConfig {
+            gcode_flavor: crate::config::GcodeFlavor::Marlin,
+            nozzle_temperature: vec![205.0, 215.0],
+            ..PrintConfig::default()
+        };
+        cfg.raw.insert("preheat_time".into(), serde_json::json!(30));
+        let input = "T0\nG1 X10 F600\nG1 X310\nM104 T0 S55 ; cooldown\nT1\nG1 X410\nM104 T1 S65 ; cooldown\nT0\nG1 X420\n";
+        let output = String::from_utf8(apply(input.as_bytes(), &cfg)).expect("gcode");
+        assert!(output.contains("M104 T0 S55 ; cooldown\n"), "{output}");
+        assert_eq!(output.matches("; removed M104").count(), 0, "{output}");
+        assert_eq!(output.matches("preheat T0 time:").count(), 1, "{output}");
+        let preheat = output.find("preheat T0 time:").expect("preheat");
+        let parked = output.find("\nT1\n").expect("park");
+        let back = output.find("\nT0\n").expect("change back");
+        assert!(parked < preheat && preheat < back, "{output}");
+        for motion in ["G1 X10 F600", "G1 X310", "G1 X410", "G1 X420"] {
+            assert_eq!(output.matches(motion).count(), 1);
+        }
+    }
+
+    #[test]
+    fn a_long_park_preheats_inside_the_park() {
+        // Parked for two minutes: the preheat goes before the move that ends inside the 30 s window, after
+        // the park, and the cooldown stays.
+        let mut cfg = PrintConfig {
+            gcode_flavor: crate::config::GcodeFlavor::Marlin,
+            nozzle_temperature: vec![205.0, 215.0],
+            ..PrintConfig::default()
+        };
+        cfg.raw.insert("preheat_time".into(), serde_json::json!(30));
+        let input = "T0\nG1 X10 F600\nM104 T0 S55 ; cooldown\nT1\nG1 X310\nG1 X1210\nT0\nG1 X1220\n";
+        let output = String::from_utf8(apply(input.as_bytes(), &cfg)).expect("gcode");
+        assert!(output.contains("M104 T0 S55 ; cooldown\n"), "{output}");
+        let preheat = output.find("preheat T0 time:").expect("preheat");
+        let first = output.find("G1 X310\n").expect("first part");
+        let second = output.find("G1 X1210\n").expect("second part");
+        assert!(first < preheat && preheat < second, "{output}");
     }
     use std::fmt::Write;
 
