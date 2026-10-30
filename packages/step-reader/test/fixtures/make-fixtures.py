@@ -76,3 +76,6 @@ def colored(text, colors):
 
 # The assembly with a red base and a blue cube; the post has no color of its own.
 (here / "assembly-colors.step").write_text(colored((here / "assembly.step").read_text(), {41: (371, (1.0, 0.0, 0.0)), 507: (837, (0.0, 0.25, 1.0))}))
+
+# The inch bracket saved with a UTF-8 byte order mark (EF BB BF) in front, as some Windows tools save text files.
+(here / "bracket-inch-bom.stp").write_bytes(b"\xef\xbb\xbf" + (here / "bracket-inch.stp").read_bytes())

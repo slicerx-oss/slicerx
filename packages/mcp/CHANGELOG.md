@@ -12,6 +12,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 - `slicerx_arrange` places as many copies of one object on a plate as rows of their boxes hold, around the objects that stay. Before, the nest could fall one short of the rows on plain boxes: of eight 10 x 50 mm bars 2 mm apart on a 100 x 60 mm bed it placed seven and refused the eighth.
 - The mimir session read-back (`mimir_session`) lists `mechanism` among the reasons a turn can start on the larger model, and a turn no longer starts there only because a picture or PDF came with it.
 
+### Fixed
+
+- `slicerx_step_read` reads a STEP file saved with a UTF-8 byte order mark like the same file without one, once the @slicerx/step-reader installed beside it is a release after 0.1.0. Before, it was refused with `step_not_step`.
+
 ## [0.2.6] - 2026-10-29
 
 ### Added

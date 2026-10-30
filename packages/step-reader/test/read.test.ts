@@ -76,6 +76,18 @@ describe('reading STEP files', () => {
     expect(read.notes[0]).toBe('Converted from inches to millimeters.')
   })
 
+  it('reads a file saved with a UTF-8 byte order mark the same as one without', () => {
+    const bom = file('bracket-inch-bom.stp')
+    expect([...bom.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+    expect(stepUnit(bom)).toBe('inch')
+    const plain = readStep(occt, file('bracket-inch.stp'), 'bracket-inch.stp', 'normal', { appName: 'SlicerX' })
+    const read = readStep(occt, bom, 'bracket-inch.stp', 'normal', { appName: 'SlicerX' })
+    expect(toObj(read)).toBe(toObj(plain))
+    expect({ ...read, objects: read.objects.map((o) => o.name) }).toEqual({ ...plain, objects: plain.objects.map((o) => o.name) })
+    // The caller's bytes are left as they were.
+    expect([...bom.subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+  })
+
   it('meshes coarser and finer on request', () => {
     const n = (q: StepQuality) => readStep(occt, file('bracket-inch.stp'), 'b.stp', q).triangles
     expect(n('coarser')).toBeLessThan(n('normal'))
@@ -97,6 +109,11 @@ describe('reading STEP files', () => {
     expect(fail(file('empty.step'))).toEqual(['no_solids', expect.stringMatching(/^has no solids or surfaces this reader can read/)])
     expect(fail(new TextEncoder().encode('solid cube\nendsolid cube\n'))).toEqual(['not_step', expect.stringMatching(/^is not a STEP file/)])
     expect(fail(new TextEncoder().encode('<?xml version="1.0"?><iso_10303_28/>'))).toEqual(['step_xml', expect.stringMatching(/^is a STEP XML file/)])
+    // A byte order mark alone is an empty file, and one in front of another format is still that format.
+    const bom = (s: string) => Uint8Array.from([0xef, 0xbb, 0xbf, ...new TextEncoder().encode(s)])
+    expect(fail(bom(''))).toEqual(['empty', 'is empty.'])
+    expect(fail(bom('solid cube\nendsolid cube\n'))).toEqual(['not_step', expect.stringMatching(/^is not a STEP file/)])
+    expect(fail(bom('<?xml version="1.0"?><iso_10303_28/>'))).toEqual(['step_xml', expect.stringMatching(/^is a STEP XML file/)])
     expect(fail(new Uint8Array(STEP_MAX_MB * 1024 * 1024 + 1))).toEqual(['too_large', `is 100 MB. STEP files up to ${STEP_MAX_MB} MB can be opened.`])
   })
 })

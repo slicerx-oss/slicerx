@@ -17,7 +17,7 @@ type Info = { file: string; unit: string; triangles: number; objects: { name: st
 async function withServer(run: (h: Awaited<ReturnType<typeof connect>>, call: (args: Record<string, unknown>) => Promise<CallToolResult>) => Promise<void>) {
   const h = await connect()
   try {
-    for (const f of ['assembly.step', 'assembly-colors.step', 'bracket-inch.stp', 'empty.step']) copyFileSync(join(fixtures, f), join(h.dir, f))
+    for (const f of ['assembly.step', 'assembly-colors.step', 'bracket-inch.stp', 'bracket-inch-bom.stp', 'empty.step']) copyFileSync(join(fixtures, f), join(h.dir, f))
     await run(h, async (args) => (await h.client.callTool({ name: 'slicerx_step_read', arguments: args })) as CallToolResult)
   } finally {
     await h.client.close()
@@ -53,6 +53,20 @@ describe('slicerx_step_read', () => {
       expect(cube.bounds.max.map((v, k) => Math.round((v - cube.bounds.min[k]!) * 1000) / 1000)).toEqual([10, 10, 10])
       expect(info.output).toBeUndefined()
       expect(text(r)).toContain('"triangles":328')
+    })
+  })
+
+  it('reads a STEP file saved with a UTF-8 byte order mark like the same file without one', async () => {
+    await withServer(async (h, call) => {
+      const plain = data<Info>(await call({ model: join(h.dir, 'bracket-inch.stp') }))
+      const r = await call({ model: join(h.dir, 'bracket-inch-bom.stp') })
+      expect(r.isError, text(r)).toBeFalsy()
+      const info = data<Info>(r)
+      expect(info.unit).toBe('inch')
+      expect(info.triangles).toBe(plain.triangles)
+      expect(info.objects.map((o) => [o.name, o.bodies.map((b) => [b.name, b.triangles, b.bounds])])).toEqual([
+        ['bracket-inch-bom', plain.objects[0]!.bodies.map((b) => [b.name, b.triangles, b.bounds])],
+      ])
     })
   })
 

@@ -102,9 +102,17 @@ export function stepUnit(bytes: Uint8Array): StepUnit | null {
   return p === '.MILLI.' ? 'millimeter' : p === '.CENTI.' ? 'centimeter' : p === '$' ? 'meter' : null
 }
 
+/**
+ * The bytes after a UTF-8 byte order mark (EF BB BF), which some editors and Windows tools write in front of the
+ * ISO-10303-21 line. OpenCASCADE refuses a file that starts with one, so it comes off before anything reads the file.
+ */
+function withoutBom(bytes: Uint8Array): Uint8Array {
+  return bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf ? bytes.subarray(3) : bytes
+}
+
 /** Why the bytes are not a STEP file we read, or null when they are one. */
 function notStep(bytes: Uint8Array): StepError | null {
-  const head = latin1.decode(bytes.subarray(0, 4096)).replace(/^\uFEFF/, '').trimStart()
+  const head = latin1.decode(bytes.subarray(0, 4096)).trimStart()
   if (head.startsWith('ISO-10303-21')) return null
   if (/ISO-10303-28|<\?xml/i.test(head)) return new StepError('step_xml', 'is a STEP XML file. Save it from your CAD program as a regular STEP file (AP203, AP214 or AP242) and open that.')
   return new StepError('not_step', 'is not a STEP file. A STEP file starts with ISO-10303-21.')
@@ -197,8 +205,9 @@ function colorOf(m: OcctMesh): string | undefined {
 }
 
 /** Reads a STEP file into objects and bodies in millimeters. Throws StepError with a plain reason and a code. */
-export function readStep(occt: Occt, bytes: Uint8Array, fileName: string, quality: StepQuality = 'normal', opts: ReadOptions = {}): StepRead {
+export function readStep(occt: Occt, file: Uint8Array, fileName: string, quality: StepQuality = 'normal', opts: ReadOptions = {}): StepRead {
   const app = opts.appName ?? 'this reader'
+  const bytes = withoutBom(file)
   if (bytes.length === 0) throw new StepError('empty', 'is empty.')
   if (bytes.length > STEP_MAX_MB * 1024 * 1024) throw new StepError('too_large', `is ${Math.round(bytes.length / 1024 / 1024)} MB. STEP files up to ${STEP_MAX_MB} MB can be opened.`)
   const why = notStep(bytes)
