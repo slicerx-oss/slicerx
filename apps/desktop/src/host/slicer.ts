@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // SlicerHost over the native `slice` commands. Geometry and results cross as
 // raw bytes; only the small request and info objects are JSON.
-import type { ChamberCooling, Collision, CollisionFix, GcodeExport, MeshHandle, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import type { ChamberCooling, Collision, CollisionFix, GcodeExport, MeshHandle, PlateCheck, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import { readPlateCheck } from '@slicerx/contracts'
 import { chamberCoolingOf, encodeParts, sliceClock } from '@slicerx/slicer'
 import { Channel, invoke } from '@tauri-apps/api/core'
 
@@ -101,6 +102,28 @@ async function load(bytes: Uint8Array, name: string): Promise<MeshHandle> {
 }
 
 let nextJob = 1
+let nextCheck = 1
+
+/** The request as the native commands read it: meshes by their numeric id. */
+function nativeRequest(req: SliceRequest, options: Record<string, unknown> = {}): string {
+  return JSON.stringify({ plate: { ...req.plate, objects: req.plate.objects.map((o) => ({ ...o, mesh: Number(o.mesh), ...(o.volumes ? { volumes: o.volumes.map((v) => ({ ...v, mesh: Number(v.mesh) })) } : {}) })) }, config: req.config, options: { ...options, ...(req.options ?? {}) } })
+}
+
+/**
+ * heimdall's plate check on the blocking pool (the check_plate command). Each check is numbered, so the shell skips one
+ * still waiting when a newer one comes; an abort lets the answer go.
+ */
+async function checkPlate(req: SliceRequest, opts?: { signal?: AbortSignal }): Promise<PlateCheck> {
+  const signal = opts?.signal
+  const canceled = () => new DOMException('Plate check canceled', 'AbortError')
+  if (signal?.aborted) throw canceled()
+  const raw = await invoke('check_plate', { request: nativeRequest(req), job: nextCheck++ }).catch((e: unknown) => {
+    if (signal?.aborted) throw canceled()
+    throw e
+  })
+  if (signal?.aborted) throw canceled()
+  return readPlateCheck(raw)
+}
 
 /**
  * Where each engine stage sits in the whole slice, from and to, roughly as the time goes on a big model: cutting the
@@ -134,9 +157,10 @@ export function createTauriSlicer(): SlicerHost {
     loadModel: (data, fileName) => load(new Uint8Array(data), fileName),
     reviewScripts: (inputs) => invoke('review_scripts', { inputs }),
     loadParts: (name, parts) => load(encodeParts(parts), `${name}.sxmp`),
+    checkPlate,
     async slice(req: SliceRequest, opts): Promise<SliceResult> {
       const started = performance.now()
-      const request = JSON.stringify({ plate: { ...req.plate, objects: req.plate.objects.map((o) => ({ ...o, mesh: Number(o.mesh), ...(o.volumes ? { volumes: o.volumes.map((v) => ({ ...v, mesh: Number(v.mesh) })) } : {}) })) }, config: req.config, options: { ...sliceClock(), ...(req.options ?? {}) } })
+      const request = nativeRequest(req, sliceClock())
       opts?.onProgress?.({ stage: 'layers', fraction: 0 })
       // A cancel stops the engine between stages; a result that lands anyway is let go at once.
       const job = nextJob++

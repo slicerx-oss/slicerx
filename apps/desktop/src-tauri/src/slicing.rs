@@ -54,6 +54,7 @@ pub struct Slicer {
     jobs: Mutex<HashMap<u32, Arc<AtomicBool>>>,
     next: AtomicU32,
     kept: Kept,
+    checks: Checks,
 }
 
 /// The sessions of the last slices, newest first, by `session_key` (at most [`KEPT_SESSIONS`]): slicing the same
@@ -345,6 +346,58 @@ pub fn cancel_slice(job: u32, state: State<'_, Slicer>) {
     }
 }
 
+/// What a plate check a newer one overtook answers.
+const CHECK_SKIPPED: &str = "plate check skipped: a newer one was asked for";
+
+/// heimdall's check of a by-object plate before a slice ([`sx_core::api::check_plate`]), on the blocking pool, so the
+/// window never waits on it. `job` numbers the page's checks: they run one at a time, and one still waiting when a
+/// newer one is asked for is skipped with an error. It slices nothing and keeps or touches no session.
+#[tauri::command]
+pub async fn check_plate(
+    request: String,
+    job: u32,
+    state: State<'_, Slicer>,
+) -> Result<serde_json::Value, String> {
+    let req: SliceRequest = serde_json::from_str(&request).map_err(|e| format!("request: {e}"))?;
+    let meshes = lock(&state.meshes).clone();
+    let checks = state.checks.clone();
+    checks.newest.fetch_max(job, Ordering::Relaxed);
+    tauri::async_runtime::spawn_blocking(move || run_check(&req, &meshes, &checks, job))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// The checks the page asked for: the newest one's number, and a lock held while one runs.
+#[derive(Default, Clone)]
+struct Checks {
+    newest: Arc<AtomicU32>,
+    running: Arc<Mutex<()>>,
+}
+
+/// Runs check `job` once the one before it is done, unless a newer one was asked for in the meantime.
+fn run_check(
+    req: &SliceRequest,
+    meshes: &HashMap<u32, Arc<Mesh>>,
+    checks: &Checks,
+    job: u32,
+) -> Result<serde_json::Value, String> {
+    let _one = lock(&checks.running);
+    if checks.newest.load(Ordering::Relaxed) > job {
+        return Err(CHECK_SKIPPED.into());
+    }
+    let lookup = |r: &str| -> sx_core::Result<Arc<Mesh>> {
+        r.parse::<u32>()
+            .ok()
+            .and_then(|k| meshes.get(&k).cloned())
+            .ok_or_else(|| Error::Config {
+                key: "plate.objects.mesh",
+                reason: format!("unknown mesh {r}"),
+            })
+    };
+    let check = sx_core::api::check_plate(req, &lookup).map_err(|e| e.to_string())?;
+    serde_json::to_value(&check).map_err(|e| e.to_string())
+}
+
 /// Hands the page a slice's preview, once: the bytes move to the response instead of being copied, and the slice keeps
 /// none. The page reads each slice's preview once and keeps it; a second ask is an error.
 #[tauri::command]
@@ -573,6 +626,78 @@ mod tests {
 
     fn kept_count(state: &Slicer) -> usize {
         lock(&state.kept.sessions).len()
+    }
+
+    /// Two 20 mm cubes printed by object on a P1S, the second `gap` mm to the right of the first.
+    fn by_object_pair(state: &Slicer, gap: f32) -> serde_json::Value {
+        let a = add(state, "a.stl", &cube_stl(20.0, 20.0, 10.0));
+        let b = add(state, "b.stl", &cube_stl(20.0, 20.0, 10.0));
+        serde_json::json!({
+            "plate": { "bed": { "widthMm": 256, "depthMm": 256, "heightMm": 250 }, "objects": [
+                { "id": "a", "name": "a", "mesh": a, "transform": at(100.0, 100.0, 0.0) },
+                { "id": "b", "name": "b", "mesh": b, "transform": at(120.0 + gap, 100.0, 0.0) },
+            ] },
+            "config": {
+                "print_sequence": "by object", "printer_model": "Bambu Lab P1S", "printable_area": ["0x0", "256x0", "256x256"],
+                "printable_height": 250, "extruder_clearance_max_radius": 68, "extruder_clearance_height_to_rod": 34,
+                "extruder_clearance_dist_to_rod": 33, "extruder_clearance_height_to_lid": 90, "nozzle_height": 4.2,
+                "brim_type": "no_brim", "skirt_loops": 0, "layer_height": 0.3, "initial_layer_print_height": 0.3,
+            },
+            "options": { "printerId": "bambu-p1s" },
+        })
+    }
+
+    fn check(state: &Slicer, request: &serde_json::Value, job: u32) -> Result<serde_json::Value, String> {
+        let req: SliceRequest =
+            serde_json::from_str(&request.to_string()).map_err(|e| format!("request: {e}"))?;
+        let meshes = lock(&state.meshes).clone();
+        state.checks.newest.fetch_max(job, Ordering::Relaxed);
+        run_check(&req, &meshes, &state.checks, job)
+    }
+
+    #[test]
+    fn a_plate_check_says_how_sure_each_strike_is_and_keeps_no_session() {
+        let state = Slicer::default();
+        let close = check(&state, &by_object_pair(&state, 3.0), 1).expect("the close pair checks");
+        let hits = close["collisions"].as_array().expect("collisions");
+        let sure = close["certainty"].as_array().expect("certainty");
+        assert_eq!(hits.len(), sure.len(), "{close}");
+        assert!(
+            hits.iter()
+                .zip(sure)
+                .any(|(c, s)| c["severity"] == "hit" && s == "sure"),
+            "the head comes down on the first cube: {close}"
+        );
+        assert!(
+            close["unchecked"].as_array().is_some_and(Vec::is_empty),
+            "{close}"
+        );
+        assert_eq!(close["order"], serde_json::json!(["a", "b"]));
+        // Far apart, nothing the slice would refuse.
+        let apart = check(&state, &by_object_pair(&state, 120.0), 2).expect("the far pair checks");
+        assert!(
+            !apart["collisions"]
+                .as_array()
+                .expect("collisions")
+                .iter()
+                .any(|c| c["severity"] == "hit"),
+            "{apart}"
+        );
+        // It slices nothing, so it keeps no session for the slice.
+        assert_eq!(kept_count(&state), 0);
+    }
+
+    #[test]
+    fn a_plate_check_a_newer_one_overtook_is_skipped() {
+        let state = Slicer::default();
+        let request = by_object_pair(&state, 3.0);
+        state.checks.newest.fetch_max(5, Ordering::Relaxed);
+        assert_eq!(check(&state, &request, 4), Err(CHECK_SKIPPED.to_string()));
+        assert!(check(&state, &request, 5).is_ok());
+        // An unknown mesh is an error, not a clean plate.
+        let mut lost = request.clone();
+        lost["plate"]["objects"][0]["mesh"] = serde_json::json!(999);
+        assert!(check(&state, &lost, 6).is_err());
     }
 
     #[test]
