@@ -138,6 +138,24 @@ precedence = "closest"
 SPDX-FileCopyrightText = ["Viktor Kovacs", "Open CASCADE SAS"]
 SPDX-License-Identifier = "LGPL-2.1-only AND LGPL-2.1-only WITH OCCT-exception-1.0"
 
+# The same reader as the @slicerx/step-reader package (packages/step-reader/SOURCE.md).
+[[annotations]]
+path = [
+  "packages/step-reader/OCCT_LGPL_EXCEPTION.txt",
+  "packages/step-reader/src/occt-import-js.wasm",
+  "packages/step-reader/patches/**",
+]
+precedence = "closest"
+SPDX-FileCopyrightText = ["Viktor Kovacs", "Open CASCADE SAS"]
+SPDX-License-Identifier = "LGPL-2.1-only AND LGPL-2.1-only WITH OCCT-exception-1.0"
+
+# The JavaScript glue Emscripten generated for that wasm.
+[[annotations]]
+path = "packages/step-reader/src/occt-import-js.mjs"
+precedence = "closest"
+SPDX-FileCopyrightText = "Emscripten authors"
+SPDX-License-Identifier = "MIT"
+
 # The outline font for text solids, a subset of Hanken Grotesk SemiBold (packages/geom/fonts/README.md).
 [[annotations]]
 path = [
