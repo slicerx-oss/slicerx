@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "shared-links",
-  "description": "Pages every edition may open in the system browser: the Made possible by SlicerX credit, Bambu Connect's download, Bambu Lab's printer error codes and Ollama's download.",
+  "description": "Pages every edition may open in the system browser: the Made possible by SlicerX credit, Bambu Connect's download, Bambu Lab's printer error codes, Ollama's download and Obico's page for authorizing a printer tunnel.",
   "windows": ["main"],
   "permissions": [
     {
@@ -10,7 +10,8 @@
         { "url": "https://slicerx.app/support" },
         { "url": "https://wiki.bambulab.com/en/software/bambu-connect" },
         { "url": "https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/*" },
-        { "url": "https://ollama.com/download" }
+        { "url": "https://ollama.com/download" },
+        { "url": "https://app.obico.io/tunnels/new/?*" }
       ]
     }
   ]

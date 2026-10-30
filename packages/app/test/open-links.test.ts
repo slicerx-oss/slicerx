@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import slicerxEdition from '../../../editions/slicerx/edition.config.ts'
 import { bugReportsUrl } from '../src/bugs/where'
 import { privacyUrl } from '../src/features/store/routes'
+import { obicoAuthorizeUrl } from '../src/first-run/printer-step'
 import { openLink, openSafely, registerLinkOpener } from '../src/lib/links'
 import { OLLAMA_DOWNLOAD } from '../src/pilot-connect/local-ai'
 import { BAMBU_CONNECT_DOWNLOAD } from '../src/send/bambu-connect'
@@ -72,6 +73,9 @@ function linksOf(config: EditionConfig): string[] {
     ...releases,
     BAMBU_CONNECT_DOWNLOAD,
     OLLAMA_DOWNLOAD,
+    // the Open Obico link of printer setup, for each kind of printer it connects
+    obicoAuthorizeUrl(config.brand.name, 'moonraker'),
+    obicoAuthorizeUrl(config.brand.name, 'octoprint'),
     // the printer error code pages (packages/connect/src/drivers/bambu/hms.rs)
     'https://wiki.bambulab.com/en/x1/troubleshooting/hmscode/0300_4006',
   ]
@@ -98,6 +102,17 @@ describe('the pages the desktop app opens', () => {
     expect(allowed(slicerxEdition).some((p) => globMatches(p, 'https://github.com/someone/else/tree/main'))).toBe(false)
   })
 
+  it('let Open Obico through for any brand name, but no other Obico page', () => {
+    for (const [, config] of editions) {
+      const allow = allowed(config)
+      for (const kind of ['moonraker', 'octoprint'] as const) {
+        const url = new URL(obicoAuthorizeUrl(`${config.brand.name} & Co`, kind)).href
+        expect(allow.some((p) => globMatches(p, url)), url).toBe(true)
+      }
+      expect(allow.some((p) => globMatches(p, 'https://app.obico.io/printers/'))).toBe(false)
+    }
+  })
+
   it('include the source of the exact build, the link from the 0.1.1 crash report', () => {
     expect(allowed(slicerxEdition).some((p) => globMatches(p, `https://github.com/slicerx-oss/slicerx/tree/${COMMIT}`))).toBe(true)
   })
@@ -120,7 +135,7 @@ describe('the pages the desktop app opens', () => {
       'state/send-actions.ts': 1,
       'updates/dialog.tsx': 5,
       'lib/links.ts': 3,
-      'first-run/printer-step.tsx': 1,
+      'first-run/printer-step.tsx': 2,
       'first-run/slicer-step.tsx': 1,
       'first-run/agreement.tsx': 2,
       'commands/builtin.ts': 1,
