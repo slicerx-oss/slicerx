@@ -331,7 +331,9 @@ pub struct SliceRequest {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlateSpec {
-    /// Defaults to a 256 x 256 x 250 mm bed.
+    /// Defaults to a 256 x 256 x 250 mm bed. It starts at the front left corner of the config's `printable_area`, so
+    /// an object without a transform is centered on that area (135.5, 136 for the Snapmaker U1's 270 mm bed from 0.5,
+    /// 1), not on half the bed's size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bed: Option<BedSpec>,
     pub objects: Vec<ObjectSpec>,
@@ -1335,6 +1337,8 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
         depth_mm: b.depth_mm,
         height_mm: b.height_mm,
     });
+    // An object without a transform goes to the middle of the bed, which starts where the printable area does.
+    let middle = crate::plate::bed_middle(bed, &req.config);
     let differing = settings_differ(req);
     let mut objects = Vec::with_capacity(req.plate.objects.len());
     for (i, o) in req.plate.objects.iter().enumerate() {
@@ -1344,7 +1348,7 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
                 key: "plate.objects.transform",
                 reason: format!("expected 16 numbers, got {}", t.len()),
             })?,
-            None => crate::plate::centered_transform(&mesh, bed),
+            None => crate::plate::centered_transform(&mesh, bed, Some(middle)),
         };
         let id = if o.id.is_empty() {
             format!("object-{}", i + 1)
@@ -2840,6 +2844,40 @@ mod tests {
                 .collisions
                 .is_empty()
         );
+    }
+
+    /// An object without a transform goes to the middle of the printable area: on the Snapmaker U1 (area 0.5, 1 to
+    /// 270.5, 271) a 270 mm bed's middle is 135.5, 136; where the area starts at 0, 0 it is half the bed.
+    #[test]
+    fn an_object_without_a_transform_is_centered_on_the_printable_area() {
+        use serde_json::{Value, json};
+        let middle = |config: Value| {
+            let req: SliceRequest = serde_json::from_value(serde_json::json!({
+                "plate": {"bed": {"widthMm": 270, "depthMm": 270, "heightMm": 270}, "objects": [{"id": "c", "mesh": "c"}]},
+                "config": config,
+            }))
+            .unwrap();
+            let t = build_plate(&req, &|_| Ok(cube())).unwrap().objects[0].transform;
+            // the 10 mm cube's middle
+            [t[12] + 5.0, t[13] + 5.0]
+        };
+        for (config, want) in [
+            (
+                json!({"printable_area": ["0.5x1", "270.5x1", "270.5x271", "0.5x271"]}),
+                [135.5, 136.0],
+            ),
+            (
+                json!({"printable_area": ["0x0", "270x0", "270x270", "0x270"]}),
+                [135.0, 135.0],
+            ),
+            (json!({}), [135.0, 135.0]),
+        ] {
+            let got = middle(config.clone());
+            assert!(
+                (got[0] - want[0]).abs() < 1e-4 && (got[1] - want[1]).abs() < 1e-4,
+                "{config}: {got:?}, want {want:?}"
+            );
+        }
     }
 
     fn cube() -> Arc<Mesh> {

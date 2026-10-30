@@ -4614,6 +4614,21 @@ fn a_project_3mf_keeps_its_positions() {
             "plain plate 1",
         ),
         (&plain, 2, &klipper(), vec![[128.0, 128.0]], "plain plate 2"),
+        // and in the middle of the shifted area, 138, 133: a request's bed starts where the area does
+        (
+            &plain,
+            1,
+            &shifted,
+            vec![[118.0, 133.0], [158.0, 133.0]],
+            "plain plate 1 on a shifted area",
+        ),
+        (
+            &plain,
+            2,
+            &shifted,
+            vec![[138.0, 133.0]],
+            "plain plate 2 on a shifted area",
+        ),
     ];
     for (model, plate, config, want, what) in cases {
         let cli = klipper_centers(&plain_slice(
@@ -4624,6 +4639,78 @@ fn a_project_3mf_keeps_its_positions() {
         ));
         near(&cli, &want, &format!("sx slice, {what}"));
         near(&request(model, plate, config), &want, &format!("request, {what}"));
+    }
+}
+
+/// The Snapmaker U1's printable area runs from 0.5, 1 to 270.5, 271, so its middle is 135.5, 136. A request with the
+/// U1's 270 mm bed, as the app and MCP clients send it, places a plate the way `sx slice <file>` does: a 3MF that is
+/// no slicer's project and a mesh without a transform go to that middle, and a project's build item keeps the file's
+/// 135.5, 135.5.
+#[test]
+fn a_u1_plate_is_centered_on_its_printable_area() {
+    let dir = temp_dir(format!("sx-cli-u1-middle-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let area = r#"["0.5x1","270.5x1","270.5x271","0.5x271"]"#;
+    let mut config = klipper();
+    config["printable_area"] = serde_json::from_str(area).unwrap();
+    let write = |name: &str, bytes: Vec<u8>| {
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p
+    };
+    let settings = format!(r#"{{"printable_area":{area}}}"#);
+    let one: [&[(f32, f32)]; 1] = [&[(135.5, 135.5)]];
+    let two: [&[(f32, f32)]; 1] = [&[(115.5, 135.5), (155.5, 135.5)]];
+    let project = write("u1-project.3mf", project_boxes_3mf(Some(&settings), &one));
+    let plain = write("u1-plain.3mf", project_boxes_3mf(None, &one));
+    let plain_two = write("u1-plain-two.3mf", project_boxes_3mf(None, &two));
+    let stl = std::path::PathBuf::from(fixture("cube.stl"));
+    let request = |model: &Path| {
+        let req = serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": {"p": model.display().to_string()},
+            "plate": {"bed": {"widthMm": 270, "depthMm": 270, "heightMm": 270}, "objects": [{"id": "p", "mesh": "p"}]},
+            "config": config,
+        });
+        let out_dir = dir.join(format!("out-{}", rand_tag()));
+        let path = dir.join(format!("{}.request.json", rand_tag()));
+        std::fs::write(&path, req.to_string()).unwrap();
+        let out = sx()
+            .args(["slice", "--request"])
+            .arg(&path)
+            .arg("--out-dir")
+            .arg(&out_dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        klipper_centers(&std::fs::read_to_string(out_dir.join("slice.gcode")).unwrap())
+    };
+    let cases: [(&Path, Vec<[f64; 2]>, &str); 4] = [
+        (&project, vec![[135.5, 135.5]], "project"),
+        (&plain, vec![[135.5, 136.0]], "plain file"),
+        (
+            &plain_two,
+            vec![[115.5, 136.0], [155.5, 136.0]],
+            "plain file of two items",
+        ),
+        (&stl, vec![[135.5, 136.0]], "mesh"),
+    ];
+    for (model, want, what) in cases {
+        for (how, got) in [
+            (
+                "sx slice",
+                klipper_centers(&plain_slice(&dir, model, &config, &[])),
+            ),
+            ("request", request(model)),
+        ] {
+            assert_eq!(got.len(), want.len(), "{how}, {what}: {got:?}");
+            for (g, w) in got.iter().zip(&want) {
+                assert!(
+                    (g[0] - w[0]).abs() < 0.01 && (g[1] - w[1]).abs() < 0.01,
+                    "{how}, {what}: {got:?}, want {want:?}"
+                );
+            }
+        }
     }
 }
 
