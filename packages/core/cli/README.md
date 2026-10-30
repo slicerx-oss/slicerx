@@ -29,6 +29,8 @@ sx bench --config <bench.json> --incremental sparse_infill_density [--runs 15]
 
 Exit codes: 0 success, 1 slicing failed, 2 usage error, 3 invalid input (unreadable request or mesh, bad JSON or config).
 
+`sx check --request` reads the same request and, without slicing it, prints heimdall's plate check: what a slice of a by-object plate would be refused for, worked out from each object's footprint. It prints `collisions` and `collisionFixes` as a slice gives them, `certainty` (one per collision: `sure` when the head's real shape meets the part from the object's own outline, so the slice refuses it, or `slice_decides` when only the slice can tell), `unchecked` (what only the slice checks, per object: `tree_support`, `tool_change_trips`, `raft` or `painted_brim`, each with `near`, the objects within the clearance radius of it), `order` (the print order checked) and `micros`. A plate printed by layer, or with fewer than two objects, prints empty lists. It exits with code 3 when a collision is sure, the code a refused slice exits with, and 0 otherwise. It takes milliseconds on most plates, so an app can run it after every edit; the desktop app does.
+
 `sx bench` runs the full pipeline (session preparation, slicing, G-code into memory, SXPV) on a bench config such as `../bench/configs/reference-0.20.json`, prints the median, p90, stage times and the correctness gates (layer count, the G-code validator, extrusion against `../bench/baseline-reference-0.20.json`, identical hashes for 1, 4 and 11 shards), and exits 1 when a gate fails. `--ab` alternates single invocations of a baseline binary and this one, for the hill-climb (`../bench/climb.mjs`).
 
 ## Tool commands
