@@ -85,7 +85,7 @@ const message = (stderr) => stderr.trim().split('\n').pop()?.replace(/^sx (slice
 async function handle(req, res) {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1')
   if (url.pathname === '/healthz') return send(res, 200, 'ok')
-  const m = /^\/s\/([^/]+)\/(meshes|slices|metadata|script-review)(?:\/([^/]+))?(?:\/(gcode|preview))?$/.exec(url.pathname)
+  const m = /^\/s\/([^/]+)\/(meshes|slices|checks|metadata|script-review)(?:\/([^/]+))?(?:\/(gcode|preview))?$/.exec(url.pathname)
   if (!m || !safe(m[1]) || (m[3] && !safe(decodeURIComponent(m[3])))) return send(res, 404, 'not found')
   const [, session, kind, rawId, file] = m
   const id = rawId ? decodeURIComponent(rawId) : ''
@@ -106,6 +106,21 @@ async function handle(req, res) {
     const r = await run(['metadata', path])
     rmSync(path, { force: true })
     return r.code === 0 ? send(res, 200, r.stdout, 'application/json') : send(res, 422, message(r.stderr))
+  }
+  // heimdall's plate check before a slice, as the desktop's check_plate runs it: a newer check of the session stops an
+  // older one still running, and both exit codes (0, and 3 for a sure strike) print the check
+  if (kind === 'checks' && id && req.method === 'POST') {
+    for (const [key, child] of running) if (key.startsWith(`${session}/check-`)) child.kill()
+    const body = JSON.parse((await read(req)).toString('utf8'))
+    const ids = new Set(body.plate.objects.flatMap((o) => [o.mesh, ...(o.volumes ?? []).map((v) => v.mesh)]))
+    body.meshes = Object.fromEntries([...ids].map((m) => [m, join(dir, `${m}.sxmp`)]))
+    body.options = { ...body.options, configReport: false }
+    const request = join(dir, `${id}.json`)
+    writeFileSync(request, JSON.stringify(body))
+    const r = await run(['check', '--request', request], `${session}/check-${id}`)
+    rmSync(request, { force: true })
+    if (r.signal) return send(res, 499, 'canceled')
+    return r.code === 0 || (r.code === 3 && r.stdout.trim().startsWith('{')) ? send(res, 200, r.stdout, 'application/json') : send(res, 422, message(r.stderr))
   }
   if (kind === 'slices' && id) {
     const out = join(dir, id)

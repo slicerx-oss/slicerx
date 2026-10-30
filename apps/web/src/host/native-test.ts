@@ -5,7 +5,8 @@
 // as in the CAD-only build (meshes.ts). Slices run in the native engine behind e2e/native-host/server.mjs, the same
 // sx-core the desktop app links, with the request and result shapes of the desktop's slicer
 // (apps/desktop/src/host/slicer.ts), so the browser suite tests what the desktop slices.
-import type { GcodeExport, MeshPart, ProjectMetadata, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import type { GcodeExport, MeshPart, PlateCheck, ProjectMetadata, SliceRequest, SliceResult, SliceStage, SliceWarning, SlicerHost } from '@slicerx/contracts'
+import { readPlateCheck } from '@slicerx/contracts'
 import { chamberCoolingOf, encodeParts, sliceClock } from '@slicerx/slicer'
 import { createMeshHost } from './meshes'
 
@@ -89,6 +90,7 @@ export function createNativeTestSlicer(url: string): SlicerHost {
   const raw = new Map<string, ArrayBuffer>()
   const gcode = new Map<string, Promise<Uint8Array>>()
   let nextJob = 1
+  let nextCheck = 1
   // Every page of a run shares the server, so each keeps its meshes and slices under its own session.
   const base = `${url}/s/${crypto.randomUUID()}`
   const call = async (path: string, init?: RequestInit): Promise<Response> => {
@@ -151,6 +153,23 @@ export function createNativeTestSlicer(url: string): SlicerHost {
       if (opts?.signal?.aborted) throw new DOMException('Slice canceled', 'AbortError')
       opts?.onProgress?.({ stage: 'preview', fraction: 1 })
       return toResult(job, report, performance.now() - started)
+    },
+    // heimdall's plate check, as the desktop runs it: a newer check stops an older one, and an abort lets the answer go.
+    async checkPlate(req: SliceRequest, opts): Promise<PlateCheck> {
+      const canceled = () => new DOMException('Plate check canceled', 'AbortError')
+      const ids = new Set(req.plate.objects.flatMap((o) => [o.mesh, ...(o.volumes ?? []).map((v) => v.mesh)]))
+      await Promise.all([...ids].map(upload))
+      if (opts?.signal?.aborted) throw canceled()
+      let found: unknown
+      try {
+        const r = await call(`/checks/${nextCheck++}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plate: req.plate, config: req.config, options: req.options ?? {} }) })
+        found = await r.json()
+      } catch (e) {
+        if (opts?.signal?.aborted) throw canceled()
+        throw e
+      }
+      if (opts?.signal?.aborted) throw canceled()
+      return readPlateCheck(found)
     },
     async getPreview(id) {
       return (await call(`/slices/${id}/preview`)).arrayBuffer()
