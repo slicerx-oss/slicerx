@@ -265,6 +265,7 @@ class SxViewportElement extends Base {
     const plateStyle = this.getAttribute('plate-style') ?? ''
     const tool = this.getAttribute('tool') ?? ''
     const reveal = this.getAttribute('reveal')
+    const worker = this.getAttribute('mesh-worker')
     this.#root.render(
       <EmbedTheme theme={themeOf(this, this.#theme)} edition={this.#edition.current}>
       <Viewport
@@ -282,6 +283,7 @@ class SxViewportElement extends Base {
         tools={toolsAttr(this.getAttribute('tools'))}
         {...(TOOLS.includes(tool) ? { tool: tool as EmbedTool } : {})}
         reveal={reveal === 'each-plate' ? 'each-plate' : reveal !== 'off' && reveal !== 'false'}
+        meshWorker={worker !== 'off' && worker !== 'false'}
         bedOutline={(this.getAttribute('bed-outline') === 'subtle' ? 'subtle' : 'default') as BedOutline}
         {...(this.#selection ? { selection: this.#selection } : {})}
         onReady={(vp) => (this.#vp = vp)}

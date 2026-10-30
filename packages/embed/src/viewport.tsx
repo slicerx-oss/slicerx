@@ -9,6 +9,7 @@ import { readPreview } from '@slicerx/contracts'
 import { useTheme } from '@slicerx/ui'
 import { createViewport, type BedOutline, type ColorMode, type PickEvent, type PlateStyle, type RenderMode, type ToolpathFinish, type TransformEvent, type ViewPreset, type Viewport as Handle, type ViewportPlate, type ViewportTheme } from '@slicerx/viewport'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { meshWorkerFactory, type MeshWorkerSetting } from './mesh-workers'
 import { sceneFor } from './theme'
 import { EMBED_ACTIONS, PrepareTools, toolKey, type EmbedAction, type EmbedTool } from './tools'
 
@@ -70,6 +71,15 @@ export interface ViewportProps {
    * ends: store the transform in your plate then, so the next `plate` you pass keeps it.
    */
   onTransform?: (e: TransformEvent) => void
+  /**
+   * Big parts (20,000 triangles or more) get their creased normals and feature edges in a worker, so a heavy plate
+   * shows at once and the page stays responsive. `true` (the default) starts the embed's own worker, a module file
+   * next to its code that your bundler emits; `false` builds every part on the page, for a strict CSP without
+   * `worker-src 'self'` or a page without workers; a function returns your own worker, one whose module is
+   * `import { serveMeshBuilds } from '@slicerx/viewport/mesh-worker'; serveMeshBuilds(self)`. A worker that cannot
+   * start or load leaves its parts to the page. Read when the view starts.
+   */
+  meshWorker?: MeshWorkerSetting
   label?: string
   className?: string
   style?: CSSProperties
@@ -80,7 +90,7 @@ export function plateKey(plate: ViewportPlate | null | undefined): string {
   return plate ? plate.objects.map((o) => o.id).join('\n') : ''
 }
 
-export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature', layer, view, quality = 'auto', onPick, onReady, sceneTheme, toolColors, toolFinishes, plateStyle = 'grid', onError, reveal = true, bedOutline = 'default', tools, tool, onToolChange, selection, onSelect, onTransform, label = '3D view', className, style }: ViewportProps) {
+export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature', layer, view, quality = 'auto', onPick, onReady, sceneTheme, toolColors, toolFinishes, plateStyle = 'grid', onError, reveal = true, bedOutline = 'default', tools, tool, onToolChange, selection, onSelect, onTransform, meshWorker = true, label = '3D view', className, style }: ViewportProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [vp, setVp] = useState<Handle | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -124,7 +134,8 @@ export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature
     if (!canvas) return
     let handle: Handle
     try {
-      handle = createViewport(canvas, { ...(quality === 'auto' ? {} : { quality }), label, reveal: reveal !== false })
+      const make = meshWorkerFactory(meshWorker)
+      handle = createViewport(canvas, { ...(quality === 'auto' ? {} : { quality }), label, reveal: reveal !== false, ...(make ? { meshWorker: make } : {}) })
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e))
       setError(err.message)
@@ -148,7 +159,7 @@ export function Viewport({ plate, preview, look = 'studio', colorMode = 'feature
       handle.dispose()
       setVp(null)
     }
-    // reveal is read once, at the start: the viewport decides then whether it may play
+    // reveal and meshWorker are read once, at the start: the viewport decides then whether it may play and where it builds
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quality, label])
 
