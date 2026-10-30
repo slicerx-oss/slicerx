@@ -543,6 +543,40 @@ export interface ViewportStats {
   refiningParts: number
 }
 
+/** A move of objects the app may send off the bed (setEdgeDrag): what moves and where its footprint is now. */
+export interface EdgeDragInfo {
+  /** The objects that move: the pressed one, or the whole selection when it moves as one. */
+  ids: readonly string[]
+  /** The footprint of everything that moves, in bed millimeters (x, y). */
+  box: { min: [number, number]; max: [number, number] }
+  /** The pointer, in client pixels. */
+  client: [number, number]
+  /** 'mouse', 'pen' or 'touch'. */
+  pointerType: string
+}
+
+/**
+ * The app's part in a move that may leave the bed, as for sending parts to another plate past an edge. With a hook
+ * set, a move drag (and a touch drag on a move arrow) may take the footprint past the bed's edges by `reachMm`;
+ * without one the footprint stays on the bed, as always. The view calls the hook only while such a move runs.
+ */
+export interface EdgeDragHook {
+  /** A move has started (the pointer has gone a few pixels). False keeps this move on the bed, as without a hook. */
+  start(e: EdgeDragInfo): boolean
+  /** How far past each bed edge the footprint may go now, mm (the view's scale changes it). */
+  reachMm(): number
+  /** The footprint moved. */
+  move(e: EdgeDragInfo): void
+  /**
+   * The pointer was released. A footprint released all on the bed (`onBed`) is a normal move whatever this answers.
+   * Otherwise 'commit' means the app took the objects off this plate, so nothing is put back, and 'back' returns them
+   * to where the move started (eased, or at once under reduced motion), with no transform reported.
+   */
+  end(e: EdgeDragInfo & { onBed: boolean }): 'commit' | 'back'
+  /** The move was called off (cancelDrag, a lost pointer): the objects go back to where it started. */
+  cancel(): void
+}
+
 export interface Viewport {
   readonly canvas: HTMLCanvasElement
   setMode(mode: ViewportMode): void
@@ -698,6 +732,17 @@ export interface Viewport {
   zoomToBed(opts?: { animate?: boolean }): void
   /** Moves the camera toward its target by `factor` (below 1 moves away), keeping the angle, within the zoom limits. */
   zoomBy(factor: number, opts?: { animate?: boolean }): void
+  /**
+   * Room for a move that may leave the bed (setEdgeDrag): `scale` below 1 eases the camera out by that much from where
+   * it is (0.72 shows the bed at 72 percent), and null eases it back to the view it left. At once under reduced motion.
+   */
+  setDragZoom?(scale: number | null, durationMs?: number): void
+  /** The app's hook for moves that may leave the bed, or null for none (the default): moves stay on the bed. */
+  setEdgeDrag?(hook: EdgeDragHook | null): void
+  /** Calls off a running move (a drag or a move arrow), the objects back where it started. False when none runs. */
+  cancelDrag?(): boolean
+  /** Moves the move readout (the distance shown beside the pointer while a move runs) to a client point, so a host can keep it clear of its own marks. Nothing while none shows. */
+  placeReadout?(x: number, y: number): void
   /** Eases the camera to center a bed point (mm) at the current angle and zoom; jumps under reduced motion. */
   focusBedPoint(x: number, y: number, z: number, opts?: { animate?: boolean }): void
   setProjection(projection: Projection): void

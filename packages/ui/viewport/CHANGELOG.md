@@ -4,6 +4,13 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+### Added
+
+- `setEdgeDrag(hook)` lets a host take parts past the bed's edges while they move, for sending them to another plate. With a hook set, a move drag (and a touch drag on an X or Y move arrow) may take the footprint past each edge as far as the hook's `reachMm()`, and the hook hears the start, each move and the release. A footprint released all on the bed is a normal move. Past an edge the hook answers `'commit'` (the host took the parts away) or `'back'`, and the parts ease back to where the move started with no transform reported. Without a hook, moves stay on the bed as before.
+- `cancelDrag()` calls off a running move or move arrow drag and puts the parts back, for Esc.
+- `setDragZoom(scale)` eases the camera out by `scale` from where it is, and `setDragZoom(null)` eases it back, so a drag has room to leave the bed.
+- `placeReadout(x, y)` moves the distance readout beside the pointer during a move, so a host can keep it clear of its own marks.
+
 ### Changed
 
 - Copies of one object share their geometry. Every part built from the same position and index arrays draws one creased mesh and one set of feature edges, and copies differ only by their transform, material and selection. A big part's worker build runs once for all its copies. The geometry is freed when its last copy goes, and a copy whose arrays differ (scaled or painted) still gets its own.
