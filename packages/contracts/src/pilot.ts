@@ -445,7 +445,7 @@ export interface PilotConfig {
   billing?: 'plan' | 'key'
   /** Auto on a key: huginn's model to start, muninn's for hard parts, the switch shown in the chat. */
   auto?: boolean
-  /** With auto: design and geometry tools move the run to muninn too (when huginn's model is weak at building parts). */
+  /** With auto: design and geometry tools and the part generators move the run to muninn too (when huginn's model is weak at building parts). */
   deepDesign?: boolean
   /**
    * The edition's models for the person's own key (ai.brain.routing): base for huginn, step for muninn, for a key of
