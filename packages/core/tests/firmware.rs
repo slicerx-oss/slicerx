@@ -1789,6 +1789,87 @@ fn the_a1_bed_mesh_takes_the_brim_and_skirt_as_orca_does() {
     assert_eq!(line(&cube_on(c, 1)), "G29 A1 X109.721 Y109.721 I36.5582 J36.5582");
 }
 
+/// The bed mesh and first layer lines of two 20 mm cubes on a Klipper plate, centered on (60, 128) and (190, 128),
+/// as `sequence` prints them, the right one with settings `own` of its own, with an outer brim `brim` mm wide.
+fn two_cubes_start(sequence: &str, own: &Value, brim: f64) -> String {
+    let bytes = std::fs::read(format!("{}/packages/core/cli/tests/fixtures/cube.stl", root())).unwrap();
+    let m = Arc::new(Mesh::load(&bytes, "cube.stl").unwrap());
+    let (lo, hi) = m.bounds().unwrap();
+    let at = |cx: f64, cy: f64| {
+        let mut t = [0.0f64; 16];
+        t[0] = 1.0;
+        t[5] = 1.0;
+        t[10] = 1.0;
+        t[15] = 1.0;
+        t[12] = cx - f64::from(lo[0] + hi[0]) / 2.0;
+        t[13] = cy - f64::from(lo[1] + hi[1]) / 2.0;
+        t[14] = -f64::from(lo[2]);
+        t
+    };
+    let start = "BED_MESH_CALIBRATE mesh_min={adaptive_bed_mesh_min[0]},{adaptive_bed_mesh_min[1]} mesh_max={adaptive_bed_mesh_max[0]},{adaptive_bed_mesh_max[1]}
+; first layer {first_layer_print_min[0]},{first_layer_print_min[1]} to {first_layer_print_max[0]},{first_layer_print_max[1]}, {first_layer_print_size[0]} by {first_layer_print_size[1]}";
+    let req: SliceRequest = serde_json::from_value(json!({
+        "plate": {"objects": [
+            {"id": "a", "name": "left", "mesh": "c", "transform": at(60.0, 128.0)},
+            {"id": "b", "name": "right", "mesh": "c", "transform": at(190.0, 128.0), "settings": own},
+        ]},
+        "config": {
+            "gcode_flavor": "klipper",
+            "machine_start_gcode": start,
+            "print_sequence": sequence,
+            "extruder_clearance_radius": 10,
+            "extruder_clearance_height_to_rod": 200,
+            "extruder_clearance_height_to_lid": 200,
+            "brim_type": if brim > 0.0 { "outer_only" } else { "no_brim" },
+            "brim_width": brim,
+            "skirt_loops": 0,
+            "skirt_distance": 2,
+            "skirt_height": 1,
+            "bed_mesh_min": [3, 3],
+            "bed_mesh_max": [250, 250],
+        },
+        "options": {"trustedGcode": true},
+    }))
+    .unwrap();
+    let r = common::run_request(&req, &move |_: &str| Ok(m.clone())).unwrap();
+    let g = String::from_utf8(r.gcode).unwrap();
+    g.lines()
+        .filter(|l| l.starts_with("BED_MESH_CALIBRATE") || l.starts_with("; first layer "))
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        )
+}
+
+#[test]
+fn a_by_object_bed_mesh_covers_every_objects_first_layer() {
+    // Printed by object, each cube is sliced on its own; the start still probes and reports the first layer of
+    // both, the same extents as the plate printed by layer (each cube's outline 2 mm out, the skirt's distance).
+    let by_object = two_cubes_start("by object", &json!({}), 0.0);
+    assert_eq!(
+        by_object,
+        "BED_MESH_CALIBRATE mesh_min=48,116 mesh_max=202,140
+; first layer 48,116 to 202,140, 154 by 24"
+    );
+    assert_eq!(by_object, two_cubes_start("by layer", &json!({}), 0.0));
+    // and so do cubes with settings of their own, each sliced on its own, by object or by layer
+    let own = json!({"wall_loops": 3});
+    assert_eq!(by_object, two_cubes_start("by object", &own, 0.0));
+    assert_eq!(by_object, two_cubes_start("by layer", &own, 0.0));
+    // A later object's brim prints on its own first layer, and the mesh reaches it as it does printed by layer.
+    let mesh_max_x = |g: &str| -> f64 {
+        let at = g.find("mesh_max=").unwrap() + "mesh_max=".len();
+        g[at..].split(',').next().unwrap().parse().unwrap()
+    };
+    let (by_object, by_layer) = (
+        mesh_max_x(&two_cubes_start("by object", &json!({}), 5.0)),
+        mesh_max_x(&two_cubes_start("by layer", &json!({}), 5.0)),
+    );
+    assert!(by_object > 206.5, "{by_object}");
+    assert!((by_object - by_layer).abs() < 0.005, "{by_object} {by_layer}");
+}
+
 #[test]
 fn an_extruder_that_prints_nothing_has_no_first_filament() {
     // The H2D numbers its extruders through physical_extruder_map. Orca 2.4.2 writes -1 for an extruder that prints

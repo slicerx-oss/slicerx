@@ -205,6 +205,7 @@ fn first_layer_extents(cfg: &PrintConfig, out: &SliceOutput) -> [f64; 4] {
         spacing / 2.0,
         0.0125,
     ));
+    pts.extend_from_slice(&out.first_layer_info.brims);
     // the prime tower's first layer with its brim, as its wall centerlines (`first_layer_wipe_tower_corners`,
     // the corners of the tower's outer walls)
     if out.prime_tower.is_some()
