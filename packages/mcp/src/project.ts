@@ -17,7 +17,7 @@ import { marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
 import { byObjectPlan, byObjectReadback, objectGetsSupport, overRod, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
 import { bedArea, boxRows, describeBed, EDGE_MM, GAP_MM, pastRim, roundRows, type BedArea, type Foot } from './bed'
 import { boxPositions, cylinderPositions, spherePositions, splitBodies } from './mesh'
-import { boxFillCount, boxInLanes, boxPlate, fillCount, nestInLanes, nestPlate, plateTools, type FootprintCache, type NestObject } from './plate-nest'
+import { boxFillCount, boxInLanes, boxPlate, fillCount, nestInLanes, nestPlate, plateTools, turnedLinear, turnedObject, type FootprintCache, type NestObject } from './plate-nest'
 
 /** A volume of an object, in the object's own (as modeled) coordinates: a cut, a support region or a settings modifier. */
 export interface ProjectVolume {
@@ -60,9 +60,12 @@ interface Entry {
   printable?: false
 }
 
-/** Where a copy sits now: its move in X and Y, and whether its footprint is on the bed. */
+/** Where an arranged copy goes: its move in X and Y, bed coordinates, and its turn about Z in degrees after its rotation. */
+type Spot = [number, number, number]
+
+/** Where a copy sits now: its move in X and Y and its turn, and whether its footprint is on the bed. */
 interface Sitting {
-  at: [number, number]
+  at: Spot
   onBed: boolean
 }
 
@@ -81,6 +84,8 @@ export interface Placement {
   sizeMm: [number, number, number]
   /** Placed by a client (slicerx_project_move) rather than in the rows. */
   manual: boolean
+  /** Degrees the last arrange turned this copy about Z, after its object's rotation; 0 when it is not turned. */
+  turnDeg: number
   /** Set when the copy reaches past the rim of a round bed; the slice refuses it until it is moved. */
   offBed?: true
   /** Set when its object is left out of the print: it keeps its place, and the slice leaves it out. */
@@ -113,7 +118,7 @@ export class McpProject implements PilotProject {
   private nextId = 1
   private nextVolume = 1
   /** Where the last arrange put each plate's copies, while the plate holds the same copies as then. */
-  private readonly nested = new Map<number, { key: string; at: Map<string, [number, number]> }>()
+  private readonly nested = new Map<number, { key: string; at: Map<string, Spot> }>()
   private readonly feet: FootprintCache = new Map()
 
   /** `geom` is the geometry engine (sx-geom) arrange nests true outlines with; without it arrange packs boxes (boxPlate). */
@@ -334,7 +339,7 @@ export class McpProject implements PilotProject {
     const e = this.entries.get(objectId)
     if (!e?.meshId) return this.rowCapacity(objectId, bed, spacing, plateIndex)
     const cfg = this.config(plateIndex)
-    const plate = { bed: this.bed(plateIndex), config: cfg, tools: this.toolsOf(cfg, [e]), gapMm: spacing, fixed: [] }
+    const plate = { bed: this.bed(plateIndex), config: cfg, tools: this.toolsOf(cfg, [e]), gapMm: spacing, fixed: [], turn: true }
     const o = this.nestObject(e as Entry & { meshId: string }, cfg, 1)
     if (this.geom) {
       try {
@@ -357,7 +362,7 @@ export class McpProject implements PilotProject {
     let leftOff = 0
     for (const index of plateIndexes) {
       this.nested.delete(index)
-      const r = await this.nestPlan(index, spacing, new Map())
+      const r = await this.nestPlan(index, spacing, new Map(), true)
       for (const n of r?.left.values() ?? []) leftOff += n
     }
     return leftOff > 0 ? { leftOff } : undefined
@@ -400,24 +405,26 @@ export class McpProject implements PilotProject {
       const plate = this.layout.find((p) => p.index === t.index)
       if (!plate) continue
       const sits = before.get(t.index) ?? new Map<string, Sitting>()
-      const pins = new Map<string, [number, number]>()
+      const pins = new Map<string, Spot>()
       for (const item of plate.items) {
         if (item.objectId === id) continue
         const other = this.entries.get(item.objectId)
         if (!other?.meshId || other.position) continue
         const copies = Array.from({ length: item.copies }, (_, c) => [`${item.objectId}-${c + 1}`, sits.get(`${item.objectId}-${c + 1}`)] as const)
         // A copy past the edge moves, unless it is locked or too large for any bed: then it stays where it was.
-        const stays = other.locked || (copies.some(([, x]) => x && !x.onBed) && !(await this.fitsEmpty(other as Entry & { meshId: string }, t.index, spacing)))
+        const stays = other.locked || (copies.some(([, x]) => x && !x.onBed) && !(await this.fitsEmpty(other as Entry & { meshId: string }, t.index, spacing, true)))
         for (const [copyId, x] of copies) if (x && (x.onBed || stays)) pins.set(copyId, x.at)
       }
-      const r = await this.nestPlan(t.index, spacing, pins)
+      const r = await this.nestPlan(t.index, spacing, pins, true)
       if (!r || r.left.size === 0) continue
       this.commitNest(t.index, r.at, r.left)
       const o = await this.toNewPlates(t.index, r.left, spacing)
       moved.push(...o.moved)
       leftOff += o.stuck
     }
-    return { leftOff, moved }
+    // Each copy of the object where it now is, with its turn.
+    const turns = this.layout.flatMap((p) => (p.items.some((i) => i.objectId === id) ? this.safePlacements(p.index).filter((q) => q.objectId === id).map((q) => ({ id: q.id, plate: p.index, turnDeg: q.turnDeg })) : []))
+    return { leftOff, moved, turns }
   }
 
   /**
@@ -472,7 +479,7 @@ export class McpProject implements PilotProject {
       const [w, d] = p.sizeMm
       const [cx, cy] = p.centerMm
       const onBed = !p.offBed && cx - w / 2 >= bed.x0 - tol && cy - d / 2 >= bed.y0 - tol && cx + w / 2 <= bed.x0 + bed.widthMm + tol && cy + d / 2 <= bed.y0 + bed.depthMm + tol
-      out.set(o.id, { at: [o.transform[12] ?? 0, o.transform[13] ?? 0], onBed })
+      out.set(o.id, { at: [o.transform[12] ?? 0, o.transform[13] ?? 0, p.turnDeg], onBed })
     })
     return out
   }
@@ -481,7 +488,7 @@ export class McpProject implements PilotProject {
   private keepPlaces(plateIndex: number, was: ReadonlyMap<string, Sitting> | undefined): void {
     const plate = this.layout.find((p) => p.index === plateIndex)
     if (!plate || !was) return
-    const at = new Map<string, [number, number]>()
+    const at = new Map<string, Spot>()
     for (const item of plate.items) {
       const e = this.entries.get(item.objectId)
       if (!e?.meshId || e.position) continue
@@ -502,10 +509,13 @@ export class McpProject implements PilotProject {
     for (const [i, n] of shifted) this.nested.set(i, n)
   }
 
-  /** Whether one copy of the object has room on the plate when it is empty: its outline, brim and skirt inside the bed. */
-  private async fitsEmpty(e: Entry & { meshId: string }, plateIndex: number, spacing: number): Promise<boolean> {
+  /**
+   * Whether one copy of the object has room on the plate when it is empty: its outline, brim and skirt inside the bed,
+   * turned when `turn` is set (arrange turns copies; placing one, as duplicate does, does not).
+   */
+  private async fitsEmpty(e: Entry & { meshId: string }, plateIndex: number, spacing: number, turn = false): Promise<boolean> {
     const cfg = this.config(plateIndex)
-    const plate = { bed: this.bed(plateIndex), config: cfg, tools: this.toolsOf(cfg, [e]), gapMm: spacing, fixed: [] }
+    const plate = { bed: this.bed(plateIndex), config: cfg, tools: this.toolsOf(cfg, [e]), gapMm: spacing, fixed: [], turn }
     const o = this.nestObject(e, cfg, 1)
     if (this.geom) {
       try {
@@ -530,7 +540,7 @@ export class McpProject implements PilotProject {
     const now = this.sitting(plateIndex)
     plate.items.push({ objectId, copies: 1 })
     if (!arranged && [...this.sitting(plateIndex).values()].every((x) => x.onBed)) return true
-    const pins = new Map([...now].map(([id, x]) => [id, x.at] as [string, [number, number]]))
+    const pins = new Map([...now].map(([id, x]) => [id, x.at] as [string, Spot]))
     const r = await this.nestPlan(plateIndex, spacing, pins)
     if (r && r.left.size === 0) return true
     plate.items = plate.items.filter((i) => i.objectId !== objectId)
@@ -574,7 +584,7 @@ export class McpProject implements PilotProject {
       const index = this.newPlateLike(from)
       const plate = this.layout.find((p) => p.index === index)!
       for (const [objectId, copies] of rest) plate.items.push({ objectId, copies })
-      const r = await this.nestPlan(index, spacing, new Map())
+      const r = await this.nestPlan(index, spacing, new Map(), true)
       const now = r?.left ?? new Map<string, number>()
       const placed = [...rest].map(([objectId, n]) => [objectId, n - (now.get(objectId) ?? 0)] as const).filter(([, n]) => n > 0)
       if (placed.length === 0) {
@@ -593,10 +603,10 @@ export class McpProject implements PilotProject {
    * Keeps a nest that left copies over: they come off the plate (their object keeps the copies placed, renumbered in
    * order), and the plate holds the layout of the rest.
    */
-  private commitNest(plateIndex: number, at: ReadonlyMap<string, [number, number]>, left: ReadonlyMap<string, number>): void {
+  private commitNest(plateIndex: number, at: ReadonlyMap<string, Spot>, left: ReadonlyMap<string, number>): void {
     const plate = this.layout.find((p) => p.index === plateIndex)
     if (!plate) return
-    const kept = new Map<string, [number, number]>()
+    const kept = new Map<string, Spot>()
     for (const item of plate.items) {
       let n = 0
       for (let c = 1; c <= item.copies; c++) {
@@ -615,10 +625,11 @@ export class McpProject implements PilotProject {
    * Nests one plate: every copy in the rows that `pins` does not hold moves, around the copies a client placed and the
    * ones `pins` holds where they are (their move in X and Y). When every copy finds room the plate keeps the layout
    * (by object, with lanes for copies taller than the gantry rod when that clears more); otherwise the plate is left
-   * as it was. Returns every copy's move by plate object id and how many copies of each moving object found no room;
-   * undefined when nothing moves.
+   * as it was. With `turn` each moving copy may turn about Z where that packs better, as the app's Arrange turns them;
+   * held copies keep the turn they have. Returns every copy's move and turn by plate object id and how many copies of
+   * each moving object found no room; undefined when nothing moves.
    */
-  private async nestPlan(index: number, spacing: number, pins: ReadonlyMap<string, readonly [number, number]>): Promise<{ at: Map<string, [number, number]>; left: Map<string, number> } | undefined> {
+  private async nestPlan(index: number, spacing: number, pins: ReadonlyMap<string, Spot>, turn = false): Promise<{ at: Map<string, Spot>; left: Map<string, number> } | undefined> {
     const geom = this.geom
     const plate = this.layout.find((p) => p.index === index)
     if (!plate) return undefined
@@ -628,7 +639,7 @@ export class McpProject implements PilotProject {
     const entries: Entry[] = []
     // The copy numbers of each moving object, in order, and the copies pins hold.
     const free = new Map<string, number[]>()
-    const pinned = new Map<string, [number, number]>()
+    const pinned = new Map<string, Spot>()
     for (const item of plate.items) {
       const e = this.entries.get(item.objectId)
       if (!e?.meshId) continue
@@ -647,8 +658,8 @@ export class McpProject implements PilotProject {
           mine.push(c)
           continue
         }
-        pinned.set(id, [at[0], at[1]])
-        fixed.push({ ...o, id, copies: 1, at: [at[0], at[1]] })
+        pinned.set(id, [at[0], at[1], at[2]])
+        fixed.push({ ...turnedObject(o, at[2]), id, copies: 1, at: [at[0], at[1]] })
       }
       if (mine.length) {
         moving.push({ ...o, copies: mine.length })
@@ -657,9 +668,9 @@ export class McpProject implements PilotProject {
     }
     const wanted = moving.reduce((n, o) => n + o.copies, 0)
     if (wanted === 0) return undefined
-    const request = { bed: this.bed(index), config: cfg, tools: this.toolsOf(cfg, entries), gapMm: spacing, moving, fixed, center: fixed.length === 0 }
+    const request = { bed: this.bed(index), config: cfg, tools: this.toolsOf(cfg, entries), gapMm: spacing, moving, fixed, center: fixed.length === 0, turn }
     // Copies by number: each object's placements in the order of their copy, on the copy numbers that move.
-    const layout = (r: { placements: { id: string; copy: number; offset: [number, number] }[] }) => {
+    const layout = (r: { placements: { id: string; copy: number; angleDeg: number; offset: [number, number] }[] }) => {
       const at = new Map(pinned)
       for (const o of moving) {
         const slots = free.get(o.id) ?? []
@@ -668,14 +679,14 @@ export class McpProject implements PilotProject {
           .sort((a, b) => a.copy - b.copy)
           .forEach((p, k) => {
             const c = slots[k]
-            if (c !== undefined) at.set(`${o.id}-${c}`, p.offset)
+            if (c !== undefined) at.set(`${o.id}-${c}`, [p.offset[0], p.offset[1], turnOf(p.angleDeg)])
           })
       }
       return at
     }
     // The nest on true outlines, or the boxes when there is no engine or it fails.
     let boxes = !geom
-    let at: Map<string, [number, number]> | undefined
+    let at: Map<string, Spot> | undefined
     if (geom) {
       try {
         at = layout(await nestPlate(geom, request, this.feet))
@@ -807,7 +818,7 @@ export class McpProject implements PilotProject {
         if (e.settings && Object.keys(e.settings).length) o.settings = { ...e.settings }
         if (e.volumes?.length) o.volumes = e.volumes.map((v) => ({ name: v.name, role: v.role, mesh: v.meshId, ...(v.settings ? { settings: { ...v.settings } } : {}) }))
         objects.push(o)
-        placements.push({ id, objectId: item.objectId, copy: c + 1, centerMm: [at[0] + w / 2, at[1] + d / 2], sizeMm: placed.size, manual: Boolean(e.position), ...(e.printable === false ? { printable: false as const } : {}) })
+        placements.push({ id, objectId: item.objectId, copy: c + 1, centerMm: [at[0] + w / 2, at[1] + d / 2], sizeMm: placed.size, manual: Boolean(e.position), turnDeg: 0, ...(e.printable === false ? { printable: false as const } : {}) })
       }
     }
     const entries = plate.items.flatMap((item) => {
@@ -823,8 +834,18 @@ export class McpProject implements PilotProject {
       const o = objects[i]
       const p = placements[i]
       if (!o || !p) return
-      // The nest gives the whole move in X and Y; the rows give the front left corner.
+      // The nest gives the whole move in X and Y and the turn; the rows give the front left corner.
       const to = nested?.get(o.id)
+      if (to && to[2]) {
+        // Turned about Z after the rotation and scale: its box, and so its center and size, follow the turn.
+        const linear = turnedLinear(o.transform.slice(0, 12).concat([0, 0, 0, 1]), to[2])
+        const turned = this.host.boundsAfter(o.mesh, linear)
+        o.transform = [...linear.slice(0, 12), to[0], to[1], o.transform[14] ?? 0, 1]
+        p.centerMm = [to[0] + turned.min[0] + turned.size[0] / 2, to[1] + turned.min[1] + turned.size[1] / 2]
+        p.sizeMm = turned.size
+        p.turnDeg = to[2]
+        return
+      }
       const at: [number, number] | undefined = to ? [to[0] - (o.transform[12] ?? 0), to[1] - (o.transform[13] ?? 0)] : spots[k]
       if (!at) return
       o.transform[12] = (o.transform[12] ?? 0) + at[0]
@@ -1220,6 +1241,12 @@ function addItem(plate: ProjectPlate, objectId: string, copies: number): void {
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100
+}
+
+/** A turn in degrees as the read-back gives it: from 0 up to 360, to a hundredth. */
+function turnOf(deg: number): number {
+  const d = round2(((deg % 360) + 360) % 360)
+  return d >= 360 ? 0 : d
 }
 
 function shapePositions(shape: VolumeShape, center: [number, number, number]): Float32Array {
