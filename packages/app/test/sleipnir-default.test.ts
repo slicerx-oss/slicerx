@@ -5,6 +5,7 @@
 import type { Host, MeshHandle } from '@slicerx/contracts'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { writeProject } from '../src/export/threemf'
+import { goalEasy } from '@slicerx/settings/easy'
 import { freshVary } from '../src/lib/sleipnir-default'
 import { boxMesh } from '../src/plate/mesh-ops'
 import { compose } from '../src/plate/transform'
@@ -25,6 +26,12 @@ function projectBytes(): ArrayBuffer {
 }
 
 describe('sleipnir on a fresh plate', () => {
+  it('follows each goal of the easy map: fixed layers only where the goal says so', () => {
+    for (const goal of ['draft', 'standard', 'fine', 'strong'] as const) {
+      expect(freshVary({ easy: {}, easyTouched: [], goal }), goal).toBe(goalEasy(goal).varyLayerHeight ?? true)
+    }
+  })
+
   beforeEach(() => set({ plate: [], plates: [{ id: 'plate-1', name: 'Plate 1', objects: [], settings: {} }], easy: { ...initial.easy }, easyTouched: [], goal: 'standard' }))
 
   it('is on for a new user and a fresh plate', () => {
