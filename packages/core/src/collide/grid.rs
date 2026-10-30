@@ -210,6 +210,12 @@ pub(crate) struct Surface {
     h: usize,
     /// Per cell, the triangles whose footprint's box covers it, ascending.
     cells: Vec<Vec<u32>>,
+    /// Per triangle, its box `[min x, max x, min y, max y, min z, max z]`, so a query passes over one that misses
+    /// without reading its corners.
+    boxes: Vec<[f64; 6]>,
+    /// Per triangle, the first cell it is listed in (`[x, y]` from the surface's corner), so a query over many cells
+    /// takes it once.
+    first: Vec<[u32; 2]>,
 }
 
 impl Surface {
@@ -236,6 +242,11 @@ impl Surface {
                 tris.push(corners.map(|i| u32::try_from(i).unwrap_or(u32::MAX)));
             }
         }
+        Self::of_mesh(pts, tris, lo, hi)
+    }
+
+    /// A surface from corners in bed coordinates and triangles over them, `lo` and `hi` the corners' extent on the bed.
+    fn of_mesh(pts: Vec<[f64; 3]>, tris: Vec<[u32; 3]>, lo: [f64; 2], hi: [f64; 2]) -> Self {
         if tris.is_empty() {
             return Self::default();
         }
@@ -251,9 +262,17 @@ impl Surface {
             w,
             h,
             cells: Vec::new(),
+            boxes: Vec::with_capacity(tris.len()),
+            first: Vec::with_capacity(tris.len()),
         };
         for (i, t) in tris.iter().enumerate() {
-            let Some(t3) = out.corners(t) else { continue };
+            let Some(t3) = out.corners(t) else {
+                // Listed in no cell: a box no query meets keeps the lists in step with the triangles.
+                out.boxes.push(NOWHERE);
+                out.first.push([u32::MAX; 2]);
+                continue;
+            };
+            out.boxes.push(bounds(&t3));
             let i = u32::try_from(i).unwrap_or(u32::MAX);
             let (cx0, cx1) = (
                 cell(t3[0][0].min(t3[1][0]).min(t3[2][0])),
@@ -263,6 +282,10 @@ impl Surface {
                 cell(t3[0][1].min(t3[1][1]).min(t3[2][1])),
                 cell(t3[0][1].max(t3[1][1]).max(t3[2][1])),
             );
+            out.first.push([
+                u32::try_from(cx0 - x0).unwrap_or(u32::MAX),
+                u32::try_from(cy0 - y0).unwrap_or(u32::MAX),
+            ]);
             for cy in cy0..=cy1 {
                 for cx in cx0..=cx1 {
                     let (Ok(x), Ok(y)) = (usize::try_from(cx - x0), usize::try_from(cy - y0)) else {
@@ -295,9 +318,14 @@ impl Surface {
         self.corners(self.tris.get(i as usize)?)
     }
 
-    /// Calls `f` with the triangles listed in the cells the box `[x0, x1] x [y0, y1]` covers, a triangle once per
-    /// cell it is in, until it returns true; true when it did. A box edge on a cell boundary takes the cells on both
-    /// sides, so no triangle that meets the box is left out.
+    /// Triangle `i`'s box, as [`Surface::boxes`] holds it.
+    fn box_of(&self, i: u32) -> Option<&[f64; 6]> {
+        self.boxes.get(i as usize)
+    }
+
+    /// Calls `f` once with each triangle listed in the cells the box `[x0, x1] x [y0, y1]` covers, until it returns
+    /// true; true when it did. A box edge on a cell boundary takes the cells on both sides, so no triangle that meets
+    /// the box is left out.
     fn each(&self, rect: [f64; 4], f: &mut dyn FnMut(u32) -> bool) -> bool {
         let (w, h) = (
             i32::try_from(self.w).unwrap_or(0),
@@ -315,6 +343,18 @@ impl Surface {
             for x in x0..=x1 {
                 let at = usize::try_from(y * w + x).unwrap_or(usize::MAX);
                 for &i in self.cells.get(at).map_or(&[][..], Vec::as_slice) {
+                    // A triangle is listed in every cell its box covers; it is taken in the first of them the query
+                    // covers, where both its columns and its rows have started inside the query.
+                    let Some(&[fx, fy]) = self.first.get(i as usize) else {
+                        continue;
+                    };
+                    let (fx, fy) = (
+                        i32::try_from(fx).unwrap_or(i32::MAX),
+                        i32::try_from(fy).unwrap_or(i32::MAX),
+                    );
+                    if fx.max(x0) != x || fy.max(y0) != y {
+                        continue;
+                    }
                     if f(i) {
                         return true;
                     }
@@ -324,7 +364,23 @@ impl Surface {
         false
     }
 
-    /// [`Self::each`]'s triangles each once, ascending: mesh order.
+    /// [`Self::near`] for a query that passes over a triangle whose box misses its box: over a box that covers a good
+    /// part of the surface, every triangle in mesh order instead. The ones no listed cell holds miss the box, and a
+    /// straight run beats gathering and sorting.
+    fn candidates(&self, rect: [f64; 4]) -> Vec<u32> {
+        let span = |lo: f64, hi: f64, at: i32, n: usize| {
+            let n = i32::try_from(n).unwrap_or(i32::MAX);
+            let (a, b) = ((cell(lo - 1e-9) - at).max(0), (cell(hi + 1e-9) - at).min(n - 1));
+            usize::try_from(b - a + 1).unwrap_or(0)
+        };
+        let covered = span(rect[0], rect[1], self.x0, self.w) * span(rect[2], rect[3], self.y0, self.h);
+        if covered * 4 >= self.w * self.h {
+            return (0..u32::try_from(self.tris.len()).unwrap_or(u32::MAX)).collect();
+        }
+        self.near(rect)
+    }
+
+    /// [`Self::each`]'s triangles, ascending: mesh order.
     fn near(&self, rect: [f64; 4]) -> Vec<u32> {
         let mut out = Vec::new();
         self.each(rect, &mut |i| {
@@ -332,7 +388,6 @@ impl Surface {
             false
         });
         out.sort_unstable();
-        out.dedup();
         out
     }
 }
@@ -345,7 +400,15 @@ pub(crate) fn meet(obj: &Surface, rect: [f64; 4], over: f64, p: [f64; 2]) -> Opt
     let near = |r: [f64; 3]| (r[0] - p[0]) * (r[0] - p[0]) + (r[1] - p[1]) * (r[1] - p[1]);
     let mut best: Option<[f64; 3]> = None;
     // Every triangle that may reach the box, in mesh order, so a tie goes to the same corner as before.
-    for i in obj.near(rect) {
+    for i in obj.candidates(rect) {
+        let Some(b) = obj.box_of(i) else {
+            continue;
+        };
+        // One whose box misses the box holds nothing in it, and one whose lowest corner stands clear above the best
+        // point so far can't beat it: no clipped corner lies lower than the triangle's lowest, to rounding.
+        if misses(b, rect, over, f64::INFINITY) || best.is_some_and(|q| b[4] > q[2] + 1e-6 + ROUNDING) {
+            continue;
+        }
         let Some(t) = obj.tri(i) else {
             continue;
         };
@@ -365,9 +428,12 @@ pub(crate) fn material_in(obj: &Surface, rect: [f64; 4], lo: f64, hi: f64, p: [f
     // Any triangle with a piece inside the box answers it; only when none has does the ray up from p decide (the
     // triangles over p, each once: the count of crossings is odd inside the solid).
     if obj.each(rect, &mut |i| {
-        obj.tri(i)
-            .and_then(|t| clipped(&t, rect, lo, hi))
-            .is_some_and(|poly| !poly.is_empty())
+        obj.box_of(i).is_some_and(|b| !misses(b, rect, lo, hi))
+            && obj.tri(i).is_some_and(|t| {
+                // A corner inside the box survives every cut of the clip, so it answers without one.
+                t.iter().any(|q| inside(q, rect, lo, hi))
+                    || clipped(&t, rect, lo, hi).is_some_and(|poly| !poly.is_empty())
+            })
     }) {
         return true;
     }
@@ -393,6 +459,42 @@ fn crosses(&[a, b, c]: &[[f64; 3]; 3], lo: f64, p: [f64; 2]) -> bool {
     let v = ((c[0] - p[0]) * (a[1] - p[1]) - (c[1] - p[1]) * (a[0] - p[0])) / d;
     let w = 1.0 - u - v;
     u > 0.0 && v >= 0.0 && w >= 0.0 && u * a[2] + v * b[2] + w * c[2] > lo
+}
+
+/// How far a clipped corner can sit below the lowest corner of its triangle, mm: the rounding of a cut along an edge
+/// a few hundred mm long, with room to spare.
+const ROUNDING: f64 = 1e-9;
+
+/// The box of a triangle that has no corners: every query misses it.
+const NOWHERE: [f64; 6] = [
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+];
+
+/// A triangle's box, `[min x, max x, min y, max y, min z, max z]`.
+fn bounds(&[a, b, c]: &[[f64; 3]; 3]) -> [f64; 6] {
+    [
+        a[0].min(b[0]).min(c[0]),
+        a[0].max(b[0]).max(c[0]),
+        a[1].min(b[1]).min(c[1]),
+        a[1].max(b[1]).max(c[1]),
+        a[2].min(b[2]).min(c[2]),
+        a[2].max(b[2]).max(c[2]),
+    ]
+}
+
+/// A triangle's box (from [`bounds`]) misses the box `rect` between `lo` and `hi`: [`clipped`]'s own first test.
+fn misses(b: &[f64; 6], rect: [f64; 4], lo: f64, hi: f64) -> bool {
+    b[5] < lo || b[4] > hi || b[1] < rect[0] || b[0] > rect[1] || b[3] < rect[2] || b[2] > rect[3]
+}
+
+/// `q` lies inside the box `rect` between `lo` and `hi`, edges included, as each cut of [`clipped`] keeps it.
+fn inside(q: &[f64; 3], rect: [f64; 4], lo: f64, hi: f64) -> bool {
+    q[0] >= rect[0] && q[0] <= rect[1] && q[1] >= rect[2] && q[1] <= rect[3] && q[2] >= lo && q[2] <= hi
 }
 
 /// `t` clipped to the box `rect` between `lo` and `hi`; None when its own box misses it.
@@ -562,5 +664,246 @@ mod tests {
         assert!((c[0] - 50.5).abs() < 1e-9);
         assert!((push - 5.0).abs() < 1e-6);
         assert!(g.contact([10.0, 20.0, 10.0, 20.0], 5.0, [15.0, 15.0]).is_none());
+    }
+
+    use crate::fm::Fm as _;
+    /// A small repeatable source of numbers for the tests below.
+    struct Draw(u64);
+
+    impl Draw {
+        #[allow(clippy::cast_precision_loss, reason = "53 random bits")]
+        fn next(&mut self) -> f64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 11) as f64 / (1u64 << 53) as f64
+        }
+
+        fn range(&mut self, lo: f64, hi: f64) -> f64 {
+            lo + (hi - lo) * self.next()
+        }
+
+        /// Now and then a whole or half millimeter, so boxes and corners land on cell edges.
+        fn snapped(&mut self, lo: f64, hi: f64) -> f64 {
+            let v = self.range(lo, hi);
+            if self.next() < 0.3 {
+                (v * 2.0).round() / 2.0
+            } else {
+                v
+            }
+        }
+    }
+
+    fn surface(pts: Vec<[f64; 3]>, tris: Vec<[u32; 3]>) -> Surface {
+        let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+        for q in &pts {
+            lo = [lo[0].min(q[0]), lo[1].min(q[1])];
+            hi = [hi[0].max(q[0]), hi[1].max(q[1])];
+        }
+        Surface::of_mesh(pts, tris, lo, hi)
+    }
+
+    fn soup(d: &mut Draw, n: usize) -> Surface {
+        let (mut pts, mut tris) = (Vec::new(), Vec::new());
+        for _ in 0..n {
+            let (cx, cy, cz) = (d.range(0.0, 30.0), d.range(0.0, 30.0), d.range(0.0, 40.0));
+            let size = if d.next() < 0.2 { 25.0 } else { 3.0 };
+            let base = u32::try_from(pts.len()).unwrap();
+            for _ in 0..3 {
+                pts.push([
+                    d.snapped(cx - size, cx + size),
+                    d.snapped(cy - size, cy + size),
+                    d.snapped(cz - size, cz + size).max(0.0),
+                ]);
+            }
+            tris.push([base, base + 1, base + 2]);
+        }
+        surface(pts, tris)
+    }
+
+    /// A box 20 x 20 x 60 with each face cut into `n` x `n` quads, at `x`, `y`.
+    fn fine_box(n: u32, x: f64, y: f64) -> Surface {
+        let (mut pts, mut tris) = (Vec::new(), Vec::new());
+        let mut face = |o: [f64; 3], u: [f64; 3], v: [f64; 3]| {
+            let base = u32::try_from(pts.len()).unwrap();
+            for j in 0..=n {
+                for i in 0..=n {
+                    let (a, b) = (f64::from(i) / f64::from(n), f64::from(j) / f64::from(n));
+                    pts.push([0, 1, 2].map(|k| o[k] + u[k] * a + v[k] * b));
+                }
+            }
+            for j in 0..n {
+                for i in 0..n {
+                    let at = |i: u32, j: u32| base + j * (n + 1) + i;
+                    tris.push([at(i, j), at(i + 1, j), at(i + 1, j + 1)]);
+                    tris.push([at(i, j), at(i + 1, j + 1), at(i, j + 1)]);
+                }
+            }
+        };
+        let (w, h) = (20.0, 60.0);
+        face([x, y, 0.0], [0.0, w, 0.0], [w, 0.0, 0.0]);
+        face([x, y, h], [w, 0.0, 0.0], [0.0, w, 0.0]);
+        face([x, y, 0.0], [w, 0.0, 0.0], [0.0, 0.0, h]);
+        face([x + w, y, 0.0], [0.0, w, 0.0], [0.0, 0.0, h]);
+        face([x + w, y + w, 0.0], [-w, 0.0, 0.0], [0.0, 0.0, h]);
+        face([x, y + w, 0.0], [0.0, -w, 0.0], [0.0, 0.0, h]);
+        surface(pts, tris)
+    }
+
+    /// A frustum of 48 sides from radius 10 at the bed to 3 at 60 mm, centered at 10, 10.
+    fn cone() -> Surface {
+        let n = 48u32;
+        let ring = |r: f64, z: f64| {
+            (0..n).map(move |i| {
+                let a = std::f64::consts::TAU * f64::from(i) / f64::from(n);
+                [10.0 + r * a.m_cos(), 10.0 + r * a.m_sin(), z]
+            })
+        };
+        let mut pts: Vec<[f64; 3]> = ring(10.0, 0.0).chain(ring(3.0, 60.0)).collect();
+        pts.push([10.0, 10.0, 0.0]);
+        pts.push([10.0, 10.0, 60.0]);
+        let mut tris = Vec::new();
+        for i in 0..n {
+            let j = (i + 1) % n;
+            tris.push([i, j, n + j]);
+            tris.push([i, n + j, n + i]);
+            tris.push([2 * n, j, i]);
+            tris.push([2 * n + 1, n + i, n + j]);
+        }
+        surface(pts, tris)
+    }
+
+    /// The queries as they were before the boxes and the once-per-triangle walk, to hold the fast ones to.
+    fn old_each(s: &Surface, rect: [f64; 4], f: &mut dyn FnMut(u32) -> bool) -> bool {
+        let (w, h) = (i32::try_from(s.w).unwrap_or(0), i32::try_from(s.h).unwrap_or(0));
+        let (x0, x1) = (
+            (cell(rect[0] - 1e-9) - s.x0).max(0),
+            (cell(rect[1] + 1e-9) - s.x0).min(w - 1),
+        );
+        let (y0, y1) = (
+            (cell(rect[2] - 1e-9) - s.y0).max(0),
+            (cell(rect[3] + 1e-9) - s.y0).min(h - 1),
+        );
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                let at = usize::try_from(y * w + x).unwrap_or(usize::MAX);
+                for &i in s.cells.get(at).map_or(&[][..], Vec::as_slice) {
+                    if f(i) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    fn old_near(s: &Surface, rect: [f64; 4]) -> Vec<u32> {
+        let mut out = Vec::new();
+        old_each(s, rect, &mut |i| {
+            out.push(i);
+            false
+        });
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    fn old_meet(obj: &Surface, rect: [f64; 4], over: f64, p: [f64; 2]) -> Option<[f64; 3]> {
+        let near = |r: [f64; 3]| (r[0] - p[0]) * (r[0] - p[0]) + (r[1] - p[1]) * (r[1] - p[1]);
+        let mut best: Option<[f64; 3]> = None;
+        for i in old_near(obj, rect) {
+            let Some(t) = obj.tri(i) else {
+                continue;
+            };
+            for q in clipped(&t, rect, over, f64::INFINITY).unwrap_or_default() {
+                if best.is_none_or(|b| q[2] < b[2] - 1e-6 || (q[2] < b[2] + 1e-6 && near(q) < near(b))) {
+                    best = Some(q);
+                }
+            }
+        }
+        best
+    }
+
+    fn old_material_in(obj: &Surface, rect: [f64; 4], lo: f64, hi: f64, p: [f64; 2]) -> bool {
+        if old_each(obj, rect, &mut |i| {
+            obj.tri(i)
+                .and_then(|t| clipped(&t, rect, lo, hi))
+                .is_some_and(|poly| !poly.is_empty())
+        }) {
+            return true;
+        }
+        let mut crossings = 0u32;
+        for i in old_near(obj, [p[0], p[0], p[1], p[1]]) {
+            if obj.tri(i).is_some_and(|t| crosses(&t, lo, p)) {
+                crossings += 1;
+            }
+        }
+        crossings % 2 == 1
+    }
+
+    #[test]
+    fn the_mesh_queries_answer_as_a_query_of_every_listed_triangle_does() {
+        let mut d = Draw(7);
+        let meshes = [soup(&mut d, 400), fine_box(12, 3.0, 4.5), cone()];
+        let (mut hits, mut met) = (0, 0);
+        for s in &meshes {
+            for _ in 0..4000 {
+                let (x, y) = (d.snapped(-8.0, 38.0), d.snapped(-8.0, 38.0));
+                let (w, h) = if d.next() < 0.15 {
+                    (d.range(20.0, 45.0), d.range(20.0, 45.0))
+                } else if d.next() < 0.1 {
+                    (0.0, d.snapped(0.0, 4.0))
+                } else {
+                    (d.snapped(0.0, 12.0), d.snapped(0.0, 12.0))
+                };
+                let rect = [x, x + w, y, y + h];
+                let lo = d.snapped(-2.0, 62.0);
+                let hi = if d.next() < 0.1 {
+                    lo
+                } else {
+                    lo + d.snapped(0.0, 20.0)
+                };
+                let p = [d.range(rect[0], rect[1]), d.range(rect[2], rect[3])];
+                let fast = material_in(s, rect, lo, hi, p);
+                assert_eq!(
+                    fast,
+                    old_material_in(s, rect, lo, hi, p),
+                    "{rect:?} {lo} {hi} {p:?}"
+                );
+                hits += usize::from(fast);
+                let (a, b) = (meet(s, rect, lo, p), old_meet(s, rect, lo, p));
+                assert_eq!(
+                    a.map(|q| q.map(f64::to_bits)),
+                    b.map(|q| q.map(f64::to_bits)),
+                    "{rect:?} {lo} {p:?}"
+                );
+                met += usize::from(a.is_some());
+            }
+        }
+        // Both answers come up often enough to mean something.
+        assert!(hits > 1500 && hits < 10_500, "{hits}");
+        assert!(met > 1500 && met < 10_500, "{met}");
+    }
+
+    #[test]
+    fn a_query_takes_each_triangle_once() {
+        let s = fine_box(8, 0.5, 0.5);
+        for rect in [
+            [0.0, 21.0, 0.0, 21.0],
+            [3.0, 3.0, 3.0, 3.0],
+            [5.0, 9.5, -2.0, 30.0],
+        ] {
+            let mut seen = Vec::new();
+            s.each(rect, &mut |i| {
+                seen.push(i);
+                false
+            });
+            let n = seen.len();
+            seen.sort_unstable();
+            seen.dedup();
+            assert_eq!(seen.len(), n);
+            assert_eq!(seen, old_near(&s, rect));
+        }
     }
 }
