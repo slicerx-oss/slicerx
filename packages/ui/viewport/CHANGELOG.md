@@ -8,6 +8,10 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 - Copies of one object share their geometry. Every part built from the same position and index arrays draws one creased mesh and one set of feature edges, and copies differ only by their transform, material and selection. A big part's worker build runs once for all its copies. The geometry is freed when its last copy goes, and a copy whose arrays differ (scaled or painted) still gets its own.
 
+### Fixed
+
+- With a mesh worker, the bead shader warm-up now waits until big parts have their final geometry. It could start right after the stand-ins drew, and on software GL the swap to the final geometry then waited for its compiles: a task of about 1 s in 6 of 7 opens of a 10-object, 1.3 million triangle plate. Now the longest task is about 0.16 s, and the warm-up, run once the GPU has nothing else to do, holds the page for about 0.06 s instead of 0.2 to 1 s.
+
 ## [0.2.6] - 2026-10-29
 
 ## [0.2.5] - 2026-10-29

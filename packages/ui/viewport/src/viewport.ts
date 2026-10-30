@@ -73,7 +73,7 @@ import { buildObject, disposeObject, sharedFinal, wideEdges, type AsyncPartBuild
 import { Pipeline } from './post'
 import { Stage } from './stage'
 import { FrameProbe, probeRequested, type ProbeStats } from './probe'
-import { CompileClock, emptyStartup, markSpan } from './startup'
+import { CompileClock, emptyStartup, markSpan, warmupWaits } from './startup'
 import { MeshBuildPool } from './mesh-pool'
 import { Toolpaths, warmupBuffers } from './toolpaths'
 import { Strikes, type StrikeMark } from './strikes'
@@ -645,14 +645,15 @@ class ViewportImpl implements Viewport {
   private warm: 'idle' | 'due' | 'scheduled' | 'started' = 'idle'
   private warmHeld = false
 
-  /** Something the warm-up would hold back waits: a file opening, or a plate set and not drawn yet. */
+  /** Something the warm-up would hold back waits (warmupWaits). */
   private warmWaits(): boolean {
-    return this.warmHeld || this.plateSet !== null || this.hold.waiting
+    return warmupWaits({ held: this.warmHeld, plateUndrawn: this.plateSet !== null, opening: this.hold.waiting, refiningParts: this.refining })
   }
 
   /**
    * Starts the warm-up two frames on (a second later still on a weak GPU). It asks again when that time comes, since an
-   * open can start in between; one that waits starts once the open lets go (holdWarmup) or its plate is drawn.
+   * open can start in between; one that waits starts once the open lets go (holdWarmup), its plate is drawn, or its big
+   * parts have their final geometry.
    */
   private warmSoon(): void {
     if (this.warm !== 'idle' && this.warm !== 'due') return
@@ -1493,7 +1494,11 @@ class ViewportImpl implements Viewport {
           this.shadowDirty = true
           this.invalidate()
         }
-        if (this.refining === 0) this.emit('platerefined', { ms: performance.now() - this.refineStart })
+        if (this.refining === 0) {
+          this.emit('platerefined', { ms: performance.now() - this.refineStart })
+          // the warm-up waited for this
+          if (this.warm === 'due') this.warmSoon()
+        }
       },
     }
   }
