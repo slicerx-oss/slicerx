@@ -1,0 +1,277 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (C) 2026 The SlicerX contributors
+// STEP to mesh, without any worker plumbing (so tests run it directly). OpenCASCADE (occt-import-js, built by
+// ../build.sh) reads the file, converts its length unit to millimeters and meshes every solid. This module picks what
+// to keep, names it and groups it into objects.
+//
+// - Solids are kept. Open shells and loose faces are construction or reference geometry in most CAD exports and are
+//   left out when the file has solids; a file with shells only keeps them (a mesh repair closes them), a file with
+//   loose faces only is refused.
+// - Bodies whose boxes touch or overlap stay together as one object with a part per body, in place (a bolt in its
+//   bracket). Bodies apart from the rest become objects of their own.
+// - Chord tolerance 0.01 mm and 0.5 rad, measured on the NIST test models and our own parts: under a second for most
+//   parts, 5 s for the largest. 0.003 mm triples the triangles for no difference a printer can show. Past the
+//   triangle limit the file is meshed again at 0.05 mm.
+// - A body keeps the color the file gives its solid, as data (`color`). Faces with colors of their own are not read.
+
+export interface OcctMesh {
+  name?: string
+  /** solid, shell or faces (added by our patch, patches/0001-mesh-kind.patch). */
+  kind?: string
+  /** The shape's color, 0 to 1 per channel, when the file gives one. */
+  color?: ArrayLike<number>
+  attributes: { position: { array: ArrayLike<number> } }
+  index: { array: ArrayLike<number> }
+}
+
+export interface OcctResult {
+  success: boolean
+  meshes: OcctMesh[]
+}
+
+export interface OcctParams {
+  linearUnit: 'millimeter'
+  linearDeflectionType: 'absolute_value'
+  linearDeflection: number
+  angularDeflection: number
+}
+
+/** The loaded OpenCASCADE module, as far as this package calls it. */
+export interface Occt {
+  ReadStepFile(data: Uint8Array, params: OcctParams | null): OcctResult
+}
+
+export type StepQuality = 'normal' | 'coarser' | 'finer'
+
+/** Chord tolerance in mm for each quality. */
+export const STEP_TOLERANCE: Record<StepQuality, number> = { finer: 0.003, normal: 0.01, coarser: 0.05 }
+export const STEP_ANGLE_RAD = 0.5
+export const STEP_MAX_MB = 100
+export const STEP_MAX_TRIANGLES = 2_000_000
+
+/** Why a STEP file could not be read. Stable: an app or an MCP client can branch on these. */
+export const STEP_ERROR_CODES = ['empty', 'not_step', 'step_xml', 'too_large', 'no_solids', 'too_detailed', 'unreadable', 'out_of_memory', 'timeout'] as const
+export type StepErrorCode = (typeof STEP_ERROR_CODES)[number]
+
+/** A STEP file that cannot be added, with the reason in plain words meant to follow the file name, and its code. */
+export class StepError extends Error {
+  override readonly name = 'StepError'
+  readonly code: StepErrorCode
+  constructor(code: StepErrorCode, message: string) {
+    super(message)
+    this.code = code
+  }
+}
+
+export type StepUnit = 'millimeter' | 'centimeter' | 'meter' | 'inch' | 'foot'
+
+export interface StepBody {
+  name: string
+  positions: Float64Array
+  indices: Uint32Array
+  /** The body's color as #rrggbb, when the file gives its solid one. */
+  color?: string
+}
+
+export interface StepRead {
+  /** Objects to add, each with its parts (one per body). */
+  objects: { name: string; bodies: StepBody[] }[]
+  /** The length unit the file declares; positions are already millimeters. */
+  unit: StepUnit | null
+  triangles: number
+  toleranceMm: number
+  /** Short sentences for an import message. */
+  notes: string[]
+}
+
+export interface ReadOptions {
+  /** The app's name, for refusals such as "uses STEP entities <name> does not support". Default "this reader". */
+  appName?: string
+}
+
+const latin1 = new TextDecoder('latin1')
+
+/** The file's length unit, from its header entities. */
+export function stepUnit(bytes: Uint8Array): StepUnit | null {
+  const text = latin1.decode(bytes)
+  const conv = /CONVERSION_BASED_UNIT\s*\(\s*'\s*(INCH|IN|FOOT|FT)\s*'/i.exec(text)
+  if (conv) return /^(INCH|IN)$/i.test(conv[1]!) ? 'inch' : 'foot'
+  const si = /SI_UNIT\s*\(\s*(\$|\.\w+\.)\s*,\s*\.METRE\.\s*\)/i.exec(text)
+  if (!si) return null
+  const p = si[1]!.toUpperCase()
+  return p === '.MILLI.' ? 'millimeter' : p === '.CENTI.' ? 'centimeter' : p === '$' ? 'meter' : null
+}
+
+/** Why the bytes are not a STEP file we read, or null when they are one. */
+function notStep(bytes: Uint8Array): StepError | null {
+  const head = latin1.decode(bytes.subarray(0, 4096)).replace(/^\uFEFF/, '').trimStart()
+  if (head.startsWith('ISO-10303-21')) return null
+  if (/ISO-10303-28|<\?xml/i.test(head)) return new StepError('step_xml', 'is a STEP XML file. Save it from your CAD program as a regular STEP file (AP203, AP214 or AP242) and open that.')
+  return new StepError('not_step', 'is not a STEP file. A STEP file starts with ISO-10303-21.')
+}
+
+const GENERIC = /^(solid|shell|body|part|open\s?cascade.*|compound|unnamed)?[\s_-]*\d*$/i
+
+function cleanName(s: string | undefined): string {
+  return (s ?? '').replace(/[\r\n\t]+/g, ' ').trim()
+}
+
+/** Groups bodies whose boxes touch or overlap (within `gap` mm), keeping the file order. */
+function groupByBox(boxes: number[][], gap: number): number[][] {
+  const parent = boxes.map((_, i) => i)
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)))
+  for (let i = 0; i < boxes.length; i++) {
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i]!
+      const b = boxes[j]!
+      if (a[0]! <= b[3]! + gap && b[0]! <= a[3]! + gap && a[1]! <= b[4]! + gap && b[1]! <= a[4]! + gap && a[2]! <= b[5]! + gap && b[2]! <= a[5]! + gap) {
+        parent[find(j)] = find(i)
+      }
+    }
+  }
+  const groups = new Map<number, number[]>()
+  boxes.forEach((_, i) => {
+    const r = find(i)
+    groups.set(r, [...(groups.get(r) ?? []), i])
+  })
+  return [...groups.values()]
+}
+
+/** [minX, minY, minZ, maxX, maxY, maxZ] of a position array. */
+export function boxOf(p: ArrayLike<number>): number[] {
+  const b = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity]
+  for (let i = 0; i < p.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const v = p[i + k]!
+      if (v < b[k]!) b[k] = v
+      if (v > b[k + 3]!) b[k + 3] = v
+    }
+  }
+  return b
+}
+
+const NOTHING = (app: string): StepError =>
+  new StepError('no_solids', `has no solids or surfaces ${app} can read. It may hold only drawings or annotations, or use STEP entities ${app} does not support.`)
+const SHAPES = /\b(MANIFOLD_SOLID_BREP|BREP_WITH_VOIDS|FACETED_BREP|SHELL_BASED_SURFACE_MODEL|CLOSED_SHELL|OPEN_SHELL|ADVANCED_FACE|FACE_SURFACE)\s*\(/i
+
+/** Thrown by a capped module when the file needs more memory than the cap (see load.ts). */
+export const OUT_OF_MEMORY = 'step-reader: memory cap reached'
+
+function mesh(occt: Occt, bytes: Uint8Array, tol: number, app: string): OcctResult {
+  let r: OcctResult
+  // A capped module (load.ts) refuses to grow past its cap. OpenCASCADE may catch the failed allocation and answer
+  // with part of the file or nothing, so a refused growth fails the read whatever came back.
+  const outOfMemory = () => (occt as { outOfMemory?: boolean }).outOfMemory === true
+  const tooBig = () => new StepError('out_of_memory', 'could not be read: it needs more memory than the reader may use.')
+  try {
+    r = occt.ReadStepFile(bytes, { linearUnit: 'millimeter', linearDeflectionType: 'absolute_value', linearDeflection: tol, angularDeflection: STEP_ANGLE_RAD })
+  } catch {
+    if (outOfMemory()) throw tooBig()
+    throw new StepError('unreadable', `could not be read: it ran out of memory or uses STEP entities ${app} does not support.`)
+  }
+  if (outOfMemory()) throw tooBig()
+  if (!r.success) {
+    if (!SHAPES.test(latin1.decode(bytes))) throw NOTHING(app)
+    throw new StepError('unreadable', `could not be read. It may be damaged, or it uses STEP entities ${app} does not support.`)
+  }
+  return r
+}
+
+const triangles = (ms: OcctMesh[]) => ms.reduce((n, m) => n + Math.floor(m.index.array.length / 3), 0)
+
+/**
+ * One channel as two hex digits. OpenCASCADE keeps colors in linear RGB and converts a file's COLOUR_RGB, which is
+ * sRGB, on reading; this turns it back into the sRGB value the file holds (0.25 in the file comes out as 0.0508).
+ */
+function hex2(linear: number): string {
+  const c = Math.min(1, Math.max(0, linear))
+  const srgb = c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055
+  return Math.round(srgb * 255).toString(16).padStart(2, '0')
+}
+
+/** A mesh's color as #rrggbb, or undefined when it has none. */
+function colorOf(m: OcctMesh): string | undefined {
+  const c = m.color
+  if (!c || c.length < 3 || ![c[0], c[1], c[2]].every((v) => typeof v === 'number' && Number.isFinite(v))) return undefined
+  return `#${hex2(c[0]!)}${hex2(c[1]!)}${hex2(c[2]!)}`
+}
+
+/** Reads a STEP file into objects and bodies in millimeters. Throws StepError with a plain reason and a code. */
+export function readStep(occt: Occt, bytes: Uint8Array, fileName: string, quality: StepQuality = 'normal', opts: ReadOptions = {}): StepRead {
+  const app = opts.appName ?? 'this reader'
+  if (bytes.length === 0) throw new StepError('empty', 'is empty.')
+  if (bytes.length > STEP_MAX_MB * 1024 * 1024) throw new StepError('too_large', `is ${Math.round(bytes.length / 1024 / 1024)} MB. STEP files up to ${STEP_MAX_MB} MB can be opened.`)
+  const why = notStep(bytes)
+  if (why) throw why
+  const notes: string[] = []
+  let tol = STEP_TOLERANCE[quality]
+  let r = mesh(occt, bytes, tol, app)
+  const used = (res: OcctResult) => {
+    const all = res.meshes.filter((m) => m.index.array.length >= 3)
+    const solids = all.filter((m) => m.kind === 'solid')
+    const shells = all.filter((m) => m.kind === 'shell' || m.kind === undefined || m.kind === '')
+    const faces = all.filter((m) => m.kind === 'faces')
+    return { all, solids, shells, faces, keep: solids.length ? solids : shells }
+  }
+  let u = used(r)
+  if (u.all.length === 0) throw NOTHING(app)
+  if (u.keep.length === 0) throw new StepError('no_solids', 'has only loose surfaces and no solid bodies, so there is nothing to print. Export it from your CAD program as a solid.')
+  if (triangles(u.keep) > STEP_MAX_TRIANGLES && tol < STEP_TOLERANCE.coarser) {
+    tol = STEP_TOLERANCE.coarser
+    r = mesh(occt, bytes, tol, app)
+    u = used(r)
+    notes.push(`Meshed at ${tol} mm because the model is very detailed.`)
+  }
+  const total = triangles(u.keep)
+  if (total > STEP_MAX_TRIANGLES) throw new StepError('too_detailed', `is too detailed: ${total.toLocaleString('en-US')} triangles at ${tol} mm, more than the ${STEP_MAX_TRIANGLES.toLocaleString('en-US')} ${app} can add at once.`)
+  const left = u.all.length - u.keep.length
+  if (left > 0) notes.push(`Left out ${left} open ${left === 1 ? 'surface' : 'surfaces'} that ${left === 1 ? 'is' : 'are'} not part of a solid.`)
+
+  const base = fileName.replace(/\.(step|stp)$/i, '')
+  const bodies: StepBody[] = u.keep.map((m, i) => {
+    const name = cleanName(m.name)
+    const color = colorOf(m)
+    return {
+      name: name && !GENERIC.test(name) ? name : u.keep.length === 1 ? base : `${base} ${i + 1}`,
+      positions: Float64Array.from(m.attributes.position.array),
+      indices: Uint32Array.from(m.index.array),
+      ...(color ? { color } : {}),
+    }
+  })
+  toLocalOrigin(bodies)
+  const groups = groupByBox(bodies.map((b) => boxOf(b.positions)), 0.01)
+  const objects = groups.map((g) => ({ name: g.length === 1 ? bodies[g[0]!]!.name : base, bodies: g.map((i) => bodies[i]!) }))
+  if (groups.length === 1 && bodies.length > 1) objects[0]!.name = base
+  // One object of one body keeps the file's name, like other formats.
+  if (objects.length === 1 && bodies.length === 1) objects[0]!.name = base
+  const unit = stepUnit(bytes)
+  if (unit && unit !== 'millimeter') notes.unshift(`Converted from ${unit === 'inch' ? 'inches' : unit === 'foot' ? 'feet' : `${unit}s`} to millimeters.`)
+  return { objects, unit, triangles: total, toleranceMm: tol, notes }
+}
+
+/**
+ * Moves every body by the same amount so their shared box is centered on the origin, in double precision. The meshes
+ * go on as 32-bit floats, which far from the origin lose detail (half a millimeter steps at 8 km): a model exported in
+ * a site's or an assembly's world coordinates keeps its small features. The bodies keep their places relative to one
+ * another; where the model lands on the plate is set later, as for any file.
+ */
+export function toLocalOrigin(bodies: StepBody[]): void {
+  const lo = [Infinity, Infinity, Infinity]
+  const hi = [-Infinity, -Infinity, -Infinity]
+  for (const b of bodies) {
+    const p = b.positions
+    for (let i = 0; i + 2 < p.length; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        const v = p[i + k]!
+        if (v < lo[k]!) lo[k] = v
+        if (v > hi[k]!) hi[k] = v
+      }
+    }
+  }
+  if (!Number.isFinite(lo[0]!)) return
+  const c = [0, 1, 2].map((k) => (lo[k]! + hi[k]!) / 2)
+  for (const b of bodies) {
+    const p = b.positions
+    for (let i = 0; i + 2 < p.length; i += 3) for (let k = 0; k < 3; k++) p[i + k] = p[i + k]! - c[k]!
+  }
+}

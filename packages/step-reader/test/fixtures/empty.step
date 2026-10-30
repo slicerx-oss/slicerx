@@ -1,0 +1,10 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('SlicerX test file with no shapes'),'2;1');
+FILE_NAME('empty','2026-10-02T00:00:00',(''),(''),'','','');
+FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));
+ENDSEC;
+DATA;
+#1 = APPLICATION_CONTEXT('core data for automotive mechanical design processes');
+ENDSEC;
+END-ISO-10303-21;
