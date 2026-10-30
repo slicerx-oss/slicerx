@@ -98,6 +98,20 @@ export interface PilotProject {
   setObjectSettings?(objectId: string, changes: Record<string, SettingValue>): void
   /** An object's own settings, for read-back. */
   objectSettings?(objectId: string): Record<string, SettingValue>
+  /**
+   * heimdall's plate check of a plate printed by object as it sits, before a slice: null by layer, with fewer than two
+   * objects, or on a host without the check. `leftSure` lists the pairs a slice is sure to be refused for, by object id
+   * and name; the rest (the collisions with their certainty, the fixes, what only the slice checks) is the host's.
+   */
+  plateCheck?(plateIndex: number): Promise<PlateCheckSummary | null>
+}
+
+/** What arrange and other tools read of a plate check: the pairs left with a sure strike, and the rest as the host gives it. */
+export interface PlateCheckSummary {
+  clean: boolean
+  leftSure: { a: { id: string; name: string }; b: { id: string; name: string }; collisions: number[] }[]
+  fixes: readonly unknown[]
+  [more: string]: unknown
 }
 
 /** What a new plate layout could not fit: parts still off the bed, and copies that found no room and were not added. */
