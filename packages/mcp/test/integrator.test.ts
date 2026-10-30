@@ -247,7 +247,7 @@ describe('profiles', () => {
     const cube = join(h.dir, 'cube.stl')
     const applied = async (profiles: string[]) => data<{ applied: string[] }>(await h.call('slicerx_estimate_file', { model: cube, profiles })).applied
     expect(await applied([])).toEqual(['process:slicerx-default'])
-    expect(await applied(['machine:bambu-a1'])).toEqual(['process:slicerx-default', 'machine:bambu-a1'])
+    expect(await applied(['machine:bambu-a1'])).toEqual(['process:slicerx-default', 'default filament: Bambu Lab default PLA', 'machine:bambu-a1'])
     expect(await applied(['process:fine'])).toEqual(['process:fine'])
     expect(await applied(['intent:strong'])).not.toContain('process:slicerx-default')
   })
