@@ -23,7 +23,7 @@ export { smartLayerBounds, smartLayerLimits, smartLayerWindow, isSmartLayerOn, S
 export { searchProfiles, setProfileProvider } from './profilesearch'
 export type { PrinterProfileHit, ProfileProvider } from './profilesearch'
 export { hasResolved, resolvedNozzles, resolvedProfile } from './resolved'
-export { applyExtruders, GCODE_KEYS, perSlot, pickExtruderVariant, pickVariant, stockLayer } from './stock-layer'
+export { applyExtruders, GCODE_KEYS, perSlot, pickExtruderVariant, pickVariant, stockLayer, stockProcess } from './stock-layer'
 export type { SlotFilament, StockLayer, StockLayerInput } from './stock-layer'
 export type { ResolvedProfile } from './resolved'
 export { machineEntry, gcodeStatus, listPrinterProfiles, printerProfile, printerConfig, listFilamentProfiles, filamentConfig, filamentSources, listProcessPresets, processConfig, profileConfig } from './profiles'

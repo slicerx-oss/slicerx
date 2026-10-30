@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Profile catalog: SlicerX's own printer profiles and process presets (packages/settings),
-// printer and filament presets from knowledge/, and the Easy intent presets.
+// Profile catalog: SlicerX's own printer profiles and process presets (packages/settings), the process a printer's
+// maker ships for each tier where there is one (as the app takes it), printer and filament presets from knowledge/, and
+// the Easy intent presets.
 import type { EasyGoal, SettingSection, SettingValue } from '@slicerx/contracts'
 import { EASY_GOALS, productName } from '@slicerx/contracts'
-import { applyEasy, EASY_MAP, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, defaultWallGenerator, printerConfig, printerProfile, processConfig, resolvedNozzles, resolvedProfile, resolveFilamentPreset, type VendorFile } from '@slicerx/settings'
+import { applyEasy, EASY_MAP, gcodeStatus, goalEasy, hasResolved, listFilamentFamilies, listPrinterProfiles, listProcessPresets, loadVendorFile, presetDefaults, printerConfig, printerProfile, processConfig, resolvedNozzles, resolveFilamentPreset, stockProcess, type VendorFile } from '@slicerx/settings'
 import { normalizeId, type DataStore } from './data'
 import { defaultConfig, filamentLayer, layerConfig, printerLayer, printerProfileByName, sameValue } from './settings'
 
@@ -45,9 +46,10 @@ export function shippedPrinterGcode(name: string): Record<string, SettingValue> 
 const STOCK_FILAMENT = 'stock-filament:'
 
 /**
- * A fresh SlicerX plate's process: the Standard preset (0.20 mm) with sleipnir (variable layer height, Quality) and
- * SlicerX's preset defaults (aegis walls; a Bambu Lab printer keeps its presets' classic walls, as in the app). The
- * default when a slice names no process. sx plans sleipnir's layers itself, with the planner the
+ * A fresh SlicerX plate's process: the printer's Standard process as the app takes it (the maker's own preset where
+ * there is one, else SlicerX's Standard, 0.20 mm), with sleipnir (variable layer height, Quality) and SlicerX's preset
+ * defaults (aegis walls; a Bambu Lab printer keeps its process's own walls, as in the app). The default when a slice
+ * names no process. sx plans sleipnir's layers itself, with the planner the
  * app uses, so a slice through this server gets the app's layers. It sets no supports: the slice takes them from the
  * printer (`ProfileCatalog.defaultSupports`), as the app does.
  */
@@ -57,14 +59,19 @@ const DEFAULT_PROCESS_KEYS = { smart_layer: 'quality' } as const
 /** The keys the Easy supports control writes. */
 export const SUPPORT_KEYS: readonly string[] = [...new Set(EASY_MAP.rules.filter((r) => r.control === 'supports').flatMap((r) => (r.op === 'set' ? [r.key] : r.keys)))]
 
-/** The support keys each maker's own Standard preset sets, by `<printer id>@<nozzle>`. */
-async function loadMakerSupports(): Promise<Map<string, Record<string, SettingValue>>> {
+const TIER_IDS = Object.keys(EASY_GOALS) as EasyGoal[]
+
+/**
+ * Each tier's process on each printer with the makers' presets, by `<printer id>@<nozzle>:<tier>`: the maker's own
+ * preset where there is one, as the app's printer layer takes it (stockProcess). A printer or nozzle with none has no
+ * entry here and gets SlicerX's tier for the printer (processConfig), which is what the app falls back to as well.
+ */
+async function loadMakerProcesses(): Promise<Map<string, Record<string, SettingValue>>> {
   const out = new Map<string, Record<string, SettingValue>>()
   for (const p of listPrinterProfiles()) {
     if (!hasResolved(p.id)) continue
     for (const nozzle of await resolvedNozzles(p.id)) {
-      const process = (await resolvedProfile(p.id, 'standard', nozzle))?.process as Record<string, SettingValue> | undefined
-      if (process) out.set(`${p.id}@${nozzle}`, Object.fromEntries(SUPPORT_KEYS.filter((k) => process[k] !== undefined).map((k) => [k, process[k] as SettingValue])))
+      for (const tier of TIER_IDS) out.set(`${p.id}@${nozzle}:${tier}`, await stockProcess(p.id, tier, nozzle))
     }
   }
   return out
@@ -85,7 +92,7 @@ export class ProfileCatalog {
   private all: ProfileSummary[] | undefined
   /** Stock filament vendor files are megabytes, so they load on first use (`prepare`). */
   private readonly vendors = new Map<string, VendorFile>()
-  /** The makers' Standard presets' supports (`loadMakerSupports`), loaded on first use (`prepare`). */
+  /** The makers' process presets by printer, nozzle and tier (`loadMakerProcesses`), loaded on first use (`prepare`). */
   private makerLoad: Promise<Map<string, Record<string, SettingValue>>> | undefined
   private maker: Map<string, Record<string, SettingValue>> | undefined
 
@@ -106,7 +113,7 @@ export class ProfileCatalog {
         if (file) this.vendors.set(parts.vendor, file)
       }
     }
-    this.makerLoad ??= loadMakerSupports()
+    this.makerLoad ??= loadMakerProcesses()
     this.maker = await this.makerLoad
   }
 
@@ -118,7 +125,7 @@ export class ProfileCatalog {
   defaultSupports(printer: { printerId: string; nozzle?: number | undefined } | undefined): Record<string, SettingValue> {
     if (!this.maker) throw new Error('ProfileCatalog.prepare must run before defaultSupports')
     const nozzle = printer ? (printer.nozzle ?? printerProfile(printer.printerId)?.defaultNozzle) : undefined
-    const own = printer ? this.maker.get(`${printer.printerId}@${nozzle}`) : undefined
+    const own = printer ? this.maker.get(`${printer.printerId}@${nozzle}:standard`) : undefined
     const from = own ? { ...defaultConfig(this.store), ...own } : (processConfig('standard') as unknown as Record<string, SettingValue>)
     return Object.fromEntries(SUPPORT_KEYS.flatMap((k) => (from[k] === undefined ? [] : [[k, from[k] as SettingValue]])))
   }
@@ -201,16 +208,34 @@ export class ProfileCatalog {
     }
     const nozzle = printer?.nozzle ?? (printer ? printerProfile(printer.printerId)?.defaultNozzle : undefined) ?? 0.4
     if (summary.id === SLICERX_DEFAULT_PROCESS) {
-      const config = processConfig('standard', nozzle, printer?.printerId) as unknown as Record<string, SettingValue> | undefined
+      const config = this.tierConfig('standard', nozzle, printer)
       const own = config ? Object.fromEntries(Object.entries(config).filter(([k]) => !SUPPORT_KEYS.includes(k))) : undefined
-      // The printer's model picks the walls: a Bambu Lab printer's presets' classic, else aegis (as sx and the app do).
+      // SlicerX's own preset defaults go over the process, as the app's layer puts them (layerConfig): aegis walls, a
+      // Bambu Lab printer keeping its process's own (its presets' classic ones).
       const machine = printer ? (printerConfig(printer.printerId, nozzle) as unknown as Record<string, unknown> | undefined) : undefined
-      return own ? { ...summary, config: { ...own, ...DEFAULT_PROCESS_KEYS, wall_generator: defaultWallGenerator(machine ?? {}) }, chain: ['Standard', summary.name], unknown_keys: [] } : undefined
+      return own ? { ...summary, config: { ...own, ...DEFAULT_PROCESS_KEYS, ...presetDefaults(machine ?? {}) }, chain: ['Standard', summary.name], unknown_keys: [] } : undefined
     }
     if (kind === 'process') {
-      const config = processConfig(id, nozzle, printer?.printerId)
-      return config ? { ...summary, config: config as unknown as Record<string, SettingValue>, chain: [summary.name], unknown_keys: [] } : undefined
+      const config = this.tierConfig(id, nozzle, printer)
+      if (!config) return undefined
+      // On a printer, SlicerX's own preset defaults go over the maker's process, as the app's layer puts them
+      // (layerConfig): aegis walls, a Bambu Lab printer's presets keeping their classic ones.
+      const machine = printer ? (printerConfig(printer.printerId, nozzle) as unknown as Record<string, unknown> | undefined) : undefined
+      return { ...summary, config: printer ? { ...config, ...presetDefaults(machine ?? {}) } : config, chain: [summary.name], unknown_keys: [] }
     }
     return undefined
+  }
+
+  /**
+   * A tier's process: on a printer and a nozzle the app offers for it, the app's (the maker's own preset for the tier
+   * and nozzle where it has one, from `prepare`), else SlicerX's tier for the printer and nozzle, or the generic tier
+   * without a printer. A nozzle the app does not offer (a printer file's or an override's) has no app answer, so it
+   * keeps SlicerX's tier for the size.
+   */
+  private tierConfig(tier: string, nozzle: number, printer: { printerId: string } | undefined): Record<string, SettingValue> | undefined {
+    const offered = printer ? (printerProfile(printer.printerId)?.nozzles ?? []).includes(nozzle) : false
+    const own = offered && this.maker?.get(`${printer!.printerId}@${nozzle}:${tier}`)
+    if (own) return { ...own }
+    return processConfig(tier, nozzle, printer?.printerId) as unknown as Record<string, SettingValue> | undefined
   }
 }
