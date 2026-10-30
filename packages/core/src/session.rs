@@ -897,7 +897,8 @@ impl Clone for WholeRegions {
 #[derive(Debug, Default)]
 struct VaseExits(std::sync::Mutex<Option<(u64, BaseExits)>>);
 
-/// Where each solid base layer of a spiral vase ends, by layer.
+/// Where each solid base layer of a spiral vase ends, by layer. Past the base, where each spiral layer starts and
+/// ends ([`Session::vase_exits`]).
 type BaseExits = std::sync::Arc<Vec<Option<crate::geom::Point>>>;
 
 impl Clone for VaseExits {
@@ -4951,9 +4952,12 @@ impl SliceSession {
         }
         // Spiral vase mode: each layer above the first starts from where the base layer below it ended.
         let vase_exits = self.vase.filter(|_| objects.end > 1).map(|b| {
-            self.vase_exits(config, b, |l, entry| {
-                self.layer_paths(l, layer_cfg_of(l), &mod_cfgs, &get, &micros, &tags, entry)
-            })
+            self.vase_exits(
+                config,
+                (b, objects.end),
+                |l, entry| self.layer_paths(l, layer_cfg_of(l), &mod_cfgs, &get, &micros, &tags, entry),
+                |l| get(l).map(|r| r.regions.as_slice()),
+            )
         });
         let object_paths = |l: u32, start: Option<LayerStart>| {
             let entry = self.vase_entry(vase_exits.as_deref().map(Vec::as_slice), l);
@@ -8834,43 +8838,76 @@ impl SliceSession {
     /// Spiral vase mode: where each solid base layer ends, each planned from where the layer below it ended
     /// (`plan(layer, entry)`), worked out in order once per config for every range of layers to read. A base
     /// layer's walls start nearest the end of the layer below, and the spiral nearest the end of the last.
-    fn vase_exits(
+    /// `layers` is the base and the end of the range: the spiral layers below that end follow, each starting and
+    /// ending at the point of its outline (`outline(layer)`) nearest where the layer below ended, so a layer whose
+    /// largest outline is another ring than the one below goes to it the shortest way.
+    fn vase_exits<'a>(
         &self,
         config: &PrintConfig,
-        base: u32,
+        layers: (u32, u32),
         plan: impl Fn(u32, Option<crate::geom::Point>) -> LayerPaths,
+        outline: impl Fn(u32) -> Option<&'a [(u8, Shapes)]>,
     ) -> BaseExits {
+        let (base, upto) = (layers.0, layers.1.max(layers.0));
         let tag = settings_tag(config);
+        let mut exits: Vec<Option<crate::geom::Point>> = Vec::new();
         if let Ok(g) = self.vase_exits.0.lock()
             && let Some((t, v)) = g.as_ref()
             && *t == tag
         {
-            return std::sync::Arc::clone(v);
+            if v.len() >= upto as usize {
+                return std::sync::Arc::clone(v);
+            }
+            exits.clone_from(v.as_ref());
         }
         // Worked out with no lock held: two ranges that ask at once each plan the same layers.
-        let mut exits: Vec<Option<crate::geom::Point>> = Vec::with_capacity(base as usize);
-        let mut entry = None;
-        for layer in 0..base {
-            let end = plan(layer, entry).exit_point().or(entry);
-            exits.push(end);
-            entry = end;
+        if exits.len() < base as usize {
+            exits.clear();
+            let mut entry = None;
+            for layer in 0..base {
+                let end = plan(layer, entry).exit_point().or(entry);
+                exits.push(end);
+                entry = end;
+            }
+        }
+        // A range further up goes on from the layers worked out so far: each spiral layer reads only the one below.
+        let mut at = exits.last().copied().flatten();
+        for layer in u32::try_from(exits.len()).unwrap_or(upto)..upto {
+            let from = at.unwrap_or_else(|| self.vase_anchor());
+            at = Some(
+                outline(layer)
+                    .and_then(|r| crate::spiral::nearest_outline(from, r))
+                    .unwrap_or(from),
+            );
+            exits.push(at);
         }
         let v = std::sync::Arc::new(exits);
-        if let Ok(mut g) = self.vase_exits.0.lock() {
+        if let Ok(mut g) = self.vase_exits.0.lock()
+            && g.as_ref().is_none_or(|(t, old)| *t != tag || old.len() < v.len())
+        {
             *g = Some((tag, std::sync::Arc::clone(&v)));
         }
         v
     }
 
-    /// Where object layer `layer` of a spiral vase starts from: the end of the base layer below it, and for the
-    /// spiral the end of the last base layer. None for the first layer and for other prints.
+    /// Where a spiral vase's first loop starts from when nothing below it ends anywhere: in front of the plate.
+    fn vase_anchor(&self) -> crate::geom::Point {
+        crate::geom::Point::from_mm(
+            f64::midpoint(self.bounds[0], self.bounds[2]),
+            self.bounds[1] - 1000.0,
+        )
+    }
+
+    /// Where object layer `layer` of a spiral vase starts from: the end of the base layer below it, for the first
+    /// spiral layer the end of the last base layer, and for a spiral layer above it the end of the spiral layer
+    /// below. None for the first layer and for other prints.
     fn vase_entry(
         &self,
         exits: Option<&[Option<crate::geom::Point>]>,
         layer: u32,
     ) -> Option<crate::geom::Point> {
-        let base = self.vase?;
-        let below = layer.min(base).checked_sub(1)?;
+        self.vase?;
+        let below = layer.checked_sub(1)?;
         exits?.get(below as usize).copied().flatten()
     }
 
@@ -11251,12 +11288,7 @@ impl SliceSession {
                 crate::spiral::VaseLayer {
                     first,
                     last: layer + 1 == n,
-                    anchor: entry.unwrap_or_else(|| {
-                        crate::geom::Point::from_mm(
-                            f64::midpoint(self.bounds[0], self.bounds[2]),
-                            self.bounds[1] - 1000.0,
-                        )
-                    }),
+                    anchor: entry.unwrap_or_else(|| self.vase_anchor()),
                     enter: entry.filter(|_| first && layer == b),
                     blend: None,
                 }

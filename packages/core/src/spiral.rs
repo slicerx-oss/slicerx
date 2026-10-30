@@ -21,8 +21,9 @@ pub(crate) struct VaseLayer {
     pub first: bool,
     /// The last layer of the print: a loop at constant Z follows, with the flow ramping down.
     pub last: bool,
-    /// The loop starts at the vertex nearest this point, so layers do not depend on each other: where the solid
-    /// base ended, when that is known.
+    /// The loop starts at the point nearest this point: where the solid base ended, when that is known, and
+    /// above the first spiral layer where the layer below ended (worked out once for the print, so layers are
+    /// still planned on their own).
     pub anchor: Point,
     /// The first layer only: where the solid base ended. When the loop's start is within
     /// `retraction_minimum_travel` of it, the loop starts there, so the nozzle goes on from the base into the
@@ -75,6 +76,24 @@ fn nearest_on(p: Point, line: &[Point]) -> Option<(Point, f64)> {
         }
     }
     best
+}
+
+/// The point of the outer rings of `regions` nearest `at`: where a spiral layer that starts from `at` starts, and
+/// so where it ends.
+pub(crate) fn nearest_outline(at: Point, regions: &[(u8, Shapes)]) -> Option<Point> {
+    regions
+        .iter()
+        .flat_map(|(_, s)| s.iter().filter_map(|shape| shape.first()))
+        .filter_map(|ring| {
+            let closed: Vec<Point> = ring
+                .iter()
+                .chain(ring.first())
+                .map(|p| Point::new(p.x, p.y))
+                .collect();
+            nearest_on(at, &closed)
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(p, _)| p)
 }
 
 pub(crate) fn enabled(cfg: &PrintConfig) -> bool {
