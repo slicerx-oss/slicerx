@@ -18,6 +18,9 @@ const repo = join(pkg, '..', '..')
 const flag = process.argv.indexOf('--standalone')
 const standalone = flag >= 0 ? resolve(process.argv[flag + 1] ?? '') : undefined
 const external = ['@modelcontextprotocol/sdk', 'zod', 'yaml', '@noble/*']
+// The STEP reader is an optional peer dependency, loaded at run time only when it is installed (slicerx_step_read):
+// never inlined, not even in the standalone bundle, so the wasm and its licenses stay in their own package.
+const optional = ['@slicerx/step-reader']
 const outFile = standalone ? join(standalone, 'slicerx-mcp.mjs') : join(pkg, 'dist', 'cli.js')
 
 if (!standalone) rmSync(join(pkg, 'dist'), { recursive: true, force: true })
@@ -30,7 +33,7 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  external: standalone ? [] : external,
+  external: standalone ? optional : [...external, ...optional],
   // Bundled CommonJS dependencies call require(); give the ESM output one.
   ...(standalone ? { banner: { js: "import { createRequire as __sxCreateRequire } from 'node:module'; const require = __sxCreateRequire(import.meta.url);" } } : {}),
   legalComments: standalone ? 'eof' : 'inline',
@@ -47,7 +50,7 @@ if (!standalone) {
     platform: 'node',
     format: 'esm',
     target: 'node24',
-    external,
+    external: [...external, ...optional],
     legalComments: 'inline',
     logLevel: 'warning',
   })
