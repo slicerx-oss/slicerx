@@ -189,6 +189,15 @@ impl Router {
             .all(|z| !inside(z, center) && edge_dist(z, center) >= r + self.clearance)
     }
 
+    /// The first zone (its place in [`crate::collide::plate::zones`]) the leg `a`-`b` runs into, more than the edge
+    /// tolerance inside it, and a point of the leg in it. A leg that only passes beside a zone is clear here.
+    pub(crate) fn enters(&self, a: Pt, b: Pt) -> Option<(usize, Pt)> {
+        self.zones
+            .iter()
+            .enumerate()
+            .find_map(|(k, z)| crate::preflight::segment_reaches(z, a, b, true, EDGE_TOL_MM).map(|p| (k, p)))
+    }
+
     /// The route of a travel from `a` to `b` at height `z` (mm).
     pub(crate) fn route(&self, a: Pt, b: Pt, z: f64) -> Route {
         let Some(zone) = self

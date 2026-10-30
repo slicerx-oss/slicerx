@@ -28,6 +28,9 @@ pub struct GcodeStats {
     pub tool_changes: u32,
     pub bytes: u64,
     pub layers: u32,
+    /// The travels written into a keep-out zone, in layer order, for the collision check.
+    #[serde(skip)]
+    pub(crate) zone_travels: Vec<crate::collide::plate::WrittenTravel>,
 }
 
 /// Cross-section of a bead: a rectangle with semicircular sides (Orca's model).
@@ -132,6 +135,8 @@ pub(crate) struct LayerChunk {
     start: Option<[f64; 3]>,
     /// Where in `bytes` the layer's first tool change starts, if it has one.
     change_at: Option<usize>,
+    /// The travels written into a keep-out zone ([`note_zone_travel`]).
+    zone_travels: Vec<crate::collide::plate::WrittenTravel>,
 }
 
 fn custom(
@@ -301,6 +306,7 @@ pub fn emit_gcode_with(
         w.write_all(&c.bytes)?;
         stats.bytes += c.bytes.len() as u64;
         stats.tool_changes += c.tool_changes;
+        stats.zone_travels.extend(c.zone_travels.iter().cloned());
         for (acc, e) in e_total.iter_mut().zip(&c.e_units) {
             *acc += e;
         }
@@ -1934,6 +1940,7 @@ fn emit_layer(
         error: None,
         start: None,
         change_at: None,
+        zone_travels: Vec::new(),
     };
     // Custom G-code of this layer, rendered only when the profile or the request has some.
     let wants_templates = [
@@ -1981,6 +1988,8 @@ fn emit_layer(
     let deferred = ctx.is_some() && templates.iter().any(|t| crate::weight::wanted(t));
     let before = custom(base, "before_layer_change_gcode", ctx.as_ref(), &mut error);
     let b = &mut chunk.bytes;
+    let mut zone_travels: Vec<crate::collide::plate::WrittenTravel> = Vec::new();
+    let objects = u32::try_from(out.objects.len()).unwrap_or(u32::MAX);
     let h = f64::from(l.height);
     // Each filament's own cross-section: E for a path is its bead's volume over the filament it prints with.
     let fil_areas: Vec<f64> = (1..=tools)
@@ -3456,7 +3465,21 @@ fn emit_layer(
             if let (Some(a), Some(last)) = (approach, route.last_mut()) {
                 *last = a;
             }
+            let mut leg_from = cursor;
             for stop in route {
+                if zoned
+                    && !lifted
+                    && let Some(a) = leg_from
+                {
+                    note_zone_travel(
+                        &mut zone_travels,
+                        zone_router.as_ref(),
+                        (l, objects),
+                        pi,
+                        (a, stop),
+                    );
+                }
+                leg_from = Some(stop);
                 b.extend_from_slice(b"G0");
                 put_xy(b, off, stop);
                 if let Some(zl) = lift_on_travel.take() {
@@ -3750,11 +3773,63 @@ fn emit_layer(
                     prev = at;
                     entering = true;
                 } else if at.dist_mm(start) >= min_seg {
+                    // Round the printer's keep-out zones as any other travel goes (zoneroute.rs), still with no
+                    // retraction: one the router cannot take round any way is lifted over it by the profile's travel
+                    // lift. A travel that meets no zone stays one straight move.
+                    let route = zone_router.as_ref().map_or(crate::zoneroute::Route::Clear, |zr| {
+                        zr.route(
+                            [at.x_mm(), at.y_mm()],
+                            [start.x_mm(), start.y_mm()],
+                            f64::from(l.z),
+                        )
+                    });
+                    #[allow(
+                        clippy::cast_possible_truncation,
+                        reason = "a lift of a few mm in thousandths"
+                    )]
+                    let lift = match &route {
+                        crate::zoneroute::Route::Lift(h) => Some((h * 1000.0).round() as i64),
+                        _ => None,
+                    };
+                    if let Some(h) = lift {
+                        write_normal_lift(b, cur_z + h, z_feed);
+                    }
+                    if lift.is_none() {
+                        let mut from = at;
+                        let legs = match &route {
+                            crate::zoneroute::Route::Around(way) => {
+                                way.iter().map(|w| Point::from_mm(w[0], w[1])).collect()
+                            }
+                            _ => vec![start],
+                        };
+                        for q in legs {
+                            note_zone_travel(
+                                &mut zone_travels,
+                                zone_router.as_ref(),
+                                (l, objects),
+                                pi,
+                                (from, q),
+                            );
+                            from = q;
+                        }
+                    }
+                    if let crate::zoneroute::Route::Around(way) = &route {
+                        for w in way.iter().take(way.len().saturating_sub(1)) {
+                            b.extend_from_slice(b"G0");
+                            put_xy(b, off, Point::from_mm(w[0], w[1]));
+                            b.extend_from_slice(b" F");
+                            put_int(b, travel_feed);
+                            b.push(b'\n');
+                        }
+                    }
                     b.extend_from_slice(b"G0");
                     put_xy(b, off, start);
                     b.extend_from_slice(b" F");
                     put_int(b, travel_feed);
                     b.push(b'\n');
+                    if lift.is_some() {
+                        write_normal_lift(b, cur_z, z_feed);
+                    }
                     b.extend_from_slice(b"G1 F");
                     put_int(b, f);
                     b.push(b'\n');
@@ -4015,7 +4090,54 @@ fn emit_layer(
     chunk.bytes.extend_from_slice(marker.as_bytes());
     chunk.change_time_s = f64::from(change_f32);
     chunk.error = error;
+    chunk.zone_travels = zone_travels;
     chunk
+}
+
+/// Notes the travel leg `a`-`b`, written before path `pi` of `l`, when it runs into one of `router`'s zones: the
+/// collision check reports it ([`crate::collide::plate::add_written_travels`]). It counts for the object the travel
+/// leaves, else the one it goes to (the prime tower after the plate's `objects`), as the check's own travels do; a
+/// travel of no object (between skirt paths) is left out.
+fn note_zone_travel(
+    list: &mut Vec<crate::collide::plate::WrittenTravel>,
+    router: Option<&crate::zoneroute::Router>,
+    (l, objects): (&LayerPaths, u32),
+    pi: usize,
+    (a, b): (Point, Point),
+) {
+    let Some((zone, p)) = router.and_then(|r| r.enters([a.x_mm(), a.y_mm()], [b.x_mm(), b.y_mm()])) else {
+        return;
+    };
+    let owner_of = |q: &crate::output::PathInfo| match q.feature {
+        Feature::PrimeTower => Some(objects),
+        Feature::Skirt | Feature::Custom => None,
+        _ => (q.owner != crate::preview::OBJECT_NONE).then_some(u32::from(q.owner)),
+    };
+    let left = pi.checked_sub(1).and_then(|k| l.paths.get(k)).and_then(owner_of);
+    let Some(owner) = left.or_else(|| l.paths.get(pi).and_then(owner_of)) else {
+        return;
+    };
+    let segments = |paths: &[crate::output::PathInfo]| {
+        paths
+            .iter()
+            .map(|q| l.path_points(q).len().saturating_sub(1))
+            .sum::<usize>()
+    };
+    let segment = segments(l.paths.get(..pi).unwrap_or(&[]));
+    let total = segments(&l.paths).max(1);
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "preview data is f32, and a layer has far fewer segments than f32 counts exactly"
+    )]
+    list.push(crate::collide::plate::WrittenTravel {
+        layer: l.index,
+        segment: u32::try_from(segment).unwrap_or(u32::MAX),
+        share: (segment as f32 / total as f32).min(1.0),
+        owner,
+        zone: u32::try_from(zone).unwrap_or(u32::MAX),
+        at: [p[0] as f32, p[1] as f32, l.z],
+    });
 }
 
 /// The lift height (thousandths of a mm), whether a travel at height `zmm` lifts (`retract_lift_above` and

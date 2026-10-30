@@ -2272,6 +2272,9 @@ fn run_prepared_timed(
     let resume_at = req.options.resume_from_layer.filter(|&r| r > 0).unwrap_or(0);
     let mut extras: Vec<(u32, crate::extras::LayerExtras)> = Vec::new();
     let mut hits = crate::collide::Hits::default();
+    // The travels the G-code writer wrote into a keep-out zone, over every range, and the plate's object count.
+    let mut written_travels = Vec::new();
+    let mut plate_objects = 0u32;
     // Objects sliced together that overlap, over every range, and the plate's objects that name them.
     let mut overlaps = crate::collide::Hits::default();
     let mut overlap_objects = Vec::new();
@@ -2331,7 +2334,9 @@ fn run_prepared_timed(
                 .0
             },
         );
-        let stats = stats?;
+        let mut stats = stats?;
+        written_travels.append(&mut stats.zone_travels);
+        plate_objects = u32::try_from(out.objects.len()).unwrap_or(u32::MAX);
         if want_gcode && want_preview {
             let text = String::from_utf8_lossy(target.get(before..).unwrap_or(&[]));
             let parsed = crate::extras::parse(&out, &config, resume_at, &text);
@@ -2512,6 +2517,7 @@ fn run_prepared_timed(
         }
         gcode_sha = sha;
     }
+    crate::collide::plate::add_written_travels(&mut hits, plate_objects, &written_travels);
     let collisions = collision_report(
         held.get().session.collide_meta_for(&config).as_ref(),
         &hits,
