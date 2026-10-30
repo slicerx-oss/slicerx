@@ -534,6 +534,9 @@ pub struct FirstLayerInfo {
     /// The convex hull of the outlines the skirt goes round (before the elephant foot compensation, on the
     /// layers up to `skirt_height`), mm.
     pub skirt_outline: Vec<[f64; 2]>,
+    /// On a plate printed by object, the outer edges of the brims of the objects after the first, mm (the first
+    /// object's brim is read from the paths of layer 0).
+    pub brims: Vec<[f64; 2]>,
 }
 
 impl SliceOutput {
