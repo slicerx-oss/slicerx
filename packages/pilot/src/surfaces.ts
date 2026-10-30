@@ -3,7 +3,8 @@
 // Which tools mimir offers a model, by where it runs. A cloud model gets every tool the runtime has. A local model has
 // a small context (see context.ts) where the tool schemas are most of the request, so it gets only the tools its
 // surface uses: the mimir tab keeps its chat tools and its way into a design (the design tools, or text_to_part where a
-// host has no design tools), without make_model.
+// host has no design tools), without make_model. Of those, each turn sends only the ones on the surface's every-turn
+// list and the ones the turn calls for (localTurnTools in toolsets.ts).
 // An edition can also switch whole tool groups off (ai.brain.tools); a switch only ever takes tools away.
 import type { PilotConfig } from '@slicerx/contracts'
 import type { PilotTool } from './tool'
@@ -20,6 +21,50 @@ export function isLocalModel(config: Pick<PilotConfig, 'provider'>): boolean {
 const LOCAL_LEAVE_OUT: Record<ToolSurface, ReadonlySet<string>> = {
   // make_model's schema alone is about 1,700 tokens
   tab: new Set(['make_model']),
+}
+
+/**
+ * The tools a local model gets on every turn, per surface: the questions, lookups and notes, the knowledge base, and
+ * preparing and slicing the plate. This is an explicit list on purpose, so a tool registered later never grows every
+ * turn of a local model's prompt: it joins a turn only when the turn calls for its toolset (toolsets.ts), until it is
+ * named here. Status and device reads, G-code utilities, printer setup and the other rarely used tools stay off it.
+ */
+const LOCAL_EVERY_TURN: Record<ToolSurface, ReadonlySet<string>> = {
+  tab: new Set([
+    // asking, showing a looked up part, the dimension sheet and the person's notes
+    'pilot.ask',
+    'pilot.report',
+    'pilot.sheet',
+    'pilot.sheet_bind',
+    'lookup.show',
+    'memory.recall',
+    'memory.remember',
+    // the project, the knowledge base and lookups
+    'project.info',
+    'parts.lookup',
+    'web.lookup',
+    'kb.search',
+    'kb.filament',
+    'kb.printer',
+    'kb.troubleshoot',
+    'kb.workflow',
+    'kb.intent',
+    'kb.sources',
+    // a part from a description, where the host has no design tools
+    'text_to_part',
+    // preparing and slicing the plate
+    'orient',
+    'arrange',
+    'slice',
+    'estimate',
+    'settings.plan',
+    'settings.apply',
+  ]),
+}
+
+/** Whether a local model on `surface` gets `name` on every turn. */
+export function onEveryLocalTurn(surface: ToolSurface, name: string): boolean {
+  return LOCAL_EVERY_TURN[surface].has(name)
 }
 
 /** The tools a model on `surface` is offered: all of `tools` for a cloud model, the surface's own set for a local one. */
