@@ -268,6 +268,7 @@ pub fn config(id: &str, plugin: &str, port: u16) -> PrinterConfig {
         camera_url: None,
         camera_credential_ref: None,
         rtsp_port: None,
+        tunnel: None,
     }
 }
 

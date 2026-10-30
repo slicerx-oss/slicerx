@@ -4,7 +4,7 @@ use serde::Serialize;
 
 /// The one error type of the crate. Messages never carry secrets: constructors take the
 /// printer id and a plain description, never a URL with credentials or a header value.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum Error {
     #[error("printer {printer} is unreachable: {detail}")]
     Unreachable { printer: String, detail: String },
@@ -58,6 +58,51 @@ pub enum Error {
     /// The printer has a camera but it does not stream. `reason` is one plain line saying what to change.
     #[error("{reason}")]
     Camera { printer: String, reason: String },
+    /// A remote tunnel (Obico) answered for the printer with one of its own refusals.
+    #[error("printer {printer} {}", problem.words())]
+    Tunnel { printer: String, problem: TunnelProblem },
+}
+
+/// What a remote tunnel said went wrong, from its own status codes (Obico's tunnel guide: 401, 481,
+/// 482 and 483), or what the app found before sending anything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TunnelProblem {
+    /// No tunnel credential is stored on this computer for the printer.
+    NoAccess,
+    /// 401: the access was revoked, or the printer or account was removed in Obico.
+    AccessRemoved,
+    /// 481: this month's free tunnel data is used up.
+    DataLimit,
+    /// The file is larger than what is left of this month's free tunnel data.
+    FileOverDataLimit,
+    /// 482: the printer's Obico plugin is not connected to Obico.
+    NotConnected,
+    /// 483: the printer's Obico plugin is connected but did not answer within 30 seconds.
+    TimedOut,
+}
+
+impl TunnelProblem {
+    fn words(self) -> &'static str {
+        match self {
+            TunnelProblem::NoAccess => {
+                "has no Obico access stored on this computer: connect it through Obico again"
+            }
+            TunnelProblem::AccessRemoved => {
+                "lost its Obico access (it was revoked, or the printer or account was removed in Obico): connect it through Obico again"
+            }
+            TunnelProblem::DataLimit => {
+                "has used this month's free Obico tunnel data, so Obico passes nothing more until the monthly reset"
+            }
+            TunnelProblem::FileOverDataLimit => {
+                "has too little of this month's free Obico tunnel data left for this file"
+            }
+            TunnelProblem::NotConnected => {
+                "is not connected to Obico right now: check that the printer is on and its Obico plugin is online"
+            }
+            TunnelProblem::TimedOut => "did not answer through Obico within 30 seconds",
+        }
+    }
 }
 
 /// Why a printer refused a sign-in, when it says (Moonraker `/access/info`).
@@ -118,6 +163,8 @@ pub enum ErrorCode {
     /// The printer's storage is full; serialized as `printer_storage_full`.
     #[serde(rename = "printer_storage_full")]
     StorageFull,
+    /// A remote tunnel's monthly data allowance is used up, or too little is left for a file.
+    TunnelDataLimit,
 }
 
 impl Error {
@@ -136,6 +183,12 @@ impl Error {
             Error::Refused { .. } => ErrorCode::Refused,
             Error::NeedsDeveloperMode { .. } => ErrorCode::NeedsDeveloperMode,
             Error::StorageFull { .. } => ErrorCode::StorageFull,
+            Error::Tunnel { problem, .. } => match problem {
+                TunnelProblem::NoAccess | TunnelProblem::AccessRemoved => ErrorCode::Auth,
+                TunnelProblem::DataLimit | TunnelProblem::FileOverDataLimit => ErrorCode::TunnelDataLimit,
+                TunnelProblem::NotConnected => ErrorCode::Unreachable,
+                TunnelProblem::TimedOut => ErrorCode::Timeout,
+            },
         }
     }
 
@@ -147,31 +200,46 @@ impl Error {
         }
     }
 
+    /// What a remote tunnel refused, for a tunnel error.
+    pub fn tunnel_problem(&self) -> Option<TunnelProblem> {
+        match self {
+            Error::Tunnel { problem, .. } => Some(*problem),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn tunnel(printer: &str, problem: TunnelProblem) -> Self {
+        Error::Tunnel {
+            printer: printer.to_owned(),
+            problem,
+        }
+    }
+
     pub(crate) fn unreachable(printer: &str, detail: impl std::fmt::Display) -> Self {
         Error::Unreachable {
             printer: printer.to_owned(),
-            detail: detail.to_string(),
+            detail: crate::tunnel::redact_userinfo(&detail.to_string()),
         }
     }
 
     pub(crate) fn tls(printer: &str, detail: impl std::fmt::Display) -> Self {
         Error::Tls {
             printer: printer.to_owned(),
-            detail: detail.to_string(),
+            detail: crate::tunnel::redact_userinfo(&detail.to_string()),
         }
     }
 
     pub(crate) fn timeout(printer: &str, detail: impl std::fmt::Display) -> Self {
         Error::Timeout {
             printer: printer.to_owned(),
-            detail: detail.to_string(),
+            detail: crate::tunnel::redact_userinfo(&detail.to_string()),
         }
     }
 
     pub(crate) fn protocol(printer: &str, detail: impl std::fmt::Display) -> Self {
         Error::Protocol {
             printer: printer.to_owned(),
-            detail: detail.to_string(),
+            detail: crate::tunnel::redact_userinfo(&detail.to_string()),
         }
     }
 

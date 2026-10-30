@@ -454,6 +454,20 @@ pub(crate) fn lan_client_auth_config(cert_pem: &str, key_pem: &str) -> Result<Ar
     Ok(Arc::new(cfg))
 }
 
+/// The config for a public host (a remote tunnel): the system's trust store decides, as for the
+/// relay and the chat providers. Never used for LAN printers.
+pub(crate) fn platform_client_config() -> Result<ClientConfig> {
+    use rustls_platform_verifier::BuilderVerifierExt as _;
+    Ok(
+        ClientConfig::builder_with_provider(Arc::new(ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .map_err(|e| Error::Config(e.to_string()))?
+            .with_platform_verifier()
+            .map_err(|e| Error::Config(format!("TLS setup failed: {e}")))?
+            .with_no_client_auth(),
+    )
+}
+
 /// A client config that trusts no certificate at all. Plain `http://` printers never use it;
 /// it exists so an `https://` redirect or URL fails instead of being trusted by accident.
 pub(crate) fn no_trust_config() -> Result<Arc<ClientConfig>> {

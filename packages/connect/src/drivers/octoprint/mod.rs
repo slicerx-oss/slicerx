@@ -17,7 +17,8 @@ use crate::error::{Error, Result};
 use crate::gate::{Action, ApprovalGate, ApprovalToken, params};
 use crate::http::{self, base_url, f64_at, seg, str_at};
 use crate::manifest::{PluginManifest, manifest};
-use crate::poll::poll_events;
+use crate::poll::poll_events_every;
+use crate::tunnel::Tunnel;
 use crate::types::{
     Adjustment, Capabilities, Capability, DiscoveredPrinter, ExtruderInfo, FileInfo, Image, JobFile,
     PrinterConfig, PrinterEvent, PrinterHardware, PrinterState, PrinterStatus, RemoteFile, Secrets,
@@ -47,18 +48,32 @@ impl PrinterConnector for OctoPrintConnector {
     }
 
     async fn connect(&self, cfg: &PrinterConfig, secrets: &dyn Secrets) -> Result<Box<dyn PrinterSession>> {
-        let key = cfg.credential_ref.as_deref().and_then(|r| secrets.get(r));
+        // Through a tunnel, `credential_ref` is the tunnel's credential, sent by the tunnel's client.
+        let tunnel = match cfg.tunnel {
+            Some(_) => Some(Arc::new(Tunnel::open(cfg, secrets).await?)),
+            None => None,
+        };
+        let (client, base, key) = match &tunnel {
+            Some(t) => (t.client(), t.base().to_owned(), None),
+            None => (
+                http::client(cfg)?,
+                base_url(cfg, 5000),
+                cfg.credential_ref.as_deref().and_then(|r| secrets.get(r)),
+            ),
+        };
         let inner = Arc::new(Inner {
             cfg: cfg.clone(),
-            client: http::client(cfg)?,
-            base: base_url(cfg, 5000),
+            client,
+            base,
             key,
             gate: self.gate.clone(),
             camera: AtomicBool::new(false),
+            tunnel,
         });
         // /api/version needs a valid key, so it doubles as the auth check.
         http::send(&cfg.id, inner.get("/api/version")).await?;
-        let cam = inner.snapshot_url().await.is_some();
+        // The printer's camera URLs point at the local network; through a tunnel there is none yet.
+        let cam = inner.tunnel.is_none() && inner.snapshot_url().await.is_some();
         inner.camera.store(cam, Ordering::Relaxed);
         Ok(Box::new(OctoPrintSession { inner }))
     }
@@ -123,11 +138,28 @@ struct Inner {
     key: Option<String>,
     gate: Arc<dyn ApprovalGate>,
     camera: AtomicBool,
+    /// The remote tunnel the printer is reached through, if any.
+    tunnel: Option<Arc<Tunnel>>,
 }
 
 impl Inner {
     fn id(&self) -> &str {
         &self.cfg.id
+    }
+
+    /// Status from the printer, or through a tunnel at most once per its polling interval.
+    async fn status(&self) -> Result<PrinterStatus> {
+        match &self.tunnel {
+            Some(t) => t.status(|| self.fetch_status()).await,
+            None => self.fetch_status().await,
+        }
+    }
+
+    /// After a print action, the next status reading goes to the printer even through a tunnel.
+    async fn forget_status(&self) {
+        if let Some(t) = &self.tunnel {
+            t.forget_status().await;
+        }
     }
 
     fn auth(&self, rb: RequestBuilder) -> RequestBuilder {
@@ -197,6 +229,9 @@ impl Inner {
             .send()
             .await
             .map_err(|e| Error::unreachable(self.id(), e.without_url()))?;
+        if let Some(e) = crate::tunnel::refusal(self.id(), &printer) {
+            return Err(e);
+        }
         let job_resp = http::send(self.id(), self.get("/api/job")).await?;
         let job = http::json(self.id(), job_resp).await?;
         let camera = self.camera.load(Ordering::Relaxed);
@@ -294,7 +329,7 @@ impl PrinterSession for OctoPrintSession {
     }
 
     async fn status(&self) -> Result<PrinterStatus> {
-        self.inner.fetch_status().await
+        self.inner.status().await
     }
 
     /// The current printer profile: its model name, extruder count and nozzle diameter.
@@ -305,14 +340,14 @@ impl PrinterSession for OctoPrintSession {
 
     fn events(&self) -> BoxStream<'static, PrinterEvent> {
         let inner = self.inner.clone();
-        let interval = inner.cfg.poll_interval();
         let id = inner.cfg.id.clone();
-        poll_events(
+        let every = Tunnel::every(inner.tunnel.as_ref(), inner.cfg.poll_interval());
+        poll_events_every(
             id,
-            interval,
+            every,
             Arc::new(move || {
                 let inner = inner.clone();
-                async move { inner.fetch_status().await }
+                async move { inner.status().await }
             }),
         )
     }
@@ -324,6 +359,9 @@ impl PrinterSession for OctoPrintSession {
             self.inner.id(),
             &params::upload(self.inner.id(), &file.name, &file.sha256),
         )?;
+        if let Some(t) = &self.inner.tunnel {
+            t.check_upload(file.data.len()).await?;
+        }
         let form = Form::new().text("select", "false").text("print", "false").part(
             "file",
             Part::bytes(file.data.clone()).file_name(file.name.clone()),
@@ -354,6 +392,7 @@ impl PrinterSession for OctoPrintSession {
             .post(&format!("/api/files/local/{}", seg(&file.path)))
             .json(&json!({ "command": "select", "print": true }));
         http::send(self.inner.id(), rb).await?;
+        self.inner.forget_status().await;
         Ok(())
     }
 
@@ -371,6 +410,7 @@ impl PrinterSession for OctoPrintSession {
                 .json(&json!({ "command": "pause", "action": "pause" })),
         )
         .await?;
+        self.inner.forget_status().await;
         Ok(())
     }
 
@@ -388,6 +428,7 @@ impl PrinterSession for OctoPrintSession {
                 .json(&json!({ "command": "pause", "action": "resume" })),
         )
         .await?;
+        self.inner.forget_status().await;
         Ok(())
     }
 
@@ -403,6 +444,7 @@ impl PrinterSession for OctoPrintSession {
             self.inner.post("/api/job").json(&json!({ "command": "cancel" })),
         )
         .await?;
+        self.inner.forget_status().await;
         Ok(())
     }
 

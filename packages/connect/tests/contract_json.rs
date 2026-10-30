@@ -142,6 +142,7 @@ fn config_fixture() {
             camera_url: None,
             camera_credential_ref: None,
             rtsp_port: None,
+            tunnel: None,
         },
         discovered: DiscoveredPrinter {
             plugin: "bambu-lan".into(),

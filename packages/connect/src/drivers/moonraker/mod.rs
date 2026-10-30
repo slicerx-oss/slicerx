@@ -23,7 +23,8 @@ use crate::error::{Error, LoginNeed, Result};
 use crate::gate::{Action, ApprovalGate, ApprovalToken, params};
 use crate::http::{self, base_url, f64_at, str_at};
 use crate::manifest::{PluginManifest, manifest};
-use crate::poll::poll_events;
+use crate::poll::poll_events_every;
+use crate::tunnel::Tunnel;
 use crate::types::{
     Adjustment, Capabilities, Capability, DiscoveredPrinter, ExtruderInfo, Fans, FileInfo, Image, JobFile,
     PrintObject, PrintRecord, PrinterConfig, PrinterEvent, PrinterHardware, PrinterLive, PrinterState,
@@ -217,7 +218,16 @@ impl PrinterConnector for MoonrakerConnector {
     }
 
     async fn connect(&self, cfg: &PrinterConfig, secrets: &dyn Secrets) -> Result<Box<dyn PrinterSession>> {
-        let secret = cfg.credential_ref.as_deref().and_then(|r| secrets.get(r));
+        // Through a tunnel, `credential_ref` is the tunnel's credential, sent by the tunnel's client.
+        let tunnel = match cfg.tunnel {
+            Some(_) => Some(Arc::new(Tunnel::open(cfg, secrets).await?)),
+            None => None,
+        };
+        let secret = if tunnel.is_some() {
+            None
+        } else {
+            cfg.credential_ref.as_deref().and_then(|r| secrets.get(r))
+        };
         let auth = match (cfg.username.as_deref().filter(|u| !u.is_empty()), secret) {
             (Some(user), Some(password)) => Auth::Login {
                 user: user.to_owned(),
@@ -228,13 +238,17 @@ impl PrinterConnector for MoonrakerConnector {
             (_, Some(key)) => Auth::Key(key),
             (_, None) => Auth::None,
         };
-        let client = http::client(cfg)?;
+        let (client, base) = match &tunnel {
+            Some(t) => (t.client(), t.base().to_owned()),
+            None => (http::client(cfg)?, base_url(cfg, self.default_port)),
+        };
         let mut inner = Inner {
             cfg: cfg.clone(),
             plugin: self.plugin,
             client,
-            base: base_url(cfg, self.default_port),
+            base,
             auth,
+            tunnel,
             gate: self.gate.clone(),
             camera: AtomicBool::new(false),
             webcams: Mutex::new(None),
@@ -244,7 +258,8 @@ impl PrinterConnector for MoonrakerConnector {
         inner.reach().await?;
         let inner = Arc::new(inner);
         inner.read_objects().await;
-        let has_camera = !inner.webcams().await.is_empty();
+        // The webcam URLs point at the local network; through a tunnel there is no camera yet.
+        let has_camera = inner.tunnel.is_none() && !inner.webcams().await.is_empty();
         inner.camera.store(has_camera, Ordering::Relaxed);
         Ok(Box::new(MoonrakerSession { inner }))
     }
@@ -427,6 +442,8 @@ struct Inner {
     client: Client,
     base: String,
     auth: Auth,
+    /// The remote tunnel the printer is reached through, if any.
+    tunnel: Option<Arc<Tunnel>>,
     gate: Arc<dyn ApprovalGate>,
     camera: AtomicBool,
     /// `/server/webcams/list`, read once per session.
@@ -440,6 +457,21 @@ struct Inner {
 impl Inner {
     fn id(&self) -> &str {
         &self.cfg.id
+    }
+
+    /// Status from the printer, or through a tunnel at most once per its polling interval.
+    async fn status(&self) -> Result<PrinterStatus> {
+        match &self.tunnel {
+            Some(t) => t.status(|| self.fetch_status()).await,
+            None => self.fetch_status().await,
+        }
+    }
+
+    /// After a print action, the next status reading goes to the printer even through a tunnel.
+    async fn forget_status(&self) {
+        if let Some(t) = &self.tunnel {
+            t.forget_status().await;
+        }
     }
 
     fn sign(&self, rb: RequestBuilder) -> RequestBuilder {
@@ -571,6 +603,9 @@ impl Inner {
             .send()
             .await
             .map_err(|e| Error::unreachable(self.id(), e.without_url()))?;
+        if let Some(e) = crate::tunnel::refusal(self.id(), &resp) {
+            return Err(e);
+        }
         let status = resp.status().as_u16();
         if matches!(status, 401 | 403) {
             return Err(Error::Auth {
@@ -973,7 +1008,7 @@ impl PrinterSession for MoonrakerSession {
     }
 
     async fn status(&self) -> Result<PrinterStatus> {
-        self.inner.fetch_status().await
+        self.inner.status().await
     }
 
     async fn plan_toolheads(
@@ -1083,14 +1118,14 @@ impl PrinterSession for MoonrakerSession {
 
     fn events(&self) -> BoxStream<'static, PrinterEvent> {
         let inner = self.inner.clone();
-        let interval = inner.cfg.poll_interval();
         let id = inner.cfg.id.clone();
-        poll_events(
+        let every = Tunnel::every(inner.tunnel.as_ref(), inner.cfg.poll_interval());
+        poll_events_every(
             id,
-            interval,
+            every,
             Arc::new(move || {
                 let inner = inner.clone();
-                async move { inner.fetch_status().await }
+                async move { inner.status().await }
             }),
         )
     }
@@ -1103,6 +1138,9 @@ impl PrinterSession for MoonrakerSession {
             &params::upload(self.inner.id(), &file.name, &file.sha256),
         )?;
         self.validate_toolhead_upload(&file).await?;
+        if let Some(t) = &self.inner.tunnel {
+            t.check_upload(file.data.len()).await?;
+        }
         let timeout = upload_timeout(file.data.len());
         let v = self
             .inner
@@ -1141,6 +1179,7 @@ impl PrinterSession for MoonrakerSession {
                     .query(&[("filename", file.path.as_str())])
             })
             .await?;
+        self.inner.forget_status().await;
         Ok(())
     }
 
@@ -1148,6 +1187,7 @@ impl PrinterSession for MoonrakerSession {
         self.inner
             .token(token, Action::Pause, &params::printer(self.inner.id()))?;
         self.inner.call(|i| i.post("/printer/print/pause")).await?;
+        self.inner.forget_status().await;
         Ok(())
     }
 
@@ -1155,6 +1195,7 @@ impl PrinterSession for MoonrakerSession {
         self.inner
             .token(token, Action::Resume, &params::printer(self.inner.id()))?;
         self.inner.call(|i| i.post("/printer/print/resume")).await?;
+        self.inner.forget_status().await;
         Ok(())
     }
 
@@ -1162,12 +1203,16 @@ impl PrinterSession for MoonrakerSession {
         self.inner
             .token(token, Action::Cancel, &params::printer(self.inner.id()))?;
         self.inner.call(|i| i.post("/printer/print/cancel")).await?;
+        self.inner.forget_status().await;
         Ok(())
     }
 
     /// Creality K2 printers serve WebRTC on port 8000 (`/call/webrtc_local`); other Klipper cameras
     /// through the webcam service Moonraker lists. Only the signaling passes through here.
     async fn webrtc_offer(&self, offer_sdp: &str) -> Result<Option<String>> {
+        if self.inner.tunnel.is_some() {
+            return Ok(None);
+        }
         let signaling = if self.inner.plugin == "creality" {
             camera::Signaling::Creality(format!(
                 "http://{}:{}/call/webrtc_local",
@@ -1504,6 +1549,7 @@ mod device_tests {
             camera_url: None,
             camera_credential_ref: None,
             rtsp_port: None,
+            tunnel: None,
         }
     }
 

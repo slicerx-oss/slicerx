@@ -387,6 +387,11 @@ export interface PrinterConfig {
   cameraCredentialRef?: string
   /** Bambu Lab RTSPS port override (default 322). */
   rtspPort?: number
+  /**
+   * The remote tunnel the printer is reached through instead of the local network. `host` is then the tunnel host
+   * (`<id>.tunnels.app.obico.io`, https only) and `credentialRef` names the tunnel's own credential.
+   */
+  tunnel?: 'obico'
 }
 
 export interface DiscoveredPrinter {
@@ -477,6 +482,8 @@ export type PrinterErrorCode =
   | 'printer_storage_full'
   /** No access code is stored on this computer for the printer (the keychain kept it only for a session). */
   | 'credential_missing'
+  /** A remote tunnel's free monthly data is used up, or too little is left for the file; the message says which. */
+  | 'tunnel_data_limit'
 
 /** Error shape at the host boundary. Messages never contain secrets. */
 export interface PrinterError {

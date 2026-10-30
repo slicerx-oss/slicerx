@@ -1739,14 +1739,21 @@ async fn authorize_printer(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     }
 }
 
+/// Where a printer may be: on the local network, or behind a remote tunnel whose host the tunnel's
+/// allow-list accepts (`sx_connect::tunnel`). `Err` says why not, in plain words.
+pub(crate) fn printer_place(config: &PrinterConfig) -> Result<(), String> {
+    match config.tunnel {
+        Some(_) => sx_connect::tunnel::check_config(config).map_err(|e| e.to_string()),
+        None if is_lan_host(&config.host) => Ok(()),
+        None => Err("printers must be on the local network".to_owned()),
+    }
+}
+
 async fn add_printer(b: &Arc<Bridge>, p: &Value) -> Rpc<Value> {
     let config: PrinterConfig = arg(p, "config")?;
     let config = through_app(b, config).await?;
-    if !is_lan_host(&config.host) {
-        return Err(RpcError::new(
-            "bad_request",
-            "printers must be on the local network",
-        ));
+    if let Err(why) = printer_place(&config) {
+        return Err(RpcError::new("bad_request", why));
     }
     if !b.connectors.iter().any(|c| c.manifest().id == config.plugin) {
         return Err(RpcError::new("not_found", format!("no plugin {}", config.plugin)));
@@ -2074,12 +2081,8 @@ async fn test_printer(b: &Bridge, p: &Value) -> Rpc<Value> {
         )
     };
     let certificate = || sx_connect::certificate_check(&config.host).map(|c| json!(c));
-    if !is_lan_host(&config.host) {
-        return fail(
-            "bad_request",
-            "printers must be on the local network".to_owned(),
-            test_steps(None, None, None, None),
-        );
+    if let Err(why) = printer_place(&config) {
+        return fail("bad_request", why, test_steps(None, None, None, None));
     }
     let Some(connector) = b.connectors.iter().find(|c| c.manifest().id == config.plugin) else {
         return fail(
@@ -2496,4 +2499,46 @@ async fn discover_cameras(b: &Bridge, p: &Value) -> Rpc<Value> {
         .map(strip_nulls)
         .collect();
     Ok(json!({ "cameras": list }))
+}
+
+#[cfg(test)]
+mod place_tests {
+    use super::printer_place;
+    use sx_connect::PrinterConfig;
+    use sx_connect::tunnel::TunnelKind;
+
+    fn cfg(plugin: &str, host: &str, tunnel: Option<TunnelKind>) -> PrinterConfig {
+        serde_json::from_value(serde_json::json!({
+            "id": "p", "name": "p", "plugin": plugin, "host": host,
+            "credentialRef": "p-key",
+            "tunnel": tunnel,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn printers_stay_on_the_local_network_unless_an_allowed_tunnel_carries_them() {
+        assert!(printer_place(&cfg("octoprint", "192.168.1.20", None)).is_ok());
+        assert!(printer_place(&cfg("octoprint", "abc.tunnels.app.obico.io", None)).is_err());
+        let obico = Some(TunnelKind::Obico);
+        assert!(printer_place(&cfg("octoprint", "abc.tunnels.app.obico.io", obico)).is_ok());
+        assert!(printer_place(&cfg("moonraker", "abc.tunnels.app.obico.io", obico)).is_ok());
+        for (plugin, host) in [
+            ("octoprint", "192.168.1.20"),
+            ("octoprint", "example.com"),
+            ("octoprint", "abc.tunnels.app.obico.io.evil.example"),
+            ("octoprint", "a.b.tunnels.app.obico.io"),
+            ("octoprint", "u:p@abc.tunnels.app.obico.io"),
+            ("octoprint", "8.8.8.8"),
+            ("bambu", "abc.tunnels.app.obico.io"),
+        ] {
+            let why = printer_place(&cfg(plugin, host, obico)).unwrap_err();
+            assert!(!why.is_empty(), "{plugin} {host}");
+        }
+        // The kind is a closed list: an unknown one does not parse.
+        let unknown: Result<PrinterConfig, _> = serde_json::from_value(serde_json::json!({
+            "id": "p", "name": "p", "plugin": "octoprint", "host": "x.octoeverywhere.com", "tunnel": "octoeverywhere",
+        }));
+        assert!(unknown.is_err());
+    }
 }

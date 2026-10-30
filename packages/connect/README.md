@@ -56,7 +56,18 @@ The drivers are written from public protocol documentation and from the observab
 - Bambu Lab printers present self-signed certificates, so those connections skip certificate validation but still verify handshake signatures. The LAN access code is the credential. Pinning the certificate on first use is a follow-up.
 - Camera URLs that a printer reports must point at the printer's own host.
 - Discovery runs only when the user starts a scan. It sends one SSDP search and listens for announcements (Bambu Lab), asks with one multicast DNS query (Moonraker, OctoPrint, PrusaLink, UltiMaker) or, for Elegoo and Snapmaker, sends one UDP broadcast, each out of every local network interface. See `docs/finding-printers.md`.
-- `sx-link` only accepts printers on the local network (see `link/README.md`).
+- `sx-link` only accepts printers on the local network (see `link/README.md`), or behind an allowed remote tunnel (below).
+
+## Remote tunnels
+
+A Moonraker or OctoPrint printer can be reached through Obico's cloud tunnel instead of the local network: its `PrinterConfig` sets `tunnel: "obico"`, `host` is the tunnel host (`<id>.tunnels.app.obico.io`) and `credentialRef` names the tunnel's `user:password` in the keychain. `src/tunnel.rs` has the rules:
+
+- Only one label directly under `tunnels.app.obico.io` is allowed, over https on 443. `TunnelEndpoint::parse` reads the `https://user:password@host` address Obico hands out and refuses any other scheme, port, path, IP address or lookalike host.
+- The host must resolve to public addresses only, and the client connects to exactly the addresses it checked. Certificates are checked against the system's trust store. Redirects are never followed, and the client uses no proxy.
+- The credential goes out only as `Authorization: Basic`. The printer's own API key is not sent through the tunnel. User names and passwords are taken out of any URL in error text and in the connection log.
+- Status is read at most every 15 to 30 seconds, by what is left of the month's tunnel data, whoever asks. `/_tsd_/tunnelusage/` is read before every upload, and a file that does not fit in what is left is refused before it is sent.
+- Obico's 401, 481, 482 and 483 come back as `Error::Tunnel` with a plain message (access removed, monthly data used up, plugin not connected, no answer within 30 seconds), with codes `auth`, `tunnel_data_limit`, `unreachable` and `timeout`.
+- The printer's camera is off through a tunnel for now.
 
 ## Dependencies
 
