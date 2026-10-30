@@ -6,13 +6,13 @@
 // failure.
 import { readFile, stat } from 'node:fs/promises'
 import { Worker } from 'node:worker_threads'
+import { STEP_MAX_MEMORY_MB } from './load.ts'
 import { STEP_MAX_MB, StepError, type StepErrorCode, type StepQuality, type StepRead } from './read.ts'
 
 export { stepInfo, toObj, toStl, type ObjOptions, type StepBounds, type StepInfo } from './convert.ts'
 export { STEP_ERROR_CODES, STEP_MAX_MB, StepError, type StepErrorCode, type StepQuality, type StepRead, type StepUnit } from './read.ts'
 
-/** Default cap on the memory OpenCASCADE may use for one file, in MB. */
-export const STEP_MAX_MEMORY_MB = 2048
+export { STEP_MAX_MEMORY_MB }
 
 /** A minute, plus 2 s per megabyte: the deadline the app gives a read (a file at the 100 MB limit gets 4 min 20 s). */
 export function stepDeadlineMs(bytes: number): number {

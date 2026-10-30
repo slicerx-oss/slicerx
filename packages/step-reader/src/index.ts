@@ -4,7 +4,7 @@
 // Node servers that read untrusted files use '@slicerx/step-reader/node', which reads each file in a worker thread
 // with a deadline and memory cap.
 export { stepInfo, toObj, toStl, type ObjOptions, type StepBounds, type StepInfo } from './convert.ts'
-export { defaultWasmUrl, loadOcct, loadStepReader, type LoadOptions, type StepReader } from './load.ts'
+export { defaultWasmUrl, loadOcct, loadStepReader, STEP_MAX_MEMORY_MB, type LoadOptions, type StepReader } from './load.ts'
 export {
   readStep,
   STEP_ANGLE_RAD,

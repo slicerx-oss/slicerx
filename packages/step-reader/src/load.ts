@@ -5,6 +5,9 @@
 // as an asset, so it can be rebuilt with ../build.sh and replaced on its own. No Node imports here: browsers load this.
 import { OUT_OF_MEMORY, readStep, type Occt, type ReadOptions, type StepQuality, type StepRead } from './read.ts'
 
+/** Default cap on the memory OpenCASCADE may use for one file, in MB: what the Node path and the app's browser worker both pass. */
+export const STEP_MAX_MEMORY_MB = 2048
+
 /** Where the wasm sits next to this module, in the source tree and in the published package alike. */
 export function defaultWasmUrl(): URL {
   return new URL('./occt-import-js.wasm', import.meta.url)
