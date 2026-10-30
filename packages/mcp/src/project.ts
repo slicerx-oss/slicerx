@@ -12,6 +12,8 @@ import { isGcodeKey, SHIPPED_GCODE_SOURCES } from './config'
 import { ToolInputError } from './models'
 import { defaultConfig, sameValue, toSchemaValue } from './settings'
 import { positionsFromParts, type NodeSlicerHost } from './slicerhost'
+import { plateCheckOutput, type PlateCheckOutput } from './collide'
+import { areaOrigin } from '@slicerx/threemf/area'
 import { defaultFilament, filamentColor, filamentType, listFilaments, MAX_FILAMENTS, type FilamentSetup, type ProjectFilament } from './filaments'
 import { marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
 import { byObjectPlan, byObjectReadback, objectGetsSupport, overRod, placedShape, type ByObjectReadback } from '@slicerx/settings/by-object'
@@ -310,6 +312,29 @@ export class McpProject implements PilotProject {
     const { objects, placements } = this.layoutPlate(plateIndex)
     const cfg = this.config(plateIndex) as Record<string, SettingValue>
     return this.clearanceOf(objects.filter((_o, k) => placements[k]?.printable !== false), cfg)
+  }
+
+  /**
+   * heimdall's plate check of a by-object plate as it sits (`sx check`, before a slice): what a slice would be refused
+   * for, how sure each finding is, the fixes and what only the slice checks (plateCheckOutput). Null by layer, with
+   * fewer than two printed objects, or without the sx engine.
+   */
+  async plateCheck(plateIndex: number): Promise<PlateCheckOutput | null> {
+    if (!this.host.checkPlate) return null
+    const cfg = this.config(plateIndex)
+    if (marginText((cfg as Record<string, SettingValue>)['print_sequence']) !== 'by object') return null
+    const plate = await this.plate(plateIndex)
+    if (plate.objects.length < 2) return null
+    const ranges = this.heightRangesFor(plate)
+    let check
+    try {
+      check = await this.host.checkPlate({ plate, config: cfg, options: { emitGcode: false, emitPreview: false, ...(ranges.length ? { heightRanges: ranges } : {}) } })
+    } catch (e) {
+      // The stub engine has no check: the footprint rule's plan is all there is.
+      if (e instanceof ToolInputError && e.code === 'engine_unavailable' && /needs the sx engine/.test(e.message)) return null
+      throw e
+    }
+    return plateCheckOutput(check, plate.objects.map((o) => ({ id: o.id, name: o.name ?? o.id })), areaOrigin((cfg as Record<string, SettingValue>)['printable_area']))
   }
 
   /** The plate's bed: the box of its printable area and, for a delta, the circle. */
