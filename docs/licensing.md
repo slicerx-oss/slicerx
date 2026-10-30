@@ -58,7 +58,7 @@ The standard parts table (`packages/pilot/src/parts/generated/standard-parts.jso
 
 ## Third-party code
 
-Vendored and bundled third-party code keeps its own license, and each one is compatible with distributing SlicerX under Apache-2.0. `NOTICE` and `THIRD-PARTY.md` list them: i_overlay and cpp_map (MIT or Apache-2.0), boostvoronoi (BSL-1.0), the STEP reader built from occt-import-js and Open CASCADE Technology (LGPL-2.1, loaded as a separate WebAssembly file, with a source offer), fonts under the SIL Open Font License, and the print watch model weights (Apache-2.0). The license files sit next to the code in `packages/vendor`.
+Vendored and bundled third-party code keeps its own license, and each one is compatible with distributing SlicerX under Apache-2.0. `NOTICE` and `THIRD-PARTY.md` list them: i_overlay and cpp_map (MIT or Apache-2.0), boostvoronoi (BSL-1.0), the STEP reader built from occt-import-js and Open CASCADE Technology (LGPL-2.1, loaded as a separate WebAssembly file, with a source offer), fonts under the SIL Open Font License, and the print watch model weights (Apache-2.0). The license files sit next to the code in `packages/vendor` and, for the STEP reader, `packages/step-reader`.
 
 ## Contributions
 

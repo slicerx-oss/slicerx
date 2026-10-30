@@ -8,7 +8,7 @@
 // has no way to stop part way, so both end the worker itself, and the next STEP file starts a fresh one.
 // Every open comes through here: a picked file, a drop, a file the system hands over (a double click, an
 // MCP client's open in app) and bytes from the library.
-import type { StepQuality, StepUnit } from './step-read'
+import type { StepQuality, StepUnit } from '@slicerx/step-reader'
 import { setStepReading } from './step-reading'
 
 export interface StepConverted {
@@ -25,7 +25,7 @@ const IDLE_MS = 60_000
 
 /**
  * How long a read may take before it is stopped: a minute, plus 2 s per megabyte. The STEP test models mesh in
- * under a second, the largest in 5 s (step-read.ts), so a minute is far past any part we have measured, and the
+ * under a second, the largest in 5 s (@slicerx/step-reader), so a minute is far past any part we have measured, and the
  * share per megabyte gives a file at the 100 MB limit (STEP_MAX_MB) 4 minutes 20 s. A read still going by then is
  * stuck, not slow, and Cancel is there for anyone who does not want to wait that long.
  */

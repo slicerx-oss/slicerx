@@ -142,7 +142,7 @@ test('a design opened over a plate that is slicing loads at once, and the old sl
 // as objects with the names from the file, and slices.
 test('a dropped STEP assembly becomes named objects and slices', async ({ page }) => {
   test.slow()
-  const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'app', 'test', 'fixtures', 'step')
+  const fixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'step-reader', 'test', 'fixtures')
   const drop = (name: string) => dropFile(page, name, readFileSync(join(fixtures, name)), 'application/step')
   await setState(page, { plate: [], selection: null, selectedIds: [], toast: null, openNote: null })
 
