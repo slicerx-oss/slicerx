@@ -40,9 +40,15 @@ export function availableSkills(catalog: KbSkill[], registered: (name: string) =
   })
 }
 
-/** The playbook section of the system prompt: one line per available skill. */
+/**
+ * The playbook section of the system prompt: one line per available skill that names more than itself. A skill whose
+ * only tool is itself gets no line, since that tool's own description says the same and more; an approval is named
+ * only when the skill needs one beyond reading.
+ */
 export function playbooks(skills: KbSkill[]): string {
-  if (skills.length === 0) return ''
-  const lines = skills.map((s) => `- ${s.id}: ${s.purpose} Tools: ${(SKILL_TOOLS[s.id] ?? []).join(', ')}. Approval: ${s.approval}.`)
+  const lines = skills
+    .filter((s) => (SKILL_TOOLS[s.id] ?? []).some((t) => t !== s.id))
+    .map((s) => `- ${s.id}: ${s.purpose} Tools: ${(SKILL_TOOLS[s.id] ?? []).join(', ')}.${s.approval === 'read' ? '' : ` Approval: ${s.approval}.`}`)
+  if (lines.length === 0) return ''
   return `Skills. When a request matches one, follow it with the tools named; a tool of the same name as the skill does the whole job in one call.\n${lines.join('\n')}`
 }
