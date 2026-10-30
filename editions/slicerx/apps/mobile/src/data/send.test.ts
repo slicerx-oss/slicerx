@@ -4,7 +4,7 @@
 // hashed the way a host sees them, differ from the approved ones, or whose sha256 is not the hash of the uploaded bytes.
 import { hashParams, type ApprovalRequest, type JobFile, type PrinterInfo, type RemoteFile } from '@slicerx/contracts'
 import type { PocketHost } from '../host'
-import { libraryModel, sliceAndSend } from './send'
+import { libraryModel, pickedFileProblem, sliceAndSend, STEP_ON_PHONE } from './send'
 
 const mockOutcome = { current: null as unknown }
 jest.mock('../cloud/slice-job', () => ({ runCloudSlice: async () => mockOutcome.current }))
@@ -86,3 +86,16 @@ describe('libraryModel downloads', () => {
     await expect(libraryModel(item, store('rate_limited')).load()).rejects.toThrow('Too many downloads from this network')
   })
 })
+
+describe('picking a file on the phone', () => {
+  it('sends a STEP file to desktop or web, since the phone has no STEP reader', () => {
+    expect(STEP_ON_PHONE).toBe("STEP files can't be opened on the phone. Open this file on desktop or web.")
+    for (const name of ['bracket.step', 'BRACKET.STP', 'assembly.stp']) expect(pickedFileProblem(name)).toBe(STEP_ON_PHONE)
+  })
+
+  it('takes STL, 3MF and OBJ, and names them for anything else', () => {
+    for (const name of ['cube.stl', 'plate.3mf', 'part.OBJ']) expect(pickedFileProblem(name)).toBeNull()
+    expect(pickedFileProblem('notes.txt')).toBe('Pick an STL, 3MF or OBJ file')
+  })
+})
+

@@ -93,6 +93,16 @@ export async function sliceAndSend(host: PocketHost, input: SendInput, onPhase: 
   return outcome
 }
 
+/** STEP files are read on desktop and web only; the phone has no STEP reader. */
+export const STEP_ON_PHONE = 'STEP files can\'t be opened on the phone. Open this file on desktop or web.'
+
+/** Why a picked file cannot be sliced from the phone, or null when it can. */
+export function pickedFileProblem(name: string): string | null {
+  if (/\.(step|stp)$/i.test(name)) return STEP_ON_PHONE
+  if (!/\.(stl|3mf|obj)$/i.test(name)) return 'Pick an STL, 3MF or OBJ file'
+  return null
+}
+
 /** Models the send screen can offer: picked files, the model opened from its page, the library, then the sample. */
 export function useSendModels(opened?: CatalogItem | null) {
   const host = usePocketHost()
@@ -108,7 +118,8 @@ export function useSendModels(opened?: CatalogItem | null) {
     const r = await DocumentPicker.getDocumentAsync({ type: ['model/stl', 'model/3mf', 'application/octet-stream', '*/*'], copyToCacheDirectory: true, multiple: false })
     const asset = r.canceled ? undefined : r.assets[0]
     if (!asset) return null
-    if (!/\.(stl|3mf|obj)$/i.test(asset.name)) throw new Error('Pick an STL, 3MF or OBJ file')
+    const problem = pickedFileProblem(asset.name)
+    if (problem) throw new Error(problem)
     const m: PhoneModel = { id: `file-${asset.uri}`, name: asset.name, origin: 'file', ...(asset.size ? { bytes: asset.size } : {}), load: () => new File(asset.uri).arrayBuffer() }
     setFiles((list) => [m, ...list.filter((x) => x.id !== m.id)].slice(0, 6))
     return m
