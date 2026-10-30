@@ -101,6 +101,22 @@ test.describe('Brim ears', () => {
     rig: { preset: string | null; move: unknown }
   }
 
+  /**
+   * Waits until a press at the point reaches the canvas, as pressable does, with the toast card out of its way. The card
+   * sits at the foot of the view, where the ears below are pressed. A warning on it stays until it is dismissed, and its
+   * information lines wait out their reading time only while the pointer is off the card, which a drag that ends over
+   * it is not. So the warnings are dismissed, the card is let go of the focus the close leaves (journey.ts), and the
+   * pointer moves to bare view at the canvas's left edge before the wait.
+   */
+  async function clearOfToasts<T extends { x: number; y: number }>(page: Page, at: T): Promise<T> {
+    const dismiss = page.getByTestId('toast-dismiss')
+    for (let i = 0; i < 10 && (await dismiss.count()) > 0; i++) await dismiss.first().click()
+    await page.evaluate(() => void document.querySelector('.sx-toasts')?.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    const view = (await page.locator('.vp-canvas').first().boundingBox())!
+    await page.mouse.move(view.x + 40, view.y + view.height / 2)
+    return pressable(page, at)
+  }
+
   /** Ears the viewport draws, in bed coordinates. */
   const ears = (page: Page) =>
     page.evaluate(() => {
@@ -142,7 +158,7 @@ test.describe('Brim ears', () => {
       const right = Math.max(...pts.map((p) => p.x)) + 25
       const top = Math.min(...pts.map((p) => p.y)) - 25
       const bottom = Math.max(...pts.map((p) => p.y)) + 25
-      await pressable(page, { x: left, y: top })
+      await clearOfToasts(page, { x: left, y: top })
       await page.keyboard.down('Shift')
       await page.mouse.move(left, top)
       await page.mouse.down()
@@ -153,7 +169,7 @@ test.describe('Brim ears', () => {
       await expect(panel.getByTestId('brim-ear-count')).toHaveText(/2 selected/)
       // Alt and drag over one of them deselects it.
       const c = { x: pts[0]!.x, y: pts[0]!.y }
-      await pressable(page, { x: c.x - 30, y: c.y - 30 })
+      await clearOfToasts(page, { x: c.x - 30, y: c.y - 30 })
       await page.keyboard.down('Alt')
       await page.mouse.move(c.x - 30, c.y - 30)
       await page.mouse.down()
@@ -167,7 +183,7 @@ test.describe('Brim ears', () => {
       const camBefore = await camera(page)
       const from = await screenOf(page, before.x, before.y, 0.1)
       const to = await screenOf(page, before.x + 12, before.y - 12, 0.1)
-      await pressable(page, from)
+      await clearOfToasts(page, from)
       await page.mouse.move(from.x, from.y)
       await page.mouse.down()
       await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 })
