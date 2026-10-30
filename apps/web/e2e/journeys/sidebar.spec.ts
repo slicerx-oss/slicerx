@@ -738,28 +738,52 @@ test.describe('the selection', () => {
   }
 
   test('copies of one object draw its one geometry, and removing a copy keeps the others drawn', async ({ page }) => {
-    type Vp = { drawnObjects(): string[]; stats(): { refiningParts: number }; renderer: { info: { memory: { geometries: number } } } }
-    const drawn = () =>
+    // The plate's own geometry, read from the objects the view draws. The renderer's geometry count also takes in the
+    // bed, the toolhead and the render passes, which a busy machine draws for the first time at any point of the test.
+    type Geo = { uuid: string; addEventListener(type: 'dispose', cb: () => void): void }
+    type Node = { geometry?: Geo; userData: { objectId?: string }; traverse(cb: (o: Node) => void): void }
+    type Vp = { drawnObjects(): string[]; stats(): { refiningParts: number }; stage: { objectsRoot: Node } }
+    type Win = { __vp: Vp; __gone?: string[] }
+    const plate = () =>
       page.evaluate(() => {
-        const vp = (window as unknown as { __vp: Vp }).__vp
-        return { ids: vp.drawnObjects().length, refining: vp.stats().refiningParts, geometries: vp.renderer.info.memory.geometries }
+        const vp = (window as unknown as Win).__vp
+        const byObject = new Map<string, Set<string>>()
+        vp.stage.objectsRoot.traverse((o) => {
+          const id = o.userData.objectId
+          if (!o.geometry || !id) return
+          if (!byObject.has(id)) byObject.set(id, new Set())
+          byObject.get(id)!.add(o.geometry.uuid)
+        })
+        const all = new Set([...byObject.values()].flatMap((g) => [...g]))
+        return { ids: vp.drawnObjects().length, refining: vp.stats().refiningParts, objects: byObject.size, geometries: all.size, perObject: [...byObject.values()].map((g) => [...g].sort().join()) }
       })
     await sidebarAs(page, { mode: 'simple' })
-    await expect.poll(async () => (await drawn()).refining).toBe(0)
-    await page.waitForTimeout(300)
-    const one = await drawn()
+    await expect.poll(async () => (await plate()).refining).toBe(0)
+    const one = await plate()
+    expect(one.objects).toBe(1)
     await three(page)
-    await expect.poll(async () => { const d = await drawn(); return [d.ids, d.refining] }).toEqual([one.ids + 2, 0])
-    await page.waitForTimeout(300)
-    // two copies add no geometry: they draw the source's mesh and edges in their own places
-    expect((await drawn()).geometries).toBe(one.geometries)
+    await expect.poll(async () => { const p = await plate(); return [p.objects, p.refining] }).toEqual([3, 0])
+    const copies = await plate()
+    // two copies add no geometry: all three draw the source's mesh and edges in their own places
+    expect(copies.geometries).toBe(one.geometries)
+    expect(new Set(copies.perObject).size).toBe(1)
+    // Removing a copy frees nothing the others draw.
+    await page.evaluate(() => {
+      const w = window as unknown as Win
+      w.__gone = []
+      w.__vp.stage.objectsRoot.traverse((o) => {
+        const g = o.geometry
+        if (g) g.addEventListener('dispose', () => w.__gone!.push(g.uuid))
+      })
+    })
     await select(page, 1)
     await page.keyboard.press('Delete')
     await expect(rows(page)).toHaveCount(2)
-    await page.waitForTimeout(300)
-    const after = await drawn()
+    await expect.poll(async () => (await plate()).objects).toBe(2)
+    const after = await plate()
     expect(after.ids).toBe(one.ids + 1)
-    expect(after.geometries).toBe(one.geometries)
+    expect(after.perObject).toEqual(copies.perObject.slice(0, 2))
+    expect(await page.evaluate(() => (window as unknown as Win).__gone)).toEqual([])
   })
 
   test('Shift selects a range, Mod toggles, and Esc clears the selection and hides the bar', async ({ page }) => {
