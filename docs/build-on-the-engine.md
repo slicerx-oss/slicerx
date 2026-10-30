@@ -147,7 +147,7 @@ This loop assumes the object was never moved (an identity transform), so `triang
 
 ## STEP and other imports
 
-`sx-geom` reads STL, OBJ (with colors) and AMF, and imports SVG artwork as outlines or solids. The SlicerX app reads STEP files with occt-import-js (Open CASCADE, LGPL-2.1) in a separate worker and hands the tessellated meshes to the engine; a STEP model then works with every operation above. Your app can do the same, or start from meshes it makes itself.
+`sx-geom` reads STL, OBJ (with colors) and AMF, and imports SVG artwork as outlines or solids. The SlicerX app reads STEP files with `@slicerx/step-reader` (occt-import-js on Open CASCADE, LGPL-2.1 with the Open CASCADE exception) in a separate worker and hands the tessellated meshes to the engine as OBJ; a STEP model then works with every operation above. Your app can do the same: install the package, which is opt-in because of its size (about 3 MB to download), and pass `toObj(read)` to the engine's import. Its README covers browsers, workers, Node and bundlers. Or start from meshes you make yourself.
 
 ## License
 

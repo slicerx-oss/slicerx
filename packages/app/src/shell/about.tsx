@@ -81,7 +81,7 @@ export function AboutDialog() {
         </p>
         {edition.legal.license ? <p className="sx-small">License: {edition.legal.license}.</p> : null}
         <p className="sx-small sx-dim" data-testid="about-step-reader">
-          STEP files are read with occt-import-js and Open CASCADE Technology, both under the LGPL 2.1. This app makes use of facilities provided by the Open CASCADE Technology software. Their source, build script and license texts are in packages/vendor/occt-import-js of the source above.
+          STEP files are read with occt-import-js and Open CASCADE Technology, both under the LGPL 2.1. This app makes use of facilities provided by the Open CASCADE Technology software. Their source, build script and license texts are in packages/step-reader of the source above.
         </p>
         <p className="sx-small sx-dim">Telemetry is off.</p>
         <Diagnostics />

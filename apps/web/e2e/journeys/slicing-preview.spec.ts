@@ -246,7 +246,7 @@ test('a printer with no connection exports G-code as the main action', async ({ 
 
 // ---- What the plate sends to the engine ----
 
-const stepFixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'app', 'test', 'fixtures', 'step')
+const stepFixtures = join(import.meta.dirname, '..', '..', '..', '..', 'packages', 'step-reader', 'test', 'fixtures')
 
 async function drop(page: Page, name: string): Promise<void> {
   const bytes = [...readFileSync(join(stepFixtures, name))]

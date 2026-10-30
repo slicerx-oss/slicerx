@@ -34,6 +34,7 @@
     "@slicerx/pilot": "workspace:*",
     "@slicerx/printer-catalog": "workspace:*",
     "@slicerx/settings": "workspace:*",
+    "@slicerx/step-reader": "workspace:*",
     "@slicerx/store": "workspace:*",
     "@slicerx/threemf": "workspace:*",
     "@slicerx/ui": "workspace:*",

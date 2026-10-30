@@ -59,7 +59,7 @@ what ships and under which terms, including the three libraries vendored in
 packages/vendor with our changes (i_overlay, boostvoronoi, cpp_map), the STEP
 reader built from occt-import-js and Open CASCADE Technology (LGPL-2.1; SlicerX
 makes use of facilities provided by the Open CASCADE Technology software; the
-source offer is in packages/vendor/occt-import-js/SOURCE.md), Cisco's OpenH264
+source offer is in packages/step-reader/SOURCE.md), Cisco's OpenH264
 binary, which is downloaded on Linux and never bundled, and the SigLIP2 model
 weights used by the print watch. The full per-version list is generated at
 release time into THIRD_PARTY_LICENSES and shipped with every build.

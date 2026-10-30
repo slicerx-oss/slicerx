@@ -126,19 +126,8 @@ precedence = "closest"
 SPDX-FileCopyrightText = ["eadf", "2026 The SlicerX contributors"]
 SPDX-License-Identifier = "BSL-1.0"
 
-# occt-import-js built with Open CASCADE Technology, for reading STEP files (SOURCE.md). The build
-# scripts are ours.
-[[annotations]]
-path = [
-  "packages/vendor/occt-import-js/OCCT_LGPL_EXCEPTION.txt",
-  "packages/vendor/occt-import-js/lib/**",
-  "packages/vendor/occt-import-js/patches/**",
-]
-precedence = "closest"
-SPDX-FileCopyrightText = ["Viktor Kovacs", "Open CASCADE SAS"]
-SPDX-License-Identifier = "LGPL-2.1-only AND LGPL-2.1-only WITH OCCT-exception-1.0"
-
-# The same reader as the @slicerx/step-reader package (packages/step-reader/SOURCE.md).
+# occt-import-js built with Open CASCADE Technology, for reading STEP files (packages/step-reader/SOURCE.md).
+# The build scripts and the TypeScript around it are ours.
 [[annotations]]
 path = [
   "packages/step-reader/OCCT_LGPL_EXCEPTION.txt",
