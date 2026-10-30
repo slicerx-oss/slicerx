@@ -4,6 +4,7 @@
 // toolhead (exit code 3), in the command line's words. This turns those words into an error code, a message for a person and the facts as details.
 // Newer sx also prints the refused collisions as data on stdout, with the engine's object ids: each item then names
 // its objects by id too (the plate object's own id where the request gave one), so two objects of one name stay apart.
+import type { PlateCheck } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 
 /** The ids of the objects an item names: the plate objects' own ids when the request gave them, and the engine's. */
@@ -236,3 +237,42 @@ export function collisionError(why: string, objectNames: readonly string[] = [],
     ...(plate ? {} : { fix: 'slicerx_arrange' }),
   })
 }
+
+/** Two objects the plate check found a strike between that the slice is sure to refuse, with the collisions naming them. */
+export interface SurePair {
+  a: { id: string; name: string }
+  b: { id: string; name: string }
+  collisions: number[]
+}
+
+/**
+ * heimdall's plate check for a client (slicerx_project_show with check, slicerx_arrange after it nests): every collision
+ * as a slice lists it with its certainty (sure: a slice of the plate is refused for it; slice_decides: only the slice
+ * can tell), the pairs left with a sure strike, the fixes with the plate's object ids, what the check leaves to the slice
+ * (with the objects near enough for it to matter), clean when there is none of these, and the engine's time. `check`
+ * names the plate's own object ids; positions are plate mm, moved by `origin` as a slice's are.
+ */
+export function plateCheckOutput(check: PlateCheck, objects: readonly { id: string; name: string }[], origin: readonly [number, number]) {
+  const name = (id: string) => objects.find((o) => o.id === id)?.name ?? id
+  const collisions = sliceCollisions(sxCollisions(check), [], origin).map((c, i) => ({ ...c, object_name: name(c.object_id), certainty: check.certainty[i] ?? 'slice_decides' }))
+  const pairs = new Map<string, SurePair>()
+  check.collisions.forEach((c, i) => {
+    if (c.severity !== 'hit' || check.certainty[i] !== 'sure') return
+    const key = [c.hitId, c.objectId].sort().join('\n')
+    const pair = pairs.get(key) ?? { a: { id: c.hitId, name: name(c.hitId) }, b: { id: c.objectId, name: name(c.objectId) }, collisions: [] }
+    pair.collisions.push(i)
+    pairs.set(key, pair)
+  })
+  return {
+    clean: check.unchecked.length === 0 && !check.collisions.some((c) => c.severity === 'hit'),
+    certainty: check.certainty,
+    collisions,
+    leftSure: [...pairs.values()],
+    fixes: check.collisionFixes,
+    unchecked: check.unchecked.map((u) => ({ objectId: u.objectId, what: u.what, near: u.near })),
+    order: check.order,
+    micros: check.micros,
+  }
+}
+
+export type PlateCheckOutput = ReturnType<typeof plateCheckOutput>
