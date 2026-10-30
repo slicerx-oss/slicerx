@@ -128,7 +128,7 @@ export interface ViewportOptions {
    */
   reveal?: boolean | 'always'
   /**
-   * Makes a worker for building big models (a part of 200,000 triangles or more) off the page's main thread: such a
+   * Makes a worker for building big models (a part of 20,000 triangles or more) off the page's main thread: such a
    * part shows at once with smooth normals and no edges, and gets its creased normals and feature edges when the worker
    * has them (platerefined). The worker module is two lines (see mesh-worker.ts):
    * `import { serveMeshBuilds } from '@slicerx/viewport/mesh-worker'; serveMeshBuilds(self)`. Without it every part is

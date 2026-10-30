@@ -16,4 +16,5 @@ export { Agreement, acceptAgreement, agreementNeeded, defaultBugReportsUrl, read
 // The theme API, so an app themes the pieces without a second package.
 export { createTheme, subban, subbanLight, nocturne, nocturneLight, themeToCss } from '@slicerx/ui/theme'
 export type { Theme, ThemeInput, ThemeColors, ThemeGradient, ThemeFonts, ThemeRadius, ThemeScene, EditionThemeConfig, EditionScene } from '@slicerx/ui/theme'
-export type { BedOutline, TransformEvent, ViewportTheme } from '@slicerx/viewport'
+export type { BedOutline, MeshWorkerLike, TransformEvent, ViewportTheme } from '@slicerx/viewport'
+export type { MeshWorkerSetting } from './mesh-workers'

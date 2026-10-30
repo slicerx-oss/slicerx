@@ -4,6 +4,10 @@ All notable changes to `@slicerx/embed` are listed here. The format follows Keep
 
 ## [Unreleased]
 
+### Added
+
+- `Viewport` builds big parts (20,000 triangles or more) in a worker of its own, as the SlicerX app does: the plate shows at once with smooth shading and takes its creased normals and edges when the worker has them, instead of holding the page. On a plate of 10 objects and 1.3 million triangles in Chromium with a hardware GPU, the plate draws in 0.06 s instead of 0.55 s, and no task holds the page for more than 50 ms (0.5 s before). The new `meshWorker` prop is `true` by default; `false` builds on the page as before (for a strict CSP or a page without workers), and a function supplies your own worker. `<sx-viewport>` takes `mesh-worker="off"`. The worker ships as `dist/mesh-build-worker.js`, started with `new Worker(new URL('./mesh-build-worker.js', import.meta.url))` so bundlers emit it. A worker that cannot start or load leaves its parts to the page.
+
 ## [0.1.8] - 2026-10-18
 
 ### Added
