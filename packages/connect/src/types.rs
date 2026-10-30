@@ -133,6 +133,10 @@ pub struct PrinterLive {
     /// are the status `message`. Absent when the printer names no step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage: Option<String>,
+    /// The slots whose runout sensor reports no filament during a job, as slot ids of `slots` (a
+    /// Snapmaker U1 toolhead's filament motion sensor). Absent when none does or the printer has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runout_slots: Option<Vec<String>>,
 }
 
 /// Fan speeds in percent.

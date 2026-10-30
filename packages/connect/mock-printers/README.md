@@ -35,13 +35,13 @@ What each fault looks like:
 | `prusalink` | `ATTENTION`, with the message in `status_printer` | not a Prusa concept: logged only | one 503, then connections refused |
 | `elegoo` | paused as by a pause command (`CurrentStatus` 1, `PrintInfo.Status` 10); SDCP V3.0.0 has no runout code, so this stands in until the real one is known | logged only (no door in SDCP V3.0.0) | the WebSocket drops, reconnects refused |
 | `snapmaker-luban` | `isFilamentOut: true`, print paused | `isEnclosureDoorOpen: true` | requests get no answer until the client gives up |
-| `snapmaker-u1` | print paused, first toolhead's `filament_exist` false | logged only | connections refused |
+| `snapmaker-u1` | print paused, one toolhead's `filament_exist` and motion sensor `filament_detected` false (the first, or `runoutToolhead` from `POST /u1`) | logged only | connections refused |
 
 The PrusaLink fake also reports axis positions (X and Y only while the head is still), fan, speed and flow in its status, the file's layer height, top layer Z and estimate in its job, a 404 for another job id, a 409 for pause or resume in the wrong state, and a 409 for an upload while another is landing (`POST /slow` makes uploads take time). The Elegoo fake pushes a status report after every change and once a second while printing.
 
 ## Snapmaker U1
 
-`snapmaker-u1` is the Moonraker fake started as a U1: host name `U1`, the U1's `print_task_config` and `filament_detect` objects (four toolheads), and one webcam in `/server/webcams/list` whatever the fixture says. The driver finds it as plugin `snapmaker` on Moonraker. `--auth` asks it for the mock API key too.
+`snapmaker-u1` is the Moonraker fake started as a U1: host name `U1`, the U1's `print_task_config` and `filament_detect` objects (four toolheads) and one `filament_motion_sensor e<N>_filament` per toolhead, and one webcam in `/server/webcams/list` whatever the fixture says. The driver finds it as plugin `snapmaker` on Moonraker. `POST /u1 {runoutToolhead, loadedToolheads}` picks the toolhead (0 to 3) a runout empties and which toolheads hold filament. `--auth` asks it for the mock API key too.
 
 ## Tests
 

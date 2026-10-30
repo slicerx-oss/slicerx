@@ -12,6 +12,8 @@ Connects to the Snapmaker U1 and to Snapmaker 2.0 machines (A150, A250, A350) in
 
 The U1 runs Klipper with Moonraker, so all four toolheads are read. See the Moonraker guide for the port (80) and firewall details.
 
+When a toolhead runs out of filament mid print, the U1 pauses and SlicerX names the toolhead, for example "Paused: filament runout on T2". Load filament in that toolhead and resume; the message clears once its sensor sees filament again.
+
 ### Snapmaker 2.0 (A150, A250, A350)
 
 1. On the touchscreen, open Settings, then the Wi-Fi or Network page, and connect the machine. Note the IP address shown there.

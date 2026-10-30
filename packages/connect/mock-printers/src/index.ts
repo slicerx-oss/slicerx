@@ -311,8 +311,10 @@ export async function startMocks(opts: StartOptions = {}): Promise<RunningMocks>
     // POST /moonraker {variant?, klippy?, message?, expireTokens?}: see MoonrakerControl.
     if (req.path === '/u1' && req.method === 'POST') {
       if (!u1Control) return { status: 404 }
-      const b = req.json() as { ignoreToolheadUpdates?: boolean; filamentColors?: string[]; omitSpoolData?: boolean }
+      const b = req.json() as { ignoreToolheadUpdates?: boolean; filamentColors?: string[]; omitSpoolData?: boolean; runoutToolhead?: number; loadedToolheads?: boolean[] }
       if (typeof b.omitSpoolData === 'boolean') u1Control.omitSpoolData = b.omitSpoolData
+      if (Number.isInteger(b.runoutToolhead) && b.runoutToolhead! >= 0 && b.runoutToolhead! <= 3) u1Control.runoutToolhead = b.runoutToolhead!
+      if (Array.isArray(b.loadedToolheads) && b.loadedToolheads.length === 4 && b.loadedToolheads.every((l) => typeof l === 'boolean')) u1Control.loadedToolheads = [...b.loadedToolheads]
       if (typeof b.ignoreToolheadUpdates === 'boolean') u1Control.ignoreToolheadUpdates = b.ignoreToolheadUpdates
       if (Array.isArray(b.filamentColors) && b.filamentColors.length === 4 && b.filamentColors.every((color) => typeof color === 'string' && /^(?:[0-9a-fA-F]{8})?$/.test(color))) u1Control.filamentColors = [...b.filamentColors]
       return { json: { ignoreToolheadUpdates: u1Control.ignoreToolheadUpdates ?? false } }

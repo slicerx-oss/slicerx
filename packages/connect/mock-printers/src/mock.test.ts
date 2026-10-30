@@ -563,14 +563,22 @@ test('Snapmaker U1: Moonraker with the U1 identity, a webcam showing the chosen 
       assert.equal((await fetch(u(p), { method: 'POST' })).status, 200, p)
       assert.equal((await q()).print_stats.state, want, p)
     }
-    // A runout pauses and empties the first toolhead; the door is only logged.
+    // A runout pauses and empties the first toolhead, whose motion sensor stops seeing filament; the door is only logged.
+    const sensor = (s: Record<string, any>, n: number) => s[`filament_motion_sensor e${n}_filament`].filament_detected
     await post(mocks, '/fault', { mock: 'snapmaker-u1', kind: 'runout' })
     let st = await q()
-    assert.deepEqual([st.print_stats.state, st.print_task_config.filament_exist[0]], ['paused', false])
+    assert.deepEqual([st.print_stats.state, st.print_task_config.filament_exist[0], sensor(st, 0), sensor(st, 1)], ['paused', false, false, true])
     await post(mocks, '/fault', { mock: 'snapmaker-u1', kind: 'door' })
     await post(mocks, '/fault', { mock: 'snapmaker-u1', kind: 'clear' })
     st = await q()
-    assert.deepEqual([st.print_stats.state, st.print_task_config.filament_exist[0]], ['paused', true])
+    assert.deepEqual([st.print_stats.state, st.print_task_config.filament_exist[0], sensor(st, 0)], ['paused', true, true])
+    // POST /u1 picks the toolhead a runout empties.
+    await post(mocks, '/u1', { runoutToolhead: 2, loadedToolheads: [true, true, true, true] })
+    await post(mocks, '/fault', { mock: 'snapmaker-u1', kind: 'runout' })
+    st = await q()
+    assert.deepEqual([st.print_task_config.filament_exist, [0, 1, 2, 3].map((n) => sensor(st, n))], [[true, true, false, true], [true, true, false, true]])
+    await post(mocks, '/fault', { mock: 'snapmaker-u1', kind: 'clear' })
+    assert.ok((await json(await fetch(u('/printer/objects/list')))).result.objects.includes('filament_motion_sensor e3_filament'))
     // Offline refuses connections until cleared.
     await post(mocks, '/fault', { mock: 'snapmaker-u1', kind: 'offline' })
     assert.ok(await failure(u('/printer/info')))

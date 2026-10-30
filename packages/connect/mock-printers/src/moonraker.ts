@@ -46,7 +46,14 @@ export interface MoonrakerControl {
   ignoreToolheadUpdates?: boolean
   filamentColors?: string[]
   omitSpoolData?: boolean
+  /** The U1 toolhead a runout fault takes the filament from, 0 to 3 (default 0). */
+  runoutToolhead?: number
+  /** Which U1 toolheads hold filament before any runout (default: all but the third). */
+  loadedToolheads?: boolean[]
 }
+
+/** The U1's filament motion sensors, one per toolhead, as Klipper names them. */
+const U1_SENSORS = [0, 1, 2, 3].map((n) => `filament_motion_sensor e${n}_filament`)
 
 /** The Klipper objects the fake has, as `/printer/objects/list` names them. */
 function objectNames(m: MockMachine, c: MoonrakerControl): string[] {
@@ -55,7 +62,7 @@ function objectNames(m: MockMachine, c: MoonrakerControl): string[] {
   if (m.fx.bed) out.push('heater_bed')
   if (m.fx.chamber) out.push('temperature_sensor chamber')
   if (c.variant === 'qidi') out.push('save_variables', 'box_stepper slot0', 'box_stepper slot1', 'box_stepper slot2', 'box_stepper slot3')
-  if (c.variant === 'u1') out.push('print_task_config', 'filament_detect')
+  if (c.variant === 'u1') out.push('print_task_config', 'filament_detect', ...U1_SENSORS)
   return out
 }
 
@@ -71,16 +78,22 @@ function variantStatus(c: MoonrakerControl, m: MockMachine): Record<string, unkn
     }
   }
   if (c.variant === 'u1') {
-    if (c.omitSpoolData) return { print_task_config: { extruder_map_table: c.toolheadMap ?? [1, 0, 3, 2], extruders_used: c.usedToolheads ?? [false, false, false, false] } }
-    // A runout empties the first toolhead.
-    return { print_task_config: { extruder_map_table: c.toolheadMap ?? [1, 0, 3, 2], extruders_used: c.usedToolheads ?? [false, false, false, false], filament_exist: [!m.faults.has('runout'), true, false, true], filament_type: ['PLA', 'PETG', '', 'PLA'], filament_sub_type: ['SnapSpeed', 'NONE', '', 'Matte'], filament_color_rgba: c.filamentColors ?? ['FF0000FF', '00FF00FF', '', '000000FF'], filament_vendor: ['Snapmaker', 'Generic', '', 'Generic'] } }
+    // A runout empties one toolhead (the first unless `runoutToolhead` says) and its motion sensor stops seeing
+    // filament, in Klipper's `filament_detected` and `enabled` fields. The sensors read true here while idle too; the
+    // real ones read false until a print first moves the filament, which the driver allows for.
+    const out = (n: number) => m.faults.has('runout') && n === (c.runoutToolhead ?? 0)
+    const sensors = Object.fromEntries(U1_SENSORS.map((name, n) => [name, { filament_detected: !out(n), enabled: true }]))
+    if (c.omitSpoolData) return { ...sensors, print_task_config: { extruder_map_table: c.toolheadMap ?? [1, 0, 3, 2], extruders_used: c.usedToolheads ?? [false, false, false, false] } }
+    // `loadedToolheads` may load the third toolhead, which then holds TPU.
+    const loaded = c.loadedToolheads ?? [true, true, false, true]
+    return { ...sensors, print_task_config: { extruder_map_table: c.toolheadMap ?? [1, 0, 3, 2], extruders_used: c.usedToolheads ?? [false, false, false, false], filament_exist: loaded.map((l, n) => l && !out(n)), filament_type: ['PLA', 'PETG', loaded[2] ? 'TPU' : '', 'PLA'], filament_sub_type: ['SnapSpeed', 'NONE', '', 'Matte'], filament_color_rgba: c.filamentColors ?? ['FF0000FF', '00FF00FF', '', '000000FF'], filament_vendor: ['Snapmaker', 'Generic', '', 'Generic'] } }
   }
   return {}
 }
 
 /**
  * `variant` starts the fake as that printer. `webcam` lists one webcam whatever the fixture says, for the U1
- * profile, whose faults it also turns on: a runout pauses the print and empties the first toolhead, the door is
+ * profile, whose faults it also turns on: a runout pauses the print and empties a toolhead, the door is
  * only logged (no door object is known), and offline refuses connections until cleared.
  */
 export async function startMoonraker(m: MockMachine, opts: { apiKey?: string; forceLogins?: boolean; variant?: MoonrakerControl['variant']; webcam?: boolean } = {}) {
