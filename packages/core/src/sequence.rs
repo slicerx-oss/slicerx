@@ -156,9 +156,33 @@ pub(crate) fn slice_range(
     out.first_layer = layers.start;
     out.tool_count = session.tool_count();
     out.plate_bounds = session.plate_bounds();
-    out.first_layer_info = session.first_layer_info(config);
+    out.first_layer_info = first_layers(session, config, true)?;
     out.objects = session.footprints().to_vec();
     Ok(out)
+}
+
+/// The first layer of every object of a plate sliced in sessions of their own together, as the start G-code reads
+/// it: the extents the bed mesh probes (`first_layer_print_min`, `adaptive_bed_mesh_min` and the rest) take in each
+/// object's first layer, not only the first object's. From the sessions, so every layer range gets the same. With
+/// `brims` (by object, where each object's brim prints on a layer of its own) the brims of the later objects too;
+/// layer by layer they are all in the paths of layer 0.
+fn first_layers(
+    session: &SliceSession,
+    config: &PrintConfig,
+    brims: bool,
+) -> Result<crate::output::FirstLayerInfo> {
+    let mut info = session.first_layer_info(config);
+    for (k, sub) in session.sequence().enumerate().skip(1) {
+        let cfg = session.object_config(k, config)?;
+        let own = sub.first_layer_info(&cfg);
+        info.area_mm2 += own.area_mm2;
+        info.rings.extend(own.rings);
+        info.skirt_outline.extend(own.skirt_outline);
+        if brims {
+            info.brims.extend(sub.first_brim_edges(&cfg.for_first_layer()));
+        }
+    }
+    Ok(info)
 }
 
 /// The settings of config index `cfg` (0 is `base`, `k` is `configs[k - 1]`).
@@ -395,7 +419,7 @@ fn slice_interleaved_from(
     out.first_layer = layers.start;
     out.tool_count = session.tool_count();
     out.plate_bounds = session.plate_bounds();
-    out.first_layer_info = session.first_layer_info(config);
+    out.first_layer_info = first_layers(session, config, false)?;
     out.objects = session.footprints().to_vec();
     Ok(out)
 }
@@ -528,7 +552,7 @@ fn slice_interleaved_by_height(
     out.first_layer = layers.start;
     out.tool_count = session.tool_count();
     out.plate_bounds = session.plate_bounds();
-    out.first_layer_info = session.first_layer_info(config);
+    out.first_layer_info = first_layers(session, config, false)?;
     out.objects = session.footprints().to_vec();
     Ok(out)
 }

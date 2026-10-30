@@ -2473,6 +2473,7 @@ impl SliceSession {
             area_mm2: area as f32,
             rings,
             skirt_outline,
+            brims: Vec::new(),
         }
     }
 
@@ -3569,6 +3570,22 @@ impl SliceSession {
         for (f, t) in self.followers.iter_mut().zip(turns) {
             f.plate_skirt = Some((std::sync::Arc::clone(&plan), t));
         }
+    }
+
+    /// The outer edges of [`Self::first_brim`]'s brim areas, mm: how far the brim of layer 0 reaches on the bed.
+    pub(crate) fn first_brim_edges(&self, cfg: &PrintConfig) -> Vec<[f64; 2]> {
+        self.first_brim(cfg)
+            .1
+            .iter()
+            .filter_map(|s| s.first())
+            .flatten()
+            .map(|p| {
+                [
+                    f64::from(p.x) / crate::geom::SCALE,
+                    f64::from(p.y) / crate::geom::SCALE,
+                ]
+            })
+            .collect()
     }
 
     /// The first layer's outline and the brim areas around it (all its islands' together), before they are cut to the
