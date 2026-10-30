@@ -215,6 +215,12 @@ pub trait PrinterSession: Send + Sync {
     async fn hardware(&self) -> Result<Option<PrinterHardware>> {
         Ok(None)
     }
+    /// The remote tunnel's report for a printer reached through one (`tunnel::TunnelReport`): its last
+    /// problem, this month's data and the running print's failure score. `None` for a printer on the
+    /// local network.
+    async fn tunnel(&self) -> Option<tunnel::TunnelReport> {
+        None
+    }
     /// The model the printer itself reports ("A1", "A1 mini"), for printers that say it. The hub adds
     /// it to the status as `model`, so a printer added by address alone still reads as what it is.
     fn reported_model(&self) -> Option<String> {

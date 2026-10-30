@@ -2,7 +2,7 @@
 
 Generated from the tool list (`serverTools` in src/server.ts) with demo printers and the geometry engine on. Do not edit by hand: `SLICERX_WRITE_TOOLS_DOC=1 pnpm --filter @slicerx/mcp exec vitest run test/registry.test.ts` writes it again.
 
-249 tools.
+250 tools.
 
 | Tool | Title | Set | Permission | What it does |
 | --- | --- | --- | --- | --- |
@@ -196,6 +196,7 @@ Generated from the tool list (`serverTools` in src/server.ts) with demo printers
 | `slicerx_printer_snapshot` | Camera snapshot | printers | read, ungated | Take a camera snapshot from a printer and return it as an image. |
 | `slicerx_printer_status` |  |  | read | Current status of one printer: state, job, layer, time left, temperatures, filament slots, its message and any problem it reports now (an HMS code or a print error, with the code and what to do). |
 | `slicerx_printer_test` |  |  | printer_config | Tests that SlicerX can reach the printer: reaches it, signs in and reads its state. |
+| `slicerx_printer_tunnel` | Printer tunnel | printers | read, ungated | Read how a printer reached through an Obico tunnel is doing: tunnel and host (never its user name or password); connected, whether the last status reading came through; problem (no_access, access_removed, data_limit, file_over_data_limit, not_connected or timed_out) with message in plain words; usage, this month's tunnel data in bytes (usedBytes, capBytes, leftBytes, unlimited, resetInSeconds); and prediction, Obico's failure score for the running print from 0 (looks fine) to 1 (looks failed), null when nothing prints. |
 | `slicerx_project_add_filament` |  |  | slice | Add a filament to the open project after the last one (the app's Add filament on the Slice filament rail), with a material type and a color. |
 | `slicerx_project_add_model` |  |  | read | Load an STL model (absolute path or http(s) URL) into the open project, with a number of copies. |
 | `slicerx_project_add_volume` |  |  | slice | Add a volume to an object, in the object's own coordinates (as modeled, before rotation and scale; slicerx_project_show gives each object's model_bounds): negative cuts it away, support_blocker keeps support out, support_enforcer asks for support there (with supports on), and modifier prints the object inside it with its own settings (walls, infill, speeds, flow). |

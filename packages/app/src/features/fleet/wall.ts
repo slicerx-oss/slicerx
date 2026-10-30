@@ -2,6 +2,7 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The camera wall's logic: which printers need a person first, the count strip over the tiles, the bays
 // printers stand in, and the one line each tile shows. Pure functions over the fleet rows.
+import { TUNNEL_PROBLEM_TEXT, type TunnelReport } from '@slicerx/contracts'
 import type { FleetRow } from '../../lib/queries'
 import { isExportOnly } from '../../lib/hand-printers'
 import type { PrinterBay } from '../../state/prefs'
@@ -125,6 +126,8 @@ export function progressOf(r: FleetRow): number | null {
 export function statusLine(r: FleetRow, now: number): string {
   const st = r.status
   if (isExportOnly(r)) return 'No connection. Export the G-code for USB or SD card.'
+  // Through Obico, the tunnel says why nothing came through, in plain words.
+  if (st.tunnelProblem) return TUNNEL_PROBLEM_TEXT[st.tunnelProblem] ?? 'Not reachable through Obico'
   const job = st.jobName ? jobTitle(st.jobName) : ''
   const layer = st.layer !== undefined && st.layerCount ? `layer ${st.layer} of ${st.layerCount}` : ''
   switch (st.state) {
@@ -197,4 +200,30 @@ export function newBayId(bays: readonly Bay[], name: string): string {
   let id = base
   for (let n = 2; used.has(id); n++) id = `${base}-${n}`
   return id
+}
+
+/** A byte count in the unit that reads best: "850 KB", "120 MB", "1.2 GB". */
+export function bytesText(bytes: number): string {
+  const b = Math.max(0, bytes)
+  if (b >= 1e9) return `${(b / 1e9).toFixed(b >= 1e10 ? 0 : 1)} GB`
+  if (b >= 1e6) return `${Math.round(b / 1e6)} MB`
+  if (b >= 1e3) return `${Math.round(b / 1e3)} KB`
+  return b > 0 ? '1 KB' : '0 MB'
+}
+
+/** The card's tunnel line: "Through Obico · 120 MB used, 180 MB left". Only the mark until the usage is read. */
+export function tunnelLine(report: TunnelReport | null): string {
+  const u = report?.usage
+  if (!u) return 'Through Obico'
+  if (u.unlimited || u.leftBytes === null) return `Through Obico · ${bytesText(u.usedBytes)} used, no limit`
+  return `Through Obico · ${bytesText(u.usedBytes)} used, ${bytesText(u.leftBytes)} left`
+}
+
+/** The tunnel line's tooltip: the month and when it resets. */
+export function tunnelTip(report: TunnelReport | null): string {
+  const u = report?.usage
+  if (!u) return 'Reached through Obico. The camera is off there for now.'
+  if (u.unlimited || u.leftBytes === null) return `Obico tunnel data this month: ${bytesText(u.usedBytes)}, with no monthly limit.`
+  const days = u.resetInSeconds === null ? null : Math.max(1, Math.ceil(u.resetInSeconds / 86_400))
+  return `Obico tunnel data this month: ${bytesText(u.usedBytes)} of ${bytesText(u.capBytes ?? u.usedBytes + u.leftBytes)} used.${days === null ? '' : ` It resets in ${days} ${days === 1 ? 'day' : 'days'}.`}`
 }

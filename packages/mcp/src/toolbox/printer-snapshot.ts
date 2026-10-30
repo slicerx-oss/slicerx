@@ -15,11 +15,21 @@ export default (d: ServerToolDeps) => {
     permission: 'read',
     toolset: 'printers',
     ungated: true,
-    description: `Take a camera snapshot from a printer and return it as an image.${printers.kind === 'demo' ? ' Simulated printers return a placeholder image.' : ''}`,
+    description: `Take a camera snapshot from a printer and return it as an image. A printer reached through Obico has its camera off and is refused with not_supported and reason camera_off_tunnel.${printers.kind === 'demo' ? ' Simulated printers return a placeholder image.' : ''}`,
     input: z.object({ printer_id: z.string().min(1) }),
     hints: { idempotent: false, openWorld: true },
     async run(args) {
-      const blob = await printers.host.snapshot(args.printer_id)
+      let blob: Blob | null
+      try {
+        blob = await printers.host.snapshot(args.printer_id)
+      } catch (e) {
+        // A printer reached through Obico: its camera is off there for now.
+        const err = e as { code?: unknown; details?: { reason?: unknown } }
+        if (err?.code === 'not_supported' && err.details?.reason === 'camera_off_tunnel') {
+          throw new ToolInputError(`The camera of ${args.printer_id} is off while it is reached through Obico. slicerx_printer_tunnel reads its tunnel.`, 'not_supported', { reason: 'camera_off_tunnel' })
+        }
+        throw e
+      }
       d.gate.log.append({ tool: 'printer.snapshot', permission: 'read', decision: 'read', input_hash: args.printer_id, ok: blob !== null })
       if (!blob) throw new ToolInputError(`${args.printer_id} has no camera or is offline.`)
       const data = Buffer.from(await blob.arrayBuffer()).toString('base64')

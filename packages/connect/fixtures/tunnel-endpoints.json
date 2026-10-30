@@ -1,0 +1,337 @@
+{
+ "about": "Obico tunnel addresses and how they parse. TunnelEndpoint::parse (packages/connect/src/tunnel.rs) and parseTunnelEndpoint (packages/contracts/src/tunnel.ts) are both tested against every case, so the app and the hub never disagree. host is the lowercased tunnel host when the address is accepted; credential says whether it carried a user name and password; problem is why it was refused.",
+ "cases": [
+  {
+   "input": "https://u:p@abc123.tunnels.app.obico.io",
+   "host": "abc123.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null,
+   "note": "the address as Obico hands it out"
+  },
+  {
+   "input": "https://u:p@abc123.tunnels.app.obico.io/",
+   "host": "abc123.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null,
+   "note": "a trailing slash"
+  },
+  {
+   "input": "  https://u:p@ABC123.Tunnels.App.Obico.IO \n",
+   "host": "abc123.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null,
+   "note": "spaces around it and capitals, as a paste brings them"
+  },
+  {
+   "input": "HTTPS://u:p@abc.tunnels.app.obico.io",
+   "host": "abc.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null
+  },
+  {
+   "input": "https://abc.tunnels.app.obico.io",
+   "host": "abc.tunnels.app.obico.io",
+   "credential": false,
+   "problem": null,
+   "note": "no user name or password: parses, and the paste box asks for the whole address"
+  },
+  {
+   "input": "https://us%40er:p%2Fss@abc.tunnels.app.obico.io",
+   "host": "abc.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null,
+   "note": "percent-encoded user name and password"
+  },
+  {
+   "input": "https://u:p:q@abc.tunnels.app.obico.io",
+   "host": "abc.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null,
+   "note": "the password may hold a colon"
+  },
+  {
+   "input": "https://a@b:p@abc.tunnels.app.obico.io",
+   "host": "abc.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null,
+   "note": "the last @ ends the user name and password"
+  },
+  {
+   "input": "https://u:p@a-1.tunnels.app.obico.io",
+   "host": "a-1.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null
+  },
+  {
+   "input": "https://u:p@xn--bc-8kc.tunnels.app.obico.io",
+   "host": "xn--bc-8kc.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null,
+   "note": "an ASCII punycode label"
+  },
+  {
+   "input": "https://u:p@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tunnels.app.obico.io",
+   "host": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tunnels.app.obico.io",
+   "credential": true,
+   "problem": null,
+   "note": "a 63 character label"
+  },
+  {
+   "input": "https://u:p@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host",
+   "note": "a 64 character label"
+  },
+  {
+   "input": "http://u:p@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "scheme"
+  },
+  {
+   "input": "abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "scheme"
+  },
+  {
+   "input": "u:p@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "scheme"
+  },
+  {
+   "input": "ftp://u:p@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "scheme"
+  },
+  {
+   "input": "wss://u:p@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "scheme"
+  },
+  {
+   "input": "",
+   "host": null,
+   "credential": false,
+   "problem": "scheme"
+  },
+  {
+   "input": "\ufeffhttps://u:p@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "scheme",
+   "note": "a byte order mark is not white space"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io:443",
+   "host": null,
+   "credential": false,
+   "problem": "port"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io:8443",
+   "host": null,
+   "credential": false,
+   "problem": "port"
+  },
+  {
+   "input": "https://u:p@[::1]",
+   "host": null,
+   "credential": false,
+   "problem": "port"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io/api",
+   "host": null,
+   "credential": false,
+   "problem": "path"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io?x=1",
+   "host": null,
+   "credential": false,
+   "problem": "path"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io#x",
+   "host": null,
+   "credential": false,
+   "problem": "path"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io//",
+   "host": null,
+   "credential": false,
+   "problem": "path"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io.evil.example",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@evil-tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@a.b.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host",
+   "note": "an empty label"
+  },
+  {
+   "input": "https://u:p@-abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@abc-.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@abc_d.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io.",
+   "host": null,
+   "credential": false,
+   "problem": "host",
+   "note": "a trailing dot"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.com",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io@evil.example",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://abc.tunnels.app.obico.io@evil.example",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@8.8.8.8",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@example.com",
+   "host": null,
+   "credential": false,
+   "problem": "host"
+  },
+  {
+   "input": "https://u:p@\u212abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host",
+   "note": "a Kelvin sign that lowercases to k outside ASCII"
+  },
+  {
+   "input": "https://u:p@\u0430bc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "host",
+   "note": "a Cyrillic a"
+  },
+  {
+   "input": "https://u:p@abc.tunnels.app.obico.io /",
+   "host": null,
+   "credential": false,
+   "problem": "host",
+   "note": "a space inside the address"
+  },
+  {
+   "input": "https://user@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "userinfo",
+   "note": "a user name with no password"
+  },
+  {
+   "input": "https://evil.example\\@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "userinfo"
+  },
+  {
+   "input": "https://:p@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "userinfo"
+  },
+  {
+   "input": "https://u:@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "userinfo"
+  },
+  {
+   "input": "https://u:p%zz@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "userinfo"
+  },
+  {
+   "input": "https://u:p%@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "userinfo"
+  },
+  {
+   "input": "https://u:p%0a@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "userinfo",
+   "note": "a control character"
+  },
+  {
+   "input": "https://u:p%e9@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "userinfo",
+   "note": "a byte that is not UTF-8 on its own"
+  },
+  {
+   "input": "https://u%3Ax:p@abc.tunnels.app.obico.io",
+   "host": null,
+   "credential": false,
+   "problem": "userinfo",
+   "note": "a colon in the user name"
+  }
+ ]
+}

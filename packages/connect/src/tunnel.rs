@@ -337,6 +337,63 @@ impl TunnelUsage {
     }
 }
 
+/// A failure score Obico's detector gives the running print (`/_tsd_/prediction/`), from 0 (looks fine) to 1
+/// (looks failed).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Prediction {
+    pub score: f64,
+}
+
+impl Prediction {
+    /// Reads `{normalized_p}`. `None` when it is missing, not a number or outside 0 to 1.
+    #[must_use]
+    pub fn from_json(v: &serde_json::Value) -> Option<Self> {
+        let p = v.get("normalized_p")?.as_f64()?;
+        (0.0..=1.0).contains(&p).then_some(Self { score: p })
+    }
+}
+
+/// This month's tunnel data as the app and clients read it, in whole bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageReport {
+    pub used_bytes: u64,
+    /// `None` when the plan has no cap.
+    pub cap_bytes: Option<u64>,
+    /// `None` when the plan has no cap.
+    pub left_bytes: Option<u64>,
+    pub unlimited: bool,
+    pub reset_in_seconds: Option<u64>,
+}
+
+impl From<TunnelUsage> for UsageReport {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn from(u: TunnelUsage) -> Self {
+        let whole = |b: f64| b.max(0.0).round() as u64;
+        Self {
+            used_bytes: whole(u.total_bytes),
+            cap_bytes: (!u.unlimited()).then(|| whole(u.monthly_cap_bytes)),
+            left_bytes: u.left_bytes().map(whole),
+            unlimited: u.unlimited(),
+            reset_in_seconds: u.reset_in_seconds,
+        }
+    }
+}
+
+/// What a tunnel printer reports about its tunnel (`PrinterSession::tunnel`): the problem the tunnel gave on
+/// the last status reading, whether that reading came through, this month's data and the running print's
+/// failure score. Never the host's credential.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelReport {
+    pub kind: TunnelKind,
+    pub problem: Option<TunnelProblem>,
+    /// Whether the last status reading came through; `None` before the first.
+    pub connected: Option<bool>,
+    pub usage: Option<UsageReport>,
+    pub prediction: Option<Prediction>,
+}
+
 /// The fastest status reading over a tunnel.
 pub const MIN_POLL: Duration = Duration::from_secs(15);
 /// The slowest status reading over a tunnel, also used while the usage is unknown.
@@ -360,6 +417,10 @@ pub fn poll_interval(usage: Option<&TunnelUsage>) -> Duration {
 
 /// How long a usage reading is trusted before status reading refreshes it.
 const USAGE_TTL: Duration = Duration::from_secs(600);
+/// How long a report reuses the usage it has, so a card or client that asks often costs no tunnel data.
+const REPORT_USAGE_TTL: Duration = Duration::from_secs(120);
+/// How long a failure score is kept before a report reads it again.
+const PREDICTION_TTL: Duration = Duration::from_secs(60);
 
 /// An open tunnel for one printer: the client (pinned addresses, platform trust, no redirects, the
 /// credential as a default `Authorization` header) and the base URL the driver builds its paths on.
@@ -372,6 +433,7 @@ pub(crate) struct Tunnel {
     /// asked once per [`USAGE_TTL`], not on every reading.
     usage_tried: Mutex<Option<Instant>>,
     last_status: tokio::sync::Mutex<Option<(Instant, Result<PrinterStatus>)>>,
+    prediction: Mutex<Option<(Instant, Option<Prediction>)>>,
 }
 
 impl Tunnel {
@@ -433,6 +495,7 @@ impl Tunnel {
             usage: Mutex::new(None),
             usage_tried: Mutex::new(None),
             last_status: tokio::sync::Mutex::new(None),
+            prediction: Mutex::new(None),
         })
     }
 
@@ -527,6 +590,64 @@ impl Tunnel {
             }
             None => std::sync::Arc::new(move || fallback),
         }
+    }
+
+    /// The tunnel's report for the app and clients. It reuses a usage reading younger than two minutes and a
+    /// failure score younger than one, and reads the score only while the last status says a print runs.
+    pub(crate) async fn report(&self, kind: TunnelKind) -> TunnelReport {
+        let (connected, mut problem, printing) = match self.last_status.lock().await.as_ref() {
+            None => (None, None, false),
+            Some((_, Ok(st))) => (
+                Some(true),
+                None,
+                matches!(
+                    st.state,
+                    crate::types::PrinterState::Printing | crate::types::PrinterState::Paused
+                ),
+            ),
+            Some((_, Err(e))) => (Some(false), e.tunnel_problem(), false),
+        };
+        let usage = match self.cached_usage() {
+            Some((at, u)) if at.elapsed() < REPORT_USAGE_TTL => Some(u),
+            stale => match self.read_usage().await {
+                Ok(u) => Some(u),
+                Err(e) => {
+                    problem = e.tunnel_problem().or(problem);
+                    stale.map(|(_, u)| u)
+                }
+            },
+        };
+        let prediction = if printing { self.prediction().await } else { None };
+        TunnelReport {
+            kind,
+            problem,
+            connected,
+            usage: usage.map(UsageReport::from),
+            prediction,
+        }
+    }
+
+    /// The running print's failure score, kept for [`PREDICTION_TTL`]. Not reading it is no score.
+    async fn prediction(&self) -> Option<Prediction> {
+        if let Some((at, p)) = *self.prediction.lock().unwrap_or_else(PoisonError::into_inner)
+            && at.elapsed() < PREDICTION_TTL
+        {
+            return p;
+        }
+        let url = format!("{}/_tsd_/prediction/", self.base);
+        let read = async {
+            let resp = crate::http::send(&self.printer, self.client.get(url)).await?;
+            crate::http::json(&self.printer, resp).await
+        };
+        let p = match read.await {
+            Ok(v) => Prediction::from_json(&v),
+            Err(e) => {
+                crate::trace(&self.printer, format_args!("tunnel failure score not read: {e}"));
+                None
+            }
+        };
+        *self.prediction.lock().unwrap_or_else(PoisonError::into_inner) = Some((Instant::now(), p));
+        p
     }
 
     /// Drops the kept status, so the next reading after a print action goes to the printer.

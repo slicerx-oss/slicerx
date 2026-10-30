@@ -4,9 +4,14 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_printer_tunnel` reads a printer reached through an Obico tunnel: `tunnel`, `host` (never its user name or password), `connected`, `problem` (`no_access`, `access_removed`, `data_limit`, `file_over_data_limit`, `not_connected` or `timed_out`) with `message` in plain words, this month's data in `usage` (`usedBytes`, `capBytes`, `leftBytes`, `unlimited`, `resetInSeconds`) and Obico's failure score for the running print in `prediction.score`, 0 to 1. A printer on the local network is refused with `not_supported` and `details.reason` `no_tunnel`. No tool connects a printer through Obico; the person does that in the app.
+
 ### Changed
 
 - The mimir session read-back (`mimir_session`) lists `mechanism` among the reasons a turn can start on the larger model, and a turn no longer starts there only because a picture or PDF came with it.
+- `slicerx_printer_snapshot` refuses a printer reached through Obico with `not_supported` and `details.reason` `camera_off_tunnel`, since its camera is off through the tunnel.
 
 ## [0.2.6] - 2026-10-29
 
