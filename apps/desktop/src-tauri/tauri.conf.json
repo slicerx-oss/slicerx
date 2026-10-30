@@ -33,7 +33,15 @@
         "font-src": "'self' https://fonts.gstatic.com",
         "script-src": "'self' 'wasm-unsafe-eval'",
         "worker-src": "'self' blob:",
-        "connect-src": "'self' ipc: http://ipc.localhost ws://127.0.0.1:47615"
+        "connect-src": "'self' ipc: http://ipc.localhost ws://127.0.0.1:47615 asset: http://asset.localhost"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "allow": ["$RESOURCE/mcp/step-reader/occt-import-js.wasm"],
+          "deny": [],
+          "requireLiteralLeadingDot": true
+        }
       }
     }
   },

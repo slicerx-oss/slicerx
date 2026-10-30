@@ -6,8 +6,11 @@
 // With --standalone <dir> it writes one self-contained file with every
 // dependency inlined, <dir>/slicerx-mcp.mjs (plus chunks), and the data into <dir>/data/,
 // for bundles such as the Claude Code plugin that ship without node_modules.
+// With --step-reader as well (the desktop app's build) the STEP reader goes beside it in <dir>/step-reader: the
+// built @slicerx/step-reader with its NOTICE, license texts and SOURCE.md, checked against the SHA-256 lines there.
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
@@ -17,6 +20,8 @@ const repo = join(pkg, '..', '..')
 
 const flag = process.argv.indexOf('--standalone')
 const standalone = flag >= 0 ? resolve(process.argv[flag + 1] ?? '') : undefined
+const withStepReader = process.argv.includes('--step-reader')
+if (withStepReader && !standalone) throw new Error('--step-reader goes with --standalone <dir>')
 const external = ['@modelcontextprotocol/sdk', 'zod', 'yaml', '@noble/*']
 // The STEP reader is an optional peer dependency, loaded at run time only when it is installed (slicerx_step_read):
 // never inlined, not even in the standalone bundle, so the wasm and its licenses stay in their own package.
@@ -36,6 +41,8 @@ await build({
   external: standalone ? optional : [...external, ...optional],
   // Bundled CommonJS dependencies call require(); give the ESM output one.
   ...(standalone ? { banner: { js: "import { createRequire as __sxCreateRequire } from 'node:module'; const require = __sxCreateRequire(import.meta.url);" } } : {}),
+  // The self-contained build has no node_modules beside it, so a missing STEP reader is not an npm install away.
+  define: { __SLICERX_STANDALONE__: standalone ? 'true' : 'false' },
   legalComments: standalone ? 'eof' : 'inline',
   logLevel: 'warning',
 })
@@ -51,6 +58,7 @@ if (!standalone) {
     format: 'esm',
     target: 'node24',
     external: [...external, ...optional],
+    define: { __SLICERX_STANDALONE__: 'false' },
     legalComments: 'inline',
     logLevel: 'warning',
   })
@@ -92,6 +100,31 @@ if (existsSync(printerDocs)) cpSync(printerDocs, join(docs, 'printers'), { recur
 // UltiMaker profiles from Cura (packages/profiles/cura), which are LGPL-3.0-or-later.
 cpSync(join(repo, 'packages', 'profiles', 'LICENSE'), join(standalone ?? join(pkg, 'dist'), 'LICENSE-AGPL-profiles.txt'))
 cpSync(join(repo, 'packages', 'profiles', 'cura', 'LICENSE'), join(standalone ?? join(pkg, 'dist'), 'LICENSE-LGPL-cura-profiles.txt'))
+
+// The STEP reader beside the self-contained server, where the server looks for it first (src/toolbox/step-read.ts).
+if (standalone) {
+  const dir = join(standalone, 'step-reader')
+  rmSync(dir, { recursive: true, force: true })
+  if (withStepReader) {
+    const reader = join(repo, 'packages', 'step-reader')
+    execFileSync(process.execPath, [join(reader, 'scripts', 'build.mjs'), dir], { stdio: 'inherit' })
+    // Type declarations are for the npm package only.
+    rmSync(join(dir, 'src-types'), { recursive: true, force: true })
+    for (const f of readdirSync(dir)) if (f.endsWith('.d.ts')) rmSync(join(dir, f))
+    // ES modules with a .js name, wherever the folder is unpacked.
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: '@slicerx/step-reader', private: true, type: 'module' }, null, 2) + '\n')
+    for (const f of readdirSync(reader)) {
+      if (f === 'NOTICE' || f === 'SOURCE.md' || f === 'OCCT_LGPL_EXCEPTION.txt' || /^LICENSE-.+/.test(f)) cpSync(join(reader, f), join(dir, f))
+    }
+    // The object code shipped must be the one the source offer describes.
+    const source = readFileSync(join(reader, 'SOURCE.md'), 'utf8')
+    for (const f of ['occt-import-js.mjs', 'occt-import-js.wasm']) {
+      const sha = createHash('sha256').update(readFileSync(join(dir, f))).digest('hex')
+      const line = source.split('\n').find((l) => l.startsWith(`- \`${f}\``))
+      if (!line?.includes(sha)) throw new Error(`step-reader/${f} (sha256 ${sha}) is not the build packages/step-reader/SOURCE.md lists`)
+    }
+  }
+}
 
 // Self-contained type declarations for the library entries.
 if (!standalone) {
