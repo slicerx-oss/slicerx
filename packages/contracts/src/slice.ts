@@ -419,6 +419,74 @@ export interface CollisionFix {
   closeCalls?: number
 }
 
+/**
+ * How sure heimdall's plate check is of a collision it found before a slice: `sure` when the head's real shape meets
+ * the part from the object's own outline, so a slice is refused for it; `slice_decides` when it may come from the
+ * footprint rule's own margin (a hull over a concave part, a stretched fan duct, a brim or support rule).
+ */
+export type CheckCertainty = 'sure' | 'slice_decides'
+
+/** What the plate check leaves to the slice for an object: tree support, tool change trips, a raft, or brim ears. */
+export type UncheckedKind = 'tree_support' | 'tool_change_trips' | 'raft' | 'painted_brim'
+
+export interface UncheckedObject {
+  objectId: string
+  what: UncheckedKind
+  /** The objects close enough to it, within the clearance radius of what it prints round itself, for this to matter. */
+  near: string[]
+}
+
+/**
+ * heimdall's check of a by-object plate before a slice (`sx check`): the collisions and fixes a slice of the same request
+ * would report, worked out from the objects' footprints, each collision with how sure it is, and what only the slice
+ * can check. Empty for a plate printed by layer or with fewer than two objects.
+ */
+export interface PlateCheck {
+  collisions: Collision[]
+  collisionFixes: CollisionFix[]
+  /** One per collision, in the same order. */
+  certainty: CheckCertainty[]
+  unchecked: UncheckedObject[]
+  /** The object ids in the print order checked. */
+  order: string[]
+  /** How long the engine took, microseconds. */
+  micros: number
+}
+
+const CERTAINTIES: readonly string[] = ['sure', 'slice_decides'] satisfies CheckCertainty[]
+const UNCHECKED: readonly string[] = ['tree_support', 'tool_change_trips', 'raft', 'painted_brim'] satisfies UncheckedKind[]
+
+/**
+ * A plate check as the engine wrote it (`sx check`, the desktop's check_plate), or an error naming what is wrong. A
+ * certainty list that does not match the collisions one for one is refused, so no collision is ever shown as sure by
+ * mistake. An unchecked kind this build does not know is kept (knownUnchecked tells them apart).
+ */
+export function readPlateCheck(v: unknown): PlateCheck {
+  const bad = (what: string): never => {
+    throw new Error(`The plate check returned an unexpected ${what}`)
+  }
+  const rec = (x: unknown): x is Record<string, unknown> => Boolean(x) && typeof x === 'object' && !Array.isArray(x)
+  if (!rec(v) || !Array.isArray(v['collisions']) || !Array.isArray(v['certainty'])) return bad('result')
+  const collisions = v['collisions'] as unknown[]
+  const certainty = v['certainty'] as unknown[]
+  if (certainty.length !== collisions.length || certainty.some((c) => typeof c !== 'string' || !CERTAINTIES.includes(c))) return bad('certainty list')
+  if (collisions.some((c) => !rec(c) || typeof c['objectId'] !== 'string' || typeof c['hitId'] !== 'string' || (c['severity'] !== 'hit' && c['severity'] !== 'close'))) return bad('collision')
+  const unchecked = Array.isArray(v['unchecked']) ? (v['unchecked'] as unknown[]) : []
+  if (unchecked.some((u) => !rec(u) || typeof u['objectId'] !== 'string' || typeof u['what'] !== 'string')) return bad('unchecked entry')
+  const strings = (x: unknown): string[] => (Array.isArray(x) ? x.filter((n): n is string => typeof n === 'string') : [])
+  return {
+    collisions: collisions as Collision[],
+    collisionFixes: Array.isArray(v['collisionFixes']) ? (v['collisionFixes'] as CollisionFix[]) : [],
+    certainty: certainty as CheckCertainty[],
+    unchecked: (unchecked as Record<string, unknown>[]).map((u) => ({ objectId: u['objectId'] as string, what: u['what'] as UncheckedKind, near: strings(u['near']) })),
+    order: strings(v['order']),
+    micros: typeof v['micros'] === 'number' ? v['micros'] : 0,
+  }
+}
+
+/** True for an unchecked kind this build has words for. */
+export const knownUnchecked = (what: string): what is UncheckedKind => UNCHECKED.includes(what)
+
 /** The chamber cooling mode a slice wrote, and where it came from. */
 export interface ChamberCooling {
   /** 0 keep warm (internal circulation), 1 weak cooling, 2 strong cooling (external circulation). */
@@ -479,6 +547,12 @@ export interface SlicerHost {
   loadModel(data: ArrayBuffer, fileName: string): Promise<MeshHandle>
   loadParts(name: string, parts: MeshPart[]): Promise<MeshHandle>
   slice(req: SliceRequest, opts?: { onProgress?: (p: SliceProgress) => void; signal?: AbortSignal }): Promise<SliceResult>
+  /**
+   * heimdall's check of a by-object plate before a slice (PlateCheck), off the page's thread. An abort lets the answer
+   * go; a check still waiting for the engine when a newer one comes is skipped. Optional: without it (the web and the
+   * phone) the app keeps its own footprint rule.
+   */
+  checkPlate?(req: SliceRequest, opts?: { signal?: AbortSignal }): Promise<PlateCheck>
   /**
    * Geometry of a loaded model (3MF, STL or parts) for drawing, in the file's build space, before the
    * plate transform. Optional: hosts that only slice may not have it.
