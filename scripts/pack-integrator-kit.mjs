@@ -3,10 +3,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Packs the packages an app that builds SlicerX in installs (@slicerx/viewport, @slicerx/embed and
 // @slicerx/mcp) into one folder, built, as npm would publish them, with the credit kit
-// (docs/integrators/credit-kit) and every setting's default (defaults.json) beside them. Use it for a build that is
-// not on npm yet:
+// (docs/integrators/credit-kit) and every setting's default (defaults.json) beside them. The optional STEP reader
+// (@slicerx/step-reader, OpenCASCADE in wasm with its license texts and source offer) is its own tarball, installed
+// only by apps that read STEP files. SHA256SUMS.txt lists every tarball and file the pack writes at the top. Use it
+// for a build that is not on npm yet:
 //   node scripts/pack-integrator-kit.mjs ~/slicerx-kit
 //   npm install ~/slicerx-kit/slicerx-viewport.tgz ~/slicerx-kit/slicerx-embed.tgz ~/slicerx-kit/slicerx-mcp.tgz
+//   npm install ~/slicerx-kit/slicerx-step-reader.tgz     # only to read STEP files
 //
 // With --engine it also lays out the prebuilt engine (sx, sx-geom and sx-link, libslicerx and its header) for
 // macOS, Windows and Linux, from an engine release's archives, each checked against the release's SHA256SUMS.txt:
@@ -140,6 +143,9 @@ export function writeKitFiles(dest) {
   })
 }
 
+/** Packages an app installs only for one feature; the manifest marks them `optional: true`. */
+export const OPTIONAL_PACKAGES = new Set(['@slicerx/step-reader'])
+
 // stable copies work on platforms where extracting symlinks needs extra privileges.
 export function writePackageManifest(dest, packages) {
   const entries = packages.map(({ name, version }) => {
@@ -148,37 +154,46 @@ export function writePackageManifest(dest, packages) {
     const file = `${stem}.tgz`
     const bytes = readFileSync(join(dest, archive))
     writeFileSync(join(dest, file), bytes)
-    return { name, version, file, archive, sha256: createHash('sha256').update(bytes).digest('hex') }
+    const entry = { name, version, file, archive, sha256: createHash('sha256').update(bytes).digest('hex') }
+    return OPTIONAL_PACKAGES.has(name) ? { ...entry, optional: true } : entry
   })
   const manifest = { schemaVersion: 1, packages: entries, files: writeKitFiles(dest) }
   writeFileSync(join(dest, 'kit-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
+  writeSums(dest, [...entries.flatMap((e) => [e.archive, e.file]), 'kit-manifest.json', ...manifest.files.map((f) => f.name)])
   return manifest
+}
+
+/** Writes `SHA256SUMS.txt` for `names` (files in `dest`), in the format `sha256sum` writes and `parseSums` reads. */
+export function writeSums(dest, names) {
+  const lines = [...names].sort().map((n) => `${createHash('sha256').update(readFileSync(join(dest, n))).digest('hex')}  ${n}`)
+  writeFileSync(join(dest, 'SHA256SUMS.txt'), `${lines.join('\n')}\n`)
 }
 
 export function kitPackages() {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-  return ['ui/viewport', 'embed', 'mcp'].map((folder) => JSON.parse(readFileSync(join(root, 'packages', folder, 'package.json'), 'utf8')))
+  return ['ui/viewport', 'embed', 'mcp', 'step-reader'].map((folder) => JSON.parse(readFileSync(join(root, 'packages', folder, 'package.json'), 'utf8')))
 }
 
 function packPackages(dest) {
   const metadata = kitPackages()
   const packages = metadata.map((p) => p.name)
-  rmSync(join(dest, 'kit-manifest.json'), { force: true })
+  for (const f of ['kit-manifest.json', 'SHA256SUMS.txt']) rmSync(join(dest, f), { force: true })
   for (const { name } of KIT_FILES) rmSync(join(dest, name), { force: true })
-  for (const f of readdirSync(dest)) if (/^slicerx-(viewport|embed|mcp)(?:-.*)?\.tgz$/.test(f)) rmSync(join(dest, f))
+  for (const f of readdirSync(dest)) if (/^slicerx-(viewport|embed|mcp|step-reader)(?:-.*)?\.tgz$/.test(f)) rmSync(join(dest, f))
   const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
   for (const p of packages) {
     // pack runs each package's prepack, which builds it.
     execFileSync(pnpm, ['--filter', p, 'pack', '--pack-destination', dest], { stdio: ['ignore', 'ignore', 'inherit'], shell: process.platform === 'win32' })
   }
   const manifest = writePackageManifest(dest, metadata)
-  const files = manifest.packages.map((p) => p.file)
+  const files = manifest.packages.filter((p) => !p.optional).map((p) => p.file)
   // the credit kit is for people, so it sits beside the tarballs rather than in node_modules
   const credit = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'integrators', 'credit-kit')
   rmSync(join(dest, 'credit-kit'), { recursive: true, force: true })
   cpSync(credit, join(dest, 'credit-kit'), { recursive: true })
   console.log(`credit kit: ${join(dest, 'credit-kit')}`)
   console.log(`npm install ${files.map((f) => join(dest, f)).join(' ')}`)
+  for (const p of manifest.packages.filter((p) => p.optional)) console.log(`optional, to read STEP files: npm install ${join(dest, p.file)}`)
 }
 
 async function main(args) {

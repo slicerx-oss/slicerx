@@ -10,6 +10,8 @@ import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { hostPlatform, parseSums, platformOf, writePackageManifest, kitPackages } from './pack-integrator-kit.mjs'
 
+const stemOf = (name) => name.replace('@', '').replace('/', '-')
+
 const script = resolve(import.meta.dirname, 'pack-integrator-kit.mjs')
 
 test('reads SHA256SUMS.txt and names the platform of each archive', () => {
@@ -107,8 +109,44 @@ test('stable package names and manifest follow upgrades with distinct package ve
 
 test('kit metadata comes from the actual workspace package folders', () => {
   const packages = kitPackages()
-  assert.deepEqual(packages.map((p) => p.name), ['@slicerx/viewport', '@slicerx/embed', '@slicerx/mcp'])
+  assert.deepEqual(packages.map((p) => p.name), ['@slicerx/viewport', '@slicerx/embed', '@slicerx/mcp', '@slicerx/step-reader'])
   for (const p of packages) assert.match(p.version, /^\d+\.\d+\.\d+/)
+})
+
+test('the STEP reader is its own optional tarball on the kit version line, listed in the manifest and SHA256SUMS.txt', () => {
+  const packages = kitPackages()
+  const mcp = packages.find((p) => p.name === '@slicerx/mcp')
+  const step = packages.find((p) => p.name === '@slicerx/step-reader')
+  assert.ok(step, 'the kit packs @slicerx/step-reader')
+  // one version line for the kit's packages, so a kit names one version
+  for (const p of packages) assert.equal(p.version, mcp.version, p.name)
+  // the server loads the reader only when it is installed beside it: an optional peer, never a dependency
+  assert.equal(mcp.dependencies?.['@slicerx/step-reader'], undefined)
+  assert.equal(mcp.peerDependenciesMeta?.['@slicerx/step-reader']?.optional, true)
+  assert.equal(mcp.peerDependencies?.['@slicerx/step-reader'], `^${step.version}`)
+
+  const tmp = mkdtempSync(join(tmpdir(), 'sx-kit-step-'))
+  try {
+    const entries = packages.map(({ name, version }) => ({ name, version }))
+    for (const p of entries) writeFileSync(join(tmp, `${stemOf(p.name)}-${p.version}.tgz`), `${p.name}@${p.version}`)
+    writePackageManifest(tmp, entries)
+    const manifest = JSON.parse(readFileSync(join(tmp, 'kit-manifest.json'), 'utf8'))
+    const entry = manifest.packages.find((p) => p.name === '@slicerx/step-reader')
+    assert.deepEqual(entry, {
+      name: '@slicerx/step-reader', version: step.version, file: 'slicerx-step-reader.tgz', archive: `slicerx-step-reader-${step.version}.tgz`,
+      sha256: createHash('sha256').update(`@slicerx/step-reader@${step.version}`).digest('hex'), optional: true,
+    })
+    for (const p of manifest.packages.filter((p) => p.name !== '@slicerx/step-reader')) assert.equal(p.optional, undefined, p.name)
+
+    // SHA256SUMS.txt covers every file the pack writes at the top of the kit, the reader's tarballs included
+    const sums = parseSums(readFileSync(join(tmp, 'SHA256SUMS.txt'), 'utf8'))
+    const expected = [...manifest.packages.flatMap((p) => [p.archive, p.file]), 'kit-manifest.json', ...manifest.files.map((f) => f.name)].sort()
+    assert.deepEqual([...sums.keys()].sort(), expected)
+    for (const [name, digest] of sums) assert.equal(createHash('sha256').update(readFileSync(join(tmp, name))).digest('hex'), digest, name)
+    assert.ok(sums.has('slicerx-step-reader.tgz') && sums.has(`slicerx-step-reader-${step.version}.tgz`))
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
 })
 
 test('the manifest guide is copied and included by the embedding packages', () => {
@@ -118,7 +156,7 @@ test('the manifest guide is copied and included by the embedding packages', () =
     const guide = readFileSync(join(tmp, 'kit-manifest.md'), 'utf8')
     assert.match(guide, /schemaVersion: 1/)
     assert.match(readFileSync(join(tmp, 'quickstart.md'), 'utf8'), /\(kit-manifest\.md\)/)
-    for (const p of kitPackages().filter((p) => p.name !== '@slicerx/viewport')) {
+    for (const p of kitPackages().filter((p) => p.name === '@slicerx/embed' || p.name === '@slicerx/mcp')) {
       assert.ok(p.files.includes('kit-manifest.md'), `${p.name} must pack the linked guide`)
     }
   } finally {
@@ -137,7 +175,7 @@ test('the kit ships the settings defaults byte for byte and lists them in the ma
     assert.ok(shipped.equals(source), 'defaults.json in the kit must equal packages/settings/defaults.json')
     const manifest = JSON.parse(readFileSync(join(tmp, 'kit-manifest.json'), 'utf8'))
     assert.equal(manifest.schemaVersion, 1)
-    assert.equal(manifest.packages.length, 3)
+    assert.equal(manifest.packages.length, 4)
     assert.deepEqual(manifest.files, [{ name: 'defaults.json', sha256: createHash('sha256').update(source).digest('hex') }])
     // every entry is [scope, value] and nothing else
     for (const [key, entry] of Object.entries(JSON.parse(source.toString('utf8')))) {

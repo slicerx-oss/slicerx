@@ -122,7 +122,7 @@ describe('slicerx_step_read', () => {
     stepModule.load = () => Promise.reject(Object.assign(new Error("Cannot find package '@slicerx/step-reader' imported from /x/cli.js"), { code: 'ERR_MODULE_NOT_FOUND' }))
     await withServer(async (h, call) => {
       const r = await call({ model: join(h.dir, 'assembly.step') })
-      expect(data(r)).toMatchObject({ error: { code: 'not_supported', details: { install: 'npm install @slicerx/step-reader' } } })
+      expect(data(r)).toMatchObject({ error: { code: 'not_supported', details: { install: 'npm install ./kit/slicerx-step-reader.tgz' } } })
       expect(text(r)).toMatch(/needs the optional @slicerx\/step-reader package/)
     })
   })

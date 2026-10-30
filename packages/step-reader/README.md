@@ -4,6 +4,8 @@
 npm install @slicerx/step-reader
 ```
 
+The integrator kit has it as its own tarball, beside the server's: `npm install ./kit/slicerx-step-reader.tgz`. `@slicerx/mcp` loads it for `slicerx_step_read` when it is installed beside it.
+
 Reads STEP files (AP203, AP214 and AP242) into triangle meshes in millimeters, in a browser, a worker or Node. It is the reader the SlicerX app uses, on Open CASCADE Technology 7.6.1 compiled to WebAssembly. The package is opt-in because of its size: about 3.2 MB to download and 7.9 MB installed, almost all of it the wasm.
 
 What a read gives you:
