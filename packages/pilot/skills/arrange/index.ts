@@ -111,18 +111,17 @@ export function createArrange(shared: ToolShared) {
 
       const plates: ProjectPlate[] = []
       let left = count
-      const caps = await Promise.all(targets.map(async (t, k) => ctx.project?.arrangeCapacity
-        ? { perPlate: await ctx.project.arrangeCapacity(obj.id, t.vol, spacing, k + 1), rotated: false }
-        : fitGrid(t.vol, ox, oy, spacing)))
+      // How many fit each plate: the host's own arrange, which turns each copy where that fits more, else a grid count from the box.
+      const caps = await Promise.all(targets.map(async (t, k) => (ctx.project?.arrangeCapacity ? await ctx.project.arrangeCapacity(obj.id, t.vol, spacing, k + 1) : fitGrid(t.vol, ox, oy, spacing).perPlate)))
       const even = Math.ceil(count / targets.length)
       for (let k = 0; k < targets.length && left > 0; k++) {
         const t = targets[k]
         const cap = caps[k]
-        if (!t || !cap) continue
-        const n = Math.min(cap.perPlate, even, left)
+        if (!t || cap === undefined) continue
+        const n = Math.min(cap, even, left)
         if (n <= 0) continue
         left -= n
-        const plate: ProjectPlate = { index: plates.length + 1, items: [{ objectId: obj.id, copies: n, ...(cap.rotated ? { rotation: 'z90' } : {}) }] }
+        const plate: ProjectPlate = { index: plates.length + 1, items: [{ objectId: obj.id, copies: n }] }
         if (t.printerId) plate.printerId = t.printerId
         plates.push(plate)
       }

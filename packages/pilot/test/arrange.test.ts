@@ -65,3 +65,18 @@ describe('arrange on the FLSUN V400', () => {
     expect(small.output).toMatchObject({ fits: true })
   })
 })
+
+describe('arrange on a host that lays copies in rows', () => {
+  it('puts only the copies on the plate, with no rotation the host would not apply', async () => {
+    // A 10 x 158 mm part on the 325 x 320 mm H2D bed: rows fit more of it turned a quarter turn.
+    const env = createEvalEnv({ client: createScriptedClient([]), machine: { printer: 'h2d', material: 'pla', nozzle: 0.4 }, objects: [{ id: 'o1', name: 'Rail', bboxMm: [10, 158, 5] }] })
+    const vol = buildVolume(env.kb, 'H2D')!
+    const grid = fitGrid(vol, 10, 158, 6)
+    expect(grid.rotated).toBe(true)
+    const raw = createArrange({ slices: new Map() } as never) as unknown as PilotTool<Record<string, unknown>>
+    const ctx: ToolContext = { host: { printers: env.sim }, sessionId: 's1', callId: 'c1', signal: new AbortController().signal, context: { machine: { printer: 'h2d', material: 'pla', nozzle: 0.4 } }, today: '2026-10-30', project: env.project, kb: env.kb, progress: () => undefined }
+    const out = await raw.run(raw.input.parse({ printerModel: 'H2D', count: grid.perPlate }) as Record<string, unknown>, ctx)
+    expect(out.ok).not.toBe(false)
+    expect(env.project.plates()).toEqual([{ index: 1, items: [{ objectId: 'o1', copies: grid.perPlate }] }])
+  })
+})
