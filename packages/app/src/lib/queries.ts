@@ -110,7 +110,9 @@ export function useFleetLive(printers: PrinterHost | undefined, ids: readonly st
         live.subs.delete(id)
         sub.off()
       }
-      if (live.subs.size === 0) lives.get(qc)?.get(printers)?.delete(epoch)
+      // Only this live's own entry: a reader that learned its printers later may already have started a new one.
+      const byEpoch = lives.get(qc)?.get(printers)
+      if (live.subs.size === 0 && byEpoch?.get(epoch) === live) byEpoch.delete(epoch)
     }
   }, [printers, qc, key, epoch])
 }
