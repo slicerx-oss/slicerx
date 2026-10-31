@@ -747,22 +747,41 @@ fn top_run(
     if top.is_empty() {
         return Some(TopRun::Usual);
     }
-    if !walls_leave_top(outline, prm, cfg, t) {
+    if !top_is_large(outline, prm, cfg, t) {
         // The ledge keeps its walls inside the one-wall run, as a top too narrow for one wall does.
         return Some(TopRun::Split(one, Vec::new()));
     }
     Some(TopRun::Split(one, top))
 }
 
-/// Whether the usual walls of the island `outline`, all of them, leave a top surface at least the narrowest one
-/// kept ([`min_top_width`]) across. Only then does the island get its one-wall run. Each wall takes the infill area
-/// in by about its spacing, so the step a sloped side needs before its top surface takes one wall grows with the
-/// wall count: on 0.2 mm layers with 0.42 and 0.45 mm walls, about 1.53 mm a layer on 2 walls and 1.93 on 3. A
-/// narrower ledge keeps its walls and gets the top surface its own infill area leaves, which starts later on more
-/// walls (a step of 0.745 mm on 2 walls, about 1.2 on 3 and 1.6 on 4) and widens smoothly with the step. Before,
-/// the one-wall run alone decided, from about 1.08 mm whatever the wall count, and the top surface there came out
-/// about 0.9 mm narrower than at 1.07. Where the generator cannot build the usual walls the one-wall run decides
-/// alone, as before.
+/// Whether the island `outline` gets its one-wall run. Where the layer above leaves part of the outline at least
+/// `min_width_top_surface` across, that part (the uncovered area taken in by half that width all round) must be at least
+/// an eighth the size of the part the layer above covers. The test does not depend on the wall count, and a ledge is a
+/// larger part of a smaller island, so on a steep sloped side the one-wall run takes over a layer at a time from the
+/// top: on a 50 mm taper on 0.2 mm layers with 0.42 and 0.45 mm walls, the layer under the flat top takes it at a step
+/// of about 1.85 mm a layer and the fifth one down at about 2.15 mm, on 2, 3 or 4 walls. A ledge that is a smaller part
+/// of its island keeps its walls inside the one-wall run, as a top too narrow for one wall does, and gets the top
+/// surface its own infill area leaves, which widens smoothly with the step. Before, the island took it once its usual
+/// walls left a top surface (at a step of about 1.53 mm on 2 walls and 1.93 on 3, none up to 2.2 on 4), on every
+/// sloped layer at once, and the top surface lost about a quarter of its width. A ledge with no part that wide still
+/// goes by whether the usual walls leave it a top surface ([`walls_leave_top`]).
+fn top_is_large(
+    outline: &Shapes,
+    prm: &Params,
+    cfg: &crate::config::PrintConfig,
+    t: &perimeters::TopCtx,
+) -> bool {
+    let free = perimeters::difference(outline, t.upper);
+    let kept = perimeters::offset(&free, -2 * min_top_width(prm, cfg));
+    if kept.is_empty() {
+        return walls_leave_top(outline, prm, cfg, t);
+    }
+    crate::shells::area_mm2(&kept) * 8.0
+        >= crate::shells::area_mm2(&perimeters::intersection(outline, t.upper))
+}
+
+/// Whether the usual walls of the island `outline`, all of them, leave a top surface at least the narrowest one kept
+/// ([`min_top_width`]) across. Where the generator cannot build the usual walls the one-wall run is taken.
 fn walls_leave_top(
     outline: &Shapes,
     prm: &Params,
@@ -1038,7 +1057,7 @@ pub(crate) mod reference {
         if top.is_empty() {
             return walls(outline, prm);
         }
-        if !super::walls_leave_top(outline, prm, cfg, t) {
+        if !super::top_is_large(outline, prm, cfg, t) {
             top.clear();
         }
         let spacing_0 = crate::geom::mm(prm.bead_width_0);
