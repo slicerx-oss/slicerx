@@ -13047,6 +13047,11 @@ fn keep_color_bands(
     let max_h = asked.iter().copied().fold(0.0, f64::max).max(config.layer_height);
     let wanted: Vec<f64> = (0..plan.count()).map(|l| plan.top(l)).collect();
     let last_wanted = wanted.last().copied().unwrap_or(max_z);
+    // A plan that ends under the model top was given one more top, whose layer's middle is above it; the rebuilt
+    // tops keep that one too, so they cover the top as the given ones did.
+    let next_top = plan
+        .next_top
+        .filter(|&n| last_wanted < max_z - crate::layers::TOP_TOLERANCE_MM && n > last_wanted + 1e-6);
     let mut out: Option<(LayerPlan, Vec<Vec<u8>>)> = None;
     for _ in 0..8 {
         // Bands of consecutive kept fixed layers, bottom and top in mm.
@@ -13106,6 +13111,9 @@ fn keep_color_bands(
             }
             even.push(t);
             prev = t;
+        }
+        if let Some(n) = next_top.filter(|&n| even.last().is_none_or(|&t| n > t + 1e-6)) {
+            even.push(n);
         }
         let next = LayerPlan::from_tops(max_z, &even, 0.04, 0.8)?;
         let next_order = order_of(&next);
@@ -14958,5 +14966,44 @@ mod solid_join_tests {
         }
         assert!(at_135 >= 3, "the block has 135 degree solid layers ({at_135})");
         assert!(checked > 50, "the block's surfaces have joins ({checked})");
+    }
+}
+
+#[cfg(test)]
+mod color_band_tests {
+    use super::{RawPart, keep_color_bands};
+    use crate::config::PrintConfig;
+    use crate::layers::LayerPlan;
+
+    /// A box from `x0` to `x1` (y 0 to 10, z 0 to `h`) on filament `slot`, as the session's raw parts hold one.
+    fn block(slot: u8, x0: f64, x1: f64, h: f64) -> RawPart {
+        let mut v = Vec::new();
+        for z in [0.0, h] {
+            for (x, y) in [(x0, 0.0), (x1, 0.0), (x1, 10.0), (x0, 10.0)] {
+                v.push([x, y, z]);
+            }
+        }
+        let mut t = vec![[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7]];
+        for k in 0..4u32 {
+            let n = (k + 1) % 4;
+            t.push([k, n, 4 + n]);
+            t.push([k, 4 + n, 4 + k]);
+        }
+        (slot, v, t, crate::paint::Facets::default())
+    }
+
+    /// A shorter object of a plate keeps the plate's tops up to the first one at or above its own top. When that
+    /// layer's middle is above the object's top, the object's plan ends one layer under its top, which the tops it
+    /// was given still cover. Keeping fixed layers where its two colors meet must not then refuse the plan.
+    #[test]
+    fn color_bands_keep_a_plan_whose_last_given_layer_is_above_the_top() {
+        let top = 1.05;
+        let given = [0.2, 0.4, 0.6, 0.8, 1.0, 1.2];
+        let plan = LayerPlan::from_tops(top, &given, 0.04, 0.8).expect("the given tops reach the top");
+        assert_eq!(plan.count(), 5);
+        let raw = vec![block(1, 0.0, 5.0, top), block(2, 5.0, 10.0, top)];
+        let kept = keep_color_bands(&PrintConfig::default(), plan, &raw, top);
+        let (kept, _) = kept.expect("the plan reaches the top as the given tops did");
+        assert_eq!(kept.count(), 5);
     }
 }

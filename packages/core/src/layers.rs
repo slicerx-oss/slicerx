@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 /// (39.350002288818 against 39.350003600121 on a real project). One micron is 30 times that rounding and 40 times
 /// under the thinnest layer a plan may have (0.04 mm), so it passes float noise and still refuses tops that stop a
 /// layer short.
-const TOP_TOLERANCE_MM: f64 = 1e-3;
+pub(crate) const TOP_TOLERANCE_MM: f64 = 1e-3;
 
 /// Layer heights for the whole plate. Uniform tops are computed by
 /// multiplication, not accumulation, so every shard sees the same values.
@@ -28,6 +28,9 @@ pub(crate) struct LayerPlan {
     thick: Vec<f64>,
     /// Plane each layer is cut at (the middle of the layer), ascending.
     pub(crate) slice_z: Vec<f64>,
+    /// With explicit tops: the first top left off because its layer's middle is at or above the model top, so a
+    /// plan rebuilt from these tops can cover the model top as the given ones did.
+    pub(crate) next_top: Option<f64>,
 }
 
 impl LayerPlan {
@@ -79,6 +82,7 @@ impl LayerPlan {
             }
             let mid = f64::midpoint(bottom, top);
             if mid >= max_z {
+                plan.next_top = Some(top);
                 break;
             }
             if plan.slice_z.len() >= 200_000 {

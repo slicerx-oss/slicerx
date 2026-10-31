@@ -2860,6 +2860,57 @@ fn sleipnir_keeps_fixed_layers_where_colors_change() {
     assert!(z.len() >= 85, "{} layers", z.len());
 }
 
+#[test]
+fn smart_layers_reach_the_top_of_a_shorter_two_color_object() {
+    // A 2 mm box with a setting of its own beside a 1.05 mm block, each made of two halves on filaments 1 and 2.
+    // Each object is sliced in a session of its own on the plate's layer tops. The block's top falls in the lower
+    // half of a plate layer, so its own plan ends a layer under its top. Both a request's own tops and the tops
+    // sleipnir plans slice.
+    let tall = Arc::new(Mesh {
+        name: "box".into(),
+        parts: vec![
+            cuboid([0.0, 10.0], [0.0, 5.0], [0.0, 2.0], "front"),
+            cuboid([0.0, 10.0], [5.0, 10.0], [0.0, 2.0], "back"),
+        ],
+        ..Mesh::default()
+    });
+    let short = Arc::new(Mesh {
+        name: "block".into(),
+        parts: vec![
+            cuboid([0.0, 5.0], [0.0, 10.0], [0.0, 1.05], "left"),
+            cuboid([5.0, 10.0], [0.0, 10.0], [0.0, 1.05], "right"),
+        ],
+        ..Mesh::default()
+    });
+    let req = |config: Value, options: Value| -> SliceRequest {
+        serde_json::from_value(json!({
+            "plate": {"objects": [
+                {"id": "a", "mesh": "tall", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 100,120,0,1], "settings": {"wall_loops": 3}, "slotOverrides": {"back": 2}},
+                {"id": "b", "mesh": "short", "transform": [1,0,0,0, 0,1,0,0, 0,0,1,0, 120,120,0,1], "slotOverrides": {"right": 2}},
+            ]},
+            "config": config,
+            "options": options,
+        }))
+        .unwrap()
+    };
+    let load = move |id: &str| Ok(if id == "tall" { tall.clone() } else { short.clone() });
+    let base = json!({"brim_width": 0, "layer_height": 0.2, "initial_layer_print_height": 0.2});
+    let tops: Vec<f64> = (1..=10).map(|i| f64::from(i) * 0.2).collect();
+    let given = common::run_request(
+        &req(base.clone(), json!({"flavor": "marlin2", "layerTopsMm": tops})),
+        &load,
+    );
+    let given = given.expect("the given tops slice");
+    assert_valid(&given);
+    let mut smart = base;
+    smart["smart_layer"] = json!("quality");
+    smart["smart_layer_min_height"] = json!(0.15);
+    smart["smart_layer_max_height"] = json!(0.2);
+    let planned = common::run_request(&req(smart, json!({"flavor": "marlin2"})), &load);
+    let planned = planned.expect("the planned tops slice");
+    assert_valid(&planned);
+}
+
 /// Two 20 mm boxes, the right one on filament slot 2, with `config` on top of a small brim-less base.
 fn two_colors(config: Value) -> SliceRun {
     let cube = Arc::new(one_box([0.0, 20.0], [0.0, 20.0], [0.0, 6.0]));
