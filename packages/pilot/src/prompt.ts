@@ -94,6 +94,16 @@ export function editionVoiceBlock(voice?: string): string {
   return line ? `${VOICE_HEADER}\n${line}` : ''
 }
 
+/**
+ * The line naming the app's tabs, or '' with none: a local model sees few of the app's own words (its tools are one
+ * set per message), so without it the model makes tabs up from the tool names. Joined as "A, B and C".
+ */
+export function tabsLine(tabs: readonly string[]): string {
+  if (tabs.length === 0) return ''
+  const list = tabs.length === 1 ? tabs[0]! : `${tabs.slice(0, -1).join(', ')} and ${tabs[tabs.length - 1]!}`
+  return `The app has these tabs: ${list}. Name no other tab.`
+}
+
 const rulesPrompt = (scope: PilotScope, has: HasTool): string => (scope === 'cad' ? cadPrompt(has) : fullPrompt(has))
 
 /**

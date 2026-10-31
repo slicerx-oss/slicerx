@@ -4,6 +4,7 @@
 export { createPilot, RUNTIME_NOTES, type CreatePilotOptions, type PilotHost } from './runtime'
 export { ASSISTANT_NAME, assistantBrand, assistantName, assistantText, setAssistantBrand, setAssistantName } from './name'
 export { isLocalModel, surfaceTools, type ToolSurface } from './surfaces'
+export { tabsLine } from './prompt'
 export { inTurnSet, TURN_SET_TOOL, TURN_SET_WORDS, TURN_SETS, turnSet, turnSetsOf, turnSetTools, type TurnSet } from './turnsets'
 export { fitContext, messageTokens, MIMIR_CONTEXT, REPLY_RESERVE, toolsTokens } from './context'
 export { capLine, capTools, TOOLSET_PRIORITY, toolsetOf, turnNeeds, type ToolCapReport } from './toolsets'
