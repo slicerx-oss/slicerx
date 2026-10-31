@@ -84,7 +84,7 @@ A tool with a side effect declares an approval plan: a question, lines for the c
 ## Status
 
 - Runtime, gate, broker, OpenAI Responses adapter (streaming text, reasoning summaries, tool calls, hosted web search with citations), scripted provider: done, tested.
-- Skills: 15 in `knowledge/skills.yaml`. mimir's tools are the ones those skills name, plus kb tools, `settings.plan` and `settings.apply`, `web.lookup`, `project.info`, printer tools, manifest plugin tools, `pilot.report` and app commands. 22 deterministic tools are app functions.
+- Skills: 15 in `knowledge/skills.yaml`. mimir's tools are the ones those skills name, plus kb tools, `settings.get`, `settings.plan` and `settings.apply`, `web.lookup`, `project.info`, printer tools, manifest plugin tools, `pilot.report` and app commands. 22 deterministic tools are app functions.
 - Live settings evaluation: `switchMachine` emits the diff from `planSettings` plus knowledge fallbacks in under 10 ms.
 - Chat surface in `ui/`; the app mounts `PilotWorkspace`.
 - Evals: 49 replay scenarios (7 gate), 5 of them check-ins with stored frames, plus the 30 prompts in `knowledge/evals`. Scenarios for jobs that became app functions run without a model in the unit tests (`evals/functions.ts`). Results are in `evals/LOG.md`.

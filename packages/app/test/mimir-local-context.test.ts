@@ -129,7 +129,7 @@ describe('the mimir tab on a local model', () => {
     expect(build).toEqual(expect.arrayContaining(['design__new', 'geom__extrude', 'pilot__sheet', 'pilot__tools']))
     expect(build.some((n) => n.startsWith('app__') || n.startsWith('printer__') || n.startsWith('settings__'))).toBe(false)
     const app = await tools('Slice the plate and send it to my printer')
-    expect(app).toEqual(expect.arrayContaining(['app__slice', 'printer__queue', 'settings__apply', 'pilot__tools']))
+    expect(app).toEqual(expect.arrayContaining(['app__slice', 'printer__queue', 'settings__get', 'settings__apply', 'pilot__tools']))
     expect(app.some((n) => n.startsWith('geom__') || n.startsWith('design__'))).toBe(false)
     expect(app).not.toContain('printer__pause')
     const print = await tools("How's my print going?")
