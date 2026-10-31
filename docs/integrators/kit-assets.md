@@ -8,6 +8,8 @@ Build the full kit as usual, or generate just the assets with Node 24:
 node scripts/pack-integrator-kit.mjs ./slicerx-kit --assets-only
 ```
 
+Add `--zip-assets` to also write `slicerx-kit-assets-<version>.zip` beside the kit. It holds the contents of `assets/` in one folder, `slicerx-kit-assets-<version>/`, and is listed in `SHA256SUMS.txt`. Two packs of the same commit give the same zip, byte for byte.
+
 `assets/manifest.json` records `kind`, `id`, `settingKey`, `title`, `theme`, `file`, and pixel `size` for each asset. Non-setting assets have `settingKey: null`. A loop shared by several settings has several manifest rows pointing to the same file. Loop titles are the registry's descriptive sentences; icon titles are readable forms of the stable icon ids. The manifest is the authoritative file list when regenerating into an existing folder.
 
 ## One stylesheet for colors
