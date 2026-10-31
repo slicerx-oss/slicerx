@@ -22,6 +22,8 @@
 //!   only the left (0.78 mm) and bottom (0.72 mm) sides step in far enough.
 //! - Box tops, the topmost layer: their lines end half the outer wall in at 15% and 30% overlap, and a line along
 //!   the wall still prints from 0.377 mm of its center line.
+//! - Box tapers whose top's lines run along two sides: on a band layer the nearest line along the wall prints from
+//!   0.377 mm of its center line at 15% and 30% overlap.
 //! - Aegis walls are not touched: their x-mark top surface stays as it is.
 #![allow(
     clippy::disallowed_methods,
@@ -855,6 +857,22 @@ fn classic_box_top_lines_along_the_wall_keep_their_distance() {
         assert!(
             got.is_some_and(|d| (d - 0.389).abs() < 0.005),
             "{overlap}% overlap: nearest line along the wall {got:?}, want 0.389"
+        );
+    }
+}
+
+#[test]
+fn classic_band_lines_along_the_wall_print_from_the_same_distance_at_any_overlap() {
+    // Box tapers 0.8 mm per layer whose top's lines run along two sides: on the band layer at z 3.0 a line along the
+    // wall prints once its center line is 0.377 mm from the outer wall's, at 15% and at 30% overlap. (box size, overlap,
+    // nearest line): the 30.7 mm box puts a grid line 0.416 mm from the wall, the 30 mm one 0.443 mm.
+    for (half, overlap, want) in [(15.35, 15, 0.416), (15.0, 30, 0.443), (15.0, 15, 0.443)] {
+        let g = slice_with(box_taper(half, 0.8), "classic", &along_edits(overlap));
+        let got = nearest_along_side(&moves(&g), 3000);
+        assert!(
+            got.is_some_and(|d| (d - want).abs() < 0.005),
+            "{} mm box, {overlap}% overlap: nearest line along the wall {got:?}, want {want}",
+            2.0 * half
         );
     }
 }

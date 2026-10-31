@@ -9900,10 +9900,10 @@ impl SliceSession {
             let one_wall_top = crate::perimeters::one_wall_top(cfg);
             let top_one_wall = one_wall_top && layer + 1 == self.plan.count() && !cfg.arachne_walls();
             // Where a classic one-wall top's surface starts nearer half the outer wall from its center line than the
-            // walls' overlap leaves it (`classic_top_near`: the topmost layer on Bambu Lab printers), its grid still
-            // reads the walls' own edge, as [`grid_inset`] does: the strip between that edge and the surface's, and how
-            // far a shape is grown into it to put it back along the outer wall.
-            let wall_back = (top_one_wall && bambu_stretch)
+            // walls' overlap leaves it (`classic_top_near`: the bands of every layer, and the topmost layer, on Bambu
+            // Lab printers), its grid still reads the walls' own edge, as [`grid_inset`] does: the strip between that
+            // edge and the surface's, and how far a shape is grown into it to put it back along the outer wall.
+            let wall_back = (one_wall_top && !cfg.arachne_walls() && bambu_stretch)
                 .then(|| {
                     let w = mm(cfg.line_width);
                     #[allow(
