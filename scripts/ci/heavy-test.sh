@@ -512,6 +512,73 @@ t0=$SECONDS
 SX_HEAVY_LOCK=$lock SX_HEAVY_MAX_HOLD=1 SX_HEAVY_KILL_GRACE=2 bash "$heavy" sh -c 'trap "" TERM; sleep 600' 2> /dev/null
 rc=$? secs=$((SECONDS - t0))
 ok eval '[ "$rc" = 124 ] && [ $secs -le 8 ] && [ ! -d "$dir" ] && grep -q "	kill	" "$tmp/history.log"'
+
+# The GPU lane's run step in ci.yml, as GitHub runs it (bash -e): heavy.sh --gpu timeout "$SX_RUN_TIMEOUT" <run>, and
+# on a failure eval "$SX_GPU_RUN_EXIT", read from the workflow. A run stopped at its time limit (124) fails the step
+# and says so; a lock that stays busy in the merge queue (75) still passes it and leaves <report>.lock-busy.
+gpu_exit=$(awk '/^  SX_GPU_RUN_EXIT: \|/ {on = 1; next} on && /^    / {print substr($0, 5); next} on {exit}' \
+  "$here/../../.github/workflows/ci.yml")
+gpu_step() { # <report> <SX_HEAVY_WAIT> <command...>; sets rc and writes the step's output to $tmp/step.out
+  local report=$1 wait=$2; shift 2
+  (cd "$here/../.." && GITHUB_EVENT_NAME=merge_group PLAYWRIGHT_JSON_OUTPUT_FILE=$report SX_RUN_TIMEOUT=1 \
+    SX_GPU_RUN_EXIT=$gpu_exit SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=$wait bash -eo pipefail -c \
+    'bash "$1" --gpu timeout "$SX_RUN_TIMEOUT" "${@:2}" || { sx_rc=$?; eval "$SX_GPU_RUN_EXIT"; }' sh "$heavy" "$@") \
+    > "$tmp/step.out" 2>&1
+  rc=$?
+}
+name="a GPU run step stopped by its time limit fails, naming the limit, and leaves no lock-busy marker"
+gpu_step "$tmp/gpu-results.json" 0 sleep 30
+ok eval '[ -n "$gpu_exit" ] && [ "$rc" = 124 ] && grep -q "^playwright exited 124$" "$tmp/step.out" \
+  && grep -q "^::error title=Timed out::The run timed out after 1 s" "$tmp/step.out" && [ ! -e "$tmp/gpu-results.json.lock-busy" ]'
+name="a GPU run step whose lock stays busy in the merge queue still passes and leaves the lock-busy marker"
+gpu_hold gb
+gpu_step "$tmp/gpu-busy.json" 2 true
+release gb "$gb"
+ok eval '[ "$rc" = 0 ] && grep -q "^::notice title=GPU run skipped::" "$tmp/step.out" && [ -e "$tmp/gpu-busy.json.lock-busy" ]'
+name="a GPU run step that passes is unchanged"
+gpu_step "$tmp/gpu-pass.json" 0 true
+ok eval '[ "$rc" = 0 ] && [ ! -s "$tmp/step.out" ]'
+# Every status a run step can hand to SX_GPU_RUN_EXIT, in the merge queue and on a pull request: the step's own status,
+# the marker it leaves, and what the GPU results step then makes of it (it runs only after a passing step). 0 and 1
+# come with a report (1 with a failed test, for the results step to name); the rest come with none, as after a kill
+# (137, 143), a usage error (2), a busy lock (75) or a time limit (124). Only 124 fails the run step itself.
+pw_test() { printf '{"suites":[{"title":"a.spec.ts","file":"a.spec.ts","specs":[{"title":"t","file":"a.spec.ts","tests":[{"projectName":"desktop","status":"%s"}]}]}],"errors":[],"stats":{}}' "$1"; }
+exit_row() { # <event> <status>: one line of the table
+  local ev=$1 st=$2 r=$tmp/rx-$1-$2.json step res mark=none
+  case $st in 0) pw_test expected > "$r" ;; 1) pw_test unexpected > "$r" ;; esac
+  (cd "$here/../.." && GITHUB_EVENT_NAME=$ev PLAYWRIGHT_JSON_OUTPUT_FILE=$r SX_RUN_TIMEOUT=1 SX_GPU_RUN_EXIT=$gpu_exit \
+    bash -eo pipefail -c '(exit "$1") || { sx_rc=$?; eval "$SX_GPU_RUN_EXIT"; }' sh "$st") > /dev/null 2>&1
+  step=$?
+  [ -e "$r.lock-busy" ] && mark=lock-busy
+  [ -e "$r.gave-up" ] && mark=gave-up
+  if [ "$step" != 0 ]; then res="not run"
+  elif [ -e "$r.lock-busy" ]; then res="skipped"
+  else
+    (cd "$here/../.." && node scripts/ci/playwright-results.mjs "$r" "$r.retried" "$r.failed") > /dev/null 2>&1
+    res="rc $? failed $(cat "$r.failed" 2> /dev/null | wc -l | tr -d ' ')"
+  fi
+  echo "$ev $st: step $step, marker $mark, results $res"
+}
+: > "$tmp/exit-table"
+for ev in merge_group pull_request; do for st in 0 1 2 75 124 137 143; do exit_row "$ev" "$st" >> "$tmp/exit-table"; done; done
+cat > "$tmp/exit-want" << 'TABLE'
+merge_group 0: step 0, marker none, results rc 0 failed 0
+merge_group 1: step 0, marker none, results rc 0 failed 1
+merge_group 2: step 0, marker none, results rc 1 failed 0
+merge_group 75: step 0, marker lock-busy, results skipped
+merge_group 124: step 124, marker none, results not run
+merge_group 137: step 0, marker none, results rc 1 failed 0
+merge_group 143: step 0, marker none, results rc 1 failed 0
+pull_request 0: step 0, marker none, results rc 0 failed 0
+pull_request 1: step 0, marker none, results rc 0 failed 1
+pull_request 2: step 0, marker none, results rc 1 failed 0
+pull_request 75: step 0, marker gave-up, results rc 1 failed 0
+pull_request 124: step 124, marker none, results not run
+pull_request 137: step 0, marker none, results rc 1 failed 0
+pull_request 143: step 0, marker none, results rc 1 failed 0
+TABLE
+name="each run step status ends as the table says: only 124 fails the step, a test failure (1) goes to the results step"
+ok diff "$tmp/exit-want" "$tmp/exit-table"
 name="a command within its max hold runs as before, and the record names the hold: 2 hours for --e2e, none for plain"
 SX_HEAVY_LOCK=$lock bash "$heavy" --e2e sh -c 'cat "$1/owner" > "$2"; exit 3' sh "$dir" "$tmp/rec.e2e"; rc3=$?
 SX_HEAVY_LOCK=$lock bash "$heavy" sh -c 'cat "$1/owner" > "$2"' sh "$dir" "$tmp/rec.plain"
