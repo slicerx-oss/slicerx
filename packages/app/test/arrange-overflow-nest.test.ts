@@ -3,7 +3,8 @@
 // Arrange all with more objects than one bed holds: the ones with no room go to new plates, laid out by the same nest
 // as the shown plate, turns included. Long thin bars standing at an angle show the difference: the nest turns them
 // flat and fits about a dozen on a bed, while boxes around the angled bars fit two. Before, the new plates used the
-// box packer, so the same bars spread over many more plates. Runs the real engine when it is built, else replies
+// box packer, so the same bars spread over many more plates. On a new plate the nest sets the layout in the middle of
+// the bed, as Move to plate sets a group (placeOnPlate), unless the middle is blocked. Runs the real engine when it is built, else replies
 // recorded from it (test/geom-engine.ts).
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
@@ -39,6 +40,26 @@ function bars(n: number): PlateEntry[] {
     const transform: Mat4 = compose({ position: [10 + k, 20 + k, 0], rotation: [0, 0, 30], scale: [1, 1, 1] })
     return { id, name: `Bar ${k + 1}`, handle, parts: [part], colors: ['#bd93f9'], transform }
   })
+}
+
+/** `n` cubes of `s` mm, overlapping near the front left corner. */
+function cubes(n: number, s: number): PlateEntry[] {
+  const positions: number[] = []
+  for (const z of [0, s]) for (const [x, y] of [[0, 0], [s, 0], [s, s], [0, s]] as const) positions.push(x, y, z)
+  const quads = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]]
+  const part: MeshPart = { name: 'cube', slot: 1, positions: new Float32Array(positions), indices: new Uint32Array(quads.flatMap(([a, b, c, d]) => [a!, b!, c!, a!, c!, d!])) }
+  return Array.from({ length: n }, (_, k) => {
+    const id = `cube${k + 1}`
+    const handle = { id, hash: id, name: id, triangles: 12, bboxMm: [s, s, s], openEdges: 0, parts: [] } as MeshHandle
+    return { id, name: `Cube ${k + 1}`, handle, parts: [part], colors: ['#bd93f9'], transform: compose({ position: [5 + k, 5 + k, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }) }
+  })
+}
+
+/** The box round a plate's cubes of `s` mm. */
+function around(objects: readonly PlateEntry[], s: number) {
+  const xs = objects.map((e) => e.transform[12]!)
+  const ys = objects.map((e) => e.transform[13]!)
+  return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs) + s, y1: Math.max(...ys) + s }
 }
 
 type Pt = [number, number]
@@ -110,5 +131,35 @@ describe('arrange all moves what does not fit to new plates laid out by the nest
     expect(history().undo()).toBe(true)
     expect(get().plates.map((p) => p.name)).toEqual(['Plate 1'])
     expect(get().plate.map((e) => [e.id, e.transform[12], e.transform[13]])).toEqual(start.map((e) => [e.id, e.transform[12], e.transform[13]]))
+  })
+
+  it('sets the cube moved to a new plate in the middle of the bed', { timeout: 60_000 }, async () => {
+    // Four 40 mm cubes fill the bed; the fifth goes to Plate 2 on its own.
+    set({ plate: cubes(5, 40) })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    const plates = platesNow()
+    expect(plates.map((p) => p.length)).toEqual([4, 1])
+    const b = around(plates[1]!, 40)
+    expect((b.x0 + b.x1) / 2).toBeCloseTo(BED.widthMm / 2, 3)
+    expect((b.y0 + b.y1) / 2).toBeCloseTo(BED.depthMm / 2, 3)
+  })
+
+  it('keeps the cubes on the last new plate where the nest put them when the middle of the bed is an excluded area', { timeout: 60_000 }, async () => {
+    const zone = { x: 45, y: 45, w: 10, h: 10 }
+    setAvoidAreas([zone])
+    set({ plate: cubes(10, 30) })
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    const plates = platesNow()
+    const last = plates.at(-1)!
+    expect(plates.length).toBeGreaterThan(1)
+    expect(plates.flat()).toHaveLength(10)
+    // packed from the front left corner, as the nest packs them, and none on the excluded area
+    const b = around(last, 30)
+    expect(b.x0).toBeCloseTo(b.y0, 3)
+    expect((b.x0 + b.x1) / 2).toBeLessThan(BED.widthMm / 2 - 1)
+    for (const e of last) {
+      const [x, y] = [e.transform[12]!, e.transform[13]!]
+      expect(x + 30 <= zone.x || x >= zone.x + zone.w || y + 30 <= zone.y || y >= zone.y + zone.h).toBe(true)
+    }
   })
 })

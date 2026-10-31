@@ -3,9 +3,11 @@
 // Arrange with more objects than the bed holds: the ones it cannot place move to a new plate, arranged there, in the
 // same undo step as the arrange, and a toast says how many moved and where; it stays until dismissed, and Show opens
 // the first new plate. Before, they stayed where they were and overlapped the placed ones or stood inside their
-// clearance, so the slice failed or merged them. Runs the box packer (no geometry engine here), as the app does when
+// clearance, so the slice failed or merged them. On a new plate the moved objects go to the middle of the bed as one
+// group, as Move to plate sets them (placeOnPlate), unless the middle is blocked. Runs the box packer (no geometry engine here), as the app does when
 // the engine cannot run; the e2e runs the nest.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setAvoidAreas } from '../src/plate/arrange'
 import { arrangePlate, movedToPlatesNotice } from '../src/plate/edit'
 import { installPrintMargins } from '../src/plate/footprint'
 import { history } from '../src/plate/history'
@@ -61,6 +63,7 @@ function expectClean(s: number, byObject: boolean) {
 
 describe('arrange with more objects than the bed holds', () => {
   beforeEach(() => set({ plates: [], toast: null }))
+  afterEach(() => setAvoidAreas([]))
 
   it('by object, 10 cubes of 20 mm on an A1: the ones that do not fit move to Plate 2, every plate clear', async () => {
     const start10 = grid(10, 20, 5, 30, 63, 103)
@@ -123,6 +126,33 @@ describe('arrange with more objects than the bed holds', () => {
     expect(get().activePlate).toBe(get().plates[1]!.id)
     expect(get().plate).toHaveLength(platesNow()[1]!.length)
     expect(get().plate.length).toBeGreaterThan(0)
+  })
+
+  it('sets the object moved to a new plate in the middle of the bed', async () => {
+    // Four 100 mm cubes fill the bed; the fifth goes to Plate 2 on its own.
+    start(grid(5, 100, 5, 10, 10, 10), 'by-layer')
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    const [one, two] = platesNow()
+    expect(one).toHaveLength(4)
+    expect(two).toHaveLength(1)
+    const b = boxOf(two![0]!, 100)
+    expect((b.x0 + b.x1) / 2).toBeCloseTo(BED.widthMm / 2, 6)
+    expect((b.y0 + b.y1) / 2).toBeCloseTo(BED.depthMm / 2, 6)
+    expectClean(100, false)
+  })
+
+  it('keeps the object moved to a new plate where arrange put it when the middle of the bed is an excluded area', async () => {
+    const zone = { x: 118, y: 118, w: 20, h: 20 }
+    setAvoidAreas([zone])
+    start(grid(5, 100, 5, 10, 10, 10), 'by-layer')
+    await arrangePlate('all', { gapMm: 6, rotate: false })
+    const two = platesNow()[1]!
+    expect(two).toHaveLength(1)
+    // the front left spot arrange gives it, as far from both edges, clear of the excluded area
+    const b = boxOf(two[0]!, 100)
+    expect(b.x0).toBeCloseTo(b.y0, 6)
+    expect(b.x1).toBeLessThanOrEqual(zone.x)
+    expectClean(100, false)
   })
 
   it('says how many moved and where, one plate or several', () => {

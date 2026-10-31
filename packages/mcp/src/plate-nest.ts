@@ -11,7 +11,7 @@ import type { MeshPart, SettingValue } from '@slicerx/contracts'
 import { betterNest, byObjectApart, byObjectSpacingModes, keepOutBoxes, layoutCenterShift, nestItem, nestProblem, placesMore, plateMargins, shiftKeep, withoutKeepOut, zoneKeep, type NestFootprint, type NestItem, type NestPlacement, type NestReply, type Rect } from '@slicerx/settings/arrange-room'
 import { arrangeReach, arrangeRules, CELL_MM, gantryLane, objectGetsSupport, overRod } from '@slicerx/settings/by-object'
 import { marginFlag as flag, marginNumber, marginText, objectPrintMargins } from '@slicerx/settings/print-margins'
-import { edgeOf, findSpot, type Placed, type Want } from '@slicerx/settings/box-pack'
+import { edgeOf, findSpot, middleShift, type Placed, type Want } from '@slicerx/settings/box-pack'
 import type { BedArea } from './bed'
 
 /** An object for the nest, as placed: its rotation and scale, without the move. */
@@ -233,6 +233,7 @@ export async function nestInLanes(engine: EngineCall, p: NestPlate, cache: Footp
  * box packer the app's arrange falls back to (@slicerx/settings/box-pack), with the same room as the nest, each box
  * grown by its brim estimated from its bounds, its raft and the skirt, clear of the printer's keep-out areas, the
  * prime tower's room and `zones`, and printing by object the clearance radius apart. Largest first, as the app packs.
+ * With `center` and nothing staying, the layout then moves to the middle of the bed as one group (middleShift).
  * Offsets in bed coordinates; copies that find no spot are left over.
  */
 export function boxPlate(p: NestPlate): NestReply {
@@ -274,6 +275,9 @@ export function boxPlate(p: NestPlate): NestReply {
     placements.push({ id: o.id, copy, angleDeg: 0, offset: [spot.x + origin[0] - o.min[0], spot.y + origin[1] - o.min[1]] })
     placed.push({ r: { x: spot.x, y: spot.y, w: want.w, h: want.h }, grow: want.grow, reach: want.reach, ...(want.ar !== undefined ? { ar: want.ar } : {}) })
   }
+  // With nothing staying, the layout goes to the middle of the bed when it has room, as the nest's layout does.
+  const shift = p.center && p.fixed.length === 0 && left.size === 0 ? middleShift(placed, bed, p.gapMm, zones, towers, skirt, avoid) : null
+  if (shift) for (const q of placements) q.offset = [q.offset[0] + shift[0], q.offset[1] + shift[1]]
   const wanted = copies.length
   return {
     placements,

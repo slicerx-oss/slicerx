@@ -4,7 +4,8 @@
 // arranging one object laid out plates that held only that object and every other object ended up on no plate (it
 // no longer sliced), and duplicate put copies in rows that ran past the bed with no word. Now arrange packs the copies
 // around the other objects, which keep their places, and copies with no room go to new plates, named by id and plate;
-// duplicate sends a copy with no room to another plate and refuses an object no empty plate holds.
+// duplicate sends a copy with no room to another plate and refuses an object no empty plate holds. On a new plate the
+// copies go to the middle of the bed, as the app's Arrange sets them there, unless the middle is blocked.
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -17,6 +18,7 @@ type Shown = {
   objects: { id: string; plates: number[] }[]
   plates: { index: number; items: { objectId: string; copies: number }[]; placements: Placement[] }[]
 }
+type Box = { x0: number; y0: number; x1: number; y1: number }
 type Moved = { objectId: string; copies: number; fromPlate: number; toPlate: number }
 
 /** The P1S bed, mm. */
@@ -147,6 +149,31 @@ describe.each(ENGINES)('arrange and duplicate keep every object %s', (_name, eng
     expect(bars[0]! + bars[1]!).toBe(full)
     expect(r.output.moved).toEqual([{ objectId: 'obj-2', copies: bars[1], fromPlate: 1, toPlate: 2 }])
     expect(problems(s)).toEqual([])
+  })
+
+  it.skipIf(skip)('a copy with no room goes to a new plate in the middle of the bed, or where it packs when the middle is excluded', { timeout: 60_000 }, async () => {
+    // An excluded area the cube in the middle of the bed would stand on, clear of the front left corner.
+    const ZONE: Box = { x0: 160, y0: 160, x1: 180, y1: 180 }
+    for (const exclude of [[], ['160x160', '180x160', '180x180', '160x180']]) {
+      // A slab across the front of plate 1 placed by hand, so the cube has no room beside it.
+      const h = await p1s(engine, [['slab', 250, 140, 4], ['cube', 120, 120, 10]])
+      await call(h, 'slicerx_project_set_overrides', { changes: { bed_exclude_area: exclude } })
+      await call(h, 'slicerx_project_move', { object: 'obj-1', x: BED / 2, y: 76 })
+      const r = await call<{ moved: Moved[] }>(h, 'slicerx_arrange', { objectId: 'obj-2' })
+      expect(r.output.moved).toEqual([{ objectId: 'obj-2', copies: 1, fromPlate: 1, toPlate: 2 }])
+      const s = await show(h)
+      expect(problems(s)).toEqual([])
+      const [x, y] = s.plates[1]!.placements[0]!.centerMm
+      const cube: Box = { x0: x - 60, y0: y - 60, x1: x + 60, y1: y + 60 }
+      if (exclude.length === 0) {
+        expect(x).toBeCloseTo(BED / 2, 3)
+        expect(y).toBeCloseTo(BED / 2, 3)
+      } else {
+        // the middle would take it onto the excluded area: it stays in the front left corner where it packs
+        expect(cube.x0).toBeCloseTo(cube.y0, 3)
+        expect(cube.x1 <= ZONE.x0 || cube.y1 <= ZONE.y0).toBe(true)
+      }
+    }
   })
 
   it.skipIf(skip)('a copy with no room on the bed goes to the next plate, then a new one', { timeout: 60_000 }, async () => {

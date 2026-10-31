@@ -5,7 +5,7 @@
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { get, markStale, selectedIds, set, toast, type PlateEntry } from '../state/store'
 import { bake, mergeParts, primitive, splitPieces, splitToObjects, type PrimitiveShape } from './mesh-ops'
-import { arrange, ARRANGE_DEFAULTS, fillCount, type ArrangeOptions, type ArrangeResult } from './arrange'
+import { arrange, ARRANGE_DEFAULTS, fillCount, placeOnPlate, type ArrangeOptions, type ArrangeResult } from './arrange'
 import { NEST_STEP_DEFAULT, nestArrange, nestFill, type NestRun } from './nest'
 import { arrangeByObject, type Place } from './by-object-arrange'
 import { byObjectConfig } from './sequence-check'
@@ -146,8 +146,8 @@ export function setArrangeOptions(o: Partial<ArrangeOptions>): void {
 /**
  * Arrange every object, or only the selected ones around the rest, on their true outlines (nest.ts), or
  * on their bounds when the geometry engine cannot run. The objects it finds no room for move to new plates
- * (moveToNewPlates), laid out there the same way, turns included, in the same undo step. Returns how many did not
- * fit on the shown plate.
+ * (moveToNewPlates), laid out there the same way, turns included, and set in the middle of the bed when it has room,
+ * in the same undo step. Returns how many did not fit on the shown plate.
  */
 export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: ArrangeOptions = arrangeOptions): Promise<number> {
   const { plate, bed } = get()
@@ -162,14 +162,15 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
     try {
       return await nestArrange(mv, fx, bed, o, hooks)
     } catch {
-      return { ...arrange(mv, fx, bed, o), boxes: true }
+      // On a new plate the boxes go to the middle of the bed when it has room, as the nest's layout does.
+      return { ...(o.center ? placeOnPlate(mv, fx, bed, o) : arrange(mv, fx, bed, o)), boxes: true }
     }
   }
   // By object, tall objects print last, each in a gantry lane of its own when there are more of them.
   const cfg = byObjectConfig(get())
   const objectSettings = get().objectSettings
-  const layOut = (plateNow: readonly PlateEntry[], mv: readonly PlateEntry[], fx: readonly PlateEntry[]) =>
-    cfg ? arrangeByObject(plateNow, mv, fx, bed, opts, cfg, place, hooks.stop, objectSettings) : place(mv, fx, opts)
+  const layOut = (plateNow: readonly PlateEntry[], mv: readonly PlateEntry[], fx: readonly PlateEntry[], o: ArrangeOptions = opts) =>
+    cfg ? arrangeByObject(plateNow, mv, fx, bed, o, cfg, place, hooks.stop, objectSettings) : place(mv, fx, o)
   let r: ArrangeResult & { order?: string[] }
   let overflow: Overflow = { layouts: [], left: [] }
   try {
@@ -177,7 +178,8 @@ export async function arrangePlate(scope: 'all' | 'selection' = 'all', opts: Arr
     // The objects with no room go to new plates, so none is left on or beside a placed one, laid out there as here.
     const large = new Set(r.tooLarge.map((t) => t.id))
     const rest = moving.filter((p) => r.leftOver.includes(p.id) && !large.has(p.id))
-    if (rest.length > 0 && !hooks.stop()) overflow = await newPlateLayouts(rest, (mv) => layOut(mv, mv, []), hooks.stop)
+    // Each new plate's layout goes to the middle of the bed, on the boxes too, as Move to plate sets a group there.
+    if (rest.length > 0 && !hooks.stop()) overflow = await newPlateLayouts(rest, (mv) => layOut(mv, mv, [], { ...opts, center: true }), hooks.stop)
   } finally {
     endRun(hooks.token)
   }
