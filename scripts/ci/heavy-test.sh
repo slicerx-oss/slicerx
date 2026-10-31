@@ -20,6 +20,8 @@ unset SX_CI_HOME RUNNER_ENVIRONMENT
 export SX_HEAVY_POLL=1
 # No --gpu hold reads the real Windows commit charge; the cache drop tests below turn it on with a fake reading.
 export SX_HEAVY_COMMIT_FREE_MIN_GB=0
+# No settled reading outlives its test; the settled reading tests turn it on with a short delay.
+export SX_HEAVY_SETTLE_S=0
 
 linpath() { case $1 in [A-Za-z]:*) wslpath -u "$1" ;; *) printf %s "$1" ;; esac; }
 start_of() { sed 's/.*) //' "/proc/$1/stat" | cut -d' ' -f20; }
@@ -770,6 +772,58 @@ echo 0 > "$dir.commit-free-min"; : > "$tmp/history.log"; commit_is 2
 env -u SX_HEAVY_COMMIT_FREE_MIN_GB SX_HEAVY_DROP_WAIT=3 SX_HEAVY_COMMIT_CMD="sh '$tmp/commit.sh' '$tmp/commit.now'" SX_HEAVY_LOCK="$lock"   bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
 ok eval '[ "$rc" = 0 ] && [ ! -e "$req" ] && [ "$(drops)" = 0 ]'
 rm -f "$dir.commit-free-min" "$req" "$dfile"
+
+# The settled reading: after an answered drop, a background reading SX_HEAVY_SETTLE_S s past the answer logs a second
+# cache-drop line, from the same side and pid, once the hold is granted. The fake reader hands out the readings in
+# $tmp/commit.seq one per call, the last one for good; a third field makes that call take so many seconds.
+printf '%s
+' '#!/bin/sh' 'read -r t f d < "$1"'   '[ "$(wc -l < "$1")" -le 1 ] || { tail -n +2 "$1" > "$1.n" && mv -f "$1.n" "$1"; }'   '[ -z "$d" ] || sleep "$d"' 'echo "$t $f"' > "$tmp/commit-seq.sh"
+# Readings of 75 GB, with $1 GB free and so on, in tenths of a GB; a word instead of a number is not a reading.
+commit_seq() {
+  local g; : > "$tmp/commit.seq"
+  for g in "$@"; do
+    case $g in *[!0-9:]*) echo "$g" ;; *:*) echo "$((75 * 1048576)) $((${g%:*} * 1048576 / 10)) ${g#*:}" ;; *) echo "$((75 * 1048576)) $((g * 1048576 / 10))" ;; esac
+  done >> "$tmp/commit.seq"
+}
+# The timer's part again, without touching the reading: answers the request by its id once the hold has asked.
+answer_only() {
+  : > "$tmp/cd.out"
+  (
+    for _ in $(seq 100); do [ -f "$req" ] && break; sleep 0.1; done
+    sleep 0.3
+    printf 'time %s
+id %s
+result dropped
+' "$(date +%s)" "$(sed -n 's/^id //p' "$req")" > "$dfile"
+    rm -f "$req"
+  ) > /dev/null 2>&1 &
+  lpids="$lpids $!"
+}
+# A --gpu hold with the fake readings and settled reading $1 s past the answer. Its output is read through a pipe, as
+# a caller that captures it would, so a background child left on its streams would keep this waiting. Sets rc and secs.
+settle_hold() {
+  local t0=$SECONDS
+  out=$(SX_HEAVY_SETTLE_S=$1 SX_HEAVY_COMMIT_FREE_MIN_GB=8 SX_HEAVY_DROP_WAIT=3     SX_HEAVY_COMMIT_CMD="sh '$tmp/commit-seq.sh' '$tmp/commit.seq'" SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 bash "$heavy" --gpu true 2>&1)
+  rc=$? secs=$((SECONDS - t0))
+}
+settled() { grep -c "	cache-drop	.*	settled " "$tmp/history.log"; }
+wait_settled() { for _ in $(seq 100); do [ "$(settled)" -ge 1 ] && return 0; sleep 0.1; done; return 1; }
+same_pid() { [ "$(grep "	cache-drop	" "$tmp/history.log" | cut -f5 | sort -u | wc -l)" = 1 ]; }
+
+name="an answered drop is followed by a settled reading in the background: the hold and its caller never wait for it"
+# Before 2.0 GB free, right after the answer 4.3 GB, and 18.0 GB once WSL has handed the memory back, a reading that
+# takes 4 s itself: the hold is released and its caller done before it is logged.
+: > "$tmp/history.log"; rm -f "$dfile"; commit_seq 20 43 180:4; answer_only; settle_hold 1
+before_settle=$(settled)
+ok eval '[ "$rc" = 0 ] && [ $secs -le 4 ] && [ "$before_settle" = 0 ] && grep -q "	release	gpu	.*rc 0" "$tmp/history.log"   && grep -q "	cache-drop	gpu	.*before used 73.0 of 75.0 GB, free 2.0 GB, after used 70.7 of 75.0 GB, free 4.3 GB; dropped; asked by " "$tmp/history.log"   && wait_settled && [ "$(drops)" = 2 ] && same_pid   && grep -q "	cache-drop	gpu		.*	settled used 57.0 of 75.0 GB, free 18.0 GB; read [0-9]* s past the answer; asked by " "$tmp/history.log"   && [ "$(grep -n "	release	" "$tmp/history.log" | cut -d: -f1)" -lt "$(grep -n "	settled " "$tmp/history.log" | cut -d: -f1)" ]'
+name="a settled reading that fails is logged as settled unreadable, and the hold is fine"
+: > "$tmp/history.log"; rm -f "$dfile"; commit_seq 20 43 none; answer_only; settle_hold 1
+ok eval '[ "$rc" = 0 ] && [ $secs -le 4 ] && wait_settled && [ "$(drops)" = 2 ] && same_pid   && grep -q "	settled unreadable; read [0-9]* s past the answer; asked by " "$tmp/history.log"'
+name="no settled reading without an answer, or with SX_HEAVY_SETTLE_S 0"
+: > "$tmp/history.log"; rm -f "$dfile"; commit_seq 20 43 20 43; settle_hold 1; rcn=$rc
+answer_only; settle_hold 0; sleep 2
+ok eval '[ "$rcn" = 0 ] && [ "$rc" = 0 ] && [ "$(drops)" = 2 ] && [ "$(settled)" = 0 ] && grep -q "cache drop not answered in 3 s" "$tmp/history.log"'
+rm -f "$req" "$dfile"
 
 if [ "${1:-}" = cross ]; then
   distro=${2:?usage: heavy-test.sh cross <distro> [<stopped distro>]} stopped=${3:-}
