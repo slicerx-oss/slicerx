@@ -3,8 +3,8 @@
 //! Surface labels that follow what the walls leave, whatever the wall generator.
 //!
 //! - The x-mark on the stock P1S request, smart layer off: a narrow piece prints as floating vertical shell or as
-//!   internal solid infill alike with classic and aegis walls. Measured: 10.5 mm more floating shell with variable
-//!   width walls than with classic ones.
+//!   internal solid infill alike with classic and aegis walls, in total and per layer (but for the step at z 6.0 to
+//!   6.4), and a strip beside the sparse sliver aegis walls leave below prints as internal solid infill.
 //! - Strips 30.9 mm long along 45 degrees, 2.2 mm tall, on the stock Voron 2.4 (arachne walls, 3 loops) and Ender 3
 //!   V3 (classic walls, 2 loops) requests, smart layer off. Per strip, the measured features inside the walls on
 //!   the top layer (z 2.2), the layer below (z 2.0) and a sparse layer (z 1.2), with the top layer's lines longer
@@ -75,19 +75,108 @@ fn totals(g: &str) -> BTreeMap<String, f64> {
     out
 }
 
+/// Filament (mm) per layer z (thousandths of a millimeter) that `feature` prints.
+fn per_layer(g: &str, feature: &str) -> BTreeMap<i64, f64> {
+    let mut out: BTreeMap<i64, f64> = BTreeMap::new();
+    let (mut current, mut z) = (String::new(), 0);
+    for line in g.lines() {
+        let s = line.trim();
+        if let Some(f) = comment(s, &["TYPE", "FEATURE"]) {
+            f.clone_into(&mut current);
+            continue;
+        }
+        if let Some(h) = comment(s, &["Z_HEIGHT", "Z"]).and_then(|v| v.parse::<f64>().ok()) {
+            z = milli(h);
+            continue;
+        }
+        let code = s.split(';').next().unwrap_or("").trim();
+        if current != feature
+            || !(code.starts_with("G1 ") || code.starts_with("G2 ") || code.starts_with("G3 "))
+        {
+            continue;
+        }
+        if let Some(e) = word(code, 'E').filter(|e| *e > 0.0)
+            && (word(code, 'X').is_some() || word(code, 'Y').is_some())
+        {
+            *out.entry(z).or_default() += e;
+        }
+    }
+    out
+}
+
+/// The x-mark on the stock P1S request, smart layer off, with classic and with aegis walls, sliced once for the tests
+/// that read it.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a plain slice with no parallel work waiting on it, shared by the tests of this file"
+)]
+fn x_mark() -> &'static (String, String) {
+    static GCODE: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
+    GCODE.get_or_init(|| {
+        let mesh = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/bench/models/x-mark.stl")).unwrap();
+        let walls = |w: &str| slice("p1s-x-mark.json", &mesh, &[("wall_generator", json!(w))]);
+        (walls("classic"), walls("aegis"))
+    })
+}
+
 #[test]
 fn the_x_mark_floats_the_same_pieces_with_classic_and_aegis_walls() {
-    let mesh = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/bench/models/x-mark.stl")).unwrap();
-    let floating = |walls: &str| {
-        let g = slice("p1s-x-mark.json", &mesh, &[("wall_generator", json!(walls))]);
-        totals(&g).get("Floating vertical shell").copied().unwrap_or(0.0)
-    };
-    let (classic, aegis) = (floating("classic"), floating("aegis"));
+    let (classic, aegis) = x_mark();
+    let floating = |g: &str| totals(g).get("Floating vertical shell").copied().unwrap_or(0.0);
+    let (classic, aegis) = (floating(classic), floating(aegis));
     assert!(classic > 400.0, "classic walls: floating {classic:.1}");
     assert!(
         (aegis - classic).abs() <= 15.0,
         "floating vertical shell: aegis walls {aegis:.1}, classic walls {classic:.1}"
     );
+}
+
+#[test]
+fn x_mark_strips_beside_the_sparse_sliver_print_as_internal_solid_infill_with_aegis_walls() {
+    // A narrow strip along a wall whose layer below has sparse infill only in the sliver aegis walls leave between the
+    // vertical shell band and the wall: the strip at x 110.25 to 110.77 on z 57.0. It prints as internal solid infill,
+    // as it does with classic walls.
+    let (_, aegis) = x_mark();
+    let (segs, lo, hi) = (segments(aegis), [110.2, 121.8], [110.8, 134.3]);
+    let here = |feature: &str| {
+        segs.iter()
+            .filter(|s| {
+                s.z == 57_000
+                    && s.feature == feature
+                    && [s.from, s.to]
+                        .iter()
+                        .all(|p| p[0] >= lo[0] && p[0] <= hi[0] && p[1] >= lo[1] && p[1] <= hi[1])
+            })
+            .count()
+    };
+    let (floating, solid) = (here("Floating vertical shell"), here("Internal solid infill"));
+    assert!(
+        floating == 0 && solid > 0,
+        "z 57.0: {floating} floating vertical shell moves, {solid} internal solid infill moves in the strip"
+    );
+}
+
+#[test]
+fn x_mark_layers_float_alike_with_classic_and_aegis_walls() {
+    // Per layer, aegis and classic walls float within 0.5 mm of filament, except on the step at z 6.0 to 6.4, where
+    // the two walls leave different top surfaces.
+    let (classic, aegis) = x_mark();
+    let (c, a) = (
+        per_layer(classic, "Floating vertical shell"),
+        per_layer(aegis, "Floating vertical shell"),
+    );
+    let apart: Vec<String> = c
+        .keys()
+        .chain(a.keys())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|z| !(6_000..=6_400).contains(*z))
+        .filter_map(|z| {
+            let (x, y) = (c.get(z).copied().unwrap_or(0.0), a.get(z).copied().unwrap_or(0.0));
+            ((x - y).abs() > 0.5).then(|| format!("z {z}: classic {x:.2}, aegis {y:.2}"))
+        })
+        .collect();
+    assert!(apart.is_empty(), "{}", apart.join("\n"));
 }
 
 /// One extruding move: its layer z, feature, stated width and ends.
