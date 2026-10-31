@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// settings.plan and settings.apply. Planning is deterministic code; applying
-// lands in the project (class slice) or a saved profile (class profile).
+// settings.get, settings.plan and settings.apply. Reading goes through the host's project, planning is
+// deterministic code; applying lands in the project (class slice) or a saved profile (class profile).
 import { assistantText } from '@slicerx/contracts'
 import type { SettingsDiff, SettingValue } from '@slicerx/contracts'
 import { z } from 'zod'
@@ -92,6 +92,49 @@ export function planToDiff(plan: PlanResult, _kb?: KnowledgeBase): SettingsDiff 
       return row
     }),
   }
+}
+
+/** The most keys one settings.get reads, so a read stays small in a local model's context. */
+export const SETTINGS_GET_MAX = 20
+
+/** What settings.get reads when no keys are asked: the settings people ask about most. */
+export const SETTINGS_GET_DEFAULT = ['layer_height', 'initial_layer_print_height', 'wall_loops', 'top_shell_layers', 'bottom_shell_layers', 'sparse_infill_density', 'sparse_infill_pattern', 'enable_support', 'support_type', 'brim_type', 'nozzle_temperature', 'hot_plate_temp', 'outer_wall_speed', 'curr_bed_type']
+
+/**
+ * settings.get: the values the shown plate slices with now, as the app link's settings.get (MCP app.settings) reads
+ * them, with the same keys and value shapes, trimmed to the keys asked: no lists of supported keys, which would cost
+ * a local model thousands of tokens for one value.
+ */
+export function settingsReadTool(): PilotTool<never> {
+  return defineTool({
+    name: 'settings.get',
+    version: '1.0.0',
+    source: 'settings',
+    permission: 'read',
+    description: `Read the print settings the shown plate slices with now, by setting key such as layer_height: effective values and the project overrides. Up to ${SETTINGS_GET_MAX} keys; with none, the most used settings.`,
+    input: z.object({ keys: z.array(z.string().min(1).max(100)).min(1).max(SETTINGS_GET_MAX).optional().describe('Setting keys, such as layer_height or wall_loops') }),
+    args: (i) => (i.keys ?? []).join(' '),
+    async run(input, ctx) {
+      const p = ctx.project
+      if (!p?.printSettings) return { ok: false, summary: 'The print settings cannot be read here' }
+      const keys = input.keys ?? SETTINGS_GET_DEFAULT
+      let read
+      try {
+        read = await p.printSettings(keys)
+      } catch (e) {
+        return { ok: false, summary: e instanceof Error ? e.message : String(e) }
+      }
+      const { plate, overrides, effective, shadowed } = read
+      // with no keys asked, the names of the other overrides, so the model can read them next
+      const more = input.keys ? [] : Object.keys(p.overrides()).filter((k) => !keys.includes(k)).slice(0, SETTINGS_GET_MAX)
+      const names = Object.keys(effective)
+      const only = names.length === 1 ? `${names[0]} ${JSON.stringify(effective[names[0]!])}` : `${names.length} settings`
+      return {
+        summary: `${only}, ${Object.keys(overrides).length} overridden`,
+        output: { plate, overrides, effective, shadowed, ...(more.length ? { otherOverrides: more } : {}) },
+      }
+    },
+  }) as PilotTool<never>
 }
 
 export function settingsTools(planner: SettingsPlanner | undefined): PilotTool<never>[] {
@@ -220,5 +263,5 @@ export function settingsTools(planner: SettingsPlanner | undefined): PilotTool<n
       }
     },
   })
-  return [plan, apply] as PilotTool<never>[]
+  return [settingsReadTool(), plan, apply] as PilotTool<never>[]
 }

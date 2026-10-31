@@ -217,6 +217,11 @@ export function appProject(host: Pick<Host, 'slicer'>): () => PilotProject {
       config(plateIndex: number): PrintConfig {
         return plateSliceConfig(get(), metaAt(plateIndex))
       },
+      // the same read as the app link's settings.get (MCP app.settings), narrowed to the keys
+      async printSettings(keys: readonly string[]) {
+        const { output } = (await import('../../app-link/project-settings')).readProjectSettings({ keys: [...keys] })
+        return { plate: output.plate, overrides: output.overrides, effective: output.effective, shadowed: output.shadowed }
+      },
       async plate(plateIndex: number): Promise<Plate> {
         const meta = metaAt(plateIndex)
         if (!meta) throw new Error(`No plate ${plateIndex}`)

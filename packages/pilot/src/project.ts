@@ -55,6 +55,18 @@ export interface ProjectVolume {
   settings?: Record<string, SettingValue>
 }
 
+/** A read of the project's print settings (settings.get on the app link), by setting key. */
+export interface PrintSettingsRead {
+  /** The shown plate's id. */
+  plate: string
+  /** The project's own overrides among the keys read. */
+  overrides: Record<string, SettingValue>
+  /** What the shown plate slices with: the profile, the Easy choices, the plate's choices and the overrides. */
+  effective: Record<string, SettingValue>
+  /** Overrides the plate's own choices replace. */
+  shadowed: string[]
+}
+
 export interface PilotProject {
   name: string
   machine(): PilotMachine | undefined
@@ -77,6 +89,11 @@ export interface PilotProject {
   setOverrides(changes: Record<string, SettingValue>): void
   /** The resolved config for a plate, profile plus overrides. */
   config(plateIndex: number): PrintConfig
+  /**
+   * The print settings the shown plate slices with, as the app link's settings.get reads them: the project overrides
+   * and the effective values by setting key, narrowed to `keys`. Throws for a key that is not a readable print setting.
+   */
+  printSettings?(keys: readonly string[]): PrintSettingsRead | Promise<PrintSettingsRead>
   /** The geometry request for a plate, ready for `SlicerHost.slice`. */
   plate(plateIndex: number): Promise<Plate>
   /** Replace objects with others (cut parts). Class slice, and approved when policy asks. */

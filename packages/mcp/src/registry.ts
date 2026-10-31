@@ -14,8 +14,11 @@ import type { McpProject } from './project'
 import { ToolInputError } from './models'
 import type { NodeSlicerHost } from './slicerhost'
 
-/** Tools that need the app itself (its command palette, a web search key, the report card). */
-const APP_ONLY = new Set(['pilot.report', 'web.lookup'])
+/**
+ * Tools that need the app itself (its command palette, a web search key, the report card, its project's settings).
+ * settings.get reads what app.settings reads over the app link, so clients use that one.
+ */
+const APP_ONLY = new Set(['pilot.report', 'web.lookup', 'settings.get'])
 
 /**
  * mimir's built-in tools, minus the ones that need the app itself, plus the checks and project
