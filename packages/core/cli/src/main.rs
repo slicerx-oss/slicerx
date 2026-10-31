@@ -790,6 +790,9 @@ fn cmd_request(args: &[String]) -> ExitCode {
         if !r.is_empty() {
             print_config_report(r);
         }
+        for w in &r.warnings {
+            eprintln!("warning: {}", w.message);
+        }
     }
     let mut out = match serde_json::to_value(&run.report) {
         Ok(v) => v,

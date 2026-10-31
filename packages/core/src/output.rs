@@ -422,6 +422,9 @@ pub enum WarningCode {
     /// A tool change the project or request sets at a height does not apply to this plate (it prints several
     /// filaments, or object by object), so the slice goes on without it.
     ToolChangeSkipped,
+    /// The request carries no printer settings (no bed area, no motion limits), so times and motion use the engine's
+    /// defaults. The slice goes on.
+    NoMachineProfile,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

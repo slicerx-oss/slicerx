@@ -264,7 +264,7 @@ export interface SliceStats {
   toolChanges: number
 }
 
-export type SliceWarningCode = 'open_edges' | 'thin_wall' | 'floating_region' | 'long_bridge' | 'outside_bed' | 'unsupported_setting' | 'manual_step' | 'collision' | 'safety_limit' | 'objects_overlap' | 'tool_change_skipped'
+export type SliceWarningCode = 'open_edges' | 'thin_wall' | 'floating_region' | 'long_bridge' | 'outside_bed' | 'unsupported_setting' | 'manual_step' | 'collision' | 'safety_limit' | 'objects_overlap' | 'tool_change_skipped' | 'no_machine_profile'
 
 export interface SliceWarning {
   code: SliceWarningCode

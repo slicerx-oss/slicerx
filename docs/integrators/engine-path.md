@@ -121,7 +121,7 @@ const result = await slice(request, jobDir)
 const sxpv = await readFile(result.files.preview)          // to the viewport's preview
 ```
 
-The result has `layerCount`, `stats` (`timeS`, and `filamentMm` and `filamentG` per slot, slot 1 first) and `warnings`, and with `--out-dir` the written files under `files` (`gcode` and `preview`). For an estimate only, set `emitGcode` and `emitPreview` to false and read `stats`.
+The result has `layerCount`, `stats` (`timeS`, and `filamentMm` and `filamentG` per slot, slot 1 first) and `warnings`, and with `--out-dir` the written files under `files` (`gcode` and `preview`). For an estimate only, set `emitGcode` and `emitPreview` to false and read `stats`. A `no_machine_profile` warning means the config carried no printer settings (no `printable_area`, no `machine_max_` keys), so the time is on the engine's defaults; send the printer's config from step 3.
 
 Exit codes: 0 sliced, 1 the slice failed, 2 a usage error, 3 invalid input. Show the message from stderr in plain words:
 
