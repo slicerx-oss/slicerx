@@ -161,3 +161,20 @@ export function useFleetPick<T>(pick: (rows: FleetRow[]) => T): T | undefined {
   useFleetLive(printers, q.data?.ids ?? [])
   return q.data?.value
 }
+
+/**
+ * How many printers the fleet shows once it has answered: null before that, and while it asks again. A printer's status
+ * changes nothing here, so a reader that only counts does not render again on every status, and keeps no subscription.
+ */
+export function useFleetCount(): number | null {
+  const printers = usePrinters()
+  const edition = useEdition()
+  const epoch = useApp((s) => s.linkEpoch)
+  const q = useQuery({
+    ...fleetQuery(printers, epoch),
+    enabled: printers !== undefined,
+    placeholderData: keepPreviousData,
+    select: (rows: FleetRow[]) => rows.filter((r) => printerAllowed(edition, r.plugin)).length,
+  })
+  return q.isSuccess && !q.isFetching ? q.data : null
+}

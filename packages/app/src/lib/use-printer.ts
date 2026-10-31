@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { FleetRow } from './queries'
-import { useFleet } from './queries'
+import { useFleet, useFleetPick } from './queries'
 import { useApp } from '../state/store'
 import { EXPORT_PLUGIN, isExportOnly } from './hand-printers'
 import type { ProjectPrinter } from '../state/store'
@@ -14,6 +14,20 @@ export function usePrinter(): { rows: FleetRow[]; printer: FleetRow | undefined 
   const project = useApp((s) => s.projectPrinter)
   const rows = useMemo(() => (project ? [projectRow(project), ...(fleet.data ?? [])] : (fleet.data ?? [])), [project, fleet.data])
   return { rows, printer: shownPrinter(rows, printerId) }
+}
+
+/**
+ * One value read from the printer the sidebar shows, as usePrinter picks it. The reader renders again only when `pick`'s
+ * answer changes (compared by value), so one that needs the printer's model or its last print skips every temperature.
+ * Pass a stable `pick` (defined outside the component), or it is worked out again on every render.
+ */
+export function useShownPrinterPick<T>(pick: (printer: FleetRow | undefined) => T): T {
+  const printerId = useApp((s) => s.printerId)
+  const project = useApp((s) => s.projectPrinter)
+  // Wrapped, so an answer of undefined is told apart from a fleet that has not answered.
+  const fromRows = useCallback((rows: FleetRow[]) => ({ value: pick(shownPrinter(project ? [projectRow(project), ...rows] : rows, printerId)) }), [pick, project, printerId])
+  // Until the fleet answers, and with no printer host, there are no rows, as in usePrinter: an open project's printer still shows.
+  return (useFleetPick(fromRows) ?? fromRows([])).value
 }
 
 /** An open project's printer as a printer row: it takes no jobs, so Print exports its G-code. */

@@ -2,12 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Cmd+K. Search results load on demand; @slicerx/ui's CommandPalette
 // renders the list and handles the keys.
+import type { PrinterInfo } from '@slicerx/contracts'
 import { ASSISTANT_NAME } from '@slicerx/pilot/name'
 import { CommandPalette, type PaletteGroup, type PaletteItem } from '@slicerx/ui'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadSettings, settingsIfLoaded, type SettingsApi } from '../adapters/load'
 import { getCommand, runCommand, useCommands } from '../commands/registry'
-import { useFleet } from '../lib/queries'
+import { useFleetPick, type FleetRow } from '../lib/queries'
 import { useFeatures } from '../features'
 import { orderWorkspaces, useLayout } from '../first-run/look'
 import { hostSlices, listedInMode, listedOnHost, titleInMode, useModelMode } from '../state/model-mode'
@@ -19,6 +20,11 @@ export { ASK } from './command-bar-id'
 /** The rows that are commands, for the footer's count: places, settings and the assistant row are not. */
 export function shownCommands(groups: readonly PaletteGroup[]): number {
   return groups.reduce((n, g) => n + g.items.filter((i) => i.id !== ASK && getCommand(i.id) !== undefined).length, 0)
+}
+
+/** The printers as the bar lists them, without their statuses: a printer's temperatures change nothing in the bar. */
+function listed(rows: FleetRow[]): PrinterInfo[] {
+  return rows.map(({ status: _status, ...info }) => info)
 }
 
 export function CommandBar() {
@@ -65,7 +71,7 @@ export function CommandBar() {
   const easy = useApp((s) => s.easy)
   const overrides = useApp((s) => s.overrides)
   const pilotMode = useApp((s) => pilotState(s))
-  const fleet = useFleet()
+  const printers = useFleetPick(listed)
   const [settingsApi, setSettingsApi] = useState<SettingsApi | null>(settingsIfLoaded)
   useEffect(() => {
     if (open && !settingsApi) void loadSettings().then(setSettingsApi)
@@ -79,8 +85,8 @@ export function CommandBar() {
   const actions = useMemo(() => new Map<string, () => void>(), [])
 
   const groups = useMemo<PaletteGroup[]>(() => {
-    return results?.commandGroups({ open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet, actions, pilotLabel, settingsApi }) ?? []
-  }, [results, open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet.data, actions, pilotLabel, settingsApi])
+    return results?.commandGroups({ open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, fleet: { data: printers }, actions, pilotLabel, settingsApi }) ?? []
+  }, [results, open, all, query, recents, workspace, spaces, pilot, pilotMode, toolHint, plate, plates, activePlate, userPresets, settingsMode, easy, overrides, printers, actions, pilotLabel, settingsApi])
 
   const close = useCallback(() => {
     pendingSubmit.current = false
@@ -94,7 +100,7 @@ export function CommandBar() {
     if (item.id === ASK) {
       // The question goes with what is selected and on the plate, so the answer is about this project.
       const s = get()
-      const printer = (fleet.data ?? []).find((r) => r.id === s.printerId)
+      const printer = (printers ?? []).find((r) => r.id === s.printerId)
       if (results) void runCommand(ASK, results.askPrompt(text, results.askContext(s, printer?.name)))
       return
     }
@@ -107,7 +113,7 @@ export function CommandBar() {
     void runCommand(item.id).then((r) => {
       if (!r.ok) toast(r.message)
     })
-  }, [query, close, fleet.data, results, actions])
+  }, [query, close, printers, results, actions])
 
   useEffect(() => {
     if (!open) pendingSubmit.current = false
