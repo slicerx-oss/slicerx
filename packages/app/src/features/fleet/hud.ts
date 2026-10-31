@@ -28,15 +28,23 @@ export function jobTitle(name: string): string {
   return name.replace(/\.(gcode(\.3mf)?|bgcode|3mf)$/i, '')
 }
 
-// Made once: toLocaleTimeString builds a new formatter on every call, and every card asks on every status.
-let clock: Intl.DateTimeFormat | undefined
-let weekday: Intl.DateTimeFormat | undefined
+// Kept between calls: toLocaleTimeString builds a new formatter on every call, and every card asks on every status. A
+// formatter keeps the time zone it was made in, so they are made again when the computer's zone or language changes.
+let formats: { key: string; clock: Intl.DateTimeFormat; weekday: Intl.DateTimeFormat } | undefined
+
+function finishFormats() {
+  const { timeZone, locale } = new Intl.DateTimeFormat().resolvedOptions()
+  const key = `${timeZone}|${locale}`
+  if (formats?.key !== key) formats = { key, clock: new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }), weekday: new Intl.DateTimeFormat('en-US', { weekday: 'short' }) }
+  return formats
+}
 
 /** The clock time a print ends, "7:48 PM", with the weekday when it is not today. */
 export function doneAt(timeLeftS: number, now: number): string {
   const end = new Date(now + timeLeftS * 1000)
-  const time = (clock ??= new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' })).format(end)
-  return new Date(now).toDateString() === end.toDateString() ? time : `${(weekday ??= new Intl.DateTimeFormat('en-US', { weekday: 'short' })).format(end)} ${time}`
+  const f = finishFormats()
+  const time = f.clock.format(end)
+  return new Date(now).toDateString() === end.toDateString() ? time : `${f.weekday.format(end)} ${time}`
 }
 
 /**
