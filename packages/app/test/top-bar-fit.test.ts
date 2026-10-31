@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FeaturesContext } from '../src/features'
 import { HostContext } from '../src/host'
 import { TopBar } from '../src/shell/top-bar'
+import { set } from '../src/state/store'
 
 const IDS = ['p1', 'p2', 'p3']
 const info = (id: string): PrinterInfo => ({ id, name: `Bay ${id}`, vendor: 'Voron', model: '2.4', plugin: 'moonraker', nozzleCount: 1 })
@@ -36,25 +37,24 @@ function fakeHost() {
   }
 }
 
-const features = {
-  ids: new Set(['connect']),
-  features: [],
-  workspaces: [
-    { id: 'prepare', label: 'Slice', icon: 'slice', component: null },
-    { id: 'library', label: 'My models', icon: 'library', component: null },
-    { id: 'printers', label: 'Printers', icon: 'printer', component: null },
-  ],
-  settings: [],
-} as never
+const WORKSPACES = [
+  { id: 'prepare', label: 'Slice', icon: 'slice', component: null },
+  { id: 'library', label: 'My models', icon: 'library', component: null },
+  { id: 'printers', label: 'Printers', icon: 'printer', component: null },
+]
+const features = { ids: new Set(['connect']), features: [], workspaces: WORKSPACES, settings: [] } as never
 
 /** Layout as the page would give it: the bar needs 1400 px until its tabs drop their labels, and has 1000. */
 let reads = 0
+/** What the unfolded bar needs: past its 1000 px unless a test says the labels fit. */
+let wide = 1400
 beforeEach(() => {
   reads = 0
+  wide = 1400
   vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
     reads++
     if (!this.classList.contains('sx-appbar')) return 0
-    return this.hasAttribute('data-narrow-tabs') ? 900 : 1400
+    return this.hasAttribute('data-narrow-tabs') ? 900 : wide
   })
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) {
     return this.classList.contains('sx-appbar') ? 1000 : 0
@@ -63,12 +63,16 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  set({ projectFile: null })
 })
 
-function mount() {
+/** A build with no printers: nothing in the bar changes after it opens. */
+const quiet = { ids: new Set(), features: [], workspaces: WORKSPACES, settings: [] } as never
+
+function mount(feats: unknown = features) {
   const fake = fakeHost()
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(createElement(QueryClientProvider, { client: qc }, createElement(HostContext.Provider, { value: fake.host }, createElement(FeaturesContext.Provider, { value: features }, createElement(TopBar)))))
+  render(createElement(QueryClientProvider, { client: qc }, createElement(HostContext.Provider, { value: fake.host }, createElement(FeaturesContext.Provider, { value: feats as never }, createElement(TopBar)))))
   return { ...fake, qc }
 }
 
@@ -89,6 +93,26 @@ describe('the top bar', () => {
     expect(bar().hasAttribute('data-narrow-tabs')).toBe(true)
     // it stops at the first step that fits
     expect(bar().hasAttribute('data-narrow-modes')).toBe(false)
+  })
+
+  it('folds as it opens when nothing in it changes afterwards', async () => {
+    set({ projectFile: { name: 'A rather long project name for a narrow window.sx3mf' } as never })
+    mount(quiet)
+    await act(async () => void (await new Promise((r) => setTimeout(r, 10))))
+    expect(bar().hasAttribute('data-narrow-tabs')).toBe(true)
+  })
+
+  it('folds when a longer project name stops fitting', async () => {
+    wide = 900
+    mount(quiet)
+    await act(async () => void (await new Promise((r) => setTimeout(r, 10))))
+    expect(bar().hasAttribute('data-narrow-search')).toBe(false)
+    wide = 1400
+    await act(async () => {
+      set({ projectFile: { name: 'A rather long project name for a narrow window.sx3mf' } as never })
+      await new Promise((r) => setTimeout(r, 10))
+    })
+    expect(bar().hasAttribute('data-narrow-tabs')).toBe(true)
   })
 
   it('does not measure on a printer status that changes nothing in the bar', async () => {
