@@ -1648,6 +1648,9 @@ pub(crate) fn one_wall_top(cfg: &crate::config::PrintConfig) -> bool {
 pub(crate) struct TopCtx<'a> {
     pub(crate) upper: &'a Shapes,
     pub(crate) lower: Option<&'a Shapes>,
+    /// The slice two layers up, when the layer above is not the topmost one: where the layer above keeps its inner
+    /// walls, which a classic one-wall top band stays outside of.
+    pub(crate) above: Option<&'a Shapes>,
 }
 
 /// At sparse infill density 0 with fixed-width walls, a narrow top or first-layer piece too narrow for one surface
@@ -1798,20 +1801,12 @@ pub(crate) fn walls_for(
     )
 }
 
-fn classic_top_trim(cfg: &crate::config::PrintConfig, ext: i32, inner: i32) -> i32 {
-    let mm = crate::geom::mm;
-    let threshold = match cfg.raw.get("min_width_top_surface") {
-        Some(serde_json::Value::Array(a)) => a.first(),
-        other => other,
-    };
-    let threshold = match threshold {
-        Some(serde_json::Value::String(s)) if s.trim().ends_with('%') => {
-            mm(cfg.raw_number("min_width_top_surface", 300.0) * cfg.inner_wall_width() / 100.0)
-        }
-        Some(_) => mm(cfg.raw_number("min_width_top_surface", 0.0)),
-        None => inner * 3,
-    };
-    (ext / 4 + 1).max(threshold / 4)
+/// How far a classic one-wall top band's step is pulled in to test that a band prints there: a side prints one once
+/// its step from the outline in to the layer above is wider than half the outer wall plus the inner wall, whatever
+/// the wall count. Half a micrometer more, so a step of exactly that width, a few tenths of a micrometer off, prints
+/// none.
+fn classic_top_cut(ext: i32, inner: i32) -> i32 {
+    i32::midpoint(ext / 2, inner) + 5
 }
 
 // a false result guarantees that the context-free classic walls are unchanged.
@@ -1819,7 +1814,6 @@ pub(crate) fn classic_top_candidate(
     cfg: &crate::config::PrintConfig,
     region: &Shapes,
     w: i32,
-    overlap: i32,
     top: &TopCtx,
 ) -> bool {
     let (ext, inner) = if cfg.has_feature_widths() {
@@ -1830,15 +1824,13 @@ pub(crate) fn classic_top_candidate(
     } else {
         (w, w)
     };
-    let trim = classic_top_trim(cfg, ext, inner);
+    let cut = classic_top_cut(ext, inner);
     region.iter().any(|shape| {
         let one = vec![shape.clone()];
-        if difference(&one, top.upper).is_empty() {
-            return false;
-        }
-        // this superset cannot hold a top region if even its widest strips disappear.
-        let possible = difference(&offset(&one, -(ext - overlap)), top.upper);
-        !offset(&possible, -trim).is_empty()
+        // the step from this outline in to the layer above, which the top band is measured on: no band where even
+        // its widest strips disappear.
+        let step = difference(&one, top.upper);
+        !step.is_empty() && !offset(&step, -cut).is_empty()
     })
 }
 
@@ -1970,12 +1962,12 @@ pub(crate) fn walls_for_top(
         let Some(top) = top.filter(|_| wall_loops > 1) else {
             return normal(region);
         };
-        let trim = classic_top_trim(cfg, ext, inner);
+        let cut = classic_top_cut(ext, inner);
         let mut islands = Vec::new();
         let mut cores = Vec::new();
         for shape in region {
             let one = vec![shape.clone()];
-            if !classic_top_candidate(cfg, &one, w, overlap, top) {
+            if !classic_top_candidate(cfg, &one, w, top) {
                 let (walls, core) = normal(&one);
                 islands.extend(walls);
                 cores.extend(core);
@@ -1991,15 +1983,48 @@ pub(crate) fn walls_for_top(
                 thin_all.as_ref(),
                 0,
             );
-            let mut exposed = difference(&outer_core, top.upper);
-            if let Some(lower) = top.lower {
-                let unsupported = offset(&difference(&exposed, lower), ext.max(inner));
-                exposed = difference(&exposed, &unsupported);
+            // The band is measured on the step itself, from this layer's outline in to the layer above, so a side
+            // prints a band once its step is wider than `cut` twice over, whatever the wall count. Measured inside the
+            // one wall instead, the step would have to be wider by the wall's inset before any band printed.
+            let mut step = difference(&one, top.upper);
+            // The part of the band over air, which stays out of it.
+            let over = top
+                .lower
+                .map(|lower| difference(&difference(&outer_core, top.upper), lower))
+                .filter(|over| !over.is_empty());
+            if let Some(over) = &over {
+                step = difference(&step, &offset(over, ext.max(inner)));
             }
-            exposed = intersection(
-                &offset(&offset(&exposed, -trim), trim + inner * 85 / 100),
-                &outer_core,
-            );
+            // Where the band's surface lines end, measured from the outer wall's center line: the near end half the
+            // outer wall's width in, whatever the inner width or the overlap, and the far end the step plus the outer
+            // wall plus 0.6 of the inner wall, less 0.05 mm, in on two walls. Each wall past the second is left out
+            // under the band too and moves the far end 0.6 of an inner wall spacing further in. The surface's lines
+            // end `ends` inside the area they fill (0.045 of their width), so the area reaches that much further.
+            let ends = mm(cfg.top_surface_width()) * 45 / 1000;
+            #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
+            let more = (wall_loops as i32 - 2).max(0) * pitch(inner) * 3 / 5;
+            let reach = ext * 3 / 2 + inner * 3 / 5 - mm(0.05) + ends + more;
+            let mut exposed = intersection(&offset(&offset(&step, -cut), cut + reach), &outer_core);
+            if overlap > ends {
+                exposed = intersection(&exposed, &offset(&one, -(ext - ends)));
+            }
+            // Where the layer above is a flat ledge (the layer over it covers it there), the band's lines end where
+            // that layer's infill area starts, inside its walls, so a larger overlap shortens them. Where the layer
+            // above steps in again, the band runs its full length.
+            if let Some(above) = top.above {
+                #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
+                let inners = inner * (wall_loops as i32 - 1);
+                let upper_band = offset(&difference(top.upper, above), reach + inners);
+                let inside = difference(&offset(top.upper, -(ext + inners - overlap)), &upper_band);
+                if !inside.is_empty() {
+                    exposed = difference(&exposed, &offset(&inside, -ends));
+                }
+            }
+            let hide = inner * 85 / 100;
+            if let Some(over) = &over {
+                // No nearer the part over air than the wall line's reach alone leaves it.
+                exposed = difference(&exposed, &offset(over, ext.max(inner) - hide));
+            }
             if exposed.is_empty() {
                 let (walls, core) = normal(&one);
                 islands.extend(walls);
@@ -2646,14 +2671,17 @@ mod tests {
             TopCtx {
                 upper: &region,
                 lower: Some(&region),
+                above: None,
             },
             TopCtx {
                 upper: &empty,
                 lower: Some(&empty),
+                above: None,
             },
             TopCtx {
                 upper: &narrow,
                 lower: Some(&region),
+                above: None,
             },
         ] {
             assert_eq!(format!("{:?}", run(Some(&context))), expected);
@@ -2673,6 +2701,7 @@ mod tests {
         let context = TopCtx {
             upper: &upper,
             lower: Some(&region),
+            above: None,
         };
         let (old, old_core) = walls_for_top(&cfg, &region, 3, 4_200, 630, 0.2, false, None, false, None);
         let (new, core) = walls_for_top(

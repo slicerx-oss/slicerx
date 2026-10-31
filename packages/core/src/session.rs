@@ -8563,9 +8563,22 @@ impl SliceSession {
                 one_wall_layer |= loops > 1;
                 loops = 1;
             }
+            let above_slice = (crate::perimeters::one_wall_top(cfg) && loops > 1 && !cfg.arachne_walls())
+                .then(|| {
+                    layer
+                        .checked_add(2)
+                        .filter(|&l| l < n)
+                        .and_then(get)
+                        .map(lower_shapes)
+                })
+                .flatten();
             let top_ctx = upper_slice
                 .filter(|_| crate::perimeters::one_wall_top(cfg) && loops > 1)
-                .map(|upper| perimeters::TopCtx { upper, lower: below });
+                .map(|upper| perimeters::TopCtx {
+                    upper,
+                    lower: below,
+                    above: above_slice.as_ref(),
+                });
             // Narrow pieces of the layer's surfaces: with fixed-width walls at sparse infill density 0 a piece the
             // lines run across without room for one keeps its gap fill, so the walls read the layer's surfaces.
             let narrow = self
@@ -8654,7 +8667,7 @@ impl SliceSession {
                         .filter(|_| {
                             top_ctx.as_ref().is_none_or(|top| {
                                 !cfg.arachne_walls()
-                                    && !perimeters::classic_top_candidate(cfg, shapes, w, own_overlap, top)
+                                    && !perimeters::classic_top_candidate(cfg, shapes, w, top)
                             })
                         })
                         .and_then(memo);
