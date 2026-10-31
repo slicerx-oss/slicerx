@@ -251,6 +251,20 @@ waiter does from the start: the slot it needs is kept free for it, and the `--gp
 never starved. The engine wait limit and this setting are read again at every decision. Each time what blocks a waiter changes, it
 prints one `heavy.sh: waiting:` line naming the holders or tickets in its way.
 
+Windows commit charge: on Windows, WSL's page cache counts toward the commit charge (`TotalVirtualMemorySize` less
+`FreeVirtualMemory`), and when the commit runs out, process starts fail and GPU runs take ten times as long. So a
+`--gpu` hold in Git Bash or WSL reads it through `powershell.exe` before it queues. With less than
+`SX_HEAVY_COMMIT_FREE_MIN_GB` free (the number in `<lock>.commit-free-min`, default 8, 0 to turn it off), it writes
+`<lock>.drop-cache.request` (time, id, who asks, the reading), waits up to `SX_HEAVY_DROP_WAIT` seconds (default 40)
+for `<lock>.drop-cache.done`, reads the commit again, and logs one `cache-drop` line in `history.log` with both
+readings, the answer and who asked. A request another hold made a moment ago is joined rather than written again. The
+answer comes from a timer inside the WSL distro, set up on the machine apart from this repository; a machine without
+it gets a "cache drop not answered" line, and a request left unread past the wait makes later holds log that without
+waiting. A reading that fails although `powershell.exe` is there (it cannot start when the commit is exhausted, or it
+prints no numbers) asks for a drop too, logged as before `unreadable`; the timer's limit of one drop per 5 minutes
+keeps that cheap. With no `powershell.exe` at all, the hold logs one line and goes on. Nothing in this check ever
+fails, stops or kills a hold.
+
 `scripts/ci/heavy-test.sh` tests all of this on a temporary lock: alone on any side, and with
 `cross <distro> [<stopped distro>]` from Git Bash, Windows against WSL.
 

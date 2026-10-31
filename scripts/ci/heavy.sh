@@ -44,6 +44,10 @@
 #   SX_HEAVY_PROMOTE_AFTER=<seconds>           how old a waiter's ticket that is not a CI job's (and not --all) must
 #                                              be before it queues as one, ahead of the CI tickets that came after it
 #                                              (default: the number in <lock>.promote-after, or 1800; 0: never)
+#   SX_HEAVY_COMMIT_FREE_MIN_GB=<n>            a --gpu hold on Windows (Git Bash or WSL) with less Windows commit charge
+#                                              free than this asks WSL to drop its page cache before it queues (default:
+#                                              the number in <lock>.commit-free-min, or 8; 0: never); see cache_check
+#   SX_HEAVY_DROP_WAIT=<seconds>               how long it waits for the answer (default 40); it never blocks the hold
 #   SX_HEAVY_LABEL=<text>                      who is asking, in the holder record and the history (optional)
 #   SX_HEAVY_SESSION=<text>                    the session that asks (default: the run and job of a GitHub Actions
 #                                              job; nothing else is read from the environment)
@@ -238,17 +242,23 @@ win_start() {
 # wsl.exe with its output cleaned of NULs and carriage returns, and its own exit status (124 when it timed out). The
 # NULs are stripped inside the substitution, so bash never warns that it ignored a null byte.
 wslx() { local o rc; o=$(set -o pipefail; winrun wsl.exe "$@" 2> /dev/null | tr -d '\0\r'); rc=$?; printf '%s\n' "$o"; return $rc; }
+# The path of Windows program $1, into wx; fails when there is none.
+winexe() {
+  local sys
+  # A WSL distro with appendWindowsPath=false has no Windows directories on PATH: look in System32 itself, or a
+  # Windows holder could never be judged dead from there.
+  if ! wx=$(command -v "$1"); then
+    [ "$side" = wsl ] && sys=$(wslpath -u 'C:\Windows\System32' 2> /dev/null) || return 127
+    case $1 in powershell.exe) wx=$sys/WindowsPowerShell/v1.0/powershell.exe ;; *) wx=$sys/$1 ;; esac
+    [ -x "$wx" ] || return 127
+  fi
+}
 # Runs a Windows program, for at most 30 s. WSL runs it through /init, as its binfmt entry would: a distro that runs
 # systemd can lose that entry, and then a plain call fails.
 winrun() {
-  local exe sys
-  # A WSL distro with appendWindowsPath=false has no Windows directories on PATH: look in System32 itself, or a
-  # Windows holder could never be judged dead from there.
-  if ! exe=$(command -v "$1"); then
-    [ "$side" = wsl ] && sys=$(wslpath -u 'C:\Windows\System32' 2> /dev/null) || return 127
-    case $1 in powershell.exe) exe=$sys/WindowsPowerShell/v1.0/powershell.exe ;; *) exe=$sys/$1 ;; esac
-    [ -x "$exe" ] || return 127
-  fi
+  local exe wx
+  winexe "$1" || return 127
+  exe=$wx
   shift
   if [ "$side" = wsl ]; then timeout 30 /init "$exe" "${exe##*/}" "$@"; else MSYS_NO_PATHCONV=1 timeout 30 "$exe" "$@"; fi
 }
@@ -805,6 +815,107 @@ watchdog() {
   for d in "${held[@]}"; do ours "$d" && rm -rf "$d" 2> /dev/null; done
   exit 0
 }
+
+# Windows commit charge: TotalVirtualMemorySize less FreeVirtualMemory, in KB. WSL's page cache counts toward it, and
+# when it runs out, process starts fail and GPU runs crawl. So a --gpu hold reads it before it queues for a GPU slot,
+# and with less than SX_HEAVY_COMMIT_FREE_MIN_GB free (the number in <lock>.commit-free-min, default 8, 0 for never) it
+# asks a timer inside WSL to drop the page cache: it writes <lock>.drop-cache.request, waits up to SX_HEAVY_DROP_WAIT
+# seconds (default 40) for <lock>.drop-cache.done, reads the commit again and logs one cache-drop line. None of it
+# ever fails, stops or kills anything: a missing answer is logged and the hold goes on. A commit that cannot be read
+# although powershell.exe is there asks for a drop as well (before "unreadable"); with no powershell.exe the check is
+# skipped with one log line.
+# SX_HEAVY_COMMIT_CMD (a command that prints "<total KB> <free KB>") and SX_HEAVY_POWERSHELL (the program to ask) are
+# for the tests. Fails with 127 when there is no powershell.exe, and 1 when it cannot start or prints no reading.
+commit_read() {
+  local out rc wx
+  c_total= c_free=
+  if [ -n "${SX_HEAVY_COMMIT_CMD:-}" ]; then
+    out=$(sh -c "$SX_HEAVY_COMMIT_CMD" 2> /dev/null); rc=$?
+  else
+    winexe "${SX_HEAVY_POWERSHELL:-powershell.exe}" || return 127
+    out=$(winrun "${SX_HEAVY_POWERSHELL:-powershell.exe}" -NoProfile -NonInteractive -Command \
+      '$o = Get-CimInstance Win32_OperatingSystem; "$($o.TotalVirtualMemorySize) $($o.FreeVirtualMemory)"' 2> /dev/null); rc=$?
+  fi
+  [ "$rc" = 0 ] || return 1
+  read -r c_total c_free _ <<< "${out//$cr/}"
+  case $c_total in '' | *[!0-9]*) return 1 ;; esac
+  case $c_free in '' | *[!0-9]*) return 1 ;; esac
+  [ "$c_total" -gt 0 ] && [ "$c_free" -le "$c_total" ]
+}
+# KB as GB with one decimal, into variable $2.
+gb() { local g=$((($1 * 10 + 524288) / 1048576)); printf -v "$2" '%d.%d' $((g / 10)) $((g % 10)); }
+commit_text() { local cu ct cf; gb $((c_total - c_free)) cu; gb "$c_total" ct; gb "$c_free" cf; printf -v "$1" 'used %s of %s GB, free %s GB' "$cu" "$ct" "$cf"; }
+# Reads a request or done file of "<key> <value>" lines: f_time, f_id, f_result, f_detail. Fails without a time.
+kv_read() {
+  local k v
+  f_time= f_id= f_result= f_detail=
+  [ -f "$1" ] || return 1
+  while IFS=' ' read -r k v || [ -n "$k" ]; do
+    v=${v%"$cr"}
+    case $k in time) f_time=$v ;; id) f_id=$v ;; result) f_result=$v ;; detail) f_detail=$v ;; esac
+  done 2> /dev/null < "$1"
+  case $f_time in '' | *[!0-9]*) return 1 ;; esac
+}
+cache_check() {
+  local min wait_s dpoll req dfile before after who t req_t req_id end answered why
+  setting min "${SX_HEAVY_COMMIT_FREE_MIN_GB:-}" commit-free-min 8
+  [ "$min" -gt 0 ] || return 0
+  case $side in msys | wsl) ;; *) [ -n "${SX_HEAVY_COMMIT_CMD:-}${SX_HEAVY_POWERSHELL:-}" ] || return 0 ;; esac
+  wait_s=${SX_HEAVY_DROP_WAIT:-40}; case $wait_s in '' | *[!0-9]*) wait_s=40 ;; esac
+  dpoll=${SX_HEAVY_DROP_POLL:-1}
+  # A reading that fails although powershell.exe is there is what an exhausted commit looks like (a new process
+  # cannot start), so it asks for a drop too; the timer's rate limit keeps that cheap.
+  commit_read
+  case $? in
+    0)
+      [ "$c_free" -lt $((min * 1048576)) ] || return 0
+      commit_text before
+      why="Windows commit charge $before, under $min GB free" ;;
+    127) hist_line cache-drop "" "skipped: no powershell.exe to read the Windows commit charge"; return 0 ;;
+    *) before=unreadable why="Windows commit charge unreadable" ;;
+  esac
+  who=${session:-${label:-$user}}
+  req=$lock.drop-cache.request dfile=$lock.drop-cache.done
+  t=$(now) req_t= req_id=
+  # A request another hold wrote a moment ago is joined; one left unread longer than a wait means nothing answers.
+  if [ -f "$req" ]; then
+    kv_read "$req" || f_time=0
+    if [ $((t - f_time)) -ge $((wait_s + 10)) ]; then
+      echo "heavy.sh: $why; a cache drop request from $((t - f_time)) s ago is still unread" >&2
+      hist_line cache-drop "" "before $before; cache drop not answered: a request from $((t - f_time)) s ago is still unread; asked by $who"
+      return 0
+    fi
+    req_t=$f_time req_id=$f_id
+  fi
+  if [ -z "$req_t" ]; then
+    req_t=$t req_id=$t-$side-$$
+    { printf 'time %s\nid %s\nby %s\nbefore %s\n' "$t" "$req_id" "$who" "$before" > "$req.$$" && mv -f "$req.$$" "$req"; } 2> /dev/null || {
+      rm -f "$req.$$" 2> /dev/null
+      hist_line cache-drop "" "before $before; skipped: could not write the cache drop request"
+      return 0
+    }
+  fi
+  echo "heavy.sh: $why; asked WSL to drop its page cache" >&2
+  # The answer names the request it answered; one written since the request was made answers it too.
+  end=$((SECONDS + wait_s)) answered=
+  while :; do
+    if kv_read "$dfile" && { { [ -n "$req_id" ] && [ "$f_id" = "$req_id" ]; } || [ "$f_time" -ge "$req_t" ]; }; then
+      answered=1; break
+    fi
+    [ "$SECONDS" -lt "$end" ] || break
+    sleep "$dpoll"
+  done
+  if commit_read; then commit_text after; else after=unreadable; fi
+  if [ -z "$answered" ]; then
+    echo "heavy.sh: cache drop not answered in $wait_s s; going on" >&2
+    hist_line cache-drop "" "before $before, after $after; cache drop not answered in $wait_s s; asked by $who"
+  else
+    echo "heavy.sh: cache drop ${f_result:-answered}; Windows commit charge now $after" >&2
+    hist_line cache-drop "" "before $before, after $after; ${f_result:-answered}${f_detail:+: $f_detail}; asked by $who"
+  fi
+  return 0
+}
+[ -z "$gpu" ] || cache_check
 
 t0=$SECONDS next=0 judged=0
 while :; do

@@ -18,6 +18,8 @@ heavy=$here/heavy.sh
 for v in $(compgen -e); do case $v in SX_HEAVY_*) unset "$v" ;; esac; done
 unset SX_CI_HOME RUNNER_ENVIRONMENT
 export SX_HEAVY_POLL=1
+# No --gpu hold reads the real Windows commit charge; the cache drop tests below turn it on with a fake reading.
+export SX_HEAVY_COMMIT_FREE_MIN_GB=0
 
 linpath() { case $1 in [A-Za-z]:*) wslpath -u "$1" ;; *) printf %s "$1" ;; esac; }
 start_of() { sed 's/.*) //' "/proc/$1/stat" | cut -d' ' -f20; }
@@ -692,6 +694,82 @@ EOF
   rm -rf "$dir".[23]
 fi
 rm -f "$dir.slots"
+
+# Windows commit charge: a --gpu hold with less than SX_HEAVY_COMMIT_FREE_MIN_GB free asks WSL to drop its page cache
+# (<lock>.drop-cache.request), waits up to SX_HEAVY_DROP_WAIT s for <lock>.drop-cache.done, and logs one cache-drop
+# line. The commit comes from a fake command, never from Windows, and the test writes the answer itself.
+req=$dir.drop-cache.request dfile=$dir.drop-cache.done
+printf '#!/bin/sh\ncat "$1"\n' > "$tmp/commit.sh"
+# A reading of 75 GB with $1 GB free.
+commit_is() { printf '%s %s\n' $((75 * 1048576)) $(($1 * 1048576)) > "$tmp/commit.now"; }
+# A hold of mode $1 (--gpu, --e2e or plain) with the fake reading and a 3 s wait. Sets rc and secs.
+cd_hold() {
+  local t0=$SECONDS
+  SX_HEAVY_COMMIT_FREE_MIN_GB=8 SX_HEAVY_DROP_WAIT=3 SX_HEAVY_COMMIT_CMD="sh '$tmp/commit.sh' '$tmp/commit.now'" \
+    SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 bash "$heavy" ${1:+"$1"} true > "$tmp/cd.out" 2>&1
+  rc=$? secs=$((SECONDS - t0))
+}
+# The timer's part: once the hold has asked (so a request it would join is not taken first), takes the request, frees
+# some commit and answers it by its id.
+answer() {
+  : > "$tmp/cd.out"
+  (
+    for _ in $(seq 100); do [ -f "$req" ] && grep -q "asked WSL" "$tmp/cd.out" && break; sleep 0.1; done
+    cp "$req" "$tmp/req.seen" && rm -f "$req"
+    commit_is 20
+    printf 'time %s\nid %s\nresult dropped\ndetail page cache 25.0 GB, then 3.0 GB\n' "$(date +%s)" "$(sed -n 's/^id //p' "$tmp/req.seen")" > "$dfile"
+  ) > /dev/null 2>&1 &
+  lpids="$lpids $!"
+}
+drops() { grep -c "	cache-drop	" "$tmp/history.log"; }
+rm -f "$req" "$dfile" "$tmp/req.seen"
+
+name="a --gpu hold under the commit floor asks for a cache drop and logs the answer with before and after"
+: > "$tmp/history.log"; commit_is 2; answer; cd_hold --gpu
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ] && [ "$(drops)" = 1 ] && [ ! -e "$req" ] && grep -q "^by " "$tmp/req.seen" \
+  && grep -q "^before used 73.0 of 75.0 GB, free 2.0 GB$" "$tmp/req.seen" \
+  && grep -q "	cache-drop	gpu	.*before used 73.0 of 75.0 GB, free 2.0 GB, after used 55.0 of 75.0 GB, free 20.0 GB; dropped: page cache 25.0 GB, then 3.0 GB; asked by " "$tmp/history.log"'
+
+name="with no answer it waits SX_HEAVY_DROP_WAIT s, logs that, and runs the command"
+: > "$tmp/history.log"; rm -f "$dfile"; commit_is 2; cd_hold --gpu
+ok eval '[ "$rc" = 0 ] && [ $secs -ge 3 ] && [ $secs -le 7 ] && [ -e "$req" ] && [ "$(drops)" = 1 ] \
+  && grep -q "cache drop not answered in 3 s" "$tmp/history.log" && grep -q "	release	gpu	.*rc 0" "$tmp/history.log"'
+name="a request another hold made a moment ago is joined, not written again, and its answer counts"
+id0=$(sed -n 's/^id //p' "$req")
+: > "$tmp/history.log"; answer; cd_hold --gpu
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ] && [ "$(sed -n "s/^id //p" "$tmp/req.seen")" = "$id0" ] && grep -q "; dropped: " "$tmp/history.log"'
+name="a request left unread past the wait means nothing answers: logged, with no wait"
+printf 'time 1\nid 1-old\n' > "$req"
+: > "$tmp/history.log"; commit_is 2; cd_hold --gpu
+ok eval '[ "$rc" = 0 ] && [ $secs -le 4 ] && [ "$(drops)" = 1 ] && grep -q "cache drop not answered: a request from [0-9]* s ago is still unread" "$tmp/history.log"'
+rm -f "$req" "$dfile"
+
+name="a --gpu hold over the commit floor writes nothing and logs nothing"
+: > "$tmp/history.log"; commit_is 20; cd_hold --gpu
+ok eval '[ "$rc" = 0 ] && [ ! -e "$req" ] && [ "$(drops)" = 0 ]'
+name="only --gpu holds ask: a plain and an --e2e hold under the floor write nothing"
+: > "$tmp/history.log"; commit_is 2; cd_hold; rcp=$rc; cd_hold --e2e
+ok eval '[ "$rcp" = 0 ] && [ "$rc" = 0 ] && [ ! -e "$req" ] && [ "$(drops)" = 0 ]'
+name="with no powershell.exe the check is skipped with one log line, and the command runs"
+: > "$tmp/history.log"
+SX_HEAVY_COMMIT_FREE_MIN_GB=8 SX_HEAVY_POWERSHELL=heavy-test-no-such-powershell.exe SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 \
+  bash "$heavy" --gpu true > "$tmp/cd.out" 2>&1; rc=$?
+ok eval '[ "$rc" = 0 ] && [ ! -e "$req" ] && [ "$(drops)" = 1 ] && grep -q "skipped: no powershell.exe" "$tmp/history.log" && [ ! -s "$tmp/cd.out" ]'
+# An exhausted commit can keep powershell.exe from starting, so a reading that fails asks for a drop as well.
+name="a reading that is not two numbers asks for a drop with before unreadable, and logs the after reading"
+: > "$tmp/history.log"; rm -f "$dfile"; echo "Access denied" > "$tmp/commit.now"; answer; cd_hold --gpu
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ] && [ "$(drops)" = 1 ] && grep -q "^before unreadable$" "$tmp/req.seen" \
+  && grep -q "	cache-drop	gpu	.*before unreadable, after used 55.0 of 75.0 GB, free 20.0 GB; dropped: " "$tmp/history.log"'
+name="a reading command that fails (powershell.exe could not start) asks too, and with no answer logs both unreadable"
+: > "$tmp/history.log"; rm -f "$dfile" "$tmp/commit.now"; cd_hold --gpu
+ok eval '[ "$rc" = 0 ] && [ $secs -ge 3 ] && [ $secs -le 7 ] && [ -e "$req" ] && [ "$(drops)" = 1 ] \
+  && grep -q "before unreadable, after unreadable; cache drop not answered in 3 s" "$tmp/history.log"'
+rm -f "$req" "$dfile"
+name="<lock>.commit-free-min 0 turns the check off"
+echo 0 > "$dir.commit-free-min"; : > "$tmp/history.log"; commit_is 2
+env -u SX_HEAVY_COMMIT_FREE_MIN_GB SX_HEAVY_DROP_WAIT=3 SX_HEAVY_COMMIT_CMD="sh '$tmp/commit.sh' '$tmp/commit.now'" SX_HEAVY_LOCK="$lock"   bash "$heavy" --gpu true > /dev/null 2>&1; rc=$?
+ok eval '[ "$rc" = 0 ] && [ ! -e "$req" ] && [ "$(drops)" = 0 ]'
+rm -f "$dir.commit-free-min" "$req" "$dfile"
 
 if [ "${1:-}" = cross ]; then
   distro=${2:?usage: heavy-test.sh cross <distro> [<stopped distro>]} stopped=${3:-}
