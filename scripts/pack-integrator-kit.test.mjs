@@ -4,11 +4,11 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { test } from 'node:test'
-import { hostPlatform, parseSums, platformOf, writePackageManifest, kitPackages } from './pack-integrator-kit.mjs'
+import { addToSums, hostPlatform, parseSums, platformOf, writePackageManifest, kitPackages } from './pack-integrator-kit.mjs'
 
 const stemOf = (name) => name.replace('@', '').replace('/', '-')
 
@@ -200,6 +200,71 @@ test('a pack leaves no untracked docs in the packages: every doc copied before p
         assert.equal(r.status, 0, `${pkg}/${f} is written by the pack but not in ${pkg}/.gitignore`)
       }
     }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+/** Every path under `dir`, relative, folders ending in `/`. */
+const tree = (dir, prefix = '') => readdirSync(dir).flatMap((n) =>
+  statSync(join(dir, n)).isDirectory() ? [`${prefix}${n}/`, ...tree(join(dir, n), `${prefix}${n}/`)] : [`${prefix}${n}`])
+
+test('--zip-assets writes a reproducible assets zip with one top folder, listed in SHA256SUMS.txt', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'sx-kit-zip-'))
+  try {
+    const version = kitPackages().find((p) => p.name === '@slicerx/mcp').version
+    const top = `slicerx-kit-assets-${version}`
+    const sha = []
+    for (const kit of ['a', 'b']) {
+      const r = spawnSync(process.execPath, [script, join(tmp, kit), '--assets-only', '--zip-assets'], { encoding: 'utf8', timeout: 120_000 })
+      assert.equal(r.status, 0, r.stderr)
+      sha.push(createHash('sha256').update(readFileSync(join(tmp, kit, `${top}.zip`))).digest('hex'))
+    }
+    assert.equal(sha[0], sha[1], 'two packs of one commit give the same zip')
+
+    const kit = join(tmp, 'a')
+    const sums = readFileSync(join(kit, 'SHA256SUMS.txt'), 'utf8')
+    assert.ok(sums.split('\n').includes(`${sha[0]}  ${top}.zip`), sums)
+
+    // unpack with the system's tools, as an integrator would: bsdtar reads zips, GNU tar does not
+    const out = join(tmp, 'unzipped')
+    mkdirSync(out)
+    try {
+      execFileSync('tar', ['-xf', join('..', 'a', `${top}.zip`)], { cwd: out, stdio: 'ignore' })
+    } catch {
+      execFileSync('unzip', ['-q', join(kit, `${top}.zip`), '-d', out], { stdio: 'inherit' })
+    }
+    assert.deepEqual(readdirSync(out), [top])
+    const assets = join(kit, 'assets')
+    const files = tree(assets).sort()
+    assert.deepEqual(tree(join(out, top)).sort(), files)
+    for (const f of files.filter((f) => !f.endsWith('/'))) assert.ok(readFileSync(join(out, top, f)).equals(readFileSync(join(assets, f))), f)
+    for (const f of ['example.css', 'example.html', 'icons/', 'loops/', 'manifest.json', 'tokens.css', 'tool-icons/']) assert.ok(files.includes(f), f)
+    assert.ok(!files.some((f) => f.startsWith('credit-kit')))
+
+    // the end record's entry count: the top folder plus every folder and file under assets/
+    const zip = readFileSync(join(kit, `${top}.zip`))
+    assert.equal(zip.readUInt32LE(zip.length - 22), 0x06054b50)
+    assert.equal(zip.readUInt16LE(zip.length - 12), files.length + 1)
+  } finally {
+    rmSync(tmp, { recursive: true, force: true })
+  }
+})
+
+test('adding the assets zip keeps every line a full pack wrote in SHA256SUMS.txt', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'sx-kit-zipsums-'))
+  try {
+    const packages = kitPackages().map(({ name, version }) => ({ name, version }))
+    for (const p of packages) writeFileSync(join(tmp, `${stemOf(p.name)}-${p.version}.tgz`), p.name)
+    writePackageManifest(tmp, packages)
+    const before = parseSums(readFileSync(join(tmp, 'SHA256SUMS.txt'), 'utf8'))
+    writeFileSync(join(tmp, 'slicerx-kit-assets-9.9.9.zip'), 'zip')
+    addToSums(tmp, ['slicerx-kit-assets-9.9.9.zip'])
+    const after = parseSums(readFileSync(join(tmp, 'SHA256SUMS.txt'), 'utf8'))
+    assert.equal(after.size, before.size + 1)
+    for (const [name, digest] of before) assert.equal(after.get(name), digest, name)
+    assert.equal(after.get('slicerx-kit-assets-9.9.9.zip'), createHash('sha256').update('zip').digest('hex'))
+    assert.deepEqual([...after.keys()], [...after.keys()].sort())
   } finally {
     rmSync(tmp, { recursive: true, force: true })
   }

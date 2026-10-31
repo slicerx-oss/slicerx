@@ -20,11 +20,17 @@
 //
 // The tooltip loops in assets/ are transparent. --backdrop draws the studio gradient behind them, and
 // --edition <edition.json> colors tokens.css and the SVG fallbacks from that edition's brand.theme block.
+//
+// --zip-assets also writes slicerx-kit-assets-<kit version>.zip beside the kit, one folder
+// slicerx-kit-assets-<kit version>/ holding the contents of assets/, and lists it in SHA256SUMS.txt. The zip is
+// reproducible: sorted entries and one fixed time (SOURCE_DATE_EPOCH, else the HEAD commit's), so two packs of one
+// commit give the same bytes.
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { crc32, deflateRawSync } from 'node:zlib'
 import { exportAssets, readEdition } from './export-kit-assets.mjs'
 
 const REPO = 'slicerx-oss/slicerx'
@@ -169,6 +175,105 @@ export function writeSums(dest, names) {
   writeFileSync(join(dest, 'SHA256SUMS.txt'), `${lines.join('\n')}\n`)
 }
 
+/** Adds `names` (files in `dest`) to `SHA256SUMS.txt`, keeping the lines already there, and writes it sorted. */
+export function addToSums(dest, names) {
+  const file = join(dest, 'SHA256SUMS.txt')
+  const kept = existsSync(file) ? [...parseSums(readFileSync(file, 'utf8')).keys()] : []
+  writeSums(dest, new Set([...kept, ...names]))
+}
+
+/** Every path under `dir`, relative and with `/`, folders ending in `/`, in code unit order (a folder before its files). */
+function walk(dir, prefix = '') {
+  const out = []
+  for (const name of readdirSync(dir)) {
+    const rel = `${prefix}${name}`
+    if (statSync(join(dir, name)).isDirectory()) out.push(`${rel}/`, ...walk(join(dir, name), `${rel}/`))
+    else out.push(rel)
+  }
+  return out.sort()
+}
+
+/** `seconds` since the epoch as a zip (MS-DOS) time and date, read in UTC so every machine writes the same bytes. */
+function dosTime(seconds) {
+  const d = new Date(Math.max(seconds, 315532800) * 1000) // 1980-01-01, the first time a zip can hold
+  return {
+    time: (d.getUTCHours() << 11) | (d.getUTCMinutes() << 5) | (d.getUTCSeconds() >> 1),
+    date: ((d.getUTCFullYear() - 1980) << 9) | ((d.getUTCMonth() + 1) << 5) | d.getUTCDate(),
+  }
+}
+
+/**
+ * Zips the contents of `dir` into `out` under one folder `top/`, with Node's own deflate (no zip tool on PATH needed;
+ * Windows has none). The bytes depend only on the files and `seconds`: entries are sorted, every entry gets the same
+ * time, and the modes are fixed (folders 755, files 644). Returns the number of entries, folders included.
+ */
+export function zipFolder(dir, out, top, seconds) {
+  const { time, date } = dosTime(seconds)
+  const names = [`${top}/`, ...walk(dir).map((p) => `${top}/${p}`)]
+  if (names.length > 0xffff) throw new Error(`${out}: ${names.length} entries is more than a zip without zip64 holds`)
+  const locals = [], central = []
+  let offset = 0
+  for (const name of names) {
+    const folder = name.endsWith('/')
+    const raw = folder ? Buffer.alloc(0) : readFileSync(join(dir, name.slice(top.length + 1)))
+    const packed = folder ? raw : deflateRawSync(raw, { level: 9 })
+    const method = folder ? 0 : 8
+    const crc = folder ? 0 : crc32(raw)
+    const path = Buffer.from(name, 'utf8')
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4) // version needed: 2.0, deflate
+    local.writeUInt16LE(0x0800, 6) // names are UTF-8
+    local.writeUInt16LE(method, 8)
+    local.writeUInt16LE(time, 10)
+    local.writeUInt16LE(date, 12)
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(packed.length, 18)
+    local.writeUInt32LE(raw.length, 22)
+    local.writeUInt16LE(path.length, 26)
+    locals.push(local, path, packed)
+    const entry = Buffer.alloc(46)
+    entry.writeUInt32LE(0x02014b50, 0)
+    entry.writeUInt16LE(0x0314, 4) // made by: Unix, 2.0, so unzip reads the modes below
+    local.copy(entry, 6, 4, 26) // version needed through uncompressed size
+    entry.writeUInt16LE(path.length, 28)
+    entry.writeUInt32LE((((folder ? 0o40755 : 0o100644) << 16) | (folder ? 0x10 : 0)) >>> 0, 38)
+    entry.writeUInt32LE(offset, 42)
+    central.push(entry, path)
+    offset += local.length + path.length + packed.length
+    if (offset > 0xffffffff) throw new Error(`${out}: more than 4 GB is more than a zip without zip64 holds`)
+  }
+  const dirBytes = Buffer.concat(central)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(names.length, 8)
+  end.writeUInt16LE(names.length, 10)
+  end.writeUInt32LE(dirBytes.length, 12)
+  end.writeUInt32LE(offset, 16)
+  writeFileSync(out, Buffer.concat([...locals, dirBytes, end]))
+  return names.length
+}
+
+/** The time a reproducible archive carries: SOURCE_DATE_EPOCH when set, else the HEAD commit's, else 1980-01-01. */
+export function sourceDate(env = process.env) {
+  if (/^\d+$/.test(env.SOURCE_DATE_EPOCH ?? '')) return Number(env.SOURCE_DATE_EPOCH)
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+  try {
+    return Number(execFileSync('git', ['log', '-1', '--format=%ct'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()) || 0
+  } catch {
+    return 0
+  }
+}
+
+/** Writes `slicerx-kit-assets-<version>.zip` in `dest` from `<dest>/assets` and lists it in SHA256SUMS.txt. */
+export function zipAssets(dest, version, seconds = sourceDate()) {
+  const top = `slicerx-kit-assets-${version}`
+  const file = `${top}.zip`
+  const entries = zipFolder(join(dest, 'assets'), join(dest, file), top, seconds)
+  addToSums(dest, [file])
+  return { file, entries }
+}
+
 export function kitPackages() {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
   return ['ui/viewport', 'embed', 'mcp', 'step-reader'].map((folder) => JSON.parse(readFileSync(join(root, 'packages', folder, 'package.json'), 'utf8')))
@@ -208,6 +313,11 @@ async function main(args) {
   if (!engineOnly && !assetsOnly) packPackages(dest)
   const editionFile = flag(args, '--edition')
   await exportAssets(join(dest, 'assets'), { backdrop: args.includes('--backdrop'), edition: editionFile ? readEdition(editionFile) : undefined })
+  if (args.includes('--zip-assets')) {
+    const version = kitPackages().find((p) => p.name === '@slicerx/mcp').version
+    const { file, entries } = zipAssets(dest, version)
+    console.log(`assets zip: ${join(dest, file)} (${entries} entries), listed in SHA256SUMS.txt`)
+  }
   if (!engineSource) return
   const archives = await engineArchives(engineSource, repo ? { repo } : {})
   const label = existsSync(engineSource)
