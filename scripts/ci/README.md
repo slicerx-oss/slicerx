@@ -265,6 +265,19 @@ prints no numbers) asks for a drop too, logged as before `unreadable`; the timer
 keeps that cheap. With no `powershell.exe` at all, the hold logs one line and goes on. Nothing in this check ever
 fails, stops or kills a hold.
 
+Every other hold (plain, `--e2e`, `--all` and class engine) runs the same check before it queues, with the same
+request, the same join of a fresh request, the same wait limit and the same settled reading. Without it, plain cargo
+builds were stopped for low memory while WSL held 27 GB of page cache and nothing asked for a drop. Two things keep it
+cheap, since plain holds come often (about 100 an hour on a busy machine) and each reading costs about 1.5 s of
+`powershell.exe`. A hold reuses a reading another hold took less than `SX_HEAVY_COMMIT_CACHE_S` seconds ago (default
+60, 0 to read every time), kept in `<lock>.commit-reading` (`time`, `total` and `free` lines, written through a rename);
+an answered drop from any hold, `--gpu` or not, removes it, so the next hold reads afresh. And within
+`SX_HEAVY_DROP_GAP` seconds (default 300, the timer's own limit) of a drop the done file reports as `dropped`, such a
+hold asks for none, since the timer would only answer `rate-limited`: it logs one `cache-drop` line,
+`before <reading>; skipped: the last cache drop was <n> s ago, at most one per <gap> s; asked by <who>`, and goes on at
+once. A `--gpu` hold works exactly as above: it reads afresh, never uses or writes `<lock>.commit-reading` (its
+answered drop only removes it), and asks and waits every time.
+
 WSL hands the dropped cache back to Windows over a minute or so, so the `after` reading, taken as soon as the answer
 comes, can show no gain at all. After an answered drop, the hold reads the commit once more `SX_HEAVY_SETTLE_S` seconds
 past the answer (default 45, 0 to turn it off), or as it is granted when that comes later, and logs a second
