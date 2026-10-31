@@ -7,7 +7,7 @@
 // project's settings, so one project on one printer slices the same in both.
 import type { EasyGoal, SettingValue } from '@slicerx/contracts/settings'
 import { isCompatibleWithPrinter, type PrinterContext } from './compat'
-import { defaultConfig } from './defaults'
+import { settingDefault } from './defaults'
 import { listFilamentFamilies, loadVendorFile, resolveFilamentPreset, type VendorFile } from './filaments'
 import { filamentConfig, gcodeStatus, listFilamentProfiles, printerConfig, printerProfile, processConfig } from './profiles'
 import { resolvedProfile } from './resolved'
@@ -200,7 +200,7 @@ export async function stockLayer(input: StockLayerInput): Promise<StockLayer | n
   const goalValues = {} as Record<EasyGoal, Record<string, SettingValue>>
   for (const g of GOALS) {
     const p = g === input.tier ? process : await tierProcess(printerId, g, nozzle)
-    goalValues[g] = Object.fromEntries(GOAL_KEYS.map((k) => [k, p[k] ?? defaultConfig()[k]!]))
+    goalValues[g] = Object.fromEntries(GOAL_KEYS.map((k) => [k, p[k] ?? settingDefault(k)!]))
   }
   return {
     printerId,
@@ -325,7 +325,8 @@ const GOAL_KEYS = ['layer_height', 'wall_loops'] as const
 /** SlicerX's layer heights on a 0.4 mm nozzle, for a printer whose own 0.4 mm presets leave a tier out. */
 const LADDER_04: Record<'draft' | 'standard' | 'fine', number> = { draft: 0.28, standard: 0.2, fine: 0.12 }
 
-const layerOf = (p: Record<string, SettingValue>): number => Number(first(p['layer_height'] ?? defaultConfig()['layer_height']))
+// One key's default: defaultConfig() copies the whole table, and tierProcess reads this for every tier it builds.
+const layerOf = (p: Record<string, SettingValue>): number => Number(first(p['layer_height'] ?? settingDefault('layer_height')))
 
 /**
  * A tier's process preset: the maker's own for this nozzle when it has one, else ours for the size. Draft and Fine with
