@@ -13,7 +13,7 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 - [../integrating.md](../integrating.md): the long guide to building your own edition, with a worked example
 - [partner-app-key.md](partner-app-key.md): reaching the user's printers through SlicerX's bridge with a partner app key the user makes and revokes
 - [connected-apps.md](connected-apps.md): Spoolman, Home Assistant and BamBuddy through SlicerX's bridge: MCP tools, approvals, the Home Assistant domains, adding a new app, and a runnable sample in connected-apps/
-- [engine-path.md](engine-path.md): Path B with the sx engine instead of the MCP server for slicing: Prepare tools in the viewport, the plate as a slice request, settings, exit codes and the preview
+- [engine-path.md](engine-path.md): Path B with the sx engine instead of the MCP server for slicing: Prepare tools in the viewport, the plate as a slice request, settings (a request without the printer's settings slices on engine defaults with a `no_machine_profile` warning), exit codes and the preview
 - [whats-new-0.1.5.md](whats-new-0.1.5.md): what engine 0.1.5 changed for integrators, and what is not in it yet
 - [mimir-cloud.md](mimir-cloud.md): mimir cloud for an app with its own mimir chat: register with the edition's key, the Messages API allowlist (pinned model, thinking and server tool blocks passed back, base64 images, size limits), quota in millionths of a dollar, forget, sharing headers, refusals (never auto-retry a 429) and a fake server for tests
 - [your-own-mimir.md](your-own-mimir.md): an edition's own mimir under `ai.brain`: the voice, its own knowledge, tool groups, routing for a person's own key, cloud step-up, memory and sync, and the `slicerx_mimir_brain` read-back
@@ -27,7 +27,7 @@ Coding agents: read AGENTS.md first, choose a path (A: your own edition, B: embe
 
 - [Assistant branding](assistant-brand.md): edition name, icon and light/dark accent, setAssistantName for embedded packages, and MCP/CLI read-back
 
-- @slicerx/mcp: the MCP server; `node_modules/@slicerx/mcp/dist/cli.js`, or `require.resolve('@slicerx/mcp/cli')`. Local AI tools: `slicerx_local_ai_check` (read), `slicerx_local_ai_setup` (always asks the user; downloads through Ollama), `slicerx_local_ai_status` (read)
+- @slicerx/mcp: the MCP server; `node_modules/@slicerx/mcp/dist/cli.js`, or `require.resolve('@slicerx/mcp/cli')`. `slicerx_slice_file` and `slicerx_estimate_file` take the printer, process and filament in `profiles` (`"profiles": ["machine:snapmaker-u1", "process:standard"]`); `printer` or `process` arguments are ignored with an `ignored_arguments` warning. Local AI tools: `slicerx_local_ai_check` (read), `slicerx_local_ai_setup` (always asks the user; downloads through Ollama), `slicerx_local_ai_status` (read)
 - @slicerx/embed: Viewport, SettingsPanel, Agreement, LocalAiSetup and useLocalAi (Set up local AI), EmbedTheme, createTheme, the custom elements, and `@slicerx/embed/sxlock` for optional locked projects
 - @slicerx/viewport: the three.js viewport under Viewport
 
