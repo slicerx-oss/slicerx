@@ -73,6 +73,23 @@ describe('sending parts to a plate', () => {
     h.dispose()
   })
 
+  it('lands where Move to plate puts it: the middle of a new plate, and clear of what another plate holds', () => {
+    const center = (id: string) => {
+      const o = allPlates().flatMap((p) => p.objects).find((e) => e.id === id)!
+      return [o.transform[12], o.transform[13]]
+    }
+    // the entries are centered on their origin, so the transform is the footprint's center
+    const to = sendToPlate(['c'], 'new')!
+    expect(allPlates().find((p) => p.id === to)!.objects.map((o) => o.id)).toEqual(['c'])
+    expect(center('c')).toEqual([90, 90])
+    expect(sendToPlate(['a'], { plateId: 'plate-2' })).toBe('plate-2')
+    const [ax, ay] = center('a') as [number, number]
+    const [zx, zy] = center('z') as [number, number]
+    // 20 x 10 mm footprints: apart in X by 20 or more, or in Y by 10 or more
+    expect(Math.abs(ax - zx) >= 20 || Math.abs(ay - zy) >= 10).toBe(true)
+    expect([zx, zy]).toEqual([50, 50])
+  })
+
   it('moves nothing to the shown plate, a plate that is gone, or objects not on the plate', () => {
     expect(sendToPlate(['a'], { plateId: 'plate-1' })).toBeNull()
     expect(sendToPlate(['a'], { plateId: 'nope' })).toBeNull()
