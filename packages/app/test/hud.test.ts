@@ -127,6 +127,22 @@ describe('device view logic', () => {
     expect(jobLine(H2D_STATUS, now)).toBe(`Layer 62 of 100 · 14 min left · done ${doneAt(840, now)}`)
     expect(doneAt(20 * 3600, now)).toMatch(/^Tue /)
   })
+
+  it('reads the finish time in the time zone the computer is in now', () => {
+    const zone = process.env['TZ']
+    try {
+      // 2026-01-15 12:00 UTC, an hour left: 5:00 AM the same day in Los Angeles, midnight Friday in Melbourne
+      const now = Date.UTC(2026, 0, 15, 12, 0)
+      process.env['TZ'] = 'America/Los_Angeles'
+      expect(doneAt(3600, now)).toBe('5:00 AM')
+      // the computer moves, or its zone setting changes, while the app runs
+      process.env['TZ'] = 'Australia/Melbourne'
+      expect(doneAt(3600, now)).toBe('Fri 12:00 AM')
+    } finally {
+      if (zone === undefined) delete process.env['TZ']
+      else process.env['TZ'] = zone
+    }
+  })
 })
 
 describe('the first look at a printer', () => {
