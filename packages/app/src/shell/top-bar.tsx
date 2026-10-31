@@ -52,11 +52,17 @@ function useFitStep(probe: RefObject<HTMLElement | null>, content: string, shape
   const [step, setStep] = useState(0)
   // A resize always measures again, even when the step was already the widest, so the fit is checked at the new width.
   const [resized, measure] = useReducer((n: number) => n + 1, 0)
+  // New content starts again from the widest step. That is part of the same check: a separate reset in the same pass
+  // undid the first step down and left a bar that did not fit unfolded.
+  const measured = useRef<string | null>(null)
   useLayoutEffect(() => {
+    if (measured.current !== content) {
+      measured.current = content
+      if (step !== 0) return setStep(0)
+    }
     const bar = probe.current?.closest<HTMLElement>('.sx-appbar')
     if (bar && step < STEPS && !barFits(bar)) setStep(step + 1)
   }, [probe, step, content, shape, resized])
-  useLayoutEffect(() => setStep(0), [content])
   useEffect(() => {
     const bar = probe.current?.closest<HTMLElement>('.sx-appbar')
     if (!bar) return
