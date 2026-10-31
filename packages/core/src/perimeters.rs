@@ -548,12 +548,38 @@ pub(crate) fn offset(shapes: &Shapes, delta: i32) -> Shapes {
     }
     let mut out = Vec::with_capacity(shapes.len());
     for shape in shapes {
+        if shrinks_away(shape, -f64::from(delta)) {
+            continue;
+        }
         match fast_offset(shape, delta) {
             Some(s) => out.extend(s),
             None => out.extend(clipper_offset(shape, delta)),
         }
     }
     out
+}
+
+/// True when shrinking `shape` by `d` internal units must leave nothing. A point that far from every edge is the
+/// center of a disc of radius `d` inside the outline, so the outline's bounds are at least `2 d` across both ways and
+/// its area at least pi d^2; a shape short of either has no such point. The union of moved loops can still keep a
+/// sliver there, and on wide circle unions (tree support areas shrunk by a few millimeters) it costs 100 ms or more
+/// to find nothing, so these shapes are skipped before it.
+fn shrinks_away(shape: &[Vec<IntPoint<i32>>], d: f64) -> bool {
+    let Some(outer) = shape.first().filter(|r| r.len() >= 3) else {
+        return false;
+    };
+    let Some(b) = ring_bounds(outer) else {
+        return false;
+    };
+    if f64::from(b[2]) - f64::from(b[0]) < 2.0 * d || f64::from(b[3]) - f64::from(b[1]) < 2.0 * d {
+        return true;
+    }
+    let twice: f64 = outer
+        .iter()
+        .zip(outer.iter().cycle().skip(1))
+        .map(|(p, q)| f64::from(p.x) * f64::from(q.y) - f64::from(q.x) * f64::from(p.y))
+        .sum();
+    twice.abs() < 2.0 * std::f64::consts::PI * d * d
 }
 
 /// Offset by union: every contour is moved edge by edge, joined with a miter
@@ -2099,6 +2125,51 @@ fn has_gaps(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tree support base areas from a slice, as `(delta, rings)`. Neither holds a disc of radius 4.3156 mm: by a grid
+    /// distance check the widest is 3.46 mm across one and 2.69 mm across the other, and the narrow side of each
+    /// outline's bounds (7.65 and 7.20 mm) is under twice the shrink.
+    fn shrunk_past_cases() -> Vec<(i32, Shapes)> {
+        let cases: Vec<(i32, Vec<Vec<[i32; 2]>>)> =
+            serde_json::from_str(include_str!("../tests/fixtures/offset-shrink-past/cases.json")).unwrap();
+        cases
+            .into_iter()
+            .map(|(delta, rings)| {
+                let shape = rings
+                    .iter()
+                    .map(|r| r.iter().map(|&[x, y]| IntPoint::new(x, y)).collect())
+                    .collect();
+                (delta, vec![shape])
+            })
+            .collect()
+    }
+
+    #[test]
+    fn shrinking_past_the_widest_disc_leaves_nothing() {
+        // The union of the moved loops used to keep a sliver inside each of these (0.83 and 0.03 mm2).
+        for (delta, shapes) in shrunk_past_cases() {
+            assert!(offset(&shapes, delta).is_empty(), "shrink by {delta} left area");
+            // Half the shrink fits inside both, so area remains.
+            assert!(
+                !offset(&shapes, delta / 2).is_empty(),
+                "shrink by {} left nothing",
+                delta / 2
+            );
+        }
+    }
+
+    #[test]
+    fn a_shrink_to_half_the_narrow_side_leaves_nothing() {
+        // A 10 by 30 mm plate: 4.9 mm in leaves a strip, 5 mm in leaves nothing.
+        let plate = vec![vec![vec![
+            IntPoint::new(0, 0),
+            IntPoint::new(300_000, 0),
+            IntPoint::new(300_000, 100_000),
+            IntPoint::new(0, 100_000),
+        ]]];
+        assert!(!offset(&plate, -49_000).is_empty());
+        assert!(offset(&plate, -50_000).is_empty());
+    }
 
     /// The plain union of every moved contour, as growing offsets were before closed holes were left out.
     fn grow_all(shapes: &Shapes, delta: i32) -> Shapes {
