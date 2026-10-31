@@ -2,13 +2,12 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Reads a 3MF or .sx3mf project without its geometry: the plates, the presets it was set up with, its filament
 // slots and its print settings, so a file can be sliced the way it was saved.
-import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
 import { appMissingKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, withBambuMissingKeys, type WallsNote } from '@slicerx/settings'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
-import { readZip } from './zip'
+import { MAX_TEXT_BYTES, openZip, type ZipReader } from './zip'
 
 export interface ProjectPlate {
   /** 1-based, the number slicing takes as `plate`. */
@@ -122,6 +121,8 @@ export interface ProjectRead {
    * print with.
    */
   opened?: { from: 'orca' | 'prusaslicer'; settings: Record<string, unknown>; slots: number; used: number[] }
+  /** Metadata/model_settings.config, else Metadata/Slic3r_PE_model.config, as the file has it: what objectLayerHeights reads. */
+  objectSettings?: string
 }
 
 /**
@@ -224,21 +225,46 @@ function mainModel(names: string[]): string {
 }
 
 /**
+ * The text of a model's first build element, as /<build\b[^>]*>([\s\S]*?)<\/build>/ finds it in the decoded model, or ''.
+ * Only that part is decoded: a plain 3MF's main model holds its geometry too.
+ */
+function buildText(model: Buffer): string {
+  for (let at = model.indexOf('<build'); at >= 0; at = model.indexOf('<build', at + 1)) {
+    const next = model[at + 6]
+    if (next !== undefined && /\w/.test(String.fromCharCode(next))) continue
+    const open = model.indexOf('>', at + 6)
+    const close = open < 0 ? -1 : model.indexOf('</build>', open + 1)
+    return close < 0 ? '' : model.toString('utf8', open + 1, close)
+  }
+  return ''
+}
+
+/**
  * The printable build items of a 3MF's main model: without plates in model_settings.config the file is one plate of
  * these, as the engine slices it (an item with `printable="0"` stays off it).
  */
-function buildItems(model: string): number {
-  const build = /<build\b[^>]*>([\s\S]*?)<\/build>/.exec(model)?.[1] ?? ''
+function buildItems(model: Buffer): number {
+  const build = buildText(model)
   return [...build.matchAll(/<item\b([^>]*)>/g)].filter((m) => !/\bprintable\s*=\s*"\s*0\s*"/.test(m[1] ?? '')).length
+}
+
+/** `use` of the ZIP at `path`, read in place; the file is closed after, whether `use` returns or throws. */
+function withZip<T>(path: string, use: (zip: ZipReader) => T): T {
+  const zip = openZip(path, basename(path))
+  try {
+    return use(zip)
+  } finally {
+    zip.close()
+  }
 }
 
 /**
  * The objects of a project that set a layer height of their own (object metadata in Metadata/model_settings.config, or
  * Metadata/Slic3r_PE_model.config), named as the file names them; with `plate`, only the objects on that plate.
+ * `project` is the file's path, or what readProjectFile read of it, so the file is not read again.
  */
-export function objectLayerHeights(path: string, plate?: number): { name: string; layer_height: number }[] {
-  const zip = readZip(readFileSync(path), basename(path))
-  const text = zip.text('Metadata/model_settings.config') ?? zip.text('Metadata/Slic3r_PE_model.config')
+export function objectLayerHeights(project: string | ProjectRead, plate?: number): { name: string; layer_height: number }[] {
+  const text = typeof project === 'string' ? withZip(project, (zip) => zip.text('Metadata/model_settings.config') ?? zip.text('Metadata/Slic3r_PE_model.config')) : project.objectSettings
   if (!text) return []
   const nodes = parseXml(text).children.flatMap((c) => c.children)
   const meta = (node: (typeof nodes)[number]) => Object.fromEntries(node.children.filter((c) => c.name === 'metadata').map((c) => [c.attrs['key'] ?? '', c.attrs['value'] ?? '']))
@@ -258,8 +284,11 @@ export function objectLayerHeights(path: string, plate?: number): { name: string
 }
 
 export function readProjectFile(path: string): ProjectRead {
+  return withZip(path, (zip) => projectOf(path, zip))
+}
+
+function projectOf(path: string, zip: ZipReader): ProjectRead {
   const name = basename(path)
-  const zip = readZip(readFileSync(path), name)
   if (!zip.names().some((n) => n.toLowerCase().endsWith('.model'))) throw new ToolInputError(`${name} has no 3D model part, so it is not a 3MF project`, 'invalid_model')
   const read = projectSettingsOf(name, zip.text('Metadata/project_settings.config'))
   // A PrusaSlicer project (no project_settings.config, or a blank one) keeps its settings in Slic3r_PE.config: what it
@@ -281,8 +310,9 @@ export function readProjectFile(path: string): ProjectRead {
     throw error
   }
   const modelPath = zip.names().find((n) => n.toLowerCase() === '3d/3dmodel.model')
-  // A project's main model only places its objects, so it is small; a plain 3MF's can be large and has no settings.
-  const source = hasSettings && modelPath ? sourceApp(zip.text(modelPath)?.slice(0, 4096)) : undefined
+  // The app's name is near the start of the main model, which holds the geometry in a PrusaSlicer project: only the
+  // first 4096 characters are read, at most 4 bytes each.
+  const source = hasSettings && modelPath ? sourceApp(zip.head(modelPath, 4 * 4096)?.toString('utf8').slice(0, 4096)) : undefined
   // The app that wrote the file reads some keys its project lacks its own way (engine-choices.json fromApp), as the
   // app's project open and `sx slice <project.3mf>` read them: a Bambu Studio project without them gets the rib
   // tower, 500 mm/s2 first layer travel and internal bridges at the bridge speed.
@@ -301,7 +331,7 @@ export function readProjectFile(path: string): ProjectRead {
       plates.push({ index: Number.isFinite(id) ? id : plates.length + 1, ...(meta['plater_name'] ? { name: meta['plater_name'] } : {}), objects: node.children.filter((c) => c.name === 'model_instance').length, ...(seq === 'by layer' || seq === 'by object' ? { print_sequence: seq } : {}) })
     }
   }
-  if (plates.length === 0) plates.push({ index: 1, objects: buildItems(zip.text(mainModel(zip.names())) ?? '') })
+  if (plates.length === 0) plates.push({ index: 1, objects: buildItems(zip.read(mainModel(zip.names()), MAX_TEXT_BYTES) ?? Buffer.alloc(0)) })
 
   const types = listOf(prusa ? prusaRaw['filament_type'] : raw['filament_type'])
   const colors = prusa ? prusa.colors : listOf(raw['filament_colour'])
@@ -367,12 +397,14 @@ export function readProjectFile(path: string): ProjectRead {
   // The app reads a PrusaSlicer project's settings mapped to Orca's keys, and another project's with the keys its app
   // reads its own way; our own .sx3mf projects open on the current printer as they are.
   const own = /\.sx3mf$/i.test(name)
-  const used = [...new Set([...partSlots(modelSettings ?? zip.text('Metadata/Slic3r_PE_model.config')), ...toolChangeSlots(zip.text('Metadata/custom_gcode_per_layer.xml'))])].sort((a, b) => a - b)
+  const objectSettings = modelSettings ?? zip.text('Metadata/Slic3r_PE_model.config')
+  const used = [...new Set([...partSlots(objectSettings), ...toolChangeSlots(zip.text('Metadata/custom_gcode_per_layer.xml'))])].sort((a, b) => a - b)
   const top = Math.max(...used)
   const opened = own || !hasSettings ? undefined : prusa ? { from: 'prusaslicer' as const, settings: prusaProjectSettings(prusaText!).values, slots: top, used } : read.raw ? { from: 'orca' as const, settings: withBambuMissingKeys(read.raw, source), slots: top, used } : undefined
 
   return {
     ...(opened ? { opened } : {}),
+    ...(objectSettings !== undefined ? { objectSettings } : {}),
     summary: {
       file: path,
       has_settings: hasSettings,

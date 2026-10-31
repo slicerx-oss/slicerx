@@ -303,7 +303,7 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
   let layerNote: string | undefined
   const smart = explicit['smart_layer']
   if (isProject && args.overrides?.['smart_layer'] === undefined && smart !== undefined && smart !== 'off' && smart !== false) {
-    const own = objectLayerHeights(modelPath, args.plate)
+    const own = objectLayerHeights(projectRead ?? modelPath, args.plate)
     if (own.length) {
       explicit['smart_layer'] = config['smart_layer'] = 'off'
       layerNote = `Smart layer heights are off for this slice: objects in ${basename(modelPath)} set their own layer height (${own.map((o) => `${o.name} ${o.layer_height} mm`).join(', ')}).`
