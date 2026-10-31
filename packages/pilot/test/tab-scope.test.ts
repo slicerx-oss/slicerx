@@ -9,7 +9,7 @@ import { DEFAULT_POLICY, setAssistantBrand, type ApprovalHost, type LlmTransport
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { designSteps, designTier, HUGINN, MANY_STEPS, MUNINN } from '../src/models'
-import { NEW_PROJECT_TOOL, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { NEW_PROJECT_TOOL, systemPrompt, tabsLine, VOICE_HEADER } from '../src/prompt'
 import { createScriptedClient, type ScriptStep } from '../src/provider/scripted'
 import { createPilot, PART_GENERATORS } from '../src/runtime'
 import type { CommandSpec } from '@slicerx/contracts'
@@ -78,7 +78,7 @@ const COMMANDS: CommandSpec[] = [
   { id: 'project-new', title: 'New project', section: 'plate', tool: { permission: 'slice' }, run: () => ({ started: true }) },
 ]
 
-function tabPilot(steps: ScriptStep[], opts: { config?: Partial<typeof AUTO>; failing?: boolean; cad?: boolean; others?: PilotTool<never>[] } = {}) {
+function tabPilot(steps: ScriptStep[], opts: { config?: Partial<typeof AUTO>; failing?: boolean; cad?: boolean; others?: PilotTool<never>[]; tabs?: string[] } = {}) {
   const client = createScriptedClient(steps, { chunk: false })
   const pilot = createPilot({
     host: { printers: NO_PRINTERS, approvals: NO_APPROVALS, llm: {} as LlmTransport },
@@ -86,6 +86,7 @@ function tabPilot(steps: ScriptStep[], opts: { config?: Partial<typeof AUTO>; fa
     policy: DEFAULT_POLICY,
     client,
     ...(opts.cad ? { scope: 'cad' as const } : {}),
+    ...(opts.tabs ? { tabs: opts.tabs } : {}),
     commands: opts.cad ? COMMANDS.filter((c) => c.section !== 'slice') : COMMANDS,
     tools: [geomTool('design.new'), geomTool('geom.extrude', !opts.failing), geomTool('geom.fillet', !opts.failing), geomTool('geom.info'), ...(opts.others ?? [])],
   })
@@ -149,6 +150,28 @@ describe('the tab runtime', () => {
     expect(cad).not.toMatch(/approval|kb\.intent/)
     // New project is named only when it is offered
     expect(systemPrompt('full', (n) => n !== NEW_PROJECT_TOOL)).not.toContain(NEW_PROJECT_TOOL)
+  })
+
+  it("names the app's tabs to a local model, and only to a local model", async () => {
+    const tabs = ['mimir (this chat)', 'Model', 'Slice', 'My models']
+    const line = 'The app has these tabs: mimir (this chat), Model, Slice and My models. Name no other tab.'
+    expect(tabsLine(tabs)).toBe(line)
+    expect(tabsLine(['Slice'])).toBe('The app has these tabs: Slice. Name no other tab.')
+    const local = tabPilot([{ text: 'Hi.' }], { config: { provider: 'openai-compatible', model: 'local-model', auto: false }, tabs })
+    await run(local.pilot, 'What does this tab do?')
+    const sent = String(local.client.requests[0]!.messages[0]!.content)
+    expect(sent).toContain(line)
+    // with the rules, before the playbooks and the edition's voice
+    expect(sent.indexOf(line)).toBeGreaterThan(sent.indexOf('Untrusted data:'))
+    const cloud = tabPilot([{ text: 'Hi.' }], { tabs })
+    await run(cloud.pilot, 'What does this tab do?')
+    const cloudSent = String(cloud.client.requests[0]!.messages[0]!.content)
+    expect(cloudSent).not.toContain('The app has these tabs')
+    expect(sent.replace(`\n\n${line}`, '')).toBe(cloudSent)
+    // no tabs given, no line
+    const none = tabPilot([{ text: 'Hi.' }], { config: { provider: 'openai-compatible', model: 'local-model', auto: false } })
+    await run(none.pilot, 'What does this tab do?')
+    expect(String(none.client.requests[0]!.messages[0]!.content)).not.toContain('The app has these tabs')
   })
 
   it('tells the model to build feature by feature with the design tools', async () => {

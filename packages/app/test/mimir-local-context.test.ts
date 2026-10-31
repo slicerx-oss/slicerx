@@ -58,6 +58,9 @@ function cost(req: LlmHttpRequest): { system: number; messages: number; tools: n
   return { system, messages: rest, tools: t, total: system + rest + t, count: tools.length }
 }
 
+/** The tabs line for the tabs registered below: the plate's modes, then Slice, My models and Printers. */
+const TABS = 'The app has these tabs: mimir (this chat), Model, Slice, My models and Printers. Name no other tab.'
+
 /** Room a local model keeps for the conversation after the system prompt, the tools, the request and the reply. */
 const CONVERSATION_ROOM = 1500
 
@@ -111,11 +114,13 @@ describe('the mimir tab on a local model', () => {
     expect(local.url).toContain('127.0.0.1:11434')
     const c = cost(local)
     expect(c.total + REPLY_RESERVE + CONVERSATION_ROOM).toBeLessThanOrEqual(MIMIR_CONTEXT)
-    // the system prompt goes whole and first: the same one a cloud model gets
+    // the system prompt goes whole and first: the one a cloud model gets, plus the line naming the registered tabs
     const cloud = read(await turn(CLOUD, message, before))
     const sent = read(local)
     expect(sent.messages[0]!.role).toBe('system')
-    expect(sent.messages[0]!.content).toBe(cloud.messages[0]!.content)
+    expect(sent.messages[0]!.content).toContain(TABS)
+    expect(cloud.messages[0]!.content).not.toContain(TABS)
+    expect(sent.messages[0]!.content.replace(`\n\n${TABS}`, '')).toBe(cloud.messages[0]!.content)
   })
 
   it('sends the design tools only on modeling turns and the app tools only on app turns', async () => {

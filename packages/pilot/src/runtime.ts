@@ -38,7 +38,7 @@ import type { PilotProject } from './project'
 import { createShared } from './shared'
 import { runBookFor, runHandle, type PrintRunHost } from './run/print-run'
 import { citedSources } from './cite'
-import { contextMessage, systemPrompt as basePrompt, type PilotScope } from './prompt'
+import { contextMessage, systemPrompt as basePrompt, tabsLine, type PilotScope } from './prompt'
 import { factLine, pickFacts, type MemoryStore } from './memory/facts'
 import { fitContext, MIMIR_CONTEXT } from './context'
 import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type ToolSurface } from './surfaces'
@@ -94,6 +94,11 @@ export interface CreatePilotOptions {
   toolGroups?: ToolGroups
   /** Where this mimir runs, which decides the tools a local model is offered (see surfaces.ts). Defaults to 'tab'. */
   surface?: ToolSurface
+  /**
+   * The app's tabs by name, as the person sees them (the tab's navigate commands). A local model's prompt names them,
+   * so it never makes tabs up; a cloud model has every app tool, and their titles, on every turn.
+   */
+  tabs?: readonly string[]
   /**
    * The person's saved notes and the edition's ai.brain.memory.local switch. On: memory.remember and memory.recall, and
    * the notes that fit (pickFacts) on a chat's first message. Off or unset: neither tool, and no notes. `remember: false`
@@ -410,7 +415,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const has = (n: string): boolean => findTool(n) !== undefined
     const book = playbooks(availableSkills(kb.skills(), has))
     // the playbooks go in with the rules, so the edition's voice still comes last
-    return basePrompt(scope, has, book)
+    const tabs = local ? tabsLine(opts.tabs ?? []) : ''
+    return basePrompt(scope, has, [tabs, book].filter(Boolean).join('\n\n'))
   }
 
   // A local model gets only its surface's tools; a cloud model gets them all.
