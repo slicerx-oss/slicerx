@@ -60,6 +60,7 @@ const LOCAL_EVERY_TURN: Record<ToolSurface, ReadonlySet<string>> = {
     'arrange',
     'slice',
     'estimate',
+    'settings.get',
     'settings.plan',
     'settings.apply',
   ]),
@@ -114,6 +115,7 @@ const GROUP_OF: Record<string, ToolGroup> = {
   energy_estimate: 'slicing',
   material_recommend: 'slicing',
   calibrate: 'slicing',
+  'settings.get': 'slicing',
   'settings.plan': 'slicing',
   'settings.apply': 'slicing',
   // printers, fleets and spools (and every printer. and printer_ tool, below)

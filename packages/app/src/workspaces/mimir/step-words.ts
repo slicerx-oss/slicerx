@@ -33,6 +33,7 @@ const WORDS: Record<string, Words | null> = {
   'design.undo': { doing: 'Undoing the last step', done: 'Undid the last step' },
   'app.slice': { doing: 'Slicing the plate', done: 'Sliced the plate' },
   'app.project_new': { doing: 'Starting a new project', done: 'Asked about a new project' },
+  'settings.get': { doing: 'Reading the settings', done: 'Read the settings' },
   'settings.plan': { doing: 'Planning the settings', done: 'Planned the settings' },
   'settings.apply': { doing: 'Changing the settings', done: 'Changed the settings' },
   'project.info': { doing: 'Reading the project', done: 'Read the project' },
