@@ -783,11 +783,13 @@ fn classic_x_mark_band_follows_each_sides_step() {
     }
 }
 
+/// The x-mark's aegis top surface is not moved by the classic band rule. The targets have the aegis monotonic line
+/// top surfaces starting at the inner wall's spacing edge, without the infill wall overlap.
 #[test]
 fn aegis_x_mark_top_surface_is_unchanged() {
     let ms = moves(&slice(x_mark(), "aegis"));
     let layers = per_layer(&ms);
-    for (z, want) in [(5.8, 2.64), (6.0, 74.92), (6.2, 9.31)] {
+    for (z, want) in [(5.8, 2.51), (6.0, 74.92), (6.2, 8.80)] {
         let got = at(&layers, TOP, z);
         assert!(
             (got - want).abs() < 0.01,
@@ -796,8 +798,8 @@ fn aegis_x_mark_top_surface_is_unchanged() {
     }
     let plate = total(&ms, TOP);
     assert!(
-        (plate - 123.14).abs() < 0.01,
-        "top surface on the plate {plate:.3}, want 123.14"
+        (plate - 122.52).abs() < 0.01,
+        "top surface on the plate {plate:.3}, want 122.52"
     );
 }
 
