@@ -12,7 +12,7 @@ import { watchOf } from '../workspaces/mimir/watch'
 import { useFeatures, useHasFeature } from '../features'
 import { topBarTabs, useLayout, useLookChoice } from '../first-run/look'
 import { ModeSelector } from '../first-run/mode-selector'
-import { useFleet } from '../lib/queries'
+import { useFleetPick, type FleetRow } from '../lib/queries'
 import { get, openSettings, set, setModelMode, setWorkspace, useApp } from '../state/store'
 import { ModeTabs } from './mode-tab'
 import { hostSlices, useCadShown, useInMimir } from '../state/model-mode'
@@ -42,28 +42,45 @@ export function barFits(bar: HTMLElement): boolean {
   return (text === name ? name.clientWidth - parseFloat(getComputedStyle(name).paddingLeft) : text.clientWidth) >= NAME_MIN_PX
 }
 
-/** The narrowest step the bar needs: back to the widest on a resize or a new name, then one step at a time until it fits, before paint. */
-function useFitStep(probe: RefObject<HTMLElement | null>, content: string): number {
+/**
+ * The narrowest step the bar needs: back to the widest on a resize, a new name or new fonts, then one step at a time
+ * until it fits, before paint. It measures only when something that takes room in the bar changes (`content`, `shape`,
+ * the step, the width): measuring reads layout, and measuring on every render made each printer status a full layout
+ * of the page on a slow computer.
+ */
+function useFitStep(probe: RefObject<HTMLElement | null>, content: string, shape: string): number {
   const [step, setStep] = useState(0)
-  // A resize always renders again, even when the step was already the widest, so the fit is checked at the new width.
-  const [, measure] = useReducer((n: number) => n + 1, 0)
+  // A resize always measures again, even when the step was already the widest, so the fit is checked at the new width.
+  const [resized, measure] = useReducer((n: number) => n + 1, 0)
   useLayoutEffect(() => {
     const bar = probe.current?.closest<HTMLElement>('.sx-appbar')
     if (bar && step < STEPS && !barFits(bar)) setStep(step + 1)
-  })
+  }, [probe, step, content, shape, resized])
   useLayoutEffect(() => setStep(0), [content])
   useEffect(() => {
     const bar = probe.current?.closest<HTMLElement>('.sx-appbar')
-    if (!bar || typeof ResizeObserver === 'undefined') return
-    let width = bar.clientWidth
-    const ro = new ResizeObserver(() => {
-      if (bar.clientWidth === width) return
-      width = bar.clientWidth
+    if (!bar) return
+    const again = () => {
       setStep(0)
       measure()
-    })
-    ro.observe(bar)
-    return () => ro.disconnect()
+    }
+    // Labels change width when a web font arrives, with nothing in the bar rendering again.
+    const fonts = typeof document !== 'undefined' ? document.fonts : undefined
+    fonts?.addEventListener?.('loadingdone', again)
+    let ro: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      let width = bar.clientWidth
+      ro = new ResizeObserver(() => {
+        if (bar.clientWidth === width) return
+        width = bar.clientWidth
+        again()
+      })
+      ro.observe(bar)
+    }
+    return () => {
+      ro?.disconnect()
+      fonts?.removeEventListener?.('loadingdone', again)
+    }
   }, [probe])
   return step
 }
@@ -74,6 +91,13 @@ export function openTab(id: string): void {
   setWorkspace(id as Parameters<typeof setWorkspace>[0])
 }
 
+/** What the Printers tab's dot shows. A printer's temperatures and progress change nothing here. */
+function fleetHealth(rows: FleetRow[]): { online: number; failing: boolean; total: number } {
+  return { online: rows.filter((p) => p.status.state !== 'offline').length, failing: rows.some((p) => p.status.state === 'error'), total: rows.length }
+}
+const NO_HEALTH = { online: 0, failing: false, total: 0 }
+const NO_WATCH = { names: [] as string[], attention: false }
+
 /** The workspace tabs the shell shows (Model's own tab aside), shared by the top bar and the phone's tab bar. */
 export function useShellTabs(): { shown: TabSpec[]; cad: boolean; activeTab: string } {
   const active = useApp((s) => s.workspace)
@@ -82,10 +106,7 @@ export function useShellTabs(): { shown: TabSpec[]; cad: boolean; activeTab: str
   // One Library tab: Community and Mine are views of it, switched inside.
   const hasFeed = available.some((w) => w.id === 'feed')
   const workspaces = useMemo(() => topBarTabs(available, layout), [available, layout])
-  const fleet = useFleet()
-  const online = fleet.data?.filter((p) => p.status.state !== 'offline').length ?? 0
-  const failing = fleet.data?.some((p) => p.status.state === 'error') ?? false
-  const total = fleet.data?.length ?? 0
+  const { online, failing, total } = useFleetPick(fleetHealth) ?? NO_HEALTH
   // Fleet health is a dot on the Printers tab, not a chip in the bar.
   const tabs = useMemo(() => workspaces.map((w) => (w.id === 'printers' && total > 0 ? { ...w, ...(failing ? { status: 'warn' as const } : online > 0 ? { status: 'ok' as const } : {}) } : w)), [workspaces, online, total, failing])
   // With modeling tools the first tab is the Design | Slice pair; without, a plain Slice tab.
@@ -106,18 +127,20 @@ export function TopBar() {
   // The search field names the look's command bar key (Space in the OrcaSlicer style); Mod+K works in every look.
   const choice = useLookChoice()
   const palette = keymapFor(choice.id, choice.overrides?.keys ?? {}).palette ?? 'Mod+K'
-  const fleet = useFleet()
+  const watch = useFleetPick(watchOf) ?? NO_WATCH
   const assistant = useHasFeature('pilot')
   // The button opens the mimir tab. Where the mode tabs show it, the button hides on it but keeps its place, so nothing
   // in the bar moves; without them (an edition without modeling tools) it is mimir's tab, pressed while open.
   const inMimir = useInMimir()
-  const watch = watchOf(fleet.data ?? [])
   const slices = hostSlices()
   // A phone has the tabs and mimir in the tab bar at the bottom (phone-tabs.tsx); the top bar keeps the name, search and Settings.
   const phone = usePhoneLayout()
   const projectFile = useApp((s) => s.projectFile)
   const nameRef = useRef<HTMLDivElement>(null)
-  const step = useFitStep(nameRef, `${projectFile?.name ?? ''}|${shown.map((t) => t.label).join(',')}`)
+  // What else takes room in the bar: the current tab, a tab's status dot, the mimir button and its watch dot, the mode
+  // selector, and the Open in app button of a build that cannot slice.
+  const shape = [activeTab, shown.map((t) => `${t.id}:${t.status ?? ''}`).join(','), assistant, watch.names.length > 0, layout.modeSelector, slices, cad, phone].join('|')
+  const step = useFitStep(nameRef, `${projectFile?.name ?? ''}|${shown.map((t) => t.label).join(',')}`, shape)
   const overflow = step >= 3 ? OVERFLOW.flatMap((id) => shown.filter((t) => t.id === id)) : []
   const inBar = overflow.length ? shown.filter((t) => !overflow.includes(t)) : shown
 
