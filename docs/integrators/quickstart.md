@@ -318,7 +318,7 @@ A refused call has `isError: true`, text such as `Error: no_such_plate: Benchy.3
 
 | Code | Meaning |
 | --- | --- |
-| `invalid_input` | An argument is wrong or missing; the message says which |
+| `invalid_input` | An argument is wrong or missing; the message says which. With `placement: "keep"`, `details.reason` `off_bed` means a part of the 3MF lands off the printable area where the file puts it; the message names the part and its overhang in mm. Move it in the file, or slice with `placement: "center"`. |
 | `file_not_found` | No file at that path |
 | `path_not_allowed` | The file is outside the folders the server may read (`--allow-dir`) |
 | `unsupported_format` | The file type is not one the tool takes |

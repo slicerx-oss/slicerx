@@ -336,7 +336,33 @@ pub struct PlateSpec {
     /// 1), not on half the bed's size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bed: Option<BedSpec>,
+    /// Where a 3MF plate's build items go: centered on the bed as a whole (the default), or kept where the file puts
+    /// them. With [`PlatePlacement::Keep`] the plate is refused when a part lands off the printable area.
+    #[serde(default, skip_serializing_if = "PlatePlacement::is_center")]
+    pub placement: PlatePlacement,
     pub objects: Vec<ObjectSpec>,
+}
+
+/// Where the build items of a 3MF plate given without a transform go ([`PlateSpec::placement`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlatePlacement {
+    /// The plate centered on the bed as a whole, each item keeping its place to the others; a slicer's project keeps
+    /// its items where the project puts them. A mesh without a transform is centered.
+    #[default]
+    Center,
+    /// Each item where the file's build transform puts it, from the front left corner of the printable area, with no
+    /// recentering. A mesh file has no placement of its own (an STL or OBJ), so it is centered as with
+    /// [`PlatePlacement::Center`]. A part that lands off the printable area refuses the plate ([`build_plate`]).
+    Keep,
+}
+
+impl PlatePlacement {
+    /// True for the default, [`PlatePlacement::Center`].
+    #[must_use]
+    pub fn is_center(&self) -> bool {
+        *self == Self::Center
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
@@ -1474,7 +1500,90 @@ pub fn build_plate(req: &SliceRequest, meshes: &dyn Fn(&str) -> Result<Arc<Mesh>
     if objects.is_empty() {
         return Err(Error::EmptyPlate);
     }
+    if req.plate.placement == PlatePlacement::Keep {
+        check_kept_on_area(&objects, request_area(bed, &req.config))?;
+    }
     Ok(Plate { bed, objects })
+}
+
+/// The printable area of a request, `(min_x, min_y, max_x, max_y)` mm: the config's `printable_area`, else the plate's
+/// bed from 0, 0.
+fn request_area(bed: Bed, config: &serde_json::Value) -> [f64; 4] {
+    config
+        .get("printable_area")
+        .and_then(crate::config::area_points)
+        .filter(|pts| pts.len() >= 3)
+        .map_or(
+            [0.0, 0.0, f64::from(bed.width_mm), f64::from(bed.depth_mm)],
+            |pts| {
+                pts.iter().fold(
+                    [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY],
+                    |r, p| [r[0].min(p[0]), r[1].min(p[1]), r[2].max(p[0]), r[3].max(p[1])],
+                )
+            },
+        )
+}
+
+/// A number of mm as a message gives it: one decimal, none when it is whole.
+fn mm_text(v: f64) -> String {
+    let t = format!("{v:.1}");
+    t.strip_suffix(".0").map_or(t.clone(), str::to_owned)
+}
+
+/// Refuses a plate placed with [`PlatePlacement::Keep`] when a part of it lands off the printable area `area`, naming each
+/// such object and how far it reaches past each edge it crosses. Within 0.05 mm counts as on the area.
+fn check_kept_on_area(objects: &[PlateObject], area: [f64; 4]) -> Result<()> {
+    const TOL: f64 = 0.05;
+    let mut off: Vec<String> = Vec::new();
+    for o in objects {
+        let mut b = [f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+        for part in o.mesh.parts.iter().filter(|p| !p.triangles.is_empty()) {
+            for &p in &part.positions {
+                let [x, y, _] = o.apply(p);
+                b = [b[0].min(x), b[1].min(y), b[2].max(x), b[3].max(y)];
+            }
+        }
+        if b[0] > b[2] {
+            continue;
+        }
+        let edges: Vec<String> = [
+            (area[0] - b[0], "left"),
+            (b[2] - area[2], "right"),
+            (area[1] - b[1], "front"),
+            (b[3] - area[3], "back"),
+        ]
+        .into_iter()
+        .filter(|(d, _)| *d > TOL)
+        .map(|(d, edge)| format!("{} mm past the {edge} edge", mm_text(d)))
+        .collect();
+        if !edges.is_empty() {
+            // The part's own name in its file first: a host may name the object after the file.
+            let name = [&o.mesh.name, &o.name, &o.id]
+                .into_iter()
+                .find(|n| !n.is_empty())
+                .map_or("", String::as_str);
+            off.push(format!("{name} is {}", edges.join(" and ")));
+        }
+    }
+    if off.is_empty() {
+        return Ok(());
+    }
+    let (it, verb) = if off.len() == 1 {
+        ("it", "places it")
+    } else {
+        ("them", "places them")
+    };
+    Err(Error::Config {
+        key: "plate.placement",
+        reason: format!(
+            "{} of the printable area (X {} to {}, Y {} to {} mm) where the file {verb}; move {it} in the file or slice with placement \"center\"",
+            off.join(", and "),
+            mm_text(area[0]),
+            mm_text(area[2]),
+            mm_text(area[1]),
+            mm_text(area[3]),
+        ),
+    })
 }
 
 /// True when the objects carry different setting overrides; each then slices with its own.
@@ -2616,6 +2725,7 @@ pub const REQUEST_SCHEMA: &str = r#"{
             "heightMm": { "type": "number", "exclusiveMinimum": 0 }
           }
         },
+        "placement": { "enum": ["center", "keep"], "default": "center", "description": "Where a 3MF plate given without a transform goes. center: the plate centered on the bed as a whole (a slicer's project keeps its own positions). keep: each build item where the file's transform puts it, from the front left corner of the printable area, with no recentering; a part that lands off the printable area (config printable_area, else the bed from 0, 0) is refused, naming it and the overhang. A mesh file without a transform (STL, OBJ) is centered under either." },
         "objects": {
           "type": "array",
           "minItems": 1,

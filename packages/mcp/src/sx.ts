@@ -25,6 +25,8 @@ const GCODE_REVIEW_NOTE = /\s*This project's G-code for (.+?) matches no known s
  */
 export function sxFailure(code: number | null, why: string): ToolInputError {
   if (/no plate \d+/.test(why)) return new ToolInputError(`sx exited with code ${code}: ${why}`, 'no_such_plate')
+  // placement keep put a part off the printable area: the message names each part and its overhang.
+  if (/config key plate\.placement: /.test(why)) return new ToolInputError(`sx exited with code ${code}: ${why}`, 'invalid_input', { reason: 'off_bed' })
   if (/safety preflight/.test(why)) {
     // A toolpath refusal's count names the layers its hits are on, within those the engine checked before it refused.
     const range = /\bin layers? (\d+)(?: to (\d+))?/.exec(why)
@@ -294,6 +296,7 @@ export function createSxSlicer(bin: string, timeoutMs = 10 * 60_000): SlicerBack
         ...(job.scriptReplacements ? { script_replacements: job.scriptReplacements } : {}),
         plate: {
           ...(bed ? { bed } : {}),
+          ...(job.placement === 'keep' ? { placement: 'keep' } : {}),
           objects: requestObjects,
         },
         config: sxConfig(job.explicitConfig, job.widthsAsGiven),

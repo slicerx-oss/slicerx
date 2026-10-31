@@ -380,7 +380,9 @@ type SplitMeshes = std::collections::HashMap<String, std::sync::Arc<Mesh>>;
 /// print by object, its clearance checks and the object labels see the objects and not one merged mesh. A slicer
 /// project's items stay where the file puts them (on the machine of the request's `printable_area`), any other 3MF's
 /// where the file puts them with the plate centered on the bed ([`sx_core::api::load_3mf_placement`]), as the app and
-/// `sx slice <file.3mf>` place them. Returns their meshes under the new keys (a plate of one item keeps its key, with
+/// `sx slice <file.3mf>` place them. With `plate.placement` `keep`, any 3MF's items stay where the file puts them, from
+/// the front left corner of the printable area, and a 3MF kept whole (given paint, volumes or brim ears) is moved the
+/// same way; the engine then refuses a part off the printable area. Returns their meshes under the new keys (a plate of one item keeps its key, with
 /// the item's mesh), a note for each project named without `#N` that has more plates than the one sliced (the
 /// result's `projectPlates`), each also on stderr, and a warning for each tool change a project keeps that does not
 /// apply ([`sx_core::api::load_3mf_marks`]).
@@ -401,25 +403,29 @@ fn split_projects(
         depth_mm: b.depth_mm,
         height_mm: b.height_mm,
     });
+    let keep = req.plate.placement == api::PlatePlacement::Keep;
     let mut out = Vec::with_capacity(req.plate.objects.len());
     for o in std::mem::take(&mut req.plate.objects) {
         let key = o.mesh_ref();
         let full = paths.get(&key).map_or(key.as_str(), String::as_str);
         let (rel, plate) = split_ref(full);
+        let is_3mf = rel.to_ascii_lowercase().ends_with(".3mf");
         // A mesh given paint stays one object, so the paint's part indices are those of the mesh as loaded.
         let plain = o.transform.is_none()
             && o.volumes.is_empty()
             && o.brim_points.is_empty()
             && !painted.contains_key(&key);
-        if !plain || !rel.to_ascii_lowercase().ends_with(".3mf") {
+        if keep && is_3mf && !plain && o.transform.is_none() {
+            // Kept whole, in the file's build space: moved as its items would be, with no recentering.
+            let transform = Some(kept_whole(base, rel, plate, bed, &req.config)?);
+            out.push(api::ObjectSpec { transform, ..o });
+            continue;
+        }
+        if !plain || !is_3mf {
             out.push(o);
             continue;
         }
-        let path = base.join(rel);
-        let bytes = std::fs::read(&path).map_err(|e| sx_core::Error::Mesh {
-            name: path.display().to_string(),
-            reason: e.to_string(),
-        })?;
+        let bytes = read_mesh_file(base, rel)?;
         let (found, plates) = api::load_3mf_items_counted(&bytes, rel, plate)?;
         let Some((plate_no, items)) = found else {
             // loading it names the plate the file does not have
@@ -432,16 +438,14 @@ fn split_projects(
             plate_notes.push(json!({"file": rel, "plates": plates, "sliced": plate_no, "text": text}));
         }
         skipped.extend(take_project_marks(req, &bytes, plate_no));
-        let placement = match api::load_3mf_placement(&bytes, rel, plate_no, [bed.width_mm, bed.depth_mm])? {
-            sx_core::plate::ItemsPlacement::Kept([x, y]) => {
-                let [ox, oy] = sx_core::plate::area_origin(&req.config);
-                sx_core::plate::ItemsPlacement::Kept([x + ox, y + oy])
-            }
-            centered @ sx_core::plate::ItemsPlacement::Centered => centered,
+        let found = api::load_3mf_placement(&bytes, rel, plate_no, [bed.width_mm, bed.depth_mm])?;
+        let project = found != sx_core::plate::ItemsPlacement::Centered;
+        let placement = if project || keep {
+            sx_core::plate::ItemsPlacement::Kept(kept_offset(found, &req.config))
+        } else {
+            found
         };
-        if placement != sx_core::plate::ItemsPlacement::Centered
-            && !projects.iter().any(|(f, n, _)| f == rel && *n == plate_no)
-        {
+        if project && !projects.iter().any(|(f, n, _)| f == rel && *n == plate_no) {
             projects.push((
                 rel.to_owned(),
                 plate_no,
@@ -492,6 +496,52 @@ fn split_projects(
         }
     }
     Ok((cache, plate_notes, skipped))
+}
+
+/// The bytes of the file `rel` names, relative to the request's folder `base`.
+fn read_mesh_file(base: &Path, rel: &str) -> sx_core::Result<Vec<u8>> {
+    let path = base.join(rel);
+    std::fs::read(&path).map_err(|e| sx_core::Error::Mesh {
+        name: path.display().to_string(),
+        reason: e.to_string(),
+    })
+}
+
+/// The transform of a 3MF plate kept as one object under `placement` `keep` (it has paint, volumes or brim ears of the
+/// request): a move from the file's build space onto the machine, as [`kept_offset`] moves its items.
+fn kept_whole(
+    base: &Path,
+    rel: &str,
+    plate: Option<u32>,
+    bed: sx_core::api::Bed,
+    config: &Value,
+) -> sx_core::Result<Vec<f32>> {
+    use sx_core::api;
+    let bytes = &read_mesh_file(base, rel)?;
+    let plate_no = match plate {
+        Some(n) => n,
+        None => api::load_3mf_items(bytes, rel, None)?.map_or(1, |(n, _)| n),
+    };
+    let [x, y] = kept_offset(
+        api::load_3mf_placement(bytes, rel, plate_no, [bed.width_mm, bed.depth_mm])?,
+        config,
+    );
+    let mut t = sx_core::plate::IDENTITY;
+    t[12] = x;
+    t[13] = y;
+    Ok(t.to_vec())
+}
+
+/// How far a 3MF plate's items move from the file's build space onto the machine when they are kept where the file puts
+/// them: a project's own placement (its plate's place in the project taken off), or none for any other 3MF, plus the
+/// front left corner of the request's printable area.
+fn kept_offset(found: sx_core::plate::ItemsPlacement, config: &Value) -> [f32; 2] {
+    let [x, y] = match found {
+        sx_core::plate::ItemsPlacement::Kept(at) => at,
+        sx_core::plate::ItemsPlacement::Centered => [0.0, 0.0],
+    };
+    let [ox, oy] = sx_core::plate::area_origin(config);
+    [x + ox, y + oy]
 }
 
 /// The meshes of a request as the engine asks for them. A mesh is let go once the last object or volume naming it

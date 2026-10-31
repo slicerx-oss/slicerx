@@ -5158,3 +5158,111 @@ fn a_request_without_printer_settings_warns_no_machine_profile() {
         schema["properties"]["configReport"]
     );
 }
+
+/// `placement`: `"center"` (the default) centers a 3MF plate on the bed as a whole; `"keep"` slices its build items where
+/// the file puts them, from the front left corner of the printable area, and refuses (exit 3) a plate that lands
+/// partly off that area, naming each part and how far it hangs over. A mesh file has no placement of its own, so an
+/// STL is centered under either.
+#[test]
+fn placement_keep_slices_a_3mf_where_the_file_puts_it() {
+    let dir = temp_dir(format!("sx-cli-placement-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let write = |name: &str, bytes: &[u8]| {
+        let p = dir.join(name);
+        std::fs::write(&p, bytes).unwrap();
+        p.display().to_string()
+    };
+    let cube = [[20.0, 20.0, 10.0]];
+    let one = write("at-80-100.3mf", &boxes_3mf(&cube, &[(0, 80.0, 100.0)]));
+    let two = write(
+        "two.3mf",
+        &boxes_3mf(&cube, &[(0, 80.0, 100.0), (0, 150.0, 60.0)]),
+    );
+    let off = write("off.3mf", &boxes_3mf(&cube, &[(0, 265.0, 100.0)]));
+    let corner = write(
+        "corner.3mf",
+        &boxes_3mf(&cube, &[(0, 80.0, 100.0), (0, 2.0, 268.5)]),
+    );
+    let stl = write("cube.stl", box_stl([0.0; 3], [20.0, 20.0, 10.0]).as_bytes());
+    let u1 = serde_json::json!(["0.5x1", "270.5x1", "270.5x271", "0.5x271"]);
+    let body = |mesh: &str, placement: Option<&str>, area: Option<&serde_json::Value>| {
+        let mut config = klipper();
+        if let Some(a) = area {
+            config["printable_area"] = a.clone();
+        }
+        let mut plate = serde_json::json!({
+            "bed": {"widthMm": 270, "depthMm": 270, "heightMm": 270},
+            "objects": [{"mesh": mesh}],
+        });
+        if let Some(p) = placement {
+            plate["placement"] = serde_json::json!(p);
+        }
+        serde_json::json!({"schemaVersion": 1, "plate": plate, "config": config})
+    };
+    let run = |mesh: &str, placement: Option<&str>, area: Option<&serde_json::Value>| {
+        let (status, _, err) = slice_body(&body(mesh, placement, area));
+        (status, err)
+    };
+    let centers_of = |request: &serde_json::Value| {
+        let d = temp_dir(format!("sx-cli-placement-{}-{}", std::process::id(), rand_tag()));
+        std::fs::create_dir_all(&d).unwrap();
+        let path = d.join("request.json");
+        std::fs::write(&path, request.to_string()).unwrap();
+        let out = sx()
+            .args(["slice", "--request"])
+            .arg(&path)
+            .arg("--out-dir")
+            .arg(d.join("out"))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{request}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        klipper_centers(&std::fs::read_to_string(d.join("out/slice.gcode")).unwrap())
+    };
+    let centers = |mesh: &str, placement: Option<&str>, area: Option<&serde_json::Value>| {
+        centers_of(&body(mesh, placement, area))
+    };
+    // Today's behavior is the default: the plate centered on the bed.
+    assert_eq!(centers(&one, None, None), [[135.0, 135.0]]);
+    assert_eq!(centers(&one, Some("center"), None), [[135.0, 135.0]]);
+    // keep: where the file puts the cube, plus the corner of the printable area (0.5, 1 on the Snapmaker U1).
+    assert_eq!(centers(&one, Some("keep"), None), [[80.0, 100.0]]);
+    assert_eq!(centers(&one, Some("keep"), Some(&u1)), [[80.5, 101.0]]);
+    assert_eq!(centers(&two, Some("keep"), None), [[80.0, 100.0], [150.0, 60.0]]);
+    // A 3MF the request keeps as one object (here for its brim ears) moves the same way.
+    let mut whole = body(&one, Some("keep"), Some(&u1));
+    whole["plate"]["objects"][0]["brimPoints"] = serde_json::json!([[0, -10, 0, 3]]);
+    assert_eq!(centers_of(&whole), [[80.5, 101.0]]);
+    // An STL has no placement: centered under keep too.
+    assert_eq!(centers(&stl, Some("keep"), None), [[135.0, 135.0]]);
+    assert_eq!(centers(&stl, Some("keep"), Some(&u1)), [[135.5, 136.0]]);
+    // Off the bed: refused as invalid input, naming the part and the overhang. Centered, the same file slices.
+    let (status, err) = run(&off, Some("keep"), None);
+    assert_eq!(status.code(), Some(3), "{err}");
+    let text = "Object_1 is 5 mm past the right edge of the printable area (X 0 to 270, Y 0 to 270 mm) where the file places it; move it in the file or slice with placement \"center\"";
+    assert!(err.contains(text), "{err}");
+    assert!(!err.contains(['\u{2013}', '\u{2014}']), "{err}");
+    assert_eq!(centers(&off, Some("center"), None), [[135.0, 135.0]]);
+    // Each part off the area is named, with every edge it crosses.
+    let (status, err) = run(&corner, Some("keep"), None);
+    assert_eq!(status.code(), Some(3), "{err}");
+    assert!(
+        err.contains(
+            "Object_2 is 8 mm past the left edge and 8.5 mm past the back edge of the printable area"
+        ),
+        "{err}"
+    );
+    assert!(!err.contains("Object_1 is"), "{err}");
+    // An unknown placement is invalid input, and the schema lists both.
+    let (status, err) = run(&one, Some("left"), None);
+    assert_eq!(status.code(), Some(3), "{err}");
+    let out = sx().args(["schema", "request"]).output().unwrap();
+    let schema: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        schema["properties"]["plate"]["properties"]["placement"]["enum"],
+        serde_json::json!(["center", "keep"])
+    );
+}
