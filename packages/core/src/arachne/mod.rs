@@ -643,7 +643,10 @@ pub(crate) fn island_walls_or(
             match top_run(&outline, &prm, cfg, t) {
                 Some(TopRun::Usual) => Built::Usual,
                 Some(TopRun::Split(one_wall, top)) => {
-                    Built::Done(one_wall_top(&prm, cfg, t, one_wall, top, overlap))
+                    match one_wall_top(&prm, cfg, t, one_wall, top, overlap) {
+                        Some((g, top)) => Built::Run(g, top),
+                        None => Built::Done(None),
+                    }
                 }
                 None => Built::Done(None),
             }
@@ -671,9 +674,10 @@ pub(crate) fn island_walls_or(
     let mut islands = Vec::with_capacity(region.len());
     let mut inner: Shapes = Vec::new();
     for ((shape, outline), b) in region.iter().zip(&outlines).zip(built) {
-        let generated = match b {
-            Built::Done(g) => g,
-            Built::Usual => walls(outline, &prm),
+        let (generated, run) = match b {
+            Built::Done(g) => (g, None),
+            Built::Run(g, one_wall) => (Some(g), Some(one_wall)),
+            Built::Usual => (walls(outline, &prm), None),
         };
         if let Some(g) = generated {
             // The infill boundary: the walls' inner edge simplified to the resolution (Orca's `simplify_p` in
@@ -684,6 +688,7 @@ pub(crate) fn island_walls_or(
             inner.extend(grown);
             islands.push(perimeters::IslandWalls {
                 wide: g.lines,
+                top_edge: top_edge(cfg, loops, overlap, run.as_ref(), resolution),
                 ..perimeters::IslandWalls::default()
             });
         } else {
@@ -709,11 +714,48 @@ fn min_infill_spacing(cfg: &crate::config::PrintConfig) -> i32 {
     crate::geom::mm(cfg.flow_spacing() * share)
 }
 
-/// One island's walls in [`island_walls_or`]: generated (`None` where the generator could not process the island), or
-/// the usual walls, not built yet.
+/// One island's walls in [`island_walls_or`]: generated (`None` where the generator could not process the island), built
+/// by a top run ([`one_wall_top`], with the one-wall part of its infill area), or the usual walls, not built yet.
 enum Built {
     Done(Option<Walls>),
+    Run(Walls, Shapes),
     Usual,
+}
+
+/// Where the top surfaces over an island of `loops` aegis walls end beside them, with a monotonic line top surface or
+/// one wall on top surfaces: at the innermost wall's spacing edge, without the `overlap` the infill area reaches into
+/// the wall, so the top surface starts there whatever the overlap is (on a 50 mm taper on the stock P1S settings, 2
+/// walls, the lines start 0.615 mm from the outer wall's centerline at every overlap from 0 to 30 percent with one wall
+/// on top, and 0.657 mm without, where they started 0.0042 mm nearer the wall per percent). Monotonic and rectilinear
+/// top surfaces keep the overlap. The infill area and its classes are worked out with the overlap
+/// as before, so the sparse and solid infill keep it and a ledge gets the same top surface. The one-wall top of a top
+/// run (`run`, whose edge beside the inner walls [`clear_of_inner_walls`] places with the overlap) keeps it too, with
+/// twice `resolution` (internal units) to spare for the simplified walls' edge. `None` with one wall, no overlap, another
+/// top surface pattern, or the arachne generator's own walls, which keep the overlap.
+fn top_edge(
+    cfg: &crate::config::PrintConfig,
+    loops: u32,
+    overlap: i32,
+    run: Option<&Shapes>,
+    resolution: f64,
+) -> Option<perimeters::TopEdge> {
+    let monotonic_line = match cfg.raw.get("top_surface_pattern") {
+        Some(serde_json::Value::String(s)) => s == "monotonicline",
+        _ => true,
+    };
+    if loops < 2
+        || overlap <= 0
+        || cfg.arachne_generator()
+        || !(monotonic_line || crate::perimeters::one_wall_top(cfg))
+    {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "a resolution in internal units")]
+    let spare = 2 * resolution.ceil() as i32;
+    let keep = run
+        .filter(|one_wall| !one_wall.is_empty())
+        .map_or_else(Vec::new, |one_wall| perimeters::offset(one_wall, overlap + spare));
+    Some(perimeters::TopEdge { overlap, keep })
 }
 
 /// Where the one-wall top surfaces leave one island ([`one_wall_top`]): no top surface, so the usual walls, or the
@@ -859,7 +901,8 @@ pub(crate) fn medial_lines(shape: &Shapes, min_mm: f64, max_mm: f64) -> Vec<Wall
 /// `PerimeterGenerator::process_arachne`, "One wall top surface for Arachne"): the outer wall goes round the
 /// whole island, the part of the infill area no layer above covers keeps just that wall, and the rest
 /// gets the remaining walls, as a separate set inside it. With no top surface the walls are the usual ([`top_run`]);
-/// here `one` is the one-wall run and `top` the part of the infill area inside it that no layer above covers.
+/// here `one` is the one-wall run and `top` the part of the infill area inside it that no layer above covers. Gives the
+/// walls and the one-wall part of their infill area.
 fn one_wall_top(
     prm: &Params,
     cfg: &crate::config::PrintConfig,
@@ -867,7 +910,7 @@ fn one_wall_top(
     one: Walls,
     mut top: Shapes,
     overlap: i32,
-) -> Option<Walls> {
+) -> Option<(Walls, Shapes)> {
     let contour = one.inner.clone();
     let spacing_0 = crate::geom::mm(prm.bead_width_0);
     let width = crate::geom::mm(cfg.inner_wall_width());
@@ -902,10 +945,8 @@ fn one_wall_top(
         }
         lines.push(l);
     }
-    Some(Walls {
-        lines,
-        inner: perimeters::union_all(&[&top, &inner_walls.inner]),
-    })
+    let inner = perimeters::union_all(&[&top, &inner_walls.inner]);
+    Some((Walls { lines, inner }, top))
 }
 
 /// The one-wall part `top` of a one-wall top kept clear of `not_top`, where the inner walls go, on Bambu Lab printers:
@@ -933,7 +974,7 @@ fn clear_of_inner_walls(
 #[cfg(test)]
 pub(crate) mod reference {
     #![allow(clippy::too_many_arguments, reason = "kept as it was")]
-    use super::{Params, Walls, percent, perimeters, simplify_rings, walls};
+    use super::{Params, Walls, percent, perimeters, simplify_rings, top_edge, walls};
     use crate::perimeters::Shapes;
 
     pub(crate) fn island_walls(
@@ -1010,12 +1051,12 @@ pub(crate) mod reference {
             } else {
                 one.clone()
             };
-            let generated = if loops == 0 {
-                None
+            let (generated, run) = if loops == 0 {
+                (None, None)
             } else if let Some(t) = top.filter(|_| loops > 1) {
                 one_wall_top(&outline, &prm, cfg, t, overlap)
             } else {
-                walls(&outline, &prm)
+                (walls(&outline, &prm), None)
             };
             if let Some(g) = generated {
                 let simple = simplify_rings(&g.inner, resolution);
@@ -1024,6 +1065,7 @@ pub(crate) mod reference {
                 inner.extend(grown);
                 islands.push(perimeters::IslandWalls {
                     wide: g.lines,
+                    top_edge: top_edge(cfg, loops, overlap, run.as_ref(), resolution),
                     ..perimeters::IslandWalls::default()
                 });
             } else {
@@ -1041,21 +1083,23 @@ pub(crate) mod reference {
         cfg: &crate::config::PrintConfig,
         t: &perimeters::TopCtx,
         overlap: i32,
-    ) -> Option<Walls> {
+    ) -> (Option<Walls>, Option<Shapes>) {
         let reach = crate::geom::mm(prm.wall_deviation()) + 2;
         if perimeters::difference(&perimeters::offset(outline, reach), t.upper).is_empty() {
-            return walls(outline, prm);
+            return (walls(outline, prm), None);
         }
         let first = Params {
             inset_count: 1,
             one_wall_outer: true,
             ..prm.clone()
         };
-        let one = walls(outline, &first)?;
+        let Some(one) = walls(outline, &first) else {
+            return (None, None);
+        };
         let contour = one.inner.clone();
         let mut top = perimeters::difference(&contour, t.upper);
         if top.is_empty() {
-            return walls(outline, prm);
+            return (walls(outline, prm), None);
         }
         if !super::top_is_large(outline, prm, cfg, t) {
             top.clear();
@@ -1082,7 +1126,9 @@ pub(crate) mod reference {
             ..prm.clone()
         };
         let grown = perimeters::offset(&not_top, crate::geom::mm(-prm.wall_0_inset));
-        let inner_walls = walls(&grown, &inner_prm)?;
+        let Some(inner_walls) = walls(&grown, &inner_prm) else {
+            return (None, None);
+        };
         let mut lines = one.lines;
         let has_outer = !lines.is_empty();
         for mut l in inner_walls.lines {
@@ -1091,10 +1137,8 @@ pub(crate) mod reference {
             }
             lines.push(l);
         }
-        Some(Walls {
-            lines,
-            inner: perimeters::union_all(&[&top, &inner_walls.inner]),
-        })
+        let inner = perimeters::union_all(&[&top, &inner_walls.inner]);
+        (Some(Walls { lines, inner }), Some(top))
     }
 }
 

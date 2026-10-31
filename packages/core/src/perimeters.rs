@@ -1624,6 +1624,16 @@ pub(crate) struct IslandWalls {
     pub(crate) wide: Vec<crate::arachne::WallLine>,
     /// Gap fill as variable-width lines, for the classic walls when Orca's gap finder ran.
     pub(crate) gap_lines: Vec<crate::arachne::WallLine>,
+    /// Where the top surfaces over the island end beside the walls, with variable-width walls (`arachne::top_edge`).
+    pub(crate) top_edge: Option<TopEdge>,
+}
+
+/// The top surfaces over an island of variable-width walls start at the innermost wall's spacing edge, without the
+/// `overlap` (internal units) the infill area reaches into the wall, except in `keep`, which keeps it.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct TopEdge {
+    pub(crate) overlap: i32,
+    pub(crate) keep: Shapes,
 }
 
 /// Whether top surfaces get one wall. A Bambu Studio config says so with `top_one_wall_type`: `all top` and `topmost`
