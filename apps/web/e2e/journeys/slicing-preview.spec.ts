@@ -1029,24 +1029,39 @@ test.describe('Slice tab defaults', () => {
       await page.mouse.move(g.x + g.width / 2 + dx, g.y + g.height / 2 + dy, { steps: 6 })
       await page.mouse.up()
     }
-    // Into the top left corner first, so there is room to move whatever an earlier test did with it (that it starts at
-    // the top is checked on a new page, in the test of the bar's defaults).
-    await drag(-3000, -3000)
-    const start = (await group.boundingBox())!
-    await drag(150, 200)
-    const moved = (await group.boundingBox())!
-    expect(moved.x - start.x).toBeCloseTo(150, 0)
-    expect(moved.y - start.y).toBeCloseTo(200, 0)
-    await expect(group).toHaveAttribute('data-moved', 'true')
-    // Far past the view's corner: it stops inside, 8 px from the edges.
-    await drag(3000, 3000)
-    const end = (await group.boundingBox())!
-    expect(end.x + end.width).toBeLessThanOrEqual(view.x + view.width - 7.5)
-    expect(end.y + end.height).toBeLessThanOrEqual(view.y + view.height - 7.5)
-    // The arrow keys move it too, from the grip.
-    await grip.focus()
-    await page.keyboard.press('ArrowLeft')
-    expect((await group.boundingBox())!.x).toBeCloseTo(end.x - 16, 0)
+    // Where the bar sits now is where it goes back to: the page outlives this test, and a bar left in a corner covers
+    // the buttons of the next ones (the Paint tool of the seam test lands under the playback bar).
+    const home = (await group.boundingBox())!
+    try {
+      // Into the top left corner first, so there is room to move whatever an earlier test did with it (that it starts at
+      // the top is checked on a new page, in the test of the bar's defaults).
+      await drag(-3000, -3000)
+      const start = (await group.boundingBox())!
+      await drag(150, 200)
+      const moved = (await group.boundingBox())!
+      expect(moved.x - start.x).toBeCloseTo(150, 0)
+      expect(moved.y - start.y).toBeCloseTo(200, 0)
+      await expect(group).toHaveAttribute('data-moved', 'true')
+      // Far past the view's corner: it stops inside, 8 px from the edges.
+      await drag(3000, 3000)
+      const end = (await group.boundingBox())!
+      expect(end.x + end.width).toBeLessThanOrEqual(view.x + view.width - 7.5)
+      expect(end.y + end.height).toBeLessThanOrEqual(view.y + view.height - 7.5)
+      // The arrow keys move it too, from the grip.
+      await grip.focus()
+      await page.keyboard.press('ArrowLeft')
+      expect((await group.boundingBox())!.x).toBeCloseTo(end.x - 16, 0)
+    } finally {
+      // By the arrow keys from the grip: in the corner the bar sits under the playback bar, where a drag cannot take hold.
+      // The keys stop at the view's edges, so the top left corner is reached whatever the bar's place, and it comes back
+      // from there to within one step of where it was.
+      await grip.focus()
+      for (let i = 0; i < 10; i++) await page.keyboard.press('Shift+ArrowUp')
+      for (let i = 0; i < 10; i++) await page.keyboard.press('Shift+ArrowLeft')
+      const corner = (await group.boundingBox())!
+      for (let i = 0; i < Math.round((home.x - corner.x) / 16); i++) await page.keyboard.press('ArrowRight')
+      for (let i = 0; i < Math.round((home.y - corner.y) / 16); i++) await page.keyboard.press('ArrowDown')
+    }
   })
 
   test('the view shows no focus ring after a click and a key, and a quiet edge when Tab brings focus to it', async ({ page }) => {
