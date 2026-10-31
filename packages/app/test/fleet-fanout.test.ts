@@ -104,4 +104,28 @@ describe('the fleet readers', () => {
     cleanup()
     for (const id of IDS) expect(app.listening(id)).toBe(0)
   })
+
+  it('stays one subscription per printer when readers learn the printers in different renders', async () => {
+    const fake = fakeHost()
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    qc.setQueryData(['fleet', 0], IDS.map((id) => ({ ...info(id), status: status(id, 20) })))
+    const features = { ids: new Set(['connect']), features: [], workspaces: [], settings: [] } as never
+    const Live = ({ ids }: { ids: string[] }) => {
+      useFleetLive(usePrinters(), ids)
+      return null
+    }
+    const tree = (a: string[], b: string[]) =>
+      createElement(QueryClientProvider, { client: qc }, createElement(HostContext.Provider, { value: fake.host }, createElement(FeaturesContext.Provider, { value: features }, createElement(Live, { ids: a }), createElement(Live, { ids: b }))))
+    // both readers mount before the fleet has loaded, then each gets the printers in a render of its own
+    const view = render(tree([], []))
+    view.rerender(tree(IDS, []))
+    view.rerender(tree(IDS, IDS))
+    for (const id of IDS) expect(fake.listening(id), `live subscriptions to ${id}`).toBe(1)
+    const writes = vi.spyOn(qc, 'setQueryData')
+    await act(async () => {
+      fake.tick()
+      await Promise.resolve()
+    })
+    expect(writes).toHaveBeenCalledTimes(1)
+  })
 })
