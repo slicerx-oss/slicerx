@@ -553,6 +553,7 @@ pub(crate) fn offset(shapes: &Shapes, delta: i32) -> Shapes {
         }
         match fast_offset(shape, delta) {
             Some(s) => out.extend(s),
+            None if nothing_left(shape, -f64::from(delta)) => {}
             None => out.extend(clipper_offset(shape, delta)),
         }
     }
@@ -580,6 +581,149 @@ fn shrinks_away(shape: &[Vec<IntPoint<i32>>], d: f64) -> bool {
         .map(|(p, q)| f64::from(p.x) * f64::from(q.y) - f64::from(q.x) * f64::from(p.y))
         .sum();
     twice.abs() < 2.0 * std::f64::consts::PI * d * d
+}
+
+/// What [`disc_fit`] found out about a disc of radius `d` inside a shape.
+#[derive(Debug, PartialEq, Eq)]
+enum DiscFit {
+    /// A point inside the shape lies `d` or more from every edge.
+    Fits,
+    /// No point inside the shape lies `d` from every edge.
+    Nowhere,
+    /// The cells ran out before either was shown.
+    Undecided,
+}
+
+/// Most cells [`disc_fit`] looks at before it gives up. Over a corpus of test slices, the empty shrinks that cost the
+/// union the most were settled within about 210 cells, while the few that ran to 4096 cost the test more than the
+/// union it could save.
+const DISC_FIT_CELLS: usize = 256;
+
+/// Fewest points a shape needs before [`nothing_left`] asks [`disc_fit`]: on smaller shapes the union takes tens of
+/// microseconds, about what the test would cost.
+const DISC_FIT_POINTS: usize = 128;
+
+/// True when [`disc_fit`] shows that shrinking `shape` by `d` internal units leaves nothing. Small shapes are not
+/// tested, and undecided counts as something left, so in both cases the offset is done in full.
+fn nothing_left(shape: &[Vec<IntPoint<i32>>], d: f64) -> bool {
+    shape.iter().map(Vec::len).sum::<usize>() >= DISC_FIT_POINTS
+        && disc_fit(shape, d, DISC_FIT_CELLS) == DiscFit::Nowhere
+}
+
+/// One square of [`disc_fit`]'s search: its center, half its side, and the most any point in it can be from the
+/// nearest edge.
+struct FitCell {
+    x: f64,
+    y: f64,
+    half: f64,
+    most: f64,
+}
+
+impl PartialEq for FitCell {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for FitCell {}
+
+impl PartialOrd for FitCell {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for FitCell {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.most.total_cmp(&other.most)
+    }
+}
+
+/// Whether a disc of radius `d` fits inside `shape` (by the positive winding rule over all of its rings), looking
+/// at no more than `cells` squares. The bounds are split into squares, the one that could hold the farthest point
+/// first. Moving a point changes its distance to the nearest edge by at most the distance moved, so no point of a
+/// square is farther from the edges than its center plus half the square's diagonal. A square that falls short of
+/// `d` that way, or lies wholly outside the shape (its center outside and no edge within half the diagonal), cannot
+/// hold the center of such a disc and is dropped; any other square is split in four. A square center inside the
+/// shape and at least `d` from every edge shows the disc fits. One unit of margin covers rounding. When every square
+/// is dropped there is no point `d` from the edges, so an inward offset by `d` leaves nothing.
+fn disc_fit(shape: &[Vec<IntPoint<i32>>], d: f64, cells: usize) -> DiscFit {
+    let edges: Vec<[f64; 4]> = shape
+        .iter()
+        .filter(|r| r.len() >= 3)
+        .flat_map(|r| {
+            r.iter()
+                .zip(r.iter().cycle().skip(1))
+                .map(|(a, b)| [f64::from(a.x), f64::from(a.y), f64::from(b.x), f64::from(b.y)])
+        })
+        .collect();
+    let Some(b) = bounds(&[shape.to_vec()]) else {
+        return DiscFit::Undecided;
+    };
+    if edges.is_empty() || d.is_nan() || d <= 0.0 {
+        return DiscFit::Undecided;
+    }
+    // Distance to the nearest edge, and whether the point is inside.
+    let probe = |x: f64, y: f64| -> (f64, bool) {
+        let mut near = f64::INFINITY;
+        let mut winding = 0i32;
+        for &[ax, ay, bx, by] in &edges {
+            let (dx, dy) = (bx - ax, by - ay);
+            let len2 = dx * dx + dy * dy;
+            let t = if len2 > 0.0 {
+                (((x - ax) * dx + (y - ay) * dy) / len2).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let (ex, ey) = (ax + t * dx - x, ay + t * dy - y);
+            near = near.min(ex * ex + ey * ey);
+            let side = dx * (y - ay) - (x - ax) * dy;
+            if ay <= y && by > y && side > 0.0 {
+                winding += 1;
+            } else if by <= y && ay > y && side < 0.0 {
+                winding -= 1;
+            }
+        }
+        (near.sqrt(), winding > 0)
+    };
+    let mut heap = std::collections::BinaryHeap::new();
+    let mut seen = 0usize;
+    // Looks at one square: Some(fits) settles it, None leaves it pushed or dropped.
+    let mut look =
+        |x: f64, y: f64, half: f64, heap: &mut std::collections::BinaryHeap<FitCell>| -> Option<DiscFit> {
+            if seen >= cells {
+                return Some(DiscFit::Undecided);
+            }
+            seen += 1;
+            let (near, inside) = probe(x, y);
+            if inside && near >= d {
+                return Some(DiscFit::Fits);
+            }
+            let reach = half * std::f64::consts::SQRT_2;
+            let most = near + reach;
+            if most < d - 1.0 || (!inside && near >= reach) {
+                return None;
+            }
+            heap.push(FitCell { x, y, half, most });
+            None
+        };
+    let (cx, cy) = (
+        f64::midpoint(f64::from(b[0]), f64::from(b[2])),
+        f64::midpoint(f64::from(b[1]), f64::from(b[3])),
+    );
+    let half = 0.5 * (f64::from(b[2]) - f64::from(b[0])).max(f64::from(b[3]) - f64::from(b[1]));
+    if let Some(found) = look(cx, cy, half, &mut heap) {
+        return found;
+    }
+    while let Some(c) = heap.pop() {
+        let h = 0.5 * c.half;
+        for (sx, sy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+            if let Some(found) = look(c.x + sx * h, c.y + sy * h, h, &mut heap) {
+                return found;
+            }
+        }
+    }
+    DiscFit::Nowhere
 }
 
 /// Offset by union: every contour is moved edge by edge, joined with a miter
@@ -2130,8 +2274,12 @@ mod tests {
     /// distance check the widest is 3.46 mm across one and 2.69 mm across the other, and the narrow side of each
     /// outline's bounds (7.65 and 7.20 mm) is under twice the shrink.
     fn shrunk_past_cases() -> Vec<(i32, Shapes)> {
-        let cases: Vec<(i32, Vec<Vec<[i32; 2]>>)> =
-            serde_json::from_str(include_str!("../tests/fixtures/offset-shrink-past/cases.json")).unwrap();
+        fixture_cases(include_str!("../tests/fixtures/offset-shrink-past/cases.json"))
+    }
+
+    /// `(delta, rings)` pairs from a fixture file, each as one shape.
+    fn fixture_cases(json: &str) -> Vec<(i32, Shapes)> {
+        let cases: Vec<(i32, Vec<Vec<[i32; 2]>>)> = serde_json::from_str(json).unwrap();
         cases
             .into_iter()
             .map(|(delta, rings)| {
@@ -2156,6 +2304,85 @@ mod tests {
                 delta / 2
             );
         }
+    }
+
+    /// A 10 mm square turned 45 degrees: the largest disc inside has a radius of 50,000.27 units, and its bounds are
+    /// wide enough that the bounds and area check lets every shrink below 70,711 through.
+    fn turned_square() -> Vec<Vec<IntPoint<i32>>> {
+        vec![vec![
+            IntPoint::new(0, -70_711),
+            IntPoint::new(70_711, 0),
+            IntPoint::new(0, 70_711),
+            IntPoint::new(-70_711, 0),
+        ]]
+    }
+
+    #[test]
+    fn disc_fit_tells_a_fitting_disc_from_none() {
+        let sq = turned_square();
+        assert!(!shrinks_away(&sq, 50_001.0));
+        assert_eq!(disc_fit(&sq, 49_990.0, DISC_FIT_CELLS), DiscFit::Fits);
+        assert_eq!(disc_fit(&sq, 50_100.0, DISC_FIT_CELLS), DiscFit::Nowhere);
+        // A hole in the middle leaves room only in the corners, each well under 25,000 units across.
+        let mut holed = sq.clone();
+        holed.push(vec![
+            IntPoint::new(0, -40_000),
+            IntPoint::new(-40_000, 0),
+            IntPoint::new(0, 40_000),
+            IntPoint::new(40_000, 0),
+        ]);
+        assert_eq!(disc_fit(&holed, 30_000.0, DISC_FIT_CELLS), DiscFit::Nowhere);
+        assert_eq!(disc_fit(&holed, 5_000.0, DISC_FIT_CELLS), DiscFit::Fits);
+    }
+
+    #[test]
+    fn shrinking_where_no_disc_fits_leaves_nothing() {
+        // Tree support base areas whose quick miter offset fails and that pass the bounds and area check, but hold no
+        // disc of the shrink's radius: by a separate grid check the largest is 3.51 mm against 4.28 mm, and 3.44 mm
+        // against 4.32 mm. The union of moved loops kept 0.13 and 0.0001 mm2 in them.
+        for (delta, shapes) in
+            fixture_cases(include_str!("../tests/fixtures/offset-shrink-past/disc-fit.json"))
+        {
+            let shape = &shapes[0];
+            assert!(!shrinks_away(shape, -f64::from(delta)));
+            assert_eq!(
+                disc_fit(shape, -f64::from(delta), DISC_FIT_CELLS),
+                DiscFit::Nowhere
+            );
+            assert!(offset(&shapes, delta).is_empty(), "shrink by {delta} left area");
+            assert!(
+                !offset(&shapes, delta / 2).is_empty(),
+                "shrink by {} left nothing",
+                delta / 2
+            );
+        }
+    }
+
+    #[test]
+    fn disc_fit_out_of_cells_does_the_offset_in_full() {
+        // Less than a unit over the largest disc: no square near the middle can be dropped, so the cells run out
+        // whatever the budget.
+        let sq = turned_square();
+        for cells in [1, DISC_FIT_CELLS, 4096] {
+            assert_eq!(disc_fit(&sq, 50_001.0, cells), DiscFit::Undecided);
+        }
+        // The same square with 40 points on each side, past the point floor, so only the cells decide.
+        let corners = &sq[0];
+        let fine: Vec<IntPoint<i32>> = (0..4)
+            .flat_map(|i| {
+                let (a, b) = (corners[i], corners[(i + 1) % 4]);
+                (0..40).map(move |k| IntPoint::new(a.x + (b.x - a.x) * k / 40, a.y + (b.y - a.y) * k / 40))
+            })
+            .collect();
+        let fine = vec![fine];
+        assert!(fine[0].len() >= DISC_FIT_POINTS);
+        assert!(!shrinks_away(&fine, 50_001.0));
+        assert_eq!(disc_fit(&fine, 50_001.0, DISC_FIT_CELLS), DiscFit::Undecided);
+        assert_eq!(disc_fit(&fine, 50_001.0, 4096), DiscFit::Undecided);
+        assert!(!nothing_left(&fine, 50_001.0));
+        // So the offset is the full one, never an early empty.
+        let full = fast_offset(&fine, -50_001).unwrap_or_else(|| clipper_offset(&fine, -50_001));
+        assert_eq!(offset(&vec![fine.clone()], -50_001), full);
     }
 
     #[test]
