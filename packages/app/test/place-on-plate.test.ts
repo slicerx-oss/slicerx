@@ -2,7 +2,8 @@
 // Copyright (C) 2026 The SlicerX contributors
 // Where objects moved to another plate land (placeOnPlate): in the middle of an empty plate, as one group, the way the
 // MCP project lays out a plate; around what a plate already holds, with no overlap; and where arrange puts them when
-// the middle is taken by an excluded area. Move to plate, plate edge drag and the app link's plate move all use it.
+// the middle is taken by an excluded area, or when a skirt round the whole print would cross one from there. Move to
+// plate, plate edge drag, the app link's plate move and Arrange's new plates all use it.
 import { afterEach, describe, expect, it } from 'vitest'
 import { ARRANGE_DEFAULTS, arrange, NO_MARGINS, placeOnPlate, setAvoidAreas, type ArrangeItem, type PrintMargins } from '../src/plate/arrange'
 import { bounds, compose } from '../src/plate/transform'
@@ -68,5 +69,22 @@ describe('placeOnPlate', () => {
     const r = placeOnPlate([part], [], BED, opts(brim))
     expect(r).toEqual(arrange([part], [], BED, opts(brim)))
     expect(footprint(part, r.transforms['a']!).x0).toBeLessThan(70)
+  })
+
+  it('stays where arrange put it when a skirt round the whole print would cross an excluded area from the middle', () => {
+    // A hand placed prime tower in the front left corner, which the skirt goes round too, and an excluded area on the
+    // way from it to the middle of the bed, clear of the centered part itself.
+    const tower = { x: 10, y: 10, w: 20, h: 20 }
+    const skirt: PrintMargins = { ...NO_MARGINS, reach: () => 3, skirt: true, keepOut: [tower] }
+    const part = box('a', 0, 0)
+    setAvoidAreas([{ x: 50, y: 50, w: 10, h: 10 }])
+    // Without a skirt round the whole print the middle is clear, so the part goes there.
+    const alone = footprint(part, placeOnPlate([part], [], BED, opts({ ...skirt, skirt: false })).transforms['a']!)
+    expect([alone.x0, alone.y0]).toEqual([80, 80])
+    // With one, its hull from the tower to the part in the middle crosses the excluded area: arrange's spot is kept.
+    const r = placeOnPlate([part], [], BED, opts(skirt))
+    expect(r).toEqual(arrange([part], [], BED, opts(skirt)))
+    const f = footprint(part, r.transforms['a']!)
+    expect(f.x1 < 50 || f.y1 < 50).toBe(true)
   })
 })

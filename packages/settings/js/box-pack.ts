@@ -2,8 +2,9 @@
 // Copyright (C) 2026 The SlicerX contributors
 // The box packer's core: the first free spot for an object's box on the bed, in rows from the front left (from the
 // middle out on a round bed), keeping the room what prints around it takes from the bed edge, the other objects, the
-// keep-out areas and the prime tower. The app's arrange packs with it when the geometry engine cannot run (app
-// src/plate/arrange.ts), and so does the MCP server's arrange (mcp src/plate-nest.ts). Pure and deterministic.
+// keep-out areas and the prime tower, and the move that then sets a layout on an empty plate in the middle of the bed.
+// The app's arrange packs with it when the geometry engine cannot run (app src/plate/arrange.ts), and so does the MCP
+// server's arrange (mcp src/plate-nest.ts). Pure and deterministic.
 import type { Rect } from './arrange-room'
 import { MARGIN_SAFETY_MM } from './margin-safety'
 
@@ -168,4 +169,32 @@ export function findSpot(want: Want, placed: readonly Placed[], zones: readonly 
     return { x, y }
   }
   return null
+}
+
+/**
+ * The move, mm, that sets a packed layout as one group in the middle of the bed, so it keeps room on every side for a
+ * brim or skirt, as the nest centers a layout when nothing stays. Null when the middle would take a box, with the room
+ * its reach keeps, past the bed edge or onto one of `zones`, or, with a skirt round the whole print, the skirt's hull
+ * (round the prime tower's place or room in `towers` too) onto an excluded area (`avoid`): the layout then stays where
+ * it packed. The app's arrange on an empty plate (app src/plate/arrange.ts placeOnPlate) and the MCP server's
+ * (mcp src/plate-nest.ts boxPlate) both take it.
+ */
+export function middleShift(placed: readonly Pick<Placed, 'r' | 'reach'>[], bed: PackBed, gap: number, zones: readonly Rect[], towers: readonly Rect[], skirt: boolean, avoid: readonly Rect[] = []): [number, number] | null {
+  if (placed.length === 0) return null
+  const dx = bed.widthMm / 2 - (Math.min(...placed.map((p) => p.r.x)) + Math.max(...placed.map((p) => p.r.x + p.r.w))) / 2
+  const dy = bed.depthMm / 2 - (Math.min(...placed.map((p) => p.r.y)) + Math.max(...placed.map((p) => p.r.y + p.r.h))) / 2
+  const moved = placed.map((p) => ({ r: { x: p.r.x + dx, y: p.r.y + dy, w: p.r.w, h: p.r.h }, reach: p.reach }))
+  const fits = moved.every(({ r, reach }) => {
+    const edge = edgeOf(reach, gap)
+    if (!boxInBed(bed, r.x, r.y, r.x + r.w, r.y + r.h, edge - 1e-6)) return false
+    return zones.every((z) => r.x >= z.x + z.w + edge - 1e-6 || r.x + r.w <= z.x - edge + 1e-6 || r.y >= z.y + z.h + edge - 1e-6 || r.y + r.h <= z.y - edge + 1e-6)
+  })
+  if (!fits) return null
+  if (skirt && avoid.length > 0) {
+    const grown = (r: Rect, by: number): Rect => ({ x: r.x - by, y: r.y - by, w: r.w + 2 * by, h: r.h + 2 * by })
+    const out = Math.max(0, ...moved.map((m) => m.reach))
+    const hull = hullOf([...towers.map((t) => grown(t, out)), ...moved.map((m) => grown(m.r, m.reach))].flatMap((r): [number, number][] => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]]))
+    if (avoid.some((z) => hullHitsRect(hull, z))) return null
+  }
+  return [dx, dy]
 }
