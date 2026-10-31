@@ -68,6 +68,10 @@ describe('placing objects', () => {
       [2, [{ objectId: 'obj-2', copies: 2 }]],
     ])
     expect(p.plates[1]?.placements.map((x) => x.id)).toEqual(['obj-2-1', 'obj-2-2'])
+    // the moved copies sit in the middle of the empty plate as a group, as the app's Move to plate and edge drag put them
+    const moved = p.plates[1]!.placements
+    expect(moved.reduce((a, x) => a + x.centerMm[0], 0) / moved.length).toBeCloseTo(128, 2)
+    expect(moved.reduce((a, x) => a + x.centerMm[1], 0) / moved.length).toBeCloseTo(128, 2)
 
     const refused = await call(h, 'slicerx_project_plate_remove', { plate: 1 })
     expect(refused.ok).toBe(false)

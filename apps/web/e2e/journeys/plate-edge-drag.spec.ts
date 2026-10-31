@@ -3,7 +3,9 @@
 // Plate edge drag: a part dragged out past a bed edge goes to another plate (left, top and right, in plate order) or to
 // a new plate (the bottom), once all of it is past the commit line. A release short of the line, or Esc, puts it back.
 // Past three other plates the top edge lists the rest. A multi-selection goes as one group, and one undo brings
-// everything back. Each test opens its own project, so none counts on the one before.
+// everything back. A dropped part lands where Move to plate puts it (placeOnPlate): in the middle of a new or empty
+// plate, and around the parts of a plate that holds some, with no overlap. Each test opens its own project, so none
+// counts on the one before.
 import type { Page } from '@playwright/test'
 import { pressable, steady } from '../canvas-press'
 import { expect } from '../fixtures'
@@ -185,6 +187,10 @@ test.describe('plate edge drag', () => {
     await expect.poll(async () => (await state(page)).shown).toBe(2)
     expect((await state(page)).plates).toEqual([[], ['Part 1']])
     await expect(page.getByTestId('plate-picker-current').locator('.pp-no')).toHaveText('Plate 2')
+    // it lands in the middle of the new plate, as Move to plate puts it, not in the front left corner
+    const [cx, cy] = await centerOf(page, 'Part 1')
+    expect(cx).toBeCloseTo(BED / 2, 1)
+    expect(cy).toBeCloseTo(BED / 2, 1)
     // one step back: no new plate, the part where it was, plate 1 shown
     await page.locator('.vp-canvas').first().focus()
     await page.keyboard.press('ControlOrMeta+z')
@@ -192,6 +198,30 @@ test.describe('plate edge drag', () => {
     const after = await state(page)
     expect(after.shown).toBe(1)
     expect(after.transforms).toEqual(before.transforms)
+  })
+
+  test('a drop onto a plate that holds a part lands clear of it, and that part stays put', async ({ page }) => {
+    await open(page, 2, [[90, 90], [40, 40]])
+    // Part 2 to the middle of plate 2, where Part 1 would land on an empty plate
+    await page.evaluate(() => {
+      const sx = (window as unknown as { __sx: Sx }).__sx
+      const s = sx.getState()
+      const part = s.plate.find((o) => o.name === 'Part 2')!
+      part.transform[12] = 80
+      part.transform[13] = 80
+      sx.setState({ plates: s.plates.map((p, i) => (i === 1 ? { ...p, objects: [part] } : p)), plate: s.plate.filter((o) => o !== part) })
+    })
+    await expect.poll(async () => (await state(page)).plates).toEqual([['Part 1'], ['Part 2']])
+    await dragOut(page, 'Part 1', [-120, 90])
+    await expect(page.getByTestId('edge-drag-left')).toHaveAttribute('data-armed', '')
+    await page.mouse.up()
+    await expect.poll(async () => (await state(page)).shown).toBe(2)
+    expect((await state(page)).plates).toEqual([[], ['Part 1', 'Part 2']])
+    const [x1, y1] = await centerOf(page, 'Part 1')
+    const [x2, y2] = await centerOf(page, 'Part 2')
+    expect([x2, y2]).toEqual([90, 90])
+    // two 20 mm boxes: apart by a box or more along one axis
+    expect(Math.max(Math.abs(x1 - x2), Math.abs(y1 - y2))).toBeGreaterThanOrEqual(SIZE)
   })
 
   test('a release short of the line snaps back with a hint; Esc calls a drag off past the line', async ({ page }) => {
