@@ -307,7 +307,9 @@ quarantined failures are not rerun or failed on. The other cargo steps on pull r
 runs rerun them. A self-hosted run step whose heavy lock is not free within
 `SX_HEAVY_WAIT` ends with heavy.sh's status 75 before any test starts: `run-exit.sh` leaves `<report>.gave-up`, and the
 results step fails with "no tests ran: the run gave up waiting for the heavy lock" rather than a missing report. Rerun
-the job once the lock is free; it is not a test failure.
+the job once the lock is free; it is not a test failure. A run stopped at its own time limit (`timeout "$SX_RUN_TIMEOUT"`,
+status 124) has no report either: `run-exit.sh` fails the run step itself with "timed out after <limit> s", so the
+job does not pass that step and fail later on a missing report.
 
 Adding an entry: open an issue for the test, add its file (for example `flaky.d/481-guard-hold-card.txt`), run
 `bash scripts/ci/flaky-check.sh lint`. Fixing one: fix the test and delete its file in the same change.
