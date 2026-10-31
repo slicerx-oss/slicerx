@@ -109,6 +109,7 @@ function stockParts(id: string): { vendor: string; family: string; variant?: str
 export class ProfileCatalog {
   private readonly store: DataStore
   private all: ProfileSummary[] | undefined
+  private shipped: ProfileSummary[] | undefined
   /** Stock filament vendor files are megabytes, so they load on first use (`prepare`). */
   private readonly vendors = new Map<string, VendorFile>()
   /** The makers' process presets by printer, nozzle and tier (`loadMakerProcesses`), loaded on first use (`prepare`). */
@@ -191,6 +192,15 @@ export class ProfileCatalog {
       if (e.kind === 'printer') out.push({ id: `printer:${e.id}`, name: e.name, section: 'printer', source: 'knowledge', ...(typeof e.data['vendor'] === 'string' ? { vendor: e.data['vendor'] } : {}) })
       if (e.kind === 'filament') out.push({ id: `filament:${e.id}`, name: e.name, section: 'filament', source: 'knowledge' })
     }
+    out.push(...this.own())
+    this.all = out
+    return out
+  }
+
+  /** Every profile `list` gives but the knowledge base's, in the same order: they need no knowledge file parsed. */
+  private own(): ProfileSummary[] {
+    if (this.shipped) return this.shipped
+    const out: ProfileSummary[] = []
     out.push({ id: SLICERX_DEFAULT_PROCESS, name: `${productName()} default (Standard 0.20 mm, sleipnir, aegis walls)`, section: 'process', source: 'slicerx' })
     for (const goal of Object.keys(EASY_GOALS) as EasyGoal[]) out.push({ id: `intent:${goal}`, name: `${goal[0]?.toUpperCase() ?? ''}${goal.slice(1)} (Easy goal)`, section: 'process', source: 'intent' })
     for (const p of listPrinterProfiles()) out.push({ id: `machine:${p.id}`, name: `${p.vendor} ${p.model}`, section: 'printer', source: 'slicerx', vendor: p.vendor })
@@ -202,12 +212,17 @@ export class ProfileCatalog {
         out.push({ id: `${STOCK_FILAMENT}${f.vendor}/${name}`, name, section: 'filament', source: 'stock', vendor: f.brand || f.vendor })
       }
     }
-    this.all = out
+    this.shipped = out
     return out
   }
 
   /** Finds a profile by id (`printer:bambu_x1c`, `machine:bambu-x1-carbon`, `process:standard`), exact name, or a loose name match. */
   find(query: string): ProfileSummary | undefined {
+    // Only the knowledge base's ids start printer: or filament:, so any other id is found without parsing it.
+    if (!query.startsWith('printer:') && !query.startsWith('filament:')) {
+      const own = this.own().find((p) => p.id === query)
+      if (own) return own
+    }
     const all = this.list()
     const q = normalizeId(query)
     return (
