@@ -20,6 +20,8 @@
 //! - The x-mark (bench/models/x-mark.stl), whose sloped sides step in 0.6 to 0.8 mm per layer from z 5.8 to 6.2:
 //!   the top surface per layer, the floating vertical shell left at z 6.2, and at z 5.8 the band per side, where
 //!   only the left (0.78 mm) and bottom (0.72 mm) sides step in far enough.
+//! - Box tops, the topmost layer: their lines end half the outer wall in at 15% and 30% overlap, and a line along
+//!   the wall still prints from 0.377 mm of its center line.
 //! - Aegis walls are not touched: their x-mark top surface stays as it is.
 #![allow(
     clippy::disallowed_methods,
@@ -139,6 +141,70 @@ endfacet"
 ",
     );
     Arc::new(Mesh::load(stl.as_bytes(), "blocks.stl").unwrap())
+}
+
+/// A box tapered in by `step` mm per 0.2 mm layer from z 2 to 4 on a 2 mm base, `half` mm from its middle to each side.
+fn box_taper(half: f64, step: f64) -> Arc<Mesh> {
+    let square = |h: f64| [(-h, -h), (h, -h), (h, h), (-h, h)];
+    let (low, high) = (square(half), square(10.0f64.mul_add(-step, half)));
+    let mut stl = String::from("solid box\n");
+    let mut facet = |p: [(f64, f64, f64); 3]| {
+        let _ = writeln!(stl, "facet normal 0 0 0\n outer loop");
+        for v in p {
+            let _ = writeln!(stl, "  vertex {} {} {}", v.0, v.1, v.2);
+        }
+        let _ = writeln!(stl, " endloop\nendfacet");
+    };
+    for i in 0..4 {
+        let next = (i + 1) % 4;
+        let (lo0, lo1, hi0, hi1) = (low[i], low[next], high[i], high[next]);
+        facet([(0.0, 0.0, 0.0), (lo1.0, lo1.1, 0.0), (lo0.0, lo0.1, 0.0)]);
+        facet([(lo0.0, lo0.1, 0.0), (lo1.0, lo1.1, 0.0), (lo1.0, lo1.1, 2.0)]);
+        facet([(lo0.0, lo0.1, 0.0), (lo1.0, lo1.1, 2.0), (lo0.0, lo0.1, 2.0)]);
+        facet([(lo0.0, lo0.1, 2.0), (lo1.0, lo1.1, 2.0), (hi1.0, hi1.1, 4.0)]);
+        facet([(lo0.0, lo0.1, 2.0), (hi1.0, hi1.1, 4.0), (hi0.0, hi0.1, 4.0)]);
+        facet([(0.0, 0.0, 4.0), (hi0.0, hi0.1, 4.0), (hi1.0, hi1.1, 4.0)]);
+    }
+    stl.push_str("endsolid box\n");
+    Arc::new(Mesh::load(stl.as_bytes(), "box.stl").unwrap())
+}
+
+/// A point's coordinates across a side of a box and along it.
+type Frame = fn((f64, f64)) -> (f64, f64);
+
+/// How far the nearest top surface line that runs along the bottom or the left side of the outer wall lies from that
+/// side's center line on layer `z` (thousandths of a millimeter), over lines along it that cover half of it or more.
+fn nearest_along_side(ms: &[Move], z: i64) -> Option<f64> {
+    let layer: Vec<&Move> = ms.iter().filter(|m| m.z == z).collect();
+    // (coordinate across the side, coordinate along it) of a point, for the bottom side and the left side.
+    let frames: [Frame; 2] = [|p| (p.1, p.0), |p| (p.0, p.1)];
+    frames
+        .iter()
+        .filter_map(|f| {
+            let side = layer
+                .iter()
+                .filter(|m| m.feature == "Outer wall" && (f(m.to).0 - f(m.from).0).abs() < 1e-3)
+                .min_by(|a, b| f(a.from).0.total_cmp(&f(b.from).0))?;
+            let (wall, len) = (f(side.from).0, (f(side.to).1 - f(side.from).1).abs());
+            layer
+                .iter()
+                .filter(|m| m.feature == TOP && (f(m.to).0 - f(m.from).0).abs() < 1e-3)
+                .filter(|m| (f(m.to).1 - f(m.from).1).abs() > 0.5 * len)
+                .map(|m| f(m.from).0 - wall)
+                .filter(|d| *d > 0.0)
+                .reduce(f64::min)
+        })
+        .reduce(f64::min)
+}
+
+/// The stock P1S request with its sparse and solid infill lines at 0 degrees, so the top's lines run along two of a
+/// box's sides, and `infill_wall_overlap` at `overlap` percent.
+fn along_edits(overlap: u32) -> [(&'static str, Value); 3] {
+    [
+        ("infill_direction", json!(0)),
+        ("solid_infill_direction", json!(0)),
+        ("infill_wall_overlap", json!(overlap)),
+    ]
 }
 
 /// A number after `key` in a G-code move.
@@ -731,4 +797,64 @@ fn aegis_x_mark_top_surface_is_unchanged() {
         (plate - 123.14).abs() < 0.01,
         "top surface on the plate {plate:.3}, want 123.14"
     );
+}
+
+#[test]
+fn classic_box_tops_start_half_the_outer_wall_in_at_any_overlap() {
+    // The topmost layer of a box under a classic one-wall top: its lines end half the outer wall's width in from the
+    // wall's center line at 15% and at 30% overlap, so the box top is the same at both, within 0.05 mm of filament of
+    // its target: boxes whose tops are 22, 20 and 18 mm across on a 30 mm block, and the 70 mm pyramid's top tier.
+    for (half, want) in [(11.0, 36.49), (10.0, 29.91), (9.0, 24.01)] {
+        let mesh = blocks(&[(15.0, 0.0, 2.0), (half, 2.0, 4.0)]);
+        for overlap in [15, 30] {
+            let g = slice_with(
+                mesh.clone(),
+                "classic",
+                &[("infill_wall_overlap", json!(overlap))],
+            );
+            let got = at(&per_layer(&moves(&g)), TOP, 4.0);
+            assert!(
+                (got - want).abs() <= 0.05,
+                "{} mm box top, {overlap}% overlap: top surface {got:.3}, want {want}",
+                2.0 * half
+            );
+        }
+    }
+    let tiers: Vec<(f64, f64, f64)> = (0..5u32)
+        .map(|i| {
+            (
+                6.0f64.mul_add(-f64::from(i), 35.0),
+                2.0 * f64::from(i),
+                2.0 * f64::from(i + 1),
+            )
+        })
+        .collect();
+    let pyramid = blocks(&tiers);
+    for overlap in [15, 30] {
+        let g = slice_with(
+            pyramid.clone(),
+            "classic",
+            &[("infill_wall_overlap", json!(overlap))],
+        );
+        let got = at(&per_layer(&moves(&g)), TOP, 10.0);
+        assert!(
+            (got - 36.49).abs() <= 0.05,
+            "pyramid top, {overlap}% overlap: top surface {got:.3}, want 36.49"
+        );
+    }
+}
+
+#[test]
+fn classic_box_top_lines_along_the_wall_keep_their_distance() {
+    // A box 30.35 mm across tapered 0.8 mm per layer, its top's lines along two sides: the nearest one on the
+    // topmost layer (z 4.0) lies 0.389 mm from the outer wall's center line at 15% and 30% overlap, as with the
+    // surface ending where the overlap leaves it. A line prints once it is 0.377 mm from that line.
+    for overlap in [15, 30] {
+        let g = slice_with(box_taper(15.175, 0.8), "classic", &along_edits(overlap));
+        let got = nearest_along_side(&moves(&g), 4000);
+        assert!(
+            got.is_some_and(|d| (d - 0.389).abs() < 0.005),
+            "{overlap}% overlap: nearest line along the wall {got:?}, want 0.389"
+        );
+    }
 }

@@ -1809,6 +1809,20 @@ fn classic_top_cut(ext: i32, inner: i32) -> i32 {
     i32::midpoint(ext / 2, inner) + 5
 }
 
+/// How far in from its outline a classic one-wall top's surface starts, internal units, when the walls' `overlap` (of
+/// line width `w`) would bring it nearer: the outer wall's width less the surface's line ends (0.045 of its line
+/// width), so the lines that run into the wall end half the outer wall's width in from its center line at any
+/// overlap. `None` when the overlap leaves the surface there or further in already.
+pub(crate) fn classic_top_near(cfg: &crate::config::PrintConfig, overlap: i32, w: i32) -> Option<i32> {
+    let ext = if cfg.has_feature_widths() {
+        crate::geom::mm(cfg.outer_wall_width())
+    } else {
+        w
+    };
+    let ends = crate::geom::mm(cfg.top_surface_width()) * 45 / 1000;
+    (overlap > ends).then_some(ext - ends)
+}
+
 // a false result guarantees that the context-free classic walls are unchanged.
 pub(crate) fn classic_top_candidate(
     cfg: &crate::config::PrintConfig,
@@ -2005,8 +2019,8 @@ pub(crate) fn walls_for_top(
             let more = (wall_loops as i32 - 2).max(0) * pitch(inner) * 3 / 5;
             let reach = ext * 3 / 2 + inner * 3 / 5 - mm(0.05) + ends + more;
             let mut exposed = intersection(&offset(&offset(&step, -cut), cut + reach), &outer_core);
-            if overlap > ends {
-                exposed = intersection(&exposed, &offset(&one, -(ext - ends)));
+            if let Some(near) = classic_top_near(cfg, overlap, w) {
+                exposed = intersection(&exposed, &offset(&one, -near));
             }
             // Where the layer above is a flat ledge (the layer over it covers it there), the band's lines end where
             // that layer's infill area starts, inside its walls, so a larger overlap shortens them. Where the layer
