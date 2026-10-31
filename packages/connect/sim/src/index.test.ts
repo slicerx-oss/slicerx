@@ -66,3 +66,24 @@ test('camera stills are real JPEGs, as real printers give', async () => {
   assert.deepEqual([...bytes.subarray(-2)], [0xff, 0xd9])
   assert.ok(bytes.length < 5 * 1024 * 1024)
 })
+
+test('a tick that changes nothing but updatedAt sends no status, a real change sends one', async () => {
+  let now = 1_700_000_000_000
+  const sim = createFleetSim(fixture, { clock: () => now })
+  const paused = fixture.printers.find((p) => p.state === 'paused')
+  assert.ok(paused, 'the demo fleet has a paused printer')
+  const statuses: PrinterEvent[] = []
+  sim.subscribe(paused.id, (e) => { if (e.type === 'status') statuses.push(e) })
+  await Promise.resolve() // subscribe sends the current status on a microtask
+  const tick = (ms: number): void => { now += ms; sim.tick(ms) }
+  for (let i = 0; i < 20; i++) tick(1000) // let temperatures settle
+  const settled = statuses.length
+  assert.ok(settled >= 1, 'the first status is sent')
+  tick(1000)
+  tick(1000)
+  assert.equal(statuses.length, settled, 'ticks that change nothing but updatedAt send nothing')
+  await sim.resume(paused.id, sim.permit.mint('resume', paused.id))
+  assert.equal(statuses.length, settled + 1, 'a state change sends exactly one status')
+  const last = statuses[statuses.length - 1]
+  assert.ok(last?.type === 'status' && last.status.state === 'printing')
+})

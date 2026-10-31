@@ -198,8 +198,14 @@ export function createFleetSim(fixture: DemoFleet, opts: FleetSimOptions = {}): 
   function emit(id: string, e: PrinterEvent): void {
     for (const cb of listeners.get(id) ?? []) cb(e)
   }
+  /** What was last sent per printer, without updatedAt. Real drivers also send only on a change. */
+  const lastSent = new Map<string, string>()
   function emitStatus(p: SimPrinter): void {
-    emit(p.fx.id, { type: 'status', status: statusOf(p) })
+    const status = statusOf(p)
+    const key = JSON.stringify({ ...status, updatedAt: '' })
+    if (lastSent.get(p.fx.id) === key) return
+    lastSent.set(p.fx.id, key)
+    emit(p.fx.id, { type: 'status', status })
   }
 
   function mint(action: MintAction, target?: string, params?: unknown): ApprovalToken {
