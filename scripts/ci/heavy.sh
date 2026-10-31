@@ -44,10 +44,14 @@
 #   SX_HEAVY_PROMOTE_AFTER=<seconds>           how old a waiter's ticket that is not a CI job's (and not --all) must
 #                                              be before it queues as one, ahead of the CI tickets that came after it
 #                                              (default: the number in <lock>.promote-after, or 1800; 0: never)
-#   SX_HEAVY_COMMIT_FREE_MIN_GB=<n>            a --gpu hold on Windows (Git Bash or WSL) with less Windows commit charge
-#                                              free than this asks WSL to drop its page cache before it queues (default:
-#                                              the number in <lock>.commit-free-min, or 8; 0: never); see cache_check
+#   SX_HEAVY_COMMIT_FREE_MIN_GB=<n>            a hold on Windows (Git Bash or WSL) with less Windows commit charge free
+#                                              than this asks WSL to drop its page cache before it queues (default: the
+#                                              number in <lock>.commit-free-min, or 8; 0: never); see cache_check
 #   SX_HEAVY_DROP_WAIT=<seconds>               how long it waits for the answer (default 40); it never blocks the hold
+#   SX_HEAVY_COMMIT_CACHE_S=<seconds>          how long a hold that is not --gpu reuses another's commit reading, kept in
+#                                              <lock>.commit-reading (default 60; 0: it reads its own every time)
+#   SX_HEAVY_DROP_GAP=<seconds>                a hold that is not --gpu asks for no drop this soon after the last one,
+#                                              which the timer would refuse anyway (default 300, the timer's own gap)
 #   SX_HEAVY_SETTLE_S=<seconds>                after an answered drop, how long past the answer the commit is read once
 #                                              more, in the background once the hold is granted (default 45; 0: never)
 #   SX_HEAVY_LABEL=<text>                      who is asking, in the holder record and the history (optional)
@@ -828,6 +832,12 @@ watchdog() {
 # skipped with one log line.
 # SX_HEAVY_COMMIT_CMD (a command that prints "<total KB> <free KB>") and SX_HEAVY_POWERSHELL (the program to ask) are
 # for the tests. Fails with 127 when there is no powershell.exe, and 1 when it cannot start or prints no reading.
+# Every other hold (plain, --e2e, --all, class engine) does the same, with two differences that keep it cheap, since
+# such holds come often (about two a minute on a busy machine) and a reading costs about 1.5 s of powershell.exe: it
+# reuses a reading taken less than SX_HEAVY_COMMIT_CACHE_S seconds ago (commit_cached), and it asks for no drop within
+# SX_HEAVY_DROP_GAP seconds of the last answered one, which the timer would only refuse as rate-limited (one log line,
+# no wait). The --gpu hold keeps its own fresh reading and its wait every time; an answered drop from any hold
+# removes the kept reading.
 # WSL hands the dropped cache back to Windows over a minute or so, so the reading right after the answer shows little
 # of it. An answered drop sets settle_at, and once the hold is granted, settle reads the commit again then.
 settle_at= settle_from= settle_who=
@@ -847,6 +857,33 @@ commit_read() {
   case $c_free in '' | *[!0-9]*) return 1 ;; esac
   [ "$c_total" -gt 0 ] && [ "$c_free" -le "$c_total" ]
 }
+# The commit for a hold that is not --gpu: the reading in <lock>.commit-reading ("time", "total" and "free" lines) when
+# it is less than SX_HEAVY_COMMIT_CACHE_S seconds old, else a new one, which is written there (through a new file and a
+# rename, so no hold reads half of one) for the holds after it. Fails as commit_read does; a failure is not kept.
+commit_cached() {
+  local cache_s=${SX_HEAVY_COMMIT_CACHE_S:-60} cfile=$lock.commit-reading k v ct= cf= cdt= t rc
+  case $cache_s in '' | *[!0-9]*) cache_s=60 ;; esac
+  t=$(now)
+  if [ "$cache_s" -gt 0 ] && [ -f "$cfile" ]; then
+    while IFS=' ' read -r k v || [ -n "$k" ]; do
+      v=${v%"$cr"}
+      case $k in time) cdt=$v ;; total) ct=$v ;; free) cf=$v ;; esac
+    done 2> /dev/null < "$cfile"
+    case $cdt in '' | *[!0-9]*) cdt= ;; esac
+    case $ct in '' | *[!0-9]*) cdt= ;; esac
+    case $cf in '' | *[!0-9]*) cdt= ;; esac
+    if [ -n "$cdt" ] && [ $((t - cdt)) -ge 0 ] && [ $((t - cdt)) -lt "$cache_s" ] && [ "$ct" -gt 0 ] && [ "$cf" -le "$ct" ]; then
+      c_total=$ct c_free=$cf
+      return 0
+    fi
+  fi
+  commit_read; rc=$?
+  if [ "$rc" = 0 ] && [ "$cache_s" -gt 0 ]; then
+    { printf 'time %s\ntotal %s\nfree %s\n' "$t" "$c_total" "$c_free" > "$cfile.$$" && mv -f "$cfile.$$" "$cfile"; } 2> /dev/null ||
+      rm -f "$cfile.$$" 2> /dev/null
+  fi
+  return $rc
+}
 # KB as GB with one decimal, into variable $2.
 gb() { local g=$((($1 * 10 + 524288) / 1048576)); printf -v "$2" '%d.%d' $((g / 10)) $((g % 10)); }
 commit_text() { local cu ct cf; gb $((c_total - c_free)) cu; gb "$c_total" ct; gb "$c_free" cf; printf -v "$1" 'used %s of %s GB, free %s GB' "$cu" "$ct" "$cf"; }
@@ -862,7 +899,7 @@ kv_read() {
   case $f_time in '' | *[!0-9]*) return 1 ;; esac
 }
 cache_check() {
-  local min wait_s dpoll req dfile before after who t req_t req_id end answered answered_at why settle_s
+  local min wait_s dpoll req dfile before after who t req_t req_id end answered answered_at why settle_s gap
   setting min "${SX_HEAVY_COMMIT_FREE_MIN_GB:-}" commit-free-min 8
   [ "$min" -gt 0 ] || return 0
   case $side in msys | wsl) ;; *) [ -n "${SX_HEAVY_COMMIT_CMD:-}${SX_HEAVY_POWERSHELL:-}" ] || return 0 ;; esac
@@ -870,7 +907,7 @@ cache_check() {
   dpoll=${SX_HEAVY_DROP_POLL:-1}
   # A reading that fails although powershell.exe is there is what an exhausted commit looks like (a new process
   # cannot start), so it asks for a drop too; the timer's rate limit keeps that cheap.
-  commit_read
+  if [ -n "$gpu" ]; then commit_read; else commit_cached; fi
   case $? in
     0)
       [ "$c_free" -lt $((min * 1048576)) ] || return 0
@@ -882,6 +919,16 @@ cache_check() {
   who=${session:-${label:-$user}}
   req=$lock.drop-cache.request dfile=$lock.drop-cache.done
   t=$(now) req_t= req_id=
+  # A hold that is not --gpu asks for no drop the timer would refuse: one answered as dropped less than
+  # SX_HEAVY_DROP_GAP seconds ago means the next is rate-limited.
+  if [ -z "$gpu" ]; then
+    gap=${SX_HEAVY_DROP_GAP:-300}; case $gap in '' | *[!0-9]*) gap=300 ;; esac
+    if [ "$gap" -gt 0 ] && kv_read "$dfile" && [ "$f_result" = dropped ] && [ $((t - f_time)) -ge 0 ] && [ $((t - f_time)) -lt "$gap" ]; then
+      echo "heavy.sh: $why; the last cache drop was $((t - f_time)) s ago, so none is asked for" >&2
+      hist_line cache-drop "" "before $before; skipped: the last cache drop was $((t - f_time)) s ago, at most one per $gap s; asked by $who"
+      return 0
+    fi
+  fi
   # A request another hold wrote a moment ago is joined; one left unread longer than a wait means nothing answers.
   if [ -f "$req" ]; then
     kv_read "$req" || f_time=0
@@ -917,6 +964,9 @@ cache_check() {
   else
     echo "heavy.sh: cache drop ${f_result:-answered}; Windows commit charge now $after" >&2
     hist_line cache-drop "" "before $before, after $after; ${f_result:-answered}${f_detail:+: $f_detail}; asked by $who"
+    # The kept reading is from before the drop, whichever hold asked for it; the next hold that is not --gpu reads a
+    # new one.
+    rm -f "$lock.commit-reading" 2> /dev/null
     settle_s=${SX_HEAVY_SETTLE_S:-45}; case $settle_s in '' | *[!0-9]*) settle_s=45 ;; esac
     [ "$settle_s" = 0 ] || settle_at=$((answered_at + settle_s)) settle_from=$answered_at settle_who=$who
   fi
@@ -938,7 +988,7 @@ settle() {
   hist_line cache-drop "" "settled $settled; read $((SECONDS - settle_from)) s past the answer; asked by $settle_who"
   exit 0
 }
-[ -z "$gpu" ] || cache_check
+cache_check
 
 t0=$SECONDS next=0 judged=0
 while :; do
