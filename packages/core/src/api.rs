@@ -756,7 +756,9 @@ pub const NO_MACHINE_PROFILE: &str = "No printer settings given; times and motio
 /// A key of the printer's own settings: its bed (`printable_area`, or the older `bed_shape`) or its
 /// motion limits (`machine_max_*`, `machine_min_*`).
 fn is_machine_key(key: &str) -> bool {
-    matches!(key, "printable_area" | "bed_shape") || key.starts_with("machine_max_") || key.starts_with("machine_min_")
+    matches!(key, "printable_area" | "bed_shape")
+        || key.starts_with("machine_max_")
+        || key.starts_with("machine_min_")
 }
 
 /// Whether a request carries any printer settings, in its config or an object's settings. Without them the slice runs
