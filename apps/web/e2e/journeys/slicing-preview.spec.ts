@@ -636,6 +636,12 @@ test('the estimate, the summary, the playback bar and the send sheet show one pr
   const sheet = page.locator('dialog.print-sheet[open]')
   // The sheet's summary of what will print (bcdbb995 replaced its Estimate group) carries the same time.
   await expect(sheet.getByRole('region', { name: 'What will print' })).toContainText(worded(timeS))
+  // Escape shuts a tip before the dialog under it (the tooltip host: "Esc closes the tip first"), so the key goes in with
+  // no tip up or coming. The palette item was clicked where the sheet's file name now is, so the pointer is still over
+  // that name and its tip is due; the pointer goes to an empty corner first, which cancels it. Then the test waits for
+  // the page to show no tooltip before the one key press.
+  await page.mouse.move(2, 2)
+  await expect(page.locator('#sx-tip')).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(sheet).toHaveCount(0)
 })
