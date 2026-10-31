@@ -5059,3 +5059,85 @@ fn a_requests_per_extruder_object_values_slice() {
         "50 mm/s inner walls: {feeds:?}"
     );
 }
+
+/// A request without any printer settings (no `printable_area` or `bed_shape`, no `machine_max_` or `machine_min_`
+/// keys) still slices, exit 0, but says so: a `no_machine_profile` warning in `warnings` and in `configReport`, and a
+/// line on stderr, so a time on engine defaults is not read as one for the printer. A plate `bed` alone is not printer
+/// settings. One printer key, or a whole printer's config, leaves the warning out.
+#[test]
+fn a_request_without_printer_settings_warns_no_machine_profile() {
+    let slice = |req: &serde_json::Value| {
+        let mut child = sx()
+            .args(["slice", "--request", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(req.to_string().as_bytes()).unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        (v, String::from_utf8_lossy(&out.stderr).into_owned())
+    };
+    let codes = |v: &serde_json::Value, at: &str| -> Vec<String> {
+        v.pointer(at)
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|w| w["code"].as_str())
+            .filter(|c| *c == "no_machine_profile")
+            .map(str::to_owned)
+            .collect()
+    };
+    let request = |config: serde_json::Value| {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "meshes": { "cube": fixture("cube.stl") },
+            "plate": { "bed": { "widthMm": 270, "depthMm": 270, "heightMm": 270 }, "objects": [{ "mesh": "cube" }] },
+            "config": config,
+            "options": { "emitPreview": false }
+        })
+    };
+    let text = "No printer settings given; times and motion use engine defaults. Send the printer's printable_area and machine_max_ keys in config (slicerx_get_profile with a machine: profile, or sx project-settings for a project).";
+    for config in [serde_json::json!({}), serde_json::json!({"layer_height": 0.2, "printer_model": "Snapmaker U1"})] {
+        let (v, err) = slice(&request(config.clone()));
+        let warning = v["warnings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["code"] == "no_machine_profile")
+            .unwrap_or_else(|| panic!("{config}: {}", v["warnings"]));
+        assert_eq!(warning["message"], text);
+        assert_eq!(codes(&v, "/configReport/warnings"), ["no_machine_profile"], "{config}");
+        assert_eq!(v["configReport"]["warnings"][0]["message"], text);
+        assert!(err.contains(&format!("warning: {text}")), "{err}");
+        assert!(!text.contains(['\u{2013}', '\u{2014}']));
+    }
+    // Any printer key, or a printer's whole config, is printer settings.
+    for config in [
+        serde_json::json!({"printable_area": ["0x0", "270x0", "270x270", "0x270"]}),
+        serde_json::json!({"bed_shape": "0x0,270x0,270x270,0x270"}),
+        serde_json::json!({"machine_max_acceleration_x": [20000]}),
+        serde_json::json!({"machine_min_travel_rate": [0]}),
+    ] {
+        let (v, err) = slice(&request(config.clone()));
+        assert!(codes(&v, "/warnings").is_empty(), "{config}: {}", v["warnings"]);
+        assert!(codes(&v, "/configReport/warnings").is_empty(), "{config}");
+        assert!(!err.contains("No printer settings given"), "{err}");
+    }
+    let p1s: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(fixture("xmark-p1s-request.json")).unwrap()).unwrap();
+    let (v, _) = slice(&request(p1s["config"].clone()));
+    assert!(codes(&v, "/warnings").is_empty(), "{}", v["warnings"]);
+    // The result schema lists the code.
+    let out = sx().args(["schema", "result"]).output().unwrap();
+    let schema: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let listed = schema["properties"]["warnings"]["items"]["properties"]["code"]["enum"].to_string();
+    assert!(listed.contains("\"no_machine_profile\""), "{listed}");
+    assert!(
+        schema["properties"]["configReport"]["properties"]["warnings"].is_object(),
+        "{}",
+        schema["properties"]["configReport"]
+    );
+}

@@ -4,6 +4,10 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ## [Unreleased]
 
+### Added
+
+- `WarningCode::NoMachineProfile` (`no_machine_profile`) and `ConfigReport::warnings`: with `options.configReport` or `options.strict`, a request whose config and object settings carry no printer settings (no `printable_area` or `bed_shape`, no `machine_max_*` or `machine_min_*` keys) gets the warning in the report's `warnings` and in `configReport.warnings` (`NO_MACHINE_PROFILE` is its text). The slice still runs on the engine's defaults, and `strict` does not refuse it. The result schema lists the code and the field.
+
 ## [0.2.7] - 2026-10-30
 
 ### Added
