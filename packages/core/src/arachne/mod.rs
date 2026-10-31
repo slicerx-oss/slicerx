@@ -640,7 +640,7 @@ pub(crate) fn island_walls_or(
         let b = if loops == 0 {
             Built::Done(None)
         } else if let Some(t) = top.filter(|_| loops > 1) {
-            match top_run(&outline, &prm, t) {
+            match top_run(&outline, &prm, cfg, t) {
                 Some(TopRun::Usual) => Built::Usual,
                 Some(TopRun::Split(one_wall, top)) => {
                     Built::Done(one_wall_top(&prm, cfg, t, one_wall, top, overlap))
@@ -724,7 +724,12 @@ enum TopRun {
 }
 
 /// [`TopRun`] of the island `outline`, `None` where the generator cannot build its one-wall run.
-fn top_run(outline: &Shapes, prm: &Params, t: &perimeters::TopCtx) -> Option<TopRun> {
+fn top_run(
+    outline: &Shapes,
+    prm: &Params,
+    cfg: &crate::config::PrintConfig,
+    t: &perimeters::TopCtx,
+) -> Option<TopRun> {
     // The infill area inside the outer wall lies inside the outline as the generator prepares it, which
     // the simplification moves out by at most the allowed deviation. Where the layer above covers all of
     // that there is no top surface, and the walls are the usual ones without the one-wall run.
@@ -742,7 +747,46 @@ fn top_run(outline: &Shapes, prm: &Params, t: &perimeters::TopCtx) -> Option<Top
     if top.is_empty() {
         return Some(TopRun::Usual);
     }
+    if !walls_leave_top(outline, prm, cfg, t) {
+        // The ledge keeps its walls inside the one-wall run, as a top too narrow for one wall does.
+        return Some(TopRun::Split(one, Vec::new()));
+    }
     Some(TopRun::Split(one, top))
+}
+
+/// Whether the usual walls of the island `outline`, all of them, leave a top surface at least the narrowest one
+/// kept ([`min_top_width`]) across. Only then does the island get its one-wall run. Each wall takes the infill area
+/// in by about its spacing, so the step a sloped side needs before its top surface takes one wall grows with the
+/// wall count: on 0.2 mm layers with 0.42 and 0.45 mm walls, about 1.53 mm a layer on 2 walls and 1.93 on 3. A
+/// narrower ledge keeps its walls and gets the top surface its own infill area leaves, which starts later on more
+/// walls (a step of 0.745 mm on 2 walls, about 1.2 on 3 and 1.6 on 4) and widens smoothly with the step. Before,
+/// the one-wall run alone decided, from about 1.08 mm whatever the wall count, and the top surface there came out
+/// about 0.9 mm narrower than at 1.07. Where the generator cannot build the usual walls the one-wall run decides
+/// alone, as before.
+fn walls_leave_top(
+    outline: &Shapes,
+    prm: &Params,
+    cfg: &crate::config::PrintConfig,
+    t: &perimeters::TopCtx,
+) -> bool {
+    walls(outline, prm).is_none_or(|usual| {
+        let top = perimeters::difference(&usual.inner, t.upper);
+        !perimeters::offset(&top, -min_top_width(prm, cfg)).is_empty()
+    })
+}
+
+/// Half the narrowest top surface a one-wall top keeps, internal units: a quarter of `min_width_top_surface` (300
+/// percent of the inner wall's width by default), and never under a quarter of the outer wall's spacing.
+fn min_top_width(prm: &Params, cfg: &crate::config::PrintConfig) -> i32 {
+    let spacing_0 = crate::geom::mm(prm.bead_width_0);
+    (spacing_0 / 4 + 1).max(
+        crate::geom::mm(abs_value(
+            cfg,
+            "min_width_top_surface",
+            cfg.inner_wall_width(),
+            300.0,
+        )) / 4,
+    )
 }
 
 /// Each ring of `shapes` closed, simplified by Douglas-Peucker within `tolerance` (units) and opened again,
@@ -815,14 +859,7 @@ fn one_wall_top(
         top = perimeters::difference(&top, &bridges);
     }
     // Drop slivers, then grow the rest to hide the wall line.
-    let min_width = (spacing_0 / 4 + 1).max(
-        crate::geom::mm(abs_value(
-            cfg,
-            "min_width_top_surface",
-            cfg.inner_wall_width(),
-            300.0,
-        )) / 4,
-    );
+    let min_width = min_top_width(prm, cfg);
     let grow = min_width + width * 85 / 100;
     top = perimeters::offset(&perimeters::offset(&top, -min_width), grow);
     let not_top = perimeters::difference(&contour, &top);
@@ -877,7 +914,7 @@ fn clear_of_inner_walls(
 #[cfg(test)]
 pub(crate) mod reference {
     #![allow(clippy::too_many_arguments, reason = "kept as it was")]
-    use super::{Params, Walls, abs_value, percent, perimeters, simplify_rings, walls};
+    use super::{Params, Walls, percent, perimeters, simplify_rings, walls};
     use crate::perimeters::Shapes;
 
     pub(crate) fn island_walls(
@@ -1001,6 +1038,9 @@ pub(crate) mod reference {
         if top.is_empty() {
             return walls(outline, prm);
         }
+        if !super::walls_leave_top(outline, prm, cfg, t) {
+            top.clear();
+        }
         let spacing_0 = crate::geom::mm(prm.bead_width_0);
         let width = crate::geom::mm(cfg.inner_wall_width());
         if let Some(lower) = t.lower {
@@ -1008,14 +1048,7 @@ pub(crate) mod reference {
             let bridges = perimeters::offset(&perimeters::difference(&top, lower), reach);
             top = perimeters::difference(&top, &bridges);
         }
-        let min_width = (spacing_0 / 4 + 1).max(
-            crate::geom::mm(abs_value(
-                cfg,
-                "min_width_top_surface",
-                cfg.inner_wall_width(),
-                300.0,
-            )) / 4,
-        );
+        let min_width = super::min_top_width(prm, cfg);
         let grow = min_width + width * 85 / 100;
         top = perimeters::offset(&perimeters::offset(&top, -min_width), grow);
         let not_top = perimeters::difference(&contour, &top);
