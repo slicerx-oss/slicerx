@@ -5266,3 +5266,39 @@ fn placement_keep_slices_a_3mf_where_the_file_puts_it() {
         serde_json::json!(["center", "keep"])
     );
 }
+
+/// A project plate sliced as a client sends it, with smart layers on: a 2 mm box with a setting of its own beside a
+/// 1.05 mm block, each made of two halves on filaments 1 and 2 (tests/fixtures/smart-tops/two-color-short.3mf). The
+/// block is sliced on the plate's layer tops in a session of its own, and its top falls in the lower half of a plate
+/// layer.
+#[test]
+fn smart_layers_slice_a_shorter_two_color_object() {
+    let dir = temp_dir(format!("sx-cli-smart-tops-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let req = serde_json::json!({
+        "schemaVersion": 1,
+        "meshes": {"m0": format!("{}#1", fixture("smart-tops/two-color-short.3mf"))},
+        "plate": {"objects": [{"id": "o0", "mesh": "m0"}]},
+        "config": {
+            "layer_height": 0.2,
+            "initial_layer_print_height": 0.2,
+            "smart_layer": "quality",
+            "smart_layer_min_height": 0.15,
+            "smart_layer_max_height": 0.2,
+        },
+        "options": {"emitGcode": true},
+    });
+    let request = dir.join("request.json");
+    std::fs::write(&request, req.to_string()).unwrap();
+    let out = sx()
+        .args(["slice", "--request"])
+        .arg(&request)
+        .arg("--out-dir")
+        .arg(&dir)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let z = v["layerZ"].as_array().unwrap();
+    assert!((z.last().unwrap().as_f64().unwrap() - 2.0).abs() < 1e-3, "{z:?}");
+}
