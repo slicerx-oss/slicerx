@@ -13,6 +13,10 @@
 //! - The step where the band starts grows with the wall count, as each wall takes the infill area in by its spacing:
 //!   none at 1.1 mm and a band at 1.2 mm on 3 walls, none up to 1.4 mm on 4. The band on 3 walls is at least as wide
 //!   as on 2.
+//! - Past a step of 1.4 mm, on a 50 mm box, the band keeps widening on 2, 3 and 4 walls. The one-wall run takes over a
+//!   layer at a time, from the smallest island at the top, once a layer's ledge is a large enough part of it. Before,
+//!   it took over on every sloped layer at once, at 1.53 mm on 2 walls and 1.94 on 3, and the top surface lost about a
+//!   quarter; on 4 walls it never did, and the top surface ran up to 6 percent over the target at 2.2 mm.
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -37,7 +41,12 @@ const SLOPED: [i64; 9] = [2200, 2400, 2600, 2800, 3000, 3200, 3400, 3600, 3800];
 /// The tapered part around the origin: a 30 mm square box to z 2, then a frustum to z 4 whose sides step in by `r`
 /// mm per 0.2 mm, as ASCII STL.
 fn taper(r: f64) -> Vec<u8> {
-    let (b, t) = (15.0, 15.0 - 10.0 * r);
+    taper_of(15.0, r)
+}
+
+/// [`taper`] on a square box `half` mm from its center to each side.
+fn taper_of(half: f64, r: f64) -> Vec<u8> {
+    let (b, t) = (half, half - 10.0 * r);
     let square = |h: f64, z: f64| [(-h, -h, z), (h, -h, z), (h, h, z), (-h, h, z)];
     let (b0, b2, t4) = (square(b, 0.0), square(b, 2.0), square(t, 4.0));
     let mut out = String::from("solid taper\n");
@@ -65,11 +74,21 @@ fn taper(r: f64) -> Vec<u8> {
 
 /// The G-code of the taper with step `r` on `walls` aegis walls.
 fn slice(r: f64, walls: u32) -> String {
+    slice_mesh(&taper(r), walls)
+}
+
+/// The G-code of the taper on a 50 mm box with step `r` on `walls` aegis walls.
+fn slice_wide(r: f64, walls: u32) -> String {
+    slice_mesh(&taper_of(25.0, r), walls)
+}
+
+/// The G-code of the ASCII STL `stl` on `walls` aegis walls.
+fn slice_mesh(stl: &[u8], walls: u32) -> String {
     let mut req: Value = serde_json::from_slice(&std::fs::read(REQUEST).unwrap()).unwrap();
     req["config"]["wall_generator"] = json!("aegis");
     req["config"]["wall_loops"] = json!(walls);
     let req: SliceRequest = serde_json::from_value(req).unwrap();
-    let mesh = Arc::new(Mesh::load(&taper(r), "taper.stl").unwrap());
+    let mesh = Arc::new(Mesh::load(stl, "taper.stl").unwrap());
     let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
     String::from_utf8(run.gcode).unwrap()
 }
@@ -247,5 +266,93 @@ fn the_aegis_top_band_starts_later_on_more_walls() {
     for r in [1.2, 1.3, 1.4] {
         let t = top(r, 4);
         assert!(t < 0.05, "4 walls at {r}: top surface {t:.2}");
+    }
+}
+
+/// On a 50 mm box the top surface over the sloped layers has no drop where the usual walls start to leave a top surface
+/// of their own: within 3 percent between steps of 1.52 and 1.53 mm on 2 walls and between 1.93 and 1.94 on 3. Before,
+/// it fell by 26 and 22 percent there, to the narrow band of the one-wall run on every sloped layer.
+#[test]
+fn the_aegis_top_band_has_no_drop_past_a_step_of_1_5_mm() {
+    let mut misses = Vec::new();
+    for (walls, a, b) in [(2, 1.52, 1.53), (3, 1.93, 1.94)] {
+        let (x, y) = (
+            sloped(&slice_wide(a, walls), "Top surface"),
+            sloped(&slice_wide(b, walls), "Top surface"),
+        );
+        if x < 150.0 || (x - y).abs() > 0.03 * x {
+            misses.push(format!("{walls} walls: top surface {x:.2} at {a}, {y:.2} at {b}"));
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
+}
+
+/// On a 50 mm box the top surface over the sloped layers is within 3 percent of the target from a step of 1.6 to
+/// 2.2 mm. Before, it was 15 to 21 percent short on 2 walls from 1.8 mm and on 3 walls from 2.0 mm, and on 4 walls
+/// 3.9 and 6.0 percent over at 2.0 and 2.2 mm, as no layer took the one-wall run.
+#[test]
+fn the_aegis_top_band_follows_the_targets_past_a_step_of_1_4_mm() {
+    let targets = [
+        (2, 1.8, 206.38),
+        (2, 2.0, 203.02),
+        (2, 2.2, 198.61),
+        (3, 1.6, 210.70),
+        (3, 2.0, 208.92),
+        (3, 2.2, 202.94),
+        (4, 1.8, 220.29),
+        (4, 2.0, 214.18),
+        (4, 2.2, 206.85),
+    ];
+    let mut misses = Vec::new();
+    for (walls, r, target) in targets {
+        let t = sloped(&slice_wide(r, walls), "Top surface");
+        if (t - target).abs() > 0.03 * target {
+            misses.push(format!(
+                "{walls} walls at {r}: top surface {t:.2} (target {target})"
+            ));
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
+}
+
+/// On 3 walls the one-wall run takes over a layer at a time from the top: each sloped layer's top surface is within
+/// 0.55 of the target at steps of 1.93 mm (the two layers under the flat top have it) and 2.2 mm (the five under it
+/// have it). Before, at 1.93 every layer kept its walls, 2.4 over on z 3.6, and at 2.2 every layer had the one-wall
+/// run, up to 8.5 short on z 2.2.
+#[test]
+fn the_aegis_top_band_takes_one_wall_a_layer_at_a_time() {
+    let targets = [
+        (
+            1.93,
+            [37.25, 33.90, 30.53, 27.19, 23.86, 20.51, 17.14, 11.56, 9.12],
+        ),
+        (
+            2.2,
+            [40.49, 36.30, 32.11, 27.90, 19.57, 16.41, 13.24, 10.07, 6.87],
+        ),
+    ];
+    let mut misses = Vec::new();
+    for (r, want) in targets {
+        let layers = per_layer(&slice_wide(r, 3), "Top surface");
+        for (z, w) in SLOPED.iter().zip(want) {
+            let got = layers.get(z).copied().unwrap_or(0.0);
+            if (got - w).abs() > 0.55 {
+                misses.push(format!("step {r}, z {z}: top surface {got:.2} (target {w})"));
+            }
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
+}
+
+/// On a 50 mm box the band starts between steps of 1.16 and 1.18 mm on 3 walls and between 1.58 and 1.59 on 4.
+#[test]
+fn the_aegis_top_band_starts_on_the_wide_box_where_it_did() {
+    let top = |r: f64, walls: u32| sloped(&slice_wide(r, walls), "Top surface");
+    for (walls, none, band) in [(3, 1.16, 1.18), (4, 1.58, 1.59)] {
+        let (a, b) = (top(none, walls), top(band, walls));
+        assert!(
+            a < 0.05 && b > 150.0,
+            "{walls} walls: top surface {a:.2} at {none}, {b:.2} at {band}"
+        );
     }
 }
