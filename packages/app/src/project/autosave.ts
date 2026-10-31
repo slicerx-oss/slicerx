@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Autosave and recent projects. A few seconds after the plates change, the project is written as .sx3mf to
-// this device's storage. It stays there until the project is saved or the plates are emptied, so work is
-// offered back after a crash or a closed tab. Saved and opened projects are kept as recent projects. While a
+// this device's storage. It stays there until the project is saved, the plates are emptied or the person answers
+// Don't save, so work is offered back after a crash, a forced quit or a closed tab. Saved and opened projects are kept as recent projects. While a
 // locked project is open the autosave is sealed with that file's key (project/locked-session.ts), and no copy
 // of it is kept in the clear. Opening another job over unsaved work keeps that work as a recent project first,
 // instead of asking to save or discard it.
@@ -43,6 +43,8 @@ export interface SnapshotStore {
   list(): Promise<Snapshot[]>
   put(s: Snapshot): Promise<void>
   remove(id: string): Promise<void>
+  /** Removes the row only when it still matches, in one step, so a row written meanwhile by another tab is left alone. */
+  removeIf(id: string, match: (s: Snapshot) => boolean): Promise<void>
 }
 
 const DB = 'slicerx-projects'
@@ -77,6 +79,23 @@ export function indexedDbSnapshots(): SnapshotStore {
     list: () => run('readonly', (s) => s.getAll() as IDBRequest<Snapshot[]>),
     put: (x) => run('readwrite', (s) => s.put(x)).then(() => undefined),
     remove: (id) => run('readwrite', (s) => s.delete(id)).then(() => undefined),
+    removeIf: (id, match) =>
+      open().then(
+        (db) =>
+          new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(TABLE, 'readwrite')
+            const store = tx.objectStore(TABLE)
+            const req = store.get(id) as IDBRequest<Snapshot | undefined>
+            req.onsuccess = () => {
+              if (req.result && match(req.result)) store.delete(id)
+            }
+            tx.oncomplete = () => {
+              db.close()
+              resolve()
+            }
+            tx.onerror = () => reject(tx.error ?? new Error('Project storage failed'))
+          }),
+      ),
   }
 }
 
@@ -86,6 +105,10 @@ export function memorySnapshots(): SnapshotStore {
     list: async () => [...rows.values()],
     put: async (x) => void rows.set(x.id, x),
     remove: async (id) => void rows.delete(id),
+    removeIf: async (id, match) => {
+      const row = rows.get(id)
+      if (row && match(row)) rows.delete(id)
+    },
   }
 }
 
@@ -126,10 +149,15 @@ const INPUTS = ['plate', 'plates', 'activePlate', 'overrides', 'easy', 'objectSe
  * example or a restore still on its way), not plates someone emptied.
  */
 let filled = false
+/** When the autosave this page session last wrote was stamped, or null when it has written none since the last clear. */
+let written: number | null = null
+/** Goes up when the person drops their unsaved work, so a write already under way does not land after it. */
+let dropped = 0
 
 /** A new page session as far as the autosave goes: the plates have held nothing yet. */
 export function resetAutosaveSession(): void {
   filled = false
+  written = null
 }
 
 /** Writes the project now, or clears the autosave when the plates were emptied. */
@@ -148,6 +176,9 @@ export async function autosaveNow(): Promise<boolean> {
   // too), so there is nothing to offer back after a crash; writing it again cost a big project seconds of the page's
   // time and over a gigabyte of memory right after it opened.
   if (!isDirty()) return false
+  const since = dropped
+  // The project was saved or its changes dropped while the copy was being made: there is nothing to offer back.
+  const stale = () => since !== dropped || !isDirty()
   const { sx3mfBytes } = await import('../export/actions')
   const plain = await sx3mfBytes(allPlates(get()), {}, { offPage: true })
   if (plain.byteLength > MAX_SNAPSHOT_BYTES) return false
@@ -155,11 +186,30 @@ export async function autosaveNow(): Promise<boolean> {
   if (key) {
     const { resealSxlock } = await import('@slicerx/embed/sxlock')
     const data = await resealSxlock(plain, key)
-    await snapshotStore().put({ id: AUTOSAVE_ID, name: projectName().replace(/\.sx3mf$/, '.sxlock'), savedAt: Date.now(), objects: n, data, locked: true, v: SNAPSHOT_VERSION })
+    if (stale()) return false
+    written = Date.now()
+    await snapshotStore().put({ id: AUTOSAVE_ID, name: projectName().replace(/\.sx3mf$/, '.sxlock'), savedAt: written, objects: n, data, locked: true, v: SNAPSHOT_VERSION })
     return true
   }
-  await snapshotStore().put({ id: AUTOSAVE_ID, name: projectName(), savedAt: Date.now(), objects: n, data: plain, v: SNAPSHOT_VERSION })
+  if (stale()) return false
+  written = Date.now()
+  await snapshotStore().put({ id: AUTOSAVE_ID, name: projectName(), savedAt: written, objects: n, data: plain, v: SNAPSHOT_VERSION })
   return true
+}
+
+/**
+ * The person chose to drop their unsaved changes (Don't save): the copy this session autosaved of them goes too, so
+ * the next start does not offer it back. A copy another session left (its restore offer closed, not answered) stays,
+ * and so do the recent projects. Resolves once the copy is gone from storage, so a quit can wait for it.
+ */
+export async function dropUnsavedCopy(): Promise<void> {
+  dropped++
+  const mine = written
+  written = null
+  if (mine === null) return
+  await snapshotStore()
+    .removeIf(AUTOSAVE_ID, (s) => s.savedAt === mine)
+    .catch(() => undefined)
 }
 
 /**

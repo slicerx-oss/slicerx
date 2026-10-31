@@ -15,9 +15,9 @@ export function UnsavedDialog() {
     setBusy(true)
     try {
       const { saveProject } = await import('../export/actions')
-      answerUnsaved(await saveProject(host))
+      await answerUnsaved(await saveProject(host))
     } catch {
-      answerUnsaved(false)
+      void answerUnsaved(false)
     } finally {
       setBusy(false)
     }
@@ -25,13 +25,13 @@ export function UnsavedDialog() {
   return (
     <Dialog
       open={prompt !== null}
-      onClose={() => answerUnsaved(false)}
+      onClose={() => void answerUnsaved(false)}
       title="Save changes first?"
       testId="unsaved-dialog"
       footer={
         <>
-          <Button variant="ghost" disabled={busy} data-testid="unsaved-cancel" onClick={() => answerUnsaved(false)}>Cancel</Button>
-          <Button variant="ghost" disabled={busy} data-testid="unsaved-discard" onClick={() => answerUnsaved(true)}>Don't save</Button>
+          <Button variant="ghost" disabled={busy} data-testid="unsaved-cancel" onClick={() => void answerUnsaved(false)}>Cancel</Button>
+          <Button variant="ghost" disabled={busy} data-testid="unsaved-discard" onClick={() => void answerUnsaved(true)}>Don't save</Button>
           <Button variant="primary" disabled={busy} data-testid="unsaved-save" onClick={() => void save()}>Save project</Button>
         </>
       }
