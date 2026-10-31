@@ -209,8 +209,7 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
                     top_layers: i64::from(i.top_layers),
                     bottom_layers: i64::from(i.bottom_layers),
                     spacing: sp_solid,
-                    wall_offset: f64::midpoint(w_ext, sp_ext)
-                        + f64::from(i.wall_loops.saturating_sub(1)) * sp_in,
+                    wall_offset: crate::shells::wall_offset(cfg, i.wall_loops),
                     opening,
                     surfaces_only: crate::shells::surfaces_only(cfg),
                     narrow: crate::tower::flag_or(cfg, "detect_narrow_internal_solid_infill", true),

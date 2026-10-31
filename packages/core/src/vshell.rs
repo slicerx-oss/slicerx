@@ -123,20 +123,6 @@ pub(crate) fn unsupported(lower_sparse: &Shapes) -> Shapes {
     perimeters::offset(lower_sparse, -EPS)
 }
 
-/// How wide a strip along the lower layer's infill edge does not hold a narrow piece up as sparse infill, internal
-/// units: [`wall_shift`] of fixed-width walls under variable-width walls, else nothing. Variable-width walls start
-/// the infill area that much closer to the wall, but the vertical shell rule's bands keep the fixed-width edge
-/// (`shells::Input::wall_offset`), so a strip of sparse infill area that thin is left between a band and the wall.
-/// No sparse line prints in it and the wall's overlap covers it: a piece above that reaches over it gets the label it
-/// gets with fixed-width walls. `height` is the lower layer's.
-pub(crate) fn edge_strip(cfg: &PrintConfig, height: f64) -> i32 {
-    if cfg.arachne_walls() {
-        fixed_wall_shift(cfg, height).max(0)
-    } else {
-        0
-    }
-}
-
 /// The widest a floating piece may be with fixed-width walls, mm: a narrow piece that a circle this wide fits in
 /// stays internal solid infill. On the stock 0.42 mm lines and two walls, the ring a box leaves around a smaller
 /// box on top floats up to 4.5 mm wide, and not from 4.75 mm.
@@ -162,6 +148,22 @@ pub(crate) fn floating_width(cfg: &PrintConfig) -> i32 {
     (mm * SCALE).round() as i32
 }
 
+/// The settings [`Below::inside`]'s outline is worked out with: under variable-width walls, the region's settings with
+/// fixed-width walls, so the touch test reads the lower layer's sparse infill only inside the infill area fixed-width
+/// walls leave; with fixed-width walls none, as their own infill area is that one.
+pub(crate) fn fixed_walls(cfg: &PrintConfig) -> Option<PrintConfig> {
+    if !cfg.arachne_walls() {
+        return None;
+    }
+    let mut fixed = cfg.clone();
+    fixed.raw.remove("perimeter_generator");
+    fixed.raw.insert(
+        "wall_generator".into(),
+        serde_json::Value::String("classic".into()),
+    );
+    Some(fixed)
+}
+
 /// What a narrow piece can rest on in the layer below, for [`split`]: the lower layer's unsupported area
 /// ([`unsupported`] of its sparse infill area), and the band its vertical shell rule alone makes solid where that
 /// band is at least a sparse infill line wide (the strip under the walls of a part that stands on the layers above,
@@ -179,10 +181,11 @@ pub(crate) struct Below<'a> {
     reach: i32,
     /// The band's part at least a sparse infill line wide, shrunk by a hair, worked out when first asked for.
     wide: std::sync::OnceLock<Shapes>,
-    /// The lower layer's infill area, and the strip along its edge left out of what a piece can rest on
-    /// ([`edge_strip`], set with [`Below::beside_walls`]; 0 when none).
-    inner: Option<&'a Shapes>,
-    edge: i32,
+    /// The outline a piece is tested against the unsupported area inside ([`Below::inside`]), and the unsupported
+    /// area and its wide part cut to it, worked out when first asked for.
+    outline: Option<&'a Shapes>,
+    touchable: std::sync::OnceLock<Shapes>,
+    touchable_open: std::sync::OnceLock<Shapes>,
     /// `ensure_vertical_shell_thickness` `partial`: a piece also rests on the sparse infill along its edge ([`EDGE`]).
     partial_edge: bool,
     /// The unsupported area's part at least a sparse infill line wide, worked out when first asked for.
@@ -208,29 +211,31 @@ impl<'a> Below<'a> {
             band: lower.map(|f| (&f.band, &f.shell)),
             reach,
             wide: std::sync::OnceLock::new(),
-            inner: lower.map(|f| &f.inner),
-            edge: 0,
+            outline: None,
+            touchable: std::sync::OnceLock::new(),
+            touchable_open: std::sync::OnceLock::new(),
             partial_edge: crate::shells::surfaces_only(cfg),
             open: std::sync::OnceLock::new(),
         }
     }
 
-    /// The same, with the strip `edge` wide along the lower layer's infill edge ([`edge_strip`]) left out of the
-    /// unsupported area a piece can rest on.
-    pub(crate) fn beside_walls(mut self, edge: i32) -> Self {
-        self.edge = edge;
+    /// The same, with a piece resting only on the unsupported area inside `outline`: the infill area fixed-width walls
+    /// leave on the lower layer ([`fixed_walls`]). Variable-width walls start the infill area closer to the wall, but
+    /// the vertical shell rule's bands keep the fixed-width edge, so a sliver of sparse infill area about 0.02 mm wide
+    /// is left between a band and the wall, wider where the outlines turn a corner. No sparse line prints in it: read
+    /// inside that outline, a piece above gets the label it gets with fixed-width walls. The band and the beads still
+    /// read the whole unsupported area.
+    pub(crate) fn inside(mut self, outline: Option<&'a Shapes>) -> Self {
+        self.outline = outline;
         self
     }
 
-    /// `hit`, the overlap with the unsupported area of a piece grown by `by`, less the strip along the lower layer's
-    /// infill edge. The infill area is cut near the piece only, far enough out that the cut's own edges, moved in by
-    /// the strip, stay clear of the grown piece.
-    fn off_edge(&self, one: &Shapes, by: i32, hit: Shapes) -> Shapes {
-        let Some(inner) = self.inner.filter(|_| self.edge > 0 && !hit.is_empty()) else {
-            return hit;
-        };
-        let near = perimeters::intersection(inner, &perimeters::offset(one, by + 2 * self.edge));
-        perimeters::intersection(&hit, &perimeters::offset(&near, -self.edge))
+    /// `area` cut to the outline ([`Below::inside`]), `area` itself when there is none.
+    fn cut_to_outline<'s>(&'s self, area: &'s Shapes, memo: &'s std::sync::OnceLock<Shapes>) -> &'s Shapes {
+        match self.outline {
+            Some(outline) if !area.is_empty() => memo.once(|| perimeters::intersection(area, outline)),
+            _ => area,
+        }
     }
 
     fn open(&self) -> &Shapes {
@@ -265,8 +270,8 @@ impl<'a> Below<'a> {
 
     /// True when the piece `one` rests on what does not hold it up below. Under `partial` the solid below a piece is
     /// the neighbors' surfaces alone, the piece's own size, so the piece also rests on the sparse infill along its
-    /// edge where that infill is at least a sparse infill line wide. Neither counts the strip along the lower layer's
-    /// infill edge ([`Below::beside_walls`]).
+    /// edge where that infill is at least a sparse infill line wide. Neither counts the unsupported area outside the
+    /// outline ([`Below::inside`]).
     fn floats(&self, one: &Shapes) -> bool {
         let rests = |hit: &Shapes| {
             !hit.is_empty() && (self.cut.is_empty() || !perimeters::difference(hit, &self.cut).is_empty())
@@ -278,19 +283,14 @@ impl<'a> Below<'a> {
             _ => false,
         };
         let touch = |by: i32, area: &Shapes| {
-            near(by)
-                && rests(&self.off_edge(
-                    one,
-                    by,
-                    perimeters::intersection(&perimeters::offset(one, by), area),
-                ))
+            near(by) && rests(&perimeters::intersection(&perimeters::offset(one, by), area))
         };
-        touch(EPS, self.unsupported)
+        touch(EPS, self.cut_to_outline(self.unsupported, &self.touchable))
             || rests(&perimeters::intersection(
                 &perimeters::offset(one, EPS),
                 self.wide(),
             ))
-            || (self.partial_edge && touch(EDGE, self.open()))
+            || (self.partial_edge && touch(EDGE, self.cut_to_outline(self.open(), &self.touchable_open)))
     }
 }
 
@@ -986,9 +986,9 @@ mod tests {
     }
 
     #[test]
-    fn under_partial_a_piece_that_reaches_only_the_strip_along_the_infill_edge_does_not_float() {
-        // Aegis walls with `partial`: the lower layer's infill area and sparse infill start at x 10, and the strip
-        // along that edge is left out of what a piece rests on, as with the full rule.
+    fn under_partial_a_piece_that_reaches_only_the_sparse_outside_the_outline_does_not_float() {
+        // Aegis walls with `partial`: the lower layer's infill area and sparse infill start at x 10, its outline at
+        // x 10.06, and the sparse outside the outline is left out of what a piece rests on, as with the full rule.
         let mut cfg = stock_widths(15.0);
         cfg.raw
             .insert("wall_generator".into(), serde_json::json!("aegis"));
@@ -996,22 +996,82 @@ mod tests {
             "ensure_vertical_shell_thickness".into(),
             serde_json::json!("partial"),
         );
-        let edge = edge_strip(&cfg, 0.2);
-        assert!(edge > mm(0.06), "the strip is {edge} units");
         let lower = crate::bridging::Facts {
             inner: vec![vec![rect(10.0, 0.0, 30.0, 20.0)]],
             sparse: vec![vec![rect(10.0, 0.0, 30.0, 20.0)]],
             ..Default::default()
         };
+        let outline: Shapes = vec![vec![rect(10.06, -1.0, 31.0, 21.0)]];
         let u = unsupported(&lower.sparse);
-        let below = Below::new(&u, Some(&lower), &Shapes::new(), &cfg).beside_walls(edge);
+        let below = Below::new(&u, Some(&lower), &Shapes::new(), &cfg).inside(Some(&outline));
         // Grown by `EDGE`, one piece reaches 0.05 mm into the strip, the other 0.01 mm past it.
         let ends = |at: i32| f64::from(at - EDGE) / SCALE;
         let inside = vec![rect(8.0, 2.0, ends(mm(10.05)), 8.0)];
-        let past = vec![rect(8.0, 12.0, ends(mm(10.01) + edge), 18.0)];
+        let past = vec![rect(8.0, 12.0, ends(mm(10.07)), 18.0)];
         let (f, r) = split(&vec![inside.clone(), past.clone()], &below, floating_width(&cfg));
         assert_eq!(f, vec![past]);
         assert_eq!(r, vec![inside]);
+    }
+
+    #[test]
+    fn a_sliver_with_a_pointed_end_outside_the_outline_does_not_float_a_piece() {
+        // Aegis walls, two loops. The lower layer is a bar with a pointed end at x 25. Its infill area starts 0.02 mm
+        // outside the infill area fixed-width walls would leave (here the bar moved in by the vertical shell rule's
+        // wall offset), and its point reaches 0.1 mm further: the band covers that outline, so the sparse infill is the
+        // sliver and a strip one sparse line wide down the middle.
+        let mut cfg = stock_widths(15.0);
+        cfg.wall_loops = 2;
+        cfg.raw
+            .insert("wall_generator".into(), serde_json::json!("aegis"));
+        let bar: Shapes = vec![vec![vec![
+            Pt::new(mm(0.0), mm(0.0)),
+            Pt::new(mm(20.0), mm(0.0)),
+            Pt::new(mm(25.0), mm(5.0)),
+            Pt::new(mm(20.0), mm(10.0)),
+            Pt::new(mm(0.0), mm(10.0)),
+        ]]];
+        let wall = mm(crate::shells::wall_offset(&cfg, 2));
+        let outline = perimeters::offset(&bar, -wall);
+        let tip = perimeters::bounds(&outline).expect("an outline")[2];
+        let point: Shapes = vec![vec![vec![
+            Pt::new(tip - mm(0.3), mm(4.7)),
+            Pt::new(tip + mm(0.12), mm(5.0)),
+            Pt::new(tip - mm(0.3), mm(5.3)),
+        ]]];
+        let inner = perimeters::union_all(&[&perimeters::offset(&bar, -(wall - mm(0.02))), &point]);
+        let strip: Shapes = vec![vec![rect(5.0, 4.8, 15.0, 5.25)]];
+        let sparse = perimeters::union_all(&[&perimeters::difference(&inner, &outline), &strip]);
+        // The sliver is wider at the point than a fixed strip along the edge would take off.
+        let at_point = perimeters::intersection(&sparse, &vec![vec![rect(23.0, 3.0, 26.0, 7.0)]]);
+        assert!(!perimeters::offset(&at_point, -mm(0.03)).is_empty());
+        let lower = crate::bridging::Facts {
+            inner: inner.clone(),
+            shell: perimeters::difference(&inner, &sparse),
+            sparse,
+            ..Default::default()
+        };
+        let u = unsupported(&lower.sparse);
+        // A narrow piece over the point and the sliver, and one over the strip down the middle.
+        let over_point = perimeters::intersection(&vec![vec![rect(22.0, 3.5, 26.0, 6.5)]], &inner);
+        let over_strip = vec![rect(8.0, 4.0, 12.0, 6.0)];
+        let pieces = vec![over_point[0].clone(), over_strip.clone()];
+        let width = floating_width(&cfg);
+        let read = |outline: Option<&Shapes>| {
+            split(
+                &pieces,
+                &Below::new(&u, Some(&lower), &Shapes::new(), &cfg).inside(outline),
+                width,
+            )
+        };
+        // Read to the infill area's edge, the sliver holds the piece over the point up as sparse infill.
+        assert_eq!(read(None).0.len(), 2);
+        let (f, r) = read(Some(&outline));
+        assert_eq!(f, vec![over_strip]);
+        assert_eq!(r, vec![over_point[0].clone()]);
+        // The outline comes from fixed-width walls; fixed-width walls read none, as their infill area is that one.
+        let fixed = fixed_walls(&cfg).expect("aegis walls read an outline");
+        assert!(!fixed.arachne_walls());
+        assert!(fixed_walls(&fixed).is_none());
     }
 
     fn stock_widths(overlap_percent: f64) -> PrintConfig {

@@ -9676,12 +9676,32 @@ impl SliceSession {
                     // stay internal solid infill.
                     let lower = lower_facts.as_deref().filter(|_| bambu);
                     let unsupported = lower.map(|f| crate::vshell::unsupported(&f.sparse));
+                    // Under variable-width walls the touch test reads the lower layer's sparse infill inside the infill area
+                    // fixed-width walls leave there (`vshell::Below::inside`).
+                    let outline = unsupported
+                        .as_ref()
+                        .and_then(|_| crate::vshell::fixed_walls(base_cfg))
+                        .and_then(|fixed| {
+                            let below = layer - 1;
+                            self.cache.fixed_inner(i64::from(below), tags.of(base_cfg), || {
+                                get(below).map(|r| {
+                                    perimeters::walls_for(
+                                        &fixed,
+                                        &slice_shapes(r),
+                                        fixed.wall_loops,
+                                        base_shell.w,
+                                        base_shell.overlap,
+                                        self.plan.thickness(below),
+                                        false,
+                                    )
+                                    .1
+                                })
+                            })
+                        });
                     let (floating, rest) = match &unsupported {
                         Some(u) => crate::vshell::split(
                             &narrow,
-                            &crate::vshell::Below::new(u, lower, &lower_cut, cfg).beside_walls(
-                                crate::vshell::edge_strip(base_cfg, self.plan.thickness(layer - 1)),
-                            ),
+                            &crate::vshell::Below::new(u, lower, &lower_cut, cfg).inside(outline.as_ref()),
                             crate::vshell::floating_width(cfg),
                         ),
                         None => (Shapes::new(), narrow),

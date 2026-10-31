@@ -40,6 +40,7 @@ pub(crate) struct Cache {
     grown: Memo<(i64, i64, i32, i32), Option<Shared<Shapes>>>,
     inset: Memo<(i64, i32), Shared<Shapes>>,
     inner: Memo<(i64, u64), Option<Shared<Walls>>>,
+    fixed_inner: Memo<(i64, u64), Option<Shared<Shapes>>>,
     around: Memo<AroundKey, Shared<Around>>,
     regions: Memo<(i64, u64), Shared<Vec<Option<crate::session::RegionPrep>>>>,
 }
@@ -154,6 +155,19 @@ impl Cache {
         self.walls(m, tag, work).map(|a| a.1.clone())
     }
 
+    /// The infill area fixed-width walls leave on layer `m`'s whole outline, for the variable-width settings
+    /// fingerprinted by `tag` (`vshell::fixed_walls`).
+    pub(crate) fn fixed_inner(
+        &self,
+        m: i64,
+        tag: u64,
+        work: impl FnOnce() -> Option<Shapes>,
+    ) -> Option<Shapes> {
+        self.fixed_inner
+            .get_or((m, tag), || work().map(std::sync::Arc::new))
+            .map(|a| (*a).clone())
+    }
+
     /// The walls of layer `m`'s whole outline and its infill area, worked out by `work` for the settings
     /// fingerprinted by `tag`. The layer itself reads them too when its region is the whole outline.
     pub(crate) fn walls(
@@ -209,6 +223,14 @@ pub(crate) struct Around {
     surfaces_kept: std::sync::OnceLock<Shapes>,
     /// The outline the layers below and above share, read only for small pieces.
     object: std::sync::OnceLock<Shapes>,
+}
+
+/// How far in from the outline the vertical shell rule starts the infill area, mm ([`Input::wall_offset`]): half the
+/// outer wall's width and spacing, and an inner wall spacing for each further loop, whatever the walls are.
+pub(crate) fn wall_offset(cfg: &crate::config::PrintConfig, wall_loops: u32) -> f64 {
+    let outer = cfg.outer_wall_width();
+    f64::midpoint(outer, cfg.spacing_for(outer))
+        + f64::from(wall_loops.saturating_sub(1)) * cfg.spacing_for(cfg.inner_wall_width())
 }
 
 fn around(i: &Input<'_>) -> Around {
