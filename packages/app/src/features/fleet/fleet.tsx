@@ -5,7 +5,7 @@ import { noteViewClosing } from '../../camera/closing'
 import { openResume } from '../../plate/resume-state'
 import { tempText } from '../../lib/temp'
 import { isDue, removeFromQueue, startable } from '../../queue/queue'
-import { lazy, Suspense, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { lazy, memo, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { Fleet, TunnelReport } from '@slicerx/contracts'
 import { Button, Chip, Dialog, Field, Icon, Input, LinkButton, Menu, MenuAnchor, MenuHeading, MenuItem, Pill, Seg, tipAttrs } from '@slicerx/ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -94,7 +94,7 @@ export function Fleet() {
   }
   const sections = view === 'bay' ? bayGroups(rows, bays, printerBays) : [{ id: 'all', name: '', rows: wallOrder(rows), summary: '' }]
   // While the bridge reconnects every card stays where it is, dimmed, with its last known state and no controls.
-  const tile = (r: FleetRow) => <Tile key={r.id} r={r} now={now} groups={groups.data ?? []} away={reconnecting} onView={() => setViewing(r.id)} />
+  const tile = (r: FleetRow) => <Tile key={r.id} r={r} now={now} groups={groups.data ?? NO_GROUPS} away={reconnecting} onView={setViewing} />
   return (
     <div className="page fleet">
       <header className="wall-h">
@@ -305,8 +305,15 @@ function lastSeen(at: string | undefined): string | null {
   return t && !Number.isNaN(t.getTime()) ? t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null
 }
 
-function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: number; groups: readonly Fleet[]; away?: boolean; onView: () => void }) {
+const NO_GROUPS: readonly Fleet[] = []
+
+/**
+ * One printer's card. It renders again only when its own row, the clock, the groups or the reconnect state change: a
+ * status from one printer leaves the other cards as they are.
+ */
+const Tile = memo(function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: number; groups: readonly Fleet[]; away?: boolean; onView: (id: string) => void }) {
   const st = r.status
+  const view = useCallback(() => onView(r.id), [onView, r.id])
   const exportOnly = isExportOnly(r)
   const kind = wallKind(r)
   const pill = wallPill(r)
@@ -345,7 +352,7 @@ function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: numb
           </span>
           <b>{r.name}</b>
           <span className="wall-model">{r.model}</span>
-          <TileMenu r={r} groups={groups} disabled={away} onView={onView} {...(repaste.menu ? { onRepaste: () => setRepasting(true) } : {})} />
+          <TileMenu r={r} groups={groups} disabled={away} onView={view} {...(repaste.menu ? { onRepaste: () => setRepasting(true) } : {})} />
         </div>
         <p className="wall-line" id={lineId} data-problem={st.tunnelProblem ? true : undefined}>
           {repaste.pointer && (st.tunnelProblem === 'no_access' || st.tunnelProblem === 'access_removed') ? repasteCardText(st.tunnelProblem) : statusLine(r, now)}
@@ -391,11 +398,11 @@ function Tile({ r, now, groups, away = false, onView }: { r: FleetRow; now: numb
           </div>
         ) : null}
       </div>
-      {exportOnly ? null : <button type="button" className="wall-open" data-testid="printer-card-open" aria-label={r.name} aria-describedby={lineId} disabled={away} onClick={onView} />}
+      {exportOnly ? null : <button type="button" className="wall-open" data-testid="printer-card-open" aria-label={r.name} aria-describedby={lineId} disabled={away} onClick={view} />}
       {repaste.menu ? <ObicoRepaste printer={r} open={repasting} onClose={() => setRepasting(false)} /> : null}
     </article>
   )
-}
+})
 
 function TileMenu({ r, groups, disabled = false, onView, onRepaste }: { r: FleetRow; groups: readonly Fleet[]; disabled?: boolean; onView: () => void; onRepaste?: () => void }) {
   const host = useHost()
