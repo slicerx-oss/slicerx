@@ -178,13 +178,18 @@ export function SlicerXApp({ host, features = [], theme, edition = NEUTRAL, logo
   )
 }
 
+/** Launch's printer setup ask, in a leaf of its own: the bridge, setup and fleet state it reads never render the shell. */
+function AskForPrinter() {
+  useAskForPrinter()
+  return null
+}
+
 function Shell() {
   const host = useHost()
   const approval = useApp((s) => s.approval)
   const assistant = useSyncExternalStore(onAssistantBrand, assistantBrand, assistantBrand)
   // Anything that asks for Slice (a key, a link, a saved pref) lands back in Model when the host cannot slice.
   useEffect(() => (hostSlices() ? undefined : stayInModel()), [])
-  useAskForPrinter()
   // Background slicing after edits (Settings > Auto slice).
   useEffect(() => (hostSlices() ? startAutoSlice(host) : undefined), [host])
   // The page says when it is ready, so scripts wait on that and not on a fixed time.
@@ -353,6 +358,7 @@ function Shell() {
       ) : null}
       <AppTooltips />
       <ProfileFollow />
+      <AskForPrinter />
       <LazySlot>
         <FitWatch />
       </LazySlot>

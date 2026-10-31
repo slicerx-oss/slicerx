@@ -16,7 +16,7 @@ vi.mock('../src/shell/command-results', async (importOriginal) => {
   return importOriginal<typeof import('../src/shell/command-results')>()
 })
 // The bar reads the printer list only to feed the results; there is no hub here.
-vi.mock('../src/lib/queries', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/lib/queries')>()), useFleet: () => ({ data: [] }) }))
+vi.mock('../src/lib/queries', async (importOriginal) => ({ ...(await importOriginal<typeof import('../src/lib/queries')>()), useFleetPick: () => [] }))
 
 let runs: string[] = []
 let off: () => void = () => {}
