@@ -749,9 +749,6 @@ rm -f "$req" "$dfile"
 name="a --gpu hold over the commit floor writes nothing and logs nothing"
 : > "$tmp/history.log"; commit_is 20; cd_hold --gpu
 ok eval '[ "$rc" = 0 ] && [ ! -e "$req" ] && [ "$(drops)" = 0 ]'
-name="only --gpu holds ask: a plain and an --e2e hold under the floor write nothing"
-: > "$tmp/history.log"; commit_is 2; cd_hold; rcp=$rc; cd_hold --e2e
-ok eval '[ "$rcp" = 0 ] && [ "$rc" = 0 ] && [ ! -e "$req" ] && [ "$(drops)" = 0 ]'
 name="with no powershell.exe the check is skipped with one log line, and the command runs"
 : > "$tmp/history.log"
 SX_HEAVY_COMMIT_FREE_MIN_GB=8 SX_HEAVY_POWERSHELL=heavy-test-no-such-powershell.exe SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 \
@@ -824,6 +821,83 @@ name="no settled reading without an answer, or with SX_HEAVY_SETTLE_S 0"
 answer_only; settle_hold 0; sleep 2
 ok eval '[ "$rcn" = 0 ] && [ "$rc" = 0 ] && [ "$(drops)" = 2 ] && [ "$(settled)" = 0 ] && grep -q "cache drop not answered in 3 s" "$tmp/history.log"'
 rm -f "$req" "$dfile"
+
+# Every other hold (plain, --e2e and the rest) runs the same check, with a reading kept in <lock>.commit-reading for
+# SX_HEAVY_COMMIT_CACHE_S s and no drop asked for within SX_HEAVY_DROP_GAP s of the last one. This reader counts its
+# calls in $tmp/commit.now.calls.
+printf '#!/bin/sh\necho x >> "$1.calls"\ncat "$1"\n' > "$tmp/commit-count.sh"
+cfile=$dir.commit-reading
+calls() { if [ -f "$tmp/commit.now.calls" ]; then wc -l < "$tmp/commit.now.calls" | tr -dc 0-9; else echo 0; fi; }
+# A hold of mode $1 (empty for plain) with the counting reader, a 3 s wait, and a kept reading for $2 s (default 0:
+# none). Sets rc and secs.
+p_hold() {
+  local t0=$SECONDS
+  SX_HEAVY_COMMIT_CACHE_S=${2:-0} SX_HEAVY_COMMIT_FREE_MIN_GB=8 SX_HEAVY_DROP_WAIT=3 \
+    SX_HEAVY_COMMIT_CMD="sh '$tmp/commit-count.sh' '$tmp/commit.now'" SX_HEAVY_LOCK=$lock SX_HEAVY_WAIT=20 \
+    bash "$heavy" ${1:+"$1"} true > "$tmp/cd.out" 2>&1
+  rc=$? secs=$((SECONDS - t0))
+}
+# A done file from $1 s ago with result $2.
+done_ago() { printf 'time %s\nid old\nresult %s\n' $(($(date +%s) - $1)) "$2" > "$dfile"; }
+rm -f "$req" "$dfile" "$cfile" "$tmp/req.seen"
+
+name="a plain hold under the commit floor asks for a cache drop, logs before, after and settled, and runs"
+: > "$tmp/history.log"; commit_is 2; answer; SX_HEAVY_SETTLE_S=1 p_hold
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ] && [ ! -e "$req" ] && grep -q "^before used 73.0 of 75.0 GB, free 2.0 GB$" "$tmp/req.seen" \
+  && grep -q "	cache-drop	plain		.*before used 73.0 of 75.0 GB, free 2.0 GB, after used 55.0 of 75.0 GB, free 20.0 GB; dropped: " "$tmp/history.log" \
+  && grep -q "	release	plain	.*rc 0" "$tmp/history.log" && wait_settled && [ "$(drops)" = 2 ] \
+  && grep -q "	cache-drop	plain		.*settled used 55.0 of 75.0 GB, free 20.0 GB; read " "$tmp/history.log"'
+name="an --e2e hold under the floor asks too"
+: > "$tmp/history.log"; rm -f "$dfile"; commit_is 2; answer; p_hold --e2e
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ] && [ "$(drops)" = 1 ] && grep -q "	cache-drop	e2e	.*; dropped: " "$tmp/history.log"'
+name="a plain hold over the floor writes nothing and logs nothing"
+: > "$tmp/history.log"; rm -f "$dfile"; commit_is 20; p_hold
+ok eval '[ "$rc" = 0 ] && [ ! -e "$req" ] && [ "$(drops)" = 0 ]'
+name="a plain hold joins a fresh request from another hold, and its answer counts"
+printf 'time %s\nid join-1\nby another hold\nbefore unreadable\n' "$(date +%s)" > "$req"
+: > "$tmp/history.log"; commit_is 2; answer; p_hold
+ok eval '[ "$rc" = 0 ] && [ $secs -le 5 ] && [ "$(sed -n "s/^id //p" "$tmp/req.seen")" = join-1 ] && grep -q "^by another hold$" "$tmp/req.seen" \
+  && [ "$(drops)" = 1 ] && grep -q "	cache-drop	plain	.*; dropped: " "$tmp/history.log"'
+name="with no answer a plain hold waits no longer than SX_HEAVY_DROP_WAIT s, logs that, and runs the command"
+: > "$tmp/history.log"; rm -f "$req" "$dfile"; commit_is 2; p_hold
+ok eval '[ "$rc" = 0 ] && [ $secs -ge 3 ] && [ $secs -le 7 ] && [ -e "$req" ] && [ "$(drops)" = 1 ] \
+  && grep -q "	cache-drop	plain	.*cache drop not answered in 3 s" "$tmp/history.log" && grep -q "	release	plain	.*rc 0" "$tmp/history.log"'
+rm -f "$req" "$dfile"
+name="a plain hold asks for no drop within the gap after one, which the timer would refuse: one line, no wait"
+: > "$tmp/history.log"; done_ago 20 dropped; commit_is 2; p_hold
+ok eval '[ "$rc" = 0 ] && [ $secs -le 2 ] && [ ! -e "$req" ] && [ "$(drops)" = 1 ] \
+  && grep -q "	cache-drop	plain	.*before used 73.0 of 75.0 GB, free 2.0 GB; skipped: the last cache drop was [0-9]* s ago, at most one per 300 s; asked by " "$tmp/history.log"'
+name="a --gpu hold in the same state asks and waits as before"
+: > "$tmp/history.log"; done_ago 20 dropped; commit_is 2; cd_hold --gpu
+ok eval '[ "$rc" = 0 ] && [ $secs -ge 3 ] && [ -e "$req" ] && grep -q "	cache-drop	gpu	.*cache drop not answered in 3 s" "$tmp/history.log"'
+rm -f "$req"
+name="a rate-limited answer does not start the gap: a plain hold asks"
+: > "$tmp/history.log"; done_ago 20 rate-limited; commit_is 2; p_hold
+ok eval '[ "$rc" = 0 ] && [ $secs -le 7 ] && [ -e "$req" ] && grep -q "	cache-drop	plain	.*cache drop not answered in 3 s" "$tmp/history.log"'
+rm -f "$req" "$dfile"
+
+name="plain holds share one reading for SX_HEAVY_COMMIT_CACHE_S s, and read again once it is older"
+: > "$tmp/history.log"; rm -f "$cfile" "$tmp/commit.now.calls"; commit_is 20
+p_hold "" 60; rc1=$rc; p_hold "" 60; c2=$(calls)
+printf 'time 1\ntotal %s\nfree %s\n' $((75 * 1048576)) $((20 * 1048576)) > "$cfile"; p_hold "" 60
+ok eval '[ "$rc1" = 0 ] && [ "$rc" = 0 ] && [ "$c2" = 1 ] && [ "$(calls)" = 2 ] && grep -q "^free $((20 * 1048576))$" "$cfile" \
+  && [ "$(sed -n "s/^time //p" "$cfile")" -gt 1 ] && [ "$(drops)" = 0 ]'
+name="a kept reading under the floor asks for a drop, and an answered drop throws the kept reading away"
+printf 'time %s\ntotal %s\nfree %s\n' "$(date +%s)" $((75 * 1048576)) $((2 * 1048576)) > "$cfile"
+: > "$tmp/history.log"; : > "$tmp/commit.now.calls"; commit_is 20; answer; p_hold "" 60
+ok eval '[ "$rc" = 0 ] && [ "$(calls)" = 1 ] && [ ! -e "$cfile" ] \
+  && grep -q "	cache-drop	plain	.*before used 73.0 of 75.0 GB, free 2.0 GB, after used 55.0 of 75.0 GB, free 20.0 GB; dropped: " "$tmp/history.log"'
+name="a --gpu hold neither uses nor writes the kept reading"
+rm -f "$dfile"; printf 'time %s\ntotal %s\nfree %s\n' "$(date +%s)" $((75 * 1048576)) $((2 * 1048576)) > "$cfile"
+cp "$cfile" "$tmp/cfile.before"; : > "$tmp/history.log"; commit_is 20; cd_hold --gpu
+ok eval '[ "$rc" = 0 ] && [ ! -e "$req" ] && [ "$(drops)" = 0 ] && cmp -s "$cfile" "$tmp/cfile.before"'
+name="an answered drop from a --gpu hold removes the kept reading too, and the next plain hold reads afresh"
+printf 'time %s\ntotal %s\nfree %s\n' "$(date +%s)" $((75 * 1048576)) $((20 * 1048576)) > "$cfile"
+rm -f "$dfile"; : > "$tmp/history.log"; commit_is 2; answer; cd_hold --gpu; rcg=$rc; gone=$([ -e "$cfile" ] && echo no || echo yes)
+: > "$tmp/commit.now.calls"; commit_is 20; rm -f "$dfile"; p_hold "" 60
+ok eval '[ "$rcg" = 0 ] && [ "$gone" = yes ] && grep -q "	cache-drop	gpu	.*; dropped: " "$tmp/history.log" && [ "$rc" = 0 ] \
+  && [ "$(calls)" = 1 ] && [ -e "$cfile" ] && grep -q "^free $((20 * 1048576))$" "$cfile"'
+rm -f "$req" "$dfile" "$cfile" "$tmp/cfile.before"
 
 if [ "${1:-}" = cross ]; then
   distro=${2:?usage: heavy-test.sh cross <distro> [<stopped distro>]} stopped=${3:-}
