@@ -5074,9 +5074,19 @@ fn a_request_without_printer_settings_warns_no_machine_profile() {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(req.to_string().as_bytes()).unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(req.to_string().as_bytes())
+            .unwrap();
         let out = child.wait_with_output().unwrap();
-        assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         (v, String::from_utf8_lossy(&out.stderr).into_owned())
     };
@@ -5100,7 +5110,10 @@ fn a_request_without_printer_settings_warns_no_machine_profile() {
         })
     };
     let text = "No printer settings given; times and motion use engine defaults. Send the printer's printable_area and machine_max_ keys in config (slicerx_get_profile with a machine: profile, or sx project-settings for a project).";
-    for config in [serde_json::json!({}), serde_json::json!({"layer_height": 0.2, "printer_model": "Snapmaker U1"})] {
+    for config in [
+        serde_json::json!({}),
+        serde_json::json!({"layer_height": 0.2, "printer_model": "Snapmaker U1"}),
+    ] {
         let (v, err) = slice(&request(config.clone()));
         let warning = v["warnings"]
             .as_array()
@@ -5109,7 +5122,11 @@ fn a_request_without_printer_settings_warns_no_machine_profile() {
             .find(|w| w["code"] == "no_machine_profile")
             .unwrap_or_else(|| panic!("{config}: {}", v["warnings"]));
         assert_eq!(warning["message"], text);
-        assert_eq!(codes(&v, "/configReport/warnings"), ["no_machine_profile"], "{config}");
+        assert_eq!(
+            codes(&v, "/configReport/warnings"),
+            ["no_machine_profile"],
+            "{config}"
+        );
         assert_eq!(v["configReport"]["warnings"][0]["message"], text);
         assert!(err.contains(&format!("warning: {text}")), "{err}");
         assert!(!text.contains(['\u{2013}', '\u{2014}']));
