@@ -7,7 +7,7 @@
 import { useEffect } from 'react'
 import { useHost } from '../host'
 import { bridgeConnector } from '../link/connector'
-import { useFleet, usePrinters } from '../lib/queries'
+import { useFleetCount } from '../lib/queries'
 import { set, useApp } from '../state/store'
 import { openSetup } from './look'
 
@@ -25,15 +25,14 @@ export function clearsNoPrinter(s: { printers: number | null; noPrinter: boolean
 
 export function useAskForPrinter(): void {
   const host = useHost()
-  const fleet = useFleet()
-  const source = usePrinters()
+  // Only the count: the whole fleet rendered this again on every printer status.
+  const printers = useFleetCount()
   // The desktop bridge brings the network printers; until it answers, an empty list means nothing yet.
   const bridge = useApp((s) => s.bridgeStatus.state)
   const bridgeSettled = !bridgeConnector()?.automatic || bridge === 'on' || bridge === 'error'
   const setupOpen = useApp((s) => s.setup !== null)
   const agreementOpen = useApp((s) => s.agreementOpen)
   const noPrinter = useApp((s) => s.noPrinter)
-  const printers = !source ? null : fleet.isSuccess && !fleet.isFetching ? (fleet.data?.length ?? 0) : null
   useEffect(() => {
     if (clearsNoPrinter({ printers, noPrinter })) set({ noPrinter: false })
   }, [printers, noPrinter])

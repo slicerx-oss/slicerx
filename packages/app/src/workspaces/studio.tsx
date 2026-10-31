@@ -19,7 +19,7 @@ import { sizeText, type UnitPrefs } from '../cad/units'
 import { get, isCadTool, railOpen, setRail, showsLayers, useApp, type PlateEntry } from '../state/store'
 import { collisionsOf } from '../plate/heimdall'
 import { bounds, sizeOf } from '../plate/transform'
-import { usePrinter } from '../lib/use-printer'
+import { useShownPrinterPick } from '../lib/use-printer'
 import { printResultKey, useRightAttention } from '../lib/right-attention'
 import { ViewportHost } from '../viewport/viewport-host'
 import { ZoneLegend } from './zone-legend'
@@ -182,8 +182,8 @@ export function Studio() {
     const wide = typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1280px)').matches
     if (!railOpen(get().rails, ws, other, wide)) setRail(ws, other, true)
   }, [modelToolOpen, other])
-  const { printer } = usePrinter()
-  const printResult = printResultKey(printer)
+  // Only the shown printer's print result: the whole fleet rendered the workspace again on every printer status.
+  const printResult = useShownPrinterPick(printResultKey)
   const rightAttention = useRightAttention(rightOpen, printResult)
   const rightSections = [...(objectsRight ? [OBJECTS_SECTION] : []), ...(hasPreview ? (manyPlates ? [PLATES_SECTION, ...PREVIEW_RIGHT] : PREVIEW_RIGHT) : [])]
   // Toasts center over the viewport and sit above the plate bar and the playback bar, below the toolbar and the view

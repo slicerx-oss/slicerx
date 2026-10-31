@@ -11,8 +11,9 @@ import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FeaturesContext } from '../src/features'
 import { HostContext } from '../src/host'
-import { useFleet, useFleetLive, useFleetPick, usePrinters, type FleetRow } from '../src/lib/queries'
-import { usePrinter } from '../src/lib/use-printer'
+import { useFleet, useFleetCount, useFleetLive, useFleetPick, usePrinters, type FleetRow } from '../src/lib/queries'
+import { usePrinter, useShownPrinterPick } from '../src/lib/use-printer'
+import { set } from '../src/state/store'
 
 const IDS = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6']
 const info = (id: string): PrinterInfo => ({ id, name: `Bay ${id}`, vendor: 'Voron', model: '2.4', plugin: 'moonraker', nozzleCount: 1 })
@@ -75,7 +76,10 @@ function mount(readers: number) {
   return { ...fake, qc }
 }
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  set({ printerId: null, projectPrinter: null })
+})
 
 describe('the fleet readers', () => {
   it('share one live subscription per printer and write the cache once per tick', async () => {
@@ -127,5 +131,62 @@ describe('the fleet readers', () => {
       await Promise.resolve()
     })
     expect(writes).toHaveBeenCalledTimes(1)
+  })
+})
+
+/** Readers that need one thing from the fleet, each counting its renders: a count, the shown printer's model, the names. */
+const names = (rows: FleetRow[]) => rows.map((r) => r.name)
+const modelOf = (p: FleetRow | undefined) => p?.model ?? '-'
+function narrowReaders(renders: Record<string, number>) {
+  const Count = () => {
+    renders.count = (renders.count ?? 0) + 1
+    return createElement('p', { 'data-testid': 'count' }, String(useFleetCount() ?? '-'))
+  }
+  const Shown = () => {
+    renders.shown = (renders.shown ?? 0) + 1
+    return createElement('p', { 'data-testid': 'shown' }, useShownPrinterPick(modelOf))
+  }
+  const Names = () => {
+    renders.names = (renders.names ?? 0) + 1
+    return createElement('p', { 'data-testid': 'names' }, (useFleetPick(names) ?? []).join(','))
+  }
+  return [createElement(Count, { key: 'count' }), createElement(Shown, { key: 'shown' }), createElement(Names, { key: 'names' })]
+}
+
+function mountNarrow(connect: boolean) {
+  const fake = fakeHost()
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const features = { ids: new Set(connect ? ['connect'] : []), features: [], workspaces: [], settings: [] } as never
+  const renders: Record<string, number> = {}
+  // One full reader keeps the statuses coming, as the Printers page does.
+  const kids = [createElement(Reader, { key: 'full', n: 0 }), ...narrowReaders(renders)]
+  render(createElement(QueryClientProvider, { client: qc }, createElement(HostContext.Provider, { value: fake.host }, createElement(FeaturesContext.Provider, { value: features }, ...kids))))
+  return { ...fake, renders }
+}
+
+describe('readers of one value from the fleet', () => {
+  it('render again only when their value changes, not on every status', async () => {
+    const app = mountNarrow(true)
+    await screen.findByText('20', { selector: '[data-testid=reader-0]' })
+    await screen.findByText(String(IDS.length), { selector: '[data-testid=count]' })
+    await screen.findByText('2.4', { selector: '[data-testid=shown]' })
+    await screen.findByText(IDS.map((id) => `Bay ${id}`).join(','), { selector: '[data-testid=names]' })
+    const before = { ...app.renders }
+    for (let tick = 1; tick <= 3; tick++) {
+      await act(async () => {
+        app.tick()
+        await Promise.resolve()
+      })
+      await screen.findByText(String(20 + tick), { selector: '[data-testid=reader-0]' })
+    }
+    expect(app.renders).toEqual(before)
+  })
+
+  it('show an open project printer before the fleet answers and with no printer host', async () => {
+    set({ printerId: 'project-printer', projectPrinter: { id: 'project-printer', name: 'X1C 0.4', vendor: 'Bambu Lab', model: 'X1C', nozzle: 0.4, source: 'the project' } as never })
+    mountNarrow(false)
+    await screen.findByText('X1C', { selector: '[data-testid=shown]' })
+    // With no printer host there is no count to act on.
+    expect(screen.getByTestId('count').textContent).toBe('-')
   })
 })

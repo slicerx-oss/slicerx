@@ -4,14 +4,16 @@
 // idle one), so its bed, speeds, limits and G-code follow the machine.
 import { useEffect } from 'react'
 import { set } from '../state/store'
-import { usePrinter } from '../lib/use-printer'
+import type { FleetRow } from '../lib/queries'
+import { useShownPrinterPick } from '../lib/use-printer'
+
+/** What the slice follows from the shown printer. Its temperatures and progress change nothing here. */
+function followed(printer: FleetRow | undefined) {
+  return { id: printer?.id, vendor: printer?.vendor, model: printer?.model, reported: printer?.status.nozzleDiameterMm }
+}
 
 export function ProfileFollow() {
-  const { printer } = usePrinter()
-  const vendor = printer?.vendor
-  const model = printer?.model
-  const id = printer?.id
-  const reported = printer?.status.nozzleDiameterMm
+  const { vendor, model, id, reported } = useShownPrinterPick(followed)
   useEffect(() => {
     // The sync loads after first paint; it reads the store as it is then, so nothing set before it is missed.
     void import('../state/profile-sync').then((m) => m.startProfileSync())
