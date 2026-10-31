@@ -93,7 +93,8 @@ describe('live plate management', () => {
     expect(out.shown).toBe(1)
     expect(out.plates.map((p) => p.entries.map((o) => o.id))).toEqual([['body'], ['copy']])
     expect(out.plates[1]!.entries[0]).toMatchObject({ instanceOf: 'body', sizeMm: [20, 10, 5], settings: { layer_height: 0.1 }, slotOverrides: { Body: 2 } })
-    expect(out.plates[1]!.entries[0]!.minMm![0]).toBeGreaterThanOrEqual(0)
+    // in the middle of the empty plate, as Move to plate, plate edge drag and the MCP project put it
+    expect(out.plates[1]!.entries[0]!.minMm).toEqual([118, 123, 0])
     await undo(before)
   })
 
