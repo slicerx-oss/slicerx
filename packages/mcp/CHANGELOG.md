@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Changed
+
+- `slicerx_slice_file` and `slicerx_estimate_file` name the arguments they do not take instead of dropping them without a word: the call still succeeds, and a warning (in `warnings`, the text and `notices` with the code `ignored_arguments`) lists each one. For `printer`, `process`, `filament` and `machine` it points to `profiles`, such as `"profiles": ["machine:snapmaker-u1", "process:standard"]`. Before, `{"printer": "Snapmaker U1"}` sliced on the generic machine with only the `no_printer` notice. A later release may refuse unknown arguments.
+
 ## [0.2.7] - 2026-10-30
 
 ### Added

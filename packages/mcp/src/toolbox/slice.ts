@@ -177,9 +177,23 @@ export const summaryShape = {
     .optional(),
   /** Which wall generator the slice ran and why. */
   walls: z.object({ generator: z.string(), source: z.enum(['kept', 'project', 'request', 'profile']), text: z.string() }).optional(),
-  /** Warnings with a code an app can act on, each also in `warnings`: `no_printer` when no printer was named, `other_plates` when a project of more than one plate was sliced without a plate. */
-  notices: z.array(z.object({ code: z.enum(['no_printer', 'other_plates']), message: z.string() })).optional(),
+  /** Warnings with a code an app can act on, each also in `warnings`: `ignored_arguments` when the call carried arguments the tool does not take (named in the message), `no_printer` when no printer was named, `other_plates` when a project of more than one plate was sliced without a plate. */
+  notices: z.array(z.object({ code: z.enum(['ignored_arguments', 'no_printer', 'other_plates']), message: z.string() })).optional(),
   note: z.string().optional(),
+}
+
+/** Arguments a client may mean as a printer, process or filament profile; profiles is where those go. */
+const PROFILE_LIKE = new Set(['printer', 'process', 'filament', 'machine'])
+
+/**
+ * The warning for arguments a slice tool does not take (`known` are the ones it does), or undefined when there are
+ * none. The tools accept them for now and slice without them, so a client sees what was ignored.
+ */
+export function ignoredArgumentsMessage(args: Record<string, unknown>, known: readonly string[]): string | undefined {
+  const ignored = Object.keys(args).filter((k) => !known.includes(k))
+  if (!ignored.length) return undefined
+  const hint = ignored.some((k) => PROFILE_LIKE.has(k)) ? ' Name the printer, process and filament in profiles instead, by id from slicerx_list_profiles, such as "profiles": ["machine:snapmaker-u1", "process:standard"].' : ''
+  return `Ignored arguments this tool does not take: ${ignored.join(', ')}.${hint}`
 }
 
 /** The warning for a slice that named no printer, with the size of the generic bed the engine used. */
@@ -226,7 +240,7 @@ async function slotLayers(d: ServerToolDeps, slots: SlotArg[]): Promise<SlotLaye
  * Slices (or only estimates, without `emitGcode`) and answers with the summary and its lines of text. Coarse stages go
  * to `progress`, which the server sends as MCP progress notifications when the client asked for them.
  */
-export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: boolean, report: (message: string, fraction: number) => void): Promise<ToolOutput> {
+export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: boolean, report: (message: string, fraction: number) => void, known: readonly string[] = Object.keys(emitGcode ? sliceFileInput : sliceInput)): Promise<ToolOutput> {
   const { store, profiles } = d
   const progress = async (p: number, message: string): Promise<void> => report(message, p)
   if (!d.slicer) throw new ToolInputError(d.slicerUnavailable ?? 'No slicing engine is available.', 'engine_unavailable')
@@ -325,7 +339,11 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     result.chamber_cooling.source = args.overrides?.[CHAMBER_KEY] !== undefined ? 'override' : own !== undefined && String(own) === String(config[CHAMBER_KEY]) ? 'project' : 'preset'
   }
   const walls: WallsNote = sliceWalls(config['wall_generator'], args.overrides, importReport?.walls)
-  const notices: { code: 'no_printer' | 'other_plates'; message: string }[] = noPrinter ? [{ code: 'no_printer', message: noPrinterMessage(config) }] : []
+  const ignored = ignoredArgumentsMessage(args, known)
+  const notices: { code: 'ignored_arguments' | 'no_printer' | 'other_plates'; message: string }[] = [
+    ...(ignored ? [{ code: 'ignored_arguments' as const, message: ignored }] : []),
+    ...(noPrinter ? [{ code: 'no_printer' as const, message: noPrinterMessage(config) }] : []),
+  ]
   if (result.plate_count && args.plate === undefined) notices.push({ code: 'other_plates', message: `${basename(modelPath)} has ${result.plate_count} plates; sliced plate ${result.plate}. Pass plate to slice another.` })
   for (const n of notices) result.warnings.push(n.message)
   if (layerNote) result.warnings.push(layerNote)
