@@ -167,6 +167,22 @@ export class DataStore {
     return entries
   }
 
+  /**
+   * The skill catalog, knowledge/skills.yaml, as its text. A new server lists it as a resource, and reading this one
+   * file instead of parsing the whole knowledge base (`knowledge`, most of what starting a server would cost) keeps
+   * that parse for the first tool or resource that needs it. A data folder whose skills.yaml does not declare the
+   * catalog falls back to the parsed knowledge base.
+   */
+  skillCatalog(): { text: string } | undefined {
+    if (!this.entries) {
+      const file = join(this.paths.knowledgeDir, 'skills.yaml')
+      const text = existsSync(file) ? readFileSync(file, 'utf8') : undefined
+      if (text !== undefined && /^kind:[ \t]*skill_catalog[ \t]*(#.*)?$/m.test(text)) return { text }
+    }
+    const e = this.knowledge().find((k) => k.kind === 'skill_catalog')
+    return e ? { text: e.text } : undefined
+  }
+
   /** Finds a knowledge entry by id, name or alias, ignoring case and punctuation. */
   findKnowledge(kinds: KnowledgeKind[], query: string): KnowledgeEntry | undefined {
     const q = normalizeId(query)

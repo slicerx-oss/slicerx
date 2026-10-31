@@ -38,8 +38,25 @@ export async function servicePluginTools(printers: PrinterHost | undefined): Pro
   return pluginToolsFrom(manifests.filter((m) => m.kind !== 'printer'))
 }
 
+/**
+ * mimir's knowledge base, built on first use: indexing it is a good part of what a new server costs, and a call that
+ * slices or reads a setting never searches it.
+ */
 export function createKb(): KnowledgeBase {
-  return createKnowledgeBase(kbIndex as unknown as KbIndex)
+  let kb: KnowledgeBase | undefined
+  const built = (): KnowledgeBase => (kb ??= createKnowledgeBase(kbIndex as unknown as KbIndex))
+  return {
+    get size() {
+      return built().size
+    },
+    get: (kind, idOrAlias) => built().get(kind, idOrAlias),
+    all: (kind) => built().all(kind),
+    search: (query, opts) => built().search(query, opts),
+    setting: (key) => built().setting(key),
+    settings: () => built().settings(),
+    skills: () => built().skills(),
+    cite: (ids) => built().cite(ids),
+  }
 }
 
 export { createCombinedPlanner }

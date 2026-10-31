@@ -249,7 +249,8 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     },
   )
 
-  const skills = store.knowledge().find((e) => e.kind === 'skill_catalog')
+  // Read on its own, so a new server parses no knowledge file until a tool or resource asks for one.
+  const skills = store.skillCatalog()
   if (skills) {
     server.registerResource(
       'skill-catalog',
