@@ -48,6 +48,8 @@
 #                                              free than this asks WSL to drop its page cache before it queues (default:
 #                                              the number in <lock>.commit-free-min, or 8; 0: never); see cache_check
 #   SX_HEAVY_DROP_WAIT=<seconds>               how long it waits for the answer (default 40); it never blocks the hold
+#   SX_HEAVY_SETTLE_S=<seconds>                after an answered drop, how long past the answer the commit is read once
+#                                              more, in the background once the hold is granted (default 45; 0: never)
 #   SX_HEAVY_LABEL=<text>                      who is asking, in the holder record and the history (optional)
 #   SX_HEAVY_SESSION=<text>                    the session that asks (default: the run and job of a GitHub Actions
 #                                              job; nothing else is read from the environment)
@@ -826,6 +828,9 @@ watchdog() {
 # skipped with one log line.
 # SX_HEAVY_COMMIT_CMD (a command that prints "<total KB> <free KB>") and SX_HEAVY_POWERSHELL (the program to ask) are
 # for the tests. Fails with 127 when there is no powershell.exe, and 1 when it cannot start or prints no reading.
+# WSL hands the dropped cache back to Windows over a minute or so, so the reading right after the answer shows little
+# of it. An answered drop sets settle_at, and once the hold is granted, settle reads the commit again then.
+settle_at= settle_from= settle_who=
 commit_read() {
   local out rc wx
   c_total= c_free=
@@ -857,7 +862,7 @@ kv_read() {
   case $f_time in '' | *[!0-9]*) return 1 ;; esac
 }
 cache_check() {
-  local min wait_s dpoll req dfile before after who t req_t req_id end answered why
+  local min wait_s dpoll req dfile before after who t req_t req_id end answered answered_at why settle_s
   setting min "${SX_HEAVY_COMMIT_FREE_MIN_GB:-}" commit-free-min 8
   [ "$min" -gt 0 ] || return 0
   case $side in msys | wsl) ;; *) [ -n "${SX_HEAVY_COMMIT_CMD:-}${SX_HEAVY_POWERSHELL:-}" ] || return 0 ;; esac
@@ -900,7 +905,7 @@ cache_check() {
   end=$((SECONDS + wait_s)) answered=
   while :; do
     if kv_read "$dfile" && { { [ -n "$req_id" ] && [ "$f_id" = "$req_id" ]; } || [ "$f_time" -ge "$req_t" ]; }; then
-      answered=1; break
+      answered=1 answered_at=$SECONDS; break
     fi
     [ "$SECONDS" -lt "$end" ] || break
     sleep "$dpoll"
@@ -912,8 +917,26 @@ cache_check() {
   else
     echo "heavy.sh: cache drop ${f_result:-answered}; Windows commit charge now $after" >&2
     hist_line cache-drop "" "before $before, after $after; ${f_result:-answered}${f_detail:+: $f_detail}; asked by $who"
+    settle_s=${SX_HEAVY_SETTLE_S:-45}; case $settle_s in '' | *[!0-9]*) settle_s=45 ;; esac
+    [ "$settle_s" = 0 ] || settle_at=$((answered_at + settle_s)) settle_from=$answered_at settle_who=$who
   fi
   return 0
+}
+# The settled reading: one more cache-drop line, from the same side and pid as the one it follows. It runs in the
+# background, holds no slot and drops this holder's traps, so it never delays the hold or its release. It moves its
+# streams to /dev/null with exec first: bash keeps a copy of the caller's streams open while a function runs with
+# redirections of its own, and a caller that reads heavy.sh's output through a pipe would wait for that copy. It ends
+# by itself after one reading, which a hung powershell.exe cannot stretch past winrun's 30 s; a hold that ends first
+# does not stop it. It writes with hist_line, as every line is.
+settle() {
+  local s settled
+  exec < /dev/null > /dev/null 2>&1
+  trap - EXIT INT TERM
+  s=$((settle_at - SECONDS))
+  [ "$s" -le 0 ] || sleep "$s"
+  if commit_read; then commit_text settled; else settled=unreadable; fi
+  hist_line cache-drop "" "settled $settled; read $((SECONDS - settle_from)) s past the answer; asked by $settle_who"
+  exit 0
 }
 [ -z "$gpu" ] || cache_check
 
@@ -970,6 +993,7 @@ while :; do
   sleep "$poll"
 done
 reap < /dev/null > /dev/null 2>&1 &
+if [ -n "$settle_at" ]; then settle & fi
 ran=1 t_run=$SECONDS
 if [ -n "$sx_lc_all" ]; then LC_ALL=${sx_lc_all#1}; else unset LC_ALL; fi
 if [ -n "$sx_lc_collate" ]; then LC_COLLATE=${sx_lc_collate#1}; else unset LC_COLLATE; fi

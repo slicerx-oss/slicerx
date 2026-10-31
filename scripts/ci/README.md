@@ -265,6 +265,16 @@ prints no numbers) asks for a drop too, logged as before `unreadable`; the timer
 keeps that cheap. With no `powershell.exe` at all, the hold logs one line and goes on. Nothing in this check ever
 fails, stops or kills a hold.
 
+WSL hands the dropped cache back to Windows over a minute or so, so the `after` reading, taken as soon as the answer
+comes, can show no gain at all. After an answered drop, the hold reads the commit once more `SX_HEAVY_SETTLE_S` seconds
+past the answer (default 45, 0 to turn it off), or as it is granted when that comes later, and logs a second
+`cache-drop` line with the same side and pid as the first. Its details read
+`settled <reading>; read <n> s past the answer; asked by <who>`, or `settled unreadable; ...` when the reading fails.
+It is a line of its own rather than a field added to the first, because `history.log` is only ever appended to, and
+the first line stays exactly as it was. The reading runs in the background once the hold is granted, on none of the
+caller's streams and in no slot, so neither the hold nor its caller waits for it. It ends by itself after that one
+reading, even when the hold ended first. A hold that gives up waiting logs no settled line.
+
 `scripts/ci/heavy-test.sh` tests all of this on a temporary lock: alone on any side, and with
 `cross <distro> [<stopped distro>]` from Git Bash, Windows against WSL.
 
