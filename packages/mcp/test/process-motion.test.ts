@@ -35,7 +35,8 @@ describe('process motion settings for the selected printer', () => {
 
   it('uses the project printer when a process is applied over its saved settings', async () => {
     const h = await connect()
-    await h.ctx.profiles.prepare(['process:standard'])
+    // The project's printer, as runSlice names it to prepare.
+    await h.ctx.profiles.prepare(['process:standard'], ['snapmaker-u1'])
     const { config } = resolveSliceConfig(h.ctx.store, h.ctx.profiles, ['process:standard'], undefined, {
       project: { name: 'colored-parts.3mf', model: 'snapmaker-u1', config: { nozzle_diameter: [0.4], outer_wall_speed: [200], default_acceleration: [10000] } },
     })
@@ -67,7 +68,8 @@ describe('process motion settings for the selected printer', () => {
 
   it('uses a custom printer nozzle for explicit and default processes, with overrides last', async () => {
     const h = await connect()
-    await h.ctx.profiles.prepare(['process:standard'])
+    // The printer the preset file inherits, as runSlice names it to prepare.
+    await h.ctx.profiles.prepare(['process:standard'], ['snapmaker-u1'])
     const presets = [{ name: 'Custom U1', section: 'printer' as const, inherits: 'Snapmaker U1 (0.4 nozzle)', values: { nozzle_diameter: [0.6] }, customGcode: false }]
     for (const names of [[], ['process:standard']]) {
       const { config } = resolveSliceConfig(h.ctx.store, h.ctx.profiles, names, undefined, { presets })
