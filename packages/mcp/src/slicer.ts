@@ -16,6 +16,8 @@ export interface SliceJob {
   modelPath: string
   /** For a 3MF or .sx3mf project: the plate to slice, 1-based. Unset slices the first plate. */
   modelPlate?: number
+  /** keep: a 3MF's build items where the file puts them, refused when a part lands off the printable area (sx engine). Unset centers the plate. */
+  placement?: 'center' | 'keep'
   /** Resolved settings: schema defaults, then profiles, then overrides, in schema shapes. */
   config: Record<string, SettingValue>
   /** Only the keys the profiles and overrides set, for engines with their own defaults. */

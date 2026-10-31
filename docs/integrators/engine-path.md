@@ -72,7 +72,7 @@ const request = {
 }
 ```
 
-`mesh` is a path to the STL, or a key of a `meshes` object that maps keys to paths. Paths are relative to the request file, or to the working directory when the request comes on stdin. A whole 3MF project slices as `project.3mf#2` for plate 2, with the transforms the project saved; the viewport has no 3MF decoder yet, so show such a project by its preview.
+`mesh` is a path to the STL, or a key of a `meshes` object that maps keys to paths. Paths are relative to the request file, or to the working directory when the request comes on stdin. A whole 3MF project slices as `project.3mf#2` for plate 2, with the transforms the project saved; the viewport has no 3MF decoder yet, so show such a project by its preview. A 3MF that is no slicer's project (a CAD export, a download) is centered on the bed as a whole. To slice it where the file puts its parts, send `"placement": "keep"` in `plate`: each build item keeps its file position from the front left corner of the `printable_area`, and a part that lands off that area exits 3 with a message naming the part and how far it reaches past each edge. An STL has no placement of its own and is centered either way.
 
 ## 3. Settings
 

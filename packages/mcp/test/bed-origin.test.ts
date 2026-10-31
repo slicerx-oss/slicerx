@@ -64,3 +64,61 @@ describe.skipIf(noSx())('a file sliced on the Snapmaker U1', { timeout: sxTimeou
     expect(await slice((dir) => boxes(join(dir, 'project.3mf'), [[135.5, 135.5]], U1_AREA))).toEqual([[135.5, 135.5]])
   })
 })
+
+// placement keep: a 3MF's build items where the file puts them, from the corner of the printable area, instead of the
+// plate centered; refused as invalid input when a part lands off the area.
+describe.skipIf(noSx())('placement on the Snapmaker U1', { timeout: sxTimeout }, () => {
+  it.each(['slicerx_slice_file', 'slicerx_estimate_file'])('%s keeps a plain 3MF where the file puts it with placement keep', async (tool) => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      const model = boxes(join(h.dir, 'at-80-100.3mf'), [[80, 100]])
+      const call = async (placement?: string) => {
+        const r = await h.call(tool, { model, profiles: ['machine:snapmaker-u1', 'process:standard'], overrides: { exclude_object: true }, ...(placement ? { placement } : {}) })
+        expect(r.isError, text(r)).toBeFalsy()
+        return r
+      }
+      if (tool === 'slicerx_slice_file') {
+        const at = async (placement?: string) => centers(readFileSync(data<{ gcode_path: string }>(await call(placement)).gcode_path, 'utf8'))
+        expect(await at()).toEqual([[135.5, 136]])
+        expect(await at('center')).toEqual([[135.5, 136]])
+        expect(await at('keep')).toEqual([[80.5, 101]])
+        // A mesh file has no placement of its own: centered under keep too.
+        const stl = await h.call(tool, { model: join(h.dir, 'cube.stl'), profiles: ['machine:snapmaker-u1'], overrides: { exclude_object: true }, placement: 'keep' })
+        expect(centers(readFileSync(data<{ gcode_path: string }>(stl).gcode_path, 'utf8'))).toEqual([[135.5, 136]])
+      } else {
+        // Taken, not ignored.
+        expect(data<{ notices?: { code: string }[] }>(await call('keep')).notices?.some((n) => n.code === 'ignored_arguments')).toBeFalsy()
+      }
+    } finally {
+      await h.client.close()
+    }
+  })
+
+  it.each(['slicerx_slice_file', 'slicerx_estimate_file'])('%s refuses a part placement keep puts off the bed, naming it and the overhang', async (tool) => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      const model = boxes(join(h.dir, 'off.3mf'), [[265, 100]])
+      const r = await h.call(tool, { model, profiles: ['machine:snapmaker-u1', 'process:standard'], placement: 'keep' })
+      expect(r.isError).toBe(true)
+      const err = data<{ error: { code: string; message: string; details?: Record<string, unknown> } }>(r).error
+      expect(err.code).toBe('invalid_input')
+      expect(err.details).toEqual({ reason: 'off_bed' })
+      expect(err.message).toContain('Object_1 is 5 mm past the right edge of the printable area (X 0.5 to 270.5, Y 1 to 271 mm) where the file places it')
+      expect(err.message).not.toMatch(/[\u2013\u2014]/)
+      // Centered, the same file slices.
+      const centered = await h.call(tool, { model, profiles: ['machine:snapmaker-u1', 'process:standard'] })
+      expect(centered.isError, text(centered)).toBeFalsy()
+    } finally {
+      await h.client.close()
+    }
+  })
+})
+
+describe('placement', () => {
+  it('takes only center or keep', async () => {
+    const h = await connect()
+    const r = await h.call('slicerx_estimate_file', { model: join(h.dir, 'cube.stl'), placement: 'left' })
+    expect(r.isError).toBe(true)
+    expect(text(r)).toContain('placement')
+  })
+})

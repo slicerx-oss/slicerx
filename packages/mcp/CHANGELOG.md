@@ -4,6 +4,10 @@ All notable changes to `@slicerx/mcp` are documented here. The format follows [K
 
 ## [Unreleased]
 
+### Added
+
+- `slicerx_slice_file` and `slicerx_estimate_file` 1.3.0 take `placement`: `center` (the default, as before) centers a 3MF plate on the bed as a whole; `keep` slices each part where the file puts it, from the front left corner of the printable area (a part at 80, 100 in the file lands at 80.5, 101 on the Snapmaker U1). With `keep`, a part that lands off the bed is refused with `invalid_input` and `details.reason` `off_bed`, the message naming the part and its overhang in mm. An STL or OBJ is centered either way.
+
 ### Changed
 
 - `slicerx_slice_file` and `slicerx_estimate_file` name the arguments they do not take instead of dropping them without a word: the call still succeeds, and a warning (in `warnings`, the text and `notices` with the code `ignored_arguments`) lists each one. For `printer`, `process`, `filament` and `machine` it points to `profiles`, such as `"profiles": ["machine:snapmaker-u1", "process:standard"]`. Before, `{"printer": "Snapmaker U1"}` sliced on the generic machine with only the `no_printer` notice. A later release may refuse unknown arguments.
