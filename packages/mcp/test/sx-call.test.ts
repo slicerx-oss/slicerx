@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// the native entry point runs the built tool runtime and reads the resulting design back.
+// the native entry point runs the tool runtime, from source here, and reads the resulting design back.
 import { execFile } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { afterAll, describe, expect, it } from 'vitest'
 import { built } from './helpers'
@@ -12,7 +14,12 @@ import { built } from './helpers'
 const run = promisify(execFile)
 const pkg = resolve(__dirname, '..')
 const sx = process.env['SLICERX_TEST_SX_BIN'] ?? resolve(pkg, '../../target/release', process.platform === 'win32' ? 'sx.exe' : 'sx')
-const runtime = resolve(pkg, 'dist/cli.js')
+// The runtime is the server's source, run through tsx as project-route-parity does: dist is git-ignored and nothing
+// builds it here, so a built copy would be whatever an earlier build left behind. tsx is loaded by absolute URL because
+// the calls run from temporary directories where a bare `--import tsx` would not resolve.
+const runtime = resolve(pkg, 'src/cli.ts')
+const tsx = pathToFileURL(createRequire(resolve(pkg, 'package.json')).resolve('tsx/esm')).href
+const nodeOptions = `${process.env['NODE_OPTIONS'] ?? ''} --import ${tsx}`.trim()
 const dirs: string[] = []
 const temporary = () => {
   const dir = mkdtempSync(join(tmpdir(), 'sx call-'))
@@ -21,7 +28,7 @@ const temporary = () => {
 }
 const environment = (dir: string) => {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v !== undefined && !k.startsWith('SLICERX_') && k !== 'SX_TEST_HUB_PORT')) as Record<string, string>
-  return { ...env, HOME: dir, USERPROFILE: dir, SLICERX_NODE_BIN: process.execPath, SLICERX_MCP_CLI: runtime }
+  return { ...env, HOME: dir, USERPROFILE: dir, SLICERX_NODE_BIN: process.execPath, SLICERX_MCP_CLI: runtime, NODE_OPTIONS: nodeOptions }
 }
 const options = (dir: string) => ['--no-app', '--printers', 'off', '--out-dir', join(dir, 'out'), '--profiles-dir', join(dir, 'profiles')]
 type Line = { tool: string; ok: boolean; output: { output?: Record<string, unknown>; error?: { code: string } } }
@@ -30,8 +37,7 @@ const lines = (stdout: string) => stdout.trim().split('\n').map((line) => JSON.p
 afterAll(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }) })
 
 const ready = built(sx, 'build sx (cargo build -p sx-cli) and name it in SLICERX_TEST_SX_BIN')
-  && built(runtime, 'build the tool runtime (node packages/mcp/scripts/build.mjs)')
-describe.skipIf(!ready)('sx call with the built tool runtime', () => {
+describe.skipIf(!ready)('sx call with the tool runtime', () => {
   it('models through native geometry and reads back the same history and solid', async () => {
     const dir = temporary()
     const name = 'Bracket "A" & $(literal)'
@@ -64,9 +70,12 @@ describe.skipIf(!ready)('sx call with the built tool runtime', () => {
 
   it('finds the nearest project package from a nested working directory', async () => {
     const dir = temporary()
-    const scope = join(dir, 'node_modules', '@slicerx')
-    mkdirSync(scope, { recursive: true })
-    symlinkSync(pkg, join(scope, 'mcp'), 'junction')
+    // sx looks for node_modules/@slicerx/mcp/dist/cli.js. This package's dist may be missing or stale, so the project's
+    // copy is a stub that hands over to the source runtime; the test is about where sx finds it, not what it runs.
+    const installed = join(dir, 'node_modules', '@slicerx', 'mcp')
+    mkdirSync(join(installed, 'dist'), { recursive: true })
+    writeFileSync(join(installed, 'package.json'), JSON.stringify({ name: '@slicerx/mcp', type: 'module' }))
+    writeFileSync(join(installed, 'dist', 'cli.js'), `await import(${JSON.stringify(pathToFileURL(runtime).href)})\n`)
     const cwd = join(dir, 'models with spaces')
     mkdirSync(cwd)
     const env: Record<string, string> = environment(dir)
