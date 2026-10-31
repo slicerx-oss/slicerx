@@ -231,6 +231,10 @@ cold.describe('a part of the app that loads slowly', () => {
     // The word waits a moment, so a quick load never flashes it, then reads clearly.
     await expect.poll(() => loading.locator('span').evaluate((el) => Number(getComputedStyle(el).opacity))).toBe(1)
     release()
+    // The workspace's code lands, then its page mounts. On a loaded runner that mount can hold the page for longer than
+    // a default wait, so the page's own heading is awaited with the cold start's allowance, and the fallback must be gone
+    // once it is there.
+    await expect(page.getByRole('heading', { name: 'Printers', level: 1 })).toBeVisible({ timeout: COLD_START_MS })
     await expect(loading).toHaveCount(0)
   })
 
