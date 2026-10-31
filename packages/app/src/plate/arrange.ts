@@ -10,7 +10,7 @@
 import type { Bed } from '@slicerx/contracts'
 import type { FirstLayerShape } from '@slicerx/settings/print-margins'
 import { MARGIN_SAFETY_MM, type Rect } from '@slicerx/settings/arrange-room'
-import { edgeOf, findSpot, hullHitsRect, hullOf, sepOf, type Placed, type Want } from '@slicerx/settings/box-pack'
+import { edgeOf, findSpot, middleShift, sepOf, type Placed, type Want } from '@slicerx/settings/box-pack'
 import { bedCircle, boxInBed } from './bed-shape'
 import { bounds, compose, decompose, fitsBed, multiply, reachFrom, type Box, type Mat4 } from './transform'
 
@@ -202,11 +202,12 @@ export function arrange(moving: readonly ArrangeItem[], fixed: readonly ArrangeI
 }
 
 /**
- * Where objects moved to another plate go (Move to plate, plate edge drag, the app link's plate move): onto a plate
- * that holds objects, arranged around them, which stay put; onto an empty plate, arranged and then moved as one group
- * to the middle of the bed, as the MCP project lays out a plate, so they keep room on every side for a brim or skirt.
- * The group stays where arrange put it when the middle would take it onto an excluded area, the prime tower's room or
- * past the bed edge.
+ * Where objects moved to another plate go (Move to plate, plate edge drag, the app link's plate move, and Arrange's new
+ * plates when the geometry engine cannot run): onto a plate that holds objects, arranged around them, which stay put;
+ * onto an empty plate, arranged and then moved as one group to the middle of the bed, as the nest and the MCP project
+ * lay out a plate, so they keep room on every side for a brim or skirt. The group stays where arrange put it when the
+ * middle would take it onto an excluded area, the prime tower's room or past the bed edge, or would take a skirt round
+ * the whole print across an excluded area (middleShift).
  */
 export function placeOnPlate(moving: readonly ArrangeItem[], fixed: readonly ArrangeItem[], bed: Bed, opts: ArrangeOptions = ARRANGE_DEFAULTS): ArrangeResult {
   const r = arrange(moving, fixed, bed, opts)
@@ -217,24 +218,13 @@ export function placeOnPlate(moving: readonly ArrangeItem[], fixed: readonly Arr
     return t && b ? [{ id: it.id, t, b }] : []
   })
   if (!placed.length) return r
-  const all = { x0: Math.min(...placed.map((p) => p.b.min[0])), y0: Math.min(...placed.map((p) => p.b.min[1])), x1: Math.max(...placed.map((p) => p.b.max[0])), y1: Math.max(...placed.map((p) => p.b.max[1])) }
-  const dx = bed.widthMm / 2 - (all.x0 + all.x1) / 2
-  const dy = bed.depthMm / 2 - (all.y0 + all.y1) / 2
   const margins = opts.margins ?? marginSource()
   const zones = [...arrangeZones(margins), ...(opts.zones ?? [])]
   const towers = [...margins.keepOut, ...(margins.towerRoom ?? [])]
-  const grown = (x0: number, y0: number, x1: number, y1: number, by: number): Rect => ({ x: x0 - by, y: y0 - by, w: x1 - x0 + 2 * by, h: y1 - y0 + 2 * by })
-  const corners = (q: Rect): [number, number][] => [[q.x, q.y], [q.x + q.w, q.y], [q.x + q.w, q.y + q.h], [q.x, q.y + q.h]]
-  const moved = placed.map((p) => ({ ...p, x0: p.b.min[0] + dx, y0: p.b.min[1] + dy, x1: p.b.max[0] + dx, y1: p.b.max[1] + dy, reach: margins.reach(printSizeOf(p.b)) }))
-  const fits = moved.every((m) => {
-    const edge = edgeOf(m.reach, opts.gapMm)
-    if (!boxInBed(bed, m.x0, m.y0, m.x1, m.y1, edge - 1e-6)) return false
-    return zones.every((z) => m.x0 >= z.x + z.w + edge - 1e-6 || m.x1 <= z.x - edge + 1e-6 || m.y0 >= z.y + z.h + edge - 1e-6 || m.y1 <= z.y - edge + 1e-6)
-  })
-  // With a skirt round the whole print, its hull (the prime tower's place included) must stay off the excluded areas too.
-  const out = Math.max(0, ...moved.map((m) => m.reach))
-  const hull = margins.skirt && avoid.length ? hullOf([...towers.map((t) => grown(t.x, t.y, t.x + t.w, t.y + t.h, out)), ...moved.map((m) => grown(m.x0, m.y0, m.x1, m.y1, m.reach))].flatMap(corners)) : null
-  if (!fits || (hull && avoid.some((z) => hullHitsRect(hull, z)))) return r
+  const boxes = placed.map((p) => ({ r: { x: p.b.min[0], y: p.b.min[1], w: p.b.max[0] - p.b.min[0], h: p.b.max[1] - p.b.min[1] }, reach: margins.reach(printSizeOf(p.b)) }))
+  const shift = middleShift(boxes, bed, opts.gapMm, zones, towers, margins.skirt, avoid)
+  if (!shift) return r
+  const [dx, dy] = shift
   const transforms = { ...r.transforms }
   for (const p of placed) {
     const next = [...p.t]

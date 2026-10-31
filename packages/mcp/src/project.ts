@@ -589,7 +589,7 @@ export class McpProject implements PilotProject {
       const index = this.newPlateLike(from)
       const plate = this.layout.find((p) => p.index === index)!
       for (const [objectId, copies] of rest) plate.items.push({ objectId, copies })
-      const r = await this.nestPlan(index, spacing, new Map(), true)
+      const r = await this.nestPlan(index, spacing, new Map(), true, undefined, true)
       const now = r?.left ?? new Map<string, number>()
       const placed = [...rest].map(([objectId, n]) => [objectId, n - (now.get(objectId) ?? 0)] as const).filter(([, n]) => n > 0)
       if (placed.length === 0) {
@@ -632,10 +632,12 @@ export class McpProject implements PilotProject {
    * (by object, with lanes for copies taller than the gantry rod when that clears more); otherwise the plate is left
    * as it was. With `turn` each moving copy may turn about Z where that packs better, as the app's Arrange turns them;
    * held copies keep the turn they have. `start` gives the moving copies of an object a turn to start from (a duplicate
-   * keeps its source copy's turn); a turn the nest adds goes on top of it. Returns every copy's move and turn by plate
-   * object id and how many copies of each moving object found no room; undefined when nothing moves.
+   * keeps its source copy's turn); a turn the nest adds goes on top of it. On a `fresh` plate (one that arrange's
+   * overflow made) the boxes go to the middle of the bed too, as the nest's layout and the app's new plates do. Returns
+   * every copy's move and turn by plate object id and how many copies of each moving object found no room; undefined
+   * when nothing moves.
    */
-  private async nestPlan(index: number, spacing: number, pins: ReadonlyMap<string, Spot>, turn = false, start?: ReadonlyMap<string, number>): Promise<{ at: Map<string, Spot>; left: Map<string, number> } | undefined> {
+  private async nestPlan(index: number, spacing: number, pins: ReadonlyMap<string, Spot>, turn = false, start?: ReadonlyMap<string, number>, fresh = false): Promise<{ at: Map<string, Spot>; left: Map<string, number> } | undefined> {
     const geom = this.geom
     const plate = this.layout.find((p) => p.index === index)
     if (!plate) return undefined
@@ -700,7 +702,7 @@ export class McpProject implements PilotProject {
         boxes = true
       }
     }
-    at ??= layout(boxPlate(request))
+    at ??= layout(boxPlate(fresh ? request : { ...request, center: false }))
     const left = new Map<string, number>()
     for (const o of moving) {
       const slots = free.get(o.id) ?? []
