@@ -504,12 +504,16 @@ test.describe('phone', () => {
       await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] })
     }
     // A tap is a finger down for 60 ms, as a real one is: Playwright's own tap() lifts in the same millisecond, and Chromium on
-    // Linux then sends the click to the toolbar and not the button.
+    // Linux then sends the click to the toolbar and not the button. The 60 ms is in the events' own timestamps and both are sent
+    // at once: a wait between them lets a busy runner hold the lift back past the 500 ms of a long press, and the tip then eats the
+    // tap. Every try failed that way in nightly runs, with the tip showing and going each time and the toggle never pressing.
     const tap = async (button: ReturnType<Page['locator']>) => {
-      const touch = touchOn(button)
-      await touch('touchStart')
-      await page.waitForTimeout(60)
-      await touch('touchEnd')
+      const { x, y } = await centerOf(button)
+      const at = Date.now() / 1000
+      await Promise.all([
+        cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }], timestamp: at }),
+        cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [], timestamp: at + 0.06 }),
+      ])
     }
     // A short tap presses the toggle and shows no tip. Chromium's touch hit test is stale until the page has had a mouse
     // event, so one click on the row's name comes first, and the tap repeats while the toggle is not pressed. How many
