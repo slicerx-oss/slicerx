@@ -3,8 +3,8 @@
 // A project object's own layer height (object metadata in Metadata/model_settings.config) beats the smart layer
 // heights the default process profile turns on: slicerx_slice_file turns them off for that file and says so. Smart
 // layers a client asks for stay, and the engine's warning, given once, says which layer heights they replace.
-import { writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { copyFileSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { objectLayerHeights } from '../src/projectfile'
 import { writeZip } from '../src/zip'
@@ -137,5 +137,60 @@ describe.skipIf(noSx())('slicerx_slice_file layer by layer with objects at layer
     const r = await slice({ layer_height: '0.3' }, { enable_prime_tower: true }, '2')
     expect(r.isError).toBe(true)
     expect(text(r)).toContain('prime tower needs one layer height for every object')
+  })
+})
+
+// core's tests/fixtures/mixed-heights/a1--m1.3mf: an A1 project of three 10 x 10 x 3 mm boxes printed by layer, obj1 at
+// its own 0.1 mm, obj2 at the plate's 0.2 mm and obj3 at its own 0.3 mm, on a 0.2 mm first layer.
+const MIXED = resolve(__dirname, '../../core/cli/tests/fixtures/mixed-heights/a1--m1.3mf')
+const MIXED_OFF = 'Smart layer heights are off for this slice: objects in a1--m1.3mf set their own layer height (obj1 0.1 mm, obj3 0.3 mm).'
+
+describe('a project file whose objects set their own layer heights', () => {
+  it('names each object and its height', () => {
+    expect(objectLayerHeights(MIXED)).toEqual([{ name: 'obj1', layer_height: 0.1 }, { name: 'obj3', layer_height: 0.3 }])
+    expect(objectLayerHeights(MIXED, 1)).toEqual([{ name: 'obj1', layer_height: 0.1 }, { name: 'obj3', layer_height: 0.3 }])
+  })
+})
+
+describe.skipIf(noSx())('slicerx_slice_file on a project file whose objects set their own layer heights', { timeout: sxTimeout }, () => {
+  const slice = async (args: Record<string, unknown>) => {
+    const h = await connect({ engine: 'sx', sxBin })
+    try {
+      const model = join(h.dir, 'a1--m1.3mf')
+      copyFileSync(MIXED, model)
+      const r = await h.call('slicerx_slice_file', { model, plate: 1, profiles: ['machine:bambu-a1'], ...args })
+      expect(r.isError, text(r)).toBeFalsy()
+      const out = data<{ layer_count: number; warnings: string[]; gcode_path: string }>(r)
+      // The request the engine slices from sits beside its G-code.
+      const request = JSON.parse(readFileSync(join(dirname(out.gcode_path), 'request.json'), 'utf8')) as { config: Record<string, unknown>; meshes: Record<string, unknown> }
+      return { out, request, model, text: text(r) }
+    } finally { await h.client.close() }
+  }
+  // 3 mm by layer: the 0.2 mm first layer, then obj1's 0.1 mm tops, which hold every other object's.
+  const OWN_LAYERS = 29
+
+  it('turn the default smart layers off and slice each object at its own height', async () => {
+    const { out, request, model, text: t } = await slice({})
+    expect(out.warnings.filter((w) => w.startsWith('Smart layer heights'))).toEqual([MIXED_OFF])
+    expect(t).toContain(`Warning: ${MIXED_OFF}`)
+    // The request carries smart layers off and the project's plate 1 itself, whose objects keep their own heights.
+    expect(request.config['smart_layer']).toBe('off')
+    expect(Object.values(request.meshes)).toEqual([`${realpathSync(model)}#1`])
+    expect(out.layer_count).toBe(OWN_LAYERS)
+  })
+
+  it("slice each object at its own height with the project's settings, which open with smart layers off", async () => {
+    const { out, request } = await slice({ project_settings: true })
+    expect(request.config['smart_layer']).toBe('off')
+    expect(out.warnings.some((w) => w.startsWith('Smart layer heights'))).toBe(false)
+    expect(out.layer_count).toBe(OWN_LAYERS)
+  })
+
+  it('keep smart layers a client asks for, saying which heights they replace', async () => {
+    const { out, request } = await slice({ overrides: { smart_layer: 'quality' } })
+    expect(request.config['smart_layer']).toBe('quality')
+    expect(out.warnings).toContain('Smart layer heights replace the layer heights objects set for themselves (obj1 0.1 mm, obj3 0.3 mm).')
+    expect(out.warnings).not.toContain(MIXED_OFF)
+    expect(out.layer_count).not.toBe(OWN_LAYERS)
   })
 })

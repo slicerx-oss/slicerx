@@ -1,56 +1,121 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // Just enough ZIP for 3MF packages: read entries (stored or deflated) and write a deflated archive.
-import { crc32, deflateRawSync, inflateRawSync } from 'node:zlib'
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import { constants, crc32, deflateRawSync, inflateRawSync } from 'node:zlib'
 import { ToolInputError } from './models'
 
 /** Largest entry this reader inflates, in bytes; a project's settings are kilobytes, a plate's G-code tens of megabytes. */
 export const MAX_ENTRY_BYTES = 512 * 1024 * 1024
+
+/** Largest entry `text` and `head` read, in bytes. */
+export const MAX_TEXT_BYTES = 64 * 1024 * 1024
 
 export interface ZipReader {
   names(): string[]
   /** The entry's bytes, or undefined when the archive has no such entry. Larger than `max` bytes throws. */
   read(name: string, max?: number): Buffer | undefined
   text(name: string): string | undefined
+  /**
+   * The entry's first `bytes` bytes (all of them when it is shorter), inflating no more of it than that takes; undefined
+   * when the archive has no such entry. An entry larger than `text` reads throws, as `text` does.
+   */
+  head(name: string, bytes: number): Buffer | undefined
+}
+
+/** A ZIP read from a file: only its directory and the entries asked for. `close` it when done. */
+export interface ZipFile extends ZipReader {
+  close(): void
 }
 
 export function readZip(buf: Buffer, label = 'file'): ZipReader {
+  return zipOf(buf.length, (at, len) => buf.subarray(at, at + len), label)
+}
+
+/**
+ * The ZIP at `path`, read in place: its end record and directory now, each entry when asked for, so a project's
+ * settings come out without the whole file in memory. The file stays open until `close`.
+ */
+export function openZip(path: string, label = 'file'): ZipFile {
+  const fd = openSync(path, 'r')
+  try {
+    const size = fstatSync(fd).size
+    const pread = (at: number, len: number): Buffer => {
+      const b = Buffer.allocUnsafe(Math.max(0, Math.min(len, size - at)))
+      let got = 0
+      while (got < b.length) {
+        const n = readSync(fd, b, got, b.length - got, at + got)
+        if (n <= 0) break
+        got += n
+      }
+      return got === b.length ? b : b.subarray(0, got)
+    }
+    return { ...zipOf(size, pread, label), close: () => closeSync(fd) }
+  } catch (error) {
+    closeSync(fd)
+    throw error
+  }
+}
+
+/** The ZIP of `total` bytes that `pread` reads from (`len` bytes at `at`, fewer past the end). */
+function zipOf(total: number, pread: (at: number, len: number) => Buffer, label: string): ZipReader {
   // The end of central directory record sits in the last 64 KiB + 22 bytes.
+  const tailAt = Math.max(0, total - 65_557)
+  const tail = pread(tailAt, total - tailAt)
   let eocd = -1
-  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65_557); i--) {
-    if (buf.readUInt32LE(i) === 0x06054b50) {
+  for (let i = tail.length - 22; i >= 0; i--) {
+    if (tail.readUInt32LE(i) === 0x06054b50) {
       eocd = i
       break
     }
   }
   if (eocd < 0) throw new ToolInputError(`${label} is not a ZIP archive (3MF files are ZIP packages)`, 'invalid_model')
-  const count = buf.readUInt16LE(eocd + 10)
-  let p = buf.readUInt32LE(eocd + 16)
+  const count = tail.readUInt16LE(eocd + 10)
+  // From the directory to the end of the file, so a directory is checked against the file as a whole.
+  const at = tail.readUInt32LE(eocd + 16)
+  const dir = pread(at, total - at)
+  let p = 0
   const entries = new Map<string, { method: number; size: number; usize: number; offset: number }>()
   for (let n = 0; n < count; n++) {
-    if (p + 46 > buf.length || buf.readUInt32LE(p) !== 0x02014b50) throw new ToolInputError(`${label} has a damaged ZIP directory`, 'invalid_model')
-    const nameLen = buf.readUInt16LE(p + 28)
-    const name = buf.toString('utf8', p + 46, p + 46 + nameLen)
-    entries.set(name, { method: buf.readUInt16LE(p + 10), size: buf.readUInt32LE(p + 20), usize: buf.readUInt32LE(p + 24), offset: buf.readUInt32LE(p + 42) })
-    p += 46 + nameLen + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32)
+    if (p + 46 > dir.length || dir.readUInt32LE(p) !== 0x02014b50) throw new ToolInputError(`${label} has a damaged ZIP directory`, 'invalid_model')
+    const nameLen = dir.readUInt16LE(p + 28)
+    const name = dir.toString('utf8', p + 46, p + 46 + nameLen)
+    entries.set(name, { method: dir.readUInt16LE(p + 10), size: dir.readUInt32LE(p + 20), usize: dir.readUInt32LE(p + 24), offset: dir.readUInt32LE(p + 42) })
+    p += 46 + nameLen + dir.readUInt16LE(p + 30) + dir.readUInt16LE(p + 32)
+  }
+  /** Where an entry's data starts, past its local header. */
+  const dataAt = (e: { offset: number }): number => {
+    const head = pread(e.offset, 30)
+    return e.offset + 30 + head.readUInt16LE(26) + head.readUInt16LE(28)
+  }
+  const inflate = (name: string, raw: Buffer, max: number, partial = false): Buffer => {
+    try {
+      return inflateRawSync(raw, { maxOutputLength: max, ...(partial ? { finishFlush: constants.Z_SYNC_FLUSH } : {}) })
+    } catch {
+      throw new ToolInputError(`${label}: ${name} is damaged or larger than it says`, 'invalid_model')
+    }
   }
   const read = (name: string, max = MAX_ENTRY_BYTES): Buffer | undefined => {
     const e = entries.get(name)
     if (!e) return undefined
     if (e.usize > max) throw new ToolInputError(`${label}: ${name} is over the ${max} byte limit`, 'invalid_model')
-    const start = e.offset + 30 + buf.readUInt16LE(e.offset + 26) + buf.readUInt16LE(e.offset + 28)
-    const raw = buf.subarray(start, start + e.size)
+    const raw = pread(dataAt(e), e.size)
     if (e.method === 0) return Buffer.from(raw)
-    if (e.method === 8) {
-      try {
-        return inflateRawSync(raw, { maxOutputLength: max })
-      } catch {
-        throw new ToolInputError(`${label}: ${name} is damaged or larger than it says`, 'invalid_model')
-      }
-    }
+    if (e.method === 8) return inflate(name, raw, max)
     throw new ToolInputError(`${label}: ${name} uses ZIP method ${e.method}, which is not supported`, 'invalid_model')
   }
-  return { names: () => [...entries.keys()], read, text: (name) => read(name, 64 * 1024 * 1024)?.toString('utf8') }
+  const head = (name: string, bytes: number): Buffer | undefined => {
+    const e = entries.get(name)
+    if (!e || e.usize > MAX_TEXT_BYTES || (e.method !== 0 && e.method !== 8)) return read(name, MAX_TEXT_BYTES)?.subarray(0, bytes)
+    const start = dataAt(e)
+    if (e.method === 0) return Buffer.from(pread(start, Math.min(e.size, bytes)))
+    // Inflate a growing start of the stream until it gives `bytes`; all of it is inflated as `read` does.
+    for (let take = Math.min(e.size, 16 * 1024); ; take = Math.min(e.size, take * 4)) {
+      const out = inflate(name, pread(start, take), MAX_TEXT_BYTES, take < e.size)
+      if (out.length >= bytes || take >= e.size) return out.subarray(0, bytes)
+    }
+  }
+  return { names: () => [...entries.keys()], read, text: (name) => read(name, MAX_TEXT_BYTES)?.toString('utf8'), head }
 }
 
 /** A deflated ZIP of the entries, in order. No ZIP64, so the archive stays under 4 GiB. */
