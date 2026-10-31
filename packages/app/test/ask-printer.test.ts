@@ -26,11 +26,13 @@ describe('opening printer setup at launch', () => {
   })
 
   it('forgets Slice without a printer once a printer is added, so removing every printer asks again', () => {
-    expect(clearsNoPrinter({ noPrinter: true, printers: 1 })).toBe(true)
+    expect(clearsNoPrinter({ noPrinter: true, bridgeSettled: true, printers: 1 })).toBe(true)
     // Not before the fleet has answered, and not with none.
-    expect(clearsNoPrinter({ noPrinter: true, printers: null })).toBe(false)
-    expect(clearsNoPrinter({ noPrinter: true, printers: 0 })).toBe(false)
-    expect(clearsNoPrinter({ noPrinter: false, printers: 2 })).toBe(false)
+    expect(clearsNoPrinter({ noPrinter: true, bridgeSettled: true, printers: null })).toBe(false)
+    expect(clearsNoPrinter({ noPrinter: true, bridgeSettled: true, printers: 0 })).toBe(false)
+    expect(clearsNoPrinter({ noPrinter: false, bridgeSettled: true, printers: 2 })).toBe(false)
+    // Not before the desktop's bridge is up: until then the list can be the demo fleet's.
+    expect(clearsNoPrinter({ noPrinter: true, bridgeSettled: false, printers: 6 })).toBe(false)
     // Cleared, then every printer removed: launch asks again.
     expect(shouldAskForPrinter({ ...none, noPrinter: false, printers: 0 })).toBe(true)
   })

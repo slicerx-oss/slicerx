@@ -18,9 +18,13 @@ export function shouldAskForPrinter(s: { kind: string; printers: number | null; 
   return s.kind === 'desktop' && s.bridgeSettled && s.printers === 0 && !s.setupOpen && !s.agreementOpen && !s.noPrinter && !s.offered
 }
 
-/** Whether "no printer" should be cleared: the fleet has answered and it has a printer. */
-export function clearsNoPrinter(s: { printers: number | null; noPrinter: boolean }): boolean {
-  return s.noPrinter && s.printers !== null && s.printers > 0
+/**
+ * Whether "no printer" should be cleared: the fleet has answered and it has a printer. On the desktop that waits for
+ * the app's own bridge, as the ask does: until it connects, a dev or test build (or an edition with no backend) lists
+ * the demo fleet's made-up printers, which are not the person's.
+ */
+export function clearsNoPrinter(s: { printers: number | null; bridgeSettled: boolean; noPrinter: boolean }): boolean {
+  return s.noPrinter && s.bridgeSettled && s.printers !== null && s.printers > 0
 }
 
 export function useAskForPrinter(): void {
@@ -34,8 +38,8 @@ export function useAskForPrinter(): void {
   const agreementOpen = useApp((s) => s.agreementOpen)
   const noPrinter = useApp((s) => s.noPrinter)
   useEffect(() => {
-    if (clearsNoPrinter({ printers, noPrinter })) set({ noPrinter: false })
-  }, [printers, noPrinter])
+    if (clearsNoPrinter({ printers, bridgeSettled, noPrinter })) set({ noPrinter: false })
+  }, [printers, bridgeSettled, noPrinter])
   useEffect(() => {
     // Setup that showed this launch (the first run, or opened by hand) already asked.
     if (setupOpen) offered = true
