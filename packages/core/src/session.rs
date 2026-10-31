@@ -8595,6 +8595,20 @@ impl SliceSession {
                 ),
                 _ => (Vec::new(), Vec::new()),
             };
+            // The topmost layer of a classic one-wall top on a Bambu Lab printer: its surface starts where a band's
+            // does, so the lines that run into the one wall end half its width in from its center line at any overlap.
+            // Other printers spread that layer's lines as a plate of one wall (`surface_edge`).
+            let top_near = (one_wall_layer
+                && layer + 1 == n
+                && !cfg.arachne_walls()
+                && crate::perimeters::one_wall_top(cfg)
+                && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor))
+            .then(|| crate::perimeters::classic_top_near(cfg, own_overlap, w))
+            .flatten();
+            let top_edge = |outline: &Shapes, core: Shapes| match top_near {
+                Some(near) => perimeters::intersection(&core, &perimeters::offset(outline, -near)),
+                None => core,
+            };
             let group = group_of(ri);
             let (islands, inner) = match group.first() {
                 Some(&first) if group.len() > 1 => {
@@ -8603,9 +8617,10 @@ impl SliceSession {
                             .iter()
                             .filter_map(|&j| here.regions.get(j).map(|r| &r.1))
                             .collect();
+                        let outline = perimeters::union_all(&all);
                         let (islands, inner) = perimeters::walls_for_top(
                             cfg,
-                            &perimeters::union_all(&all),
+                            &outline,
                             loops,
                             w,
                             own_overlap,
@@ -8615,6 +8630,7 @@ impl SliceSession {
                             one_wall_layer,
                             classic_narrow,
                         );
+                        let inner = top_edge(&outline, inner);
                         walled_group = Some(inner.clone());
                         (islands, inner)
                     } else {
@@ -8627,9 +8643,10 @@ impl SliceSession {
                 }
                 _ if !counterbore_cut.is_empty() => {
                     // Counterbore floors a bridge can span are not walled; they print as bridging infill.
+                    let walled = perimeters::difference(shapes, &counterbore_cut);
                     let (islands, inner) = perimeters::walls_for_top(
                         cfg,
-                        &perimeters::difference(shapes, &counterbore_cut),
+                        &walled,
                         loops,
                         w,
                         own_overlap,
@@ -8639,6 +8656,7 @@ impl SliceSession {
                         one_wall_layer,
                         classic_narrow,
                     );
+                    let inner = top_edge(&walled, inner);
                     (islands, perimeters::union_all(&[&inner, &counterbore]))
                 }
                 _ => {
@@ -8722,7 +8740,8 @@ impl SliceSession {
                             fresh()
                         }
                     });
-                    walls
+                    let (islands, inner) = walls;
+                    (islands, top_edge(shapes, inner))
                 }
             };
             Micros::add(&micros.perimeters, &t);
@@ -9880,6 +9899,33 @@ impl SliceSession {
             // on a plate of one wall. Lower layers' tops under it keep one grid.
             let one_wall_top = crate::perimeters::one_wall_top(cfg);
             let top_one_wall = one_wall_top && layer + 1 == self.plan.count() && !cfg.arachne_walls();
+            // Where a classic one-wall top's surface starts nearer half the outer wall from its center line than the
+            // walls' overlap leaves it (`classic_top_near`: the topmost layer on Bambu Lab printers), its grid still
+            // reads the walls' own edge, as [`grid_inset`] does: the strip between that edge and the surface's, and how
+            // far a shape is grown into it to put it back along the outer wall.
+            let wall_back = (top_one_wall && bambu_stretch)
+                .then(|| {
+                    let w = mm(cfg.line_width);
+                    #[allow(
+                        clippy::cast_possible_truncation,
+                        reason = "overlap is a fraction of a line width"
+                    )]
+                    let overlap = (f64::from(w) * stretch_overlap / 100.0).round() as i32;
+                    let near = crate::perimeters::classic_top_near(cfg, overlap, w)?;
+                    let edge = mm(cfg.outer_wall_width()) - overlap;
+                    let strip = perimeters::difference(
+                        &perimeters::offset(shapes, -edge),
+                        &perimeters::offset(shapes, -near),
+                    );
+                    Some((strip, near - edge + 5))
+                })
+                .flatten();
+            // `shapes` grown back to the walls' own edge along the outer wall.
+            let grown_back = |shapes: &Shapes| -> Option<Shapes> {
+                let (strip, by) = wall_back.as_ref()?;
+                let back = perimeters::intersection(&perimeters::offset(shapes, *by), strip);
+                Some(perimeters::union_all(&[shapes, &back]))
+            };
             let surface_stretch = surface_edge(
                 cfg,
                 layer_height,
@@ -10013,6 +10059,7 @@ impl SliceSession {
                     if region.is_empty() {
                         continue;
                     }
+                    let region_plain = region.clone();
                     let region = if turn == 0.0 {
                         region
                     } else {
@@ -10047,6 +10094,19 @@ impl SliceSession {
                             if let Some(e) = grid_gap_edge.get_mut(which) {
                                 *e = Some((inset_mm - surface_mm / 2.0).max(0.0));
                             }
+                            // A line along the wall prints from the walls' own edge (`wall_back`): the lines that fit
+                            // are found in the surface grown back to it, and still end in the surface.
+                            let lines_in =
+                                (which == 0)
+                                    .then(|| grown_back(&region_plain))
+                                    .flatten()
+                                    .map(|r| {
+                                        if turn == 0.0 {
+                                            r
+                                        } else {
+                                            crate::patterns::rotate_shapes(&r, -turn)
+                                        }
+                                    });
                             let center = crate::geom::Point::new(
                                 mm(f64::midpoint(self.bounds[0], self.bounds[2])),
                                 mm(f64::midpoint(self.bounds[1], self.bounds[3])),
@@ -10061,6 +10121,7 @@ impl SliceSession {
                             };
                             vec![anchored_grid(
                                 &region,
+                                lines_in.as_ref(),
                                 d,
                                 anchor,
                                 surface_spacing,
@@ -10070,6 +10131,7 @@ impl SliceSession {
                         }
                         (None, None) => vec![SurfaceGrid {
                             region,
+                            lines_in: None,
                             spacing: surface_spacing,
                             spacing_mm: surface_mm,
                             inset: mm(0.5 * surface_mm),
@@ -10083,6 +10145,7 @@ impl SliceSession {
                     for grid in grids {
                         let SurfaceGrid {
                             region,
+                            lines_in,
                             spacing: surface_spacing,
                             spacing_mm: surface_mm,
                             inset,
@@ -10094,7 +10157,7 @@ impl SliceSession {
                             *p = p.max(surface_mm);
                         }
                         let outer = perimeters::offset(&region, -mm(0.05 * surface_mm));
-                        let inner_c = perimeters::offset(&region, -inset);
+                        let inner_c = perimeters::offset(lines_in.as_ref().unwrap_or(&region), -inset);
                         let family = crate::infill::Family {
                             dir: d,
                             spacing: surface_spacing,
@@ -10440,11 +10503,19 @@ impl SliceSession {
                         return Vec::new();
                     }
                     let region = match grid_gap_edge.get(which).copied().flatten().filter(|_| *own) {
-                        // Between the innermost wall and the lines.
-                        Some(e) => perimeters::intersection(
-                            &surface_region(which),
-                            &perimeters::offset(&inner, -mm(e)),
-                        ),
+                        // Between the innermost wall and the lines, from the walls' own edge where the grid reads it.
+                        Some(e) => match (which == 0)
+                            .then(|| grown_back(&surface_region(which)).zip(grown_back(&inner)))
+                            .flatten()
+                        {
+                            Some((surface, area)) => {
+                                perimeters::intersection(&surface, &perimeters::offset(&area, -mm(e)))
+                            }
+                            None => perimeters::intersection(
+                                &surface_region(which),
+                                &perimeters::offset(&inner, -mm(e)),
+                            ),
+                        },
                         None => match spread_gap_edge.get(which).copied().flatten() {
                             Some(e) => perimeters::intersection(
                                 &surface_region(which),
@@ -11883,9 +11954,12 @@ pub(crate) fn grid_inset(
 
 /// The grid of a monotonic line surface on Bambu Lab printers: `region` (turned so its lines run along `d`) drawn in a
 /// [`PieceFrame`] whose line 0 sits half a spacing past `anchor` (a point turned with the region), so the lines lie
-/// at (j + 1/2) spacings from it across the lines, with their centers `inset_mm` in from the region's edge.
+/// at (j + 1/2) spacings from it across the lines, with their centers `inset_mm` in from the region's edge, or from
+/// the edge of `lines_in` when given (the region with its edge moved where the lines are found; they still end in
+/// the region).
 fn anchored_grid(
     region: &Shapes,
+    lines_in: Option<&Shapes>,
     d: Dir,
     anchor: crate::geom::Point,
     spacing: i64,
@@ -11903,16 +11977,19 @@ fn anchored_grid(
         origin: origin + exact / 2.0,
         scale: spacing as f64 / exact,
     };
-    let drawn: Shapes = region
-        .iter()
-        .map(|s| {
-            s.iter()
-                .map(|r| r.iter().map(|q| frame.to(*q)).collect())
-                .collect()
-        })
-        .collect();
+    let draw = |shapes: &Shapes| -> Shapes {
+        shapes
+            .iter()
+            .map(|s| {
+                s.iter()
+                    .map(|r| r.iter().map(|q| frame.to(*q)).collect())
+                    .collect()
+            })
+            .collect()
+    };
     SurfaceGrid {
-        region: drawn,
+        region: draw(region),
+        lines_in: lines_in.map(draw),
         spacing,
         spacing_mm,
         inset: mm(inset_mm),
@@ -11927,6 +12004,8 @@ fn anchored_grid(
 /// lines print (mm) and the line left out, if any.
 struct SurfaceGrid {
     region: Shapes,
+    /// Where the lines are found, when not in `region` itself.
+    lines_in: Option<Shapes>,
     spacing: i64,
     spacing_mm: f64,
     inset: i32,
@@ -12099,6 +12178,7 @@ fn stretch_grids(region: &Shapes, d: Dir, edge_mm: f64, nominal_mm: f64) -> Vec<
             #[allow(clippy::cast_possible_truncation, reason = "a width in mm")]
             out.push(SurfaceGrid {
                 region: drawn,
+                lines_in: None,
                 spacing,
                 spacing_mm,
                 inset: i32::try_from(half).unwrap_or(i32::MAX),
@@ -14520,7 +14600,7 @@ mod surface_edge_tests {
         ]]];
         let anchor = crate::geom::Point::new(mm(3.0), mm(2.0));
         let spacing = crate::paths::t_units(0.4);
-        let grid = anchored_grid(&square, Dir::D45, anchor, spacing, 0.4, 0.2);
+        let grid = anchored_grid(&square, None, Dir::D45, anchor, spacing, 0.4, 0.2);
         let frame = grid.frame.expect("a frame");
         let across = |p: crate::geom::Point| {
             (f64::from(p.y) - f64::from(p.x)) / std::f64::consts::SQRT_2 / crate::geom::SCALE
