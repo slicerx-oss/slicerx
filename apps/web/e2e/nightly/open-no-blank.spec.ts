@@ -93,18 +93,18 @@ test('ten opens in a row leave no held frame, canvas or texture behind', { tag: 
     await page.waitForTimeout(400)
   }
   // the first open settles what a plate with x-mark holds; nine more must not add to it. Objects that leave the plate
-  // stay built for 10 s in case they come back, so both counts are taken once that has passed.
+  // stay built for 10 s in case they come back (the viewport's PARK_MS timer), so the base is taken once its parked
+  // map has emptied, however late a loaded machine runs the timers.
+  const parkedCount = () => page.evaluate(() => (window as unknown as { __vp: { parked: Map<string, unknown> } }).__vp.parked.size)
   await open()
-  await page.waitForTimeout(11_000)
+  await expect.poll(parkedCount, { timeout: 30_000 }).toBe(0)
   const base = await memory()
   for (let i = 0; i < 9; i++) await open()
   // the last fade's copy goes once it has faded (a slow renderer takes a few frames)
   await expect.poll(async () => (await memory()).overlays).toBe(0)
-  await page.waitForTimeout(11_000)
-  const after = await memory()
   // the view's own caches move by one or two; nine opens' worth of held frames or meshes would be far more
-  expect(after.geometries).toBeLessThanOrEqual(base.geometries + 2)
-  expect(after.textures).toBeLessThanOrEqual(base.textures + 2)
+  await expect.poll(async () => (await memory()).geometries, { timeout: 30_000 }).toBeLessThanOrEqual(base.geometries + 2)
+  await expect.poll(async () => (await memory()).textures, { timeout: 30_000 }).toBeLessThanOrEqual(base.textures + 2)
 })
 
 test('a model added to the plate fades in beside the others, which stay as they are', { tag: '@nightly' }, async ({ page, isMobile }) => {
