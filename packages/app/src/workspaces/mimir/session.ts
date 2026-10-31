@@ -38,6 +38,7 @@ import { appPrintRun } from './print-run'
 import { appProject, pilotSlicer } from './project'
 import { mimirTools, NO_APPROVALS, NO_PRINTERS, SCRIPTED_TIERS, scriptRouter } from './scripted'
 import { SCRIPTS } from './scripts'
+import { appTabs } from './tabs'
 
 export const mimirLogs = createMemorySessionStore()
 
@@ -195,6 +196,8 @@ export function tabPilotOptions(host: Host, parts: { llm: LlmTransport; config: 
   const slices = hostSlices()
   const commands = mimirCommands(host, parts.commands ?? liveCommands())
   return {
+    // the tabs as registered, which a local model's prompt names
+    tabs: appTabs(commands),
     host: {
       printers: guardedPrinters(host, { ledger: sendLedger }) ?? host.printers ?? NO_PRINTERS,
       approvals: host.approvals ?? NO_APPROVALS,
