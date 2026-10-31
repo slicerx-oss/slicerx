@@ -6,6 +6,8 @@ All notable changes to the `sx_core::api` module. The format follows Keep a Chan
 
 ### Added
 
+- `PlateSpec::placement` (`plate.placement`, `PlatePlacement`): `center` (the default, as before) or `keep`. With `keep`, `build_plate` refuses the plate with `Error::Config` (key `plate.placement`) when a part lands off the printable area (the config's `printable_area`, else the plate's bed from 0, 0), naming each part and how far it reaches past each edge in mm. Hosts that split a 3MF into its build items place them where the file puts them under `keep` (the `sx` CLI does). The request schema lists the field.
+
 - `WarningCode::NoMachineProfile` (`no_machine_profile`) and `ConfigReport::warnings`: with `options.configReport` or `options.strict`, a request whose config and object settings carry no printer settings (no `printable_area` or `bed_shape`, no `machine_max_*` or `machine_min_*` keys) gets the warning in the report's `warnings` and in `configReport.warnings` (`NO_MACHINE_PROFILE` is its text). The slice still runs on the engine's defaults, and `strict` does not refuse it. The result schema lists the code and the field.
 
 ## [0.2.7] - 2026-10-30

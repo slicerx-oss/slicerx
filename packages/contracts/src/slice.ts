@@ -150,6 +150,8 @@ export interface PlateObject {
 
 export interface Plate {
   bed: Bed
+  /** Where a 3MF plate given without a transform goes. `center` (the default): centered on the bed as a whole. `keep`: each build item where the file puts it, from the front left corner of the printable area, refused when a part lands off that area. A mesh file without a transform is centered under either. */
+  placement?: 'center' | 'keep'
   objects: PlateObject[]
 }
 

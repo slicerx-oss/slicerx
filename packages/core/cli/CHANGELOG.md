@@ -6,6 +6,8 @@ Changes to the `sx` command's JSON input and output. Keep a Changelog format; se
 
 ### Added
 
+- `sx slice --request` and `sx check --request` take `plate.placement`: `center` (the default, as before) centers a 3MF plate on the bed as a whole; `keep` slices its build items where the file's transforms put them, from the front left corner of the `printable_area`, with no recentering. With `keep` a part that lands off the printable area exits 3 with a message naming the part and how far it reaches past each edge. An STL or OBJ without a transform is centered under either. `sx schema request` lists the field.
+
 - `sx slice --request` warns when the request's config carries no printer settings at all (no `printable_area` or `bed_shape`, no `machine_max_` or `machine_min_` keys): a `no_machine_profile` warning in `warnings` and in the new `configReport.warnings`, and a `warning:` line on stderr. The slice still runs on the engine's defaults and exits 0; before, a time on those defaults came back with no sign that no printer settings were given. `sx schema result` lists the code and the field.
 
 - `sx remap-toolheads <in.gcode> --map <logical=physical,...> -o <out.gcode> [--json]`: a sliced Snapmaker U1 file with its logical tools moved onto other physical toolheads, with no printer: every `T`, M104/M109/M116/M900 `T`, `INDEX=` on `SM_PRINT_PREEXTRUDE_FILAMENT` and `SM_PRINT_FLOW_CALIBRATE`, and `EXTRUDER=extruderN` follows the map, with the printer bridge's rewrite and refusals. Prints the changed counts and the output's SHA-256 (`--json`: one object, see README). A refused file exits 3 with `{"error":"remap_refused","line","reason"}` under `--json`, and nothing is written.
