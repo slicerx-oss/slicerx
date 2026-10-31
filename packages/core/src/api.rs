@@ -744,6 +744,32 @@ pub struct ConfigReport {
     /// Which wall generator the slice runs and why.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub walls: Option<WallsNote>,
+    /// Notes on the config as a whole, each also in the result's `warnings`: `no_machine_profile` when it carries no
+    /// printer settings at all.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<SliceWarning>,
+}
+
+/// The `no_machine_profile` warning's text.
+pub const NO_MACHINE_PROFILE: &str = "No printer settings given; times and motion use engine defaults. Send the printer's printable_area and machine_max_ keys in config (slicerx_get_profile with a machine: profile, or sx project-settings for a project).";
+
+/// A key of the printer's own settings: its bed (`printable_area`, or the older `bed_shape`) or its
+/// motion limits (`machine_max_*`, `machine_min_*`).
+fn is_machine_key(key: &str) -> bool {
+    matches!(key, "printable_area" | "bed_shape") || key.starts_with("machine_max_") || key.starts_with("machine_min_")
+}
+
+/// Whether a request carries any printer settings, in its config or an object's settings. Without them the slice runs
+/// on the engine's defaults, which no real printer has.
+fn carries_machine_settings(req: &SliceRequest) -> bool {
+    req.config
+        .as_object()
+        .is_some_and(|m| m.keys().any(|k| is_machine_key(k)))
+        || req
+            .plate
+            .objects
+            .iter()
+            .any(|o| o.settings.keys().any(|k| is_machine_key(k)))
 }
 
 static APP_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -1261,6 +1287,11 @@ impl ConfigReport {
         if other.walls.is_some() {
             self.walls = other.walls;
         }
+        for w in other.warnings {
+            if !self.warnings.contains(&w) {
+                self.warnings.push(w);
+            }
+        }
     }
 
     /// One line per kind, the first [`REPORT_NAMES`] keys named and the rest counted.
@@ -1518,6 +1549,15 @@ pub fn request_config_report(
             .cloned()
             .collect();
         report.not_applied.sort();
+    }
+    // A request with no printer settings slices on the engine's defaults; said here so a time is not read as one for
+    // the printer. A warning only: the slice goes on, and strict does not refuse it.
+    if listed && !carries_machine_settings(req) {
+        report.warnings.push(SliceWarning {
+            code: WarningCode::NoMachineProfile,
+            message: NO_MACHINE_PROFILE.to_owned(),
+            layer: None,
+        });
     }
     // The objects' shared settings go over the config the same way: with the report a value the engine cannot use
     // leaves that setting as the config has it and is listed; without it the value refuses the config, naming its key.
@@ -2407,7 +2447,12 @@ fn run_prepared_timed(
             layer: None,
         });
     }
-    if !config_report.is_empty() || config_report.walls.is_some() {
+    for w in &config_report.warnings {
+        if !report.warnings.contains(w) {
+            report.warnings.push(w.clone());
+        }
+    }
+    if !config_report.is_empty() || config_report.walls.is_some() || !config_report.warnings.is_empty() {
         report.config_report = Some(config_report);
     }
     report.feature_filaments = feature_use.report();
@@ -2684,7 +2729,7 @@ pub const RESULT_SCHEMA: &str = r#"{
         "type": "object",
         "required": ["code", "message"],
         "properties": {
-          "code": { "enum": ["open_edges", "thin_wall", "floating_region", "long_bridge", "outside_bed", "unsupported_setting", "manual_step", "safety_limit", "objects_overlap", "tool_change_skipped"] },
+          "code": { "enum": ["open_edges", "thin_wall", "floating_region", "long_bridge", "outside_bed", "unsupported_setting", "manual_step", "safety_limit", "objects_overlap", "tool_change_skipped", "no_machine_profile"] },
           "message": { "type": "string" },
           "layer": { "type": "integer" }
         }
@@ -2702,6 +2747,15 @@ pub const RESULT_SCHEMA: &str = r#"{
             "type": "object",
             "required": ["key", "value", "reason"],
             "properties": { "key": { "type": "string" }, "value": {}, "reason": { "type": "string" }, "object": { "type": "string", "description": "The object whose own settings carry the value, on a plate whose objects have settings of their own" } }
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "description": "Notes on the config as a whole, each also in warnings: no_machine_profile when it carries no printer settings (no printable_area or bed_shape, no machine_max_ or machine_min_ keys), so times and motion use engine defaults",
+          "items": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": { "code": { "type": "string" }, "message": { "type": "string" } }
           }
         }
       }
