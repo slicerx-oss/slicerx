@@ -8,7 +8,7 @@ import { gcodeLabel, printerForProfile } from '@slicerx/settings'
 import type { ToolOutput } from '@slicerx/pilot'
 import { z } from 'zod'
 import { productName, type ScriptReplacementChoice } from '@slicerx/contracts'
-import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, type ExtraLayers, type SlotLayer } from '../config'
+import { isGcodeKey, resolveSliceConfig, SHIPPED_GCODE_SOURCES, slicePrinter, type ExtraLayers, type SlotLayer } from '../config'
 import { gcode3mf, PLATE_THUMBNAILS } from '../gcode3mf'
 import { resolveModel, ToolInputError } from '../models'
 import { readPresetFiles } from '../presets'
@@ -277,7 +277,8 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     if (args.project_settings) project = { name: basename(modelPath), config: { ...read.config, ...(seq ? { print_sequence: seq } : {}) }, model: printer, gcode: args.project_gcode }
   }
   await progress(0.1, 'Resolving settings')
-  await profiles.prepare([...args.profiles, ...(args.filaments ?? []).flatMap((s) => (s.profile ? [s.profile] : []))])
+  // The project's own printer too: a slice of a project that names no machine: profile ends on it.
+  await profiles.prepare([...args.profiles, ...(args.filaments ?? []).flatMap((s) => (s.profile ? [s.profile] : []))], [project?.model])
   // Another slicer's project on a printer slices with the settings the app opens it with (project-open.ts).
   if (project && projectRead) {
     const asked = args.overrides?.['nozzle_diameter']
@@ -286,6 +287,8 @@ export async function runSlice(d: ServerToolDeps, args: SliceArgs, emitGcode: bo
     if (opened) project = { ...project, opened, model: opened.printer }
   }
   const presets = args.profile_files.length ? await readPresetFiles(d.policy, args.profile_files) : undefined
+  // A printer preset file can move the slice to another printer, and the opened project slices on the one it opened on.
+  await profiles.prepare([], [project?.opened?.printer, slicePrinter(profiles, args.profiles, presets ?? [], project)?.printerId])
   const slots = args.filaments?.length ? await slotLayers(d, args.filaments) : undefined
   if (args.script_replacements) {
     if (!project || !args.script_printer || args.project_gcode !== 'review' || slicer.kind !== 'sx') throw new ToolInputError('Explicit stock replacement requires project settings, project_gcode review, script_printer and the sx engine', 'invalid_input')

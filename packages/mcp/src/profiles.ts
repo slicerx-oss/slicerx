@@ -61,36 +61,45 @@ export const SUPPORT_KEYS: readonly string[] = [...new Set(EASY_MAP.rules.filter
 
 const TIER_IDS = Object.keys(EASY_GOALS) as EasyGoal[]
 
-/**
- * Each tier's process on each printer with the makers' presets, by `<printer id>@<nozzle>:<tier>`: the maker's own
- * preset where there is one, as the app's printer layer takes it (stockProcess). A printer or nozzle with none has no
- * entry here and gets SlicerX's tier for the printer (processConfig), which is what the app falls back to as well.
- */
-async function loadMakerProcesses(): Promise<Map<string, Record<string, SettingValue>>> {
-  const out = new Map<string, Record<string, SettingValue>>()
-  for (const p of listPrinterProfiles()) {
-    if (!hasResolved(p.id)) continue
-    for (const nozzle of await resolvedNozzles(p.id)) {
-      for (const tier of TIER_IDS) out.set(`${p.id}@${nozzle}:${tier}`, await stockProcess(p.id, tier, nozzle))
-    }
-  }
-  return out
+/** What a slice on one printer reads from the makers' presets, by `<printer id>@<nozzle>` and `<printer id>@<nozzle>:<tier>`. */
+export interface PrinterStock {
+  /**
+   * The printer's machine and default filament for each nozzle the app offers for it, as the app's printer layer takes
+   * them (stockPrinter): the maker's resolved machine and default filament where there are some, else SlicerX's printer
+   * profile and the generic PLA.
+   */
+  printers: Map<string, StockPrinter>
+  /**
+   * Each tier's process on the printer for each nozzle it has the makers' presets for: the maker's own preset where
+   * there is one, as the app's printer layer takes it (stockProcess). A printer or nozzle with none has no entry here
+   * and gets SlicerX's tier for the printer (processConfig), which is what the app falls back to as well.
+   */
+  maker: Map<string, Record<string, SettingValue>>
 }
 
 /**
- * Each printer's machine and default filament for each nozzle the app offers for it, by `<printer id>@<nozzle>`, as the
- * app's printer layer takes them (stockPrinter): the maker's resolved machine and default filament where there are
- * some, else SlicerX's printer profile and the generic PLA.
+ * One nozzle of one printer's `PrinterStock`: its machine and default filament when the app offers the nozzle, its
+ * makers' process for each tier when it has resolved presets for the nozzle. Nothing for an id that is no printer
+ * profile. A slice reads one printer, so this is built for the printers a slice names, not for every printer.
  */
-async function loadStockPrinters(): Promise<Map<string, StockPrinter>> {
-  const out = new Map<string, StockPrinter>()
-  for (const p of listPrinterProfiles()) {
-    for (const nozzle of p.nozzles) {
-      const stock = await stockPrinter(p.id, nozzle)
-      if (stock) out.set(`${p.id}@${nozzle}`, stock)
-    }
+export async function loadPrinterNozzle(printerId: string, nozzle: number, into: PrinterStock): Promise<void> {
+  const p = printerProfile(printerId)
+  if (!p) return
+  if (p.nozzles.includes(nozzle)) {
+    const stock = await stockPrinter(p.id, nozzle)
+    if (stock) into.printers.set(`${p.id}@${nozzle}`, stock)
   }
-  return out
+  if (hasResolved(p.id) && (await resolvedNozzles(p.id)).includes(nozzle)) {
+    for (const tier of TIER_IDS) into.maker.set(`${p.id}@${nozzle}:${tier}`, await stockProcess(p.id, tier, nozzle))
+  }
+}
+
+/** Every nozzle `loadPrinterNozzle` has an entry for on a printer: the ones the app offers and the ones with resolved presets. */
+export async function printerNozzles(printerId: string): Promise<number[]> {
+  const p = printerProfile(printerId)
+  if (!p) return []
+  const resolved = hasResolved(p.id) ? await resolvedNozzles(p.id) : []
+  return [...new Set([...p.nozzles, ...resolved])]
 }
 
 /** The sleipnir bounds keys, which the app works out over the whole layer. */
@@ -112,12 +121,12 @@ export class ProfileCatalog {
   private shipped: ProfileSummary[] | undefined
   /** Stock filament vendor files are megabytes, so they load on first use (`prepare`). */
   private readonly vendors = new Map<string, VendorFile>()
-  /** The makers' process presets by printer, nozzle and tier (`loadMakerProcesses`), loaded on first use (`prepare`). */
-  private makerLoad: Promise<Map<string, Record<string, SettingValue>>> | undefined
-  private maker: Map<string, Record<string, SettingValue>> | undefined
-  /** Each printer's machine and default filament by printer and nozzle (`loadStockPrinters`), loaded on first use (`prepare`). */
-  private printersLoad: Promise<Map<string, StockPrinter>> | undefined
-  private printers: Map<string, StockPrinter> | undefined
+  /** The makers' presets of each printer `prepare` was given (`PrinterStock`), by printer and nozzle. */
+  private readonly stock: PrinterStock = { printers: new Map(), maker: new Map() }
+  /** Each `<printer id>@<nozzle>` loading or loaded into `stock`, so a printer is read once however many slices use it. */
+  private readonly nozzleLoads = new Map<string, Promise<void>>()
+  /** The printer ids whose every nozzle is in `stock`. */
+  private readonly prepared = new Set<string>()
 
   constructor(store: DataStore) {
     this.store = store
@@ -125,10 +134,12 @@ export class ProfileCatalog {
 
   /**
    * Loads what `get` needs for these profiles, the vendor files of stock filament presets, and what `defaultSupports`
-   * and `defaultFilament` need, the makers' process presets and each printer's machine and default filament. Call
-   * before any of them.
+   * and `defaultFilament` need on each printer the profiles name and each of `printers` (the one a project or a preset
+   * file slices on): the makers' process presets and the printer's machine and default filament, on every nozzle it
+   * has them for. Call before any of them, with every printer the slice can end on; a printer is loaded once.
    */
-  async prepare(queries: readonly string[]): Promise<void> {
+  async prepare(queries: readonly string[], printers: readonly (string | undefined)[] = []): Promise<void> {
+    const ids = new Set<string>()
     for (const q of queries) {
       const p = this.find(q)
       const parts = p?.source === 'stock' ? stockParts(p.id) : undefined
@@ -136,11 +147,34 @@ export class ProfileCatalog {
         const file = await loadVendorFile(parts.vendor)
         if (file) this.vendors.set(parts.vendor, file)
       }
+      const model = p?.section === 'printer' ? this.printerModel(q) : undefined
+      if (model) ids.add(model)
     }
-    this.makerLoad ??= loadMakerProcesses()
-    this.printersLoad ??= loadStockPrinters()
-    this.maker = await this.makerLoad
-    this.printers = await this.printersLoad
+    for (const id of printers) if (id) ids.add(id)
+    for (const id of ids) await this.preparePrinter(id)
+  }
+
+  /** Every nozzle of one printer into `stock`, each `<printer id>@<nozzle>` read once. */
+  private async preparePrinter(printerId: string): Promise<void> {
+    if (this.prepared.has(printerId)) return
+    for (const nozzle of await printerNozzles(printerId)) {
+      const key = `${printerId}@${nozzle}`
+      let load = this.nozzleLoads.get(key)
+      if (!load) {
+        load = loadPrinterNozzle(printerId, nozzle, this.stock)
+        this.nozzleLoads.set(key, load)
+      }
+      await load
+    }
+    this.prepared.add(printerId)
+  }
+
+  /**
+   * Throws when `prepare` was not given this printer: its makers' presets would be missing and the slice would quietly
+   * take the schema's supports, filament or process instead of the app's. An id that is no printer profile has none.
+   */
+  private needPrepared(printerId: string, what: string): void {
+    if (printerProfile(printerId) && !this.prepared.has(printerId)) throw new Error(`ProfileCatalog.prepare must run with printer ${printerId} before ${what}`)
   }
 
   /**
@@ -149,15 +183,21 @@ export class ProfileCatalog {
    * does not offer for it, which keep the schema's filament.
    */
   defaultFilament(printer: { printerId: string; nozzle?: number | undefined } | undefined): { name: string; config: Record<string, SettingValue> } | undefined {
-    if (!this.printers) throw new Error('ProfileCatalog.prepare must run before defaultFilament')
     const stock = printer ? this.stockPrinter(printer.printerId, printer.nozzle) : undefined
     return stock ? { name: stock.filamentName, config: { ...stock.filament } } : undefined
   }
 
   /** The app's machine and default filament for a printer on a nozzle it offers (its default when none is given), from `prepare`. */
   private stockPrinter(printerId: string, nozzle: number | undefined): StockPrinter | undefined {
+    this.needPrepared(printerId, 'reading its machine')
     const mm = nozzle ?? printerProfile(printerId)?.defaultNozzle
-    return this.printers?.get(`${printerId}@${mm}`)
+    return this.stock.printers.get(`${printerId}@${mm}`)
+  }
+
+  /** The makers' process for a tier on a printer and nozzle, from `prepare`. */
+  private makerProcess(printerId: string, nozzle: number | undefined, tier: string): Record<string, SettingValue> | undefined {
+    this.needPrepared(printerId, 'reading its process')
+    return this.stock.maker.get(`${printerId}@${nozzle}:${tier}`)
   }
 
   /**
@@ -166,9 +206,8 @@ export class ProfileCatalog {
    * Lab's); with no printer, or one the makers ship no preset for, SlicerX's Standard tier's.
    */
   defaultSupports(printer: { printerId: string; nozzle?: number | undefined } | undefined): Record<string, SettingValue> {
-    if (!this.maker) throw new Error('ProfileCatalog.prepare must run before defaultSupports')
     const nozzle = printer ? (printer.nozzle ?? printerProfile(printer.printerId)?.defaultNozzle) : undefined
-    const own = printer ? this.maker.get(`${printer.printerId}@${nozzle}:standard`) : undefined
+    const own = printer ? this.makerProcess(printer.printerId, nozzle, 'standard') : undefined
     const from = own ? { ...defaultConfig(this.store), ...own } : (processConfig('standard') as unknown as Record<string, SettingValue>)
     return Object.fromEntries(SUPPORT_KEYS.flatMap((k) => (from[k] === undefined ? [] : [[k, from[k] as SettingValue]])))
   }
@@ -315,7 +354,7 @@ export class ProfileCatalog {
    */
   private tierConfig(tier: string, nozzle: number, printer: { printerId: string } | undefined): Record<string, SettingValue> | undefined {
     const offered = printer ? (printerProfile(printer.printerId)?.nozzles ?? []).includes(nozzle) : false
-    const own = offered && this.maker?.get(`${printer!.printerId}@${nozzle}:${tier}`)
+    const own = offered && this.makerProcess(printer!.printerId, nozzle, tier)
     if (own) return { ...own }
     return processConfig(tier, nozzle, printer?.printerId) as unknown as Record<string, SettingValue> | undefined
   }
