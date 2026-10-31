@@ -356,3 +356,271 @@ fn the_aegis_top_band_starts_on_the_wide_box_where_it_did() {
         );
     }
 }
+
+/// The G-code of the taper on a box `half` mm from its center to each side with step `r`, on `walls` aegis walls and
+/// an infill wall overlap of `overlap` percent.
+fn slice_overlap(half: f64, r: f64, walls: u32, overlap: f64) -> String {
+    let mut req: Value = serde_json::from_slice(&std::fs::read(REQUEST).unwrap()).unwrap();
+    req["config"]["wall_generator"] = json!("aegis");
+    req["config"]["wall_loops"] = json!(walls);
+    req["config"]["infill_wall_overlap"] = json!(overlap);
+    let req: SliceRequest = serde_json::from_value(req).unwrap();
+    let mesh = Arc::new(Mesh::load(&taper_of(half, r), "taper.stl").unwrap());
+    let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    String::from_utf8(run.gcode).unwrap()
+}
+
+/// The top surface band on `layer` on each side of the part (left, right, bottom, top), on the 12 mm straight stretch
+/// about the middle of the side: its near edge (the line ends nearest the outer wall) and its far edge, mm in from
+/// the side's outer wall centerline.
+fn band_edges(gcode: &str, layer: i64) -> [(f64, f64); 4] {
+    let outer: Vec<(f64, f64)> = moves(gcode, "Outer wall")
+        .into_iter()
+        .filter(|m| m.layer == layer)
+        .flat_map(|m| [m.from, m.to])
+        .collect();
+    let lo = |f: fn(&(f64, f64)) -> f64| outer.iter().map(f).fold(f64::INFINITY, f64::min);
+    let hi = |f: fn(&(f64, f64)) -> f64| outer.iter().map(f).fold(f64::NEG_INFINITY, f64::max);
+    let (x0, x1, y0, y1) = (lo(|p| p.0), hi(|p| p.0), lo(|p| p.1), hi(|p| p.1));
+    let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+    // Per side (left, right, bottom, top): how far in from the outer wall a point is, and how far along the side from
+    // its middle.
+    let place = |side: usize, p: (f64, f64)| match side {
+        0 => (p.0 - x0, p.1 - cy),
+        1 => (x1 - p.0, p.1 - cy),
+        2 => (p.1 - y0, p.0 - cx),
+        _ => (y1 - p.1, p.0 - cx),
+    };
+    let top: Vec<Move> = moves(gcode, "Top surface")
+        .into_iter()
+        .filter(|m| m.layer == layer)
+        .collect();
+    [0, 1, 2, 3].map(|side| {
+        let depth = |p| place(side, p).0;
+        let ends: Vec<f64> = top
+            .iter()
+            .filter(|m| {
+                let mid = (f64::midpoint(m.from.0, m.to.0), f64::midpoint(m.from.1, m.to.1));
+                place(side, mid).1.abs() <= 6.0 && depth(m.from).min(depth(m.to)) < 6.0
+            })
+            .flat_map(|m| [depth(m.from), depth(m.to)])
+            .collect();
+        (
+            ends.iter().copied().fold(f64::INFINITY, f64::min),
+            ends.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        )
+    })
+}
+
+/// The top surface band's lines start at the innermost wall's spacing edge, without the infill wall overlap, and end
+/// where they did: on z 3.0, at 15 percent overlap, the near edge on every side is within 0.005 mm of the target on
+/// a 50 mm box at a step of 1.52 mm on 2 and 3 walls and on a 30 mm box at 1.0 mm on 2 walls, and the far edge too.
+/// Before, the near edge was 0.063 mm (the overlap, 15 percent of the 0.42 mm line) nearer the outer wall: 0.552,
+/// 0.987 and 0.552.
+#[test]
+fn the_aegis_top_band_starts_at_the_innermost_walls_edge() {
+    let cases = [
+        (25.0, 1.52, 2, 0.615, 2.697),
+        (25.0, 1.52, 3, 1.050, 3.273),
+        (15.0, 1.0, 2, 0.615, 2.177),
+    ];
+    let mut misses = Vec::new();
+    for (half, r, walls, near, far) in cases {
+        let got = band_edges(&slice_overlap(half, r, walls, 15.0), 3000);
+        if got
+            .iter()
+            .any(|(n, f)| (n - near).abs() > 0.005 || (f - far).abs() > 0.005)
+        {
+            misses.push(format!(
+                "{} mm box, step {r}, {walls} walls: (near, far) per side {got:.3?}, targets {near} and {far}",
+                2.0 * half
+            ));
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
+}
+
+/// The near edge does not move with the overlap: on the 50 mm box at a step of 1.52 mm on 2 walls, z 3.0, it is
+/// within 0.005 mm of the target at 0, 10, 15 and 30 percent. Before, it moved 0.0042 mm nearer the outer wall per
+/// percent: 0.615, 0.573, 0.552 and 0.489.
+#[test]
+fn the_aegis_top_band_near_edge_ignores_the_overlap() {
+    let mut misses = Vec::new();
+    for overlap in [0.0, 10.0, 15.0, 30.0] {
+        let got = band_edges(&slice_overlap(25.0, 1.52, 2, overlap), 3000);
+        if got.iter().any(|(n, _)| (n - 0.615).abs() > 0.005) {
+            misses.push(format!(
+                "{overlap} percent: (near, far) per side {got:.3?}, target near 0.615"
+            ));
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
+}
+
+/// A ledge whose only uncovered part inside the walls is their overlap still gets its top surface band: on the 50 mm
+/// box at a step of 1.52 mm on 2 walls the layer above leaves z 2.0 uncovered out to 0.55 mm from the outer wall's
+/// centerline, short of the innermost wall's spacing edge, and the top surface there is within 7 percent of the
+/// target (the band now starts 0.063 mm farther from the wall), with no internal solid infill in its place. Taking the
+/// overlap out of the infill area itself would print that band as internal solid infill instead.
+#[test]
+fn the_aegis_top_band_forms_where_only_the_overlap_is_uncovered() {
+    let g = slice_overlap(25.0, 1.52, 2, 15.0);
+    let top = per_layer(&g, "Top surface").get(&2000).copied().unwrap_or(0.0);
+    let solid = per_layer(&g, "Internal solid infill")
+        .get(&2000)
+        .copied()
+        .unwrap_or(0.0);
+    assert!(
+        (top - 21.24).abs() <= 0.07 * 21.24 && solid < 0.05,
+        "z 2.0: top surface {top:.2} (target 21.24), internal solid infill {solid:.2}"
+    );
+}
+
+/// A square box `half` mm from its center to each side and `height` mm tall, as ASCII STL.
+fn box_of(half: f64, height: f64) -> Vec<u8> {
+    let square = |h: f64, z: f64| [(-h, -h, z), (h, -h, z), (h, h, z), (-h, h, z)];
+    let (b0, t) = (square(half, 0.0), square(half, height));
+    let mut out = String::from("solid box\n");
+    let mut facet = |a: (f64, f64, f64), p: (f64, f64, f64), q: (f64, f64, f64)| {
+        let _ = writeln!(out, "facet normal 0 0 0\n outer loop");
+        for v in [a, p, q] {
+            let _ = writeln!(out, "  vertex {} {} {}", v.0, v.1, v.2);
+        }
+        let _ = writeln!(out, " endloop\nendfacet");
+    };
+    let mut quad = |a, p, q, d| {
+        facet(a, p, q);
+        facet(a, q, d);
+    };
+    quad(b0[0], b0[3], b0[2], b0[1]);
+    for i in 0..4 {
+        let j = (i + 1) % 4;
+        quad(b0[i], b0[j], t[j], t[i]);
+    }
+    quad(t[0], t[1], t[2], t[3]);
+    out.push_str("endsolid box\n");
+    out.into_bytes()
+}
+
+/// The G-code of the ASCII STL `stl` on 2 aegis walls without one wall on top, at an infill wall overlap of
+/// `overlap` percent.
+fn slice_ordinary(stl: &[u8], overlap: f64) -> String {
+    let mut req: Value = serde_json::from_slice(&std::fs::read(REQUEST).unwrap()).unwrap();
+    req["config"]["wall_generator"] = json!("aegis");
+    req["config"]["wall_loops"] = json!(2);
+    req["config"]["only_one_wall_top"] = json!(false);
+    req["config"]["infill_wall_overlap"] = json!(overlap);
+    let req: SliceRequest = serde_json::from_value(req).unwrap();
+    let mesh = Arc::new(Mesh::load(stl, "part.stl").unwrap());
+    let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    String::from_utf8(run.gcode).unwrap()
+}
+
+/// Without one wall on top the top surface starts at the inner wall's spacing edge too, whatever the overlap: on 2
+/// walls, at 0, 15 and 30 percent, the near edge on every side is within 0.005 mm of the target on the flat top of a
+/// 20 mm box 4 mm tall (z 4.0) and on the 50 mm taper at a step of 1.52 mm, sloped (z 3.0) and flat (z 4.0). The inner
+/// wall sits 0.435 mm from the outer wall's centerline here. Before, the near edge was 0.657, 0.594 and 0.531.
+#[test]
+fn ordinary_aegis_tops_start_at_the_inner_walls_edge() {
+    let parts = [
+        ("20 mm box", box_of(10.0, 4.0), vec![4000]),
+        ("50 mm taper", taper_of(25.0, 1.52), vec![3000, 4000]),
+    ];
+    let mut misses = Vec::new();
+    for (name, stl, layers) in &parts {
+        for overlap in [0.0, 15.0, 30.0] {
+            let g = slice_ordinary(stl, overlap);
+            for &layer in layers {
+                let got = band_edges(&g, layer);
+                if got.iter().any(|(n, _)| (n - 0.657).abs() > 0.005) {
+                    misses.push(format!(
+                        "{name}, z {layer}, {overlap} percent: (near, far) per side {got:.3?}, target near 0.657"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
+}
+
+/// The stock Prusa MK4 request (0.4 mm nozzle; outer wall 100, inner wall 110 and top surface 93.75 percent of it).
+const MK4: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/tests/fixtures/precise-wall-surface/requests/prusa-mk4--n4-ar-p1-L3.json"
+);
+
+/// The G-code of the ASCII STL `stl` from `request` on 2 aegis walls without one wall on top, with `pattern` on top
+/// and both wall overlaps (`infill_wall_overlap` and `top_bottom_infill_wall_overlap`) at `overlap` percent.
+fn slice_pattern(request: &str, stl: &[u8], pattern: &str, overlap: f64) -> String {
+    let mut req: Value = serde_json::from_slice(&std::fs::read(request).unwrap()).unwrap();
+    let cfg = &mut req["config"];
+    cfg["wall_generator"] = json!("aegis");
+    cfg["wall_loops"] = json!(2);
+    cfg["only_one_wall_top"] = json!(false);
+    cfg["top_surface_pattern"] = json!(pattern);
+    cfg["infill_wall_overlap"] = json!(overlap);
+    cfg["top_bottom_infill_wall_overlap"] = json!(overlap);
+    let req: SliceRequest = serde_json::from_value(req).unwrap();
+    let mesh = Arc::new(Mesh::load(stl, "part.stl").unwrap());
+    let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    String::from_utf8(run.gcode).unwrap()
+}
+
+/// The near edge on every side of `layer` within 0.005 mm of `target`, or what it was.
+fn near_misses(what: &str, gcode: &str, layer: i64, target: f64) -> Option<String> {
+    let got = band_edges(gcode, layer);
+    got.iter()
+        .any(|(n, _)| (n - target).abs() > 0.005)
+        .then(|| format!("{what}, z {layer}: (near, far) per side {got:.3?}, target near {target}"))
+}
+
+/// A monotonic line top surface starts at the inner wall's spacing edge at any overlap on printers of every kind: on
+/// the MK4 the near edge is within 0.005 mm of the target at 0 and 30 percent, on the flat top of the 20 mm box (z 4.0)
+/// and on the 50 mm taper at a step of 1.52 mm (z 3.0). Before, it was 0.516 at 30 percent: the stretched surface's
+/// edge took `top_bottom_infill_wall_overlap` into the wall.
+#[test]
+fn monotonic_line_aegis_tops_ignore_the_overlap_on_the_mk4() {
+    let parts = [
+        ("20 mm box", box_of(10.0, 4.0), 4000),
+        ("50 mm taper", taper_of(25.0, 1.52), 3000),
+    ];
+    let mut misses = Vec::new();
+    for (name, stl, layer) in &parts {
+        for overlap in [0.0, 30.0] {
+            let g = slice_pattern(MK4, stl, "monotonicline", overlap);
+            misses.extend(near_misses(
+                &format!("MK4 {name}, {overlap} percent"),
+                &g,
+                *layer,
+                0.635,
+            ));
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
+}
+
+/// Monotonic and rectilinear top surfaces keep their overlap with the walls: on the flat top of the 20 mm box (z 4.0)
+/// the near edge moves toward the wall with the overlap, to within 0.005 mm of the targets at 0 and 30 percent, on the
+/// P1S (monotonic and rectilinear) and the MK4 (monotonic).
+#[test]
+fn monotonic_aegis_tops_keep_the_overlap() {
+    let cases = [
+        (REQUEST, "P1S", "monotonic", 0.824, 0.701),
+        (REQUEST, "P1S", "rectilinear", 0.827, 0.701),
+        (MK4, "MK4", "monotonic", 0.780, 0.661),
+    ];
+    let stl = box_of(10.0, 4.0);
+    let mut misses = Vec::new();
+    for (request, printer, pattern, at_0, at_30) in cases {
+        for (overlap, target) in [(0.0, at_0), (30.0, at_30)] {
+            let g = slice_pattern(request, &stl, pattern, overlap);
+            misses.extend(near_misses(
+                &format!("{printer} {pattern}, {overlap} percent"),
+                &g,
+                4000,
+                target,
+            ));
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
+}

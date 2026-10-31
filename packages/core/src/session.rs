@@ -9386,6 +9386,25 @@ impl SliceSession {
                 continue;
             };
             let mut cls = cls;
+            // The top surfaces start at the innermost wall's spacing edge where the walls say so (`top_edge`): the
+            // infill area less its overlap with the walls, and the parts the walls keep it in. Their lines then reach
+            // that edge with no overlap term.
+            let top_edge = islands.iter().any(|i| i.top_edge.is_some());
+            if !cls.top.is_empty() {
+                let edges: Vec<&perimeters::TopEdge> =
+                    islands.iter().filter_map(|i| i.top_edge.as_ref()).collect();
+                if let Some(overlap) = edges.iter().map(|e| e.overlap).max() {
+                    let mut within = vec![perimeters::offset(&inner, -overlap)];
+                    within.extend(
+                        edges
+                            .iter()
+                            .filter(|e| !e.keep.is_empty())
+                            .map(|e| e.keep.clone()),
+                    );
+                    let within = perimeters::union_all(&within.iter().collect::<Vec<_>>());
+                    cls.top = perimeters::intersection(&cls.top, &within);
+                }
+            }
             let known = own_facts.filter(|_| known);
 
             let t = Timer::start();
@@ -9945,7 +9964,9 @@ impl SliceSession {
                 // A single wall under the top surfaces of lower layers (`only_one_wall_top`) or on the first layer
                 // (`only_one_wall_first_layer`) moves the surface's edge where the rule was not measured, so those
                 // surfaces keep one grid.
-                let stretch = surface_stretch.filter(|_| {
+                // A top surface whose edge the walls set (`top_edge`) keeps it: its edge does not move.
+                let stretch_edge = surface_stretch.map(|e| if which == 0 && top_edge { 0.0 } else { e });
+                let stretch = stretch_edge.filter(|_| {
                     let top = which == 0 && (!one_wall_top || top_one_wall);
                     let first = which == 1
                         && layer == 0
@@ -10038,14 +10059,26 @@ impl SliceSession {
                             } else {
                                 cfg.wall_loops
                             };
-                            grid_inset(cfg, layer_height, stretch_overlap / 100.0, loops, surface_mm)
+                            let overlap = if which == 0 && top_edge {
+                                0.0
+                            } else {
+                                stretch_overlap / 100.0
+                            };
+                            grid_inset(cfg, layer_height, overlap, loops, surface_mm)
                         })
                         .flatten();
                     let grids: Vec<SurfaceGrid> = match (stretch, anchored) {
                         (Some(e), _) => stretch_grids(&region, d, e, surface_mm),
                         (None, Some(inset_mm)) => {
                             if let Some(e) = grid_gap_edge.get_mut(which) {
-                                *e = Some((inset_mm - surface_mm / 2.0).max(0.0));
+                                // The gap fill starts at the innermost wall's spacing edge, the infill area less its
+                                // overlap, whether or not the walls took the overlap out of the top surface.
+                                let back = if which == 0 && top_edge {
+                                    stretch_overlap / 100.0 * cfg.line_width
+                                } else {
+                                    0.0
+                                };
+                                *e = Some((inset_mm + back - surface_mm / 2.0).max(0.0));
                             }
                             let center = crate::geom::Point::new(
                                 mm(f64::midpoint(self.bounds[0], self.bounds[2])),
@@ -12696,6 +12729,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
                             .cloned()
                             .collect(),
                         gap_lines: Vec::new(),
+                        top_edge: None,
                     },
                 ),
                 (
@@ -12710,6 +12744,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
                             .cloned()
                             .collect(),
                         gap_lines: isl.gap_lines.clone(),
+                        top_edge: None,
                     },
                 ),
             ]
