@@ -83,10 +83,12 @@ try {
   const kit = process.env['SPOOLHOUSE_KIT'] ?? join(app, '.kit')
   await step('pack @slicerx/viewport, @slicerx/embed and @slicerx/mcp as npm publishes them', () => {
     if (!process.env['SPOOLHOUSE_KIT']) execFileSync(process.execPath, [join(repo, 'scripts', 'pack-integrator-kit.mjs'), kit], { cwd: repo, stdio: ['ignore', 'ignore', 'inherit'] })
-    // the kit's manifest names the three stable tarballs; the versioned copies beside them are the same files
+    // the kit's manifest names the three stable tarballs every app installs, and the optional STEP reader beside them;
+    // the versioned copies are the same files
     const manifest = JSON.parse(readFileSync(join(kit, 'kit-manifest.json'), 'utf8'))
     const tgz = manifest.packages.map((p) => p.file)
-    assert.deepEqual(tgz.toSorted(), ['slicerx-embed.tgz', 'slicerx-mcp.tgz', 'slicerx-viewport.tgz'], `three packages in ${kit}/kit-manifest.json`)
+    assert.deepEqual(manifest.packages.filter((p) => !p.optional).map((p) => p.file).toSorted(), ['slicerx-embed.tgz', 'slicerx-mcp.tgz', 'slicerx-viewport.tgz'], `three packages in ${kit}/kit-manifest.json`)
+    assert.deepEqual(manifest.packages.filter((p) => p.optional).map((p) => p.file), ['slicerx-step-reader.tgz'], `the optional STEP reader in ${kit}/kit-manifest.json`)
     for (const f of tgz) assert.ok(existsSync(join(kit, f)), `${f} in ${kit}`)
     for (const [file, wants] of [['slicerx-embed', ['AGENTS.md', 'llms.txt']], ['slicerx-mcp', ['AGENTS.md', 'llms.txt']]]) {
       const t = tgz.find((f) => f.startsWith(file))
