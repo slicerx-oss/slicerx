@@ -10,7 +10,7 @@
 // never runs it; it is here so the long-names checks stay in one place, and the config can let the desktop project run
 // this file too. The view chips test runs in both: a phone, and a desktop window as narrow as one.
 import { type CDPSession, type Page } from '@playwright/test'
-import { addMenu, appReady, closeSheet, expect, goTab, openSheet, plateReady, sliceCount, sliced, tab, viewportReady } from '../fixtures'
+import { addMenu, appReady, closeSheet, COLD_START_MS, expect, goTab, openSheet, plateReady, sliceCount, sliced, tab, viewportReady } from '../fixtures'
 import { journey as test } from '../journey'
 import { shotsDir, shotsOn } from './lib/session'
 
@@ -717,7 +717,8 @@ const meet = (a: Box, b: Box) => a.x < b.x + b.w - 0.5 && b.x < a.x + a.w - 0.5 
 
 /** Waits until no pane or control is sliding after a resize, so the boxes measured are where they stay. */
 async function panesStill(page: Page): Promise<void> {
-  await expect.poll(() => page.evaluate(() => !document.getAnimations().some((a) => a.playState === 'running' && a instanceof CSSTransition))).toBe(true)
+  // as long as a cold start: a busy machine can stop painting for half a minute while the canvas takes its new size
+  await expect.poll(() => page.evaluate(() => !document.getAnimations().some((a) => a.playState === 'running' && a instanceof CSSTransition)), { timeout: COLD_START_MS }).toBe(true)
 }
 
 /** Print is inside the window and is what a tap on its middle reaches. */

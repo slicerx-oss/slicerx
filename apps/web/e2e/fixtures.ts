@@ -236,8 +236,18 @@ export async function openSheet(page: Page, panel = 'slice-sidebar'): Promise<vo
   const tab = page.locator(`.sheet-tab[data-panel="${panel}"]`)
   if (!(await tab.count())) return
   if ((await tab.getAttribute('aria-expanded')) !== 'true') await tab.click()
-  // Open means slid all the way up: its foot on the screen's bottom edge. A short sheet stops low, so its top says nothing.
-  await expect.poll(() => page.getByTestId(panel).evaluate((el) => Math.abs(el.closest('aside')!.getBoundingClientRect().bottom - innerHeight) < 2)).toBe(true)
+  // Open means slid all the way up: its foot on the screen's bottom edge (a short sheet stops low, so its top says
+  // nothing) and its slide over. A busy machine can stop painting for half a minute while software graphics resizes
+  // the canvas, and the sheet only finishes after that, so this waits as long as a cold start.
+  await expect
+    .poll(() =>
+      page.getByTestId(panel).evaluate((el) => {
+        const aside = el.closest('aside')!
+        const sliding = aside.getAnimations().some((a) => a instanceof CSSTransition && a.transitionProperty === 'transform' && a.playState === 'running')
+        return Math.abs(aside.getBoundingClientRect().bottom - innerHeight) < 2 && !sliding
+      }),
+    { timeout: COLD_START_MS })
+    .toBe(true)
 }
 
 /** On a phone, closes an open side sheet so the view under it can be used. Does nothing when none is open. */
@@ -249,13 +259,21 @@ export async function closeSheet(page: Page): Promise<void> {
   for (let i = 0; i < 3 && (await over.count()); i++) await page.keyboard.press('Escape')
   await page.keyboard.press('Escape')
   await expect(open).toHaveCount(0)
-  await expect.poll(() => page.locator('aside.pane.sheet').first().evaluate((el) => el.getBoundingClientRect().top >= innerHeight - 2)).toBe(true)
+  // Shut means slid off the bottom with the slide over, which waits out a paint stall as openSheet does.
+  await expect
+    .poll(() =>
+      page.locator('aside.pane.sheet').first().evaluate((el) => {
+        const sliding = el.getAnimations().some((a) => a instanceof CSSTransition && a.transitionProperty === 'transform' && a.playState === 'running')
+        return el.getBoundingClientRect().top >= innerHeight - 2 && !sliding
+      }),
+    { timeout: COLD_START_MS })
+    .toBe(true)
 }
 
 /** Waits until no pane or view is sliding, so a point measured on the canvas stays where it was measured. */
 export async function panesSettled(page: Page): Promise<void> {
   await expect
-    .poll(() => page.evaluate(() => !document.getAnimations().some((a) => a instanceof CSSTransition && a.playState === 'running' && a.effect instanceof KeyframeEffect && a.effect.target instanceof Element && a.effect.target.matches('.pane, .vp'))))
+    .poll(() => page.evaluate(() => !document.getAnimations().some((a) => a instanceof CSSTransition && a.playState === 'running' && a.effect instanceof KeyframeEffect && a.effect.target instanceof Element && a.effect.target.matches('.pane, .vp'))), { timeout: COLD_START_MS })
     .toBe(true)
 }
 
