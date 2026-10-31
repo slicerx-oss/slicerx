@@ -3,7 +3,7 @@
 // Server state through TanStack Query. Printer events
 // write into the same cache, so every view of a printer agrees.
 import type { PrinterHost, PrinterInfo, PrinterStatus } from '@slicerx/contracts'
-import { keepPreviousData, queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { useHasFeature } from '../features'
 import { printerAllowed, useEdition } from '../edition'
@@ -44,28 +44,76 @@ export function fleetQuery(printers: PrinterHost | undefined, epoch = 0) {
   })
 }
 
-/** Keeps the fleet cache live from printer events while mounted. */
+/**
+ * The live link from one printer host to one fleet cache: one subscription per printer, however many readers keep it,
+ * and the statuses that arrive together written in one go. A host reports every printer in the same moment (the demo
+ * fleet's tick, a bridge's burst), and a write per printer per reader kept a slow computer's page busy for most of
+ * every second.
+ */
+type Live = { subs: Map<string, { readers: number; off: () => void }>; pending: Map<string, PrinterStatus>; queued: boolean }
+
+const lives = new WeakMap<QueryClient, WeakMap<PrinterHost, Map<number, Live>>>()
+
+function liveFor(qc: QueryClient, printers: PrinterHost, epoch: number): Live {
+  let byHost = lives.get(qc)
+  if (!byHost) lives.set(qc, (byHost = new WeakMap()))
+  let byEpoch = byHost.get(printers)
+  if (!byEpoch) byHost.set(printers, (byEpoch = new Map()))
+  let live = byEpoch.get(epoch)
+  if (!live) byEpoch.set(epoch, (live = { subs: new Map(), pending: new Map(), queued: false }))
+  return live
+}
+
+/** Writes the statuses that came in since the last write, once the task that brought them is done. */
+function queueWrite(qc: QueryClient, live: Live, epoch: number, s: PrinterStatus): void {
+  live.pending.set(s.printerId, s)
+  if (live.queued) return
+  live.queued = true
+  queueMicrotask(() => {
+    live.queued = false
+    const next = live.pending
+    live.pending = new Map()
+    if (next.size === 0) return
+    qc.setQueryData<FleetRow[]>(['fleet', epoch], (rows) =>
+      rows?.map((r) => {
+        const s = next.get(r.id)
+        return s ? named(r, s) : r
+      }),
+    )
+  })
+}
+
+/** Keeps the fleet cache live from printer events while mounted. Readers of the same printer share its subscription. */
 export function useFleetLive(printers: PrinterHost | undefined, ids: readonly string[]): void {
   const qc = useQueryClient()
   const epoch = useApp((s) => s.linkEpoch)
   const key = ids.join(',')
   useEffect(() => {
     if (!printers) return
-    const offs = key
-      .split(',')
-      .filter(Boolean)
-      .map((id) =>
-        printers.subscribe(id, (e) => {
-          if (e.type !== 'status') return
-          qc.setQueryData<FleetRow[]>(['fleet', epoch], (rows) => rows?.map((r) => (r.id === e.status.printerId ? named(r, e.status) : r)))
-        }),
-      )
+    const live = liveFor(qc, printers, epoch)
+    const mine = key.split(',').filter(Boolean)
+    for (const id of mine) {
+      const sub = live.subs.get(id)
+      if (sub) {
+        sub.readers++
+        continue
+      }
+      const off = printers.subscribe(id, (e) => {
+        if (e.type === 'status') queueWrite(qc, live, epoch, e.status)
+      })
+      live.subs.set(id, { readers: 1, off })
+    }
     return () => {
-      for (const off of offs) off()
+      for (const id of mine) {
+        const sub = live.subs.get(id)
+        if (!sub || --sub.readers > 0) continue
+        live.subs.delete(id)
+        sub.off()
+      }
+      if (live.subs.size === 0) lives.get(qc)?.get(printers)?.delete(epoch)
     }
   }, [printers, qc, key, epoch])
 }
-
 
 /** The printer host when the connect feature is on, otherwise undefined. */
 export function usePrinters(): PrinterHost | undefined {
@@ -89,4 +137,25 @@ export function useFleet() {
   })
   useFleetLive(printers, q.data?.map((r) => r.id) ?? [])
   return q
+}
+
+/**
+ * One value read from the fleet, kept live like useFleet. The reader renders again only when `pick`'s answer changes
+ * (compared by value), not on every status a printer sends: the top bar needs a count and a dot, not the temperatures.
+ */
+export function useFleetPick<T>(pick: (rows: FleetRow[]) => T): T | undefined {
+  const printers = usePrinters()
+  const edition = useEdition()
+  const epoch = useApp((s) => s.linkEpoch)
+  const q = useQuery({
+    ...fleetQuery(printers, epoch),
+    enabled: printers !== undefined,
+    placeholderData: keepPreviousData,
+    select: (rows: FleetRow[]) => {
+      const shown = rows.filter((r) => printerAllowed(edition, r.plugin))
+      return { ids: shown.map((r) => r.id), value: pick(shown) }
+    },
+  })
+  useFleetLive(printers, q.data?.ids ?? [])
+  return q.data?.value
 }
