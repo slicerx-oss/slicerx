@@ -166,11 +166,16 @@ export function confirmDiscard(what: string): Promise<boolean> {
   })
 }
 
-/** The dialog's answer. */
-export function answerUnsaved(proceed: boolean): void {
+/**
+ * The dialog's answer. Going on (Don't save, or saved) also drops the copy autosaved for a restore, and the caller
+ * hears the answer only once it is gone: a quit exits right after, and must not leave it to be offered back.
+ */
+export async function answerUnsaved(proceed: boolean): Promise<void> {
   const r = pending
   pending = null
   set({ unsavedPrompt: null })
-  if (proceed) markClean()
-  r?.(proceed)
+  if (!proceed) return r?.(false)
+  markClean()
+  if (r) await import('./autosave').then((m) => m.dropUnsavedCopy()).catch(() => undefined)
+  r?.(true)
 }

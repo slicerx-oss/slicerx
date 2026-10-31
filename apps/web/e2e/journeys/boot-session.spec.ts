@@ -12,7 +12,7 @@
 import { test as plain, expect as plainExpect } from '@playwright/test'
 import { type Page } from '@playwright/test'
 import { journey, expect } from '../journey'
-import { openStudio } from '../cad-helpers'
+import { command, openStudio } from '../cad-helpers'
 import { COLD_START_MS, expectCurrentTab, expectTabLabel, goTab, plateReady, test as cold } from '../fixtures'
 import {
   A1_MINI,
@@ -182,6 +182,50 @@ cold.describe('the example plate and the autosave', () => {
     await plateReady(page)
     await page.clock.fastForward(3_000)
     expect(await restoreShown(page)).toBe(false)
+  })
+
+  /** An unsaved change to the example plate, autosaved: the page's clock jumps over the autosave's 4 s wait. */
+  async function unsavedChange(page: Page): Promise<void> {
+    await page.evaluate(() => (window as unknown as { __sx: { setState(p: unknown): void } }).__sx.setState({ overrides: { layer_height: 0.16 } }))
+    await page.clock.fastForward(10_000)
+    await expect.poll(async () => (await rows(page)).filter((r) => r.id === 'autosave').length, { timeout: 30_000 }).toBe(1)
+  }
+
+  // Don't save drops the changes on purpose, so the copy kept for a restore goes with them (the quit in the desktop app
+  // takes the same answer; packages/app/test/dont-save-clears-recovery.test.ts).
+  cold("Don't save drops the autosaved copy, so the next start offers nothing back", async ({ page }) => {
+    await watchRestore(page)
+    await page.clock.install()
+    await openStudio(page)
+    await unsavedChange(page)
+    await command(page, 'Start over with the example plate')
+    const ask = page.getByRole('dialog', { name: 'Save changes first?' })
+    await expect(ask).toBeVisible()
+    await ask.getByTestId('unsaved-discard').click()
+    await expect(ask).toHaveCount(0)
+    await expect.poll(async () => (await rows(page)).filter((r) => r.id === 'autosave')).toEqual([])
+    await page.reload()
+    await plateReady(page)
+    await page.clock.fastForward(3_000)
+    expect(await restoreShown(page)).toBe(false)
+  })
+
+  // A start after the page ended with nothing answered (a crash, a killed tab, a shutdown) still offers the work back,
+  // and Discard there drops it.
+  cold('work left by a page that ended unanswered is offered back, and Discard drops it', async ({ page, context }) => {
+    await page.clock.install()
+    await openStudio(page)
+    await unsavedChange(page)
+    // Closed without beforeunload, as a crash or a kill ends it.
+    await page.close()
+    const next = await context.newPage()
+    await next.goto('./')
+    const offer = next.getByRole('dialog', { name: 'Restore unsaved work?' })
+    await expect(offer).toBeVisible({ timeout: COLD_START_MS })
+    await expect(offer).toContainText('because it was never saved')
+    await offer.getByTestId('danger-recover-discard').click()
+    await expect(offer).toHaveCount(0)
+    await expect.poll(async () => (await rows(next)).filter((r) => r.id === 'autosave')).toEqual([])
   })
 })
 
