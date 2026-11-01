@@ -94,9 +94,12 @@ test('ten opens in a row leave no held frame, canvas or texture behind', { tag: 
   }
   // the first open settles what a plate with x-mark holds; nine more must not add to it. Objects that leave the plate
   // stay built for 10 s in case they come back (the viewport's PARK_MS timer), so the base is taken once its parked
-  // map has emptied, however late a loaded machine runs the timers.
+  // map has emptied, however late a loaded machine runs the timers. The view's bead warm-up uploads the hidden toolhead
+  // and purge meshes once per view, after the plate is drawn, so on a loaded machine the base waits for it too.
   const parkedCount = () => page.evaluate(() => (window as unknown as { __vp: { parked: Map<string, unknown> } }).__vp.parked.size)
+  const warmed = () => page.evaluate(() => (window as unknown as { __vp: { stats(): { startup: { warmMs: number | null } } } }).__vp.stats().startup.warmMs !== null)
   await open()
+  await expect.poll(warmed, { timeout: 60_000 }).toBe(true)
   await expect.poll(parkedCount, { timeout: 30_000 }).toBe(0)
   const base = await memory()
   for (let i = 0; i < 9; i++) await open()
