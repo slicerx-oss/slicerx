@@ -46,6 +46,11 @@ function orcaSettings(api: SettingsApi, extra: Record<string, unknown> = {}): Re
   return { ...out, ...extra }
 }
 
+/** The settings of a .gcode.3mf, which a Bambu Lab printer, Bambu Studio and OrcaSlicer read: in their values. */
+function printSettings(api: SettingsApi): Record<string, unknown> {
+  return api.orcaReadable(orcaSettings(api))
+}
+
 async function saveBytes(host: Host, name: string, bytes: Uint8Array, type: string, accept: string): Promise<boolean> {
   const ref = await host.files.save(name, new Blob([bytes as BlobPart], { type }), { accept: [accept] })
   if (ref) toast(`Saved ${ref.name}`, 'ok')
@@ -149,7 +154,7 @@ export async function exportGcode3mf(host: Host): Promise<boolean> {
   }
   const index = Math.max(0, s.plates.findIndex((p) => p.id === s.activePlate))
   const plates = allPlates(get())
-  const bytes = await (await import('./threemf')).writeProjectCompressed({ plates, bed: s.bed, settings: orcaSettings(await loadSettings()), gcode: { [index]: text }, ...(await printMarks(plates)) })
+  const bytes = await (await import('./threemf')).writeProjectCompressed({ plates, bed: s.bed, settings: printSettings(await loadSettings()), gcode: { [index]: text }, ...(await printMarks(plates)) })
   return saveBytes(host, `${fileBase()}.gcode.3mf`, bytes, 'model/3mf', '.gcode.3mf')
 }
 
@@ -165,7 +170,7 @@ export async function printGcode3mf(gcode: string, plateNumber?: number): Promis
   const all = allPlates(s)
   const plate = (plateNumber !== undefined ? all[plateNumber - 1] : undefined) ?? all.find((p) => p.id === s.activePlate)
   const plates = plate ? [plate] : []
-  return (await import('./threemf')).writeProjectCompressed({ plates, bed: s.bed, settings: orcaSettings(await loadSettings()), gcode: { 0: gcode }, ...(await printMarks(plates)) })
+  return (await import('./threemf')).writeProjectCompressed({ plates, bed: s.bed, settings: printSettings(await loadSettings()), gcode: { 0: gcode }, ...(await printMarks(plates)) })
 }
 
 /** Print output: slices every plate that has objects and writes them all into one .gcode.3mf. */
@@ -195,7 +200,7 @@ export async function exportAllPlates(host: Host): Promise<boolean> {
   }
   const s = get()
   const all = allPlates(s)
-  return saveBytes(host, `${fileBase()}.gcode.3mf`, await (await import('./threemf')).writeProjectCompressed({ plates: all, bed: s.bed, settings: orcaSettings(await loadSettings()), gcode, ...(await printMarks(all)) }), 'model/3mf', '.gcode.3mf')
+  return saveBytes(host, `${fileBase()}.gcode.3mf`, await (await import('./threemf')).writeProjectCompressed({ plates: all, bed: s.bed, settings: printSettings(await loadSettings()), gcode, ...(await printMarks(all)) }), 'model/3mf', '.gcode.3mf')
 }
 
 /**

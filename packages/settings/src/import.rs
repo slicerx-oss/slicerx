@@ -438,5 +438,54 @@ pub fn export_orca(config: &PrintConfig, name: &str, section: Section, inherits:
             out.insert(k.clone(), to_orca(def, v));
         }
     }
+    orca_readable(&mut out);
     Json::Object(out)
+}
+
+/// Keys of ours that `OrcaSlicer` and Bambu Studio do not read, left out of what is written for them.
+const NOT_ORCA_KEYS: &[&str] = &["filament_travel_slope"];
+
+/// Values of ours that they do not read, by key, and what is written for them instead: a ramp lift as a slope lift.
+const ORCA_VALUES: &[(&str, &str, &str)] = &[
+    ("z_hop_types", "Ramp Lift", "Slope Lift"),
+    ("filament_z_hop_types", "Ramp Lift", "Slope Lift"),
+];
+
+/// Orca-format settings (as [`to_orca`] writes them) as `OrcaSlicer` and Bambu Studio read them, for a profile made
+/// for them: our own keys left out and our own values written as theirs. The same as `orcaReadable` in the settings
+/// package.
+pub fn orca_readable(settings: &mut serde_json::Map<String, Json>) {
+    settings.retain(|k, _| !NOT_ORCA_KEYS.contains(&k.as_str()));
+    for (key, v) in settings.iter_mut() {
+        let swaps: Vec<(&str, &str)> = ORCA_VALUES
+            .iter()
+            .filter(|(k, _, _)| k == key)
+            .map(|(_, from, to)| (*from, *to))
+            .collect();
+        if swaps.is_empty() {
+            continue;
+        }
+        let one = |s: &str| -> String {
+            s.split(',')
+                .map(|p| {
+                    swaps
+                        .iter()
+                        .find(|(from, _)| *from == p.trim())
+                        .map_or(p, |(_, to)| *to)
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        match v {
+            Json::String(s) => *s = one(s),
+            Json::Array(a) => {
+                for x in a.iter_mut() {
+                    if let Json::String(s) = x {
+                        *s = one(s);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }

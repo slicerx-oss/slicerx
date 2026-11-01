@@ -263,6 +263,30 @@ export function importOrcaProfile(json: unknown, resolve: (name: string) => unkn
 }
 
 /** Back to Orca's string-typed JSON, for saving a profile Orca and Bambu Studio can open. */
+/** Keys of ours that OrcaSlicer and Bambu Studio do not read, left out of what is written for them. */
+const NOT_ORCA_KEYS: ReadonlySet<string> = new Set(['filament_travel_slope'])
+/** Values of ours that they do not read, by key, and what is written for them instead: a ramp lift as a slope lift. */
+const ORCA_VALUES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  z_hop_types: { 'Ramp Lift': 'Slope Lift' },
+  filament_z_hop_types: { 'Ramp Lift': 'Slope Lift' },
+}
+
+/**
+ * Orca-format settings (as `toOrca` writes them) as OrcaSlicer and Bambu Studio read them, for a profile or a
+ * .gcode.3mf made for them: SlicerX's own keys left out and its own values written as theirs. A SlicerX project keeps
+ * its settings as they are. The same as `orca_readable` in the Rust crate.
+ */
+export function orcaReadable(settings: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(settings)) {
+    if (NOT_ORCA_KEYS.has(k)) continue
+    const values = ORCA_VALUES[k]
+    const one = (x: unknown): unknown => (values && typeof x === 'string' ? x.split(',').map((p) => values[p.trim()] ?? p).join(',') : x)
+    out[k] = Array.isArray(v) ? v.map(one) : one(v)
+  }
+  return out
+}
+
 export function exportOrcaProfile(config: PrintConfig, meta: { name: string; section: SettingSection; inherits?: string }): Record<string, unknown> {
   const out: Record<string, unknown> = {
     type: meta.section === 'printer' ? 'machine' : meta.section,
@@ -278,7 +302,7 @@ export function exportOrcaProfile(config: PrintConfig, meta: { name: string; sec
     const v = config[key]
     if (def && v !== undefined) out[key] = toOrca(def, v)
   }
-  return out
+  return orcaReadable(out)
 }
 
 /** Layer configs left to right: process, filament and printer parts into one config. Later parts win. */
