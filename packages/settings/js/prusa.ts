@@ -250,10 +250,10 @@ function projectWidths(raw: Raw): Raw {
 /**
  * One lift row's z hop height and type for each extruder, `nil` where the row leaves it to the printer (prusa-map.json
  * `composites.lift`). With the ramp on the lift is the ramp's height, as a ramp lift (its angle is the `travel_slope` key
- * of the same name, which carries over as it is); with it off the straight lift, straight up; with no ramp set the
- * straight lift and no type. A list value
- * gives one entry per extruder, its last entry for an extruder past its end; `nil` is not set. Undefined when the
- * preset has none of the row's keys.
+ * of the same name, which carries over as it is); with it off the straight lift, as a normal lift. A filament row with no
+ * ramp of its own takes the printer's ramp from the same settings: off gives its straight lift as a normal lift, and on,
+ * or no printer key, leaves the type unset. A list value gives one entry per extruder, its last entry for an extruder
+ * past its end; `nil` is not set. Undefined when the preset has none of the row's keys.
  */
 function liftOf(row: LiftRow, prusa: Raw): { height: string[]; type: string[] } | undefined {
   if (!(row.ramp in prusa || row.height in prusa || row.straight in prusa)) return undefined
@@ -269,6 +269,16 @@ function liftOf(row: LiftRow, prusa: Raw): { height: string[]; type: string[] } 
     const type = on === undefined ? undefined : on === '1' ? 'Ramp Lift' : 'Normal Lift'
     out.height.push((on === '1' ? at(height, i) : at(straight, i)) ?? 'nil')
     out.type.push(type ?? 'nil')
+  }
+  // A filament with no ramp of its own takes the printer's (`travel_ramping_lift` for `filament_travel_ramping_lift`).
+  // When the settings turn that off, the filament's own straight lift goes straight up. With it on or not given the type
+  // stays the printer's.
+  if (row.ramp.startsWith('filament_')) {
+    const printer = list(row.ramp.slice('filament_'.length))
+    out.type = out.type.map((t, i) => {
+      const p = at(printer, i)
+      return t === 'nil' && out.height[i] !== 'nil' && p !== undefined && p !== '1' ? 'Normal Lift' : t
+    })
   }
   return out
 }

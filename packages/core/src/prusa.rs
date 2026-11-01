@@ -559,9 +559,11 @@ fn split_strings(s: &str) -> Vec<String> {
 
 /// One lift row's z hop height and type for each extruder, `nil` where the row leaves it to the printer
 /// (`composites.lift` in prusa-map.json). With the ramp on the lift is the ramp's height, as a ramp lift (its angle is
-/// the `travel_slope` key of the same name, which carries over as it is); with it off the straight lift, straight up;
-/// with no ramp set the straight lift and no type. A list value gives one entry per extruder, its last entry for an extruder past its end; `nil` is not set.
-/// None when the settings have none of the row's keys. The same as `liftOf` in the settings package.
+/// the `travel_slope` key of the same name, which carries over as it is); with it off the straight lift, as a normal
+/// lift. A filament row with no ramp of its own takes the printer's ramp from the same settings: off gives its straight
+/// lift as a normal lift, and on, or no printer key, leaves the type unset. A list value gives one entry per extruder,
+/// its last entry for an extruder past its end; `nil` is not set. None when the settings have none of the row's keys.
+/// The same as `liftOf` in the settings package.
 fn lift_of(row: &LiftRow, raw: &HashMap<&str, &str>) -> Option<(Vec<String>, Vec<String>)> {
     if ![&row.ramp, &row.height, &row.straight]
         .iter()
@@ -597,6 +599,17 @@ fn lift_of(row: &LiftRow, raw: &HashMap<&str, &str>) -> Option<(Vec<String>, Vec
         };
         heights.push(h.unwrap_or_else(|| "nil".to_owned()));
         kinds.push(kind.to_owned());
+    }
+    // A filament with no ramp of its own takes the printer's (`travel_ramping_lift` for `filament_travel_ramping_lift`).
+    // When the settings turn that off, the filament's own straight lift goes straight up. With it on or not given the
+    // type stays the printer's.
+    if let Some(printer) = row.ramp.strip_prefix("filament_") {
+        let printer = list(printer);
+        for (i, (kind, h)) in kinds.iter_mut().zip(&heights).enumerate() {
+            if *kind == "nil" && h != "nil" && at(&printer, i).is_some_and(|v| v != "1") {
+                "Normal Lift".clone_into(kind);
+            }
+        }
     }
     Some((heights, kinds))
 }
