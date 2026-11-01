@@ -298,7 +298,7 @@
   "only_one_wall_first_layer": false,
   "only_one_wall_top": true,
   "outer_wall_line_width": "0.42",
-  "precise_outer_wall": true,
+  "precise_outer_wall": false,
   "precise_z_height": false,
   "resolution": 0.012,
   "scarf_angle_threshold": 155,

@@ -10194,9 +10194,10 @@
   }
  },
  "every_process": {
-  "comment": "The maker's process presets have no internal_bridge_speed, and its app prints internal bridges at bridge_speed: 100% here, where the settings default is 150%.",
+  "comment": "Keys the Bambu Lab process presets do not set. internal_bridge_speed: 100%, where the settings default is 150%. precise_outer_wall: off, where the generated presets had it on.",
   "values": {
-   "internal_bridge_speed": "100%"
+   "internal_bridge_speed": "100%",
+   "precise_outer_wall": "0"
   }
  }
 }

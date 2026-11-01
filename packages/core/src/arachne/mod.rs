@@ -726,7 +726,7 @@ enum Built {
 /// one wall on top surfaces: at the innermost wall's spacing edge, without the `overlap` the infill area reaches into
 /// the wall, so the top surface starts there whatever the overlap is (on a 50 mm taper on the stock P1S settings, 2
 /// walls, the lines start 0.615 mm from the outer wall's centerline at every overlap from 0 to 30 percent with one wall
-/// on top, and 0.657 mm without, where they started 0.0042 mm nearer the wall per percent). Monotonic and rectilinear
+/// on top, and 0.614 mm without, where they started 0.0042 mm nearer the wall per percent). Monotonic and rectilinear
 /// top surfaces keep the overlap. The infill area and its classes are worked out with the overlap
 /// as before, so the sparse and solid infill keep it and a ledge gets the same top surface. The one-wall top of a top
 /// run (`run`, whose edge beside the inner walls [`clear_of_inner_walls`] places with the overlap) keeps it too, with

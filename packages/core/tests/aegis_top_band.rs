@@ -344,11 +344,13 @@ fn the_aegis_top_band_takes_one_wall_a_layer_at_a_time() {
     assert!(misses.is_empty(), "{misses:#?}");
 }
 
-/// On a 50 mm box the band starts between steps of 1.16 and 1.18 mm on 3 walls and between 1.58 and 1.59 on 4.
+/// On a 50 mm box the band starts between steps of 1.13 and 1.14 mm on 3 walls and between 1.54 and 1.55 on 4. These
+/// moved from 1.16 to 1.18 and 1.58 to 1.59 when the stock P1S request took precise outer wall off: the inner walls sit
+/// 0.043 mm nearer the outer wall, so the infill area under the ledge is that much wider.
 #[test]
 fn the_aegis_top_band_starts_on_the_wide_box_where_it_did() {
     let top = |r: f64, walls: u32| sloped(&slice_wide(r, walls), "Top surface");
-    for (walls, none, band) in [(3, 1.16, 1.18), (4, 1.58, 1.59)] {
+    for (walls, none, band) in [(3, 1.13, 1.14), (4, 1.54, 1.55)] {
         let (a, b) = (top(none, walls), top(band, walls));
         assert!(
             a < 0.05 && b > 150.0,
@@ -416,12 +418,13 @@ fn band_edges(gcode: &str, layer: i64) -> [(f64, f64); 4] {
 /// where they did: on z 3.0, at 15 percent overlap, the near edge on every side is within 0.005 mm of the target on
 /// a 50 mm box at a step of 1.52 mm on 2 and 3 walls and on a 30 mm box at 1.0 mm on 2 walls, and the far edge too.
 /// Before, the near edge was 0.063 mm (the overlap, 15 percent of the 0.42 mm line) nearer the outer wall: 0.552,
-/// 0.987 and 0.552.
+/// 0.987 and 0.552. The 3-wall target moved from 1.050 to 1.007 when the stock P1S request took precise outer wall
+/// off: its second inner wall sits 0.043 mm nearer the outer wall.
 #[test]
 fn the_aegis_top_band_starts_at_the_innermost_walls_edge() {
     let cases = [
         (25.0, 1.52, 2, 0.615, 2.697),
-        (25.0, 1.52, 3, 1.050, 3.273),
+        (25.0, 1.52, 3, 1.007, 3.273),
         (15.0, 1.0, 2, 0.615, 2.177),
     ];
     let mut misses = Vec::new();
@@ -519,7 +522,9 @@ fn slice_ordinary(stl: &[u8], overlap: f64) -> String {
 /// Without one wall on top the top surface starts at the inner wall's spacing edge too, whatever the overlap: on 2
 /// walls, at 0, 15 and 30 percent, the near edge on every side is within 0.005 mm of the target on the flat top of a
 /// 20 mm box 4 mm tall (z 4.0) and on the 50 mm taper at a step of 1.52 mm, sloped (z 3.0) and flat (z 4.0). The inner
-/// wall sits 0.435 mm from the outer wall's centerline here. Before, the near edge was 0.657, 0.594 and 0.531.
+/// wall sits 0.392 mm from the outer wall's centerline here. Before, with precise outer wall on and the inner wall at
+/// 0.435, the near edge was 0.657, 0.594 and 0.531. The target moved from 0.657 to 0.614 when the stock P1S request took
+/// precise outer wall off.
 #[test]
 fn ordinary_aegis_tops_start_at_the_inner_walls_edge() {
     let parts = [
@@ -532,9 +537,9 @@ fn ordinary_aegis_tops_start_at_the_inner_walls_edge() {
             let g = slice_ordinary(stl, overlap);
             for &layer in layers {
                 let got = band_edges(&g, layer);
-                if got.iter().any(|(n, _)| (n - 0.657).abs() > 0.005) {
+                if got.iter().any(|(n, _)| (n - 0.614).abs() > 0.005) {
                     misses.push(format!(
-                        "{name}, z {layer}, {overlap} percent: (near, far) per side {got:.3?}, target near 0.657"
+                        "{name}, z {layer}, {overlap} percent: (near, far) per side {got:.3?}, target near 0.614"
                     ));
                 }
             }
@@ -601,12 +606,13 @@ fn monotonic_line_aegis_tops_ignore_the_overlap_on_the_mk4() {
 
 /// Monotonic and rectilinear top surfaces keep their overlap with the walls: on the flat top of the 20 mm box (z 4.0)
 /// the near edge moves toward the wall with the overlap, to within 0.005 mm of the targets at 0 and 30 percent, on the
-/// P1S (monotonic and rectilinear) and the MK4 (monotonic).
+/// P1S (monotonic and rectilinear) and the MK4 (monotonic). The P1S targets moved 0.041 to 0.043 mm nearer the outer wall (from
+/// 0.824 and 0.701 monotonic, 0.827 and 0.701 rectilinear) when the stock P1S request took precise outer wall off.
 #[test]
 fn monotonic_aegis_tops_keep_the_overlap() {
     let cases = [
-        (REQUEST, "P1S", "monotonic", 0.824, 0.701),
-        (REQUEST, "P1S", "rectilinear", 0.827, 0.701),
+        (REQUEST, "P1S", "monotonic", 0.782, 0.660),
+        (REQUEST, "P1S", "rectilinear", 0.784, 0.658),
         (MK4, "MK4", "monotonic", 0.780, 0.661),
     ];
     let stl = box_of(10.0, 4.0);

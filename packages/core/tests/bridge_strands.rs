@@ -15,7 +15,9 @@
 //! Our own shapes on the shipped A1 settings (0.20 mm Standard, fixed layers, no brim): boxes W by 30 by 6 mm,
 //! whose first top layer bridges the 15 % sparse infill, and blocks D deep (two 3 mm pillars 4 mm tall, 8 mm
 //! apart, under a slab from 4 to 5.6 mm), whose first layer bridges the gap. Each size puts R / s0 0.15 below or
-//! above a whole number.
+//! above a whole number. The shipped A1 settings print with precise outer wall off, so the inner walls sit
+//! k = h (1 - pi / 4) nearer the outside than with it on, and the sizes are 2k (blocks) and 4k (boxes, whose region
+//! is measured at 45 degrees) smaller than they were with it on.
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -402,7 +404,7 @@ fn round_strands_over_sparse_infill_spread_evenly() {
     let cfg = a1(&json!({}));
     let rule = Rule::of(&cfg);
     // R / 0.45 is 55.85 and 56.15 on a fill at 45 degrees.
-    for (w, cells) in [(8.702_f32, 55), (8.893, 56)] {
+    for (w, cells) in [(8.530_f32, 55), (8.721, 56)] {
         let moves = slice(bx(w), &cfg);
         let (z, got) = strands(&moves, 0.45);
         assert_eq!(z, "5.20", "box {w}");
@@ -428,7 +430,7 @@ fn flat_strands_over_air_spread_evenly() {
     let cfg = a1(&json!({}));
     let rule = Rule::of(&cfg);
     // R over the internal solid infill spacing is 9.85 and 10.15.
-    for (d, cells) in [(5.294_f32, 9), (5.407, 10)] {
+    for (d, cells) in [(5.208_f32, 9), (5.321, 10)] {
         let moves = slice(block(d), &cfg);
         let (z, got) = strands(&moves, rule.solid_spacing);
         assert_eq!(z, "4.20", "block {d}");
@@ -451,7 +453,7 @@ fn thick_bridges_turn_the_strands_over_air_round() {
     let cfg = a1(&json!({"thick_bridges": true}));
     let rule = Rule::of(&cfg);
     // R / 0.45 is 7.85 and 8.15.
-    for (d, cells) in [(5.112_f32, 7), (5.247, 8)] {
+    for (d, cells) in [(5.026_f32, 7), (5.161, 8)] {
         let moves = slice(block(d), &cfg);
         let (z, got) = strands(&moves, 0.45);
         assert_eq!(z, "4.20", "block {d}");

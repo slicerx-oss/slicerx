@@ -52,7 +52,7 @@ describe('Bambu Studio 2.8 overlay', () => {
 
   it('gives every process tier of every model and nozzle internal bridges at the bridge speed', () => {
     const data = read<ResolvedBrand>('resolved/bambu-lab.json')
-    expect(overlay.every_process?.values).toEqual({ internal_bridge_speed: '100%' })
+    expect(overlay.every_process?.values).toEqual({ internal_bridge_speed: '100%', precise_outer_wall: '0' })
     let parts = 0
     for (const [model, entry] of Object.entries(data.models)) {
       for (const [size, part] of [['default', entry] as const, ...Object.entries(entry.nozzles ?? {})]) {
@@ -68,6 +68,30 @@ describe('Bambu Studio 2.8 overlay', () => {
     expect(parts).toBeGreaterThan(40)
     // The schema default stays for every other printer.
     expect(defaultConfig()['internal_bridge_speed']).toEqual(['150%'])
+  })
+
+  it('turns precise outer wall off on every process tier of every model and nozzle', async () => {
+    const data = read<ResolvedBrand>('resolved/bambu-lab.json')
+    let parts = 0
+    for (const [model, entry] of Object.entries(data.models)) {
+      for (const [size, part] of [['default', entry] as const, ...Object.entries(entry.nozzles ?? {})]) {
+        // Off is the schema default, so no tier stores the key.
+        for (const [tier, p] of Object.entries(part.process)) {
+          const d = tier === part.base ? { set: p as Record<string, unknown>, unset: [] } : (p as { set: Record<string, unknown>; unset: string[] })
+          expect('precise_outer_wall' in d.set || d.unset.includes('precise_outer_wall'), `${model} ${size} ${tier}`).toBe(false)
+        }
+        parts++
+      }
+    }
+    expect(parts).toBeGreaterThan(40)
+    expect(defaultConfig()['precise_outer_wall']).toBe(false)
+    for (const tier of ['standard', 'fine', 'draft']) {
+      const p1s = await resolvedProfile('bambu-p1s', tier)
+      expect(p1s!.process['precise_outer_wall'] ?? defaultConfig()['precise_outer_wall'], tier).toBe(false)
+    }
+    // Other makers keep their presets' value.
+    const mk4s = await resolvedProfile('prusa-mk4s', 'standard')
+    expect(mk4s!.process['precise_outer_wall']).toBe(true)
   })
 
   it('names a preset, model, nozzle and tier the data has for every entry', () => {
