@@ -578,7 +578,8 @@ fn a_slot_cut_into_a_step_leaves_the_notch_its_walls() {
     // piece is too narrow for a classic one-wall top band, so no strip of gap fill is left between a band's inner
     // wall and the notch. The top surface grows in steps that carry it round the slot's closed end into the strips
     // beside the slot walls, so the tips of the top region get their gap fill too and the layer reaches the measured
-    // band, 2.79 to 4.65 mm (3.72 measured).
+    // band, 2.79 to 4.65 mm (3.72 measured). A short top grid line also prints there, since a grid line prints
+    // wherever its center keeps the grid's inset however short that leaves it, and it adds a bead beside it.
     for model in ["bambu-a1", "bambu-p1s"] {
         let g = gaps(&slice(&xmark(), measured(model, &[])));
         let got = g.by_z.get(&hundredths(59.0)).copied().unwrap_or(0.0);
@@ -634,6 +635,59 @@ fn the_band_reach_follows_the_layer_height() {
         layer_total(&name, &found, 6.08, 12.9, 3.23);
         layer_total(&name, &found, 85.4, 1.7, 0.42);
         layer_total(&name, &found, 85.52, 1.68, 0.42);
+    }
+}
+
+/// Top surface path per layer z (in hundredths), mm.
+fn tops(g: &str) -> BTreeMap<i64, f64> {
+    let (mut x, mut y, mut z) = (0.0_f64, 0.0_f64, 0.0_f64);
+    let mut feature = String::new();
+    let mut out = BTreeMap::new();
+    for line in g.lines() {
+        let s = line.trim();
+        if let Some(f) = s.strip_prefix("; FEATURE:").or_else(|| s.strip_prefix(";TYPE:")) {
+            f.trim().clone_into(&mut feature);
+            continue;
+        }
+        if let Some(v) = s.strip_prefix("; Z_HEIGHT:").or_else(|| s.strip_prefix(";Z:")) {
+            z = v.trim().parse().unwrap();
+            continue;
+        }
+        let code = s.split(';').next().unwrap_or("").trim();
+        if !["G0 ", "G1 "].iter().any(|p| code.starts_with(p)) {
+            continue;
+        }
+        let (nx, ny) = (word(code, 'X').unwrap_or(x), word(code, 'Y').unwrap_or(y));
+        if feature == "Top surface" && word(code, 'E').is_some_and(|e| e > 0.0) {
+            *out.entry(hundredths(z)).or_default() += (nx - x).hypot(ny - y);
+        }
+        (x, y) = (nx, ny);
+    }
+    out
+}
+
+#[test]
+fn a_classic_top_the_walls_edge_keeps_its_line_ends() {
+    // With only_one_wall_top off and smart layers, the x-mark's step tops at z 5.92 and 6.07 start at the innermost
+    // wall's spacing edge, where the walls put them, and their lines end 0.05 spacing inside that surface: 695.90 and
+    // 2196.29 mm of top surface. Reading the edge from the infill area instead pulls every line end in, to 683.23
+    // and 2182.27.
+    for model in ["bambu-a1", "bambu-p1s"] {
+        let config = measured(
+            model,
+            &[
+                ("only_one_wall_top", json!(false)),
+                ("smart_layer", json!("quality")),
+            ],
+        );
+        let t = tops(&slice(&xmark(), config));
+        for (z, want) in [(5.92, 695.90), (6.07, 2196.29)] {
+            let got = t.get(&hundredths(z)).copied().unwrap_or(0.0);
+            assert!(
+                (got - want).abs() <= 0.3,
+                "{model} classic: {got:.2} mm of top surface at z {z}, want {want:.2}"
+            );
+        }
     }
 }
 
