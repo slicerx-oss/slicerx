@@ -1,6 +1,6 @@
 # Printer: Machine
 
-67 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+68 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `adaptive_bed_mesh_margin`
 
@@ -431,6 +431,15 @@ Which filament sets the bed temperature when a plate prints several: the first o
 - Default: 2.5
 - Recommended range: 0 to no maximum
 - Changing it redoes: paths
+- mimir class: read (not in the catalog: never written)
+
+### `nozzle_high_flow`
+
+**High flow nozzle**
+
+- Type: list of booleans, one per extruder
+- Default: [false]
+- Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
 ### `nozzle_hrc`

@@ -142,6 +142,7 @@ fan_min_speed	filament	floats
 fan_speedup_overhangs	printer	bool
 fan_speedup_time	printer	float
 farthest_point_timelapse	printer	bool
+filament_abrasive	filament	bools
 filament_adaptive_volumetric_speed	filament	bools
 filament_adhesiveness_category	filament	ints
 filament_change_extrusion_role_gcode	filament	strings
@@ -411,6 +412,7 @@ notes	process	string
 nozzle_diameter	printer	floats
 nozzle_flush_dataset	printer	ints
 nozzle_height	printer	float
+nozzle_high_flow	printer	bools
 nozzle_hrc	printer	int
 nozzle_temperature	filament	ints
 nozzle_temperature_initial_layer	filament	ints
