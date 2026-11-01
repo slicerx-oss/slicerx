@@ -37,6 +37,7 @@ const OVERLAID = new Set([
   ...Object.values(OVERLAY.filament).flatMap((v) => Object.keys(v)),
   ...Object.values(OVERLAY.machine).flatMap((s) => Object.values(s).flatMap((m) => [...Object.keys(m.values), ...Object.keys(m.filament?.values ?? {})])),
   ...Object.values(OVERLAY.process).flatMap((s) => Object.values(s).flatMap((t) => Object.values(t).flatMap((p) => Object.keys(p.values)))),
+  ...Object.keys(OVERLAY.every_process?.values ?? {}),
 ])
 
 /** Keys the MK4 IS overlay sets on purpose for a model and nozzle (packages/profiles/overlays/prusa-mk4is.json). */
