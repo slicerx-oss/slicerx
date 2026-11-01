@@ -635,8 +635,9 @@ pub(crate) fn island_walls_or(
     let overlap = if loops < 2 { line } else { overlap };
     for shape in region {
         let one: Shapes = vec![shape.clone()];
+        // The walls' outline keeps a point up to the miter limit, as the classic wall loops do.
         let outline = if inset > 0 {
-            perimeters::offset(&one, -inset)
+            perimeters::offset_with(&one, -inset, perimeters::BEVEL_PAST_MITER_LIMIT)
         } else {
             one
         };
@@ -1080,7 +1081,7 @@ pub(crate) mod reference {
         for shape in region {
             let one: Shapes = vec![shape.clone()];
             let outline = if inset > 0 {
-                perimeters::offset(&one, -inset)
+                perimeters::offset_with(&one, -inset, perimeters::BEVEL_PAST_MITER_LIMIT)
             } else {
                 one.clone()
             };
@@ -1237,9 +1238,9 @@ fn prepare_outline(
         reason = "a distance of a few micrometers in units"
     )]
     let eps_units = (epsilon / NM_PER_UNIT).max(1) as i32;
-    let step1 = perimeters::offset(outline, -eps_units);
-    let step2 = perimeters::offset(&step1, eps_units * 2);
-    let step3 = perimeters::offset(&step2, -eps_units);
+    let step1 = perimeters::offset_with(outline, -eps_units, perimeters::BEVEL_PAST_MITER_LIMIT);
+    let step2 = perimeters::offset_with(&step1, eps_units * 2, perimeters::BEVEL_PAST_MITER_LIMIT);
+    let step3 = perimeters::offset_with(&step2, -eps_units, perimeters::BEVEL_PAST_MITER_LIMIT);
     // one list of rings, outer counter-clockwise, holes clockwise, as orca's WallToolPaths::generate works on them
     let mut rings: Vec<Vec<P>> = Vec::new();
     for shape in &step3 {

@@ -144,11 +144,12 @@ fn union(a: &Shapes, b: &Shapes) -> Shapes {
     }
 }
 
+/// Bridge areas keep a point up to the miter limit when they shrink or grow ([`perimeters::BEVEL_PAST_MITER_LIMIT`]).
 fn shrink(s: &Shapes, d: f64) -> Shapes {
     if s.is_empty() {
         Vec::new()
     } else {
-        perimeters::offset(s, -mm(d))
+        perimeters::offset_with(s, -mm(d), perimeters::BEVEL_PAST_MITER_LIMIT)
     }
 }
 
@@ -156,7 +157,7 @@ fn expand(s: &Shapes, d: f64) -> Shapes {
     if s.is_empty() {
         Vec::new()
     } else {
-        perimeters::offset(s, mm(d))
+        perimeters::offset_with(s, mm(d), perimeters::BEVEL_PAST_MITER_LIMIT)
     }
 }
 
@@ -877,8 +878,8 @@ pub(crate) fn fill(
     let (ref_x, _) = frame.rot(IntPoint::new(reference.0, reference.1));
     // Lines sit half a spacing (and a hair) off the grid through the reference, as for full infill.
     let origin = ref_x + i64::midpoint(spacing, 100);
-    let outer = perimeters::offset(area, -mm(0.05 * spacing_mm));
-    let inner = perimeters::offset(area, -mm(0.5 * spacing_mm));
+    let outer = perimeters::offset_with(area, -mm(0.05 * spacing_mm), perimeters::BEVEL_PAST_MITER_LIMIT);
+    let inner = perimeters::offset_with(area, -mm(0.5 * spacing_mm), perimeters::BEVEL_PAST_MITER_LIMIT);
     if inner.is_empty() || outer.is_empty() {
         return Vec::new();
     }
@@ -914,7 +915,7 @@ pub(crate) fn fill_even(area: &Shapes, angle: f64, nominal_mm: f64, edge_mm: f64
         let moved = if mm(edge_mm) == 0 {
             one
         } else {
-            perimeters::offset(&one, mm(edge_mm))
+            perimeters::offset_with(&one, mm(edge_mm), perimeters::BEVEL_PAST_MITER_LIMIT)
         };
         for p in moved {
             let Some(ring) = p.first() else {
@@ -943,8 +944,13 @@ pub(crate) fn fill_even(area: &Shapes, angle: f64, nominal_mm: f64, edge_mm: f64
             let shape: Shapes = vec![p];
             #[allow(clippy::cast_possible_truncation, reason = "half a spacing in internal units")]
             let half = (pitch / 2.0).round() as i64 - HAIR;
-            let inner = perimeters::offset(&shape, -i32::try_from(half.max(0)).unwrap_or(i32::MAX));
-            let outer = perimeters::offset(&shape, -mm(0.05 * spacing_mm));
+            let inner = perimeters::offset_with(
+                &shape,
+                -i32::try_from(half.max(0)).unwrap_or(i32::MAX),
+                perimeters::BEVEL_PAST_MITER_LIMIT,
+            );
+            let outer =
+                perimeters::offset_with(&shape, -mm(0.05 * spacing_mm), perimeters::BEVEL_PAST_MITER_LIMIT);
             if inner.is_empty() || outer.is_empty() {
                 continue;
             }
