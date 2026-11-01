@@ -305,12 +305,9 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<(Vec<crate::api:
             }
         }
     }
+    // Object and part settings as the file gives them; a Prusa project's are read in our keys
+    // ([`crate::prusa::object_overrides`] and [`crate::prusa::part_overrides`]).
     let to_map = |list: &[(String, String)]| -> serde_json::Map<String, serde_json::Value> {
-        if prusa {
-            let mut out = crate::prusa::overrides(list);
-            out.retain(|k, _| !never(k));
-            return out;
-        }
         list.iter()
             .filter(|(k, _)| !never(k))
             .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
@@ -405,7 +402,21 @@ fn from_geom(bytes: &[u8], name: &str, which: Plates) -> Result<(Vec<crate::api:
                     "{shown}: part type {other} is not one this engine knows; it prints as a normal part"
                 ));
             }
-            let own = to_map(&p.settings);
+            let own = if prusa {
+                // A part's widths in percent are of its object's layer height; the object decides its layers.
+                let (mut out, ignored) =
+                    crate::prusa::part_overrides(&p.settings, &o.settings, prusa_config.as_deref());
+                out.retain(|k, _| !never(k));
+                for k in ignored {
+                    let line = format!("{shown}: {k} on a part is not used (the object's applies)");
+                    if !notes.contains(&line) {
+                        notes.push(line);
+                    }
+                }
+                out
+            } else {
+                to_map(&p.settings)
+            };
             for k in object.keys().chain(own.keys()) {
                 if crate::config::is_object_key(k) {
                     continue;

@@ -547,6 +547,34 @@ export function prusaObjectOverrides(meta: Readonly<Record<string, string>>, pro
   return out
 }
 
+/** The keys a Prusa part (a volume) may carry that the object decides: they are not printed from a part. */
+export const PRUSA_PART_IGNORED: readonly string[] = ['layer_height', 'first_layer_height', 'first_layer_extrusion_width']
+
+/**
+ * One part's (volume's) Prusa settings as `prusaOverrides` gives them, without `PRUSA_PART_IGNORED`, plus each width
+ * the part sets as a percent or 0 in mm: a percent of the object's layer height (the project's when the object sets
+ * none), the support XY spacing of the part's outer wall width. `objectMeta` is the object's own Prusa settings,
+ * `projectText` the text of the project's own config. The same as `part_overrides` in the engine.
+ */
+export function prusaPartOverrides(meta: Readonly<Record<string, string>>, objectMeta: Readonly<Record<string, string>>, projectText?: string): Record<string, string> {
+  const kept = Object.fromEntries(Object.entries(meta).filter(([k]) => !PRUSA_PART_IGNORED.includes(k)))
+  const out = prusaOverrides(kept)
+  const raw: Raw = { ...(projectText === undefined ? {} : readPrusaConfig(projectText)), ...objectMeta, ...kept }
+  // A width of 0 is the part's general width when the part sets one; otherwise the object's or the project's, which
+  // their own settings already carry.
+  const ownGeneral = 'extrusion_width' in kept
+  for (const key of Object.keys(MAP.widthPercentOf).sort()) {
+    if (key === 'first_layer_extrusion_width') continue
+    const v = raw[key]
+    const p = v === undefined ? undefined : percent(v)
+    let mm: number | undefined
+    if (p !== undefined) mm = key in kept ? widthMm(key, p, raw) : undefined
+    else if (v !== undefined && (ownGeneral || key in kept)) mm = zeroWidthMm(key, v, raw)
+    if (mm !== undefined) out[MAP.rename[key] ?? key] = String(mm)
+  }
+  return out
+}
+
 /** One object's or volume's Prusa settings (`Slic3r_PE_model.config` metadata) as Orca-format strings. */
 export function prusaOverrides(meta: Readonly<Record<string, string>>): Record<string, string> {
   const m = mapPrusaValues({ ...meta })

@@ -295,12 +295,34 @@ fn a_prusaslicer_parts_own_wall_widths_print_beside_another_part() {
         ("o23.3mf", 100.0, ["0.45", "0.55"]),
         ("vol-two-mm.3mf", 122.5, ["0.45", "0.55"]),
         ("vol-two-own.3mf", 122.5, ["0.35", "0.55"]),
+        // A part's 150% is of its object's layer height: the project's 0.1 mm.
+        ("o6.3mf", 100.0, ["0.45", "0.15"]),
     ] {
         let got = inner_walls_by_side(&gcode(&widths(name)), x);
         for (side, (got, want)) in got.iter().zip(want).enumerate() {
             if got.len() != 1 || !got.contains(want) {
                 wrong.push(format!("{name}: side {side} inner walls {got:?}, not {want}"));
             }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn a_prusaslicer_parts_width_percents_are_of_its_objects_layer_height() {
+    // 150% on the part: of the project's 0.1 mm layers (0.15), of the object's own 0.3 mm (0.45), the same on a 0.6
+    // mm nozzle (the nozzle does not enter), and the part's own 0.3 mm layer height is not the object's (0.15).
+    let mut wrong = Vec::new();
+    for (name, want) in [
+        ("vol-pct150.3mf", "0.15"),
+        ("vol-pct150-objlh03.3mf", "0.45"),
+        ("vol-pct150-n06.3mf", "0.15"),
+        ("vol-lh03-pct150.3mf", "0.15"),
+    ] {
+        let printed = widths_above_layer_1(&gcode(&widths(name)));
+        let got = printed.get("Inner wall").cloned().unwrap_or_default();
+        if got.len() != 1 || !got.contains(want) {
+            wrong.push(format!("{name}: inner walls {got:?}, not {want}"));
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
@@ -341,6 +363,91 @@ fn a_prusaslicer_objects_own_solid_infill_width_leaves_the_first_layer_alone() {
             .is_some_and(|w| w.contains("0.75")),
         "{printed:?}"
     );
+}
+
+/// The first layer's extrusions on one side of the plate's `x` (right of it when `right`), skirt left out: each
+/// feature and its line ends in hundredths of a mm, sorted.
+fn first_layer_side(gcode: &str, x: f64, right: bool) -> Vec<String> {
+    let (mut layer, mut kind) = (0, String::new());
+    let (mut at_x, mut at_y) = (0.0_f64, 0.0_f64);
+    let mut out = Vec::new();
+    for l in gcode.lines() {
+        if l == ";LAYER_CHANGE" {
+            layer += 1;
+            continue;
+        }
+        if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+            continue;
+        }
+        if !(l.starts_with("G1 ") || l.starts_with("G0 ")) {
+            continue;
+        }
+        let field = |c: char| {
+            l.split(';')
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .find_map(|f| f.strip_prefix(c))
+                .and_then(|v| v.parse::<f64>().ok())
+        };
+        let (nx, ny) = (field('X').unwrap_or(at_x), field('Y').unwrap_or(at_y));
+        if layer == 1
+            && kind != "Skirt"
+            && field('E').is_some_and(|e| e > 0.0)
+            && (nx - at_x).abs() + (ny - at_y).abs() > 1e-6
+            && (f64::midpoint(at_x, nx) > x) == right
+        {
+            out.push(format!("{kind} {at_x:.2},{at_y:.2} {nx:.2},{ny:.2}"));
+        }
+        (at_x, at_y) = (nx, ny);
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn a_prusaslicer_part_without_settings_prints_its_first_layer_as_its_own() {
+    // One object with its own 0.3 mm layers and two parts; the second part sets its inner walls to 200% (0.6 mm). With
+    // no first layer width the first layer prints each region's walls at their own widths, so the plain part walls
+    // itself there: its first layer prints as it does beside a part without settings.
+    let beside_part = first_layer_side(&gcode(&widths("vol-plain-beside-pct200.3mf")), 122.5, false);
+    let beside_plain = first_layer_side(&gcode(&widths("vol-plain-beside-plain.3mf")), 122.5, false);
+    assert!(!beside_plain.is_empty());
+    assert_eq!(beside_part, beside_plain);
+    // Two objects, the second a part at 150% (0.15 mm): the plain object's first layer is its own, and the part's
+    // first layer walls print at the part's width.
+    let g = gcode(&widths("o6.3mf"));
+    assert_eq!(
+        first_layer_side(&g, 102.0, false),
+        first_layer_side(&gcode(&widths("o6-plain.3mf")), 102.0, false)
+    );
+    let inner: std::collections::BTreeSet<String> = {
+        let (mut layer, mut kind, mut width) = (0, String::new(), String::new());
+        let mut out = std::collections::BTreeSet::new();
+        let mut at = 0.0_f64;
+        for l in g.lines() {
+            if l == ";LAYER_CHANGE" {
+                layer += 1;
+            } else if let Some(t) = l.strip_prefix(";TYPE:") {
+                t.clone_into(&mut kind);
+            } else if let Some(w) = l.strip_prefix(";WIDTH:") {
+                w.clone_into(&mut width);
+            } else if l.starts_with("G1 ") {
+                let to = l
+                    .split_whitespace()
+                    .find_map(|f| f.strip_prefix('X'))
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .unwrap_or(at);
+                if layer == 1 && kind == "Inner wall" && l.contains(" E") && f64::midpoint(at, to) > 102.0 {
+                    out.insert(width.clone());
+                }
+                at = to;
+            }
+        }
+        out
+    };
+    assert_eq!(inner, ["0.171".to_owned()].into_iter().collect());
 }
 
 /// `PrusaSlicer` projects of an 8 x 8 mm pillar under a 16 x 16 mm slab, with normal support around the pillar: grid
