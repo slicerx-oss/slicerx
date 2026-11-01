@@ -4850,9 +4850,18 @@ fn a_modifier_changes_shell_layers_line_width_and_infill_pattern() {
             .count()
     };
     assert!(left_solid(&shells).abs_diff(left_solid(&base)) * 5 <= left_solid(&base).max(1));
-    // A wider line inside the modifier.
-    let wide = half_modifier(json!({"line_width": 0.6}), json!({}));
-    let widths = right_half_moves(&wide, "Inner wall");
+    // A wider inner wall inside the modifier, above the first layer (where the region keeps its line width).
+    // Its line width alone widens nothing that has a width of its own.
+    let wide = half_modifier(json!({"inner_wall_line_width": 0.6}), json!({}));
+    let first_z = wide.lines().find_map(|l| l.strip_prefix(";Z:")).unwrap_or("");
+    let above: String = wide
+        .lines()
+        .skip_while(|l| l.strip_prefix(";Z:") != Some(first_z))
+        .skip(1)
+        .skip_while(|l| !l.starts_with(";Z:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let widths = right_half_moves(&above, "Inner wall");
     assert!(
         !widths.is_empty() && widths.iter().all(|w| (w - 0.6).abs() < 0.02),
         "{widths:?}"
