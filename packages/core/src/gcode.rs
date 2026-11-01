@@ -2376,14 +2376,18 @@ fn emit_layer(
                 .find(|f| *f != Feature::GapFill)
         })
         .flatten();
-    let mut pending_lift = (retracts
-        && lift_ok
-        && lift_allowed(&rc, l.index == 0, last_fill)
-        && l.lift_z <= 0.0
-        && !layer_gcode
-            .iter()
-            .any(|g| g.layer == l.index && g.kind == "custom"))
-    .then(|| Lift::of_layer_change(&rc));
+    let custom_here = layer_gcode
+        .iter()
+        .any(|g| g.layer == l.index && g.kind == "custom");
+    // A ramp lift climbs from the old layer at every layer change, whether or not it retracts and whatever the lift
+    // limits say; it is left to the layer's first travel, which also lifts the print's first travel straight up.
+    let mut pending_lift = if ramp_kind(&rc) {
+        (hop > 0 && !l.paths.is_empty() && !spiral && !vase_step && l.lift_z <= 0.0 && !custom_here)
+            .then_some(Lift::Ramp)
+    } else {
+        (retracts && lift_ok && lift_allowed(&rc, l.index == 0, last_fill) && l.lift_z <= 0.0 && !custom_here)
+            .then(|| Lift::of_layer_change(&rc))
+    };
     // A lift made before custom G-code that the next travel keeps and comes down from.
     let mut pending_drop = false;
     if pending_lift.is_none() {
@@ -3339,7 +3343,9 @@ fn emit_layer(
         // A travel shorter than the retraction minimum is short whether or not it retracts.
         let short = dist < rc.retraction_minimum_travel;
         // A retraction that wipes runs at the layer's wipe acceleration: the travel's lines follow the wipe instead.
-        let wipes_first = need_retract && pending_lift.is_none() && wipes(&rc, last_pts);
+        // A ramp lift waiting for the layer's first travel climbs after the retraction, not before it.
+        let wipes_first =
+            need_retract && matches!(pending_lift, None | Some(Lift::Ramp)) && wipes(&rc, last_pts);
         if travel_accel
             && !wipes_first
             && let Some(motion) = motions.get_mut(usize::from(p.tool))
@@ -3350,6 +3356,10 @@ fn emit_layer(
         let mut lifted = std::mem::take(&mut pending_drop);
         // A slope lift too steep for its travel climbs on the travel move itself (Orca's `travel_to_xyz`).
         let mut lift_on_travel: Option<i64> = None;
+        // A ramp lift climbs along the travel itself, from this height (thousandths): the layer's, or the old layer's
+        // at a layer change. Settled: the layer change's ramp is this travel's lift, so it makes no other.
+        let mut ramp_from: Option<i64> = None;
+        let mut lift_settled = false;
         // The layer change's lift, made by the layer's first travel; with no travel to make it on, the nozzle
         // just moves to the layer's height.
         // A lift heads along the travel's first leg, which a planned route turns away from the straight line.
@@ -3360,6 +3370,16 @@ fn emit_layer(
         };
         if let Some(kind) = pending_lift.take() {
             match cursor.filter(|&from| from != start) {
+                // The ramp runs once the travel's retraction and wipe are done; at 0 or 90 degrees the nozzle goes to
+                // the new layer and travels there.
+                Some(_) if kind == Lift::Ramp => {
+                    if crate::ramplift::straight(crate::ramplift::angle(&rc)) {
+                        write_normal_lift(b, z, z_feed);
+                    } else {
+                        ramp_from = Some(z_below);
+                    }
+                    lift_settled = true;
+                }
                 Some(from) => {
                     lift_on_travel = write_lift(
                         b,
@@ -3371,6 +3391,16 @@ fn emit_layer(
                         [travel_feed, z_feed],
                         zone_router.as_ref(),
                     );
+                    lifted = true;
+                }
+                // A ramp lift's first travel from an unknown place (the print's first): straight up when it
+                // retracts inside the lift limits, across, and straight down.
+                None if kind == Lift::Ramp
+                    && retracted
+                    && lift_ok
+                    && lift_allowed(&rc, l.index == 0, last_fill) =>
+                {
+                    write_normal_lift(b, z + hop, z_feed);
                     lifted = true;
                 }
                 None => write_normal_lift(b, z, z_feed),
@@ -3405,10 +3435,17 @@ fn emit_layer(
             }
             retracted = true;
             retracted_by = retract;
-            if lift_ok && !lifted && lift_allowed(&rc, l.index == 0, last_fill) {
+            if lift_ok && !lifted && !lift_settled && lift_allowed(&rc, l.index == 0, last_fill) {
                 // A travel that retracts lifts as Orca's needs_retraction picks: Auto Lift slopes, the others are
-                // their own kind.
-                if let Some(from) = cursor {
+                // their own kind. A ramp lift climbs along the travel (straight up at 0 or 90 degrees, or over a
+                // zone no way round clears).
+                if cursor.is_some()
+                    && zone_lift.is_none()
+                    && ramp_kind(&rc)
+                    && !crate::ramplift::straight(crate::ramplift::angle(&rc))
+                {
+                    ramp_from = Some(z);
+                } else if let Some(from) = cursor {
                     let first = toward(&plan);
                     let over = || {
                         l.lift_overhangs
@@ -3450,6 +3487,7 @@ fn emit_layer(
         {
             write_normal_lift(b, z + h, z_feed);
             lifted = true;
+            ramp_from = None;
         }
         // Wipe before external loop: with the outer wall first, the nozzle lands a little before
         // the start of the loop, unretracts there and then moves onto the start.
@@ -3466,6 +3504,11 @@ fn emit_layer(
                 *last = a;
             }
             let mut leg_from = cursor;
+            if let (Some(base), Some(from)) = (ramp_from, cursor) {
+                lifted =
+                    write_ramp_travel(b, off, &rc, (from, route.as_slice()), [base, z, hop], travel_feed);
+                route.clear();
+            }
             for stop in route {
                 if zoned
                     && !lifted
@@ -3490,6 +3533,10 @@ fn emit_layer(
                 put_int(b, travel_feed);
                 b.push(b'\n');
             }
+        }
+        // A ramp from the old layer with no travel to make it on comes straight down to the layer.
+        if cursor == Some(start) && ramp_from.is_some_and(|f| f != z) {
+            lifted = true;
         }
         if lifted {
             b.extend_from_slice(b"G1 Z");
@@ -4797,6 +4844,9 @@ enum Lift {
     Normal,
     Slope,
     Spiral,
+    /// A `PrusaSlicer` filament's ramping lift ([`crate::ramplift`]): along the whole travel from where its retraction
+    /// ends, and at a layer change from the old layer whether or not it retracts.
+    Ramp,
 }
 
 impl Lift {
@@ -4808,6 +4858,7 @@ impl Lift {
             "Spiral Lift" => Lift::Spiral,
             "Auto Lift" if over() => Lift::Spiral,
             "Slope Lift" | "Auto Lift" => Lift::Slope,
+            RAMP_LIFT => Lift::Ramp,
             _ => Lift::Normal,
         }
     }
@@ -4817,6 +4868,7 @@ impl Lift {
         match z_hop_kind(rc).as_str() {
             "Spiral Lift" | "Auto Lift" => Lift::Spiral,
             "Slope Lift" => Lift::Slope,
+            RAMP_LIFT => Lift::Ramp,
             _ => Lift::Normal,
         }
     }
@@ -4829,6 +4881,14 @@ impl Lift {
             _ => Lift::Normal,
         }
     }
+}
+
+/// The `z_hop_types` value of the ramp lift ([`Lift::Ramp`]).
+const RAMP_LIFT: &str = "Ramp Lift";
+
+/// Whether a filament's lifts are ramp lifts.
+fn ramp_kind(rc: &PrintConfig) -> bool {
+    z_hop_kind(rc) == RAMP_LIFT
 }
 
 /// A plain lift straight up to `z_to` (thousandths).
@@ -5074,6 +5134,90 @@ fn write_lift(
             None
         }
     }
+}
+
+/// A travel along `way` (from where the nozzle is, through the route's stops) that climbs as a ramp lift
+/// ([`crate::ramplift`]) from the height `z[0]` (thousandths: the layer's, or the old layer's at a layer change) by up
+/// to the lift `z[2]`, on a layer at `z[1]`. When the ramp gets no higher than the layer, the travel moves evenly from
+/// its height to the layer's along its whole length instead. Moves that change the height are `G1` with a Z, the rest
+/// `G0`, all at the travel feed `feed`. Returns whether the nozzle ends above the layer, to come straight down there.
+fn write_ramp_travel(
+    b: &mut Vec<u8>,
+    off: Point,
+    rc: &PrintConfig,
+    way: (Point, &[Point]),
+    z: [i64; 3],
+    feed: i64,
+) -> bool {
+    let (from, route) = way;
+    let [base, layer, hop] = z;
+    let mut len = 0.0;
+    let mut at = from;
+    for &q in route {
+        len += at.dist_mm(q);
+        at = q;
+    }
+    #[allow(clippy::cast_precision_loss, reason = "a lift in thousandths")]
+    let h = hop as f64 / 1000.0;
+    let ramp = crate::ramplift::Ramp::of(
+        h,
+        crate::ramplift::angle(rc),
+        crate::ramplift::Limits::of(rc).as_ref(),
+        len,
+    );
+    #[allow(clippy::cast_possible_truncation, reason = "a lift in thousandths")]
+    let rise = |s: f64| (ramp.at(s) * 1000.0).round() as i64;
+    let climbs = len > 0.0 && base + rise(len) > layer;
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "heights in thousandths"
+    )]
+    let height = |s: f64| -> i64 {
+        if climbs {
+            base + rise(s)
+        } else if len > 0.0 {
+            base + ((layer - base) as f64 * (s / len).min(1.0)).round() as i64
+        } else {
+            layer
+        }
+    };
+    let knots = if climbs { ramp.knots(len) } else { Vec::new() };
+    let mut written = base;
+    let mut put = |b: &mut Vec<u8>, p: Point, zt: i64| {
+        if zt == written {
+            b.extend_from_slice(b"G0");
+            put_xy(b, off, p);
+        } else {
+            b.extend_from_slice(b"G1");
+            put_xy(b, off, p);
+            b.extend_from_slice(b" Z");
+            put_fixed(b, zt, 3);
+            written = zt;
+        }
+        b.extend_from_slice(b" F");
+        put_int(b, feed);
+        b.push(b'\n');
+    };
+    let mut knot = knots.iter().copied().peekable();
+    let (mut s0, mut at) = (0.0, from);
+    for &q in route {
+        let leg = at.dist_mm(q);
+        let s1 = s0 + leg;
+        while let Some(s) = knot.next_if(|&s| s < s1 - 1e-6) {
+            if s > s0 + 1e-6 && leg > 0.0 {
+                let t = (s - s0) / leg;
+                let p = Point::from_mm(
+                    at.x_mm() + (q.x_mm() - at.x_mm()) * t,
+                    at.y_mm() + (q.y_mm() - at.y_mm()) * t,
+                );
+                put(b, p, height(s));
+            }
+        }
+        put(b, q, height(s1));
+        (s0, at) = (s1, q);
+    }
+    written > layer
 }
 
 /// The layer's travel acceleration (and jerk) lines before a lift made at once ahead of custom G-code that moves the
