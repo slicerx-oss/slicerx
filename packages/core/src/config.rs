@@ -1870,6 +1870,37 @@ impl PrintConfig {
         (width - self.layer_height * (1.0 - std::f64::consts::FRAC_PI_4)).max(width * 0.5)
     }
 
+    /// What the infill area's overlap with the walls (`infill_wall_overlap`, and the first and the last layer's
+    /// overlap) is a share of, mm, on a layer of `wall_loops` walls: the inner wall's spacing under two aegis walls or
+    /// more, the line width under one aegis wall and under the other generators. On the stock P1S settings at 0.20 mm
+    /// and 30% that keeps the internal solid infill 0.662 mm from the outer wall's centerline on 2 aegis walls, not
+    /// 0.658.
+    pub fn overlap_width_on(&self, wall_loops: u32) -> f64 {
+        if self.aegis_walls() && wall_loops >= 2 {
+            self.spacing_for(self.inner_wall_width())
+        } else {
+            self.line_width
+        }
+    }
+
+    /// [`PrintConfig::overlap_width_on`] the settings' own wall count.
+    pub fn overlap_width(&self) -> f64 {
+        self.overlap_width_on(self.wall_loops)
+    }
+
+    /// `percent` of [`PrintConfig::overlap_width`] in internal units, `w` being the line width in internal units.
+    #[allow(
+        clippy::cast_possible_truncation,
+        reason = "overlap is a fraction of a line width"
+    )]
+    pub(crate) fn overlap_units(&self, w: i32, percent: f64) -> i32 {
+        if self.aegis_walls() && self.wall_loops >= 2 {
+            crate::geom::mm(self.overlap_width() * percent / 100.0)
+        } else {
+            (f64::from(w) * percent / 100.0).round() as i32
+        }
+    }
+
     /// Top and bottom shell layers on a layer `height` mm thick: the layer
     /// counts, or as many layers as the minimum shell thickness needs. A count
     /// of 0 stays 0: no shell, whatever the thickness.
@@ -2184,6 +2215,11 @@ impl PrintConfig {
                     _ => None,
                 });
         self.arachne_walls() && !generator.is_some_and(is_aegis)
+    }
+
+    /// Variable-width walls from aegis (`wall_generator` or `perimeter_generator` = `aegis`, or `athena`).
+    pub fn aegis_walls(&self) -> bool {
+        self.arachne_walls() && !self.arachne_generator()
     }
 
     /// True when `print_sequence` is `by object`: each object prints completely before the next.

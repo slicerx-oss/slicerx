@@ -6085,11 +6085,7 @@ impl SliceSession {
             let fam = Families::new(cfg);
             let micros = Micros::default();
             let w = mm(cfg.line_width);
-            #[allow(
-                clippy::cast_possible_truncation,
-                reason = "overlap is a fraction of a line width"
-            )]
-            let overlap = (f64::from(w) * cfg.infill_wall_overlap / 100.0).round() as i32;
+            let overlap = cfg.overlap_units(w, cfg.infill_wall_overlap);
             let regions = self.whole_regions(fam, &micros);
             let slices: Vec<Shapes> = regions.iter().map(slice_shapes).collect();
             let (top_n, bot_n) = cfg.shell_layers(self.plan.height);
@@ -8242,11 +8238,8 @@ impl SliceSession {
     /// What depends on a region's own settings: its line width, shell layers and infill pattern.
     fn shell_of(&self, cfg: &PrintConfig) -> Shell {
         let w = mm(cfg.line_width);
-        #[allow(
-            clippy::cast_possible_truncation,
-            reason = "overlap is a fraction of a line width"
-        )]
-        let overlap = (f64::from(w) * cfg.infill_wall_overlap / 100.0).round() as i32;
+        // A share of the line width, or of the inner wall's spacing under aegis walls (`overlap_width`).
+        let overlap = cfg.overlap_units(w, cfg.infill_wall_overlap);
         let (top_n, bot_n) = cfg.shell_layers(self.plan.height);
         Shell {
             w,
@@ -8538,12 +8531,8 @@ impl SliceSession {
             // The first and the last layer's own walls use `top_bottom_infill_wall_overlap` (as OrcaSlicer's
             // walls do with no layer above, and on layer 0; `infill_wall_overlap` on Bambu Lab printers,
             // [`first_last_overlap`]). The neighbors' infill areas, which the layers around share, keep `overlap`.
-            #[allow(
-                clippy::cast_possible_truncation,
-                reason = "overlap is a fraction of a line width"
-            )]
             let own_overlap = if top_or_bottom {
-                (f64::from(w) * first_last_overlap(cfg) / 100.0).round() as i32
+                cfg.overlap_units(w, first_last_overlap(cfg))
             } else {
                 overlap
             };
@@ -9797,7 +9786,8 @@ impl SliceSession {
                                         &slice_shapes(r),
                                         fixed.wall_loops,
                                         base_shell.w,
-                                        base_shell.overlap,
+                                        // Of the line width, as fixed-width walls take it.
+                                        fixed.overlap_units(base_shell.w, base_cfg.infill_wall_overlap),
                                         self.plan.thickness(below),
                                         false,
                                     )
@@ -10223,7 +10213,7 @@ impl SliceSession {
                                 // The gap fill starts at the innermost wall's spacing edge, the infill area less its
                                 // overlap, whether or not the walls took the overlap out of the top surface.
                                 let back = if which == 0 && top_edge {
-                                    stretch_overlap / 100.0 * cfg.line_width
+                                    stretch_overlap / 100.0 * cfg.overlap_width()
                                 } else {
                                     0.0
                                 };
@@ -11920,7 +11910,8 @@ fn even_bridges(cfg: &PrintConfig) -> bool {
 /// `infill_wall_overlap` of the mean of the inner wall's and the internal solid infill's spacings, whatever the wall
 /// generator. The piece is cut from the infill area, so its edge moves from where the infill area starts to there.
 /// With variable-width walls the infill area starts half the inner wall's spacing past the innermost wall's
-/// centerline, less `infill_wall_overlap` of the line width. Fixed-width walls cut it at the walls' widths from the
+/// centerline, less `infill_wall_overlap` of [`PrintConfig::overlap_width`] (the line width, or the inner wall's
+/// spacing under aegis walls). Fixed-width walls cut it at the walls' widths from the
 /// outline (the outer wall's and one inner wall's per further loop, less the same overlap), while their inner walls
 /// sit by the precise outer wall setting, so the edge is worked out from the outline.
 fn stretch_of(
@@ -11946,7 +11937,7 @@ fn stretch_of(
     // the set layer height.
     let set = cfg.layer_height;
     let edge = if cfg.arachne_walls() {
-        spacing(inner, set) / 2.0 - share * cfg.line_width - past_wall(set)
+        spacing(inner, set) / 2.0 - share * cfg.overlap_width() - past_wall(set)
     } else if cfg.wall_loops < 2 {
         inner / 2.0 - share * cfg.line_width - past_wall(set)
     } else {
@@ -12052,7 +12043,7 @@ const PRECISE_SURFACE_EDGE_ON_BAMBU: bool = true;
 
 /// How far a top surface's or the first layer's bottom surface's pieces move their edge out (in, when negative)
 /// before each spreads its lines evenly across itself, mm, on a layer `height` thick whose infill area overlaps
-/// the walls by `overlap` (a share of the line width). The infill area starts at the walls' widths from the
+/// the walls by `overlap` (a share of [`PrintConfig::overlap_width_on`] the walls). The infill area starts at the walls' widths from the
 /// outline (the outer wall's, then the inner wall's spacing per further loop with variable-width walls and its
 /// width with fixed-width walls) less that overlap. The surface starts half the innermost wall's spacing past that
 /// wall's centerline, less [`first_last_overlap`] of a spacing. With variable-width walls that centerline
@@ -12101,7 +12092,7 @@ pub(crate) fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64, wall_lo
             innermost + spacing(inner) / 2.0 - share * overlap_of,
         )
     };
-    Some((area - overlap * cfg.line_width) - surface)
+    Some((area - overlap * cfg.overlap_width_on(wall_loops)) - surface)
 }
 
 /// Where the gap fill of a surface spread across a piece inside one fixed-width wall starts, mm in from the edge of
@@ -12119,7 +12110,7 @@ fn one_wall_gap_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> f64 {
 /// Lab printers, mm: a line prints when its center is at least c + sc/2 + s/2 from the outline, with c the innermost
 /// of `loops` walls' centerline, sc its spacing and s the surface's spacing `surface_mm`, and no overlap term. The
 /// infill area, on a layer `height` thick, starts at the walls' widths from the outline (as [`surface_edge`] reads
-/// them) less `overlap` (a share of the line width). c is where the walls are laid: with variable-width walls half an inner spacing inside the outer wall's
+/// them) less `overlap` (a share of [`PrintConfig::overlap_width_on`] the walls). c is where the walls are laid: with variable-width walls half an inner spacing inside the outer wall's
 /// width plus an inner spacing per further loop, with fixed-width walls the outer wall's centerline, the first inner
 /// wall's pitch, then an inner spacing per further loop (one wall: the outer wall's centerline and spacing). Never
 /// less than 0, so no line reaches past the infill area. `None` with no walls or an extra wall on every other layer.
@@ -12150,7 +12141,7 @@ pub(crate) fn grid_inset(
         let innermost = outer / 2.0 + first + (n - 2.0) * spacing(inner);
         (outer + (n - 1.0) * inner, innermost + spacing(inner) / 2.0)
     };
-    Some((edge + surface_mm / 2.0 - (area - overlap * cfg.line_width)).max(0.0))
+    Some((edge + surface_mm / 2.0 - (area - overlap * cfg.overlap_width_on(loops))).max(0.0))
 }
 
 /// The grid of a monotonic line surface on Bambu Lab printers: `region` (turned so its lines run along `d`) drawn in a
