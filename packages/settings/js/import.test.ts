@@ -238,3 +238,18 @@ describe('per-extruder values of a number setting', () => {
     expect(r.invalidKeys).toEqual([])
   })
 })
+
+describe('the single-wall top threshold', () => {
+  // A percent of the wall width or a width in mm, as the engine reads it, so the text passes through.
+  const kept = (r: { config: Record<string, unknown>; unknownKeys: string[]; ignoredKeys: string[]; invalidKeys: string[] }, value: string) => {
+    expect(r.config['top_area_threshold']).toBe(value)
+    for (const list of [r.unknownKeys, r.ignoredKeys, r.invalidKeys]) expect(list).not.toContain('top_area_threshold')
+  }
+  it("is kept from a project's settings, as a percent or a width in mm", () => {
+    kept(importFlat({ top_area_threshold: '100%', layer_height: '0.2' }) as never, '100%')
+    kept(importFlat({ top_area_threshold: '0.9' }) as never, '0.9')
+  })
+  it('is kept from a process profile', () => {
+    kept(importOrcaProfile({ type: 'process', name: 'Narrow bands', top_area_threshold: '100%' }, () => undefined) as never, '100%')
+  })
+})
