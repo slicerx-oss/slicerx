@@ -261,6 +261,21 @@ jobs:
         with:
           # Also save after a failed (or timed out, see the test steps) run, so the next one starts warm.
           cache-on-failure: true
+      # The static ONNX Runtime library that ort-sys (the sx-watch crate's model runtime) would download in its build
+      # script, fetched here instead with retries and checked against a pinned sha256 (scripts/ci/ort-fetch.sh). A
+      # failed download in the build script showed up as "could not find native static library onnxruntime". The
+      # script sets ORT_LIB_LOCATION, so the build makes no request. The cache holds the checked archive and the
+      # library; a hit is checked against the sha256 again before use.
+      - if: env.DUP != 'true'
+        id: ort
+        run: bash scripts/ci/ort-fetch.sh key | sed 's/^/key=/' >> "$GITHUB_OUTPUT"
+      - if: env.DUP != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ort
+          key: ${{ steps.ort.outputs.key }}
+      - if: env.DUP != 'true'
+        run: bash scripts/ci/ort-fetch.sh fetch "$RUNNER_TEMP/ort"
       # A Cargo.lock that no longer matches the manifests fails here, before a build quietly rewrites it.
       - if: env.DUP != 'true'
         run: cargo metadata --locked --format-version 1 > /dev/null
@@ -1326,6 +1341,13 @@ jobs:
         run: |
           echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin \
             || echo "::warning::ghcr.io sign in failed, pulling anonymously"
+      - run: sh supabase/tests/stack-start-test.sh
+      # The second stack starts right after the first stops, and its ports (55320 to 55329) lie in the range Linux hands
+      # to outgoing connections. One of those connections once held 55322 and the bind failed three times in a row
+      # ("address already in use") while nothing listened on it. Reserved ports are never handed out that way. Both
+      # stacks' ranges are read from supabase/config.toml and SX_NOGRANTS_PORTS (stack-start.sh).
+      - name: keep the stacks' ports out of the ephemeral range
+        run: sudo sh -c '. supabase/tests/stack-start.sh && sx_reserve_ports' && sysctl net.ipv4.ip_local_reserved_ports
       # supabase/setup-cli pins the image registry to ghcr.io (SUPABASE_INTERNAL_IMAGE_REGISTRY), and ghcr.io refuses
       # shared runners' pulls even when signed in. The CLI takes every service image from that one registry, and the
       # same images are published to public.ecr.aws and docker.io, so the first start moves on to those when a registry

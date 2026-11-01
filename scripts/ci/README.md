@@ -319,6 +319,12 @@ Files, all in `scripts/ci/`:
   name as the run reports it (`path/to/file.test.ts > suite > test`, a cargo test path, or a Playwright title).
 - `cargo-retry.sh <cargo test arguments>`: `cargo test --no-fail-fast` with the one rerun by exact name below, for a
   CI job; it appends the tests that passed only on the rerun to the file in `SX_FLAKY_OUT`.
+- `ort-fetch.sh key | fetch <dir>`: the static ONNX Runtime library that the ort-sys build script would download, fetched
+  in its own step of the hosted `rust (ubuntu-latest)` job with `curl --retry 5 --retry-all-errors`, checked against a
+  sha256 pinned in the script (on a cache hit too), extracted, and pointed to with `ORT_LIB_LOCATION` so the build makes
+  no request. The cache key is the ort-sys version plus that sha256. The script fails when Cargo.lock locks another
+  ort-sys version; then copy the x86_64-unknown-linux-gnu entry without features from `build/download/dist.tsv` of the
+  new crate into it.
 - `require-green.sh` and `required-checks.txt`: see "Release gate".
 
 Machine runs (`run.sh`): when a step fails, only the failing tests run again, once. vitest reruns the failing files in
