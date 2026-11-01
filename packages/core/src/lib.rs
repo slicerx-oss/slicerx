@@ -179,6 +179,7 @@ mod extraperim;
 #[allow(clippy::indexing_slicing)]
 mod quality;
 mod raft;
+mod ramplift;
 #[allow(
     clippy::indexing_slicing,
     clippy::cast_precision_loss,
