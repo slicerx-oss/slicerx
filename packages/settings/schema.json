@@ -8192,6 +8192,18 @@
    "invalidates": "gcode"
   },
   {
+   "key": "filament_abrasive",
+   "section": "filament",
+   "type": "bools",
+   "label": "Abrasive filament",
+   "mode": "advanced",
+   "default": [
+    false
+   ],
+   "group": "filament",
+   "invalidates": "gcode"
+  },
+  {
    "key": "filament_adhesiveness_category",
    "section": "filament",
    "type": "ints",
@@ -10407,6 +10419,18 @@
    "default": 2.5,
    "group": "machine",
    "invalidates": "paths"
+  },
+  {
+   "key": "nozzle_high_flow",
+   "section": "printer",
+   "type": "bools",
+   "label": "High flow nozzle",
+   "mode": "advanced",
+   "default": [
+    false
+   ],
+   "group": "machine",
+   "invalidates": "gcode"
   },
   {
    "key": "nozzle_hrc",

@@ -443,7 +443,7 @@ pub fn export_orca(config: &PrintConfig, name: &str, section: Section, inherits:
 }
 
 /// Keys of ours that `OrcaSlicer` and Bambu Studio do not read, left out of what is written for them.
-const NOT_ORCA_KEYS: &[&str] = &["filament_travel_slope"];
+const NOT_ORCA_KEYS: &[&str] = &["filament_travel_slope", "filament_abrasive", "nozzle_high_flow"];
 
 /// Values of ours that they do not read, by key, and what is written for them instead: a ramp lift as a slope lift.
 const ORCA_VALUES: &[(&str, &str, &str)] = &[

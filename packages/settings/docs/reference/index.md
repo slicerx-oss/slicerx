@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 758 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 760 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -29,7 +29,7 @@ Material settings: temperatures, cooling, flow, retraction, drying.
 - [Cooling](filament-cooling.md): 31 settings
 - [Drying](filament-drying.md): 8 settings
 - [Extrusion](filament-extrusion.md): 13 settings
-- [Filament properties](filament-filament.md): 10 settings
+- [Filament properties](filament-filament.md): 11 settings
 - [G-code](filament-gcode.md): 3 settings
 - [Multi material](filament-multimaterial.md): 25 settings
 - [Profile metadata](filament-profile.md): 7 settings
@@ -44,7 +44,7 @@ Machine settings: bed and nozzle geometry, motion limits, G-code, network.
 
 - [Cooling](printer-cooling.md): 13 settings
 - [G-code](printer-gcode.md): 16 settings
-- [Machine](printer-machine.md): 67 settings
+- [Machine](printer-machine.md): 68 settings
 - [Acceleration, jerk and machine limits](printer-motion.md): 35 settings
 - [Multi material](printer-multimaterial.md): 21 settings
 - [Network and hosts](printer-network.md): 13 settings
@@ -199,6 +199,7 @@ Alphabetical, each linking to its group file.
 - `fan_speedup_overhangs`: Fan speedup overhangs, [printer/cooling](printer-cooling.md#fan_speedup_overhangs)
 - `fan_speedup_time`: Fan speedup time, [printer/cooling](printer-cooling.md#fan_speedup_time)
 - `farthest_point_timelapse`: Farthest point timelapse, [printer/machine](printer-machine.md#farthest_point_timelapse)
+- `filament_abrasive`: Abrasive filament, [filament/filament](filament-filament.md#filament_abrasive)
 - `filament_adaptive_volumetric_speed`: Filament adaptive volumetric speed, [filament/extrusion](filament-extrusion.md#filament_adaptive_volumetric_speed)
 - `filament_adhesiveness_category`: Filament adhesiveness category, [filament/filament](filament-filament.md#filament_adhesiveness_category)
 - `filament_change_extrusion_role_gcode`: G-code on feature change, [filament/gcode](filament-gcode.md#filament_change_extrusion_role_gcode)
@@ -468,6 +469,7 @@ Alphabetical, each linking to its group file.
 - `nozzle_diameter`: Nozzle diameter, [printer/machine](printer-machine.md#nozzle_diameter)
 - `nozzle_flush_dataset`: Nozzle flush dataset, [printer/multimaterial](printer-multimaterial.md#nozzle_flush_dataset)
 - `nozzle_height`: Nozzle height, [printer/machine](printer-machine.md#nozzle_height)
+- `nozzle_high_flow`: High flow nozzle, [printer/machine](printer-machine.md#nozzle_high_flow)
 - `nozzle_hrc`: Nozzle hrc, [printer/machine](printer-machine.md#nozzle_hrc)
 - `nozzle_temperature`: Nozzle temperature, [filament/temperature](filament-temperature.md#nozzle_temperature)
 - `nozzle_temperature_initial_layer`: Hotend temperature for the first layer, [filament/temperature](filament-temperature.md#nozzle_temperature_initial_layer)
