@@ -794,10 +794,12 @@ fn aegis_x_mark_top_surface_is_unchanged() {
             "z {z}: top surface {got:.3}, want {want}"
         );
     }
+    // 123.14 until a grid line printed wherever its center keeps the grid's inset however short that leaves it: one
+    // more top line (0.022 mm of filament) on layer z 59.
     let plate = total(&ms, TOP);
     assert!(
-        (plate - 123.14).abs() < 0.01,
-        "top surface on the plate {plate:.3}, want 123.14"
+        (plate - 123.16).abs() < 0.01,
+        "top surface on the plate {plate:.3}, want 123.16"
     );
 }
 

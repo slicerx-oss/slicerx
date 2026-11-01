@@ -8362,8 +8362,9 @@ impl SliceSession {
     /// How narrow pieces of `layer`'s surfaces whose lines spread evenly across each piece (see the surface fill
     /// below) print, for a region with settings `cfg` and shells `sh`: the top surfaces, uncovered by `upper` (the
     /// layer above's outline) and resting on `below`, or all of the first layer. On Bambu Lab printers only the first
-    /// layer's bottom surface spreads, and with no sparse infill the monotonic line tops keep one grid
-    /// ([`perimeters::NarrowSurface::grid`]). `None` wherever those surfaces neither spread their lines nor keep that grid.
+    /// layer's bottom surface and a monotonic top spread, and with no sparse infill the monotonic line tops keep one
+    /// grid ([`perimeters::NarrowSurface::grid`]). `None` wherever those surfaces neither spread their lines nor keep
+    /// that grid.
     #[allow(
         clippy::too_many_arguments,
         reason = "the layer, its settings and shells, and its neighbors"
@@ -8379,23 +8380,26 @@ impl SliceSession {
     ) -> Option<perimeters::NarrowSurface<'a>> {
         let bambu = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor);
         let n = self.plan.count();
-        // Under `only_one_wall_top` only the topmost layer's surfaces, with their one fixed-width wall, spread.
+        // Under `only_one_wall_top` only the topmost layer's surfaces, with their one fixed-width wall, spread; on Bambu
+        // Lab printers the first layer's too, with its own walls.
         let one_wall_top = crate::perimeters::one_wall_top(cfg);
-        if one_wall_top && (layer + 1 < n || bambu || cfg.arachne_walls()) {
+        if one_wall_top && ((layer + 1 < n && !(bambu && layer == 0)) || cfg.arachne_walls()) {
             return None;
         }
         let no_sparse = cfg.sparse_infill_density <= 0.0 && !cfg.arachne_walls();
+        let name_of = |key: &str, default: &'static str| match cfg.raw.get(key) {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            _ => default.to_owned(),
+        };
         // Bambu Lab printers' monotonic line tops keep one grid: with no sparse infill every narrow piece of them is
-        // top surface, with the grid's lines that fit and gap fill.
-        let grid = bambu && layer > 0;
+        // top surface, with the grid's lines that fit and gap fill. A monotonic top spreads its lines there too.
+        let grid = bambu && layer > 0 && name_of("top_surface_pattern", "monotonicline") == "monotonicline";
         if grid && !no_sparse {
             return None;
         }
-        let pattern = |key: &str, default: &str, density_key: &str| {
-            let name = match cfg.raw.get(key) {
-                Some(serde_json::Value::String(s)) => s.as_str(),
-                _ => default,
-            };
+        let pattern = |key: &str, default: &'static str, density_key: &str| {
+            let name = name_of(key, default);
+            let name = name.as_str();
             (cfg.raw_number(density_key, 100.0) / 100.0 - 1.0).abs() < 1e-9
                 && if grid {
                     name == "monotonicline"
@@ -8423,13 +8427,15 @@ impl SliceSession {
         } else {
             cfg.infill_wall_overlap
         };
-        let loops = if one_wall_top {
+        let loops = if one_wall_top && layer + 1 == n {
             cfg.wall_loops.min(1)
         } else {
             cfg.wall_loops
         };
         let edge = if grid {
             0.0
+        } else if one_wall_top && layer + 1 == n {
+            top_wall_surface_edge(cfg, layer_height, overlap / 100.0, loops)?
         } else {
             surface_edge(cfg, layer_height, overlap / 100.0, loops)?
         };
@@ -8451,7 +8457,6 @@ impl SliceSession {
             no_sparse,
             opening: mm(0.1 * cfg.outer_wall_width()),
             grid,
-            room: !bambu,
         })
     }
 
@@ -9926,16 +9931,17 @@ impl SliceSession {
                 let back = perimeters::intersection(&perimeters::offset(shapes, *by), strip);
                 Some(perimeters::union_all(&[shapes, &back]))
             };
-            let surface_stretch = surface_edge(
-                cfg,
-                layer_height,
-                stretch_overlap / 100.0,
-                if top_one_wall {
-                    cfg.wall_loops.min(1)
-                } else {
-                    cfg.wall_loops
-                },
-            );
+            // How far in from the walls' own edge that surface starts (`wall_back`), mm: a spread reads the walls' edge.
+            let moved_in = wall_back
+                .as_ref()
+                .filter(|_| top_one_wall)
+                .map_or(0.0, |(_, by)| f64::from(by - 5) / SCALE);
+            let surface_stretch = if top_one_wall {
+                top_wall_surface_edge(cfg, layer_height, stretch_overlap / 100.0, cfg.wall_loops.min(1))
+                    .map(|e| e + moved_in)
+            } else {
+                surface_edge(cfg, layer_height, stretch_overlap / 100.0, cfg.wall_loops)
+            };
             // How much wider than the surface's own width each stretched top and bottom line prints, and the
             // widest stretched spacing, mm.
             let mut widen: [Vec<f32>; 2] = [Vec::new(), Vec::new()];
@@ -10005,7 +10011,7 @@ impl SliceSession {
                     && (top_one_wall || cfg.wall_loops == 1)
                     && let Some(e) = spread_gap_edge.get_mut(which)
                 {
-                    *e = Some(one_wall_gap_edge(cfg, layer_height, stretch_overlap / 100.0));
+                    *e = Some(one_wall_gap_edge(cfg, layer_height, stretch_overlap / 100.0) - moved_in);
                 }
                 // Monotonic, rectilinear and aligned rectilinear join each line to its neighbor along the edge of the
                 // surface however long the turn is: which ends are neighbors decides it, not a length (only ironing
@@ -10089,7 +10095,7 @@ impl SliceSession {
                         })
                         .flatten();
                     let grids: Vec<SurfaceGrid> = match (stretch, anchored) {
-                        (Some(e), _) => stretch_grids(&region, d, e, surface_mm),
+                        (Some(e), _) => stretch_grids(&region, d, e, surface_mm, bambu_stretch),
                         (None, Some(inset_mm)) => {
                             if let Some(e) = grid_gap_edge.get_mut(which) {
                                 *e = Some((inset_mm - surface_mm / 2.0).max(0.0));
@@ -10142,6 +10148,14 @@ impl SliceSession {
                     };
                     // The surface's own spacing, before a stretched grid's pitch takes the name.
                     let nominal_mm = surface_mm;
+                    // With fixed-width walls a grid's lines end 0.05 spacing inside the innermost wall's spacing edge,
+                    // which lies this far in from the infill area's edge (out, when negative), less what a classic
+                    // one-wall top's area already moved in (`moved_in`). Other lines, a grid inside variable-width
+                    // walls and the lower tops under `only_one_wall_top`, whose bands set their own ends, end 0.05
+                    // spacing inside the area.
+                    let end_edge = anchored
+                        .filter(|_| (top_one_wall || !one_wall_top) && !cfg.arachne_walls())
+                        .map_or(0.0, |inset_mm| inset_mm - nominal_mm / 2.0 - moved_in);
                     for grid in grids {
                         let SurfaceGrid {
                             region,
@@ -10156,7 +10170,7 @@ impl SliceSession {
                         if let (Some(_), Some(p)) = (stretch, pitch.get_mut(which)) {
                             *p = p.max(surface_mm);
                         }
-                        let outer = perimeters::offset(&region, -mm(0.05 * surface_mm));
+                        let outer = perimeters::offset(&region, -mm(0.05 * surface_mm + end_edge));
                         let inner_c = perimeters::offset(lines_in.as_ref().unwrap_or(&region), -inset);
                         let family = crate::infill::Family {
                             dir: d,
@@ -10172,10 +10186,9 @@ impl SliceSession {
                         // A stretched piece prints a line wherever the band of its pitch round the line holds the
                         // surface's own spacing along it (`perimeters::line_room`): the room for one, which also
                         // takes in a piece narrower along its lines than their pitch across them. Worked out only
-                        // where the lines pulled in by half the pitch miss a line or keep one too short, and not on
-                        // Bambu Lab printers, whose narrow pieces follow rules of their own.
+                        // where the lines pulled in by half the pitch miss a line or keep one too short.
                         let room = (frame.is_some()
-                            && !bambu_stretch
+                            && anchored.is_none()
                             && short_or_missing(&own, &own_out, min_len))
                         .then(|| {
                             let h = std::f64::consts::FRAC_1_SQRT_2;
@@ -10201,7 +10214,12 @@ impl SliceSession {
                             continue;
                         }
                         spans.clear();
-                        if fits.is_empty() {
+                        if anchored.is_some() {
+                            // A grid line prints wherever its center keeps the grid's inset, however short that
+                            // leaves it: a line across a strip prints once the strip is a spacing wide past the
+                            // innermost wall's spacing edge.
+                            own.retain(|iv| iv.t1 > iv.t0);
+                        } else if fits.is_empty() {
                             infill::trim(&mut own, 0, min_len);
                         } else {
                             keep_room(&mut own, &fits, &own_out, min_len);
@@ -11864,11 +11882,25 @@ const PRECISE_SURFACE_EDGE_ON_BAMBU: bool = true;
 /// innermost: the surface starts half the outer wall's spacing past its centerline, less the overlap of the mean of
 /// the outer wall's and the internal solid infill's spacings. `None` where the walls are not the plain loops this
 /// reads (an extra wall on every other layer, or one fixed-width wall on Bambu Lab printers, whose surfaces there
-/// keep their own rules).
+/// keep their own rules but for the topmost layer under one wall on top, [`top_wall_surface_edge`]).
 ///
 /// `wall_loops` is how many walls the layer prints, which `only_one_wall_top` or `only_one_wall_first_layer` may
 /// take below the settings' own count.
 pub(crate) fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64, wall_loops: u32) -> Option<f64> {
+    if wall_loops == 1 && !cfg.arachne_walls() && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+        return None;
+    }
+    top_wall_surface_edge(cfg, height, overlap, wall_loops)
+}
+
+/// [`surface_edge`] for the topmost layer under `only_one_wall_top`, which reads one fixed-width wall on Bambu Lab
+/// printers too: their maker's slicer spreads a monotonic top there from the same edge.
+pub(crate) fn top_wall_surface_edge(
+    cfg: &PrintConfig,
+    height: f64,
+    overlap: f64,
+    wall_loops: u32,
+) -> Option<f64> {
     if wall_loops == 0 || crate::tower::flag(cfg, "alternate_extra_wall") {
         return None;
     }
@@ -11880,9 +11912,6 @@ pub(crate) fn surface_edge(cfg: &PrintConfig, height: f64, overlap: f64, wall_lo
         let walls = outer + (loops - 1.0) * spacing(inner);
         (walls, walls - share * spacing(inner))
     } else if wall_loops < 2 {
-        if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
-            return None;
-        }
         let overlap_of = f64::midpoint(spacing(outer), spacing(cfg.solid_infill_width()));
         (outer, outer / 2.0 + spacing(outer) / 2.0 - share * overlap_of)
     } else {
@@ -12118,7 +12147,12 @@ pub(crate) fn stretch_pitch(across: f64, nominal: f64) -> (f64, Option<i32>) {
 /// piece with its edge moved out by `edge_mm`, drawn in a [`PieceFrame`] where its first line is the grid's line 0,
 /// with the line spacing, how far in the lines' ends keep, how much wider than the surface's own width the lines
 /// print and the line [`stretch_pitch`] leaves out. `nominal_mm` is the surface's own spacing.
-fn stretch_grids(region: &Shapes, d: Dir, edge_mm: f64, nominal_mm: f64) -> Vec<SurfaceGrid> {
+///
+/// On Bambu Lab printers (`bambu`) a piece a whole number of cells across keeps every line, floor(R/s) of them at most
+/// 1.2 s apart, and the lines' ends and the turns between them keep half the surface's own spacing in
+/// ([`perimeters::line_room`]) rather than half the pitch they spread to: a first-layer strip's connectors lie
+/// s/2 inside its edge, and a strip one spacing wide prints one path down its middle.
+fn stretch_grids(region: &Shapes, d: Dir, edge_mm: f64, nominal_mm: f64, bambu: bool) -> Vec<SurfaceGrid> {
     let mut out = Vec::new();
     let nominal = (nominal_mm * crate::geom::SCALE).max(1.0);
     for piece in region {
@@ -12145,7 +12179,11 @@ fn stretch_grids(region: &Shapes, d: Dir, edge_mm: f64, nominal_mm: f64) -> Vec<
                 reason = "a width across one piece, in internal units"
             )]
             let across = (hi - lo) as f64 / std::f64::consts::SQRT_2;
-            let (pitch, last) = stretch_pitch(across, nominal);
+            let (pitch, last) = if bambu {
+                (crate::bridging::even_pitch(across, nominal, Some(1.2)), None)
+            } else {
+                stretch_pitch(across, nominal)
+            };
             let spacing_mm = pitch / crate::geom::SCALE;
             // The pitch in scanline units, and the whole number of them the grid steps by in the piece's frame.
             let exact = pitch * std::f64::consts::SQRT_2;
@@ -12164,9 +12202,14 @@ fn stretch_grids(region: &Shapes, d: Dir, edge_mm: f64, nominal_mm: f64) -> Vec<
                 clippy::cast_precision_loss,
                 reason = "half a spacing in internal units"
             )]
-            let half = ((spacing as f64 * std::f64::consts::FRAC_1_SQRT_2 / 2.0).round() as i64
-                - crate::bridging::HAIR)
-                .max(0);
+            let half = if bambu {
+                // The pitch is never under the nominal spacing, so the first and the last line keep at least this.
+                perimeters::line_room(nominal).round() as i64
+            } else {
+                (spacing as f64 * std::f64::consts::FRAC_1_SQRT_2 / 2.0).round() as i64
+                    - crate::bridging::HAIR
+            }
+            .max(0);
             let drawn: Shapes = vec![
                 p.iter()
                     .map(|r| r.iter().map(|q| frame.to(*q)).collect())
@@ -14384,7 +14427,10 @@ mod feature_slot_tests {
 
 #[cfg(test)]
 mod surface_edge_tests {
-    use super::{Dir, IntPoint, Shapes, anchored_grid, grid_inset, mm, stretch_pitch, surface_edge};
+    use super::{
+        Dir, IntPoint, Shapes, anchored_grid, grid_inset, mm, stretch_pitch, surface_edge,
+        top_wall_surface_edge,
+    };
     use crate::config::PrintConfig;
     use serde_json::json;
 
@@ -14540,12 +14586,20 @@ mod surface_edge_tests {
                 }
             }
         }
-        // Bambu Lab printers keep their own rules for one wall; an extra wall on every other layer is not read.
-        let a1 = PrintConfig::from_value(
-            &json!({"wall_generator": "classic", "wall_loops": 1, "printer_model": "Bambu Lab A1"}),
-        )
+        // Bambu Lab printers keep their own rules for one wall, but for the topmost layer under one wall on top, which
+        // reads the same rule with `infill_wall_overlap` for the share; an extra wall on every other layer is not read.
+        let a1 = PrintConfig::from_value(&json!({"wall_generator": "classic", "wall_loops": 1,
+            "printer_model": "Bambu Lab A1", "infill_wall_overlap": 15}))
         .expect("read");
         assert!(surface_edge(&a1, 0.2, 0.25, a1.wall_loops).is_none());
+        let same = PrintConfig::from_value(&json!({"wall_generator": "classic", "wall_loops": 1,
+            "top_bottom_infill_wall_overlap": 15}))
+        .expect("read");
+        let (got, want) = (
+            top_wall_surface_edge(&a1, 0.2, 0.15, a1.wall_loops).expect("one wall"),
+            surface_edge(&same, 0.2, 0.15, same.wall_loops).expect("one wall"),
+        );
+        assert!((got - want).abs() < 1e-9, "{got} {want}");
         let extra =
             PrintConfig::from_value(&json!({"wall_loops": 2, "alternate_extra_wall": true})).expect("read");
         assert!(surface_edge(&extra, 0.2, 0.25, extra.wall_loops).is_none());

@@ -323,7 +323,12 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// last-layer top surface, the travels between their lines, two line widths and the filament total moved.
 /// Changed again when the monotonic line tops on Bambu Lab printers took a grid anchored to the objects: only each
 /// cube's top surface lines, the travels between them and the filament total moved (one line fewer on the first cube).
-const BY_OBJECT_FNV: &str = "009348296199873e";
+/// Changed again when Bambu Lab surfaces took their line ends from the innermost wall's spacing edge: every move of each
+/// cube's first-layer bottom surface (its turns and line ends now half its spacing in, not half its pitch less a hair)
+/// and of its top surface (the grid lines now end 0.05 spacing inside the inner wall's spacing edge, which the precise
+/// outer wall puts 0.04 mm past the infill area on each side) moved, with the travels between them, the progress lines
+/// and the filament total; no wall, infill or tower move changed.
+const BY_OBJECT_FNV: &str = "837a0c64611157d9";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {

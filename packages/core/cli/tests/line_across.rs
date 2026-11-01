@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-//! On Bambu Lab printers, strips whose surface lines run across them print as before: the narrow piece rules for lines
-//! across a strip on other printers leave them alone.
+//! On Bambu Lab printers, strips whose surface lines run across them follow those printers' own rules
+//! (`bambu_line_across_room.rs`), not the narrow piece rules for lines across a strip on other printers.
 //!
 //! A1 0.4 projects of strips 30.9 mm long along 135 degrees, the surface lines along 45 (`fixtures/line-across`: the
 //! projects and each strip's center, direction and size), sliced with `sx slice` and the wall generator named: two
@@ -178,12 +178,12 @@ fn la_g6_bambu_lab_strips_with_lines_across_are_unchanged() {
     assert_eq!(got, want);
 }
 
-/// LA-G7 (guard). The same A1 project with two walls on the top and the classic walls: the first layer keeps its gap
-/// fill bead in every strip that had one, 1.682 to 1.833 mm and 2.097 to 2.361 mm, then prints surface lines from
-/// 2.399 mm. On a Bambu Lab printer a first-layer strip counts as surface only where a line of its pitch plus 0.05 mm
-/// fits, as the surface fill there prints it; a strip with less room keeps its bead rather than printing walls only.
+/// LA-G7 (guard). The same A1 project with two walls on the top and the classic walls: the first layer keeps the
+/// gap fill between its walls in the strips too narrow for both (1.682 to 1.833 mm), prints walls only in the strips
+/// narrower than one spacing past its overlap edge (1.871 to 2.323 mm), and surface lines from 2.361 mm, first as
+/// pieces along the strip, then across it.
 #[test]
 fn la_g7_bambu_lab_first_layer_strips_keep_their_gap_fill_with_classic_walls() {
     let (_, first) = codes("a1--n4-cl-sp0-ac-2top2", "classic");
-    assert_eq!(first, "ggggg......ggggggggLLLLLLLLLLLXXXXXXXXXXX");
+    assert_eq!(first, "ggggg.............LLLLLLLLLLLLXXXXXXXXXXX");
 }

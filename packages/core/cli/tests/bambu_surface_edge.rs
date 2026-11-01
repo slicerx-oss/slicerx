@@ -133,7 +133,8 @@ fn e_f_bambu_monotonic_top_spreads_its_lines() {
 }
 
 /// E-m. Sparse infill 0: a first-layer strip prints one line once R >= s (2.350 mm, a 0.509 mm line down its middle
-/// and no gap fill) and keeps its gap fill below (2.313 mm, R = 0.94 s).
+/// and no gap fill) and walls only below (2.313 mm, R = 0.94 s), as the line-across room rule measured it on the
+/// A1 and the P1S.
 #[test]
 fn e_m_bambu_narrow_first_layer_strip_prints_a_line_once_one_fits() {
     let case = "a1--n-cl-sp0-L2-p0-2w";
@@ -144,7 +145,7 @@ fn e_m_bambu_narrow_first_layer_strip_prints_a_line_once_one_fits() {
     widths(r, 0.509, 0.001, "W 2.350");
     assert!(r.gap_fill <= 0.05, "W 2.350 gap fill {}", r.gap_fill);
     let r = first.at(2.313);
-    assert!(r.lines.is_empty() && r.gap_fill > 0.05, "W 2.313: {r:?}");
+    assert!(r.lines.is_empty() && r.gap_fill <= 0.05, "W 2.313: {r:?}");
 }
 
 /// E-n. The first line comes at 2.464 mm with the precise outer wall on the A1 and at 2.501 mm on the P1S; every

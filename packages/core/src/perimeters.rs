@@ -1711,10 +1711,6 @@ pub(crate) struct NarrowSurface<'a> {
     /// surface, printing the grid's lines that fit and gap fill around them; narrow pieces elsewhere keep their gap
     /// fill.
     pub(crate) grid: bool,
-    /// Lines across a piece fit once it is one spacing wide along them ([`line_room`]), as the surface fill's room
-    /// rule prints them. Off on Bambu Lab printers, whose surface fill has no room rule: there a line fits where the
-    /// piece holds a line of its pitch plus 0.05 mm, as the fill prints it.
-    pub(crate) room: bool,
 }
 
 impl NarrowSurface<'_> {
@@ -1738,35 +1734,15 @@ impl NarrowSurface<'_> {
 
     /// Whether the surface's lines fit in `piece` of the infill area anywhere: the piece with its edge moved out as
     /// the lines spread is somewhere at least the surface's own spacing wide along the lines ([`line_room`]),
-    /// whatever pitch the lines spread to across them, or without [`Self::room`] holds a line of that pitch plus
-    /// 0.05 mm. A piece the lines run across, narrower than that along them, holds none.
+    /// whatever pitch the lines spread to across them. A piece the lines run across, narrower than that along them,
+    /// holds none.
     fn lines_fit(&self, piece: &Shapes) -> bool {
         let moved = if self.edge == 0 {
             piece.clone()
         } else {
             offset(piece, self.edge)
         };
-        if self.room {
-            return !erode_along(&moved, self.line, line_room(f64::from(self.spacing))).is_empty();
-        }
-        // The piece's extent across the lines sets their pitch.
-        let (u, v) = self.line;
-        let (lo, hi) = moved
-            .iter()
-            .flat_map(|s| s.iter())
-            .flat_map(|r| r.iter())
-            .map(|p| v.mul_add(-f64::from(p.x), u * f64::from(p.y)))
-            .fold((f64::MAX, f64::MIN), |(a, b), q| (a.min(q), b.max(q)));
-        if hi <= lo {
-            return false;
-        }
-        let (pitch, _) = crate::session::stretch_pitch(hi - lo, f64::from(self.spacing.max(1)));
-        // The line's ends keep a hair less than half the pitch in; half a micrometer more, so a line that would come
-        // out a few tenths of a micrometer short does not count.
-        #[allow(clippy::cast_precision_loss, reason = "a few internal units")]
-        let hair = crate::bridging::HAIR as f64;
-        let reach = f64::midpoint(pitch - 2.0 * hair, f64::from(crate::geom::mm(0.05))) + 5.0;
-        !erode_along(&moved, self.line, reach).is_empty()
+        !erode_along(&moved, self.line, line_room(f64::from(self.spacing))).is_empty()
     }
 
     /// Whether any of `region` is surface, so its walls may differ from the walls the layers around share.
@@ -1928,7 +1904,7 @@ pub(crate) fn walls_for_top(
         };
         // With no sparse infill, a thin strip is infill area once it holds a surface line: the surface's own spacing
         // and edge on the layer's surfaces, the top surface's elsewhere. On Bambu Lab printers only the layer's
-        // surfaces that spread their lines ([`NarrowSurface`], the first layer) do this.
+        // surfaces ([`NarrowSurface`]: the first layer, a monotonic top, a monotonic line top's grid) do this.
         let surface = narrow.filter(|n| n.no_sparse);
         let thin = (thin_infill(cfg) || surface.is_some()).then(|| {
             let edge = if let Some(n) = surface {
@@ -1951,7 +1927,10 @@ pub(crate) fn walls_for_top(
                 } else {
                     edge.map(|e| fits - 2 * e)
                 },
-                narrow_gap_fill: SPARSE0_NARROW_GAP_FILL,
+                // On Bambu Lab printers a spread surface's strip too narrow for a line prints walls only, as their
+                // maker's slicer leaves it.
+                narrow_gap_fill: SPARSE0_NARROW_GAP_FILL
+                    && !crate::firmware::bambu_printer(cfg, cfg.gcode_flavor),
                 surface,
             }
         });
@@ -3054,7 +3033,6 @@ mod tests {
             no_sparse: true,
             opening: 0,
             grid: false,
-            room: true,
         };
         // The piece's extent across the lines, and the pitch the lines spread to over it.
         for (across, pitch) in [

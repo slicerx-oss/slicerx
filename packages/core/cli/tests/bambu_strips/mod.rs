@@ -17,8 +17,14 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub fn fixture(name: &str) -> PathBuf {
+    fixture_in("bambu-surface-edge", name)
+}
+
+/// `name` in the fixture folder `dir`.
+pub fn fixture_in(dir: &str, name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/bambu-surface-edge")
+        .join("tests/fixtures")
+        .join(dir)
         .join(name)
 }
 
@@ -137,8 +143,14 @@ impl Layer {
 }
 
 pub fn strips(case: &str) -> Vec<Strip> {
+    strips_in("bambu-surface-edge", case)
+}
+
+/// The strips of the project `case` in the fixture folder `dir`.
+pub fn strips_in(dir: &str, case: &str) -> Vec<Strip> {
     let v: Value =
-        serde_json::from_slice(&std::fs::read(fixture(&format!("{case}.strips.json"))).unwrap()).unwrap();
+        serde_json::from_slice(&std::fs::read(fixture_in(dir, &format!("{case}.strips.json"))).unwrap())
+            .unwrap();
     v.as_array()
         .unwrap()
         .iter()
@@ -173,9 +185,14 @@ pub struct Move {
 
 /// The project `case`'s G-code, as `sx slice <project> --plate 1` writes it.
 pub fn slice(case: &str) -> String {
+    slice_in("bambu-surface-edge", case)
+}
+
+/// The project `case` of the fixture folder `dir`, as [`slice`] writes it.
+pub fn slice_in(dir: &str, case: &str) -> String {
     let out = Command::new(env!("CARGO_BIN_EXE_sx"))
         .arg("slice")
-        .arg(fixture(&format!("{case}.3mf")))
+        .arg(fixture_in(dir, &format!("{case}.3mf")))
         .args(["--plate", "1", "-o", "-"])
         .output()
         .unwrap();
@@ -243,8 +260,13 @@ pub fn moves(gcode: &str) -> Vec<Move> {
 
 /// The project `case`'s top layer and first layer, per strip.
 pub fn measure(case: &str) -> (Layer, Layer) {
-    let moves = moves(&slice(case));
-    let mut strips = strips(case);
+    measure_in("bambu-surface-edge", case)
+}
+
+/// [`measure`] for the project `case` of the fixture folder `dir`.
+pub fn measure_in(dir: &str, case: &str) -> (Layer, Layer) {
+    let moves = moves(&slice_in(dir, case));
+    let mut strips = strips_in(dir, case);
     // Where the slice put the object: the first layer's outer wall against the strips' own bounds.
     let corners = |s: &Strip| {
         let a = s.ang.to_radians();
