@@ -827,10 +827,20 @@ fn mm_f32(v: f64) -> f32 {
     v as f32
 }
 
-/// What decides whether two regions share their walls: the loop count and the line width.
-fn wall_key(cfg: &PrintConfig) -> (u32, i64) {
+/// What decides whether two regions share their walls: the loop count, the line width and the outer and inner wall
+/// widths. A region whose walls are wider or narrower walls itself, an outer wall along its boundary. On a first layer
+/// with a first layer width of its own every region prints its walls at its line width, so the loop count and the line
+/// width decide there (`line_only`).
+fn wall_key(cfg: &PrintConfig, line_only: bool) -> (u32, [i64; 3]) {
     #[allow(clippy::cast_possible_truncation, reason = "a width in microns")]
-    (cfg.wall_loops, (cfg.line_width * 1000.0).round() as i64)
+    let um = |w: f64| (w * 1000.0).round() as i64;
+    let line = um(cfg.line_width);
+    let walls = if line_only {
+        [line, line]
+    } else {
+        [um(cfg.outer_wall_width()), um(cfg.inner_wall_width())]
+    };
+    (cfg.wall_loops, [line, walls[0], walls[1]])
 }
 
 /// The first part of a layer's paths ([`SliceSession::layer_start`]), which [`SliceSession::layer_finish`]
@@ -8492,7 +8502,8 @@ impl SliceSession {
         let key_of = |j: usize, slot: u8| {
             let c = region_config(j);
             let t = self.feature_tools(c, slot);
-            (wall_key(c), t.outer, t.inner)
+            let line_only = layer == 0 && self.raft.is_none() && cfg.feature_widths.initial_layer.is_some();
+            (wall_key(c, line_only), t.outer, t.inner)
         };
         let group_of = |ri: usize| -> Vec<usize> {
             let Some((slot, _)) = here.regions.get(ri) else {
@@ -9490,6 +9501,31 @@ impl SliceSession {
                 tool: *slot,
                 islands,
                 width: (region_k != 0).then(|| mm_f32(cfg.line_width)),
+                // On the print's first layer the region keeps its line width, and with no first layer width of its
+                // own its walls print at their own widths, as the region walls itself then ([`wall_key`]).
+                feature_widths: (region_k != 0)
+                    .then(|| {
+                        let lw = cfg.line_width;
+                        match (
+                            layer == 0 && self.raft.is_none(),
+                            base_cfg.feature_widths.initial_layer,
+                        ) {
+                            (false, _) => Some([
+                                cfg.outer_wall_width(),
+                                cfg.inner_wall_width(),
+                                cfg.sparse_infill_width(),
+                                cfg.solid_infill_width(),
+                                cfg.top_surface_width(),
+                                cfg.support_width(),
+                            ]),
+                            (true, None) => {
+                                Some([cfg.outer_wall_width(), cfg.inner_wall_width(), lw, lw, lw, lw])
+                            }
+                            (true, Some(_)) => None,
+                        }
+                    })
+                    .flatten()
+                    .map(|w| w.map(mm_f32)),
                 overhang: overhangs
                     .as_mut()
                     .filter(|_| crate::tower::flag_or(cfg, "detect_overhang_wall", true))
@@ -13033,6 +13069,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
     }
     let template = ToolWork {
         width: work.width,
+        feature_widths: work.feature_widths,
         overhang: work.overhang.clone(),
         bridge_width: work.bridge_width,
         bridge_flat_flow: work.bridge_flat_flow,
@@ -14584,6 +14621,51 @@ fn zig_lines(
 /// which f32 widens to just under that, hence the slack.
 fn below_bed(min_z: f64) -> bool {
     min_z < -(0.001 + 1e-4)
+}
+
+#[cfg(test)]
+mod wall_key_tests {
+    use super::wall_key;
+    use crate::config::PrintConfig;
+    use serde_json::json;
+
+    fn cfg(v: &serde_json::Value) -> PrintConfig {
+        let mut c = PrintConfig::from_value(&json!({"line_width": 0.45})).expect("the defaults read");
+        c.apply_value(v).expect("the settings read");
+        c
+    }
+
+    #[test]
+    fn a_region_with_other_wall_widths_walls_itself() {
+        let base = cfg(&json!({}));
+        // A modifier or part that only sets a wall width, with the same loops and line width.
+        assert_ne!(
+            wall_key(&base, false),
+            wall_key(&cfg(&json!({"inner_wall_line_width": 0.55})), false)
+        );
+        assert_ne!(
+            wall_key(&base, false),
+            wall_key(&cfg(&json!({"outer_wall_line_width": 0.6})), false)
+        );
+        // One that only changes the infill shares the walls around it.
+        assert_eq!(
+            wall_key(&base, false),
+            wall_key(&cfg(&json!({"sparse_infill_density": "50%"})), false)
+        );
+        assert_eq!(
+            wall_key(&cfg(&json!({"sparse_infill_line_width": 0.55})), false),
+            wall_key(&base, false)
+        );
+        // On the first layer every region prints its walls at its line width: the wall widths do not split them.
+        assert_eq!(
+            wall_key(&base, true),
+            wall_key(&cfg(&json!({"inner_wall_line_width": 0.55})), true)
+        );
+        assert_ne!(
+            wall_key(&base, true),
+            wall_key(&cfg(&json!({"line_width": 0.5})), true)
+        );
+    }
 }
 
 #[cfg(test)]

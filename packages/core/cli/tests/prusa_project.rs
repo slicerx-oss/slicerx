@@ -257,6 +257,92 @@ fn a_prusaslicer_objects_width_percents_are_of_its_own_layer_height() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
+/// The inner wall widths above the first layer left and right of the plate's `x`, from the G-code's `;WIDTH:` lines.
+fn inner_walls_by_side(gcode: &str, x: f64) -> [std::collections::BTreeSet<String>; 2] {
+    let mut out = [
+        std::collections::BTreeSet::new(),
+        std::collections::BTreeSet::new(),
+    ];
+    let (mut layer, mut kind, mut width, mut at) = (0, String::new(), String::new(), 0.0_f64);
+    for l in gcode.lines() {
+        if l == ";LAYER_CHANGE" {
+            layer += 1;
+        } else if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+        } else if let Some(w) = l.strip_prefix(";WIDTH:") {
+            w.clone_into(&mut width);
+        } else if l.starts_with("G1 ") || l.starts_with("G0 ") {
+            let to = l
+                .split_whitespace()
+                .find_map(|f| f.strip_prefix('X'))
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap_or(at);
+            if layer > 1 && kind == "Inner wall" && l.contains(" E") && l.contains(" X") {
+                out[usize::from(f64::midpoint(at, to) >= x)].insert(width.clone());
+            }
+            at = to;
+        }
+    }
+    out
+}
+
+#[test]
+fn a_prusaslicer_parts_own_wall_widths_print_beside_another_part() {
+    // A part's (volume's) own inner wall width prints on that part only, beside an object or a part without one: B's
+    // 0.55 mm next to object A (o23), the second of two parts at 0.55 mm, and two parts at 0.35 and 0.55 mm.
+    let mut wrong = Vec::new();
+    for (name, x, want) in [
+        ("o23.3mf", 100.0, ["0.45", "0.55"]),
+        ("vol-two-mm.3mf", 122.5, ["0.45", "0.55"]),
+        ("vol-two-own.3mf", 122.5, ["0.35", "0.55"]),
+    ] {
+        let got = inner_walls_by_side(&gcode(&widths(name)), x);
+        for (side, (got, want)) in got.iter().zip(want).enumerate() {
+            if got.len() != 1 || !got.contains(want) {
+                wrong.push(format!("{name}: side {side} inner walls {got:?}, not {want}"));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn a_prusaslicer_objects_own_solid_infill_width_leaves_the_first_layer_alone() {
+    // o22: the object sets a solid infill width of 250% and its own 0.3 mm layers, and the project sets no first layer
+    // width. Above the first layer its solid infill prints 0.75 mm; the first layer's bottom keeps the width it has
+    // without the setting, about 0.45 mm.
+    let g = gcode(&widths("o22.3mf"));
+    let mut layer = 0;
+    let (mut kind, mut first) = (String::new(), std::collections::BTreeSet::new());
+    for l in g.lines() {
+        if l == ";LAYER_CHANGE" {
+            layer += 1;
+        } else if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+        } else if let Some(w) = l.strip_prefix(";WIDTH:")
+            && layer == 1
+            && kind == "Bottom surface"
+        {
+            first.insert(w.to_owned());
+        }
+    }
+    let wide: Vec<&String> = first
+        .iter()
+        .filter(|w| w.parse::<f64>().is_ok_and(|w| w > 0.5))
+        .collect();
+    assert!(
+        !first.is_empty() && wide.is_empty(),
+        "first layer bottom widths {first:?}"
+    );
+    let printed = widths_above_layer_1(&g);
+    assert!(
+        printed
+            .get("Internal solid infill")
+            .is_some_and(|w| w.contains("0.75")),
+        "{printed:?}"
+    );
+}
+
 /// `PrusaSlicer` projects of an 8 x 8 mm pillar under a 16 x 16 mm slab, with normal support around the pillar: grid
 /// support at XY spacings of 0.3, 0.8 and 1.5 mm, snug support at 0.8 mm, and grid support at 0.8 mm with the object's
 /// own layer height of 0.3 mm on a 0.2 mm project. Every width is 0 (auto).

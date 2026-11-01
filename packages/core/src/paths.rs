@@ -48,8 +48,11 @@ pub(crate) struct ToolWork {
     pub(crate) tower_after: Vec<crate::tower::TowerPath>,
     /// The sparse infill prints first, right after the tool change, to take up the purged filament.
     pub(crate) flush_first: bool,
-    /// Bead width of a region with its own line width (a modifier volume), mm.
+    /// Bead width of a region with its own settings (a modifier volume, or a part with settings of its own), mm.
     pub(crate) width: Option<f32>,
+    /// That region's widths by feature, in the order of the layer's (outer and inner wall, sparse and solid infill,
+    /// top surface, support), mm.
+    pub(crate) feature_widths: Option<[f32; 6]>,
     pub(crate) islands: Vec<IslandWalls>,
     pub(crate) sparse: Vec<[Point; 2]>,
     /// Sparse infill from patterns that are not straight scanlines.
@@ -1873,7 +1876,7 @@ pub(crate) fn plan_layer_paths(
         .map(|v| v as f32);
     #[allow(clippy::cast_possible_truncation, reason = "line widths are small")]
     let width_mm = cfg.line_width as f32;
-    // Widths by feature; a region with its own line width (a modifier) overrides all of them.
+    // Widths by feature; a region with its own settings (a modifier) prints its own.
     #[allow(clippy::cast_possible_truncation, reason = "line widths are small")]
     let feature_w = [
         cfg.outer_wall_width() as f32,
@@ -1968,7 +1971,9 @@ pub(crate) fn plan_layer_paths(
         b.flow = line_flow;
         let base_width = b.width_mm;
         let fw = |i: usize| {
-            w.width
+            w.feature_widths
+                .and_then(|f| f.get(i).copied())
+                .or(w.width)
                 .unwrap_or_else(|| feature_w.get(i).copied().unwrap_or(base_width))
         };
         if let Some(v) = w.width {
