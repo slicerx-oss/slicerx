@@ -1814,13 +1814,20 @@ fn classic_top_cut(ext: i32, inner: i32) -> i32 {
 /// width), so the lines that run into the wall end half the outer wall's width in from its center line at any
 /// overlap. `None` when the overlap leaves the surface there or further in already.
 pub(crate) fn classic_top_near(cfg: &crate::config::PrintConfig, overlap: i32, w: i32) -> Option<i32> {
+    let (ext, near) = classic_top_start(cfg, w);
+    (ext - overlap < near).then_some(near)
+}
+
+/// The outer wall's width and how far in from its outline a classic one-wall top's surface starts so its lines end
+/// half that width in from the wall's center line ([`classic_top_near`]), internal units, for line width `w`.
+pub(crate) fn classic_top_start(cfg: &crate::config::PrintConfig, w: i32) -> (i32, i32) {
     let ext = if cfg.has_feature_widths() {
         crate::geom::mm(cfg.outer_wall_width())
     } else {
         w
     };
     let ends = crate::geom::mm(cfg.top_surface_width()) * 45 / 1000;
-    (overlap > ends).then_some(ext - ends)
+    (ext, ext - ends)
 }
 
 // a false result guarantees that the context-free classic walls are unchanged.
