@@ -244,8 +244,14 @@ fn an_object_with_its_own_settings_keeps_the_plates_filament_order() {
     // filaments: both objects' walls on T0, the change, both objects' infill on T1. (Within one filament the plain
     // plate takes the objects in the order its infill lines run; here they keep the plate's order.)
     assert_eq!(changes(&go), changes(&gp), "tool changes");
+    // A top's corner beads follow each cube's own corner pockets, which its wall count moves, so gap fill is left out.
     let pattern = |l: &Layer| -> Vec<(String, String)> {
-        let mut v: Vec<(String, String)> = l.runs.iter().map(|r| (r.1.clone(), r.2.clone())).collect();
+        let mut v: Vec<(String, String)> = l
+            .runs
+            .iter()
+            .filter(|r| r.1 != "Gap infill")
+            .map(|r| (r.1.clone(), r.2.clone()))
+            .collect();
         v.dedup();
         v
     };
@@ -332,7 +338,10 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// travels between its lines and the filament total moved.
 /// Changed again when `top_area_threshold` became a setting with a default: only its line in the settings block,
 /// `; top_area_threshold = 200%`, was added.
-const BY_OBJECT_FNV: &str = "c086cf7febe04f3f";
+/// Changed again when the monotonic line tops on Bambu Lab printers started each piece on its lowest line heading
+/// along the lines and beaded the free right-angle corners: only the order and direction of the top surface lines, one
+/// 0.28 mm corner bead on the top layer (z 10.0), the travels and the filament total moved.
+const BY_OBJECT_FNV: &str = "0328293d5615bb13";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {

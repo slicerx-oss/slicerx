@@ -154,21 +154,23 @@ pub(crate) fn polylines_with(
     links: Links,
     to_point: &dyn Fn(i64, i64) -> Point,
 ) -> Vec<Vec<Point>> {
-    polylines_core(spans, &[], spacing, links, to_point)
+    polylines_core(spans, &[], spacing, links, to_point, false)
 }
 
 /// Monotonic polylines over the lines of a surface pulled in by half a spacing (`spans`, where the turns
 /// happen and lines are neighbors when the wall joins their ends, as Orca links them) and pulled in by
 /// 0.05 spacing (`outer`, where the
-/// two ends of each path reach).
+/// two ends of each path reach). With `lead_high` every region with no neighbor on its left (the first region of
+/// each connected piece) starts on its first line's high end in this frame, wherever the previous region ended.
 pub(crate) fn polylines_outer(
     spans: &[Iv],
     outer: &[Iv],
     spacing: i64,
     links: Links,
     to_point: &dyn Fn(i64, i64) -> Point,
+    lead_high: bool,
 ) -> Vec<Vec<Point>> {
-    polylines_core(spans, outer, spacing, links, to_point)
+    polylines_core(spans, outer, spacing, links, to_point, lead_high)
 }
 
 /// Where the ends of the lines meet the walls and which ends are neighbors along the wall.
@@ -374,6 +376,7 @@ fn polylines_core(
     spacing: i64,
     links: Links,
     to_point: &dyn Fn(i64, i64) -> Point,
+    lead_high: bool,
 ) -> Vec<Vec<Point>> {
     let proper = {
         let (o, ds, dt) = (to_point(0, 0), to_point(1_000_000, 0), to_point(0, 1_000_000));
@@ -588,7 +591,11 @@ fn polylines_core(
                     let Some(&first_idx) = regions.get(r).and_then(|g| g.segs.first()) else {
                         return;
                     };
+                    let leads = lead_high && regions.get(r).is_some_and(|g| g.left.is_empty());
                     for high in [false, true] {
+                        if leads && !high {
+                            continue;
+                        }
                         if cont && cursor_end.is_none_or(|ce| turn_between(ce, (first_idx, high)).is_none()) {
                             continue;
                         }
@@ -637,6 +644,7 @@ fn polylines_core(
         .filter(|&r| regions.get(r).is_some_and(|g| g.left.is_empty()))
         .take(MAX_ANTS)
         .flat_map(|r| [(r, false), (r, true)])
+        .filter(|&(_, high)| high || !lead_high)
         .collect();
     let mut best = walk(None);
     if regions.len() > 1 && regions.len() <= MAX_ANT_REGIONS {
