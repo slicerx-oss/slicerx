@@ -33,6 +33,9 @@ pub(crate) struct In<'a> {
     /// With `interface_shells`, `slice` gives the region's own filament; this is everything on the layer
     /// below, so a bottom resting on another filament prints as a bottom surface, not a bridge.
     pub(crate) whole_lower: Option<Shapes>,
+    /// Where the surfaces over the region's classic walls start (`perimeters::classic_edges`), when its top surfaces
+    /// are found out to the internal solid infill's edge rather than the infill area's (`top_from_spacing_edge`).
+    pub(crate) classic: Option<perimeters::ClassicEdges>,
 }
 
 /// The four kinds of infill area, disjoint and inside the infill area.
@@ -178,12 +181,30 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
             None => work(),
         }
     };
-    let mut top = if i.top_layers == 0 {
-        Vec::new()
-    } else if i.layer + 1 >= i.count {
-        inner.clone()
-    } else {
-        meet(inner, &free(1, upper.as_ref()))
+    let uncovered = (i.top_layers > 0 && i.layer + 1 < i.count).then(|| free(1, upper.as_ref()));
+    let mut top = match &uncovered {
+        _ if i.top_layers == 0 => Vec::new(),
+        Some(f) => meet(inner, f),
+        None => inner.clone(),
+    };
+    // Over classic walls (`In::classic`) the top surface is found out to the edge the internal solid infill starts at,
+    // the innermost wall's spacing edge less the overlap, where the infill area ends at the walls' widths further in.
+    // A strip the layer above leaves uncovered only between the two edges (a ledge or a taper stepping in by about
+    // the walls' width) is still a top surface: it grows into the infill area from there below, as a top does.
+    let (lone, touch) = match (i.classic, &uncovered) {
+        (Some(e), Some(f)) if e.solid < e.infill => {
+            let touch = f64::from(e.infill - e.solid) / crate::geom::SCALE;
+            let strip = sub(&meet(&perimeters::offset(i.region, -e.solid), f), inner);
+            let alone: Shapes = strip
+                .into_iter()
+                .filter(|piece| {
+                    let one = vec![piece.clone()];
+                    meet(&perimeters::offset_round(&one, mm(touch)), &top).is_empty()
+                })
+                .collect();
+            (alone, touch)
+        }
+        _ => (Vec::new(), 0.0),
     };
     let bottom = if i.bottom_layers == 0 {
         Vec::new()
@@ -288,12 +309,13 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
     if i.layer > 0 {
         bottom = resting;
     }
-    let expand = |src: &Shapes, shell: &mut Shapes, sparse: &mut Shapes| -> Shapes {
+    // `touch`: how far, mm, `src` may lie from the areas it grows into and still reach them.
+    let expand = |src: &Shapes, touch: f64, shell: &mut Shapes, sparse: &mut Shapes| -> Shapes {
         if src.is_empty() {
             return Vec::new();
         }
-        let a = grown_into(src, shell, into_shell, tiny(into_shell));
-        let b = grown_into(src, sparse, into_sparse, tiny(into_sparse));
+        let a = grown_into(src, shell, into_shell, tiny(into_shell) + touch);
+        let b = grown_into(src, sparse, into_sparse, tiny(into_sparse) + touch);
         let merged = union(&union(src, &a), &b);
         let merged = perimeters::offset(&perimeters::offset(&merged, mm(closing)), -mm(closing));
         // The closed surface stays inside the infill area.
@@ -302,8 +324,12 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
         *sparse = sub(sparse, &merged);
         merged
     };
-    let bottom = expand(&bottom, &mut shell, &mut sparse);
-    let top = expand(&top, &mut shell, &mut sparse);
+    let bottom = expand(&bottom, 0.0, &mut shell, &mut sparse);
+    let top = expand(&top, 0.0, &mut shell, &mut sparse);
+    // The strips outside the infill area reach it across the gap between the two edges, and only what they grow
+    // into stays.
+    let lone = sub(&lone, &bottom);
+    let top = union(&top, &expand(&lone, touch, &mut shell, &mut sparse));
     let top = sub(&top, &bottom);
 
     // Sparse pockets smaller than `minimum_sparse_infill_area` are printed solid. A pocket is measured out to the
