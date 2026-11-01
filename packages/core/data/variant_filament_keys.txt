@@ -27,6 +27,7 @@ eng_plate_temp_initial_layer
 fan_cooling_layer_time
 fan_max_speed
 fan_min_speed
+filament_abrasive
 filament_adaptive_volumetric_speed
 filament_adhesiveness_category
 filament_change_extrusion_role_gcode

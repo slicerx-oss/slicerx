@@ -1211,6 +1211,15 @@ fn add_defaults(c: &mut Context<'_>, cfg: &PrintConfig, tools: usize) {
     put("print_preset", Value::Str(String::new()));
     put("filament_preset", per_tool(Value::Str(String::new())));
     put("spiral_mode", Value::Bool(false));
+    // PrusaSlicer's names. `spiral_vase` is the spiral setting under its PrusaSlicer name. The start G-code of Prusa
+    // printers (MK4, MINI, XL) checks the nozzle against the filament's abrasive flag and the nozzle's high flow flag
+    // (M862.1); a PrusaSlicer project or preset carries both, and any other profile leaves them off.
+    put(
+        "spiral_vase",
+        Value::Bool(crate::firmware::truthy(cfg, "spiral_mode")),
+    );
+    put("filament_abrasive", per_tool(Value::Bool(false)));
+    put("nozzle_high_flow", per_tool(Value::Bool(false)));
     // `zhop` is the current tool's lift, one number (PrusaSlicer's placeholder); `z_hop` is the per-filament list.
     put("zhop", Value::Num(cfg.z_hop));
     put("z_hop", per_tool(Value::Num(cfg.z_hop)));
