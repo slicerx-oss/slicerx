@@ -199,6 +199,22 @@ describe('PrusaSlicer key map', () => {
     expect(c['filament_z_hop_types']).toEqual(['Normal Lift'])
     expect(p!.unmappedKeys).toEqual([])
   })
+  it("reads a filament's retract lift with no ramping of its own as straight when the printer's ramping is off", () => {
+    const lift = (given: Record<string, string>): Record<string, unknown> => {
+      const v = mapPrusaValues(given).values
+      return Object.fromEntries(['filament_z_hop', 'filament_z_hop_types'].filter((k) => k in v).map((k) => [k, v[k]]))
+    }
+    const filament = { filament_retract_lift: '0.6', filament_travel_ramping_lift: 'nil', filament_travel_max_lift: 'nil' }
+    // A MINI with ramping off: the filament's lift goes straight up.
+    expect(lift({ retract_lift: '0.2', travel_ramping_lift: '0', ...filament })).toEqual({ filament_z_hop: '0.6', filament_z_hop_types: 'Normal Lift' })
+    // One entry per extruder, each from that extruder's printer ramping; one with ramping on is left to the printer.
+    expect(lift({ travel_ramping_lift: '0,1', filament_retract_lift: '0.6,0.4', filament_travel_ramping_lift: 'nil,nil' })).toEqual({ filament_z_hop: '0.6,0.4', filament_z_hop_types: 'Normal Lift,nil' })
+    // With the printer's ramping on, or no printer keys at all, the type stays the printer's.
+    expect(lift({ travel_ramping_lift: '1', ...filament })).toEqual({ filament_z_hop: '0.6' })
+    expect(lift(filament)).toEqual({ filament_z_hop: '0.6' })
+    // No lift height of its own: the filament leaves the printer's lift alone.
+    expect(lift({ travel_ramping_lift: '0', filament_retract_lift: 'nil', filament_travel_ramping_lift: 'nil' })).toEqual({})
+  })
   it('splits an exported configuration into one preset per kind', () => {
     const all = importPrusaIni(`${PRINT}${FILAMENT}${PRINTER}`, 'config.ini')
     expect(all.map((p) => p.section)).toEqual(['process', 'filament', 'printer'])

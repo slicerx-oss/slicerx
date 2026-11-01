@@ -1066,7 +1066,7 @@
       "unmapped": []
     },
     {
-      "name": "a filament's retract lift with no ramping of its own",
+      "name": "a filament's retract lift with no ramping of its own, on a printer with ramping off, lifts straight up",
       "lines": [
         "retract_lift = 0.2",
         "travel_ramping_lift = 0",
@@ -1075,7 +1075,8 @@
         "filament_travel_max_lift = nil"
       ],
       "config": {
-        "filament_z_hop": "0.6"
+        "filament_z_hop": "0.6",
+        "filament_z_hop_types": "Normal Lift"
       },
       "unmapped": []
     },

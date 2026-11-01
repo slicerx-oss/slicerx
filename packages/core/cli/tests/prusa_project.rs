@@ -626,3 +626,102 @@ fn sx_project_settings_reads_a_prusaslicer_filaments_lift() {
     assert_eq!(config["filament_z_hop"], "0.6");
     assert_eq!(config["filament_z_hop_types"], "Normal Lift");
 }
+
+/// Each travel between two extruding moves on one layer: the layer's Z and the travel's moves as (XY length, Z at the
+/// move's end).
+fn same_layer_travels(gcode: &str) -> Vec<(f64, Vec<(f64, f64)>)> {
+    let (mut at_x, mut at_y, mut at_z, mut at_e) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+    let mut relative = false;
+    let mut out = Vec::new();
+    let mut last: Option<f64> = None;
+    let mut moves: Vec<(f64, f64)> = Vec::new();
+    for line in gcode.lines() {
+        let code = line.split(';').next().unwrap_or("").trim();
+        let mut words = code.split_whitespace();
+        let Some(cmd) = words.next() else { continue };
+        match cmd {
+            "M83" => relative = true,
+            "M82" => relative = false,
+            "G0" | "G1" => {}
+            _ => continue,
+        }
+        let (mut nx, mut ny, mut nz, mut de) = (at_x, at_y, at_z, 0.0_f64);
+        for w in words {
+            let (axis, v) = w.split_at(1);
+            let Ok(v) = v.parse::<f64>() else { continue };
+            match axis {
+                "X" => nx = v,
+                "Y" => ny = v,
+                "Z" => nz = v,
+                "E" => {
+                    de = if relative { v } else { v - at_e };
+                    at_e = if relative { at_e + v } else { v };
+                }
+                _ => {}
+            }
+        }
+        let (dx, dy) = (nx - at_x, ny - at_y);
+        let run = (dx * dx + dy * dy).sqrt();
+        if de > 0.0 && run > 0.0 {
+            if let Some(z) = last
+                && (z - nz).abs() < 1e-6
+                && !moves.is_empty()
+            {
+                out.push((z, std::mem::take(&mut moves)));
+            }
+            moves.clear();
+            last = Some(nz);
+        } else if last.is_some() {
+            moves.push((run, nz));
+        }
+        (at_x, at_y, at_z) = (nx, ny, nz);
+    }
+    out
+}
+
+#[test]
+fn a_prusaslicer_mini_filaments_straight_lift_goes_straight_up_and_down() {
+    // mini--isl--FRL06: the filament's retract lift of 0.6 with no ramping of its own, on a MINI with ramping off, so
+    // the lift is straight. Every travel between the two boxes on a layer lifts straight up by 0.6 before it moves,
+    // travels at that height, and drops straight down to the layer at its end point.
+    let project = lift_project("mini--isl--FRL06");
+    let config = project_settings(&project);
+    assert_eq!(config["filament_z_hop"], "0.6");
+    assert_eq!(config["filament_z_hop_types"], "Normal Lift");
+    let mut wrong = Vec::new();
+    let between: Vec<(f64, Vec<(f64, f64)>)> = same_layer_travels(&gcode(&project))
+        .into_iter()
+        .filter(|(_, m)| m.iter().map(|&(run, _)| run).sum::<f64>() > 15.0)
+        .collect();
+    if between.len() != 15 {
+        wrong.push(format!("{} travels between the boxes, not 15", between.len()));
+    }
+    for (z, m) in &between {
+        let top = z + 0.6;
+        let mut level = *z;
+        let changes: Vec<(usize, f64, f64)> = m
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &(run, to))| {
+                let from = std::mem::replace(&mut level, to);
+                ((to - from).abs() > 1e-6).then_some((i, run, to))
+            })
+            .collect();
+        let ok = matches!(
+            changes.as_slice(),
+            [(up, rise_run, a), (down, drop_run, b)]
+                if *rise_run < 1e-9
+                    && *drop_run < 1e-9
+                    && (a - top).abs() < 0.005
+                    && (b - z).abs() < 1e-6
+                    && m[up + 1..*down].iter().map(|&(run, _)| run).sum::<f64>() > 15.0
+                    && m[down + 1..].iter().all(|&(run, _)| run < 1e-9)
+        );
+        if !ok {
+            wrong.push(format!(
+                "the travel at Z {z} changes Z as (move, XY length, Z) {changes:?}"
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
