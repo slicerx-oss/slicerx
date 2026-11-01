@@ -344,13 +344,14 @@ fn the_aegis_top_band_takes_one_wall_a_layer_at_a_time() {
     assert!(misses.is_empty(), "{misses:#?}");
 }
 
-/// On a 50 mm box the band starts between steps of 1.13 and 1.14 mm on 3 walls and between 1.54 and 1.55 on 4. These
+/// On a 50 mm box the band starts between steps of 1.14 and 1.15 mm on 3 walls and between 1.55 and 1.56 on 4. These
 /// moved from 1.16 to 1.18 and 1.58 to 1.59 when the stock P1S request took precise outer wall off: the inner walls sit
-/// 0.043 mm nearer the outer wall, so the infill area under the ledge is that much wider.
+/// 0.043 mm nearer the outer wall, so the infill area under the ledge is that much wider. They moved again, from 1.13
+/// to 1.14 and 1.54 to 1.55, when the band layers' inner walls took the inner wall spacing after the first one.
 #[test]
 fn the_aegis_top_band_starts_on_the_wide_box_where_it_did() {
     let top = |r: f64, walls: u32| sloped(&slice_wide(r, walls), "Top surface");
-    for (walls, none, band) in [(3, 1.13, 1.14), (4, 1.54, 1.55)] {
+    for (walls, none, band) in [(3, 1.14, 1.15), (4, 1.55, 1.56)] {
         let (a, b) = (top(none, walls), top(band, walls));
         assert!(
             a < 0.05 && b > 150.0,
@@ -418,13 +419,13 @@ fn band_edges(gcode: &str, layer: i64) -> [(f64, f64); 4] {
 /// where they did: on z 3.0, at 15 percent overlap, the near edge on every side is within 0.005 mm of the target on
 /// a 50 mm box at a step of 1.52 mm on 2 and 3 walls and on a 30 mm box at 1.0 mm on 2 walls, and the far edge too.
 /// Before, the near edge was 0.063 mm (the overlap, 15 percent of the 0.42 mm line) nearer the outer wall: 0.552,
-/// 0.987 and 0.552. The 3-wall target moved from 1.050 to 1.007 when the stock P1S request took precise outer wall
-/// off: its second inner wall sits 0.043 mm nearer the outer wall.
+/// 0.987 and 0.552. The 3-wall target moved from 1.050 to 1.022 when the stock P1S request took precise outer wall
+/// off and the band layers' second inner wall took the inner wall spacing.
 #[test]
 fn the_aegis_top_band_starts_at_the_innermost_walls_edge() {
     let cases = [
         (25.0, 1.52, 2, 0.615, 2.697),
-        (25.0, 1.52, 3, 1.007, 3.273),
+        (25.0, 1.52, 3, 1.022, 3.273),
         (15.0, 1.0, 2, 0.615, 2.177),
     ];
     let mut misses = Vec::new();
@@ -582,7 +583,8 @@ fn near_misses(what: &str, gcode: &str, layer: i64, target: f64) -> Option<Strin
 /// A monotonic line top surface starts at the inner wall's spacing edge at any overlap on printers of every kind: on
 /// the MK4 the near edge is within 0.005 mm of the target at 0 and 30 percent, on the flat top of the 20 mm box (z 4.0)
 /// and on the 50 mm taper at a step of 1.52 mm (z 3.0). Before, it was 0.516 at 30 percent: the stretched surface's
-/// edge took `top_bottom_infill_wall_overlap` into the wall.
+/// edge took `top_bottom_infill_wall_overlap` into the wall. The MK4 prints with precise outer wall on, and the target
+/// moved from 0.635 to 0.614 when that put the inner wall half of k = h x (1 - pi/4) in instead of a whole k.
 #[test]
 fn monotonic_line_aegis_tops_ignore_the_overlap_on_the_mk4() {
     let parts = [
@@ -597,7 +599,7 @@ fn monotonic_line_aegis_tops_ignore_the_overlap_on_the_mk4() {
                 &format!("MK4 {name}, {overlap} percent"),
                 &g,
                 *layer,
-                0.635,
+                0.614,
             ));
         }
     }
@@ -608,12 +610,13 @@ fn monotonic_line_aegis_tops_ignore_the_overlap_on_the_mk4() {
 /// the near edge moves toward the wall with the overlap, to within 0.005 mm of the targets at 0 and 30 percent, on the
 /// P1S (monotonic and rectilinear) and the MK4 (monotonic). The P1S targets moved 0.041 to 0.043 mm nearer the outer wall (from
 /// 0.824 and 0.701 monotonic, 0.827 and 0.701 rectilinear) when the stock P1S request took precise outer wall off.
+/// The MK4 ones (precise outer wall on) moved 0.021 mm nearer, from 0.780 and 0.661, when the inner wall did.
 #[test]
 fn monotonic_aegis_tops_keep_the_overlap() {
     let cases = [
         (REQUEST, "P1S", "monotonic", 0.782, 0.660),
         (REQUEST, "P1S", "rectilinear", 0.784, 0.658),
-        (MK4, "MK4", "monotonic", 0.780, 0.661),
+        (MK4, "MK4", "monotonic", 0.759, 0.640),
     ];
     let stl = box_of(10.0, 4.0);
     let mut misses = Vec::new();
@@ -626,6 +629,98 @@ fn monotonic_aegis_tops_keep_the_overlap() {
                 4000,
                 target,
             ));
+        }
+    }
+    assert!(misses.is_empty(), "{misses:#?}");
+}
+
+/// The G-code of the 50 mm taper at a step of 1.52 mm on `walls` aegis walls, with precise outer wall `precise`.
+fn slice_band(walls: u32, precise: bool) -> String {
+    let mut req: Value = serde_json::from_slice(&std::fs::read(REQUEST).unwrap()).unwrap();
+    req["config"]["wall_generator"] = json!("aegis");
+    req["config"]["wall_loops"] = json!(walls);
+    req["config"]["precise_outer_wall"] = json!(precise);
+    let req: SliceRequest = serde_json::from_value(req).unwrap();
+    let mesh = Arc::new(Mesh::load(&taper_of(25.0, 1.52), "taper.stl").unwrap());
+    let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    String::from_utf8(run.gcode).unwrap()
+}
+
+/// The inner walls on `layer` on each side of the part (left, right, bottom, top), on the straight runs along the side
+/// within 3 mm of its outer wall: each loop's centerline, mm in from the side's outer wall centerline, nearest first,
+/// and their filament per mm.
+fn band_loops(gcode: &str, layer: i64) -> [(Vec<f64>, f64); 4] {
+    let outer: Vec<(f64, f64)> = moves(gcode, "Outer wall")
+        .into_iter()
+        .filter(|m| m.layer == layer)
+        .flat_map(|m| [m.from, m.to])
+        .collect();
+    let lo = |f: fn(&(f64, f64)) -> f64| outer.iter().map(f).fold(f64::INFINITY, f64::min);
+    let hi = |f: fn(&(f64, f64)) -> f64| outer.iter().map(f).fold(f64::NEG_INFINITY, f64::max);
+    let (x0, x1, y0, y1) = (lo(|p| p.0), hi(|p| p.0), lo(|p| p.1), hi(|p| p.1));
+    let place = |side: usize, p: (f64, f64)| match side {
+        0 => p.0 - x0,
+        1 => x1 - p.0,
+        2 => p.1 - y0,
+        _ => y1 - p.1,
+    };
+    let inner: Vec<Move> = moves(gcode, "Inner wall")
+        .into_iter()
+        .filter(|m| m.layer == layer)
+        .collect();
+    [0, 1, 2, 3].map(|side| {
+        let (mut depths, mut filament, mut length) = (Vec::new(), 0.0, 0.0);
+        for m in &inner {
+            let (a, b) = (place(side, m.from), place(side, m.to));
+            let run = (m.to.0 - m.from.0).hypot(m.to.1 - m.from.1);
+            if (a - b).abs() > 0.001 || a > 3.0 || run < 5.0 {
+                continue;
+            }
+            depths.push(a);
+            filament += m.filament;
+            length += run;
+        }
+        depths.sort_by(f64::total_cmp);
+        depths.dedup_by(|a, b| (*a - *b).abs() < 0.01);
+        (depths, filament / length.max(1e-9))
+    })
+}
+
+/// On the band layers the inner walls sit where they do on the layers with no top surface, and the band starts past
+/// them as there: on the 50 mm taper at a step of 1.52 mm, z 3.0, within 0.003 mm on every side, the loops are 0.392
+/// and 0.799 with precise outer wall off and 0.414 and 0.821 with it on, on 3 walls, and the band's near edge 1.022
+/// and 1.043. On 2 walls the one inner wall is at 0.392 and 0.414, with 0.0332 mm of filament per mm (within 0.0003)
+/// either way. Before, the second inner wall followed the first at the outer to first inner wall pitch (0.784 off and
+/// 0.827 on), the first did not move with the setting, and the one wall on 2 walls took 0.0338 and 0.0321 per mm.
+#[test]
+fn aegis_band_layers_keep_the_inner_wall_pitch() {
+    let cases: [(u32, bool, &[f64], Option<f64>); 4] = [
+        (3, false, &[0.392, 0.799], Some(1.022)),
+        (3, true, &[0.414, 0.821], Some(1.043)),
+        (2, false, &[0.392], None),
+        (2, true, &[0.414], None),
+    ];
+    let mut misses = Vec::new();
+    for (walls, precise, target, near) in cases {
+        let g = slice_band(walls, precise);
+        let got = band_loops(&g, 3000);
+        let what = format!("{walls} walls, precise outer wall {precise}");
+        let placed = got.iter().all(|(d, _)| {
+            d.len() == target.len() && d.iter().zip(target).all(|(g, t)| (g - t).abs() <= 0.003)
+        });
+        let per_mm = walls > 2 || got.iter().all(|(_, e)| (e - 0.0332).abs() <= 0.0003);
+        if !placed || !per_mm {
+            misses.push(format!(
+                "{what}: (loops, filament per mm) per side {got:.4?}, targets {target:?} and 0.0332"
+            ));
+        }
+        if let Some(near) = near {
+            let edges = band_edges(&g, 3000);
+            if edges.iter().any(|(n, _)| (n - near).abs() > 0.003) {
+                misses.push(format!(
+                    "{what}: (near, far) per side {edges:.3?}, target near {near}"
+                ));
+            }
         }
     }
     assert!(misses.is_empty(), "{misses:#?}");

@@ -568,16 +568,15 @@ pub(crate) fn island_walls_or(
     let precise_order = crate::tower::flag_or(cfg, "precise_outer_wall", true)
         && cfg.wall_sequence == crate::config::WallSequence::InnerOuter;
     // aegis walls set the outer to first inner spacing themselves (the mean of the two beads' spacings by
-    // default); a precise outer wall makes it the mean of the two widths, with no overlap. The outer wall stays
-    // half its width in from the surface and the inner walls keep their own spacing.
+    // default). A precise outer wall adds half the outer wall's width less its spacing, the room the plain Arachne
+    // walls below give the inner walls by taking the outline in by that difference and moving the outer bead back
+    // out by half of it. The outer wall stays half its width in from the surface and the inner walls keep their
+    // own spacing.
     let athena =
         crate::config::athena_spacing(cfg, cfg.outer_wall_width(), cfg.inner_wall_width(), layer_height).map(
             |(ext, inner)| {
                 if precise_order {
-                    (
-                        f64::midpoint(cfg.outer_wall_width(), cfg.inner_wall_width()),
-                        inner,
-                    )
+                    (ext + (cfg.outer_wall_width() - spacing_0) / 2.0, inner)
                 } else {
                     (ext, inner)
                 }
@@ -927,15 +926,8 @@ fn one_wall_top(
     let not_top = perimeters::difference(&contour, &top);
     top = perimeters::intersection(&top, &contour);
     top = clear_of_inner_walls(cfg, prm, top, &not_top, overlap);
-    let inner_prm = Params {
-        bead_width_0: prm.bead_width_x,
-        inset_count: prm.inset_count.saturating_sub(1),
-        wall_0_inset: 0.0,
-        keep_diagram: false,
-        one_wall_outer: false,
-        ..prm.clone()
-    };
-    let grown = perimeters::offset(&not_top, crate::geom::mm(-prm.wall_0_inset));
+    let (inner_prm, inset) = inner_run(prm);
+    let grown = perimeters::offset(&not_top, crate::geom::mm(-inset));
     let inner_walls = walls(&grown, &inner_prm)?;
     let mut lines = one.lines;
     let has_outer = !lines.is_empty();
@@ -947,6 +939,30 @@ fn one_wall_top(
     }
     let inner = perimeters::union_all(&[&top, &inner_walls.inner]);
     Some((Walls { lines, inner }, top))
+}
+
+/// The walls inside a one-wall top's run, the rest of the walls of `prm` as a set of their own, and how far (mm) the
+/// part they go in is taken in from the one-wall run's inner edge. Their first wall sits where the first inner wall
+/// does with every wall, and each further one an inner wall spacing on, as there. Under aegis walls the first is the
+/// outer to first inner spacing from the outer wall: the set's own outer bead sits the mean of the two spacings in, so
+/// the part is taken in by what that spacing adds to the mean (half the outer wall's width less its spacing with a
+/// precise outer wall, none by default). With the set's outer to first inner spacing at that same value, the second
+/// wall followed the first 0.392 mm on, 0.015 short of an inner wall spacing at 0.2 mm (0.435, 0.028 past it, with a
+/// precise outer wall), and a set of one wall took its width from it.
+fn inner_run(prm: &Params) -> (Params, f64) {
+    let inner = Params {
+        bead_width_0: prm.bead_width_x,
+        inset_count: prm.inset_count.saturating_sub(1),
+        wall_0_inset: 0.0,
+        keep_diagram: false,
+        one_wall_outer: false,
+        athena: prm.athena.map(|(_, inner)| (inner, inner)),
+        ..prm.clone()
+    };
+    let inset = prm.athena.map_or(prm.wall_0_inset, |(ext, _)| {
+        ext - f64::midpoint(prm.bead_width_0, prm.bead_width_x)
+    });
+    (inner, inset)
 }
 
 /// The one-wall part `top` of a one-wall top kept clear of `not_top`, where the inner walls go, on Bambu Lab printers:
@@ -998,10 +1014,7 @@ pub(crate) mod reference {
             crate::config::athena_spacing(cfg, cfg.outer_wall_width(), cfg.inner_wall_width(), layer_height)
                 .map(|(ext, inner)| {
                     if precise_order {
-                        (
-                            f64::midpoint(cfg.outer_wall_width(), cfg.inner_wall_width()),
-                            inner,
-                        )
+                        (ext + (cfg.outer_wall_width() - spacing_0) / 2.0, inner)
                     } else {
                         (ext, inner)
                     }
@@ -1117,15 +1130,8 @@ pub(crate) mod reference {
         let not_top = perimeters::difference(&contour, &top);
         top = perimeters::intersection(&top, &contour);
         top = super::clear_of_inner_walls(cfg, prm, top, &not_top, overlap);
-        let inner_prm = Params {
-            bead_width_0: prm.bead_width_x,
-            inset_count: prm.inset_count.saturating_sub(1),
-            wall_0_inset: 0.0,
-            keep_diagram: false,
-            one_wall_outer: false,
-            ..prm.clone()
-        };
-        let grown = perimeters::offset(&not_top, crate::geom::mm(-prm.wall_0_inset));
+        let (inner_prm, inset) = super::inner_run(prm);
+        let grown = perimeters::offset(&not_top, crate::geom::mm(-inset));
         let Some(inner_walls) = walls(&grown, &inner_prm) else {
             return (None, None);
         };
@@ -1996,12 +2002,12 @@ mod tests {
     }
 
     /// Where the walls belong, mm from the surface: the outer wall half its width in; the first inner wall the
-    /// mean of the two widths further with a precise outer wall and inner walls first, else the mean of the two
-    /// spacings (width less (1 - pi/4) h); each further inner wall one inner spacing on.
+    /// mean of the two spacings (width less (1 - pi/4) h) further, and with a precise outer wall and inner walls
+    /// first half the outer wall's width less its spacing more; each further inner wall one inner spacing on.
     fn wall_rule(precise: bool, inner_first: bool, wo: f64, wi: f64, h: f64, walls: usize) -> Vec<f64> {
         let k = 1.0 - std::f64::consts::FRAC_PI_4;
         let first = if precise && inner_first {
-            f64::midpoint(wo, wi)
+            f64::midpoint(wo, wi) - h * k / 2.0
         } else {
             f64::midpoint(wo, wi) - h * k
         };
@@ -2013,9 +2019,9 @@ mod tests {
             .collect()
     }
 
-    /// The first inner wall's center sits the mean of the two widths from the outer wall's with a precise outer
-    /// wall and inner walls first, and the mean of the two spacings otherwise; each further inner wall one inner
-    /// spacing on; the outer wall half its width in from the surface. Layer heights 0.12 to 0.3 mm, outer and
+    /// The first inner wall's center sits the mean of the two spacings from the outer wall's, and with a precise
+    /// outer wall and inner walls first half the outer wall's width less its spacing more (before, the mean of the
+    /// two widths, half of that difference too far in); each further inner wall one inner spacing on; the outer wall half its width in from the surface. Layer heights 0.12 to 0.3 mm, outer and
     /// inner widths equal and unequal, 0.4 and 0.6 nozzles.
     #[test]
     fn first_inner_wall_follows_the_precise_outer_wall() {
