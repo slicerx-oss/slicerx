@@ -7,7 +7,7 @@
 // printer, it carries no geometry, so it is for printing, not for editing.
 import type { SettingValue } from '@slicerx/contracts'
 import { productName } from '@slicerx/contracts'
-import { settingDef, toOrca } from '@slicerx/settings'
+import { orcaReadable, settingDef, toOrca } from '@slicerx/settings'
 import { entryData, gcodeLabelIds, projectFiles } from '@slicerx/threemf'
 import type { SliceSummary } from './slicer'
 import { writeZip } from './zip'
@@ -15,14 +15,15 @@ import { writeZip } from './zip'
 /** Thumbnail sizes asked of the engine for a .gcode.3mf when the settings name none: the plate picture and its small copy. */
 export const PLATE_THUMBNAILS = ['512x512/PNG', '128x128/PNG']
 
-/** The slice settings as Orca writes them in project_settings.config, as the app's export does. */
+/** The slice settings as Orca writes them in project_settings.config, as the app's export does, in the values Bambu
+ * Studio and OrcaSlicer read ([`orcaReadable`]). */
 function orcaSettings(config: Readonly<Record<string, SettingValue>>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(config)) {
     const def = settingDef(k)
     out[k] = def ? toOrca(def, v) : v
   }
-  return out
+  return orcaReadable(out)
 }
 
 export function gcode3mf(sliced: string, summary: SliceSummary, config: Record<string, SettingValue>): Buffer {

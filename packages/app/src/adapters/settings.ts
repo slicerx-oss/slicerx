@@ -3,9 +3,9 @@
 // The app's entry point to the full @slicerx/settings schema (labels, ranges, tiers, help). Startup code uses
 // ./config instead, which needs only the defaults; this module loads on demand through ./load.
 import type { PrintConfig, SettingDef, SettingValue } from '@slicerx/contracts'
-import { formatValue as plainValue, goalEasy, isVisible, matchGoal, SETTINGS, settingDef, settingsForTier, toOrca } from '@slicerx/settings'
+import { formatValue as plainValue, goalEasy, isVisible, matchGoal, orcaReadable, SETTINGS, settingDef, settingsForTier, toOrca } from '@slicerx/settings'
 
-export { goalEasy, isVisible, matchGoal, settingDef, settingsForTier, SETTINGS, toOrca }
+export { goalEasy, isVisible, matchGoal, orcaReadable, settingDef, settingsForTier, SETTINGS, toOrca }
 
 /** A value as the app shows it: a choice by its label, as its picker shows it, anything else as the settings package writes it. */
 export function formatValue(def: SettingDef | undefined, v: SettingValue | undefined): string {
