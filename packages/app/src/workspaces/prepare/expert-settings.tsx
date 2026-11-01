@@ -122,6 +122,14 @@ export interface FieldPin {
   toggle: () => void
 }
 
+/** A number, or text that reads as one with no % sign. */
+function plainNumber(v: unknown): boolean {
+  if (typeof v === 'number') return Number.isFinite(v)
+  if (typeof v !== 'string') return false
+  const s = v.trim()
+  return s !== '' && !s.endsWith('%') && Number.isFinite(Number(s))
+}
+
 export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 'set', note, scoped, pin, chips, unavailable = def.unavailableValues ?? [] }: { def: SettingDef; value: SettingValue | undefined; overridden: boolean; onSet?: (key: string, value: SettingValue | undefined) => void; idPrefix?: string; note?: ReactNode; scoped?: FieldScope; pin?: FieldPin; chips?: ReactNode; /** The values the engine cannot print for this printer (unavailableIn). */ unavailable?: readonly string[] }) {
   const id = `${idPrefix}-${def.key}`
   const setOverride = onSet
@@ -215,8 +223,10 @@ export function Field({ def, value, overridden, onSet = setOverride, idPrefix = 
     )
   }
   // A number's unit is written once, beside the label (the number fields rule), so every field ends at one edge. A
-  // number-or-percent row names its unit in its toggle instead.
-  const unit = def.type === 'bool' || def.type === 'bools' || def.type === 'enum' || def.type === 'floatsOrPercents' ? '' : unitText
+  // number-or-percent row names its unit in its toggle instead. A width in mm or a percent shows its unit only while
+  // the value is a plain number: a percent carries its own % sign.
+  const percentNow = def.type === 'floatOrPercent' && !plainNumber(scalar)
+  const unit = def.type === 'bool' || def.type === 'bools' || def.type === 'enum' || def.type === 'floatsOrPercents' || percentNow ? '' : unitText
   return (
     <SettingRow
       as="li"
