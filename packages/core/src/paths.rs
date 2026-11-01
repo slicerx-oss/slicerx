@@ -78,6 +78,10 @@ pub(crate) struct ToolWork {
     pub(crate) bottom_widen: Vec<f32>,
     /// Solid infill of the top shell under the visible top surface.
     pub(crate) shell: Vec<[Point; 2]>,
+    /// How much wider than the internal solid infill's own width (mm) each of `shell` prints, when a piece fit its
+    /// lines between its edges on a Bambu Lab printer (they widen with their pitch); empty when every line prints at
+    /// the feature's width.
+    pub(crate) shell_widen: Vec<f32>,
     /// The turns along the edge that join one solid surface line to the next (top, bottom and internal solid), so
     /// the plate can keep one that would cross another path a travel (`collide::plate::drop_crossing_joins`).
     pub(crate) joins: Vec<[Point; 2]>,
@@ -2687,7 +2691,14 @@ pub(crate) fn plan_layer_paths(
         });
         let g = b.out.paths.len();
         b.width_mm = fw(3);
-        b.push_lines(w.tool, Feature::InternalSolid, speeds.solid, &w.shell);
+        push_widened(
+            &mut b,
+            w.tool,
+            Feature::InternalSolid,
+            speeds.solid,
+            &w.shell,
+            &w.shell_widen,
+        );
         b.push_gaps(w.tool, fill_gap_speed(cfg, layer, speeds.inner), &w.gap_shell);
         groups.push(Group {
             start: g,
