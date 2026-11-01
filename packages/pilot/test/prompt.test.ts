@@ -141,6 +141,12 @@ describe('the scope rule for parts', () => {
     expect(SCOPE_LINE).toContain('only after the person says yes')
   })
 
+  it('asks for sizes only once a version is picked, and lets the person turn a card of versions down', () => {
+    expect(SCOPE_LINE).toContain('Ask for sizes only after the person picks a version')
+    expect(SCOPE_LINE.indexOf('Ask for sizes only after')).toBeGreaterThan(SCOPE_LINE.indexOf('offer the closest version they can'))
+    expect(SCOPE_LINE).toContain("always ends with a 'nothing for now' choice")
+  })
+
   it('keeps build the rest for a small missing feature only, after the out of scope shapes', () => {
     expect(SCOPE_LINE).toContain('If only a small feature is missing')
     expect(SCOPE_LINE.indexOf('build the rest')).toBeGreaterThan(SCOPE_LINE.indexOf('Out of scope'))
