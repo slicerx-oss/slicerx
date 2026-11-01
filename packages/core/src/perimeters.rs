@@ -1629,6 +1629,9 @@ pub(crate) struct IslandWalls {
     /// Classic walls under a one-wall top's band (`only_one_wall_top`), whose infill area starts where the band's
     /// rules put it.
     pub(crate) band: bool,
+    /// The band's own part of the infill area, out to where its lines end ([`BandEnds`]): it prints as top surface,
+    /// also where the layer above leaves sparse infill under it.
+    pub(crate) band_area: Shapes,
 }
 
 /// The top surfaces over an island of variable-width walls start at the innermost wall's spacing edge, without the
@@ -1853,17 +1856,50 @@ fn classic_top_clear(upper: &Shapes, threshold: i32) -> Shapes {
     offset(upper, threshold / 2 + 5)
 }
 
-/// How far in from its outline a classic one-wall top's surface starts, internal units, when the walls' `overlap` (of
-/// line width `w`) would bring it nearer: the outer wall's width less the surface's line ends (0.045 of its line
-/// width), so the lines that run into the wall end half the outer wall's width in from its center line at any
-/// overlap. `None` when the overlap leaves the surface there or further in already.
-pub(crate) fn classic_top_near(cfg: &crate::config::PrintConfig, overlap: i32, w: i32) -> Option<i32> {
-    let (ext, near) = classic_top_start(cfg, w);
-    (ext - overlap < near).then_some(near)
+/// Where a classic one-wall top band's lines end, internal units: `near` from this layer's outer wall center line,
+/// `far` and `ledge` from the layer above's, so a sloped band's far end is its step plus `far`. Measured on 0.42 mm
+/// outer and 0.45 mm inner walls (and 0.40 and 0.44, 0.50 inner, 0.62 on a 0.6 mm nozzle) at 0.12 to 0.3 mm layers
+/// and 0 to 30 percent overlap.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BandEnds {
+    /// 0.55 of the outer wall's width less 0.12 of the layer height, at any overlap.
+    pub(crate) near: i32,
+    /// 0.954 of the outer wall's width plus 0.6 of an inner wall spacing per wall past the first, the spacing taken at
+    /// the layer's height. The overlap does not move it.
+    pub(crate) far: i32,
+    /// Where the layer above is a flat ledge (the layer over it covers it), the far end: the nearer of `far` and
+    /// 0.9932 of the way to the inner edge of the walls (half the outer wall plus the inner walls) less 0.9286 of the
+    /// overlap. On 0.42 mm outer and 0.45 mm inner walls that is 0.6555 mm less 0.39 mm times the overlap's share
+    /// of the line width.
+    pub(crate) ledge: i32,
+}
+
+/// [`BandEnds`] for outer and inner walls `ext` and `inner` wide, `wall_loops` of them (two or more), on a layer
+/// `layer_height` mm thick, at the walls' `overlap`.
+pub(crate) fn band_line_ends(
+    ext: i32,
+    inner: i32,
+    wall_loops: u32,
+    layer_height: f64,
+    overlap: i32,
+) -> BandEnds {
+    let mm = crate::geom::mm;
+    let inner_mm = f64::from(inner) / crate::geom::SCALE;
+    let spacing = mm((inner_mm - layer_height * (1.0 - std::f64::consts::FRAC_PI_4)).max(inner_mm * 0.5));
+    #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
+    let inners = (wall_loops as i32 - 1).max(1);
+    let far = ext * 954 / 1000 + inners * spacing * 3 / 5;
+    let edge = ext / 2 + inner * inners;
+    let ledge = (edge * 1311 / 1320 - overlap * 13 / 14).min(far);
+    BandEnds {
+        near: ext * 55 / 100 - mm(0.12 * layer_height),
+        far,
+        ledge,
+    }
 }
 
 /// The outer wall's width and how far in from its outline a classic one-wall top's surface starts so its lines end
-/// half that width in from the wall's center line ([`classic_top_near`]), internal units, for line width `w`.
+/// half that width in from the wall's center line at any overlap, internal units, for line width `w`.
 pub(crate) fn classic_top_start(cfg: &crate::config::PrintConfig, w: i32) -> (i32, i32) {
     let ext = if cfg.has_feature_widths() {
         crate::geom::mm(cfg.outer_wall_width())
@@ -2225,15 +2261,12 @@ pub(crate) fn walls_for_top(
             if let Some(over) = &over {
                 step = difference(&step, &offset(over, ext.max(inner)));
             }
-            // Where the band's surface lines end, measured from the outer wall's center line: the near end half the
-            // outer wall's width in, whatever the inner width or the overlap, and the far end the step plus the outer
-            // wall plus 0.6 of the inner wall, less 0.05 mm, in on two walls. Each wall past the second is left out
-            // under the band too and moves the far end 0.6 of an inner wall spacing further in. The surface's lines
-            // end `ends` inside the area they fill (0.045 of their width), so the area reaches that much further.
+            // Where the band's surface lines end ([`BandEnds`]). Each wall past the first is left out under the band
+            // and moves the far end 0.6 of an inner wall spacing further in. The surface's lines end `ends` inside the
+            // area they fill (0.045 of their width), so the area reaches that much further.
             let ends = mm(cfg.top_surface_width()) * 45 / 1000;
-            #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
-            let more = (wall_loops as i32 - 2).max(0) * pitch(inner) * 3 / 5;
-            let reach = ext * 3 / 2 + inner * 3 / 5 - mm(0.05) + ends + more;
+            let line_ends = band_line_ends(ext, inner, wall_loops, layer_height, overlap);
+            let reach = ext / 2 + line_ends.far + ends;
             // Each piece of the step is judged on its own: only the pieces that reach into the room clear the
             // threshold, and the rest keep the usual walls.
             step.retain(|piece| !intersection(&vec![piece.clone()], &room).is_empty());
@@ -2255,17 +2288,23 @@ pub(crate) fn walls_for_top(
                 }
             }
             let mut exposed = intersection(&grown, &outer_core);
-            if let Some(near) = classic_top_near(cfg, overlap, w) {
-                exposed = intersection(&exposed, &offset(&one, -near));
+            // The lines start `near` in at any overlap, so where the overlap leaves the infill area further in, the
+            // band's part of it grows out to there.
+            let near = ext / 2 + line_ends.near - ends;
+            let short = ext - overlap - near;
+            if short > 0 {
+                exposed = intersection(&grown, &offset(&outer_core, short));
             }
-            // Where the layer above is a flat ledge (the layer over it covers it there), the band's lines end where
-            // that layer's infill area starts, inside its walls, so a larger overlap shortens them. Where the layer
+            exposed = intersection(&exposed, &offset(&one, -near));
+            // Where the layer above is a flat ledge (the layer over it covers it there), the band's lines end
+            // `ledge` past that layer's outer wall center line, so a larger overlap shortens them. Where the layer
             // above steps in again, the band runs its full length.
             if let Some(above) = top.above {
                 #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
                 let inners = inner * (wall_loops as i32 - 1);
                 let upper_band = offset(&difference(top.upper, above), reach + inners);
-                let inside = difference(&offset(top.upper, -(ext + inners - overlap)), &upper_band);
+                // The lines end `ledge` past the layer above's outer wall center line.
+                let inside = difference(&offset(top.upper, -(ext / 2 + line_ends.ledge)), &upper_band);
                 if !inside.is_empty() {
                     exposed = difference(&exposed, &offset(&inside, -ends));
                 }
@@ -2295,6 +2334,7 @@ pub(crate) fn walls_for_top(
             );
             let mut joined = IslandWalls {
                 band: true,
+                band_area: exposed.clone(),
                 ..IslandWalls::default()
             };
             for mut island in inside {
