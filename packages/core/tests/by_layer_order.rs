@@ -323,7 +323,11 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// last-layer top surface, the travels between their lines, two line widths and the filament total moved.
 /// Changed again when the monotonic line tops on Bambu Lab printers took a grid anchored to the objects: only each
 /// cube's top surface lines, the travels between them and the filament total moved (one line fewer on the first cube).
-const BY_OBJECT_FNV: &str = "009348296199873e";
+/// Changed again when classic walls' top surface and internal solid infill started from the innermost wall's spacing
+/// edge instead of the walls' widths: only the internal solid infill along the walls (270.19 to 272.30 mm over 5
+/// layers), the top surface of one layer (53.81 to 53.57 mm), the travels between their lines and the filament total
+/// moved.
+const BY_OBJECT_FNV: &str = "077ec844e3fb258e";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {

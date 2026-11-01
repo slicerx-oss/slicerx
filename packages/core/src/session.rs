@@ -867,6 +867,9 @@ pub(crate) struct RegionPrep {
     cls: crate::classify::Classes,
     /// The classes came from the layer's bridge facts (the region is the whole outline, classified alike).
     known: bool,
+    /// Where the surfaces over the region's classic walls start (`perimeters::classic_edges`), when the region is
+    /// walled on its own outline with two walls or more.
+    edges: Option<perimeters::ClassicEdges>,
 }
 
 /// A hole as sliced and the polygon that replaces it (`hole_to_polyhole`).
@@ -8616,6 +8619,8 @@ impl SliceSession {
                 None => core,
             };
             let group = group_of(ri);
+            // The walls of the region's own outline, which the surfaces' edges are measured from.
+            let mut own_outline = false;
             let (islands, inner) = match group.first() {
                 Some(&first) if group.len() > 1 => {
                     let own = if ri == first {
@@ -8747,9 +8752,21 @@ impl SliceSession {
                         }
                     });
                     let (islands, inner) = walls;
+                    own_outline = true;
                     (islands, top_edge(shapes, inner))
                 }
             };
+            let edges = own_outline
+                .then(|| {
+                    let share = if top_or_bottom {
+                        first_last_overlap(cfg)
+                    } else {
+                        cfg.infill_wall_overlap
+                    } / 100.0;
+                    perimeters::classic_edges(cfg, loops, w, own_overlap, share)
+                })
+                .flatten()
+                .filter(|_| !crate::tower::flag(cfg, "alternate_extra_wall"));
             Micros::add(&micros.perimeters, &t);
             // What each part of the infill area is (classify.rs).
             // `interface_shells`: with several filaments in the object, a region's
@@ -8832,6 +8849,7 @@ impl SliceSession {
                     inner,
                     cls,
                     known: known.is_some(),
+                    edges,
                 }),
                 walled_group,
             )
@@ -9403,6 +9421,7 @@ impl SliceSession {
                 inner,
                 cls,
                 known,
+                edges: classic_edges,
             }) = (match &shared_preps {
                 Some(p) => p.get(ri).cloned().flatten(),
                 None => own_preps.get_mut(ri).and_then(Option::take),
@@ -9428,6 +9447,34 @@ impl SliceSession {
                     );
                     let within = perimeters::union_all(&within.iter().collect::<Vec<_>>());
                     cls.top = perimeters::intersection(&cls.top, &within);
+                }
+            }
+            // Over classic walls the top surface and the internal solid infill start where the walls are laid
+            // (`perimeters::classic_edges`), where the infill area starts at the walls' widths. Not under a one-wall
+            // top's band, whose rules place its infill area.
+            let classic_edges = classic_edges.filter(|_| !islands.iter().any(|i| i.band));
+            // How far, mm, the top surface's edge along the walls moved out from the infill area's.
+            let mut top_shift = None;
+            if let Some(e) = classic_edges.filter(|_| !cls.top.is_empty() && !perimeters::one_wall_top(cfg)) {
+                let name = match cfg.raw.get("top_surface_pattern") {
+                    Some(serde_json::Value::String(s)) => s.as_str(),
+                    _ => "monotonicline",
+                };
+                // A top surface that spreads its lines across each piece already moves its edge there
+                // (`surface_edge`).
+                let full = (cfg.raw_number("top_surface_density", 100.0) - 100.0).abs() < 1e-9;
+                let spread =
+                    full && stretch_pattern(name, crate::firmware::bambu_printer(cfg, cfg.gcode_flavor));
+                if !spread {
+                    let to = if name == "monotonicline" {
+                        e.top_line
+                    } else {
+                        e.solid
+                    };
+                    let bridged = bridged_areas(&cls.bridges);
+                    cls.top =
+                        classic_reedge(&cls.top, shapes, &inner, e.infill, to, &[&cls.bottom, &bridged]);
+                    top_shift = Some(f64::from(e.infill - to) / crate::geom::SCALE);
                 }
             }
             let known = own_facts.filter(|_| known);
@@ -9812,6 +9859,34 @@ impl SliceSession {
                     shell_family.spacing = (shell_family.spacing as f64 / d.max(0.05)).round() as i64;
                 }
             }
+            // With narrow detection off, the bands too narrow for lines are found in the internal solid infill out to
+            // the innermost wall's spacing edge, with no overlap term, as a floating shell's band is.
+            let mut shell_band = None;
+            if let Some(e) = classic_edges.filter(|_| !shell_area.is_empty()) {
+                // Clear of the other surfaces, the bridges and the narrow bands beside it.
+                let mut bridged = bridged_areas(&cls.bridges);
+                if let Some(b) = &bridges {
+                    bridged.extend(b.areas.iter().flat_map(|x| x.area.iter().cloned()));
+                }
+                let avoid = [
+                    &cls.top,
+                    &cls.bottom,
+                    &bridged,
+                    &work.region_narrow,
+                    &work.region_floating,
+                ];
+                if !crate::tower::flag_or(cfg, "detect_narrow_internal_solid_infill", true) {
+                    shell_band = Some(classic_reedge(
+                        &shell_area,
+                        shapes,
+                        &inner,
+                        e.infill,
+                        e.top_line,
+                        &avoid,
+                    ));
+                }
+                shell_area = classic_reedge(&shell_area, shapes, &inner, e.infill, e.solid, &avoid);
+            }
             let mut shell = scan_area(shell_family, &shell_area, &mut events);
             let mut top = scan_area(fam.solid(dir), &cls.top, &mut events);
             let mut bottom = scan_area(
@@ -10074,7 +10149,7 @@ impl SliceSession {
                         // the lines' ends, half a spacing in, leave nothing or a strip under 0.3 spacings) prints as
                         // one line along its middle, as the printer maker's slicer does. The bead is as wide as the
                         // band, and at least a solid line's spacing (its flow).
-                        let thin = thin_bands(&region, surface_mm);
+                        let thin = thin_bands(shell_band.as_ref().unwrap_or(&region), surface_mm);
                         if !thin.is_empty() {
                             let width = mm(surface_mm);
                             let lines = crate::narrow::concentric_lines(&thin, cfg, surface_mm, layer_height);
@@ -10133,6 +10208,9 @@ impl SliceSession {
                     let grids: Vec<SurfaceGrid> = match (stretch, anchored) {
                         (Some(e), _) => stretch_grids(&region, d, e, surface_mm),
                         (None, Some(inset_mm)) => {
+                            // A classic top surface whose edge moved out (`top_shift`) keeps its lines where they
+                            // were across the walls, and its gap fill reaches the innermost wall's spacing edge.
+                            let shift = top_shift.filter(|_| which == 0);
                             if let Some(e) = grid_gap_edge.get_mut(which) {
                                 // The gap fill starts at the innermost wall's spacing edge, the infill area less its
                                 // overlap, whether or not the walls took the overlap out of the top surface.
@@ -10141,8 +10219,12 @@ impl SliceSession {
                                 } else {
                                     0.0
                                 };
-                                *e = Some((inset_mm + back - surface_mm / 2.0).max(0.0));
+                                *e = Some(match shift {
+                                    Some(_) => inset_mm - surface_mm / 2.0,
+                                    None => (inset_mm + back - surface_mm / 2.0).max(0.0),
+                                });
                             }
+                            let inset_mm = inset_mm + shift.unwrap_or(0.0);
                             // A line along the wall prints from the walls' own edge (`wall_back`): the lines that fit
                             // are found in the surface grown back to it, and still end in the surface.
                             let lines_in =
@@ -11885,6 +11967,46 @@ fn stretch_pattern(name: &str, bambu: bool) -> bool {
     }
 }
 
+/// The areas of `bridges`, together.
+fn bridged_areas(bridges: &[crate::bridging::Bridged]) -> Shapes {
+    bridges.iter().flat_map(|b| b.area.iter().cloned()).collect()
+}
+
+/// `class`, part of the infill area `inner` that classic walls of `outline` leave `from` in from the outline (internal
+/// units), with its edge along the walls moved to `to` in from the outline: cut there when `to` is further in, else
+/// grown into the strip between the two edges, clear of `avoid`. Its other edges stay where they are.
+fn classic_reedge(
+    class: &Shapes,
+    outline: &Shapes,
+    inner: &Shapes,
+    from: i32,
+    to: i32,
+    avoid: &[&Shapes],
+) -> Shapes {
+    if class.is_empty() || from == to {
+        return class.clone();
+    }
+    let area = perimeters::offset(outline, -to);
+    if to > from {
+        return perimeters::intersection(class, &area);
+    }
+    let strip = perimeters::difference(&area, inner);
+    let mut grown = perimeters::intersection(&perimeters::offset(class, from - to + 2), &strip);
+    for a in avoid {
+        if grown.is_empty() {
+            return class.clone();
+        }
+        if !a.is_empty() {
+            grown = perimeters::difference(&grown, a);
+        }
+    }
+    if grown.is_empty() {
+        class.clone()
+    } else {
+        perimeters::union_all(&[class, &grown])
+    }
+}
+
 /// How far the first and the last layer's infill area overlaps the walls, percent of a line width:
 /// `top_bottom_infill_wall_overlap` (25 % when unset), or on Bambu Lab printers `infill_wall_overlap`, as on every
 /// other layer. Their maker's slicer has no setting of its own for these layers.
@@ -12828,6 +12950,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
                             .collect(),
                         gap_lines: Vec::new(),
                         top_edge: None,
+                        band: isl.band,
                     },
                 ),
                 (
@@ -12843,6 +12966,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
                             .collect(),
                         gap_lines: isl.gap_lines.clone(),
                         top_edge: None,
+                        band: isl.band,
                     },
                 ),
             ]

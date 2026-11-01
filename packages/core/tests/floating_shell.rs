@@ -351,11 +351,12 @@ fn a_cone_prints_its_shell_band_as_a_floating_vertical_shell() {
     assert!((0.5..=0.7).contains(&share), "floating share {share:.2}");
     // On the cone every slowed span is shorter than 2 mm: none is left.
     assert_eq!(r.spans, 0);
-    // With narrow detection off: no floating shell, and plain internal solid infill (324.2 mm there).
+    // With narrow detection off: no floating shell, and plain internal solid infill (324.2 mm there, measured with
+    // precise outer wall off; turned on, the band starts k = h x (1 - pi/4) farther in and is narrower).
     let (g, _) = slice(
         cone(),
         false,
-        &json!({"detect_narrow_internal_solid_infill": false}),
+        &json!({"detect_narrow_internal_solid_infill": false, "precise_outer_wall": false}),
     );
     let r = read(&g);
     assert_eq!(r.total(FLOATING), 0.0);
