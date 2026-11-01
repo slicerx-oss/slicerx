@@ -3,9 +3,10 @@
 //! One wall on top surfaces with classic walls, on stepped slopes: a layer whose outline the layer above steps in
 //! from prints a band of top surface along that edge, without the walls past the outer one, once the step on that
 //! side is wider than half the outer wall plus the inner wall (0.66 mm with 0.42 and 0.45 mm walls), whatever the wall
-//! count. The band's lines start half the outer wall in from its center line and end the step plus the outer wall
-//! plus 0.6 of the inner wall, less 0.05 mm, in from it, further in for each wall past the second. Under a flat
-//! ledge they end where the ledge's infill area starts.
+//! count. The band's lines start 0.55 of the outer wall's width less 0.12 of the layer height in from its center
+//! line at any overlap, and end the step plus 0.954 of the outer wall plus 0.6 of an inner wall spacing per wall past
+//! the first in from it. Under a flat ledge they end the nearer of that and 0.6555 mm less 0.39 of the overlap past the
+//! ledge's outer wall center line, on the stock widths.
 //!
 //! All on the stock P1S request (fixtures/surface-walls/p1s-x-mark.json: classic walls, two loops, one wall on top,
 //! smart layer off), and on it with settings set by hand: the MK4's process values (0.40 mm outer and 0.44 mm inner
@@ -1000,6 +1001,396 @@ fn classic_band_bridges_a_short_neck_under_the_cut_off() {
         assert!(
             inner.is_none_or(|x| x < -1.0),
             "{ramp} mm ramp: the inner wall reaches {inner:?} mm from the middle, want none within 1"
+        );
+    }
+}
+
+/// A square box 2 mm tall turned 45 degrees, its corners `diag` mm from its middle, under ten 0.2 mm slabs whose sides
+/// step in by `step` mm per layer: the top's lines, at 45 degrees on the box, run along its sides.
+fn diamond_taper(diag: f64, step: f64) -> Arc<Mesh> {
+    let corners = |d: f64| [(d, 0.0), (0.0, d), (-d, 0.0), (0.0, -d)];
+    let (low, high) = (
+        corners(diag),
+        corners((10.0 * step).mul_add(-std::f64::consts::SQRT_2, diag)),
+    );
+    let mut stl = String::from("solid diamond\n");
+    let mut facet = |p: [(f64, f64, f64); 3]| {
+        let _ = writeln!(stl, "facet normal 0 0 0\n outer loop");
+        for v in p {
+            let _ = writeln!(stl, "  vertex {} {} {}", v.0, v.1, v.2);
+        }
+        let _ = writeln!(stl, " endloop\nendfacet");
+    };
+    for i in 0..4 {
+        let next = (i + 1) % 4;
+        let (lo0, lo1, hi0, hi1) = (low[i], low[next], high[i], high[next]);
+        facet([(0.0, 0.0, 0.0), (lo1.0, lo1.1, 0.0), (lo0.0, lo0.1, 0.0)]);
+        facet([(lo0.0, lo0.1, 0.0), (lo1.0, lo1.1, 0.0), (lo1.0, lo1.1, 2.0)]);
+        facet([(lo0.0, lo0.1, 0.0), (lo1.0, lo1.1, 2.0), (lo0.0, lo0.1, 2.0)]);
+        facet([(lo0.0, lo0.1, 2.0), (lo1.0, lo1.1, 2.0), (hi1.0, hi1.1, 4.0)]);
+        facet([(lo0.0, lo0.1, 2.0), (hi1.0, hi1.1, 4.0), (hi0.0, hi0.1, 4.0)]);
+        facet([(0.0, 0.0, 4.0), (hi0.0, hi0.1, 4.0), (hi1.0, hi1.1, 4.0)]);
+    }
+    stl.push_str("endsolid diamond\n");
+    Arc::new(Mesh::load(stl.as_bytes(), "diamond.stl").unwrap())
+}
+
+/// The most common value of `values`, rounded to thousandths of a millimeter.
+fn most_common(values: impl Iterator<Item = f64>) -> Option<f64> {
+    let mut count: BTreeMap<i32, u32> = BTreeMap::new();
+    for v in values {
+        *count.entry((v * 1000.0).round() as i32).or_default() += 1;
+    }
+    let best = count.values().copied().max()?;
+    count
+        .into_iter()
+        .find(|(_, n)| *n == best)
+        .map(|(k, _)| f64::from(k) / 1000.0)
+}
+
+/// Where the band's lines end on layer `z` of a square taper or ledge (thousandths of a millimeter, as `above`, the
+/// layer above): over the top surface moves that cross the bottom side within 6 mm of its middle, the most common
+/// near and far ends, mm in from this layer's outer wall center line, and the step from there to the layer above's.
+fn band_ends(ms: &[Move], z: i64, above: i64) -> Option<(f64, f64, f64)> {
+    let wall = |z: i64| ms.iter().filter(move |m| m.z == z && m.feature == "Outer wall");
+    let low_y = |z: i64| wall(z).flat_map(|m| [m.from.1, m.to.1]).reduce(f64::min);
+    let (y0, y1) = (low_y(z)?, low_y(above)?);
+    let xs: Vec<f64> = wall(z).flat_map(|m| [m.from.0, m.to.0]).collect();
+    let x0 = xs.iter().copied().reduce(f64::min)?;
+    let x1 = xs.iter().copied().reduce(f64::max)?;
+    let middle = f64::midpoint(x0, x1);
+    let ends: Vec<(f64, f64)> = ms
+        .iter()
+        .filter(|m| m.z == z && m.feature == TOP && (m.from.0 - middle).abs() < 6.0)
+        .map(|m| (m.from.1 - y0, m.to.1 - y0))
+        .filter(|(a, b)| a.min(*b) < 2.5 && (a - b).abs() > 0.3)
+        .map(|(a, b)| (a.min(b), a.max(b)))
+        .collect();
+    let near = most_common(ends.iter().map(|e| e.0))?;
+    let far = most_common(ends.iter().map(|e| e.1))?;
+    Some((near, far, y1 - y0))
+}
+
+/// One band case: a name, the mesh, the settings over the stock P1S request, the first band layer and the one above
+/// it (thousandths of a millimeter), and the near end and far end less the step the band's lines end at, mm.
+struct BandCase {
+    name: &'static str,
+    mesh: fn() -> Arc<Mesh>,
+    edits: Vec<(&'static str, Value)>,
+    z: i64,
+    above: i64,
+    near: f64,
+    far: f64,
+}
+
+fn mk4_edits(walls: u32) -> Vec<(&'static str, Value)> {
+    family_edits(walls, Family::Mk4)
+}
+
+/// The sloped band cases, on 0.42 mm outer and 0.45 mm inner walls at 15% overlap unless named otherwise.
+#[allow(clippy::too_many_lines, reason = "one row per measured case")]
+fn sloped_cases() -> Vec<BandCase> {
+    let case = |name, mesh, edits: Vec<(&'static str, Value)>, z, above, near, far| BandCase {
+        name,
+        mesh,
+        edits,
+        z,
+        above,
+        near,
+        far,
+    };
+    let walls = |n: u32| vec![("wall_loops", json!(n))];
+    let t075: fn() -> Arc<Mesh> = || taper(0.75);
+    let t14: fn() -> Arc<Mesh> = || taper(1.4);
+    let t10_06: fn() -> Arc<Mesh> = || taper_on(1.0, 2.1, 0.3);
+    let inner50 = |n: u32| {
+        let mut e = walls(n);
+        e.push(("inner_wall_line_width", json!("0.50")));
+        e
+    };
+    vec![
+        case("2 walls", t075, walls(2), 2200, 2400, 0.207, 0.645),
+        case("3 walls", t075, walls(3), 2200, 2400, 0.207, 0.890),
+        case("4 walls", t075, walls(4), 2200, 2400, 0.207, 1.134),
+        case(
+            "MK4 values, 2 walls",
+            t075,
+            mk4_edits(2),
+            2200,
+            2400,
+            0.197,
+            0.619,
+        ),
+        case(
+            "MK4 values, 3 walls",
+            t075,
+            mk4_edits(3),
+            2200,
+            2400,
+            0.197,
+            0.858,
+        ),
+        case(
+            "inner wall 0.50, 2 walls",
+            t075,
+            inner50(2),
+            2200,
+            2400,
+            0.207,
+            0.675,
+        ),
+        case(
+            "inner wall 0.50, 3 walls",
+            t075,
+            inner50(3),
+            2200,
+            2400,
+            0.207,
+            0.950,
+        ),
+        case(
+            "0.6 nozzle values, 2 walls",
+            t10_06,
+            family_edits(2, Family::Nozzle06),
+            2400,
+            2700,
+            0.306,
+            0.925,
+        ),
+        case(
+            "0.6 nozzle values, 3 walls",
+            t10_06,
+            family_edits(3, Family::Nozzle06),
+            2400,
+            2700,
+            0.306,
+            1.259,
+        ),
+        case(
+            "0.12 mm layers",
+            t14,
+            vec![("layer_height", json!(0.12))],
+            2240,
+            2360,
+            0.217,
+            0.655,
+        ),
+        case(
+            "0.28 mm layers",
+            t075,
+            vec![("layer_height", json!(0.28))],
+            2440,
+            2720,
+            0.198,
+            0.636,
+        ),
+        case(
+            "0% overlap",
+            t075,
+            vec![("infill_wall_overlap", json!(0))],
+            2200,
+            2400,
+            0.207,
+            0.645,
+        ),
+    ]
+}
+
+/// A sloped case's name and its band's near end and far end less the step, mm.
+type Ends = (&'static str, Option<(f64, f64)>);
+
+/// The band's line ends of each sloped case, sliced once for the tests that read them.
+fn sloped_ends() -> &'static [Ends] {
+    static ENDS: OnceLock<Vec<Ends>> = OnceLock::new();
+    ENDS.get_or_init(|| {
+        sloped_cases()
+            .into_iter()
+            .map(|c| {
+                let ms = moves(&slice_with((c.mesh)(), "classic", &c.edits));
+                (c.name, band_ends(&ms, c.z, c.above).map(|(n, f, s)| (n, f - s)))
+            })
+            .collect()
+    })
+}
+
+#[test]
+fn classic_band_lines_start_0_55_of_the_outer_wall_less_0_12_of_the_layer_in() {
+    // The band's lines start 0.55 of the outer wall's width less 0.12 of the layer height in
+    // from its center line, within 0.002 mm, at any overlap: 0.207 mm on the stock widths and layers.
+    for (case, (name, got)) in sloped_cases().iter().zip(sloped_ends()) {
+        assert!(
+            got.is_some_and(|(n, _)| (n - case.near).abs() <= 0.002 + 1e-9),
+            "{name}: band lines start at {:?} mm, want {}",
+            got.map(|g| g.0),
+            case.near
+        );
+    }
+}
+
+#[test]
+fn classic_band_lines_end_0_954_of_the_outer_wall_past_the_step() {
+    // The band's lines end the step plus 0.954 of the outer wall plus 0.6 of an inner wall
+    // spacing per wall past the first in from the outer wall's center line, within 0.002 mm.
+    for (case, (name, got)) in sloped_cases().iter().zip(sloped_ends()) {
+        assert!(
+            got.is_some_and(|(_, f)| (f - case.far).abs() <= 0.002 + 1e-9),
+            "{name}: band lines end {:?} mm past the step, want {}",
+            got.map(|g| g.1),
+            case.far
+        );
+    }
+}
+
+/// A 30 mm block 2 mm tall under a block that leaves a 4 mm ledge ring.
+fn ring4() -> Arc<Mesh> {
+    blocks(&[(15.0, 0.0, 2.0), (11.0, 2.0, 4.0)])
+}
+
+#[test]
+fn classic_ledge_ring_lines_end_short_of_the_band_rule_at_higher_overlap() {
+    // A 4 mm ledge ring at z 2.0: its lines end the nearer of the band's far end and 0.6555 mm less 0.39 of the
+    // overlap past the layer above's outer wall center line, within 0.003 mm.
+    for (overlap, want) in [(0, 0.645), (10, 0.617), (15, 0.597), (25, 0.558), (30, 0.538)] {
+        let ms = moves(&slice_with(
+            ring4(),
+            "classic",
+            &[("infill_wall_overlap", json!(overlap))],
+        ));
+        let got = band_ends(&ms, 2000, 2200).map(|(_, f, s)| f - s);
+        assert!(
+            got.is_some_and(|f| (f - want).abs() <= 0.003 + 1e-9),
+            "{overlap}% overlap: ring lines end {got:?} mm past the step, want {want}"
+        );
+    }
+}
+
+#[test]
+fn classic_ledge_rings_print_their_band_as_top_surface() {
+    // The ledge ring's band prints as top surface out to its lines' far end, within 0.15 mm of filament: the 4 mm
+    // ring at 0% overlap and the bottom tier of the five-tier pyramid at 15%.
+    let g = slice_with(ring4(), "classic", &[("infill_wall_overlap", json!(0))]);
+    let got = at(&per_layer(&moves(&g)), TOP, 2.0);
+    assert!(
+        (got - 35.76).abs() <= 0.15,
+        "4 mm ring, 0% overlap: top surface {got:.2}, want 35.76"
+    );
+    let tiers: Vec<(f64, f64, f64)> = (0..5u32)
+        .map(|i| {
+            (
+                6.0f64.mul_add(-f64::from(i), 35.0),
+                2.0 * f64::from(i),
+                2.0 * f64::from(i + 1),
+            )
+        })
+        .collect();
+    let got = at(&per_layer(&moves(&slice(blocks(&tiers), "classic"))), TOP, 2.0);
+    assert!(
+        (got - 130.74).abs() <= 0.15,
+        "pyramid, 15% overlap: top surface {got:.2}, want 130.74"
+    );
+}
+
+#[test]
+fn classic_band_keeps_the_line_along_a_turned_box_wall() {
+    // A 30.7 mm box turned 45 degrees, stepping in 0.75 mm per layer: its top's lines run along the sides, and on the
+    // band layers at z 2.6 and 2.8 the line along the wall prints, within 0.15 mm of filament of the top surface.
+    let layers = per_layer(&moves(&slice(diamond_taper(21.7132, 0.75), "classic")));
+    for (z, want) in [(2.6, 9.34), (2.8, 8.77)] {
+        let got = at(&layers, TOP, z);
+        assert!(
+            (got - want).abs() <= 0.15,
+            "z {z}: top surface {got:.2}, want {want}"
+        );
+    }
+}
+
+#[test]
+fn classic_band_line_ends_are_the_same_with_precise_outer_wall() {
+    // The band's line ends do not move with `precise_outer_wall`: a 0.75 mm taper at 15% and 0% overlap and the 4 mm
+    // ledge ring at 15%.
+    type Case = (fn() -> Arc<Mesh>, u32, i64);
+    let cases: [Case; 3] = [
+        (|| taper(0.75), 15, 2200),
+        (|| taper(0.75), 0, 2200),
+        (ring4, 15, 2000),
+    ];
+    for (mesh, overlap, z) in cases {
+        let ends = |precise: bool| {
+            let g = slice_with(
+                mesh(),
+                "classic",
+                &[
+                    ("infill_wall_overlap", json!(overlap)),
+                    ("precise_outer_wall", json!(precise)),
+                ],
+            );
+            band_ends(&moves(&g), z, z + 200)
+        };
+        let (off, on) = (ends(false), ends(true));
+        assert!(off.is_some(), "z {z}, {overlap}% overlap: no band lines");
+        assert!(
+            off.zip(on)
+                .is_some_and(|(a, b)| a.0 == b.0 && a.1 - a.2 == b.1 - b.2),
+            "z {z}, {overlap}% overlap: band ends {off:?} with precise outer wall off, {on:?} with it on"
+        );
+    }
+}
+
+/// The stock settings of shipped printer `model` of `vendor` (packages/profiles/resolved), with classic walls, one wall
+/// on top surfaces, precise outer wall off and smart layer off, slicing `mesh` at the middle of the plate.
+fn slice_printer(vendor: &str, model: &str, mesh: Arc<Mesh>) -> String {
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+    let read = |path: String| -> Value { serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap() };
+    let mut config = serde_json::Map::new();
+    for (k, v) in read(format!("{root}/packages/settings/defaults.json"))
+        .as_object()
+        .unwrap()
+    {
+        config.insert(k.clone(), v[1].clone());
+    }
+    let m = read(format!("{root}/packages/profiles/resolved/{vendor}.json"))["models"][model].clone();
+    let base = m["base"].as_str().unwrap().to_owned();
+    for part in [&m["process"][&base], &m["filament"], &m["machine"]] {
+        for (k, v) in part.as_object().unwrap() {
+            config.insert(k.clone(), v.clone());
+        }
+    }
+    for (k, v) in [
+        ("wall_generator", json!("classic")),
+        ("only_one_wall_top", json!(true)),
+        ("precise_outer_wall", json!(false)),
+        ("smart_layer", json!("off")),
+    ] {
+        config.insert(k.to_owned(), v);
+    }
+    let mut req: Value = serde_json::from_slice(&std::fs::read(REQUEST).unwrap()).unwrap();
+    req["config"] = Value::Object(config);
+    req["options"]["printerId"] = json!(model);
+    let req: SliceRequest = serde_json::from_value(req).unwrap();
+    let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+    String::from_utf8(run.gcode).unwrap()
+}
+
+#[test]
+fn classic_band_line_ends_follow_each_printers_widths() {
+    // The same rule on other printers' stock values, a 0.75 mm taper's first band layer (z 2.2, the layer above
+    // z 2.4), within 0.002 mm. Near end 0.55 x outer - 0.12 x h; far end less the step 0.954 x outer + 0.6 x
+    // (walls - 1) x inner spacing, with inner spacing = inner - h x (1 - pi/4).
+    // - Creality K1: 0.42 mm outer, 0.45 mm inner, 2 walls, 0.2 mm layers, 30% overlap.
+    //   Near 0.55 x 0.42 - 0.12 x 0.2 = 0.231 - 0.024 = 0.207.
+    //   Spacing 0.45 - 0.2 x 0.2146 = 0.4071; far 0.954 x 0.42 + 0.6 x 1 x 0.4071 = 0.4007 + 0.2443 = 0.645.
+    // - Prusa MK4: 0.40 mm outer (100% of the 0.4 mm nozzle), 0.44 mm inner (110%), 3 walls, 0.2 mm layers, 25%
+    //   overlap. Near 0.55 x 0.40 - 0.024 = 0.220 - 0.024 = 0.196.
+    //   Spacing 0.44 - 0.0429 = 0.3971; far 0.954 x 0.40 + 0.6 x 2 x 0.3971 = 0.3816 + 0.4765 = 0.858.
+    for (vendor, model, near, far) in [
+        ("creality", "creality-k1", 0.207, 0.645),
+        ("prusa", "prusa-mk4", 0.196, 0.858),
+    ] {
+        let g = slice_printer(vendor, model, taper(0.75));
+        let got = band_ends(&moves(&g), 2200, 2400).map(|(n, f, s)| (n, f - s));
+        assert!(
+            got.is_some_and(|(n, f)| (n - near).abs() <= 0.002 + 1e-9 && (f - far).abs() <= 0.002 + 1e-9),
+            "{model}: band lines from {got:?} (near, far less the step), want ({near}, {far})"
         );
     }
 }

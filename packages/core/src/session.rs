@@ -6148,6 +6148,7 @@ impl SliceSession {
                         tag: 0,
                         whole_lower: None,
                         classic: classic_top_edges(cfg, w, overlap),
+                        band_top: None,
                     });
                     sparse.push(cls.sparse);
                 }
@@ -8810,8 +8811,19 @@ impl SliceSession {
             };
             // A region that is the layer's whole outline, walled and classified with the layer's own settings, has
             // the classification the layer's bridge facts were worked out from: the same inputs to `classify`.
+            // The classic one-wall top bands' part of the infill area, which prints as top surface.
+            let band_top: Vec<&Shapes> = islands
+                .iter()
+                .map(|i| &i.band_area)
+                .filter(|a| !a.is_empty())
+                .collect();
+            let band_top = (!band_top.is_empty()).then(|| perimeters::union_all(&band_top));
             let known = facts.filter(|f| {
-                region_k == 0 && shared.is_some() && *shapes == slice_shapes(here) && f.inner == inner
+                region_k == 0
+                    && shared.is_some()
+                    && band_top.is_none()
+                    && *shapes == slice_shapes(here)
+                    && f.inner == inner
             });
             let cls = match known {
                 Some(f) => f.classes(),
@@ -8832,6 +8844,7 @@ impl SliceSession {
                         .then(|| layer.checked_sub(1).and_then(get).map(lower_shapes))
                         .flatten(),
                     classic: edges.filter(|_| top_from_spacing_edge(cfg)),
+                    band_top: band_top.as_ref(),
                 }),
             };
             (
@@ -9201,6 +9214,7 @@ impl SliceSession {
                         tag: cfg_tag,
                         whole_lower: None,
                         classic: classic_top_edges(cfg, base_shell.w, base_overlap),
+                        band_top: None,
                     });
                     let (lines, paths) = sparse_of(lu, &cls.sparse);
                     let bridged: Shapes = cls
@@ -9997,8 +10011,8 @@ impl SliceSession {
             let grid_rules = |which: usize| bambu_stretch || (which == 0 && top_one_wall);
             // Where a classic one-wall top's surface starts elsewhere than the walls' overlap leaves it, its grid still
             // reads the walls' own edge, as [`grid_inset`] does. Nearer half the outer wall from its
-            // center line (`classic_top_near`: the bands of every layer on Bambu Lab printers, and the topmost layer
-            // on every printer): the strip between that edge and the surface's, and how far a shape is grown into it
+            // center line (the bands of every layer, `perimeters::BandEnds`, and the topmost layer on every printer):
+            // the strip between that edge and the surface's, and how far a shape is grown into it
             // to put it back along the outer wall. Further out (the topmost layer, at an overlap under the lines'
             // ends, `classic_top_start`): the strip the surface grew into, which a shape loses to put it back.
             let wall_back = (one_wall_top && !cfg.arachne_walls() && grid_rules(0))
@@ -13056,6 +13070,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
                         gap_lines: Vec::new(),
                         top_edge: None,
                         band: isl.band,
+                        band_area: Vec::new(),
                     },
                 ),
                 (
@@ -13072,6 +13087,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
                         gap_lines: isl.gap_lines.clone(),
                         top_edge: None,
                         band: isl.band,
+                        band_area: Vec::new(),
                     },
                 ),
             ]
