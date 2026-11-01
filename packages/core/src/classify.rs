@@ -23,6 +23,8 @@ pub(crate) struct In<'a> {
     pub(crate) slice: &'a dyn Fn(i64) -> Option<Shapes>,
     /// The infill area of any layer by index.
     pub(crate) inner_of: &'a dyn Fn(i64) -> Option<Shapes>,
+    /// The real infill area of a layer whose `only_one_wall_top` walls leave a slit ([`crate::shells::Input::slit`]).
+    pub(crate) slit_of: Option<&'a dyn Fn(i64) -> Option<Shapes>>,
     pub(crate) top_layers: u32,
     pub(crate) bottom_layers: u32,
     pub(crate) wall_loops: u32,
@@ -238,6 +240,7 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
                     wall_offset: crate::shells::wall_offset(cfg, i.wall_loops),
                     opening,
                     surfaces_only: crate::shells::surfaces_only(cfg),
+                    slit: i.slit_of.filter(|_| crate::shells::slit_counts(cfg)),
                     narrow: crate::tower::flag_or(cfg, "detect_narrow_internal_solid_infill", true),
                 };
                 let solid = crate::shells::solid_area(&input);
@@ -346,7 +349,8 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
     let top = sub(&top, &bottom);
 
     // Sparse pockets smaller than `minimum_sparse_infill_area` are printed solid. A pocket is measured out to the
-    // middle of the innermost wall's spacing, the area that wall and the infill share, not the infill area alone.
+    // middle of the innermost wall's spacing, the area that wall and the infill share, not the infill area alone:
+    // where it meets solid infill instead of the wall it is not grown.
     if cfg.sparse_infill_density > 0.0 && !sparse.is_empty() {
         let min_area = crate::motion::raw_f(cfg, "minimum_sparse_infill_area").unwrap_or(15.0);
         let reach = if i.wall_loops > 0 { 0.5 * sp_in } else { 0.0 };
@@ -355,7 +359,10 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
             // Growing only adds area, so a piece already bigger than the minimum stays sparse.
             crate::shells::area_mm2(one) <= min_area
                 && (reach <= 0.0
-                    || crate::shells::area_mm2(&perimeters::offset(&one.to_vec(), mm(reach))) <= min_area)
+                    || crate::shells::area_mm2(&union(
+                        &one.to_vec(),
+                        &sub(&perimeters::offset(&one.to_vec(), mm(reach)), inner),
+                    )) <= min_area)
         });
         shell = union(&shell, &small);
         sparse = big;

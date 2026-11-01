@@ -250,6 +250,38 @@ fn candidates(env: &Env<'_>, l: i64) -> Vec<Shapes> {
     out
 }
 
+/// The candidates, with those that come within a strand spacing of each other made one: a thin strip of solid
+/// beside a wider piece (the line under a slit) is bridged with it, its strands run across both from the far edge.
+fn joined(mut cands: Vec<Shapes>, sp: f64) -> Vec<Shapes> {
+    if cands.len() < 2 {
+        return cands;
+    }
+    let mut out: Vec<(Shapes, Shapes)> = Vec::new();
+    while let Some(c) = cands.pop() {
+        let mut grown = expand(&c, sp);
+        let mut area = c;
+        loop {
+            let mut hit = false;
+            let mut k = 0;
+            while k < out.len() {
+                if meet(&out[k].1, &grown).is_empty() {
+                    k += 1;
+                } else {
+                    let (a, g) = out.swap_remove(k);
+                    area = union(&area, &a);
+                    grown = union(&grown, &g);
+                    hit = true;
+                }
+            }
+            if !hit {
+                break;
+            }
+        }
+        out.push((area, grown));
+    }
+    out.into_iter().map(|(a, _)| a).collect()
+}
+
 /// Candidates in Orca's order: by the corner of their extents, then by distance from the first one's
 /// far corner.
 fn sorted_candidates(mut c: Vec<Shapes>) -> Vec<Shapes> {
@@ -668,14 +700,14 @@ fn compute(env: &Env<'_>, l: i64, memo: &Memo) -> Vec<Bridged> {
     if l < 1 || l >= env.count {
         return Vec::new();
     }
-    let cands = sorted_candidates((*cands_of(env, l, memo)).clone());
-    if cands.is_empty() {
-        return Vec::new();
-    }
     let Some(here) = (env.facts)(l) else {
         return Vec::new();
     };
     let sp = env.bridge_spacing;
+    let cands = sorted_candidates(joined((*cands_of(env, l, memo)).clone(), sp));
+    if cands.is_empty() {
+        return Vec::new();
+    }
     let target_h = env.bridge_height * 0.9;
     let z = (env.print_z)(l);
     // Sparse infill deep enough for a thick bridge, where strands can go.

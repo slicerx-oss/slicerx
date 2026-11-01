@@ -26,8 +26,8 @@ type Steps = Vec<Option<Shapes>>;
 pub(crate) type Walls = (Vec<perimeters::IslandWalls>, Shapes);
 type WalkKey = ((i64, i64, i64), u64);
 /// Layer, top and bottom shell layers, then the bits of the solid spacing, wall offset and opening, and whether
-/// only the surfaces count.
-type AroundKey = (i64, i64, i64, u64, u64, u64, bool, bool);
+/// only the surfaces count, narrow detection is on and the neighbors' slits count.
+type AroundKey = (i64, i64, i64, u64, u64, u64, bool, bool, bool);
 
 #[derive(Default)]
 pub(crate) struct Cache {
@@ -43,6 +43,7 @@ pub(crate) struct Cache {
     fixed_inner: Memo<(i64, u64), Option<Shared<Shapes>>>,
     around: Memo<AroundKey, Shared<Around>>,
     regions: Memo<(i64, u64), Shared<Vec<Option<crate::session::RegionPrep>>>>,
+    slit: Memo<(i64, u64), Option<Shared<Shapes>>>,
 }
 
 impl Clone for Cache {
@@ -168,6 +169,13 @@ impl Cache {
             .map(|a| (*a).clone())
     }
 
+    /// The real infill area of layer `m` with its slit ([`Input::slit`]) for the settings fingerprinted by `tag`.
+    pub(crate) fn slit(&self, m: i64, tag: u64, work: impl FnOnce() -> Option<Shapes>) -> Option<Shapes> {
+        self.slit
+            .get_or((m, tag), || work().map(std::sync::Arc::new))
+            .map(|a| (*a).clone())
+    }
+
     /// The walls of layer `m`'s whole outline and its infill area, worked out by `work` for the settings
     /// fingerprinted by `tag`. The layer itself reads them too when its region is the whole outline.
     pub(crate) fn walls(
@@ -200,6 +208,10 @@ pub(crate) struct Input<'a> {
     pub(crate) opening: f64,
     /// Only the neighbors' surfaces turn solid, not the band a leaning wall leaves (`partial`).
     pub(crate) surfaces_only: bool,
+    /// The real infill area of a layer by index, where `only_one_wall_top` moves its inner walls in off the outline and
+    /// they leave a slit wide enough to count ([`slit_counts`]); `None` for the others, which read as their outline inset by
+    /// `wall_offset`.
+    pub(crate) slit: Option<&'a dyn Fn(i64) -> Option<Shapes>>,
     /// `detect_narrow_internal_solid_infill`: a narrow band prints as concentric beads, so bands are kept from
     /// `BAND_MIN_NARROW` wide, not `BAND_MIN`.
     pub(crate) narrow: bool,
@@ -223,6 +235,26 @@ pub(crate) struct Around {
     surfaces_kept: std::sync::OnceLock<Shapes>,
     /// The outline the layers below and above share, read only for small pieces.
     object: std::sync::OnceLock<Shapes>,
+}
+
+/// The share of the solid infill line spacing from which the slit an `only_one_wall_top` layer's inner walls leave
+/// counts: the slit is the inner walls' spacing less the infill overlap into them from both sides. Wider slits pull the
+/// band of the layers below out to the slit's inner edge; narrower ones (from about 17% overlap on stock lines) do not.
+const SLIT_MIN: f64 = 0.7365;
+
+/// Whether the slit [`Input::slit`] reads counts with `cfg`: fixed-width walls, two or more of them,
+/// `only_one_wall_top` on, and the slit at least [`SLIT_MIN`] solid spacings wide.
+pub(crate) fn slit_counts(cfg: &PrintConfig) -> bool {
+    if cfg.arachne_walls() || cfg.wall_loops < 2 || !perimeters::one_wall_top(cfg) {
+        return false;
+    }
+    let inner = cfg.spacing_for(cfg.inner_wall_width());
+    let solid = cfg.spacing_for(cfg.solid_infill_width());
+    let slit = inner.mul_add(
+        f64::from(cfg.wall_loops - 1),
+        -(cfg.infill_wall_overlap / 100.0) * (inner + solid),
+    );
+    slit >= SLIT_MIN * solid
 }
 
 /// How far in from the outline the vertical shell rule starts the infill area, mm ([`Input::wall_offset`]): half the
@@ -259,6 +291,8 @@ fn around(i: &Input<'_>) -> Around {
     };
     let mine = (i.slice)(i.layer).map(|s| inset_of(i.layer, &s));
     let mut holes: Option<Shapes> = mine.clone();
+    // The slits the neighbors' walls leave ([`Input::slit`]).
+    let mut slits: Shapes = Vec::new();
     let mut consider = |m: i64, toward: i64| -> bool {
         // A layer past the plate's end shows the whole layer beside it as a surface.
         let Some(here) = (i.slice)(m) else {
@@ -279,7 +313,22 @@ fn around(i: &Input<'_>) -> Around {
             shell = perimeters::union_all(&[&shell, &grown]);
         }
         if let Some(h) = holes.take() {
-            holes = Some(perimeters::intersection(&h, &inset_of(m, &here)));
+            let mut area = inset_of(m, &here);
+            // A layer whose walls leave a slit under its top surface's one wall shows its real infill area, slit and all.
+            if let Some(slit) = i.slit
+                && let Some(above) = (i.slice)(m + 1)
+                && !free_of(m, 1, &here, &above).is_empty()
+                && let Some(real) = slit(m)
+            {
+                // Only a real slit counts: the hairline the two ways of working out an infill edge leave along the
+                // walls does not.
+                let cut = opened(&perimeters::difference(&area, &real), 0.25 * i.spacing);
+                if !cut.is_empty() {
+                    area = perimeters::difference(&area, &cut);
+                    slits = perimeters::union_all(&[&slits, &cut]);
+                }
+            }
+            holes = Some(perimeters::intersection(&h, &area));
         }
         true
     };
@@ -319,7 +368,20 @@ fn around(i: &Input<'_>) -> Around {
     let band_min = if i.narrow { BAND_MIN_NARROW } else { BAND_MIN };
     let kept = match &classic {
         Some(_) if i.surfaces_only => opened(&shell, 0.5 * band_min * i.spacing),
-        Some(c) => opened(&perimeters::union_all(&[&shell, c]), 0.5 * band_min * i.spacing),
+        Some(c) => {
+            let kept = opened(&perimeters::union_all(&[&shell, c]), 0.5 * band_min * i.spacing);
+            // The strip under a neighbor's slit stays, however thin: it prints one line there.
+            let strip = if slits.is_empty() {
+                Vec::new()
+            } else {
+                opened(&perimeters::intersection(c, &slits), i.opening)
+            };
+            if strip.is_empty() {
+                kept
+            } else {
+                perimeters::union_all(&[&kept, &strip])
+            }
+        }
         None => Vec::new(),
     };
     let surfaces = match &classic {
@@ -349,6 +411,7 @@ fn around_of(i: &Input<'_>) -> Shared<Around> {
                 i.opening.to_bits(),
                 i.surfaces_only,
                 i.narrow,
+                i.slit.is_some(),
             );
             c.around(key, || around(i))
         }
