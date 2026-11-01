@@ -267,6 +267,8 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     // layers), with the travels between its lines, the progress lines and the totals.
     // Changed again when top_area_threshold became a setting with a default: only its line in the settings block,
     // `; top_area_threshold = 200%`, was added.
+    // Changed again when the monotonic line tops on Bambu Lab printers started each piece on its lowest line heading
+    // along the lines: only the order and direction of the top surface lines moved, with the travels between them.
     let c = config("p1s", &json!({"brim_type": "outer_only", "brim_width": 5}));
     let (out, gcode) = slice("p1s", &c, &[[18.0, 6.0], [140.0, 140.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -280,7 +282,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "d5ab0fc6dd003079",
+        "3258a15ff0d1f4cf",
         "the P1S plate's G-code changed"
     );
 }

@@ -1088,9 +1088,14 @@ impl Frame {
             max: f64::MAX,
             chord_fallback: false,
         };
-        crate::monotonic::polylines_outer(&spans_in, &spans_out, spacing, links, &|off, t| {
-            self.back(origin + off, t)
-        })
+        crate::monotonic::polylines_outer(
+            &spans_in,
+            &spans_out,
+            spacing,
+            links,
+            &|off, t| self.back(origin + off, t),
+            false,
+        )
     }
 }
 

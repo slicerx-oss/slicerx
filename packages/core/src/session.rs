@@ -10046,6 +10046,8 @@ impl SliceSession {
                 }
             };
             let mut curved: [Vec<[crate::geom::Point; 2]>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+            // The right-angle corner beads of each surface (`fillgap::corner_beads`), printed with its gap fill.
+            let mut corner_gaps: [Vec<crate::arachne::WallLine>; 3] = [Vec::new(), Vec::new(), Vec::new()];
             // Which of the three surfaces are filled with monotonic line (their own gap fill, below). Only Bambu Lab
             // printers fill those slivers; other printers leave gap fill to `gap_fill_target` whatever the pattern.
             let mut line_fill = [false; 3];
@@ -10148,6 +10150,13 @@ impl SliceSession {
                     continue;
                 }
                 let spread = |v: f64| if density < 1.0 { v / density } else { v };
+                // On Bambu Lab printers a full monotonic line top, and the bottom over a raft, start each connected
+                // piece on its lowest line heading along the lines, and bead the free right-angle corners the
+                // chain leaves (`fillgap::corner_beads`). Other surfaces keep their own order and gap fill.
+                let corner_rules = line_fill_gaps
+                    && name == "monotonicline"
+                    && (density - 1.0).abs() < 1e-9
+                    && (which == 0 || (which == 1 && layer == 0 && self.raft_layers() > 0));
                 // The top surface's lines are a family of their own when its width differs.
                 let surface_spacing = if which == 0 {
                     top_spacing
@@ -10458,8 +10467,74 @@ impl SliceSession {
                                 surface_spacing,
                                 links,
                                 &to_point,
+                                corner_rules,
                             )
                         };
+                        if corner_rules && let Some(slot) = corner_gaps.get_mut(which) {
+                            // Worked out on the plate: the grid's frame and turn undone as for the lines below.
+                            let to_plate = |p: crate::geom::Point| -> crate::geom::Point {
+                                let p = frame.map_or(p, |f| f.back(p));
+                                if turn == 0.0 {
+                                    p
+                                } else {
+                                    crate::patterns::rotate_points(&[p], turn)
+                                        .first()
+                                        .copied()
+                                        .unwrap_or(p)
+                                }
+                            };
+                            // Each line's two ends in print order, and the chain's links: a line's last point and
+                            // the next one's first (a travel; monotonic line never joins its lines).
+                            let ends: Vec<[crate::geom::Point; 2]> = pls
+                                .iter()
+                                .filter_map(|pl| Some([to_plate(*pl.first()?), to_plate(*pl.last()?)]))
+                                .collect();
+                            let chain: Vec<[crate::geom::Point; 2]> = ends
+                                .windows(2)
+                                .filter_map(|w| match w {
+                                    [a, b] => Some([a[1], b[0]]),
+                                    _ => None,
+                                })
+                                .collect();
+                            // The lines' direction on the plate, from the longest line.
+                            let along = ends
+                                .iter()
+                                .map(|[a, b]| (f64::from(b.x - a.x), f64::from(b.y - a.y)))
+                                .max_by(|a, b| a.0.m_hypot(a.1).total_cmp(&b.0.m_hypot(b.1)))
+                                .map(|(x, y)| (x / x.m_hypot(y), y / x.m_hypot(y)))
+                                .filter(|(x, y)| x.is_finite() && y.is_finite());
+                            let ends_area: Shapes = outer
+                                .iter()
+                                .map(|shape| {
+                                    shape
+                                        .iter()
+                                        .map(|ring| {
+                                            ring.iter()
+                                                .map(|q| {
+                                                    let p = to_plate(crate::geom::Point::new(q.x, q.y));
+                                                    IntPoint::new(p.x, p.y)
+                                                })
+                                                .collect()
+                                        })
+                                        .collect()
+                                })
+                                .collect();
+                            let width = if which == 0 {
+                                cfg.top_surface_width()
+                            } else {
+                                cfg.solid_infill_width()
+                            };
+                            if let Some(along) = along {
+                                slot.extend(crate::fillgap::corner_beads(
+                                    &ends_area,
+                                    &ends,
+                                    &chain,
+                                    along,
+                                    width,
+                                    layer_height,
+                                ));
+                            }
+                        }
                         if let Some(slot_lines) = curved.get_mut(which) {
                             for pl in pls {
                                 // The turns: pieces between two points on different scanlines (a line keeps its own).
@@ -10771,7 +10846,10 @@ impl SliceSession {
                     };
                     if *own {
                         // No bead wider than a solid infill line, whatever the surface's own width.
-                        crate::fillgap::line_gaps(&region, lines, mm_pitch, mm_pitch.min(solid_mm))
+                        let mut beads =
+                            crate::fillgap::line_gaps(&region, lines, mm_pitch, mm_pitch.min(solid_mm));
+                        beads.extend(corner_gaps.get(which).into_iter().flatten().cloned());
+                        beads
                     } else if line_fill.get(which).copied().unwrap_or(false) {
                         // A monotonic line surface on the first layer gets none, whatever the target says.
                         Vec::new()
