@@ -21,4 +21,15 @@ describe('an Orca profile export of a ramp lift', () => {
     expect(out['z_hop_types']).toEqual(['Slope Lift', 'Spiral Lift'])
     expect(out['travel_slope']).toEqual(['1', '3'])
   })
+
+  it("leaves out the abrasive filament and high flow nozzle flags, which are PrusaSlicer's", () => {
+    const filament = importFlat({ filament_abrasive: ['1'], nozzle_temperature: ['215'] }).config
+    expect(filament['filament_abrasive']).toEqual([true])
+    const f = exportOrcaProfile(filament, { name: 'CF PETG', section: 'filament' })
+    expect(f).not.toHaveProperty('filament_abrasive')
+    expect(f['nozzle_temperature']).toEqual(['215'])
+    const p = exportOrcaProfile(importFlat({ nozzle_high_flow: ['1'], nozzle_diameter: ['0.6'] }).config, { name: 'HF printer', section: 'printer' })
+    expect(p).not.toHaveProperty('nozzle_high_flow')
+    expect(p['nozzle_diameter']).toEqual(['0.6'])
+  })
 })
