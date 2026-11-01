@@ -181,6 +181,7 @@ SPDX-License-Identifier = "LicenseRef-Trademark-Permission"
 path = [
   "packages/core/bench/models/x-mark-2color-orca.3mf",
   "packages/core/cli/tests/fixtures/bambu-surface-edge/*.3mf",
+  "packages/core/cli/tests/fixtures/bambu-line-across-room/*.3mf",
   "packages/core/cli/tests/fixtures/layer-tool-change/**",
   "packages/core/cli/tests/fixtures/layer-tools/**",
   "packages/core/cli/tests/fixtures/line-across/*.3mf",

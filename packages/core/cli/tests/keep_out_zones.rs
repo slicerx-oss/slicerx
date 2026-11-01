@@ -269,6 +269,10 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     // `; top_area_threshold = 200%`, was added.
     // Changed again when the monotonic line tops on Bambu Lab printers started each piece on its lowest line heading
     // along the lines: only the order and direction of the top surface lines moved, with the travels between them.
+    // Changed again when Bambu Lab surfaces took their line ends from the innermost wall's spacing edge: only the top
+    // layer's top surface moved (its grid lines now end 0.05 spacing inside the one wall's spacing edge, about
+    // 0.002 mm nearer the wall than half the outer wall in), with the travels after it, the progress lines and the
+    // totals; no first layer, wall, brim or infill move changed.
     let c = config("p1s", &json!({"brim_type": "outer_only", "brim_width": 5}));
     let (out, gcode) = slice("p1s", &c, &[[18.0, 6.0], [140.0, 140.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -282,7 +286,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "3258a15ff0d1f4cf",
+        "982d333254e3a553",
         "the P1S plate's G-code changed"
     );
 }
