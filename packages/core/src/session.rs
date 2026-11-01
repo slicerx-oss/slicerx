@@ -8595,18 +8595,24 @@ impl SliceSession {
                 ),
                 _ => (Vec::new(), Vec::new()),
             };
-            // The topmost layer of a classic one-wall top on a Bambu Lab printer: its surface starts where a band's
-            // does, so the lines that run into the one wall end half its width in from its center line at any overlap.
-            // Other printers spread that layer's lines as a plate of one wall (`surface_edge`).
+            // The topmost layer of a classic one-wall top, on every printer: its surface starts where a band's does,
+            // so the lines that run into the one wall end half its width in from its center line at any overlap. An
+            // overlap under the lines' ends leaves the surface further in, so it grows out to there.
             let top_near = (one_wall_layer
                 && layer + 1 == n
                 && !cfg.arachne_walls()
-                && crate::perimeters::one_wall_top(cfg)
-                && crate::firmware::bambu_printer(cfg, cfg.gcode_flavor))
-            .then(|| crate::perimeters::classic_top_near(cfg, own_overlap, w))
-            .flatten();
+                && crate::perimeters::one_wall_top(cfg))
+            .then(|| crate::perimeters::classic_top_start(cfg, w));
             let top_edge = |outline: &Shapes, core: Shapes| match top_near {
-                Some(near) => perimeters::intersection(&core, &perimeters::offset(outline, -near)),
+                Some((ext, near)) => {
+                    let short = ext - own_overlap - near;
+                    let core = if short > 0 {
+                        perimeters::offset(&core, short)
+                    } else {
+                        core
+                    };
+                    perimeters::intersection(&core, &perimeters::offset(outline, -near))
+                }
                 None => core,
             };
             let group = group_of(ri);
@@ -9914,15 +9920,20 @@ impl SliceSession {
             } else {
                 cfg.infill_wall_overlap
             };
-            // The topmost layer under `only_one_wall_top` prints one fixed-width wall, so its top surface spreads as
-            // on a plate of one wall. Lower layers' tops under it keep one grid.
+            // Tops under `only_one_wall_top` keep one grid. The topmost layer's top, inside its one fixed-width wall,
+            // follows the Bambu Lab rules on every printer: no spreading, monotonic line on the objects' grid with
+            // its own gap fill (`grid_rules`).
             let one_wall_top = crate::perimeters::one_wall_top(cfg);
             let top_one_wall = one_wall_top && layer + 1 == self.plan.count() && !cfg.arachne_walls();
-            // Where a classic one-wall top's surface starts nearer half the outer wall from its center line than the
-            // walls' overlap leaves it (`classic_top_near`: the bands of every layer, and the topmost layer, on Bambu
-            // Lab printers), its grid still reads the walls' own edge, as [`grid_inset`] does: the strip between that
-            // edge and the surface's, and how far a shape is grown into it to put it back along the outer wall.
-            let wall_back = (one_wall_top && !cfg.arachne_walls() && bambu_stretch)
+            // Whether surface `which` (0 top, 1 bottom, 2 internal solid) follows the Bambu Lab printers' rules.
+            let grid_rules = |which: usize| bambu_stretch || (which == 0 && top_one_wall);
+            // Where a classic one-wall top's surface starts elsewhere than the walls' overlap leaves it, its grid still
+            // reads the walls' own edge, as [`grid_inset`] does. Nearer half the outer wall from its
+            // center line (`classic_top_near`: the bands of every layer on Bambu Lab printers, and the topmost layer
+            // on every printer): the strip between that edge and the surface's, and how far a shape is grown into it
+            // to put it back along the outer wall. Further out (the topmost layer, at an overlap under the lines'
+            // ends, `classic_top_start`): the strip the surface grew into, which a shape loses to put it back.
+            let wall_back = (one_wall_top && !cfg.arachne_walls() && grid_rules(0))
                 .then(|| {
                     let w = mm(cfg.line_width);
                     #[allow(
@@ -9930,31 +9941,36 @@ impl SliceSession {
                         reason = "overlap is a fraction of a line width"
                     )]
                     let overlap = (f64::from(w) * stretch_overlap / 100.0).round() as i32;
-                    let near = crate::perimeters::classic_top_near(cfg, overlap, w)?;
-                    let edge = mm(cfg.outer_wall_width()) - overlap;
-                    let strip = perimeters::difference(
-                        &perimeters::offset(shapes, -edge),
-                        &perimeters::offset(shapes, -near),
-                    );
-                    Some((strip, near - edge + 5))
+                    let (ext, near) = crate::perimeters::classic_top_start(cfg, w);
+                    let edge = ext - overlap;
+                    if near > edge {
+                        let strip = perimeters::difference(
+                            &perimeters::offset(shapes, -edge),
+                            &perimeters::offset(shapes, -near),
+                        );
+                        Some((strip, Some(near - edge + 5)))
+                    } else if near < edge && top_one_wall && cfg.wall_loops > 1 {
+                        let strip = perimeters::difference(
+                            &perimeters::offset(shapes, -near),
+                            &perimeters::offset(shapes, -edge),
+                        );
+                        Some((strip, None))
+                    } else {
+                        None
+                    }
                 })
                 .flatten();
-            // `shapes` grown back to the walls' own edge along the outer wall.
+            // `shapes` put back to the walls' own edge along the outer wall: grown into the strip, or less it.
             let grown_back = |shapes: &Shapes| -> Option<Shapes> {
-                let (strip, by) = wall_back.as_ref()?;
-                let back = perimeters::intersection(&perimeters::offset(shapes, *by), strip);
-                Some(perimeters::union_all(&[shapes, &back]))
+                match wall_back.as_ref()? {
+                    (strip, Some(by)) => {
+                        let back = perimeters::intersection(&perimeters::offset(shapes, *by), strip);
+                        Some(perimeters::union_all(&[shapes, &back]))
+                    }
+                    (strip, None) => Some(perimeters::difference(shapes, strip)),
+                }
             };
-            let surface_stretch = surface_edge(
-                cfg,
-                layer_height,
-                stretch_overlap / 100.0,
-                if top_one_wall {
-                    cfg.wall_loops.min(1)
-                } else {
-                    cfg.wall_loops
-                },
-            );
+            let surface_stretch = surface_edge(cfg, layer_height, stretch_overlap / 100.0, cfg.wall_loops);
             // How much wider than the surface's own width each stretched top and bottom line prints, and the
             // widest stretched spacing, mm.
             let mut widen: [Vec<f32>; 2] = [Vec::new(), Vec::new()];
@@ -9969,7 +9985,7 @@ impl SliceSession {
                     _ => default,
                 };
                 if let Some(f) = line_fill.get_mut(which) {
-                    *f = line_fill_gaps && name == "monotonicline";
+                    *f = (line_fill_gaps || grid_rules(which)) && name == "monotonicline";
                 }
                 // `top_surface_density` and `bottom_surface_density` (external surfaces that are not
                 // bridges): the lines spread out; a top density of 0 leaves the top unfilled.
@@ -10007,13 +10023,13 @@ impl SliceSession {
                 } else {
                     cfg.spacing_for(cfg.solid_infill_width())
                 });
-                // A single wall under the top surfaces of lower layers (`only_one_wall_top`) or on the first layer
+                // A single wall under the top surfaces (`only_one_wall_top`) or on the first layer
                 // (`only_one_wall_first_layer`) moves the surface's edge where the rule was not measured, so those
                 // surfaces keep one grid.
                 // A top surface whose edge the walls set (`top_edge`) keeps it: its edge does not move.
                 let stretch_edge = surface_stretch.map(|e| if which == 0 && top_edge { 0.0 } else { e });
                 let stretch = stretch_edge.filter(|_| {
-                    let top = which == 0 && (!one_wall_top || top_one_wall);
+                    let top = which == 0 && !one_wall_top;
                     let first = which == 1
                         && layer == 0
                         && self.raft.is_none()
@@ -10023,7 +10039,7 @@ impl SliceSession {
                 });
                 if stretch.is_some()
                     && !cfg.arachne_walls()
-                    && (top_one_wall || cfg.wall_loops == 1)
+                    && cfg.wall_loops == 1
                     && let Some(e) = spread_gap_edge.get_mut(which)
                 {
                     *e = Some(one_wall_gap_edge(cfg, layer_height, stretch_overlap / 100.0));
@@ -10093,8 +10109,8 @@ impl SliceSession {
                     // On Bambu Lab printers a monotonic line top or first-layer bottom keeps one grid, anchored to the
                     // objects: lines at (j + 1/2) spacings from the center of their box (the reference the sparse
                     // infill and the bridges use), and a line prints when its center is at least [`grid_inset`]
-                    // past the infill area's edge.
-                    let anchored = (bambu_stretch
+                    // past the infill area's edge. So does a classic one-wall top's topmost layer on every printer.
+                    let anchored = (grid_rules(which)
                         && name == "monotonicline"
                         && (which == 0 || (which == 1 && layer == 0))
                         && (density - 1.0).abs() < 1e-9)
@@ -10205,10 +10221,10 @@ impl SliceSession {
                         // A stretched piece prints a line wherever the band of its pitch round the line holds the
                         // surface's own spacing along it (`perimeters::line_room`): the room for one, which also
                         // takes in a piece narrower along its lines than their pitch across them. Worked out only
-                        // where the lines pulled in by half the pitch miss a line or keep one too short, and not on
-                        // Bambu Lab printers, whose narrow pieces follow rules of their own.
+                        // where the lines pulled in by half the pitch miss a line or keep one too short, and not where
+                        // the Bambu Lab rules apply, whose narrow pieces follow rules of their own.
                         let room = (frame.is_some()
-                            && !bambu_stretch
+                            && !grid_rules(which)
                             && short_or_missing(&own, &own_out, min_len))
                         .then(|| {
                             let h = std::f64::consts::FRAC_1_SQRT_2;
@@ -10536,8 +10552,10 @@ impl SliceSession {
                         return Vec::new();
                     }
                     let region = match grid_gap_edge.get(which).copied().flatten().filter(|_| *own) {
-                        // Between the innermost wall and the lines, from the walls' own edge where the grid reads it.
-                        Some(e) => match (which == 0)
+                        // Between the innermost wall and the lines, from the walls' own edge where the grid reads it
+                        // nearer the wall than the surface. A surface grown out past that edge has its gap fill from
+                        // its own edge, which is where the walls' spacing edge would put it, within the lines' ends.
+                        Some(e) => match (which == 0 && wall_back.as_ref().is_some_and(|w| w.1.is_some()))
                             .then(|| grown_back(&surface_region(which)).zip(grown_back(&inner)))
                             .flatten()
                         {

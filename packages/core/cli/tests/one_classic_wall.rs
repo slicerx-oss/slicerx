@@ -20,7 +20,8 @@
 //! - With sparse infill a strip prints walls only, then gap fill, then lines once it is
 //!   ow + 2 p1 + 0.6 s(iw) wide, p1 being where a first inner wall would sit.
 //! - At sparse infill density 0 a strip prints a line once R >= s0; a narrower one keeps a gap fill bead.
-//! - The topmost layer under `only_one_wall_top` prints as a plate of one wall.
+//! - The topmost layer under `only_one_wall_top` keeps the Bambu Lab rules on every printer: lines on the objects'
+//!   grid at the surface's own width and spacing, with gap fill beside them, and no spreading.
 //! - Bambu Lab printers keep their own rules.
 #![allow(
     clippy::cast_possible_truncation,
@@ -130,7 +131,12 @@ fn measure(case: &str) -> (Rows, Rows) {
 /// Per strip, what the plate `case` prints on its top layer and its first layer, a project with the wall generator
 /// `walls`.
 fn measure_with(case: &str, walls: &str) -> (Rows, Rows) {
-    let moves = moves(&slice(case, walls));
+    measure_gcode(case, &slice(case, walls))
+}
+
+/// Per strip, what the G-code `gcode` of the plate `case` prints on its top layer and its first layer.
+fn measure_gcode(case: &str, gcode: &str) -> (Rows, Rows) {
+    let moves = moves(gcode);
     let mut strips = strips(case);
     // Where the slice put the plate: the outer wall on every layer against the strips' own bounds (a strip the
     // elephant foot compensation takes off the first layer would move that layer's box).
@@ -193,6 +199,95 @@ fn measure_with(case: &str, walls: &str) -> (Rows, Rows) {
         )
     };
     (layer(top_z, "Top surface"), layer(first_z, "Bottom surface"))
+}
+
+/// The filament (E, relative extrusion) of the top surface and of the gap fill on the plate's topmost layer, over
+/// moves that go somewhere (not the primes after a retraction).
+fn top_e(gcode: &str) -> (f64, f64) {
+    let (mut feature, mut z) = (String::new(), 0i64);
+    let (mut x, mut y): (Option<f64>, Option<f64>) = (None, None);
+    let mut by: BTreeMap<(i64, &str), f64> = BTreeMap::new();
+    for line in gcode.lines() {
+        if let Some(t) = line.strip_prefix(";TYPE:") {
+            t.trim().clone_into(&mut feature);
+            continue;
+        }
+        if let Some(t) = line.strip_prefix(";Z:") {
+            z = t.trim().parse::<f64>().map_or(z, |v| (v * 1000.0).round() as i64);
+            continue;
+        }
+        if !(line.starts_with("G1 ")
+            || line.starts_with("G0 ")
+            || line.starts_with("G2 ")
+            || line.starts_with("G3 "))
+        {
+            continue;
+        }
+        let (nx, ny) = (
+            bambu_strips::word(line, 'X').or(x),
+            bambu_strips::word(line, 'Y').or(y),
+        );
+        if let Some(e) = bambu_strips::word(line, 'E').filter(|e| *e > 0.0)
+            && (nx != x || ny != y)
+        {
+            for f in ["Top surface", "Gap infill"] {
+                if feature == f {
+                    *by.entry((z, f)).or_default() += e;
+                }
+            }
+        }
+        (x, y) = (nx, ny);
+    }
+    let top = by
+        .keys()
+        .filter(|k| k.1 == "Top surface")
+        .map(|k| k.0)
+        .max()
+        .unwrap();
+    let at = |f: &str| by.get(&(top, f)).copied().unwrap_or(0.0);
+    (at("Top surface"), at("Gap infill"))
+}
+
+/// The topmost layer of a classic one-wall top: every strip's code, the top surface and gap fill filament within
+/// 0.25 % of `top_e_mm` and `gap_e_mm`, and lines as wide as set (0.42) a nominal spacing apart. Returns the first
+/// layer.
+fn grid_top(case: &str, codes: &str, top_e_mm: f64, gap_e_mm: f64) -> Rows {
+    grid_top_of(
+        case,
+        &slice(case, "aegis"),
+        codes,
+        (top_e_mm, 0.0025),
+        (gap_e_mm, 0.0025),
+    )
+}
+
+/// [`grid_top`] on the G-code `gcode` of the plate `case`, with each filament target's share it may miss by.
+fn grid_top_of(case: &str, gcode: &str, codes: &str, top_e_mm: (f64, f64), gap_e_mm: (f64, f64)) -> Rows {
+    let (top, first) = measure_gcode(case, gcode);
+    let (e_top, e_gap) = top_e(gcode);
+    assert_eq!(top.layer().codes(), codes, "{case} top");
+    near(
+        e_top,
+        top_e_mm.0,
+        top_e_mm.1 * top_e_mm.0,
+        &format!("{case} top surface E"),
+    );
+    near(
+        e_gap,
+        gap_e_mm.0,
+        gap_e_mm.1 * gap_e_mm.0,
+        &format!("{case} gap fill E"),
+    );
+    let s0 = 0.42 - 0.2 * (1.0 - std::f64::consts::FRAC_PI_4);
+    for (t, _, r) in &top.0 {
+        if r.lines.len() >= 2 {
+            near(spacing_of(r), s0, 0.002, &format!("{case} T{t} spacing"));
+        }
+        for w in &r.widths {
+            near(*w, 0.42, 0.0005, &format!("{case} T{t} width"));
+        }
+    }
+    first
 }
 
 /// The surface line spacing of a strip with 2 lines or more.
@@ -451,24 +546,43 @@ fn ow_8_one_wall_lines_across_spread_along_the_strip() {
     }
 }
 
-/// OW-9. Creality K1 stock (two walls, `only_one_wall_top`, gap fill everywhere): the topmost layer spreads its lines
-/// as a plate of one wall, and a strip whose capped lines leave about 0.4 of a spacing beside them gets a bead there.
+/// OW-9. Creality K1 stock (two walls, `only_one_wall_top`, gap fill everywhere): the topmost layer keeps its lines on
+/// the objects' grid, 0.42 wide a nominal spacing apart, with gap fill beside them.
+///
+/// The targets moved when the topmost layer of a classic one-wall top took the Bambu Lab rules on every printer. They
+/// were the spread of a plate of one wall (the surface 0.3043 mm in, 3 lines at T3.5 and 2 at T2.9).
 #[test]
-fn ow_9_k1_top_prints_as_one_wall() {
-    let (top, _) = measure("creality-k1--n4-sp15-al");
-    near(top.layer().ins(), 0.3043, 0.0015, "top ins");
-    let r = top.t(3.5);
-    lines(r, 3, Some(0.4398), 0.4827, 0.5241, "T3.5");
-    assert!(r.gap_fill <= 0.05, "T3.5 gap fill {:.3}", r.gap_fill);
-    let r = top.t(2.9);
-    lines(r, 2, Some(0.4525), 0.4954, 0.5306, "T2.9");
-    assert!(
-        r.gap_fill > 25.0 && r.gap_fill < 35.0,
-        "T2.9 gap fill {:.3}",
-        r.gap_fill
+fn ow_9_k1_top_keeps_the_grid() {
+    let _ = grid_top(
+        "creality-k1--n4-sp15-al",
+        "..ggggggggggggggggaaaaaaabbabbbbbcbcbccccccdcdcdddddddde",
+        93.31,
+        48.03,
     );
-    gap_only(top.t(2.1), "T2.1");
-    assert_eq!(top.t(2.3).lines.len(), 2, "T2.3");
+}
+
+/// The K1 plate of OW-9 at `top_bottom_infill_wall_overlap` 0 and 30 % (stock 25 %): the same strips, the same top
+/// surface within 0.25 % and gap fill within 1 % of OW-9's targets. The overlap moves neither end of the lines.
+#[test]
+fn k1_top_strips_are_the_same_at_any_overlap() {
+    let case = "creality-k1--n4-sp15-al";
+    for overlap in [0, 30] {
+        let mut req: Value =
+            serde_json::from_slice(&std::fs::read(fixture(&format!("requests/{case}.json"))).unwrap())
+                .unwrap();
+        req["config"]["top_bottom_infill_wall_overlap"] = serde_json::json!(overlap);
+        let req: SliceRequest = serde_json::from_value(req).unwrap();
+        let bytes = std::fs::read(fixture(&format!("{case}.stl"))).unwrap();
+        let mesh = Arc::new(Mesh::load(&bytes, "strips.stl").unwrap());
+        let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+        let _ = grid_top_of(
+            case,
+            &String::from_utf8(run.gcode).unwrap(),
+            "..ggggggggggggggggaaaaaaabbabbbbbcbcbccccccdcdcdddddddde",
+            (93.31, 0.0025),
+            (48.03, 0.01),
+        );
+    }
 }
 
 /// OW-10. The switches from walls only to gap fill and from gap fill to lines stay where they are; the first
@@ -531,20 +645,19 @@ fn ow_10_one_wall_narrow_switches_hold() {
     }
 }
 
-/// OW-11. K1 stock at sparse 0: on the topmost layer strips narrower than a spacing keep their gap fill bead where
-/// the walls leave one and walls only below, lines from R = s0; the first layer (two walls) prints as before.
+/// OW-11. K1 stock at sparse 0: the topmost layer keeps its lines on the objects' grid with gap fill beside them, and
+/// the first layer (two walls) prints as before.
+///
+/// The top's targets moved when the topmost layer of a classic one-wall top took the Bambu Lab rules on every printer.
+/// They were the spread of a plate of one wall (lines from R = s0).
 #[test]
 fn ow_11_k1_no_sparse_top_and_first_layer() {
-    let (top, first) = measure("creality-k1--n4-sp0-al");
-    for t in [0.5, 0.6] {
-        walls_only(top.t(t), "top");
-    }
-    for t in [0.7, 0.8, 0.9] {
-        gap_only(top.t(t), "top");
-    }
-    for (t, _, r) in top.span(1.0, 6.0) {
-        assert!(!r.lines.is_empty(), "top T{t}: no line");
-    }
+    let first = grid_top(
+        "creality-k1--n4-sp0-al",
+        "..gggggggggggagagaaaaaaaabbabbbbbcbcbccccccdcdcdddddddde",
+        96.08,
+        45.76,
+    );
     assert_eq!(
         first.layer().codes(),
         "......gg......gggggggggggggggggg.......gggg1111111111aa2",
@@ -601,6 +714,61 @@ fn ow_13_a1_classic_keeps_its_own_rules() {
         let (top, first) = measure_with(case, "classic");
         assert_eq!(top.layer().codes(), top_codes, "{case} top");
         assert_eq!(first.layer().codes(), first_codes, "{case} first layer");
+    }
+}
+
+/// A K1 box top (stock request, a 20 mm box 4 mm tall): the topmost layer's lines that run into the one wall end half
+/// the outer wall in from its center line, so the top surface takes 29.91 of filament within 0.05 at any
+/// `top_bottom_infill_wall_overlap` (the spread rule took 30.50 at the stock 25 %).
+#[test]
+fn k1_box_top_is_the_same_at_any_overlap() {
+    use std::fmt::Write as _;
+    // The box's 8 corners (bit 0: x, bit 1: y, bit 2: z) and its 12 triangles, facing out.
+    let corner = |i: usize| -> [f64; 3] {
+        [
+            if i & 1 == 0 { -10.0 } else { 10.0 },
+            if i & 2 == 0 { -10.0 } else { 10.0 },
+            if i & 4 == 0 { 0.0 } else { 4.0 },
+        ]
+    };
+    let mut stl = String::from("solid box\n");
+    for f in [
+        [0, 2, 1],
+        [1, 2, 3],
+        [4, 5, 6],
+        [5, 7, 6],
+        [0, 1, 4],
+        [1, 5, 4],
+        [2, 6, 3],
+        [3, 6, 7],
+        [0, 4, 2],
+        [2, 4, 6],
+        [1, 3, 5],
+        [3, 7, 5],
+    ] {
+        stl.push_str("facet normal 0 0 0\n outer loop\n");
+        for p in f.map(corner) {
+            let _ = writeln!(stl, "  vertex {} {} {}", p[0], p[1], p[2]);
+        }
+        stl.push_str(" endloop\nendfacet\n");
+    }
+    stl.push_str("endsolid box\n");
+    let mesh = Arc::new(Mesh::load(stl.as_bytes(), "box.stl").unwrap());
+    for overlap in [0, 15, 25, 30] {
+        let mut req: Value =
+            serde_json::from_slice(&std::fs::read(fixture("requests/creality-k1--n4-sp15-al.json")).unwrap())
+                .unwrap();
+        req["config"]["top_bottom_infill_wall_overlap"] = serde_json::json!(overlap);
+        let req: SliceRequest = serde_json::from_value(req).unwrap();
+        let mesh = mesh.clone();
+        let run = api::run_request(&req, &move |_: &str| Ok(mesh.clone())).unwrap();
+        let (top, _) = top_e(&String::from_utf8(run.gcode).unwrap());
+        near(
+            top,
+            29.91,
+            0.05,
+            &format!("{overlap}% overlap: box top surface E"),
+        );
     }
 }
 
