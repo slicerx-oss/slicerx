@@ -4,6 +4,10 @@ All notable changes to `@slicerx/viewport` are documented here. The format follo
 
 ## [Unreleased]
 
+### Fixed
+
+- A model added beside the others fades all the way in. The frame loop stopped after the fade's first frame when nothing else asked for a frame, so the new model could stay invisible until something redrew the view.
+
 ## [0.2.7] - 2026-10-30
 
 ### Added
