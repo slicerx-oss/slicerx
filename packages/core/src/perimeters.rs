@@ -1843,6 +1843,97 @@ pub(crate) fn classic_top_start(cfg: &crate::config::PrintConfig, w: i32) -> (i3
     (ext, ext - ends)
 }
 
+/// How far past the cut a classic one-wall top band's tail runs on, internal units, before the band's own growth: with
+/// that growth the band ends about 0.7 mm past where a step that narrows along the outline falls below the cut-off.
+const CLASSIC_TOP_TAIL: i32 = 2_500;
+
+/// The tails of a classic one-wall top band, the parts of `step` past the sharp tips of `wide` (the step shrunk by
+/// `cut`) where the step narrows along the outline of `one`, for the band to grow from. A step that narrows gradually
+/// leaves `wide` ending in a thin point, and growing it back bevels that point, so without a tail the band would stop
+/// short of where the step falls below the cut-off. A tip that runs along the outline keeps a line from it, `cut` plus
+/// [`CLASSIC_TOP_TAIL`] on, inside `one` and no further than twice `cut` from its outline. A tip that points into the
+/// part, as the end of a slot the layer above cuts into the step does, or out of it, gets none, so a slot keeps its
+/// gap fill. Each tail is the step within `cut` plus the tail of `wide`, in a strip along the tip's axis from `cut`
+/// behind the tip to that line's end, four times `cut` wide.
+fn classic_top_tails(wide: &Shapes, step: &Shapes, one: &Shapes, cut: i32) -> Shapes {
+    let c = f64::from(cut);
+    let run = c + f64::from(CLASSIC_TOP_TAIL);
+    let sign = one
+        .first()
+        .and_then(|s| s.first())
+        .map_or(1, |r| crate::geom::area2_int(r).signum());
+    let to_outline = |p: IntPoint<i32>| {
+        let (qx, qy) = (f64::from(p.x), f64::from(p.y));
+        let mut best = f64::MAX;
+        for r in one.iter().flatten() {
+            for (j, s) in r.iter().enumerate() {
+                let Some(e) = r.get((j + 1) % r.len()) else {
+                    continue;
+                };
+                let (sx, sy) = (f64::from(s.x), f64::from(s.y));
+                let (wx, wy) = (f64::from(e.x) - sx, f64::from(e.y) - sy);
+                let l2 = wx * wx + wy * wy;
+                let t = if l2 > 0.0 {
+                    (((qx - sx) * wx + (qy - sy) * wy) / l2).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                best = best.min((qx - sx - t * wx).m_hypot(qy - sy - t * wy));
+            }
+        }
+        best
+    };
+    let mut strips: Shapes = Vec::new();
+    for ring in wide.iter().flatten() {
+        let n = ring.len();
+        for (i, v) in ring.iter().enumerate() {
+            let (Some(a), Some(b)) = (ring.get((i + n - 1) % n), ring.get((i + 1) % n)) else {
+                continue;
+            };
+            let (ix, iy) = (f64::from(v.x - a.x), f64::from(v.y - a.y));
+            let (ox, oy) = (f64::from(b.x - v.x), f64::from(b.y - v.y));
+            let (li, lo) = (ix.m_hypot(iy), ox.m_hypot(oy));
+            if li == 0.0 || lo == 0.0 {
+                continue;
+            }
+            let (ix, iy, ox, oy) = (ix / li, iy / li, ox / lo, oy / lo);
+            // A tip: a corner of the area that turns past 120 degrees, which the grow bevels.
+            let (dot, cross) = (ix * ox + iy * oy, iy * (-ox) - (-ix) * oy);
+            if cross <= 0.0 || dot >= -0.5 {
+                continue;
+            }
+            let (dx, dy) = (ix - ox, iy - oy);
+            let dl = dx.m_hypot(dy);
+            let (dx, dy) = (dx / dl, dy / dl);
+            let (vx, vy) = (f64::from(v.x), f64::from(v.y));
+            let end = round_pt(vx + dx * run, vy + dy * run);
+            if winding(one, end) == 0 || to_outline(end) > 2.0 * c {
+                continue;
+            }
+            let (nx, ny) = (-dy * 2.0 * c, dx * 2.0 * c);
+            let (bx, by) = (vx - dx * c, vy - dy * c);
+            let (fx, fy) = (vx + dx * run, vy + dy * run);
+            let mut strip = vec![
+                round_pt(bx + nx, by + ny),
+                round_pt(bx - nx, by - ny),
+                round_pt(fx - nx, fy - ny),
+                round_pt(fx + nx, fy + ny),
+            ];
+            if crate::geom::area2_int(&strip).signum() != sign {
+                strip.reverse();
+            }
+            strips.push(vec![strip]);
+        }
+    }
+    if strips.is_empty() {
+        return Vec::new();
+    }
+    intersection(
+        &intersection(step, &grow_open(wide, cut + CLASSIC_TOP_TAIL)),
+        &union_all(&[&strips]),
+    )
+}
+
 // a false result guarantees that the context-free classic walls are unchanged.
 pub(crate) fn classic_top_candidate(
     cfg: &crate::config::PrintConfig,
@@ -2112,7 +2203,15 @@ pub(crate) fn walls_for_top(
             #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
             let more = (wall_loops as i32 - 2).max(0) * pitch(inner) * 3 / 5;
             let reach = ext * 3 / 2 + inner * 3 / 5 - mm(0.05) + ends + more;
-            let mut exposed = intersection(&offset(&offset(&step, -cut), cut + reach), &outer_core);
+            // The band is the part of the step wider than `cut` twice over, grown back by `cut` and on by `reach`,
+            // plus the tails where the step narrows along the outline ([`classic_top_tails`]), grown by `reach`.
+            let wide = offset(&step, -cut);
+            let mut grown = offset(&wide, cut + reach);
+            let tails = classic_top_tails(&wide, &step, &one, cut);
+            if !tails.is_empty() {
+                grown = union_all(&[&grown, &grow_open(&tails, reach)]);
+            }
+            let mut exposed = intersection(&grown, &outer_core);
             if let Some(near) = classic_top_near(cfg, overlap, w) {
                 exposed = intersection(&exposed, &offset(&one, -near));
             }
