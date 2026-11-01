@@ -712,7 +712,7 @@ impl Athena {
     /// outline. The thickness is of the outline already taken in by half the difference of the outer bead's
     /// width and spacing on each side, so beads as wide as these spacings fill the part edge to edge.
     /// Scaled by the outer spacing over the outer to first inner spacing instead, two beads in a 0.8 mm fin
-    /// were 13 percent too narrow under the precise outer wall (that spacing is then the mean of the two
+    /// were 13 percent too narrow under the precise outer wall (that spacing was then the mean of the two
     /// widths, with no overlap), and in a 1 mm fin or peg they kept their width and stood off the surface:
     /// 0.82 and 0.83 of the material on those fins and 0.70 on a 1 mm peg.
     fn fill_thin(thickness: i64, n: i64) -> Beading {
@@ -1085,8 +1085,8 @@ mod tests {
         );
     }
 
-    /// The stock 0.42 and 0.45 mm walls at 0.2 mm layers as spacings, with the precise outer wall's outer to
-    /// first inner spacing (the mean of the two widths), capped at `max` beads.
+    /// The stock 0.42 and 0.45 mm walls at 0.2 mm layers as spacings, with an outer to first inner spacing of
+    /// 0.435 mm (the mean of the two widths), capped at `max` beads.
     fn athena_precise(max: i64) -> Box<dyn Strategy> {
         athena_precise_run(max, false)
     }

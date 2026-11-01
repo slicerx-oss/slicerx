@@ -7,6 +7,7 @@
 //! The P1S presets print with precise outer wall off, so the first inner wall sits the mean of the two walls' spacings
 //! in (spacing = width - layer height x (1 - pi/4)) and each further one an inner wall spacing past it: 0.392, 0.799
 //! and 1.206 at 0.2 mm layers. With precise outer wall on, the first inner wall sits the mean of the two widths in.
+//! aegis walls sit at the same places with it off; with it on, their first inner wall moves only half as far in.
 #![allow(
     clippy::disallowed_methods,
     clippy::cast_possible_truncation,
@@ -197,9 +198,14 @@ fn loops(gcode: &str) -> [Vec<f64>; 4] {
 
 /// The loops of every side within 0.002 mm of `target` on `config`, or what they were.
 fn misses(what: &str, config: &Value, target: &[f64]) -> Option<String> {
+    misses_within(what, config, target, 0.002)
+}
+
+/// The loops of every side within `tolerance` mm of `target` on `config`, or what they were.
+fn misses_within(what: &str, config: &Value, target: &[f64], tolerance: f64) -> Option<String> {
     let got = loops(&slice(config));
     let ok = got.iter().all(|side| {
-        side.len() == target.len() && side.iter().zip(target).all(|(g, t)| (g - t).abs() <= 0.002)
+        side.len() == target.len() && side.iter().zip(target).all(|(g, t)| (g - t).abs() <= tolerance)
     });
     (!ok).then(|| format!("{what}: per side {got:.3?}, target {target:?}"))
 }
@@ -234,6 +240,34 @@ fn classic_walls_with_precise_outer_wall_on_sit_at_the_targets() {
     for (h, target) in cases {
         let cfg = settings(&json!({"wall_loops": 3, "layer_height": h, "precise_outer_wall": true}));
         out.extend(misses(&format!("3 walls, {h} mm, on"), &cfg, target));
+    }
+    assert!(out.is_empty(), "{out:#?}");
+}
+
+/// aegis walls on the shipped P1S settings sit where classic ones do with precise outer wall off: 0.392 and 0.799 at
+/// 0.2 mm on 3 walls, and 0.409, 0.833 and 1.258 at 0.12 mm on 4. With it on, the outer wall stays on the surface
+/// and the first inner wall moves in by half of k = h x (1 - pi/4), the outer wall's width less its spacing, so
+/// every inner loop sits 0.021 mm farther in at 0.2 mm (0.414 and 0.821) and 0.030 at 0.28 (0.405 and 0.795).
+/// Before, with it on the first inner wall sat the mean of the two widths in, a whole k past the off places: 0.435
+/// and 0.842 at 0.2 mm, 0.435 and 0.825 at 0.28.
+#[test]
+fn aegis_walls_sit_at_the_targets() {
+    let cases: [(u32, f64, bool, &[f64]); 4] = [
+        (3, 0.2, false, &[0.392, 0.799]),
+        (3, 0.2, true, &[0.414, 0.821]),
+        (3, 0.28, true, &[0.405, 0.795]),
+        (4, 0.12, false, &[0.409, 0.833, 1.258]),
+    ];
+    let mut out = Vec::new();
+    for (walls, h, precise, target) in cases {
+        let cfg = settings(&json!({
+            "wall_generator": "aegis",
+            "wall_loops": walls,
+            "layer_height": h,
+            "precise_outer_wall": precise,
+        }));
+        let what = format!("aegis, {walls} walls, {h} mm, precise outer wall {precise}");
+        out.extend(misses_within(&what, &cfg, target, 0.003));
     }
     assert!(out.is_empty(), "{out:#?}");
 }

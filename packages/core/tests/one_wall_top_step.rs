@@ -789,12 +789,14 @@ fn classic_x_mark_band_follows_each_sides_step() {
 /// The x-mark's aegis top surface is not moved by the classic band rule. The targets have the aegis monotonic line
 /// top surfaces starting at the inner wall's spacing edge, without the infill wall overlap. With precise outer wall off
 /// on the stock P1S request the z 5.8 and 6.2 targets moved from 2.51 and 8.80 to 2.50 and 8.30, and the plate from
-/// 122.52 to 122.00.
+/// 122.52 to 122.00. They moved to 2.51 and 8.81, and the plate to 122.52, when the inner wall on the one-wall top
+/// layers took its normal width: it had been widened to about 0.459 mm (0.0338 mm of filament per mm against 0.0332),
+/// and the room it gives back goes to the top surface instead of gap infill, as on layers without a one-wall top.
 #[test]
 fn aegis_x_mark_top_surface_is_unchanged() {
     let ms = moves(&slice(x_mark(), "aegis"));
     let layers = per_layer(&ms);
-    for (z, want) in [(5.8, 2.50), (6.0, 74.92), (6.2, 8.30)] {
+    for (z, want) in [(5.8, 2.51), (6.0, 74.92), (6.2, 8.81)] {
         let got = at(&layers, TOP, z);
         assert!(
             (got - want).abs() < 0.01,
@@ -803,8 +805,8 @@ fn aegis_x_mark_top_surface_is_unchanged() {
     }
     let plate = total(&ms, TOP);
     assert!(
-        (plate - 122.00).abs() < 0.01,
-        "top surface on the plate {plate:.3}, want 122.00"
+        (plate - 122.52).abs() < 0.01,
+        "top surface on the plate {plate:.3}, want 122.52"
     );
 }
 
