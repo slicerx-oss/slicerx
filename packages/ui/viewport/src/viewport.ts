@@ -825,7 +825,8 @@ class ViewportImpl implements Viewport {
     }
     const revealing = this.stepReveal(now)
     if (revealing) this.dirty = true
-    if (this.stepFade(now)) this.dirty = true
+    const fading = this.stepFade(now)
+    if (fading) this.dirty = true
     if (moving) {
       this.dirty = true
       this.settle = SETTLE_FRAMES
@@ -859,9 +860,10 @@ class ViewportImpl implements Viewport {
     }
     // Through kick, never a bare requestAnimationFrame: a listener that invalidated during this tick has already
     // queued the next one, and a second request would start a second loop that renders every frame again.
-    // A reveal still waiting on the plate's first frame needs the tick after it to start.
+    // A reveal still waiting on the plate's first frame needs the tick after it to start. A fade-in needs every frame to
+    // its end: drawing clears dirty, and a still view asks for no frame after it.
     const revealNext = revealing || (this.reveal !== null && !this.reveal.started && this.veil === null && !this.hold.waiting)
-    if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealNext) this.kick()
+    if (moving || this.dirty || this.rig.move || this.arrangeAnim || revealNext || fading) this.kick()
   }
 
   /**
