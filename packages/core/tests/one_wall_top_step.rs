@@ -24,6 +24,9 @@
 //!   the wall still prints from 0.377 mm of its center line.
 //! - Box tapers whose top's lines run along two sides: on a band layer the nearest line along the wall prints from
 //!   0.377 mm of its center line at 15% and 30% overlap.
+//! - Necks: a box whose bottom side steps in 0.64 mm, under the cut-off, along a stretch between ramps from 0.75 mm.
+//!   The band runs on 0.1 to 1 mm past where a ramp of 2 or 3 mm passes the cut-off, and bridges a 1 mm stretch.
+//!   The x-mark's rounded block corners at z 6.2, whose facets dip under the cut-off, keep their band the same way.
 //! - Aegis walls are not touched: their x-mark top surface stays as it is.
 #![allow(
     clippy::disallowed_methods,
@@ -718,7 +721,7 @@ fn classic_ledge_rings_end_where_the_layer_above_infill_starts() {
 fn classic_x_mark_slopes_print_their_band() {
     let ms = classic_x_mark();
     let layers = per_layer(ms);
-    for (z, want, within) in [(5.8, 9.99, 0.15), (6.0, 80.17, 0.05), (6.2, 12.91, 0.10)] {
+    for (z, want, within) in [(5.8, 9.99, 0.15), (6.0, 80.17, 0.05), (6.2, 12.91, 0.02)] {
         let got = at(&layers, TOP, z);
         assert!(
             near(got, want, within),
@@ -877,6 +880,124 @@ fn classic_band_lines_along_the_wall_print_from_the_same_distance_at_any_overlap
             got.is_some_and(|d| (d - want).abs() < 0.005),
             "{} mm box, {overlap}% overlap: nearest line along the wall {got:?}, want {want}",
             2.0 * half
+        );
+    }
+}
+
+/// A 30 mm square box 2 mm tall under ten 0.2 mm slabs that step in 0.75 mm per layer on every side, except a stretch
+/// `gap` mm long in the middle of the bottom side that steps in `low` mm, with straight ramps `ramp` mm long either
+/// side. Each slab is the outline stepped in by half a layer's step more than the one below.
+fn neck(low: f64, ramp: f64, gap: f64) -> Arc<Mesh> {
+    let mut stl = String::from("solid neck\n");
+    let mut prism = |p: &[(f64, f64)], z0: f64, z1: f64| {
+        for (i, a) in p.iter().enumerate() {
+            let b = p[(i + 1) % p.len()];
+            for t in [
+                [(0.0, 0.0, z0), (b.0, b.1, z0), (a.0, a.1, z0)],
+                [(0.0, 0.0, z1), (a.0, a.1, z1), (b.0, b.1, z1)],
+                [(a.0, a.1, z0), (b.0, b.1, z0), (b.0, b.1, z1)],
+                [(a.0, a.1, z0), (b.0, b.1, z1), (a.0, a.1, z1)],
+            ] {
+                let _ = writeln!(stl, "facet normal 0 0 0\n outer loop");
+                for v in t {
+                    let _ = writeln!(stl, "  vertex {} {} {}", v.0, v.1, v.2);
+                }
+                let _ = writeln!(stl, " endloop\nendfacet");
+            }
+        }
+    };
+    prism(
+        &[(-15.0, -15.0), (15.0, -15.0), (15.0, 15.0), (-15.0, 15.0)],
+        0.0,
+        2.0,
+    );
+    for k in 1..=10 {
+        let t = f64::from(k) - 0.5;
+        let (l, r) = (0.75f64.mul_add(t, -15.0), 0.75f64.mul_add(-t, 15.0));
+        let mut p = vec![(l, 0.75f64.mul_add(t, -15.0))];
+        for x in [-gap / 2.0 - ramp, -gap / 2.0, gap / 2.0, gap / 2.0 + ramp] {
+            p.push((x, neck_step(x, low, ramp, gap).mul_add(t, -15.0)));
+        }
+        p.extend([(r, 0.75f64.mul_add(t, -15.0)), (r, r), (l, r)]);
+        prism(
+            &p,
+            0.2f64.mul_add(f64::from(k - 1), 2.0),
+            0.2f64.mul_add(f64::from(k), 2.0),
+        );
+    }
+    stl.push_str("endsolid neck\n");
+    Arc::new(Mesh::load(stl.as_bytes(), "neck.stl").unwrap())
+}
+
+/// The [`neck`]'s step per layer at `x` mm from its middle along the bottom side.
+fn neck_step(x: f64, low: f64, ramp: f64, gap: f64) -> f64 {
+    let a = x.abs() - gap / 2.0;
+    if a <= 0.0 {
+        low
+    } else if a >= ramp {
+        0.75
+    } else {
+        (0.75 - low).mul_add(a / ramp, low)
+    }
+}
+
+/// On the [`neck`]'s layer at z 3.0, measured from the neck's middle along the bottom side's left half: the left end
+/// where the step falls below the 0.66 mm cut-off, the furthest the band's top surface reaches toward the middle,
+/// and the furthest the inner wall along the bottom side reaches.
+fn neck_ends(low: f64, ramp: f64, gap: f64) -> (f64, Option<f64>, Option<f64>) {
+    let ms = moves(&slice(neck(low, ramp, gap), "classic"));
+    let layer: Vec<&Move> = ms.iter().filter(|m| m.z == 3000).collect();
+    let walls: Vec<(f64, f64)> = layer
+        .iter()
+        .filter(|m| m.feature == "Outer wall")
+        .flat_map(|m| [m.from, m.to])
+        .collect();
+    let mid = walls.iter().map(|p| p.0).fold(f64::MAX, f64::min) / 2.0
+        + walls.iter().map(|p| p.0).fold(f64::MIN, f64::max) / 2.0;
+    // The bottom wall's center line where the step is 0.75 mm, at the left end of the bottom side.
+    let edge = walls
+        .iter()
+        .filter(|p| p.0 < mid - gap / 2.0 - ramp - 1.0)
+        .map(|p| p.1)
+        .fold(f64::MAX, f64::min);
+    let wall_y = |x: f64| 4.5f64.mul_add(neck_step(x - mid, low, ramp, gap) - 0.75, edge);
+    let cross = -gap / 2.0 - ramp + ramp * (0.75 - 0.66) / (0.75 - low);
+    let reach = |feature: &str, lo: f64, hi: f64| {
+        layer
+            .iter()
+            .filter(|m| m.feature == feature)
+            .flat_map(|m| [m.from, m.to])
+            .filter(|p| p.0 > mid + cross - 6.0 && p.0 < mid && (lo..hi).contains(&(p.1 - wall_y(p.0))))
+            .map(|p| p.0 - mid)
+            .reduce(f64::max)
+    };
+    (cross, reach(TOP, -0.15, 0.5), reach("Inner wall", 0.3, 1.0))
+}
+
+#[test]
+fn classic_band_runs_on_past_where_a_gradual_fall_drops_under_the_cut_off() {
+    // The bottom side's step falls from 0.75 to 0.64 mm over a ramp of 2 or 3 mm: the band reaches on 0.1 to 1 mm
+    // past the point where the step passes 0.66 mm, as where the step falls at once.
+    for ramp in [2.0, 3.0] {
+        let (cross, top, _) = neck_ends(0.64, ramp, 8.0);
+        let past = top.map(|x| x - cross);
+        assert!(
+            past.is_some_and(|p| (0.1..=1.0).contains(&p)),
+            "{ramp} mm ramp: the band ends {past:?} mm past the cut-off, want 0.1 to 1"
+        );
+    }
+}
+
+#[test]
+fn classic_band_bridges_a_short_neck_under_the_cut_off() {
+    // A 1 mm stretch stepping 0.64 mm between ramps of 1 and 2 mm: the bands from either side meet across it, so no
+    // inner wall prints along the bottom side within 1 mm of the middle.
+    for ramp in [1.0, 2.0] {
+        let (_, top, inner) = neck_ends(0.64, ramp, 1.0);
+        assert!(top.is_some(), "{ramp} mm ramp: no band");
+        assert!(
+            inner.is_none_or(|x| x < -1.0),
+            "{ramp} mm ramp: the inner wall reaches {inner:?} mm from the middle, want none within 1"
         );
     }
 }
