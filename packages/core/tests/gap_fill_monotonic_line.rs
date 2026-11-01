@@ -126,6 +126,16 @@ fn shelf() -> Vec<u8> {
     stl(&tris)
 }
 
+/// The measuring plate 56 by 24 mm and 8 mm tall: a 24 mm square with a 10 mm square hole, a 10 mm square peg and
+/// a 10 mm round peg centered at (51, 12).
+fn holepeg() -> Vec<u8> {
+    std::fs::read(format!(
+        "{}/packages/core/tests/fixtures/gap-fill/holepeg.stl",
+        root()
+    ))
+    .unwrap()
+}
+
 fn xmark() -> Vec<u8> {
     std::fs::read(format!("{}/packages/core/bench/models/x-mark.stl", root())).unwrap()
 }
@@ -213,6 +223,145 @@ fn gaps(g: &str) -> Gaps {
         (x, y) = (nx, ny);
     }
     out
+}
+
+/// One gap fill bead printed right after a surface: its layer z (in hundredths), path length and moves, widest
+/// stated width, and its first and last points.
+struct Bead {
+    z: i64,
+    len: f64,
+    moves: usize,
+    width: f64,
+    start: (f64, f64),
+    end: (f64, f64),
+}
+
+impl Bead {
+    fn mid(&self) -> (f64, f64) {
+        (
+            f64::midpoint(self.start.0, self.end.0),
+            f64::midpoint(self.start.1, self.end.1),
+        )
+    }
+}
+
+/// A direction in degrees from 0 to 180 (lines run both ways).
+fn heading(from: (f64, f64), to: (f64, f64)) -> f64 {
+    (to.1 - from.1)
+        .atan2(to.0 - from.0)
+        .to_degrees()
+        .rem_euclid(180.0)
+}
+
+/// The surface gap fill beads of a slice, the direction of each layer's top surface lines (the whole degree from 0
+/// to 179 that the most top surface path runs along, per layer z in hundredths), and the lowest x and y the straight
+/// outer wall moves of each layer reach (a full circle written as one arc has no extent of its own).
+struct Layout {
+    beads: Vec<Bead>,
+    lines: BTreeMap<i64, i64>,
+    corner: BTreeMap<i64, (f64, f64)>,
+}
+
+fn layout(g: &str) -> Layout {
+    let (mut x, mut y, mut z, mut w) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+    let (mut feature, mut before) = (String::new(), String::new());
+    let mut beads: Vec<Bead> = Vec::new();
+    let mut open = false;
+    let mut along: BTreeMap<i64, BTreeMap<i64, f64>> = BTreeMap::new();
+    let mut extent: BTreeMap<i64, (f64, f64)> = BTreeMap::new();
+    for line in g.lines() {
+        let s = line.trim();
+        if let Some(f) = s.strip_prefix("; FEATURE:").or_else(|| s.strip_prefix(";TYPE:")) {
+            let f = f.trim().to_owned();
+            if f != feature {
+                before = std::mem::replace(&mut feature, f);
+            }
+            open = false;
+            continue;
+        }
+        if let Some(v) = s.strip_prefix("; Z_HEIGHT:").or_else(|| s.strip_prefix(";Z:")) {
+            z = v.trim().parse().unwrap();
+            continue;
+        }
+        if let Some(v) = s
+            .strip_prefix("; LINE_WIDTH:")
+            .or_else(|| s.strip_prefix(";WIDTH:"))
+        {
+            w = v.trim().parse().unwrap();
+            continue;
+        }
+        let code = s.split(';').next().unwrap_or("").trim();
+        if !["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|p| code.starts_with(p)) {
+            continue;
+        }
+        let (nx, ny) = (word(code, 'X').unwrap_or(x), word(code, 'Y').unwrap_or(y));
+        let d = (nx - x).hypot(ny - y);
+        let extrudes = word(code, 'E').is_some_and(|e| e > 0.0);
+        if d > 0.0 {
+            let at = hundredths(z);
+            if extrudes && feature == "Top surface" {
+                #[allow(clippy::cast_possible_truncation, reason = "a direction in whole degrees")]
+                let a = heading((x, y), (nx, ny)).round() as i64 % 180;
+                *along.entry(at).or_default().entry(a).or_default() += d;
+            }
+            if extrudes && feature == "Outer wall" {
+                let e = extent.entry(at).or_insert((f64::MAX, f64::MAX));
+                *e = (e.0.min(nx), e.1.min(ny));
+            }
+            let surface =
+                ["Top surface", "Internal solid infill", "Bottom surface"].contains(&before.as_str());
+            if extrudes && feature == "Gap infill" && surface {
+                match beads.last_mut().filter(|_| open) {
+                    Some(b) => {
+                        b.len += d;
+                        b.moves += 1;
+                        b.width = b.width.max(w);
+                        b.end = (nx, ny);
+                    }
+                    None => beads.push(Bead {
+                        z: at,
+                        len: d,
+                        moves: 1,
+                        width: w,
+                        start: (x, y),
+                        end: (nx, ny),
+                    }),
+                }
+                open = true;
+            } else {
+                open = false;
+            }
+        }
+        (x, y) = (nx, ny);
+    }
+    Layout {
+        beads,
+        lines: along
+            .into_iter()
+            .filter_map(|(z, by)| {
+                by.into_iter()
+                    .max_by(|a, b| a.1.total_cmp(&b.1))
+                    .map(|(a, _)| (z, a))
+            })
+            .collect(),
+        corner: extent,
+    }
+}
+
+/// The isolated short beads along the lines: single-move beads 0.6 mm long or less and 0.2 mm wide or more that run
+/// within 12 degrees of their layer's top surface lines (the shape of a bead across a corner the lines cut off).
+fn short_along(l: &Layout) -> Vec<&Bead> {
+    l.beads
+        .iter()
+        .filter(|b| b.moves == 1 && b.len <= 0.6 && b.width >= 0.2)
+        .filter(|b| {
+            l.lines.get(&b.z).is_some_and(|dir| {
+                #[allow(clippy::cast_precision_loss, reason = "a direction in whole degrees")]
+                let off = (heading(b.start, b.end) - *dir as f64).rem_euclid(180.0);
+                off.min(180.0 - off) <= 12.0
+            })
+        })
+        .collect()
 }
 
 /// Checks a case against its targets (layer z, mm). Layers in `skipped` (where our surface differs from the
@@ -424,5 +573,56 @@ fn other_printers_leave_it_to_gap_fill_target() {
             let g = gaps(&slice(&xmark(), stock(vendor, model, &edits)));
             assert_eq!(g.total(), 0.0, "{model} {edits:?}: {:?}", g.by_z);
         }
+    }
+}
+
+#[test]
+fn the_round_peg_strip_sits_where_the_lines_leave_it() {
+    // Holepeg's top (z 8.0) leaves its longest sliver beside the round peg, on its side away from the plate's
+    // corner: the measured bead's middle is at about (54.2, 15.2) in the model, (53.97, 14.97) from the outer wall's
+    // lowest x and y (0.21 in from the model's corner). A grid anchored elsewhere puts the long strip on the peg's
+    // other side, about (47.9, 8.9).
+    for model in ["bambu-a1", "bambu-p1s"] {
+        let g = slice(&holepeg(), measured(model, &[]));
+        check(model, &gaps(&g), &[(8.0, 3.44)], &[]);
+        let l = layout(&g);
+        let longest = l
+            .beads
+            .iter()
+            .filter(|b| b.z == 800)
+            .max_by(|a, b| a.len.total_cmp(&b.len))
+            .unwrap();
+        let corner = l.corner[&800];
+        let (mx, my) = longest.mid();
+        let off = (mx - corner.0 - 53.97).hypot(my - corner.1 - 14.97);
+        assert!(
+            off <= 1.0,
+            "{model}: the longest bead ({:.2} mm) is centered at ({:.2}, {:.2}) from the walls' corner, {off:.2} mm off",
+            longest.len,
+            mx - corner.0,
+            my - corner.1
+        );
+    }
+}
+
+#[test]
+fn no_short_bead_along_the_lines() {
+    // The measured x-mark tops have none: a corner the lines cut off gets no bead across it.
+    for model in ["bambu-a1", "bambu-p1s"] {
+        let l = layout(&slice(&xmark(), measured(model, &[])));
+        // z in hundredths of a mm.
+        let found: Vec<String> = short_along(&l)
+            .iter()
+            .map(|b| {
+                format!(
+                    "z {}: {:.3} by {:.3} mm at ({:.2}, {:.2})",
+                    b.z, b.len, b.width, b.start.0, b.start.1
+                )
+            })
+            .collect();
+        assert!(
+            found.is_empty(),
+            "{model}: short beads along the lines: {found:?}"
+        );
     }
 }
