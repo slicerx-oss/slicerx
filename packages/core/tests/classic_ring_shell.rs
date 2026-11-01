@@ -20,6 +20,11 @@
 //!   under the slope widens to the slits and its lowest layer bridges; at 30% overlap the slit is too narrow to count
 //!   and nothing changes; with MK4 widths (0.40 and 0.44 mm walls, 3 walls, 25%, 4 top layers) on a printer that is
 //!   not a Bambu Lab one, the same solid and bridges print.
+//! - The ring's shell layers over its z 1.2 bridge with 3 bottom shells (the stock request, `precise_outer_wall` off),
+//!   by infill wall overlap: up to 19% the slit counts, z 1.4 is internal solid and z 1.6 and 1.8 float, about 34.9
+//!   each on the W 4.0 ring. From 20% it does not count, the ring layers carry about 31.9 and the first of them, z 1.4,
+//!   floats too: the bridge under it ends at the ring's edge, so the sparse infill past it comes within a sparse line.
+//!   It stays internal solid with variable-width walls, with one wall and with three.
 //! - The classic x-mark on the P1S and A1 prints gap fill only after a top surface (fixtures/classic-ring-shell: their
 //!   stock settings with classic walls).
 //!
@@ -77,8 +82,13 @@ fn stl(name: &str, tris: &[[(f64, f64, f64); 3]]) -> Arc<Mesh> {
 
 /// The W 4.0 step: a 30 mm square box 2 mm tall under a centered 22 mm block to z 4.
 fn step() -> Arc<Mesh> {
+    step_w(4.0)
+}
+
+/// The W step: a 30 mm square box 2 mm tall under a centered (30 - 2W) mm block to z 4, leaving a ring W wide.
+fn step_w(w: f64) -> Arc<Mesh> {
     let mut tris = Vec::new();
-    for (h, z0, z1) in [(15.0, 0.0, 2.0), (11.0, 2.0, 4.0)] {
+    for (h, z0, z1) in [(15.0, 0.0, 2.0), (15.0 - w, 2.0, 4.0)] {
         let sq: [(f64, f64); 4] = [(-h, -h), (h, -h), (h, h), (-h, h)];
         for i in 0..4 {
             let (a, b) = (sq[i], sq[(i + 1) % 4]);
@@ -591,4 +601,90 @@ fn the_slit_counts_on_other_printers_too() {
         (3.8, 12.13, 0.0),
     ];
     check_taper("MK4 widths, not Bambu Lab", &slice(taper(), &mk4), &want);
+}
+
+/// Floating vertical shell and internal solid infill on the ring's shell layers z 1.4, 1.6 and 1.8 of the W `w` step
+/// with `edits`: `want` is the label of each (true floating) and `e` the amount each layer carries, within `within`.
+fn check_ring(name: &str, w: f64, edits: &[(&str, Value)], want: [bool; 3], e: f64, within: f64) {
+    let layers = per_layer(&moves(&slice(step_w(w), edits)));
+    let mut misses = Vec::new();
+    for (z, floats) in [1.4, 1.6, 1.8].into_iter().zip(want) {
+        let (fl, is) = (at(&layers, FLOATING, z), at(&layers, SOLID, z));
+        let (got, other, label) = if floats {
+            (fl, is, FLOATING)
+        } else {
+            (is, fl, SOLID)
+        };
+        if other > 0.0 || !near(got, e, within) {
+            misses.push(format!(
+                "z {z}: floating {fl:.2}, internal solid {is:.2}, want {label} {e}"
+            ));
+        }
+    }
+    assert!(misses.is_empty(), "{name}:\n{}", misses.join("\n"));
+}
+
+#[test]
+fn the_slit_counts_up_to_19_percent_overlap() {
+    for (ov, e) in [(16, 34.96), (17, 34.93), (18, 34.91), (19, 34.88)] {
+        check_ring(
+            &format!("{ov}% overlap"),
+            4.0,
+            &[("infill_wall_overlap", json!(ov))],
+            [false, true, true],
+            e,
+            0.03,
+        );
+    }
+}
+
+#[test]
+fn classic_ring_amounts_follow_the_slit() {
+    for (w, want, e) in [(4.5, [false, true, true], 38.19), (5.0, [false; 3], 41.56)] {
+        check_ring(&format!("W {w}"), w, &[], want, e, 0.03);
+    }
+}
+
+#[test]
+fn the_first_ring_layer_over_its_bridge_floats_from_20_percent_overlap() {
+    for (ov, e) in [
+        (20, 31.90),
+        (21, 31.87),
+        (22, 31.85),
+        (23, 31.82),
+        (24, 31.69),
+        (25, 31.66),
+        (30, 31.53),
+    ] {
+        check_ring(
+            &format!("{ov}% overlap"),
+            4.0,
+            &[("infill_wall_overlap", json!(ov))],
+            [true; 3],
+            e,
+            0.03,
+        );
+    }
+}
+
+#[test]
+fn the_first_ring_layer_stays_internal_solid_with_other_walls() {
+    // Variable-width walls within 1% of their amount; one wall (whose upper ring layers are not pinned here) and three
+    // walls keep z 1.4 internal solid.
+    check_ring(
+        "variable-width walls",
+        4.5,
+        &[("wall_generator", json!("aegis"))],
+        [false, true, true],
+        35.44,
+        0.01,
+    );
+    for (loops, e) in [(1, 33.01), (3, 35.27)] {
+        let layers = per_layer(&moves(&slice(step_w(4.0), &[("wall_loops", json!(loops))])));
+        let (fl, is) = (at(&layers, FLOATING, 1.4), at(&layers, SOLID, 1.4));
+        assert!(
+            fl == 0.0 && near(is, e, 0.03),
+            "{loops} walls, z 1.4: floating {fl:.2}, internal solid {is:.2}, want internal solid {e}"
+        );
+    }
 }
