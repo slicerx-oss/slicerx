@@ -341,7 +341,8 @@ impl Pair {
             .collect()
     }
 
-    /// Every group at the ratio `want` gives it (within 0.001, 0.002 for ironing, which has many short moves), each
+    /// Every group at the ratio `want` gives it (within 0.001, 0.002 for ironing, which has many short moves, and for gap
+    /// fill, whose corner beads are short and thin enough that E rounds to a few parts in a thousand), each
     /// feature of `need` present on the first layer, and the start sequence's moves unchanged.
     fn expect(&self, what: &str, need: &[&str], want: impl Fn(&Group) -> f64) {
         for (a, b) in self.base.iter().zip(&self.case).filter(|(a, _)| a.layer == 0) {
@@ -356,7 +357,11 @@ impl Pair {
             );
         }
         for (g, r) in &ratios {
-            let tol = if g.1 == "Ironing" { 0.002 } else { 0.001 };
+            let tol = if g.1 == "Ironing" || g.1 == "Gap infill" {
+                0.002
+            } else {
+                0.001
+            };
             let w = want(g);
             assert!(
                 (r - w).abs() < tol,
