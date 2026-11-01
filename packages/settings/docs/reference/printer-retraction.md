@@ -279,7 +279,7 @@ How fast the filament pulls back by the tool change retraction length, beyond th
 
 - Type: list of enum values, one per extruder
 - Default: ["Slope Lift"]
-- Values: `Auto Lift` (Auto), `Normal Lift` (Normal), `Slope Lift` (Slope), `Spiral Lift` (Spiral)
+- Values: `Auto Lift` (Auto), `Normal Lift` (Normal), `Slope Lift` (Slope), `Spiral Lift` (Spiral), `Ramp Lift` (Ramp)
 - Used only when: Z hop height (`z_hop`) is above 0
 - Changing it redoes: G-code only
 - mimir class: edit (may change in a plate override)

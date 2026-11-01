@@ -984,7 +984,7 @@
       ]
     },
     {
-      "name": "a filament's ramping lift is its own z hop height as a slope lift, and the printer's lift stays the printer's",
+      "name": "a filament's ramping lift is its own z hop height as a ramp lift at its own angle, and the printer's lift stays the printer's",
       "lines": [
         "retract_lift = 0.2",
         "travel_ramping_lift = 1",
@@ -997,11 +997,10 @@
       ],
       "config": {
         "filament_z_hop": "0.6",
-        "filament_z_hop_types": "Slope Lift"
+        "filament_z_hop_types": "Ramp Lift",
+        "filament_travel_slope": "1"
       },
-      "unmapped": [
-        "filament_travel_slope"
-      ]
+      "unmapped": []
     },
     {
       "name": "a filament with ramping off lifts its own retract lift straight up",
@@ -1017,11 +1016,10 @@
       ],
       "config": {
         "filament_z_hop": "0.6",
-        "filament_z_hop_types": "Normal Lift"
+        "filament_z_hop_types": "Normal Lift",
+        "filament_travel_slope": "1"
       },
-      "unmapped": [
-        "filament_travel_slope"
-      ]
+      "unmapped": []
     },
     {
       "name": "a filament with ramping off and no retract lift of its own lifts the printer's height straight up",
@@ -1040,7 +1038,7 @@
       "unmapped": []
     },
     {
-      "name": "a filament's ramp at 90 degrees lifts straight up",
+      "name": "a filament's ramp at 90 degrees is a ramp lift at its own angle, which lifts straight up",
       "lines": [
         "filament_travel_ramping_lift = 1",
         "filament_travel_max_lift = 0.6",
@@ -1048,11 +1046,10 @@
       ],
       "config": {
         "filament_z_hop": "0.6",
-        "filament_z_hop_types": "Normal Lift"
+        "filament_z_hop_types": "Ramp Lift",
+        "filament_travel_slope": "90"
       },
-      "unmapped": [
-        "filament_travel_slope"
-      ]
+      "unmapped": []
     },
     {
       "name": "a filament's ramp of height 0 does not lift",
@@ -1063,11 +1060,10 @@
       ],
       "config": {
         "filament_z_hop": "0",
-        "filament_z_hop_types": "Slope Lift"
+        "filament_z_hop_types": "Ramp Lift",
+        "filament_travel_slope": "1"
       },
-      "unmapped": [
-        "filament_travel_slope"
-      ]
+      "unmapped": []
     },
     {
       "name": "a filament's retract lift with no ramping of its own",
@@ -1096,9 +1092,7 @@
         "filament_travel_slope = nil"
       ],
       "config": {},
-      "unmapped": [
-        "filament_travel_slope"
-      ]
+      "unmapped": []
     },
     {
       "name": "two filaments' lifts, one ramping and one straight",
@@ -1109,7 +1103,7 @@
       ],
       "config": {
         "filament_z_hop": "0.6,0.4",
-        "filament_z_hop_types": "Slope Lift,Normal Lift"
+        "filament_z_hop_types": "Ramp Lift,Normal Lift"
       },
       "unmapped": []
     },

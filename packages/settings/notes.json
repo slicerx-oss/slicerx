@@ -492,6 +492,7 @@
   "filament_wipe_distance": "Overrides the printer's wipe distance for this filament, in mm. Empty uses the printer's value.",
   "filament_z_hop": "Overrides the printer's z hop height for this filament, in mm. Empty uses the printer's value.",
   "filament_z_hop_types": "Overrides the printer's z hop type for this filament. Empty uses the printer's value.",
+  "filament_travel_slope": "Overrides the printer's travel slope for this filament, in degrees: how steeply slope, spiral and ramp lifts climb. Empty uses the printer's value.",
   "long_retractions_when_ec": "Does a long retraction when switching extruders, on printers with two nozzles, which reduces oozing from the idle one.",
   "retraction_distances_when_ec": "How far to retract when switching extruders, in mm, on printers with two nozzles.",
   "filament_ironing_speed": "Ironing speed for this filament, in mm/s, over the process value. Empty uses the process value.",

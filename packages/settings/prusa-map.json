@@ -1,5 +1,5 @@
 {
- "comment": "Maps PrusaSlicer preset keys to SlicerX keys. A key that is in the schema under the same name needs no entry. A key in onlyMappedValues carries over only through a values row (PrusaSlicer writes no shrinkage as 0%, SlicerX as 100%); any other value is left out and reported as not applied. A key in zeroIsUnset with the value 0 means not set there and is read as absent. A key in noPercent carries over in mm only; a percent is left out and reported as not applied. composites: fanOut sets several keys to one value and each lift row turns a lift (ramp on or off, its height, the straight lift and the ramp's angle) into a z hop height and type: with ramp 1 the height and Slope Lift (Normal Lift at an angle of 0 or 90 degrees), with ramp 0 the straight lift and Normal Lift, with no ramp set the straight lift alone. A filament row reads only the filament's own keys. Support, first layer speed and ironing read several keys and stay as code in js/prusa.ts and the engine's prusa.rs, pinned by fixtures/prusa-project-settings.json. projectTakes: what a project file's settings may set, for every project the app opens and for a PrusaSlicer project in the engine and the MCP server too: plain values of the listed types in the listed sections, the text settings in text when every character is one of its class, no key in unread and no value in unsetValues. Source: PrusaSlicer print_config_def and handle_legacy (commit 30ef591), compared key by key with our schema. Percent bases are in percentOf.",
+ "comment": "Maps PrusaSlicer preset keys to SlicerX keys. A key that is in the schema under the same name needs no entry. A key in onlyMappedValues carries over only through a values row (PrusaSlicer writes no shrinkage as 0%, SlicerX as 100%); any other value is left out and reported as not applied. A key in zeroIsUnset with the value 0 means not set there and is read as absent. A key in noPercent carries over in mm only; a percent is left out and reported as not applied. composites: fanOut sets several keys to one value and each lift row turns a lift (ramp on or off, its height and the straight lift) into a z hop height and type: with ramp 1 the height and Ramp Lift (the ramp's angle, travel_slope or filament_travel_slope, carries over under its own name), with ramp 0 the straight lift and Normal Lift, with no ramp set the straight lift alone. A filament row reads only the filament's own keys. Support, first layer speed and ironing read several keys and stay as code in js/prusa.ts and the engine's prusa.rs, pinned by fixtures/prusa-project-settings.json. projectTakes: what a project file's settings may set, for every project the app opens and for a PrusaSlicer project in the engine and the MCP server too: plain values of the listed types in the listed sections, the text settings in text when every character is one of its class, no key in unread and no value in unsetValues. Source: PrusaSlicer print_config_def and handle_legacy (commit 30ef591), compared key by key with our schema. Percent bases are in percentOf.",
  "prusaCommit": "30ef591",
  "rename": {
   "arc_fitting": "enable_arc_fitting",
@@ -339,7 +339,6 @@
     "ramp": "travel_ramping_lift",
     "height": "travel_max_lift",
     "straight": "retract_lift",
-    "slope": "travel_slope",
     "to": "z_hop",
     "type": "z_hop_types"
    },
@@ -347,7 +346,6 @@
     "ramp": "filament_travel_ramping_lift",
     "height": "filament_travel_max_lift",
     "straight": "filament_retract_lift",
-    "slope": "filament_travel_slope",
     "to": "filament_z_hop",
     "type": "filament_z_hop_types"
    }
