@@ -596,6 +596,9 @@ async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<{
   const prusaObject = g.layout === 'prusa' ? (await import('@slicerx/settings')).prusaObjectOverrides : null
   const prusaText = prusaConfig ? new TextDecoder().decode(prusaConfig) : undefined
   const objectRaw = (list: [string, string][]): Record<string, string> => (prusaObject ? prusaObject(Object.fromEntries(list), prusaText) : raw(list))
+  // A part's width percents are of its object's layer height (prusaPartOverrides).
+  const prusaPart = g.layout === 'prusa' ? (await import('@slicerx/settings')).prusaPartOverrides : null
+  const partRaw = (list: [string, string][], object: [string, string][]): Record<string, string> => (prusaPart ? prusaPart(Object.fromEntries(list), Object.fromEntries(object), prusaText) : raw(list))
   const items: Assembled[] = []
   for (const [itemIndex, o] of g.objects.entries()) {
     const parts: MeshPart[] = []
@@ -607,7 +610,7 @@ async function assembleGeom(g: GeomProject, prusaConfig?: Uint8Array): Promise<{
       if (p.kindText !== null) continue
       const name = p.name || o.name || 'Part'
       const part: MeshPart = { name, slot: p.slot ?? o.slot ?? 1, positions: p.positions, indices: p.indices }
-      const own = raw(p.settings)
+      const own = partRaw(p.settings, o.settings)
       if (p.kind !== 'normal') {
         const role: VolumeRole = p.kind
         volumes.push({ name, role, part, ...(role === 'modifier' && Object.keys(own).length ? { rawSettings: own } : {}) })
@@ -695,25 +698,27 @@ async function assembleScanned(scanned: ScannedProject): Promise<{ plateCfg: Pla
   const prusaText = settingsText ? undefined : files.get('Metadata/Slic3r_PE_model.config')
   const prusa = new Map<string, { name?: string; extruder?: number; settings: Record<string, string>; volumes: PrusaVolume[] }>()
   if (prusaText) {
-    const { prusaObjectOverrides, prusaOverrides } = await import('@slicerx/settings')
+    const { prusaObjectOverrides, prusaPartOverrides } = await import('@slicerx/settings')
     const peConfig = files.get('Metadata/Slic3r_PE.config')
     const peText = peConfig ? dec.decode(peConfig) : undefined
     const cfg = xml(dec.decode(prusaText)).documentElement
     const md = (el: Element) => Object.fromEntries(kids(el, 'metadata').map((m) => [m.getAttribute('key') ?? '', m.getAttribute('value') ?? '']))
-    const settingsOf = (m: Record<string, string>) => prusaOverrides(Object.fromEntries(Object.entries(m).filter(([k]) => k !== '' && !PRUSA_META.has(k))))
+    const settingsOnly = (m: Record<string, string>) => Object.fromEntries(Object.entries(m).filter(([k]) => k !== '' && !PRUSA_META.has(k)))
     const slot = (v: string | undefined) => {
       const n = Number(v)
       return Number.isInteger(n) && n > 0 ? n : undefined
     }
     for (const o of kids(cfg, 'object')) {
       const om = md(o)
+      // A part's width percents are of its object's layer height (prusaPartOverrides).
+      const settingsOf = (vm: Record<string, string>) => prusaPartOverrides(settingsOnly(vm), settingsOnly(om), peText)
       const volumes: PrusaVolume[] = kids(o, 'volume').map((v) => {
         const vm = md(v)
         const ext = slot(vm['extruder'])
         return { first: Number(v.getAttribute('firstid')), last: Number(v.getAttribute('lastid')), ...(vm['name'] ? { name: vm['name'] } : {}), type: vm['volume_type'] ?? (vm['modifier'] === '1' ? 'ParameterModifier' : 'ModelPart'), ...(ext ? { extruder: ext } : {}), settings: settingsOf(vm) }
       })
       const ext = slot(om['extruder'])
-      const objectSettings = prusaObjectOverrides(Object.fromEntries(Object.entries(om).filter(([k]) => k !== '' && !PRUSA_META.has(k))), peText)
+      const objectSettings = prusaObjectOverrides(settingsOnly(om), peText)
       prusa.set(o.getAttribute('id') ?? '', { ...(om['name'] ? { name: om['name'] } : {}), ...(ext ? { extruder: ext } : {}), settings: objectSettings, volumes })
     }
   }
