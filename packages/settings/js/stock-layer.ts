@@ -79,7 +79,7 @@ export const GCODE_KEYS = ['machine_start_gcode', 'machine_end_gcode', 'before_l
 const first = (v: unknown): unknown => (Array.isArray(v) ? v[0] : v)
 
 /** Filament keys that override the printer's extruder value only when set. */
-const FILAMENT_OVERRIDE_KEYS: ReadonlySet<string> = new Set(['filament_retraction_length', 'filament_z_hop', 'filament_z_hop_types', 'filament_retract_lift_above', 'filament_retract_lift_below', 'filament_retract_lift_enforce', 'filament_retraction_speed', 'filament_deretraction_speed', 'filament_retract_restart_extra', 'filament_retraction_minimum_travel', 'filament_wipe_distance', 'filament_retract_when_changing_layer', 'filament_wipe', 'filament_retract_before_wipe', 'filament_long_retractions_when_cut', 'filament_retraction_distances_when_cut'])
+const FILAMENT_OVERRIDE_KEYS: ReadonlySet<string> = new Set(['filament_retraction_length', 'filament_z_hop', 'filament_z_hop_types', 'filament_retract_lift_above', 'filament_retract_lift_below', 'filament_retract_lift_enforce', 'filament_retraction_speed', 'filament_deretraction_speed', 'filament_retract_restart_extra', 'filament_retraction_minimum_travel', 'filament_wipe_distance', 'filament_retract_when_changing_layer', 'filament_wipe', 'filament_retract_before_wipe', 'filament_long_retractions_when_cut', 'filament_retraction_distances_when_cut', 'filament_travel_slope'])
 
 /** One value per slot for every key a slot's filament sets, so a three-color print has three entries. */
 export function perSlot(parts: readonly Record<string, SettingValue>[]): Record<string, SettingValue> {

@@ -1,6 +1,6 @@
 # Filament: Retraction
 
-22 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+23 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `filament_deretraction_speed`
 
@@ -203,6 +203,20 @@ Overrides the printer's retraction speed for this filament. Empty uses the print
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 
+### `filament_travel_slope`
+
+**Filament travel slope**
+
+Overrides the printer's travel slope for this filament: the angle a slope, spiral or ramp lift climbs at. Empty uses the printer's value.
+
+- Type: list of numbers, one per extruder
+- Unit: degrees
+- Default: empty list
+- Recommended range: 0 to 90
+- Nullable: A profile can store `nil` to take the value from another profile; the key is then left out.
+- Changing it redoes: G-code only
+- mimir class: read (not in the catalog: never written)
+
 ### `filament_wipe`
 
 **Filament wipe**
@@ -252,7 +266,7 @@ Overrides the printer's z hop type for this filament. Empty uses the printer's v
 - Type: list of enum values, one per extruder
 - Default: empty list
 - Nullable: A profile can store `nil` to take the value from another profile; the key is then left out.
-- Values: `Auto Lift` (Auto), `Normal Lift` (Normal), `Slope Lift` (Slope), `Spiral Lift` (Spiral)
+- Values: `Auto Lift` (Auto), `Normal Lift` (Normal), `Slope Lift` (Slope), `Spiral Lift` (Spiral), `Ramp Lift` (Ramp)
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 

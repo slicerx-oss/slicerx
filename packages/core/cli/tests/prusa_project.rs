@@ -556,12 +556,12 @@ fn travels(gcode: &str) -> Vec<Travel> {
 fn a_prusaslicer_projects_filament_lift_reaches_the_slice() {
     // (project, the lift, whether it goes straight up): the filament's own lift on the default printer, which lifts
     // nothing. Every travel between the two boxes on a layer retracts and lifts, and any travel that lifts lifts by the
-    // filament's height. A ramp is a slope lift that climbs along the travel; at 0 or 90 degrees it goes straight up.
+    // filament's height. A ramp at 0 or 90 degrees goes straight up; a sloped ramp's climb (by the travel's length) is
+    // checked in prusa_lift_ramp.rs.
     let mut wrong = Vec::new();
     for (name, height, straight) in [
         ("mini--isl--FRL06", 0.6, None),
         ("mk4--isl--FRAMP0FRL06", 0.6, Some(true)),
-        ("mk4--isl--stock", 0.6, Some(false)),
         ("mk4--isl--FSL90", 0.6, Some(true)),
     ] {
         let all = travels(&gcode(&lift_project(name)));
@@ -613,11 +613,12 @@ fn a_prusaslicer_projects_filament_lift_reaches_the_slice() {
 
 #[test]
 fn sx_project_settings_reads_a_prusaslicer_filaments_lift() {
-    // The filament's ramp height, not the printer's (1.5) and not as a slope, and the printer's lift stays the
-    // printer's.
+    // The filament's ramp height, not the printer's (1.5) and not as a slope, as a ramp at the filament's angle, and
+    // the printer's lift stays the printer's.
     let config = project_settings(&lift_project("mk4--isl--stock"));
     assert_eq!(config["filament_z_hop"], "0.6");
-    assert_eq!(config["filament_z_hop_types"], "Slope Lift");
+    assert_eq!(config["filament_z_hop_types"], "Ramp Lift");
+    assert_eq!(config["filament_travel_slope"], "1");
     for k in ["z_hop", "z_hop_types", "travel_slope"] {
         assert!(config.get(k).is_none(), "{k}");
     }

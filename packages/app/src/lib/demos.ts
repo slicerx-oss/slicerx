@@ -595,6 +595,7 @@ export const SETTING_DEMOS: Readonly<Record<string, string>> = {
   support_on_build_plate_only: 'adv-support-on-build-plate-only',
   support_remove_small_overhang: 'adv-support-remove-small-overhang',
   travel_slope: 'adv-travel-slope',
+  filament_travel_slope: 'adv-travel-slope',
   tree_support_branch_angle: 'adv-tree-support-branch-angle',
   tree_support_branch_angle_organic: 'adv-tree-support-branch-angle',
   tree_support_angle_slow: 'adv-tree-support-angle-slow',
