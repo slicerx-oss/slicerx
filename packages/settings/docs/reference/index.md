@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 757 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 758 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -15,7 +15,7 @@ Print settings: layers, walls, infill, speeds, supports, adhesion.
 - [Multi material](process-multimaterial.md): 43 settings
 - [Overhangs and bridges](process-overhangs.md): 29 settings
 - [Profile metadata](process-profile.md): 8 settings
-- [Quality and geometry](process-quality.md): 89 settings
+- [Quality and geometry](process-quality.md): 90 settings
 - [Retraction](process-retraction.md): 2 settings
 - [Special modes](process-special.md): 24 settings
 - [Speed](process-speed.md): 23 settings
@@ -716,6 +716,7 @@ Alphabetical, each linking to its group file.
 - `toolchange_ordering`: Toolchange ordering, [process/multimaterial](process-multimaterial.md#toolchange_ordering)
 - `toolchange_park_position`: Tool change position, [printer/machine](printer-machine.md#toolchange_park_position)
 - `toolchange_temperature_drop`: Temperature drop allowed at a tool change, [printer/multimaterial](printer-multimaterial.md#toolchange_temperature_drop)
+- `top_area_threshold`: Single-wall top step width, [process/quality](process-quality.md#top_area_threshold)
 - `top_bottom_infill_wall_overlap`: Top and bottom infill to wall overlap, [process/strength](process-strength.md#top_bottom_infill_wall_overlap)
 - `top_color_penetration_layers`: Painted color depth under tops, [process/advanced](process-advanced.md#top_color_penetration_layers)
 - `top_layer_direction`: Top layer direction, [process/strength](process-strength.md#top_layer_direction)

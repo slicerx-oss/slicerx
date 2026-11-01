@@ -1,6 +1,6 @@
 # Process: Quality and geometry
 
-89 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+90 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `detect_thin_wall`
 
@@ -822,6 +822,19 @@ How far, along the height of the part, layer heights are blended. 0 picks eight 
 - Default: on
 - Tier: Expert, quality
 - Changing it redoes: surfaces
+- mimir class: read (not in the catalog: never written)
+
+### `top_area_threshold`
+
+**Single-wall top step width**
+
+- Type: millimeters or percent (string such as "0.42" or "110%")
+- Unit: mm
+- Default: "200%"
+- Recommended range: 0 to no maximum
+- Used only when: Single wall on the top surface (`only_one_wall_top`) is on; and Wall generator (`wall_generator`) is "classic"
+- Tier: Expert, quality
+- Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
 ### `top_surface_line_width`

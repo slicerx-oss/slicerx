@@ -3452,6 +3452,31 @@
    "intent": "quality"
   },
   {
+   "key": "top_area_threshold",
+   "section": "process",
+   "type": "floatOrPercent",
+   "label": "Single-wall top step width",
+   "unit": "mm",
+   "min": 0,
+   "mode": "expert",
+   "default": "200%",
+   "group": "quality",
+   "invalidates": "perimeters",
+   "enabledWhen": [
+    {
+     "key": "only_one_wall_top",
+     "op": "eq",
+     "value": true
+    },
+    {
+     "key": "wall_generator",
+     "op": "eq",
+     "value": "classic"
+    }
+   ],
+   "intent": "quality"
+  },
+  {
    "key": "outer_wall_line_width",
    "section": "process",
    "type": "floatOrPercent",
