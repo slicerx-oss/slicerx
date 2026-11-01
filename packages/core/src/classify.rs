@@ -36,6 +36,11 @@ pub(crate) struct In<'a> {
     /// Where the surfaces over the region's classic walls start (`perimeters::classic_edges`), when its top surfaces
     /// are found out to the internal solid infill's edge rather than the infill area's (`top_from_spacing_edge`).
     pub(crate) classic: Option<perimeters::ClassicEdges>,
+    /// A classic one-wall top band's part of the infill area
+    /// (`perimeters::IslandWalls::band_area`): top surface out to where the band's lines end, also where the
+    /// surface's growth into the area beside it stops short of that, as under a flat ledge whose layer above keeps
+    /// sparse infill there.
+    pub(crate) band_top: Option<&'a Shapes>,
 }
 
 /// The four kinds of infill area, disjoint and inside the infill area.
@@ -329,7 +334,15 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
     // The strips outside the infill area reach it across the gap between the two edges, and only what they grow
     // into stays.
     let lone = sub(&lone, &bottom);
-    let top = union(&top, &expand(&lone, touch, &mut shell, &mut sparse));
+    let mut top = union(&top, &expand(&lone, touch, &mut shell, &mut sparse));
+    if let Some(band) = i.band_top {
+        let more = sub(&sub(&meet(band, inner), &top), &bottom);
+        if !perimeters::offset(&more, -mm(0.005)).is_empty() {
+            shell = sub(&shell, &more);
+            sparse = sub(&sparse, &more);
+            top = union(&top, &more);
+        }
+    }
     let top = sub(&top, &bottom);
 
     // Sparse pockets smaller than `minimum_sparse_infill_area` are printed solid. A pocket is measured out to the
