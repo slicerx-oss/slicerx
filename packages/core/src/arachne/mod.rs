@@ -629,6 +629,10 @@ pub(crate) fn island_walls_or(
     let mut outlines: Vec<Shapes> = Vec::with_capacity(region.len());
     let mut built: Vec<Built> = Vec::with_capacity(region.len());
     let mut waiting = usual.is_some();
+    // One wall, a one-wall top's run, and the fixed-width walls of an island the generator cannot process keep the
+    // overlap of the line width ([`line_overlap`]).
+    let line = line_overlap(cfg, overlap);
+    let overlap = if loops < 2 { line } else { overlap };
     for shape in region {
         let one: Shapes = vec![shape.clone()];
         let outline = if inset > 0 {
@@ -641,12 +645,10 @@ pub(crate) fn island_walls_or(
         } else if let Some(t) = top.filter(|_| loops > 1) {
             match top_run(&outline, &prm, cfg, t) {
                 Some(TopRun::Usual) => Built::Usual,
-                Some(TopRun::Split(one_wall, top)) => {
-                    match one_wall_top(&prm, cfg, t, one_wall, top, overlap) {
-                        Some((g, top)) => Built::Run(g, top),
-                        None => Built::Done(None),
-                    }
-                }
+                Some(TopRun::Split(one_wall, top)) => match one_wall_top(&prm, cfg, t, one_wall, top, line) {
+                    Some((g, top)) => Built::Run(g, top),
+                    None => Built::Done(None),
+                },
                 None => Built::Done(None),
             }
         } else {
@@ -681,6 +683,7 @@ pub(crate) fn island_walls_or(
         if let Some(g) = generated {
             // The infill boundary: the walls' inner edge simplified to the resolution (Orca's `simplify_p` in
             // `PerimeterGenerator::add_infill_contour_for_arachne`), opened by half a line and grown by the overlap.
+            let overlap = if run.is_some() { line } else { overlap };
             let simple = simplify_rings(&g.inner, resolution);
             let opened = perimeters::offset(&simple, -(min_infill_spacing / 2));
             let grown = perimeters::offset(&opened, overlap + min_infill_spacing / 2);
@@ -691,12 +694,27 @@ pub(crate) fn island_walls_or(
                 ..perimeters::IslandWalls::default()
             });
         } else {
-            let (isl, core) = perimeters::walls(&vec![shape.clone()], loops, w, overlap);
+            let (isl, core) = perimeters::walls(&vec![shape.clone()], loops, w, line);
             inner.extend(core);
             islands.extend(isl);
         }
     }
     (islands, inner)
+}
+
+/// `overlap` (internal units, a share of [`crate::config::PrintConfig::overlap_width`]) as the same share of the line
+/// width. One wall and a one-wall top's run meet the outer wall alone, and fixed-width walls take the overlap of the
+/// line width.
+#[allow(
+    clippy::cast_possible_truncation,
+    reason = "overlap is a fraction of a line width"
+)]
+fn line_overlap(cfg: &crate::config::PrintConfig, overlap: i32) -> i32 {
+    if cfg.aegis_walls() && cfg.wall_loops >= 2 {
+        (f64::from(overlap) * cfg.line_width / cfg.overlap_width()).round() as i32
+    } else {
+        overlap
+    }
 }
 
 /// The narrowest infill area the walls leave that is kept, internal units: 0.6 of a line spacing, or a whole line
@@ -1057,6 +1075,8 @@ pub(crate) mod reference {
         let resolution = f64::from(crate::geom::mm(prm.resolution));
         let mut islands = Vec::with_capacity(region.len());
         let mut inner: Shapes = Vec::new();
+        let line = super::line_overlap(cfg, overlap);
+        let overlap = if loops < 2 { line } else { overlap };
         for shape in region {
             let one: Shapes = vec![shape.clone()];
             let outline = if inset > 0 {
@@ -1067,11 +1087,12 @@ pub(crate) mod reference {
             let (generated, run) = if loops == 0 {
                 (None, None)
             } else if let Some(t) = top.filter(|_| loops > 1) {
-                one_wall_top(&outline, &prm, cfg, t, overlap)
+                one_wall_top(&outline, &prm, cfg, t, line)
             } else {
                 (walls(&outline, &prm), None)
             };
             if let Some(g) = generated {
+                let overlap = if run.is_some() { line } else { overlap };
                 let simple = simplify_rings(&g.inner, resolution);
                 let opened = perimeters::offset(&simple, -(min_infill_spacing / 2));
                 let grown = perimeters::offset(&opened, overlap + min_infill_spacing / 2);
@@ -1082,7 +1103,7 @@ pub(crate) mod reference {
                     ..perimeters::IslandWalls::default()
                 });
             } else {
-                let (isl, core) = perimeters::walls(&one, loops, w, overlap);
+                let (isl, core) = perimeters::walls(&one, loops, w, line);
                 inner.extend(core);
                 islands.extend(isl);
             }
