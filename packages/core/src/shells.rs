@@ -239,8 +239,9 @@ pub(crate) struct Around {
 
 /// The share of the solid infill line spacing from which the slit an `only_one_wall_top` layer's inner walls leave
 /// counts: the slit is the inner walls' spacing less the infill overlap into them from both sides. Wider slits pull the
-/// band of the layers below out to the slit's inner edge; narrower ones (from about 17% overlap on stock lines) do not.
-const SLIT_MIN: f64 = 0.7365;
+/// band of the layers below out to the slit's inner edge; narrower ones (from 20% overlap on stock lines, where the slit
+/// is 0.664 solid spacings wide against 0.684 at 19%) do not.
+const SLIT_MIN: f64 = 0.674;
 
 /// Whether the slit [`Input::slit`] reads counts with `cfg`: fixed-width walls, two or more of them,
 /// `only_one_wall_top` on, and the slit at least [`SLIT_MIN`] solid spacings wide.

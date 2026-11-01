@@ -197,6 +197,10 @@ pub(crate) struct Below<'a> {
     partial_edge: bool,
     /// The unsupported area's part at least a sparse infill line wide, worked out when first asked for.
     open: std::sync::OnceLock<Shapes>,
+    /// A sparse infill line, internal units, where the slit `only_one_wall_top` leaves is too narrow to count
+    /// ([`crate::shells::slit_counts`]) on two or more fixed-width walls: a piece over the layer's bridges
+    /// ([`Below::cut`]) also floats where the sparse infill past them comes within this of it. 0 otherwise.
+    margin: i32,
 }
 
 impl<'a> Below<'a> {
@@ -223,6 +227,15 @@ impl<'a> Below<'a> {
             touchable_open: std::sync::OnceLock::new(),
             partial_edge: crate::shells::surfaces_only(cfg),
             open: std::sync::OnceLock::new(),
+            margin: if cfg.arachne_walls()
+                || cfg.wall_loops < 2
+                || !perimeters::one_wall_top(cfg)
+                || crate::shells::slit_counts(cfg)
+            {
+                0
+            } else {
+                (cfg.sparse_infill_width() * SCALE).round() as i32
+            },
         }
     }
 
@@ -277,8 +290,11 @@ impl<'a> Below<'a> {
 
     /// True when the piece `one` rests on what does not hold it up below. Under `partial` the solid below a piece is
     /// the neighbors' surfaces alone, the piece's own size, so the piece also rests on the sparse infill along its
-    /// edge where that infill is at least a sparse infill line wide. Neither counts the unsupported area outside the
-    /// outline ([`Below::inside`]).
+    /// edge where that infill is at least a sparse infill line wide. Where the slit above is too narrow to count
+    /// ([`Below::margin`]), a piece over the layer's bridges also rests on the sparse infill within a sparse infill
+    /// line past them: the bridge under a ring then ends at the ring's edge, so the ring's first shell layer over it
+    /// floats. Where the slit counts the bridge reaches on under the block and that layer stays internal solid
+    /// infill. None of these counts the unsupported area outside the outline ([`Below::inside`]).
     fn floats(&self, one: &Shapes) -> bool {
         let rests = |hit: &Shapes| {
             !hit.is_empty() && (self.cut.is_empty() || !perimeters::difference(hit, &self.cut).is_empty())
@@ -298,6 +314,13 @@ impl<'a> Below<'a> {
                 self.wide(),
             ))
             || (self.partial_edge && touch(EDGE, self.cut_to_outline(self.open(), &self.touchable_open)))
+            || (self.margin > 0
+                && !self.cut.is_empty()
+                && !perimeters::intersection(one, &self.cut).is_empty()
+                && touch(
+                    EPS + self.margin,
+                    self.cut_to_outline(self.unsupported, &self.touchable),
+                ))
     }
 }
 
