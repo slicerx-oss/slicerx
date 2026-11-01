@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import cases from '../fixtures/prusa-project-settings.json'
 import mapJson from '../prusa-map.json'
-import { prusaObjectOverrides, prusaProjectConfig, takesProjectValue } from './prusa'
+import { prusaObjectOverrides, prusaPartOverrides, prusaProjectConfig, takesProjectValue } from './prusa'
 import { settingDef } from './schema'
 import { unzipForTest } from './testkit'
 
@@ -91,6 +91,22 @@ describe('prusaObjectOverrides', () => {
     expect(prusaObjectOverrides({ extrusion_width: '0' }, auto)).toEqual({ line_width: '0', support_line_width: '0.6' })
     // A general width in mm with the object's own layer height is the project's, already in the project's settings.
     expect(prusaObjectOverrides({ layer_height: '0.3' }, auto.replace('250%', '0.5'))).toEqual({ layer_height: '0.3' })
+  })
+})
+
+describe('prusaPartOverrides', () => {
+  const project = ['layer_height = 0.1', 'external_perimeter_extrusion_width = 0.6'].map((l) => `; ${l}`).join('\n')
+
+  it("takes a part's width percents of its object's layer height, else the project's", () => {
+    expect(prusaPartOverrides({ perimeter_extrusion_width: '150%' }, {}, project)).toEqual({ inner_wall_line_width: '0.15' })
+    expect(prusaPartOverrides({ perimeter_extrusion_width: '150%' }, { layer_height: '0.3' }, project)['inner_wall_line_width']).toBe('0.45')
+    expect(prusaPartOverrides({ support_material_xy_spacing: '150%' }, {}, project)['support_object_xy_distance']).toBe('0.9')
+  })
+
+  it("leaves out a part's own layer height and first layer, which its object decides", () => {
+    expect(prusaPartOverrides({ layer_height: '0.3', perimeter_extrusion_width: '150%' }, {}, project)).toEqual({ inner_wall_line_width: '0.15' })
+    expect(prusaPartOverrides({ first_layer_extrusion_width: '0.6', first_layer_height: '0.3' }, {}, project)).toEqual({})
+    expect(prusaPartOverrides({ perimeter_extrusion_width: '0.55' }, {}, project)).toEqual({ inner_wall_line_width: '0.55' })
   })
 })
 

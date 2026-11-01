@@ -382,6 +382,64 @@ pub(crate) fn object_overrides(list: &[(String, String)], project: Option<&str>)
     out
 }
 
+/// The keys a part (a volume) of a Prusa project may carry that the object decides: a part's own layer height,
+/// first layer height and first layer width are not printed.
+pub(crate) const PART_IGNORED: [&str; 3] = [
+    "layer_height",
+    "first_layer_height",
+    "first_layer_extrusion_width",
+];
+
+/// One part's (volume's) settings in a Prusa project as [`overrides`] gives them, without [`PART_IGNORED`], plus
+/// each width the part sets as a percent or 0 in mm: a percent of the object's layer height (the project's when the
+/// object sets none), the support XY spacing of the part's outer wall width. `object` is the object's own settings as
+/// the file gives them, `project` the text of the project's own config. Also the ignored keys the part sets, in order.
+pub(crate) fn part_overrides(
+    list: &[(String, String)],
+    object: &[(String, String)],
+    project: Option<&str>,
+) -> (Map<String, Value>, Vec<String>) {
+    let ignored_key = |k: &str| PART_IGNORED.contains(&k);
+    let kept: Vec<(String, String)> = list.iter().filter(|(k, _)| !ignored_key(k)).cloned().collect();
+    let ignored: Vec<String> = list
+        .iter()
+        .filter(|(k, _)| ignored_key(k))
+        .map(|(k, _)| k.clone())
+        .collect();
+    let mut out = overrides(&kept);
+    let m = map();
+    let global = project.map(config_lines).unwrap_or_default();
+    let mut raw: HashMap<&str, &str> = global.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    raw.extend(object.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    raw.extend(kept.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+    let own: HashMap<&str, &str> = kept.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    // A width of 0 is the part's general width when the part sets one; otherwise the object's or the project's, which
+    // their own settings already carry.
+    let own_general = own.contains_key("extrusion_width");
+    let mut keys: Vec<&String> = m.width_percent_of.keys().collect();
+    keys.sort();
+    for key in keys {
+        if key == "first_layer_extrusion_width" {
+            continue;
+        }
+        let own_key = own.contains_key(key.as_str());
+        let Some(v) = raw.get(key.as_str()) else {
+            continue;
+        };
+        let mm = match percent(v) {
+            Some(p) if own_key => width_mm(key, p, &raw),
+            None if own_general || own_key => zero_width_mm(key, v, &raw),
+            _ => None,
+        };
+        let Some(mm) = mm else {
+            continue;
+        };
+        let target = m.rename.get(key).map_or(key.as_str(), String::as_str);
+        out.insert(target.to_owned(), Value::String(plain(mm)));
+    }
+    (out, ignored)
+}
+
 /// A project's own `PrusaSlicer` settings (the text of `Metadata/Slic3r_PE.config`) as what a project may set
 /// (`projectTakes` in prusa-map.json), in the Orca-format values `project_settings.config` has: the print and filament
 /// values, with the printer's own settings, G-code and other text left to the current printer. Also the keys that have
