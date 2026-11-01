@@ -327,7 +327,10 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// edge instead of the walls' widths: only the internal solid infill along the walls (270.19 to 272.30 mm over 5
 /// layers), the top surface of one layer (53.81 to 53.57 mm), the travels between their lines and the filament total
 /// moved.
-const BY_OBJECT_FNV: &str = "077ec844e3fb258e";
+/// Changed again when the internal solid infill on Bambu Lab printers fit its lines between each piece's edges: only
+/// the internal solid infill (272.30 to 272.34 mm over 5 layers, its lines wider by as much as their pitch grew), the
+/// travels between its lines and the filament total moved.
+const BY_OBJECT_FNV: &str = "7df43e472f9a326f";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {

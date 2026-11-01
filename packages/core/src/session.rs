@@ -10049,9 +10049,9 @@ impl SliceSession {
                 }
             };
             let surface_stretch = surface_edge(cfg, layer_height, stretch_overlap / 100.0, cfg.wall_loops);
-            // How much wider than the surface's own width each stretched top and bottom line prints, and the
-            // widest stretched spacing, mm.
-            let mut widen: [Vec<f32>; 2] = [Vec::new(), Vec::new()];
+            // How much wider than the surface's own width each stretched top and bottom line and each fitted internal
+            // solid line prints, and the widest stretched spacing, mm.
+            let mut widen: [Vec<f32>; 3] = [Vec::new(), Vec::new(), Vec::new()];
             let mut pitch: [f64; 2] = [0.0, 0.0];
             for (which, key, default, spans) in [
                 (0usize, "top_surface_pattern", "monotonicline", &mut top),
@@ -10208,8 +10208,13 @@ impl SliceSession {
                             grid_inset(cfg, layer_height, overlap, loops, surface_mm)
                         })
                         .flatten();
+                    // On Bambu Lab printers the internal solid infill's line patterns fit their lines between each
+                    // piece's edges (`fitted_grids`).
+                    let fitted =
+                        which == 2 && bambu_stretch && (density - 1.0).abs() < 1e-9 && fitted_pattern(name);
                     let grids: Vec<SurfaceGrid> = match (stretch, anchored) {
                         (Some(e), _) => stretch_grids(&region, d, e, surface_mm),
+                        (None, None) if fitted => fitted_grids(&region, d, surface_mm, surface_spacing),
                         (None, Some(inset_mm)) => {
                             // A classic top surface whose edge moved out (`top_shift`) keeps its lines where they
                             // were across the walls, and its gap fill reaches the innermost wall's spacing edge.
@@ -10327,7 +10332,7 @@ impl SliceSession {
                         if let Some(k) = skip {
                             fits.retain(|iv| iv.k != k);
                         }
-                        if anchored.is_some() {
+                        if anchored.is_some() || fitted {
                             // The scanlines laid over the whole surface sit on the plate's grid: none of them prints.
                             spans.clear();
                         }
@@ -10414,7 +10419,7 @@ impl SliceSession {
                                 let before = slot_lines.len();
                                 slot_lines
                                     .extend(pl.windows(2).filter_map(|s| Some([*s.first()?, *s.get(1)?])));
-                                if let (Some(_), Some(w)) = (stretch, widen.get_mut(which)) {
+                                if let (true, Some(w)) = (stretch.is_some() || fitted, widen.get_mut(which)) {
                                     w.extend(std::iter::repeat_n(wider, slot_lines.len() - before));
                                 }
                             }
@@ -10675,7 +10680,7 @@ impl SliceSession {
                 work.gap_shell = gaps_of(2, solid_mm);
             }
             let [curved_top, curved_bottom, curved_shell] = curved;
-            let [widen_top, widen_bottom] = widen;
+            let [widen_top, widen_bottom, widen_shell] = widen;
             if !widen_top.is_empty() {
                 work.top_widen = vec![0.0; work.top.len()];
                 work.top_widen.extend(widen_top);
@@ -10683,6 +10688,10 @@ impl SliceSession {
             if !widen_bottom.is_empty() {
                 work.bottom_widen = vec![0.0; work.bottom.len()];
                 work.bottom_widen.extend(widen_bottom);
+            }
+            if !widen_shell.is_empty() {
+                work.shell_widen = vec![0.0; work.shell.len()];
+                work.shell_widen.extend(widen_shell);
             }
             work.top.extend(curved_top);
             work.bottom.extend(curved_bottom);
@@ -12383,6 +12392,92 @@ fn stretch_grids(region: &Shapes, d: Dir, edge_mm: f64, nominal_mm: f64) -> Vec<
     out
 }
 
+/// Whether a Bambu Lab printer's internal solid infill fits its lines between each piece's edges ([`fitted_grids`]):
+/// the line patterns at full density.
+fn fitted_pattern(name: &str) -> bool {
+    matches!(name, "monotonic" | "rectilinear" | "zig-zag")
+}
+
+/// The grids of internal solid infill on Bambu Lab printers over each connected piece of `region`, turned so its lines
+/// run along `d`: the first and the last line half the surface's own spacing `nominal_mm` in from the piece's edges
+/// across the lines, and the lines between them as far apart as a whole number of spacings fits, the most whose pitch
+/// is not under the spacing (floor(W / spacing) for W between the two lines). Every line prints, as much wider than
+/// the surface's own width as the pitch is wider than the spacing, so the piece stays solid. The lines' ends keep
+/// half a spacing from the edge. A piece with no room for two lines a spacing apart keeps the surface's one grid
+/// (`spacing`, internal units of the scanlines, with its lines' ends half a spacing in).
+fn fitted_grids(region: &Shapes, d: Dir, nominal_mm: f64, spacing: i64) -> Vec<SurfaceGrid> {
+    let nominal = nominal_mm * crate::geom::SCALE;
+    let half = mm(0.5 * nominal_mm);
+    let mut out = Vec::new();
+    for piece in region {
+        let one: Shapes = vec![piece.clone()];
+        let Some(ring) = piece.first() else {
+            continue;
+        };
+        let (lo, hi) = ring
+            .iter()
+            .map(|q| d.st(q.x, q.y).0)
+            .fold((i64::MAX, i64::MIN), |(a, b), s| (a.min(s), b.max(s)));
+        // The width between the first and the last line, internal units, with each line a hair inside its edge so a
+        // line that sits exactly on the ends' inset still prints.
+        #[allow(
+            clippy::cast_precision_loss,
+            reason = "a width across one piece, in internal units"
+        )]
+        let between = (hi - lo) as f64 / std::f64::consts::SQRT_2 - nominal - 2.0 * FIT_HAIR;
+        let intervals = (between / nominal + 1e-9).floor();
+        if hi <= lo || intervals < 1.0 {
+            out.push(SurfaceGrid {
+                region: one,
+                lines_in: None,
+                spacing,
+                spacing_mm: nominal_mm,
+                inset: half,
+                frame: None,
+                wider: 0.0,
+                skip: None,
+            });
+            continue;
+        }
+        let pitch = between / intervals;
+        // A line is as much wider than the surface's own width as its pitch is wider than the spacing.
+        #[allow(clippy::cast_possible_truncation, reason = "a width in mm")]
+        let wider = ((pitch - nominal) / crate::geom::SCALE) as f32;
+        // In scanline units (the distance across the lines times the square root of 2), and the whole number of them
+        // the grid steps by in the piece's frame.
+        let exact = pitch * std::f64::consts::SQRT_2;
+        #[allow(clippy::cast_possible_truncation, reason = "a spacing in scanline units")]
+        let step = (exact.round() as i64).max(1);
+        #[allow(clippy::cast_precision_loss, reason = "scanline values on a bed")]
+        let frame = PieceFrame {
+            d,
+            origin: lo as f64 + (nominal / 2.0 + FIT_HAIR) * std::f64::consts::SQRT_2,
+            scale: step as f64 / exact,
+        };
+        let drawn: Shapes = vec![
+            piece
+                .iter()
+                .map(|r| r.iter().map(|q| frame.to(*q)).collect())
+                .collect(),
+        ];
+        out.push(SurfaceGrid {
+            region: drawn,
+            lines_in: None,
+            spacing: step,
+            spacing_mm: pitch / crate::geom::SCALE,
+            inset: half,
+            frame: Some(frame),
+            wider,
+            skip: None,
+        });
+    }
+    out
+}
+
+/// How far inside its inset, internal units, a fitted grid's first and last line sit ([`fitted_grids`]), so a piece's
+/// edge straying by a few tenths of a micrometer keeps them.
+const FIT_HAIR: f64 = 5.0;
+
 /// `bridge_density` and `internal_bridge_density` as a share of 1, kept within Orca's 10 to 125 percent.
 fn bridge_density(cfg: &PrintConfig, key: &str) -> f64 {
     (cfg.raw_number(key, 100.0) / 100.0).clamp(0.1, 1.25)
@@ -13013,6 +13108,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
         bottom,
         bottom_widen,
         shell,
+        shell_widen,
         shell_thick,
         floating,
         region_floating,
@@ -13069,6 +13165,15 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
             w.gap_shell.extend(gap_shell);
             w.region_shell.extend(region_shell);
             w.region_narrow.extend(region_narrow);
+            // Each line keeps how much it widens; a work that sets none widens none.
+            if !shell_widen.is_empty() || !w.shell_widen.is_empty() {
+                w.shell_widen.resize(w.shell.len(), 0.0);
+                if shell_widen.len() == shell.len() {
+                    w.shell_widen.extend(shell_widen);
+                } else {
+                    w.shell_widen.resize(w.shell.len() + shell.len(), 0.0);
+                }
+            }
             w.shell.extend(shell);
             w.shell_thick.extend(shell_thick);
             w.floating.extend(floating);
