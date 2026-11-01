@@ -6141,6 +6141,7 @@ impl SliceSession {
                         inner: &inner,
                         slice: &slice_of,
                         inner_of: &inner_of,
+                        slit_of: None,
                         top_layers: top_n,
                         bottom_layers: bot_n,
                         wall_loops: cfg.wall_loops,
@@ -8453,6 +8454,57 @@ impl SliceSession {
         })
     }
 
+    /// The infill area of layer `m` inside the spacing edge of its innermost walls as they really run, with the slit
+    /// `only_one_wall_top` leaves where it moves the inner walls in off the outline: what the shell rule reads for a
+    /// neighbor ([`crate::shells::Input::slit`]). Measured without the infill overlap into the walls, like the fixed
+    /// inset it replaces. `None` on the topmost layer, which prints one wall.
+    fn slit_area<'a>(
+        &self,
+        cfg: &PrintConfig,
+        get: &(dyn Fn(u32) -> Option<&'a LayerRegions> + Sync),
+        m: i64,
+        w: i32,
+    ) -> Option<Shapes> {
+        let n = self.plan.count();
+        let l = u32::try_from(m).ok()?;
+        if l + 1 >= n || crate::tower::flag(cfg, "alternate_extra_wall") {
+            return None;
+        }
+        let outline = slice_shapes(get(l)?);
+        let upper = get(l + 1).map(lower_shapes)?;
+        let lower = l
+            .checked_sub(1)
+            .and_then(get)
+            .map(|r| match (&r.lslices, r.regions.as_slice()) {
+                (Some(foot), _) => foot.clone(),
+                (None, [(_, only)]) => only.clone(),
+                _ => perimeters::union_all(&r.regions.iter().map(|(_, s)| s).collect::<Vec<_>>()),
+            });
+        let above = (l + 2 < n).then(|| get(l + 2).map(lower_shapes)).flatten();
+        let ctx = perimeters::TopCtx {
+            upper: &upper,
+            lower: lower.as_ref(),
+            above: above.as_ref(),
+        };
+        // No band that moves the walls in, no slit: the fixed inset already reads the layer.
+        if !perimeters::classic_top_candidate(cfg, &outline, w, &ctx) {
+            return None;
+        }
+        let (_, inner) = perimeters::walls_for_top(
+            cfg,
+            &outline,
+            cfg.wall_loops,
+            w,
+            0,
+            self.plan.thickness(l),
+            false,
+            Some(&ctx),
+            false,
+            None,
+        );
+        Some(inner)
+    }
+
     /// The walls, infill area and surface classes of every region of `layer`, in region order (`None` for an
     /// empty region). `cfg` is the layer's settings and `base_shell` what follows from them, `below` the material
     /// of the layer below and `upper_slice` the outline of the layer above. Regions of one filament whose walls
@@ -8809,6 +8861,12 @@ impl SliceSession {
                     None => work().map(|v| v.1),
                 }
             };
+            let slit_of = |m: i64| -> Option<Shapes> {
+                match shared {
+                    Some(c) => c.slit(m, region_tag, || self.slit_area(cfg, get, m, w)),
+                    None => self.slit_area(cfg, get, m, w),
+                }
+            };
             // A region that is the layer's whole outline, walled and classified with the layer's own settings, has
             // the classification the layer's bridge facts were worked out from: the same inputs to `classify`.
             // The classic one-wall top bands' part of the infill area, which prints as top surface.
@@ -8835,6 +8893,10 @@ impl SliceSession {
                     inner: &inner,
                     slice: &slice_of,
                     inner_of: &inner_of,
+                    slit_of: self
+                        .vase
+                        .is_none()
+                        .then_some(&slit_of as &dyn Fn(i64) -> Option<Shapes>),
                     top_layers: top_n,
                     bottom_layers: bot_n,
                     wall_loops: cfg.wall_loops,
@@ -9114,6 +9176,10 @@ impl SliceSession {
                     })
                 })
             };
+            let base_slit = |m: i64| -> Option<Shapes> {
+                self.cache
+                    .slit(m, cfg_tag, || self.slit_area(cfg, get, m, base_shell.w))
+            };
             let fam = Families::new(cfg);
             let sparse_of = |l: u32, area: &Shapes| -> SparseLines {
                 let as_int = |p: crate::geom::Point| IntPoint::new(p.x, p.y);
@@ -9207,6 +9273,7 @@ impl SliceSession {
                         inner: &inner,
                         slice: &base_slice,
                         inner_of: &base_inner,
+                        slit_of: Some(&base_slit),
                         top_layers: base_shell.top_n,
                         bottom_layers: base_shell.bot_n,
                         wall_loops: cfg.wall_loops,

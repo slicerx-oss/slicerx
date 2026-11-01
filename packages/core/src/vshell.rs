@@ -128,6 +128,11 @@ pub(crate) fn unsupported(lower_sparse: &Shapes) -> Shapes {
 /// box on top floats up to 4.5 mm wide, and not from 4.75 mm.
 const FLOATING_WIDTH_MM: f64 = 4.625;
 
+/// [`FLOATING_WIDTH_MM`] where the shell rule reads the slit `only_one_wall_top` walls leave
+/// ([`crate::shells::slit_counts`]): the ring's piece reaches the inner edge of the slit the ring top layer's inner wall
+/// leaves around the block, about 0.4 mm further in, and still floats up to 4.5 mm wide, and not from 4.75 mm.
+const FLOATING_WIDTH_SLIT_MM: f64 = 5.025;
+
 /// [`FLOATING_WIDTH_MM`] with variable-width walls: the ring floats up to 4.75 mm wide, and not from 5.0 mm.
 const FLOATING_WIDTH_VARIABLE_MM: f64 = 4.9;
 
@@ -142,6 +147,8 @@ pub(crate) fn floating_width(cfg: &PrintConfig) -> i32 {
         FLOATING_WIDTH_PARTIAL_MM
     } else if cfg.arachne_walls() {
         FLOATING_WIDTH_VARIABLE_MM
+    } else if crate::shells::slit_counts(cfg) {
+        FLOATING_WIDTH_SLIT_MM
     } else {
         FLOATING_WIDTH_MM
     };
