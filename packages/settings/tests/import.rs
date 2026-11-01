@@ -405,3 +405,26 @@ fn a_projects_own_feature_filaments_are_left_unread() {
     assert!(own.get("outer_wall_filament_id").is_some());
     assert!(own.get("inner_wall_filament_id").is_some());
 }
+
+#[test]
+fn an_orca_export_writes_a_ramp_lift_as_a_slope_lift() {
+    // A ramp lift is SlicerX's own lift type and the filament's travel slope a key of ours: an export for OrcaSlicer
+    // or Bambu Studio writes the ramp as a slope lift and leaves the filament's slope out.
+    let filament = import_orca(
+        &json!({"name": "Ramp PLA", "type": "filament", "filament_z_hop": ["0.6"], "filament_z_hop_types": ["Ramp Lift"], "filament_travel_slope": ["1"]}),
+        &|_| None,
+    )
+    .unwrap();
+    let json = export_orca(&filament.config, "Ramp PLA", Section::Filament, None);
+    assert_eq!(json["filament_z_hop_types"], json!(["Slope Lift"]));
+    assert_eq!(json["filament_z_hop"], json!(["0.6"]));
+    assert!(json.get("filament_travel_slope").is_none(), "{json}");
+    let printer = import_orca(
+        &json!({"name": "Ramp printer", "type": "machine", "z_hop_types": ["Ramp Lift", "Spiral Lift"], "travel_slope": ["1", "3"]}),
+        &|_| None,
+    )
+    .unwrap();
+    let json = export_orca(&printer.config, "Ramp printer", Section::Printer, None);
+    assert_eq!(json["z_hop_types"], json!(["Slope Lift", "Spiral Lift"]));
+    assert_eq!(json["travel_slope"], json!(["1", "3"]));
+}

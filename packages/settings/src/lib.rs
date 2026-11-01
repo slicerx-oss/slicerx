@@ -57,7 +57,7 @@ pub use easy::{
 };
 pub use error::Error;
 pub use filaments::{FamilyEntry, FilamentPreset, VendorFile};
-pub use import::{ProfileImport, export_orca, import_orca, merge_layers};
+pub use import::{ProfileImport, export_orca, import_orca, merge_layers, orca_readable};
 pub use intent::short_name;
 pub use knowledge::{GoalKnowledge, MaterialKnowledge, PrinterKnowledge, knowledge};
 pub use plan::{
