@@ -259,6 +259,9 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     // Changed again when the topmost layer of a classic one-wall top on Bambu Lab printers ended its lines half the
     // outer wall in from the wall's center line at any overlap: only the cubes' top surface moved, with the travels
     // and retractions around it, the progress lines and the totals.
+    // Changed again when classic walls' internal solid infill started from the innermost wall's spacing edge instead
+    // of the walls' widths: only the internal solid infill along the walls moved (275.35 to 276.37 mm over 5 layers),
+    // with the travels between its lines, the progress lines and the totals.
     let c = config("p1s", &json!({"brim_type": "outer_only", "brim_width": 5}));
     let (out, gcode) = slice("p1s", &c, &[[18.0, 6.0], [140.0, 140.0]], &[]);
     assert!(out.status.success(), "{}", stderr(&out));
@@ -272,7 +275,7 @@ fn a_p1s_plate_at_its_excluded_corner_prints_as_before() {
     }
     assert_eq!(
         format!("{h:016x}"),
-        "cdd03083360e20ce",
+        "6378134316d2a728",
         "the P1S plate's G-code changed"
     );
 }

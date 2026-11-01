@@ -1626,6 +1626,9 @@ pub(crate) struct IslandWalls {
     pub(crate) gap_lines: Vec<crate::arachne::WallLine>,
     /// Where the top surfaces over the island end beside the walls, with variable-width walls (`arachne::top_edge`).
     pub(crate) top_edge: Option<TopEdge>,
+    /// Classic walls under a one-wall top's band (`only_one_wall_top`), whose infill area starts where the band's
+    /// rules put it.
+    pub(crate) band: bool,
 }
 
 /// The top surfaces over an island of variable-width walls start at the innermost wall's spacing edge, without the
@@ -1873,6 +1876,90 @@ pub(crate) fn precise_inner_walls(cfg: &crate::config::PrintConfig) -> bool {
         && cfg.wall_sequence == crate::config::WallSequence::InnerOuter
 }
 
+/// How classic walls of line width `w` are laid, internal units: the outer and inner walls' widths, the inner wall's
+/// loop pitch (its spacing, width less the rounded corners) and the first inner wall's pitch from the outer one (the
+/// mean of the two widths under [`precise_inner_walls`], else the mean of the two spacings).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ClassicPitch {
+    pub(crate) ext: i32,
+    pub(crate) inner: i32,
+    pub(crate) spacing: i32,
+    pub(crate) spacing2: i32,
+}
+
+impl ClassicPitch {
+    /// The innermost of `wall_loops` (2 or more) walls' spacing edge, in from the outline: the outer wall's
+    /// centerline, the first inner wall's pitch, an inner spacing per further wall, and half an inner spacing.
+    pub(crate) fn spacing_edge(self, wall_loops: u32) -> i32 {
+        #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
+        let more = wall_loops.max(2) as i32 - 2;
+        self.ext / 2 + self.spacing2 + self.spacing * more + self.spacing / 2
+    }
+}
+
+/// [`ClassicPitch`] for `cfg`, whose walls are `w` wide without widths of their own.
+pub(crate) fn classic_pitch(cfg: &crate::config::PrintConfig, w: i32) -> ClassicPitch {
+    let mm = crate::geom::mm;
+    let (ext, inner) = if cfg.has_feature_widths() {
+        (mm(cfg.outer_wall_width()), mm(cfg.inner_wall_width()))
+    } else {
+        (w, w)
+    };
+    let pitch = |width: i32| mm(cfg.spacing_for(f64::from(width) / crate::geom::SCALE));
+    let spacing2 = if precise_inner_walls(cfg) {
+        i32::midpoint(ext, inner)
+    } else {
+        i32::midpoint(pitch(ext), pitch(inner))
+    };
+    ClassicPitch {
+        ext,
+        inner,
+        spacing: pitch(inner),
+        spacing2,
+    }
+}
+
+/// Where the top surface and the internal solid infill over `wall_loops` classic walls start, internal units in from
+/// the outline, and where the infill area the walls leave starts (the outer wall's width and an inner wall's width per
+/// further wall, less the walls' `overlap`). A monotonic line top surface starts at the innermost wall's spacing edge
+/// ([`ClassicPitch::spacing_edge`]), with no overlap term. The internal solid infill and the other top surfaces start
+/// that edge less `share` (the walls' infill wall overlap, a share) of the mean of the inner wall's and the internal
+/// solid infill's spacings. So both follow the layer height and the precise outer wall setting as the walls do, where
+/// the infill area follows the walls' widths. On the stock P1S settings (0.2 mm layers, 15 percent) with precise
+/// outer wall off, a monotonic line top's lines end 0.614, 1.022 and 1.429 mm in from the outer wall's centerline on
+/// 2, 3 and 4 walls, and the internal solid infill's 0.725, 1.132 and 1.539. `None` with under two walls or
+/// variable-width walls.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ClassicEdges {
+    pub(crate) top_line: i32,
+    pub(crate) solid: i32,
+    pub(crate) infill: i32,
+}
+
+/// [`ClassicEdges`] of `cfg` on `wall_loops` walls of line width `w`.
+pub(crate) fn classic_edges(
+    cfg: &crate::config::PrintConfig,
+    wall_loops: u32,
+    w: i32,
+    overlap: i32,
+    share: f64,
+) -> Option<ClassicEdges> {
+    if wall_loops < 2 || cfg.arachne_walls() {
+        return None;
+    }
+    let p = classic_pitch(cfg, w);
+    let edge = p.spacing_edge(wall_loops);
+    let solid = cfg.spacing_for(cfg.solid_infill_width());
+    let back = share * f64::midpoint(f64::from(p.spacing) / crate::geom::SCALE, solid);
+    #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
+    let infill = p.ext + p.inner * (wall_loops as i32 - 1) - overlap;
+    Some(ClassicEdges {
+        top_line: edge,
+        solid: edge - crate::geom::mm(back),
+        infill,
+    })
+}
+
 /// [`walls_for`] with the neighbor layers known, so `only_one_wall_top` can give top surfaces one wall.
 /// `one_wall_layer`: `only_one_wall_first_layer` or `only_one_wall_top` took the layer's walls down to one.
 /// `narrow`: the layer's surfaces, where with fixed-width walls at sparse infill density 0 a narrow piece the lines
@@ -1906,28 +1993,18 @@ pub(crate) fn walls_for_top(
         )
     } else {
         let mm = crate::geom::mm;
-        let (ext, inner) = if cfg.has_feature_widths() {
-            (mm(cfg.outer_wall_width()), mm(cfg.inner_wall_width()))
-        } else {
-            (w, w)
-        };
-        // Orca's gap regions use the loop pitch (width less the rounded corners); the first inner
-        // wall sits the average width from the outer one under `precise_outer_wall`, else the
-        // average pitch.
+        let laid = classic_pitch(cfg, w);
+        let ClassicPitch {
+            ext, inner, spacing2, ..
+        } = laid;
         let pitch = |width: i32| mm(cfg.spacing_for(f64::from(width) / crate::geom::SCALE));
-        let spacing2 = if precise_inner_walls(cfg) {
-            i32::midpoint(ext, inner)
-        } else {
-            i32::midpoint(pitch(ext), pitch(inner))
-        };
         // With sparse infill and two walls or more, a strip of infill area whose free width inside the innermost wall
         // (less the overlap) is under 0.15 of an inner spacing prints walls only: the infill area is opened by at least the strip
         // width that holds. That width is the free width plus how far the infill area reaches past the free
         // width's edge on each side.
         let min_core = if cfg.sparse_infill_density > 0.0 && overlap > 0 && wall_loops > 1 {
             let spacing = pitch(inner);
-            #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
-            let free_edge = ext / 2 + spacing2 + spacing * (wall_loops as i32 - 2) + spacing / 2;
+            let free_edge = laid.spacing_edge(wall_loops);
             #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
             let inset = ext + inner * (wall_loops as i32 - 1) - overlap;
             spacing * 3 / 20 + 2 * (free_edge - inset)
@@ -2074,7 +2151,10 @@ pub(crate) fn walls_for_top(
                 thin_all.as_ref(),
                 0,
             );
-            let mut joined = IslandWalls::default();
+            let mut joined = IslandWalls {
+                band: true,
+                ..IslandWalls::default()
+            };
             for mut island in inside {
                 for (index, _) in &mut island.loops {
                     *index += 1;
