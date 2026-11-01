@@ -35,7 +35,7 @@ struct PrusaMap {
     no_percent: Vec<String>,
     /// One key's value set on each of several keys.
     fan_out: Vec<(String, Vec<String>)>,
-    /// Lifts given as a ramp switch, a ramp height, a straight lift and a ramp angle.
+    /// Lifts given as a ramp switch, a ramp height and a straight lift.
     lift: Vec<LiftRow>,
     /// What a project's settings may set.
     takes: Takes,
@@ -45,13 +45,12 @@ struct PrusaMap {
     legacy: HashMap<String, String>,
 }
 
-/// A lift (`composites.lift` in prusa-map.json): the `PrusaSlicer` keys it reads (the ramp switch, the ramp's height, the
-/// straight lift and the ramp's angle) and the z hop height and type it sets.
+/// A lift (`composites.lift` in prusa-map.json): the `PrusaSlicer` keys it reads (the ramp switch, the ramp's height and
+/// the straight lift) and the z hop height and type it sets.
 struct LiftRow {
     ramp: String,
     height: String,
     straight: String,
-    slope: String,
     to: String,
     kind: String,
 }
@@ -170,7 +169,6 @@ fn map() -> &'static PrusaMap {
                             ramp: text(row, "ramp"),
                             height: text(row, "height"),
                             straight: text(row, "straight"),
-                            slope: text(row, "slope"),
                             to: text(row, "to"),
                             kind: text(row, "type"),
                         })
@@ -560,9 +558,9 @@ fn split_strings(s: &str) -> Vec<String> {
 }
 
 /// One lift row's z hop height and type for each extruder, `nil` where the row leaves it to the printer
-/// (`composites.lift` in prusa-map.json). With the ramp on the lift is the ramp's height, as a slope lift (straight up
-/// at an angle of 0 or 90 degrees); with it off the straight lift, straight up; with no ramp set the straight lift and
-/// no type. A list value gives one entry per extruder, its last entry for an extruder past its end; `nil` is not set.
+/// (`composites.lift` in prusa-map.json). With the ramp on the lift is the ramp's height, as a ramp lift (its angle is
+/// the `travel_slope` key of the same name, which carries over as it is); with it off the straight lift, straight up;
+/// with no ramp set the straight lift and no type. A list value gives one entry per extruder, its last entry for an extruder past its end; `nil` is not set.
 /// None when the settings have none of the row's keys. The same as `liftOf` in the settings package.
 fn lift_of(row: &LiftRow, raw: &HashMap<&str, &str>) -> Option<(Vec<String>, Vec<String>)> {
     if ![&row.ramp, &row.height, &row.straight]
@@ -579,12 +577,7 @@ fn lift_of(row: &LiftRow, raw: &HashMap<&str, &str>) -> Option<(Vec<String>, Vec
             .map(str::trim)
             .collect()
     };
-    let (ramp, height, straight, slope) = (
-        list(&row.ramp),
-        list(&row.height),
-        list(&row.straight),
-        list(&row.slope),
-    );
+    let (ramp, height, straight) = (list(&row.ramp), list(&row.height), list(&row.straight));
     let at = |l: &[&str], i: usize| -> Option<String> {
         let v = *l.get(i.min(l.len().saturating_sub(1)))?;
         (!v.is_empty() && v != "nil").then(|| v.to_owned())
@@ -592,12 +585,9 @@ fn lift_of(row: &LiftRow, raw: &HashMap<&str, &str>) -> Option<(Vec<String>, Vec
     let (mut heights, mut kinds) = (Vec::new(), Vec::new());
     for i in 0..ramp.len().max(height.len()).max(straight.len()) {
         let on = at(&ramp, i);
-        let upright = at(&slope, i)
-            .and_then(|a| number(&a))
-            .is_some_and(|a| a <= 0.0 || a >= 90.0);
         let kind = match on.as_deref() {
             None => "nil",
-            Some("1") if !upright => "Slope Lift",
+            Some("1") => "Ramp Lift",
             Some(_) => "Normal Lift",
         };
         let h = if on.as_deref() == Some("1") {

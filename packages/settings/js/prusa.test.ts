@@ -163,10 +163,10 @@ describe('PrusaSlicer key map', () => {
     expect(c['printable_height']).toBe(210)
     expect(c['gcode_flavor']).toBe('marlin2')
     expect(c['retraction_length']).toEqual([0.8])
-    // With ramping on the lift is the ramp's height, not retract_lift, and the slope is the ramp's angle.
+    // With ramping on the lift is the ramp's height, not retract_lift, as a ramp lift, and the slope is the ramp's angle.
     expect(c['z_hop']).toEqual([0.6])
     expect(c['retraction_speed']).toEqual([35])
-    expect(c['z_hop_types']).toEqual(['Slope Lift'])
+    expect(c['z_hop_types']).toEqual(['Ramp Lift'])
     expect(c['travel_slope']).toEqual([30])
     expect(c['machine_start_gcode']).toBe('G28 ; home\nM104 S[first_layer_temperature]\n')
     expect(c['printer_notes']).toBe('PRINTER_VENDOR_PRUSA3D\nPRINTER_MODEL_TEST\n')
@@ -177,15 +177,17 @@ describe('PrusaSlicer key map', () => {
   it('reads a travel lift as a z hop height and type', () => {
     const lift = (given: Record<string, string>): Record<string, unknown> => {
       const v = mapPrusaValues(given).values
-      return Object.fromEntries(['z_hop', 'z_hop_types', 'travel_slope', 'filament_z_hop', 'filament_z_hop_types'].filter((k) => k in v).map((k) => [k, v[k]]))
+      return Object.fromEntries(['z_hop', 'z_hop_types', 'travel_slope', 'filament_z_hop', 'filament_z_hop_types', 'filament_travel_slope'].filter((k) => k in v).map((k) => [k, v[k]]))
     }
     // A ramp's height is never read as its angle.
-    expect(lift({ retract_lift: '0.2', travel_max_lift: '1.5', travel_ramping_lift: '1', travel_slope: '1' })).toEqual({ z_hop: '1.5', z_hop_types: 'Slope Lift', travel_slope: '1' })
+    expect(lift({ retract_lift: '0.2', travel_max_lift: '1.5', travel_ramping_lift: '1', travel_slope: '1' })).toEqual({ z_hop: '1.5', z_hop_types: 'Ramp Lift', travel_slope: '1' })
     expect(lift({ retract_lift: '0.4', travel_max_lift: '1.5', travel_ramping_lift: '0', travel_slope: '1' })).toEqual({ z_hop: '0.4', z_hop_types: 'Normal Lift', travel_slope: '1' })
     expect(lift({ retract_lift: '0.4' })).toEqual({ z_hop: '0.4' })
-    // A ramp at 0 or 90 degrees lifts straight up.
-    expect(lift({ travel_max_lift: '0.6', travel_ramping_lift: '1', travel_slope: '0' })).toEqual({ z_hop: '0.6', z_hop_types: 'Normal Lift', travel_slope: '0' })
-    expect(lift({ filament_travel_max_lift: '0.6', filament_travel_ramping_lift: '1', filament_travel_slope: '90' })).toEqual({ filament_z_hop: '0.6', filament_z_hop_types: 'Normal Lift' })
+    // The filament's ramp keeps its own angle. At 0 or 90 degrees it is still a ramp, which the engine lifts straight up
+    // and never at a layer change.
+    expect(lift({ filament_travel_max_lift: '0.6', filament_travel_ramping_lift: '1', filament_travel_slope: '1' })).toEqual({ filament_z_hop: '0.6', filament_z_hop_types: 'Ramp Lift', filament_travel_slope: '1' })
+    expect(lift({ travel_max_lift: '0.6', travel_ramping_lift: '1', travel_slope: '0' })).toEqual({ z_hop: '0.6', z_hop_types: 'Ramp Lift', travel_slope: '0' })
+    expect(lift({ filament_travel_max_lift: '0.6', filament_travel_ramping_lift: '1', filament_travel_slope: '90' })).toEqual({ filament_z_hop: '0.6', filament_z_hop_types: 'Ramp Lift', filament_travel_slope: '90' })
     // A filament's lift keys that are not set leave the printer's lift alone.
     expect(lift({ filament_retract_lift: 'nil', filament_travel_max_lift: 'nil', filament_travel_ramping_lift: 'nil' })).toEqual({})
   })

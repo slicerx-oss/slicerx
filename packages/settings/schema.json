@@ -9056,7 +9056,8 @@
     "Auto Lift",
     "Normal Lift",
     "Slope Lift",
-    "Spiral Lift"
+    "Spiral Lift",
+    "Ramp Lift"
    ],
    "mode": "advanced",
    "default": [],
@@ -9068,8 +9069,24 @@
     "Auto",
     "Normal",
     "Slope",
-    "Spiral"
+    "Spiral",
+    "Ramp"
    ]
+  },
+  {
+   "key": "filament_travel_slope",
+   "section": "filament",
+   "type": "floats",
+   "label": "Filament travel slope",
+   "unit": "deg",
+   "min": 0,
+   "max": 90,
+   "mode": "advanced",
+   "default": [],
+   "nullable": true,
+   "group": "retraction",
+   "invalidates": "gcode",
+   "help": "Overrides the printer's travel slope for this filament: the angle a slope, spiral or ramp lift climbs at. Empty uses the printer's value."
   },
   {
    "key": "long_retractions_when_ec",
@@ -12187,7 +12204,8 @@
     "Auto Lift",
     "Normal Lift",
     "Slope Lift",
-    "Spiral Lift"
+    "Spiral Lift",
+    "Ramp Lift"
    ],
    "mode": "advanced",
    "default": [
@@ -12207,7 +12225,8 @@
     "Auto",
     "Normal",
     "Slope",
-    "Spiral"
+    "Spiral",
+    "Ramp"
    ]
   },
   {

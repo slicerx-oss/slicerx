@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 756 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 757 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -34,7 +34,7 @@ Material settings: temperatures, cooling, flow, retraction, drying.
 - [Multi material](filament-multimaterial.md): 25 settings
 - [Profile metadata](filament-profile.md): 7 settings
 - [Quality and geometry](filament-quality.md): 3 settings
-- [Retraction](filament-retraction.md): 22 settings
+- [Retraction](filament-retraction.md): 23 settings
 - [Speed](filament-speed.md): 1 settings
 - [Temperature](filament-temperature.md): 27 settings
 
@@ -279,6 +279,7 @@ Alphabetical, each linking to its group file.
 - `filament_tower_interface_print_temp`: Filament tower interface print temp, [filament/temperature](filament-temperature.md#filament_tower_interface_print_temp)
 - `filament_tower_interface_purge_volume`: Filament tower interface purge volume, [filament/multimaterial](filament-multimaterial.md#filament_tower_interface_purge_volume)
 - `filament_tower_ironing_area`: Filament tower ironing area, [filament/multimaterial](filament-multimaterial.md#filament_tower_ironing_area)
+- `filament_travel_slope`: Filament travel slope, [filament/retraction](filament-retraction.md#filament_travel_slope)
 - `filament_type`: Filament type, [filament/filament](filament-filament.md#filament_type)
 - `filament_unloading_speed`: Filament unloading speed, [filament/multimaterial](filament-multimaterial.md#filament_unloading_speed)
 - `filament_unloading_speed_start`: Filament unloading speed start, [filament/multimaterial](filament-multimaterial.md#filament_unloading_speed_start)

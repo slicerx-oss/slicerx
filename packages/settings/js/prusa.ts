@@ -11,7 +11,7 @@ import { importValues, type Dropped } from './report'
 import { settingDef } from './schema'
 
 /** One lift of prusa-map.json `composites.lift`: the Prusa keys it reads and the keys it sets. */
-interface LiftRow { ramp: string; height: string; straight: string; slope: string; to: string; type: string }
+interface LiftRow { ramp: string; height: string; straight: string; to: string; type: string }
 
 interface PrusaMap {
   rename: Record<string, string>
@@ -249,15 +249,16 @@ function projectWidths(raw: Raw): Raw {
 
 /**
  * One lift row's z hop height and type for each extruder, `nil` where the row leaves it to the printer (prusa-map.json
- * `composites.lift`). With the ramp on the lift is the ramp's height, as a slope lift (straight up at an angle of 0 or 90
- * degrees); with it off the straight lift, straight up; with no ramp set the straight lift and no type. A list value
+ * `composites.lift`). With the ramp on the lift is the ramp's height, as a ramp lift (its angle is the `travel_slope` key
+ * of the same name, which carries over as it is); with it off the straight lift, straight up; with no ramp set the
+ * straight lift and no type. A list value
  * gives one entry per extruder, its last entry for an extruder past its end; `nil` is not set. Undefined when the
  * preset has none of the row's keys.
  */
 function liftOf(row: LiftRow, prusa: Raw): { height: string[]; type: string[] } | undefined {
   if (!(row.ramp in prusa || row.height in prusa || row.straight in prusa)) return undefined
   const list = (k: string): string[] => (prusa[k] ?? '').split(',').map((s) => s.trim())
-  const [ramp, height, straight, slope] = [list(row.ramp), list(row.height), list(row.straight), list(row.slope)]
+  const [ramp, height, straight] = [list(row.ramp), list(row.height), list(row.straight)]
   const at = (l: string[], i: number): string | undefined => {
     const v = l[Math.min(i, l.length - 1)]
     return v === undefined || v === '' || v === 'nil' ? undefined : v
@@ -265,9 +266,7 @@ function liftOf(row: LiftRow, prusa: Raw): { height: string[]; type: string[] } 
   const out = { height: [] as string[], type: [] as string[] }
   for (let i = 0; i < Math.max(ramp.length, height.length, straight.length); i++) {
     const on = at(ramp, i)
-    const angle = num(at(slope, i))
-    const upright = angle !== undefined && (angle <= 0 || angle >= 90)
-    const type = on === undefined ? undefined : on === '1' && !upright ? 'Slope Lift' : 'Normal Lift'
+    const type = on === undefined ? undefined : on === '1' ? 'Ramp Lift' : 'Normal Lift'
     out.height.push((on === '1' ? at(height, i) : at(straight, i)) ?? 'nil')
     out.type.push(type ?? 'nil')
   }
