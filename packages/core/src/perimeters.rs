@@ -158,8 +158,10 @@ pub(crate) fn shapes_from_loops_mode(
     };
     if closing > 0 && !shapes.is_empty() {
         // Orca then simplifies the contours (0.0025 mm), which also drops the vertices the offsets left on
-        // straight edges.
-        offset(&offset(&shapes, closing), -closing)
+        // straight edges. The closing keeps a corner up to the miter limit ([`BEVEL_PAST_MITER_LIMIT`]), so a point
+        // of 39 to 60 degrees comes back where it was for the walls to follow, where a bevel left a flat on it.
+        let m = BEVEL_PAST_MITER_LIMIT;
+        offset_with(&offset_with(&shapes, closing, m), -closing, m)
             .into_iter()
             .map(|s| s.into_iter().map(|r| simplify_ring(&r, 25)).collect())
             .collect()
@@ -535,26 +537,33 @@ pub(crate) fn overlaps(a: Option<[i32; 4]>, b: Option<[i32; 4]>) -> bool {
 /// normal and joining neighbors with miters gives a polygon with no
 /// crossings. That fast path is tried first per shape and checked; shapes
 /// where it fails (thin features, collapsing islands, holes meeting the outer
-/// contour) go through [`clipper_offset`] instead. Both paths are
+/// contour) go through `clipper_offset` instead. Both paths are
 /// deterministic, so the choice does not depend on thread or shard.
 /// Growing offsets (the brim) always take the union path, since separate
-/// islands can merge.
+/// islands can merge. A corner whose moved edges diverge is mitered up to a
+/// turn of 120 degrees and beveled past it ([`BEVEL_PAST_120`]).
 pub(crate) fn offset(shapes: &Shapes, delta: i32) -> Shapes {
+    offset_with(shapes, delta, BEVEL_PAST_120)
+}
+
+/// [`offset`], with a corner whose moved edges diverge beveled once the cosine of its turn falls below `bevel`
+/// ([`BEVEL_PAST_120`] or [`BEVEL_PAST_MITER_LIMIT`]) and mitered otherwise.
+pub(crate) fn offset_with(shapes: &Shapes, delta: i32, bevel: f64) -> Shapes {
     if delta > 0 {
         // Growing shapes can merge, so they go through one union.
         let all: Vec<Vec<IntPoint<i32>>> = shapes.iter().flat_map(|s| s.iter().cloned()).collect();
         let hole: Vec<bool> = shapes.iter().flat_map(|s| (0..s.len()).map(|i| i > 0)).collect();
-        return grow_union(&all, &hole, delta);
+        return grow_union_with(&all, &hole, delta, false, bevel);
     }
     let mut out = Vec::with_capacity(shapes.len());
     for shape in shapes {
         if shrinks_away(shape, -f64::from(delta)) {
             continue;
         }
-        match fast_offset(shape, delta) {
+        match fast_offset_with(shape, delta, bevel) {
             Some(s) => out.extend(s),
             None if nothing_left(shape, -f64::from(delta)) => {}
-            None => out.extend(clipper_offset(shape, delta)),
+            None => out.extend(clipper_offset_with(shape, delta, bevel)),
         }
     }
     out
@@ -730,12 +739,18 @@ fn disc_fit(shape: &[Vec<IntPoint<i32>>], d: f64, cells: usize) -> DiscFit {
 /// where the offset lines diverge and through the original vertex where they
 /// overlap, and the loops are merged with the positive fill rule, which drops
 /// the reversed pieces. This is the method of Clipper's `ClipperOffset`.
+#[cfg(test)]
 fn clipper_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Shapes {
+    clipper_offset_with(shape, delta, BEVEL_PAST_120)
+}
+
+/// `clipper_offset` with the bevel limit `bevel` (see [`offset_with`]).
+fn clipper_offset_with(shape: &[Vec<IntPoint<i32>>], delta: i32, bevel: f64) -> Shapes {
     let d = f64::from(delta);
     let raw: Option<Vec<Vec<IntPoint<i32>>>> = shape
         .iter()
         .filter(|c| c.len() >= 3)
-        .map(|c| raw_loop(c, d, true))
+        .map(|c| raw_loop_with(c, d, true, false, bevel))
         .collect();
     if let Some(raw) = raw {
         if raw.is_empty() {
@@ -760,7 +775,7 @@ fn clipper_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Shapes {
     let mut raw: Vec<Vec<IntPoint<i32>>> = vec![bx.clone()];
     for c in shape.iter().filter(|c| c.len() >= 3) {
         let rev: Vec<IntPoint<i32>> = c.iter().rev().copied().collect();
-        if let Some(r) = raw_loop(&rev, -d, true) {
+        if let Some(r) = raw_loop_with(&rev, -d, true, false, bevel) {
             raw.push(r);
         }
     }
@@ -780,18 +795,25 @@ const CLOSED_HOLES_MIN: usize = 32_000;
 /// fills it. A painted layer has thousands, and the union's buffers grow with every edge and crossing, so small
 /// holes that provably close are left out first. The result is the same, point for point. When the proof
 /// fails, all of them go through, as before.
+#[cfg(test)]
 fn grow_union(contours: &[Vec<IntPoint<i32>>], hole: &[bool], delta: i32) -> Shapes {
-    grow_union_with(contours, hole, delta, false)
+    grow_union_with(contours, hole, delta, false, BEVEL_PAST_120)
 }
 
-/// [`grow_union`], with the corners that turn past 120 degrees cut square when `square` is set (see
-/// [`grow_open`]).
-fn grow_union_with(contours: &[Vec<IntPoint<i32>>], hole: &[bool], delta: i32, square: bool) -> Shapes {
+/// `grow_union`, with the corners that turn past 120 degrees cut square when `square` is set (see
+/// [`grow_open`]), and the bevel limit `bevel` (see [`offset_with`]).
+fn grow_union_with(
+    contours: &[Vec<IntPoint<i32>>],
+    hole: &[bool],
+    delta: i32,
+    square: bool,
+    bevel: f64,
+) -> Shapes {
     let d = f64::from(delta);
     let (mut raw, mut turned) = (Vec::new(), Vec::new());
     for (c, &h) in contours.iter().zip(hole).filter(|(c, _)| c.len() >= 3) {
-        let Some(r) = raw_loop_with(c, d, true, square) else {
-            return clipper_offset(contours, delta);
+        let Some(r) = raw_loop_with(c, d, true, square, bevel) else {
+            return clipper_offset_with(contours, delta, bevel);
         };
         // A hole that closes winds nowhere below zero, so its moved contour has a positive area.
         turned.push(h && crate::geom::area2_int(&r) > 0);
@@ -1074,16 +1096,30 @@ pub(crate) fn offset_square(shapes: &Shapes, delta: i32) -> Shapes {
 /// the gap walk, so the tip of a sharp wedge reaches as far as the area it was shrunk from allows. Every other
 /// corner is joined as in [`offset`]. A `delta` of zero or less is [`offset`].
 pub(crate) fn grow_open(shapes: &Shapes, delta: i32) -> Shapes {
+    grow_open_with(shapes, delta, BEVEL_PAST_120)
+}
+
+/// [`grow_open`], with the corners whose turn has a cosine below `bevel` cut square (see [`offset_with`]).
+pub(crate) fn grow_open_with(shapes: &Shapes, delta: i32, bevel: f64) -> Shapes {
     if delta <= 0 {
-        return offset(shapes, delta);
+        return offset_with(shapes, delta, bevel);
     }
     let all: Vec<Vec<IntPoint<i32>>> = shapes.iter().flat_map(|s| s.iter().cloned()).collect();
     let hole: Vec<bool> = shapes.iter().flat_map(|s| (0..s.len()).map(|i| i > 0)).collect();
-    grow_union_with(&all, &hole, delta, true)
+    grow_union_with(&all, &hole, delta, true, bevel)
 }
 
 /// Miter length limit, as a multiple of the offset distance.
 const MITER_LIMIT: f64 = 3.0;
+
+/// The cosine of a 120 degree turn: [`offset`] bevels a corner whose moved edges diverge once it turns past that
+/// (a point sharper than 60 degrees).
+pub(crate) const BEVEL_PAST_120: f64 = -0.5;
+
+/// The cosine of the turn where a miter reaches [`MITER_LIMIT`] times the offset past the vertex, 141.06 degrees (a
+/// point of 38.94 degrees, half angle asin(1/3)). Wall loops and bridge areas bevel a corner only past it, so a point
+/// of 39 to 60 degrees keeps its miter.
+pub(crate) const BEVEL_PAST_MITER_LIMIT: f64 = 2.0 / (MITER_LIMIT * MITER_LIMIT) - 1.0;
 
 /// The raw offset of one contour by `d` (positive grows the area on the
 /// contour's left): edges moved along their normals and joined. Where the
@@ -1095,13 +1131,22 @@ const MITER_LIMIT: f64 = 3.0;
 /// instead of coming out turned inside out). Returns `None` when a shrinking offset meets a corner
 /// whose miter would pass the limit, since its point could land outside the
 /// shape.
+#[cfg(test)]
 fn raw_loop(c: &[IntPoint<i32>], d: f64, through: bool) -> Option<Vec<IntPoint<i32>>> {
-    raw_loop_with(c, d, through, false)
+    raw_loop_with(c, d, through, false, BEVEL_PAST_120)
 }
 
-/// [`raw_loop`]; with `square` and a growing `d`, a corner that turns past 120 degrees is cut square at `d` past
-/// the vertex (Clipper's square join) in place of the bevel.
-fn raw_loop_with(c: &[IntPoint<i32>], d: f64, through: bool, square: bool) -> Option<Vec<IntPoint<i32>>> {
+/// `raw_loop`; with `square` and a growing `d`, a corner that turns past 120 degrees is cut square at `d` past
+/// the vertex (Clipper's square join) in place of the bevel. Either takes a corner whose offset lines diverge once
+/// the cosine of its turn falls below `bevel`: [`BEVEL_PAST_120`] for `raw_loop`, [`BEVEL_PAST_MITER_LIMIT`] for
+/// wall loops and bridge areas.
+fn raw_loop_with(
+    c: &[IntPoint<i32>],
+    d: f64,
+    through: bool,
+    square: bool,
+    bevel: f64,
+) -> Option<Vec<IntPoint<i32>>> {
     let n = c.len();
     let normal = |i: usize| -> Option<(f64, f64)> {
         let a = c.get(i % n)?;
@@ -1120,7 +1165,7 @@ fn raw_loop_with(c: &[IntPoint<i32>], d: f64, through: bool, square: bool) -> Op
         let cross = prev.0 * cur.1 - prev.1 * cur.0;
         let (px, py) = (f64::from(p.x), f64::from(p.y));
         let gap = (cross > 0.0) == (d > 0.0);
-        if gap && dot < -0.5 && square && d > 0.0 {
+        if gap && dot < bevel && square && d > 0.0 {
             // Each moved edge runs on past the vertex by d tan(turn / 4) to the square cut.
             let t = (cross.m_atan2(dot) / 4.0).m_tan();
             r.push(round_pt(
@@ -1131,7 +1176,7 @@ fn raw_loop_with(c: &[IntPoint<i32>], d: f64, through: bool, square: bool) -> Op
                 px + d * (cur.0 + cur.1 * t),
                 py + d * (cur.1 - cur.0 * t),
             ));
-        } else if gap && dot < -0.5 {
+        } else if gap && dot < bevel {
             r.push(round_pt(px + prev.0 * d, py + prev.1 * d));
             r.push(round_pt(px + cur.0 * d, py + cur.1 * d));
         } else if !gap && (d > 0.0 || through) {
@@ -1262,7 +1307,13 @@ pub(crate) fn plain_offsets(
 /// Miter offset of one shape, or `None` when the result is not a valid shape
 /// (a contour flipped or any two edges touch). A shape that comes apart
 /// where the miter loop cut a piece away comes back as the union's pieces.
+#[cfg(test)]
 fn fast_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Option<Shapes> {
+    fast_offset_with(shape, delta, BEVEL_PAST_120)
+}
+
+/// `fast_offset` with the bevel limit `bevel` (see [`offset_with`]).
+fn fast_offset_with(shape: &[Vec<IntPoint<i32>>], delta: i32, bevel: f64) -> Option<Shapes> {
     let d = f64::from(delta);
     let mut out: Vec<Vec<IntPoint<i32>>> = Vec::with_capacity(shape.len());
     // Each contour's bounds, so the check below skips contours far from a point (a plate with dozens of holes
@@ -1281,7 +1332,7 @@ fn fast_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Option<Shapes> {
         }
         let area_in = crate::geom::area2_int(c);
         outline_ccw.get_or_insert(area_in > 0);
-        let mut r = raw_loop(c, d, false)?;
+        let mut r = raw_loop_with(c, d, false, false, bevel)?;
         r.dedup();
         if r.first() == r.last() {
             r.pop();
@@ -1328,7 +1379,7 @@ fn fast_offset(shape: &[Vec<IntPoint<i32>>], delta: i32) -> Option<Shapes> {
     // contours, the shape came apart into pieces one contour per input contour cannot hold, so the union's
     // result is the offset.
     if split {
-        let union = clipper_offset(shape, delta);
+        let union = clipper_offset_with(shape, delta, bevel);
         if union.iter().map(Vec::len).sum::<usize>() > out.len() {
             return Some(union);
         }
@@ -2427,14 +2478,15 @@ pub(crate) fn walls_gapped(
             // Orca's loop chain: each loop is the previous one pulled in by a loop pitch and opened by
             // the squish tolerance, so a loop vanishes where the part is too thin for it and a
             // narrow crescent does not keep a sliver of a wall. The opening cuts a sharp point
-            // square ([`grow_open`]).
+            // square ([`grow_open`]). A wall loop keeps a point up to the miter limit ([`BEVEL_PAST_MITER_LIMIT`]).
             let min_spacing = spacing * 6 / 10;
             for k in 0..wall_loops {
                 let last = if let Some(prev) = chain.last() {
                     let d = if k == 1 { spacing2 } else { spacing };
-                    grow_open(&offset(prev, -(d + min_spacing / 2 - 1)), min_spacing / 2 - 1)
+                    let pulled = offset_with(prev, -(d + min_spacing / 2 - 1), BEVEL_PAST_MITER_LIMIT);
+                    grow_open_with(&pulled, min_spacing / 2 - 1, BEVEL_PAST_MITER_LIMIT)
                 } else {
-                    offset(&one, -(ext / 2))
+                    offset_with(&one, -(ext / 2), BEVEL_PAST_MITER_LIMIT)
                 };
                 let empty = last.is_empty();
                 chain.push(last);
@@ -2456,7 +2508,7 @@ pub(crate) fn walls_gapped(
                 } else {
                     -(ext + inner * (2 * k as i32 - 1) / 2)
                 };
-                for s in offset(&one, d) {
+                for s in offset_with(&one, d, BEVEL_PAST_MITER_LIMIT) {
                     for c in s {
                         island.loops.push((k, c));
                     }
@@ -2949,6 +3001,122 @@ mod tests {
         let hexagon = vec![vec![hexagon]];
         assert_eq!(grow_open(&hexagon, r), offset(&hexagon, r));
         assert_eq!(grow_open(&wedge, -r), offset(&wedge, -r));
+    }
+
+    /// How far past `y` (in the direction `dir`, 1 up or -1 down) the rings of `shapes` reach within 1.5 `d` of the
+    /// line x = `cx`.
+    fn reach(shapes: &Shapes, cx: i32, y: i32, dir: i32, d: i32) -> f64 {
+        shapes
+            .iter()
+            .flatten()
+            .flatten()
+            .filter(|p| (p.x - cx).abs() <= d * 3 / 2)
+            .map(|p| f64::from((p.y - y) * dir))
+            .fold(f64::MIN, f64::max)
+    }
+
+    #[test]
+    fn corners_up_to_the_miter_limit_keep_their_point() {
+        // With the miter limit join, a corner that turns by up to 141 degrees (a half angle a of 19.47 degrees or
+        // more, where the miter reaches 3 times the offset) is mitered, d / sin a past the vertex; a sharper one is
+        // beveled through the ends of the moved edges, d sin a past it, or with the opening grow cut square d past it.
+        // The plain offset and opening grow bevel and cut square from 120 degrees, as before.
+        let d = 4_000;
+        let sharp = BEVEL_PAST_MITER_LIMIT;
+        for turn in [125.0f64, 140.0, 145.0] {
+            let a = (90.0 - turn / 2.0).to_radians();
+            let kept = turn < 141.0;
+            let miter = f64::from(d) / a.m_sin();
+            let bevel = f64::from(d) * a.m_sin();
+            // A notch 4 mm deep cut from the top of a block, shrunk: its tip is a reflex corner of the area.
+            let w = round_pt(40_000.0 * a.m_tan(), 0.0).x;
+            let notch: Shapes = vec![vec![vec![
+                IntPoint::new(0, 0),
+                IntPoint::new(200_000, 0),
+                IntPoint::new(200_000, 100_000),
+                IntPoint::new(100_000 + w, 100_000),
+                IntPoint::new(100_000, 60_000),
+                IntPoint::new(100_000 - w, 100_000),
+                IntPoint::new(0, 100_000),
+            ]]];
+            let got = reach(&offset_with(&notch, -d, sharp), 100_000, 60_000, -1, d);
+            let want = if kept { miter } else { bevel };
+            assert!(
+                (got - want).abs() <= 30.0,
+                "notch, turn {turn}: {got}, want {want}"
+            );
+            // A wedge 4 mm tall on a block, grown: its tip is a convex corner.
+            let wedge: Shapes = vec![vec![vec![
+                IntPoint::new(0, 0),
+                IntPoint::new(200_000, 0),
+                IntPoint::new(200_000, 60_000),
+                IntPoint::new(100_000 + w, 60_000),
+                IntPoint::new(100_000, 100_000),
+                IntPoint::new(100_000 - w, 60_000),
+                IntPoint::new(0, 60_000),
+            ]]];
+            let got = reach(&offset_with(&wedge, d, sharp), 100_000, 100_000, 1, d);
+            let want = if kept { miter } else { bevel };
+            assert!(
+                (got - want).abs() <= 30.0,
+                "wedge, turn {turn}: {got}, want {want}"
+            );
+            let got = reach(&grow_open_with(&wedge, d, sharp), 100_000, 100_000, 1, d);
+            let want = if kept { miter } else { f64::from(d) };
+            assert!(
+                (got - want).abs() <= 30.0,
+                "wedge opened, turn {turn}: {got}, want {want}"
+            );
+            for (got, want, what) in [
+                (reach(&offset(&notch, -d), 100_000, 60_000, -1, d), bevel, "notch"),
+                (reach(&offset(&wedge, d), 100_000, 100_000, 1, d), bevel, "wedge"),
+                (
+                    reach(&grow_open(&wedge, d), 100_000, 100_000, 1, d),
+                    f64::from(d),
+                    "wedge opened",
+                ),
+            ] {
+                assert!(
+                    (got - want).abs() <= 30.0,
+                    "plain {what}, turn {turn}: {got}, want {want}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn infill_area_keeps_the_bevel_where_walls_keep_the_point() {
+        // A V notch whose tip turns 140 degrees: the wall loops keep its point, the infill area inside them is the
+        // plain offset that bevels it, as every offset other than walls, bridge areas and the slice closing does.
+        let a = 20.0f64.to_radians();
+        let w = round_pt(40_000.0 * a.m_tan(), 0.0).x;
+        let notch: Shapes = vec![vec![vec![
+            IntPoint::new(0, 0),
+            IntPoint::new(200_000, 0),
+            IntPoint::new(200_000, 100_000),
+            IntPoint::new(100_000 + w, 100_000),
+            IntPoint::new(100_000, 60_000),
+            IntPoint::new(100_000 - w, 100_000),
+            IntPoint::new(0, 100_000),
+        ]]];
+        let (ext, inner, overlap) = (4_200, 4_500, 630);
+        let (islands, core) = walls_with(&notch, 2, ext, inner, overlap);
+        let outer: Shapes = islands[0]
+            .loops
+            .iter()
+            .filter(|(k, _)| *k == 0)
+            .map(|(_, r)| vec![r.clone()])
+            .collect();
+        let want = f64::from(ext / 2) / a.m_sin();
+        let got = reach(&outer, 100_000, 60_000, -1, ext / 2);
+        assert!((got - want).abs() <= 30.0, "outer wall: {got}, want {want}");
+        let (inset, min) = (ext + inner - overlap, inner * 27 / 50);
+        assert_eq!(core, offset(&offset(&notch, -(inset + min / 2)), min / 2));
+        let sharp = BEVEL_PAST_MITER_LIMIT;
+        assert_ne!(
+            core,
+            offset_with(&offset_with(&notch, -(inset + min / 2), sharp), min / 2, sharp)
+        );
     }
 
     #[test]
