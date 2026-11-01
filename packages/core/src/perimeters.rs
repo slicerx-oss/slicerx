@@ -1814,12 +1814,43 @@ pub(crate) fn walls_for(
     )
 }
 
-/// How far a classic one-wall top band's step is pulled in to test that a band prints there: a side prints one once
-/// its step from the outline in to the layer above is wider than half the outer wall plus the inner wall, whatever
-/// the wall count. Half a micrometer more, so a step of exactly that width, a few tenths of a micrometer off, prints
-/// none.
+/// How far a classic one-wall top band's step is pulled in before it is grown back into the band: the mean of half
+/// the outer wall and the inner wall, and half a micrometer more. Whether a piece of the step gets a band at all is
+/// [`classic_top_room`]'s test.
 fn classic_top_cut(ext: i32, inner: i32) -> i32 {
     i32::midpoint(ext / 2, inner) + 5
+}
+
+/// The width a piece of a classic one-wall top's step must clear for a band, internal units: `top_area_threshold`
+/// of the larger of the inner wall's width and the outer wall's spacing. The setting is a percent of that width (200
+/// by default) or a width in mm. With 0.42 and 0.45 mm walls on 0.2 mm layers it is 0.90 mm.
+fn classic_top_threshold(cfg: &crate::config::PrintConfig, ext: i32, inner: i32) -> i32 {
+    let scale = crate::geom::SCALE;
+    let base = (f64::from(inner) / scale).max(cfg.spacing_for(f64::from(ext) / scale));
+    let value = match cfg.raw.get("top_area_threshold") {
+        Some(serde_json::Value::Array(a)) => a.first(),
+        other => other,
+    };
+    let width = value
+        .and_then(|v| crate::config::float_or_percent(v, base))
+        .filter(|t| t.is_finite())
+        .unwrap_or(2.0 * base);
+    crate::geom::mm(width.max(0.0))
+}
+
+/// Where a classic one-wall top band can start on the island `one`: the points more than half the outer wall's
+/// width (`ext`) inside its outline that lie more than half the threshold width ([`classic_top_threshold`]) from the
+/// layer above, given as `clear`, the layer above grown by that half. A piece of the step gets a band only when it
+/// reaches into this area, so a slot from an edge needs to be wider than the threshold and longer than half the
+/// outer wall plus half the threshold, and a straight ledge deeper than that second width. Half a micrometer more
+/// each way, so a step of exactly those widths, a few tenths of a micrometer off, prints none.
+fn classic_top_room(one: &Shapes, clear: &Shapes, ext: i32) -> Shapes {
+    difference(&offset(one, -(ext / 2 + 5)), clear)
+}
+
+/// The layer above grown by half the threshold width and half a micrometer, for [`classic_top_room`].
+fn classic_top_clear(upper: &Shapes, threshold: i32) -> Shapes {
+    offset(upper, threshold / 2 + 5)
 }
 
 /// How far in from its outline a classic one-wall top's surface starts, internal units, when the walls' `overlap` (of
@@ -1949,13 +1980,10 @@ pub(crate) fn classic_top_candidate(
     } else {
         (w, w)
     };
-    let cut = classic_top_cut(ext, inner);
+    let clear = classic_top_clear(top.upper, classic_top_threshold(cfg, ext, inner));
     region.iter().any(|shape| {
-        let one = vec![shape.clone()];
-        // the step from this outline in to the layer above, which the top band is measured on: no band where even
-        // its widest strips disappear.
-        let step = difference(&one, top.upper);
-        !step.is_empty() && !offset(&step, -cut).is_empty()
+        // no band where no piece of the step from this outline in to the layer above clears the threshold.
+        !classic_top_room(&vec![shape.clone()], &clear, ext).is_empty()
     })
 }
 
@@ -2162,11 +2190,14 @@ pub(crate) fn walls_for_top(
             return normal(region);
         };
         let cut = classic_top_cut(ext, inner);
+        let threshold = classic_top_threshold(cfg, ext, inner);
+        let clear = classic_top_clear(top.upper, threshold);
         let mut islands = Vec::new();
         let mut cores = Vec::new();
         for shape in region {
             let one = vec![shape.clone()];
-            if !classic_top_candidate(cfg, &one, w, top) {
+            let room = classic_top_room(&one, &clear, ext);
+            if room.is_empty() {
                 let (walls, core) = normal(&one);
                 islands.extend(walls);
                 cores.extend(core);
@@ -2182,9 +2213,9 @@ pub(crate) fn walls_for_top(
                 thin_all.as_ref(),
                 0,
             );
-            // The band is measured on the step itself, from this layer's outline in to the layer above, so a side
-            // prints a band once its step is wider than `cut` twice over, whatever the wall count. Measured inside the
-            // one wall instead, the step would have to be wider by the wall's inset before any band printed.
+            // The band is grown from the step itself, from this layer's outline in to the layer above, whatever the
+            // wall count. Grown from inside the one wall instead, the step would have to be wider by the wall's inset
+            // before any band printed.
             let mut step = difference(&one, top.upper);
             // The part of the band over air, which stays out of it.
             let over = top
@@ -2203,6 +2234,9 @@ pub(crate) fn walls_for_top(
             #[allow(clippy::cast_possible_wrap, reason = "wall counts are capped at 50")]
             let more = (wall_loops as i32 - 2).max(0) * pitch(inner) * 3 / 5;
             let reach = ext * 3 / 2 + inner * 3 / 5 - mm(0.05) + ends + more;
+            // Each piece of the step is judged on its own: only the pieces that reach into the room clear the
+            // threshold, and the rest keep the usual walls.
+            step.retain(|piece| !intersection(&vec![piece.clone()], &room).is_empty());
             // The band is the part of the step wider than `cut` twice over, grown back by `cut` and on by `reach`,
             // plus the tails where the step narrows along the outline ([`classic_top_tails`]), grown by `reach`.
             let wide = offset(&step, -cut);
@@ -2210,6 +2244,15 @@ pub(crate) fn walls_for_top(
             let tails = classic_top_tails(&wide, &step, &one, cut);
             if !tails.is_empty() {
                 grown = union_all(&[&grown, &grow_open(&tails, reach)]);
+            }
+            // A piece that clears a threshold under the cut's width can vanish when pulled in by the cut: it is
+            // pulled in by no more than it clears instead.
+            let least = (ext / 2).min(threshold / 2).min(cut);
+            for piece in &step {
+                let piece = vec![piece.clone()];
+                if intersection(&piece, &wide).is_empty() {
+                    grown = union_all(&[&grown, &offset(&offset(&piece, -least), least + reach)]);
+                }
             }
             let mut exposed = intersection(&grown, &outer_core);
             if let Some(near) = classic_top_near(cfg, overlap, w) {
