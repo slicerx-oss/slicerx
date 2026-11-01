@@ -322,6 +322,7 @@ timelapse_type
 toolchange_cyclic_first_layer
 toolchange_cyclic_order
 toolchange_ordering
+top_area_threshold
 top_bottom_infill_wall_overlap
 top_color_penetration_layers
 top_layer_direction

@@ -15,7 +15,7 @@ export const SECTIONS: Readonly<Record<SettingIntent, readonly SettingSection[]>
   quality: [
     { id: 'layers', label: 'Layers and line width', match: /^layer_height$|^initial_layer_print_height|line_width$|^smart_layer|^precise_z_height|^slicing_mode|^initial_layer_min_bead_width|^zaa_/ },
     { id: 'seam', label: 'Seam', match: /^seam_|^scarf_|^wipe_on_loops|^wipe_inward|^wipe_before_external_loop|^staggered_inner_seams/ },
-    { id: 'walls', label: 'Walls', match: /^wall_|^precise_outer_wall|^only_one_wall|^detect_thin_wall|^min_bead_width|^min_feature_size|^is_infill_first|^unsupported_wall_last/ },
+    { id: 'walls', label: 'Walls', match: /^wall_|^precise_outer_wall|^only_one_wall|^top_area_threshold|^detect_thin_wall|^min_bead_width|^min_feature_size|^is_infill_first|^unsupported_wall_last/ },
     { id: 'surfaces', label: 'Top and bottom surfaces', match: /^top_surface_pattern|^bottom_surface_pattern|^internal_solid_infill_pattern|^top_bottom_infill_wall_overlap|^min_width_top_surface/ },
     { id: 'overhangs', label: 'Overhangs and bridges', match: /^(?!.*flow_ratio).*(bridge|overhang|counterbore)/ },
     { id: 'precision', label: 'Precision' },

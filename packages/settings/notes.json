@@ -185,6 +185,7 @@
   "min_width_top_surface": "A top area narrower than this doesn't count as a top surface, in mm or as a percent of the line width, so the single top wall doesn't kick in on small ledges.",
   "only_one_wall_first_layer": "Prints just one wall on the first layer, leaving more room for the bottom pattern.",
   "only_one_wall_top": "Prints just one wall on flat top surfaces, leaving more room for the top pattern, which can look cleaner.",
+  "top_area_threshold": "With a single top wall on classic walls, a step the layer above leaves uncovered gets the single wall only where it is wider than this, in mm or a percent of the wall width. Min width top surface does this for Arachne and aegis walls.",
   "outer_wall_line_width": "Line width of the outer wall, in mm or as a percent of the nozzle diameter. Slightly narrower can give finer detail; 0 uses the default line width.",
   "precise_outer_wall": "Adjusts the spacing between the outer wall and the next one so the outside dimensions come out more accurately. Ignored when the outer wall prints first.",
   "precise_z_height": "Adjusts the last few layer heights so the top of the part lands exactly at the model's height.",

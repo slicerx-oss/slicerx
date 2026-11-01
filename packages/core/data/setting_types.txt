@@ -659,6 +659,7 @@ toolchange_cyclic_order	process	string
 toolchange_ordering	process	enum
 toolchange_park_position	printer	points
 toolchange_temperature_drop	printer	floats
+top_area_threshold	process	floatOrPercent
 top_bottom_infill_wall_overlap	process	percent
 top_color_penetration_layers	process	int
 top_layer_direction	process	float
