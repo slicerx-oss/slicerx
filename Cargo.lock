@@ -5570,6 +5570,7 @@ dependencies = [
 name = "sx-cli"
 version = "0.2.7"
 dependencies = [
+ "miniz_oxide 0.9.1",
  "rayon",
  "serde_json",
  "sha2 0.11.0",

@@ -428,3 +428,25 @@ fn an_orca_export_writes_a_ramp_lift_as_a_slope_lift() {
     assert_eq!(json["z_hop_types"], json!(["Slope Lift", "Spiral Lift"]));
     assert_eq!(json["travel_slope"], json!(["1", "3"]));
 }
+
+#[test]
+fn an_orca_export_leaves_out_the_prusaslicer_nozzle_check_flags() {
+    // The abrasive filament and high flow nozzle flags are PrusaSlicer's, which OrcaSlicer and Bambu Studio do not
+    // read: an export for them leaves both out.
+    let filament = import_orca(
+        &json!({"name": "CF PETG", "type": "filament", "filament_abrasive": ["1"], "nozzle_temperature": ["215"]}),
+        &|_| None,
+    )
+    .unwrap();
+    let json = export_orca(&filament.config, "CF PETG", Section::Filament, None);
+    assert!(json.get("filament_abrasive").is_none(), "{json}");
+    assert_eq!(json["nozzle_temperature"], json!(["215"]));
+    let printer = import_orca(
+        &json!({"name": "HF printer", "type": "machine", "nozzle_high_flow": ["1"], "nozzle_diameter": ["0.6"]}),
+        &|_| None,
+    )
+    .unwrap();
+    let json = export_orca(&printer.config, "HF printer", Section::Printer, None);
+    assert!(json.get("nozzle_high_flow").is_none(), "{json}");
+    assert_eq!(json["nozzle_diameter"], json!(["0.6"]));
+}
