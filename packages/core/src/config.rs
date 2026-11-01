@@ -2626,8 +2626,9 @@ pub const FUZZY_KEYS: &[&str] = &[
 ];
 
 /// The printer retraction settings a filament may override with its own `filament_` value (Orca 2.4.2
-/// PrintConfig.cpp `filament_extruder_override_keys`).
-pub const FILAMENT_OVERRIDES: [&str; 16] = [
+/// PrintConfig.cpp `filament_extruder_override_keys`), and the angle a lift climbs at (`filament_travel_slope`, which a
+/// `PrusaSlicer` filament sets for its ramping lift).
+pub const FILAMENT_OVERRIDES: [&str; 17] = [
     "retraction_length",
     "z_hop",
     "z_hop_types",
@@ -2644,6 +2645,7 @@ pub const FILAMENT_OVERRIDES: [&str; 16] = [
     "retract_before_wipe",
     "long_retractions_when_cut",
     "retraction_distances_when_cut",
+    "travel_slope",
 ];
 
 /// Keys a height range may change: they only touch how a layer is written,
