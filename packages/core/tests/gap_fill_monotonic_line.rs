@@ -279,6 +279,20 @@ fn monotonic_line_top_surfaces_get_gap_fill() {
 }
 
 #[test]
+fn a_slot_cut_into_a_band_step_keeps_its_gap_fill() {
+    // At z 59.0 the layer above cuts a slot about 0.8 mm wide and 1.3 mm deep into the part from the step: the
+    // classic one-wall top band stops at the slot and leaves it its gap fill, at least the target less 25 percent.
+    for model in ["bambu-a1", "bambu-p1s"] {
+        let g = gaps(&slice(&xmark(), measured(model, &[])));
+        let got = g.by_z.get(&hundredths(59.0)).copied().unwrap_or(0.0);
+        assert!(
+            got >= 0.75 * 3.71,
+            "{model} classic: {got:.2} mm of gap fill at z 59.0, target 3.71"
+        );
+    }
+}
+
+#[test]
 fn other_top_patterns_get_none() {
     for pattern in ["monotonic", "rectilinear", "alignedrectilinear", "concentric"] {
         let g = gaps(&slice(&xmark(), a1(&[("top_surface_pattern", json!(pattern))])));
