@@ -6151,6 +6151,7 @@ impl SliceSession {
                         cache: None,
                         tag: 0,
                         whole_lower: None,
+                        classic: classic_top_edges(cfg, w, overlap),
                     });
                     sparse.push(cls.sparse);
                 }
@@ -8841,6 +8842,7 @@ impl SliceSession {
                     whole_lower: own_filament
                         .then(|| layer.checked_sub(1).and_then(get).map(lower_shapes))
                         .flatten(),
+                    classic: edges.filter(|_| top_from_spacing_edge(cfg)),
                 }),
             };
             (
@@ -9209,6 +9211,7 @@ impl SliceSession {
                         cache: Some(&self.cache),
                         tag: cfg_tag,
                         whole_lower: None,
+                        classic: classic_top_edges(cfg, base_shell.w, base_overlap),
                     });
                     let (lines, paths) = sparse_of(lu, &cls.sparse);
                     let bridged: Shapes = cls
@@ -11965,6 +11968,22 @@ fn stretch_pattern(name: &str, bambu: bool) -> bool {
     } else {
         matches!(name, "monotonic" | "monotonicline" | "rectilinear")
     }
+}
+
+/// Whether the classification finds top surfaces out to the internal solid infill's edge over classic walls
+/// (`classify::In::classic`): on Bambu Lab printers, without `only_one_wall_top`, whose band layers keep their own
+/// rules.
+fn top_from_spacing_edge(cfg: &PrintConfig) -> bool {
+    crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) && !crate::perimeters::one_wall_top(cfg)
+}
+
+/// The edges [`top_from_spacing_edge`] classifies a whole layer with, over `cfg.wall_loops` classic walls of line
+/// width `w` overlapping the infill area by `overlap` (internal units).
+fn classic_top_edges(cfg: &PrintConfig, w: i32, overlap: i32) -> Option<perimeters::ClassicEdges> {
+    if !top_from_spacing_edge(cfg) || crate::tower::flag(cfg, "alternate_extra_wall") {
+        return None;
+    }
+    perimeters::classic_edges(cfg, cfg.wall_loops, w, overlap, cfg.infill_wall_overlap / 100.0)
 }
 
 /// The areas of `bridges`, together.
