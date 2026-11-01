@@ -4,7 +4,8 @@
 //!
 //! - The x-mark on the stock P1S request, smart layer off: a narrow piece prints as floating vertical shell or as
 //!   internal solid infill alike with classic and aegis walls, in total and per layer (but for the step at z 6.0 to
-//!   6.4 and the slope at z 59.2, where classic walls print a one-wall top band in place of floating shell), and a
+//!   6.4 and the slope at z 59.2, where classic walls print a one-wall top band in place of floating shell, and the
+//!   layers at z 5.0, 5.2, 6.6 and 58.8 whose vertical shell reads the slit those bands' inner walls leave), and a
 //!   strip beside the sparse sliver aegis walls leave below prints as internal solid infill.
 //! - Strips 30.9 mm long along 45 degrees, 2.2 mm tall, on the stock Voron 2.4 (arachne walls, 3 loops) and Ender 3
 //!   V3 (classic walls, 2 loops) requests, smart layer off. Per strip, the measured features inside the walls on
@@ -161,7 +162,8 @@ fn x_mark_strips_beside_the_sparse_sliver_print_as_internal_solid_infill_with_ae
 fn x_mark_layers_float_alike_with_classic_and_aegis_walls() {
     // Per layer, aegis and classic walls float within 0.5 mm of filament, except on the step at z 6.0 to 6.4 and the
     // slope at z 59.2, where the two walls leave different top surfaces: classic walls print a one-wall top band
-    // there in place of floating shell.
+    // there in place of floating shell. The inner walls of those bands run inside the layer and leave a slit that
+    // the vertical shell of the layers around reads, so z 5.0, 5.2, 6.6 and 58.8 differ too.
     let (classic, aegis) = x_mark();
     let (c, a) = (
         per_layer(classic, "Floating vertical shell"),
@@ -172,7 +174,7 @@ fn x_mark_layers_float_alike_with_classic_and_aegis_walls() {
         .chain(a.keys())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .filter(|z| !(6_000..=6_400).contains(*z) && **z != 59_200)
+        .filter(|z| !(6_000..=6_400).contains(*z) && ![5_000, 5_200, 6_600, 58_800, 59_200].contains(*z))
         .filter_map(|z| {
             let (x, y) = (c.get(z).copied().unwrap_or(0.0), a.get(z).copied().unwrap_or(0.0));
             ((x - y).abs() > 0.5).then(|| format!("z {z}: classic {x:.2}, aegis {y:.2}"))
