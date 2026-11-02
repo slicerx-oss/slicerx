@@ -544,19 +544,6 @@ const XMARK: [(f64, f64); 6] = [
     (85.4, 0.2),
 ];
 const XMARK_SKIPPED: [f64; 3] = [5.8, 6.2, 59.2];
-/// With classic walls z 59.0 is left out too: it keeps less gap fill than measured (2.61 mm against 3.71), short beside
-/// the tapered tips of its top region, where its beads come out 0.84 mm against 1.42 and none against 0.45. Tracked as
-/// the classic x-mark top tip card: put the layer back when it is fixed.
-const XMARK_SKIPPED_CLASSIC: [f64; 4] = [5.8, 6.2, 59.0, 59.2];
-
-/// The x-mark layers left out for the case `name`.
-fn xmark_skipped(name: &str) -> &'static [f64] {
-    if name.contains(" classic") {
-        &XMARK_SKIPPED_CLASSIC
-    } else {
-        &XMARK_SKIPPED
-    }
-}
 
 fn a1(edits: &[(&str, Value)]) -> Map<String, Value> {
     printer("bambu-a1", edits)
@@ -576,7 +563,7 @@ fn monotonic_line_top_surfaces_get_gap_fill() {
     for model in ["bambu-a1", "bambu-p1s"] {
         for (name, config) in both_walls(model, &[]) {
             let g = gaps(&slice(&xmark(), config));
-            check(&name, &g, &XMARK, xmark_skipped(&name));
+            check(&name, &g, &XMARK, &XMARK_SKIPPED);
             // Every stated width between 0.06 and 0.43 mm.
             for w in &g.widths {
                 assert!((0.06..=0.43).contains(w), "{name}: a bead {w} mm wide");
@@ -589,13 +576,15 @@ fn monotonic_line_top_surfaces_get_gap_fill() {
 fn a_slot_cut_into_a_step_leaves_the_notch_its_walls() {
     // At z 59.0 the layer above cuts a slot about 0.8 mm wide and 1.3 mm deep into the part from the step. That
     // piece is too narrow for a classic one-wall top band, so no strip of gap fill is left between a band's inner
-    // wall and the notch, and the layer keeps the gap fill of its other two pieces (2.60 mm measured).
+    // wall and the notch. The top surface grows in steps that carry it round the slot's closed end into the strips
+    // beside the slot walls, so the tips of the top region get their gap fill too and the layer reaches the measured
+    // band, 2.79 to 4.65 mm (3.72 measured).
     for model in ["bambu-a1", "bambu-p1s"] {
         let g = gaps(&slice(&xmark(), measured(model, &[])));
         let got = g.by_z.get(&hundredths(59.0)).copied().unwrap_or(0.0);
         assert!(
-            (2.5..=2.7).contains(&got),
-            "{model} classic: {got:.2} mm of gap fill at z 59.0, want 2.60"
+            (2.79..=4.65).contains(&got),
+            "{model} classic: {got:.2} mm of gap fill at z 59.0, want 2.79 to 4.65"
         );
     }
 }
@@ -673,7 +662,7 @@ fn the_first_layer_gets_none() {
     let bottom = [("bottom_surface_pattern", json!("monotonicline"))];
     for (name, config) in both_walls("bambu-a1", &bottom) {
         let g = gaps(&slice(&xmark(), config));
-        check(&name, &g, &XMARK, xmark_skipped(&name));
+        check(&name, &g, &XMARK, &XMARK_SKIPPED);
         assert!(!g.by_z.contains_key(&20), "{name}: {:?}", g.by_z);
     }
 }
@@ -706,7 +695,7 @@ fn monotonic_line_internal_solid_gets_it_from_the_second_layer() {
 fn filter_out_gap_fill_does_not_apply() {
     for (name, config) in both_walls("bambu-a1", &[("filter_out_gap_fill", json!(3))]) {
         let g = gaps(&slice(&xmark(), config));
-        check(&name, &g, &XMARK, xmark_skipped(&name));
+        check(&name, &g, &XMARK, &XMARK_SKIPPED);
     }
 }
 
@@ -719,7 +708,7 @@ fn ironing_and_top_shell_count_change_nothing() {
     ] {
         for (name, config) in both_walls("bambu-a1", std::slice::from_ref(&edits)) {
             let g = gaps(&slice(&xmark(), config));
-            check(&format!("{name} {edits:?}"), &g, &XMARK, xmark_skipped(&name));
+            check(&format!("{name} {edits:?}"), &g, &XMARK, &XMARK_SKIPPED);
         }
     }
 }
@@ -735,15 +724,7 @@ fn the_amount_follows_the_layer_height() {
     ];
     for (name, config) in both_walls("bambu-a1", &[("layer_height", json!(0.12))]) {
         let g = gaps(&slice(&xmark(), config));
-        // With classic walls z 59.12 is left out as z 59.0 is on 0.2 mm layers: it keeps less gap fill than measured
-        // (0.87 mm against 1.73), short at the tapered tip of its top region. Tracked as the classic x-mark top tip
-        // card: put the layer back when it is fixed.
-        let skipped: &[f64] = if name.contains(" classic") {
-            &[6.08, 59.12, 85.4]
-        } else {
-            &[6.08, 85.4]
-        };
-        check(&format!("{name}, 0.12 mm layers"), &g, &targets, skipped);
+        check(&format!("{name}, 0.12 mm layers"), &g, &targets, &[6.08, 85.4]);
     }
 }
 

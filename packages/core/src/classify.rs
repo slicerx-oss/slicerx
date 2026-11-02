@@ -144,6 +144,31 @@ fn grown_into(src: &Shapes, zone: &Shapes, d: f64, tiny: f64) -> Shapes {
     }
 }
 
+/// How many equal steps [`grown_in_steps`] takes after its seed.
+const GROWTH_STEPS: u32 = 5;
+
+/// `src` grown by `d` mm into the pieces of `zone` it touches, in steps that each stay inside the zone: first by
+/// `tiny`, then by [`GROWTH_STEPS`] equal steps up to `d`, every one a round offset of the part grown so far cut to the
+/// zone again. Where a piece of the zone wraps round a wall corner (the internal solid shell round a slot's closed end
+/// and down the strips beside it), the growth follows the piece round the corner instead of cutting across the wall,
+/// as one offset of `d` does: past the corner it reaches only as far as the piece's own path allows.
+fn grown_in_steps(src: &Shapes, zone: &Shapes, d: f64, tiny: f64) -> Shapes {
+    if src.is_empty() || zone.is_empty() || d <= 0.0 {
+        return Vec::new();
+    }
+    let mut grown = meet_near(zone, &perimeters::offset_round(src, mm(tiny)));
+    let step = (d - tiny) / f64::from(GROWTH_STEPS);
+    if step > 0.0 {
+        for _ in 0..GROWTH_STEPS {
+            if grown.is_empty() {
+                break;
+            }
+            grown = meet_near(zone, &perimeters::offset_round(&grown, mm(step)));
+        }
+    }
+    grown
+}
+
 /// The classification of one region of one layer.
 pub(crate) fn classify(i: &In<'_>) -> Classes {
     let cfg = i.cfg;
@@ -317,27 +342,32 @@ pub(crate) fn classify(i: &In<'_>) -> Classes {
     if i.layer > 0 {
         bottom = resting;
     }
-    // `touch`: how far, mm, `src` may lie from the areas it grows into and still reach them.
-    let expand = |src: &Shapes, touch: f64, shell: &mut Shapes, sparse: &mut Shapes| -> Shapes {
-        if src.is_empty() {
-            return Vec::new();
-        }
-        let a = grown_into(src, shell, into_shell, tiny(into_shell) + touch);
-        let b = grown_into(src, sparse, into_sparse, tiny(into_sparse) + touch);
-        let merged = union(&union(src, &a), &b);
-        let merged = perimeters::offset(&perimeters::offset(&merged, mm(closing)), -mm(closing));
-        // The closed surface stays inside the infill area.
-        let merged = meet(&merged, inner);
-        *shell = sub(shell, &merged);
-        *sparse = sub(sparse, &merged);
-        merged
-    };
-    let bottom = expand(&bottom, 0.0, &mut shell, &mut sparse);
-    let top = expand(&top, 0.0, &mut shell, &mut sparse);
+    // Top surfaces on Bambu Lab printers with classic walls grow in steps that follow the shell and sparse areas round
+    // wall corners ([`grown_in_steps`]); bottoms, and tops elsewhere, grow in one offset ([`grown_into`]).
+    let stepped_tops = crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) && !cfg.arachne_walls();
+    // `touch`: how far, mm, `src` may lie from the areas it grows into and still reach them. `stepped`: grow in steps.
+    let expand =
+        |src: &Shapes, touch: f64, stepped: bool, shell: &mut Shapes, sparse: &mut Shapes| -> Shapes {
+            if src.is_empty() {
+                return Vec::new();
+            }
+            let grow = if stepped { grown_in_steps } else { grown_into };
+            let a = grow(src, shell, into_shell, tiny(into_shell) + touch);
+            let b = grow(src, sparse, into_sparse, tiny(into_sparse) + touch);
+            let merged = union(&union(src, &a), &b);
+            let merged = perimeters::offset(&perimeters::offset(&merged, mm(closing)), -mm(closing));
+            // The closed surface stays inside the infill area.
+            let merged = meet(&merged, inner);
+            *shell = sub(shell, &merged);
+            *sparse = sub(sparse, &merged);
+            merged
+        };
+    let bottom = expand(&bottom, 0.0, false, &mut shell, &mut sparse);
+    let top = expand(&top, 0.0, stepped_tops, &mut shell, &mut sparse);
     // The strips outside the infill area reach it across the gap between the two edges, and only what they grow
     // into stays.
     let lone = sub(&lone, &bottom);
-    let mut top = union(&top, &expand(&lone, touch, &mut shell, &mut sparse));
+    let mut top = union(&top, &expand(&lone, touch, stepped_tops, &mut shell, &mut sparse));
     if let Some(band) = i.band_top {
         let more = sub(&sub(&meet(band, inner), &top), &bottom);
         if !perimeters::offset(&more, -mm(0.005)).is_empty() {
