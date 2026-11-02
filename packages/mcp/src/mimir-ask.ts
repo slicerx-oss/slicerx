@@ -3,10 +3,11 @@
 // A message to mimir in the open app, with pictures and PDF drawings from this computer: the files are read here, held
 // to the chat's limits (4 files, 10 MB each, PNG, JPEG, WebP, GIF or PDF) and sent over the app link, where the message
 // shows in the mimir tab as the person's next one. The ask answers at once with the session; mimir_session reads
-// back what mimir said and did, with the files each message carried. Offered while the app link is in use.
+// back what mimir said and did, with the files each message carried, and the question mimir waits on; mimir_dismiss
+// turns that question down so mimir carries on. Offered while the app link is in use.
 import { readFile, stat } from 'node:fs/promises'
 import { basename, extname } from 'node:path'
-import { defineTool, FILE_LIMITS, type PilotTool } from '@slicerx/pilot'
+import { ASK_SAID_MAX, defineTool, FILE_LIMITS, type PilotTool } from '@slicerx/pilot'
 import { z } from 'zod'
 import type { AppLinkCaller } from './app-route'
 import { ToolInputError, type ErrorCode } from './errors'
@@ -43,7 +44,7 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Send mimir a message in the open ${appName} app, with up to 4 pictures or PDF drawings from this computer (PNG, JPEG, WebP, GIF or PDF, 10 MB each), for example a photo of what a part must fit or a dimensioned drawing. It shows in the mimir tab as the person's next message, and mimir reads the files with it. Answers at once with the session id and the files as sent (a big picture is scaled down to 1568 px); read mimir's reply with slicerx_mimir_session. Refused while mimir is still answering.`,
+    description: `Send mimir a message in the open ${appName} app, with up to 4 pictures or PDF drawings from this computer (PNG, JPEG, WebP, GIF or PDF, 10 MB each), for example a photo of what a part must fit or a dimensioned drawing. It shows in the mimir tab as the person's next message, and mimir reads the files with it. Answers at once with the session id and the files as sent (a big picture is scaled down to 1568 px); read mimir's reply with slicerx_mimir_session. Refused while mimir is still answering, which includes while it waits on a question for the person (slicerx_mimir_session shows it as waiting); slicerx_mimir_dismiss turns that question down so mimir can finish.`,
     input: z.object({
       message: z.string().max(4000).default('').describe('What to ask mimir, as the person would type it'),
       files: z.array(z.string().min(1)).max(FILE_LIMITS.maxCount).default([]).describe('Paths of pictures or PDFs on this computer to attach'),
@@ -62,7 +63,7 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, the model each turn ran on (on Auto, with the reason it was picked: deep, attachment, many_steps, mechanism, person_sizes or default), what mimir said, the tools it ran and how each ended, its questions and lookups. Without an id, the newest conversation.`,
+    description: `Read back a mimir conversation in the open ${appName} app, turn by turn: what was said and the files on each message, the model each turn ran on (on Auto, with the reason it was picked: deep, attachment, many_steps, mechanism, person_sizes or default), what mimir said, the tools it ran and how each ended, its questions and lookups, and waiting: the question mimir waits on now (its askId, title, question and choices), or null. Without an id, the newest conversation.`,
     input: z.object({ id: z.string().min(1).max(200).optional().describe('A session id from slicerx_mimir_ask; the newest when left out') }),
     async run(i) {
       let id = i.id
@@ -76,5 +77,23 @@ export function mimirAskTools(link: AppLinkCaller, appName: string): PilotTool<n
       return { summary: `mimir session ${id}: ${turns} turn${turns === 1 ? '' : 's'}.`, output: out }
     },
   })
-  return [ask, session] as PilotTool<never>[]
+  const dismiss = defineTool({
+    name: 'mimir.dismiss',
+    version: '1.0.0',
+    source: 'command',
+    permission: 'read',
+    description: `Turn down the question mimir is waiting on in the open ${appName} app (the waiting question slicerx_mimir_session shows). mimir carries on without an answer, and reads said in its place when given, the way a person typing a reply instead of picking would. It does not pick an answer and does not stop mimir's run. Give the askId from waiting so a question that has already changed is refused instead of the next one being turned down.`,
+    input: z.object({
+      askId: z.string().min(1).max(200).optional().describe('The waiting question to turn down, from slicerx_mimir_session (waiting.askId); the one waiting now when left out'),
+      said: z.string().max(ASK_SAID_MAX).optional().describe('Words mimir reads in place of an answer, such as why the question does not fit'),
+    }),
+    async run(i) {
+      const args: Record<string, unknown> = {}
+      if (i.askId !== undefined) args['askId'] = i.askId
+      if (i.said !== undefined) args['said'] = i.said
+      const out = await call(link, appName, 'mimir.dismiss', args)
+      return { summary: `Turned down mimir's question in ${appName}; mimir carries on. Read what it does next with slicerx_mimir_session (session ${String(out['sessionId'])}).`, output: out }
+    },
+  })
+  return [ask, session, dismiss] as PilotTool<never>[]
 }

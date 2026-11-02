@@ -2,11 +2,13 @@
 // Copyright (C) 2026 The SlicerX contributors
 // mimir's conversations in the app, read back over the app link: the sessions, and for one session what was said and
 // what mimir did each turn (the model it ran on and why, its tool calls and how they ended, its questions and the
-// answers, what it looked up). The chat that keeps them registers its log here; nothing is registered until it does.
+// answers, what it looked up), and the question it waits on now, if any. The chat that keeps them registers its log
+// here; nothing is registered until it does.
 // Text is cut to a readable length and nothing else in the app is reachable from here.
 import { assistantText } from '@slicerx/contracts'
 import type { PilotEvent, PrintRun, SessionStore } from '@slicerx/contracts'
 import { reduceTranscript, startTurn, emptyTranscript, type Transcript, type Turn } from '@slicerx/pilot/reduce'
+import { openChoice } from '../workspaces/mimir/card-waits'
 import { LinkError } from './methods-error'
 
 export interface SessionSource {
@@ -83,8 +85,8 @@ function compact(turn: Turn, user: { text: string; attachments: string[] } | und
 
 /**
  * How mimir checked sizes in a session, for the dimension bench: questions it asked (choices and sheets), lookups it
- * showed, sheets confirmed, and how many sizes the person changed on them. Counted from the events, so kinds the chat
- * adds later count as they come.
+ * showed, sheets confirmed, how many sizes the person changed on them, and how many questions were turned down.
+ * Counted from the events, so kinds the chat adds later count as they come.
  */
 function statsOf(events: readonly PilotEvent[]) {
   let questions = 0
@@ -92,8 +94,10 @@ function statsOf(events: readonly PilotEvent[]) {
   let lookups = 0
   let confirmed = 0
   let changed = 0
-  for (const e of events as readonly { type: string; answer?: { confirmed?: boolean; changed?: string[] } }[]) {
+  let dismissed = 0
+  for (const e of events as readonly { type: string; answer?: { confirmed?: boolean; changed?: string[] }; dismissed?: boolean }[]) {
     if (e.type === 'ask') questions++
+    else if (e.type === 'ask_answered' && e.dismissed === true) dismissed++
     else if (e.type === 'sheet') sheets++
     else if (e.type === 'lookup') lookups++
     else if (e.type === 'sheet_answered') {
@@ -101,7 +105,7 @@ function statsOf(events: readonly PilotEvent[]) {
       changed += e.answer?.changed?.length ?? 0
     }
   }
-  return { questions: questions + sheets, sheets, lookups, sheetsConfirmed: confirmed, sizesChanged: changed }
+  return { questions: questions + sheets, sheets, lookups, sheetsConfirmed: confirmed, sizesChanged: changed, questionsDismissed: dismissed }
 }
 
 /** `mimir.sessions`: the conversations, newest first. */
@@ -124,14 +128,20 @@ export async function readSession(args: Record<string, unknown>): Promise<unknow
     runs[runs.length - 1]!.push(e)
   }
   const said = source.messages?.(id) ?? []
+  const reduced: Transcript[] = []
   const turns = runs.map((run, i) => {
     // An event this build's transcript does not know (a log from a newer chat) is skipped, not fatal.
     let tr: Transcript = startTurn(emptyTranscript(), { user: said[i]?.text ?? null }, 0)
     for (const e of run) tr = reduceTranscript(tr, e, 0) ?? tr
+    reduced.push(tr)
     const t = tr.turns.at(-1)!
     // the model the turn started on, and on Auto why it was picked; a later move shows as a model step
     const start = run.find((e): e is PilotEvent & { type: 'start' } => e.type === 'start')
     return { ...(start ? { model: start.model, ...(start.route ? { route: { tier: start.route.tier, reason: start.route.reason } } : {}) } : {}), ...compact(t, said[i]) }
   })
-  return { id, stats: statsOf(events), turns: turns.slice(-MAX_TURNS), ...(turns.length > MAX_TURNS ? { earlier: turns.length - MAX_TURNS } : {}) }
+  // the question the latest run waits on: a client reads it here, and mimir.dismiss turns it down
+  const latest = reduced.at(-1)
+  const open = latest ? openChoice(latest) : null
+  const waiting = open ? { askId: open.askId, title: cut(open.title, 200), question: cut(open.question, 500), choices: open.choices.map((c) => ({ id: c.id, label: c.label })) } : null
+  return { id, stats: statsOf(events), waiting, turns: turns.slice(-MAX_TURNS), ...(turns.length > MAX_TURNS ? { earlier: turns.length - MAX_TURNS } : {}) }
 }

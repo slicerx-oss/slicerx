@@ -22,6 +22,7 @@ import { CloudNotice, useCloudNoticeDue } from '../../pilot-connect/cloud-notice
 import { cameraBus } from '../../plate/tools'
 import { usePaneSize } from '../../shell/pane'
 import { setMimirAsker } from '../../app-link/mimir-ask'
+import { setMimirCards } from '../../app-link/mimir-dismiss'
 import { setTabChat } from '../../app-link/sessions'
 import { useHost } from '../../host'
 import { usePhoneLayout } from '../../lib/phone-layout'
@@ -172,6 +173,16 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
     })
     return () => setMimirAsker(null)
   }, [sessionId, live])
+  // a client may turn down the question card waiting here (mimir.dismiss), never pick its answer
+  useEffect(() => {
+    if (!live) return
+    setMimirCards({
+      sessionId: () => sessionId,
+      open: () => openChoice(shown.current),
+      dismiss: (askId, said) => pilot.answer?.(askId, null, said) ?? Promise.reject(new Error('No question here')),
+    })
+    return () => setMimirCards(null)
+  }, [sessionId, live, pilot])
   // Ask mimir in the command bar hands its words over as a message once mimir can take it; each distinct one runs once
   const prompt = useApp((s) => s.pilotPrompt)
   const consumed = useRef<string | null>(null)
