@@ -88,7 +88,18 @@ describe('prusaObjectOverrides', () => {
     expect(o['outer_wall_line_width']).toBeUndefined()
     // The object's own general width in mm, and at 0 the support at the project's 0.6 nozzle.
     expect(prusaObjectOverrides({ extrusion_width: '0.5' }, auto)['inner_wall_line_width']).toBe('0.5')
-    expect(prusaObjectOverrides({ extrusion_width: '0' }, auto)).toEqual({ line_width: '0', support_line_width: '0.6' })
+    // Its first layer widths follow the same chain on the first layer: the project's 0.6 mm outer wall, else the 0.6
+    // nozzle's auto widths (1.125 times it, the top surface and the support 1.0 times).
+    expect(prusaObjectOverrides({ extrusion_width: '0' }, auto)).toEqual({
+      line_width: '0',
+      support_line_width: '0.6',
+      initial_layer_inner_wall_line_width: '0.675',
+      initial_layer_internal_solid_infill_line_width: '0.675',
+      initial_layer_outer_wall_line_width: '0.6',
+      initial_layer_sparse_infill_line_width: '0.675',
+      initial_layer_support_line_width: '0.6',
+      initial_layer_top_surface_line_width: '0.6',
+    })
     // A general width in mm with the object's own layer height is the project's, already in the project's settings.
     expect(prusaObjectOverrides({ layer_height: '0.3' }, auto.replace('250%', '0.5'))).toEqual({ layer_height: '0.3' })
   })
@@ -98,15 +109,33 @@ describe('prusaPartOverrides', () => {
   const project = ['layer_height = 0.1', 'external_perimeter_extrusion_width = 0.6'].map((l) => `; ${l}`).join('\n')
 
   it("takes a part's width percents of its object's layer height, else the project's", () => {
-    expect(prusaPartOverrides({ perimeter_extrusion_width: '150%' }, {}, project)).toEqual({ inner_wall_line_width: '0.15' })
+    // On the first layer the percent is of the first layer height (the default 0.35 mm here).
+    expect(prusaPartOverrides({ perimeter_extrusion_width: '150%' }, {}, project)).toEqual({ inner_wall_line_width: '0.15', initial_layer_inner_wall_line_width: '0.525' })
     expect(prusaPartOverrides({ perimeter_extrusion_width: '150%' }, { layer_height: '0.3' }, project)['inner_wall_line_width']).toBe('0.45')
     expect(prusaPartOverrides({ support_material_xy_spacing: '150%' }, {}, project)['support_object_xy_distance']).toBe('0.9')
   })
 
   it("leaves out a part's own layer height and first layer, which its object decides", () => {
-    expect(prusaPartOverrides({ layer_height: '0.3', perimeter_extrusion_width: '150%' }, {}, project)).toEqual({ inner_wall_line_width: '0.15' })
+    expect(prusaPartOverrides({ layer_height: '0.3', perimeter_extrusion_width: '150%' }, {}, project)).toEqual({ inner_wall_line_width: '0.15', initial_layer_inner_wall_line_width: '0.525' })
     expect(prusaPartOverrides({ first_layer_extrusion_width: '0.6', first_layer_height: '0.3' }, {}, project)).toEqual({})
-    expect(prusaPartOverrides({ perimeter_extrusion_width: '0.55' }, {}, project)).toEqual({ inner_wall_line_width: '0.55' })
+    expect(prusaPartOverrides({ perimeter_extrusion_width: '0.55' }, {}, project)).toEqual({ inner_wall_line_width: '0.55', initial_layer_inner_wall_line_width: '0.55' })
+  })
+
+  it("gives a part its first layer widths of the project's first layer height", () => {
+    const firstLayer = ['first_layer_height = 0.2', 'layer_height = 0.1', 'first_layer_extrusion_width = 0'].map((l) => `; ${l}`).join('\n')
+    // 150% of the 0.2 mm first layer on the part's object, whatever its own layer and first layer heights.
+    expect(prusaPartOverrides({ perimeter_extrusion_width: '150%' }, { layer_height: '0.3', first_layer_height: '0.3' }, firstLayer)).toEqual({
+      inner_wall_line_width: '0.45',
+      initial_layer_inner_wall_line_width: '0.3',
+    })
+    // A part's own general width gives every feature its first layer width.
+    const general = prusaPartOverrides({ extrusion_width: '150%' }, {}, firstLayer)
+    for (const k of ['outer_wall', 'inner_wall', 'sparse_infill', 'internal_solid_infill', 'top_surface', 'support']) {
+      expect(general[`initial_layer_${k}_line_width`], k).toBe('0.3')
+    }
+    // Under the project's own first layer width the part keeps the project's first layer.
+    const set = firstLayer.replace('first_layer_extrusion_width = 0', 'first_layer_extrusion_width = 0.5')
+    expect(prusaPartOverrides({ perimeter_extrusion_width: '150%' }, {}, set)).toEqual({ inner_wall_line_width: '0.15' })
   })
 })
 

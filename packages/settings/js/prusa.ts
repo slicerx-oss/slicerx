@@ -24,6 +24,9 @@ interface PrusaMap {
   zeroWidthFallback: string[]
   /** The width a key of `zeroWidthFallback` gets when `extrusion_width` is 0 too, times the project's nozzle diameter. */
   zeroWidthNozzle: Record<string, number>
+  /** Our first layer width per feature: the project key it is read from and the multiple of the project's nozzle
+   * diameter it takes when that and `extrusion_width` are 0. */
+  firstLayerWidths: Record<string, { from: string; nozzle: number }>
   ignoredPattern: string
   ignoredKeys: string[]
   /** Keys that carry over only through a `values` row; any other value is left out and reported as not applied. */
@@ -234,6 +237,40 @@ function widthMm(key: string, p: number, raw: Raw): number | undefined {
   const base = of === 'external_perimeter_width' ? outerWidth(raw) : absolute(of, raw)
   // Kept to a nanometer, so float noise does not show: 150% of 0.15 is 0.225.
   return base === undefined ? undefined : Math.round(((base * p) / 100) * 1e9) / 1e9
+}
+
+/**
+ * Each feature's first layer width that settings `raw` stand for, mm, as our keys (prusa-map.json `firstLayerWidths`),
+ * for the features whose project key `own` picks. The first layer prints `first_layer_extrusion_width` for every feature
+ * when it is not 0; else each feature its own width with the first layer height in place of the layer height: a percent
+ * of it, mm as given, and a 0 the general width (`extrusion_width`, the same way), else its multiple of the project's
+ * nozzle diameter. `global` holds the project's own settings, which alone decide the first layer height and width. An
+ * object or a part (`part` true) under a first layer width of the project's gets none: the project's are its own. The
+ * same as `first_layer_widths` in the engine.
+ */
+function firstLayerWidths(raw: Raw, global: Raw, own: (key: string) => boolean, part = false): Record<string, string> {
+  const out: Record<string, string> = {}
+  const flh = absolute('first_layer_height', global)
+  if (flh === undefined) return out
+  const at = (v: string): number | undefined => {
+    const p = percent(v)
+    return p === undefined ? num(v) : (p / 100) * flh
+  }
+  const set = (k: string, from: Raw): number | undefined => {
+    const v = from[k]
+    const w = v === undefined ? undefined : at(v)
+    return w === undefined || w === 0 ? undefined : w
+  }
+  const first = set('first_layer_extrusion_width', global)
+  if (part && first !== undefined) return out
+  const general = set('extrusion_width', raw)
+  const nozzle = projectNozzle(raw)
+  for (const [ours, { from, nozzle: ratio }] of Object.entries(MAP.firstLayerWidths).sort(([a], [b]) => (a < b ? -1 : 1))) {
+    if (!own(from)) continue
+    const w = first ?? set(from, raw) ?? general ?? (nozzle === undefined ? undefined : ratio * nozzle)
+    if (w !== undefined) out[ours] = String(Math.round(w * 1e9) / 1e9)
+  }
+  return out
 }
 
 /** A project's own settings with each width percent of `widthPercentOf` in mm, all read from the settings as given. */
@@ -487,7 +524,9 @@ export function readPrusaConfig(text: string): Raw {
 export function prusaProjectSettings(text: string): { values: Record<string, unknown>; unmapped: string[]; notApplied: Dropped[] } {
   const raw = readPrusaConfig(text)
   const m = mapPrusaValues(projectWidths(raw))
-  const values: Record<string, unknown> = { ...m.values }
+  // Only a project that gives its first layer height or a width: one with none of them sets nothing of the first layer.
+  const reads = (k: string): boolean => ['first_layer_height', 'first_layer_extrusion_width', 'extrusion_width'].includes(k) || Object.values(MAP.firstLayerWidths).some((f) => f.from === k)
+  const values: Record<string, unknown> = { ...m.values, ...(Object.keys(raw).some(reads) ? firstLayerWidths(raw, raw, () => true) : {}) }
   // A project with support on and its own support XY spacing keeps that much room between the part and the outer base
   // support line's edge, so its outer lines sit half a line width in. The same as the engine's project read.
   if (values['enable_support'] === '1' && 'support_object_xy_distance' in values) values['support_base_edge_inset'] = 'half_width'
@@ -529,7 +568,8 @@ export function prusaProjectConfig(text: string): { config: Record<string, unkno
  */
 export function prusaObjectOverrides(meta: Readonly<Record<string, string>>, projectText?: string): Record<string, string> {
   const out = prusaOverrides(meta)
-  const raw: Raw = { ...(projectText === undefined ? {} : readPrusaConfig(projectText)), ...meta }
+  const global: Raw = projectText === undefined ? {} : readPrusaConfig(projectText)
+  const raw: Raw = { ...global, ...meta }
   const ownHeight = 'layer_height' in meta
   // A width of 0 is the object's general width when the object sets either one, or has its own layer height under a
   // general width in percent; otherwise it is the project's, already in the project's settings.
@@ -544,6 +584,10 @@ export function prusaObjectOverrides(meta: Readonly<Record<string, string>>, pro
     else if (v !== undefined && (ownGeneral || key in meta)) mm = zeroWidthMm(key, v, raw)
     if (mm !== undefined) out[MAP.rename[key] ?? key] = String(mm)
   }
+  // The first layer widths of the features the object sets a width for, or all of them under its own general width;
+  // the object's own first layer height and width are not printed.
+  const general = 'extrusion_width' in meta
+  Object.assign(out, firstLayerWidths(raw, global, (k) => general || k in meta, true))
   return out
 }
 
@@ -559,7 +603,8 @@ export const PRUSA_PART_IGNORED: readonly string[] = ['layer_height', 'first_lay
 export function prusaPartOverrides(meta: Readonly<Record<string, string>>, objectMeta: Readonly<Record<string, string>>, projectText?: string): Record<string, string> {
   const kept = Object.fromEntries(Object.entries(meta).filter(([k]) => !PRUSA_PART_IGNORED.includes(k)))
   const out = prusaOverrides(kept)
-  const raw: Raw = { ...(projectText === undefined ? {} : readPrusaConfig(projectText)), ...objectMeta, ...kept }
+  const global: Raw = projectText === undefined ? {} : readPrusaConfig(projectText)
+  const raw: Raw = { ...global, ...objectMeta, ...kept }
   // A width of 0 is the part's general width when the part sets one; otherwise the object's or the project's, which
   // their own settings already carry.
   const ownGeneral = 'extrusion_width' in kept
@@ -572,6 +617,8 @@ export function prusaPartOverrides(meta: Readonly<Record<string, string>>, objec
     else if (v !== undefined && (ownGeneral || key in kept)) mm = zeroWidthMm(key, v, raw)
     if (mm !== undefined) out[MAP.rename[key] ?? key] = String(mm)
   }
+  // The first layer widths of the features the part sets a width for, or all of them under its own general width.
+  Object.assign(out, firstLayerWidths(raw, global, (k) => ownGeneral || k in kept, true))
   return out
 }
 
