@@ -35,7 +35,7 @@ import { planChoiceCard } from './plan-card'
 import { partHandlers } from './part-actions'
 import { MEMORY_CARDS } from './remember-chip'
 import { RUN_APPROVAL_CARDS, runCard, runChoiceCard } from './run-cards'
-import { cardWaits } from './card-waits'
+import { cardWaits, openChoice } from './card-waits'
 import './mimir.css'
 import './mimir-phone.css'
 
@@ -216,6 +216,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
       onApprove: (r: ApprovalRequest, o: { bedClear: boolean }) => pilot.resolveApproval(r.id, o.bedClear ? { kind: 'approve', bedClear: true } : { kind: 'approve' }),
       onCancel: (r: ApprovalRequest) => pilot.resolveApproval(r.id, { kind: 'deny', reason: 'canceled' }),
       onChoose: (askId, choiceId) => pilot.answer?.(askId, choiceId) ?? Promise.resolve(),
+      // turning a question down answers it with no pick: the run carries on, unlike Stop
+      onDismiss: (askId) => pilot.answer?.(askId, null) ?? Promise.resolve(),
       choiceCard: (p) => planChoiceCard(p) ?? runChoiceCard(p),
       onConfirmSheet: (sheetId, values) => pilot.answerSheet?.(sheetId, values) ?? Promise.resolve(),
       onEditSheet: (_sheetId, key, value) => setDraft(key, value),
@@ -276,6 +278,8 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
   // moves with it, so a reader who has scrolled up keeps the same lines where they were: a card's button just pressed
   // stays under the finger. At the bottom the observer above keeps the end in view, which holds them still too.
   const waits = phone && cardWaits(transcript)
+  // a question card waiting in the reply: words in the message box answer it, in the same run
+  const open = openChoice(transcript)
   const chatTop = useRef<number | null>(null)
   useLayoutEffect(() => {
     const el = body.current
@@ -410,7 +414,17 @@ export function MimirChat({ hidden = false }: { hidden?: boolean }) {
         {phone ? <div className="mimir-sheet-slot" /> : null}
       </div>
       <div className="mimir-chat-foot" hidden={more}>
-        <Composer attachments={attachments} running={run.running} sendOff={ready === null || notice} onStop={run.cancel} onSend={(text, files) => send(text, files)} />
+        <Composer
+          attachments={attachments}
+          running={run.running}
+          sendOff={ready === null || notice}
+          onStop={run.cancel}
+          onSend={(text, files) => send(text, files)}
+          answering={open !== null}
+          onAnswer={(text) => {
+            if (open) pilot.answer?.(open.askId, null, text).catch((e: unknown) => console.warn('mimir: the written answer did not land', e))
+          }}
+        />
       </div>
       <div className="mimir-split" data-testid="mimir-split">
         <ResizeEdge

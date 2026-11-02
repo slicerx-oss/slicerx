@@ -24,6 +24,13 @@ export function lastPick(messages: readonly LlmMessage[]): string | null {
   return typeof picked === 'string' ? picked : null
 }
 
+/** Whether the last pilot.ask was turned down, and what the person wrote instead; null when it was answered or not asked. */
+export function lastDismissed(messages: readonly LlmMessage[]): { said: string | null } | null {
+  const r = lastResult(messages)
+  if (r?.['dismissed'] !== true) return null
+  return { said: typeof r['said'] === 'string' ? r['said'] : null }
+}
+
 /** The values the last confirmed sheet gave, from the tool messages so far. */
 export function sheetValues(messages: readonly LlmMessage[]): Record<string, number> | null {
   for (let k = messages.length - 1; k >= 0; k--) {
@@ -133,13 +140,17 @@ const backplate: ScriptStep[] = [
     text: 'That looks like a round smart thermostat on a rectangular trim plate.',
     calls: [{ name: 'pilot.ask', args: { title: 'Confirm the part', question: 'Is this the thermostat on your wall?', choices: [{ id: 'same', label: 'Yes, that one' }, { id: 'other', label: 'A different model' }] } }],
   },
-  (messages) =>
-    lastPick(messages) === 'other'
+  (messages) => {
+    // a question turned down builds nothing; words written in its place are read as the answer
+    const dismissed = lastDismissed(messages)
+    if (dismissed) return { text: dismissed.said ? `You said: "${dismissed.said}". Send me the model name from its back, or a photo of the label, and I will look up its size.` : 'Okay, I will leave it for now.' }
+    return lastPick(messages) === 'other'
       ? { text: 'Send me the model name from its back, or a photo of the label, and I will look up its size.' }
       : {
           text: 'I found the trim plate size.',
           calls: [{ name: 'lookup.show', args: { title: 'Reference found', fields: [['Trim plate', '150.4 x 110.4 mm'], ['Center hole', '30 mm'], ['Mounting holes', '2 x 4.5 mm, 60 mm apart']], source: EXAMPLE_SOURCE } }],
-        },
+        }
+  },
   {
     text: 'Here are the sizes I will build with. The plate and holes come from the spec sheet; the thickness is my guess. Change anything that is off.',
     calls: [
