@@ -25,6 +25,9 @@ struct PrusaMap {
     /// The width a key of `zero_width_fallback` gets when `extrusion_width` is 0 too, times the project's nozzle
     /// diameter (`zeroWidthNozzle`).
     zero_width_nozzle: HashMap<String, f64>,
+    /// Our first layer width per feature, the project key it is read from and the multiple of the project's nozzle
+    /// diameter it takes when that and `extrusion_width` are 0 (`firstLayerWidths`), sorted.
+    first_layer_widths: Vec<(String, String, f64)>,
     ignored_prefixes: Vec<String>,
     ignored_keys: Vec<String>,
     /// Keys that carry over only through a `values` row; any other value is left out.
@@ -125,6 +128,24 @@ fn map() -> &'static PrusaMap {
                 .unwrap_or_default(),
             width_percent_of: strings("widthPercentOf"),
             zero_width_fallback: list("zeroWidthFallback"),
+            first_layer_widths: v
+                .get("firstLayerWidths")
+                .and_then(Value::as_object)
+                .map(|o| {
+                    let mut rows: Vec<(String, String, f64)> = o
+                        .iter()
+                        .filter_map(|(ours, e)| {
+                            Some((
+                                ours.clone(),
+                                e.get("from")?.as_str()?.to_owned(),
+                                e.get("nozzle")?.as_f64()?,
+                            ))
+                        })
+                        .collect();
+                    rows.sort_by(|a, b| a.0.cmp(&b.0));
+                    rows
+                })
+                .unwrap_or_default(),
             zero_width_nozzle: v
                 .get("zeroWidthNozzle")
                 .and_then(Value::as_object)
@@ -330,6 +351,43 @@ fn project_widths(list: &[(String, String)]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Each feature's first layer width that settings `raw` stand for, mm, as our keys (`firstLayerWidths`), for the
+/// features whose project key `own` picks. The first layer prints `first_layer_extrusion_width` for every feature when
+/// it is not 0; else each feature its own width with the first layer height in place of the layer height: a percent of
+/// it, mm as given, and a 0 the general width (`extrusion_width`, the same way), else its multiple of the project's
+/// nozzle diameter. `global` holds the project's own settings, which alone decide the first layer height and width. An
+/// object or a part (`part` true) under a first layer width of the project's gets none: the project's are its own.
+fn first_layer_widths(
+    raw: &HashMap<&str, &str>,
+    global: &HashMap<&str, &str>,
+    own: &dyn Fn(&str) -> bool,
+    part: bool,
+) -> Vec<(String, String)> {
+    let Some(flh) = absolute("first_layer_height", global, 0) else {
+        return Vec::new();
+    };
+    let at = |v: &str| percent(v).map_or_else(|| number(v), |p| Some(p / 100.0 * flh));
+    let set = |k: &str, from: &HashMap<&str, &str>| from.get(k).and_then(|v| at(v)).filter(|w| *w != 0.0);
+    let first = set("first_layer_extrusion_width", global);
+    if part && first.is_some() {
+        return Vec::new();
+    }
+    let general = set("extrusion_width", raw);
+    let nozzle = project_nozzle(raw);
+    map()
+        .first_layer_widths
+        .iter()
+        .filter(|(_, from, _)| own(from))
+        .filter_map(|(ours, from, ratio)| {
+            let w = first
+                .or_else(|| set(from, raw))
+                .or(general)
+                .or_else(|| nozzle.map(|n| ratio * n))?;
+            Some((ours.clone(), plain((w * 1e9).round() / 1e9)))
+        })
+        .collect()
+}
+
 /// A number as Orca writes it: no trailing zeros.
 fn plain(n: f64) -> String {
     let s = format!("{n}");
@@ -378,6 +436,13 @@ pub(crate) fn object_overrides(list: &[(String, String)], project: Option<&str>)
         };
         let target = m.rename.get(key).map_or(key.as_str(), String::as_str);
         out.insert(target.to_owned(), Value::String(plain(mm)));
+    }
+    // The first layer widths of the features the object sets a width for, or all of them under its own general
+    // width; the object's own first layer height and width are not printed.
+    let global_raw: HashMap<&str, &str> = global.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let general = own.contains_key("extrusion_width");
+    for (k, v) in first_layer_widths(&raw, &global_raw, &|k| general || own.contains_key(k), true) {
+        out.insert(k, Value::String(v));
     }
     out
 }
@@ -437,6 +502,11 @@ pub(crate) fn part_overrides(
         let target = m.rename.get(key).map_or(key.as_str(), String::as_str);
         out.insert(target.to_owned(), Value::String(plain(mm)));
     }
+    // The first layer widths of the features the part sets a width for, or all of them under its own general width.
+    let global_raw: HashMap<&str, &str> = global.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    for (k, v) in first_layer_widths(&raw, &global_raw, &|k| own_general || own.contains_key(k), true) {
+        out.insert(k, Value::String(v));
+    }
     (out, ignored)
 }
 
@@ -446,7 +516,22 @@ pub(crate) fn part_overrides(
 /// no setting of ours, sorted. The same as `prusaProjectConfig` in the settings package, which the app and the MCP
 /// server use.
 pub(crate) fn project_settings(text: &str) -> (Map<String, Value>, Vec<String>) {
-    let (mut mapped, unmapped) = map_values(&project_widths(&config_lines(text)), true);
+    let lines = config_lines(text);
+    let (mut mapped, unmapped) = map_values(&project_widths(&lines), true);
+    let raw: HashMap<&str, &str> = lines.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    // Only a project that gives its first layer height or a width: one with none of them sets nothing of the first layer.
+    let m = map();
+    let reads = |k: &str| {
+        matches!(
+            k,
+            "first_layer_height" | "first_layer_extrusion_width" | "extrusion_width"
+        ) || m.first_layer_widths.iter().any(|(_, from, _)| from == k)
+    };
+    if raw.keys().any(|k| reads(k)) {
+        for (k, v) in first_layer_widths(&raw, &raw, &|_| true, false) {
+            mapped.insert(k, Value::String(v));
+        }
+    }
     edge_on_gap(&mut mapped);
     skirt_from_nominal_brim(&mut mapped);
     let settings = mapped.into_iter().filter(|(k, v)| takes(k, v)).collect();
@@ -915,9 +1000,21 @@ mod tests {
             "0.5"
         );
         let o = object(&[("extrusion_width", "0")], &project);
-        assert_eq!(o.len(), 2, "{o:?}");
+        assert_eq!(o.len(), 8, "{o:?}");
         assert_eq!(o["line_width"], "0");
         assert_eq!(o["support_line_width"], "0.6");
+        // Its first layer widths follow the same chain there: the project's 0.6 mm outer wall, else the 0.6 nozzle's
+        // auto widths (1.125 times it, the top surface and the support 1.0 times).
+        for (k, w) in [
+            ("outer_wall", "0.6"),
+            ("inner_wall", "0.675"),
+            ("sparse_infill", "0.675"),
+            ("internal_solid_infill", "0.675"),
+            ("top_surface", "0.6"),
+            ("support", "0.6"),
+        ] {
+            assert_eq!(o[&format!("initial_layer_{k}_line_width")], w, "{k}");
+        }
         // A general width in mm with the object's own layer height is the project's, already in the project's settings.
         let o = object(&[("layer_height", "0.3")], &project.replace("250%", "0.5"));
         assert_eq!(o.len(), 1, "{o:?}");

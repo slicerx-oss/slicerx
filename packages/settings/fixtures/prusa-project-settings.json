@@ -76,6 +76,12 @@
         "sparse_infill_pattern": "grid",
         "initial_layer_acceleration": "0",
         "initial_layer_line_width": "0.4",
+        "initial_layer_outer_wall_line_width": "0.4",
+        "initial_layer_inner_wall_line_width": "0.4",
+        "initial_layer_sparse_infill_line_width": "0.4",
+        "initial_layer_internal_solid_infill_line_width": "0.4",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4",
         "initial_layer_print_height": "0.2",
         "nozzle_temperature_initial_layer": "235",
         "full_fan_speed_layer": "0",
@@ -312,7 +318,13 @@
       "config": {
         "outer_wall_speed": "30",
         "top_surface_speed": "10",
-        "initial_layer_print_height": "0.23"
+        "initial_layer_print_height": "0.23",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -527,6 +539,12 @@
       ],
       "config": {
         "initial_layer_line_width": "0.7",
+        "initial_layer_outer_wall_line_width": "0.7",
+        "initial_layer_inner_wall_line_width": "0.7",
+        "initial_layer_sparse_infill_line_width": "0.7",
+        "initial_layer_internal_solid_infill_line_width": "0.7",
+        "initial_layer_top_surface_line_width": "0.7",
+        "initial_layer_support_line_width": "0.7",
         "line_width": "0.45"
       },
       "unmapped": []
@@ -559,6 +577,12 @@
       ],
       "config": {
         "initial_layer_line_width": "0.4",
+        "initial_layer_outer_wall_line_width": "0.4",
+        "initial_layer_inner_wall_line_width": "0.4",
+        "initial_layer_sparse_infill_line_width": "0.4",
+        "initial_layer_internal_solid_infill_line_width": "0.4",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4",
         "initial_layer_print_height": "0.2"
       },
       "unmapped": []
@@ -571,6 +595,12 @@
       ],
       "config": {
         "initial_layer_line_width": "0.45",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.45",
+        "initial_layer_support_line_width": "0.45",
         "initial_layer_print_height": "0.3"
       },
       "unmapped": []
@@ -583,6 +613,12 @@
       ],
       "config": {
         "initial_layer_line_width": "0.225",
+        "initial_layer_outer_wall_line_width": "0.225",
+        "initial_layer_inner_wall_line_width": "0.225",
+        "initial_layer_sparse_infill_line_width": "0.225",
+        "initial_layer_internal_solid_infill_line_width": "0.225",
+        "initial_layer_top_surface_line_width": "0.225",
+        "initial_layer_support_line_width": "0.225",
         "initial_layer_print_height": "0.15"
       },
       "unmapped": []
@@ -595,6 +631,12 @@
       ],
       "config": {
         "initial_layer_line_width": "0.18",
+        "initial_layer_outer_wall_line_width": "0.18",
+        "initial_layer_inner_wall_line_width": "0.18",
+        "initial_layer_sparse_infill_line_width": "0.18",
+        "initial_layer_internal_solid_infill_line_width": "0.18",
+        "initial_layer_top_surface_line_width": "0.18",
+        "initial_layer_support_line_width": "0.18",
         "initial_layer_print_height": "0.15"
       },
       "unmapped": []
@@ -605,7 +647,13 @@
         "first_layer_extrusion_width = 0.5"
       ],
       "config": {
-        "initial_layer_line_width": "0.5"
+        "initial_layer_line_width": "0.5",
+        "initial_layer_outer_wall_line_width": "0.5",
+        "initial_layer_inner_wall_line_width": "0.5",
+        "initial_layer_sparse_infill_line_width": "0.5",
+        "initial_layer_internal_solid_infill_line_width": "0.5",
+        "initial_layer_top_surface_line_width": "0.5",
+        "initial_layer_support_line_width": "0.5"
       },
       "unmapped": []
     },
@@ -615,7 +663,13 @@
         "first_layer_extrusion_width = 0"
       ],
       "config": {
-        "initial_layer_line_width": "0"
+        "initial_layer_line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -627,7 +681,13 @@
       ],
       "config": {
         "support_object_xy_distance": "0.3",
-        "outer_wall_line_width": "0.6"
+        "outer_wall_line_width": "0.6",
+        "initial_layer_outer_wall_line_width": "0.6",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -639,7 +699,13 @@
       ],
       "config": {
         "support_object_xy_distance": "0.9",
-        "outer_wall_line_width": "0.6"
+        "outer_wall_line_width": "0.6",
+        "initial_layer_outer_wall_line_width": "0.6",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -653,7 +719,13 @@
       "config": {
         "support_object_xy_distance": "0.5",
         "outer_wall_line_width": "0.5",
-        "line_width": "0.5"
+        "line_width": "0.5",
+        "initial_layer_outer_wall_line_width": "0.5",
+        "initial_layer_inner_wall_line_width": "0.5",
+        "initial_layer_sparse_infill_line_width": "0.5",
+        "initial_layer_internal_solid_infill_line_width": "0.5",
+        "initial_layer_top_surface_line_width": "0.5",
+        "initial_layer_support_line_width": "0.5"
       },
       "unmapped": []
     },
@@ -669,7 +741,13 @@
         "support_object_xy_distance": "0.5",
         "outer_wall_line_width": "0.5",
         "line_width": "0.5",
-        "layer_height": "0.2"
+        "layer_height": "0.2",
+        "initial_layer_outer_wall_line_width": "0.875",
+        "initial_layer_inner_wall_line_width": "0.875",
+        "initial_layer_sparse_infill_line_width": "0.875",
+        "initial_layer_internal_solid_infill_line_width": "0.875",
+        "initial_layer_top_surface_line_width": "0.875",
+        "initial_layer_support_line_width": "0.875"
       },
       "unmapped": []
     },
@@ -683,7 +761,13 @@
       "config": {
         "support_object_xy_distance": "0.3",
         "outer_wall_line_width": "0.3",
-        "layer_height": "0.2"
+        "layer_height": "0.2",
+        "initial_layer_outer_wall_line_width": "0.525",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -698,7 +782,13 @@
       "config": {
         "support_object_xy_distance": "0.3375",
         "outer_wall_line_width": "0",
-        "line_width": "0"
+        "line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.675",
+        "initial_layer_inner_wall_line_width": "0.675",
+        "initial_layer_sparse_infill_line_width": "0.675",
+        "initial_layer_internal_solid_infill_line_width": "0.675",
+        "initial_layer_top_surface_line_width": "0.6",
+        "initial_layer_support_line_width": "0.6"
       },
       "unmapped": []
     },
@@ -713,7 +803,13 @@
       "config": {
         "support_object_xy_distance": "0.140625",
         "outer_wall_line_width": "0",
-        "line_width": "0"
+        "line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.28125",
+        "initial_layer_inner_wall_line_width": "0.28125",
+        "initial_layer_sparse_infill_line_width": "0.28125",
+        "initial_layer_internal_solid_infill_line_width": "0.28125",
+        "initial_layer_top_surface_line_width": "0.25",
+        "initial_layer_support_line_width": "0.25"
       },
       "unmapped": []
     },
@@ -725,7 +821,13 @@
       ],
       "config": {
         "inner_wall_line_width": "0.3",
-        "layer_height": "0.2"
+        "layer_height": "0.2",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.525",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -737,7 +839,13 @@
       ],
       "config": {
         "inner_wall_line_width": "0.75",
-        "layer_height": "0.3"
+        "layer_height": "0.3",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.875",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -749,7 +857,13 @@
       ],
       "config": {
         "sparse_infill_line_width": "0.15",
-        "layer_height": "0.1"
+        "layer_height": "0.1",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.525",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -761,7 +875,13 @@
       ],
       "config": {
         "sparse_infill_line_width": "0.75",
-        "layer_height": "0.3"
+        "layer_height": "0.3",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.875",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -773,7 +893,13 @@
       ],
       "config": {
         "internal_solid_infill_line_width": "0.45",
-        "layer_height": "0.3"
+        "layer_height": "0.3",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.525",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -785,7 +911,13 @@
       ],
       "config": {
         "top_surface_line_width": "0.25",
-        "layer_height": "0.1"
+        "layer_height": "0.1",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.875",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -797,7 +929,13 @@
       ],
       "config": {
         "support_line_width": "0.45",
-        "layer_height": "0.3"
+        "layer_height": "0.3",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.525"
       },
       "unmapped": []
     },
@@ -809,7 +947,13 @@
       ],
       "config": {
         "line_width": "0.5",
-        "layer_height": "0.2"
+        "layer_height": "0.2",
+        "initial_layer_outer_wall_line_width": "0.875",
+        "initial_layer_inner_wall_line_width": "0.875",
+        "initial_layer_sparse_infill_line_width": "0.875",
+        "initial_layer_internal_solid_infill_line_width": "0.875",
+        "initial_layer_top_surface_line_width": "0.875",
+        "initial_layer_support_line_width": "0.875"
       },
       "unmapped": []
     },
@@ -821,7 +965,13 @@
       ],
       "config": {
         "outer_wall_line_width": "0.45",
-        "layer_height": "0.3"
+        "layer_height": "0.3",
+        "initial_layer_outer_wall_line_width": "0.525",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -831,7 +981,13 @@
         "perimeter_extrusion_width = 150%"
       ],
       "config": {
-        "inner_wall_line_width": "0.45"
+        "inner_wall_line_width": "0.45",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.525",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -841,7 +997,13 @@
         "perimeter_extrusion_width = 0.55"
       ],
       "config": {
-        "inner_wall_line_width": "0.55"
+        "inner_wall_line_width": "0.55",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.55",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -851,7 +1013,13 @@
         "perimeter_extrusion_width = 0"
       ],
       "config": {
-        "inner_wall_line_width": "0"
+        "inner_wall_line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -863,7 +1031,13 @@
       ],
       "config": {
         "support_line_width": "0.4",
-        "line_width": "0"
+        "line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -876,7 +1050,13 @@
       ],
       "config": {
         "support_line_width": "0.6",
-        "line_width": "0"
+        "line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.675",
+        "initial_layer_inner_wall_line_width": "0.675",
+        "initial_layer_sparse_infill_line_width": "0.675",
+        "initial_layer_internal_solid_infill_line_width": "0.675",
+        "initial_layer_top_surface_line_width": "0.6",
+        "initial_layer_support_line_width": "0.6"
       },
       "unmapped": []
     },
@@ -889,7 +1069,13 @@
       ],
       "config": {
         "support_line_width": "0.25",
-        "line_width": "0"
+        "line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.28125",
+        "initial_layer_inner_wall_line_width": "0.28125",
+        "initial_layer_sparse_infill_line_width": "0.28125",
+        "initial_layer_internal_solid_infill_line_width": "0.28125",
+        "initial_layer_top_surface_line_width": "0.25",
+        "initial_layer_support_line_width": "0.25"
       },
       "unmapped": []
     },
@@ -901,7 +1087,13 @@
       ],
       "config": {
         "support_line_width": "0.5",
-        "line_width": "0.5"
+        "line_width": "0.5",
+        "initial_layer_outer_wall_line_width": "0.5",
+        "initial_layer_inner_wall_line_width": "0.5",
+        "initial_layer_sparse_infill_line_width": "0.5",
+        "initial_layer_internal_solid_infill_line_width": "0.5",
+        "initial_layer_top_surface_line_width": "0.5",
+        "initial_layer_support_line_width": "0.5"
       },
       "unmapped": []
     },
@@ -913,7 +1105,13 @@
       ],
       "config": {
         "inner_wall_line_width": "0.5",
-        "line_width": "0.5"
+        "line_width": "0.5",
+        "initial_layer_outer_wall_line_width": "0.5",
+        "initial_layer_inner_wall_line_width": "0.5",
+        "initial_layer_sparse_infill_line_width": "0.5",
+        "initial_layer_internal_solid_infill_line_width": "0.5",
+        "initial_layer_top_surface_line_width": "0.5",
+        "initial_layer_support_line_width": "0.5"
       },
       "unmapped": []
     },
@@ -927,7 +1125,13 @@
       "config": {
         "outer_wall_line_width": "0.5",
         "line_width": "0.5",
-        "layer_height": "0.2"
+        "layer_height": "0.2",
+        "initial_layer_outer_wall_line_width": "0.875",
+        "initial_layer_inner_wall_line_width": "0.875",
+        "initial_layer_sparse_infill_line_width": "0.875",
+        "initial_layer_internal_solid_infill_line_width": "0.875",
+        "initial_layer_top_surface_line_width": "0.875",
+        "initial_layer_support_line_width": "0.875"
       },
       "unmapped": []
     },
@@ -939,7 +1143,13 @@
       ],
       "config": {
         "top_surface_line_width": "0.5",
-        "line_width": "0.5"
+        "line_width": "0.5",
+        "initial_layer_outer_wall_line_width": "0.5",
+        "initial_layer_inner_wall_line_width": "0.5",
+        "initial_layer_sparse_infill_line_width": "0.5",
+        "initial_layer_internal_solid_infill_line_width": "0.5",
+        "initial_layer_top_surface_line_width": "0.5",
+        "initial_layer_support_line_width": "0.5"
       },
       "unmapped": []
     },
@@ -951,7 +1161,13 @@
       ],
       "config": {
         "top_surface_line_width": "0",
-        "line_width": "0"
+        "line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -965,7 +1181,13 @@
       "config": {
         "sparse_infill_line_width": "0",
         "internal_solid_infill_line_width": "0",
-        "line_width": "0"
+        "line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.45",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": []
     },
@@ -976,7 +1198,13 @@
         "perimeter_extrusion_width = 0.55"
       ],
       "config": {
-        "inner_wall_line_width": "0.55"
+        "inner_wall_line_width": "0.55",
+        "initial_layer_outer_wall_line_width": "0.45",
+        "initial_layer_inner_wall_line_width": "0.55",
+        "initial_layer_sparse_infill_line_width": "0.45",
+        "initial_layer_internal_solid_infill_line_width": "0.45",
+        "initial_layer_top_surface_line_width": "0.4",
+        "initial_layer_support_line_width": "0.4"
       },
       "unmapped": [
         "automatic_extrusion_widths"
@@ -1168,6 +1396,81 @@
       "unmapped": [
         "extra_perimeters"
       ]
+    },
+    {
+      "name": "first layer widths: each feature's own width with the first layer height in place of the layer height",
+      "lines": [
+        "first_layer_height = 0.2",
+        "layer_height = 0.1",
+        "first_layer_extrusion_width = 0",
+        "perimeter_extrusion_width = 150%",
+        "external_perimeter_extrusion_width = 0.42",
+        "extrusion_width = 150%"
+      ],
+      "config": {
+        "initial_layer_print_height": "0.2",
+        "layer_height": "0.1",
+        "initial_layer_line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.42",
+        "initial_layer_inner_wall_line_width": "0.3",
+        "initial_layer_sparse_infill_line_width": "0.3",
+        "initial_layer_internal_solid_infill_line_width": "0.3",
+        "initial_layer_top_surface_line_width": "0.3",
+        "initial_layer_support_line_width": "0.3",
+        "inner_wall_line_width": "0.15",
+        "outer_wall_line_width": "0.42",
+        "line_width": "0.15"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer widths: a first layer width in mm for every feature",
+      "lines": [
+        "first_layer_height = 0.2",
+        "layer_height = 0.1",
+        "first_layer_extrusion_width = 0.5",
+        "perimeter_extrusion_width = 150%"
+      ],
+      "config": {
+        "initial_layer_print_height": "0.2",
+        "layer_height": "0.1",
+        "initial_layer_line_width": "0.5",
+        "initial_layer_outer_wall_line_width": "0.5",
+        "initial_layer_inner_wall_line_width": "0.5",
+        "initial_layer_sparse_infill_line_width": "0.5",
+        "initial_layer_internal_solid_infill_line_width": "0.5",
+        "initial_layer_top_surface_line_width": "0.5",
+        "initial_layer_support_line_width": "0.5",
+        "inner_wall_line_width": "0.15"
+      },
+      "unmapped": []
+    },
+    {
+      "name": "first layer widths: support and top surface at 0 are the nozzle's own width",
+      "lines": [
+        "first_layer_height = 0.3",
+        "layer_height = 0.15",
+        "first_layer_extrusion_width = 0",
+        "nozzle_diameter = 0.6",
+        "support_material_extrusion_width = 0",
+        "top_infill_extrusion_width = 0",
+        "solid_infill_extrusion_width = 250%"
+      ],
+      "config": {
+        "initial_layer_print_height": "0.3",
+        "layer_height": "0.15",
+        "initial_layer_line_width": "0",
+        "initial_layer_outer_wall_line_width": "0.675",
+        "initial_layer_inner_wall_line_width": "0.675",
+        "initial_layer_sparse_infill_line_width": "0.675",
+        "initial_layer_internal_solid_infill_line_width": "0.75",
+        "initial_layer_top_surface_line_width": "0.6",
+        "initial_layer_support_line_width": "0.6",
+        "support_line_width": "0.6",
+        "top_surface_line_width": "0",
+        "internal_solid_infill_line_width": "0.375"
+      },
+      "unmapped": []
     }
   ]
 }

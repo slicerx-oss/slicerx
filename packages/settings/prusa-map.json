@@ -390,6 +390,14 @@
  "zeroWidthNozzle": {
   "support_material_extrusion_width": 1
  },
+ "firstLayerWidths": {
+  "initial_layer_outer_wall_line_width": { "from": "external_perimeter_extrusion_width", "nozzle": 1.125 },
+  "initial_layer_inner_wall_line_width": { "from": "perimeter_extrusion_width", "nozzle": 1.125 },
+  "initial_layer_sparse_infill_line_width": { "from": "infill_extrusion_width", "nozzle": 1.125 },
+  "initial_layer_internal_solid_infill_line_width": { "from": "solid_infill_extrusion_width", "nozzle": 1.125 },
+  "initial_layer_top_surface_line_width": { "from": "top_infill_extrusion_width", "nozzle": 1 },
+  "initial_layer_support_line_width": { "from": "support_material_extrusion_width", "nozzle": 1 }
+ },
  "ignoredPattern": "^(display_|exposure|initial_exposure|min_exposure|max_exposure|min_initial|max_initial|pad_|hollowing_|tilt_|material_|sla_|bottle_|faded_layers|gamma_correction|relative_correction|absolute_correction|elefant_foot_min_width|zcorrection|support_points|supports_enable|support_tree_type|support_enforcers_only|delay_|fast_tilt|slow_tilt|high_viscosity|use_tilt|tower_|area_fill|default_sla_)",
  "ignoredKeys": [
   "bed_custom_model",
