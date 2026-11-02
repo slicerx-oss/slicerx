@@ -13,7 +13,7 @@ import { SETTINGS } from '../../adapters/settings'
 import { fuzzyScore } from '../../commands/fuzzy'
 import { effectiveMode, useLayout } from '../../first-run/look'
 import { markStale, openSettings, set, useApp } from '../../state/store'
-import { EDITABLE, Field, visibleLevels } from './expert-settings'
+import { EDITABLE, Field, LIST_ENUM_KEYS, visibleLevels } from './expert-settings'
 import { printerBase } from './printer-base'
 import { NozzlePicker } from './nozzle-picker'
 
@@ -25,7 +25,27 @@ const TABS: { id: string; label: string; groups: string[] }[] = [
   { id: 'cooling', label: 'Cooling', groups: ['cooling'] },
 ]
 
-const PRINTER_KEYS = SETTINGS.filter((d) => d.section === 'printer' && EDITABLE.has(d.type))
+const PRINTER_KEYS = SETTINGS.filter((d) => d.section === 'printer' && (EDITABLE.has(d.type) || LIST_ENUM_KEYS.has(d.key)))
+
+/** The Printer settings keys: numbers, switches and choices, plus the per-extruder choice lists named in LIST_ENUM_KEYS. */
+export const printerKeys = (): readonly string[] => PRINTER_KEYS.map((d) => d.key)
+
+const first = (v: SettingValue | undefined): unknown => (Array.isArray(v) ? v[0] : v)
+
+/**
+ * The lines under Z hop type: when the extruders hold different types, when the type has no effect (no lift height,
+ * or the firmware retracts), and how a ramp is written for other apps. Two at most, so the hint stays short.
+ */
+export function zHopTypeNote(config: Record<string, SettingValue | undefined>): string | undefined {
+  const types = config['z_hop_types']
+  const lines: string[] = []
+  if (Array.isArray(types) && types.some((t) => t !== types[0])) lines.push('The extruders use different types; choosing one sets both.')
+  const fw = first(config['use_firmware_retraction'])
+  if (fw === true || fw === 1 || fw === '1' || fw === 'true') lines.push('This printer retracts with its own firmware commands, so the type is not used.')
+  else if (Number(first(config['z_hop']) ?? 0) <= 0) lines.push('Z hop height is 0, so the nozzle does not lift.')
+  if (first(types) === 'Ramp Lift') lines.push('Ramp is written as Slope when you export for Bambu Studio or OrcaSlicer.')
+  return lines.length ? lines.slice(0, 2).join(' ') : undefined
+}
 
 export function setPrinterSetting(key: string, value: SettingValue | undefined, base: PrintConfig | undefined): void {
   set((s) => {
@@ -34,7 +54,9 @@ export function setPrinterSetting(key: string, value: SettingValue | undefined, 
     else {
       // Machine limits and the like hold one value per mode; a field edits the first and keeps the rest.
       const cur = (next[key] ?? (base as Record<string, SettingValue> | undefined)?.[key]) as SettingValue | undefined
-      next[key] = Array.isArray(cur) && cur.length > 1 && Array.isArray(value) ? ([value[0], ...cur.slice(1)] as SettingValue) : value
+      // Z hop type is one row for every extruder: the choice goes to each entry, and the list keeps its length.
+      if (LIST_ENUM_KEYS.has(key) && Array.isArray(value)) next[key] = Array.from({ length: Array.isArray(cur) ? Math.max(1, cur.length) : 1 }, () => value[0]) as SettingValue
+      else next[key] = Array.isArray(cur) && cur.length > 1 && Array.isArray(value) ? ([value[0], ...cur.slice(1)] as SettingValue) : value
     }
     return { overrides: next }
   })
@@ -104,7 +126,7 @@ export function PrinterSettingsDialog({ printer }: { printer: { vendor: string; 
       {defs.length === 0 ? <p className="sx-muted sx-small">No printer setting matches.</p> : null}
       <ul className="expert">
         {defs.map((d) => (
-          <Field key={d.key} def={d} value={config[d.key]} overridden={d.key in overrides} idPrefix="ps" onSet={(k, v) => setPrinterSetting(k, v, base)} />
+          <Field key={d.key} def={d} value={config[d.key]} overridden={d.key in overrides} idPrefix="ps" note={d.key === 'z_hop_types' ? zHopTypeNote(config) : undefined} onSet={(k, v) => setPrinterSetting(k, v, base)} />
         ))}
       </ul>
     </Dialog>

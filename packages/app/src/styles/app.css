@@ -910,6 +910,8 @@ button.reset:hover { color: var(--fg); background: var(--ink-3); }
 .spool-row.sel { background: var(--ink-2); outline: 1px solid var(--accent); outline-offset: -1px; }
 .spool-row .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot-color { display: flex; gap: 8px; align-items: center; }
+/* The travel slope number: body font, as every number field, with tabular figures. */
+.slot-form .sx-input.num { font-variant-numeric: tabular-nums; }
 .color-input { width: 44px; height: 32px; padding: 0; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--ink-2); cursor: pointer; }
 .flush-scroll { overflow: auto; margin: 12px 0; max-height: 50vh; }
 .flush-table { border-collapse: separate; border-spacing: 4px; font: var(--fw-medium) calc(12px * var(--text-scale)) var(--f-mono); }
