@@ -44,9 +44,9 @@ const CHOICES: PilotChoice[] = [
   { id: 'pick:none', label: 'None of these' },
 ]
 
-function show(o: { picked?: string | null; actionable?: boolean } = {}) {
+function show(o: { picked?: string | null; actionable?: boolean; dismissed?: boolean } = {}) {
   const onChoose = vi.fn(async (_askId: string, _choiceId: string) => undefined)
-  render(createElement(TargetPicker, { askId: 'ask_1', title: 'Which printer and spool?', question: '2 printers are online. Pick the spool to print with.', choices: CHOICES, picked: o.picked ?? null, actionable: o.actionable ?? true, onChoose, printers: [DESK, SHELF, ATTIC] }))
+  render(createElement(TargetPicker, { askId: 'ask_1', title: 'Which printer and spool?', question: '2 printers are online. Pick the spool to print with.', choices: CHOICES, picked: o.picked ?? null, actionable: o.actionable ?? true, onChoose, printers: [DESK, SHELF, ATTIC], ...(o.dismissed ? { dismissed: true } : {}) }))
   return { card: screen.getByTestId('mimir-target'), onChoose }
 }
 
@@ -101,6 +101,12 @@ describe('the target card', () => {
     fireEvent.click(within(card).getByRole('button', { name: 'None of these' }))
     expect(onChoose).toHaveBeenCalledTimes(1)
     warn.mockRestore()
+  })
+
+  it('a pick turned down by a written reply reads Canceled, with nothing picked', () => {
+    const { card } = show({ picked: '', dismissed: true })
+    expect(card.querySelector('.target-rec-state')?.textContent).toBe('Canceled')
+    expect(card.querySelector('[data-on]')).toBeNull()
   })
 
   it('the card says nothing about internal ids', () => {
