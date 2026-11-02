@@ -25,7 +25,7 @@ const CHAMBER_KEY = 'chamber_cooling_mode'
 export const settingValue = z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])
 const overridesSchema = z
   .record(z.string(), settingValue)
-  .describe('OrcaSlicer setting keys to values, applied last. Example: {"layer_height": 0.16, "sparse_infill_density": 25, "enable_support": true}')
+  .describe('Setting keys to values, applied last. Example: {"layer_height": 0.16, "sparse_infill_density": 25, "enable_support": true}')
 
 export const sliceInput = {
   script_replacements: z.array(z.object({ key: z.string().min(1), slot: z.number().int().min(0).max(63).optional(), original: z.string().max(1_048_576), replacement: z.string().max(1_048_576) })).min(1).max(64).optional().describe('Explicit choices to replace imported script slots with verified stock. Requires project_settings, project_gcode review and script_printer. Supply exact original text from inspection and the chosen stock text. The engine rechecks identity and text, retains originals in script_replacements, and never starts a printer.'),

@@ -16,7 +16,7 @@ export default (d: ServerToolDeps) =>
     toolset: 'settings',
     ungated: true,
     description:
-      'Work out which OrcaSlicer settings to change for a filament, printer, nozzle and print intent. Returns each changed key with before, after and a reason (detail "full" adds the knowledge base sources), plus any validation issues and a config_patch you can pass as overrides to slicerx_slice_file or to slicerx_project_set_overrides. Nothing is saved.',
+      'Work out which settings to change for a filament, printer, nozzle and print intent. Returns each changed key with before, after and a reason (detail "full" adds the knowledge base sources), plus any validation issues and a config_patch you can pass as overrides to slicerx_slice_file or to slicerx_project_set_overrides. Nothing is saved.',
     input: z.object({
       filament: z.string().optional().describe('Target filament id or name, such as "petg", "PA-CF" or "TPU 95A"'),
       printer: z.string().optional().describe('Target printer id or name, such as "bambu_x1c" or "Prusa MK4S"'),

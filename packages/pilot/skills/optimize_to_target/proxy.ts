@@ -145,7 +145,7 @@ export function checkChanges(kb: KnowledgeBase, changes: Record<string, ChangeVa
       }
     }
     if (def.values?.length && typeof v === 'string' && !def.values.includes(v)) {
-      out.rejected.push(`${k}="${v}" is not an Orca value (${def.values.slice(0, 6).join(', ')}${def.values.length > 6 ? ', ...' : ''})`)
+      out.rejected.push(`${k}="${v}" is not a value of that setting (${def.values.slice(0, 6).join(', ')}${def.values.length > 6 ? ', ...' : ''})`)
       continue
     }
     if (def.pilot === 'guarded') out.guarded.push(k)
