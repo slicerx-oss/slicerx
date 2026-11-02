@@ -821,6 +821,29 @@ fn compute(env: &Env<'_>, l: i64, memo: &Memo) -> Vec<Bridged> {
     done
 }
 
+/// The bridge areas of one layer as they print: areas with the same strand direction become one, and each direction,
+/// taken from the largest angle down, leaves out what the ones before it cover, so where two candidates' bridges
+/// overlap the strands print once.
+pub(crate) fn merged(areas: &[Bridged]) -> Vec<Bridged> {
+    let mut groups: Vec<Bridged> = Vec::new();
+    for x in areas {
+        if let Some(g) = groups.iter_mut().find(|g| (g.angle - x.angle).abs() < 1e-9) {
+            g.area = union(&g.area, &x.area);
+        } else {
+            groups.push(x.clone());
+        }
+    }
+    crate::sorting::sort_by(&mut groups, |a, b| b.angle.total_cmp(&a.angle));
+    let mut taken = Shapes::new();
+    for g in &mut groups {
+        let rest = sub(&g.area, &taken);
+        taken = union(&taken, &g.area);
+        g.area = rest;
+    }
+    groups.retain(|g| !g.area.is_empty());
+    groups
+}
+
 /// The solid ring kept under the edges of the bridges of layer `l + 1`, inside the band along the walls of
 /// layer `l` (`additional_ensuring`).
 pub(crate) fn ensuring(env: &Env<'_>, l: i64, memo: &Memo) -> Shapes {
@@ -1455,4 +1478,66 @@ pub(crate) fn second_external(env: &Env<'_>, l: i64, band: f64) -> Vec<Bridged> 
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::indexing_slicing)]
+mod tests {
+    use super::*;
+
+    fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Shapes {
+        let p = |x: f64, y: f64| IntPoint::new(mm(x), mm(y));
+        vec![vec![vec![p(x0, y0), p(x1, y0), p(x1, y1), p(x0, y1)]]]
+    }
+
+    fn bridged(area: Shapes, angle: f64) -> Bridged {
+        Bridged { area, angle }
+    }
+
+    #[test]
+    fn overlapping_areas_of_one_angle_print_as_their_union() {
+        let m = merged(&[
+            bridged(rect(0.0, 0.0, 10.0, 10.0), 0.5),
+            bridged(rect(5.0, 0.0, 15.0, 10.0), 0.5),
+        ]);
+        assert_eq!(m.len(), 1);
+        assert!((m[0].angle - 0.5).abs() < 1e-12);
+        assert!(
+            (area(&m[0].area) - 150.0).abs() < 1e-6,
+            "area {}",
+            area(&m[0].area)
+        );
+    }
+
+    #[test]
+    fn a_smaller_angle_leaves_out_what_a_larger_one_covers() {
+        let m = merged(&[
+            bridged(rect(0.0, 0.0, 10.0, 10.0), 0.2),
+            bridged(rect(5.0, 0.0, 15.0, 10.0), 1.2),
+        ]);
+        assert_eq!(m.len(), 2);
+        assert!((m[0].angle - 1.2).abs() < 1e-12 && (m[1].angle - 0.2).abs() < 1e-12);
+        assert!(
+            (area(&m[0].area) - 100.0).abs() < 1e-6,
+            "larger angle {}",
+            area(&m[0].area)
+        );
+        assert!(
+            (area(&m[1].area) - 50.0).abs() < 1e-6,
+            "smaller angle {}",
+            area(&m[1].area)
+        );
+        assert!(area(&meet(&m[1].area, &m[0].area)) < 1e-6);
+    }
+
+    #[test]
+    fn an_area_covered_by_a_larger_angle_drops_out() {
+        let m = merged(&[
+            bridged(rect(2.0, 2.0, 8.0, 8.0), 0.3),
+            bridged(rect(0.0, 0.0, 10.0, 10.0), 0.9),
+        ]);
+        assert_eq!(m.len(), 1);
+        assert!((m[0].angle - 0.9).abs() < 1e-12);
+        assert!((area(&m[0].area) - 100.0).abs() < 1e-6);
+    }
 }

@@ -9749,7 +9749,8 @@ impl SliceSession {
                     cls.sparse = perimeters::difference(&cls.sparse, &gone);
                 }
                 let mut widths: Vec<f32> = Vec::new();
-                for x in &b.areas {
+                // Overlapping bridge areas print once (`bridging::merged`); `b.areas` stays the union the cuts read.
+                for x in &crate::bridging::merged(&b.areas) {
                     let part = perimeters::intersection(&x.area, &inner);
                     if let Some(st) = b.stretch {
                         for piece in crate::bridging::fill_even(&part, x.angle, b.spacing, st.edge) {
