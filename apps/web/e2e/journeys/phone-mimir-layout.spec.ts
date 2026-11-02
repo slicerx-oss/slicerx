@@ -178,15 +178,25 @@ journey.describe('the mimir tab on a phone, against the UI spec', () => {
     const chips = await choice.locator('.choice-chip').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom))
     expect((await cancel.boundingBox())!.y).toBeGreaterThanOrEqual(Math.max(...chips))
     await inside(page, 'a question card with Cancel')
-    // the view unfolds once the card is answered, which may scroll the chat; inside the card nothing moves or resizes
-    const inCard = async () => {
-      const [c, x] = [(await choice.boundingBox())!, (await cancel.boundingBox())!]
-      return { h: c.height, w: c.width, dx: x.x - c.x, dy: x.y - c.y, xh: x.height, xw: x.width }
+    // the view unfolds once the card is answered, which may scroll the chat; inside the card nothing moves or resizes.
+    // The card and its Cancel are read in one frame, since a read of each in turn can straddle the scroll and see the
+    // card where it was and Cancel where it went; and once two reads a frame apart agree, so the chat has settled.
+    const inCard = () =>
+      choice.evaluate((card) => {
+        const c = card.getBoundingClientRect()
+        const x = card.querySelector('[data-testid="mimir-choice-cancel"]')!.getBoundingClientRect()
+        return { h: c.height, w: c.width, dx: x.x - c.x, dy: x.y - c.y, xh: x.height, xw: x.width }
+      })
+    const settled = async () => {
+      const at = () => choice.evaluate((card) => new Promise<string>((done) => requestAnimationFrame(() => done(JSON.stringify(card.getBoundingClientRect())))))
+      let last = await at()
+      for (let now = await at(); now !== last; now = await at()) last = now
+      return inCard()
     }
-    const before = await inCard()
+    const before = await settled()
     await cancel.tap()
     await expect(choice.getByTestId('mimir-choice-state')).toHaveText('Canceled')
-    expect(await inCard()).toEqual(before)
+    expect(await settled()).toEqual(before)
     await expect(page.getByTestId('mimir-transcript')).toContainText('Okay, I will leave it for now.', { timeout: 30_000 })
     await expect(composer.getByRole('button', { name: 'Send' })).toBeVisible()
   })
