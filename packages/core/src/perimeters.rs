@@ -1632,6 +1632,10 @@ pub(crate) struct IslandWalls {
     /// The band's own part of the infill area, out to where its lines end ([`BandEnds`]): it prints as top surface,
     /// also where the layer above leaves sparse infill under it.
     pub(crate) band_area: Shapes,
+    /// The island's outline when its classic walls keep every wall although the layer's tops get one
+    /// (`only_one_wall_top`): no part of it clears the band's threshold. A top surface's gap fill on it starts at the
+    /// innermost wall's spacing edge, not the outer wall's.
+    pub(crate) kept: Shapes,
 }
 
 /// The top surfaces over an island of variable-width walls start at the innermost wall's spacing edge, without the
@@ -2225,6 +2229,14 @@ pub(crate) fn walls_for_top(
         let Some(top) = top.filter(|_| wall_loops > 1) else {
             return normal(region);
         };
+        // An island that keeps all its walls under the layer's tops ([`IslandWalls::kept`]).
+        let kept_walls = |one: &Shapes| {
+            let (mut walls, core) = normal(one);
+            for island in &mut walls {
+                island.kept.clone_from(one);
+            }
+            (walls, core)
+        };
         let cut = classic_top_cut(ext, inner);
         let threshold = classic_top_threshold(cfg, ext, inner);
         let clear = classic_top_clear(top.upper, threshold);
@@ -2234,7 +2246,7 @@ pub(crate) fn walls_for_top(
             let one = vec![shape.clone()];
             let room = classic_top_room(&one, &clear, ext);
             if room.is_empty() {
-                let (walls, core) = normal(&one);
+                let (walls, core) = kept_walls(&one);
                 islands.extend(walls);
                 cores.extend(core);
                 continue;
@@ -2315,7 +2327,7 @@ pub(crate) fn walls_for_top(
                 exposed = difference(&exposed, &offset(over, ext.max(inner) - hide));
             }
             if exposed.is_empty() {
-                let (walls, core) = normal(&one);
+                let (walls, core) = kept_walls(&one);
                 islands.extend(walls);
                 cores.extend(core);
                 continue;
@@ -2977,7 +2989,13 @@ mod tests {
                 above: None,
             },
         ] {
-            assert_eq!(format!("{:?}", run(Some(&context))), expected);
+            // The same walls and infill area; the island also records that it keeps its walls.
+            let (mut islands, core) = run(Some(&context));
+            for island in &mut islands {
+                assert_eq!(island.kept, region);
+                island.kept.clear();
+            }
+            assert_eq!(format!("{:?}", (islands, core)), expected);
         }
     }
 

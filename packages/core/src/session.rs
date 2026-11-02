@@ -10702,6 +10702,22 @@ impl SliceSession {
             ];
             if line_gaps.iter().chain(&by_target).any(|on| *on) {
                 let flat = perimeters::offset(&inner, -overlap);
+                // Under classic one-wall tops, the bands' part of the infill area and the islands that keep all
+                // their walls (`perimeters::IslandWalls::band_area` and `kept`), whose inner walls a top's gap fill
+                // reaches as it does the outer wall.
+                let bands: Vec<&Shapes> = work
+                    .islands
+                    .iter()
+                    .map(|i| &i.band_area)
+                    .filter(|a| !a.is_empty())
+                    .collect();
+                let bands = (!bands.is_empty()).then(|| perimeters::union_all(&bands));
+                let kept: Vec<(&Shapes, u32)> = work
+                    .islands
+                    .iter()
+                    .filter(|i| !i.kept.is_empty())
+                    .map(|i| (&i.kept, i.loops.iter().map(|(k, _)| k + 1).max().unwrap_or(0)))
+                    .collect();
                 let solid_mm = cfg.spacing_for(cfg.solid_infill_width());
                 let gaps_of = |which: usize, mm_pitch: f64| {
                     let (Some(lines), Some(own), Some(target)) =
@@ -10716,18 +10732,35 @@ impl SliceSession {
                         // Between the innermost wall and the lines, from the walls' own edge where the grid reads it
                         // nearer the wall than the surface. A surface grown out past that edge has its gap fill from
                         // its own edge, which is where the walls' spacing edge would put it, within the lines' ends.
-                        Some(e) => match (which == 0 && wall_back.as_ref().is_some_and(|w| w.1.is_some()))
+                        Some(e) => {
+                            let (surface, area) = match (which == 0
+                                && wall_back.as_ref().is_some_and(|w| w.1.is_some()))
                             .then(|| grown_back(&surface_region(which)).zip(grown_back(&inner)))
                             .flatten()
-                        {
-                            Some((surface, area)) => {
-                                perimeters::intersection(&surface, &perimeters::offset(&area, -mm(e)))
+                            {
+                                Some((surface, area)) => (surface, std::borrow::Cow::Owned(area)),
+                                None => (surface_region(which), std::borrow::Cow::Borrowed(&inner)),
+                            };
+                            let from_edge = perimeters::offset(&area, -mm(e));
+                            match (which == 0)
+                                .then(|| inner_wall_gaps(cfg, w, shapes, &inner, bands.as_ref(), &kept))
+                                .flatten()
+                            {
+                                // Beside inner walls the top's gap fill starts at their spacing edge. Where the
+                                // surface stops short of a band's edge, it takes in what lies between.
+                                Some((within, reach)) => {
+                                    let near = perimeters::intersection(
+                                        &within,
+                                        &perimeters::offset(&surface, reach + mm(e) + 10),
+                                    );
+                                    perimeters::intersection(
+                                        &perimeters::union_all(&[&surface, &near]),
+                                        &perimeters::union_all(&[&from_edge, &within]),
+                                    )
+                                }
+                                None => perimeters::intersection(&surface, &from_edge),
                             }
-                            None => perimeters::intersection(
-                                &surface_region(which),
-                                &perimeters::offset(&inner, -mm(e)),
-                            ),
-                        },
+                        }
                         None => match spread_gap_edge.get(which).copied().flatten() {
                             Some(e) => perimeters::intersection(
                                 &surface_region(which),
@@ -12187,6 +12220,45 @@ fn one_wall_gap_edge(cfg: &PrintConfig, height: f64, overlap: f64) -> f64 {
     outer / 2.0 + spacing / 2.0 - (outer - overlap * cfg.line_width)
 }
 
+/// Where a classic one-wall top's gap fill may lie beside inner walls, out to their spacing edge (half an inner
+/// spacing in from their center lines), as it reaches the outer wall's spacing edge elsewhere: the bands' part of the
+/// infill area `bands` grown to the spacing edge of the inner walls beside it, not into the rest of the infill area
+/// `inner` nor past the outer wall's spacing edge, and the inside of the innermost wall's spacing edge on the islands
+/// that keep all their walls, `kept` (each outline with its wall count). Also how far the bands' part reaches past
+/// the infill area (internal units). `None` when the layer has neither.
+fn inner_wall_gaps(
+    cfg: &PrintConfig,
+    w: i32,
+    shapes: &Shapes,
+    inner: &Shapes,
+    bands: Option<&Shapes>,
+    kept: &[(&Shapes, u32)],
+) -> Option<(Shapes, i32)> {
+    if bands.is_none() && kept.iter().all(|(_, loops)| *loops < 2) {
+        return None;
+    }
+    let laid = perimeters::classic_pitch(cfg, w);
+    let reach = (laid.inner - laid.spacing) / 2;
+    let mut parts: Vec<Shapes> = Vec::new();
+    if let Some(bands) = bands {
+        let outer_edge = laid.ext / 2 + mm(cfg.spacing_for(f64::from(laid.ext) / crate::geom::SCALE)) / 2;
+        parts.push(perimeters::intersection(
+            &perimeters::difference(
+                &perimeters::offset(bands, reach),
+                &perimeters::difference(inner, bands),
+            ),
+            &perimeters::offset(shapes, -outer_edge),
+        ));
+    }
+    for (outline, loops) in kept.iter().filter(|(_, loops)| *loops > 1) {
+        parts.push(perimeters::offset(outline, -laid.spacing_edge(*loops)));
+    }
+    Some((
+        perimeters::union_all(&parts.iter().collect::<Vec<_>>()),
+        reach.max(0),
+    ))
+}
+
 /// How far in from the edge of the infill area the lines of a surface on a fixed grid keep their centers on Bambu
 /// Lab printers, mm: a line prints when its center is at least c + sc/2 + s/2 from the outline, with c the innermost
 /// of `loops` walls' centerline, sc its spacing and s the surface's spacing `surface_mm`, and no overlap term. The
@@ -13138,6 +13210,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
                         top_edge: None,
                         band: isl.band,
                         band_area: Vec::new(),
+                        kept: Vec::new(),
                     },
                 ),
                 (
@@ -13155,6 +13228,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
                         top_edge: None,
                         band: isl.band,
                         band_area: Vec::new(),
+                        kept: Vec::new(),
                     },
                 ),
             ]
