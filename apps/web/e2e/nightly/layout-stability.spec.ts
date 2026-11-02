@@ -474,6 +474,39 @@ test.describe('controls never move when pressed', { tag: '@nightly' }, () => {
     expect(moved).toEqual([])
   })
 
+  test('a mimir question card: a chip and Cancel move nothing in the card or the composer', async ({ page, isMobile }, info) => {
+    test.skip(isMobile, 'Desktop: the phone checks its card in phone-mimir-layout')
+    await open(page, { settingsMode: 'advanced', pilot: { mode: 'on', provider: 'anthropic' } })
+    await sx(page, { plate: [], selection: null, selectedIds: [] })
+    await page.getByTestId('tab-mimir').click()
+    const composer = page.getByTestId('mimir-composer')
+    const moved: Moved[] = []
+    for (const press of ['mimir-choice-cancel', 'Yes, that one'] as const) {
+      await composer.getByRole('textbox').fill('a wall mount for my thermostat')
+      await composer.getByRole('button', { name: 'Send' }).click()
+      const card = page.getByTestId('mimir-choice').last()
+      const control = press === 'mimir-choice-cancel' ? card.getByTestId(press) : card.getByRole('button', { name: press })
+      await expect(control).toBeEnabled()
+      const parts = [card, card.locator('.choice-top'), ...(await card.locator('.choice-chip').all()), card.getByTestId('mimir-choice-cancel'), composer]
+      // the state's own text fills in on its reserved line (the row it sits in is measured), as a pick always has
+      const at = () => Promise.all(parts.map(async (l) => (await l.boundingBox())!))
+      const was = await at()
+      await control.click()
+      await expect(card.getByTestId('mimir-choice-cancel')).toBeDisabled()
+      const now = await at()
+      now.forEach((a, i) => {
+        const b = was[i]!
+        const d = { dx: a.x - b.x, dy: a.y - b.y, dw: a.width - b.width, dh: a.height - b.height }
+        if (Math.max(...Object.values(d).map(Math.abs)) > LIMIT) moved.push({ control: press, what: `card part ${i}`, ...d })
+      })
+      // a pick goes on to a size sheet; a cancel lets the run finish before the next message
+      if (press === 'Yes, that one') break
+      await expect(composer.getByRole('button', { name: 'Stop' })).toHaveCount(0, { timeout: 30_000 })
+    }
+    report(info, moved)
+    expect(moved).toEqual([])
+  })
+
   test('mimir lookup cards', async ({ page, isMobile }, info) => {
     test.skip(isMobile, 'Desktop: the cards sit beside the chat')
     test.slow()

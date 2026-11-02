@@ -76,6 +76,22 @@ describe('the scripted mimir', () => {
     expect(events.filter((e) => e.type === 'text').map((e) => (e.type === 'text' ? e.delta : '')).join('')).toMatch(/model name/)
   })
 
+  it.each([
+    ['Cancel on the card', undefined, 'Okay, I will leave it for now.'],
+    ['words written in its place', 'it is a different model', 'You said: "it is a different model".'],
+  ])('a question turned down with %s builds nothing and the run ends as usual', async (_how, said, reply) => {
+    const p = scriptedMimir(SCRIPTS, mimirTools())
+    const events: PilotEvent[] = []
+    for await (const e of p.run('s', 'a wall mount for my thermostat')) {
+      events.push(e)
+      if (e.type === 'ask') void p.answer!(e.askId, null, said)
+    }
+    const text = events.filter((e) => e.type === 'text').map((e) => (e.type === 'text' ? e.delta : '')).join('')
+    expect(text).toContain(reply)
+    expect(events.some((e) => e.type === 'lookup' || e.type === 'sheet')).toBe(false)
+    expect(events.at(-1)).toMatchObject({ type: 'done', stopReason: 'end' })
+  })
+
   it('says what it knows for a message no script matches', async () => {
     const events = await play('make me a teapot', null)
     expect(events.filter((e) => e.type === 'text').map((e) => (e.type === 'text' ? e.delta : '')).join('')).toMatch(/Scripted replies know/)

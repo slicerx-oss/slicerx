@@ -55,6 +55,8 @@
 :root[data-phone] .mimir-chat .sheet-rec-field .sx-scrub { height: auto; }
 :root[data-phone] .mimir-chat .sheet-rec-field .sx-scrub-input { height: var(--h-lg); font-size: 16px; }
 :root[data-phone] .mimir-chat .sheet-rec-foot .sx-btn { min-height: var(--h-lg); }
+/* a question card's Cancel: a 44 px target in its own row under the answers, never in the chip row */
+:root[data-phone] .mimir-chat .choice-foot .sx-btn { min-height: var(--h-lg); }
 /* the sizes panel (Edit sizes): its fields are 44 px tall to type in, and a size's source link takes a 44 px touch.
    The link's text truncates inside its own span, so the link can let its touch box out. */
 :root[data-phone] .mimir-sheet-panel .mimir-sheet-field .sx-scrub { height: auto; }

@@ -486,6 +486,68 @@ test.describe('the mimir tab', () => {
     await expect(transcript).not.toContainText('It matches the plan')
   })
 
+  test('Cancel on a question card turns it down and the run carries on to its end, moving nothing', async ({ page }) => {
+    await askTab(page, 'a wall mount for my thermostat')
+    const choice = page.getByTestId('mimir-choice')
+    const cancel = choice.getByTestId('mimir-choice-cancel')
+    await expect(cancel).toBeEnabled()
+    const composer = page.getByTestId('mimir-composer')
+    await expect(composer.getByRole('button', { name: 'Stop' })).toBeVisible()
+    // the card, each chip and the message box stay where they were through the press
+    await pressStill(cancel, [choice, ...(await choice.locator('.choice-chip').all()), composer])
+    await expect(choice.getByTestId('mimir-choice-state')).toHaveText('Canceled')
+    await expect(choice.locator('.choice-chip:disabled')).toHaveCount(2)
+    await expect(cancel).toBeDisabled()
+    const transcript = page.getByTestId('mimir-transcript')
+    await expect(transcript).toContainText('Okay, I will leave it for now.')
+    await expect(page.getByTestId('mimir-sheet-record')).toHaveCount(0)
+    // the run ended the ordinary way: Send is back, nothing says it was stopped, and the next message goes
+    await expect(composer.getByRole('button', { name: 'Send' })).toBeVisible()
+    await expect(composer.getByRole('button', { name: 'Stop' })).toHaveCount(0)
+    await expect(transcript).not.toContainText('Run canceled')
+    await expect(transcript.locator('.sum-h.stop')).toHaveCount(0)
+    await askTab(page, 'a wall mount for my thermostat')
+    await expect(page.getByTestId('mimir-choice')).toHaveCount(2)
+  })
+
+  test('words typed while a question card waits turn it down and reach mimir in the same run, with no new message', async ({ page }) => {
+    await askTab(page, 'a wall mount for my thermostat')
+    const choice = page.getByTestId('mimir-choice')
+    await expect(choice.getByTestId('mimir-choice-cancel')).toBeEnabled()
+    const bubbles = page.locator('.mimir-chat .bubble')
+    await expect(bubbles).toHaveCount(1)
+    const composer = page.getByTestId('mimir-composer')
+    const box = composer.getByRole('textbox')
+    await box.fill('it is a different model')
+    // Stop turns into Send in the same place while there is text
+    await expect(composer.getByRole('button', { name: 'Send' })).toBeEnabled()
+    await box.press('Enter')
+    await expect(choice.getByTestId('mimir-choice-state')).toHaveText('Canceled')
+    await expect(choice.getByTestId('mimir-choice-said')).toHaveText('it is a different model')
+    await expect(page.getByTestId('mimir-transcript')).toContainText('You said: "it is a different model".')
+    await expect(bubbles).toHaveCount(1)
+    await expect(box).toHaveValue('')
+    await expect(composer.getByRole('button', { name: 'Send' })).toBeVisible()
+  })
+
+  test('Escape on a question card turns it down and puts focus in the message box; Stop still stops the run', async ({ page }) => {
+    await askTab(page, 'a wall mount for my thermostat')
+    const choice = page.getByTestId('mimir-choice')
+    await choice.getByRole('button', { name: 'Yes, that one' }).focus()
+    await page.keyboard.press('Escape')
+    await expect(choice.getByTestId('mimir-choice-state')).toHaveText('Canceled')
+    await expect(page.getByTestId('mimir-composer').getByRole('textbox')).toBeFocused()
+    await expect(page.getByTestId('mimir-transcript')).toContainText('Okay, I will leave it for now.')
+    // a second card: Stop ends the run as before, and the card can no longer be turned down
+    await askTab(page, 'a wall mount for my thermostat')
+    const second = page.getByTestId('mimir-choice').last()
+    await expect(second.getByTestId('mimir-choice-cancel')).toBeEnabled()
+    await page.getByTestId('mimir-composer').getByRole('button', { name: 'Stop' }).click()
+    await expect(page.getByTestId('mimir-composer').getByRole('button', { name: 'Send' })).toBeVisible()
+    await second.getByTestId('mimir-choice-cancel').click()
+    await expect(second).toContainText('Could not send your answer')
+  })
+
   test('a finished part brings up the spools under the run, and a click there picks the spool it prints with', async ({ page }, info) => {
     const printer = (await state(page))['printerId']
     try {
