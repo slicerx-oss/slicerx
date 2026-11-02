@@ -60,7 +60,7 @@ export async function askMimir(args: Record<string, unknown>): Promise<unknown> 
     files.push(await attachment(i, name, type, data))
   }
   if (!asker) throw new LinkError('not_ready', 'the mimir tab is not open in the app, or no model is connected to it yet; ask the person to open it')
-  if (asker.busy()) throw new LinkError('busy', 'mimir is answering a message now; read it back with mimir.session and send again when it is done')
+  if (asker.busy()) throw new LinkError('busy', 'mimir is answering a message now; read it back with mimir.session and send again when it is done (a question it waits on shows there as waiting, and mimir.dismiss turns it down)')
   const sessionId = asker.send(message.trim(), files)
   return { sessionId, said: message.trim(), attachments: files.map((f) => ({ name: f.name, type: f.type, bytes: f.bytes })) }
 }

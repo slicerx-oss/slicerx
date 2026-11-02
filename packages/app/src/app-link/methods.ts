@@ -7,7 +7,7 @@
 // read (ui.get) and switched between workspaces and tabs (ui.set, read class); the selection and the panels open
 // (ui.select) are edit class, since the person's next click or key acts on them, and it never closes or covers a panel
 // with their work under way. Nothing here prints, queues, approves, signs in, picks a printer or changes printer
-// connections.
+// connections. A client may turn down a question mimir waits on (mimir.dismiss), never pick its answer.
 // Project print overrides have their own methods and read-back.
 import type { MeshHandle, MeshPart } from '@slicerx/contracts'
 import { VISUAL_TOKEN_NAMES } from '@slicerx/edition-config'
@@ -160,6 +160,8 @@ export const APP_LINK_METHODS: Record<string, LinkClass> = {
   'mimir.session': 'read',
   // a client's message to mimir, with pictures and PDFs, sent in the chat as the person's next message
   'mimir.ask': 'edit',
+  // turns down the question mimir waits on, so its run carries on; it changes the chat, and never picks an answer
+  'mimir.dismiss': 'edit',
   // today's mimir cloud use and caps; the install token stays in the shell
   'mimir.quota': 'read',
   // whether mimir cloud keeps this install's sessions (Settings > mimir), and whether the notice was read
@@ -451,6 +453,7 @@ const HANDLERS: Record<string, Handler> = {
   'mimir.sessions': () => listSessions(),
   'mimir.session': (args) => readSession(args),
   'mimir.ask': async (args) => (await import('./mimir-ask')).askMimir(args),
+  'mimir.dismiss': async (args) => (await import('./mimir-dismiss')).dismissCard(args),
   'mimir.quota': async () => {
     // loaded on use: only the desktop shell carries mimir cloud
     const { cloudReady } = await import('../pilot-connect/cloud-edition')
