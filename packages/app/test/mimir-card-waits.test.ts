@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 // When the phone's mimir tab folds its view for a card: while a run waits on the person for a print or change to
-// approve or a question to answer, and not for a size sheet, a card already answered or a run that has ended.
+// approve or a question to answer, and not for a size sheet, a card already answered or a run that has ended. Which
+// question card a written reply answers: the newest one still waiting, never an approval.
 import type { PilotEvent } from '@slicerx/contracts'
 import { emptyTranscript, foldEvents, startTurn } from '@slicerx/pilot/ui'
 import { describe, expect, it } from 'vitest'
-import { cardWaits } from '../src/workspaces/mimir/card-waits'
+import { cardWaits, openChoice } from '../src/workspaces/mimir/card-waits'
 
 const request = { id: 'apr_1', sessionId: 's', tool: 'printer.queue', permission: 'queue' as const, title: 'Print on Bay 6?', lines: [], paramsHash: 'x', actions: [], expiresAt: new Date(Date.now() + 60_000).toISOString() }
 const ask = { type: 'ask', askId: 'ask_1', title: 'Confirm the part', question: 'Is this the thermostat on your wall?', choices: [{ id: 'same', label: 'Yes, that one' }] } as PilotEvent
@@ -46,5 +47,25 @@ describe('cardWaits', () => {
     const replayed = run([ask])
     const turns = replayed.turns.map((t) => ({ ...t, blocks: t.blocks.map((b) => (b.kind === 'choice' ? { ...b, replay: true } : b)) }))
     expect(cardWaits({ ...replayed, turns })).toBe(false)
+  })
+})
+
+describe('openChoice', () => {
+  const second = { ...ask, askId: 'ask_2', title: 'Pick a size' } as PilotEvent
+
+  it('is the newest question still waiting in a running reply', () => {
+    expect(openChoice(emptyTranscript())).toBeNull()
+    expect(openChoice(run([ask]))).toMatchObject({ askId: 'ask_1', title: 'Confirm the part' })
+    const both = run([ask, second])
+    expect(openChoice(both)?.askId).toBe('ask_2')
+    expect(openChoice(foldEvents([{ type: 'ask_answered', askId: 'ask_2', choiceId: '', dismissed: true } as PilotEvent], both))?.askId).toBe('ask_1')
+  })
+
+  it('leaves an approval card alone, and is null once the run has ended or for a replayed card', () => {
+    expect(openChoice(run([{ type: 'approval_request', request } as PilotEvent]))).toBeNull()
+    expect(openChoice(run([ask, done]))).toBeNull()
+    const replayed = run([ask])
+    const turns = replayed.turns.map((t) => ({ ...t, blocks: t.blocks.map((b) => (b.kind === 'choice' ? { ...b, replay: true } : b)) }))
+    expect(openChoice({ ...replayed, turns })).toBeNull()
   })
 })

@@ -158,6 +158,39 @@ journey.describe('the mimir tab on a phone, against the UI spec', () => {
     await expect(open).toBeFocused()
   })
 
+  journey('at 390 px a question card, its 44 px Cancel and the composer fit together; Cancel turns it down and the run ends', async ({ page }) => {
+    await page.setViewportSize(PHONES[1])
+    await phoneMimir(page)
+    await askTab(page, 'Make a backplate for my thermostat')
+    const choice = page.getByTestId('mimir-choice')
+    const cancel = choice.getByTestId('mimir-choice-cancel')
+    await expect(cancel).toBeEnabled({ timeout: 30_000 })
+    const composer = page.getByTestId('mimir-composer')
+    const view = page.viewportSize()!
+    // the card, its Cancel and the message box are all on screen at once with no scrolling
+    for (const l of [choice, cancel, composer]) {
+      const b = (await l.boundingBox())!
+      expect(b.y, 'top on screen').toBeGreaterThanOrEqual(0)
+      expect(b.y + b.height, 'bottom on screen').toBeLessThanOrEqual(view.height)
+    }
+    expect((await cancel.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    // Cancel sits in its own row under the chips, never beside them
+    const chips = await choice.locator('.choice-chip').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().bottom))
+    expect((await cancel.boundingBox())!.y).toBeGreaterThanOrEqual(Math.max(...chips))
+    await inside(page, 'a question card with Cancel')
+    // the view unfolds once the card is answered, which may scroll the chat; inside the card nothing moves or resizes
+    const inCard = async () => {
+      const [c, x] = [(await choice.boundingBox())!, (await cancel.boundingBox())!]
+      return { h: c.height, w: c.width, dx: x.x - c.x, dy: x.y - c.y, xh: x.height, xw: x.width }
+    }
+    const before = await inCard()
+    await cancel.tap()
+    await expect(choice.getByTestId('mimir-choice-state')).toHaveText('Canceled')
+    expect(await inCard()).toEqual(before)
+    await expect(page.getByTestId('mimir-transcript')).toContainText('Okay, I will leave it for now.', { timeout: 30_000 })
+    await expect(composer.getByRole('button', { name: 'Send' })).toBeVisible()
+  })
+
   journey('the folded drawing header and the panel hint pass contrast at 1x in light and dark', async ({ page }) => {
     journey.slow()
     await phoneMimir(page)
