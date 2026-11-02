@@ -943,3 +943,13 @@ fn with_variable_width_walls_the_ring_floats_up_to_4_9_mm() {
         37.68,
     );
 }
+
+#[test]
+fn overlapping_bridge_areas_of_three_wall_rings_print_once() {
+    // At 3 walls and 40% overlap the ring piece and the line under the slit are two bridge candidates whose areas
+    // overlap; the overlap gets one set of strands, so z 1.2 carries about 73.3 (86.6 when it printed twice).
+    let edits = [("infill_wall_overlap", json!(40)), ("wall_loops", json!(3))];
+    let layers = per_layer(&moves(&slice(step_w(4.0), &edits)));
+    let bridge = at(&layers, BRIDGE, 1.2);
+    assert!(near(bridge, 73.26, 0.05), "z 1.2 bridge {bridge:.2}, want 73.26");
+}
