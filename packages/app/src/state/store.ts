@@ -284,7 +284,7 @@ export interface AppState {
    * What the last open or import says (the printer it opened on, the settings it applied, "Added cube.stl"): one line in
    * the left pane under the printer card, with its action, until dismissed or replaced. Never over the view. Not saved.
    */
-  openNote: { id: number; text: string; action?: ToastAction } | null
+  openNote: { id: number; text: string; action?: ToastAction; details?: string; wrap?: boolean } | null
   /** A standing notice about the 3D view (drawn without hardware acceleration), or null. A phone shows it as an icon in the top bar instead of a toast. */
   viewNotice: string | null
   aboutOpen: boolean
@@ -1042,9 +1042,13 @@ export function toast(text: string, tone?: 'ok' | 'info' | 'warn' | 'error', act
   set({ toast: { id: ++toastSeq, text, ...(tone ? { tone } : {}), ...(action ? { action } : {}), ...closing } })
 }
 
-/** An open or import says what it did: a note in the left pane under the printer card, not a toast over the view. */
-export function openNote(text: string, action?: ToastAction): void {
-  set({ openNote: { id: ++toastSeq, text, ...(action ? { action } : {}) } })
+/**
+ * An open or import says what it did: a note in the left pane under the printer card, not a toast over the view.
+ * `details` is shown only under Details; `wrap` lets the line take two lines before it is cut, for a note whose point
+ * would be hidden on one.
+ */
+export function openNote(text: string, action?: ToastAction, opts: { details?: string; wrap?: boolean } = {}): void {
+  set({ openNote: { id: ++toastSeq, text, ...(action ? { action } : {}), ...(opts.details ? { details: opts.details } : {}), ...(opts.wrap ? { wrap: true } : {}) } })
 }
 
 /** The selected objects: the multi-selection when it includes the primary, else just the primary. */

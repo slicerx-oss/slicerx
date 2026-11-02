@@ -4,16 +4,20 @@
 // load_config_model): the file's printer and nozzle, matched to our profiles, become a printer of their own that
 // exports G-code and slices with the project's machine G-code. Switching to one of the person's printers takes that
 // printer's G-code wholesale and keeps the settings that suit it, so no project G-code reaches another machine.
+// A PrusaSlicer project opens on the printer the plate is on, and the open's note offers the printer it was made for:
+// one button switches to it (the person's own printer of that model and nozzle, else our profile for it) and works the
+// project's settings out again there. Without the button the plate stays where it is.
 import type { PrinterInfo, SettingValue } from '@slicerx/contracts'
-import { GCODE_TEXT_KEYS, SLICERX_KEEPS, carryOver, importFlat, matchProjectPrinter, printerProfile, projectPrinterChanges, reviewProjectGcode, settingDef, type ProjectPrinterMatch } from '@slicerx/settings'
+import { GCODE_TEXT_KEYS, SLICERX_KEEPS, carryOver, importFlat, matchProjectPrinter, printerName, printerProfile, projectPrinterChanges, projectPrinterOffer, projectSettingChanges, reviewProjectGcode, settingDef, type ProjectPrinterMatch } from '@slicerx/settings'
 import { resolveConfig } from '../adapters/config'
 import { appName } from '../edition'
 import { slotConfig } from '../filament/slot-config'
 import { profileReady } from '../state/profile-sync'
 import { isExportOnly } from '../lib/hand-printers'
-import { gcodeValues } from '../state/project-gcode'
+import { gcodeValues, reviewOpenedGcode } from '../state/project-gcode'
 import { recognizedScript } from './script-review'
-import { appStore, get, set, setWorkspace, toast, type AppState, type ProjectPrinter, type ToastAction } from '../state/store'
+import { appStore, get, markStale, openNote, set, setWorkspace, toast, type AppState, type ProjectPrinter, type ToastAction } from '../state/store'
+import { nearestGoal } from '../lib/goal-edits'
 import { profileIdFor } from '../workspaces/prepare/printer-base'
 
 export const PROJECT_PRINTER_ID = 'project-printer'
@@ -52,8 +56,7 @@ export async function switchToProjectPrinter(source: string, settings: Record<st
     return found
   }
   const s0 = get()
-  const fits = printers.filter((p) => p.id !== PROJECT_PRINTER_ID && profileIdFor(p) === found.profileId && sameMm(nozzleOf(s0, p) ?? -1, found.nozzle))
-  const own = fits.find((p) => !isExportOnly(p)) ?? fits[0]
+  const own = ownPrinterFor(found, printers)
   if (own) {
     set({ printerId: own.id, printerModel: { id: own.id, vendor: own.vendor, model: own.model } })
     await profileReady()
@@ -115,6 +118,113 @@ export function applyProjectSettings(source: string, settings: Record<string, un
   if (blocked.length) note += ` Its ${blocked.map((c) => c.label).join(', ')} has lines ${appName()} never sends, so the ${match.model} profile's is used.`
   if (keptNote) note += ` ${keptNote}`
   return { keys: [...Object.keys(applied), ...Object.keys(gcode)], note }
+}
+
+/** One of the person's `printers` of the matched model and nozzle, one that takes jobs first; undefined when none is. */
+function ownPrinterFor(found: Extract<ProjectPrinterMatch, { kind: 'match' }>, printers: readonly PrinterInfo[]): PrinterInfo | undefined {
+  const s = get()
+  const fits = printers.filter((p) => p.id !== PROJECT_PRINTER_ID && profileIdFor(p) === found.profileId && sameMm(nozzleOf(s, p) ?? -1, found.nozzle))
+  return fits.find((p) => !isExportOnly(p)) ?? fits[0]
+}
+
+/** The printer the plate is on, as the note names it: the person's name for it, the project printer's, else its model. */
+function plateOn(s: AppState, printers: readonly PrinterInfo[]): string {
+  const id = s.printerModel?.id
+  if (id === PROJECT_PRINTER_ID && s.projectPrinter) return `${s.projectPrinter.model} ${mm(s.projectPrinter.nozzle)}`
+  const own = id ? printers.find((p) => p.id === id) : undefined
+  if (own) return own.name
+  return s.printerModel ? `the ${s.printerModel.model}` : 'the generic bed'
+}
+
+const settingsCount = (n: number): string => `${n} ${n === 1 ? 'setting' : 'settings'}`
+
+/** An open note: its line, the button, and what Details adds (the file it came from). */
+export interface PrinterNote {
+  text: string
+  details: string
+  action?: ToastAction
+  /** Called once the open has finished: what the overrides are then is what Switch to tells the person's later changes from. */
+  settle?: () => void
+}
+
+const same = (a: SettingValue | undefined, b: SettingValue | undefined): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/**
+ * What the note of a PrusaSlicer project opened on the current printer says about the printer it was made for, with
+ * `applied` (the project's values the open put over the current printer's) already in the overrides: null when the
+ * plate is already on that printer (or the file names none), a plain line when it is a printer we have no profile for,
+ * else a line and the button that switches to it. The printer leads, since it is what the person acts on; the file is
+ * in Details.
+ */
+export function projectPrinterNote(source: string, settings: Record<string, unknown>, printers: readonly PrinterInfo[], applied: Record<string, SettingValue>): PrinterNote | null {
+  const s = get()
+  const offer = projectPrinterOffer(matchProjectPrinter(settings), { profileId: s.printerModel ? (s.profile?.printerId ?? null) : null, ...(s.profile ? { nozzle: s.profile.nozzle } : {}) })
+  if (!offer || offer.kind === 'same') return null
+  const n = Object.keys(applied).length
+  const did = n ? ` Applied ${settingsCount(n)} on ${plateOn(s, printers)}.` : ` Opened on ${plateOn(s, printers)}.`
+  const details = `From ${source}.`
+  if (offer.kind === 'unknown') return { text: `Made for ${offer.name}, which ${appName()} has no profile for.${did}`, details }
+  const { match } = offer
+  const own = ownPrinterFor(match, printers)
+  // The overrides as the open left them (settle), so a setting the person changes before the click is told apart from the project's.
+  const at = { opened: { ...s.overrides } }
+  return {
+    text: `Made for a ${printerName(match.profileId)}, ${mm(match.nozzle)} nozzle.${did}`,
+    details,
+    action: { label: `Switch to ${own ? own.name : `${match.model} ${mm(match.nozzle)}`}`, run: () => void switchToOfferedPrinter(source, settings, printers, applied, at.opened) },
+    settle: () => {
+      at.opened = { ...get().overrides }
+    },
+  }
+}
+
+/**
+ * The note's Switch to: the plate moves to the printer a PrusaSlicer project was made for (the person's own of that
+ * model and nozzle, else our profile for it, as switchToProjectPrinter picks), and the project's print and filament
+ * settings are worked out again on top of that printer's. Only what came from the project is worked out again: a
+ * value of `applied` still as the open left it (`opened`) goes back to what the person had before the open first, and
+ * any setting the person changed since the open stays as they set it. Its printer G-code is reviewed again against the
+ * new printer.
+ */
+export async function switchToOfferedPrinter(source: string, settings: Record<string, unknown>, printers: readonly PrinterInfo[], applied: Record<string, SettingValue>, opened: Record<string, SettingValue>): Promise<void> {
+  const ps = get().projectSettings
+  const prior = ps?.source === source ? (ps.prior ?? {}) : {}
+  const now = get().overrides
+  // The person's own changes since the open: every key whose value is not the one the open left.
+  const edited = new Set([...Object.keys(now), ...Object.keys(opened)].filter((k) => !same(now[k], opened[k])))
+  set((s) => {
+    const overrides = { ...s.overrides }
+    for (const k of Object.keys(applied)) {
+      if (edited.has(k)) continue
+      const v = prior[k]
+      if (v === null || v === undefined) delete overrides[k]
+      else overrides[k] = v
+    }
+    return { overrides }
+  })
+  const before = get().overrides
+  const match = await switchToProjectPrinter(source, settings, printers)
+  if (match?.kind !== 'match') return
+  const changes = projectSettingChanges(settings, resolveConfig(get().easy, get().overrides)).values
+  const values = Object.fromEntries(Object.entries(changes).filter(([k]) => !edited.has(k)))
+  const keys = Object.keys(values)
+  set((s) => {
+    const overrides = { ...s.overrides, ...values }
+    const was: Record<string, SettingValue | null> = { ...prior }
+    for (const k of keys) if (!(k in was)) was[k] = before[k] ?? null
+    return {
+      overrides,
+      goal: 'custom' as const,
+      goalBase: nearestGoal(resolveConfig(s.easy, overrides), s.profile?.goalValues),
+      projectSettings: { source, keys: [...new Set([...(ps?.source === source ? ps.keys : []), ...keys])], prior: was },
+    }
+  })
+  // The open already said the project has its own G-code; the slice still asks, now against this printer's.
+  await reviewOpenedGcode(source, settings, { quiet: true })
+  markStale()
+  const on = match.own ? match.own.name : `${match.model} ${mm(match.nozzle)}`
+  const kept = edited.size ? ` Kept ${settingsCount(edited.size)} you changed.` : ''
+  openNote(`Switched to ${on}.${keys.length ? ` Applied ${settingsCount(keys.length)} from the project.` : ''}${kept}`, CHANGE_PRINTER, { details: `From ${source}.`, wrap: true })
 }
 
 /** The nozzle a printer slices with: what it reports, else what was chosen for it, else its model's default. */

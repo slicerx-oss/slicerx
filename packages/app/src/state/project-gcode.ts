@@ -12,8 +12,11 @@ import { get, set, toast } from './store'
 
 export type GcodeChoice = 'project' | 'profile'
 
-/** Reviews the G-code settings of a project just opened. Returns the number of settings that wait for a person. */
-export async function reviewOpenedGcode(source: string, settings: Record<string, unknown>): Promise<number> {
+/**
+ * Reviews the G-code settings of a project just opened. Returns the number of settings that wait for a person. `quiet`
+ * reviews again without a second toast, for the same project on the printer it moved to.
+ */
+export async function reviewOpenedGcode(source: string, settings: Record<string, unknown>, opts: { quiet?: boolean } = {}): Promise<number> {
   const [{ GCODE_TEXT_KEYS, importFlat, reviewProjectGcode }, { recognizedScript }] = await Promise.all([import('@slicerx/settings'), import('../project/script-review')])
   const project = importFlat(Object.fromEntries(Object.entries(settings).filter(([k]) => GCODE_TEXT_KEYS.includes(k)))).config as Record<string, unknown>
   const s = get()
@@ -29,7 +32,7 @@ export async function reviewOpenedGcode(source: string, settings: Record<string,
   }
   set({ projectGcode: { source, changes: review.changes, asking: false } })
   const what = review.changes.length === 1 ? `its own ${review.changes[0]!.label}` : 'its own printer G-code'
-  toast(`${source} has ${what}. You choose which G-code to use when you slice.`, 'info')
+  if (!opts.quiet) toast(`${source} has ${what}. You choose which G-code to use when you slice.`, 'info')
   return review.changes.length
 }
 

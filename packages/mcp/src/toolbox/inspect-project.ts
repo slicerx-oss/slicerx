@@ -10,13 +10,13 @@ export default (d: ServerToolDeps) =>
   serverTool({
     name: 'inspect_project',
     title: 'Inspect a 3MF project',
-    version: '1.1.0',
+    version: '1.2.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',
     ungated: true,
     description:
-      'Read a 3MF or .sx3mf project without slicing it: its plates (with names and object counts), the printer, process and filament presets it was saved with, its filament slots (type and color), its support settings (`support`: enable_support, support_* and tree_support_* as the file sets them), whether it carries print settings, and with settings `project_config`: the settings a slice with project_settings: true and no machine: profile takes from the file (its own values, the engine choices it did not change, and the reading of keys it lacks by the app that wrote it, such as the rib prime tower for a Bambu Studio project), as one object to pass as the config of a slice request. Use the plate numbers with slicerx_slice_file and project_settings: true to slice it as it was set up. Open a locked project (.sxlock) with slicerx_sxlock_open first.',
+      'Read a 3MF or .sx3mf project without slicing it: its plates (with names and object counts), the printer, process and filament presets it was saved with, the printer another slicer\'s project was made for (`project_printer`: its name, and the machine: profile and nozzle that slice it on that printer when there is a profile for it; pass that profile to slicerx_slice_file to use it, or another to keep your printer), its filament slots (type and color), its support settings (`support`: enable_support, support_* and tree_support_* as the file sets them), whether it carries print settings, and with settings `project_config`: the settings a slice with project_settings: true and no machine: profile takes from the file (its own values, the engine choices it did not change, and the reading of keys it lacks by the app that wrote it, such as the rib prime tower for a Bambu Studio project), as one object to pass as the config of a slice request. Use the plate numbers with slicerx_slice_file and project_settings: true to slice it as it was set up. Open a locked project (.sxlock) with slicerx_sxlock_open first.',
     input: z.object({ file: z.string().min(1).describe('Absolute path or http(s) URL of a .3mf or .sx3mf file') }),
     hints: { openWorld: true },
     async run(args) {
@@ -27,6 +27,7 @@ export default (d: ServerToolDeps) =>
         `${basename(path)}: ${summary.plates.length} plate${summary.plates.length === 1 ? '' : 's'}${summary.has_settings || summary.import_report.skipped ? '' : ', no print settings (a plain 3MF)'}`,
         ...summary.plates.map((p) => `Plate ${p.index}${p.name ? ` "${p.name}"` : ''}: ${p.objects} object${p.objects === 1 ? '' : 's'}`),
         ...(summary.presets.printer ? [`Printer preset: ${summary.presets.printer}`] : []),
+        ...(summary.project_printer ? [madeForLine(summary.project_printer)] : []),
         ...(summary.presets.process ? [`Process preset: ${summary.presets.process}`] : []),
         ...summary.filaments.map((f) => `Slot ${f.slot}: ${[f.type, f.color, f.preset].filter(Boolean).join(', ')}`),
         ...(Object.keys(summary.support).length > 0
@@ -42,3 +43,9 @@ export default (d: ServerToolDeps) =>
       return { summary: text[0] ?? basename(path), structured: structured as unknown as Record<string, unknown>, text: text.join('\n') }
     },
   })
+
+/** "Made for: Prusa Research MK4, 0.4 mm nozzle (slice with machine:prusa-mk4)", or a printer with no profile here. */
+function madeForLine(p: { name: string; profile?: string; nozzle?: number }): string {
+  const nozzle = p.nozzle !== undefined ? `, ${Number(p.nozzle.toFixed(2))} mm nozzle` : ''
+  return p.profile ? `Made for: ${p.name}${nozzle} (slice with ${p.profile})` : `Made for: ${p.name}${nozzle}, which has no printer profile here`
+}

@@ -13,9 +13,9 @@ import { areaOrigin } from '@slicerx/threemf/area'
 import { loadFlushData } from '@slicerx/settings/flush'
 import { FLUSH_DEFAULTS } from '@slicerx/settings/flush-defaults'
 import { defaultSlotColors, normalizeColor, objectPaletteColors, plateTowerIndexes, projectFlushFrom, projectTowerFrom, slotSettings } from '@slicerx/settings/slot-settings'
-import { carryOver, GCODE_TEXT_KEYS, layerConfig, matchProjectPrinter, nearestGoalBy, printerProfile, projectPrinterChanges, projectSettingChanges, sliceBedType, stockLayer, type ProjectPrinterMatch } from '@slicerx/settings'
+import { carryOver, GCODE_TEXT_KEYS, layerConfig, matchProjectPrinter, nearestGoalBy, printerName, printerProfile, projectPrinterChanges, projectPrinterOffer, projectSettingChanges, sliceBedType, stockLayer, type ProjectPrinterMatch } from '@slicerx/settings'
 import type { ProfileCatalog } from './profiles'
-import type { ProjectRead } from './projectfile'
+import { projectPrinterReport, type ProjectPrinterReport, type ProjectRead } from './projectfile'
 
 /** The settings the app slices an opened project with on one printer, and what the slice needs to know about them. */
 export interface OpenedProject {
@@ -26,6 +26,27 @@ export interface OpenedProject {
   config: Record<string, SettingValue>
   /** The project slices on its own printer, so its G-code goes through the review (the app's project printer). */
   ownGcode: boolean
+}
+
+const mmText = (n: number): string => `${Number(n.toFixed(2))} mm`
+
+/**
+ * Whether a slice of `read`'s project on `opened` (the printer the slice is for) is on the printer the project was made
+ * for, as the app's open note says it: the report with `used`, and when it is another printer SlicerX has a profile for,
+ * the line that names the profile that switches to it. Undefined when the project names no printer or the slice names none.
+ */
+export function projectPrinterUse(read: ProjectRead, opened: OpenedProject | undefined, file: string): { report: ProjectPrinterReport; message?: string } | undefined {
+  if (!read.opened || !opened) return undefined
+  const report = projectPrinterReport(read.opened.settings)
+  const offer = projectPrinterOffer(matchProjectPrinter(read.opened.settings), { profileId: opened.printer, nozzle: opened.nozzle })
+  if (!report || !offer) return undefined
+  if (offer.kind === 'same') return { report: { ...report, used: true } }
+  const here = printerName(opened.printer)
+  if (offer.kind === 'unknown') return { report: { ...report, used: false }, message: `${file} is for a ${offer.name}, which has no profile here; sliced for the ${here}.` }
+  return {
+    report: { ...report, used: false },
+    message: `${file} is set up for a ${report.name} with a ${mmText(offer.match.nozzle)} nozzle; sliced for the ${here} ${mmText(opened.nozzle)}. Slice with ${report.profile} to use the project's printer.`,
+  }
 }
 
 /** A project open leaves sleipnir off: the layers are the project's (open-project.ts). The other Easy controls keep the layer's values. */

@@ -71,10 +71,44 @@ export function matchProjectPrinter(settings: Record<string, unknown>): ProjectP
     }
   }
   const key = norm(model ?? '')
-  const p = key ? profiles.find((x) => norm(`${x.vendor} ${x.model}`) === key || norm(x.model) === key) : undefined
+  const p = key ? (profiles.find((x) => norm(`${x.vendor} ${x.model}`) === key || norm(x.model) === key) ?? prusaModel(profiles, key)) : undefined
   if (!p) return { kind: 'unknown', name: label, ...(want ? { nozzle: want } : {}) }
   if (want === undefined || p.nozzles.some((x) => sameMm(x, want))) return hit(p, want ?? p.defaultNozzle)
   return { ...hit(p, p.defaultNozzle), asked: want } as ProjectPrinterMatch
+}
+
+/**
+ * PrusaSlicer's own model codes for a Prusa printer (`printer_model`): MK4IS, MINIIS and XLIS are the MK4, MINI and XL
+ * on their input shaper firmware, the same machines as our profiles; XL5IS is the XL with five toolheads. Only Prusa's
+ * profiles are looked at, so a code like these never matches another maker's printer.
+ */
+const PRUSA_CODES: Record<string, string> = { xl2: '', xl3: '', xl4: '', xl5: 'prusa-xl-5-toolhead' }
+function prusaModel<P extends { id: string; vendor: string; model: string }>(profiles: readonly P[], key: string): P | undefined {
+  const code = key.endsWith('is') ? key.slice(0, -2) : key
+  const prusa = profiles.filter((x) => norm(x.vendor).startsWith('prusa'))
+  if (code in PRUSA_CODES) return prusa.find((x) => x.id === PRUSA_CODES[code])
+  return prusa.find((x) => norm(x.model) === code)
+}
+
+/** What an opened project's printer means for the printer the plate is on (`current`, its profile and nozzle). */
+export type ProjectPrinterOffer =
+  /** The plate is already on the project's printer and nozzle. */
+  | { kind: 'same'; match: Extract<ProjectPrinterMatch, { kind: 'match' }> }
+  /** Another printer we have a profile for: the person may switch to it, and the plate stays where it is until they do. */
+  | { kind: 'offer'; match: Extract<ProjectPrinterMatch, { kind: 'match' }> }
+  /** A printer we have no profile for: nothing to switch to, so the settings stay on the current printer. */
+  | { kind: 'unknown'; name: string; nozzle?: number }
+
+/**
+ * Whether a project opened on `current` (its profile id and nozzle; no profile id for the generic bed) is for another
+ * printer, and whether that printer can be offered. Null when the file names no printer. The app's open note and the
+ * MCP server's project reads both answer with this, so a client hears what a person sees.
+ */
+export function projectPrinterOffer(match: ProjectPrinterMatch | null, current: { profileId?: string | null; nozzle?: number }): ProjectPrinterOffer | null {
+  if (!match) return null
+  if (match.kind === 'unknown') return { kind: 'unknown', name: match.name, ...(match.nozzle !== undefined ? { nozzle: match.nozzle } : {}) }
+  const same = current.profileId === match.profileId && (current.nozzle === undefined || sameMm(current.nozzle, match.nozzle))
+  return { kind: same ? 'same' : 'offer', match }
 }
 
 /** Settings made for one nozzle size: layer heights and line widths. */

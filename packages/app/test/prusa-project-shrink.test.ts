@@ -89,7 +89,8 @@ describe('a PrusaSlicer project with shrinkage set', () => {
     await openModelBytes(host, 'shrunk.3mf', buf(bytes), undefined, { fresh: true })
     const text = get().openNote?.text ?? ''
     expect(text).toContain('Not applied from its settings: shrinkage compensation XY.')
-    expect(text).toMatch(/^Applied \d+ settings from shrunk\.3mf\. /)
+    // Made for a Prusa printer and opened on another, so the note offers that printer and says where the settings went.
+    expect(text).toMatch(/^Made for a Prusa Research \S+, 0\.4 mm nozzle\. Applied \d+ settings on .+?\. /)
     expect(text).not.toMatch(/filament_shrink|_xy/)
     expect((resolveConfig(get().easy, get().overrides) as Record<string, SettingValue>)['filament_shrink']).toEqual([100])
   })
