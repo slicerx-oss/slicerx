@@ -264,7 +264,7 @@ export function importOrcaProfile(json: unknown, resolve: (name: string) => unkn
 
 /** Back to Orca's string-typed JSON, for saving a profile Orca and Bambu Studio can open. */
 /** Keys of ours that OrcaSlicer and Bambu Studio do not read, left out of what is written for them. */
-const NOT_ORCA_KEYS: ReadonlySet<string> = new Set(['filament_travel_slope'])
+const NOT_ORCA_KEYS: ReadonlySet<string> = new Set(['filament_travel_slope', 'filament_abrasive', 'nozzle_high_flow'])
 /** Values of ours that they do not read, by key, and what is written for them instead: a ramp lift as a slope lift. */
 const ORCA_VALUES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   z_hop_types: { 'Ramp Lift': 'Slope Lift' },

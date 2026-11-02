@@ -1,6 +1,6 @@
 # Filament: Filament properties
 
-10 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+11 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `default_filament_colour`
 
@@ -8,6 +8,15 @@
 
 - Type: list of strings, one per extruder
 - Default: [""]
+- Changing it redoes: G-code only
+- mimir class: read (not in the catalog: never written)
+
+### `filament_abrasive`
+
+**Abrasive filament**
+
+- Type: list of booleans, one per extruder
+- Default: [false]
 - Changing it redoes: G-code only
 - mimir class: read (not in the catalog: never written)
 

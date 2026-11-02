@@ -1211,6 +1211,15 @@ fn add_defaults(c: &mut Context<'_>, cfg: &PrintConfig, tools: usize) {
     put("print_preset", Value::Str(String::new()));
     put("filament_preset", per_tool(Value::Str(String::new())));
     put("spiral_mode", Value::Bool(false));
+    // PrusaSlicer's names. `spiral_vase` is the spiral setting under its PrusaSlicer name. The start G-code of Prusa
+    // printers (MK4, MINI, XL) checks the nozzle against the filament's abrasive flag and the nozzle's high flow flag
+    // (M862.1); a PrusaSlicer project or preset carries both, and any other profile leaves them off.
+    put(
+        "spiral_vase",
+        Value::Bool(crate::firmware::truthy(cfg, "spiral_mode")),
+    );
+    put("filament_abrasive", per_tool(Value::Bool(false)));
+    put("nozzle_high_flow", per_tool(Value::Bool(false)));
     // `zhop` is the current tool's lift, one number (PrusaSlicer's placeholder); `z_hop` is the per-filament list.
     put("zhop", Value::Num(cfg.z_hop));
     put("z_hop", per_tool(Value::Num(cfg.z_hop)));
@@ -1467,5 +1476,127 @@ G1 X100 E12 F1000 ; purge\nG1 E5\nG1 E-1\nG1 Z10\nG92 E0\nBED_MESH_CALIBRATE\n";
         assert_eq!(filter_resume_start("G28 Z\nG28 X Y Z", 5.0).unwrap(), "G28 X Y\n");
         // A start that is only a macro call cannot be filtered.
         assert!(filter_resume_start("PRINT_START BED=60 EXTRUDER=215\n", 5.0).is_none());
+    }
+
+    #[cfg(feature = "import")]
+    /// Entry `name` of the zip `bytes`, inflated, found through the central directory.
+    fn zip_entry(bytes: &[u8], name: &str) -> Vec<u8> {
+        let u16_at = |at: usize| usize::from(u16::from_le_bytes([bytes[at], bytes[at + 1]]));
+        let u32_at = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+        let end = (0..bytes.len() - 21)
+            .rev()
+            .find(|&at| u32_at(at) == 0x0605_4b50)
+            .unwrap();
+        let mut at = u32_at(end + 16);
+        for _ in 0..u16_at(end + 10) {
+            let (method, size, name_len) = (u16_at(at + 10), u32_at(at + 20), u16_at(at + 28));
+            let local = u32_at(at + 42);
+            if &bytes[at + 46..at + 46 + name_len] == name.as_bytes() {
+                let data = local + 30 + u16_at(local + 26) + u16_at(local + 28);
+                let raw = &bytes[data..data + size];
+                return if method == 0 {
+                    raw.to_vec()
+                } else {
+                    miniz_oxide::inflate::decompress_to_vec(raw).unwrap()
+                };
+            }
+            at += 46 + name_len + u16_at(at + 30) + u16_at(at + 32);
+        }
+        panic!("{name} is not in the zip");
+    }
+
+    #[cfg(feature = "import")]
+    /// The value of `key` in a `PrusaSlicer` config (`; key = value` lines), with its escapes undone.
+    fn prusa_value(config: &str, key: &str) -> String {
+        let line = config
+            .lines()
+            .find_map(|l| l.strip_prefix(&format!("; {key} = ")))
+            .unwrap();
+        let mut out = String::new();
+        let mut chars = line.chars();
+        while let Some(c) = chars.next() {
+            match (c, c == '\\') {
+                (_, true) => match chars.next() {
+                    Some('n') => out.push('\n'),
+                    Some('r') => out.push('\r'),
+                    Some(other) => out.push(other),
+                    None => {}
+                },
+                (c, false) => out.push(c),
+            }
+        }
+        out
+    }
+
+    #[cfg(feature = "import")]
+    /// A `PrusaSlicer` MK4 project's own start and layer change G-code, rendered on the project's print and filament
+    /// values (as the app opens it) with `printer` over them: the start's M862.1 line and the layer change's M74.
+    fn mk4_project_gcode(config: &str, printer: &serde_json::Value) -> Result<(String, String), String> {
+        let (mut v, _) = crate::prusa::project_settings(config);
+        v.insert(
+            "machine_start_gcode".into(),
+            prusa_value(config, "start_gcode").into(),
+        );
+        v.insert(
+            "layer_change_gcode".into(),
+            prusa_value(config, "layer_gcode").into(),
+        );
+        v.extend(printer.as_object().unwrap().clone());
+        let cfg = PrintConfig::from_value(&serde_json::Value::Object(v)).unwrap();
+        let out = SliceOutput {
+            tool_count: 1,
+            ..SliceOutput::default()
+        };
+        let mut ctx = super::context(&cfg, &out);
+        let start = super::render(&cfg, &ctx, "machine_start_gcode")?.unwrap_or_default();
+        ctx.set_num("layer_z", 0.4);
+        let layer = super::render(&cfg, &ctx, "layer_change_gcode")?.unwrap_or_default();
+        let line = |text: &str, code: &str| {
+            text.lines()
+                .find(|l| l.starts_with(code))
+                .unwrap_or_default()
+                .to_owned()
+        };
+        Ok((line(&start, "M862.1"), line(&layer, "M74")))
+    }
+
+    #[cfg(feature = "import")]
+    #[test]
+    fn a_prusaslicer_projects_start_and_layer_change_gcode_render_with_its_values() {
+        let project = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("cli/tests/fixtures/prusa-lift/mk4--isl--stock.3mf");
+        let config = String::from_utf8(zip_entry(
+            &std::fs::read(project).unwrap(),
+            "Metadata/Slic3r_PE.config",
+        ))
+        .unwrap();
+        assert!(
+            config.contains("; filament_abrasive = 0\n"),
+            "the project's own value"
+        );
+        assert!(
+            config.contains("; nozzle_high_flow = 0\n"),
+            "the project's own value"
+        );
+        // The project's values: a filament that is not abrasive, a nozzle that is not high flow, no spiral vase.
+        assert_eq!(
+            mk4_project_gcode(&config, &serde_json::json!({})).unwrap(),
+            ("M862.1 P0.4 A0 F0 ; nozzle check".to_owned(), "M74 W0".to_owned())
+        );
+        // An abrasive filament comes from the project's filament; the high flow nozzle is the printer's.
+        let abrasive = config.replace("; filament_abrasive = 0\n", "; filament_abrasive = 1\n");
+        assert_eq!(
+            mk4_project_gcode(&abrasive, &serde_json::json!({"nozzle_high_flow": [true]}))
+                .unwrap()
+                .0,
+            "M862.1 P0.4 A1 F1 ; nozzle check"
+        );
+        // Spiral vase, under its PrusaSlicer name, skips the M74 weight line.
+        assert_eq!(
+            mk4_project_gcode(&config, &serde_json::json!({"spiral_mode": true}))
+                .unwrap()
+                .1,
+            ""
+        );
     }
 }

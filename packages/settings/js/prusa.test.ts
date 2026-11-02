@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
 import { describe, expect, it } from 'vitest'
-import { PRUSA_KEY_MAP, importPrusaIni, mapPrusaValues, parseIni, prusaOverrides, prusaProjectSettings } from './prusa'
+import { PRUSA_KEY_MAP, importPrusaIni, mapPrusaValues, parseIni, prusaOverrides, prusaProjectConfig, prusaProjectSettings } from './prusa'
 import { settingDef } from './schema'
 
 // Small presets written for these tests; the keys and value forms follow PrusaSlicer's own file format.
@@ -276,5 +276,25 @@ describe('PrusaSlicer shrinkage compensation and unset first layer infill speed'
   it('keeps object and volume settings the same way', () => {
     expect(prusaOverrides({ filament_shrinkage_compensation_xy: '0%', first_layer_infill_speed: '0', layer_height: '0.1' })).toEqual({ filament_shrink: '100%', layer_height: '0.1' })
     expect(prusaOverrides({ filament_shrinkage_compensation_z: '2%' })).toEqual({})
+  })
+})
+
+// The start G-code of Prusa printers checks the nozzle against these two flags (M862.1), so they carry over as settings.
+describe('PrusaSlicer abrasive filament and high flow nozzle', () => {
+  it('imports the filament flag with a filament preset and the nozzle flag with a printer preset', () => {
+    const [f] = importPrusaIni('filament_abrasive = 1\nfilament_settings_id = "CF PETG"\n', 'cf.ini')
+    expect(f!.section).toBe('filament')
+    expect((f!.config as Record<string, unknown>)['filament_abrasive']).toEqual([true])
+    expect(f!.unmappedKeys).toEqual([])
+    const [p] = importPrusaIni('nozzle_high_flow = 1\nnozzle_diameter = 0.6\nprinter_settings_id = "HF printer"\n', 'hf.ini')
+    expect(p!.section).toBe('printer')
+    expect((p!.config as Record<string, unknown>)['nozzle_high_flow']).toEqual([true])
+    expect(p!.unmappedKeys).toEqual([])
+  })
+  it("takes a project's filament flag and leaves the nozzle flag to the printer", () => {
+    const r = prusaProjectConfig('; filament_abrasive = 1\n; nozzle_high_flow = 1\n; spiral_vase = 0\n')
+    expect(r.config).toEqual({ filament_abrasive: '1', spiral_mode: '0' })
+    expect(r.left).toEqual(['nozzle_high_flow'])
+    expect(r.unmapped).toEqual([])
   })
 })

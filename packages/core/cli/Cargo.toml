@@ -33,6 +33,8 @@ sha2 = { version = "=0.11.0", default-features = false, optional = true }
 
 
 [dev-dependencies]
+# The tests read PrusaSlicer projects' settings out of their 3MF.
+miniz_oxide = "=0.9.1"
 sha2 = { version = "=0.11.0", default-features = false }
 
 [build-dependencies]
