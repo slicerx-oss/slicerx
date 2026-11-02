@@ -324,7 +324,7 @@
 .sx-pilot .choice-state .sx-ic{width:14px;height:14px}
 .sx-pilot .choice-q{color:var(--t-fg);font:600 16px/1.45 var(--f-body)}
 .sx-pilot .choice-a{display:flex;flex-wrap:wrap;gap:8px}
-.sx-pilot .choice-chip{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 26px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);font:500 14px var(--f-body);cursor:pointer}
+.sx-pilot .choice-chip{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 26px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--fg);font:500 14px var(--f-body);cursor:pointer;-webkit-tap-highlight-color:transparent}
 .sx-pilot .choice-chip:hover:not(:disabled){border-color:var(--purple);background:color-mix(in srgb,var(--purple) 8%,transparent)}
 .sx-pilot .choice-chip:disabled{cursor:default}
 .sx-pilot .choice-chip[data-on]{border-color:var(--green);color:var(--fg);background:color-mix(in srgb,var(--green) 10%,transparent)}
@@ -336,7 +336,7 @@
    answer (disabled), so a pick or a cancel changes no size; the person's words, when they wrote instead of picking,
    take its start and wrap to two lines at most */
 .sx-pilot .choice-foot{display:flex;align-items:flex-start;justify-content:flex-end;gap:8px;min-height:28px}
-.sx-pilot .choice-foot .sx-btn{flex:none}
+.sx-pilot .choice-foot .sx-btn{flex:none;-webkit-tap-highlight-color:transparent}
 .sx-pilot .choice-said{min-width:0;font-size:13px;line-height:18px;color:var(--t-mute);overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .sx-pilot .choice-foot .choice-said{flex:1;padding-top:5px}
 

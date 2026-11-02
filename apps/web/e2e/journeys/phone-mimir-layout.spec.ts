@@ -4,7 +4,8 @@
 // no sideways scroll, the header hides the design's name beside the Sample replies badge, which shows whole, the sizes panel's
 // fields sit on the 96 px control column with long labels wrapping instead of cut off, nothing is cut off or runs past
 // the edge at 430, Escape puts the sizes panel away and hands focus back to Edit sizes, and the folded drawing's header
-// and the panel's hint pass contrast at 1x in both themes. On the desktop, one line of the composer is 44 px inside its
+// and the panel's hint pass contrast at 1x in both themes. A question card's chips and Cancel draw no default tap
+// highlight. On the desktop, one line of the composer is 44 px inside its
 // border with its gaps on the spacing scale.
 import type { Locator, Page } from '@playwright/test'
 import { journey, expect } from '../journey'
@@ -199,6 +200,26 @@ journey.describe('the mimir tab on a phone, against the UI spec', () => {
     expect(await settled()).toEqual(before)
     await expect(page.getByTestId('mimir-transcript')).toContainText('Okay, I will leave it for now.', { timeout: 30_000 })
     await expect(composer.getByRole('button', { name: 'Send' })).toBeVisible()
+  })
+
+  journey('at 390 px a question card\'s chips and Cancel draw no default tap highlight, before and after a tap', async ({ page }) => {
+    await page.setViewportSize(PHONES[1])
+    await phoneMimir(page)
+    await askTab(page, 'Make a backplate for my thermostat')
+    const choice = page.getByTestId('mimir-choice')
+    const cancel = choice.getByTestId('mimir-choice-cancel')
+    await expect(cancel).toBeEnabled({ timeout: 30_000 })
+    // the browser paints a square box of this color over a pressed button unless the app sets it clear
+    const highlights = () => choice.locator('.choice-chip, [data-testid="mimir-choice-cancel"]').evaluateAll((els) => els.map((e) => `${e.textContent?.trim() || e.className}: ${getComputedStyle(e).getPropertyValue('-webkit-tap-highlight-color')}`))
+    const clear = (rows: string[]) => rows.map((r) => r.replace(/^.*: /, ''))
+    const rows = await highlights()
+    expect(rows.length, 'the chips and Cancel').toBeGreaterThanOrEqual(2)
+    expect(new Set(clear(rows)), rows.join('; ')).toEqual(new Set(['rgba(0, 0, 0, 0)']))
+    // the same once Cancel is pressed and the card is answered, so the disabled buttons stay clear too
+    await cancel.tap()
+    await expect(choice.getByTestId('mimir-choice-state')).toHaveText('Canceled')
+    const after = await highlights()
+    expect(new Set(clear(after)), after.join('; ')).toEqual(new Set(['rgba(0, 0, 0, 0)']))
   })
 
   journey('the folded drawing header and the panel hint pass contrast at 1x in light and dark', async ({ page }) => {
