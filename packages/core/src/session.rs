@@ -10332,6 +10332,50 @@ impl SliceSession {
                             }
                         }
                     }
+                    if let (1, 0, true, Some(edge_mm)) = (which, layer, bambu_stretch, stretch) {
+                        // On Bambu Lab printers a band of the first layer's bottom surface too narrow for its spread
+                        // lines (the internal solid's narrow band rule above: the lines' ends, half a spacing in, leave
+                        // nothing or a strip under 0.3 spacings) whose lines would run across it prints one path along
+                        // its middle instead of lines shorter than their own width. The band is moved out by the edge
+                        // the spread lines read, so the path is as wide as their room, and at least the surface's
+                        // spacing. A band the lines run along keeps its line along the middle from the spread grid.
+                        let a = if d == Dir::D135 { 135f64 } else { 45.0 }.to_radians() + turn;
+                        let (ly, lx) = a.m_sin_cos();
+                        let width = mm(surface_mm);
+                        let mut across: Shapes = Vec::new();
+                        for piece in thin_bands(&region, surface_mm) {
+                            let one: Shapes = vec![piece.clone()];
+                            let lines = crate::narrow::concentric_lines(
+                                &perimeters::offset(&one, mm(edge_mm)),
+                                cfg,
+                                surface_mm,
+                                layer_height,
+                            );
+                            let (mut on, mut off) = (0.0, 0.0);
+                            for w in lines.iter().flat_map(|l| l.points.windows(2)) {
+                                if let [p, q] = w {
+                                    let (dx, dy) = (f64::from(q.x - p.x), f64::from(q.y - p.y));
+                                    on += (dx * lx + dy * ly).abs();
+                                    off += (dy * lx - dx * ly).abs();
+                                }
+                            }
+                            if off > on {
+                                work.bottom_thick.extend(lines.into_iter().map(|mut l| {
+                                    l.widths.iter_mut().for_each(|w| *w = (*w).max(width));
+                                    l
+                                }));
+                                across.push(piece);
+                            }
+                        }
+                        if !across.is_empty() {
+                            let k = mm(0.15 * surface_mm);
+                            let rest = perimeters::difference(&region, &perimeters::offset(&across, k));
+                            region = perimeters::offset(&perimeters::offset(&rest, -k), k);
+                            if region.is_empty() {
+                                spans.clear();
+                            }
+                        }
+                    }
                     if region.is_empty() {
                         continue;
                     }
@@ -13499,6 +13543,7 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
         flush_first,
         bottom,
         bottom_widen,
+        bottom_thick,
         shell,
         shell_widen,
         shell_thick,
@@ -13533,11 +13578,12 @@ fn split_by_feature(work: ToolWork, t: FeatureTools) -> Vec<ToolWork> {
             w.flush_first |= flush_first;
         }
     }
-    if !(bottom.is_empty() && gap_bottom.is_empty()) {
+    if !(bottom.is_empty() && bottom_thick.is_empty() && gap_bottom.is_empty()) {
         let k = at(&mut out, t.bottom);
         if let Some(w) = out.get_mut(k) {
             w.bottom.extend(bottom);
             w.bottom_widen.extend(bottom_widen);
+            w.bottom_thick.extend(bottom_thick);
             w.region_bottom.extend(region_bottom);
             w.gap_bottom.extend(gap_bottom);
         }

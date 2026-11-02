@@ -79,6 +79,8 @@ pub(crate) struct ToolWork {
     /// layer's bottom spread its lines evenly across itself (they widen with their spacing); empty when every line
     /// prints at the feature's width.
     pub(crate) bottom_widen: Vec<f32>,
+    /// Narrow bands of the first layer's bottom surface, each printed as one bead along its middle.
+    pub(crate) bottom_thick: Vec<crate::arachne::WallLine>,
     /// Solid infill of the top shell under the visible top surface.
     pub(crate) shell: Vec<[Point; 2]>,
     /// How much wider than the internal solid infill's own width (mm) each of `shell` prints, when a piece fit its
@@ -2507,6 +2509,9 @@ pub(crate) fn plan_layer_paths(
             &w.bottom,
             &w.bottom_widen,
         );
+        for l in &w.bottom_thick {
+            b.push_thick(w.tool, bottom_feature, speeds.solid, &l.points, &l.widths);
+        }
         b.push_gaps(w.tool, fill_gap_speed(cfg, layer, speeds.inner), &w.gap_bottom);
         b.width_mm = base_width;
         groups.push(Group {
