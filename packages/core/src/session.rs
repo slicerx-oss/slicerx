@@ -10336,39 +10336,52 @@ impl SliceSession {
                         }
                     }
                     if let (1, 0, true, Some(edge_mm)) = (which, layer, bambu_stretch, stretch) {
-                        // On Bambu Lab printers a band of the first layer's bottom surface too narrow for its spread
-                        // lines (the internal solid's narrow band rule above: the lines' ends, half a spacing in, leave
-                        // nothing or a strip under 0.3 spacings) whose lines would run across it prints one path along
-                        // its middle instead of lines shorter than their own width. The band is moved out by the edge
-                        // the spread lines read, so the path is as wide as their room, and at least the surface's
-                        // spacing. A band the lines run along keeps its line along the middle from the spread grid.
-                        let a = if d == Dir::D135 { 135f64 } else { 45.0 }.to_radians() + turn;
-                        let (ly, lx) = a.m_sin_cos();
+                        // On Bambu Lab printers a band of the first layer's bottom surface (the internal solid's narrow
+                        // band rule above: the lines' ends, half a spacing in, leave nothing or a strip under 0.3
+                        // spacings) whose spread lines would all be shorter than 0.05 spacing prints one path along its
+                        // middle instead. The band is moved out by the edge the spread lines read, so the path is as wide
+                        // as their room, and at least the surface's spacing. A band with longer lines, across it or
+                        // along it, keeps them.
+                        let short = paths::t_units(0.05 * surface_mm);
                         let width = mm(surface_mm);
                         let mut across: Shapes = Vec::new();
                         for piece in thin_bands(&region, surface_mm) {
                             let one: Shapes = vec![piece.clone()];
+                            let turned = if turn == 0.0 {
+                                one.clone()
+                            } else {
+                                crate::patterns::rotate_shapes(&one, -turn)
+                            };
+                            let grids = stretch_grids(&turned, d, edge_mm, surface_mm, true, false);
+                            let mut lines_seen = false;
+                            let all_short = grids.iter().all(|g| {
+                                let family = crate::infill::Family {
+                                    dir: d,
+                                    spacing: g.spacing,
+                                };
+                                let inner = perimeters::offset(&g.region, -g.inset);
+                                scan_area(family, &inner, &mut events)
+                                    .iter()
+                                    .filter(|iv| iv.t1 > iv.t0 && g.skip.is_none_or(|k| iv.k != k))
+                                    .all(|iv| {
+                                        lines_seen = true;
+                                        iv.t1 - iv.t0 < short
+                                    })
+                            });
+                            if !(lines_seen && all_short) {
+                                continue;
+                            }
                             let lines = crate::narrow::concentric_lines(
                                 &perimeters::offset(&one, mm(edge_mm)),
                                 cfg,
                                 surface_mm,
                                 layer_height,
                             );
-                            let (mut on, mut off) = (0.0, 0.0);
-                            for w in lines.iter().flat_map(|l| l.points.windows(2)) {
-                                if let [p, q] = w {
-                                    let (dx, dy) = (f64::from(q.x - p.x), f64::from(q.y - p.y));
-                                    on += (dx * lx + dy * ly).abs();
-                                    off += (dy * lx - dx * ly).abs();
-                                }
-                            }
-                            if off > on {
-                                work.bottom_thick.extend(lines.into_iter().map(|mut l| {
-                                    l.widths.iter_mut().for_each(|w| *w = (*w).max(width));
-                                    l
-                                }));
-                                across.push(piece);
-                            }
+                            work.bottom_thick.extend(lines.into_iter().map(|mut l| {
+                                l.widths.iter_mut().for_each(|w| *w = (*w).max(width));
+                                l
+                            }));
+                            across.push(piece);
                         }
                         if !across.is_empty() {
                             let k = mm(0.15 * surface_mm);
