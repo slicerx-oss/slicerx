@@ -93,6 +93,10 @@ pub(crate) struct Env<'a> {
     pub(crate) nofilter: bool,
     /// Added to the bridging angle for patterns whose lines are not the anchors' direction (radians).
     pub(crate) angle_bias: f64,
+    /// How much further than a strand spacing apart candidates are still bridged as one ([`joined`]), mm: half the
+    /// narrowing of the slit `only_one_wall_top` leaves where the shell rule reads it, 0 elsewhere. The line under the
+    /// slit sits that much further from the band beside it than the walls alone would leave it.
+    pub(crate) slit_join: f64,
     /// `internal_bridge_angle` in degrees when set, and whether it is relative to the chosen one.
     pub(crate) custom_angle: Option<(f64, bool)>,
 }
@@ -251,8 +255,9 @@ fn candidates(env: &Env<'_>, l: i64) -> Vec<Shapes> {
     out
 }
 
-/// The candidates, with those that come within a strand spacing of each other made one: a thin strip of solid
-/// beside a wider piece (the line under a slit) is bridged with it, its strands run across both from the far edge.
+/// The candidates, with those that come within `sp` of each other made one (a strand spacing, and on layers under a
+/// slit [`Env::slit_join`] more): a thin strip of solid beside a wider piece (the line under a slit) is bridged with
+/// it, its strands run across both from the far edge.
 fn joined(mut cands: Vec<Shapes>, sp: f64) -> Vec<Shapes> {
     if cands.len() < 2 {
         return cands;
@@ -705,7 +710,7 @@ fn compute(env: &Env<'_>, l: i64, memo: &Memo) -> Vec<Bridged> {
         return Vec::new();
     };
     let sp = env.bridge_spacing;
-    let cands = sorted_candidates(joined((*cands_of(env, l, memo)).clone(), sp));
+    let cands = sorted_candidates(joined((*cands_of(env, l, memo)).clone(), sp + env.slit_join));
     if cands.is_empty() {
         return Vec::new();
     }
