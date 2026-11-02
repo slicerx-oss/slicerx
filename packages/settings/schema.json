@@ -3004,6 +3004,78 @@
    "intent": "quality"
   },
   {
+   "key": "initial_layer_outer_wall_line_width",
+   "section": "process",
+   "type": "float",
+   "label": "Outer wall line width on the first layer",
+   "unit": "mm",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
+   "group": "quality",
+   "invalidates": "perimeters"
+  },
+  {
+   "key": "initial_layer_inner_wall_line_width",
+   "section": "process",
+   "type": "float",
+   "label": "Inner wall line width on the first layer",
+   "unit": "mm",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
+   "group": "quality",
+   "invalidates": "perimeters"
+  },
+  {
+   "key": "initial_layer_sparse_infill_line_width",
+   "section": "process",
+   "type": "float",
+   "label": "Sparse infill line width on the first layer",
+   "unit": "mm",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
+   "group": "quality",
+   "invalidates": "perimeters"
+  },
+  {
+   "key": "initial_layer_internal_solid_infill_line_width",
+   "section": "process",
+   "type": "float",
+   "label": "Internal solid infill line width on the first layer",
+   "unit": "mm",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
+   "group": "quality",
+   "invalidates": "perimeters"
+  },
+  {
+   "key": "initial_layer_top_surface_line_width",
+   "section": "process",
+   "type": "float",
+   "label": "Top surface line width on the first layer",
+   "unit": "mm",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
+   "group": "quality",
+   "invalidates": "perimeters"
+  },
+  {
+   "key": "initial_layer_support_line_width",
+   "section": "process",
+   "type": "float",
+   "label": "Support line width on the first layer",
+   "unit": "mm",
+   "min": 0,
+   "max": 2,
+   "mode": "hidden",
+   "group": "quality",
+   "invalidates": "perimeters"
+  },
+  {
    "key": "initial_layer_min_bead_width",
    "section": "process",
    "type": "percent",

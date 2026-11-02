@@ -1,6 +1,6 @@
 # Settings reference
 
-Every setting in the SlicerX schema: 760 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
+Every setting in the SlicerX schema: 766 keys, named like OrcaSlicer's settings (commit `7d42ad17a45c1c44d07f382f14244223565e9cb8`) so profiles interchange. Each entry gives the label, type, unit, default, range, allowed values, the settings it depends on, the slice stage it redoes, its Easy mode mapping and its mimir class. This reference is generated from `schema.json` by `scripts/gen-reference.mjs`; edit the schema inputs, not these files. Labels are our own wording.
 
 How to read the fields is in the [guide](../guide.md).
 
@@ -15,7 +15,7 @@ Print settings: layers, walls, infill, speeds, supports, adhesion.
 - [Multi material](process-multimaterial.md): 43 settings
 - [Overhangs and bridges](process-overhangs.md): 29 settings
 - [Profile metadata](process-profile.md): 8 settings
-- [Quality and geometry](process-quality.md): 90 settings
+- [Quality and geometry](process-quality.md): 96 settings
 - [Retraction](process-retraction.md): 2 settings
 - [Special modes](process-special.md): 24 settings
 - [Speed](process-speed.md): 23 settings
@@ -351,11 +351,17 @@ Alphabetical, each linking to its group file.
 - `initial_layer_fan_speed`: Initial layer fan speed, [filament/cooling](filament-cooling.md#initial_layer_fan_speed)
 - `initial_layer_flow_ratio`: Initial layer flow ratio, [process/advanced](process-advanced.md#initial_layer_flow_ratio)
 - `initial_layer_infill_speed`: Infill speed on the first layer, [process/speed](process-speed.md#initial_layer_infill_speed)
+- `initial_layer_inner_wall_line_width`: Inner wall line width on the first layer, [process/quality](process-quality.md#initial_layer_inner_wall_line_width)
+- `initial_layer_internal_solid_infill_line_width`: Internal solid infill line width on the first layer, [process/quality](process-quality.md#initial_layer_internal_solid_infill_line_width)
 - `initial_layer_jerk`: Initial layer jerk, [process/motion](process-motion.md#initial_layer_jerk)
 - `initial_layer_line_width`: Line width on the first layer, [process/quality](process-quality.md#initial_layer_line_width)
 - `initial_layer_min_bead_width`: Initial layer min bead width, [process/quality](process-quality.md#initial_layer_min_bead_width)
+- `initial_layer_outer_wall_line_width`: Outer wall line width on the first layer, [process/quality](process-quality.md#initial_layer_outer_wall_line_width)
 - `initial_layer_print_height`: First layer height, [process/quality](process-quality.md#initial_layer_print_height)
+- `initial_layer_sparse_infill_line_width`: Sparse infill line width on the first layer, [process/quality](process-quality.md#initial_layer_sparse_infill_line_width)
 - `initial_layer_speed`: First layer speed, [process/speed](process-speed.md#initial_layer_speed)
+- `initial_layer_support_line_width`: Support line width on the first layer, [process/quality](process-quality.md#initial_layer_support_line_width)
+- `initial_layer_top_surface_line_width`: Top surface line width on the first layer, [process/quality](process-quality.md#initial_layer_top_surface_line_width)
 - `initial_layer_travel_acceleration`: Initial layer travel acceleration, [process/motion](process-motion.md#initial_layer_travel_acceleration)
 - `initial_layer_travel_jerk`: Initial layer travel jerk, [process/motion](process-motion.md#initial_layer_travel_jerk)
 - `initial_layer_travel_speed`: Initial layer travel speed, [process/speed](process-speed.md#initial_layer_travel_speed)

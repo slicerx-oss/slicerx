@@ -33,7 +33,18 @@ describe('schema', () => {
 
   // The slice works these out when nothing sets them, so a default config leaves them out. An unset first layer flow
   // ratio prints at 1, and a default would add the key to the settings block of every file.
-  const NO_DEFAULT = ['skirt_brim_edge', 'initial_layer_flow_ratio', 'support_base_edge_inset', 'chamber_cooling_mode']
+  const NO_DEFAULT = [
+    'skirt_brim_edge',
+    'initial_layer_flow_ratio',
+    'initial_layer_outer_wall_line_width',
+    'initial_layer_inner_wall_line_width',
+    'initial_layer_sparse_infill_line_width',
+    'initial_layer_internal_solid_infill_line_width',
+    'initial_layer_top_surface_line_width',
+    'initial_layer_support_line_width',
+    'support_base_edge_inset',
+    'chamber_cooling_mode',
+  ]
 
   it('gives every setting a default, except the ones the slice works out', () => {
     expect(SETTINGS.filter((d) => d.default === undefined).map((d) => d.key)).toEqual(NO_DEFAULT)

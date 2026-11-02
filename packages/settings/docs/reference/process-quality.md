@@ -1,6 +1,6 @@
 # Process: Quality and geometry
 
-90 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
+96 settings. Keys are OrcaSlicer's own names. See the [index](index.md) for the other groups and the [guide](../guide.md) for how to read and apply them.
 
 ### `detect_thin_wall`
 
@@ -150,6 +150,30 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Changing it redoes: contours
 - mimir class: read (not in the catalog: never written)
 
+### `initial_layer_inner_wall_line_width`
+
+**Inner wall line width on the first layer**
+
+- Type: number
+- Unit: mm
+- Default: none (the slice works it out when nothing sets it)
+- Recommended range: 0 to 2
+- Tier: Hidden (profile key)
+- Changing it redoes: perimeters
+- mimir class: read (not in the catalog: never written)
+
+### `initial_layer_internal_solid_infill_line_width`
+
+**Internal solid infill line width on the first layer**
+
+- Type: number
+- Unit: mm
+- Default: none (the slice works it out when nothing sets it)
+- Recommended range: 0 to 2
+- Tier: Hidden (profile key)
+- Changing it redoes: perimeters
+- mimir class: read (not in the catalog: never written)
+
 ### `initial_layer_line_width`
 
 **Line width on the first layer**
@@ -176,6 +200,18 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Changing it redoes: perimeters
 - mimir class: read (not in the catalog: never written)
 
+### `initial_layer_outer_wall_line_width`
+
+**Outer wall line width on the first layer**
+
+- Type: number
+- Unit: mm
+- Default: none (the slice works it out when nothing sets it)
+- Recommended range: 0 to 2
+- Tier: Hidden (profile key)
+- Changing it redoes: perimeters
+- mimir class: read (not in the catalog: never written)
+
 ### `initial_layer_print_height`
 
 **First layer height**
@@ -190,6 +226,42 @@ Prints a second bridge layer over bridges, so the solid layers above sag less an
 - Easy mode: Set by the Detail control.
 - mimir class: edit (may change in a plate override)
 - Effect: higher: A thicker first layer hides bed unevenness but is harder to squish flat. lower: A thinner first layer needs a level bed
+
+### `initial_layer_sparse_infill_line_width`
+
+**Sparse infill line width on the first layer**
+
+- Type: number
+- Unit: mm
+- Default: none (the slice works it out when nothing sets it)
+- Recommended range: 0 to 2
+- Tier: Hidden (profile key)
+- Changing it redoes: perimeters
+- mimir class: read (not in the catalog: never written)
+
+### `initial_layer_support_line_width`
+
+**Support line width on the first layer**
+
+- Type: number
+- Unit: mm
+- Default: none (the slice works it out when nothing sets it)
+- Recommended range: 0 to 2
+- Tier: Hidden (profile key)
+- Changing it redoes: perimeters
+- mimir class: read (not in the catalog: never written)
+
+### `initial_layer_top_surface_line_width`
+
+**Top surface line width on the first layer**
+
+- Type: number
+- Unit: mm
+- Default: none (the slice works it out when nothing sets it)
+- Recommended range: 0 to 2
+- Tier: Hidden (profile key)
+- Changing it redoes: perimeters
+- mimir class: read (not in the catalog: never written)
 
 ### `inner_wall_line_width`
 

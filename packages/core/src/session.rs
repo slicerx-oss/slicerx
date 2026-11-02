@@ -8556,6 +8556,7 @@ impl SliceSession {
         let layer_height = self.plan.thickness(layer);
         let top_or_bottom = layer == 0 || layer + 1 == n;
         let base_cfg = cfg;
+        let mods = first_layer_mods(cfg, mods);
         let region_config = |j: usize| match here.region_cfg.get(j).copied().unwrap_or(0) {
             0 => base_cfg,
             k => mods.get(usize::from(k) - 1).unwrap_or(base_cfg),
@@ -9455,6 +9456,7 @@ impl SliceSession {
         let trim = paths::t_units(cfg.line_width / 2.0);
         let min_len = paths::t_units(cfg.line_width / 2.0);
         let base_cfg = cfg;
+        let mods = first_layer_mods(cfg, mods);
         let region_config = |j: usize| match here.region_cfg.get(j).copied().unwrap_or(0) {
             0 => base_cfg,
             k => mods.get(usize::from(k) - 1).unwrap_or(base_cfg),
@@ -9483,7 +9485,7 @@ impl SliceSession {
         // through the session's memo.
         let own_facts = bridges.as_ref().and_then(|b| b.own.as_deref());
         let several = self.several(here);
-        let shared_preps = several.then(|| self.shared_preps(layer, cfg, mods, get, micros, tags));
+        let shared_preps = several.then(|| self.shared_preps(layer, cfg, &mods, get, micros, tags));
         let mut own_preps = if several {
             Vec::new()
         } else {
@@ -9491,7 +9493,7 @@ impl SliceSession {
                 layer,
                 cfg,
                 &base_shell,
-                mods,
+                &mods,
                 get,
                 below,
                 upper_slice.as_ref(),
@@ -9587,12 +9589,13 @@ impl SliceSession {
                 islands,
                 width: (region_k != 0).then(|| mm_f32(cfg.line_width)),
                 // On the print's first layer the region keeps its line width, and with no first layer width of its
-                // own its walls print at their own widths, as the region walls itself then ([`wall_key`]).
+                // own its walls print at their own widths, as the region walls itself then ([`wall_key`]). With first
+                // layer widths per feature its settings are its first layer's already, each feature at its own.
                 feature_widths: (region_k != 0)
                     .then(|| {
                         let lw = cfg.line_width;
                         match (
-                            layer == 0 && self.raft.is_none(),
+                            layer == 0 && self.raft.is_none() && !base_cfg.on_first_layer,
                             base_cfg.feature_widths.initial_layer,
                         ) {
                             (false, _) => Some([
@@ -14475,6 +14478,16 @@ fn shared_first_layer(plate: &Plate, config: &PrintConfig) -> Option<Plate> {
         }
     }
     Some(out)
+}
+
+/// The modifier and part settings a layer printed with `cfg` reads: each one's own first layer settings when `cfg` is a
+/// first layer's made from first layer widths per feature ([`PrintConfig::for_first_layer`]), else `mods` as they are.
+fn first_layer_mods<'m>(cfg: &PrintConfig, mods: &'m [PrintConfig]) -> std::borrow::Cow<'m, [PrintConfig]> {
+    if cfg.on_first_layer {
+        std::borrow::Cow::Owned(mods.iter().map(PrintConfig::for_first_layer).collect())
+    } else {
+        std::borrow::Cow::Borrowed(mods)
+    }
 }
 
 /// `base` with an object's own settings over it. A value the engine cannot use leaves that setting as `base` has it, as

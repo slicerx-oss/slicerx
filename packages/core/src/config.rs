@@ -471,6 +471,12 @@ pub struct PrintConfig {
     /// Widths that differ from `line_width` per feature (walls, infill, top surface and the first layer);
     /// `None` keeps the general line width. See [`PrintConfig::outer_wall_width`] and the like.
     pub feature_widths: FeatureWidths,
+    /// Each feature's own line width on the first layer, mm (`initial_layer_outer_wall_line_width` and the like). With
+    /// any of them set the first layer prints these widths at its own height ([`PrintConfig::for_first_layer`]); a
+    /// feature without one takes the first layer's line width. `initial_layer` is not used here.
+    pub first_layer_widths: FeatureWidths,
+    /// Set on the settings [`PrintConfig::for_first_layer`] made from first layer widths per feature.
+    pub(crate) on_first_layer: bool,
     /// Percent of the line width.
     pub infill_wall_overlap: f64,
     pub brim_width: f64,
@@ -649,6 +655,8 @@ impl PrintConfig {
             sparse_infill_anchor_max: 20.0,
             line_width: 0.42,
             feature_widths: FeatureWidths::default(),
+            first_layer_widths: FeatureWidths::default(),
+            on_first_layer: false,
             infill_wall_overlap: 15.0,
             brim_width: 5.0,
             skirt_loops: 0,
@@ -1344,6 +1352,43 @@ impl PrintConfig {
                 *slot = Some(width_auto(x, c.nozzle_diameter, auto).ok_or_else(|| bad(key))?);
             }
         }
+        // First layer widths per feature: 0 is the feature's automatic width, as for its own width above.
+        for (key, slot, auto) in [
+            (
+                "initial_layer_outer_wall_line_width",
+                &mut c.first_layer_widths.outer_wall,
+                AUTO_WIDTH_RATIO,
+            ),
+            (
+                "initial_layer_inner_wall_line_width",
+                &mut c.first_layer_widths.inner_wall,
+                AUTO_WIDTH_RATIO,
+            ),
+            (
+                "initial_layer_sparse_infill_line_width",
+                &mut c.first_layer_widths.sparse_infill,
+                AUTO_WIDTH_RATIO,
+            ),
+            (
+                "initial_layer_internal_solid_infill_line_width",
+                &mut c.first_layer_widths.internal_solid_infill,
+                AUTO_WIDTH_RATIO,
+            ),
+            (
+                "initial_layer_top_surface_line_width",
+                &mut c.first_layer_widths.top_surface,
+                AUTO_NOZZLE_WIDTH_RATIO,
+            ),
+            (
+                "initial_layer_support_line_width",
+                &mut c.first_layer_widths.support,
+                AUTO_NOZZLE_WIDTH_RATIO,
+            ),
+        ] {
+            if let Some(x) = get(key) {
+                *slot = Some(width_auto(x, c.nozzle_diameter, auto).ok_or_else(|| bad(key))?);
+            }
+        }
         // Orca (`PrintConfigDef::normalize_fdm`): spiral vase mode is one wall, no top shell, no infill and
         // no retraction at the layer change.
         if crate::firmware::truthy(c, "spiral_mode") {
@@ -1476,6 +1521,22 @@ impl PrintConfig {
             ("top_surface_line_width", w.top_surface),
             ("support_line_width", w.support),
             ("initial_layer_line_width", w.initial_layer),
+        ] {
+            if let Some(v) = v {
+                range(key, v, 0.1, 2.0)?;
+            }
+        }
+        let f = &self.first_layer_widths;
+        for (key, v) in [
+            ("initial_layer_outer_wall_line_width", f.outer_wall),
+            ("initial_layer_inner_wall_line_width", f.inner_wall),
+            ("initial_layer_sparse_infill_line_width", f.sparse_infill),
+            (
+                "initial_layer_internal_solid_infill_line_width",
+                f.internal_solid_infill,
+            ),
+            ("initial_layer_top_surface_line_width", f.top_surface),
+            ("initial_layer_support_line_width", f.support),
         ] {
             if let Some(v) = v {
                 range(key, v, 0.1, 2.0)?;
@@ -1815,9 +1876,34 @@ impl PrintConfig {
         self.raw.get("initial_layer_line_width").and_then(num) == Some(0.0)
     }
 
-    /// The support's line width on the first layer, mm: `initial_layer_line_width` when it is set, `line_width`
-    /// when it is 0, and the support's own width when the key is left out.
+    /// True when some feature has a first layer width of its own ([`PrintConfig::first_layer_widths`]).
+    pub fn has_first_layer_widths(&self) -> bool {
+        self.first_layer_widths != FeatureWidths::default()
+    }
+
+    /// The first layer's line width with first layer widths per feature, mm: `initial_layer_line_width` when it is
+    /// set, else the first layer inner wall width, else `line_width`. The lines without a first layer width of their
+    /// own print at it there (the skirt and the brim).
+    fn first_layer_line_width(&self) -> f64 {
+        self.feature_widths
+            .initial_layer
+            .or(self.first_layer_widths.inner_wall)
+            .unwrap_or(self.line_width)
+    }
+
+    /// The support's line width on the first layer, mm: its first layer width when the features have their own,
+    /// else `initial_layer_line_width` when it is set, `line_width` when it is 0, and the support's own width when
+    /// the key is left out.
     pub fn first_layer_support_width(&self) -> f64 {
+        if self.on_first_layer {
+            return self.support_width();
+        }
+        if self.has_first_layer_widths() {
+            return self
+                .first_layer_widths
+                .support
+                .unwrap_or_else(|| self.first_layer_line_width());
+        }
         match self.feature_widths.initial_layer {
             Some(w) => w,
             None if self.initial_layer_width_unset() => self.line_width,
@@ -1825,10 +1911,27 @@ impl PrintConfig {
         }
     }
 
-    /// The settings for the first layer: every width is `initial_layer_line_width` when it is set. At 0 each
-    /// feature keeps its own width, except the supports, which print at `line_width`.
+    /// The settings for the first layer. With first layer widths per feature each feature prints its own there (a
+    /// feature without one, the first layer's line width), and the lines are laid out for the first layer's own height,
+    /// so each prints as wide as set. Without them every width is `initial_layer_line_width` when it is set; at 0
+    /// each feature keeps its own width, except the supports, which print at `line_width`.
     #[must_use]
     pub fn for_first_layer(&self) -> Self {
+        if self.on_first_layer {
+            return self.clone();
+        }
+        if self.has_first_layer_widths() {
+            let f = self.first_layer_widths;
+            let mut c = self.clone();
+            c.line_width = self.first_layer_line_width();
+            c.feature_widths = FeatureWidths {
+                initial_layer: None,
+                ..f
+            };
+            c.layer_height = self.initial_layer_print_height;
+            c.on_first_layer = true;
+            return c;
+        }
         let Some(w) = self.feature_widths.initial_layer else {
             let mut c = self.clone();
             if self.initial_layer_width_unset() {
@@ -3388,6 +3491,33 @@ mod tests {
             PrintConfig::from_value(&json!({ "initial_layer_line_width": 0.5, "support_line_width": 0.4 }))
                 .unwrap();
         assert!((c.first_layer_support_width() - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn first_layer_widths_per_feature_give_the_first_layer_its_own_widths_and_height() {
+        use serde_json::json;
+        let c = PrintConfig::from_value(&json!({
+            "layer_height": 0.1, "initial_layer_print_height": 0.2, "line_width": 0.45,
+            "inner_wall_line_width": 0.15, "initial_layer_line_width": 0,
+            "initial_layer_inner_wall_line_width": 0.3, "initial_layer_outer_wall_line_width": 0,
+            "initial_layer_support_line_width": 0
+        }))
+        .unwrap();
+        assert!(c.has_first_layer_widths());
+        // The supports' first layer width at 0 is the nozzle's own (0.4), the outer wall's 1.125 times it.
+        assert!((c.first_layer_support_width() - 0.4).abs() < 1e-9);
+        let first = c.for_first_layer();
+        assert!((first.inner_wall_width() - 0.3).abs() < 1e-9);
+        assert!((first.outer_wall_width() - 0.45).abs() < 1e-9);
+        // Lines without a first layer width of their own (the skirt) take the first layer inner wall width, and the
+        // lines are laid out for the first layer's own 0.2 mm.
+        assert!((first.line_width - 0.3).abs() < 1e-9);
+        assert!((first.layer_height - 0.2).abs() < 1e-9);
+        assert_eq!(first.for_first_layer(), first);
+        // Without them the first layer keeps each feature's own width, as before.
+        let plain = PrintConfig::from_value(&json!({ "layer_height": 0.1, "initial_layer_print_height": 0.2, "inner_wall_line_width": 0.15, "initial_layer_line_width": 0 })).unwrap();
+        assert!(!plain.has_first_layer_widths());
+        assert!((plain.for_first_layer().layer_height - 0.1).abs() < 1e-9);
     }
 
     #[test]
