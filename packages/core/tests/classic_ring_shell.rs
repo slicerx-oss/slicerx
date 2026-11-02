@@ -31,6 +31,10 @@
 //!   ring layer below only border the sparse infill under the block, so they stay internal solid infill, and only a
 //!   layer that lies over that sparse infill floats. The measured pattern grid decides which pairs of internal solid
 //!   and sparse infill patterns do this.
+//! - The widest ring whose z 1.6 and 1.8 float with zig-zag internal solid infill, by the slit: 4.5 mm where it counts
+//!   (not 4.55); where it does not, 4.7 at 20% overlap (not 4.75) and 4.68 on 0.50 mm solid lines (not 4.7), and for
+//!   narrower slits 4.95 at 30% (not 5.0) and 4.9 on 0.50 mm lines at 20% (not 5.0). With variable-width walls 4.9
+//!   (not 4.95).
 //! - The classic x-mark on the P1S and A1 prints gap fill only after a top surface (fixtures/classic-ring-shell: their
 //!   stock settings with classic walls).
 //!
@@ -844,4 +848,98 @@ fn at_monotonic_five_layer_stairs_float_less() {
     ));
     let fl: f64 = ms.iter().filter(|m| m.feature == FLOATING).map(|m| m.e).sum();
     assert!(near(fl, 18.51, 0.05), "floating {fl:.2}, want 18.51");
+}
+
+/// The widest ring that floats with zig-zag internal solid infill and `edits`, and the next width up: the W `last`
+/// ring's z 1.6 and 1.8 float with about `e` each (within 2%), and the W `first` ring's print as internal solid infill
+/// with nothing floating.
+fn check_ring_width(name: &str, edits: &[(&str, Value)], last: f64, first: f64, e: f64) {
+    let mut all = vec![solid_pattern("zig-zag")];
+    all.extend(edits.iter().cloned());
+    let mut misses = Vec::new();
+    for (w, floats) in [(last, true), (first, false)] {
+        let layers = per_layer(&moves(&slice(step_w(w), &all)));
+        for z in [1.6, 1.8] {
+            let (fl, is) = (at(&layers, FLOATING, z), at(&layers, SOLID, z));
+            let right = if floats {
+                is == 0.0 && near(fl, e, 0.02)
+            } else {
+                fl == 0.0 && is > 0.0
+            };
+            if !right {
+                let want = if floats {
+                    format!("{FLOATING} {e}")
+                } else {
+                    SOLID.to_owned()
+                };
+                misses.push(format!(
+                    "W {w} z {z}: floating {fl:.2}, internal solid {is:.2}, want {want}"
+                ));
+            }
+        }
+    }
+    assert!(misses.is_empty(), "{name}:\n{}", misses.join("\n"));
+}
+
+#[test]
+fn where_the_slit_counts_the_ring_floats_up_to_4_5_mm() {
+    check_ring_width("stock", &[], 4.5, 4.55, 38.19);
+}
+
+#[test]
+fn at_20_percent_overlap_the_ring_floats_up_to_4_7_mm() {
+    check_ring_width(
+        "20% overlap",
+        &[("infill_wall_overlap", json!(20))],
+        4.7,
+        4.75,
+        36.31,
+    );
+}
+
+#[test]
+fn on_0_50_mm_solid_lines_the_ring_floats_up_to_4_68_mm() {
+    check_ring_width(
+        "0.50 mm solid lines",
+        &[("internal_solid_infill_line_width", json!(0.5))],
+        4.68,
+        4.7,
+        36.35,
+    );
+}
+
+#[test]
+fn at_30_percent_overlap_the_ring_floats_up_to_4_95_mm() {
+    check_ring_width(
+        "30% overlap",
+        &[("infill_wall_overlap", json!(30))],
+        4.95,
+        5.0,
+        37.64,
+    );
+}
+
+#[test]
+fn on_0_50_mm_solid_lines_at_20_percent_overlap_the_ring_floats_up_to_4_9_mm() {
+    check_ring_width(
+        "0.50 mm solid lines, 20% overlap",
+        &[
+            ("internal_solid_infill_line_width", json!(0.5)),
+            ("infill_wall_overlap", json!(20)),
+        ],
+        4.9,
+        5.0,
+        37.75,
+    );
+}
+
+#[test]
+fn with_variable_width_walls_the_ring_floats_up_to_4_9_mm() {
+    check_ring_width(
+        "variable-width walls",
+        &[("wall_generator", json!("aegis"))],
+        4.9,
+        4.95,
+        37.68,
+    );
 }
