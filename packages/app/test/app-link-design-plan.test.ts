@@ -48,7 +48,7 @@ describe('design.put_plan over the app link', () => {
 
   it("refuses a card plan's id, never pushes card plans out, and a waiting card returns the person's plan unchanged", async () => {
     const card = { part: 'Box', units: 'mm' as const, features: [{ name: 'Body', kind: 'extrude', sizes: { width: 80, depth: 60, height: 40 } }], assumptions: [], questions: [] }
-    const older = ((await planTool().run(card as never, { ask: async (q: { choices: { id: string }[] }) => q.choices[0]!.id } as never)).output as { planId: string }).planId
+    const older = ((await planTool().run(card as never, { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as never)).output as { planId: string }).planId
     const out = await planTool().run(card as never, {
       ask: async (q: { choices: { id: string }[] }) => {
         const id = planOfChoices(q.choices)!
@@ -58,7 +58,7 @@ describe('design.put_plan over the app link', () => {
         expect(e?.message).toContain('plan the person made')
         // and floods the registry
         for (let k = 0; k < 60; k++) await runCall('design.put_plan', { plan: { ...plan, planId: `flood-${k}` } })
-        return planChoiceId('go', id)
+        return { id: planChoiceId('go', id) }
       },
     } as never)
     const answer = out.output as { planId: string; accepted: boolean; edits?: unknown }

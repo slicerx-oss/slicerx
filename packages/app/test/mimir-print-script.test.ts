@@ -33,7 +33,7 @@ function fake(name: string, out: (input: Record<string, unknown>, ctx: ToolConte
 const target = fake('run.target', async (i, ctx) => {
   if (i['printer'] === 'A1') return { printerId: 'p_a1', printerName: 'Bench A1', slots: [{ filament: 1, slot: 'A2', material: 'PETG', color: 'black' }], from: 'words' }
   const picked = await ctx.ask!({ title: 'Which printer and spool?', question: 'Pick the spool to print with.', choices: [{ id: 'pick:p_p1s:A1', label: 'Bay 2, slot A1: PLA, White' }, { id: 'pick:none', label: 'None of these' }] })
-  if (picked === 'pick:none') return null
+  if (picked.id === 'pick:none') return null
   return { printerId: 'p_p1s', printerName: 'Bay 2', slots: [{ filament: 1, slot: 'A1', material: 'PLA', color: 'white' }], from: 'picked' }
 })
 
