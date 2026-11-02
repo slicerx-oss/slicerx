@@ -329,10 +329,10 @@ fn a_prusaslicer_parts_width_percents_are_of_its_objects_layer_height() {
 }
 
 #[test]
-fn a_prusaslicer_objects_own_solid_infill_width_leaves_the_first_layer_alone() {
+fn a_prusaslicer_objects_own_solid_infill_width_prints_on_the_first_layer_at_its_height() {
     // o22: the object sets a solid infill width of 250% and its own 0.3 mm layers, and the project sets no first layer
-    // width. Above the first layer its solid infill prints 0.75 mm; the first layer's bottom keeps the width it has
-    // without the setting, about 0.45 mm.
+    // width. Above the first layer its solid infill prints 0.75 mm; the first layer's bottom prints 250% of the 0.2 mm
+    // first layer height, 0.5 mm with its lines fitted to the area.
     let g = gcode(&widths("o22.3mf"));
     let mut layer = 0;
     let (mut kind, mut first) = (String::new(), std::collections::BTreeSet::new());
@@ -348,12 +348,12 @@ fn a_prusaslicer_objects_own_solid_infill_width_leaves_the_first_layer_alone() {
             first.insert(w.to_owned());
         }
     }
-    let wide: Vec<&String> = first
+    let off: Vec<&String> = first
         .iter()
-        .filter(|w| w.parse::<f64>().is_ok_and(|w| w > 0.5))
+        .filter(|w| !w.parse::<f64>().is_ok_and(|w| (0.5..0.52).contains(&w)))
         .collect();
     assert!(
-        !first.is_empty() && wide.is_empty(),
+        !first.is_empty() && off.is_empty(),
         "first layer bottom widths {first:?}"
     );
     let printed = widths_above_layer_1(&g);
@@ -416,7 +416,7 @@ fn a_prusaslicer_part_without_settings_prints_its_first_layer_as_its_own() {
     assert!(!beside_plain.is_empty());
     assert_eq!(beside_part, beside_plain);
     // Two objects, the second a part at 150% (0.15 mm): the plain object's first layer is its own, and the part's
-    // first layer walls print at the part's width.
+    // first layer walls print at the part's width there, 150% of the 0.2 mm first layer height.
     let g = gcode(&widths("o6.3mf"));
     assert_eq!(
         first_layer_side(&g, 102.0, false),
@@ -447,7 +447,7 @@ fn a_prusaslicer_part_without_settings_prints_its_first_layer_as_its_own() {
         }
         out
     };
-    assert_eq!(inner, ["0.171".to_owned()].into_iter().collect());
+    assert_eq!(inner, ["0.3".to_owned()].into_iter().collect());
 }
 
 /// `PrusaSlicer` projects of an 8 x 8 mm pillar under a 16 x 16 mm slab, with normal support around the pillar: grid
