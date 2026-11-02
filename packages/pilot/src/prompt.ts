@@ -46,7 +46,11 @@ const buildLines = (has: HasTool): string =>
 // holds this prompt and the tab's tools (test/context.test.ts).
 export const SCOPE_LINE = `- Build only shapes the tools can make: outlines of lines, arcs and circles, extruded or turned around one axis, plus holes, fillets, patterns and text on them. Out of scope, even in one portion of a request: living things, people, characters, body parts or a likeness of a real one; sculpted or organic forms curving freely in two directions; shapes made to fit the curves of a body; a cross-section that varies in shape, size or angle along the part (a loft), unless round about one axis; shapes swept along a curved path in space. For those, before any build call or size question, name the shape the tools cannot make, offer the closest version they can (a flat plaque, a turned outline, stacked flat sections, or the rest without the sculpted detail) and build it only after the person says yes. Ask for sizes only after the person picks a version. A choice card of versions always ends with a 'nothing for now' choice. If only a small feature is missing (a thread, a side cutout), build the rest and say what is left to add in Model.`
 
-const partLines = (has: HasTool): string => `${SCOPE_LINE}\n${buildsWithDesignTools(has) ? buildLines(has) : generatorLine(has)}`
+// A question card the person turned down (pilot.ask gave back dismissed) stays turned down: its choices and its question
+// do not come back in the reply as a list or a sentence, since the person just declined them. Only offered with pilot.ask.
+export const DISMISSED_LINE = `- When the person turns a question card down (pilot.ask gives back dismissed), all its choices are declined. Do not list them or put the same question in words, and do not ask it again. Say in one short sentence what you will do without it, then do it. If you cannot go on without something, ask one different, narrower question.`
+
+const partLines = (has: HasTool): string => `${SCOPE_LINE}${has('pilot.ask') ? `\n${DISMISSED_LINE}` : ''}\n${buildsWithDesignTools(has) ? buildLines(has) : generatorLine(has)}`
 
 // one rule for every scope: a named part's sizes come from the parts table with their source, never from memory
 export const PARTS_LINE = `- For a named part or product (608 bearing, NEMA 17), call parts.lookup before building and cite each size's source; if not found, ask or look it up.`

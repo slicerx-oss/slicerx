@@ -37,6 +37,15 @@ function reader(seen: unknown[], text = 'Okay.'): ScriptStep {
 const ASK = { name: 'pilot.ask', args: { title: 'Confirm model', question: 'Is this the one?', choices: [{ id: 'same', label: 'Yes' }, { id: 'other', label: 'No' }] } }
 
 describe('pilot.ask', () => {
+  it('tells the model a dismissed question stays turned down: no re-ask, no choices or question in prose, only a narrower question', () => {
+    const d = askTool().description
+    expect(d).toContain('every choice on it is turned down')
+    expect(d).toContain('do not list its choices or repeat its question in your reply, in any wording')
+    expect(d).toContain('ask a different, narrower question')
+    expect(d).toContain('treat it as their answer')
+    expect(d).not.toContain('or reply in text')
+  })
+
   it('waits for the pick and gives it to the next step', async () => {
     const seen: string[] = []
     const p = pilot([

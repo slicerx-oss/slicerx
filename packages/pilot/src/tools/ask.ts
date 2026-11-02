@@ -14,7 +14,7 @@ export function askTool(): PilotTool<never> {
     source: 'command',
     permission: 'read',
     description:
-      'Ask the person a short question with two to four fixed answers and wait for the pick. Use it to confirm something before building on it, such as which model a photo shows. Returns the picked choice id, or dismissed when the person turned the question down. If dismissed, do not ask it again; carry on without it, or reply in text. If they wrote something, treat it as their answer.',
+      'Ask the person a short question with two to four fixed answers and wait for the pick. Use it to confirm something before building on it, such as which model a photo shows. Returns the picked choice id, or dismissed when the person turned the question down. If dismissed, every choice on it is turned down: do not ask it again, and do not list its choices or repeat its question in your reply, in any wording. Carry on with what the request still allows, and if you truly need something, ask a different, narrower question. If they wrote something, treat it as their answer.',
     input: z.object({
       title: z.string().min(2).max(40),
       question: z.string().min(3).max(160),
