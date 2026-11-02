@@ -4,7 +4,7 @@
 // builds parts turns down shapes the tools cannot make before building.
 import { afterEach, describe, expect, it } from 'vitest'
 import { setAssistantBrand } from '@slicerx/contracts'
-import { SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
+import { DISMISSED_LINE, SCOPE_LINE, systemPrompt, VOICE_HEADER } from '../src/prompt'
 import type { KbSkill } from '../src/kb/kb'
 import { playbooks } from '../skills/catalog'
 
@@ -145,6 +145,16 @@ describe('the scope rule for parts', () => {
     expect(SCOPE_LINE).toContain('Ask for sizes only after the person picks a version')
     expect(SCOPE_LINE.indexOf('Ask for sizes only after')).toBeGreaterThan(SCOPE_LINE.indexOf('offer the closest version they can'))
     expect(SCOPE_LINE).toContain("always ends with a 'nothing for now' choice")
+  })
+
+  it('keeps a turned-down question card turned down: no choices or question in the reply, at most a narrower question', () => {
+    expect(DISMISSED_LINE).toContain('pilot.ask gives back dismissed')
+    expect(DISMISSED_LINE).toContain('all its choices are declined')
+    expect(DISMISSED_LINE).toContain('Do not list them or put the same question in words, and do not ask it again')
+    expect(DISMISSED_LINE).toContain('ask one different, narrower question')
+    for (const scope of ['full', 'cad'] as const) expect(systemPrompt(scope)).toContain(DISMISSED_LINE)
+    const noAsk = (name: string): boolean => name !== 'pilot.ask'
+    expect(systemPrompt('cad', noAsk)).not.toContain(DISMISSED_LINE)
   })
 
   it('keeps build the rest for a small missing feature only, after the out of scope shapes', () => {
