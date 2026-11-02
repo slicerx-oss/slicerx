@@ -348,6 +348,151 @@ fn layout(g: &str) -> Layout {
     }
 }
 
+/// One extruding move of a layer: its feature, the feature before it, its ends and its stated width.
+struct Move {
+    z: i64,
+    feature: String,
+    before: String,
+    from: (f64, f64),
+    to: (f64, f64),
+    width: f64,
+}
+
+fn moves(g: &str) -> Vec<Move> {
+    let (mut x, mut y, mut z, mut w) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+    let (mut feature, mut before) = (String::new(), String::new());
+    let mut out = Vec::new();
+    for line in g.lines() {
+        let s = line.trim();
+        if let Some(f) = s.strip_prefix("; FEATURE:").or_else(|| s.strip_prefix(";TYPE:")) {
+            let f = f.trim().to_owned();
+            if f != feature {
+                before = std::mem::replace(&mut feature, f);
+            }
+            continue;
+        }
+        if let Some(v) = s.strip_prefix("; Z_HEIGHT:").or_else(|| s.strip_prefix(";Z:")) {
+            z = v.trim().parse().unwrap();
+            continue;
+        }
+        if let Some(v) = s
+            .strip_prefix("; LINE_WIDTH:")
+            .or_else(|| s.strip_prefix(";WIDTH:"))
+        {
+            w = v.trim().parse().unwrap();
+            continue;
+        }
+        let code = s.split(';').next().unwrap_or("").trim();
+        if !["G0 ", "G1 ", "G2 ", "G3 "].iter().any(|p| code.starts_with(p)) {
+            continue;
+        }
+        let (nx, ny) = (word(code, 'X').unwrap_or(x), word(code, 'Y').unwrap_or(y));
+        if word(code, 'E').is_some_and(|e| e > 0.0) && (nx - x).hypot(ny - y) > 0.0 {
+            out.push(Move {
+                z: hundredths(z),
+                feature: feature.clone(),
+                before: before.clone(),
+                from: (x, y),
+                to: (nx, ny),
+                width: w,
+            });
+        }
+        (x, y) = (nx, ny);
+    }
+    out
+}
+
+/// A run of surface gap fill moves that join end to end: its layer z (in hundredths) and path length.
+struct Piece {
+    z: i64,
+    len: f64,
+}
+
+fn surface_gap(m: &Move) -> bool {
+    m.feature == "Gap infill"
+        && ["Top surface", "Internal solid infill", "Bottom surface"].contains(&m.before.as_str())
+}
+
+fn pieces(all: &[Move]) -> Vec<Piece> {
+    let mut out: Vec<Piece> = Vec::new();
+    let mut end: Option<(f64, f64)> = None;
+    for m in all {
+        if !surface_gap(m) {
+            end = None;
+            continue;
+        }
+        let len = (m.to.0 - m.from.0).hypot(m.to.1 - m.from.1);
+        match out
+            .last_mut()
+            .filter(|_| end.is_some_and(|e| (e.0 - m.from.0).hypot(e.1 - m.from.1) <= 0.02))
+        {
+            Some(p) => p.len += len,
+            None => out.push(Piece { z: m.z, len }),
+        }
+        end = Some(m.to);
+    }
+    out
+}
+
+fn to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let l2 = dx.mul_add(dx, dy * dy);
+    let t = if l2 == 0.0 {
+        0.0
+    } else {
+        ((p.0 - a.0).mul_add(dx, (p.1 - a.1) * dy) / l2).clamp(0.0, 1.0)
+    };
+    (p.0 - t.mul_add(dx, a.0)).hypot(p.1 - t.mul_add(dy, a.1))
+}
+
+/// The median, over the surface gap fill moves of layer `z` (at least 0.05 mm long) whose middle lies in the x-mark's
+/// box and whose center is within 0.15 mm of a wall's edge, of where the bead's wall-side edge (its center less half
+/// its stated width) sits against the nearest wall's edge (its center line plus half its width), mm. Negative: the
+/// bead reaches into the wall. `dy` moves the box (the P1S puts the part 2 mm lower than the A1).
+fn wall_side_edge(all: &[Move], z: f64, dy: f64) -> Option<f64> {
+    let at = hundredths(z);
+    let walls: Vec<&Move> = all
+        .iter()
+        .filter(|m| m.z == at && (m.feature == "Inner wall" || m.feature == "Outer wall"))
+        .collect();
+    let mut edges: Vec<f64> = all
+        .iter()
+        .filter(|m| m.z == at && surface_gap(m))
+        .filter(|m| (m.to.0 - m.from.0).hypot(m.to.1 - m.from.1) >= 0.05)
+        .filter_map(|m| {
+            let mid = (f64::midpoint(m.from.0, m.to.0), f64::midpoint(m.from.1, m.to.1));
+            if !((80.0..=175.0).contains(&mid.0) && (115.0 + dy..=140.0 + dy).contains(&mid.1)) {
+                return None;
+            }
+            let (d, ww) = walls
+                .iter()
+                .map(|q| (to_segment(mid, q.from, q.to), q.width))
+                .min_by(|a, b| a.0.total_cmp(&b.0))?;
+            (d - ww / 2.0 <= 0.15).then_some(d - ww / 2.0 - m.width / 2.0)
+        })
+        .collect();
+    if edges.is_empty() {
+        return None;
+    }
+    edges.sort_by(f64::total_cmp);
+    let n = edges.len();
+    Some(if n % 2 == 1 {
+        edges[n / 2]
+    } else {
+        f64::midpoint(edges[n / 2 - 1], edges[n / 2])
+    })
+}
+
+/// Checks the gap fill total on layer `z` of `name` against the measured `target`, within `band` mm.
+fn layer_total(name: &str, all: &[Piece], z: f64, target: f64, band: f64) {
+    let at = hundredths(z);
+    let got: f64 = all.iter().filter(|p| p.z == at).map(|p| p.len).sum();
+    assert!(
+        (got - target).abs() <= band,
+        "{name}: {got:.2} mm of gap fill at z {z}, target {target} within {band}"
+    );
+}
+
 /// The isolated short beads along the lines: single-move beads 0.6 mm long or less and 0.2 mm wide or more that run
 /// within 12 degrees of their layer's top surface lines (the shape of a bead across a corner the lines cut off).
 fn short_along(l: &Layout) -> Vec<&Bead> {
@@ -399,12 +544,10 @@ const XMARK: [(f64, f64); 6] = [
     (85.4, 0.2),
 ];
 const XMARK_SKIPPED: [f64; 3] = [5.8, 6.2, 59.2];
-/// With classic walls z 6.0 and z 59.0 are left out too: both keep less gap fill than measured (0.44 mm against 1.96
-/// at z 6.0, and 2.60 against 3.71 at z 59.0, where the piece of the step under the notch is too narrow for a one-wall
-/// top band and the layer keeps two pieces of 1.76 and 0.84 mm). The strip a band there used to leave along the notch
-/// made up the total before. Tracked as the classic x-mark gap fill shortfall card: put these layers back when it
-/// is fixed.
-const XMARK_SKIPPED_CLASSIC: [f64; 5] = [5.8, 6.0, 6.2, 59.0, 59.2];
+/// With classic walls z 59.0 is left out too: it keeps less gap fill than measured (2.61 mm against 3.71), short beside
+/// the tapered tips of its top region, where its beads come out 0.84 mm against 1.42 and none against 0.45. Tracked as
+/// the classic x-mark top tip card: put the layer back when it is fixed.
+const XMARK_SKIPPED_CLASSIC: [f64; 4] = [5.8, 6.2, 59.0, 59.2];
 
 /// The x-mark layers left out for the case `name`.
 fn xmark_skipped(name: &str) -> &'static [f64] {
@@ -454,6 +597,54 @@ fn a_slot_cut_into_a_step_leaves_the_notch_its_walls() {
             (2.5..=2.7).contains(&got),
             "{model} classic: {got:.2} mm of gap fill at z 59.0, want 2.60"
         );
+    }
+}
+
+/// The two printers the x-mark targets were measured on with classic walls, each with how far its plate puts the part
+/// below the A1's (mm in y).
+const CLASSIC_PRINTERS: [(&str, f64); 2] = [("bambu-a1", 0.0), ("bambu-p1s", -2.0)];
+
+#[test]
+fn the_band_gap_fill_reaches_into_its_inner_wall() {
+    // At z 6.0 the classic one-wall top band around the right-hand pillar ends at an inner wall. The top's gap fill
+    // there starts at that wall's spacing edge, as it starts at the outer wall's elsewhere, so it reaches into the wall
+    // (measured: its edge 0.032 mm inside the wall's edge) and the band's corners get their beads (1.96 mm measured on
+    // the layer). z 5.8 and z 85.4 lie beside the outer wall and keep theirs.
+    for (model, dy) in CLASSIC_PRINTERS {
+        let all = moves(&slice(&xmark(), measured(model, &[])));
+        let found = pieces(&all);
+        let name = format!("{model} classic");
+        layer_total(&name, &found, 6.0, 1.96, 0.49);
+        let edge = wall_side_edge(&all, 6.0, dy).unwrap_or(f64::MAX);
+        assert!(
+            edge <= -0.025,
+            "{name}: z 6.0 bead edge {edge:.3} mm against the wall's edge"
+        );
+        layer_total(&name, &found, 5.8, 1.77, 0.44);
+        layer_total(&name, &found, 85.4, 0.21, 0.3);
+    }
+}
+
+#[test]
+fn the_band_reach_follows_the_layer_height() {
+    // On 0.12 mm layers the inner wall's spacing edge lies nearer its edge, and the gap fill beside a band's inner wall
+    // reaches in by less (measured: 0.021 mm); z 5.96 gets 3.07 mm measured. z 6.08, z 85.4 and z 85.52 keep theirs.
+    for (model, dy) in CLASSIC_PRINTERS {
+        let all = moves(&slice(
+            &xmark(),
+            measured(model, &[("layer_height", json!(0.12))]),
+        ));
+        let found = pieces(&all);
+        let name = format!("{model} classic, 0.12 mm layers");
+        layer_total(&name, &found, 5.96, 3.07, 0.77);
+        let edge = wall_side_edge(&all, 5.96, dy).unwrap_or(f64::MAX);
+        assert!(
+            edge <= -0.015,
+            "{name}: z 5.96 bead edge {edge:.3} mm against the wall's edge"
+        );
+        layer_total(&name, &found, 6.08, 12.9, 3.23);
+        layer_total(&name, &found, 85.4, 1.7, 0.42);
+        layer_total(&name, &found, 85.52, 1.68, 0.42);
     }
 }
 
@@ -544,12 +735,11 @@ fn the_amount_follows_the_layer_height() {
     ];
     for (name, config) in both_walls("bambu-a1", &[("layer_height", json!(0.12))]) {
         let g = gaps(&slice(&xmark(), config));
-        // With classic walls z 5.96 and z 59.12 are left out as z 6.0 and z 59.0 are on 0.2 mm layers: they keep
-        // less gap fill than measured (1.03 mm against 3.07 at z 5.96, and 0.87 against 1.73 at z 59.12, where the
-        // narrow pieces get no one-wall top band). Tracked as the classic x-mark gap fill shortfall card: put these
-        // layers back when it is fixed.
+        // With classic walls z 59.12 is left out as z 59.0 is on 0.2 mm layers: it keeps less gap fill than measured
+        // (0.87 mm against 1.73), short at the tapered tip of its top region. Tracked as the classic x-mark top tip
+        // card: put the layer back when it is fixed.
         let skipped: &[f64] = if name.contains(" classic") {
-            &[5.96, 6.08, 59.12, 85.4]
+            &[6.08, 59.12, 85.4]
         } else {
             &[6.08, 85.4]
         };
