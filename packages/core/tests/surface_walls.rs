@@ -2,11 +2,11 @@
 // Copyright (C) 2026 The SlicerX contributors
 //! Surface labels that follow what the walls leave, whatever the wall generator.
 //!
-//! - The x-mark on the stock P1S request, smart layer off: a narrow piece prints as floating vertical shell or as
-//!   internal solid infill alike with classic and aegis walls, in total and per layer (but for the step at z 6.0 to
-//!   6.4 and the slope at z 59.2, where classic walls print a one-wall top band in place of floating shell, and the
-//!   layers at z 5.0, 5.2, 6.6 and 58.8 whose vertical shell reads the slit those bands' inner walls leave), and a
-//!   strip beside the sparse sliver aegis walls leave below prints as internal solid infill.
+//! - The x-mark on the stock P1S request, smart layer off, zig-zag internal solid infill: a narrow piece prints as
+//!   floating vertical shell or as internal solid infill alike with classic and aegis walls, in total and per layer
+//!   (but for the step at z 6.0 to 6.4 and the slope at z 59.2, where classic walls print a one-wall top band in place
+//!   of floating shell, and the layers at z 5.0, 5.2, 6.6 and 58.8 whose vertical shell reads the slit those bands'
+//!   inner walls leave), and a strip beside the sparse sliver aegis walls leave below prints as internal solid infill.
 //! - Strips 30.9 mm long along 45 degrees, 2.2 mm tall, on the stock Voron 2.4 (arachne walls, 3 loops) and Ender 3
 //!   V3 (classic walls, 2 loops) requests, smart layer off. Per strip, the measured features inside the walls on
 //!   the top layer (z 2.2), the layer below (z 2.0) and a sparse layer (z 1.2), with the top layer's lines longer
@@ -15,6 +15,12 @@
 //!   classic walls with no sparse infill the middle of a narrow strip is infill area, not a gap fill bead, once it
 //!   holds a surface line; a narrower strip keeps its gap fill bead on every layer, where the targets have nothing
 //!   on the top and sparse layers and internal solid infill below (a slot inside the walls is worse than the bead).
+//! - The same x-mark with classic walls and the stock monotonic internal solid infill over grid sparse infill: the
+//!   band at z 66.6 over the floating vertical shell of z 66.2 and 66.4 floats, and the strip at z 1.2 over the
+//!   internal solid infill of z 1.0 stays internal solid infill. With smart layer heights (quality) and precise outer
+//!   walls, the one-line band inside the inner wall of the overhanging face at z 50.37 floats.
+//! - The stock P1S request with smart layer heights on four objects (fixtures/floating-plate4): the shell bands of the
+//!   showcase x-mark's two sloped sides at z 45.35, each on a floating shell bead below, float.
 
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -107,7 +113,10 @@ fn per_layer(g: &str, feature: &str) -> BTreeMap<i64, f64> {
 }
 
 /// The x-mark on the stock P1S request, smart layer off, with classic and with aegis walls, sliced once for the tests
-/// that read it.
+/// that read it. Zig-zag internal solid infill: a narrow piece there floats where it only borders the sparse infill
+/// below, so the labels compare the walls alone. With the stock monotonic the z 1.2 strip over the internal solid
+/// below prints as internal solid infill with classic walls and still floats with aegis walls (card
+/// aegis-follow-pattern-order); the tests at the end of this file read the stock pattern with classic walls.
 #[allow(
     clippy::disallowed_methods,
     reason = "a plain slice with no parallel work waiting on it, shared by the tests of this file"
@@ -116,8 +125,31 @@ fn x_mark() -> &'static (String, String) {
     static GCODE: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
     GCODE.get_or_init(|| {
         let mesh = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/bench/models/x-mark.stl")).unwrap();
-        let walls = |w: &str| slice("p1s-x-mark.json", &mesh, &[("wall_generator", json!(w))]);
+        let walls = |w: &str| {
+            slice(
+                "p1s-x-mark.json",
+                &mesh,
+                &[
+                    ("wall_generator", json!(w)),
+                    ("internal_solid_infill_pattern", json!("zig-zag")),
+                ],
+            )
+        };
         (walls("classic"), walls("aegis"))
+    })
+}
+
+/// The x-mark on the stock P1S request, smart layer off, with classic walls and the stock monotonic internal solid
+/// infill over grid sparse infill, sliced once.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a plain slice with no parallel work waiting on it, shared by the tests of this file"
+)]
+fn x_mark_monotonic() -> &'static String {
+    static GCODE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    GCODE.get_or_init(|| {
+        let mesh = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/bench/models/x-mark.stl")).unwrap();
+        slice("p1s-x-mark.json", &mesh, &[("wall_generator", json!("classic"))])
     })
 }
 
@@ -417,5 +449,116 @@ fn classic_strips_with_sparse_infill_keep_their_gap_fill_bead() {
         "f4-end.stl",
         &[],
         &[],
+    );
+}
+
+#[test]
+fn at_monotonic_the_x_mark_band_over_floating_shell_floats() {
+    // The L-shaped band inside the inner wall at z 66.6 lies on the lower layer's band, and z 66.2 and 66.4 under it
+    // print as floating vertical shell: it floats too, about 1.94 mm of filament on the layer.
+    let g = x_mark_monotonic();
+    let floating = per_layer(g, "Floating vertical shell")
+        .get(&66_600)
+        .copied()
+        .unwrap_or(0.0);
+    let solid = per_layer(g, "Internal solid infill")
+        .get(&66_600)
+        .copied()
+        .unwrap_or(0.0);
+    assert!(
+        (floating - 1.94).abs() <= 0.1 && solid < 1.0,
+        "z 66.6: floating {floating:.2}, internal solid {solid:.2}"
+    );
+}
+
+#[test]
+fn at_monotonic_the_x_mark_strip_over_internal_solid_stays_internal_solid() {
+    // The strip at z 1.2 lies on the lower layer's band, and z 1.0 under it prints as internal solid infill: it stays
+    // internal solid infill, about 2.85 mm on the layer.
+    let g = x_mark_monotonic();
+    let floating = per_layer(g, "Floating vertical shell")
+        .get(&1_200)
+        .copied()
+        .unwrap_or(0.0);
+    let solid = per_layer(g, "Internal solid infill")
+        .get(&1_200)
+        .copied()
+        .unwrap_or(0.0);
+    assert!(
+        floating < 0.05 && (solid - 2.85).abs() <= 0.15,
+        "z 1.2: floating {floating:.2}, internal solid {solid:.2}"
+    );
+}
+
+/// The x-mark on the stock P1S request with smart layer heights (quality) and precise outer walls, classic walls and
+/// the stock monotonic internal solid infill, sliced once.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a plain slice with no parallel work waiting on it, shared by the tests of this file"
+)]
+fn x_mark_smart() -> &'static String {
+    static GCODE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    GCODE.get_or_init(|| {
+        let mesh = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/bench/models/x-mark.stl")).unwrap();
+        slice(
+            "p1s-x-mark.json",
+            &mesh,
+            &[
+                ("wall_generator", json!("classic")),
+                ("smart_layer", json!("quality")),
+                ("precise_outer_wall", json!(true)),
+            ],
+        )
+    })
+}
+
+#[test]
+fn at_monotonic_the_band_of_a_sloped_face_floats() {
+    // The one-line shell band just inside the inner wall of a face that leans out about 0.14 mm a layer, at x 115.0
+    // from y 120.2 to 131.9 on z 50.37, stands on the same band of the layers below: it floats, about 0.32 mm.
+    let g = x_mark_smart();
+    let floating = per_layer(g, "Floating vertical shell")
+        .get(&50_370)
+        .copied()
+        .unwrap_or(0.0);
+    assert!(floating > 0.25, "z 50.37: floating {floating:.2}");
+}
+
+#[test]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "a plain slice with no parallel work waiting on it"
+)]
+fn at_monotonic_the_sloped_sides_of_the_showcase_float_on_the_plate_of_four() {
+    // The shell bands of the showcase x-mark's two sloped sides at z 45.35 (x 117.9 and 138.1, y 202.9 to 217.2),
+    // each on a floating shell bead at z 45.15: they float, about 1.02 mm on the layer.
+    const PLATE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/floating-plate4");
+    let req: SliceRequest =
+        serde_json::from_slice(&std::fs::read(format!("{PLATE}/p1s-plate4.json")).unwrap()).unwrap();
+    let load = |path: String| Arc::new(Mesh::load(&std::fs::read(path).unwrap(), "m.stl").unwrap());
+    let meshes: BTreeMap<&str, Arc<Mesh>> = [
+        (
+            "s",
+            load(concat!(env!("CARGO_MANIFEST_DIR"), "/bench/models/x-mark-showcase.stl").to_owned()),
+        ),
+        ("t", load(format!("{PLATE}/taper0.7.stl"))),
+        ("b", load(format!("{PLATE}/box20.stl"))),
+        ("f", load(format!("{FIXTURES}/f4-vor.stl"))),
+    ]
+    .into_iter()
+    .collect();
+    let run = api::run_request(&req, &move |name: &str| Ok(meshes[name].clone())).unwrap();
+    let g = String::from_utf8(run.gcode).unwrap();
+    let floating = per_layer(&g, "Floating vertical shell")
+        .get(&45_350)
+        .copied()
+        .unwrap_or(0.0);
+    let solid = per_layer(&g, "Internal solid infill")
+        .get(&45_350)
+        .copied()
+        .unwrap_or(0.0);
+    assert!(
+        floating > 0.9 && solid < 0.1,
+        "z 45.35: floating {floating:.2}, internal solid {solid:.2}"
     );
 }
