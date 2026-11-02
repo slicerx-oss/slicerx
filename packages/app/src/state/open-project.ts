@@ -15,7 +15,7 @@ import { clearProject } from '../project/new'
 import { keepBeforeOpen } from '../project/autosave'
 import type { OpenScope } from '../project/unsaved'
 import { identity, uid } from './actions'
-import { get, markStale, openNote, set, toast, type PlateEntry, type PlateVolumeEntry } from './store'
+import { get, markStale, openNote, set, toast, type PlateEntry, type PlateVolumeEntry, type ToastAction } from './store'
 import { quietly } from '../plate/history'
 
 /**
@@ -210,6 +210,7 @@ async function addProjectShown(
   if (wasEmpty && !own) mine(() => set((s) => ({ easy: { ...s.easy, varyLayerHeight: false }, goal: 'custom' as const, easyTouched: [...s.easyTouched] })))
   // Settings the file has but that could not be read are said, never dropped without a word.
   let note: string | null = project.settingsNote ?? null
+  let offerNote: { action?: ToastAction; details: string; settle?: () => void } | undefined
   if (wasEmpty && hasSettings && !geometryOnly) {
     const { reviewImportedScripts } = await import('../project/script-review')
     const records = await reviewImportedScripts(host.slicer, project.settings, scriptTarget)
@@ -237,10 +238,13 @@ async function addProjectShown(
     const { projectSettingChanges } = await import('../export/project-settings')
     const { values } = projectSettingChanges(project.settings, resolveConfig(get().easy, get().overrides))
     const n = Object.keys(values).length
-    if (n) {
-      mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const })))
-      note = `Applied ${n} settings from ${name}${note ? `. ${note}` : ''}`
-    }
+    if (n) mine(() => set((s) => ({ overrides: { ...s.overrides, ...values }, goal: 'custom' as const })))
+    // A PrusaSlicer project made for another printer stays on this one, and its note offers the printer it was made for.
+    const offer = project.settingsFrom === 'prusaslicer' ? await printerOffer(host, name, project.settings, values) : null
+    if (offer) {
+      note = `${offer.text}${note ? ` ${note}` : ''}`
+      offerNote = { ...(offer.action ? { action: offer.action } : {}), details: offer.details, ...(offer.settle ? { settle: offer.settle } : {}) }
+    } else if (n) note = `Applied ${n} settings from ${name}${note ? `. ${note}` : ''}`
     for (const k of Object.keys(values)) brought.add(k)
     // Its printer G-code: stock text needs nothing, anything else waits for the person at the next slice.
     markOpenStage('settings')
@@ -281,8 +285,17 @@ async function addProjectShown(
   if (!note) return 'opened'
   // A newer open took over meanwhile: its note is the one to show.
   mine(() => undefined)
-  openNote(note, joined.length ? { label: 'Keep separate', run: () => void keepSeparate(host, joined) } : match?.kind === 'match' ? pp?.CHANGE_PRINTER : undefined)
+  offerNote?.settle?.()
+  openNote(note, joined.length ? { label: 'Keep separate', run: () => void keepSeparate(host, joined) } : match?.kind === 'match' ? pp?.CHANGE_PRINTER : offerNote?.action, offerNote ? { details: offerNote.details, wrap: true } : {})
   return 'told'
+}
+
+/** The open note's line about the printer a PrusaSlicer project was made for, and its Switch to (project-printer.ts). */
+async function printerOffer(host: Host, name: string, settings: Record<string, unknown>, applied: Record<string, SettingValue>): Promise<import('../project/project-printer').PrinterNote | null> {
+  const [{ projectPrinterNote }, { profileReady }] = await Promise.all([import('../project/project-printer'), import('./profile-sync')])
+  await profileReady()
+  const printers = host.printers ? await host.printers.list().catch(() => []) : []
+  return projectPrinterNote(name, settings, printers, applied)
 }
 
 /** A joined object, the file's objects it was made of, and where it was before the open placed it on this bed. */

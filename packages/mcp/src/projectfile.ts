@@ -4,10 +4,30 @@
 // slots and its print settings, so a file can be sliced the way it was saved.
 import { basename } from 'node:path'
 import type { SettingValue } from '@slicerx/contracts'
-import { appMissingKeys, importProject, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, withBambuMissingKeys, type WallsNote } from '@slicerx/settings'
+import { appMissingKeys, importProject, matchProjectPrinter, printerName, keptEngineChoices, LEGACY_GROUPS, LEGACY_KEYS, parseXml, projectDefaults, projectWalls, ProjectVariantError, prusaProjectConfig, prusaProjectSettings, readPrusaConfig, selectVariants, SLICERX_KEEP_VALUES, withBambuMissingKeys, type WallsNote } from '@slicerx/settings'
 import { productName } from '@slicerx/contracts'
 import { ToolInputError } from './models'
 import { MAX_TEXT_BYTES, openZip, type ZipReader } from './zip'
+
+/**
+ * The printer a project was made for, as inspect_project and a project slice report it: its name, and for a printer
+ * SlicerX has a profile for, the machine: profile a slice names to use it and its nozzle. `used` (a slice only) says
+ * whether the slice is for that printer.
+ */
+export interface ProjectPrinterReport {
+  name: string
+  profile?: string
+  nozzle?: number
+  used?: boolean
+}
+
+/** The printer another slicer's project settings name; undefined when they name none. */
+export function projectPrinterReport(settings: Record<string, unknown>): ProjectPrinterReport | undefined {
+  const match = matchProjectPrinter(settings)
+  if (!match) return undefined
+  if (match.kind === 'unknown') return { name: match.name, ...(match.nozzle !== undefined ? { nozzle: match.nozzle } : {}) }
+  return { name: printerName(match.profileId), profile: `machine:${match.profileId}`, nozzle: match.nozzle }
+}
 
 export interface ProjectPlate {
   /** 1-based, the number slicing takes as `plate`. */
@@ -37,6 +57,11 @@ export interface ProjectSummary {
   support: Record<string, SettingValue>
   /** What the file's print settings carry that slicing will not use, by kind (see `ImportReport`). */
   import_report: ImportReport
+  /**
+   * The printer another slicer's project was made for: its name, and for a printer SlicerX has a profile for, the
+   * machine: profile that slices it on that printer and its nozzle. Absent when the file names no printer.
+   */
+  project_printer?: ProjectPrinterReport
 }
 
 /** A key of the project's support settings, as `ProjectSummary.support` lists them. */
@@ -402,6 +427,8 @@ function projectOf(path: string, zip: ZipReader): ProjectRead {
   const top = Math.max(...used)
   const opened = own || !hasSettings ? undefined : prusa ? { from: 'prusaslicer' as const, settings: prusaProjectSettings(prusaText!).values, slots: top, used } : read.raw ? { from: 'orca' as const, settings: withBambuMissingKeys(read.raw, source), slots: top, used } : undefined
 
+  const madeFor = opened ? projectPrinterReport(opened.settings) : undefined
+
   return {
     ...(opened ? { opened } : {}),
     ...(objectSettings !== undefined ? { objectSettings } : {}),
@@ -415,6 +442,7 @@ function projectOf(path: string, zip: ZipReader): ProjectRead {
       dropped_keys: dropped,
       support,
       import_report: importReport,
+      ...(madeFor ? { project_printer: madeFor } : {}),
     },
     config,
   }
