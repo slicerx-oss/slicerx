@@ -374,6 +374,7 @@ Use the design and step ids from `design_list` and `design_steps`. A null bindin
 | `--profiles-dir <dir>` | `SLICERX_MCP_PROFILES_DIR` | `~/.config/slicerx/profiles` |
 | `--data-dir <dir>` | `SLICERX_MCP_DATA_DIR` or `SLICERX_DATA_DIR` | bundled `data/`, else the clone |
 | `--parts-table <file>` | (flag only) | the standard parts table bundled with mimir, read by `slicerx_parts_lookup` |
+| (environment only) | `NODE_COMPILE_CACHE=<dir>` keeps Node's compile cache in that folder, `NODE_DISABLE_COMPILE_CACHE=1` turns it off | `~/Library/Caches/slicerx/node-compile-cache` on macOS, `%LOCALAPPDATA%\slicerx\node-compile-cache` on Windows, `$XDG_CACHE_HOME/slicerx/node-compile-cache` (or `~/.cache/...`) on Linux. Later starts load faster from it. A folder that can't be written is skipped without a message, and the server runs as usual. |
 
 ## Volumes in the open app
 

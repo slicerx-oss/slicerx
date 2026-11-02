@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2026 The SlicerX contributors
-// Bundles the server into dist/cli.js (workspace packages inlined, npm
+// Bundles the server into dist/cli-main.js (workspace packages inlined, npm
 // dependencies external, the @noble crypto libraries too, since the type declarations
-// name them) and copies the data files it reads into data/.
-// With --standalone <dir> it writes one self-contained file with every
-// dependency inlined, <dir>/slicerx-mcp.mjs (plus chunks), and the data into <dir>/data/,
-// for bundles such as the Claude Code plugin that ship without node_modules.
+// name them), its entry dist/cli.js (src/launch.ts: the compile cache, then the server),
+// and copies the data files it reads into data/.
+// With --standalone <dir> it writes the server with every dependency inlined,
+// <dir>/slicerx-mcp-main.mjs (plus chunks) and its entry <dir>/slicerx-mcp.mjs, and the data
+// into <dir>/data/, for bundles such as the Claude Code plugin that ship without node_modules.
 // With --step-reader as well (the desktop app's build) the STEP reader goes beside it in <dir>/step-reader: the
 // built @slicerx/step-reader with its NOTICE, license texts and SOURCE.md, checked against the SHA-256 lines there.
 import { execFileSync } from 'node:child_process'
@@ -27,13 +28,15 @@ const external = ['@modelcontextprotocol/sdk', 'zod', 'yaml', '@noble/*']
 // never inlined, not even in the standalone bundle, so the wasm and its licenses stay in their own package.
 const optional = ['@slicerx/step-reader']
 const outFile = standalone ? join(standalone, 'slicerx-mcp.mjs') : join(pkg, 'dist', 'cli.js')
+// The server itself, loaded by the entry once the compile cache is on (a file beside the entry).
+const mainName = standalone ? 'slicerx-mcp-main.mjs' : 'cli-main.js'
 
 if (!standalone) rmSync(join(pkg, 'dist'), { recursive: true, force: true })
 await build({
-  entryPoints: standalone ? { 'slicerx-mcp': join(pkg, 'src', 'cli.ts') } : [join(pkg, 'src', 'cli.ts')],
+  entryPoints: standalone ? { 'slicerx-mcp-main': join(pkg, 'src', 'cli.ts') } : { 'cli-main': join(pkg, 'src', 'cli.ts') },
   // Code splitting keeps dynamic imports in their own chunks. Without it esbuild wraps shared
   // modules in lazy initializers, and zod's schemas are then used before they exist.
-  ...(standalone ? { outdir: standalone, splitting: true, outExtension: { '.js': '.mjs' }, chunkNames: 'chunks/[name]-[hash]' } : { outfile: outFile }),
+  ...(standalone ? { outdir: standalone, splitting: true, outExtension: { '.js': '.mjs' }, chunkNames: 'chunks/[name]-[hash]' } : { outdir: join(pkg, 'dist') }),
   bundle: true,
   platform: 'node',
   format: 'esm',
@@ -44,6 +47,18 @@ await build({
   // The self-contained build has no node_modules beside it, so a missing STEP reader is not an npm install away.
   define: { __SLICERX_STANDALONE__: standalone ? 'true' : 'false' },
   legalComments: standalone ? 'eof' : 'inline',
+  logLevel: 'warning',
+})
+// The entry: node built-ins only, so it loads in no time and nothing else is compiled before the cache is on.
+await build({
+  entryPoints: [join(pkg, 'src', 'launch.ts')],
+  outfile: outFile,
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node24',
+  define: { SX_MCP_MAIN: JSON.stringify(`./${mainName}`) },
+  legalComments: 'inline',
   logLevel: 'warning',
 })
 
