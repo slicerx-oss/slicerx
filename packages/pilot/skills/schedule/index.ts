@@ -299,7 +299,7 @@ export function createSchedule(shared: ToolShared) {
     version: '1.0.0',
     permission: 'read',
     description:
-      'Plan jobs across printers: for each job (object, copies, material, optional due date) it estimates time per copy by slicing one copy, splits copies into plates, and assigns each plate to a printer that has the material loaded (else notes a spool swap), idle printers first, lowest machine cost, meeting due dates. Returns a schedule table with start and finish times and the on-time status of each job. Skips paused, error and offline printers. It queues nothing: once the user accepts the plan, arrange and slice the plates, then call printer.queue once per plate (it asks for approval).',
+      'Plan jobs across printers: for each job (object, copies, material, optional due date) it estimates time per copy by slicing one copy, splits copies into plates, and assigns each plate to a printer that has the material loaded (else notes a spool swap), idle printers first, lowest machine cost, meeting due dates. Returns a schedule table with start and finish times and the on-time status of each job. Skips paused, error and offline printers. It queues nothing: once the user accepts the plan, arrange and slice the plates, then call printer.queue once per plate.',
     input: z.object({
       jobs: z.array(jobSchema).min(1).max(20).describe('Jobs to plan'),
       printers: z.array(z.string()).optional().describe('Printer ids to use'),
