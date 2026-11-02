@@ -10112,6 +10112,16 @@ impl SliceSession {
             // The corner beads of each surface and the corners its strip pieces leave alone
             // (`fillgap::corner_beads`), printed with its gap fill.
             let mut corner_gaps: [crate::fillgap::Corners; 3] = Default::default();
+            // The classic wall wedges at the layer's sharp tips (`fillgap::tip_wedges`), and where each surface that
+            // follows the corner rules below meets them (`fillgap::tip_cuts`): the surface ends at a straight cut there
+            // and the strip the lines leave before the cut gets a cap (`fillgap::tip_caps`).
+            let wedges = if crate::firmware::bambu_printer(cfg, cfg.gcode_flavor) {
+                crate::fillgap::tip_wedges(work.islands.iter().flat_map(|i| &i.gap_lines))
+            } else {
+                Vec::new()
+            };
+            let mut tip_cuts: [Vec<crate::fillgap::TipCut>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+            let mut tip_rooms: [Vec<f64>; 3] = [Vec::new(), Vec::new(), Vec::new()];
             // Which of the three surfaces are filled with monotonic line (their own gap fill, below). Only Bambu Lab
             // printers fill those slivers; other printers leave gap fill to `gap_fill_target` whatever the pattern.
             let mut line_fill = [false; 3];
@@ -10396,6 +10406,15 @@ impl SliceSession {
                     if region.is_empty() {
                         continue;
                     }
+                    if corner_rules && !wedges.is_empty() {
+                        let cuts = crate::fillgap::tip_cuts(&region, &wedges, surface_mm);
+                        if !cuts.is_empty() {
+                            region = crate::fillgap::cut_tips(&region, &cuts);
+                            if let Some(slot) = tip_cuts.get_mut(which) {
+                                *slot = cuts;
+                            }
+                        }
+                    }
                     let region_plain = region.clone();
                     let region = if turn == 0.0 {
                         region
@@ -10464,17 +10483,25 @@ impl SliceSession {
                             let inset_mm = inset_mm + shift.unwrap_or(0.0);
                             // A line along the wall prints from the walls' own edge (`wall_back`): the lines that fit
                             // are found in the surface grown back to it, and still end in the surface.
-                            let lines_in =
-                                (which == 0)
-                                    .then(|| grown_back(&region_plain))
-                                    .flatten()
-                                    .map(|r| {
-                                        if turn == 0.0 {
-                                            r
-                                        } else {
-                                            crate::patterns::rotate_shapes(&r, -turn)
-                                        }
-                                    });
+                            let found_in = (which == 0).then(|| grown_back(&region_plain)).flatten();
+                            // How much room a line needs from a tip's cut: as much as from the walls.
+                            if let (Some(cuts), Some(slot)) = (
+                                tip_cuts.get(which).filter(|c| !c.is_empty()),
+                                tip_rooms.get_mut(which),
+                            ) {
+                                *slot = crate::fillgap::tip_rooms(
+                                    found_in.as_ref().unwrap_or(&region_plain),
+                                    cuts,
+                                    inset_mm,
+                                );
+                            }
+                            let lines_in = found_in.map(|r| {
+                                if turn == 0.0 {
+                                    r
+                                } else {
+                                    crate::patterns::rotate_shapes(&r, -turn)
+                                }
+                            });
                             let center = crate::geom::Point::new(
                                 mm(f64::midpoint(self.bounds[0], self.bounds[2])),
                                 mm(f64::midpoint(self.bounds[1], self.bounds[3])),
@@ -10581,6 +10608,56 @@ impl SliceSession {
                             // The scanlines laid over the whole surface sit on the plate's grid: none of them prints.
                             spans.clear();
                         }
+                        // The tip lines kept below: the chain is laid without them and they go in beside it
+                        // (`fillgap::insert_tip_lines`), so the chain's own lines keep their directions.
+                        let mut tip_lines: Vec<infill::Iv> = Vec::new();
+                        if let (Some(cuts), Some(rooms)) = (
+                            tip_cuts.get(which).filter(|c| !c.is_empty()),
+                            tip_rooms.get(which),
+                        ) {
+                            // A line between a wall and a tip's cut prints when it has the room from the cut that a
+                            // line needs from the walls, measured from where the lines end.
+                            let to_plate = |p: crate::geom::Point| -> (f64, f64) {
+                                let p = frame.map_or(p, |f| f.back(p));
+                                let p = if turn == 0.0 {
+                                    p
+                                } else {
+                                    crate::patterns::rotate_points(&[p], turn)
+                                        .first()
+                                        .copied()
+                                        .unwrap_or(p)
+                                };
+                                (f64::from(p.x) / SCALE, f64::from(p.y) / SCALE)
+                            };
+                            let kept: Vec<infill::Iv> = own_out
+                                .iter()
+                                .filter(|o| {
+                                    !on_line(&own, o.k)
+                                        .iter()
+                                        .any(|iv| iv.t0 <= o.t1 && o.t0 <= iv.t1 && iv.t1 - iv.t0 >= min_len)
+                                })
+                                .filter(|o| {
+                                    let off = i64::from(o.k) * surface_spacing;
+                                    crate::fillgap::tip_line_fits(
+                                        cuts,
+                                        rooms,
+                                        to_plate(d.point(off, o.t0)),
+                                        to_plate(d.point(off, o.t1)),
+                                    )
+                                })
+                                .copied()
+                                .collect();
+                            if !kept.is_empty() {
+                                // A kept line replaces the short pieces it overlaps on its scanline, which would
+                                // otherwise reach the same ends and print it again.
+                                own.retain(|iv| {
+                                    !kept.iter().any(|o| o.k == iv.k && iv.t0 <= o.t1 && o.t0 <= iv.t1)
+                                });
+                                tip_lines.clone_from(&kept);
+                                own.extend(kept);
+                                own.sort_by_key(|iv| (iv.k, iv.t0));
+                            }
+                        }
                         if own.is_empty() && fits.is_empty() {
                             continue;
                         }
@@ -10601,10 +10678,18 @@ impl SliceSession {
                             Some(r) if inner_c.is_empty() => r,
                             _ => &inner_c,
                         };
+                        // The chain's lines: the tip lines that are still there go in after it is laid.
+                        let (tips_now, chain_own): (Vec<infill::Iv>, Vec<infill::Iv>) =
+                            if tip_lines.is_empty() {
+                                (Vec::new(), Vec::new())
+                            } else {
+                                own.iter().partition(|iv| tip_lines.contains(iv))
+                            };
+                        let chain_lines = if tip_lines.is_empty() { &own } else { &chain_own };
                         let edge = (link_max > 0.0 && !turn_area.is_empty()).then(|| {
                             let mut e = crate::edge::Edge::new(turn_area);
                             // A turn may not pass another line end.
-                            e.mark_ends(own.iter().flat_map(|iv| {
+                            e.mark_ends(chain_lines.iter().flat_map(|iv| {
                                 let off = i64::from(iv.k) * surface_spacing;
                                 [d.point(off, iv.t0), d.point(off, iv.t1)]
                             }));
@@ -10619,11 +10704,11 @@ impl SliceSession {
                         // either side, the shorter when both are free, round a notch on the same line only when neither
                         // is); monotonic and monotonic line are monotonic regions.
                         let (spans_in, spans_out) = (
-                            crate::monotonic::orca_spans(&own, d),
+                            crate::monotonic::orca_spans(chain_lines, d),
                             crate::monotonic::orca_spans(&own_out, d),
                         );
                         let to_point = |k: i64, t: i64| crate::monotonic::orca_point(d, k, t);
-                        let pls = if matches!(name, "rectilinear" | "alignedrectilinear") {
+                        let mut pls = if matches!(name, "rectilinear" | "alignedrectilinear") {
                             crate::monotonic::zigzag_with(
                                 &spans_in,
                                 surface_spacing,
@@ -10641,6 +10726,14 @@ impl SliceSession {
                                 corner_rules,
                             )
                         };
+                        if !tips_now.is_empty() {
+                            crate::fillgap::insert_tip_lines(
+                                &mut pls,
+                                &crate::monotonic::orca_spans(&tips_now, d),
+                                surface_spacing,
+                                &to_point,
+                            );
+                        }
                         if corner_rules && let Some(slot) = corner_gaps.get_mut(which) {
                             // Worked out on the plate: the grid's frame and turn undone as for the lines below.
                             let to_plate = |p: crate::geom::Point| -> crate::geom::Point {
@@ -10706,6 +10799,10 @@ impl SliceSession {
                                 );
                                 slot.beads.extend(found.beads);
                                 slot.quiet.extend(found.quiet);
+                            }
+                            if let Some(cuts) = tip_cuts.get(which).filter(|c| !c.is_empty()) {
+                                slot.beads
+                                    .extend(crate::fillgap::tip_caps(cuts, &ends, width, layer_height));
                             }
                         }
                         if let Some(slot_lines) = curved.get_mut(which) {
