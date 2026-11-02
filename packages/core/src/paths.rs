@@ -2001,6 +2001,14 @@ pub(crate) fn plan_layer_paths(
             }
             b.width_mm = base_width;
         }
+        // With first layer widths per feature the skirt prints at the first layer's line width, whichever region's work
+        // carries it.
+        let work_width = b.width_mm;
+        if cfg.on_first_layer && !w.skirt.is_empty() {
+            #[allow(clippy::cast_possible_truncation, reason = "a line width is small")]
+            let skirt_width = cfg.line_width as f32;
+            b.width_mm = skirt_width;
+        }
         for (i, c) in w.skirt.iter().enumerate() {
             if i == 0 && layer == 0 {
                 b.start_point = skirt_start_point(&c.points, cfg.raw_number("skirt_start_angle", -135.0));
@@ -2012,6 +2020,7 @@ pub(crate) fn plan_layer_paths(
                 b.push_loop(w.tool, Feature::Skirt, speed, &c.points);
             }
         }
+        b.width_mm = work_width;
         // On a first layer with brims of several objects, an object's brim prints right before its first island
         // (below); the loops of objects with no island in this work print here.
         let island_object = |isl: &IslandWalls| -> Option<usize> {
