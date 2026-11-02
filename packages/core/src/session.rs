@@ -10100,8 +10100,9 @@ impl SliceSession {
                 }
             };
             let mut curved: [Vec<[crate::geom::Point; 2]>; 3] = [Vec::new(), Vec::new(), Vec::new()];
-            // The right-angle corner beads of each surface (`fillgap::corner_beads`), printed with its gap fill.
-            let mut corner_gaps: [Vec<crate::arachne::WallLine>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+            // The corner beads of each surface and the corners its strip pieces leave alone
+            // (`fillgap::corner_beads`), printed with its gap fill.
+            let mut corner_gaps: [crate::fillgap::Corners; 3] = Default::default();
             // Which of the three surfaces are filled with monotonic line (their own gap fill, below). Only Bambu Lab
             // printers fill those slivers; other printers leave gap fill to `gap_fill_target` whatever the pattern.
             let mut line_fill = [false; 3];
@@ -10205,8 +10206,8 @@ impl SliceSession {
                 }
                 let spread = |v: f64| if density < 1.0 { v / density } else { v };
                 // On Bambu Lab printers a full monotonic line top, and the bottom over a raft, start each connected
-                // piece on its lowest line heading along the lines, and bead the free right-angle corners the
-                // chain leaves (`fillgap::corner_beads`). Other surfaces keep their own order and gap fill.
+                // piece on its lowest line heading along the lines, and bead the free corners the chain leaves
+                // (`fillgap::corner_beads`). Other surfaces keep their own order and gap fill.
                 let corner_rules = line_fill_gaps
                     && name == "monotonicline"
                     && (density - 1.0).abs() < 1e-9
@@ -10579,14 +10580,16 @@ impl SliceSession {
                                 cfg.solid_infill_width()
                             };
                             if let Some(along) = along {
-                                slot.extend(crate::fillgap::corner_beads(
+                                let found = crate::fillgap::corner_beads(
                                     &ends_area,
                                     &ends,
                                     &chain,
                                     along,
                                     width,
                                     layer_height,
-                                ));
+                                );
+                                slot.beads.extend(found.beads);
+                                slot.quiet.extend(found.quiet);
                             }
                         }
                         if let Some(slot_lines) = curved.get_mut(which) {
@@ -10902,7 +10905,10 @@ impl SliceSession {
                         // No bead wider than a solid infill line, whatever the surface's own width.
                         let mut beads =
                             crate::fillgap::line_gaps(&region, lines, mm_pitch, mm_pitch.min(solid_mm));
-                        beads.extend(corner_gaps.get(which).into_iter().flatten().cloned());
+                        if let Some(corners) = corner_gaps.get(which) {
+                            crate::fillgap::drop_corner_pieces(&mut beads, &corners.quiet);
+                            beads.extend(corners.beads.iter().cloned());
+                        }
                         beads
                     } else if line_fill.get(which).copied().unwrap_or(false) {
                         // A monotonic line surface on the first layer gets none, whatever the target says.

@@ -75,15 +75,27 @@ pub(crate) fn line_gaps(
     out
 }
 
-/// The corner beads of a monotonic line surface on Bambu Lab printers. At a right-angle corner of `ends_area` (where
-/// the line ends sit) whose bisector runs along the lines, two lines end one on each wall. From the corner to the
-/// nearest line end on each wall are the legs, a the shorter and b the longer. When those two
-/// lines are linked in the chain (`links`: a line's last point and the next line's first point), the turn between them
-/// fills the corner and it gets no bead. When they are not and the pocket the shorter leg leaves, e = w / sqrt(2) - a
-/// for line width `width_mm`, is [`CORNER_E_MIN`] to [`CORNER_E_MAX`] mm, the corner gets one straight bead along the
-/// longer leg's wall, about a - 0.06 mm wide. `lines` holds each line's first and last point in print order and
-/// `along` is the lines' direction. Every other corner (cut by a line, at another angle, or with e out of that range)
-/// gets none.
+/// What the corner pass decides for one monotonic line surface on Bambu Lab printers: the corner beads it prints, and
+/// the corners (on the plate) where the strip pass's own pieces are dropped ([`drop_corner_pieces`]) because the
+/// corner rule, not the strip's medial axis, decides what prints there.
+#[derive(Default)]
+pub(crate) struct Corners {
+    pub(crate) beads: Vec<WallLine>,
+    pub(crate) quiet: Vec<Point>,
+}
+
+/// The corner beads of a monotonic line surface on Bambu Lab printers. At a corner of `ends_area` (where the line ends
+/// sit) whose bisector runs along the lines (a run-in corner), two lines end, one on each wall. From the corner to the
+/// nearest line end on each wall are the legs, a the shorter and b the longer, and u is how far the shorter leg's line
+/// end sits from the corner across the lines. When those two lines are linked in the chain (`links`: a line's last
+/// point and the next line's first point), the turn between them fills the corner and it gets no bead. At a run-in
+/// corner of [`CORNER_ANGLE_MIN_DEG`] to [`CORNER_ANGLE_MAX_DEG`] whose lines are not linked and whose u is w / 2 less
+/// [`CORNER_U_FROM_HALF_MAX`] to w / 2 less [`CORNER_U_FROM_HALF_MIN`] (0.107 to 0.150 mm at w 0.42), for line width
+/// w `width_mm`, the corner gets one straight bead along the longer leg's wall, about
+/// 1.73 u - 0.10 mm wide; any other run-in corner in that range gets none. Those corners, the linked run-in tips down
+/// to [`TIP_ANGLE_MIN_DEG`] and the corners a line cuts across (bisector across the lines, [`CUT_ANGLE_MIN_DEG`] to
+/// [`CUT_ANGLE_MAX_DEG`]) get nothing from the strip pass either: they are listed in [`Corners::quiet`]. `lines` holds
+/// each line's first and last point in print order and `along` is the lines' direction.
 pub(crate) fn corner_beads(
     ends_area: &Shapes,
     lines: &[[Point; 2]],
@@ -91,7 +103,7 @@ pub(crate) fn corner_beads(
     along: (f64, f64),
     width_mm: f64,
     layer_height: f64,
-) -> Vec<WallLine> {
+) -> Corners {
     let to_mm = |p: Point| {
         (
             f64::from(p.x) / crate::geom::SCALE,
@@ -111,24 +123,14 @@ pub(crate) fn corner_beads(
     };
     let at_mm = |(x, y): (f64, f64)| IntPoint::new(mm(x), mm(y));
     let flat = layer_height * (1.0 - std::f64::consts::FRAC_PI_4);
-    let tilt = CORNER_ANGLE_TOL_DEG.to_radians().m_sin();
-    let mut out = Vec::new();
+    let run_in_tilt = RUN_IN_TOL_DEG.to_radians().m_sin();
+    let cut_tilt = CUT_TOL_DEG.to_radians().m_cos();
+    let mut out = Corners::default();
     for shape in ends_area {
         for raw in shape {
             let ring = perimeters::simplify_ring(raw, 5);
-            let n = ring.len();
-            if n < 3 {
-                continue;
-            }
-            for i in 0..n {
-                let (Some(&pv), Some(&pp), Some(&pn)) =
-                    (ring.get(i), ring.get((i + n - 1) % n), ring.get((i + 1) % n))
-                else {
-                    continue;
-                };
-                let v = to_mm(Point::new(pv.x, pv.y));
-                let walls = [pp, pn].map(|q| {
-                    let q = to_mm(Point::new(q.x, q.y));
+            for (v, prev, next, beveled) in ring_corners(&ring) {
+                let walls = [prev, next].map(|q| {
                     let len = (q.0 - v.0).m_hypot(q.1 - v.1);
                     (((q.0 - v.0) / len, (q.1 - v.1) / len), len)
                 });
@@ -136,17 +138,38 @@ pub(crate) fn corner_beads(
                 if l1 < CORNER_WALL_MIN_MM || l2 < CORNER_WALL_MIN_MM {
                     continue;
                 }
-                // A right angle whose bisector runs along the lines, and the surface inside it.
-                if (u1.0 * u2.0 + u1.1 * u2.1).abs() > tilt {
+                let angle = (u1.0 * u2.0 + u1.1 * u2.1).clamp(-1.0, 1.0).m_acos().to_degrees();
+                // The line ends' boundary cuts only sharp corners off; a cut-off corner at the rule's angles or
+                // wider is a rounded or chamfered corner of the part, which the strip pass fills as before.
+                if beveled && angle >= CORNER_ANGLE_MIN_DEG {
                     continue;
                 }
                 let half = (u1.0 + u2.0).m_hypot(u1.1 + u2.1);
-                let bis = ((u1.0 + u2.0) / half, (u1.1 + u2.1) / half);
-                if (bis.0 * along.1 - bis.1 * along.0).abs() > tilt {
+                if half < 1e-9 {
                     continue;
                 }
-                let probe = at_mm((v.0 + 0.02 * bis.0, v.1 + 0.02 * bis.1));
+                let bis = ((u1.0 + u2.0) / half, (u1.1 + u2.1) / half);
+                // The surface inside the corner (a convex corner of the surface), past the cut of a beveled one.
+                let reach = if beveled { BEVEL_MAX_MM * 2.0 } else { 0.02 };
+                let probe = at_mm((v.0 + reach * bis.0, v.1 + reach * bis.1));
                 if !crate::support::point_in(ends_area, probe.x, probe.y) {
+                    continue;
+                }
+                let corner = {
+                    let at = at_mm(v);
+                    Point::new(at.x, at.y)
+                };
+                // A corner a line cuts across: the strip pass leaves it empty too.
+                if (bis.0 * along.1 - bis.1 * along.0).abs() >= cut_tilt {
+                    if (CUT_ANGLE_MIN_DEG..=CUT_ANGLE_MAX_DEG).contains(&angle) {
+                        out.quiet.push(corner);
+                    }
+                    continue;
+                }
+                let rule = (CORNER_ANGLE_MIN_DEG..=CORNER_ANGLE_MAX_DEG).contains(&angle);
+                if (bis.0 * along.1 - bis.1 * along.0).abs() > run_in_tilt
+                    || !(rule || (TIP_ANGLE_MIN_DEG..CORNER_ANGLE_MIN_DEG).contains(&angle))
+                {
                     continue;
                 }
                 // The nearest line end on each wall.
@@ -157,7 +180,7 @@ pub(crate) fn corner_beads(
                             let leg = dx * u.0 + dy * u.1;
                             let off = (dx * u.1 - dy * u.0).abs();
                             (off <= END_ON_WALL_MM && leg > -END_ON_WALL_MM && leg < len)
-                                .then_some((leg, k, at))
+                                .then_some((leg, k, at, p))
                         })
                         .min_by(|a, b| a.0.total_cmp(&b.0))
                 };
@@ -167,39 +190,59 @@ pub(crate) fn corner_beads(
                 if h1.1 == h2.1 {
                     continue;
                 }
-                let (a, b) = (h1.0.min(h2.0), h1.0.max(h2.0));
-                let e = std::f64::consts::FRAC_1_SQRT_2 * width_mm - a;
-                if !(CORNER_E_MIN..=CORNER_E_MAX).contains(&e) {
+                let joined = linked(h1.2, h2.2);
+                if !rule {
+                    // A sharper run-in tip: quiet only when its lines are linked; a free one keeps its strip pieces.
+                    if joined {
+                        out.quiet.push(corner);
+                    }
                     continue;
                 }
-                if linked(h1.2, h2.2) {
+                out.quiet.push(corner);
+                if joined {
                     continue;
                 }
-                // Along the longer leg's wall, from beside the corner; the other wall is the way in.
-                let (u, inward) = if h1.0 >= h2.0 { (u1, u2) } else { (u2, u1) };
-                let wide = a >= CORNER_WIDE_LEG_MM;
-                let printed = a - if wide { 0.05 } else { 0.062 };
-                let w = printed - flat;
+                // Along the longer leg's wall, from beside the corner.
+                let (short, (wall, b)) = if h1.0 >= h2.0 {
+                    (h2, (u1, h1.0))
+                } else {
+                    (h1, (u2, h2.0))
+                };
+                let lateral = ((short.3.0 - v.0) * along.1 - (short.3.1 - v.1) * along.0).abs();
+                let window =
+                    (width_mm / 2.0 - CORNER_U_FROM_HALF_MAX)..=(width_mm / 2.0 - CORNER_U_FROM_HALF_MIN);
+                if !window.contains(&lateral) {
+                    continue;
+                }
+                let w = 1.73 * lateral - 0.100 - flat;
                 if w <= 0.0 {
                     continue;
                 }
-                let near = (
-                    v.0 + 0.025 * u.0 + 0.013 * inward.0,
-                    v.1 + 0.025 * u.1 + 0.013 * inward.1,
-                );
-                let far = if wide {
-                    // The far end sits 0.065 mm in from the wall and the bead is b - 0.05 long.
-                    let len = b - 0.05;
-                    let rise = 0.065 - 0.013;
-                    let run = (len * len - rise * rise).max(0.0).sqrt();
-                    (
-                        near.0 + run * u.0 + rise * inward.0,
-                        near.1 + run * u.1 + rise * inward.1,
-                    )
+                // Into the surface, square to the wall.
+                let side = wall.0 * bis.1 - wall.1 * bis.0;
+                let inward = if side >= 0.0 {
+                    (-wall.1, wall.0)
                 } else {
-                    (near.0 + (b + 0.005) * u.0, near.1 + (b + 0.005) * u.1)
+                    (wall.1, -wall.0)
                 };
-                out.push(WallLine {
+                // The near end sits 0.55 u - 0.041 from the corner, 0.69 u - 0.067 in from the wall; the far end
+                // 1.94 u - 0.22 in, for a bead b + 0.21 - 1.70 u long.
+                let (near_in, far_in) = (0.69 * lateral - 0.067, 1.94 * lateral - 0.220);
+                let from_corner = (0.55 * lateral - 0.041).max(near_in.abs());
+                let from = (from_corner * from_corner - near_in * near_in).max(0.0).sqrt();
+                let length = b + 0.21 - 1.70 * lateral;
+                let run = (length * length - (far_in - near_in) * (far_in - near_in))
+                    .max(0.0)
+                    .sqrt();
+                let near = (
+                    v.0 + from * wall.0 + near_in * inward.0,
+                    v.1 + from * wall.1 + near_in * inward.1,
+                );
+                let far = (
+                    v.0 + (from + run) * wall.0 + far_in * inward.0,
+                    v.1 + (from + run) * wall.1 + far_in * inward.1,
+                );
+                out.beads.push(WallLine {
                     inset: 0,
                     is_odd: true,
                     closed: false,
@@ -212,16 +255,132 @@ pub(crate) fn corner_beads(
     out
 }
 
-/// The range of e (mm) where a free right-angle corner of a monotonic line surface gets a bead; out of it there is
-/// none.
-const CORNER_E_MIN: f64 = 0.089;
-const CORNER_E_MAX: f64 = 0.143;
-/// How far from a right angle, and from the lines' direction for its bisector, a beaded corner may be, degrees.
-const CORNER_ANGLE_TOL_DEG: f64 = 1.0;
-/// The shortest wall on either side of a beaded corner, mm.
+/// A corner of a ring (mm): the corner, the point before it, the point after it and whether the ring cuts it off.
+type RingCorner = ((f64, f64), (f64, f64), (f64, f64), bool);
+
+/// The convex and concave corners of a ring of the line ends' boundary as (corner, the point before, the point
+/// after, beveled), mm. Where the boundary cuts a sharp corner off with edges shorter than [`BEVEL_MAX_MM`], the
+/// corner is where the two long walls beside them meet.
+fn ring_corners(ring: &[IntPoint<i32>]) -> Vec<RingCorner> {
+    let pts: Vec<(f64, f64)> = ring
+        .iter()
+        .map(|p| {
+            (
+                f64::from(p.x) / crate::geom::SCALE,
+                f64::from(p.y) / crate::geom::SCALE,
+            )
+        })
+        .collect();
+    let n = pts.len();
+    if n < 3 {
+        return Vec::new();
+    }
+    let at = |i: usize| pts.get(i % n).copied().unwrap_or((0.0, 0.0));
+    let long = |i: usize| {
+        let (p, q) = (at(i), at(i + 1));
+        (q.0 - p.0).m_hypot(q.1 - p.1) >= BEVEL_MAX_MM
+    };
+    let Some(first) = (0..n).find(|&i| long(i)) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut i = first;
+    loop {
+        // The next long edge after edge i, and the short ones between.
+        let mut j = i + 1;
+        while !long(j) {
+            j += 1;
+        }
+        let (a0, a1, b0, b1) = (at(i), at(i + 1), at(j), at(j + 1));
+        if j == i + 1 {
+            out.push((a1, a0, b1, false));
+        } else {
+            let (da, db) = ((a1.0 - a0.0, a1.1 - a0.1), (b1.0 - b0.0, b1.1 - b0.1));
+            let cross = da.0 * db.1 - da.1 * db.0;
+            if cross.abs() > 1e-12 {
+                let t = ((b0.0 - a0.0) * db.1 - (b0.1 - a0.1) * db.0) / cross;
+                let v = (a0.0 + t * da.0, a0.1 + t * da.1);
+                if (v.0 - a1.0).m_hypot(v.1 - a1.1) <= 2.0 * BEVEL_MAX_MM {
+                    out.push((v, a0, b1, true));
+                }
+            }
+        }
+        if j >= first + n {
+            break;
+        }
+        i = j;
+        if i >= first + n {
+            break;
+        }
+    }
+    out
+}
+
+/// Drops the strip pass's pieces (`beads`, from [`line_gaps`]) that reach within [`QUIET_NEAR_MM`] of one of the
+/// `quiet` corners and lie wholly within [`QUIET_REACH_MM`] of it. A sliver running along a wall past the corner keeps
+/// its bead.
+pub(crate) fn drop_corner_pieces(beads: &mut Vec<WallLine>, quiet: &[Point]) {
+    if quiet.is_empty() {
+        return;
+    }
+    let to_mm = |x: i32, y: i32| {
+        (
+            f64::from(x) / crate::geom::SCALE,
+            f64::from(y) / crate::geom::SCALE,
+        )
+    };
+    let near_segment = |c: (f64, f64), a: (f64, f64), b: (f64, f64)| {
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let l2 = dx * dx + dy * dy;
+        let t = if l2 > 0.0 {
+            (((c.0 - a.0) * dx + (c.1 - a.1) * dy) / l2).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        (c.0 - a.0 - t * dx).m_hypot(c.1 - a.1 - t * dy)
+    };
+    beads.retain(|bead| {
+        let pts: Vec<(f64, f64)> = bead.points.iter().map(|p| to_mm(p.x, p.y)).collect();
+        !quiet.iter().any(|q| {
+            let c = to_mm(q.x, q.y);
+            let within = pts
+                .iter()
+                .all(|p| (p.0 - c.0).m_hypot(p.1 - c.1) <= QUIET_REACH_MM);
+            let touches = match pts.as_slice() {
+                [only] => (only.0 - c.0).m_hypot(only.1 - c.1) <= QUIET_NEAR_MM,
+                _ => pts
+                    .windows(2)
+                    .any(|w| matches!(w, [a, b] if near_segment(c, *a, *b) <= QUIET_NEAR_MM)),
+            };
+            within && touches
+        })
+    });
+}
+
+/// The corner angles (degrees) where the bead rule decides a run-in corner.
+const CORNER_ANGLE_MIN_DEG: f64 = 74.0;
+const CORNER_ANGLE_MAX_DEG: f64 = 106.0;
+/// Below the bead rule's angles, run-in tips down to this angle (degrees) get nothing when their lines are linked.
+const TIP_ANGLE_MIN_DEG: f64 = 55.0;
+/// The range of u where a free run-in corner gets a bead, as how far it sits under half the line width (mm); out of it
+/// there is none.
+const CORNER_U_FROM_HALF_MIN: f64 = 0.060;
+const CORNER_U_FROM_HALF_MAX: f64 = 0.103;
+/// How far a run-in corner's bisector may sit from the lines' direction, degrees.
+const RUN_IN_TOL_DEG: f64 = 3.0;
+/// How far a cut corner's bisector may sit from square across the lines, degrees, and the angles (degrees) of the cut
+/// corners that get nothing.
+const CUT_TOL_DEG: f64 = 10.0;
+const CUT_ANGLE_MIN_DEG: f64 = 40.0;
+const CUT_ANGLE_MAX_DEG: f64 = 110.0;
+/// A strip piece is dropped at a quiet corner when it comes this close to it (mm) and lies wholly within
+/// [`QUIET_REACH_MM`] of it.
+const QUIET_NEAR_MM: f64 = 0.2;
+const QUIET_REACH_MM: f64 = 0.8;
+/// Boundary edges shorter than this (mm) are a bevel across a sharp corner, not a wall.
+const BEVEL_MAX_MM: f64 = 0.15;
+/// The shortest wall on either side of a corner the pass looks at, mm.
 const CORNER_WALL_MIN_MM: f64 = 0.6;
-/// From this shorter leg (mm) the bead is a little wider for its leg and slants in toward its far end.
-const CORNER_WIDE_LEG_MM: f64 = 0.19;
 /// How far a line end may sit from the wall it ends on, mm.
 const END_ON_WALL_MM: f64 = 0.01;
 /// The longest travel that links two line ends at a corner, mm.
