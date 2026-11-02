@@ -51,7 +51,7 @@ async function target(input: Record<string, unknown>, o: { printers?: PrinterInf
     run: runHandle(book, 's'),
     ask: async (q: { title: string; question: string; choices: PilotChoice[] }) => {
       asks.push(q)
-      return o.answer ? o.answer(q.choices) : 'pick:none'
+      return { id: o.answer ? o.answer(q.choices) : 'pick:none' }
     },
   } as unknown as ToolContext
   const tool = runTools({ memory: o.memory })[0]!
@@ -287,7 +287,8 @@ describe('color words', () => {
 
 describe('run.target in the running pilot', () => {
   /** A pilot with the edition's memory switch, two online printers and a printer note, whose model calls run.target. */
-  async function chat(local: boolean) {
+  let pilotRef: ReturnType<typeof createPilot> | null = null
+  async function chat(local: boolean, answer: (askId: string) => Promise<void> = (askId) => pilotRef!.answer!(askId, 'pick:none')) {
     const statuses = [status('bay-1', [WHITE_PLA, BLACK_PETG]), status('bay-2', [{ id: 'A1', material: 'PLA', color: '#000000' }])]
     const printers = {
       list: async () => [A1, MINI],
@@ -305,6 +306,7 @@ describe('run.target in the running pilot', () => {
       memory: { local, store: memory([{ kind: 'printer', text: 'Prints mostly on the A1 mini in the shelf' }]) },
       printRun: { fingerprint: () => 'fp1', setTarget },
     })
+    pilotRef = pilot
     const asks: string[] = []
     const calls = new Set<string>()
     const results: Extract<PilotEvent, { type: 'tool_result' }>[] = []
@@ -312,7 +314,7 @@ describe('run.target in the running pilot', () => {
       if (ev.type === 'approval_request') await pilot.resolveApproval(ev.request.id, { kind: 'approve' })
       if (ev.type === 'ask') {
         asks.push(ev.question)
-        await pilot.answer!(ev.askId, 'pick:none')
+        await answer(ev.askId)
       }
       if (ev.type === 'tool_call' && ev.tool === 'run.target') calls.add(ev.callId)
       if (ev.type === 'tool_result' && calls.has(ev.callId)) results.push(ev)
@@ -330,6 +332,13 @@ describe('run.target in the running pilot', () => {
   it('with memory off the note is not read, so it asks', async () => {
     const { asks, setTarget } = await chat(false)
     expect(asks).toEqual(['2 printers are online. Pick the spool to print with.'])
+    expect(setTarget).not.toHaveBeenCalled()
+  })
+
+  it('a dismissed printer question picks nothing and changes nothing, as None of these does', async () => {
+    const { asks, results, setTarget } = await chat(false, (askId) => pilotRef!.answer!(askId, null, 'not yet'))
+    expect(asks).toHaveLength(1)
+    expect(results.map((r) => [r.ok, r.summary])).toEqual([[false, 'No printer picked. Nothing changed.']])
     expect(setTarget).not.toHaveBeenCalled()
   })
 })

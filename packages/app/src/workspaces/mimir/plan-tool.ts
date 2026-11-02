@@ -165,7 +165,8 @@ export function planTool(opts: { newId?: () => string } = {}): PilotTool<never> 
         ],
       })
       const latest = planById(plan.planId) ?? shown
-      if (picked !== planChoiceId(PLAN_GO, plan.planId)) {
+      // anything but Go is not approved: Not yet, and a dismissed card too
+      if (picked.id !== planChoiceId(PLAN_GO, plan.planId)) {
         const answer: PlanAnswer = { planId: plan.planId, accepted: false }
         return { ok: false, summary: 'Not approved; build nothing until the plan is agreed', output: answer }
       }

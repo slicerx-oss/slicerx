@@ -101,6 +101,26 @@ describe('design.plan', () => {
     expect(r.output).not.toHaveProperty('edits')
   })
 
+  it('a dismissed plan card is not approved, so nothing builds from it and no design ties to it', async () => {
+    let planId = ''
+    const p = scriptedMimir(script(BOX as unknown as Record<string, unknown>), mimirTools())
+    const ev: PilotEvent[] = []
+    for await (const e of p.run('s', 'plan a box')) {
+      ev.push(e)
+      if (e.type === 'ask') {
+        planId = planOfChoices(e.choices)!
+        void p.answer!(e.askId, null, 'make it taller')
+      }
+    }
+    const r = result(ev)
+    expect(r.ok).toBe(false)
+    expect(r.output).toEqual({ planId, accepted: false })
+    expect(ev.find((e) => e.type === 'ask_answered')).toMatchObject({ dismissed: true, said: 'make it taller' })
+    const [extrude] = withPlanTies([defineTool({ name: 'geom.extrude', version: '1.0.0', source: 'command', permission: 'slice', description: 'extrude stand-in', input: z.object({ design: z.string().optional() }), run: async () => ({ summary: 'ok' }) }) as PilotTool<never>])
+    await extrude!.run({ design: 'd5' } as never, {} as never)
+    expect(mimirPlans.get(planId)?.design).toBeUndefined()
+  })
+
   it('takes the overall size and holes when mimir knows them', async () => {
     const ev = await run({ ...BOX, overall: { x: 80, y: 60, z: 44 }, holes: [{ name: 'Vent', diameter: 5 }] }, (e) => planChoiceId('go', planOfChoices(e.choices)!))
     expect(result(ev).ok).toBe(true)
@@ -161,7 +181,7 @@ describe('design.plan', () => {
   it(`keeps the last ${PLAN_KEEP} plans, the oldest going first`, async () => {
     const tool = planTool()
     const ids: string[] = []
-    const ctx = { ask: async (q: { choices: { id: string }[] }) => q.choices[1]!.id } as never
+    const ctx = { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[1]!.id }) } as never
     for (let n = 0; n <= PLAN_KEEP; n++) {
       const out = await tool.run(BOX as never, ctx)
       ids.push((out.output as { planId: string }).planId)
@@ -178,7 +198,7 @@ describe('design.plan', () => {
     const out = await tool.run(BOX as never, {
       ask: async (q: { choices: { id: string }[] }) => {
         seen = planOfChoices(q.choices)
-        return q.choices[0]!.id
+        return { id: q.choices[0]!.id }
       },
     } as never)
     expect(seen).toBe('plan:with:colons')
@@ -203,8 +223,8 @@ describe("the tab's design.plan", () => {
 })
 
 describe('design.plan and design.check share one registry', () => {
-  const go = { ask: async (q: { choices: { id: string }[] }) => q.choices[0]!.id } as never
-  const no = { ask: async (q: { choices: { id: string }[] }) => q.choices[1]!.id } as never
+  const go = { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as never
+  const no = { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[1]!.id }) } as never
   /** A stand-in for a design tool: design.new answers with its design id, a geometry step takes one. */
   const fake = (name: string, permission: 'read' | 'slice', output?: unknown): PilotTool<never> =>
     defineTool({ name, version: '1.0.0', source: 'command', permission, description: `${name} stand-in for the test`, input: z.object({ design: z.string().optional() }), run: async () => ({ summary: name, output }) }) as PilotTool<never>
@@ -214,7 +234,7 @@ describe('design.plan and design.check share one registry', () => {
       ask: async (q: { choices: { id: string }[] }) => {
         const id = planOfChoices(q.choices)!
         expect(editPlan(id, { ...planById(id)!, features: [{ ...BOX.features[0]!, sizes: { ...BOX.features[0]!.sizes, wall: 2.4 } }, BOX.features[1]!] })).toBe(true)
-        return q.choices[0]!.id
+        return { id: q.choices[0]!.id }
       },
     } as never)
     const { planId } = out.output as { planId: string }
@@ -251,7 +271,7 @@ describe('design.plan and design.check share one registry', () => {
   it("the scripted check reads the person's last card plan; a client's plan put after it changes nothing", async () => {
     const step = SCRIPTS.find((x) => x.id === 'check')!.steps[0] as (m: never[]) => { calls?: { name: string; args: { planId: string } }[] }
     expect(step([]).calls).toBeUndefined()
-    const { planId } = (await planTool().run(BOX as never, { ask: async (q: { choices: { id: string }[] }) => q.choices[0]!.id } as never)).output as { planId: string }
+    const { planId } = (await planTool().run(BOX as never, { ask: async (q: { choices: { id: string }[] }) => ({ id: q.choices[0]!.id }) } as never)).output as { planId: string }
     expect(step([]).calls?.[0]).toEqual({ name: 'design.check', args: { planId } })
     // an MCP client puts its own plan after the card's (design.put_plan)
     mimirPlans.put({ planId: 'client-9', ...BOX, part: 'Steered' }, undefined, 'client')

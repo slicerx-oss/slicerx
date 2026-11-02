@@ -5,7 +5,7 @@
 // its source. None changes anything; they are how mimir checks with the person and shows what it found.
 import type { PilotDim, PilotSheetBind, PilotSheetSolid } from '@slicerx/contracts'
 import { z } from 'zod'
-import { defineTool, type PilotTool } from '../tool'
+import { defineTool, wasDismissed, type PilotTool } from '../tool'
 
 export function askTool(): PilotTool<never> {
   return defineTool({
@@ -13,7 +13,8 @@ export function askTool(): PilotTool<never> {
     version: '1.0.0',
     source: 'command',
     permission: 'read',
-    description: 'Ask the person a short question with two to four fixed answers and wait for the pick. Use it to confirm something before building on it, such as which model a photo shows. Returns the picked choice id.',
+    description:
+      'Ask the person a short question with two to four fixed answers and wait for the pick. Use it to confirm something before building on it, such as which model a photo shows. Returns the picked choice id, or dismissed when the person turned the question down. If dismissed, do not ask it again; carry on without it, or reply in text. If they wrote something, treat it as their answer.',
     input: z.object({
       title: z.string().min(2).max(40),
       question: z.string().min(3).max(160),
@@ -22,7 +23,13 @@ export function askTool(): PilotTool<never> {
     args: (i) => `"${i.question}"`,
     async run(i, ctx) {
       if (!ctx.ask) return { ok: false, summary: 'Nobody here can answer a question' }
-      const picked = await ctx.ask({ title: i.title, question: i.question, choices: i.choices })
+      const answer = await ctx.ask({ title: i.title, question: i.question, choices: i.choices })
+      // turning a question down is an answer, not a failure: the run carries on from it
+      if (wasDismissed(answer.id)) {
+        if (answer.said) return { summary: `Dismissed, wrote: "${answer.said}"`, output: { picked: null, dismissed: true, said: answer.said } }
+        return { summary: 'Dismissed', output: { picked: null, dismissed: true } }
+      }
+      const picked = answer.id
       const label = i.choices.find((c) => c.id === picked)?.label ?? picked
       return { summary: label, output: { picked, label } }
     },
