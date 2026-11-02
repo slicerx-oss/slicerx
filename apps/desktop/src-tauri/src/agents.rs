@@ -758,6 +758,8 @@ mod bundle_tests {
         let server = tmp("server");
         std::fs::create_dir_all(server.join("chunks")).unwrap();
         std::fs::write(server.join("slicerx-mcp.mjs"), "x").unwrap();
+        // the entry loads the server from the file beside it, after it turns on the compile cache
+        std::fs::write(server.join("slicerx-mcp-main.mjs"), "z").unwrap();
         std::fs::write(server.join("chunks").join("a.mjs"), "y").unwrap();
         let out = tmp("out").join("slicerx.mcpb");
         pack_mcpb(
@@ -773,6 +775,7 @@ mod bundle_tests {
             .collect();
         assert!(names.contains(&"manifest.json".to_owned()));
         assert!(names.contains(&"server/slicerx-mcp.mjs".to_owned()));
+        assert!(names.contains(&"server/slicerx-mcp-main.mjs".to_owned()));
         assert!(names.contains(&"server/chunks/a.mjs".to_owned()));
         let mut text = String::new();
         std::io::Read::read_to_string(&mut zip.by_name("manifest.json").unwrap(), &mut text).unwrap();
