@@ -191,7 +191,7 @@ export function cloudTools(deps: CloudToolDeps): PilotTool<never>[] {
     input: z.object({
       model: z.string().min(1).describe('Absolute path to an STL file, an http(s) URL, or a built-in test model such as sample:cube-20'),
       profiles: z.array(z.string()).max(8).default([]).describe('Profiles applied in order, by id or name from slicerx_list_profiles'),
-      overrides: z.record(z.string(), z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])).optional().describe('OrcaSlicer setting keys to values, applied last'),
+      overrides: z.record(z.string(), z.union([z.number(), z.boolean(), z.string(), z.array(z.unknown())])).optional().describe('Setting keys to values, applied last'),
       name: z.string().min(1).max(120).optional().describe('Job name shown in the job list; default the file name'),
       emit_preview: z.boolean().default(false).describe('Also make the toolpath preview'),
     }),

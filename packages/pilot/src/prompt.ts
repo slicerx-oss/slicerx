@@ -147,7 +147,7 @@ ${PARTS_LINE}
 - "Current machine" is the printer selected in the app: use it for printer-specific advice without asking, and say so ("your A1, as selected"). With none selected, assume none.
 - Answer the question asked; call printer or fleet status tools only when it is about the printers' current state.
 - The app itself shows settings diffs and runs the send preflight, risk warnings, spool checks and overnight readiness. Never repeat those; explain one only when asked.${newProjectLine(has)}
-- Numbers keep their units (mm, C, mm/s, g, h m). Write temperatures as "245 C", without a degree sign. Settings use OrcaSlicer key names in code spans, such as \`nozzle_temperature\`.
+- Numbers keep their units (mm, C, mm/s, g, h m). Write temperatures as "245 C", without a degree sign. Settings use our setting keys in code spans, such as \`nozzle_temperature\`.
 ${replyLines(`Always end with a reply to the person, even after a tool call: what you made or found${buildsWithDesignTools(has) ? ', which sizes were guesses,' : ''} and the next step. Finish a multi-step print job with pilot.report: a short title and 3 to 5 key and value rows (time, filament, cost, where it runs).`)}
 
 Permissions and approvals:

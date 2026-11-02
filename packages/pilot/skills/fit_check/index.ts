@@ -167,7 +167,7 @@ export function createFitCheck() {
       const test = String(obj(tolerance?.data['orca_test'])['model'] ?? '')
       const sources = new Set<string>([...strs(tolerance?.data['src']), ...causeSrc(accuracy, 'c_hole_compensation')])
       const advice: string[] = []
-      if (i.measuredGrowthMm === undefined) advice.push(assistantText(`These growth values are mimir rules of thumb, not a measurement of this printer. Print the Orca tolerance test to measure it${test ? ` (${test.replace(/\.$/, '')})` : ''}, then run this again with measuredGrowthMm.`))
+      if (i.measuredGrowthMm === undefined) advice.push(assistantText(`These growth values are mimir rules of thumb, not a measurement of this printer. Print a tolerance test to measure it${test ? ` (${test.replace(/\.$/, '')})` : ''}, then run this again with measuredGrowthMm.`))
       if (i.nearBed && !(typeof efc === 'number' && efc > 0)) {
         advice.push('Set elephant foot compensation, or keep moving joints out of the first layers; the base flare closes gaps near the bed.')
         for (const s of causeSrc(accuracy, 'c_elephant_foot')) sources.add(s)

@@ -183,7 +183,7 @@ export function kbTools(): PilotTool<never>[] {
     version: '1.0.0',
     source: 'kb',
     permission: 'read',
-    description: 'Turn a job request in plain words ("12 strong PETG brackets by Friday") into structured goals (count, part, material, strength, speed, detail, deadline, printers) and setting targets by Orca key with reasons. Call it first for any job request.',
+    description: 'Turn a job request in plain words ("12 strong PETG brackets by Friday") into structured goals (count, part, material, strength, speed, detail, deadline, printers) and setting targets by setting key with reasons. Call it first for any job request.',
     input: z.object({ text: z.string().min(2).describe('The user\'s request, verbatim') }),
     args: (i) => `"${i.text}"`,
     async run(i, ctx) {

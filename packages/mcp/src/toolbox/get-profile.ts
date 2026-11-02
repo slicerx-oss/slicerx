@@ -13,7 +13,7 @@ export default (d: ServerToolDeps) =>
     permission: 'read',
     toolset: 'settings',
     ungated: true,
-    description: 'Return the settings a profile sets, with OrcaSlicer inherits chains resolved. Accepts an id from slicerx_list_profiles or a profile name.',
+    description: 'Return the settings a profile sets, with inherits chains resolved. Accepts an id from slicerx_list_profiles or a profile name.',
     input: z.object({ profile: z.string().min(1).describe('Profile id or name, such as "printer:prusa_mk4s" or "filament:pla"') }),
     async run(args) {
       await d.profiles.prepare([args.profile])

@@ -122,7 +122,7 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
       instructions:
-        assistantText(`${productName()}, the AI-ready slicer. Tools slice and estimate models, plan and check OrcaSlicer settings, run mimir skills on a project (orient, arrange, cut, slice), and read and control printers. Anything that changes a printer, a saved profile or spends money follows the permission policy the user set: it runs, asks the user first, or is refused. When a tool returns status "approval_required", show the request to the user and call slicerx_approve only with their answer. Resources hold the knowledge base, the settings reference, printer setup guides and the theming and embedding docs.`),
+        assistantText(`${productName()}, the AI-ready slicer. Tools slice and estimate models, plan and check settings, run mimir skills on a project (orient, arrange, cut, slice), and read and control printers. Anything that changes a printer, a saved profile or spends money follows the permission policy the user set: it runs, asks the user first, or is refused. When a tool returns status "approval_required", show the request to the user and call slicerx_approve only with their answer. Resources hold the knowledge base, the settings reference, printer setup guides and the theming and embedding docs.`),
     },
   )
   // Before the first tool is registered, which is when the SDK sets its tools/call handler.
@@ -200,14 +200,14 @@ export function createSlicerxServer(ctx: ServerContext, opts: SlicerxServerOptio
   server.registerResource(
     'settings-catalog',
     'slicerx://settings/catalog',
-    { title: 'Settings catalog', description: 'OrcaSlicer keys with Pilot edit rules and guardrail bounds (knowledge/settings.yaml)', mimeType: 'application/yaml' },
+    { title: 'Settings catalog', description: 'Setting keys with Pilot edit rules and guardrail bounds (knowledge/settings.yaml)', mimeType: 'application/yaml' },
     (uri) => ({ contents: [{ uri: uri.href, mimeType: 'application/yaml', text: store.knowledge().find((e) => e.kind === 'settings_catalog')?.text ?? '' }] }),
   )
 
   server.registerResource(
     'settings-schema',
     'slicerx://settings/schema',
-    { title: 'Settings schema', description: `Every OrcaSlicer setting ${productName()} knows: type, unit, default, limits, help and invalidated stage`, mimeType: 'application/json' },
+    { title: 'Settings schema', description: `Every setting ${productName()} knows: type, unit, default, limits, help and invalidated stage`, mimeType: 'application/json' },
     (uri) => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify({ orca_commit: ORCA_COMMIT, settings: store.settingsSchema() }) }] }),
   )
 

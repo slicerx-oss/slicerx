@@ -14,8 +14,8 @@ export default (d: ServerToolDeps) =>
     permission: 'read',
     toolset: 'settings',
     ungated: true,
-    description: 'Explain one OrcaSlicer setting: label, a plain summary, help text, unit, default, limits, what raising or lowering it does, when it has no effect, and the first slicing stage it invalidates. Use slicerx_find_settings if you do not know the key.',
-    input: z.object({ key: z.string().min(1).describe('OrcaSlicer key, such as "sparse_infill_density" or "elefant_foot_compensation"') }),
+    description: 'Explain one setting: label, a plain summary, help text, unit, default, limits, what raising or lowering it does, when it has no effect, and the first slicing stage it invalidates. Use slicerx_find_settings if you do not know the key.',
+    input: z.object({ key: z.string().min(1).describe('Setting key, such as "sparse_infill_density" or "elefant_foot_compensation"') }),
     async run(args) {
       const info = explainSetting(d.store, args.key.trim())
       if (info) return { summary: args.key.trim(), structured: info as unknown as Record<string, unknown> }

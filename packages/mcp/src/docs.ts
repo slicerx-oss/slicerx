@@ -93,7 +93,7 @@ export function settingEntry(paths: DataPaths, section: string, group: string, k
 
 /** Markdown reference of every setting, grouped by section and group. Used when the published reference is not installed. */
 export function settingsReference(store: DataStore): string {
-  const lines = [`# ${productName()} settings reference`, '', `Every OrcaSlicer setting ${productName()} reads, with its unit, default and limits. Keys are OrcaSlicer names.`, '']
+  const lines = [`# ${productName()} settings reference`, '', `Every setting ${productName()} reads, with its unit, default and limits, by its setting key.`, '']
   const bySection = new Map<string, Map<string, typeof defs>>()
   const defs = [...store.settingsSchema()]
   for (const d of defs) {

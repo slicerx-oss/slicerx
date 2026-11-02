@@ -13,7 +13,7 @@ import { checkChanges, configRisks, plateStrength } from '../optimize_to_target/
 
 const changeSet = z.object({
   name: z.string().optional().describe('Short label, such as "0.6 nozzle" or "3 walls"'),
-  changes: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])).describe('Orca keys and values on top of the current settings; {} means the current settings'),
+  changes: z.record(z.string(), z.union([z.number(), z.string(), z.boolean()])).describe('Setting keys and values on top of the current settings; {} means the current settings'),
 })
 
 function label(set: { name?: string | undefined; changes: Record<string, unknown> }): string {
@@ -53,7 +53,7 @@ export function createCompareSetups() {
     version: '1.0.0',
     permission: 'slice',
     description:
-      'Slice the same plate two ways and compare side by side: print time, filament grams, cost, a strength proxy and risk notes, with a one line verdict. Each setup is a set of Orca keys on top of the current settings (empty means the current settings). Does not change the project. Use it for "is a 0.6 nozzle worth it" or to check a settings plan before applying it.',
+      'Slice the same plate two ways and compare side by side: print time, filament grams, cost, a strength proxy and risk notes, with a one line verdict. Each setup is a set of setting keys on top of the current settings (empty means the current settings). Does not change the project. Use it for "is a 0.6 nozzle worth it" or to check a settings plan before applying it.',
     input: z.object({
       plate: z.number().int().min(1).optional().describe('Plate number; default the first plate'),
       a: changeSet.describe('Setup A'),

@@ -132,7 +132,7 @@ export function createSupports() {
       objectId: z.string().optional().describe('Object id or name; defaults to the first object'),
       protect: z.array(z.enum(FACE_NAMES as [FaceDir, ...FaceDir[]])).optional().describe('Faces to keep free of support scars, in model coordinates'),
       prefer: z.enum(['normal', 'tree']).optional().describe('Force a support type when the user asked for one'),
-      thresholdAngle: z.number().int().min(5).max(80).optional().describe('Orca support threshold angle in degrees; default from the layer height'),
+      thresholdAngle: z.number().int().min(5).max(80).optional().describe('Support threshold angle in degrees; default from the layer height'),
       apply: z.boolean().optional().describe('Apply the support settings to the project; default false, which only reports'),
     }),
     args: (i) => [i.objectId ?? null, i.protect?.length ? `--protect ${i.protect.join(',')}` : null, i.prefer ? `--prefer ${i.prefer}` : null, i.apply ? '--apply' : null].filter(Boolean).join(' '),
