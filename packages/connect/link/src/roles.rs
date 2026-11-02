@@ -234,6 +234,8 @@ pub(crate) const APP_LINK_METHODS: &[(&str, LinkClass)] = &[
     ("mimir.session", LinkClass::Read),
     // A client's message to mimir, with pictures and PDFs: it goes in the chat as the person's next message, so it edits.
     ("mimir.ask", LinkClass::Edit),
+    // Turns down the question mimir waits on, so its run carries on. It changes the chat; it never picks an answer.
+    ("mimir.dismiss", LinkClass::Edit),
     // Today's mimir cloud use and caps for this install. The token stays in the app's keychain.
     ("mimir.quota", LinkClass::Read),
     // Whether mimir cloud keeps this install's sessions, and whether the person read the notice.
@@ -540,6 +542,7 @@ mod tests {
         ("mimir.sessions", LinkClass::Read),
         ("mimir.session", LinkClass::Read),
         ("mimir.ask", LinkClass::Edit),
+        ("mimir.dismiss", LinkClass::Edit),
         ("mimir.quota", LinkClass::Read),
         ("mimir.share", LinkClass::Read),
         ("mimir.status", LinkClass::Read),

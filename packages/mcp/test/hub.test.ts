@@ -387,6 +387,91 @@ describe('a message to mimir with files, through a scripted hub', () => {
   })
 })
 
+describe('turning down the question mimir waits on, through a scripted hub', () => {
+  const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
+
+  /** The open app as the link sees it: one chat whose run waits on a question until it is turned down. */
+  function app() {
+    const seen: { method: string; args: Record<string, unknown> }[] = []
+    let waiting: { askId: string; title: string; question: string; choices: { id: string; label: string }[] } | null = { askId: 'ask_1', title: 'Confirm the part', question: 'Is this the thermostat on your wall?', choices: [{ id: 'same', label: 'Yes, that one' }, { id: 'other', label: 'A different model' }] }
+    let said: string | undefined
+    const handle = (method: string, args: Record<string, unknown>): unknown => {
+      seen.push({ method, args })
+      if (method === 'mimir.sessions') return { sessions: [{ id: 's_1' }] }
+      if (method === 'mimir.session') return { id: 's_1', stats: { questions: 1, questionsDismissed: waiting ? 0 : 1 }, waiting, turns: [{ said: 'a wall mount', steps: [{ kind: 'choice', askId: 'ask_1', picked: waiting ? null : '', ...(waiting ? {} : { dismissed: true, ...(said ? { said } : {}) }) }] }] }
+      if (method === 'mimir.ask') {
+        if (waiting) throw { code: 'busy', message: 'mimir is answering a message now' }
+        return { sessionId: 's_1', said: args['message'], attachments: [] }
+      }
+      if (method === 'mimir.dismiss') {
+        if (!waiting || (args['askId'] !== undefined && args['askId'] !== waiting.askId)) throw { code: 'not_found', message: 'mimir is not waiting on that question' }
+        const askId = waiting.askId
+        said = typeof args['said'] === 'string' ? args['said'] : undefined
+        waiting = null
+        return { sessionId: 's_1', askId, dismissed: true, ...(said ? { said } : {}) }
+      }
+      return {}
+    }
+    return { seen, handle }
+  }
+
+  it('reads the waiting question, turns it down with words, and mimir.ask goes through only after', async () => {
+    const a = app()
+    const h = await connect(opts(scriptedHub({ ok: true }, true, undefined, a.handle)))
+    const before = await h.call('slicerx_mimir_session', {})
+    expect(data<{ output: { waiting: { askId: string } | null } }>(before).output.waiting?.askId).toBe('ask_1')
+    const blocked = await h.call('slicerx_mimir_ask', { message: 'are you there?' })
+    expect(blocked.isError).toBe(true)
+    expect(text(blocked)).toMatch(/busy/)
+
+    const out = await h.call('slicerx_mimir_dismiss', { askId: 'ask_1', said: 'it is a different model' })
+    expect(out.isError, text(out)).toBeFalsy()
+    expect(data<{ output: unknown }>(out).output).toEqual({ sessionId: 's_1', askId: 'ask_1', dismissed: true, said: 'it is a different model' })
+    expect(a.seen.find((s) => s.method === 'mimir.dismiss')).toEqual({ method: 'mimir.dismiss', args: { askId: 'ask_1', said: 'it is a different model' } })
+
+    const after = data<{ output: { waiting: unknown; stats: { questionsDismissed: number }; turns: { steps: Record<string, unknown>[] }[] } }>(await h.call('slicerx_mimir_session', { id: 's_1' })).output
+    expect(after.waiting).toBeNull()
+    expect(after.stats.questionsDismissed).toBe(1)
+    expect(after.turns[0]!.steps[0]).toMatchObject({ dismissed: true, said: 'it is a different model' })
+    const asked = await h.call('slicerx_mimir_ask', { message: 'thanks' })
+    expect(asked.isError, text(asked)).toBeFalsy()
+  })
+
+  it('a stale askId is not_found, a long said is invalid_input before anything is sent, and a closed tab is not_configured', async () => {
+    const a = app()
+    const h = await connect(opts(scriptedHub({ ok: true }, true, undefined, a.handle)))
+    const stale = await h.call('slicerx_mimir_dismiss', { askId: 'ask_old' })
+    expect(stale.isError).toBe(true)
+    expect(text(stale)).toMatch(/not_found/)
+    const long = await h.call('slicerx_mimir_dismiss', { said: 'x'.repeat(1001) })
+    expect(long.isError).toBe(true)
+    // the server's input check refuses it before the call reaches the app (the app refuses it too, as invalid_input)
+    expect(text(long)).toMatch(/Input validation error.*<=1000 characters at said/)
+    expect(a.seen.filter((s) => s.method === 'mimir.dismiss').map((s) => s.args)).toEqual([{ askId: 'ask_old' }])
+    // with no askId the one waiting is turned down
+    const now = await h.call('slicerx_mimir_dismiss', {})
+    expect(data<{ output: { askId: string } }>(now).output.askId).toBe('ask_1')
+    const again = await h.call('slicerx_mimir_dismiss', {})
+    expect(text(again)).toMatch(/not_found/)
+
+    const closed = await connect(opts(scriptedHub({ ok: true }, true, undefined, (method) => {
+      if (method === 'mimir.dismiss') throw { code: 'not_ready', message: 'the mimir tab is not open in the app' }
+      return {}
+    })))
+    const shut = await closed.call('slicerx_mimir_dismiss', {})
+    expect(shut.isError).toBe(true)
+    expect(text(shut)).toMatch(/not_configured/)
+  })
+
+  it('says it never picks an answer or stops the run, and the ask says a waiting question blocks it', async () => {
+    const h = await connect(opts(scriptedHub({ ok: true }, true, undefined, app().handle)))
+    const tools = (await h.client.listTools()).tools
+    const dismiss = tools.find((t) => t.name === 'slicerx_mimir_dismiss')!
+    expect(dismiss.description).toMatch(/does not pick an answer and does not stop mimir's run/)
+    expect(tools.find((t) => t.name === 'slicerx_mimir_ask')!.description).toMatch(/slicerx_mimir_dismiss/)
+  })
+})
+
 describe('a dimension sheet through a scripted hub', () => {
   const opts = (hub: ReturnType<typeof scriptedHub>) => ({ printers: 'link' as const, linkUrl: 'ws://127.0.0.1:47615', linkCode: 'AGNT-CODE', linkWebSocket: hub.WS })
 
