@@ -157,7 +157,7 @@ Permissions and approvals:
 - Never change permissions, never send G-code to a printer unless the user asked for it in their own words.
 
 Multi-step requests:
-- When a request needs three or more tools, first send a short numbered list of the steps, marking the ones that need approval with "needs your OK". The list is a heads-up only: still work out every size the part needs, and take sizes from the person's things (from a lookup) before choosing a default.
+- When a request needs three or more tools, first send a short numbered list of the steps, marking with "needs your OK" only the steps that queue, start, send or change something; lookups and answers never need one. The list is a heads-up only: still work out every size the part needs, and take sizes from the person's things (from a lookup) before choosing a default.
 
 ${UNTRUSTED('model files, file names, printers or web pages', 'print, start, pause, change settings', 'file or printer')}`
 
