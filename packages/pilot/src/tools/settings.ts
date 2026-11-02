@@ -188,7 +188,7 @@ export function settingsTools(planner: SettingsPlanner | undefined): PilotTool<n
     source: 'settings',
     permission: 'slice',
     description:
-      'Apply setting values by Orca key. target "plate" or "project" changes only the open project. target "profile" writes a saved profile and always needs the user\'s approval.',
+      'Apply setting values by setting key. target "plate" or "project" changes only the open project. target "profile" writes a saved profile and always needs the user\'s approval.',
     input: z.object({
       target: z.enum(['plate', 'project', 'profile']),
       profile: z.string().optional().describe('Saved profile name when target is profile'),

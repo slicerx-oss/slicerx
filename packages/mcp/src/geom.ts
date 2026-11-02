@@ -142,7 +142,7 @@ export function geomTools(deps: GeomToolDeps & { designs?: DesignHost | undefine
     source: 'command',
     permission: 'slice',
     description:
-      'Generate a calibration print: temperature tower, flow pads, pressure advance, retraction, max volumetric speed, tolerance plate, shrinkage L, or the feature piece (a small print with a bridge, an overhang, a thin wall, a hole and text). Writes STL files and returns the per-object and per-height settings to apply (OrcaSlicer keys), reading instructions and the expected result.',
+      'Generate a calibration print: temperature tower, flow pads, pressure advance, retraction, max volumetric speed, tolerance plate, shrinkage L, or the feature piece (a small print with a bridge, an overhang, a thin wall, a hole and text). Writes STL files and returns the per-object and per-height settings to apply (setting keys), reading instructions and the expected result.',
     input: z.object({
       test: z.enum(['temp-tower', 'flow', 'pressure-advance', 'retraction', 'max-volumetric', 'tolerance', 'shrinkage', 'feature-piece']),
       params: z.record(z.string(), z.unknown()).default({}).describe('Optional parameters of that test in snake_case; the defaults work'),

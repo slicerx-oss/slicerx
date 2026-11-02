@@ -15,7 +15,7 @@ export default (d: ServerToolDeps) =>
     toolset: 'settings',
     ungated: true,
     description:
-      'Check a full or partial OrcaSlicer config: unknown keys, wrong types, values outside OrcaSlicer limits or the usual range, keys that have no effect, and cross-key problems (layer height against nozzle, fan order, nozzle temperature against the filament). Each issue has a severity and may suggest a fix; nothing is changed.',
+      'Check a full or partial config: unknown keys, wrong types, values outside the limits of their setting or the usual range, keys that have no effect, and cross-key problems (layer height against nozzle, fan order, nozzle temperature against the filament). Each issue has a severity and may suggest a fix; nothing is changed.',
     input: z.object({
       config: z.record(z.string(), settingValue).describe('Setting keys to values'),
       nozzle_diameter: z.number().min(0.1).max(2).optional(),
