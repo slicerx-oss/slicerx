@@ -160,17 +160,47 @@ pub(crate) fn polylines_with(
 /// Monotonic polylines over the lines of a surface pulled in by half a spacing (`spans`, where the turns
 /// happen and lines are neighbors when the wall joins their ends, as Orca links them) and pulled in by
 /// 0.05 spacing (`outer`, where the
-/// two ends of each path reach). With `lead_high` every region with no neighbor on its left (the first region of
-/// each connected piece) starts on its first line's high end in this frame, wherever the previous region ended.
+/// two ends of each path reach). With the Bambu Lab line top rules (`bambu`) every region with no neighbor on its left
+/// (the first region of each connected piece) starts on its first line's high end in this frame, wherever the previous
+/// region ended, and a line is split only where `outer` splits it: spans of one line that lie in one span of `outer`
+/// (pinched apart by the half spacing, as just above a slot's tip) print as one line.
 pub(crate) fn polylines_outer(
     spans: &[Iv],
     outer: &[Iv],
     spacing: i64,
     links: Links,
     to_point: &dyn Fn(i64, i64) -> Point,
-    lead_high: bool,
+    bambu: bool,
 ) -> Vec<Vec<Point>> {
-    polylines_core(spans, outer, spacing, links, to_point, lead_high)
+    if bambu && !outer.is_empty() {
+        let joined = join_in_outer(spans, outer);
+        return polylines_core(&joined, outer, spacing, links, to_point, true);
+    }
+    polylines_core(spans, outer, spacing, links, to_point, bambu)
+}
+
+/// `spans` (sorted by line, then position) with the spans of each line that lie in one span of `outer` joined into
+/// one, from the first one's low end to the last one's high end.
+fn join_in_outer(spans: &[Iv], outer: &[Iv]) -> Vec<Iv> {
+    // The span of `outer` that holds `s`, as its index.
+    let holder = |s: &Iv| -> Option<usize> {
+        let i = outer.partition_point(|o| (o.k, o.t1) < (s.k, s.t1));
+        outer
+            .get(i)
+            .filter(|o| o.k == s.k && o.t0 <= s.t0 && s.t1 <= o.t1)
+            .map(|_| i)
+    };
+    let mut out: Vec<Iv> = Vec::with_capacity(spans.len());
+    let mut last_holder: Option<usize> = None;
+    for s in spans {
+        let h = holder(s);
+        match out.last_mut() {
+            Some(prev) if prev.k == s.k && h.is_some() && h == last_holder => prev.t1 = prev.t1.max(s.t1),
+            _ => out.push(*s),
+        }
+        last_holder = h;
+    }
+    out
 }
 
 /// Where the ends of the lines meet the walls and which ends are neighbors along the wall.
@@ -994,5 +1024,22 @@ mod tests {
         // Every span is printed once, end to end.
         assert_eq!(points, 10);
         assert!(total(&pls) > 0.0);
+    }
+
+    #[test]
+    fn spans_in_one_outer_span_join() {
+        // Line 0 is split by the outer contour too; line 1 only by the lines pulled in by half a spacing.
+        let spans = vec![
+            iv(0, 10, 40),
+            iv(0, 60, 90),
+            iv(1, 10, 40),
+            iv(1, 60, 90),
+            iv(1, 120, 150),
+        ];
+        let outer = vec![iv(0, 5, 45), iv(0, 55, 95), iv(1, 5, 95), iv(1, 115, 155)];
+        assert_eq!(
+            join_in_outer(&spans, &outer),
+            vec![iv(0, 10, 40), iv(0, 60, 90), iv(1, 10, 90), iv(1, 120, 150)]
+        );
     }
 }
