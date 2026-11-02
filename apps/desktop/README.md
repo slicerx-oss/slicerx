@@ -24,6 +24,8 @@ A dev run's printer hub takes 47615 like a release, or the port in `SX_TEST_HUB_
 
 `build:app` writes the edition's Tauri settings to `src-tauri/gen/edition.conf.json` (from `SLICERX_CONFIG`, default the SlicerX edition) and passes them to `tauri build --config`.
 
+Every `tauri build` (build:app, build:bridge, `pnpm edition:build`, the release scripts) runs `scripts/pack-mcp.mjs` first, as its `beforeBuildCommand`: it packs the MCP server and the STEP reader into `src-tauri/resources/mcp`, which ships as the app's `mcp` resource folder. The window loads the reader's wasm from there (`src/host/step-wasm.ts`) and its page has no copy of its own, so `build.rs` stops a build whose `resources/mcp/step-reader` is missing the reader and says to run `node apps/desktop/scripts/pack-mcp.mjs`. `tauri dev` needs neither: the dev server serves the reader's own wasm.
+
 Prerequisites: the pinned Rust toolchain, Node 24 with pnpm 10, and the platform's Tauri dependencies (Xcode command line tools on macOS, WebView2 on Windows, WebKitGTK 4.1 on Linux). Icons are generated from `icons-src/icon-1024.png` with `pnpm tauri icon icons-src/icon-1024.png -o src-tauri/icons`.
 
 Dependencies: tauri 2.12.0, tauri-build 2.7.0, tauri-plugin-dialog 2.8.0, tauri-plugin-updater 2.13.1, serde 1.0.229, serde_json 1.0.151, anyhow 1.0.104; @tauri-apps/api and @tauri-apps/cli 2.12.0.

@@ -3,6 +3,7 @@
 // Loads OpenCASCADE (occt-import-js.mjs and occt-import-js.wasm, which sit next to this file) in a browser, a worker or
 // Node. The wasm is a separate file found with new URL(..., import.meta.url), the pattern Vite and other bundlers copy
 // as an asset, so it can be rebuilt with ../build.sh and replaced on its own. No Node imports here: browsers load this.
+// In Node, a capped load reads a file: URL through process.getBuiltinModule instead (wasmBytes).
 import { OUT_OF_MEMORY, readStep, type Occt, type ReadOptions, type StepQuality, type StepRead } from './read.ts'
 
 /** Default cap on the memory OpenCASCADE may use for one file, in MB: what the Node path and the app's browser worker both pass. */
@@ -47,7 +48,17 @@ function capMemory(memory: WebAssembly.Memory, maxBytes: number, onRefuse: () =>
   })
 }
 
-async function wasmBytes(url: string): Promise<ArrayBuffer> {
+/** Node's file reading, when this runs in Node; found at run time, so nothing here imports a Node module. */
+function nodeFiles(): { readFile(path: URL): Promise<Uint8Array> } | undefined {
+  const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process
+  return proc?.getBuiltinModule?.('node:fs/promises') as { readFile(path: URL): Promise<Uint8Array> } | undefined
+}
+
+async function wasmBytes(url: string): Promise<ArrayBuffer | Uint8Array> {
+  // Node's fetch does not read file: URLs, so in Node a file URL is read from disk, as the glue does on its own when
+  // there is no cap. Browsers and workers fetch every URL.
+  const files = url.startsWith('file:') ? nodeFiles() : undefined
+  if (files) return files.readFile(new URL(url))
   const res = await fetch(url, { credentials: 'same-origin' })
   if (!res.ok) throw new Error(`could not fetch ${url}: ${res.status}`)
   return res.arrayBuffer()

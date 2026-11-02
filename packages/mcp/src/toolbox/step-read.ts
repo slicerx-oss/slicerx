@@ -3,8 +3,11 @@
 // STEP files for clients: read one with the optional @slicerx/step-reader package, in a worker thread with a deadline,
 // a 100 MB input cap and a memory cap, and say what is in it. With output stl or obj the meshes are written to a new
 // file under the server's output folder, which every model path check allows, so the mesh tools and slicing take it.
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { basename, extname, join } from 'node:path'
+// The reader comes from the folder SLICERX_STEP_READER_DIR names, else the step-reader folder beside the self-contained
+// server (the desktop app ships it there), else the installed package.
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { basename, extname, join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import type * as StepNode from '@slicerx/step-reader/node'
 import { productName } from '@slicerx/contracts'
@@ -14,11 +17,45 @@ import { serverTool, type ServerToolDeps } from './deps'
 export const STEP_EXTENSIONS = ['.step', '.stp'] as const
 // The reader ships in the integrator kit as its own tarball, beside slicerx-mcp.tgz; ./kit is the kit folder.
 const INSTALL = 'npm install ./kit/slicerx-step-reader.tgz'
+/** Names a folder holding the built reader (node.js and the files beside it), used before anything else. */
+export const STEP_READER_DIR_ENV = 'SLICERX_STEP_READER_DIR'
+
+// true in the self-contained build (scripts/build.mjs --standalone), which has no node_modules to install into.
+declare const __SLICERX_STANDALONE__: boolean | undefined
+const standalone = typeof __SLICERX_STANDALONE__ === 'boolean' && __SLICERX_STANDALONE__
 
 type StepModule = typeof StepNode
 
-/** The reader, when the package is installed next to this server. Kept apart so a test can stand in for it. */
-export const stepModule = { load: (): Promise<StepModule> => import('@slicerx/step-reader/node') }
+/** The folder the reader came from, or the package; for the refusal when it is missing. */
+type Source = { kind: 'env' | 'bundled'; dir: string } | { kind: 'package' }
+
+/** The reader's folder: SLICERX_STEP_READER_DIR, else `bundled` (the step-reader folder beside the server) when it holds one. */
+export function stepReaderSource(env: NodeJS.ProcessEnv, bundled: string | undefined): Source {
+  const named = env[STEP_READER_DIR_ENV]?.trim()
+  if (named) return { kind: 'env', dir: resolve(named) }
+  if (bundled && existsSync(join(bundled, 'node.js'))) return { kind: 'bundled', dir: bundled }
+  return { kind: 'package' }
+}
+
+let lastSource: Source = { kind: 'package' }
+
+/**
+ * The reader. `bundled` is the step-reader folder beside the server's entry, which the command line sets
+ * (setBundledStepReader). Kept apart so a test can stand in for it.
+ */
+export const stepModule = {
+  bundled: undefined as string | undefined,
+  load: (): Promise<StepModule> => {
+    const source = (lastSource = stepReaderSource(process.env, stepModule.bundled))
+    if (source.kind === 'package') return import('@slicerx/step-reader/node')
+    return import(pathToFileURL(join(source.dir, 'node.js')).href) as Promise<StepModule>
+  },
+}
+
+/** Where the self-contained server ships the reader: a step-reader folder next to its entry file. */
+export function setBundledStepReader(dir: string): void {
+  stepModule.bundled = dir
+}
 
 async function reader(): Promise<StepModule> {
   try {
@@ -26,6 +63,12 @@ async function reader(): Promise<StepModule> {
   } catch (e) {
     const code = (e as { code?: unknown }).code
     if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND' || /Cannot find (module|package) '@slicerx\/step-reader/.test(String((e as Error).message))) {
+      if (lastSource.kind === 'env') {
+        throw new ToolInputError(`${STEP_READER_DIR_ENV} names ${lastSource.dir}, which holds no STEP reader (node.js from a built @slicerx/step-reader). Point it at that folder, or unset it.`, 'not_supported', { step_reader_dir: lastSource.dir })
+      }
+      if (standalone) {
+        throw new ToolInputError(`This copy of the server was built without the STEP reader, so it cannot read STEP files. Open the file in ${productName()} instead (slicerx_open_in_app), or name a folder holding the reader in ${STEP_READER_DIR_ENV}.`, 'not_supported')
+      }
       throw new ToolInputError(`Reading STEP files needs the optional @slicerx/step-reader package, which is not installed next to this server. Install the kit's slicerx-step-reader.tgz beside @slicerx/mcp (${INSTALL}, with ./kit your kit folder) and start the server again.`, 'not_supported', { install: INSTALL })
     }
     throw e
@@ -56,13 +99,13 @@ export default (d: ServerToolDeps) =>
   serverTool({
     name: 'step_read',
     title: 'Read a STEP file',
-    version: '1.0.0',
+    version: '1.1.0',
     source: 'command',
     permission: 'read',
     toolset: 'core',
     ungated: true,
     description:
-      `Read a STEP file (.step or .stp; AP203, AP214 or AP242) as ${productName()} reads it: the objects it becomes (touching bodies stay together), each body's name, color (#rrggbb, or null) and triangle count, boxes in mm, the unit the file declares and notes. With output "stl" or "obj" it also writes the meshes, in mm, to a new file in the server's output folder and returns its path, which the mesh tools and slicerx_slice_file take; colored bodies keep their color as OBJ vertex colors or STL facet colors. The file is read in a worker with a deadline (a minute plus 2 s per MB), a 100 MB size limit and a memory limit. A refusal has a step_ code: step_empty, step_not_step, step_step_xml, step_too_large, step_no_solids, step_too_detailed, step_unreadable, step_out_of_memory or step_timeout. Needs the optional @slicerx/step-reader package, the kit's slicerx-step-reader.tgz (${INSTALL}); without it the call is refused with not_supported. To open a STEP file in the app instead, use slicerx_open_in_app.`,
+      `Read a STEP file (.step or .stp; AP203, AP214 or AP242) as ${productName()} reads it: the objects it becomes (touching bodies stay together), each body's name, color (#rrggbb, or null) and triangle count, boxes in mm, the unit the file declares and notes. With output "stl" or "obj" it also writes the meshes, in mm, to a new file in the server's output folder and returns its path, which the mesh tools and slicerx_slice_file take; colored bodies keep their color as OBJ vertex colors or STL facet colors. The file is read in a worker with a deadline (a minute plus 2 s per MB), a 100 MB size limit and a memory limit. A refusal has a step_ code: step_empty, step_not_step, step_step_xml, step_too_large, step_no_solids, step_too_detailed, step_unreadable, step_out_of_memory or step_timeout. Needs the optional @slicerx/step-reader package, the kit's slicerx-step-reader.tgz (${INSTALL}), which the server bundled with the desktop app includes; without it the call is refused with not_supported. To open a STEP file in the app instead, use slicerx_open_in_app.`,
     input: z.object({
       model: z.string().min(1).describe('Absolute path or http(s) URL of a .step or .stp file'),
       quality: z.enum(['normal', 'coarser', 'finer']).default('normal').describe('Chord tolerance: coarser 0.05 mm, normal 0.01 mm, finer 0.003 mm'),

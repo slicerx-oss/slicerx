@@ -41,6 +41,8 @@ if (!values['no-geom']) {
     process.exit(r.status || 1)
   }
 }
+// The page loads the STEP reader's wasm from the app's resources (src/host/step-wasm.ts), as a release does; `tauri
+// build` packs the MCP server and the reader into src-tauri/resources/mcp first (beforeBuildCommand, pack-mcp.mjs).
 run(['tauri:config'])
 const conf = JSON.parse(readFileSync(join(desktop, 'src-tauri', 'gen', 'edition.conf.json'), 'utf8'))
 const base = JSON.parse(readFileSync(join(desktop, 'src-tauri', 'tauri.conf.json'), 'utf8'))
