@@ -5,7 +5,7 @@
 // still answered: Not now and Print reach the run that asked, once, and the run goes on. Replaced runtimes with nothing
 // going and nothing waiting are let go, and no more than 8 are kept. An answer no runtime waits for is still refused.
 import { DEFAULT_POLICY, type ApprovalRequest, type LlmTransport, type Pilot, type PilotEvent, type PrinterHost } from '@slicerx/contracts'
-import { createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type PilotTool } from '@slicerx/pilot'
+import { askTool, createApprovalBroker, createPilot, createScriptedClient, DEFAULT_CONFIG, defineTool, type PilotTool } from '@slicerx/pilot'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { answersReachTheirRun, forgetReplaced, replacedCount, retire } from '../src/workspaces/mimir/answers'
@@ -115,5 +115,60 @@ describe('a send card across a runtime made again', () => {
     retire(first)
     const second = runtime()
     await expect(second.resolveApproval('apr_none', { kind: 'approve' })).rejects.toThrow('No pending approval apr_none')
+  })
+})
+
+describe('a question across a runtime made again', () => {
+  function asker(seen: string[]): Pilot {
+    return answersReachTheirRun(
+      createPilot({
+        host: { printers, approvals: createApprovalBroker(), llm: {} as LlmTransport },
+        config: DEFAULT_CONFIG,
+        policy: DEFAULT_POLICY,
+        client: createScriptedClient(
+          [
+            { calls: [{ name: 'pilot.ask', args: { title: 'Which one', question: 'Is this the model?', choices: [{ id: 'yes', label: 'Yes' }, { id: 'no', label: 'No' }] } }] },
+            (messages) => {
+              const last = messages.at(-1)
+              seen.push(last?.role === 'tool' ? last.content : '')
+              return { text: 'Okay.' }
+            },
+          ],
+          { chunk: false },
+        ),
+        builtins: false,
+        tools: [askTool()],
+      }),
+    )
+  }
+
+  it.each([
+    ['a dismiss', undefined],
+    ['a dismiss with words', 'a different model'],
+  ])('%s reaches the runtime that asked', async (_name, said) => {
+    const seen: string[] = []
+    const first = asker(seen)
+    const events: PilotEvent[] = []
+    let askId = ''
+    let shown: () => void = () => undefined
+    const asked = new Promise<void>((r) => (shown = r))
+    const done = (async () => {
+      for await (const e of first.run('tab', 'which model')) {
+        events.push(e)
+        if (e.type === 'ask') {
+          askId = e.askId
+          shown()
+        }
+      }
+    })()
+    await asked
+    retire(first)
+    const second = asker([])
+    await second.answer!(askId, null, said)
+    await done
+    expect(events.find((e) => e.type === 'ask_answered')).toMatchObject(said ? { dismissed: true, said } : { dismissed: true })
+    const read = JSON.parse(seen[0]!) as { ok: boolean; result: unknown }
+    expect(read.ok).toBe(true)
+    expect(read.result).toEqual(said ? { picked: null, dismissed: true, said } : { picked: null, dismissed: true })
   })
 })

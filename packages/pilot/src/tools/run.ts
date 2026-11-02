@@ -307,7 +307,8 @@ export function runTools(opts: { memory?: MemoryStore | undefined } = {}): Pilot
         if (!choices.length) return { ok: false, summary: withOdd(online.length ? `${why} No printer online has a spool loaded.`.trim() : 'No printer is online.') }
         if (!ctx.ask) return { ok: false, summary: withOdd(`${why} Ask the person which printer and spool to use.`.trim()) }
         const picked = await ctx.ask({ title: 'Which printer and spool?', question: withOdd(`${why} Pick the spool to print with.`.trim()), choices: [...choices, { id: 'pick:none', label: 'None of these' }] })
-        const m = /^pick:(.+):([^:]+)$/.exec(picked)
+        // a dismissed question has no pick, so it ends here like None of these
+        const m = /^pick:(.+):([^:]+)$/.exec(picked.id)
         printer = m ? (among.find((p) => p.id === m[1]) ?? null) : null
         if (!m || !printer) return { ok: false, summary: 'No printer picked. Nothing changed.' }
         from = 'picked'

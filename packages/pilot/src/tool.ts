@@ -48,6 +48,23 @@ export interface WebLookup {
   (query: string, signal?: AbortSignal): Promise<{ text: string; citations: Citation[] }>
 }
 
+/** The choice id of a question the person dismissed. Choice ids are never empty, so it cannot be a real pick. */
+export const ASK_DISMISSED = ''
+
+/** The most a person's words in place of a pick may be, in characters; longer is cut. */
+export const ASK_SAID_MAX = 1000
+
+/** True when a question's answer is a dismiss, not a pick. */
+export function wasDismissed(id: string): boolean {
+  return id === ASK_DISMISSED
+}
+
+/** The answer to a question: the picked choice id (`ASK_DISMISSED` for a dismiss), and what the person wrote instead. */
+export interface AskAnswer {
+  id: string
+  said?: string
+}
+
 export interface ToolContext {
   host: ToolHost
   sessionId: string
@@ -64,8 +81,11 @@ export interface ToolContext {
   kb: KnowledgeBase
   web?: WebLookup
   progress(line: string, fraction?: number): void
-  /** Asks the person a question with fixed answers and waits for the pick; absent where nobody can answer. */
-  ask?(question: { title: string; question: string; choices: PilotChoice[] }): Promise<string>
+  /**
+   * Asks the person a question with fixed answers and waits for the answer: the picked choice id, or `ASK_DISMISSED`
+   * when they turned the question down, with what they wrote instead in `said`. Absent where nobody can answer.
+   */
+  ask?(question: { title: string; question: string; choices: PilotChoice[] }): Promise<AskAnswer>
   /** Shows a dimension sheet and waits for the person to confirm or edit it; absent where nobody can answer. */
   sheet?(sheet: Omit<PilotSheet, 'id'>): Promise<PilotSheetAnswer>
   /** Ties the last sheet's rows to the steps they set; false when this run showed no sheet. */

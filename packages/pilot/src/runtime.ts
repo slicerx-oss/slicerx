@@ -44,7 +44,7 @@ import { fitContext, MIMIR_CONTEXT } from './context'
 import { applyToolGroups, isLocalModel, surfaceTools, type ToolGroups, type ToolSurface } from './surfaces'
 import { createTransportClient, errorText, type CloudShare } from './provider/client'
 import type { LlmClient, LlmImage, LlmMessage, LlmToolCall } from './provider/types'
-import { argLine, toolSpec, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
+import { argLine, ASK_DISMISSED, ASK_SAID_MAX, toolSpec, wasDismissed, type AskAnswer, type PilotTool, type ToolContext, type ToolHost, type ToolOutput, type Toolset, type WebLookup } from './tool'
 import { capLine, capTools, localTurnTools, turnNeeds, type ToolCapReport } from './toolsets'
 import { inTurnSet, TURN_SETS, turnSet, turnSetsOf, turnSetTool, turnSetTools, type TurnSet } from './turnsets'
 import { availableSkills, playbooks } from '../skills/catalog'
@@ -292,8 +292,8 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
   const client: LlmClient = opts.client ?? createTransportClient(opts.host.llm, opts.config.provider, { ...(opts.config.baseUrl === undefined ? {} : { baseUrl: opts.config.baseUrl }), ...(opts.share ? { share: opts.share } : {}) })
   const history = new Map<string, LlmMessage[]>()
   const pending = new Map<string, Pending>()
-  // Questions waiting for the person's pick, by ask id.
-  const asks = new Map<string, (choiceId: string) => void>()
+  // Questions waiting for the person's pick, by ask id, with the ids of their choices.
+  const asks = new Map<string, { ids: Set<string>; resolve: (choiceId: string, said?: string) => void }>()
   // Dimension sheets waiting for the person, by sheet id, and the last sheet each session showed.
   const sheets = new Map<string, (values: Record<string, number> | null) => void>()
   const lastSheet = new Map<string, PilotSheet>()
@@ -590,16 +590,24 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
     const builtin = isBuiltin(tool)
     if (runBook && builtin) ctx.run = runHandle(runBook, sessionId)
     ctx.ask = (q) =>
-      new Promise<string>((resolve, reject) => {
+      new Promise<AskAnswer>((resolve, reject) => {
         const askId = `ask_${newId()}`
         const onAbort = (): void => {
           asks.delete(askId)
           reject(new Error('Run canceled.'))
         }
-        asks.set(askId, (choiceId) => {
-          signal.removeEventListener('abort', onAbort)
-          emit({ type: 'ask_answered', askId, choiceId })
-          resolve(choiceId)
+        asks.set(askId, {
+          ids: new Set(q.choices.map((c) => c.id)),
+          resolve: (choiceId, said) => {
+            signal.removeEventListener('abort', onAbort)
+            if (wasDismissed(choiceId)) {
+              emit(said ? { type: 'ask_answered', askId, choiceId, dismissed: true, said } : { type: 'ask_answered', askId, choiceId, dismissed: true })
+              resolve(said ? { id: choiceId, said } : { id: choiceId })
+            } else {
+              emit({ type: 'ask_answered', askId, choiceId })
+              resolve({ id: choiceId })
+            }
+          },
         })
         signal.addEventListener('abort', onAbort, { once: true })
         emit({ type: 'ask', askId, title: q.title, question: q.question, choices: q.choices })
@@ -981,11 +989,16 @@ export function createPilot(opts: CreatePilotOptions): Pilot & {
       }
       history.set(sessionId, messages)
     },
-    async answer(askId: string, choiceId: string): Promise<void> {
-      const done = asks.get(askId)
-      if (!done) throw new Error(`No open question ${askId}`)
+    async answer(askId: string, choiceId: string | null, said?: string): Promise<void> {
+      const open = asks.get(askId)
+      if (!open) throw new Error(`No open question ${askId}`)
+      // only one of the question's own choices is a pick; anything else would reach the tool as an answer it never offered
+      if (choiceId !== null && !open.ids.has(choiceId)) throw new Error(`Not one of this question's answers: ${choiceId}`)
       asks.delete(askId)
-      done(choiceId)
+      // what the person wrote comes only with a dismiss: a pick is the whole answer
+      const words = choiceId === null && typeof said === 'string' ? said.trim().slice(0, ASK_SAID_MAX) : ''
+      if (choiceId === null) open.resolve(ASK_DISMISSED, words || undefined)
+      else open.resolve(choiceId)
     },
     run(sessionId: string, message: string, runOpts: { signal?: AbortSignal; context?: PilotContext; attachments?: PilotAttachment[] } = {}): AsyncIterable<PilotEvent> {
       const signal = runOpts.signal ?? new AbortController().signal

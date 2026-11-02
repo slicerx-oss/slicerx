@@ -396,7 +396,11 @@ export type PilotEvent =
   | { type: 'approval_request'; request: ApprovalRequest; source?: ToolSource; builtin?: boolean }
   /** A question for the person with fixed answers; the run waits until one is picked. */
   | { type: 'ask'; askId: string; title: string; question: string; choices: PilotChoice[] }
-  | { type: 'ask_answered'; askId: string; choiceId: string }
+  /**
+   * The person's answer to a question. A dismissed question (turned down, no choice picked) has `dismissed` set and an
+   * empty `choiceId`; `said` is what they wrote instead, when they wrote something.
+   */
+  | { type: 'ask_answered'; askId: string; choiceId: string; dismissed?: true; said?: string }
   /** The sizes a part needs, for the person to confirm or edit; the run waits until they do. */
   | { type: 'sheet'; sheet: PilotSheet }
   | { type: 'sheet_answered'; sheetId: string; answer: PilotSheetAnswer }
@@ -491,8 +495,11 @@ export interface SessionStore {
 export interface Pilot {
   tools(): ToolSpec[]
   run(sessionId: string, message: string, opts?: { signal?: AbortSignal; context?: PilotContext; attachments?: PilotAttachment[] }): AsyncIterable<PilotEvent>
-  /** Answers a choice card. Runtimes without questions leave it out. */
-  answer?(askId: string, choiceId: string): Promise<void>
+  /**
+   * Answers a choice card: one of its choice ids, or null to dismiss it without a pick. `said` is what the person wrote
+   * instead of picking (a dismiss only), trimmed and kept to 1000 characters. Runtimes without questions leave it out.
+   */
+  answer?(askId: string, choiceId: string | null, said?: string): Promise<void>
   /** Answers a dimension sheet: the values as the person left them, or null when they canceled it. Runtimes without sheets leave it out. */
   answerSheet?(sheetId: string, values: Record<string, number> | null): Promise<void>
   /**

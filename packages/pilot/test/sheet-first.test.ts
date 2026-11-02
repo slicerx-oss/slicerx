@@ -101,7 +101,7 @@ describe('a sheet before the first build', () => {
       input: z.object({}),
       async run(_i, ctx) {
         const picked = await ctx.ask!({ title: 'Plan', question: 'Build from this plan?', choices: [{ id: 'go', label: 'Go' }, { id: 'change', label: 'Not yet' }] })
-        return picked === 'go' ? { summary: 'Approved' } : { ok: false, summary: 'Not approved' }
+        return picked.id === 'go' ? { summary: 'Approved' } : { ok: false, summary: 'Not approved' }
       },
     }) as PilotTool<never>
     const PLAN = { name: 'design.plan', args: {} }
