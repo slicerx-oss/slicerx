@@ -243,19 +243,42 @@ pub(crate) struct Around {
 /// is 0.664 solid spacings wide against 0.684 at 19%) do not.
 const SLIT_MIN: f64 = 0.674;
 
-/// Whether the slit [`Input::slit`] reads counts with `cfg`: fixed-width walls, two or more of them,
-/// `only_one_wall_top` on, and the slit at least [`SLIT_MIN`] solid spacings wide.
-pub(crate) fn slit_counts(cfg: &PrintConfig) -> bool {
+/// The slit an `only_one_wall_top` layer's inner walls leave with `cfg`, and the spacings it is worked out from, mm.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Slit {
+    /// The inner walls' spacing less the infill overlap into them from both sides.
+    pub(crate) width: f64,
+    /// The inner wall line spacing.
+    pub(crate) inner: f64,
+    /// The solid infill line spacing.
+    pub(crate) solid: f64,
+}
+
+impl Slit {
+    /// The slit's width in solid infill line spacings.
+    pub(crate) fn share(self) -> f64 {
+        self.width / self.solid
+    }
+}
+
+/// The slit `cfg` leaves where it can leave one: fixed-width walls, two or more of them, and `only_one_wall_top` on.
+pub(crate) fn slit(cfg: &PrintConfig) -> Option<Slit> {
     if cfg.arachne_walls() || cfg.wall_loops < 2 || !perimeters::one_wall_top(cfg) {
-        return false;
+        return None;
     }
     let inner = cfg.spacing_for(cfg.inner_wall_width());
     let solid = cfg.spacing_for(cfg.solid_infill_width());
-    let slit = inner.mul_add(
+    let width = inner.mul_add(
         f64::from(cfg.wall_loops - 1),
         -(cfg.infill_wall_overlap / 100.0) * (inner + solid),
     );
-    slit >= SLIT_MIN * solid
+    Some(Slit { width, inner, solid })
+}
+
+/// Whether the slit [`Input::slit`] reads counts with `cfg`: one is left ([`slit`]), at least [`SLIT_MIN`] solid
+/// spacings wide.
+pub(crate) fn slit_counts(cfg: &PrintConfig) -> bool {
+    slit(cfg).is_some_and(|s| s.width >= SLIT_MIN * s.solid)
 }
 
 /// How far in from the outline the vertical shell rule starts the infill area, mm ([`Input::wall_offset`]): half the

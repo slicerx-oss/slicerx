@@ -128,22 +128,53 @@ pub(crate) fn unsupported(lower_sparse: &Shapes) -> Shapes {
 }
 
 /// The widest a floating piece may be with fixed-width walls, mm: a narrow piece that a circle this wide fits in
-/// stays internal solid infill. On the stock 0.42 mm lines and two walls, the ring a box leaves around a smaller
-/// box on top floats up to 4.5 mm wide, and not from 4.75 mm.
+/// stays internal solid infill. Kept for one wall and with `only_one_wall_top` off, where no slit is left
+/// ([`crate::shells::slit`]); the ring a box leaves around a smaller box on top floats up to 4.5 mm wide on the stock
+/// 0.42 mm lines, and not from 4.75 mm.
 const FLOATING_WIDTH_MM: f64 = 4.625;
 
 /// [`FLOATING_WIDTH_MM`] where the shell rule reads the slit `only_one_wall_top` walls leave
 /// ([`crate::shells::slit_counts`]): the ring's piece reaches the inner edge of the slit the ring top layer's inner wall
-/// leaves around the block, about 0.4 mm further in, and still floats up to 4.5 mm wide, and not from 4.75 mm.
+/// leaves around the block, about 0.4 mm further in, and still floats up to 4.5 mm wide, and not from 4.55 mm.
 const FLOATING_WIDTH_SLIT_MM: f64 = 5.025;
 
-/// [`FLOATING_WIDTH_MM`] with variable-width walls: the ring floats up to 4.75 mm wide, and not from 5.0 mm.
-const FLOATING_WIDTH_VARIABLE_MM: f64 = 4.9;
+/// The share of the solid infill line spacing that splits the slits too narrow to count: from it up to a slit that
+/// counts ([`crate::shells::slit_counts`]) a piece floats up to the [`FLOATING_WIDTH_CORNER_MM`] width, below it up to
+/// the wider [`FLOATING_WIDTH_OPEN_MM`] one. On stock 0.42 mm solid lines the slit is 0.601 solid spacings at 23%
+/// overlap and 0.580 at 24%; on 0.50 mm lines 0.607 at 15% and 0.513 at 20%.
+const CORNER_MIN: f64 = 0.59;
+
+/// The floating width, mm, under a slit from [`CORNER_MIN`] solid spacings to one that counts, at no infill wall
+/// overlap on a 0.42 mm solid line ([`CORNER_SOLID_MM`] spacing at 0.2 mm layers). It grows with the overlap
+/// ([`overlap_reach`]) and shrinks by [`CORNER_SLOPE`] per mm of solid line spacing past that one: at 20% overlap on
+/// 0.42 mm lines the ring floats up to 4.7 mm wide and not from 4.75 mm, at 15% on 0.50 mm lines up to 4.68 mm and
+/// not from 4.7 mm.
+const FLOATING_WIDTH_CORNER_MM: f64 = 4.69;
+
+/// The solid infill line spacing [`FLOATING_WIDTH_CORNER_MM`] is set on, mm.
+const CORNER_SOLID_MM: f64 = 0.3771;
+
+/// How much [`FLOATING_WIDTH_CORNER_MM`] shrinks per mm of solid infill line spacing past [`CORNER_SOLID_MM`].
+const CORNER_SLOPE: f64 = 0.8;
+
+/// The floating width, mm, under a slit narrower than [`CORNER_MIN`] solid spacings, at no infill wall overlap. It
+/// grows with the overlap ([`overlap_reach`]): at 24% and 30% overlap on 0.42 mm solid lines and at 30% on 0.50 mm
+/// ones the ring floats up to 4.95 mm wide and not from 5.0 mm, at 20% on 0.50 mm lines up to 4.9 mm.
+const FLOATING_WIDTH_OPEN_MM: f64 = 4.92;
+
+/// [`FLOATING_WIDTH_MM`] with variable-width walls: the ring floats up to 4.9 mm wide, and not from 4.95 mm.
+const FLOATING_WIDTH_VARIABLE_MM: f64 = 5.0;
 
 /// [`FLOATING_WIDTH_MM`] with `ensure_vertical_shell_thickness` `partial`, with either walls. The piece is the
 /// neighbors' surfaces alone, narrower than the band the full rule leaves: the ring floats up to 5.5 mm wide, and not
 /// from 6.0 mm.
 const FLOATING_WIDTH_PARTIAL_MM: f64 = 5.0;
+
+/// How far the infill wall overlap moves a piece's reach in, mm: the overlap's share of the mean of the inner wall
+/// and solid infill line spacings.
+fn overlap_reach(cfg: &PrintConfig, slit: crate::shells::Slit) -> f64 {
+    cfg.infill_wall_overlap / 100.0 * f64::midpoint(slit.inner, slit.solid)
+}
 
 /// The widest a floating piece may be with the region's walls, internal units.
 pub(crate) fn floating_width(cfg: &PrintConfig) -> i32 {
@@ -153,6 +184,13 @@ pub(crate) fn floating_width(cfg: &PrintConfig) -> i32 {
         FLOATING_WIDTH_VARIABLE_MM
     } else if crate::shells::slit_counts(cfg) {
         FLOATING_WIDTH_SLIT_MM
+    } else if let Some(slit) = crate::shells::slit(cfg) {
+        let reach = overlap_reach(cfg, slit);
+        if slit.share() >= CORNER_MIN {
+            CORNER_SLOPE.mul_add(-(slit.solid - CORNER_SOLID_MM), FLOATING_WIDTH_CORNER_MM + reach)
+        } else {
+            FLOATING_WIDTH_OPEN_MM + reach
+        }
     } else {
         FLOATING_WIDTH_MM
     };
