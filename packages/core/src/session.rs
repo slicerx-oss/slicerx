@@ -8456,8 +8456,11 @@ impl SliceSession {
 
     /// The infill area of layer `m` inside the spacing edge of its innermost walls as they really run, with the slit
     /// `only_one_wall_top` leaves where it moves the inner walls in off the outline: what the shell rule reads for a
-    /// neighbor ([`crate::shells::Input::slit`]). Measured without the infill overlap into the walls, like the fixed
-    /// inset it replaces. `None` on the topmost layer, which prints one wall.
+    /// neighbor ([`crate::shells::Input::slit`]), and through it the internal bridges. The core inside the inner walls
+    /// is measured without the infill overlap into them, like the fixed inset it replaces. On two walls the band's top
+    /// surface reaches [`slit_narrowing`] further across the slit, so the slit reads as the inner wall's spacing less
+    /// the overlap from both sides, as [`crate::shells::slit_counts`] measures it. `None` on the topmost layer, which
+    /// prints one wall.
     fn slit_area<'a>(
         &self,
         cfg: &PrintConfig,
@@ -8490,7 +8493,7 @@ impl SliceSession {
         if !perimeters::classic_top_candidate(cfg, &outline, w, &ctx) {
             return None;
         }
-        let (_, inner) = perimeters::walls_for_top(
+        let (islands, inner) = perimeters::walls_for_top(
             cfg,
             &outline,
             cfg.wall_loops,
@@ -8502,7 +8505,17 @@ impl SliceSession {
             false,
             None,
         );
-        Some(inner)
+        let bands: Vec<&Shapes> = islands
+            .iter()
+            .map(|i| &i.band_area)
+            .filter(|a| !a.is_empty())
+            .collect();
+        let narrowing = slit_narrowing(cfg, w);
+        if bands.is_empty() || narrowing == 0 {
+            return Some(inner);
+        }
+        let reach = perimeters::offset(&perimeters::union_all(&bands), narrowing);
+        Some(perimeters::union_all(&[&inner, &reach]))
     }
 
     /// The walls, infill area and surface classes of every region of `layer`, in region order (`None` for an
@@ -9344,6 +9357,11 @@ impl SliceSession {
                         InfillPattern::HilbertCurve => std::f64::consts::FRAC_PI_4,
                         InfillPattern::OctagramSpiral => std::f64::consts::PI / 16.0,
                         _ => 0.0,
+                    },
+                    slit_join: if crate::shells::slit_counts(cfg) {
+                        0.5 * f64::from(slit_narrowing(cfg, base_shell.w)) / SCALE
+                    } else {
+                        0.0
                     },
                     custom_angle: crate::motion::raw_f(cfg, "internal_bridge_angle")
                         .filter(|a| *a > 0.0)
@@ -12138,6 +12156,23 @@ fn classic_reedge(
     } else {
         perimeters::union_all(&[class, &grown])
     }
+}
+
+/// How much narrower the slit a classic one-wall top leaves beside its band reads than the walls lay it
+/// ([`SliceSession::slit_area`]), internal units: the inner wall's width less its spacing, and the infill wall
+/// overlap's share of the inner wall's and the internal solid infill's spacings together, the overlap into the inner
+/// wall from both sides. On the stock P1S settings (0.45 mm inner walls, 0.42 mm internal solid infill, 0.2 mm layers,
+/// 15 percent) that is 0.160 mm. Only on two walls: with three or more the measured bridges and floating shell under a
+/// slope follow the slit as the walls lay it, so it is not narrowed (0).
+fn slit_narrowing(cfg: &PrintConfig, w: i32) -> i32 {
+    if cfg.wall_loops != 2 {
+        return 0;
+    }
+    let p = perimeters::classic_pitch(cfg, w);
+    let spacing = f64::from(p.spacing) / SCALE;
+    let solid = cfg.spacing_for(cfg.solid_infill_width());
+    let wide = f64::from(p.inner - p.spacing) / SCALE;
+    mm((cfg.infill_wall_overlap / 100.0).mul_add(spacing + solid, wide))
 }
 
 /// How far the first and the last layer's infill area overlaps the walls, percent of a line width:
