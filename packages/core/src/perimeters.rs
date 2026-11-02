@@ -1965,47 +1965,86 @@ pub(crate) fn classic_top_start(cfg: &crate::config::PrintConfig, w: i32) -> (i3
     (ext, ext - ends)
 }
 
-/// How far past the cut a classic one-wall top band's tail runs on, internal units, before the band's own growth: with
-/// that growth the band ends about 0.7 mm past where a step that narrows along the outline falls below the cut-off.
+/// How far past the cut a classic one-wall top band's tail runs on, internal units (0.25 mm), before the band's own
+/// growth: with that growth the band ends about 0.7 mm past where a step that narrows along the outline falls below the
+/// cut-off.
 const CLASSIC_TOP_TAIL: i32 = 2_500;
+
+/// The tail past the cut, internal units (0.05 mm), of a tip that sits just past a corner of the outline and runs on
+/// along a straight stretch of it, as where a side's band ends on a corner facet whose step stays under the cut-off.
+/// The step does not narrow there, so only the tail's length ends it, and a full [`CLASSIC_TOP_TAIL`] bands most of
+/// the facet.
+const CLASSIC_TOP_CORNER_TAIL: i32 = 500;
+
+/// How far back along `wide` from a tip the outline is read for a corner, internal units (2 mm).
+const CLASSIC_TOP_CORNER_BACK: f64 = 20_000.0;
+
+/// The distance from `p` to the outline of `one` and the unit direction of the outline's nearest edge.
+fn outline_near(one: &Shapes, p: (f64, f64)) -> (f64, (f64, f64)) {
+    let mut best = (f64::MAX, (1.0, 0.0));
+    for r in one.iter().flatten() {
+        for (j, s) in r.iter().enumerate() {
+            let Some(e) = r.get((j + 1) % r.len()) else {
+                continue;
+            };
+            let (sx, sy) = (f64::from(s.x), f64::from(s.y));
+            let (wx, wy) = (f64::from(e.x) - sx, f64::from(e.y) - sy);
+            let l2 = wx * wx + wy * wy;
+            if l2 == 0.0 {
+                continue;
+            }
+            let t = (((p.0 - sx) * wx + (p.1 - sy) * wy) / l2).clamp(0.0, 1.0);
+            let d = (p.0 - sx - t * wx).m_hypot(p.1 - sy - t * wy);
+            if d < best.0 {
+                let l = l2.sqrt();
+                best = (d, (wx / l, wy / l));
+            }
+        }
+    }
+    best
+}
+
+/// The point `back` along `ring` behind its vertex `i`, walking against the ring's direction.
+fn ring_back(ring: &[IntPoint<i32>], i: usize, back: f64) -> (f64, f64) {
+    let n = ring.len();
+    let (mut k, mut left) = (i, back);
+    for _ in 0..n {
+        let (Some(ck), Some(pk)) = (ring.get(k), ring.get((k + n - 1) % n)) else {
+            break;
+        };
+        let (cx, cy) = (f64::from(ck.x), f64::from(ck.y));
+        let (px, py) = (f64::from(pk.x), f64::from(pk.y));
+        let seg = (px - cx).m_hypot(py - cy);
+        if seg >= left {
+            let f = left / seg;
+            return ((px - cx).mul_add(f, cx), (py - cy).mul_add(f, cy));
+        }
+        left -= seg;
+        k = (k + n - 1) % n;
+    }
+    ring.get(i)
+        .map_or((0.0, 0.0), |v| (f64::from(v.x), f64::from(v.y)))
+}
 
 /// The tails of a classic one-wall top band, the parts of `step` past the sharp tips of `wide` (the step shrunk by
 /// `cut`) where the step narrows along the outline of `one`, for the band to grow from. A step that narrows gradually
 /// leaves `wide` ending in a thin point, and growing it back bevels that point, so without a tail the band would stop
 /// short of where the step falls below the cut-off. A tip that runs along the outline keeps a line from it, `cut` plus
-/// [`CLASSIC_TOP_TAIL`] on, inside `one` and no further than twice `cut` from its outline. A tip that points into the
-/// part, as the end of a slot the layer above cuts into the step does, or out of it, gets none, so a slot keeps its
-/// gap fill. Each tail is the step within `cut` plus the tail of `wide`, in a strip along the tip's axis from `cut`
+/// [`CLASSIC_TOP_TAIL`] on, inside `one` and no further than twice `cut` from its outline. A tip whose line runs on
+/// along the same straight stretch of outline as the tip itself, while 2 mm back along `wide` the outline runs at 15
+/// degrees or more to it, sits just past a corner and keeps [`CLASSIC_TOP_CORNER_TAIL`] instead. A tip that points into
+/// the part, as the end of a slot the layer above cuts into the step does, or out of it, gets none, so a slot keeps
+/// its gap fill. Each tail is the step within `cut` plus the tail of `wide`, in a strip along the tip's axis from `cut`
 /// behind the tip to that line's end, four times `cut` wide.
 fn classic_top_tails(wide: &Shapes, step: &Shapes, one: &Shapes, cut: i32) -> Shapes {
     let c = f64::from(cut);
-    let run = c + f64::from(CLASSIC_TOP_TAIL);
     let sign = one
         .first()
         .and_then(|s| s.first())
         .map_or(1, |r| crate::geom::area2_int(r).signum());
-    let to_outline = |p: IntPoint<i32>| {
-        let (qx, qy) = (f64::from(p.x), f64::from(p.y));
-        let mut best = f64::MAX;
-        for r in one.iter().flatten() {
-            for (j, s) in r.iter().enumerate() {
-                let Some(e) = r.get((j + 1) % r.len()) else {
-                    continue;
-                };
-                let (sx, sy) = (f64::from(s.x), f64::from(s.y));
-                let (wx, wy) = (f64::from(e.x) - sx, f64::from(e.y) - sy);
-                let l2 = wx * wx + wy * wy;
-                let t = if l2 > 0.0 {
-                    (((qx - sx) * wx + (qy - sy) * wy) / l2).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-                best = best.min((qx - sx - t * wx).m_hypot(qy - sy - t * wy));
-            }
-        }
-        best
-    };
-    let mut strips: Shapes = Vec::new();
+    // Two outline directions count as one straight stretch within 5 degrees, and as a corner from 15 (the cosines).
+    let (straight, corner) = (0.996_194_698_091_745_5, 0.965_925_826_289_068_3);
+    let (mut strips, mut corner_strips): (Shapes, Shapes) = (Vec::new(), Vec::new());
     for ring in wide.iter().flatten() {
         let n = ring.len();
         for (i, v) in ring.iter().enumerate() {
@@ -2028,8 +2067,20 @@ fn classic_top_tails(wide: &Shapes, step: &Shapes, one: &Shapes, cut: i32) -> Sh
             let dl = dx.m_hypot(dy);
             let (dx, dy) = (dx / dl, dy / dl);
             let (vx, vy) = (f64::from(v.x), f64::from(v.y));
+            let long = c + f64::from(CLASSIC_TOP_TAIL);
+            let far = (vx + dx * long, vy + dy * long);
+            let (_, at_far) = outline_near(one, far);
+            let (_, at_tip) = outline_near(one, (vx, vy));
+            let (_, at_back) = outline_near(one, ring_back(ring, i, CLASSIC_TOP_CORNER_BACK));
+            let along = |p: (f64, f64), q: (f64, f64)| (p.0 * q.0 + p.1 * q.1).abs();
+            let at_corner = along(at_tip, at_far) >= straight && along(at_back, at_far) <= corner;
+            let run = if at_corner {
+                c + f64::from(CLASSIC_TOP_CORNER_TAIL)
+            } else {
+                long
+            };
             let end = round_pt(vx + dx * run, vy + dy * run);
-            if winding(one, end) == 0 || to_outline(end) > 2.0 * c {
+            if winding(one, end) == 0 || outline_near(one, (f64::from(end.x), f64::from(end.y))).0 > 2.0 * c {
                 continue;
             }
             let (nx, ny) = (-dy * 2.0 * c, dx * 2.0 * c);
@@ -2044,16 +2095,28 @@ fn classic_top_tails(wide: &Shapes, step: &Shapes, one: &Shapes, cut: i32) -> Sh
             if crate::geom::area2_int(&strip).signum() != sign {
                 strip.reverse();
             }
-            strips.push(vec![strip]);
+            if at_corner {
+                corner_strips.push(vec![strip]);
+            } else {
+                strips.push(vec![strip]);
+            }
         }
     }
-    if strips.is_empty() {
-        return Vec::new();
+    let tails = |strips: &Shapes, tail: i32| {
+        intersection(
+            &intersection(step, &grow_open(wide, cut + tail)),
+            &union_all(&[strips]),
+        )
+    };
+    match (strips.is_empty(), corner_strips.is_empty()) {
+        (true, true) => Vec::new(),
+        (false, true) => tails(&strips, CLASSIC_TOP_TAIL),
+        (true, false) => tails(&corner_strips, CLASSIC_TOP_CORNER_TAIL),
+        (false, false) => union_all(&[
+            &tails(&strips, CLASSIC_TOP_TAIL),
+            &tails(&corner_strips, CLASSIC_TOP_CORNER_TAIL),
+        ]),
     }
-    intersection(
-        &intersection(step, &grow_open(wide, cut + CLASSIC_TOP_TAIL)),
-        &union_all(&[&strips]),
-    )
 }
 
 // a false result guarantees that the context-free classic walls are unchanged.
