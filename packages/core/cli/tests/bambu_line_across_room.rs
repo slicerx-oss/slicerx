@@ -379,6 +379,44 @@ fn br_3_bambu_first_layer_starts_at_one_spacing_on_the_overlap_edge() {
     }
 }
 
+/// BR-3b. Where the first layer's spread lines across a strip would be shorter than 0.3 s0 (W - 2 eov under 1.3 s0),
+/// the strip prints one bottom path down its middle, W - 2 eov + h (1 - pi/4) wide as a line along it would be, with
+/// no lines across it and no gap fill: A1 2.350 and 2.391 mm, P1S 2.500 and 2.542 mm.
+#[test]
+fn br_3b_bambu_first_layer_narrow_strips_print_one_path_down_the_middle() {
+    for (case, names, eov) in [
+        ("a1--ml-2top-sp0-ac-f", ["T2.270", "T2.380"], 0.9419),
+        ("p1s--ml-2top-sp0-ac-f", ["T2.670", "T2.780"], 1.017),
+    ] {
+        let plate = Plate::slice(case);
+        for name in names {
+            let cut = plate.cut(name, false);
+            let what = format!("{case} {name} (W {:.3})", cut.w);
+            assert!(
+                cut.across().is_empty(),
+                "{what}: {} pieces across",
+                cut.across().len()
+            );
+            assert_eq!(cut.surface.len(), 1, "{what}: bottom surface moves");
+            assert!(
+                cut.surface_len() > 0.9 * 30.9,
+                "{what}: {:.3} mm of bottom",
+                cut.surface_len()
+            );
+            along_at(&cut, cut.w / 2.0, &what);
+            for s in &cut.surface {
+                near(
+                    s.width.unwrap_or(0.0),
+                    cut.w - 2.0 * eov + SQUISH,
+                    0.003,
+                    &format!("{what} width"),
+                );
+            }
+            assert!(cut.gap_len() <= 0.05, "{what}: gap fill");
+        }
+    }
+}
+
 /// BR-4. One wall on the top: a monotonic line top keeps its gap fill bead at 1.166 mm and prints lines across at
 /// 1.184 mm, ending 0.4174 from each side; a monotonic top prints walls only at 1.052 mm and lines at 1.071 mm.
 #[test]
