@@ -62,7 +62,7 @@ test('the kit has the STEP reader as its own tarball, in the manifest and SHA256
   const server = unpack(join(kit, mcp.file))
   // no wasm, no OpenCASCADE glue or license texts, and nothing of the reader but the type declarations its tool's types name
   assert.deepEqual(server.names.filter((n) => /occt|\.wasm$/i.test(n) || (/step-reader/.test(n) && !n.endsWith('.d.ts'))), [])
-  const cli = readFileSync(join(server.root, 'dist', 'cli.js'), 'utf8')
+  const cli = readFileSync(join(server.root, 'dist', 'cli-main.js'), 'utf8')
   assert.ok(cli.includes('@slicerx/step-reader/node'), 'the server imports the reader by package name')
   assert.ok(!cli.includes('occt-import-js'), 'the server does not inline the reader')
   const meta = JSON.parse(readFileSync(join(server.root, 'package.json'), 'utf8'))
