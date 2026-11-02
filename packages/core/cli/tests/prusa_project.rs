@@ -4,6 +4,13 @@
 //! through the settings package's map, as the app and the MCP server open it: the shared cases in
 //! packages/settings/fixtures/prusa-project-settings.json, and a slice of the T slab fixture that prints its support,
 //! its 3 walls and its temperatures on the default printer, the same moves as those settings passed as `--config`.
+#![allow(
+    clippy::disallowed_methods,
+    clippy::float_cmp,
+    clippy::many_single_char_names,
+    clippy::similar_names,
+    reason = "a G-code reader for the test: plate positions, arcs and widths in mm"
+)]
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -914,6 +921,264 @@ fn a_prusaslicer_mini_filaments_straight_lift_goes_straight_up_and_down() {
             wrong.push(format!(
                 "the travel at Z {z} changes Z as (move, XY length, Z) {changes:?}"
             ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// One first layer move that prints: its feature, its `;WIDTH:`, its ends and points along it (arcs sampled through
+/// their centers), and the run of unbroken printing moves of one feature it belongs to.
+struct FirstMove {
+    kind: String,
+    width: f64,
+    points: Vec<(f64, f64)>,
+    run: usize,
+}
+
+/// The printing moves of the first layer, `G2` and `G3` arcs included.
+fn first_layer_moves(gcode: &str) -> Vec<FirstMove> {
+    let (mut layer, mut kind, mut width) = (0, String::new(), 0.0_f64);
+    let (mut x, mut y) = (0.0_f64, 0.0_f64);
+    let (mut run, mut printing) = (0, false);
+    let mut out = Vec::new();
+    for l in gcode.lines() {
+        if l == ";LAYER_CHANGE" {
+            layer += 1;
+            printing = false;
+            continue;
+        }
+        if let Some(t) = l.strip_prefix(";TYPE:") {
+            t.clone_into(&mut kind);
+            printing = false;
+            continue;
+        }
+        if let Some(w) = l.strip_prefix(";WIDTH:") {
+            width = w.parse().unwrap_or(0.0);
+            continue;
+        }
+        let code = l.split(';').next().unwrap_or("").trim();
+        let Some(g) = ["G0 ", "G1 ", "G2 ", "G3 "]
+            .iter()
+            .position(|p| code.starts_with(p))
+        else {
+            continue;
+        };
+        let field = |c: char| {
+            code.split_whitespace()
+                .skip(1)
+                .find_map(|f| f.strip_prefix(c))
+                .and_then(|v| v.parse::<f64>().ok())
+        };
+        let (nx, ny) = (field('X').unwrap_or(x), field('Y').unwrap_or(y));
+        let moved = (nx - x).abs() + (ny - y).abs() > 1e-6 || g >= 2;
+        let prints = field('E').is_some_and(|e| e > 0.0) && moved;
+        if layer == 1 && prints {
+            if !printing {
+                run += 1;
+            }
+            let points = if g >= 2 {
+                let (cx, cy) = (x + field('I').unwrap_or(0.0), y + field('J').unwrap_or(0.0));
+                let r = (x - cx).hypot(y - cy);
+                let (a0, a1) = ((y - cy).atan2(x - cx), (ny - cy).atan2(nx - cx));
+                let mut d = a1 - a0;
+                if g == 2 {
+                    while d >= 0.0 {
+                        d -= std::f64::consts::TAU;
+                    }
+                } else {
+                    while d <= 0.0 {
+                        d += std::f64::consts::TAU;
+                    }
+                }
+                (0..=16)
+                    .map(|k| {
+                        let a = a0 + d * f64::from(k) / 16.0;
+                        (cx + r * a.cos(), cy + r * a.sin())
+                    })
+                    .collect()
+            } else {
+                vec![(x, y), (nx, ny)]
+            };
+            out.push(FirstMove {
+                kind: kind.clone(),
+                width,
+                points,
+                run,
+            });
+        }
+        printing = prints;
+        (x, y) = (nx, ny);
+    }
+    out
+}
+
+/// The first layer of one side of the plate's `x` (right of it when `right`): each wall feature's `;WIDTH:` values,
+/// and how far each wall loop starts in from the outermost one along x, mm.
+fn first_layer_walls(gcode: &str, x: f64, right: bool) -> (Vec<(String, f64)>, Vec<f64>) {
+    let moves = first_layer_moves(gcode);
+    let side = |m: &&FirstMove| {
+        let (a, b) = (m.points[0], m.points[m.points.len() - 1]);
+        (f64::midpoint(a.0, b.0) > x) == right
+    };
+    let walls: Vec<&FirstMove> = moves
+        .iter()
+        .filter(side)
+        .filter(|m| m.kind == "Outer wall" || m.kind == "Inner wall")
+        .collect();
+    let mut widths: Vec<(String, f64)> = Vec::new();
+    for m in &walls {
+        if !widths
+            .iter()
+            .any(|(k, w)| *k == m.kind && (w - m.width).abs() < 1e-9)
+        {
+            widths.push((m.kind.clone(), m.width));
+        }
+    }
+    widths.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+    let mut starts: Vec<f64> = Vec::new();
+    let mut runs: Vec<usize> = walls.iter().map(|m| m.run).collect();
+    runs.dedup();
+    for r in runs {
+        let min = walls
+            .iter()
+            .filter(|m| m.run == r)
+            .flat_map(|m| m.points.iter().map(|p| p.0))
+            .fold(f64::INFINITY, f64::min);
+        if !starts.iter().any(|s| (s - min).abs() < 1e-3) {
+            starts.push(min);
+        }
+    }
+    starts.sort_by(f64::total_cmp);
+    let first = starts.first().copied().unwrap_or(0.0);
+    (widths, starts.iter().map(|s| s - first).collect())
+}
+
+/// The first layer's bottom surface on one side of the plate's `x`: its widest `;WIDTH:` and the spacing of its
+/// parallel lines (the median distance between neighbors), mm.
+fn first_layer_bottom(gcode: &str, x: f64, right: bool) -> (f64, f64) {
+    let moves = first_layer_moves(gcode);
+    let lines: Vec<&FirstMove> = moves
+        .iter()
+        .filter(|m| m.kind == "Bottom surface" && m.points.len() == 2)
+        .filter(|m| (f64::midpoint(m.points[0].0, m.points[1].0) > x) == right)
+        .filter(|m| (m.points[1].0 - m.points[0].0).hypot(m.points[1].1 - m.points[0].1) > 1.0)
+        .collect();
+    let width = lines.iter().map(|m| m.width).fold(0.0, f64::max);
+    // The lines of the most common direction, by their offsets across it.
+    let angle = |m: &&FirstMove| {
+        let d = (m.points[1].1 - m.points[0].1).atan2(m.points[1].0 - m.points[0].0);
+        (d.to_degrees().rem_euclid(180.0)).round()
+    };
+    let mut by_angle: Vec<(f64, usize)> = Vec::new();
+    for m in &lines {
+        let a = angle(m);
+        match by_angle.iter_mut().find(|(b, _)| *b == a) {
+            Some((_, n)) => *n += 1,
+            None => by_angle.push((a, 1)),
+        }
+    }
+    let Some(&(a, _)) = by_angle.iter().max_by_key(|(_, n)| *n) else {
+        return (width, 0.0);
+    };
+    let t = a.to_radians();
+    let mut offsets: Vec<f64> = lines
+        .iter()
+        .filter(|m| angle(m) == a)
+        .map(|m| {
+            let (mx, my) = (
+                f64::midpoint(m.points[0].0, m.points[1].0),
+                f64::midpoint(m.points[0].1, m.points[1].1),
+            );
+            -t.sin() * mx + t.cos() * my
+        })
+        .collect();
+    offsets.sort_by(f64::total_cmp);
+    offsets.dedup_by(|a, b| (*a - *b).abs() < 1e-4);
+    let mut gaps: Vec<f64> = offsets
+        .windows(2)
+        .map(|w| w[1] - w[0])
+        .filter(|g| *g > 0.05 && *g < 3.0)
+        .collect();
+    gaps.sort_by(f64::total_cmp);
+    (width, gaps.get(gaps.len() / 2).copied().unwrap_or(0.0))
+}
+
+/// The spacing of two neighboring beads `w` wide on a layer `h` thick, mm.
+fn bead_spacing(w: f64, h: f64) -> f64 {
+    w - h * (1.0 - std::f64::consts::FRAC_PI_4)
+}
+
+#[test]
+fn a_prusaslicer_projects_first_layer_prints_each_features_width_at_the_first_layer_height() {
+    // Projects of 0.2 mm first layers and 0.1 mm layers (flw-pct150-flh03: 0.3 and 0.15 mm), first layer width 0 unless
+    // named. On the first layer every wall prints its own width with the first layer height in place of the layer
+    // height, and its loops lie one bead spacing at that height apart: the auto 0.45 mm walls of a plain object, a
+    // part's or an object's 150% as 0.3 mm (150% of the 0.2 mm first layer), a part's 0.55 mm as it is, and a first
+    // layer width of 150% of a 0.3 mm first layer as 0.45 mm for every wall.
+    let h = 0.2;
+    let auto = 0.45;
+    let pitch = |outer: f64, inner: f64, h: f64| {
+        let (so, si) = (bead_spacing(outer, h), bead_spacing(inner, h));
+        vec![0.0, f64::midpoint(so, si), f64::midpoint(so, si) + si]
+    };
+    let mut wrong = Vec::new();
+    for (name, x, right, outer, inner, h) in [
+        ("o6.3mf", 102.0, false, auto, auto, h),
+        ("o6.3mf", 102.0, true, auto, 0.3, h),
+        ("o2.3mf", 102.0, true, auto, 0.3, h),
+        ("o23.3mf", 102.0, true, auto, 0.55, h),
+        ("vol-pct150-objlh03.3mf", 0.0, true, auto, 0.3, h),
+        ("flw-pct150-flh03.3mf", 0.0, true, auto, auto, 0.3),
+    ] {
+        let (widths, starts) = first_layer_walls(&gcode(&widths(name)), x, right);
+        let want = vec![("Inner wall".to_owned(), inner), ("Outer wall".to_owned(), outer)];
+        let same = widths.len() == want.len()
+            && widths
+                .iter()
+                .zip(&want)
+                .all(|(a, b)| a.0 == b.0 && (a.1 - b.1).abs() < 1e-6);
+        if !same {
+            wrong.push(format!(
+                "{name} {right}: first layer walls {widths:?}, not {want:?}"
+            ));
+        }
+        let at = pitch(outer, inner, h);
+        if starts.len() != at.len() || starts.iter().zip(&at).any(|(a, b)| (a - b).abs() > 0.002) {
+            wrong.push(format!(
+                "{name} {right}: first layer wall loops at {starts:.3?}, not {at:.3?}"
+            ));
+        }
+    }
+    // The bottom's lines lie one bead spacing apart for their width at the first layer height.
+    for (name, x, right) in [("o6.3mf", 102.0, false), ("o23.3mf", 102.0, true)] {
+        let (w, spacing) = first_layer_bottom(&gcode(&widths(name)), x, right);
+        if (spacing - bead_spacing(w, h)).abs() > 0.005 {
+            wrong.push(format!(
+                "{name} {right}: bottom lines {w} wide, {spacing:.4} apart, not {:.4}",
+                bead_spacing(w, h)
+            ));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+#[test]
+fn a_prusaslicer_projects_first_layer_skirt_and_support_print_their_own_widths() {
+    // The skirt prints the perimeter width on the first layer (150% of the 0.2 mm first layer on r6-pct150), and the
+    // first layer's support its own support width: 1.0 times the 0.4 mm nozzle when it is 0, 150% of the first layer
+    // height when it is 150%.
+    let mut wrong = Vec::new();
+    for (name, skirt, support) in [("t3-auto.3mf", "0.45", "0.4"), ("r6-pct150.3mf", "0.3", "0.3")] {
+        let moves = first_layer_moves(&gcode(&widths(name)));
+        for (kind, want) in [("Skirt", skirt), ("Support", support)] {
+            let got: std::collections::BTreeSet<String> = moves
+                .iter()
+                .filter(|m| m.kind == kind)
+                .map(|m| format!("{}", m.width))
+                .collect();
+            if got.len() != 1 || !got.contains(want) {
+                wrong.push(format!("{name}: first layer {kind} {got:?}, not {want}"));
+            }
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
