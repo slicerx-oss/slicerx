@@ -341,7 +341,8 @@ fn a_plate_printed_by_object_prints_as_before() {
 /// Changed again when the monotonic line tops on Bambu Lab printers started each piece on its lowest line heading
 /// along the lines and beaded the free right-angle corners: only the order and direction of the top surface lines, one
 /// 0.28 mm corner bead on the top layer (z 10.0), the travels and the filament total moved.
-const BY_OBJECT_FNV: &str = "0328293d5615bb13";
+/// Changed again when the corner bead took its width, length and ends from the line end's offset across the lines.
+const BY_OBJECT_FNV: &str = "106a0f7c12efff84";
 
 #[test]
 fn layers_paired_by_height_keep_their_filament_order_inside_each_layer() {
