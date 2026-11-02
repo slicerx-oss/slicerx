@@ -493,3 +493,375 @@ fn the_beaded_corners_and_totals_hold() {
         );
     }
 }
+
+// Corners of other angles, on plates of 40 prisms 3 mm tall built here. Island k of a plate moves along x so that a
+// fixed point of it steps across the bed-fixed line grid in 1/80 of the line pitch, so the corners sample every
+// offset against the lines.
+//
+// - At a run-in corner of 75 to 105 degrees, u is how far the shorter leg's line end sits from the corner across the
+//   lines. A free corner gets exactly one bead when u is 0.107 to 0.150 mm (asserted from 0.110 to 0.147), none from
+//   0.153 or up to 0.103; a linked one gets none. The bead runs along the longer leg's wall, 1.73 u - 0.10 mm wide.
+// - Corners a line cuts across get no gap fill near them, nor do run-in tips at 60 and 75 degrees whose two lines
+//   the chain links.
+
+/// The line pitch of the stock A1 top, mm.
+const PITCH: f64 = 0.37707;
+
+/// Where island `k` of a plate on a grid of `step` mm sits: in rows of 8, moved along x so a point on its corner's
+/// diagonal steps 1/80 of the pitch across the 45 degree lines per island.
+fn spot(k: usize, step: f64) -> P {
+    #[allow(clippy::cast_precision_loss, reason = "small island indices")]
+    let (col, row, kf) = ((k % 8) as f64, (k / 8) as f64, k as f64);
+    let (x, y) = (20.0 + col * step, 20.0 + row * step);
+    let r = std::f64::consts::FRAC_1_SQRT_2;
+    let s = (y - x) * r;
+    (x + (s - kf * PITCH / 80.0).rem_euclid(PITCH) / r, y)
+}
+
+/// A plate of 40 convex islands, counterclockwise: `rh<deg>` rhombi with 6 mm sides whose `deg` corners sit at both
+/// ends of the diagonal along the lines (run-in corners) and whose other two are cut corners, `tip<deg>` isosceles
+/// triangles with 8 mm legs and the apex bisector along the lines, `ctip<deg>` the same with the bisector across them.
+fn islands(name: &str) -> Vec<Vec<P>> {
+    let at = |a: f64| (a.to_radians().cos(), a.to_radians().sin());
+    (0..40)
+        .map(|k| {
+            if let Some(deg) = name.strip_prefix("rh") {
+                let h = deg.parse::<f64>().unwrap() / 2.0;
+                let p0 = spot(k, 10.0);
+                let (u1, u2) = (at(45.0 - h), at(45.0 + h));
+                let p1 = (p0.0 + 6.0 * u1.0, p0.1 + 6.0 * u1.1);
+                let p3 = (p0.0 + 6.0 * u2.0, p0.1 + 6.0 * u2.1);
+                vec![p0, p1, (p1.0 + p3.0 - p0.0, p1.1 + p3.1 - p0.1), p3]
+            } else {
+                let (cut, deg) = match name.strip_prefix("ctip") {
+                    Some(d) => (true, d),
+                    None => (false, name.strip_prefix("tip").unwrap()),
+                };
+                let h = deg.parse::<f64>().unwrap() / 2.0;
+                let mut a = spot(k, 14.0);
+                if cut {
+                    a.0 += 6.0;
+                }
+                let into = if cut { 135.0 } else { 45.0 };
+                let (d1, d2) = (at(into - h), at(into + h));
+                vec![
+                    a,
+                    (a.0 + 8.0 * d1.0, a.1 + 8.0 * d1.1),
+                    (a.0 + 8.0 * d2.0, a.1 + 8.0 * d2.1),
+                ]
+            }
+        })
+        .collect()
+}
+
+/// A binary STL of each island as a prism 3 mm tall.
+fn prisms(polys: &[Vec<P>]) -> Vec<u8> {
+    let mut tris: Vec<[(f64, f64, f64); 3]> = Vec::new();
+    for p in polys {
+        let n = p.len();
+        for i in 1..n - 1 {
+            let (a, b, c) = (p[0], p[i], p[i + 1]);
+            tris.push([(a.0, a.1, 0.0), (c.0, c.1, 0.0), (b.0, b.1, 0.0)]);
+            tris.push([(a.0, a.1, 3.0), (b.0, b.1, 3.0), (c.0, c.1, 3.0)]);
+        }
+        for i in 0..n {
+            let (a, b) = (p[i], p[(i + 1) % n]);
+            tris.push([(a.0, a.1, 0.0), (b.0, b.1, 0.0), (b.0, b.1, 3.0)]);
+            tris.push([(a.0, a.1, 0.0), (b.0, b.1, 3.0), (a.0, a.1, 3.0)]);
+        }
+    }
+    let mut out = vec![0_u8; 80];
+    out.extend(u32::try_from(tris.len()).unwrap().to_le_bytes());
+    for t in &tris {
+        out.extend([0_u8; 12]);
+        for v in t {
+            for c in [v.0, v.1, v.2] {
+                #[allow(clippy::cast_possible_truncation, reason = "STL stores f32")]
+                out.extend((c as f32).to_le_bytes());
+            }
+        }
+        out.extend([0_u8; 2]);
+    }
+    out
+}
+
+/// A plate's G-code, once it is sliced.
+type Sliced = Arc<std::sync::OnceLock<Arc<String>>>;
+
+/// The stock A1 G-code of a plate, sliced once per test binary.
+fn plate_gcode(name: &str) -> Arc<String> {
+    static DONE: std::sync::Mutex<Vec<(String, Sliced)>> = std::sync::Mutex::new(Vec::new());
+    let cell = {
+        let mut done = DONE.lock().unwrap();
+        if let Some((_, c)) = done.iter().find(|(n, _)| n == name) {
+            c.clone()
+        } else {
+            let c = Arc::new(std::sync::OnceLock::new());
+            done.push((name.to_owned(), c.clone()));
+            c
+        }
+    };
+    cell.get_or_init(|| Arc::new(slice(&prisms(&islands(name)), a1(&[]))))
+        .clone()
+}
+
+/// One corner of an island's top as printed.
+struct Turn {
+    /// The corner's angle, degrees.
+    angle: f64,
+    /// The bisector runs along the lines (a run-in corner) or across them (a cut corner).
+    run_in: bool,
+    cut: bool,
+    /// The corner of the line ends' boundary.
+    at: P,
+    /// The legs, shorter first, and the wall of the longer one as a unit direction from the corner.
+    a: f64,
+    b: f64,
+    long_wall: P,
+    /// How far the shorter leg's line end sits from the corner across the lines, mm.
+    u: f64,
+    joined: bool,
+    /// The gap fill moves printed after the top within 0.2 mm of the corner.
+    beads: Vec<Move>,
+}
+
+/// Every convex corner of every island of a plate on its top layer. The plate is centered on the bed.
+#[allow(clippy::too_many_lines, reason = "one pass over each island's corners")]
+fn turns(name: &str) -> Vec<Turn> {
+    let polys = islands(name);
+    let g = plate_gcode(name);
+    let all = moves(&g);
+    let zt = all
+        .iter()
+        .filter(|m| m.extrudes && m.feature == TOP)
+        .map(|m| m.z)
+        .fold(f64::MIN, f64::max);
+    let layer: Vec<Move> = all.into_iter().filter(|m| m.z == zt).collect();
+    let pts = polys.iter().flatten();
+    let lo = pts
+        .clone()
+        .fold((f64::MAX, f64::MAX), |a, p| (a.0.min(p.0), a.1.min(p.1)));
+    let hi = pts.fold((f64::MIN, f64::MIN), |a, p| (a.0.max(p.0), a.1.max(p.1)));
+    let shift = (
+        128.0 - f64::midpoint(lo.0, hi.0),
+        128.0 - f64::midpoint(lo.1, hi.1),
+    );
+    let lines: Vec<&Move> = layer
+        .iter()
+        .filter(|m| m.extrudes && m.feature == TOP && dist(m.from, m.to) > 0.05)
+        .collect();
+    let dir = 45.0_f64;
+    let along = (dir.to_radians().cos(), dir.to_radians().sin());
+    let extrusions: Vec<&Move> = layer.iter().filter(|m| m.extrudes).collect();
+    let mut out = Vec::new();
+    for poly in &polys {
+        let poly: Vec<P> = poly.iter().map(|p| (p.0 + shift.0, p.1 + shift.1)).collect();
+        let n = poly.len();
+        // Each edge: start, unit direction, inward normal.
+        let edges: Vec<(P, P, P)> = (0..n)
+            .map(|i| {
+                let (p, q) = (poly[i], poly[(i + 1) % n]);
+                let l = dist(p, q);
+                let d = ((q.0 - p.0) / l, (q.1 - p.1) / l);
+                (p, d, (-d.1, d.0))
+            })
+            .collect();
+        let depth = |e: &(P, P, P), p: P| (p.0 - e.0.0) * e.2.0 + (p.1 - e.0.1) * e.2.1;
+        let inside = |p: P| edges.iter().all(|e| depth(e, p) > -0.1);
+        let ends: Vec<P> = lines
+            .iter()
+            .filter(|m| inside(m.from) && inside(m.to))
+            .flat_map(|m| [m.from, m.to])
+            .collect();
+        let mut insets: Vec<f64> = ends
+            .iter()
+            .map(|p| edges.iter().map(|e| depth(e, *p)).fold(f64::MAX, f64::min))
+            .collect();
+        insets.sort_by(f64::total_cmp);
+        let ins = insets[insets.len() / 2];
+        for i in 0..n {
+            let (ea, eb) = (edges[(i + n - 1) % n], edges[i]);
+            let angle = (-(ea.1.0 * eb.1.0 + ea.1.1 * eb.1.1)).acos().to_degrees();
+            // The two walls pulled in to the line ends, and where they meet.
+            let (pa, pb) = (
+                (ea.0.0 + ea.2.0 * ins, ea.0.1 + ea.2.1 * ins),
+                (eb.0.0 + eb.2.0 * ins, eb.0.1 + eb.2.1 * ins),
+            );
+            let cross = ea.1.0 * eb.1.1 - ea.1.1 * eb.1.0;
+            let t = ((pb.0 - pa.0) * eb.1.1 - (pb.1 - pa.1) * eb.1.0) / cross;
+            let c = (pa.0 + t * ea.1.0, pa.1 + t * ea.1.1);
+            let bis = heading((0.0, 0.0), (eb.1.0 - ea.1.0, eb.1.1 - ea.1.1));
+            let rel = apart(bis, dir).min(apart(bis + 180.0, dir));
+            let leg = |e: &(P, P, P)| {
+                ends.iter()
+                    .filter(|p| (depth(e, **p) - ins).abs() < 0.04 && dist(**p, c) < 3.0)
+                    .min_by(|p, q| dist(**p, c).total_cmp(&dist(**q, c)))
+                    .copied()
+            };
+            let (Some(xa), Some(xb)) = (leg(&ea), leg(&eb)) else {
+                continue;
+            };
+            let (da, db) = (dist(xa, c), dist(xb, c));
+            // The wall of each leg, as a direction away from the corner.
+            let (wa, wb) = ((-ea.1.0, -ea.1.1), eb.1);
+            let (short, a, b, long_wall) = if da <= db {
+                (xa, da, db, wb)
+            } else {
+                (xb, db, da, wa)
+            };
+            let u = (-(short.0 - c.0) * along.1 + (short.1 - c.1) * along.0).abs();
+            let joined = extrusions.windows(2).any(|w| {
+                let (p, q) = (w[0], w[1]);
+                p.feature == TOP
+                    && q.feature == TOP
+                    && dist(p.to, q.from) < 0.6
+                    && ((dist(p.to, xa) < 0.01 && dist(q.from, xb) < 0.01)
+                        || (dist(p.to, xb) < 0.01 && dist(q.from, xa) < 0.01))
+            });
+            let beads = layer
+                .iter()
+                .filter(|m| {
+                    m.extrudes
+                        && m.feature == "Gap infill"
+                        && m.before == TOP
+                        && to_segment(c, m.from, m.to) <= 0.2
+                })
+                .cloned()
+                .collect();
+            out.push(Turn {
+                angle,
+                run_in: rel < 5.0,
+                cut: rel > 80.0,
+                at: c,
+                a,
+                b,
+                long_wall,
+                u,
+                joined,
+                beads,
+            });
+        }
+    }
+    out
+}
+
+/// The corners that break the lateral offset rule, and the free corners in its window.
+fn u_rule(name: &str, all: &[Turn]) -> (Vec<String>, usize) {
+    let (mut errors, mut beaded) = (Vec::new(), 0);
+    for (k, c) in all.iter().enumerate().filter(|(_, c)| c.run_in) {
+        let n = c.beads.len();
+        let tag = format!(
+            "{name} corner {k} ({:.0} degrees, u {:.4}, a {:.3}, b {:.3}, {})",
+            c.angle,
+            c.u,
+            c.a,
+            c.b,
+            if c.joined { "linked" } else { "free" }
+        );
+        if c.joined || c.u <= 0.103 || c.u >= 0.153 {
+            if n > 0 {
+                errors.push(format!("{tag}: {n} bead move(s), want none"));
+            }
+        } else if (0.110..=0.147).contains(&c.u) {
+            if n == 1 {
+                beaded += 1;
+            } else {
+                errors.push(format!("{tag}: {n} bead move(s), want one"));
+            }
+        }
+    }
+    (errors, beaded)
+}
+
+#[test]
+fn free_corners_at_80_and_100_degrees_bead_by_the_lateral_offset() {
+    for name in ["rh80", "rh100"] {
+        let all = turns(name);
+        let (errors, beaded) = u_rule(name, &all);
+        assert!(errors.is_empty(), "{} corner(s) off: {errors:?}", errors.len());
+        assert!(beaded >= 5, "{name}: {beaded} free corners in the window");
+    }
+}
+
+#[test]
+fn a_corner_bead_at_another_angle_is_as_wide_as_its_offset_allows() {
+    for name in ["rh80", "rh100"] {
+        let all = turns(name);
+        let mut seen = 0;
+        for (k, c) in all.iter().enumerate() {
+            if !c.run_in || c.joined || !(0.110..=0.147).contains(&c.u) {
+                continue;
+            }
+            let Some(bead) = c.beads.first() else { continue };
+            seen += 1;
+            let wall = heading((0.0, 0.0), c.long_wall);
+            let h = heading(bead.from, bead.to);
+            let off = apart(h, wall).min(apart(h, wall + 180.0));
+            let len = dist(bead.from, bead.to);
+            let near = dist(bead.from, c.at).min(dist(bead.to, c.at));
+            let tag = format!(
+                "{name} corner {k} (u {:.4}, b {:.3}): bead {len:.3} by {:.3} at {off:.1} degrees to its wall, {near:.3} from the corner",
+                c.u, c.b, bead.width
+            );
+            assert!(off <= 15.0, "{tag}");
+            assert!((c.b - 0.06..=c.b + 0.03).contains(&len), "{tag}");
+            assert!((bead.width - (1.73 * c.u - 0.10)).abs() <= 0.02, "{tag}");
+            assert!(near <= if c.u < 0.143 { 0.06 } else { 0.10 }, "{tag}");
+        }
+        assert!(seen >= 5, "{name}: {seen} beads");
+    }
+}
+
+#[test]
+fn corners_a_line_cuts_across_get_no_bead() {
+    for name in ["rh100", "ctip60"] {
+        let all = turns(name);
+        let cut: Vec<&Turn> = all.iter().filter(|c| c.cut).collect();
+        assert!(cut.len() >= 40, "{name}: {} cut corners", cut.len());
+        let wrong: Vec<String> = cut
+            .iter()
+            .filter(|c| !c.beads.is_empty())
+            .map(|c| {
+                format!(
+                    "{:.0} degrees at ({:.3}, {:.3}): {} move(s)",
+                    c.angle,
+                    c.at.0,
+                    c.at.1,
+                    c.beads.len()
+                )
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "{name}: {} cut corner(s) beaded: {wrong:?}",
+            wrong.len()
+        );
+    }
+}
+
+#[test]
+fn linked_run_in_tips_get_no_bead() {
+    for name in ["tip75", "tip60"] {
+        let all = turns(name);
+        let tips: Vec<&Turn> = all.iter().filter(|c| c.run_in && c.joined).collect();
+        assert!(tips.len() >= 30, "{name}: {} linked tips", tips.len());
+        let wrong: Vec<String> = tips
+            .iter()
+            .filter(|c| !c.beads.is_empty())
+            .map(|c| {
+                format!(
+                    "u {:.4} at ({:.3}, {:.3}): {} move(s)",
+                    c.u,
+                    c.at.0,
+                    c.at.1,
+                    c.beads.len()
+                )
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "{name}: {} linked tip(s) beaded: {wrong:?}",
+            wrong.len()
+        );
+    }
+}
